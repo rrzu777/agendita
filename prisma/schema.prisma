@@ -1,0 +1,285 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  businesses BusinessUser[]
+}
+
+model Business {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  subdomain       String   @unique
+  customDomain    String?  @unique
+  ownerUserId     String
+  logoUrl         String?
+  profileImageUrl String?
+  bio             String?
+  whatsapp        String?
+  instagram       String?
+  addressText     String?
+  city            String
+  country         String   @default("CL")
+  currency        String   @default("CLP")
+  timezone        String   @default("America/Santiago")
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  users           BusinessUser[]
+  services        Service[]
+  availability    AvailabilityRule[]
+  timeBlocks      TimeBlock[]
+  customers       Customer[]
+  bookings        Booking[]
+  payments        Payment[]
+  ledgerEntries   LedgerEntry[]
+  reviews         Review[]
+  galleryImages   GalleryImage[]
+}
+
+model BusinessUser {
+  id         String       @id @default(cuid())
+  businessId String
+  userId     String
+  role       BusinessRole
+  createdAt  DateTime     @default(now())
+
+  business   Business     @relation(fields: [businessId], references: [id])
+  user       User         @relation(fields: [userId], references: [id])
+
+  @@unique([businessId, userId])
+}
+
+enum BusinessRole {
+  owner
+  admin
+  staff
+}
+
+model Service {
+  id              String   @id @default(cuid())
+  businessId      String
+  name            String
+  description     String?
+  durationMinutes Int
+  price           Int
+  depositAmount   Int
+  pastelColor     String
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  business        Business @relation(fields: [businessId], references: [id])
+  bookings        Booking[]
+}
+
+model AvailabilityRule {
+  id         String   @id @default(cuid())
+  businessId String
+  dayOfWeek  Int
+  startTime  String
+  endTime    String
+  isActive   Boolean  @default(true)
+
+  business   Business @relation(fields: [businessId], references: [id])
+}
+
+model TimeBlock {
+  id            String   @id @default(cuid())
+  businessId    String
+  startDateTime DateTime
+  endDateTime   DateTime
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  business      Business @relation(fields: [businessId], references: [id])
+}
+
+model Customer {
+  id         String   @id @default(cuid())
+  businessId String
+  name       String
+  phone      String
+  email      String?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business   Business @relation(fields: [businessId], references: [id])
+  bookings   Booking[]
+  payments   Payment[]
+  reviews    Review[]
+}
+
+model Booking {
+  id                String               @id @default(cuid())
+  businessId        String
+  serviceId         String
+  customerId        String
+  startDateTime     DateTime
+  endDateTime       DateTime
+  status            BookingStatus
+
+  totalPrice        Int
+  depositRequired   Int
+  depositPaid       Int                  @default(0)
+  remainingBalance  Int
+  discountAmount    Int                  @default(0)
+  finalAmount       Int
+  paymentStatus     BookingPaymentStatus
+
+  customerNotes     String?
+  internalNotes     String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  business          Business             @relation(fields: [businessId], references: [id])
+  service           Service              @relation(fields: [serviceId], references: [id])
+  customer          Customer             @relation(fields: [customerId], references: [id])
+  payments          Payment[]
+  ledgerEntries     LedgerEntry[]
+  review            Review?
+}
+
+enum BookingStatus {
+  pending_payment
+  confirmed
+  completed
+  cancelled
+  no_show
+}
+
+enum BookingPaymentStatus {
+  unpaid
+  deposit_paid
+  fully_paid
+  refunded
+  failed
+}
+
+model Payment {
+  id                String          @id @default(cuid())
+  businessId        String
+  bookingId         String
+  customerId        String
+  provider          PaymentProvider
+  providerPaymentId String?
+  amount            Int
+  currency          String          @default("CLP")
+  status            PaymentStatus
+  paymentType       PaymentType
+  paymentMethod     String?
+  paidAt            DateTime?
+  rawPayload        Json?
+  createdAt         DateTime        @default(now())
+
+  business          Business        @relation(fields: [businessId], references: [id])
+  booking           Booking         @relation(fields: [bookingId], references: [id])
+  customer          Customer        @relation(fields: [customerId], references: [id])
+  ledgerEntries     LedgerEntry[]
+}
+
+enum PaymentProvider {
+  mock
+  mercado_pago
+  webpay
+  manual
+}
+
+enum PaymentStatus {
+  pending
+  approved
+  rejected
+  cancelled
+  refunded
+  failed
+}
+
+enum PaymentType {
+  deposit
+  final_payment
+  full_payment
+  refund
+  cancellation_fee
+  manual_adjustment
+}
+
+model LedgerEntry {
+  id              String          @id @default(cuid())
+  businessId      String
+  bookingId       String?
+  paymentId       String?
+  customerId      String?
+  type            LedgerEntryType
+  direction       LedgerDirection
+  amount          Int
+  currency        String          @default("CLP")
+  description     String?
+  occurredAt      DateTime
+  createdAt       DateTime        @default(now())
+  createdByUserId String?
+
+  business        Business        @relation(fields: [businessId], references: [id])
+  booking         Booking?        @relation(fields: [bookingId], references: [id])
+  payment         Payment?        @relation(fields: [paymentId], references: [id])
+}
+
+enum LedgerEntryType {
+  booking_created
+  deposit_paid
+  final_payment_paid
+  full_payment_paid
+  refund_issued
+  discount_applied
+  cancellation_fee_charged
+  manual_income
+  manual_expense
+  adjustment
+}
+
+enum LedgerDirection {
+  income
+  expense
+  neutral
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  businessId String
+  bookingId  String   @unique
+  customerId String
+  rating     Int
+  comment    String?
+  isApproved Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  business   Business @relation(fields: [businessId], references: [id])
+  booking    Booking  @relation(fields: [bookingId], references: [id])
+  customer   Customer @relation(fields: [customerId], references: [id])
+}
+
+model GalleryImage {
+  id         String   @id @default(cuid())
+  businessId String
+  imageUrl   String
+  caption    String?
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  business   Business @relation(fields: [businessId], references: [id])
+}

@@ -1,0 +1,112 @@
+import { PrismaClient } from '@prisma/client'
+
+const prisma = new PrismaClient()
+
+async function main() {
+  // Clean up
+  await prisma.ledgerEntry.deleteMany()
+  await prisma.payment.deleteMany()
+  await prisma.review.deleteMany()
+  await prisma.booking.deleteMany()
+  await prisma.customer.deleteMany()
+  await prisma.galleryImage.deleteMany()
+  await prisma.service.deleteMany()
+  await prisma.timeBlock.deleteMany()
+  await prisma.availabilityRule.deleteMany()
+  await prisma.businessUser.deleteMany()
+  await prisma.business.deleteMany()
+  await prisma.user.deleteMany()
+
+  // Create users
+  const ownerUser = await prisma.user.create({
+    data: {
+      email: 'owner@mimosnails.com',
+      name: 'Camila Morales',
+    },
+  })
+
+  // Create business
+  const business = await prisma.business.create({
+    data: {
+      name: 'Mimos Nails',
+      slug: 'mimosnails',
+      subdomain: 'mimosnails',
+      ownerUserId: ownerUser.id,
+      bio: 'Manicura rusa y esmaltado permanente en Santiago. Especialista en uñas esculpidas.',
+      whatsapp: '+56912345678',
+      instagram: '@mimosnails',
+      addressText: 'Providencia, Santiago',
+      city: 'Santiago',
+      currency: 'CLP',
+      timezone: 'America/Santiago',
+    },
+  })
+
+  // Link user to business
+  await prisma.businessUser.create({
+    data: {
+      businessId: business.id,
+      userId: ownerUser.id,
+      role: 'owner',
+    },
+  })
+
+  // Create services
+  await prisma.service.createMany({
+    data: [
+      {
+        businessId: business.id,
+        name: 'Manicura rusa',
+        description: 'Limpieza profunda de cutícula, nivelación y esmaltado.',
+        durationMinutes: 120,
+        price: 28000,
+        depositAmount: 10000,
+        pastelColor: '#FFB3BA',
+        sortOrder: 1,
+      },
+      {
+        businessId: business.id,
+        name: 'Esmaltado permanente',
+        description: 'Esmaltado en gel con larga duración.',
+        durationMinutes: 90,
+        price: 22000,
+        depositAmount: 8000,
+        pastelColor: '#E2B3FF',
+        sortOrder: 2,
+      },
+      {
+        businessId: business.id,
+        name: 'Kapping gel',
+        description: 'Refuerzo de uña natural con gel.',
+        durationMinutes: 90,
+        price: 25000,
+        depositAmount: 8000,
+        pastelColor: '#A3D8FF',
+        sortOrder: 3,
+      },
+    ],
+  })
+
+  // Create availability rules
+  await prisma.availabilityRule.createMany({
+    data: [
+      { businessId: business.id, dayOfWeek: 1, startTime: '09:00', endTime: '18:00' },
+      { businessId: business.id, dayOfWeek: 2, startTime: '09:00', endTime: '18:00' },
+      { businessId: business.id, dayOfWeek: 3, startTime: '09:00', endTime: '18:00' },
+      { businessId: business.id, dayOfWeek: 4, startTime: '09:00', endTime: '18:00' },
+      { businessId: business.id, dayOfWeek: 5, startTime: '09:00', endTime: '18:00' },
+      { businessId: business.id, dayOfWeek: 6, startTime: '10:00', endTime: '15:00' },
+    ],
+  })
+
+  console.log('Seed completed successfully')
+}
+
+main()
+  .catch((e) => {
+    console.error(e)
+    process.exit(1)
+  })
+  .finally(async () => {
+    await prisma.$disconnect()
+  })
