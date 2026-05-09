@@ -28,8 +28,7 @@ function LandingPage() {
 }
 
 export default function HomePage() {
-  const headersList = headers()
-  const subdomain = headersList.get('x-business-subdomain')
+  const subdomain = headers().get('x-business-subdomain')
   
   if (subdomain) {
     return <BusinessProfile />
