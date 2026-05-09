@@ -15,7 +15,17 @@ export async function middleware(request: NextRequest) {
   }
   
   // Resolve tenant from hostname
-  const tenant = await resolveTenant(hostname)
+  let tenant = await resolveTenant(hostname)
+  
+  // Fallback for development: mock tenant for known subdomains
+  if (!tenant && hostname.includes('mimosnails')) {
+    tenant = {
+      businessId: 'mock-business-1',
+      slug: 'mimosnails',
+      subdomain: 'mimosnails',
+      isCustomDomain: false,
+    }
+  }
   
   // Add tenant info to headers for use in server components/actions
   const requestHeaders = new Headers(request.headers)
