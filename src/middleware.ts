@@ -3,7 +3,9 @@ import type { NextRequest } from 'next/server'
 import { resolveTenant } from '@/lib/tenant/resolver'
 
 export async function middleware(request: NextRequest) {
-  const { pathname, hostname } = request.nextUrl
+  const { pathname } = request.nextUrl
+  const rawHostname = request.headers.get('host') || request.nextUrl.hostname
+  const hostname = rawHostname.split(':')[0]
   
   // Skip middleware for static files and API routes
   if (
