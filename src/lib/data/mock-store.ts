@@ -30,6 +30,38 @@ export type TimeBlock = {
   reason: string | null
 }
 
+export type Booking = {
+  id: string
+  businessId: string
+  serviceId: string
+  customerId: string
+  startDateTime: Date
+  endDateTime: Date
+  status: 'pending_payment' | 'confirmed' | 'completed' | 'cancelled' | 'no_show'
+  totalPrice: number
+  depositRequired: number
+  depositPaid: number
+  remainingBalance: number
+  discountAmount: number
+  finalAmount: number
+  paymentStatus: 'unpaid' | 'deposit_paid' | 'fully_paid' | 'refunded' | 'failed'
+  customerNotes: string | null
+  internalNotes: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+export type Customer = {
+  id: string
+  businessId: string
+  name: string
+  phone: string
+  email: string | null
+  notes: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
 export const store = {
   services: mockBusiness.services.map((s, i) => ({ 
     ...s, 
@@ -45,5 +77,6 @@ export const store = {
     { id: 'ar-6', businessId: 'mock-business-1', dayOfWeek: 6, startTime: '10:00', endTime: '15:00', isActive: true },
   ] as AvailabilityRule[],
   timeBlocks: [] as TimeBlock[],
-  bookings: [] as any[],
+  customers: [] as Customer[],
+  bookings: [] as Booking[],
 }
