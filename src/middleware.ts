@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { resolveTenant } from '@/lib/tenant/resolver'
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const rawHostname = request.headers.get('host') || request.nextUrl.hostname
   const hostname = rawHostname.split(':')[0]
+  const appDomain = (process.env.APP_DOMAIN || 'localhost').split(':')[0]
   
   // Skip middleware for static files and API routes
   if (
@@ -16,25 +16,27 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
   
-  // Resolve tenant from hostname
-  let tenant = await resolveTenant(hostname)
-  
-  // Fallback for development: mock tenant for known subdomains
-  if (!tenant && hostname.includes('mimosnails')) {
-    tenant = {
-      businessId: 'mock-business-1',
-      slug: 'mimosnails',
-      subdomain: 'mimosnails',
-      isCustomDomain: false,
+  // Extract subdomain from hostname
+  // e.g., mimosnails.localhost:3000 -> mimosnails
+  let subdomain: string | null = null
+  if (hostname !== appDomain && hostname !== 'localhost') {
+    if (hostname.endsWith(`.${appDomain}`)) {
+      subdomain = hostname.replace(`.${appDomain}`, '')
+    } else if (hostname.includes('.')) {
+      // Custom domain or other subdomain pattern
+      subdomain = hostname.split('.')[0]
     }
+  }
+  
+  // Fallback for development
+  if (!subdomain && hostname.includes('mimosnails')) {
+    subdomain = 'mimosnails'
   }
   
   // Add tenant info to headers for use in server components/actions
   const requestHeaders = new Headers(request.headers)
-  if (tenant) {
-    requestHeaders.set('x-business-id', tenant.businessId)
-    requestHeaders.set('x-business-slug', tenant.slug)
-    requestHeaders.set('x-business-subdomain', tenant.subdomain)
+  if (subdomain) {
+    requestHeaders.set('x-business-subdomain', subdomain)
   }
   
   return NextResponse.next({
