@@ -2,7 +2,7 @@ import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 
 export default async function BookPage() {
-  const subdomain = headers().get('x-business-subdomain')
+  const subdomain = (await headers()).get('x-business-subdomain')
   
   if (!subdomain) {
     notFound()

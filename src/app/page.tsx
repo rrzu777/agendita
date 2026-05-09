@@ -27,8 +27,8 @@ function LandingPage() {
   )
 }
 
-export default function HomePage() {
-  const subdomain = headers().get('x-business-subdomain')
+export default async function HomePage() {
+  const subdomain = (await headers()).get('x-business-subdomain')
   
   if (subdomain) {
     return <BusinessProfile />
