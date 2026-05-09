@@ -17,12 +17,6 @@ export async function middleware(request: NextRequest) {
   // Resolve tenant from hostname
   const tenant = await resolveTenant(hostname)
   
-  // If no tenant and not on main domain, show 404
-  if (!tenant && pathname !== '/') {
-    // Could redirect to main domain or show 404
-    return NextResponse.next()
-  }
-  
   // Add tenant info to headers for use in server components/actions
   const requestHeaders = new Headers(request.headers)
   if (tenant) {
