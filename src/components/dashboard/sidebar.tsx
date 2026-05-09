@@ -8,6 +8,7 @@ const navItems = [
   { href: '/dashboard', label: 'Resumen', icon: '📊' },
   { href: '/dashboard/bookings', label: 'Reservas', icon: '📅' },
   { href: '/dashboard/services', label: 'Servicios', icon: '💅' },
+  { href: '/dashboard/availability', label: 'Horarios', icon: '🕐' },
   { href: '/dashboard/customers', label: 'Clientas', icon: '👥' },
   { href: '/dashboard/payments', label: 'Pagos', icon: '💰' },
   { href: '/dashboard/reviews', label: 'Reseñas', icon: '⭐' },
