@@ -1,6 +1,6 @@
-import { prisma } from '@/lib/db/prisma'
 import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
+import { prisma } from '@/lib/db/prisma'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import Link from 'next/link'
@@ -26,14 +26,33 @@ async function getBusiness(subdomain: string) {
   })
 }
 
-export default async function PublicProfilePage() {
-  const headersList = headers()
-  const subdomain = headersList.get('x-business-subdomain')
-  
-  if (!subdomain) {
-    notFound()
-  }
-  
+function LandingPage() {
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
+      <main className="container mx-auto px-4 py-16">
+        <div className="text-center max-w-3xl mx-auto">
+          <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
+            Agenda online para manicuristas
+          </h1>
+          <p className="text-xl text-gray-600 mb-8">
+            Permite que tus clientas reserven hora, paguen abono y reciban confirmación 
+            sin escribirte mil veces por WhatsApp.
+          </p>
+          <div className="flex gap-4 justify-center">
+            <button className="bg-pink-500 text-white px-8 py-3 rounded-full font-semibold hover:bg-pink-600 transition">
+              Crear cuenta
+            </button>
+            <button className="bg-white text-pink-500 border-2 border-pink-500 px-8 py-3 rounded-full font-semibold hover:bg-pink-50 transition">
+              Iniciar sesión
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+async function PublicProfilePage({ subdomain }: { subdomain: string }) {
   const business = await getBusiness(subdomain)
   
   if (!business) {
@@ -115,4 +134,15 @@ export default async function PublicProfilePage() {
       )}
     </div>
   )
+}
+
+export default async function HomePage() {
+  const headersList = headers()
+  const subdomain = headersList.get('x-business-subdomain')
+  
+  if (subdomain) {
+    return <PublicProfilePage subdomain={subdomain} />
+  }
+  
+  return <LandingPage />
 }
