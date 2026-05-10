@@ -78,6 +78,41 @@ export async function confirmPayment(bookingId: string, amount: number) {
   booking.paymentStatus = amount >= booking.finalAmount ? 'fully_paid' : 'deposit_paid'
   booking.status = 'confirmed'
   booking.updatedAt = new Date()
+
+  // Create payment record
+  store.payments.push({
+    id: `pay-${Date.now()}`,
+    businessId: booking.businessId,
+    bookingId,
+    customerId: booking.customerId,
+    provider: 'mock',
+    providerPaymentId: null,
+    amount,
+    currency: 'CLP',
+    status: 'approved',
+    paymentType: amount >= booking.finalAmount ? 'full_payment' : 'deposit',
+    paymentMethod: 'mock',
+    paidAt: new Date(),
+    rawPayload: null,
+    createdAt: new Date(),
+  })
+
+  // Create ledger entry
+  store.ledgerEntries.push({
+    id: `led-${Date.now()}`,
+    businessId: booking.businessId,
+    bookingId,
+    paymentId: null,
+    customerId: booking.customerId,
+    type: amount >= booking.finalAmount ? 'full_payment_paid' : 'deposit_paid',
+    direction: 'income',
+    amount,
+    currency: 'CLP',
+    description: `Abono pagado para reserva ${booking.id.slice(-4)}`,
+    occurredAt: new Date(),
+    createdAt: new Date(),
+    createdByUserId: null,
+  })
   
   revalidatePath('/dashboard/bookings')
   return booking

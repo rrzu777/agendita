@@ -62,6 +62,39 @@ export type Customer = {
   updatedAt: Date
 }
 
+export type Payment = {
+  id: string
+  businessId: string
+  bookingId: string
+  customerId: string
+  provider: 'mock' | 'mercado_pago' | 'webpay' | 'manual'
+  providerPaymentId: string | null
+  amount: number
+  currency: string
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'refunded' | 'failed'
+  paymentType: 'deposit' | 'final_payment' | 'full_payment' | 'refund' | 'cancellation_fee' | 'manual_adjustment'
+  paymentMethod: string | null
+  paidAt: Date | null
+  rawPayload: any
+  createdAt: Date
+}
+
+export type LedgerEntry = {
+  id: string
+  businessId: string
+  bookingId: string | null
+  paymentId: string | null
+  customerId: string | null
+  type: string
+  direction: 'income' | 'expense' | 'neutral'
+  amount: number
+  currency: string
+  description: string | null
+  occurredAt: Date
+  createdAt: Date
+  createdByUserId: string | null
+}
+
 export const store = {
   services: mockBusiness.services.map((s, i) => ({ 
     ...s, 
@@ -79,4 +112,6 @@ export const store = {
   timeBlocks: [] as TimeBlock[],
   customers: [] as Customer[],
   bookings: [] as Booking[],
+  payments: [] as Payment[],
+  ledgerEntries: [] as LedgerEntry[],
 }
