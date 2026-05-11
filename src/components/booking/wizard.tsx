@@ -100,23 +100,41 @@ export function BookingWizard() {
             nextStep()
           }} onBack={prevStep} />
         )}
-        {currentStep === 3 && (
+        {currentStep === 3 && data.date && (
           <StepTime data={data} onSelect={(timeSlot) => {
             updateData({ timeSlot })
             nextStep()
           }} onBack={prevStep} />
         )}
-        {currentStep === 4 && (
+        {currentStep === 3 && !data.date && (
+          <div className="text-center py-8">
+            <p className="text-gray-600 mb-4">Primero debes seleccionar una fecha</p>
+            <button onClick={() => setCurrentStep(2)} className="text-pink-600 underline">Volver a seleccionar fecha</button>
+          </div>
+        )}
+        {currentStep === 4 && data.timeSlot && (
           <StepCustomer data={data} onSubmit={(customerData) => {
             updateData(customerData)
             nextStep()
           }} onBack={prevStep} />
         )}
-        {currentStep === 5 && (
+        {currentStep === 4 && !data.timeSlot && (
+          <div className="text-center py-8">
+            <p className="text-gray-600 mb-4">Primero debes seleccionar un horario</p>
+            <button onClick={() => setCurrentStep(3)} className="text-pink-600 underline">Volver a seleccionar horario</button>
+          </div>
+        )}
+        {currentStep === 5 && data.serviceId && data.timeSlot && (
           <StepPayment data={data} onSuccess={(id) => {
             setBookingId(id)
             nextStep()
           }} onBack={prevStep} />
+        )}
+        {currentStep === 5 && (!data.serviceId || !data.timeSlot) && (
+          <div className="text-center py-8">
+            <p className="text-gray-600 mb-4">Faltan datos de la reserva</p>
+            <button onClick={() => setCurrentStep(1)} className="text-pink-600 underline">Volver al inicio</button>
+          </div>
         )}
         {currentStep === 6 && (
           <StepConfirmation data={data} bookingId={bookingId} />

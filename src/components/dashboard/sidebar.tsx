@@ -3,6 +3,9 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { signOut } from '@/lib/auth/actions'
+import type { User } from '@supabase/supabase-js'
+import type { Business } from '@prisma/client'
 
 const navItems = [
   { href: '/dashboard', label: 'Resumen', icon: '📊' },
@@ -16,8 +19,14 @@ const navItems = [
   { href: '/dashboard/settings', label: 'Configuración', icon: '⚙️' },
 ]
 
-export function DashboardSidebar() {
+interface DashboardSidebarProps {
+  user: User
+  business: Business | null
+}
+
+export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
   const pathname = usePathname()
+  const userName = user.user_metadata?.name || user.email?.split('@')[0] || 'Usuario'
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 min-h-screen flex flex-col">
@@ -25,7 +34,10 @@ export function DashboardSidebar() {
         <Link href="/" className="text-xl font-bold text-pink-600">
           Agendita
         </Link>
-        <p className="text-sm text-gray-500 mt-1">Panel de control</p>
+        {business && (
+          <p className="text-sm font-medium text-gray-700 mt-1">{business.name}</p>
+        )}
+        <p className="text-xs text-gray-500 mt-1">Panel de control</p>
       </div>
       <nav className="flex-1 p-4">
         <ul className="space-y-1">
@@ -48,7 +60,11 @@ export function DashboardSidebar() {
         </ul>
       </nav>
       <div className="p-4 border-t border-gray-100">
-        <form action="/api/auth/signout" method="post">
+        <div className="px-4 py-2 mb-2">
+          <p className="text-sm font-medium text-gray-900">{userName}</p>
+          <p className="text-xs text-gray-500 truncate">{user.email}</p>
+        </div>
+        <form action={signOut}>
           <button
             type="submit"
             className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"

@@ -1,23 +1,49 @@
 'use server'
 
-import { store, TimeBlock } from '@/lib/data/mock-store'
+import { z } from 'zod'
+import { prisma } from '@/lib/db'
+import type { TimeBlock } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
+import { checkRateLimit } from '@/lib/rate-limit'
 
-export async function getTimeBlocks() {
-  return store.timeBlocks
+const createTimeBlockSchema = z.object({
+  businessId: z.string().min(1),
+  startDateTime: z.date(),
+  endDateTime: z.date(),
+  reason: z.string().max(255).optional().nullable(),
+}).refine(data => data.endDateTime > data.startDateTime, {
+  message: 'La fecha de fin debe ser posterior a la de inicio',
+})
+
+export async function getTimeBlocks(businessId?: string) {
+  return prisma.timeBlock.findMany({
+    where: businessId ? { businessId } : undefined,
+    orderBy: { startDateTime: 'asc' },
+  })
 }
 
-export async function createTimeBlock(data: Omit<TimeBlock, 'id'>) {
-  const newBlock = {
-    ...data,
-    id: `tb-${Date.now()}`,
+export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt'>) {
+  const limit = await checkRateLimit('create-timeblock', 20, 60000)
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
-  store.timeBlocks.push(newBlock)
+
+  const parsed = createTimeBlockSchema.safeParse(data)
+  if (!parsed.success) {
+    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  }
+
+  const newBlock = await prisma.timeBlock.create({ data })
   revalidatePath('/dashboard/availability')
   return newBlock
 }
 
 export async function deleteTimeBlock(id: string) {
-  store.timeBlocks = store.timeBlocks.filter(b => b.id !== id)
+  const limit = await checkRateLimit('delete-timeblock', 20, 60000)
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  }
+
+  await prisma.timeBlock.delete({ where: { id } })
   revalidatePath('/dashboard/availability')
 }

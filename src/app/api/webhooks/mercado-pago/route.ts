@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { store } from '@/lib/data/mock-store'
 import { confirmPayment } from '@/server/actions/bookings'
+import { createHmac } from 'crypto'
 
-// Mercado Pago webhook handler
-// In production, this would validate the webhook signature
+// Mercado Pago webhook signature validation
+// Docs: https://www.mercadopago.cl/developers/en/docs/your-integrations/notifications/webhooks
+function verifyMercadoPagoSignature(payload: string, signature: string | null, secret: string): boolean {
+  if (!signature) return false
+  const expected = createHmac('sha256', secret).update(payload).digest('hex')
+  return signature === expected
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const payload = await request.json()
+    const rawBody = await request.text()
+    const payload = JSON.parse(rawBody)
 
     // Log webhook for debugging
     console.log('[Mercado Pago Webhook]', payload)
@@ -17,18 +24,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
     }
 
-    // In production, verify webhook signature here
-    // const signature = request.headers.get('x-signature')
-    // if (!verifySignature(payload, signature)) {
-    //   return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-    // }
+    // Verify webhook signature in production
+    const mpSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET
+    if (mpSecret) {
+      const signature = request.headers.get('x-signature')
+      if (!verifyMercadoPagoSignature(rawBody, signature, mpSecret)) {
+        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+      }
+    } else {
+      console.warn('[Mercado Pago Webhook] No MERCADO_PAGO_WEBHOOK_SECRET configured, skipping signature validation')
+    }
 
     // Extract payment info from payload
     const paymentId = payload.data.id
     const status = payload.type || payload.action
 
     // Find payment in store
-    const payment = store.payments.find(p => p.providerPaymentId === paymentId)
+    const payment = store.payments.find((p) => p.providerPaymentId === paymentId)
     if (!payment) {
       return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
     }

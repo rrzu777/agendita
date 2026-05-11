@@ -1,11 +1,11 @@
+import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { getBookings } from '@/server/actions/bookings'
-import { getServices } from '@/server/actions/services'
+import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { updateBookingStatus } from '@/server/actions/bookings'
-import { store } from '@/lib/data/mock-store'
 
 const statusLabels: Record<string, string> = {
   pending_payment: 'Pendiente de pago',
@@ -24,8 +24,13 @@ const statusColors: Record<string, string> = {
 }
 
 export default async function BookingsPage() {
-  const bookings = await getBookings()
-  const services = await getServices()
+  const userData = await getCurrentUserWithBusiness()
+
+  if (!userData?.business) {
+    redirect('/login')
+  }
+
+  const bookings = await getBookings(userData.business.id)
 
   return (
     <div>
@@ -51,13 +56,10 @@ export default async function BookingsPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                bookings.map((booking) => {
-                  const service = services.find(s => s.id === booking.serviceId)
-                  const customer = store.customers.find(c => c.id === booking.customerId)
-                  return (
+                bookings.map((booking) => (
                     <TableRow key={booking.id}>
                       <TableCell className="font-medium">
-                        {service?.name || 'Servicio desconocido'}
+                        {booking.service?.name || 'Servicio desconocido'}
                       </TableCell>
                       <TableCell>
                         {new Date(booking.startDateTime).toLocaleDateString('es-CL')}
@@ -66,7 +68,7 @@ export default async function BookingsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {customer?.name || '—'}
+                        {booking.customer?.name || '—'}
                       </TableCell>
                       <TableCell>
                         <Badge className={statusColors[booking.status]}>
@@ -99,8 +101,7 @@ export default async function BookingsPage() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  )
-                })
+                ))
               )}
             </TableBody>
           </Table>

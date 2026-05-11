@@ -52,25 +52,19 @@ export function generateSlots(
     const slotEnd = addMinutes(current, durationMinutes)
     
     const blockedByTimeBlock = blocks.some(block =>
-      isWithinInterval(current, { start: block.startDateTime, end: block.endDateTime }) ||
-      isWithinInterval(slotEnd, { start: block.startDateTime, end: block.endDateTime }) ||
-      (current <= block.startDateTime && slotEnd >= block.endDateTime)
+      current < block.endDateTime && block.startDateTime < slotEnd
     )
     
     const blockedByBooking = bookings.some(booking => {
       if (booking.status === 'cancelled' || booking.status === 'no_show') return false
-      return (
-        isWithinInterval(current, { start: booking.startDateTime, end: booking.endDateTime }) ||
-        isWithinInterval(slotEnd, { start: booking.startDateTime, end: booking.endDateTime }) ||
-        (current <= booking.startDateTime && slotEnd >= booking.endDateTime)
-      )
+      return current < booking.endDateTime && booking.startDateTime < slotEnd
     })
     
     if (!blockedByTimeBlock && !blockedByBooking) {
       slots.push({ start: new Date(current), end: slotEnd })
     }
     
-    current = addMinutes(current, 30)
+    current = addMinutes(current, durationMinutes)
   }
   
   return slots

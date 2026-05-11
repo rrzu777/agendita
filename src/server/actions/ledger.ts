@@ -1,59 +1,112 @@
 'use server'
 
-import { store, LedgerEntry } from '@/lib/data/mock-store'
+import { z } from 'zod'
+import { prisma } from '@/lib/db'
+import type { LedgerEntry } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
+import { checkRateLimit } from '@/lib/rate-limit'
 
-export async function getLedgerEntries() {
-  return store.ledgerEntries.sort((a, b) => 
-    new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime()
-  )
+const createLedgerEntrySchema = z.object({
+  businessId: z.string().min(1),
+  bookingId: z.string().min(1).nullable(),
+  paymentId: z.string().min(1).nullable(),
+  customerId: z.string().min(1).nullable(),
+  type: z.string().min(1).max(50),
+  direction: z.enum(['income', 'expense', 'neutral']),
+  amount: z.number().positive(),
+  currency: z.string().min(2).max(3),
+  description: z.string().max(500).optional().nullable(),
+  occurredAt: z.date(),
+  createdByUserId: z.string().min(1).nullable(),
+})
+
+export async function getLedgerEntries(businessId?: string) {
+  return prisma.ledgerEntry.findMany({
+    where: businessId ? { businessId } : undefined,
+    orderBy: { occurredAt: 'desc' },
+    include: {
+      booking: true,
+      payment: true,
+    },
+  })
 }
 
 export async function createLedgerEntry(data: Omit<LedgerEntry, 'id' | 'createdAt'>) {
-  const entry: LedgerEntry = {
-    ...data,
-    id: `led-${Date.now()}`,
-    createdAt: new Date(),
+  const limit = await checkRateLimit('create-ledger-entry', 30, 60000)
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
-  store.ledgerEntries.push(entry)
+
+  const parsed = createLedgerEntrySchema.safeParse(data)
+  if (!parsed.success) {
+    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  }
+
+  const entry = await prisma.ledgerEntry.create({ data })
   revalidatePath('/dashboard/payments')
   return entry
 }
 
-export async function getFinancialSummary() {
+export async function getFinancialSummary(businessId?: string) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  
+
   const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1)
-  
-  const incomeToday = store.ledgerEntries
-    .filter(e => e.direction === 'income' && new Date(e.occurredAt) >= today)
-    .reduce((sum, e) => sum + e.amount, 0)
-  
-  const incomeMonth = store.ledgerEntries
-    .filter(e => e.direction === 'income' && new Date(e.occurredAt) >= thisMonth)
-    .reduce((sum, e) => sum + e.amount, 0)
-  
-  const totalDeposited = store.payments
-    .filter(p => p.status === 'approved' && p.paymentType === 'deposit')
-    .reduce((sum, p) => sum + p.amount, 0)
-  
-  const totalPending = store.bookings
-    .filter(b => b.status !== 'cancelled' && b.status !== 'no_show')
-    .reduce((sum, b) => sum + b.remainingBalance, 0)
-  
-  const totalRefunded = store.ledgerEntries
-    .filter(e => e.type === 'refund_issued')
-    .reduce((sum, e) => sum + e.amount, 0)
-  
+
+  const baseWhere = businessId ? { businessId } : {}
+
+  const [incomeToday, incomeMonth, totalDeposited, totalPending, totalRefunded, totalBookings, completedBookings, cancelledBookings] = await Promise.all([
+    prisma.ledgerEntry.aggregate({
+      where: {
+        ...baseWhere,
+        direction: 'income',
+        occurredAt: { gte: today },
+      },
+      _sum: { amount: true },
+    }),
+    prisma.ledgerEntry.aggregate({
+      where: {
+        ...baseWhere,
+        direction: 'income',
+        occurredAt: { gte: thisMonth },
+      },
+      _sum: { amount: true },
+    }),
+    prisma.payment.aggregate({
+      where: {
+        ...baseWhere,
+        status: 'approved',
+        paymentType: 'deposit',
+      },
+      _sum: { amount: true },
+    }),
+    prisma.booking.aggregate({
+      where: {
+        ...baseWhere,
+        status: { notIn: ['cancelled', 'no_show'] },
+      },
+      _sum: { remainingBalance: true },
+    }),
+    prisma.ledgerEntry.aggregate({
+      where: {
+        ...baseWhere,
+        type: 'refund_issued',
+      },
+      _sum: { amount: true },
+    }),
+    prisma.booking.count({ where: baseWhere }),
+    prisma.booking.count({ where: { ...baseWhere, status: 'completed' } }),
+    prisma.booking.count({ where: { ...baseWhere, status: 'cancelled' } }),
+  ])
+
   return {
-    incomeToday,
-    incomeMonth,
-    totalDeposited,
-    totalPending,
-    totalRefunded,
-    totalBookings: store.bookings.length,
-    completedBookings: store.bookings.filter(b => b.status === 'completed').length,
-    cancelledBookings: store.bookings.filter(b => b.status === 'cancelled').length,
+    incomeToday: incomeToday._sum.amount ?? 0,
+    incomeMonth: incomeMonth._sum.amount ?? 0,
+    totalDeposited: totalDeposited._sum.amount ?? 0,
+    totalPending: totalPending._sum.remainingBalance ?? 0,
+    totalRefunded: totalRefunded._sum.amount ?? 0,
+    totalBookings,
+    completedBookings,
+    cancelledBookings,
   }
 }

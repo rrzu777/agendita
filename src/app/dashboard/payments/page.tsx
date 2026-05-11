@@ -1,16 +1,23 @@
+import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { FinanceStats } from '@/components/dashboard/finance-stats'
 import { LedgerTable } from '@/components/dashboard/ledger-table'
 import { PaymentForm } from '@/components/dashboard/payment-form'
 import { getFinancialSummary, getLedgerEntries } from '@/server/actions/ledger'
 import { getBookings } from '@/server/actions/bookings'
-import { Button } from '@/components/ui/button'
 import { exportLedgerToCSV } from '@/lib/finance/csv-export'
+import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 
 export default async function PaymentsPage() {
-  const summary = await getFinancialSummary()
-  const entries = await getLedgerEntries()
-  const bookings = await getBookings()
+  const userData = await getCurrentUserWithBusiness()
+
+  if (!userData?.business) {
+    redirect('/login')
+  }
+
+  const summary = await getFinancialSummary(userData.business.id)
+  const entries = await getLedgerEntries(userData.business.id)
+  const bookings = await getBookings(userData.business.id)
 
   const csvData = exportLedgerToCSV(entries)
 

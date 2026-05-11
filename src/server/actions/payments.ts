@@ -1,8 +1,23 @@
 'use server'
 
-import { store, Payment } from '@/lib/data/mock-store'
+import { z } from 'zod'
+import { prisma } from '@/lib/db'
+import { PaymentProvider, PaymentType } from '@prisma/client'
 import { getDefaultProvider } from '@/lib/payments/factory'
 import { revalidatePath } from 'next/cache'
+import { checkRateLimit } from '@/lib/rate-limit'
+
+const initiatePaymentSchema = z.object({
+  bookingId: z.string().min(1),
+  amount: z.number().positive(),
+  currency: z.string().min(2).max(3),
+  description: z.string().min(1).max(255),
+})
+
+const verifyPaymentSchema = z.object({
+  paymentId: z.string().min(1),
+  bookingId: z.string().min(1),
+})
 
 export async function initiatePayment(data: {
   bookingId: string
@@ -10,8 +25,17 @@ export async function initiatePayment(data: {
   currency: string
   description: string
 }) {
+  const limit = await checkRateLimit('initiate-payment', 20, 60000)
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  }
+
+  const parsed = initiatePaymentSchema.safeParse(data)
+  if (!parsed.success) {
+    throw new Error('Datos de pago inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  }
+
   const provider = getDefaultProvider()
-  
   const result = await provider.createPayment({
     amount: data.amount,
     currency: data.currency,
@@ -21,37 +45,47 @@ export async function initiatePayment(data: {
     webhookUrl: `${process.env.NEXT_PUBLIC_APP_DOMAIN || 'http://localhost:3000'}/api/webhooks/${provider.name}`,
   })
 
-  // Create payment record
-  const payment: Payment = {
-    id: result.paymentId,
-    businessId: 'mock-business-1',
-    bookingId: data.bookingId,
-    customerId: '', // Would be filled from booking
-    provider: provider.name as any,
-    providerPaymentId: result.providerPaymentId,
-    amount: data.amount,
-    currency: data.currency,
-    status: result.status as any,
-    paymentType: 'deposit',
-    paymentMethod: null,
-    paidAt: null,
-    rawPayload: result.rawResponse,
-    createdAt: new Date(),
-  }
+  // Obtener customerId de la booking
+  const booking = await prisma.booking.findUnique({
+    where: { id: data.bookingId },
+    select: { customerId: true, businessId: true },
+  })
 
-  store.payments.push(payment)
+  const payment = await prisma.payment.create({
+    data: {
+      id: result.paymentId,
+      businessId: booking?.businessId || 'mock-business-1',
+      bookingId: data.bookingId,
+      customerId: booking?.customerId || '',
+      provider: provider.name as PaymentProvider,
+      providerPaymentId: result.providerPaymentId,
+      amount: data.amount,
+      currency: data.currency,
+      status: result.status as any,
+      paymentType: 'deposit',
+    },
+  })
+
   revalidatePath('/dashboard/payments')
-
   return result
 }
 
 export async function verifyAndConfirmPayment(paymentId: string, bookingId: string) {
-  const provider = getDefaultProvider()
-  const payment = store.payments.find(p => p.id === paymentId)
-  
+  const limit = await checkRateLimit('verify-payment', 30, 60000)
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  }
+
+  const parsed = verifyPaymentSchema.safeParse({ paymentId, bookingId })
+  if (!parsed.success) {
+    throw new Error('Datos de verificación inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  }
+
+  const payment = await prisma.payment.findUnique({ where: { id: paymentId } })
   if (!payment) throw new Error('Payment not found')
 
-  // Verify payment with provider (server-side)
+  const provider = getDefaultProvider()
+
   if (payment.providerPaymentId) {
     const verification = await provider.verifyPayment({
       paymentId: payment.id,
@@ -59,25 +93,27 @@ export async function verifyAndConfirmPayment(paymentId: string, bookingId: stri
     })
 
     if (verification.status === 'approved') {
-      payment.status = 'approved'
-      payment.paidAt = new Date()
-      
-      // Confirm booking payment
+      await prisma.payment.update({
+        where: { id: paymentId },
+        data: { status: 'approved', paidAt: new Date() },
+      })
+
       const { confirmPayment } = await import('./bookings')
       await confirmPayment(bookingId, payment.amount)
-      
+
       return { success: true }
     }
   }
 
-  // For mock provider, auto-approve in development
   if (payment.provider === 'mock') {
-    payment.status = 'approved'
-    payment.paidAt = new Date()
-    
+    await prisma.payment.update({
+      where: { id: paymentId },
+      data: { status: 'approved', paidAt: new Date() },
+    })
+
     const { confirmPayment } = await import('./bookings')
     await confirmPayment(bookingId, payment.amount)
-    
+
     return { success: true }
   }
 
@@ -85,11 +121,57 @@ export async function verifyAndConfirmPayment(paymentId: string, bookingId: stri
 }
 
 export async function getPayments() {
-  return store.payments.sort((a, b) => 
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  )
+  return prisma.payment.findMany({
+    orderBy: { createdAt: 'desc' },
+  })
 }
 
 export async function getPaymentsByBooking(bookingId: string) {
-  return store.payments.filter(p => p.bookingId === bookingId)
+  return prisma.payment.findMany({
+    where: { bookingId },
+  })
+}
+
+const createManualPaymentSchema = z.object({
+  businessId: z.string().min(1),
+  bookingId: z.string().min(1),
+  customerId: z.string().min(1),
+  amount: z.number().positive(),
+  currency: z.string().min(2).max(3),
+  paymentType: z.enum(['deposit', 'final_payment', 'full_payment']),
+  paymentMethod: z.string().min(1),
+})
+
+export async function createManualPayment(data: {
+  businessId: string
+  bookingId: string
+  customerId: string
+  amount: number
+  currency: string
+  paymentType: string
+  paymentMethod: string
+}) {
+  const limit = await checkRateLimit('create-manual-payment', 20, 60000)
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  }
+
+  const parsed = createManualPaymentSchema.safeParse(data)
+  if (!parsed.success) {
+    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  }
+
+  const payment = await prisma.payment.create({
+    data: {
+      ...data,
+      paymentType: data.paymentType as PaymentType,
+      provider: 'manual',
+      providerPaymentId: null,
+      status: 'approved',
+      paidAt: new Date(),
+    },
+  })
+
+  revalidatePath('/dashboard/payments')
+  return payment
 }

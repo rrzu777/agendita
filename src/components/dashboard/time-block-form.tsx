@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { createTimeBlock, deleteTimeBlock } from '@/server/actions/time-blocks'
 
-export function TimeBlockForm({ onSuccess }: { onSuccess?: () => void }) {
+export function TimeBlockForm({ businessId, onSuccess }: { businessId: string; onSuccess?: () => void }) {
   const [open, setOpen] = useState(false)
 
   async function handleSubmit(formData: FormData) {
@@ -18,7 +18,7 @@ export function TimeBlockForm({ onSuccess }: { onSuccess?: () => void }) {
     const reason = formData.get('reason') as string
 
     await createTimeBlock({
-      businessId: 'mock-business-1',
+      businessId,
       startDateTime: new Date(`${startDate}T${startTime}`),
       endDateTime: new Date(`${endDate}T${endTime}`),
       reason: reason || null,

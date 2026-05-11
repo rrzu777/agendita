@@ -8,39 +8,54 @@ import { initiatePayment, verifyAndConfirmPayment } from '@/server/actions/payme
 
 export function StepPayment({ data, onSuccess, onBack }: { data: BookingData; onSuccess: (id: string) => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
-  const [step, setStep] = useState<'review' | 'processing' | 'success'>('review')
+  const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error'>('review')
+  const [errorMessage, setErrorMessage] = useState('')
 
   async function handlePayment() {
     setLoading(true)
     setStep('processing')
-    
-    // Create booking
-    const booking = await createBooking({
-      serviceId: data.serviceId!,
-      customerName: data.customerName,
-      customerPhone: data.customerPhone,
-      customerEmail: data.customerEmail,
-      startDateTime: data.timeSlot!.start,
-      endDateTime: data.timeSlot!.end,
-      totalPrice: data.servicePrice,
-      depositRequired: data.serviceDeposit,
-      finalAmount: data.servicePrice,
-    })
+    setErrorMessage('')
 
-    // Initiate payment with provider
-    const paymentResult = await initiatePayment({
-      bookingId: booking.id,
-      amount: data.serviceDeposit,
-      currency: 'CLP',
-      description: `Abono para ${data.serviceName}`,
-    })
+    try {
+      // Create booking
+      const booking = await createBooking({
+        serviceId: data.serviceId!,
+        customerName: data.customerName,
+        customerPhone: data.customerPhone,
+        customerEmail: data.customerEmail,
+        startDateTime: data.timeSlot!.start,
+        endDateTime: data.timeSlot!.end,
+        totalPrice: data.servicePrice,
+        depositRequired: data.serviceDeposit,
+        finalAmount: data.servicePrice,
+      })
 
-    // Verify payment (server-side)
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    await verifyAndConfirmPayment(paymentResult.paymentId, booking.id)
+      // Initiate payment with provider
+      const paymentResult = await initiatePayment({
+        bookingId: booking.id,
+        amount: data.serviceDeposit,
+        currency: 'CLP',
+        description: `Abono para ${data.serviceName}`,
+      })
 
-    onSuccess(booking.id)
-    setLoading(false)
+      // Verify payment (server-side) with timeout
+      await new Promise(resolve => setTimeout(resolve, 1500))
+
+      const verifyPromise = verifyAndConfirmPayment(paymentResult.paymentId, booking.id)
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout al verificar el pago')), 10000)
+      )
+      await Promise.race([verifyPromise, timeoutPromise])
+
+      setStep('success')
+      onSuccess(booking.id)
+    } catch (err) {
+      console.error('Payment error:', err)
+      setErrorMessage(err instanceof Error ? err.message : 'Error al procesar el pago')
+      setStep('error')
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (step === 'processing') {
@@ -49,6 +64,20 @@ export function StepPayment({ data, onSuccess, onBack }: { data: BookingData; on
         <div className="text-4xl mb-4">⏳</div>
         <h2 className="text-xl font-bold mb-2">Procesando pago...</h2>
         <p className="text-gray-600">Por favor no cierres esta ventana</p>
+      </div>
+    )
+  }
+
+  if (step === 'error') {
+    return (
+      <div className="text-center py-8">
+        <div className="text-4xl mb-4">❌</div>
+        <h2 className="text-xl font-bold mb-2">Error en el pago</h2>
+        <p className="text-gray-600 mb-4">{errorMessage || 'No se pudo procesar el pago'}</p>
+        <div className="flex gap-3 justify-center">
+          <Button variant="outline" onClick={onBack}>Atrás</Button>
+          <Button onClick={() => setStep('review')}>Intentar de nuevo</Button>
+        </div>
       </div>
     )
   }

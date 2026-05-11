@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { createPayment } from '@/server/actions/payments'
+import { createManualPayment } from '@/server/actions/payments'
 import { createLedgerEntry } from '@/server/actions/ledger'
 import { confirmPayment } from '@/server/actions/bookings'
 
@@ -21,19 +21,14 @@ export function PaymentForm({ bookings }: { bookings: any[] }) {
     const booking = bookings.find(b => b.id === bookingId)
     if (!booking) return
 
-    const payment = await createPayment({
+    const payment = await createManualPayment({
       businessId: 'mock-business-1',
       bookingId,
       customerId: booking.customerId,
-      provider: 'manual',
-      providerPaymentId: null,
       amount,
       currency: 'CLP',
-      status: 'approved',
-      paymentType: paymentType as any,
+      paymentType,
       paymentMethod,
-      paidAt: new Date(),
-      rawPayload: null,
     })
 
     await confirmPayment(bookingId, amount)

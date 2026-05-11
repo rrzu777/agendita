@@ -1,3 +1,11 @@
+function escapeCSV(value: unknown): string {
+  const str = String(value ?? '')
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+    return '"' + str.replace(/"/g, '""') + '"'
+  }
+  return str
+}
+
 export function exportLedgerToCSV(entries: any[]): string {
   const headers = ['Fecha', 'Tipo', 'Dirección', 'Monto', 'Moneda', 'Descripción', 'Reserva']
   
@@ -12,7 +20,7 @@ export function exportLedgerToCSV(entries: any[]): string {
   ])
   
   return [headers, ...rows]
-    .map(row => row.join(','))
+    .map(row => row.map(escapeCSV).join(','))
     .join('\n')
 }
 
