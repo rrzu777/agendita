@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { BookingWizard } from '@/components/booking/wizard'
 import { prisma } from '@/lib/db'
 import { notFound } from 'next/navigation'
