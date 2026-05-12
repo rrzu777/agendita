@@ -6,7 +6,7 @@ import { BookingData } from './wizard'
 import { createBooking } from '@/server/actions/bookings'
 import { initiatePayment, verifyAndConfirmPayment } from '@/server/actions/payments'
 
-export function StepPayment({ data, onSuccess, onBack }: { data: BookingData; onSuccess: (id: string) => void; onBack: () => void }) {
+export function StepPayment({ data, businessId, onSuccess, onBack }: { data: BookingData; businessId: string; onSuccess: (id: string) => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error'>('review')
   const [errorMessage, setErrorMessage] = useState('')
@@ -28,7 +28,7 @@ export function StepPayment({ data, onSuccess, onBack }: { data: BookingData; on
         totalPrice: data.servicePrice,
         depositRequired: data.serviceDeposit,
         finalAmount: data.servicePrice,
-      })
+      }, businessId)
 
       // Initiate payment with provider
       const paymentResult = await initiatePayment({

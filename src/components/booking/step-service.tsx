@@ -1,16 +1,22 @@
 'use client'
 
-import { mockBusiness } from '@/lib/data/mock-business'
 import { Card, CardContent } from '@/components/ui/card'
 import { BookingData } from './wizard'
+import type { Service } from '@prisma/client'
 
-export function StepService({ data, onSelect }: { data: BookingData; onSelect: (data: Partial<BookingData>) => void }) {
+interface StepServiceProps {
+  data: BookingData
+  services: Service[]
+  onSelect: (data: Partial<BookingData>) => void
+}
+
+export function StepService({ data, services, onSelect }: StepServiceProps) {
   return (
     <div>
       <h2 className="text-2xl font-bold mb-2">Elige un servicio</h2>
       <p className="text-gray-600 mb-6">Selecciona el servicio que deseas agendar</p>
       <div className="space-y-4">
-        {mockBusiness.services.map((service) => (
+        {services.map((service) => (
           <button
             key={service.id}
             onClick={() => onSelect({

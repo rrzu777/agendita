@@ -5,9 +5,18 @@ import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
 import { generateSlots } from '@/lib/availability/slots'
-import { store } from '@/lib/data/mock-store'
+import type { AvailabilityRule, TimeBlock, Booking } from '@prisma/client'
 
-export function StepTime({ data, onSelect, onBack }: { data: BookingData; onSelect: (slot: { start: Date; end: Date }) => void; onBack: () => void }) {
+interface StepTimeProps {
+  data: BookingData
+  availabilityRules: AvailabilityRule[]
+  timeBlocks: TimeBlock[]
+  bookings: Booking[]
+  onSelect: (slot: { start: Date; end: Date }) => void
+  onBack: () => void
+}
+
+export function StepTime({ data, availabilityRules, timeBlocks, bookings, onSelect, onBack }: StepTimeProps) {
   const [slots, setSlots] = useState<{ start: Date; end: Date }[]>([])
   const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null)
   const [loading, setLoading] = useState(true)
@@ -17,14 +26,14 @@ export function StepTime({ data, onSelect, onBack }: { data: BookingData; onSele
       const generated = generateSlots(
         data.date,
         data.serviceDuration,
-        store.availabilityRules,
-        store.timeBlocks,
-        store.bookings
+        availabilityRules,
+        timeBlocks,
+        bookings
       )
       setSlots(generated)
       setLoading(false)
     }
-  }, [data.date, data.serviceDuration])
+  }, [data.date, data.serviceDuration, availabilityRules, timeBlocks, bookings])
 
   if (loading) {
     return <div className="text-center py-8 text-gray-500">Cargando horarios disponibles...</div>

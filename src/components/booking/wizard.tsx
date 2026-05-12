@@ -7,6 +7,7 @@ import { StepTime } from './step-time'
 import { StepCustomer } from './step-customer'
 import { StepPayment } from './step-payment'
 import { StepConfirmation } from './step-confirmation'
+import type { Service, AvailabilityRule, TimeBlock, Booking } from '@prisma/client'
 
 export type BookingData = {
   serviceId: string | null
@@ -47,7 +48,15 @@ const steps = [
   { id: 6, label: 'Confirmación' },
 ]
 
-export function BookingWizard() {
+interface BookingWizardProps {
+  businessId: string
+  services: Service[]
+  availabilityRules?: AvailabilityRule[]
+  timeBlocks?: TimeBlock[]
+  bookings?: Booking[]
+}
+
+export function BookingWizard({ businessId, services, availabilityRules = [], timeBlocks = [], bookings = [] }: BookingWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const [data, setData] = useState<BookingData>(initialData)
   const [bookingId, setBookingId] = useState<string | null>(null)
@@ -89,7 +98,7 @@ export function BookingWizard() {
       {/* Step content */}
       <div className="bg-white rounded-xl shadow-sm border p-6">
         {currentStep === 1 && (
-          <StepService data={data} onSelect={(service) => {
+          <StepService data={data} services={services} onSelect={(service) => {
             updateData(service)
             nextStep()
           }} />
@@ -101,10 +110,15 @@ export function BookingWizard() {
           }} onBack={prevStep} />
         )}
         {currentStep === 3 && data.date && (
-          <StepTime data={data} onSelect={(timeSlot) => {
-            updateData({ timeSlot })
-            nextStep()
-          }} onBack={prevStep} />
+          <StepTime 
+            data={data} 
+            availabilityRules={availabilityRules}
+            timeBlocks={timeBlocks}
+            bookings={bookings}
+            onSelect={(timeSlot) => {
+              updateData({ timeSlot })
+              nextStep()
+            }} onBack={prevStep} />
         )}
         {currentStep === 3 && !data.date && (
           <div className="text-center py-8">
@@ -125,7 +139,7 @@ export function BookingWizard() {
           </div>
         )}
         {currentStep === 5 && data.serviceId && data.timeSlot && (
-          <StepPayment data={data} onSuccess={(id) => {
+          <StepPayment data={data} businessId={businessId} onSuccess={(id) => {
             setBookingId(id)
             nextStep()
           }} onBack={prevStep} />
