@@ -7,7 +7,7 @@ import { StepTime } from './step-time'
 import { StepCustomer } from './step-customer'
 import { StepPayment } from './step-payment'
 import { StepConfirmation } from './step-confirmation'
-import type { Service, AvailabilityRule, TimeBlock, Booking } from '@prisma/client'
+import type { Service } from '@prisma/client'
 
 export type BookingData = {
   serviceId: string | null
@@ -51,12 +51,9 @@ const steps = [
 interface BookingWizardProps {
   businessId: string
   services: Service[]
-  availabilityRules?: AvailabilityRule[]
-  timeBlocks?: TimeBlock[]
-  bookings?: Booking[]
 }
 
-export function BookingWizard({ businessId, services, availabilityRules = [], timeBlocks = [], bookings = [] }: BookingWizardProps) {
+export function BookingWizard({ businessId, services }: BookingWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const [data, setData] = useState<BookingData>(initialData)
   const [bookingId, setBookingId] = useState<string | null>(null)
@@ -111,10 +108,8 @@ export function BookingWizard({ businessId, services, availabilityRules = [], ti
         )}
         {currentStep === 3 && data.date && (
           <StepTime 
+            businessId={businessId}
             data={data} 
-            availabilityRules={availabilityRules}
-            timeBlocks={timeBlocks}
-            bookings={bookings}
             onSelect={(timeSlot) => {
               updateData({ timeSlot })
               nextStep()

@@ -1,33 +1,20 @@
-export const dynamic = 'force-dynamic'
-
 import { prisma } from '@/lib/db'
 import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { Metadata } from 'next'
+import { cache } from 'react'
+import { unstable_cache } from 'next/cache'
+
+export const revalidate = 300
 
 interface ProfilePageProps {
   params: Promise<{ slug: string }>
 }
 
-export async function generateMetadata({ params }: ProfilePageProps): Promise<Metadata> {
-  const { slug } = await params
-  const business = await prisma.business.findUnique({
-    where: { slug },
-  })
-
-  if (!business) return { title: 'Perfil no encontrado' }
-
-  return {
-    title: `${business.name} — Reserva tu hora`,
-    description: business.bio || `Reserva tu hora en ${business.name}`,
-  }
-}
-
-export default async function PublicProfilePage({ params }: ProfilePageProps) {
-  const { slug } = await params
-
-  const business = await prisma.business.findUnique({
+const getCachedPublicBusiness = unstable_cache(async (slug: string) => {
+  return prisma.business.findUnique({
+    relationLoadStrategy: 'join',
     where: { slug },
     include: {
       services: {
@@ -46,6 +33,26 @@ export default async function PublicProfilePage({ params }: ProfilePageProps) {
       },
     },
   })
+}, ['public-business'], { revalidate: 300, tags: ['public-business'] })
+
+const getPublicBusiness = cache(getCachedPublicBusiness)
+
+export async function generateMetadata({ params }: ProfilePageProps): Promise<Metadata> {
+  const { slug } = await params
+  const business = await getPublicBusiness(slug)
+
+  if (!business) return { title: 'Perfil no encontrado' }
+
+  return {
+    title: `${business.name} — Reserva tu hora`,
+    description: business.bio || `Reserva tu hora en ${business.name}`,
+  }
+}
+
+export default async function PublicProfilePage({ params }: ProfilePageProps) {
+  const { slug } = await params
+
+  const business = await getPublicBusiness(slug)
 
   if (!business || !business.isActive) {
     notFound()

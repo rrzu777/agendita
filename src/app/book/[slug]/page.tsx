@@ -3,40 +3,29 @@ export const dynamic = 'force-dynamic'
 import { BookingWizard } from '@/components/booking/wizard'
 import { prisma } from '@/lib/db'
 import { notFound } from 'next/navigation'
+import { unstable_cache } from 'next/cache'
 
 interface BookPageProps {
   params: Promise<{ slug: string }>
 }
 
-export default async function BookPage({ params }: BookPageProps) {
-  const { slug } = await params
-
-  const business = await prisma.business.findUnique({
+const getBookingBusiness = unstable_cache(async (slug: string) => {
+  return prisma.business.findUnique({
+    relationLoadStrategy: 'join',
     where: { slug },
     include: {
       services: {
         where: { isActive: true },
         orderBy: { sortOrder: 'asc' },
       },
-      availability: {
-        where: { isActive: true },
-        orderBy: { dayOfWeek: 'asc' },
-      },
-      timeBlocks: {
-        where: {
-          endDateTime: { gte: new Date() },
-        },
-        orderBy: { startDateTime: 'asc' },
-      },
-      bookings: {
-        where: {
-          status: { notIn: ['cancelled', 'no_show'] },
-          startDateTime: { gte: new Date() },
-        },
-        orderBy: { startDateTime: 'asc' },
-      },
     },
   })
+}, ['booking-business'], { revalidate: 60, tags: ['booking-business'] })
+
+export default async function BookPage({ params }: BookPageProps) {
+  const { slug } = await params
+
+  const business = await getBookingBusiness(slug)
 
   if (!business || !business.isActive) {
     notFound()
@@ -52,9 +41,6 @@ export default async function BookPage({ params }: BookPageProps) {
         <BookingWizard 
           businessId={business.id} 
           services={business.services}
-          availabilityRules={business.availability}
-          timeBlocks={business.timeBlocks}
-          bookings={business.bookings}
         />
       </div>
     </div>

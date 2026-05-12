@@ -4,36 +4,47 @@ import { useState, useEffect } from 'react'
 import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
-import { generateSlots } from '@/lib/availability/slots'
-import type { AvailabilityRule, TimeBlock, Booking } from '@prisma/client'
+import { getAvailableTimeSlots } from '@/server/actions/availability'
 
 interface StepTimeProps {
+  businessId: string
   data: BookingData
-  availabilityRules: AvailabilityRule[]
-  timeBlocks: TimeBlock[]
-  bookings: Booking[]
   onSelect: (slot: { start: Date; end: Date }) => void
   onBack: () => void
 }
 
-export function StepTime({ data, availabilityRules, timeBlocks, bookings, onSelect, onBack }: StepTimeProps) {
+export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) {
   const [slots, setSlots] = useState<{ start: Date; end: Date }[]>([])
   const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null)
   const [loading, setLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
-    if (data.date) {
-      const generated = generateSlots(
-        data.date,
-        data.serviceDuration,
-        availabilityRules,
-        timeBlocks,
-        bookings
-      )
-      setSlots(generated)
-      setLoading(false)
+    if (!data.date || !data.serviceId) return
+
+    let ignore = false
+    setLoading(true)
+    setErrorMessage('')
+    setSelectedSlot(null)
+
+    getAvailableTimeSlots(businessId, data.serviceId, data.date)
+      .then((availableSlots) => {
+        if (ignore) return
+        setSlots(availableSlots)
+      })
+      .catch((error) => {
+        if (ignore) return
+        setSlots([])
+        setErrorMessage(error instanceof Error ? error.message : 'No se pudieron cargar los horarios')
+      })
+      .finally(() => {
+        if (!ignore) setLoading(false)
+      })
+
+    return () => {
+      ignore = true
     }
-  }, [data.date, data.serviceDuration, availabilityRules, timeBlocks, bookings])
+  }, [businessId, data.date, data.serviceId])
 
   if (loading) {
     return <div className="text-center py-8 text-gray-500">Cargando horarios disponibles...</div>
@@ -43,7 +54,9 @@ export function StepTime({ data, availabilityRules, timeBlocks, bookings, onSele
     return (
       <div>
         <h2 className="text-2xl font-bold mb-2">No hay horarios disponibles</h2>
-        <p className="text-gray-600 mb-6">No hay horarios disponibles para esta fecha. Por favor, selecciona otra fecha.</p>
+        <p className="text-gray-600 mb-6">
+          {errorMessage || 'No hay horarios disponibles para esta fecha. Por favor, selecciona otra fecha.'}
+        </p>
         <Button variant="outline" onClick={onBack}>Atrás</Button>
       </div>
     )

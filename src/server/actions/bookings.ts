@@ -6,6 +6,7 @@ import type { Booking, Customer } from '@prisma/client'
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { revalidateBusinessPublicPaths } from './revalidate-business'
 
 const createBookingSchema = z.object({
   serviceId: z.string().min(1),
@@ -97,6 +98,7 @@ export async function createBooking(data: {
   })
 
   revalidatePath('/dashboard/bookings')
+  await revalidateBusinessPublicPaths(businessId)
   return booking
 }
 
@@ -106,6 +108,7 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
     data: { status },
   })
   revalidatePath('/dashboard/bookings')
+  await revalidateBusinessPublicPaths(updated.businessId)
   return updated
 }
 
@@ -172,5 +175,6 @@ export async function confirmPayment(bookingId: string, amount: number) {
   })
 
   revalidatePath('/dashboard/bookings')
+  await revalidateBusinessPublicPaths(updated.businessId)
   return updated
 }

@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db'
 import type { Service } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { revalidateBusinessPublicPaths } from './revalidate-business'
 
 const createServiceSchema = z.object({
   businessId: z.string().min(1),
@@ -43,6 +44,7 @@ export async function createService(data: Omit<Service, 'id' | 'createdAt' | 'up
 
   const newService = await prisma.service.create({ data })
   revalidatePath('/dashboard/services')
+  await revalidateBusinessPublicPaths(newService.businessId)
   return newService
 }
 
@@ -62,6 +64,7 @@ export async function updateService(id: string, data: Partial<Omit<Service, 'id'
     data,
   })
   revalidatePath('/dashboard/services')
+  await revalidateBusinessPublicPaths(updated.businessId)
   return updated
 }
 
@@ -71,9 +74,10 @@ export async function deleteService(id: string) {
     throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
-  await prisma.service.update({
+  const updated = await prisma.service.update({
     where: { id },
     data: { isActive: false },
   })
   revalidatePath('/dashboard/services')
+  await revalidateBusinessPublicPaths(updated.businessId)
 }
