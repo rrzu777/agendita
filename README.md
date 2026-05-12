@@ -41,3 +41,4 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 - Auth: Supabase Auth with session protection
 - Features: Dashboard, Public Profile, Booking Wizard, Finances
 - Status: MVP ready for beta testing
+# Deployment trigger
