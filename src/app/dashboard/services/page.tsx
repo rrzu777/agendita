@@ -15,9 +15,9 @@ export default async function ServicesPage() {
 
   return (
     <div>
-      <DashboardHeader title="Servicios" />
-      <div className="p-8">
-        <ServiceTable services={services} />
+      <DashboardHeader title="Servicios" subtitle="Gestiona catálogo, precios, abonos y duración de tus tratamientos." />
+      <div className="p-5 md:p-10">
+        <ServiceTable services={services} businessId={userData.business.id} />
       </div>
     </div>
   )

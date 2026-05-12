@@ -71,29 +71,21 @@ export function BookingWizard({ businessId, services }: BookingWizardProps) {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      {/* Stepper */}
-      <div className="flex justify-between mb-8">
-        {steps.map((step, index) => (
-          <div key={step.id} className="flex items-center">
-            <div className={`
-              w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium
-              ${currentStep >= step.id ? 'bg-pink-500 text-white' : 'bg-gray-200 text-gray-500'}
-            `}>
-              {step.id}
-            </div>
-            <span className={`ml-2 text-sm hidden sm:block ${currentStep >= step.id ? 'text-pink-600 font-medium' : 'text-gray-400'}`}>
-              {step.label}
-            </span>
-            {index < steps.length - 1 && (
-              <div className={`w-8 h-0.5 mx-2 ${currentStep > step.id ? 'bg-pink-500' : 'bg-gray-200'}`} />
-            )}
-          </div>
-        ))}
+    <div className="mx-auto max-w-2xl">
+      <div className="mb-8">
+        <div className="mb-3 h-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-all"
+            style={{ width: `${(currentStep / steps.length) * 100}%` }}
+          />
+        </div>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-primary">Paso {currentStep} de {steps.length}</p>
+          <p className="text-sm text-muted-foreground">{steps[currentStep - 1]?.label}</p>
+        </div>
       </div>
 
-      {/* Step content */}
-      <div className="bg-white rounded-xl shadow-sm border p-6">
+      <section className="studio-card p-5 sm:p-8">
         {currentStep === 1 && (
           <StepService data={data} services={services} onSelect={(service) => {
             updateData(service)
@@ -117,8 +109,8 @@ export function BookingWizard({ businessId, services }: BookingWizardProps) {
         )}
         {currentStep === 3 && !data.date && (
           <div className="text-center py-8">
-            <p className="text-gray-600 mb-4">Primero debes seleccionar una fecha</p>
-            <button onClick={() => setCurrentStep(2)} className="text-pink-600 underline">Volver a seleccionar fecha</button>
+            <p className="text-muted-foreground mb-4">Primero debes seleccionar una fecha</p>
+            <button onClick={() => setCurrentStep(2)} className="font-semibold text-primary underline">Volver a seleccionar fecha</button>
           </div>
         )}
         {currentStep === 4 && data.timeSlot && (
@@ -129,8 +121,8 @@ export function BookingWizard({ businessId, services }: BookingWizardProps) {
         )}
         {currentStep === 4 && !data.timeSlot && (
           <div className="text-center py-8">
-            <p className="text-gray-600 mb-4">Primero debes seleccionar un horario</p>
-            <button onClick={() => setCurrentStep(3)} className="text-pink-600 underline">Volver a seleccionar horario</button>
+            <p className="text-muted-foreground mb-4">Primero debes seleccionar un horario</p>
+            <button onClick={() => setCurrentStep(3)} className="font-semibold text-primary underline">Volver a seleccionar horario</button>
           </div>
         )}
         {currentStep === 5 && data.serviceId && data.timeSlot && (
@@ -141,14 +133,14 @@ export function BookingWizard({ businessId, services }: BookingWizardProps) {
         )}
         {currentStep === 5 && (!data.serviceId || !data.timeSlot) && (
           <div className="text-center py-8">
-            <p className="text-gray-600 mb-4">Faltan datos de la reserva</p>
-            <button onClick={() => setCurrentStep(1)} className="text-pink-600 underline">Volver al inicio</button>
+            <p className="text-muted-foreground mb-4">Faltan datos de la reserva</p>
+            <button onClick={() => setCurrentStep(1)} className="font-semibold text-primary underline">Volver al inicio</button>
           </div>
         )}
         {currentStep === 6 && (
           <StepConfirmation data={data} bookingId={bookingId} />
         )}
-      </div>
+      </section>
     </div>
   )
 }

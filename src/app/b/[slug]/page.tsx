@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Metadata } from 'next'
 import { cache } from 'react'
 import { unstable_cache } from 'next/cache'
+import { BadgeCheck, CalendarDays, Camera, Clock3, MapPin, MessageCircle, Star } from 'lucide-react'
 
 export const revalidate = 300
 
@@ -58,37 +59,41 @@ export default async function PublicProfilePage({ params }: ProfilePageProps) {
     notFound()
   }
 
-  const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+  const daysOfWeek = ['Domingos', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábados']
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
-      <div className="max-w-lg mx-auto px-4 py-12">
-        {/* Profile Header */}
-        <div className="text-center mb-8">
+    <main className="studio-shell pb-28">
+      <div className="mx-auto max-w-[420px] px-4 py-12">
+        <section className="mb-10 text-center">
+          <div className="relative mx-auto mb-6 size-28">
           {business.profileImageUrl ? (
             <img
               src={business.profileImageUrl}
               alt={business.name}
-              className="w-24 h-24 rounded-full mx-auto mb-4 object-cover border-4 border-white shadow-lg"
+                className="size-28 rounded-full border-4 border-white object-cover shadow-xl"
             />
           ) : (
-            <div className="w-24 h-24 rounded-full mx-auto mb-4 bg-pink-200 flex items-center justify-center text-4xl">
-              💅
+              <div className="flex size-28 items-center justify-center rounded-full border-4 border-white bg-secondary text-4xl font-semibold text-primary shadow-xl">
+                {business.name.slice(0, 2).toUpperCase()}
+              </div>
+            )}
+            <div className="absolute bottom-1 right-1 rounded-full border-2 border-white bg-primary p-1.5 text-primary-foreground">
+              <BadgeCheck className="size-4" />
             </div>
-          )}
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">{business.name}</h1>
-          {business.bio && <p className="text-gray-600 text-sm leading-relaxed">{business.bio}</p>}
+          </div>
+          <h1 className="mb-2 text-4xl font-semibold tracking-normal text-primary">{business.name}</h1>
+          {business.bio && <p className="mx-auto max-w-[310px] text-base leading-relaxed text-muted-foreground">{business.bio}</p>}
           
-          {/* Social Links */}
-          <div className="flex justify-center gap-3 mt-4">
+          <div className="mt-6 flex justify-center gap-4">
             {business.whatsapp && (
               <a
                 href={`https://wa.me/${business.whatsapp.replace(/\D/g, '')}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="bg-green-500 text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-green-600 transition"
+                className="flex size-12 items-center justify-center rounded-full border border-border bg-card text-primary shadow-sm transition-transform active:scale-95"
+                aria-label="WhatsApp"
               >
-                WhatsApp
+                <MessageCircle className="size-5" />
               </a>
             )}
             {business.instagram && (
@@ -96,103 +101,123 @@ export default async function PublicProfilePage({ params }: ProfilePageProps) {
                 href={`https://instagram.com/${business.instagram.replace('@', '')}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 rounded-full text-sm font-medium hover:opacity-90 transition"
+                className="flex size-12 items-center justify-center rounded-full border border-border bg-card text-primary shadow-sm transition-transform active:scale-95"
+                aria-label="Instagram"
               >
-                Instagram
+                <Camera className="size-5" />
               </a>
             )}
           </div>
 
           {business.addressText && (
-            <p className="text-gray-500 text-sm mt-3">📍 {business.addressText}</p>
+            <p className="mt-4 inline-flex items-center gap-2 text-sm text-muted-foreground">
+              <MapPin className="size-4" />
+              {business.addressText}
+            </p>
           )}
-        </div>
+        </section>
 
-        {/* Book Button */}
-        <div className="mb-8">
-          <Link href={`/book/${business.slug}`}>
-            <Button className="w-full bg-pink-500 hover:bg-pink-600 text-lg py-6 rounded-xl shadow-lg hover:shadow-xl transition-all">
-              Reservar ahora
-            </Button>
-          </Link>
-        </div>
-
-        {/* Services */}
-        <div className="bg-white rounded-2xl shadow-sm border p-6 mb-6">
-          <h2 className="text-lg font-bold mb-4 text-gray-900">Servicios</h2>
+        <section className="mb-7">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-2xl font-semibold tracking-normal text-primary">Servicios</h2>
+            <span className="rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
+              {business.services.length} disponibles
+            </span>
+          </div>
           <div className="space-y-4">
             {business.services.map((service) => (
-              <div
+              <article
                 key={service.id}
-                className="flex items-center justify-between p-4 rounded-xl border hover:border-pink-300 transition-colors"
-                style={{ backgroundColor: service.pastelColor + '15' }}
+                className="studio-card flex items-center justify-between gap-4 p-5 shadow-[0_10px_24px_rgba(51,41,32,0.06)]"
               >
                 <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900">{service.name}</h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {service.durationMinutes} min • ${service.price.toLocaleString('es-CL')}
-                  </p>
+                  <h3 className="text-xl font-semibold text-primary">{service.name}</h3>
                   {service.description && (
-                    <p className="text-xs text-gray-400 mt-1">{service.description}</p>
+                    <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">{service.description}</p>
                   )}
+                  <p className="mt-3 flex items-center gap-2 text-sm text-foreground">
+                    <Clock3 className="size-4" />
+                    {service.durationMinutes} min
+                  </p>
                 </div>
-                <div className="text-right ml-4">
-                  <span className="text-pink-600 font-bold text-lg">
+                <div className="ml-2 text-right">
+                  <span className="text-2xl font-semibold tracking-normal text-primary">
                     ${service.price.toLocaleString('es-CL')}
                   </span>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                     Abono ${service.depositAmount.toLocaleString('es-CL')}
                   </p>
+                  <span
+                    className="mt-4 inline-block size-6 rounded-full border border-border"
+                    style={{ backgroundColor: service.pastelColor || 'var(--accent)' }}
+                  />
                 </div>
-              </div>
+              </article>
             ))}
           </div>
-        </div>
+        </section>
 
-        {/* Availability */}
-        <div className="bg-white rounded-2xl shadow-sm border p-6 mb-6">
-          <h2 className="text-lg font-bold mb-4 text-gray-900">Horarios</h2>
-          <div className="space-y-2">
+        <section className="studio-card mb-7 p-6">
+          <h2 className="mb-5 flex items-center gap-3 text-2xl font-semibold tracking-normal text-primary">
+            <Clock3 className="size-6" />
+            Horarios
+          </h2>
+          <div className="space-y-3">
             {business.availability.map((rule) => (
-              <div key={rule.id} className="flex justify-between text-sm py-2 border-b last:border-0">
-                <span className="font-medium text-gray-700">{daysOfWeek[rule.dayOfWeek]}</span>
-                <span className="text-gray-500">
+              <div key={rule.id} className="flex justify-between gap-4 text-sm">
+                <span className="text-foreground">{daysOfWeek[rule.dayOfWeek]}</span>
+                <span className="font-semibold text-primary">
                   {rule.startTime} - {rule.endTime}
                 </span>
               </div>
             ))}
           </div>
-        </div>
+        </section>
 
-        {/* Reviews */}
         {business.reviews.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border p-6">
-            <h2 className="text-lg font-bold mb-4 text-gray-900">Reseñas</h2>
-            <div className="space-y-4">
+          <section className="mb-7">
+            <h2 className="mb-4 text-2xl font-semibold tracking-normal text-primary">Reseñas</h2>
+            <div className="studio-card p-6">
               {business.reviews.map((review) => (
                 <div key={review.id} className="border-b last:border-0 pb-4 last:pb-0">
                   <div className="flex items-center gap-1 mb-2">
                     {Array.from({ length: review.rating }).map((_, i) => (
-                      <span key={i} className="text-yellow-400 text-sm">⭐</span>
+                      <Star key={i} className="size-4 fill-primary text-primary" />
                     ))}
                   </div>
-                  <p className="text-sm text-gray-600">{review.comment}</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    — {review.customer?.name || 'Clienta'}
+                  <p className="text-sm italic leading-relaxed text-foreground">{review.comment}</p>
+                  <p className="mt-3 text-sm font-semibold text-primary">
+                    {review.customer?.name || 'Clienta'}
                   </p>
                 </div>
               ))}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* Footer */}
-        <div className="text-center mt-8 pb-8">
-          <p className="text-xs text-gray-400">
-            Reservas gestionadas con 💖 por <span className="font-semibold text-pink-500">Agendita</span>
-          </p>
+        {business.addressText && (
+          <section className="studio-card mb-7 flex items-center gap-4 p-5">
+            <div className="flex size-12 items-center justify-center rounded-xl bg-muted text-primary">
+              <MapPin className="size-5" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-primary">Ubicación</h2>
+              <p className="text-sm text-muted-foreground">{business.addressText}</p>
+            </div>
+          </section>
+        )}
+      </div>
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border/50 bg-background/85 px-4 py-4 backdrop-blur">
+        <div className="mx-auto max-w-[420px]">
+          <Button asChild className="h-16 w-full rounded-xl text-lg font-semibold shadow-[0_12px_28px_rgba(51,41,32,0.22)]">
+            <Link href={`/book/${business.slug}`}>
+              <CalendarDays className="mr-2 size-5" />
+              Reservar ahora
+            </Link>
+          </Button>
         </div>
       </div>
-    </div>
+    </main>
   )
 }

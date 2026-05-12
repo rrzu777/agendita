@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ServiceForm } from './service-form'
 import { deleteService } from '@/server/actions/services'
+import { Plus, Trash2 } from 'lucide-react'
 
-export function ServiceTable({ services: initialServices }: { services: any[] }) {
+export function ServiceTable({ services: initialServices, businessId }: { services: any[]; businessId: string }) {
   const [services, setServices] = useState(initialServices)
 
   async function handleDelete(id: string) {
@@ -21,14 +22,17 @@ export function ServiceTable({ services: initialServices }: { services: any[] })
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold">Servicios</h2>
-        <ServiceForm onSuccess={refresh} />
+      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-normal text-primary">Catálogo de servicios</h2>
+          <p className="text-sm text-muted-foreground">{services.length} servicios activos</p>
+        </div>
+        <ServiceForm businessId={businessId} onSuccess={refresh} triggerLabel="Nuevo servicio" triggerIcon={<Plus className="mr-2 size-4" />} />
       </div>
-      <div className="bg-white rounded-lg shadow-sm border">
+      <div className="studio-card overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="bg-muted/50">
               <TableHead>Nombre</TableHead>
               <TableHead>Precio</TableHead>
               <TableHead>Duración</TableHead>
@@ -38,22 +42,28 @@ export function ServiceTable({ services: initialServices }: { services: any[] })
             </TableRow>
           </TableHeader>
           <TableBody>
-            {services.map((service) => (
-              <TableRow key={service.id}>
-                <TableCell className="font-medium">
-                  <div>{service.name}</div>
-                  <div className="text-sm text-gray-500">{service.description}</div>
+            {services.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
+                  No hay servicios activos todavía
                 </TableCell>
-                <TableCell>${service.price.toLocaleString('es-CL')}</TableCell>
+              </TableRow>
+            ) : services.map((service) => (
+              <TableRow key={service.id}>
+                <TableCell className="font-semibold text-primary">
+                  <div>{service.name}</div>
+                  <div className="max-w-md text-sm font-normal text-muted-foreground">{service.description}</div>
+                </TableCell>
+                <TableCell className="font-semibold">${service.price.toLocaleString('es-CL')}</TableCell>
                 <TableCell>{service.durationMinutes} min</TableCell>
                 <TableCell>${service.depositAmount.toLocaleString('es-CL')}</TableCell>
                 <TableCell>
-                  <div className="w-6 h-6 rounded-full" style={{ backgroundColor: service.pastelColor }} />
+                  <div className="size-7 rounded-full border border-border" style={{ backgroundColor: service.pastelColor }} />
                 </TableCell>
-                <TableCell className="text-right space-x-2">
-                  <ServiceForm service={service} onSuccess={refresh} />
-                  <Button variant="destructive" size="sm" onClick={() => handleDelete(service.id)}>
-                    Eliminar
+                <TableCell className="space-x-2 text-right">
+                  <ServiceForm businessId={businessId} service={service} onSuccess={refresh} />
+                  <Button variant="destructive" size="sm" onClick={() => handleDelete(service.id)} aria-label={`Eliminar ${service.name}`}>
+                    <Trash2 className="size-4" />
                   </Button>
                 </TableCell>
               </TableRow>

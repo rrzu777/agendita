@@ -14,9 +14,9 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-background text-foreground">
       <DashboardSidebar user={userData.user} business={userData.business} />
-      <main className="flex-1">
+      <main className="min-w-0 flex-1 pb-24 md:pb-0">
         {children}
       </main>
     </div>

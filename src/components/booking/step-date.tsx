@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isBefore, startOfDay } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 export function StepDate({ data, onSelect, onBack }: { data: BookingData; onSelect: (date: Date) => void; onBack: () => void }) {
   const [currentMonth, setCurrentMonth] = useState(new Date())
@@ -17,17 +18,21 @@ export function StepDate({ data, onSelect, onBack }: { data: BookingData; onSele
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-2">Elige una fecha</h2>
-      <p className="text-gray-600 mb-6">{data.serviceName} — {data.serviceDuration} min</p>
+      <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Elige una fecha</h2>
+      <p className="mb-8 text-lg text-muted-foreground">{data.serviceName} — {data.serviceDuration} min</p>
 
       <div className="flex justify-between items-center mb-4">
-        <Button variant="outline" size="sm" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>←</Button>
-        <span className="font-semibold capitalize">{format(currentMonth, 'MMMM yyyy')}</span>
-        <Button variant="outline" size="sm" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}>→</Button>
+        <Button variant="outline" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} aria-label="Mes anterior">
+          <ChevronLeft className="size-4" />
+        </Button>
+        <span className="font-semibold capitalize text-primary">{format(currentMonth, 'MMMM yyyy')}</span>
+        <Button variant="outline" size="icon" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} aria-label="Mes siguiente">
+          <ChevronRight className="size-4" />
+        </Button>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 mb-4">
-        {weekDays.map(d => <div key={d} className="text-center text-xs text-gray-500 py-2">{d}</div>)}
+      <div className="mb-4 grid grid-cols-7 gap-1">
+        {weekDays.map(d => <div key={d} className="py-2 text-center text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{d}</div>)}
         {days.map((day) => {
           const isPast = isBefore(day, startOfDay(new Date()))
           const isSelected = selectedDate && isSameDay(day, selectedDate)
@@ -37,9 +42,9 @@ export function StepDate({ data, onSelect, onBack }: { data: BookingData; onSele
               disabled={isPast}
               onClick={() => setSelectedDate(day)}
               className={`
-                aspect-square flex items-center justify-center rounded-lg text-sm
-                ${isPast ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-gray-100'}
-                ${isSelected ? 'bg-pink-500 text-white' : ''}
+                flex aspect-square items-center justify-center rounded-full text-sm font-semibold transition-colors
+                ${isPast ? 'cursor-not-allowed text-muted-foreground/35' : 'hover:bg-accent'}
+                ${isSelected ? 'bg-primary text-primary-foreground hover:bg-primary' : 'text-foreground'}
               `}
             >
               {format(day, 'd')}
@@ -48,9 +53,9 @@ export function StepDate({ data, onSelect, onBack }: { data: BookingData; onSele
         })}
       </div>
 
-      <div className="flex gap-3 mt-6">
+      <div className="mt-8 flex gap-3">
         <Button variant="outline" onClick={onBack}>Atrás</Button>
-        <Button className="flex-1 bg-pink-500 hover:bg-pink-600" disabled={!selectedDate}
+        <Button className="h-12 flex-1 text-base font-semibold" disabled={!selectedDate}
           onClick={() => selectedDate && onSelect(selectedDate)}>
           Continuar
         </Button>

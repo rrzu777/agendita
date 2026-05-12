@@ -3,21 +3,22 @@ import { BusinessProfile } from '@/components/public/business-profile'
 
 function LandingPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white">
-      <main className="container mx-auto px-4 py-16">
-        <div className="text-center max-w-3xl mx-auto">
-          <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
+    <div className="studio-shell">
+      <main className="container mx-auto px-4 py-20">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="studio-eyebrow mb-4">Agenda boutique para estudios de belleza</p>
+          <h1 className="mb-6 text-5xl font-semibold tracking-normal text-primary md:text-7xl">
             Agenda online para manicuristas
           </h1>
-          <p className="text-xl text-gray-600 mb-8">
+          <p className="mb-10 text-xl leading-relaxed text-muted-foreground">
             Permite que tus clientas reserven hora, paguen abono y reciban confirmación 
             sin escribirte mil veces por WhatsApp.
           </p>
-          <div className="flex gap-4 justify-center">
-            <a href="/register" className="bg-pink-500 text-white px-8 py-3 rounded-full font-semibold hover:bg-pink-600 transition inline-block">
+          <div className="flex flex-col justify-center gap-4 sm:flex-row">
+            <a href="/register" className="inline-block rounded-lg bg-primary px-8 py-3 font-semibold text-primary-foreground shadow-[0_14px_32px_rgba(51,41,32,0.18)] transition hover:bg-primary/90">
               Crear cuenta
             </a>
-            <a href="/login" className="bg-white text-pink-500 border-2 border-pink-500 px-8 py-3 rounded-full font-semibold hover:bg-pink-50 transition inline-block">
+            <a href="/login" className="inline-block rounded-lg border border-border bg-card px-8 py-3 font-semibold text-primary transition hover:bg-muted">
               Iniciar sesión
             </a>
           </div>

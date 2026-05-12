@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { updateBookingStatus } from '@/server/actions/bookings'
+import { CalendarDays, Plus } from 'lucide-react'
 
 const statusLabels: Record<string, string> = {
   pending_payment: 'Pendiente de pago',
@@ -16,11 +17,11 @@ const statusLabels: Record<string, string> = {
 }
 
 const statusColors: Record<string, string> = {
-  pending_payment: 'bg-yellow-100 text-yellow-800',
+  pending_payment: 'bg-orange-100 text-orange-800',
   confirmed: 'bg-green-100 text-green-800',
-  completed: 'bg-blue-100 text-blue-800',
-  cancelled: 'bg-gray-100 text-gray-800',
-  no_show: 'bg-red-100 text-red-800',
+  completed: 'bg-secondary text-secondary-foreground',
+  cancelled: 'bg-muted text-muted-foreground',
+  no_show: 'bg-destructive/10 text-destructive',
 }
 
 export default async function BookingsPage() {
@@ -34,12 +35,32 @@ export default async function BookingsPage() {
 
   return (
     <div>
-      <DashboardHeader title="Reservas" />
-      <div className="p-8">
-        <div className="bg-white rounded-lg shadow-sm border">
+      <DashboardHeader title="Gestión de reservas" subtitle="Administra tus citas y el estado de tus servicios." />
+      <div className="p-5 md:p-10">
+        <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="studio-card p-4">
+              <p className="studio-eyebrow">Total</p>
+              <p className="mt-1 text-3xl font-semibold text-primary">{bookings.length}</p>
+            </div>
+            <div className="studio-card p-4">
+              <p className="studio-eyebrow">Confirmadas</p>
+              <p className="mt-1 text-3xl font-semibold text-primary">{bookings.filter(b => b.status === 'confirmed').length}</p>
+            </div>
+            <div className="studio-card p-4">
+              <p className="studio-eyebrow">Pendientes</p>
+              <p className="mt-1 text-3xl font-semibold text-primary">{bookings.filter(b => b.status === 'pending_payment').length}</p>
+            </div>
+          </div>
+          <Button className="h-11 rounded-lg font-semibold">
+            <Plus className="mr-2 size-4" />
+            Nueva cita
+          </Button>
+        </div>
+        <div className="studio-card overflow-hidden">
           <Table>
             <TableHeader>
-              <TableRow>
+              <TableRow className="bg-muted/50">
                 <TableHead>Servicio</TableHead>
                 <TableHead>Fecha</TableHead>
                 <TableHead>Cliente</TableHead>
@@ -51,19 +72,21 @@ export default async function BookingsPage() {
             <TableBody>
               {bookings.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-gray-500 py-8">
+                  <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
+                    <CalendarDays className="mx-auto mb-3 size-8 text-primary" />
                     No hay reservas todavía
                   </TableCell>
                 </TableRow>
               ) : (
                 bookings.map((booking) => (
                     <TableRow key={booking.id}>
-                      <TableCell className="font-medium">
-                        {booking.service?.name || 'Servicio desconocido'}
+                      <TableCell className="font-semibold text-primary">
+                        <div>{booking.service?.name || 'Servicio desconocido'}</div>
+                        <div className="text-xs font-normal text-muted-foreground">#{booking.id.slice(0, 8)}</div>
                       </TableCell>
                       <TableCell>
                         {new Date(booking.startDateTime).toLocaleDateString('es-CL')}
-                        <div className="text-sm text-gray-500">
+                        <div className="text-sm text-muted-foreground">
                           {new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
                         </div>
                       </TableCell>
@@ -76,7 +99,7 @@ export default async function BookingsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <span className={booking.paymentStatus === 'fully_paid' ? 'text-green-600' : 'text-yellow-600'}>
+                        <span className={booking.paymentStatus === 'fully_paid' ? 'font-semibold text-green-700' : 'font-semibold text-primary'}>
                           ${booking.depositPaid.toLocaleString('es-CL')} / ${booking.finalAmount.toLocaleString('es-CL')}
                         </span>
                       </TableCell>

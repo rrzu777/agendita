@@ -9,21 +9,21 @@ export default async function BookIndexPage() {
   })
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-2xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">Reserva tu hora</h1>
-          <p className="text-gray-600">Selecciona un negocio para continuar</p>
+    <div className="studio-shell py-10">
+      <div className="mx-auto max-w-2xl px-4">
+        <div className="mb-8 text-center">
+          <h1 className="text-4xl font-semibold tracking-normal text-primary">Reserva tu hora</h1>
+          <p className="mt-2 text-muted-foreground">Selecciona un negocio para continuar</p>
         </div>
         <div className="space-y-4">
           {businesses.map((business) => (
             <Link
               key={business.id}
               href={`/book/${business.slug}`}
-              className="block bg-white rounded-xl shadow-sm border p-6 hover:shadow-md transition-shadow"
+              className="studio-card block p-6 transition-shadow hover:shadow-[var(--cream-shadow)]"
             >
-              <h2 className="text-lg font-semibold text-gray-900">{business.name}</h2>
-              <p className="text-pink-600 mt-1">Hacer reserva →</p>
+              <h2 className="text-lg font-semibold text-primary">{business.name}</h2>
+              <p className="mt-1 font-semibold text-muted-foreground">Hacer reserva →</p>
             </Link>
           ))}
         </div>

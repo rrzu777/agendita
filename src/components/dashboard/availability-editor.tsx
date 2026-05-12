@@ -27,30 +27,30 @@ export function AvailabilityEditor({ rules: initialRules }: { rules: any[] }) {
   return (
     <div className="space-y-4">
       {rules.map((rule) => (
-        <div key={rule.id} className="flex items-center gap-4 bg-white p-4 rounded-lg border">
-          <div className="w-28 font-medium">{DAYS[rule.dayOfWeek]}</div>
+        <div key={rule.id} className="flex flex-col gap-4 rounded-xl border border-border/60 bg-card p-4 sm:flex-row sm:items-center">
+          <div className="w-32 font-semibold text-primary">{DAYS[rule.dayOfWeek]}</div>
           <Switch
             checked={rule.isActive}
             onCheckedChange={(checked) => handleToggle(rule.id, checked)}
           />
           {rule.isActive ? (
-            <>
+            <div className="flex flex-wrap items-center gap-3">
               <Input
                 type="time"
                 value={rule.startTime}
                 onChange={(e) => handleTimeChange(rule.id, 'startTime', e.target.value)}
-                className="w-32"
+                className="studio-input w-32"
               />
-              <span className="text-gray-500">a</span>
+              <span className="text-muted-foreground">a</span>
               <Input
                 type="time"
                 value={rule.endTime}
                 onChange={(e) => handleTimeChange(rule.id, 'endTime', e.target.value)}
-                className="w-32"
+                className="studio-input w-32"
               />
-            </>
+            </div>
           ) : (
-            <span className="text-gray-400">Cerrado</span>
+            <span className="font-semibold text-muted-foreground">Cerrado</span>
           )}
         </div>
       ))}

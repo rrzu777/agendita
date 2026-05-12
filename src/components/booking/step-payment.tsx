@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
 import { createBooking } from '@/server/actions/bookings'
 import { initiatePayment, verifyAndConfirmPayment } from '@/server/actions/payments'
+import { AlertCircle, CreditCard, Loader2 } from 'lucide-react'
 
 export function StepPayment({ data, businessId, onSuccess, onBack }: { data: BookingData; businessId: string; onSuccess: (id: string) => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
@@ -60,20 +61,20 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
 
   if (step === 'processing') {
     return (
-      <div className="text-center py-8">
-        <div className="text-4xl mb-4">⏳</div>
-        <h2 className="text-xl font-bold mb-2">Procesando pago...</h2>
-        <p className="text-gray-600">Por favor no cierres esta ventana</p>
+      <div className="py-14 text-center">
+        <Loader2 className="mx-auto mb-4 size-8 animate-spin text-primary" />
+        <h2 className="mb-2 text-2xl font-semibold tracking-normal text-primary">Procesando pago...</h2>
+        <p className="text-muted-foreground">Por favor no cierres esta ventana</p>
       </div>
     )
   }
 
   if (step === 'error') {
     return (
-      <div className="text-center py-8">
-        <div className="text-4xl mb-4">❌</div>
-        <h2 className="text-xl font-bold mb-2">Error en el pago</h2>
-        <p className="text-gray-600 mb-4">{errorMessage || 'No se pudo procesar el pago'}</p>
+      <div className="py-12 text-center">
+        <AlertCircle className="mx-auto mb-4 size-9 text-destructive" />
+        <h2 className="mb-2 text-2xl font-semibold tracking-normal text-primary">Error en el pago</h2>
+        <p className="mb-5 text-muted-foreground">{errorMessage || 'No se pudo procesar el pago'}</p>
         <div className="flex gap-3 justify-center">
           <Button variant="outline" onClick={onBack}>Atrás</Button>
           <Button onClick={() => setStep('review')}>Intentar de nuevo</Button>
@@ -84,23 +85,24 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-2">Pago de abono</h2>
-      <p className="text-gray-600 mb-6">Resumen de tu reserva</p>
+      <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Pago de abono</h2>
+      <p className="mb-8 text-lg text-muted-foreground">Resumen de tu reserva</p>
 
-      <div className="bg-gray-50 rounded-lg p-4 mb-6 space-y-2">
-        <div className="flex justify-between"><span className="text-gray-600">Servicio</span><span className="font-medium">{data.serviceName}</span></div>
-        <div className="flex justify-between"><span className="text-gray-600">Fecha y hora</span><span className="font-medium">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
-        <div className="flex justify-between"><span className="text-gray-600">Precio total</span><span className="font-medium">${data.servicePrice.toLocaleString('es-CL')}</span></div>
-        <div className="border-t pt-2 flex justify-between"><span className="text-gray-600">Abono a pagar</span><span className="font-bold text-pink-600">${data.serviceDeposit.toLocaleString('es-CL')}</span></div>
+      <div className="mb-6 space-y-3 rounded-xl bg-muted/55 p-5">
+        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">${data.servicePrice.toLocaleString('es-CL')}</span></div>
+        <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono a pagar</span><span className="font-semibold text-primary">${data.serviceDeposit.toLocaleString('es-CL')}</span></div>
       </div>
 
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-        <p className="text-sm text-yellow-800">💳 Modo de desarrollo: El pago se procesará con el proveedor simulado.</p>
+      <div className="mb-6 flex gap-3 rounded-xl border border-border/70 bg-secondary/40 p-4 text-sm text-primary">
+        <CreditCard className="mt-0.5 size-5 shrink-0" />
+        <p>Modo de desarrollo: el pago se procesará con el proveedor simulado.</p>
       </div>
 
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
-        <Button className="flex-1 bg-pink-500 hover:bg-pink-600" onClick={handlePayment} disabled={loading}>
+        <Button className="h-12 flex-1 text-base font-semibold" onClick={handlePayment} disabled={loading}>
           {loading ? 'Procesando...' : `Pagar abono $${data.serviceDeposit.toLocaleString('es-CL')}`}
         </Button>
       </div>

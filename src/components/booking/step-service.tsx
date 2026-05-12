@@ -3,6 +3,7 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { BookingData } from './wizard'
 import type { Service } from '@prisma/client'
+import { Clock3 } from 'lucide-react'
 
 interface StepServiceProps {
   data: BookingData
@@ -13,8 +14,8 @@ interface StepServiceProps {
 export function StepService({ data, services, onSelect }: StepServiceProps) {
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-2">Elige un servicio</h2>
-      <p className="text-gray-600 mb-6">Selecciona el servicio que deseas agendar</p>
+      <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Selecciona un servicio</h2>
+      <p className="mb-8 text-lg text-muted-foreground">Elige el tratamiento que deseas realizarte hoy.</p>
       <div className="space-y-4">
         {services.map((service) => (
           <button
@@ -29,26 +30,37 @@ export function StepService({ data, services, onSelect }: StepServiceProps) {
             })}
             className="w-full text-left"
           >
-            <Card className="hover:shadow-md transition-shadow border-0 shadow-sm overflow-hidden">
-              <div className="h-1.5" style={{ backgroundColor: service.pastelColor }} />
-              <CardContent className="p-5">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-semibold text-lg">{service.name}</h3>
-                    <p className="text-gray-600 text-sm mt-1">{service.description}</p>
+            <Card className={`rounded-2xl border bg-card transition-all hover:border-primary hover:shadow-[var(--cream-shadow)] ${data.serviceId === service.id ? 'border-primary bg-secondary/35 shadow-[var(--cream-shadow)]' : 'border-border/70'}`}>
+              <CardContent className="p-5 sm:p-7">
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <h3 className="text-2xl font-semibold leading-tight text-primary">{service.name}</h3>
+                    <p className="mt-4 flex items-center gap-2 text-base text-muted-foreground">
+                      <Clock3 className="size-5 text-primary" />
+                      {service.durationMinutes} min
+                    </p>
+                    {service.description && (
+                      <p className="mt-5 text-base leading-relaxed text-muted-foreground">{service.description}</p>
+                    )}
                   </div>
-                  <div className="text-right">
-                    <div className="font-bold text-lg">${service.price.toLocaleString('es-CL')}</div>
-                    <div className="text-sm text-gray-500">{service.durationMinutes} min</div>
+                  <div className="shrink-0 text-left sm:text-right">
+                    <div className="text-3xl font-semibold leading-none tracking-normal text-primary">
+                      CLP {service.price.toLocaleString('es-CL')}
+                    </div>
+                    {service.depositAmount > 0 && (
+                      <div className="mt-2 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        Abono: CLP {service.depositAmount.toLocaleString('es-CL')}
+                      </div>
+                    )}
                   </div>
-                </div>
-                <div className="mt-3 text-sm text-gray-500">
-                  Abono requerido: <span className="font-medium">${service.depositAmount.toLocaleString('es-CL')}</span>
                 </div>
               </CardContent>
             </Card>
           </button>
         ))}
+      </div>
+      <div className="mt-8 rounded-2xl border border-border/70 bg-muted/50 p-5 text-base leading-relaxed text-muted-foreground">
+        Todos nuestros servicios incluyen preparación básica y confirmación digital de la reserva.
       </div>
     </div>
   )

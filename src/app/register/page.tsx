@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { signUp } from '@/lib/auth/actions'
+import { CheckCircle2, Lock, Mail, Sparkles, User } from 'lucide-react'
 
 export default function RegisterPage() {
   const [error, setError] = useState('')
@@ -30,67 +31,86 @@ export default function RegisterPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-pink-50 to-white px-4">
-        <Card className="w-full max-w-md">
+      <main className="studio-shell flex items-center justify-center px-4 py-12">
+        <Card className="studio-card w-full max-w-md px-4 py-6 sm:px-8">
           <CardHeader className="text-center">
-            <div className="text-4xl mb-4">✉️</div>
-            <CardTitle className="text-2xl">Verifica tu email</CardTitle>
+            <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-xl bg-secondary text-primary">
+              <CheckCircle2 className="size-6" />
+            </div>
+            <CardTitle className="text-3xl text-primary">Verifica tu email</CardTitle>
             <CardDescription>
               Te enviamos un email de confirmación. Haz clic en el enlace para activar tu cuenta.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-center text-sm text-gray-600">
+            <p className="text-center text-sm text-muted-foreground">
               ¿Ya confirmaste?{' '}
-              <Link href="/login" className="text-pink-600 hover:underline">
+              <Link href="/login" className="font-semibold text-primary hover:underline">
                 Inicia sesión
               </Link>
             </p>
           </CardContent>
         </Card>
-      </div>
+      </main>
     )
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-pink-50 to-white px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="text-4xl mb-4">💅</div>
-          <CardTitle className="text-2xl">Crea tu cuenta</CardTitle>
-          <CardDescription>Empieza a recibir reservas online</CardDescription>
+    <main className="studio-shell flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-[440px]">
+        <div className="mb-10 text-center">
+          <h1 className="text-6xl font-semibold tracking-normal text-primary sm:text-7xl">Agendita</h1>
+          <p className="mt-3 text-xl text-muted-foreground">Tu estudio, ordenado desde el primer día</p>
+        </div>
+      <Card className="studio-card w-full px-4 py-6 sm:px-8">
+        <CardHeader className="px-0 text-left">
+          <div className="mb-2 flex size-11 items-center justify-center rounded-xl bg-secondary text-primary">
+            <Sparkles className="size-5" />
+          </div>
+          <CardTitle className="text-4xl font-semibold tracking-normal text-primary">Crea tu cuenta</CardTitle>
+          <CardDescription className="text-base text-muted-foreground">Empieza a recibir reservas online</CardDescription>
         </CardHeader>
-        <CardContent>
-          <form action={handleSubmit} className="space-y-4">
+        <CardContent className="px-0">
+          <form action={handleSubmit} className="space-y-6">
             {error && (
-              <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg">
+              <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
                 {error}
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="name">Nombre</Label>
-              <Input id="name" name="name" placeholder="Tu nombre" required />
+              <Label className="studio-eyebrow" htmlFor="name">Nombre</Label>
+              <div className="relative">
+                <User className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
+                <Input className="studio-input pl-12" id="name" name="name" placeholder="Tu nombre" required />
+              </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" name="email" type="email" placeholder="hola@tunegocio.cl" required />
+              <Label className="studio-eyebrow" htmlFor="email">Email</Label>
+              <div className="relative">
+                <Mail className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
+                <Input className="studio-input pl-12" id="email" name="email" type="email" placeholder="hola@tunegocio.cl" required />
+              </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Contraseña</Label>
-              <Input id="password" name="password" type="password" placeholder="Mínimo 6 caracteres" required minLength={6} />
+              <Label className="studio-eyebrow" htmlFor="password">Contraseña</Label>
+              <div className="relative">
+                <Lock className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
+                <Input className="studio-input pl-12" id="password" name="password" type="password" placeholder="Mínimo 6 caracteres" required minLength={6} />
+              </div>
             </div>
-            <Button type="submit" className="w-full bg-pink-500 hover:bg-pink-600" disabled={loading}>
+            <Button type="submit" className="h-14 w-full rounded-lg text-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]" disabled={loading}>
               {loading ? 'Creando cuenta...' : 'Crear cuenta'}
             </Button>
           </form>
-          <p className="text-center text-sm text-gray-600 mt-4">
+          <p className="mt-8 text-center text-base text-muted-foreground">
             ¿Ya tienes cuenta?{' '}
-            <Link href="/login" className="text-pink-600 hover:underline">
+            <Link href="/login" className="font-semibold text-primary hover:underline">
               Inicia sesión
             </Link>
           </p>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </main>
   )
 }

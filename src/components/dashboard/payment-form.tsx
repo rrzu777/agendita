@@ -8,8 +8,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { createManualPayment } from '@/server/actions/payments'
 import { createLedgerEntry } from '@/server/actions/ledger'
 import { confirmPayment } from '@/server/actions/bookings'
+import { Plus } from 'lucide-react'
 
-export function PaymentForm({ bookings }: { bookings: any[] }) {
+export function PaymentForm({ bookings, businessId }: { bookings: any[]; businessId: string }) {
   const [open, setOpen] = useState(false)
 
   async function handleSubmit(formData: FormData) {
@@ -22,7 +23,7 @@ export function PaymentForm({ bookings }: { bookings: any[] }) {
     if (!booking) return
 
     const payment = await createManualPayment({
-      businessId: 'mock-business-1',
+      businessId,
       bookingId,
       customerId: booking.customerId,
       amount,
@@ -34,7 +35,7 @@ export function PaymentForm({ bookings }: { bookings: any[] }) {
     await confirmPayment(bookingId, amount)
 
     await createLedgerEntry({
-      businessId: 'mock-business-1',
+      businessId,
       bookingId,
       paymentId: payment.id,
       customerId: booking.customerId,
@@ -56,16 +57,19 @@ export function PaymentForm({ bookings }: { bookings: any[] }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-pink-500 hover:bg-pink-600">Registrar pago</Button>
+        <Button className="h-11 font-semibold">
+          <Plus className="mr-2 size-4" />
+          Registrar pago
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Registrar pago manual</DialogTitle>
+          <DialogTitle className="text-2xl font-semibold tracking-normal text-primary">Registrar pago manual</DialogTitle>
         </DialogHeader>
-        <form action={handleSubmit} className="space-y-4">
-          <div>
-            <Label>Reserva</Label>
-            <select name="bookingId" required className="w-full border rounded-md p-2">
+        <form action={handleSubmit} className="space-y-5">
+          <div className="space-y-2">
+            <Label className="studio-eyebrow">Reserva</Label>
+            <select name="bookingId" required className="min-h-12 w-full rounded-lg border border-border bg-card px-4 text-base focus:border-primary focus:outline-none">
               <option value="">Selecciona una reserva</option>
               {pendingBookings.map((booking) => (
                 <option key={booking.id} value={booking.id}>
@@ -74,23 +78,23 @@ export function PaymentForm({ bookings }: { bookings: any[] }) {
               ))}
             </select>
           </div>
-          <div>
-            <Label>Tipo de pago</Label>
-            <select name="paymentType" required className="w-full border rounded-md p-2">
+          <div className="space-y-2">
+            <Label className="studio-eyebrow">Tipo de pago</Label>
+            <select name="paymentType" required className="min-h-12 w-full rounded-lg border border-border bg-card px-4 text-base focus:border-primary focus:outline-none">
               <option value="deposit">Abono</option>
               <option value="final_payment">Pago final</option>
               <option value="full_payment">Pago total</option>
             </select>
           </div>
-          <div>
-            <Label>Monto (CLP)</Label>
-            <Input name="amount" type="number" required />
+          <div className="space-y-2">
+            <Label className="studio-eyebrow">Monto (CLP)</Label>
+            <Input className="studio-input" name="amount" type="number" required />
           </div>
-          <div>
-            <Label>Método de pago</Label>
-            <Input name="paymentMethod" placeholder="Efectivo, transferencia, etc." required />
+          <div className="space-y-2">
+            <Label className="studio-eyebrow">Método de pago</Label>
+            <Input className="studio-input" name="paymentMethod" placeholder="Efectivo, transferencia, etc." required />
           </div>
-          <Button type="submit" className="w-full bg-pink-500 hover:bg-pink-600">
+          <Button type="submit" className="h-12 w-full font-semibold">
             Registrar pago
           </Button>
         </form>

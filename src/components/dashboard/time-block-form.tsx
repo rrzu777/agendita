@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { createTimeBlock, deleteTimeBlock } from '@/server/actions/time-blocks'
+import { Ban, Plus, Trash2 } from 'lucide-react'
 
 export function TimeBlockForm({ businessId, onSuccess }: { businessId: string; onSuccess?: () => void }) {
   const [open, setOpen] = useState(false)
@@ -31,38 +32,41 @@ export function TimeBlockForm({ businessId, onSuccess }: { businessId: string; o
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline">Bloquear horario</Button>
+        <Button variant="outline" className="h-11 font-semibold">
+          <Plus className="mr-2 size-4" />
+          Bloquear horario
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Bloquear horario</DialogTitle>
+          <DialogTitle className="text-2xl font-semibold tracking-normal text-primary">Bloquear horario</DialogTitle>
         </DialogHeader>
-        <form action={handleSubmit} className="space-y-4">
+        <form action={handleSubmit} className="space-y-5">
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Fecha inicio</Label>
-              <Input name="startDate" type="date" required />
+            <div className="space-y-2">
+              <Label className="studio-eyebrow">Fecha inicio</Label>
+              <Input className="studio-input" name="startDate" type="date" required />
             </div>
-            <div>
-              <Label>Hora inicio</Label>
-              <Input name="startTime" type="time" required />
+            <div className="space-y-2">
+              <Label className="studio-eyebrow">Hora inicio</Label>
+              <Input className="studio-input" name="startTime" type="time" required />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-y-4 gap-x-4">
-            <div>
-              <Label>Fecha fin</Label>
-              <Input name="endDate" type="date" required />
+            <div className="space-y-2">
+              <Label className="studio-eyebrow">Fecha fin</Label>
+              <Input className="studio-input" name="endDate" type="date" required />
             </div>
-            <div>
-              <Label>Hora fin</Label>
-              <Input name="endTime" type="time" required />
+            <div className="space-y-2">
+              <Label className="studio-eyebrow">Hora fin</Label>
+              <Input className="studio-input" name="endTime" type="time" required />
             </div>
           </div>
-          <div>
-            <Label>Motivo (opcional)</Label>
-            <Input name="reason" placeholder="Vacaciones, emergencia, etc." />
+          <div className="space-y-2">
+            <Label className="studio-eyebrow">Motivo (opcional)</Label>
+            <Input className="studio-input" name="reason" placeholder="Vacaciones, emergencia, etc." />
           </div>
-          <Button type="submit" className="w-full bg-pink-500 hover:bg-pink-600">
+          <Button type="submit" className="h-12 w-full font-semibold">
             Bloquear
           </Button>
         </form>
@@ -80,21 +84,26 @@ export function TimeBlockList({ blocks: initialBlocks }: { blocks: any[] }) {
   }
 
   if (blocks.length === 0) {
-    return <p className="text-gray-500">No hay horarios bloqueados</p>
+    return <p className="rounded-xl border border-dashed border-border p-6 text-center text-muted-foreground">No hay horarios bloqueados</p>
   }
 
   return (
     <div className="space-y-2">
       {blocks.map((block) => (
-        <div key={block.id} className="flex justify-between items-center bg-red-50 p-3 rounded-lg border border-red-100">
-          <div>
-            <div className="font-medium">
+        <div key={block.id} className="flex items-center justify-between gap-4 rounded-xl border border-destructive/20 bg-destructive/5 p-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-1 flex size-9 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+              <Ban className="size-4" />
+            </div>
+            <div>
+            <div className="font-semibold text-primary">
               {new Date(block.startDateTime).toLocaleDateString('es-CL')} {new Date(block.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} - {new Date(block.endDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
             </div>
-            {block.reason && <div className="text-sm text-gray-600">{block.reason}</div>}
+            {block.reason && <div className="text-sm text-muted-foreground">{block.reason}</div>}
+            </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => handleDelete(block.id)}>
-            Eliminar
+          <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(block.id)} aria-label="Eliminar bloqueo">
+            <Trash2 className="size-4" />
           </Button>
         </div>
       ))}

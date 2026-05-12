@@ -4,8 +4,8 @@ import { CalendarView } from '@/components/dashboard/calendar-view'
 export default function CalendarPage() {
   return (
     <div>
-      <DashboardHeader title="Calendario" />
-      <div className="p-8 max-w-3xl">
+      <DashboardHeader title="Calendario" subtitle="Vista mensual para revisar disponibilidad y citas." />
+      <div className="max-w-4xl p-5 md:p-10">
         <CalendarView />
       </div>
     </div>

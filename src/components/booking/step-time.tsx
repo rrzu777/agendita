@@ -5,6 +5,7 @@ import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
 import { getAvailableTimeSlots } from '@/server/actions/availability'
+import { Clock3, Loader2 } from 'lucide-react'
 
 interface StepTimeProps {
   businessId: string
@@ -47,14 +48,19 @@ export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) 
   }, [businessId, data.date, data.serviceId])
 
   if (loading) {
-    return <div className="text-center py-8 text-gray-500">Cargando horarios disponibles...</div>
+    return (
+      <div className="flex flex-col items-center justify-center py-14 text-muted-foreground">
+        <Loader2 className="mb-4 size-7 animate-spin text-primary" />
+        Cargando horarios disponibles...
+      </div>
+    )
   }
 
   if (slots.length === 0) {
     return (
       <div>
-        <h2 className="text-2xl font-bold mb-2">No hay horarios disponibles</h2>
-        <p className="text-gray-600 mb-6">
+        <h2 className="mb-2 text-3xl font-semibold tracking-normal text-primary">No hay horarios disponibles</h2>
+        <p className="mb-6 text-muted-foreground">
           {errorMessage || 'No hay horarios disponibles para esta fecha. Por favor, selecciona otra fecha.'}
         </p>
         <Button variant="outline" onClick={onBack}>Atrás</Button>
@@ -64,31 +70,34 @@ export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) 
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-2">Elige una hora</h2>
-      <p className="text-gray-600 mb-6">
+      <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Elige una hora</h2>
+      <p className="mb-8 text-lg text-muted-foreground">
         {data.serviceName} — {data.date?.toLocaleDateString('es-CL')}
       </p>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {slots.map((slot) => (
           <button
             key={slot.start.toISOString()}
             onClick={() => setSelectedSlot(slot)}
             className={`
-              p-3 rounded-lg border text-center transition
+              rounded-xl border p-4 text-center transition
               ${selectedSlot?.start.getTime() === slot.start.getTime()
-                ? 'border-pink-500 bg-pink-50 text-pink-700'
-                : 'border-gray-200 hover:border-pink-300'}
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border bg-card text-primary hover:border-primary hover:bg-accent'}
             `}
           >
-            <div className="font-semibold">{format(slot.start, 'HH:mm')}</div>
+            <div className="flex items-center justify-center gap-2 font-semibold">
+              <Clock3 className="size-4" />
+              {format(slot.start, 'HH:mm')}
+            </div>
           </button>
         ))}
       </div>
 
-      <div className="flex gap-3 mt-6">
+      <div className="mt-8 flex gap-3">
         <Button variant="outline" onClick={onBack}>Atrás</Button>
-        <Button className="flex-1 bg-pink-500 hover:bg-pink-600" disabled={!selectedSlot}
+        <Button className="h-12 flex-1 text-base font-semibold" disabled={!selectedSlot}
           onClick={() => selectedSlot && onSelect(selectedSlot)}>
           Continuar
         </Button>

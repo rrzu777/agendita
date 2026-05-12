@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { getBookings } from '@/server/actions/bookings'
 import { getFinancialSummary } from '@/server/actions/ledger'
+import { CalendarCheck2, CreditCard, ExternalLink, TrendingUp, Users } from 'lucide-react'
 
 export default async function DashboardPage() {
   const userData = await getCurrentUserWithBusiness()
@@ -33,21 +34,26 @@ export default async function DashboardPage() {
 
   // Link público
   const publicUrl = `${process.env.NEXT_PUBLIC_APP_DOMAIN || 'http://localhost:3000'}/b/${business.slug}`
+  const stats = [
+    { label: 'Reservas hoy', value: bookingsToday.length.toString(), hint: '+ hoy', icon: CalendarCheck2 },
+    { label: 'Ingresos mes', value: `$${summary.incomeMonth.toLocaleString('es-CL')}`, hint: 'Este mes', icon: CreditCard },
+    { label: 'Próximas reservas', value: upcomingBookings.length.toString(), hint: 'Agenda', icon: TrendingUp },
+    { label: 'Total reservas', value: bookings.length.toString(), hint: 'Histórico', icon: Users },
+  ]
 
   return (
     <div>
-      <DashboardHeader title="Resumen" />
-      <div className="p-8">
-        {/* Profile Link Card */}
-        <Card className="mb-6 border-pink-200 bg-pink-50/50">
+      <DashboardHeader title={`Hola, ${business.name}`} subtitle="Aquí tienes un resumen del pulso de tu estudio para hoy." />
+      <div className="p-5 md:p-10">
+        <Card className="studio-card mb-8 border-border/60 bg-card">
           <CardContent className="p-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
               <div>
-                <h3 className="font-semibold text-gray-900 mb-1">Tu perfil público</h3>
-                <p className="text-sm text-gray-600">
+                <h3 className="mb-1 text-lg font-semibold text-primary">Tu perfil público</h3>
+                <p className="text-sm text-muted-foreground">
                   Comparte este link con tus clientas para que reserven
                 </p>
-                <code className="mt-2 inline-block bg-white px-3 py-1.5 rounded-lg text-sm text-pink-600 font-mono border border-pink-200">
+                <code className="mt-3 inline-block max-w-full rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm text-primary">
                   {publicUrl}
                 </code>
               </div>
@@ -56,7 +62,8 @@ export default async function DashboardPage() {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <Button className="bg-pink-500 hover:bg-pink-600">
+                <Button className="h-11 rounded-lg font-semibold">
+                  <ExternalLink className="mr-2 size-4" />
                   Ver perfil
                 </Button>
               </a>
@@ -65,88 +72,64 @@ export default async function DashboardPage() {
         </Card>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Reservas hoy</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{bookingsToday.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Ingresos mes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">${summary.incomeMonth.toLocaleString('es-CL')}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Próximas reservas</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{upcomingBookings.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Total reservas</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{bookings.length}</div>
-            </CardContent>
-          </Card>
+          {stats.map((stat) => {
+            const Icon = stat.icon
+            return (
+              <Card key={stat.label} className="studio-card border-border/60">
+                <CardHeader className="pb-1">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex size-12 items-center justify-center rounded-xl bg-secondary text-primary">
+                      <Icon className="size-5" />
+                    </div>
+                    <span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">{stat.hint}</span>
+                  </div>
+                  <CardTitle className="text-sm font-semibold text-muted-foreground">{stat.label}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-4xl font-semibold tracking-normal text-primary">{stat.value}</div>
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
 
-        <div className="mt-8">
-          <h2 className="text-lg font-semibold mb-4">Próximas reservas</h2>
+        <section className="mt-10">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-2xl font-semibold tracking-normal text-primary">Próximas citas</h2>
+            <a href="/dashboard/calendar" className="text-sm font-semibold text-muted-foreground hover:text-primary">
+              Ver calendario completo
+            </a>
+          </div>
           {upcomingBookings.length === 0 ? (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center text-gray-500">
-              <p className="mb-2">No tienes reservas próximas</p>
-              <p className="text-sm">
-                Comparte tu link <code className="text-pink-600">{publicUrl}</code> para empezar a recibir reservas
+            <div className="studio-card p-8 text-center text-muted-foreground">
+              <p className="mb-2 font-semibold text-primary">No tienes reservas próximas</p>
+              <p className="text-sm leading-relaxed">
+                Comparte tu link <code className="text-primary">{publicUrl}</code> para empezar a recibir reservas
               </p>
             </div>
           ) : (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-500">Servicio</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-500">Fecha</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-500">Cliente</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-500">Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {upcomingBookings.slice(0, 5).map((booking) => (
-                    <tr key={booking.id} className="border-t">
-                      <td className="px-4 py-3">{booking.service?.name || '—'}</td>
-                      <td className="px-4 py-3">
-                        {new Date(booking.startDateTime).toLocaleDateString('es-CL')}
-                        {' '}
+            <div className="space-y-4">
+              {upcomingBookings.slice(0, 5).map((booking) => (
+                <article key={booking.id} className="studio-card flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
+                  <div className="flex items-center gap-5">
+                    <div className="flex size-16 flex-col items-center justify-center rounded-xl bg-accent text-primary">
+                      <span className="text-xl font-semibold">
                         {new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td className="px-4 py-3">{booking.customer?.name || '—'}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
-                          booking.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                          booking.status === 'pending_payment' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {booking.status === 'confirmed' ? 'Confirmada' :
-                           booking.status === 'pending_payment' ? 'Pendiente' :
-                           booking.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </span>
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-semibold text-primary">{booking.customer?.name || 'Cliente'}</h3>
+                      <p className="text-sm font-semibold uppercase tracking-[0.1em] text-muted-foreground">{booking.service?.name || 'Servicio'}</p>
+                    </div>
+                  </div>
+                  <span className="self-start rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground md:self-auto">
+                    {booking.status === 'confirmed' ? 'Confirmada' : booking.status === 'pending_payment' ? 'Pendiente' : booking.status}
+                  </span>
+                </article>
+              ))}
             </div>
           )}
-        </div>
+        </section>
       </div>
     </div>
   )

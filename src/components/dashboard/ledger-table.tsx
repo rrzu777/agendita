@@ -10,7 +10,7 @@ const directionLabels: Record<string, string> = {
 const directionColors: Record<string, string> = {
   income: 'bg-green-100 text-green-800',
   expense: 'bg-red-100 text-red-800',
-  neutral: 'bg-gray-100 text-gray-800',
+  neutral: 'bg-muted text-muted-foreground',
 }
 
 const typeLabels: Record<string, string> = {
@@ -28,10 +28,10 @@ const typeLabels: Record<string, string> = {
 
 export function LedgerTable({ entries }: { entries: any[] }) {
   return (
-    <div className="bg-white rounded-lg shadow-sm border">
+    <div className="studio-card overflow-hidden">
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow className="bg-muted/50">
             <TableHead>Fecha</TableHead>
             <TableHead>Tipo</TableHead>
             <TableHead>Dirección</TableHead>
@@ -42,7 +42,7 @@ export function LedgerTable({ entries }: { entries: any[] }) {
         <TableBody>
           {entries.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-gray-500 py-8">
+              <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
                 No hay movimientos registrados
               </TableCell>
             </TableRow>
@@ -56,10 +56,10 @@ export function LedgerTable({ entries }: { entries: any[] }) {
                     {directionLabels[entry.direction]}
                   </Badge>
                 </TableCell>
-                <TableCell className={`font-medium ${entry.direction === 'income' ? 'text-green-600' : entry.direction === 'expense' ? 'text-red-600' : ''}`}>
+                <TableCell className={`font-semibold ${entry.direction === 'income' ? 'text-green-700' : entry.direction === 'expense' ? 'text-destructive' : 'text-primary'}`}>
                   {entry.direction === 'expense' ? '-' : ''}${entry.amount.toLocaleString('es-CL')}
                 </TableCell>
-                <TableCell className="text-gray-600">{entry.description || '—'}</TableCell>
+                <TableCell className="text-muted-foreground">{entry.description || '—'}</TableCell>
               </TableRow>
             ))
           )}

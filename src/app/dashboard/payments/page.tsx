@@ -5,7 +5,6 @@ import { LedgerTable } from '@/components/dashboard/ledger-table'
 import { PaymentForm } from '@/components/dashboard/payment-form'
 import { getFinancialSummary, getLedgerEntries } from '@/server/actions/ledger'
 import { getBookings } from '@/server/actions/bookings'
-import { exportLedgerToCSV } from '@/lib/finance/csv-export'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 
 export default async function PaymentsPage() {
@@ -19,18 +18,19 @@ export default async function PaymentsPage() {
   const entries = await getLedgerEntries(userData.business.id)
   const bookings = await getBookings(userData.business.id)
 
-  const csvData = exportLedgerToCSV(entries)
-
   return (
     <div>
-      <DashboardHeader title="Pagos y finanzas" />
-      <div className="p-8 space-y-8">
+      <DashboardHeader title="Pagos y finanzas" subtitle="Controla abonos, pagos finales y movimientos manuales." />
+      <div className="space-y-8 p-5 md:p-10">
         <FinanceStats summary={summary} />
         
-        <div className="flex justify-between items-center">
-          <h2 className="text-xl font-semibold">Historial de movimientos</h2>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold tracking-normal text-primary">Historial de movimientos</h2>
+            <p className="text-sm text-muted-foreground">Últimos ingresos, ajustes y pagos registrados.</p>
+          </div>
           <div className="flex gap-3">
-            <PaymentForm bookings={bookings} />
+            <PaymentForm bookings={bookings} businessId={userData.business.id} />
           </div>
         </div>
         
