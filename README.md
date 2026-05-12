@@ -42,3 +42,4 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 - Features: Dashboard, Public Profile, Booking Wizard, Finances
 - Status: MVP ready for beta testing
 # Deployment trigger
+trigger deploy Mon May 11 22:57:05 -04 2026
