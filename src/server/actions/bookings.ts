@@ -66,7 +66,7 @@ export async function createBooking(data: {
   // Validar que el negocio exista y esté activo
   const business = await prisma.business.findUnique({
     where: { id: businessId, isActive: true },
-    select: { id: true },
+    select: { id: true, timezone: true },
   })
   if (!business) {
     throw new Error('Negocio no válido')
@@ -94,6 +94,7 @@ export async function createBooking(data: {
       serviceId: data.serviceId,
       startDateTime: data.startDateTime,
       endDateTime,
+      timezone: business.timezone || 'America/Santiago',
     })
 
     // Buscar o crear cliente dentro de la transacción
