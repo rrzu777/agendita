@@ -1,0 +1,41 @@
+import { describe, it, expect } from 'vitest'
+import { generateSlots } from '@/lib/availability/slots'
+import { assertSlotIsAvailable } from '@/lib/availability/validation'
+import { vi } from 'vitest'
+
+/**
+ * Test de roundtrip: generateSlots produce slots para un timezone del negocio,
+ * y assertSlotIsAvailable debe aceptar esos mismos slots.
+ * Este test debe pasar aunque el proceso corra con TZ=UTC.
+ */
+describe('timezone roundtrip', () => {
+  const timezone = 'America/Santiago'
+
+  it('generateSlots -> assertSlotIsAvailable for 09:00 slot', async () => {
+    // 2026-05-20T04:00:00Z = 00:00 miércoles en Santiago
+    const date = new Date('2026-05-20T04:00:00Z')
+
+    const rules = [{ dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }]
+    const slots = generateSlots(date, 60, rules, [], [], { timezone })
+
+    expect(slots.length).toBeGreaterThan(0)
+    const firstSlot = slots[0]
+
+    // assertSlotIsAvailable debe aceptar el slot generado
+    const tx = {
+      service: { findFirst: vi.fn().mockResolvedValue({ durationMinutes: 60 }) },
+      availabilityRule: { findFirst: vi.fn().mockResolvedValue({ dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }) },
+      timeBlock: { findFirst: vi.fn().mockResolvedValue(null) },
+      $queryRaw: vi.fn().mockResolvedValue([]),
+    } as unknown as Parameters<typeof assertSlotIsAvailable>[0]['tx']
+
+    await assertSlotIsAvailable({
+      tx,
+      businessId: 'biz-1',
+      serviceId: 'svc-1',
+      startDateTime: firstSlot.start,
+      endDateTime: firstSlot.end,
+      timezone,
+    })
+  })
+})

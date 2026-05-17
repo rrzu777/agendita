@@ -1,5 +1,6 @@
-import { addMinutes, differenceInMinutes, startOfDay } from 'date-fns'
-import { toBusinessLocalDate } from './timezone'
+import { addMinutes, differenceInMinutes } from 'date-fns'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { getLocalDayOfWeek } from './timezone'
 import type { PrismaClient, Prisma } from '@prisma/client'
 
 export interface AssertSlotInput {
@@ -48,27 +49,23 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }
 
-  // Usar timezone del negocio para calcular día y rango horario, consistente con generateSlots
-  const localStart = toBusinessLocalDate(startDateTime, timezone)
-  const dayOfWeek = localStart.getDay()
+  // Usar timezone del negocio para calcular día y rango horario
+  const localStartStr = formatInTimeZone(startDateTime, timezone, 'yyyy-MM-dd')
+  const localDayOfWeek = getLocalDayOfWeek(startDateTime, timezone)
+
   const rule = await tx.availabilityRule.findFirst({
-    where: { businessId, dayOfWeek, isActive: true },
+    where: { businessId, dayOfWeek: localDayOfWeek, isActive: true },
     select: { startTime: true, endTime: true },
   })
   if (!rule) {
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }
 
-  const localEnd = toBusinessLocalDate(endDateTime, timezone)
-  const dayStart = startOfDay(localStart)
-  const [startHour, startMin] = rule.startTime.split(':').map(Number)
-  const [endHour, endMin] = rule.endTime.split(':').map(Number)
-  const ruleStart = new Date(dayStart)
-  ruleStart.setHours(startHour, startMin, 0, 0)
-  const ruleEnd = new Date(dayStart)
-  ruleEnd.setHours(endHour, endMin, 0, 0)
+  // Construir timestamps UTC reales para inicio y fin de regla
+  const ruleStart = fromZonedTime(`${localStartStr} ${rule.startTime}`, timezone)
+  const ruleEnd = fromZonedTime(`${localStartStr} ${rule.endTime}`, timezone)
 
-  if (localStart < ruleStart || localEnd > ruleEnd) {
+  if (startDateTime < ruleStart || endDateTime > ruleEnd) {
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }
 
@@ -87,11 +84,7 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
   // Advisory lock por businessId + día local del negocio.
   // Esto serializa todas las creaciones de reserva para un negocio en un día,
   // evitando doble-booking concurrente incluso entre slots con distinto startDateTime.
-  const year = localStart.getFullYear()
-  const month = String(localStart.getMonth() + 1).padStart(2, '0')
-  const day = String(localStart.getDate()).padStart(2, '0')
-  const dateKey = `${year}-${month}-${day}`
-  const lockKey = `${businessId}:${dateKey}`
+  const lockKey = `${businessId}:${localStartStr}`
   const hash = hashStringToInt(lockKey)
   await tx.$queryRaw`SELECT pg_advisory_xact_lock(${hash})`
 

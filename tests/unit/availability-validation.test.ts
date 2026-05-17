@@ -5,12 +5,12 @@ import { BookingStatus } from '@prisma/client'
 describe('assertSlotIsAvailable', () => {
   const businessId = 'biz-1'
   const serviceId = 'svc-1'
-  // Todas las fechas están en UTC explícito (Z) para determinismo
-  // sin importar el timezone del servidor de test.
+  // Todas las fechas están en UTC explícito (Z)
   // El negocio opera en America/Santiago (UTC-4 en mayo).
   const timezone = 'America/Santiago'
-  const start = new Date('2026-05-20T14:00:00Z') // 10:00 Santiago
-  const end = new Date('2026-05-20T15:00:00Z')   // 11:00 Santiago
+  // 2026-05-20 14:00Z = 10:00 Santiago (Wednesday)
+  const start = new Date('2026-05-20T14:00:00Z')
+  const end = new Date('2026-05-20T15:00:00Z')
 
   function makeTx(mocks: Record<string, unknown> = {}) {
     return {
@@ -55,8 +55,8 @@ describe('assertSlotIsAvailable', () => {
   })
 
   it('rejects when slot is outside rule hours', async () => {
-    const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
     // 18:00-19:00 Santiago = 22:00-23:00 UTC
+    const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
     const lateStart = new Date('2026-05-20T22:00:00Z')
     const lateEnd = new Date('2026-05-20T23:00:00Z')
     const tx = makeTx({ service: { durationMinutes: 60 }, rule })

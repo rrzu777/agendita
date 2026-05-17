@@ -1,26 +1,27 @@
-/**
- * Convierte una fecha UTC a un "local-equivalent" Date
- * cuyos componentes (año, mes, día, hora, minuto, segundo)
- * reflejan la hora local en el timezone del negocio.
- *
- * Esto permite usar date-fns sobre fechas que conceptualmente
- * viven en otro timezone sin agregar dependencias.
- */
-export function toBusinessLocalDate(date: Date, timezone: string): Date {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
-    hour12: false,
-  })
-  const parts = formatter.formatToParts(date)
-  const get = (type: string) =>
-    parseInt(parts.find((p) => p.type === type)?.value || '0', 10)
+import { formatInTimeZone, toZonedTime } from 'date-fns-tz'
+import { getISODay } from 'date-fns'
 
-  // month is 1-based in Intl, 0-based in Date constructor
-  return new Date(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'))
+/**
+ * Obtiene la fecha local (como string yyyy-MM-dd) de un instante UTC
+ * en el timezone del negocio.
+ */
+export function getLocalDateStr(date: Date, timezone: string): string {
+  return formatInTimeZone(date, timezone, 'yyyy-MM-dd')
+}
+
+/**
+ * Obtiene el día de la semana local (0=domingo...6=sábado) de un instante UTC
+ * en el timezone del negocio.
+ */
+export function getLocalDayOfWeek(date: Date, timezone: string): number {
+  const zoned = toZonedTime(date, timezone)
+  return getISODay(zoned) % 7
+}
+
+/**
+ * Obtiene la hora local (como string HH:mm) de un instante UTC
+ * en el timezone del negocio.
+ */
+export function getLocalTimeStr(date: Date, timezone: string): string {
+  return formatInTimeZone(date, timezone, 'HH:mm')
 }

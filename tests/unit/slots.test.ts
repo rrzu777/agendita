@@ -2,73 +2,79 @@ import { describe, it, expect } from 'vitest'
 import { generateSlots } from '@/lib/availability/slots'
 
 describe('generateSlots', () => {
-  const baseDate = new Date('2026-05-11T00:00:00') // Monday UTC
+  const timezone = 'America/Santiago'
+  // 2026-05-11T04:00:00Z = 00:00 lunes en Santiago
+  const baseDate = new Date('2026-05-11T04:00:00Z')
 
   const rules = [
     { dayOfWeek: 1, startTime: '09:00', endTime: '18:00', isActive: true },
   ]
 
   it('generates slots for a normal day', () => {
-    const slots = generateSlots(baseDate, 60, rules, [], [], { timezone: 'UTC' })
+    const slots = generateSlots(baseDate, 60, rules, [], [], { timezone })
     expect(slots.length).toBeGreaterThan(0)
-    expect(slots[0].start.getHours()).toBe(9)
+    // 09:00 Santiago = 13:00 UTC
+    expect(slots[0].start.toISOString()).toBe('2026-05-11T13:00:00.000Z')
   })
 
   it('respects availability rules', () => {
-    const slots = generateSlots(baseDate, 60, rules, [], [], { timezone: 'UTC' })
+    const slots = generateSlots(baseDate, 60, rules, [], [], { timezone })
     const lastSlot = slots[slots.length - 1]
-    expect(lastSlot.end.getHours()).toBeLessThanOrEqual(18)
+    // 17:00-18:00 Santiago = 21:00-22:00 UTC
+    expect(lastSlot.end.toISOString()).toBe('2026-05-11T22:00:00.000Z')
   })
 
   it('excludes blocked time', () => {
     const blocks = [
       {
-        startDateTime: new Date('2026-05-11T12:00:00'),
-        endDateTime: new Date('2026-05-11T13:00:00'),
+        // 12:00-13:00 Santiago = 16:00-17:00 UTC
+        startDateTime: new Date('2026-05-11T16:00:00Z'),
+        endDateTime: new Date('2026-05-11T17:00:00Z'),
       },
     ]
-    const slots = generateSlots(baseDate, 60, rules, blocks, [], { timezone: 'UTC' })
-    const hasSlotAt12 = slots.some((s) => s.start.getHours() === 12)
+    const slots = generateSlots(baseDate, 60, rules, blocks, [], { timezone })
+    const hasSlotAt12 = slots.some((s) => s.start.toISOString() === '2026-05-11T16:00:00.000Z')
     expect(hasSlotAt12).toBe(false)
   })
 
   it('excludes existing bookings', () => {
     const bookings = [
       {
-        startDateTime: new Date('2026-05-11T10:00:00'),
-        endDateTime: new Date('2026-05-11T11:00:00'),
+        // 10:00-11:00 Santiago = 14:00-15:00 UTC
+        startDateTime: new Date('2026-05-11T14:00:00Z'),
+        endDateTime: new Date('2026-05-11T15:00:00Z'),
         status: 'confirmed',
       },
     ]
-    const slots = generateSlots(baseDate, 60, rules, [], bookings, { timezone: 'UTC' })
-    const hasSlotAt10 = slots.some((s) => s.start.getHours() === 10)
+    const slots = generateSlots(baseDate, 60, rules, [], bookings, { timezone })
+    const hasSlotAt10 = slots.some((s) => s.start.toISOString() === '2026-05-11T14:00:00.000Z')
     expect(hasSlotAt10).toBe(false)
   })
 
   it('allows cancelled bookings to be rebooked', () => {
     const bookings = [
       {
-        startDateTime: new Date('2026-05-11T10:00:00'),
-        endDateTime: new Date('2026-05-11T11:00:00'),
+        startDateTime: new Date('2026-05-11T14:00:00Z'),
+        endDateTime: new Date('2026-05-11T15:00:00Z'),
         status: 'cancelled',
       },
     ]
-    const slots = generateSlots(baseDate, 60, rules, [], bookings, { timezone: 'UTC' })
-    const hasSlotAt10 = slots.some((s) => s.start.getHours() === 10)
+    const slots = generateSlots(baseDate, 60, rules, [], bookings, { timezone })
+    const hasSlotAt10 = slots.some((s) => s.start.toISOString() === '2026-05-11T14:00:00.000Z')
     expect(hasSlotAt10).toBe(true)
   })
 
   it('filters past slots when date is today', () => {
-    // Fechas fijas con Z para determinismo con timezone UTC
-    const today = new Date('2026-05-20T00:00:00Z')
-    const now = new Date('2026-05-20T14:00:00Z')
+    // 2026-05-20T04:00:00Z = 00:00 miércoles en Santiago
+    const today = new Date('2026-05-20T04:00:00Z')
+    const now = new Date('2026-05-20T18:00:00Z') // 14:00 Santiago
 
     const localRules = [
       { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true },
     ]
 
-    const slots = generateSlots(today, 60, localRules, [], [], { timezone: 'UTC', now })
-    const hasMorningSlot = slots.some((s) => s.start.getHours() < 14)
+    const slots = generateSlots(today, 60, localRules, [], [], { timezone, now })
+    const hasMorningSlot = slots.some((s) => s.start.toISOString() < '2026-05-20T18:00:00.000Z')
     expect(hasMorningSlot).toBe(false)
     expect(slots.length).toBeGreaterThan(0)
   })
@@ -81,14 +87,13 @@ describe('generateSlots', () => {
     ]
     const slots = generateSlots(utcSundayLate, 60, santiagoRules, [], [], { timezone: 'America/Santiago' })
     expect(slots.length).toBeGreaterThan(0)
-    expect(slots[0].start.getHours()).toBe(9)
+    expect(slots[0].start.toISOString()).toBe('2026-05-10T13:00:00.000Z') // 09:00 Santiago
   })
 
   it('uses step increment equal to durationMinutes', () => {
-    const slots = generateSlots(baseDate, 90, rules, [], [], { timezone: 'UTC' })
+    const slots = generateSlots(baseDate, 90, rules, [], [], { timezone })
     expect(slots.length).toBe(6) // 09:00 to 16:30 = 6 slots of 90min
-    expect(slots[0].start.getHours()).toBe(9)
-    expect(slots[1].start.getHours()).toBe(10)
-    expect(slots[1].start.getMinutes()).toBe(30)
+    expect(slots[0].start.toISOString()).toBe('2026-05-11T13:00:00.000Z')
+    expect(slots[1].start.toISOString()).toBe('2026-05-11T14:30:00.000Z')
   })
 })

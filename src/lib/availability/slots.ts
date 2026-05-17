@@ -1,5 +1,6 @@
-import { addMinutes, startOfDay, isSameDay } from 'date-fns'
-import { toBusinessLocalDate } from './timezone'
+import { addMinutes } from 'date-fns'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { getLocalDayOfWeek } from './timezone'
 
 export interface TimeSlot {
   start: Date
@@ -35,6 +36,9 @@ export interface GenerateSlotsOptions {
  * El step increment entre slots es igual a `durationMinutes`.
  * Esto significa que para un servicio de 60 min, los slots son
  * 09:00, 10:00, 11:00, etc. Para 90 min: 09:00, 10:30, 12:00.
+ *
+ * Devuelve instantes Date UTC reales. Por ejemplo, para negocio
+ * America/Santiago con regla 09:00, el primer slot será 13:00Z.
  */
 export function generateSlots(
   date: Date,
@@ -46,25 +50,20 @@ export function generateSlots(
 ): TimeSlot[] {
   const { timezone = 'America/Santiago', now = new Date() } = options
 
-  const localDate = toBusinessLocalDate(date, timezone)
-  const localNow = toBusinessLocalDate(now, timezone)
-  const dayOfWeek = localDate.getDay()
+  const localDateStr = formatInTimeZone(date, timezone, 'yyyy-MM-dd')
+  const localDayOfWeek = getLocalDayOfWeek(date, timezone)
 
-  const rule = rules.find((r) => r.dayOfWeek === dayOfWeek && r.isActive)
+  const rule = rules.find((r) => r.dayOfWeek === localDayOfWeek && r.isActive)
   if (!rule) return []
 
-  const dayStart = startOfDay(localDate)
-  const [startHour, startMin] = rule.startTime.split(':').map(Number)
-  const [endHour, endMin] = rule.endTime.split(':').map(Number)
+  // Construir timestamps UTC reales para inicio y fin de disponibilidad
+  const availabilityStart = fromZonedTime(`${localDateStr} ${rule.startTime}`, timezone)
+  const availabilityEnd = fromZonedTime(`${localDateStr} ${rule.endTime}`, timezone)
 
-  const availabilityStart = new Date(dayStart)
-  availabilityStart.setHours(startHour, startMin, 0, 0)
-
-  const availabilityEnd = new Date(dayStart)
-  availabilityEnd.setHours(endHour, endMin, 0, 0)
-
-  const isToday = isSameDay(localDate, localNow)
-  const cutoff = isToday ? addMinutes(localNow, 1) : undefined
+  // Filtrar horarios pasados para el día actual en timezone del negocio
+  const nowLocalStr = formatInTimeZone(now, timezone, 'yyyy-MM-dd')
+  const isToday = localDateStr === nowLocalStr
+  const cutoff = isToday ? addMinutes(now, 1) : undefined
 
   const slots: TimeSlot[] = []
   let current = availabilityStart
