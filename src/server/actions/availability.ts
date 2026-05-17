@@ -5,8 +5,8 @@ import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
-import { endOfDay, startOfDay } from 'date-fns'
 import { generateSlots } from '@/lib/availability/slots'
+import { getBusinessDayRange } from '@/lib/availability/timezone'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 
 const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
@@ -39,8 +39,8 @@ export async function getAvailableTimeSlots(businessId: string, serviceId: strin
     throw new Error('Negocio no válido')
   }
 
-  const dayStart = startOfDay(date)
-  const dayEnd = endOfDay(date)
+  const timezone = business.timezone || 'America/Santiago'
+  const { dayStart, dayEnd } = getBusinessDayRange(date, timezone)
 
   const [service, availabilityRules, timeBlocks, bookings] = await Promise.all([
     prisma.service.findFirst({
@@ -75,7 +75,7 @@ export async function getAvailableTimeSlots(businessId: string, serviceId: strin
   }
 
   return generateSlots(date, service.durationMinutes, availabilityRules, timeBlocks, bookings, {
-    timezone: business.timezone || 'America/Santiago',
+    timezone,
     now: new Date(),
   })
 }
