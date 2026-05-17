@@ -29,8 +29,12 @@ export async function proxy(request: NextRequest) {
 
   // Extract subdomain from hostname for tenant resolution
   const rawHostname = request.headers.get('host') || request.nextUrl.hostname
-  const hostname = rawHostname.split(':')[0]
-  const appDomain = (process.env.APP_DOMAIN || 'localhost').split(':')[0]
+  const hostname = rawHostname.split(':')[0].toLowerCase()
+  const appDomain = (process.env.APP_DOMAIN || 'localhost')
+    .replace(/^https?:\/\//, '')
+    .replace(/\/$/, '')
+    .split(':')[0]
+    .toLowerCase()
 
   let subdomain: string | null = null
   if (hostname !== appDomain && hostname !== 'localhost') {
@@ -39,14 +43,23 @@ export async function proxy(request: NextRequest) {
       if (subdomain === 'www') {
         subdomain = null
       }
+    } else if (hostname.endsWith('.localhost')) {
+      subdomain = hostname.replace('.localhost', '')
+      if (subdomain === 'www') {
+        subdomain = null
+      }
+    } else if (!hostname.endsWith('.vercel.app')) {
+      const labels = hostname.split('.')
+      subdomain = labels.length >= 3 ? labels[0] : null
+      if (subdomain === 'www') {
+        subdomain = null
+      }
     }
   }
 
-  if (!subdomain && hostname.includes('mimosnails')) {
-    subdomain = 'mimosnails'
-  }
-
   const requestHeaders = new Headers(request.headers)
+  requestHeaders.delete('x-business-subdomain')
+
   if (subdomain) {
     requestHeaders.set('x-business-subdomain', subdomain)
   }

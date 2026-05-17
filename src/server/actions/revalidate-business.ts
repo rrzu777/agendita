@@ -11,6 +11,8 @@ export async function revalidateBusinessPublicPaths(businessId: string) {
 
   revalidateTag('public-business', 'max')
   revalidateTag('booking-business', 'max')
+  revalidatePath('/')
+  revalidatePath('/book')
   revalidatePath(`/b/${business.slug}`)
   revalidatePath(`/book/${business.slug}`)
 }

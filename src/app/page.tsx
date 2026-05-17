@@ -1,5 +1,6 @@
-import { headers } from 'next/headers'
 import { BusinessProfile } from '@/components/public/business-profile'
+import { getPublicBusinessBySubdomain } from '@/lib/business/public'
+import { getTenantFromRequest } from '@/lib/tenant/resolver'
 
 function LandingPage() {
   return (
@@ -29,11 +30,15 @@ function LandingPage() {
 }
 
 export default async function HomePage() {
-  const subdomain = (await headers()).get('x-business-subdomain')
-  
-  if (subdomain) {
-    return <BusinessProfile />
+  const tenant = await getTenantFromRequest()
+
+  if (tenant) {
+    const business = await getPublicBusinessBySubdomain(tenant.subdomain)
+
+    if (business) {
+      return <BusinessProfile business={business} bookingHref="/book" />
+    }
   }
-  
+
   return <LandingPage />
 }

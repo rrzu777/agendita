@@ -2,8 +2,9 @@
 
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import { PaymentProvider, PaymentType } from '@prisma/client'
+import { PaymentProvider, PaymentStatus, PaymentType } from '@prisma/client'
 import { getDefaultProvider } from '@/lib/payments/factory'
+import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 
@@ -35,34 +36,47 @@ export async function initiatePayment(data: {
     throw new Error('Datos de pago inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
+  const booking = await prisma.booking.findUnique({
+    where: { id: data.bookingId },
+    select: {
+      customerId: true,
+      businessId: true,
+      business: {
+        select: {
+          slug: true,
+          subdomain: true,
+        },
+      },
+    },
+  })
+
+  if (!booking) {
+    throw new Error('Booking not found')
+  }
+
   const provider = getDefaultProvider()
+  const baseUrl = getBusinessPublicUrl(booking.business)
   const result = await provider.createPayment({
     amount: data.amount,
     currency: data.currency,
     bookingId: data.bookingId,
     description: data.description,
-    returnUrl: `${process.env.NEXT_PUBLIC_APP_DOMAIN || 'http://localhost:3000'}/book/confirmation`,
-    webhookUrl: `${process.env.NEXT_PUBLIC_APP_DOMAIN || 'http://localhost:3000'}/api/webhooks/${provider.name}`,
+    returnUrl: `${baseUrl}/book/confirmation?bookingId=${data.bookingId}`,
+    webhookUrl: `${baseUrl}/api/webhooks/${provider.name}`,
   })
 
-  // Obtener customerId de la booking
-  const booking = await prisma.booking.findUnique({
-    where: { id: data.bookingId },
-    select: { customerId: true, businessId: true },
-  })
-
-  const payment = await prisma.payment.create({
+  await prisma.payment.create({
     data: {
       id: result.paymentId,
-      businessId: booking?.businessId || 'mock-business-1',
+      businessId: booking.businessId,
       bookingId: data.bookingId,
-      customerId: booking?.customerId || '',
+      customerId: booking.customerId,
       provider: provider.name as PaymentProvider,
       providerPaymentId: result.providerPaymentId,
       amount: data.amount,
       currency: data.currency,
-      status: result.status as any,
-      paymentType: 'deposit',
+      status: result.status as PaymentStatus,
+      paymentType: PaymentType.deposit,
     },
   })
 

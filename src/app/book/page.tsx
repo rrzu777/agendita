@@ -1,7 +1,22 @@
+import { headers } from 'next/headers'
 import Link from 'next/link'
 import { prisma } from '@/lib/db'
+import { BookingBusinessPage } from '@/components/booking/booking-business-page'
+import { getBookingBusinessBySubdomain } from '@/lib/business/public'
+import { getTenantFromRequest } from '@/lib/tenant/resolver'
 
 export default async function BookIndexPage() {
+  const requestHeaders = await headers()
+  const tenant = await getTenantFromRequest(requestHeaders)
+
+  if (tenant) {
+    const business = await getBookingBusinessBySubdomain(tenant.subdomain)
+
+    if (business) {
+      return <BookingBusinessPage business={business} profileHref="/" />
+    }
+  }
+
   const businesses = await prisma.business.findMany({
     where: { isActive: true },
     select: { id: true, name: true, slug: true },

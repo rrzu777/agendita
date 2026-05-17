@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { getBookings } from '@/server/actions/bookings'
 import { getFinancialSummary } from '@/server/actions/ledger'
+import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { CalendarCheck2, CreditCard, ExternalLink, TrendingUp, Users } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -32,8 +33,8 @@ export default async function DashboardPage() {
     b.status !== 'no_show'
   )
 
-  // Link público
-  const publicUrl = `${process.env.NEXT_PUBLIC_APP_DOMAIN || 'http://localhost:3000'}/b/${business.slug}`
+  const publicUrl = getBusinessPublicUrl(business)
+  const bookingUrl = getBusinessPublicUrl(business, '/book')
   const stats = [
     { label: 'Reservas hoy', value: bookingsToday.length.toString(), hint: '+ hoy', icon: CalendarCheck2 },
     { label: 'Ingresos mes', value: `$${summary.incomeMonth.toLocaleString('es-CL')}`, hint: 'Este mes', icon: CreditCard },
@@ -57,16 +58,28 @@ export default async function DashboardPage() {
                   {publicUrl}
                 </code>
               </div>
-              <a
-                href={publicUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <Button className="h-11 rounded-lg font-semibold">
-                  <ExternalLink className="mr-2 size-4" />
-                  Ver perfil
-                </Button>
-              </a>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <a
+                  href={publicUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button variant="outline" className="h-11 rounded-lg font-semibold">
+                    <ExternalLink className="mr-2 size-4" />
+                    Ver perfil
+                  </Button>
+                </a>
+                <a
+                  href={bookingUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button className="h-11 rounded-lg font-semibold">
+                    <CalendarCheck2 className="mr-2 size-4" />
+                    Reservar
+                  </Button>
+                </a>
+              </div>
             </div>
           </CardContent>
         </Card>
