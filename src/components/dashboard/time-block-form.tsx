@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { createTimeBlock, deleteTimeBlock } from '@/server/actions/time-blocks'
 import { Ban, Plus, Trash2 } from 'lucide-react'
 
-export function TimeBlockForm({ businessId, onSuccess }: { businessId: string; onSuccess?: () => void }) {
+export function TimeBlockForm({ onSuccess }: { onSuccess?: () => void }) {
   const [open, setOpen] = useState(false)
 
   async function handleSubmit(formData: FormData) {
@@ -19,7 +19,6 @@ export function TimeBlockForm({ businessId, onSuccess }: { businessId: string; o
     const reason = formData.get('reason') as string
 
     await createTimeBlock({
-      businessId,
       startDateTime: new Date(`${startDate}T${startTime}`),
       endDateTime: new Date(`${endDate}T${endTime}`),
       reason: reason || null,

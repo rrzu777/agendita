@@ -27,10 +27,10 @@ export async function getCurrentUserWithBusiness() {
   const user = await getCurrentUser()
   if (!user) return null
 
-  // Buscar el business asociado al usuario
   const businessUser = await prisma.businessUser.findFirst({
     where: { userId: user.id },
     include: { business: true },
+    orderBy: { createdAt: 'desc' },
   })
 
   return {

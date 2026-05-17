@@ -14,9 +14,9 @@ export default async function PaymentsPage() {
     redirect('/login')
   }
 
-  const summary = await getFinancialSummary(userData.business.id)
-  const entries = await getLedgerEntries(userData.business.id)
-  const bookings = await getBookings(userData.business.id)
+  const summary = await getFinancialSummary()
+  const entries = await getLedgerEntries()
+  const bookings = await getBookings()
 
   return (
     <div>
@@ -30,7 +30,7 @@ export default async function PaymentsPage() {
             <p className="text-sm text-muted-foreground">Últimos ingresos, ajustes y pagos registrados.</p>
           </div>
           <div className="flex gap-3">
-            <PaymentForm bookings={bookings} businessId={userData.business.id} />
+            <PaymentForm bookings={bookings} />
           </div>
         </div>
         

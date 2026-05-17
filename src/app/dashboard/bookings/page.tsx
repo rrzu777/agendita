@@ -31,7 +31,7 @@ export default async function BookingsPage() {
     redirect('/login')
   }
 
-  const bookings = await getBookings(userData.business.id)
+  const bookings = await getBookings()
 
   return (
     <div>

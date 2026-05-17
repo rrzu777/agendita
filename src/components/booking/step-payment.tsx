@@ -25,10 +25,6 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
         customerPhone: data.customerPhone,
         customerEmail: data.customerEmail,
         startDateTime: data.timeSlot!.start,
-        endDateTime: data.timeSlot!.end,
-        totalPrice: data.servicePrice,
-        depositRequired: data.serviceDeposit,
-        finalAmount: data.servicePrice,
       }, businessId)
 
       // Initiate payment with provider

@@ -7,7 +7,7 @@ import { ServiceForm } from './service-form'
 import { deleteService } from '@/server/actions/services'
 import { Plus, Trash2 } from 'lucide-react'
 
-export function ServiceTable({ services: initialServices, businessId }: { services: any[]; businessId: string }) {
+export function ServiceTable({ services: initialServices }: { services: any[] }) {
   const [services, setServices] = useState(initialServices)
 
   async function handleDelete(id: string) {
@@ -27,7 +27,7 @@ export function ServiceTable({ services: initialServices, businessId }: { servic
           <h2 className="text-2xl font-semibold tracking-normal text-primary">Catálogo de servicios</h2>
           <p className="text-sm text-muted-foreground">{services.length} servicios activos</p>
         </div>
-        <ServiceForm businessId={businessId} onSuccess={refresh} triggerLabel="Nuevo servicio" triggerIcon={<Plus className="mr-2 size-4" />} />
+        <ServiceForm onSuccess={refresh} triggerLabel="Nuevo servicio" triggerIcon={<Plus className="mr-2 size-4" />} />
       </div>
       <div className="studio-card overflow-hidden">
         <Table>
@@ -61,7 +61,7 @@ export function ServiceTable({ services: initialServices, businessId }: { servic
                   <div className="size-7 rounded-full border border-border" style={{ backgroundColor: service.pastelColor }} />
                 </TableCell>
                 <TableCell className="space-x-2 text-right">
-                  <ServiceForm businessId={businessId} service={service} onSuccess={refresh} />
+                  <ServiceForm service={service} onSuccess={refresh} />
                   <Button variant="destructive" size="sm" onClick={() => handleDelete(service.id)} aria-label={`Eliminar ${service.name}`}>
                     <Trash2 className="size-4" />
                   </Button>

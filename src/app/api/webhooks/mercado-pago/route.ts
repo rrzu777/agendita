@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { store } from '@/lib/data/mock-store'
-import { confirmPayment } from '@/server/actions/bookings'
+import { prisma } from '@/lib/db'
+import { applyPaymentToBooking } from '@/lib/booking-payments'
 import { createHmac } from 'crypto'
 
 // Mercado Pago webhook signature validation
@@ -9,6 +9,32 @@ function verifyMercadoPagoSignature(payload: string, signature: string | null, s
   if (!signature) return false
   const expected = createHmac('sha256', secret).update(payload).digest('hex')
   return signature === expected
+}
+
+/**
+ * Determina si un pago debe ser marcado como aprobado basado en su provider.
+ * Falla cerrado: nunca aprueba sin verificación real del provider.
+ */
+async function determineApprovalStatus(
+  payment: { provider: string; providerPaymentId: string | null; id: string }
+): Promise<{ approved: boolean; error?: string }> {
+  if (payment.provider === 'mock') {
+    if (process.env.NODE_ENV === 'production') {
+      return { approved: false, error: 'Mock provider not allowed in production' }
+    }
+    return { approved: true }
+  }
+
+  if (payment.provider === 'mercado_pago') {
+    // Not implemented: real verification requires Mercado Pago SDK/API
+    return { approved: false, error: 'Mercado Pago webhook verification is not implemented' }
+  }
+
+  if (payment.provider === 'webpay') {
+    return { approved: false, error: 'Webpay webhook verification is not implemented' }
+  }
+
+  return { approved: false, error: `Unsupported payment provider: ${payment.provider}` }
 }
 
 export async function POST(request: NextRequest) {
@@ -24,46 +50,64 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
     }
 
-    // Verify webhook signature in production
+    // Verify webhook signature
     const mpSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET
-    if (mpSecret) {
+    if (!mpSecret) {
+      // Fail-closed in production: reject unsigned webhooks
+      if (process.env.NODE_ENV === 'production') {
+        console.error('[Mercado Pago Webhook] MERCADO_PAGO_WEBHOOK_SECRET missing in production')
+        return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 })
+      }
+      console.warn('[Mercado Pago Webhook] No MERCADO_PAGO_WEBHOOK_SECRET configured, skipping signature validation (dev only)')
+    } else {
       const signature = request.headers.get('x-signature')
       if (!verifyMercadoPagoSignature(rawBody, signature, mpSecret)) {
         return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
       }
-    } else {
-      console.warn('[Mercado Pago Webhook] No MERCADO_PAGO_WEBHOOK_SECRET configured, skipping signature validation')
     }
 
     // Extract payment info from payload
-    const paymentId = payload.data.id
-    const status = payload.type || payload.action
+    const providerPaymentId = payload.data.id
 
-    // Find payment in store
-    const payment = store.payments.find((p) => p.providerPaymentId === paymentId)
+    // Find payment in real database by providerPaymentId
+    const payment = await prisma.payment.findFirst({
+      where: { providerPaymentId },
+      include: { booking: true },
+    })
+
     if (!payment) {
       return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
     }
 
-    // Process based on status
-    if (status === 'payment.created' || status === 'payment.updated') {
-      // In production, fetch payment details from Mercado Pago API
-      // const mpPayment = await fetchMercadoPagoPayment(paymentId)
-      
-      // For now, approve if it's a known payment
-      if (payment.status === 'pending') {
-        // Update payment status
-        payment.status = 'approved'
-        payment.paidAt = new Date()
-
-        // Confirm booking payment
-        await confirmPayment(payment.bookingId, payment.amount)
-
-        return NextResponse.json({ success: true, message: 'Payment approved' })
-      }
+    // Validate ownership: payment and booking must belong to the same business
+    if (payment.booking && payment.businessId !== payment.booking.businessId) {
+      return NextResponse.json({ error: 'Business mismatch' }, { status: 403 })
     }
 
-    return NextResponse.json({ success: true, message: 'Webhook processed' })
+    // Determine if payment should be approved (fail-closed)
+    const { approved, error } = await determineApprovalStatus(payment)
+    if (!approved) {
+      return NextResponse.json({ error: error || 'Payment not approved' }, { status: 501 })
+    }
+
+    // Idempotent application: only update if not already approved
+    const updated = await prisma.$transaction(async (tx) => {
+      const updateResult = await tx.payment.updateMany({
+        where: { id: payment.id, status: { not: 'approved' } },
+        data: { status: 'approved', paidAt: new Date() },
+      })
+
+      if (updateResult.count === 0) {
+        // Already approved by another concurrent request
+        return tx.booking.findUnique({ where: { id: payment.bookingId } })
+      }
+
+      return applyPaymentToBooking(tx, payment.bookingId, payment.amount, payment.id)
+    })
+
+    if (!updated) throw new Error('Reserva no encontrada')
+
+    return NextResponse.json({ success: true, message: 'Payment approved', bookingId: updated.id })
   } catch (error) {
     console.error('[Mercado Pago Webhook Error]', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

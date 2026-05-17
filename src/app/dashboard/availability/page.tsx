@@ -13,31 +13,33 @@ export default async function AvailabilityPage() {
     redirect('/login')
   }
 
-  const rules = await getAvailabilityRules(userData.business.id)
-  const blocks = await getTimeBlocks(userData.business.id)
+  const rules = await getAvailabilityRules()
+  const blocks = await getTimeBlocks()
 
   return (
     <div>
-      <DashboardHeader title="Horarios de atención" subtitle="Define cuándo atiendes y bloquea días específicos." />
-      <div className="max-w-4xl space-y-10 p-5 md:p-10">
-        <section className="studio-card p-6">
-          <h2 className="mb-2 text-2xl font-semibold tracking-normal text-primary">Horario semanal</h2>
-          <p className="mb-6 text-muted-foreground">
-            Configura tus horarios de atención por día de la semana.
-          </p>
-          <AvailabilityEditor rules={rules} />
-        </section>
-
-        <section className="studio-card p-6">
-          <div className="mb-3 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-2xl font-semibold tracking-normal text-primary">Bloqueos</h2>
-            <TimeBlockForm businessId={userData.business.id} />
+      <DashboardHeader title="Disponibilidad" subtitle="Configura tus horarios de atención y bloqueos." />
+      <div className="space-y-8 p-5 md:p-10">
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold tracking-normal text-primary">Horario semanal</h2>
+              <p className="text-sm text-muted-foreground">Define los días y horas en que atiendes.</p>
+            </div>
           </div>
-          <p className="mb-5 text-muted-foreground">
-            Bloquea días o horarios específicos cuando no puedas atender.
-          </p>
+          <AvailabilityEditor rules={rules} />
+        </div>
+
+        <div className="space-y-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold tracking-normal text-primary">Bloqueos</h2>
+              <p className="text-sm text-muted-foreground">Marca días o rangos en los que no estarás disponible.</p>
+            </div>
+            <TimeBlockForm onSuccess={() => {}} />
+          </div>
           <TimeBlockList blocks={blocks} />
-        </section>
+        </div>
       </div>
     </div>
   )

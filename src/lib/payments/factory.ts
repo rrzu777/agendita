@@ -23,9 +23,20 @@ export function getPaymentProvider(name: ProviderName): PaymentProvider {
 
 export function getDefaultProvider(): PaymentProvider {
   const env = process.env.NODE_ENV
-  if (env === 'development') {
+  const configured = process.env.PAYMENT_PROVIDER as ProviderName | undefined
+
+  if (env === 'development' || env === 'test') {
     return mockPaymentProvider
   }
-  // In production, would return mercado_pago or webpay
-  return mockPaymentProvider
+
+  // Production: must be explicitly configured
+  if (!configured) {
+    throw new Error('PAYMENT_PROVIDER not configured. Set it to mercado_pago or webpay.')
+  }
+
+  if (configured === 'mock') {
+    throw new Error('PAYMENT_PROVIDER cannot be mock in production.')
+  }
+
+  return getPaymentProvider(configured)
 }

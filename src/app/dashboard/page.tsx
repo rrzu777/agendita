@@ -16,8 +16,8 @@ export default async function DashboardPage() {
   }
 
   const business = userData.business
-  const bookings = await getBookings(business.id)
-  const summary = await getFinancialSummary(business.id)
+  const bookings = await getBookings()
+  const summary = await getFinancialSummary()
 
   // Calcular estadísticas reales
   const today = new Date()

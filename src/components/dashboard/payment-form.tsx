@@ -6,11 +6,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { createManualPayment } from '@/server/actions/payments'
-import { createLedgerEntry } from '@/server/actions/ledger'
-import { confirmPayment } from '@/server/actions/bookings'
 import { Plus } from 'lucide-react'
 
-export function PaymentForm({ bookings, businessId }: { bookings: any[]; businessId: string }) {
+export function PaymentForm({ bookings }: { bookings: any[] }) {
   const [open, setOpen] = useState(false)
 
   async function handleSubmit(formData: FormData) {
@@ -22,30 +20,12 @@ export function PaymentForm({ bookings, businessId }: { bookings: any[]; busines
     const booking = bookings.find(b => b.id === bookingId)
     if (!booking) return
 
-    const payment = await createManualPayment({
-      businessId,
+    await createManualPayment({
       bookingId,
-      customerId: booking.customerId,
       amount,
       currency: 'CLP',
       paymentType,
       paymentMethod,
-    })
-
-    await confirmPayment(bookingId, amount)
-
-    await createLedgerEntry({
-      businessId,
-      bookingId,
-      paymentId: payment.id,
-      customerId: booking.customerId,
-      type: paymentType === 'deposit' ? 'deposit_paid' : paymentType === 'final_payment' ? 'final_payment_paid' : 'full_payment_paid',
-      direction: 'income',
-      amount,
-      currency: 'CLP',
-      description: `Pago ${paymentType} registrado manualmente`,
-      occurredAt: new Date(),
-      createdByUserId: null,
     })
 
     setOpen(false)

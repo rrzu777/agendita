@@ -5,9 +5,9 @@ import { prisma } from '@/lib/db'
 import type { LedgerEntry } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 
 const createLedgerEntrySchema = z.object({
-  businessId: z.string().min(1),
   bookingId: z.string().min(1).nullable(),
   paymentId: z.string().min(1).nullable(),
   customerId: z.string().min(1).nullable(),
@@ -17,12 +17,12 @@ const createLedgerEntrySchema = z.object({
   currency: z.string().min(2).max(3),
   description: z.string().max(500).optional().nullable(),
   occurredAt: z.date(),
-  createdByUserId: z.string().min(1).nullable(),
 })
 
-export async function getLedgerEntries(businessId?: string) {
+export async function getLedgerEntries() {
+  const { businessId } = await requireBusiness()
   return prisma.ledgerEntry.findMany({
-    where: businessId ? { businessId } : undefined,
+    where: { businessId },
     orderBy: { occurredAt: 'desc' },
     include: {
       booking: true,
@@ -31,7 +31,8 @@ export async function getLedgerEntries(businessId?: string) {
   })
 }
 
-export async function createLedgerEntry(data: Omit<LedgerEntry, 'id' | 'createdAt'>) {
+export async function createLedgerEntry(data: Omit<LedgerEntry, 'id' | 'createdAt' | 'businessId' | 'createdByUserId'>) {
+  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('create-ledger-entry', 30, 60000)
   if (!limit.success) {
     throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
@@ -42,18 +43,44 @@ export async function createLedgerEntry(data: Omit<LedgerEntry, 'id' | 'createdA
     throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
-  const entry = await prisma.ledgerEntry.create({ data })
+  if (data.bookingId) {
+    const booking = await prisma.booking.findFirst({
+      where: { id: data.bookingId, businessId },
+    })
+    if (!booking) throw new ForbiddenError('Reserva no encontrada')
+  }
+  if (data.paymentId) {
+    const payment = await prisma.payment.findFirst({
+      where: { id: data.paymentId, businessId },
+    })
+    if (!payment) throw new ForbiddenError('Pago no encontrado')
+  }
+  if (data.customerId) {
+    const customer = await prisma.customer.findFirst({
+      where: { id: data.customerId, businessId },
+    })
+    if (!customer) throw new ForbiddenError('Cliente no encontrado')
+  }
+
+  const entry = await prisma.ledgerEntry.create({
+    data: {
+      ...data,
+      businessId,
+      createdByUserId: user.id,
+    },
+  })
   revalidatePath('/dashboard/payments')
   return entry
 }
 
-export async function getFinancialSummary(businessId?: string) {
+export async function getFinancialSummary() {
+  const { businessId } = await requireBusiness()
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
   const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1)
 
-  const baseWhere = businessId ? { businessId } : {}
+  const baseWhere = { businessId }
 
   const [incomeToday, incomeMonth, totalDeposited, totalPending, totalRefunded, totalBookings, completedBookings, cancelledBookings] = await Promise.all([
     prisma.ledgerEntry.aggregate({

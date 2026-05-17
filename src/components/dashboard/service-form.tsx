@@ -15,13 +15,11 @@ const PASTEL_COLORS = [
 ]
 
 export function ServiceForm({
-  businessId,
   service,
   onSuccess,
   triggerLabel,
   triggerIcon,
 }: {
-  businessId: string
   service?: any
   onSuccess?: () => void
   triggerLabel?: string
@@ -34,7 +32,6 @@ export function ServiceForm({
   async function handleSubmit(formData: FormData) {
     setLoading(true)
     const data = {
-      businessId,
       name: formData.get('name') as string,
       description: formData.get('description') as string || null,
       durationMinutes: parseInt(formData.get('durationMinutes') as string),

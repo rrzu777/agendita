@@ -11,13 +11,13 @@ export default async function ServicesPage() {
     redirect('/login')
   }
 
-  const services = await getServices(userData.business.id)
+  const services = await getServices()
 
   return (
     <div>
-      <DashboardHeader title="Servicios" subtitle="Gestiona catálogo, precios, abonos y duración de tus tratamientos." />
+      <DashboardHeader title="Servicios" subtitle="Gestiona tus servicios y precios." />
       <div className="p-5 md:p-10">
-        <ServiceTable services={services} businessId={userData.business.id} />
+        <ServiceTable services={services} />
       </div>
     </div>
   )

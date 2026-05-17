@@ -7,6 +7,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { endOfDay, startOfDay } from 'date-fns'
 import { generateSlots } from '@/lib/availability/slots'
+import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 
 const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
 
@@ -16,14 +17,28 @@ const updateAvailabilityRuleSchema = z.object({
   isActive: z.boolean(),
 })
 
-export async function getAvailabilityRules(businessId?: string) {
+export async function getAvailabilityRules() {
+  const { businessId } = await requireBusiness()
   return prisma.availabilityRule.findMany({
-    where: businessId ? { businessId } : undefined,
+    where: { businessId },
     orderBy: { dayOfWeek: 'asc' },
   })
 }
 
 export async function getAvailableTimeSlots(businessId: string, serviceId: string, date: Date) {
+  const limit = await checkRateLimit('available-slots', 10, 60000)
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  }
+
+  const business = await prisma.business.findUnique({
+    where: { id: businessId, isActive: true },
+    select: { id: true },
+  })
+  if (!business) {
+    throw new Error('Negocio no válido')
+  }
+
   const dayStart = startOfDay(date)
   const dayEnd = endOfDay(date)
 
@@ -66,6 +81,7 @@ export async function updateAvailabilityRule(
   id: string,
   data: { startTime: string; endTime: string; isActive: boolean }
 ) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('update-availability', 30, 60000)
   if (!limit.success) {
     throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
@@ -76,11 +92,18 @@ export async function updateAvailabilityRule(
     throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
-  const updated = await prisma.availabilityRule.update({
-    where: { id },
+  const updateResult = await prisma.availabilityRule.updateMany({
+    where: { id, businessId },
     data,
   })
+  if (updateResult.count === 0) {
+    throw new ForbiddenError('Regla no encontrada')
+  }
+
+  const updated = await prisma.availabilityRule.findUnique({ where: { id } })
   revalidatePath('/dashboard/availability')
-  await revalidateBusinessPublicPaths(updated.businessId)
+  if (updated) {
+    await revalidateBusinessPublicPaths(updated.businessId)
+  }
   return updated
 }
