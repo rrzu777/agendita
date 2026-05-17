@@ -9,6 +9,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { applyPaymentToBooking } from '@/lib/booking-payments'
+import { assertSlotIsAvailable } from '@/lib/availability/validation'
 import { addMinutes } from 'date-fns'
 
 const createBookingSchema = z.object({
@@ -85,44 +86,55 @@ export async function createBooking(data: {
   const finalAmount = service.price
   const endDateTime = addMinutes(data.startDateTime, service.durationMinutes)
 
-  // Buscar o crear cliente
-  let customer = await prisma.customer.findFirst({
-    where: {
-      phone: data.customerPhone,
-      name: data.customerName,
-      businessId,
-    },
-  })
-
-  if (!customer) {
-    customer = await prisma.customer.create({
-      data: {
-        businessId,
-        name: data.customerName,
-        phone: data.customerPhone,
-        email: data.customerEmail || null,
-      },
-    })
-  }
-
-  const booking = await prisma.booking.create({
-    data: {
+  const booking = await prisma.$transaction(async (tx) => {
+    // Validación transaccional de disponibilidad con lock
+    await assertSlotIsAvailable({
+      tx,
       businessId,
       serviceId: data.serviceId,
-      customerId: customer.id,
       startDateTime: data.startDateTime,
       endDateTime,
-      status: BookingStatus.pending_payment,
-      totalPrice,
-      depositRequired,
-      remainingBalance: finalAmount,
-      finalAmount,
-      paymentStatus: BookingPaymentStatus.unpaid,
-    },
-    include: {
-      service: true,
-      customer: true,
-    },
+    })
+
+    // Buscar o crear cliente dentro de la transacción
+    let customer = await tx.customer.findFirst({
+      where: {
+        phone: data.customerPhone,
+        name: data.customerName,
+        businessId,
+      },
+    })
+
+    if (!customer) {
+      customer = await tx.customer.create({
+        data: {
+          businessId,
+          name: data.customerName,
+          phone: data.customerPhone,
+          email: data.customerEmail || null,
+        },
+      })
+    }
+
+    return tx.booking.create({
+      data: {
+        businessId,
+        serviceId: data.serviceId,
+        customerId: customer.id,
+        startDateTime: data.startDateTime,
+        endDateTime,
+        status: BookingStatus.pending_payment,
+        totalPrice,
+        depositRequired,
+        remainingBalance: finalAmount,
+        finalAmount,
+        paymentStatus: BookingPaymentStatus.unpaid,
+      },
+      include: {
+        service: true,
+        customer: true,
+      },
+    })
   })
 
   revalidatePath('/dashboard/bookings')
