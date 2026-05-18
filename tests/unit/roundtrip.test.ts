@@ -16,13 +16,14 @@ describe('timezone roundtrip', () => {
     const date = new Date('2026-05-20T04:00:00Z')
 
     const rules = [{ dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }]
-    const slots = generateSlots(date, 60, rules, [], [], { timezone })
+    const slots = generateSlots(date, 60, rules, [], [], { timezone, now: new Date('2026-05-19T04:00:00Z') })
 
     expect(slots.length).toBeGreaterThan(0)
     const firstSlot = slots[0]
 
     // assertSlotIsAvailable debe aceptar el slot generado
     const tx = {
+      business: { findUnique: vi.fn().mockResolvedValue({ bookingWindowDays: 90 }) },
       service: { findFirst: vi.fn().mockResolvedValue({ durationMinutes: 60 }) },
       availabilityRule: { findFirst: vi.fn().mockResolvedValue({ dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }) },
       timeBlock: { findFirst: vi.fn().mockResolvedValue(null) },

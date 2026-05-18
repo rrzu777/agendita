@@ -18,6 +18,7 @@ const createBookingSchema = z.object({
   customerPhone: z.string().min(8).max(20),
   customerEmail: z.string().email().optional().or(z.literal('')),
   startDateTime: z.date(),
+  idempotencyKey: z.string().min(1).max(64).optional(),
 })
 
 const confirmPaymentSchema = z.object({
@@ -27,11 +28,12 @@ const confirmPaymentSchema = z.object({
 })
 
 const VALID_STATUS_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
-  pending_payment: ['confirmed', 'cancelled'],
+  pending_payment: ['confirmed', 'cancelled', 'expired'],
   confirmed: ['completed', 'cancelled', 'no_show'],
   completed: [],
   cancelled: [],
   no_show: [],
+  expired: [],
 }
 
 export async function getBookings() {
@@ -52,6 +54,7 @@ export async function createBooking(data: {
   customerPhone: string
   customerEmail?: string
   startDateTime: Date
+  idempotencyKey?: string
 }, businessId: string) {
   const limit = await checkRateLimit('create-booking', 20, 60000)
   if (!limit.success) {
@@ -86,61 +89,106 @@ export async function createBooking(data: {
   const finalAmount = service.price
   const endDateTime = addMinutes(data.startDateTime, service.durationMinutes)
 
-  const booking = await prisma.$transaction(async (tx) => {
-    // Validación transaccional de disponibilidad con lock
-    await assertSlotIsAvailable({
-      tx,
-      businessId,
-      serviceId: data.serviceId,
-      startDateTime: data.startDateTime,
-      endDateTime,
-      timezone: business.timezone || 'America/Santiago',
-    })
-
-    // Buscar o crear cliente dentro de la transacción
-    let customer = await tx.customer.findFirst({
+  // Idempotencia: si llega key, buscar booking existente fuera de tx (fast path).
+  // El race final se maneja con el unique constraint de DB dentro de la tx.
+  if (data.idempotencyKey) {
+    const existing = await prisma.booking.findUnique({
       where: {
-        phone: data.customerPhone,
-        name: data.customerName,
-        businessId,
-      },
-    })
-
-    if (!customer) {
-      customer = await tx.customer.create({
-        data: {
+        businessId_idempotencyKey: {
           businessId,
-          name: data.customerName,
-          phone: data.customerPhone,
-          email: data.customerEmail || null,
+          idempotencyKey: data.idempotencyKey,
         },
-      })
+      },
+      include: { service: true, customer: true },
+    })
+    if (existing) {
+      return existing
     }
+  }
 
-    return tx.booking.create({
-      data: {
+  try {
+    const booking = await prisma.$transaction(async (tx) => {
+      // Validación transaccional de disponibilidad con lock
+      await assertSlotIsAvailable({
+        tx,
         businessId,
         serviceId: data.serviceId,
-        customerId: customer.id,
         startDateTime: data.startDateTime,
         endDateTime,
-        status: BookingStatus.pending_payment,
-        totalPrice,
-        depositRequired,
-        remainingBalance: finalAmount,
-        finalAmount,
-        paymentStatus: BookingPaymentStatus.unpaid,
-      },
-      include: {
-        service: true,
-        customer: true,
-      },
-    })
-  })
+        timezone: business.timezone || 'America/Santiago',
+      })
 
-  revalidatePath('/dashboard/bookings')
-  await revalidateBusinessPublicPaths(businessId)
-  return booking
+      // Buscar o crear cliente dentro de la transacción
+      let customer = await tx.customer.findFirst({
+        where: {
+          phone: data.customerPhone,
+          name: data.customerName,
+          businessId,
+        },
+      })
+
+      if (!customer) {
+        customer = await tx.customer.create({
+          data: {
+            businessId,
+            name: data.customerName,
+            phone: data.customerPhone,
+            email: data.customerEmail || null,
+          },
+        })
+      }
+
+      const holdExpiresAt = addMinutes(new Date(), 15)
+
+      return tx.booking.create({
+        data: {
+          businessId,
+          serviceId: data.serviceId,
+          customerId: customer.id,
+          startDateTime: data.startDateTime,
+          endDateTime,
+          status: BookingStatus.pending_payment,
+          totalPrice,
+          depositRequired,
+          remainingBalance: finalAmount,
+          finalAmount,
+          paymentStatus: BookingPaymentStatus.unpaid,
+          holdExpiresAt,
+          idempotencyKey: data.idempotencyKey || null,
+        },
+        include: {
+          service: true,
+          customer: true,
+        },
+      })
+    })
+
+    revalidatePath('/dashboard/bookings')
+    await revalidateBusinessPublicPaths(businessId)
+    return booking
+  } catch (e: unknown) {
+    // Race: otro request creó la misma idempotencyKey entre el findUnique y el create.
+    // El unique constraint de DB lo detecta y devolvemos la reserva existente.
+    const prismaError = e as { code?: string; meta?: { target?: string[] } }
+    if (
+      prismaError.code === 'P2002' &&
+      data.idempotencyKey &&
+      Array.isArray(prismaError.meta?.target) &&
+      prismaError.meta.target.includes('businessId_idempotencyKey')
+    ) {
+      const existing = await prisma.booking.findUnique({
+        where: {
+          businessId_idempotencyKey: {
+            businessId,
+            idempotencyKey: data.idempotencyKey,
+          },
+        },
+        include: { service: true, customer: true },
+      })
+      if (existing) return existing
+    }
+    throw e
+  }
 }
 
 export async function updateBookingStatus(id: string, status: BookingStatus) {
@@ -198,7 +246,14 @@ export async function confirmPayment(bookingId: string, paymentId: string, amoun
     where: { id: bookingId, businessId },
   })
   if (!booking) throw new ForbiddenError('Reserva no encontrada')
-  if (booking.status === BookingStatus.cancelled) throw new Error('No se puede confirmar pago para reserva cancelada')
+
+  const { assertBookingPayable } = await import('@/lib/booking-payments')
+  try {
+    assertBookingPayable(booking)
+  } catch (e) {
+    throw new Error(e instanceof Error ? e.message : 'No se puede confirmar pago para esta reserva')
+  }
+
   if (amount <= 0) throw new Error('El monto debe ser positivo')
 
   const payment = await prisma.payment.findFirst({

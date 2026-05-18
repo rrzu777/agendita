@@ -15,6 +15,7 @@ describe('assertSlotIsAvailable', () => {
   function makeTx(mocks: Record<string, unknown> = {}) {
     return {
       ...mocks,
+      business: { findUnique: vi.fn().mockResolvedValue({ bookingWindowDays: 90 }) },
       service: { findFirst: vi.fn().mockResolvedValue(mocks.service ?? null) },
       availabilityRule: { findFirst: vi.fn().mockResolvedValue(mocks.rule ?? null) },
       timeBlock: { findFirst: vi.fn().mockResolvedValue(mocks.block ?? null) },
@@ -122,9 +123,9 @@ describe('assertSlotIsAvailable', () => {
   })
 
   it('uses business timezone for dayOfWeek calculation', async () => {
-    // 2026-05-18 01:00 UTC = 2026-05-17 21:00 Santiago (Sunday)
-    const utcMonday = new Date('2026-05-18T01:00:00Z')
-    const utcEnd = new Date('2026-05-18T02:00:00Z') // 22:00 Santiago
+    // 2026-05-25 01:00 UTC = 2026-05-24 21:00 Santiago (Sunday)
+    const utcMonday = new Date('2026-05-25T01:00:00Z')
+    const utcEnd = new Date('2026-05-25T02:00:00Z') // 22:00 Santiago
 
     const rule = { dayOfWeek: 0, startTime: '21:00', endTime: '23:00', isActive: true }
     const findFirstSpy = vi.fn().mockResolvedValue(rule)

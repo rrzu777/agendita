@@ -1,16 +1,29 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
 import { createBooking } from '@/server/actions/bookings'
 import { initiatePayment, verifyAndConfirmPayment } from '@/server/actions/payments'
 import { AlertCircle, CreditCard, Loader2 } from 'lucide-react'
 
+function generateIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+  // Fallback para entornos sin crypto.randomUUID (muy poco probable en navegadores modernos)
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 export function StepPayment({ data, businessId, onSuccess, onBack }: { data: BookingData; businessId: string; onSuccess: (id: string) => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error'>('review')
   const [errorMessage, setErrorMessage] = useState('')
+
+  // Generar una key estable por montaje de StepPayment.
+  // Retry dentro del mismo montaje (ej. "Intentar de nuevo") usa la misma key.
+  // Si el usuario va "Atrás" y vuelve, el componente se remonta → nueva key.
+  const idempotencyKey = useMemo(() => data.idempotencyKey || generateIdempotencyKey(), [data.idempotencyKey])
 
   async function handlePayment() {
     setLoading(true)
@@ -18,13 +31,14 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
     setErrorMessage('')
 
     try {
-      // Create booking
+      // Create booking with idempotencyKey
       const booking = await createBooking({
         serviceId: data.serviceId!,
         customerName: data.customerName,
         customerPhone: data.customerPhone,
         customerEmail: data.customerEmail,
         startDateTime: data.timeSlot!.start,
+        idempotencyKey,
       }, businessId)
 
       // Initiate payment with provider

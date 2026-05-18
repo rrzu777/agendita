@@ -33,13 +33,14 @@ export async function getAvailableTimeSlots(businessId: string, serviceId: strin
 
   const business = await prisma.business.findUnique({
     where: { id: businessId, isActive: true },
-    select: { id: true, timezone: true },
+    select: { id: true, timezone: true, bookingWindowDays: true },
   })
   if (!business) {
     throw new Error('Negocio no válido')
   }
 
   const timezone = business.timezone || 'America/Santiago'
+  const bookingWindowDays = business.bookingWindowDays ?? 90
   const { dayStart, dayEnd } = getBusinessDayRange(date, timezone)
 
   const [service, availabilityRules, timeBlocks, bookings] = await Promise.all([
@@ -62,7 +63,7 @@ export async function getAvailableTimeSlots(businessId: string, serviceId: strin
     prisma.booking.findMany({
       where: {
         businessId,
-        status: { notIn: ['cancelled', 'no_show'] },
+        status: { notIn: ['cancelled', 'no_show', 'expired'] },
         startDateTime: { lte: dayEnd },
         endDateTime: { gte: dayStart },
       },
@@ -77,6 +78,7 @@ export async function getAvailableTimeSlots(businessId: string, serviceId: strin
   return generateSlots(date, service.durationMinutes, availabilityRules, timeBlocks, bookings, {
     timezone,
     now: new Date(),
+    bookingWindowDays,
   })
 }
 

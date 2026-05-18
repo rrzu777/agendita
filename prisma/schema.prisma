@@ -36,6 +36,7 @@ model Business {
   country         String   @default("CL")
   currency        String   @default("CLP")
   timezone        String   @default("America/Santiago")
+  bookingWindowDays Int    @default(90)
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -109,6 +110,8 @@ model TimeBlock {
   createdAt     DateTime @default(now())
 
   business      Business @relation(fields: [businessId], references: [id])
+
+  @@index([businessId, startDateTime, endDateTime])
 }
 
 model Customer {
@@ -146,7 +149,11 @@ model Booking {
 
   customerNotes     String?
   internalNotes     String?
+  holdExpiresAt     DateTime?
+  idempotencyKey    String?
   createdAt         DateTime             @default(now())
+
+  @@unique([businessId, idempotencyKey])
   updatedAt         DateTime             @updatedAt
 
   business          Business             @relation(fields: [businessId], references: [id])
@@ -155,6 +162,8 @@ model Booking {
   payments          Payment[]
   ledgerEntries     LedgerEntry[]
   review            Review?
+
+  @@index([businessId, status, startDateTime, endDateTime])
 }
 
 enum BookingStatus {
@@ -163,6 +172,7 @@ enum BookingStatus {
   completed
   cancelled
   no_show
+  expired
 }
 
 enum BookingPaymentStatus {

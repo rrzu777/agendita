@@ -58,13 +58,12 @@ export async function initiatePayment(data: {
     throw new Error('Reserva no encontrada')
   }
 
-  // No iniciar pago si la reserva no está en estado pagable
-  if (
-    booking.status === BookingStatus.cancelled ||
-    booking.status === BookingStatus.completed ||
-    booking.status === BookingStatus.no_show
-  ) {
-    throw new Error('No se puede iniciar pago para esta reserva')
+  // No iniciar pago si la reserva no está en estado pagable o hold expirado
+  try {
+    const { assertBookingPayable } = await import('@/lib/booking-payments')
+    assertBookingPayable(booking)
+  } catch (e) {
+    throw new Error(e instanceof Error ? e.message : 'No se puede iniciar pago para esta reserva')
   }
 
   if (booking.remainingBalance <= 0 || booking.paymentStatus === 'fully_paid') {
@@ -136,6 +135,14 @@ export async function verifyAndConfirmPayment(paymentId: string, bookingId: stri
   // Validar que payment y booking pertenecen al mismo negocio
   if (payment.businessId !== payment.booking.businessId) {
     throw new Error('Inconsistencia de negocio en el pago')
+  }
+
+  // No confirmar si la reserva no es pagable (expired, cancelled, etc. o hold vencido)
+  try {
+    const { assertBookingPayable } = await import('@/lib/booking-payments')
+    assertBookingPayable(payment.booking)
+  } catch (e) {
+    return { success: false, message: e instanceof Error ? e.message : 'No se puede confirmar pago para esta reserva' }
   }
 
   const provider = getDefaultProvider()
@@ -239,6 +246,14 @@ export async function createManualPayment(data: {
   if (!booking) {
     throw new ForbiddenError('Reserva no encontrada')
   }
+
+  const { assertBookingPayable } = await import('@/lib/booking-payments')
+  try {
+    assertBookingPayable(booking)
+  } catch (e) {
+    throw new Error(e instanceof Error ? e.message : 'No se puede registrar pago para esta reserva')
+  }
+
   if (data.amount > booking.remainingBalance) {
     throw new Error('El monto excede el saldo pendiente')
   }

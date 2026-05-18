@@ -22,6 +22,7 @@ export type BookingData = {
   customerPhone: string
   customerEmail: string
   customerNotes: string
+  idempotencyKey: string | null
 }
 
 const initialData: BookingData = {
@@ -37,6 +38,7 @@ const initialData: BookingData = {
   customerPhone: '',
   customerEmail: '',
   customerNotes: '',
+  idempotencyKey: null,
 }
 
 const steps = [

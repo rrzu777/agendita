@@ -1,4 +1,4 @@
-import { addMinutes, differenceInMinutes } from 'date-fns'
+import { addMinutes, differenceInMinutes, addDays } from 'date-fns'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { getLocalDayOfWeek } from './timezone'
 import type { PrismaClient, Prisma } from '@prisma/client'
@@ -22,17 +22,39 @@ function hashStringToInt(str: string): number {
   return Math.abs(hash)
 }
 
+function logEvent(event: string, meta: Record<string, unknown>) {
+  // Log estructurado sin PII; en producción esto podría enviarse a un servicio de logs
+  const payload = { timestamp: new Date().toISOString(), event, ...meta }
+  console.log(JSON.stringify(payload))
+}
+
 export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<void> {
   const { tx, businessId, serviceId, startDateTime, endDateTime, timezone } = input
 
   if (endDateTime <= startDateTime) {
+    logEvent('slot_validation_rejected', { businessId, reason: 'end_before_start' })
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }
 
-  // Margen de 1 minuto para el pasado
   const now = new Date()
-  const minStart = addMinutes(now, 1)
+
+  // Lead time mínimo: 2 horas antes del slot
+  const minStart = addMinutes(now, 120)
   if (startDateTime < minStart) {
+    logEvent('slot_validation_rejected', { businessId, reason: 'lead_time', slotStart: startDateTime.toISOString() })
+    throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
+  }
+
+  const business = await tx.business.findUnique({
+    where: { id: businessId },
+    select: { bookingWindowDays: true },
+  })
+
+  // Booking window máximo: 90 días por defecto
+  const bookingWindowDays = business?.bookingWindowDays ?? 90
+  const maxStart = addDays(now, bookingWindowDays)
+  if (startDateTime > maxStart) {
+    logEvent('slot_validation_rejected', { businessId, reason: 'booking_window', slotStart: startDateTime.toISOString(), maxStart: maxStart.toISOString() })
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }
 
@@ -41,11 +63,13 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
     select: { durationMinutes: true },
   })
   if (!service) {
+    logEvent('slot_validation_rejected', { businessId, reason: 'service_not_found' })
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }
 
   const duration = differenceInMinutes(endDateTime, startDateTime)
   if (duration !== service.durationMinutes) {
+    logEvent('slot_validation_rejected', { businessId, reason: 'duration_mismatch' })
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }
 
@@ -58,6 +82,7 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
     select: { startTime: true, endTime: true },
   })
   if (!rule) {
+    logEvent('slot_validation_rejected', { businessId, reason: 'no_availability_rule', dayOfWeek: localDayOfWeek })
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }
 
@@ -66,6 +91,7 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
   const ruleEnd = fromZonedTime(`${localStartStr} ${rule.endTime}`, timezone)
 
   if (startDateTime < ruleStart || endDateTime > ruleEnd) {
+    logEvent('slot_validation_rejected', { businessId, reason: 'outside_rule_hours' })
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }
 
@@ -78,6 +104,7 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
     select: { id: true },
   })
   if (block) {
+    logEvent('slot_validation_rejected', { businessId, reason: 'timeblock_overlap' })
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }
 
@@ -97,6 +124,7 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
     FOR UPDATE
   `
   if (Array.isArray(overlappingBookings) && overlappingBookings.length > 0) {
+    logEvent('slot_validation_rejected', { businessId, reason: 'booking_overlap', overlappingCount: overlappingBookings.length })
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }
 }
