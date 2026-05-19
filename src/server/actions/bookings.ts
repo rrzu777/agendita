@@ -341,13 +341,6 @@ export async function registerManualPayment(
   })
   if (!booking) throw new ForbiddenError('Reserva no encontrada')
 
-  if (booking.remainingBalance <= 0) {
-    throw new Error('La reserva ya está pagada')
-  }
-  if (amount > booking.remainingBalance) {
-    throw new Error('El monto excede el saldo pendiente')
-  }
-
   const { assertBookingPayable } = await import('@/lib/booking-payments')
   try {
     assertBookingPayable(booking)
@@ -358,9 +351,16 @@ export async function registerManualPayment(
   const paymentType =
     booking.depositPaid > 0 ? PaymentType.final_payment : PaymentType.full_payment
 
-  // NOTE: Duplicate manual payments are possible if two requests race.
-  // For robust idempotency, pre-create a Payment record or pass an idempotencyKey.
   const updated = await prisma.$transaction(async (tx) => {
+    const current = await tx.booking.findUnique({ where: { id: bookingId } })
+    if (!current) throw new Error('Reserva no encontrada')
+    if (current.remainingBalance <= 0) {
+      throw new Error('La reserva ya está pagada')
+    }
+    if (amount > current.remainingBalance) {
+      throw new Error('El monto excede el saldo pendiente')
+    }
+
     const { applyApprovedPayment } = await import('@/server/services/finance')
     return applyApprovedPayment({
       tx,
