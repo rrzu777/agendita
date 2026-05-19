@@ -358,6 +358,8 @@ export async function registerManualPayment(
   const paymentType =
     booking.depositPaid > 0 ? PaymentType.final_payment : PaymentType.full_payment
 
+  // NOTE: Duplicate manual payments are possible if two requests race.
+  // For robust idempotency, pre-create a Payment record or pass an idempotencyKey.
   const updated = await prisma.$transaction(async (tx) => {
     const { applyApprovedPayment } = await import('@/server/services/finance')
     return applyApprovedPayment({
@@ -376,5 +378,10 @@ export async function registerManualPayment(
   revalidatePath('/dashboard/calendar')
   revalidatePath('/dashboard/bookings')
   await revalidateBusinessPublicPaths(businessId)
-  return updated
+
+  const hydrated = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    include: { service: true, customer: true },
+  })
+  return hydrated
 }
