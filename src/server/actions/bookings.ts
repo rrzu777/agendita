@@ -348,9 +348,6 @@ export async function registerManualPayment(
     throw new Error(e instanceof Error ? e.message : 'No se puede registrar pago para esta reserva')
   }
 
-  const paymentType =
-    booking.depositPaid > 0 ? PaymentType.final_payment : PaymentType.full_payment
-
   const updated = await prisma.$transaction(async (tx) => {
     const current = await tx.booking.findUnique({ where: { id: bookingId } })
     if (!current) throw new Error('Reserva no encontrada')
@@ -360,6 +357,9 @@ export async function registerManualPayment(
     if (amount > current.remainingBalance) {
       throw new Error('El monto excede el saldo pendiente')
     }
+
+    const paymentType =
+      current.depositPaid > 0 ? PaymentType.final_payment : PaymentType.full_payment
 
     const { applyApprovedPayment } = await import('@/server/services/finance')
     return applyApprovedPayment({
