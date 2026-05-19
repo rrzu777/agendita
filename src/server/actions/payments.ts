@@ -9,7 +9,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
-import { applyPaymentToBooking } from '@/lib/booking-payments'
+
 
 const initiatePaymentSchema = z.object({
   bookingId: z.string().min(1),
@@ -167,18 +167,19 @@ export async function verifyAndConfirmPayment(paymentId: string, bookingId: stri
   }
 
   const updated = await prisma.$transaction(async (tx) => {
-    // Idempotencia transaccional: solo marcar aprobado si aún no lo está
-    const updateResult = await tx.payment.updateMany({
-      where: { id: paymentId, status: { not: 'approved' } },
-      data: { status: 'approved', paidAt: new Date() },
+    const { applyApprovedPayment } = await import('@/server/services/finance')
+    return applyApprovedPayment({
+      tx,
+      bookingId,
+      businessId: payment.businessId,
+      amount: payment.amount,
+      currency: payment.currency,
+      provider: payment.provider,
+      providerPaymentId: payment.providerPaymentId,
+      paymentType: payment.paymentType,
+      paymentMethod: payment.paymentMethod,
+      paymentId: payment.id,
     })
-
-    if (updateResult.count === 0) {
-      // Ya estaba aprobado por otro request concurrente
-      return tx.booking.findUnique({ where: { id: bookingId } })
-    }
-
-    return applyPaymentToBooking(tx, bookingId, payment.amount, paymentId)
   })
 
   if (!updated) throw new Error('Reserva no encontrada')
@@ -221,6 +222,7 @@ const createManualPaymentSchema = z.object({
  * Flujo privado (dashboard): registra un pago manual, crea el registro
  * Payment y actualiza la reserva + ledger en una transacción.
  * No confía en customerId ni businessId del cliente.
+ * Delega el recálculo financiero a applyApprovedPayment.
  */
 export async function createManualPayment(data: {
   bookingId: string
@@ -263,6 +265,8 @@ export async function createManualPayment(data: {
   }
 
   const result = await prisma.$transaction(async (tx) => {
+    const { applyApprovedPayment } = await import('@/server/services/finance')
+
     const payment = await tx.payment.create({
       data: {
         businessId,
@@ -273,15 +277,29 @@ export async function createManualPayment(data: {
         providerPaymentId: null,
         amount: data.amount,
         currency: data.currency,
-        status: 'approved',
+        status: 'pending',
         paymentMethod: data.paymentMethod,
-        paidAt: new Date(),
+        paidAt: null,
       },
     })
 
-    const updatedBooking = await applyPaymentToBooking(tx, data.bookingId, data.amount, payment.id)
+    const updatedBooking = await applyApprovedPayment({
+      tx,
+      bookingId: data.bookingId,
+      businessId,
+      amount: data.amount,
+      currency: data.currency,
+      provider: 'manual',
+      providerPaymentId: null,
+      paymentType: data.paymentType as PaymentType,
+      paymentMethod: data.paymentMethod,
+      paymentId: payment.id,
+    })
 
-    return { payment, booking: updatedBooking }
+    // Volver a leer el Payment actualizado para retornar datos frescos (status approved, paidAt, etc.)
+    const refreshedPayment = await tx.payment.findUnique({ where: { id: payment.id } })
+
+    return { payment: refreshedPayment ?? payment, booking: updatedBooking }
   })
 
   revalidatePath('/dashboard/payments')

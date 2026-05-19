@@ -8,7 +8,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
-import { applyPaymentToBooking } from '@/lib/booking-payments'
+
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
 import { addMinutes } from 'date-fns'
 
@@ -227,8 +227,8 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
 
 /**
  * Flujo privado (dashboard): confirma/aplica un pago ya existente a una reserva.
- * Requiere sesión y rol owner/admin. No crea un registro Payment;
- * asume que el Payment ya fue creado por initiatePayment o createManualPayment.
+ * Requiere sesión y rol owner/admin. Delega toda la lógica financiera a
+ * applyApprovedPayment para garantizar consistencia e idempotencia.
  */
 export async function confirmPayment(bookingId: string, paymentId: string, amount: number) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
@@ -254,8 +254,6 @@ export async function confirmPayment(bookingId: string, paymentId: string, amoun
     throw new Error(e instanceof Error ? e.message : 'No se puede confirmar pago para esta reserva')
   }
 
-  if (amount <= 0) throw new Error('El monto debe ser positivo')
-
   const payment = await prisma.payment.findFirst({
     where: { id: paymentId, businessId },
   })
@@ -264,18 +262,19 @@ export async function confirmPayment(bookingId: string, paymentId: string, amoun
   if (payment.amount !== amount) throw new ForbiddenError('El monto no coincide con el pago registrado')
 
   const updated = await prisma.$transaction(async (tx) => {
-    // Idempotencia transaccional: solo marcar aprobado si aún no lo está
-    const updateResult = await tx.payment.updateMany({
-      where: { id: paymentId, businessId, status: { not: 'approved' } },
-      data: { status: 'approved', paidAt: new Date() },
+    const { applyApprovedPayment } = await import('@/server/services/finance')
+    return applyApprovedPayment({
+      tx,
+      bookingId,
+      businessId,
+      amount: payment.amount,
+      currency: payment.currency,
+      provider: payment.provider,
+      providerPaymentId: payment.providerPaymentId,
+      paymentType: payment.paymentType,
+      paymentMethod: payment.paymentMethod,
+      paymentId: payment.id,
     })
-
-    if (updateResult.count === 0) {
-      // Ya estaba confirmado por otro request concurrente
-      return tx.booking.findUnique({ where: { id: bookingId } })
-    }
-
-    return applyPaymentToBooking(tx, bookingId, amount, paymentId)
   })
 
   revalidatePath('/dashboard/bookings')

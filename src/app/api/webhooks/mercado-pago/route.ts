@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { applyPaymentToBooking } from '@/lib/booking-payments'
+import { applyApprovedPayment } from '@/server/services/finance'
 import { createHmac } from 'crypto'
 
 // Mercado Pago webhook signature validation
@@ -92,17 +92,18 @@ export async function POST(request: NextRequest) {
 
     // Idempotent application: only update if not already approved
     const updated = await prisma.$transaction(async (tx) => {
-      const updateResult = await tx.payment.updateMany({
-        where: { id: payment.id, status: { not: 'approved' } },
-        data: { status: 'approved', paidAt: new Date() },
+      return applyApprovedPayment({
+        tx,
+        bookingId: payment.bookingId,
+        businessId: payment.businessId,
+        amount: payment.amount,
+        currency: payment.currency,
+        provider: payment.provider,
+        providerPaymentId: payment.providerPaymentId,
+        paymentType: payment.paymentType,
+        paymentMethod: payment.paymentMethod,
+        paymentId: payment.id,
       })
-
-      if (updateResult.count === 0) {
-        // Already approved by another concurrent request
-        return tx.booking.findUnique({ where: { id: payment.bookingId } })
-      }
-
-      return applyPaymentToBooking(tx, payment.bookingId, payment.amount, payment.id)
     })
 
     if (!updated) throw new Error('Reserva no encontrada')

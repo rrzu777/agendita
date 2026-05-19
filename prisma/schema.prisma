@@ -203,6 +203,12 @@ model Payment {
   booking           Booking         @relation(fields: [bookingId], references: [id])
   customer          Customer        @relation(fields: [customerId], references: [id])
   ledgerEntries     LedgerEntry[]
+
+  // Evita duplicar exactamente el mismo pago para la misma reserva.
+  // En PostgreSQL, múltiples NULLs no se consideran iguales, por lo que
+  // varios pagos manuales (providerPaymentId = null) para el mismo booking
+  // siguen permitidos, pero no se duplica un pago online con el mismo providerPaymentId.
+  @@unique([bookingId, provider, providerPaymentId])
 }
 
 enum PaymentProvider {
@@ -248,6 +254,11 @@ model LedgerEntry {
   business        Business        @relation(fields: [businessId], references: [id])
   booking         Booking?        @relation(fields: [bookingId], references: [id])
   payment         Payment?        @relation(fields: [paymentId], references: [id])
+
+  // Garantiza exactamente un LedgerEntry por Payment aprobado.
+  // En PostgreSQL, múltiples NULLs son permitidos, así que se permite
+  // tener varias LedgerEntries sin paymentId (casos manuales u otros).
+  @@unique([paymentId])
 }
 
 enum LedgerEntryType {
