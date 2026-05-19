@@ -10,11 +10,17 @@ describe('groupBookingsByDay', () => {
     ]
     const result = groupBookingsByDay(items, 'America/Santiago')
     expect(Object.keys(result)).toEqual(['2026-05-18', '2026-05-19'])
-    expect(result['2026-05-18'].length).toBe(2)
-    expect(result['2026-05-19'].length).toBe(1)
+    expect(result['2026-05-18']).toEqual([items[0], items[1]])
+    expect(result['2026-05-19']).toEqual([items[2]])
   })
 
   it('returns empty object for empty input', () => {
     expect(groupBookingsByDay([], 'America/Santiago')).toEqual({})
+  })
+
+  it('throws for invalid timezone', () => {
+    expect(() =>
+      groupBookingsByDay([{ startDateTime: new Date() }], 'Invalid/Zone')
+    ).toThrow()
   })
 })
