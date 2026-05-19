@@ -42,6 +42,21 @@ export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' |
   return newBlock
 }
 
+export async function getTimeBlocksByRange(start: Date, end: Date) {
+  const { businessId } = await requireBusiness()
+  return prisma.timeBlock.findMany({
+    where: {
+      businessId,
+      OR: [
+        { startDateTime: { gte: start, lte: end } },
+        { endDateTime: { gte: start, lte: end } },
+        { startDateTime: { lte: start }, endDateTime: { gte: end } },
+      ],
+    },
+    orderBy: { startDateTime: 'asc' },
+  })
+}
+
 export async function deleteTimeBlock(id: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('delete-timeblock', 20, 60000)
