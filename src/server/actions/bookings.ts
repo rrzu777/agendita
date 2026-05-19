@@ -285,6 +285,13 @@ export async function confirmPayment(bookingId: string, paymentId: string, amoun
 }
 
 export async function getBookingsByRange(start: Date, end: Date) {
+  if (!(start instanceof Date) || isNaN(start.getTime()) || !(end instanceof Date) || isNaN(end.getTime())) {
+    throw new Error('Rango de fechas inválido')
+  }
+  if (start > end) {
+    throw new Error('La fecha de inicio debe ser anterior a la fecha de término')
+  }
+
   const { businessId } = await requireBusiness()
   return prisma.booking.findMany({
     where: {
