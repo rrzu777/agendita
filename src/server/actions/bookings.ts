@@ -225,6 +225,7 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
 
   const updated = await prisma.booking.findUnique({ where: { id } })
   revalidatePath('/dashboard/bookings')
+  revalidatePath('/dashboard/calendar')
   if (updated) {
     await revalidateBusinessPublicPaths(updated.businessId)
   }
