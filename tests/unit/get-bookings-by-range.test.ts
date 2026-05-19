@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getBookingsByRange } from '@/server/actions/bookings'
 
 const mockRequireBusiness = vi.fn().mockResolvedValue({ businessId: 'biz-1' })
@@ -30,6 +30,7 @@ describe('getBookingsByRange', () => {
 
     const result = await getBookingsByRange(start, end)
 
+    expect(mockRequireBusiness).toHaveBeenCalledTimes(1)
     expect(result.length).toBe(1)
     expect(result[0].id).toBe('b1')
     expect(mockFindMany).toHaveBeenCalledWith({
