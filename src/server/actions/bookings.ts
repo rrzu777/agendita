@@ -283,3 +283,18 @@ export async function confirmPayment(bookingId: string, paymentId: string, amoun
   }
   return updated
 }
+
+export async function getBookingsByRange(start: Date, end: Date) {
+  const { businessId } = await requireBusiness()
+  return prisma.booking.findMany({
+    where: {
+      businessId,
+      startDateTime: { gte: start, lte: end },
+    },
+    orderBy: { startDateTime: 'asc' },
+    include: {
+      service: true,
+      customer: true,
+    },
+  })
+}
