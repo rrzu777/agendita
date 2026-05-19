@@ -17,11 +17,24 @@ vi.mock('@/lib/db', () => ({
 
 describe('getBookingsByRange', () => {
   it('returns bookings filtered by business and date range', async () => {
-    const result = await getBookingsByRange(
-      new Date('2026-05-01'),
-      new Date('2026-05-31')
-    )
+    const { prisma } = await import('@/lib/db')
+    const start = new Date('2026-05-01')
+    const end = new Date('2026-05-31')
+
+    const result = await getBookingsByRange(start, end)
+
     expect(result.length).toBe(1)
     expect(result[0].id).toBe('b1')
+    expect(prisma.booking.findMany).toHaveBeenCalledWith({
+      where: {
+        businessId: 'biz-1',
+        startDateTime: { gte: start, lte: end },
+      },
+      orderBy: { startDateTime: 'asc' },
+      include: {
+        service: true,
+        customer: true,
+      },
+    })
   })
 })
