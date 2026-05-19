@@ -54,6 +54,18 @@ describe('getTimeBlocksByRange', () => {
     expect(result).toEqual([])
   })
 
+  it('throws for invalid date objects', async () => {
+    await expect(
+      getTimeBlocksByRange(new Date('invalid'), new Date('2026-05-31'))
+    ).rejects.toThrow('Rango de fechas inválido')
+  })
+
+  it('throws when start is after end', async () => {
+    await expect(
+      getTimeBlocksByRange(new Date('2026-05-31'), new Date('2026-05-01'))
+    ).rejects.toThrow('La fecha de inicio debe ser anterior a la fecha de término')
+  })
+
   it('throws when requireBusiness fails', async () => {
     mockRequireBusiness.mockRejectedValueOnce(new Error('Auth required'))
     await expect(
