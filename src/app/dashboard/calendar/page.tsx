@@ -68,6 +68,7 @@ export default async function CalendarPage({
           timeBlocks={serializeDates(timeBlocks)}
           selectedDate={selectedDate}
           businessCurrency={business.currency}
+          timezone={timezone}
         />
       </div>
     </div>

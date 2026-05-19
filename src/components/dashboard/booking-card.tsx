@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { Button } from '@/components/ui/button'
@@ -48,13 +49,19 @@ interface BookingCardProps {
 export function BookingCard({ booking, businessCurrency }: BookingCardProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const router = useRouter()
 
   const start = new Date(booking.startDateTime)
   const end = new Date(booking.endDateTime)
 
   function handleStatusChange(status: string) {
     startTransition(async () => {
-      await updateBookingStatus(booking.id, status as any)
+      try {
+        await updateBookingStatus(booking.id, status as any)
+        router.refresh()
+      } catch (err) {
+        console.error('Error updating booking status:', err)
+      }
     })
   }
 

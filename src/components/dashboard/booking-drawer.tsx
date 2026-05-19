@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import {
@@ -66,6 +67,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency }:
   const [paymentMethod, setPaymentMethod] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const router = useRouter()
 
   const start = new Date(booking.startDateTime)
 
@@ -85,6 +87,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency }:
     startTransition(async () => {
       try {
         await registerManualPayment(booking.id, numAmount, paymentMethod)
+        router.refresh()
         setAmount('')
         setPaymentMethod('')
         onOpenChange(false)

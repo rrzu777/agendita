@@ -3,6 +3,7 @@
 import { useMemo } from 'react'
 import { format, compareAsc } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { formatInTimeZone } from 'date-fns-tz'
 import { BookingCard, type CalendarBooking } from './booking-card'
 import { TimeBlockCard, type CalendarTimeBlock } from './time-block-card'
 
@@ -11,29 +12,28 @@ interface DayPanelProps {
   timeBlocks: CalendarTimeBlock[]
   selectedDate: string | null
   businessCurrency: string
+  timezone: string
 }
 
-export function DayPanel({ bookings, timeBlocks, selectedDate, businessCurrency }: DayPanelProps) {
+export function DayPanel({ bookings, timeBlocks, selectedDate, businessCurrency, timezone }: DayPanelProps) {
   const items = useMemo(() => {
     if (!selectedDate) return []
     const dayBookings = bookings
       .filter((b) => {
-        const d = new Date(b.startDateTime)
-        return format(d, 'yyyy-MM-dd') === selectedDate
+        return formatInTimeZone(new Date(b.startDateTime), timezone, 'yyyy-MM-dd') === selectedDate
       })
       .map((b) => ({ ...b, type: 'booking' as const }))
 
     const dayBlocks = timeBlocks
       .filter((tb) => {
-        const d = new Date(tb.startDateTime)
-        return format(d, 'yyyy-MM-dd') === selectedDate
+        return formatInTimeZone(new Date(tb.startDateTime), timezone, 'yyyy-MM-dd') === selectedDate
       })
       .map((tb) => ({ ...tb, type: 'timeBlock' as const }))
 
     return [...dayBookings, ...dayBlocks].sort((a, b) =>
       compareAsc(new Date(a.startDateTime), new Date(b.startDateTime))
     )
-  }, [bookings, timeBlocks, selectedDate])
+  }, [bookings, timeBlocks, selectedDate, timezone])
 
   if (!selectedDate) {
     return (
