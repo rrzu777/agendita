@@ -44,6 +44,12 @@ export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' |
 
 export async function getTimeBlocksByRange(start: Date, end: Date) {
   const { businessId } = await requireBusiness()
+  if (!(start instanceof Date) || isNaN(start.getTime()) || !(end instanceof Date) || isNaN(end.getTime())) {
+    throw new Error('Rango de fechas inválido')
+  }
+  if (start > end) {
+    throw new Error('La fecha de inicio debe ser anterior a la fecha de término')
+  }
   return prisma.timeBlock.findMany({
     where: {
       businessId,

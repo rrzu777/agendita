@@ -53,4 +53,11 @@ describe('getTimeBlocksByRange', () => {
     )
     expect(result).toEqual([])
   })
+
+  it('throws when requireBusiness fails', async () => {
+    mockRequireBusiness.mockRejectedValueOnce(new Error('Auth required'))
+    await expect(
+      getTimeBlocksByRange(new Date('2026-05-01'), new Date('2026-05-31'))
+    ).rejects.toThrow('Auth required')
+  })
 })
