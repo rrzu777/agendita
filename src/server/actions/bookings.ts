@@ -338,9 +338,15 @@ export async function registerManualPayment(
 
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, businessId },
-    include: { service: true, customer: true },
   })
   if (!booking) throw new ForbiddenError('Reserva no encontrada')
+
+  if (booking.remainingBalance <= 0) {
+    throw new Error('La reserva ya está pagada')
+  }
+  if (amount > booking.remainingBalance) {
+    throw new Error('El monto excede el saldo pendiente')
+  }
 
   const { assertBookingPayable } = await import('@/lib/booking-payments')
   try {
