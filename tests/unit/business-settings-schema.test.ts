@@ -52,14 +52,14 @@ describe('updateBusinessSchema', () => {
     expect(result.success).toBe(false)
   })
 
-  it('transforms empty URL to null', () => {
+  it('allows empty URL', () => {
     const result = updateBusinessSchema.safeParse({
       name: 'Test', city: 'Santiago', subdomain: 'test',
       profileImageUrl: '',
     })
     expect(result.success).toBe(true)
     if (result.success) {
-      expect(result.data.profileImageUrl).toBeNull()
+      expect(result.data.profileImageUrl).toBe('')
     }
   })
 
@@ -76,25 +76,25 @@ describe('updateBusinessSchema', () => {
     expect(result.success).toBe(false)
   })
 
-  it('normalizes whatsapp', () => {
+  it('accepts whatsapp with spaces', () => {
     const result = updateBusinessSchema.safeParse({
       name: 'Test', city: 'Santiago', subdomain: 'test',
       whatsapp: '9 1234 5678',
     })
     expect(result.success).toBe(true)
     if (result.success) {
-      expect(result.data.whatsapp).toBe('+56912345678')
+      expect(result.data.whatsapp).toBe('9 1234 5678')
     }
   })
 
-  it('normalizes instagram', () => {
+  it('accepts instagram with @', () => {
     const result = updateBusinessSchema.safeParse({
       name: 'Test', city: 'Santiago', subdomain: 'test',
       instagram: '@miestudio',
     })
     expect(result.success).toBe(true)
     if (result.success) {
-      expect(result.data.instagram).toBe('miestudio')
+      expect(result.data.instagram).toBe('@miestudio')
     }
   })
 })

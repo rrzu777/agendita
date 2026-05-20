@@ -6,6 +6,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusinessRole } from '@/lib/auth/server'
 import { updateBusinessSchema, type UpdateBusinessInput } from '@/lib/business/schema'
+import { normalizeWhatsapp, normalizeInstagram } from '@/lib/business/normalize'
 
 const RESERVED_SUBDOMAINS = [
   'www', 'app', 'admin', 'dashboard', 'api', 'login', 'register', 'support',
@@ -13,6 +14,11 @@ const RESERVED_SUBDOMAINS = [
 
 export { updateBusinessSchema }
 export type { UpdateBusinessInput }
+
+function trimToNull(value: string | undefined): string | null {
+  if (value === undefined || value.trim() === '') return null
+  return value.trim()
+}
 
 export async function updateBusinessSettings(data: UpdateBusinessInput) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
@@ -43,9 +49,25 @@ export async function updateBusinessSettings(data: UpdateBusinessInput) {
     throw new Error('Este subdominio ya está en uso')
   }
 
+  const updateData = {
+    name: validated.name.trim(),
+    bio: trimToNull(validated.bio),
+    profileImageUrl: trimToNull(validated.profileImageUrl),
+    logoUrl: trimToNull(validated.logoUrl),
+    whatsapp: normalizeWhatsapp(validated.whatsapp) || null,
+    instagram: normalizeInstagram(validated.instagram) || null,
+    addressText: trimToNull(validated.addressText),
+    city: validated.city.trim(),
+    timezone: validated.timezone,
+    subdomain: validated.subdomain,
+    cancellationPolicy: trimToNull(validated.cancellationPolicy),
+    bookingPolicy: trimToNull(validated.bookingPolicy),
+    depositPolicy: trimToNull(validated.depositPolicy),
+  }
+
   const updated = await prisma.business.update({
     where: { id: businessId },
-    data: validated,
+    data: updateData,
   })
 
   revalidatePath('/dashboard/settings')

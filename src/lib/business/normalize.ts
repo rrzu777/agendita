@@ -1,4 +1,4 @@
-export function normalizeWhatsapp(input: string | null): string | null {
+export function normalizeWhatsapp(input: string | null | undefined): string | null {
   if (!input || input.trim() === '') return null
 
   let cleaned = input.replace(/[^0-9+]/g, '')
@@ -26,7 +26,7 @@ export function normalizeWhatsapp(input: string | null): string | null {
   return cleaned
 }
 
-export function normalizeInstagram(input: string | null): string | null {
+export function normalizeInstagram(input: string | null | undefined): string | null {
   if (!input || input.trim() === '') return null
 
   let cleaned = input.trim().replace(/\s/g, '')

@@ -18,6 +18,7 @@ import { updateBusinessSettings, updateBusinessSchema } from '@/server/actions/b
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import type { Business } from '@prisma/client'
 import { Globe, ExternalLink, AlertCircle, CheckCircle2 } from 'lucide-react'
+import type { z } from 'zod'
 
 const TIMEZONES = [
   { value: 'America/Santiago', label: 'América/Santiago (Chile)' },
@@ -27,21 +28,7 @@ const TIMEZONES = [
   { value: 'America/Bogota', label: 'América/Bogotá (Colombia)' },
 ]
 
-type FormData = {
-  name: string
-  bio?: string
-  profileImageUrl?: string
-  logoUrl?: string
-  whatsapp?: string
-  instagram?: string
-  addressText?: string
-  city: string
-  timezone: string
-  subdomain: string
-  cancellationPolicy?: string
-  bookingPolicy?: string
-  depositPolicy?: string
-}
+type FormData = z.input<typeof updateBusinessSchema>
 
 export function SettingsForm({ business }: { business: Business }) {
   const [isSubmitting, setIsSubmitting] = useState(false)
