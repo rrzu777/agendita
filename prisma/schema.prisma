@@ -51,6 +51,9 @@ model Business {
   ledgerEntries   LedgerEntry[]
   reviews         Review[]
   galleryImages   GalleryImage[]
+  cancellationPolicy String?
+  bookingPolicy      String?
+  depositPolicy      String?
 }
 
 model BusinessUser {
