@@ -97,4 +97,24 @@ describe('updateBusinessSchema', () => {
       expect(result.data.instagram).toBe('@miestudio')
     }
   })
+
+  it('rejects name with only spaces', () => {
+    const result = updateBusinessSchema.safeParse({ name: '   ', city: 'Santiago', subdomain: 'test' })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects city with only spaces', () => {
+    const result = updateBusinessSchema.safeParse({ name: 'Test', city: '   ', subdomain: 'test' })
+    expect(result.success).toBe(false)
+  })
+
+  it('defaults timezone when not provided', () => {
+    const result = updateBusinessSchema.safeParse({
+      name: 'Test', city: 'Santiago', subdomain: 'test',
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.timezone).toBe('America/Santiago')
+    }
+  })
 })

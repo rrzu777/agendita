@@ -1,15 +1,14 @@
 import { z } from 'zod'
-import { normalizeWhatsapp, normalizeInstagram } from './normalize'
 
 export const updateBusinessSchema = z.object({
-  name: z.string().min(1, 'El nombre es obligatorio').max(100),
+  name: z.string().max(100).transform(v => v.trim()).refine(v => v.length > 0, 'El nombre es obligatorio'),
   bio: z.string().max(500).optional(),
   profileImageUrl: z.string().url('URL inválida').optional().or(z.literal('')),
   logoUrl: z.string().url('URL inválida').optional().or(z.literal('')),
   whatsapp: z.string().optional().or(z.literal('')),
   instagram: z.string().optional().or(z.literal('')),
   addressText: z.string().optional(),
-  city: z.string().min(1, 'La ciudad es obligatoria'),
+  city: z.string().transform(v => v.trim()).refine(v => v.length > 0, 'La ciudad es obligatoria'),
   timezone: z.string().default('America/Santiago'),
   subdomain: z.string()
     .min(3, 'Mínimo 3 caracteres')
