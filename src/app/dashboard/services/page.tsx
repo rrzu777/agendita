@@ -11,7 +11,7 @@ export default async function ServicesPage() {
     redirect('/login')
   }
 
-  const services = await getServices()
+  const services = await getServices(true)
 
   return (
     <div>

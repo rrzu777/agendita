@@ -1,46 +1,30 @@
 'use server'
 
-import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import type { Service } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import {
+  createServiceSchema,
+  updateServiceSchema,
+  reorderSchema,
+} from '@/lib/services/schema'
 
-const createServiceSchema = z.object({
-  name: z.string().min(1).max(100),
-  description: z.string().max(500).optional().nullable(),
-  durationMinutes: z.number().int().positive().max(480),
-  price: z.number().nonnegative(),
-  depositAmount: z.number().nonnegative(),
-  pastelColor: z.string().max(50),
-  isActive: z.boolean().optional(),
-  sortOrder: z.number().int().nonnegative().optional(),
-})
-
-const updateServiceSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  description: z.string().max(500).optional().nullable(),
-  durationMinutes: z.number().int().positive().max(480).optional(),
-  price: z.number().nonnegative().optional(),
-  depositAmount: z.number().nonnegative().optional(),
-  pastelColor: z.string().max(50).optional(),
-  sortOrder: z.number().int().nonnegative().optional(),
-})
-
-export async function getServices() {
+export async function getServices(includeInactive = false) {
   const { businessId } = await requireBusiness()
   return prisma.service.findMany({
     where: {
-      isActive: true,
+      ...(includeInactive ? {} : { isActive: true }),
       businessId,
     },
     orderBy: { sortOrder: 'asc' },
   })
 }
 
-export async function createService(data: Omit<Service, 'id' | 'createdAt' | 'updatedAt' | 'businessId'>) {
+export async function createService(
+  data: Record<string, unknown>
+) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('create-service', 30, 60000)
   if (!limit.success) {
@@ -52,13 +36,19 @@ export async function createService(data: Omit<Service, 'id' | 'createdAt' | 'up
     throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
-  const newService = await prisma.service.create({ data: { ...data, businessId } })
+  const newService = await prisma.service.create({
+    data: { ...parsed.data, businessId },
+  })
+
   revalidatePath('/dashboard/services')
-  await revalidateBusinessPublicPaths(newService.businessId)
+  await revalidateBusinessPublicPaths(businessId)
   return newService
 }
 
-export async function updateService(id: string, data: Partial<Omit<Service, 'id' | 'createdAt' | 'updatedAt' | 'businessId'>>) {
+export async function updateService(
+  serviceId: string,
+  data: Record<string, unknown>
+) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('update-service', 30, 60000)
   if (!limit.success) {
@@ -70,40 +60,126 @@ export async function updateService(id: string, data: Partial<Omit<Service, 'id'
     throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
-  const updateResult = await prisma.service.updateMany({
-    where: { id, businessId },
-    data: parsed.data,
+  const existing = await prisma.service.findUnique({
+    where: { id: serviceId },
+    select: { businessId: true, price: true, depositAmount: true },
   })
-  if (updateResult.count === 0) {
+  if (!existing) {
+    throw new ForbiddenError('Servicio no encontrado')
+  }
+  if (existing.businessId !== businessId) {
     throw new ForbiddenError('Servicio no encontrado')
   }
 
-  const updated = await prisma.service.findUnique({ where: { id } })
-  revalidatePath('/dashboard/services')
-  if (updated) {
-    await revalidateBusinessPublicPaths(updated.businessId)
+  if (Object.keys(parsed.data).length === 0) {
+    throw new Error('No hay campos para actualizar')
   }
+
+  const finalPrice = parsed.data.price !== undefined ? parsed.data.price : existing.price
+  const finalDeposit = parsed.data.depositAmount !== undefined ? parsed.data.depositAmount : existing.depositAmount
+  if (finalDeposit > finalPrice) {
+    throw new Error('El abono no puede superar el precio')
+  }
+
+  const updated = await prisma.service.update({
+    where: { id: serviceId },
+    data: parsed.data,
+  })
+
+  revalidatePath('/dashboard/services')
+  await revalidateBusinessPublicPaths(businessId)
   return updated
 }
 
-export async function deleteService(id: string) {
+export async function toggleService(serviceId: string) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('toggle-service', 20, 60000)
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  }
+
+  const existing = await prisma.service.findUnique({
+    where: { id: serviceId },
+    select: { businessId: true, isActive: true },
+  })
+  if (!existing) {
+    throw new ForbiddenError('Servicio no encontrado')
+  }
+  if (existing.businessId !== businessId) {
+    throw new ForbiddenError('Servicio no encontrado')
+  }
+
+  const updated = await prisma.service.update({
+    where: { id: serviceId },
+    data: { isActive: !existing.isActive },
+  })
+
+  revalidatePath('/dashboard/services')
+  await revalidateBusinessPublicPaths(businessId)
+  return updated
+}
+
+export async function deleteService(serviceId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('delete-service', 20, 60000)
   if (!limit.success) {
     throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
-  const deleteResult = await prisma.service.updateMany({
-    where: { id, businessId },
-    data: { isActive: false },
+  const existing = await prisma.service.findUnique({
+    where: { id: serviceId },
+    select: { businessId: true },
   })
-  if (deleteResult.count === 0) {
+  if (!existing) {
+    throw new ForbiddenError('Servicio no encontrado')
+  }
+  if (existing.businessId !== businessId) {
     throw new ForbiddenError('Servicio no encontrado')
   }
 
-  const updated = await prisma.service.findUnique({ where: { id } })
+  const updated = await prisma.service.update({
+    where: { id: serviceId },
+    data: { isActive: false },
+  })
+
   revalidatePath('/dashboard/services')
-  if (updated) {
-    await revalidateBusinessPublicPaths(updated.businessId)
+  await revalidateBusinessPublicPaths(businessId)
+  return updated
+}
+
+export async function reorderServices(items: { id: string; sortOrder: number }[]) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('reorder-services', 10, 60000)
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
+
+  const parsed = reorderSchema.safeParse({ items })
+  if (!parsed.success) {
+    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  }
+
+  const ids = parsed.data.items.map(i => i.id)
+
+  const ownedServices = await prisma.service.findMany({
+    where: { id: { in: ids }, businessId },
+    select: { id: true },
+  })
+  const ownedIds = new Set(ownedServices.map(s => s.id))
+  const submittedIds = new Set(ids)
+  if (ownedIds.size !== submittedIds.size) {
+    throw new ForbiddenError('Uno o más servicios no pertenecen a este negocio')
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const item of parsed.data.items) {
+      await tx.service.update({
+        where: { id: item.id },
+        data: { sortOrder: item.sortOrder },
+      })
+    }
+  })
+
+  revalidatePath('/dashboard/services')
+  await revalidateBusinessPublicPaths(businessId)
 }
