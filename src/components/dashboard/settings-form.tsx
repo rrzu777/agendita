@@ -115,6 +115,9 @@ export function SettingsForm({ business }: { business: Business }) {
             <Textarea id="bio" {...register('bio')} rows={3} />
             {errors.bio && <p className="text-sm text-destructive">{errors.bio.message}</p>}
           </div>
+          {/* TODO: Replace external URL inputs with Supabase Storage upload
+              once bucket/policies are configured. MVP uses external URLs to avoid
+              blocking the settings feature on storage infrastructure. */}
           <div className="space-y-2">
             <Label htmlFor="logoUrl">URL del logo</Label>
             <Input id="logoUrl" {...register('logoUrl')} placeholder="https://..." />
@@ -186,6 +189,11 @@ export function SettingsForm({ business }: { business: Business }) {
               </SelectContent>
             </Select>
           </div>
+          {/* Currency is intentionally read-only.
+              Changing currency would break existing payment integrations
+              (Mercado Pago, Webpay) and pricing consistency across bookings.
+              If multi-currency is needed later, it requires a dedicated migration
+              and payment-provider coordination. Default remains CLP per spec. */}
           <div className="space-y-2">
             <Label htmlFor="currency">Moneda</Label>
             <Input id="currency" value="CLP" disabled />

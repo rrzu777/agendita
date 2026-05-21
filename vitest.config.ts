@@ -13,6 +13,8 @@ export default defineConfig({
       '**/.next/**',
       '**/coverage/**',
       '**/.worktrees/**',
+      'tests/e2e/**',
+      'playwright.config.ts',
     ],
   },
   resolve: {
