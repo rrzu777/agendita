@@ -3,7 +3,12 @@
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { PaymentProvider, PaymentStatus, PaymentType, BookingStatus } from '@prisma/client'
-import { getDefaultProvider } from '@/lib/payments/factory'
+import {
+  getDefaultProvider,
+  isOnlinePaymentAvailable,
+  getOnlinePaymentProvider,
+  resolveOnlinePaymentAvailability,
+} from '@/lib/payments/factory'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -28,6 +33,10 @@ const verifyPaymentSchema = z.object({
  * Flujo público: inicia un pago online para una reserva.
  * Recibe bookingId del frontend; el monto autoritativo se resuelve
  * desde la reserva + servicio en DB.
+ *
+ * Si el pago online no está disponible (provider no configurado,
+ * configurado como manual, o no implementado), retorna error claro
+ * sin crear registros de pago.
  */
 export async function initiatePayment(data: {
   bookingId: string
@@ -43,6 +52,13 @@ export async function initiatePayment(data: {
   const parsed = initiatePaymentSchema.safeParse(data)
   if (!parsed.success) {
     throw new Error('Datos de pago inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  }
+
+  // Guard: no crear pagos si el checkout online no está disponible
+  if (!isOnlinePaymentAvailable()) {
+    throw new Error(
+      'Pago online no disponible. Contacta al negocio para coordinar el pago.',
+    )
   }
 
   const booking = await prisma.booking.findUnique({
@@ -76,7 +92,7 @@ export async function initiatePayment(data: {
   const currency = booking.business.currency || 'CLP'
   const description = `Abono para ${booking.service?.name || 'servicio'}`
 
-  const provider = getDefaultProvider()
+  const provider = getOnlinePaymentProvider()
   const baseUrl = getBusinessPublicUrl(booking.business)
   const result = await provider.createPayment({
     amount,
@@ -104,6 +120,14 @@ export async function initiatePayment(data: {
 
   revalidatePath('/dashboard/payments')
   return result
+}
+
+/**
+ * Server action para que el frontend público consulte la disponibilidad de pago online.
+ * Nunca lanza: siempre retorna un objeto con { available, provider, reason?, isMock }.
+ */
+export async function getOnlinePaymentAvailability() {
+  return resolveOnlinePaymentAvailability()
 }
 
 /**
@@ -157,8 +181,11 @@ export async function verifyAndConfirmPayment(paymentId: string, bookingId: stri
     if (verification.status === 'approved') approved = true
   }
 
+  // Mock auto-approval: only in dev/test, never in production
   if (payment.provider === 'mock') {
     if (process.env.NODE_ENV !== 'production') {
+      approved = true
+    } else if (process.env.ALLOW_MOCK_PAYMENTS_IN_PRODUCTION === 'true') {
       approved = true
     }
   }

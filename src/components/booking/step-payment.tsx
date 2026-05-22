@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
 import { createBooking } from '@/server/actions/bookings'
-import { initiatePayment, verifyAndConfirmPayment } from '@/server/actions/payments'
+import { initiatePayment, verifyAndConfirmPayment, getOnlinePaymentAvailability } from '@/server/actions/payments'
 import { AlertCircle, CreditCard, Loader2 } from 'lucide-react'
 
 function generateIdempotencyKey(): string {
@@ -19,6 +19,16 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error'>('review')
   const [errorMessage, setErrorMessage] = useState('')
+  const [availability, setAvailability] = useState<{
+    available: boolean
+    provider: string | null
+    reason?: string
+    isMock: boolean
+  } | null>(null)
+
+  useEffect(() => {
+    getOnlinePaymentAvailability().then(setAvailability)
+  }, [])
 
   // Generar una key estable por montaje de StepPayment.
   // Retry dentro del mismo montaje (ej. "Intentar de nuevo") usa la misma key.
@@ -93,6 +103,43 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
     )
   }
 
+  if (availability && !availability.available) {
+    return (
+      <div>
+        <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Pago de abono</h2>
+        <p className="mb-8 text-lg text-muted-foreground">Resumen de tu reserva</p>
+
+        <div className="mb-6 space-y-3 rounded-xl bg-muted/55 p-5">
+          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
+          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
+          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">${data.servicePrice.toLocaleString('es-CL')}</span></div>
+          <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono a pagar</span><span className="font-semibold text-primary">${data.serviceDeposit.toLocaleString('es-CL')}</span></div>
+        </div>
+
+        <div className="mb-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <AlertCircle className="mt-0.5 size-5 shrink-0" />
+          <div>
+            <p className="font-semibold">Pago online no disponible</p>
+            <p className="mt-1">{availability.reason || 'El checkout en línea no está habilitado para este negocio. Contacta al negocio para coordinar el pago de tu abono.'}</p>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (availability === null) {
+    return (
+      <div className="py-14 text-center">
+        <Loader2 className="mx-auto mb-4 size-8 animate-spin text-primary" />
+        <p className="text-muted-foreground">Verificando disponibilidad de pago...</p>
+      </div>
+    )
+  }
+
   return (
     <div>
       <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Pago de abono</h2>
@@ -105,10 +152,12 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
         <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono a pagar</span><span className="font-semibold text-primary">${data.serviceDeposit.toLocaleString('es-CL')}</span></div>
       </div>
 
-      <div className="mb-6 flex gap-3 rounded-xl border border-border/70 bg-secondary/40 p-4 text-sm text-primary">
-        <CreditCard className="mt-0.5 size-5 shrink-0" />
-        <p>Modo de desarrollo: el pago se procesará con el proveedor simulado.</p>
-      </div>
+      {availability.isMock && (
+        <div className="mb-6 flex gap-3 rounded-xl border border-border/70 bg-secondary/40 p-4 text-sm text-primary">
+          <CreditCard className="mt-0.5 size-5 shrink-0" />
+          <p>Modo de desarrollo: el pago se procesará con el proveedor simulado.</p>
+        </div>
+      )}
 
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
