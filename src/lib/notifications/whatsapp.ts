@@ -1,0 +1,98 @@
+import { formatInTimeZone } from 'date-fns-tz'
+import { es } from 'date-fns/locale'
+
+export interface BookingWhatsappData {
+  customerName: string
+  customerPhone: string
+  serviceName: string
+  startDateTime: Date
+  businessTimezone: string
+  businessCurrency: string
+  totalPrice: number
+  depositPaid: number
+  remainingBalance: number
+  businessAddress?: string | null
+}
+
+export interface ReviewRequestWhatsappData {
+  customerName: string
+  serviceName: string
+  reviewLink: string
+}
+
+function fmtDate(date: Date, timezone: string): string {
+  return formatInTimeZone(date, timezone, "EEEE d 'de' MMMM 'de' yyyy, HH:mm", { locale: es })
+}
+
+function fmtCurrency(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat('es-CL', { style: 'currency', currency: currency || 'CLP' }).format(amount)
+  } catch {
+    return `${currency} ${amount}`
+  }
+}
+
+function normalizePhone(phone: string): string {
+  return phone.replace(/^\+/, '').replace(/\D/g, '')
+}
+
+export function buildWhatsappUrl(phone: string, message: string): string {
+  const normalized = normalizePhone(phone)
+  const encoded = encodeURIComponent(message)
+  return `https://wa.me/${normalized}?text=${encoded}`
+}
+
+export function buildBookingConfirmationWhatsappMessage(data: BookingWhatsappData): string {
+  const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
+  const total = fmtCurrency(data.totalPrice, data.businessCurrency)
+  const deposit = fmtCurrency(data.depositPaid || 0, data.businessCurrency)
+  const remaining = fmtCurrency(data.remainingBalance, data.businessCurrency)
+
+  const lines = [
+    `¡Hola ${data.customerName}! 🎉`,
+    `Tu reserva en Agendita fue creada exitosamente:`,
+    ``,
+    `📋 Servicio: ${data.serviceName}`,
+    `📅 Fecha y hora: ${dateStr}`,
+  ]
+  if (data.businessAddress) {
+    lines.push(`📍 Dirección: ${data.businessAddress}`)
+  }
+  lines.push(
+    ``,
+    `💰 Precio total: ${total}`,
+    `✅ Abono: ${deposit}`,
+    `💳 Saldo pendiente: ${remaining}`,
+    ``,
+    `¡Te esperamos!`,
+  )
+
+  return lines.join('\n')
+}
+
+export function buildReviewRequestWhatsappMessage(data: ReviewRequestWhatsappData): string {
+  return [
+    `¡Hola ${data.customerName}! 🌟`,
+    ``,
+    `Gracias por visitarnos. Nos encantaría saber cómo te fue con tu servicio de ${data.serviceName}.`,
+    ``,
+    `Dejanos tu reseña aquí:`,
+    `${data.reviewLink}`,
+    ``,
+    `¡Gracias!`,
+  ].join('\n')
+}
+
+export function buildWhatsappBookingSummaryText(data: BookingWhatsappData): string {
+  const parts = [
+    `Reserva creada para ${data.customerName}`,
+    `Servicio: ${data.serviceName}`,
+    `Fecha: ${fmtDate(data.startDateTime, data.businessTimezone)}`,
+    `Total: ${fmtCurrency(data.totalPrice, data.businessCurrency)}`,
+    `Teléfono: ${data.customerPhone}`,
+  ]
+  if (data.businessAddress) {
+    parts.push(`Dirección: ${data.businessAddress}`)
+  }
+  return parts.join(' | ')
+}

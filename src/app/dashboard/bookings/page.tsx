@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { updateBookingStatus } from '@/server/actions/bookings'
 import { CalendarDays, Plus } from 'lucide-react'
+import { BookingContactButtons } from '@/components/dashboard/booking-contact-buttons'
 
 const statusLabels: Record<string, string> = {
   pending_payment: 'Pendiente de pago',
@@ -32,6 +33,9 @@ export default async function BookingsPage() {
   }
 
   const bookings = await getBookings()
+  const businessCurrency = userData.business.currency || 'CLP'
+  const businessTimezone = userData.business.timezone || 'America/Santiago'
+  const businessAddress = userData.business.addressText || null
 
   return (
     <div>
@@ -66,13 +70,14 @@ export default async function BookingsPage() {
                 <TableHead>Cliente</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead>Pago</TableHead>
+                <TableHead>Contacto</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {bookings.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
                     <CalendarDays className="mx-auto mb-3 size-8 text-primary" />
                     No hay reservas todavía
                   </TableCell>
@@ -102,6 +107,28 @@ export default async function BookingsPage() {
                         <span className={booking.paymentStatus === 'fully_paid' ? 'font-semibold text-green-700' : 'font-semibold text-primary'}>
                           ${booking.depositPaid.toLocaleString('es-CL')} / ${booking.finalAmount.toLocaleString('es-CL')}
                         </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          <BookingContactButtons
+                            variant="compact"
+                            booking={{
+                              customerName: booking.customer?.name || '',
+                              customerPhone: booking.customer?.phone || null,
+                              serviceName: booking.service?.name || '',
+                              startDateTime: booking.startDateTime.toISOString(),
+                              businessTimezone,
+                              businessCurrency,
+                              totalPrice: booking.totalPrice,
+                              depositPaid: booking.depositPaid,
+                              remainingBalance: booking.remainingBalance,
+                              businessAddress,
+                            }}
+                          />
+                          {!booking.customer?.phone && (
+                            <span className="text-xs text-muted-foreground">Sin teléfono</span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-2 justify-end">

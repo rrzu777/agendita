@@ -5,6 +5,7 @@ const mockPrisma = {
   booking: {
     findUnique: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
   },
   payment: {
     findUnique: vi.fn(),
@@ -131,10 +132,11 @@ describe('applyApprovedPayment', () => {
 
     expect(tx.payment.create).toHaveBeenCalledTimes(1)
     expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(1)
-    expect(result.depositPaid).toBe(5000)
-    expect(result.remainingBalance).toBe(15000)
-    expect(result.paymentStatus).toBe(BookingPaymentStatus.unpaid)
-    expect(result.status).toBe(BookingStatus.pending_payment)
+    expect(result.booking.depositPaid).toBe(5000)
+    expect(result.booking.remainingBalance).toBe(15000)
+    expect(result.booking.paymentStatus).toBe(BookingPaymentStatus.unpaid)
+    expect(result.booking.status).toBe(BookingStatus.pending_payment)
+    expect(result.wasConfirmed).toBe(false)
   })
 
   it('accumulates partial payments and updates status to confirmed when depositRequired is met', async () => {
@@ -147,6 +149,7 @@ describe('applyApprovedPayment', () => {
     tx.payment.findMany.mockResolvedValue([existingPayment, newPayment])
     tx.ledgerEntry.findFirst.mockResolvedValue(null)
     const updatedBooking = { ...baseBooking, depositPaid: 10000, remainingBalance: 10000, paymentStatus: BookingPaymentStatus.deposit_paid, status: BookingStatus.confirmed }
+    tx.booking.updateMany.mockResolvedValue({ count: 1 })
     tx.booking.update.mockResolvedValue(updatedBooking)
 
     const result = await applyApprovedPayment({
@@ -162,10 +165,11 @@ describe('applyApprovedPayment', () => {
 
     expect(tx.payment.create).toHaveBeenCalledTimes(1)
     expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(1)
-    expect(result.depositPaid).toBe(10000)
-    expect(result.remainingBalance).toBe(10000)
-    expect(result.paymentStatus).toBe(BookingPaymentStatus.deposit_paid)
-    expect(result.status).toBe(BookingStatus.confirmed)
+    expect(result.booking.depositPaid).toBe(10000)
+    expect(result.booking.remainingBalance).toBe(10000)
+    expect(result.booking.paymentStatus).toBe(BookingPaymentStatus.deposit_paid)
+    expect(result.booking.status).toBe(BookingStatus.confirmed)
+    expect(result.wasConfirmed).toBe(true)
   })
 
   it('final payment leaves remainingBalance 0 and fully_paid', async () => {
@@ -193,8 +197,9 @@ describe('applyApprovedPayment', () => {
       paymentType: PaymentType.final_payment,
     })
 
-    expect(result.remainingBalance).toBe(0)
-    expect(result.paymentStatus).toBe(BookingPaymentStatus.fully_paid)
+    expect(result.booking.remainingBalance).toBe(0)
+    expect(result.booking.paymentStatus).toBe(BookingPaymentStatus.fully_paid)
+    expect(result.wasConfirmed).toBe(false)
   })
 
   it('does not duplicate Payment or LedgerEntry for same providerPaymentId', async () => {
@@ -204,6 +209,7 @@ describe('applyApprovedPayment', () => {
     tx.payment.findFirst.mockResolvedValue(existingPayment)
     tx.payment.findMany.mockResolvedValue([existingPayment])
     const updatedBooking = { ...baseBooking, depositPaid: 10000, remainingBalance: 10000 }
+    tx.booking.updateMany.mockResolvedValue({ count: 1 })
     tx.booking.update.mockResolvedValue(updatedBooking)
 
     const result = await applyApprovedPayment({
@@ -220,7 +226,7 @@ describe('applyApprovedPayment', () => {
     expect(tx.payment.create).not.toHaveBeenCalled()
     expect(tx.ledgerEntry.create).not.toHaveBeenCalled()
     expect(tx.payment.update).not.toHaveBeenCalled()
-    expect(result.depositPaid).toBe(10000)
+    expect(result.booking.depositPaid).toBe(10000)
   })
 
   it('approves existing pending Payment and creates LedgerEntry if not exists', async () => {
@@ -233,6 +239,7 @@ describe('applyApprovedPayment', () => {
     tx.payment.findMany.mockResolvedValue([updatedPayment])
     tx.ledgerEntry.findFirst.mockResolvedValue(null)
     const updatedBooking = { ...baseBooking, depositPaid: 10000, remainingBalance: 10000, paymentStatus: BookingPaymentStatus.deposit_paid, status: BookingStatus.confirmed }
+    tx.booking.updateMany.mockResolvedValue({ count: 1 })
     tx.booking.update.mockResolvedValue(updatedBooking)
 
     const result = await applyApprovedPayment({
@@ -248,7 +255,8 @@ describe('applyApprovedPayment', () => {
 
     expect(tx.payment.update).toHaveBeenCalledTimes(1)
     expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(1)
-    expect(result.depositPaid).toBe(10000)
+    expect(result.booking.depositPaid).toBe(10000)
+    expect(result.wasConfirmed).toBe(true)
   })
 
   it('manual payment updates correctly', async () => {
@@ -260,6 +268,7 @@ describe('applyApprovedPayment', () => {
     tx.payment.findMany.mockResolvedValue([createdPayment])
     tx.ledgerEntry.findFirst.mockResolvedValue(null)
     const updatedBooking = { ...baseBooking, depositPaid: 20000, remainingBalance: 0, paymentStatus: BookingPaymentStatus.fully_paid, status: BookingStatus.confirmed }
+    tx.booking.updateMany.mockResolvedValue({ count: 1 })
     tx.booking.update.mockResolvedValue(updatedBooking)
 
     const result = await applyApprovedPayment({
@@ -274,9 +283,10 @@ describe('applyApprovedPayment', () => {
       paymentMethod: 'Efectivo',
     })
 
-    expect(result.depositPaid).toBe(20000)
-    expect(result.remainingBalance).toBe(0)
-    expect(result.paymentStatus).toBe(BookingPaymentStatus.fully_paid)
+    expect(result.booking.depositPaid).toBe(20000)
+    expect(result.booking.remainingBalance).toBe(0)
+    expect(result.booking.paymentStatus).toBe(BookingPaymentStatus.fully_paid)
+    expect(result.wasConfirmed).toBe(true)
   })
 
   it('creates two distinct Payments for two manual calls without paymentId', async () => {
@@ -286,7 +296,7 @@ describe('applyApprovedPayment', () => {
     tx.payment.findFirst.mockResolvedValueOnce(null)
     const createdPayment1 = { id: 'pay-1', amount: 5000, status: 'approved' }
     tx.payment.create.mockResolvedValueOnce(createdPayment1)
-    tx.payment.findMany.mockResolvedValueOnce([createdPayment1])
+    tx.payment.findMany.mockResolvedValueOnce([createdPayment1]).mockResolvedValueOnce([createdPayment1])
     tx.ledgerEntry.findFirst.mockResolvedValueOnce(null)
     const updatedBooking1 = { ...baseBooking, depositPaid: 5000, remainingBalance: 15000, paymentStatus: BookingPaymentStatus.unpaid }
     tx.booking.update.mockResolvedValueOnce(updatedBooking1)
@@ -306,9 +316,10 @@ describe('applyApprovedPayment', () => {
     tx.payment.findFirst.mockResolvedValueOnce(null)
     const createdPayment2 = { id: 'pay-2', amount: 3000, status: 'approved' }
     tx.payment.create.mockResolvedValueOnce(createdPayment2)
-    tx.payment.findMany.mockResolvedValueOnce([createdPayment1, createdPayment2])
+    tx.payment.findMany.mockResolvedValueOnce([createdPayment1, createdPayment2]).mockResolvedValueOnce([createdPayment1, createdPayment2])
     tx.ledgerEntry.findFirst.mockResolvedValueOnce(null)
     const updatedBooking2 = { ...baseBooking, depositPaid: 8000, remainingBalance: 12000, paymentStatus: BookingPaymentStatus.unpaid }
+    tx.booking.updateMany.mockResolvedValue({ count: 0 })
     tx.booking.update.mockResolvedValueOnce(updatedBooking2)
 
     const result = await applyApprovedPayment({
@@ -324,8 +335,8 @@ describe('applyApprovedPayment', () => {
 
     expect(tx.payment.create).toHaveBeenCalledTimes(2)
     expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(2)
-    expect(result.depositPaid).toBe(8000)
-    expect(result.remainingBalance).toBe(12000)
+    expect(result.booking.depositPaid).toBe(8000)
+    expect(result.booking.remainingBalance).toBe(12000)
   })
 
   describe('with explicit paymentId', () => {
@@ -339,6 +350,7 @@ describe('applyApprovedPayment', () => {
       tx.payment.findMany.mockResolvedValue([updatedPayment])
       tx.ledgerEntry.findFirst.mockResolvedValue(null)
       const updatedBooking = { ...baseBooking, depositPaid: 8000, remainingBalance: 12000, paymentStatus: BookingPaymentStatus.unpaid, status: BookingStatus.pending_payment }
+      tx.booking.updateMany.mockResolvedValue({ count: 0 })
       tx.booking.update.mockResolvedValue(updatedBooking)
 
       const result = await applyApprovedPayment({
@@ -356,8 +368,8 @@ describe('applyApprovedPayment', () => {
       expect(tx.payment.create).not.toHaveBeenCalled()
       expect(tx.payment.update).toHaveBeenCalledTimes(1)
       expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(1)
-      expect(result.depositPaid).toBe(8000)
-      expect(result.remainingBalance).toBe(12000)
+      expect(result.booking.depositPaid).toBe(8000)
+      expect(result.booking.remainingBalance).toBe(12000)
     })
 
     it('is idempotent when Payment is already approved', async () => {
@@ -367,6 +379,7 @@ describe('applyApprovedPayment', () => {
       tx.payment.findUnique.mockResolvedValue(existingPayment)
       tx.payment.findMany.mockResolvedValue([existingPayment])
       const updatedBooking = { ...baseBooking, depositPaid: 8000, remainingBalance: 12000, paymentStatus: BookingPaymentStatus.unpaid }
+      tx.booking.updateMany.mockResolvedValue({ count: 0 })
       tx.booking.update.mockResolvedValue(updatedBooking)
 
       const result = await applyApprovedPayment({
@@ -384,7 +397,7 @@ describe('applyApprovedPayment', () => {
       expect(tx.payment.create).not.toHaveBeenCalled()
       expect(tx.payment.update).not.toHaveBeenCalled()
       expect(tx.ledgerEntry.create).not.toHaveBeenCalled()
-      expect(result.depositPaid).toBe(8000)
+      expect(result.booking.depositPaid).toBe(8000)
     })
 
     it('does not duplicate LedgerEntry when called twice with same paymentId', async () => {
@@ -395,6 +408,7 @@ describe('applyApprovedPayment', () => {
       tx.payment.findMany.mockResolvedValue([existingPayment])
       tx.ledgerEntry.findFirst.mockResolvedValue({ id: 'ledger-1' }) // ya existe
       const updatedBooking = { ...baseBooking, depositPaid: 8000, remainingBalance: 12000, paymentStatus: BookingPaymentStatus.unpaid }
+      tx.booking.updateMany.mockResolvedValue({ count: 0 })
       tx.booking.update.mockResolvedValue(updatedBooking)
 
       const result = await applyApprovedPayment({
@@ -410,7 +424,7 @@ describe('applyApprovedPayment', () => {
       })
 
       expect(tx.ledgerEntry.create).not.toHaveBeenCalled()
-      expect(result.depositPaid).toBe(8000)
+      expect(result.booking.depositPaid).toBe(8000)
     })
   })
 })

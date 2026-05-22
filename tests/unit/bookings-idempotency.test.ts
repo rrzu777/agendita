@@ -13,6 +13,11 @@ const mockPrisma = {
     findFirst: vi.fn(),
     create: vi.fn(),
   },
+  businessUser: {
+    findMany: vi.fn().mockResolvedValue([
+      { user: { email: 'owner@test.com', name: 'Owner' } },
+    ]),
+  },
   $transaction: vi.fn(),
 }
 
@@ -38,6 +43,24 @@ vi.mock('@/server/actions/revalidate-business', () => ({
   revalidateBusinessPublicPaths: vi.fn().mockResolvedValue(undefined),
 }))
 
+const mockResendSend = vi.fn()
+const MockResend = vi.fn(function (this: Record<string, unknown>) {
+  this.emails = { send: mockResendSend }
+}) as unknown as { new (...args: unknown[]): { emails: { send: typeof mockResendSend } } }
+
+vi.mock('resend', () => ({
+  Resend: MockResend,
+}))
+
+vi.mock('@/lib/notifications', () => ({
+  sendBookingConfirmationToCustomer: vi.fn(),
+  sendBookingReceivedToCustomer: vi.fn(),
+  sendNewBookingNotificationToBusiness: vi.fn().mockResolvedValue([]),
+  sendBookingCancelledNotification: vi.fn(),
+  sendNotificationSafely: vi.fn().mockResolvedValue({ success: true }),
+  sendMultiNotificationSafely: vi.fn().mockResolvedValue([]),
+}))
+
 vi.mock('@/lib/availability/validation', () => ({
   assertSlotIsAvailable: vi.fn().mockResolvedValue(undefined),
 }))
@@ -56,9 +79,18 @@ describe('createBooking idempotency', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv('RESEND_API_KEY', '')
+    vi.stubEnv('FROM_EMAIL', '')
     mockPrisma.business.findUnique.mockResolvedValue({
       id: 'biz-1',
       timezone: 'America/Santiago',
+      name: 'Test Business',
+      whatsapp: '+56987654321',
+      addressText: 'Test Address',
+      currency: 'CLP',
+      cancellationPolicy: null,
+      slug: 'test-biz',
+      subdomain: null,
     })
     mockPrisma.service.findFirst.mockResolvedValue({
       id: 'svc-1',
@@ -94,7 +126,18 @@ describe('createBooking idempotency', () => {
       id: 'booking-new',
       businessId: 'biz-1',
       serviceId: 'svc-1',
+      customerId: 'cust-1',
       status: BookingStatus.pending_payment,
+      totalPrice: 10000,
+      depositRequired: 5000,
+      depositPaid: 0,
+      remainingBalance: 10000,
+      finalAmount: 10000,
+      paymentStatus: BookingPaymentStatus.unpaid,
+      startDateTime: new Date('2026-05-20T14:00:00Z'),
+      endDateTime: new Date('2026-05-20T15:00:00Z'),
+      service: { name: 'Manicure' },
+      customer: { name: 'Juan', phone: '+56912345678', email: null },
     }
     mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
       const tx = {
@@ -154,6 +197,18 @@ describe('createBooking idempotency', () => {
       id: 'booking-no-key',
       businessId: 'biz-1',
       serviceId: 'svc-1',
+      customerId: 'cust-1',
+      status: BookingStatus.pending_payment,
+      totalPrice: 10000,
+      depositRequired: 5000,
+      depositPaid: 0,
+      remainingBalance: 10000,
+      finalAmount: 10000,
+      paymentStatus: BookingPaymentStatus.unpaid,
+      startDateTime: new Date('2026-05-20T14:00:00Z'),
+      endDateTime: new Date('2026-05-20T15:00:00Z'),
+      service: { name: 'Manicure' },
+      customer: { name: 'Juan', phone: '+56912345678', email: null },
     }
     mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
       const tx = {

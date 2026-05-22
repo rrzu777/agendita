@@ -13,9 +13,10 @@ interface DayPanelProps {
   selectedDate: string | null
   businessCurrency: string
   timezone: string
+  businessAddress: string | null
 }
 
-export function DayPanel({ bookings, timeBlocks, selectedDate, businessCurrency, timezone }: DayPanelProps) {
+export function DayPanel({ bookings, timeBlocks, selectedDate, businessCurrency, timezone, businessAddress }: DayPanelProps) {
   const items = useMemo(() => {
     if (!selectedDate) return []
     const dayBookings = bookings
@@ -63,7 +64,7 @@ export function DayPanel({ bookings, timeBlocks, selectedDate, businessCurrency,
       </h3>
       {items.map((item) =>
         item.type === 'booking' ? (
-          <BookingCard key={item.id} booking={item} businessCurrency={businessCurrency} />
+          <BookingCard key={item.id} booking={item} businessCurrency={businessCurrency} businessTimezone={timezone} businessAddress={businessAddress} />
         ) : (
           <TimeBlockCard key={item.id} timeBlock={item} />
         )

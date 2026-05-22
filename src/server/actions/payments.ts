@@ -9,6 +9,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { sendBookingConfirmedNotification, sendNotificationSafely } from '@/lib/notifications'
 
 
 const initiatePaymentSchema = z.object({
@@ -166,7 +167,7 @@ export async function verifyAndConfirmPayment(paymentId: string, bookingId: stri
     return { success: false, message: 'Pago no aprobado' }
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const { applyApprovedPayment } = await import('@/server/services/finance')
     return applyApprovedPayment({
       tx,
@@ -182,10 +183,16 @@ export async function verifyAndConfirmPayment(paymentId: string, bookingId: stri
     })
   })
 
-  if (!updated) throw new Error('Reserva no encontrada')
+  if (!result || !result.booking) throw new Error('Reserva no encontrada')
+
+  if (result.wasConfirmed) {
+    await sendNotificationSafely('booking confirmed', () =>
+      sendBookingConfirmedNotification(bookingId, payment.businessId),
+    )
+  }
 
   revalidatePath('/dashboard/bookings')
-  await revalidateBusinessPublicPaths(updated.businessId)
+  await revalidateBusinessPublicPaths(result.booking.businessId)
   return { success: true }
 }
 
@@ -283,7 +290,7 @@ export async function createManualPayment(data: {
       },
     })
 
-    const updatedBooking = await applyApprovedPayment({
+    const { booking: updatedBooking, wasConfirmed } = await applyApprovedPayment({
       tx,
       bookingId: data.bookingId,
       businessId,
@@ -299,8 +306,14 @@ export async function createManualPayment(data: {
     // Volver a leer el Payment actualizado para retornar datos frescos (status approved, paidAt, etc.)
     const refreshedPayment = await tx.payment.findUnique({ where: { id: payment.id } })
 
-    return { payment: refreshedPayment ?? payment, booking: updatedBooking }
+    return { payment: refreshedPayment ?? payment, booking: updatedBooking, wasConfirmed }
   })
+
+  if (result.wasConfirmed) {
+    await sendNotificationSafely('booking confirmed', () =>
+      sendBookingConfirmedNotification(data.bookingId, businessId),
+    )
+  }
 
   revalidatePath('/dashboard/payments')
   revalidatePath('/dashboard/bookings')

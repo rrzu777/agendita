@@ -69,6 +69,7 @@ export default async function CalendarPage({
           selectedDate={selectedDate}
           businessCurrency={business.currency}
           timezone={timezone}
+          businessAddress={business.addressText}
         />
       </div>
     </div>

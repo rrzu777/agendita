@@ -25,6 +25,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { registerManualPayment } from '@/server/actions/bookings'
 import type { CalendarBooking } from './booking-card'
+import { BookingContactButtons } from './booking-contact-buttons'
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false)
@@ -59,9 +60,11 @@ interface BookingDrawerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   businessCurrency: string
+  businessTimezone: string
+  businessAddress: string | null
 }
 
-export function BookingDrawer({ booking, open, onOpenChange, businessCurrency }: BookingDrawerProps) {
+export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, businessTimezone, businessAddress }: BookingDrawerProps) {
   const isMobile = useIsMobile()
   const [amount, setAmount] = useState('')
   const [paymentMethod, setPaymentMethod] = useState('')
@@ -150,6 +153,27 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency }:
               <p className="mt-1 text-sm">{booking.customerNotes}</p>
             </div>
           )}
+
+          <div className="space-y-2 rounded-xl border border-border/60 p-3">
+            <h4 className="text-sm font-semibold">Contactar clienta</h4>
+            <BookingContactButtons
+              booking={{
+                customerName: booking.customer?.name || '',
+                customerPhone: booking.customer?.phone || null,
+                serviceName: booking.service?.name || '',
+                startDateTime: booking.startDateTime,
+                businessTimezone,
+                businessCurrency,
+                totalPrice: booking.totalPrice || 0,
+                depositPaid: booking.depositPaid || 0,
+                remainingBalance: booking.remainingBalance || 0,
+                businessAddress,
+              }}
+            />
+            {!booking.customer?.phone && (
+              <p className="text-xs text-muted-foreground">Sin teléfono registrado</p>
+            )}
+          </div>
 
           {booking.remainingBalance > 0 && booking.status === 'confirmed' && (
             <form onSubmit={handleSubmit} className="space-y-3 rounded-xl border border-border/60 p-3">

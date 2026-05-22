@@ -31,7 +31,7 @@ export async function applyApprovedPayment({
   rawPayload,
   createdByUserId,
   paymentId: explicitPaymentId,
-}: ApplyApprovedPaymentInput) {
+}: ApplyApprovedPaymentInput): Promise<{ booking: Awaited<ReturnType<typeof recalcBookingFromPayments>>['booking']; wasConfirmed: boolean }> {
   if (amount <= 0) {
     throw new Error('El monto debe ser positivo')
   }
@@ -151,7 +151,7 @@ export async function applyApprovedPayment({
   return recalcBookingFromPayments(tx, bookingId)
 }
 
-async function recalcBookingFromPayments(tx: Prisma.TransactionClient, bookingId: string) {
+async function recalcBookingFromPayments(tx: Prisma.TransactionClient, bookingId: string): Promise<{ booking: { id: string; status: string; businessId: string; customerId: string; totalPrice: number; depositRequired: number; depositPaid: number; remainingBalance: number; finalAmount: number; paymentStatus: string }; wasConfirmed: boolean }> {
   const booking = await tx.booking.findUnique({
     where: { id: bookingId },
   })
@@ -166,8 +166,6 @@ async function recalcBookingFromPayments(tx: Prisma.TransactionClient, bookingId
   const newRemainingBalance = Math.max(0, booking.finalAmount - totalApproved)
 
   let newPaymentStatus: BookingPaymentStatus
-  let newStatus: BookingStatus = booking.status
-
   if (totalApproved >= booking.finalAmount) {
     newPaymentStatus = BookingPaymentStatus.fully_paid
   } else if (totalApproved >= booking.depositRequired) {
@@ -176,22 +174,66 @@ async function recalcBookingFromPayments(tx: Prisma.TransactionClient, bookingId
     newPaymentStatus = BookingPaymentStatus.unpaid
   }
 
-  if (
+  const shouldConfirm =
     booking.status === BookingStatus.pending_payment &&
     totalApproved >= booking.depositRequired
-  ) {
-    newStatus = BookingStatus.confirmed
+
+  if (shouldConfirm) {
+    // Atomic: only transitions if still pending_payment. Avoids two concurrent
+    // transactions both returning wasConfirmed=true for the same booking.
+    const result = await tx.booking.updateMany({
+      where: { id: bookingId, status: BookingStatus.pending_payment },
+      data: {
+        depositPaid: newDepositPaid,
+        remainingBalance: newRemainingBalance,
+        paymentStatus: newPaymentStatus,
+        status: BookingStatus.confirmed,
+      },
+    })
+
+    if (result.count > 0) {
+      return {
+        booking: {
+          id: booking.id,
+          status: BookingStatus.confirmed,
+          businessId: booking.businessId,
+          customerId: booking.customerId,
+          totalPrice: booking.totalPrice,
+          depositRequired: booking.depositRequired,
+          depositPaid: newDepositPaid,
+          remainingBalance: newRemainingBalance,
+          finalAmount: booking.finalAmount,
+          paymentStatus: newPaymentStatus,
+        },
+        wasConfirmed: true,
+      }
+    }
+
+    // Another tx already confirmed this booking. Refetch and recalc without status change.
+    const refetched = await tx.booking.findUnique({ where: { id: bookingId } })
+    if (!refetched) throw new Error('Reserva no encontrada')
+
+    const updated = await tx.booking.update({
+      where: { id: bookingId },
+      data: {
+        depositPaid: newDepositPaid,
+        remainingBalance: newRemainingBalance,
+        paymentStatus: newPaymentStatus,
+      },
+    })
+
+    return { booking: updated, wasConfirmed: false }
   }
 
+  // No confirmation needed — just update payment fields
   const updated = await tx.booking.update({
     where: { id: bookingId },
     data: {
       depositPaid: newDepositPaid,
       remainingBalance: newRemainingBalance,
       paymentStatus: newPaymentStatus,
-      status: newStatus,
     },
   })
 
-  return updated
+  return { booking: updated, wasConfirmed: false }
 }

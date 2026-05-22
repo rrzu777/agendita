@@ -11,6 +11,15 @@ import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth
 
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
 import { addMinutes } from 'date-fns'
+import {
+  sendBookingConfirmationToCustomer,
+  sendBookingReceivedToCustomer,
+  sendNewBookingNotificationToBusiness,
+  sendBookingCancelledNotification,
+  sendBookingConfirmedNotification,
+  sendNotificationSafely,
+  sendMultiNotificationSafely,
+} from '@/lib/notifications'
 
 const createBookingSchema = z.object({
   serviceId: z.string().min(1),
@@ -41,6 +50,85 @@ const VALID_STATUS_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
   no_show: [],
   expired: [],
 }
+
+async function fireBookingNotifications(
+  business: {
+    name: string
+    timezone: string
+    whatsapp: string | null
+    addressText: string | null
+    currency: string
+    cancellationPolicy: string | null
+    slug: string
+    subdomain: string | null
+  },
+  booking: {
+    customer: { name: string; phone: string; email: string | null }
+    totalPrice: number
+    depositRequired: number
+    depositPaid: number
+    remainingBalance: number
+    startDateTime: Date
+  } & { id: string; businessId: string },
+  serviceName: string,
+) {
+  const customerEmail = booking.customer.email
+  const businessTimezone = business.timezone || 'America/Santiago'
+  const businessCurrency = business.currency || 'CLP'
+
+  const domain = process.env.NEXT_PUBLIC_APP_DOMAIN || process.env.APP_DOMAIN || 'localhost:3000'
+  const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '')
+  const protocol = cleanDomain.startsWith('localhost') || cleanDomain.endsWith('.localhost') || cleanDomain.startsWith('127.0.0.1') ? 'http' : 'https'
+  const dashboardLink = `${protocol}://${cleanDomain}/dashboard/bookings`
+
+  const promises: Promise<unknown>[] = []
+
+  if (customerEmail) {
+    promises.push(
+      sendNotificationSafely('customer received', () =>
+        sendBookingReceivedToCustomer({
+          businessName: business.name,
+          businessWhatsapp: business.whatsapp,
+          businessAddress: business.addressText,
+          businessTimezone,
+          businessCurrency,
+          businessCancellationPolicy: business.cancellationPolicy,
+          customerName: booking.customer.name,
+          customerEmail,
+          customerPhone: booking.customer.phone,
+          serviceName,
+          startDateTime: booking.startDateTime,
+          totalPrice: booking.totalPrice,
+          depositRequired: booking.depositRequired,
+          depositPaid: booking.depositPaid,
+          remainingBalance: booking.remainingBalance,
+        }),
+      ),
+    )
+  }
+
+  promises.push(
+    sendMultiNotificationSafely('business notification', () =>
+      sendNewBookingNotificationToBusiness(booking.businessId, {
+        businessName: business.name,
+        customerName: booking.customer.name,
+        customerPhone: booking.customer.phone,
+        customerEmail: customerEmail || null,
+        serviceName,
+        startDateTime: booking.startDateTime,
+        businessTimezone,
+        businessCurrency,
+        depositRequired: booking.depositRequired,
+        remainingBalance: booking.remainingBalance,
+        dashboardLink,
+      }),
+    ),
+  )
+
+  await Promise.allSettled(promises)
+}
+
+// sendBookingConfirmedNotification is now centralized in @/lib/notifications
 
 export async function getBookings() {
   const { businessId } = await requireBusiness()
@@ -75,7 +163,17 @@ export async function createBooking(data: {
   // Validar que el negocio exista y esté activo
   const business = await prisma.business.findUnique({
     where: { id: businessId, isActive: true },
-    select: { id: true, timezone: true },
+    select: {
+      id: true,
+      timezone: true,
+      name: true,
+      whatsapp: true,
+      addressText: true,
+      currency: true,
+      cancellationPolicy: true,
+      slug: true,
+      subdomain: true,
+    },
   })
   if (!business) {
     throw new Error('Negocio no válido')
@@ -169,6 +267,13 @@ export async function createBooking(data: {
       })
     })
 
+    const bookingForNotification = booking as Booking & {
+      service: { name: string }
+      customer: { name: string; phone: string; email: string | null }
+    }
+
+    await fireBookingNotifications(business, bookingForNotification, service.name)
+
     revalidatePath('/dashboard/bookings')
     await revalidateBusinessPublicPaths(businessId)
     return booking
@@ -206,6 +311,11 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
 
   const existing = await prisma.booking.findFirst({
     where: { id, businessId },
+    include: {
+      customer: { select: { name: true, email: true } },
+      service: { select: { name: true } },
+      business: { select: { name: true, timezone: true } },
+    },
   })
   if (!existing) {
     throw new ForbiddenError('Reserva no encontrada')
@@ -221,6 +331,19 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
   })
   if (updateResult.count === 0) {
     throw new ForbiddenError('Reserva no encontrada')
+  }
+
+  if (status === BookingStatus.cancelled && existing.customer.email) {
+    await sendNotificationSafely('cancellation', () =>
+      sendBookingCancelledNotification({
+        businessName: existing.business.name,
+        customerName: existing.customer.name,
+        customerEmail: existing.customer.email,
+        serviceName: existing.service.name,
+        startDateTime: existing.startDateTime,
+        businessTimezone: existing.business.timezone || 'America/Santiago',
+      }),
+    )
   }
 
   const updated = await prisma.booking.findUnique({ where: { id } })
@@ -268,9 +391,11 @@ export async function confirmPayment(bookingId: string, paymentId: string, amoun
   if (payment.bookingId !== bookingId) throw new ForbiddenError('El pago no corresponde a esta reserva')
   if (payment.amount !== amount) throw new ForbiddenError('El monto no coincide con el pago registrado')
 
+  let wasConfirmed = false
+
   const updated = await prisma.$transaction(async (tx) => {
     const { applyApprovedPayment } = await import('@/server/services/finance')
-    return applyApprovedPayment({
+    const result = await applyApprovedPayment({
       tx,
       bookingId,
       businessId,
@@ -282,7 +407,15 @@ export async function confirmPayment(bookingId: string, paymentId: string, amoun
       paymentMethod: payment.paymentMethod,
       paymentId: payment.id,
     })
+    wasConfirmed = result.wasConfirmed
+    return result.booking
   })
+
+  if (updated && wasConfirmed) {
+    await sendNotificationSafely('booking confirmed', () =>
+      sendBookingConfirmedNotification(bookingId, businessId),
+    )
+  }
 
   revalidatePath('/dashboard/bookings')
   if (updated) {
@@ -348,6 +481,8 @@ export async function registerManualPayment(
     throw new Error(e instanceof Error ? e.message : 'No se puede registrar pago para esta reserva')
   }
 
+  let wasConfirmed = false
+
   const updated = await prisma.$transaction(async (tx) => {
     const current = await tx.booking.findUnique({ where: { id: bookingId } })
     if (!current) throw new Error('Reserva no encontrada')
@@ -362,7 +497,7 @@ export async function registerManualPayment(
       current.depositPaid > 0 ? PaymentType.final_payment : PaymentType.full_payment
 
     const { applyApprovedPayment } = await import('@/server/services/finance')
-    return applyApprovedPayment({
+    const result = await applyApprovedPayment({
       tx,
       bookingId,
       businessId,
@@ -373,6 +508,8 @@ export async function registerManualPayment(
       paymentType,
       paymentMethod,
     })
+    wasConfirmed = result.wasConfirmed
+    return result.booking
   })
 
   revalidatePath('/dashboard/calendar')
@@ -383,5 +520,12 @@ export async function registerManualPayment(
     where: { id: bookingId },
     include: { service: true, customer: true },
   })
+
+  if (hydrated && wasConfirmed) {
+    await sendNotificationSafely('booking confirmed', () =>
+      sendBookingConfirmedNotification(bookingId, businessId),
+    )
+  }
+
   return hydrated
 }

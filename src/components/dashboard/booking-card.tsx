@@ -32,7 +32,8 @@ export type CalendarBooking = {
   startDateTime: string
   endDateTime: string
   service: { name: string } | null
-  customer: { name: string } | null
+  customer: { name: string; phone: string; email: string | null } | null
+  totalPrice: number
   depositPaid: number
   finalAmount: number
   remainingBalance: number
@@ -44,9 +45,11 @@ export type CalendarBooking = {
 interface BookingCardProps {
   booking: CalendarBooking
   businessCurrency: string
+  businessTimezone: string
+  businessAddress: string | null
 }
 
-export function BookingCard({ booking, businessCurrency }: BookingCardProps) {
+export function BookingCard({ booking, businessCurrency, businessTimezone, businessAddress }: BookingCardProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
@@ -165,6 +168,8 @@ export function BookingCard({ booking, businessCurrency }: BookingCardProps) {
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         businessCurrency={businessCurrency}
+        businessTimezone={businessTimezone}
+        businessAddress={businessAddress}
       />
     </>
   )

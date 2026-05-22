@@ -6,6 +6,7 @@ const mockPrisma = {
     findFirst: vi.fn(),
     findUnique: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
   },
   payment: {
     create: vi.fn(),
@@ -89,6 +90,7 @@ describe('createManualPayment', () => {
 
     const updatedBooking = { ...baseBooking, depositPaid: 10000, remainingBalance: 10000, paymentStatus: BookingPaymentStatus.deposit_paid, status: BookingStatus.confirmed }
     mockPrisma.booking.update.mockResolvedValue(updatedBooking)
+    mockPrisma.booking.updateMany.mockResolvedValue({ count: 1 })
 
     // Simular que $transaction ejecuta el callback con el tx mockeado
     // Usamos el mismo mockPrisma como tx para que las llamadas se registren

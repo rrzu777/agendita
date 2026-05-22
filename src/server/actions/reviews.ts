@@ -8,6 +8,7 @@ import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth
 import { BookingStatus, Prisma } from '@prisma/client'
 import { submitReviewSchema } from '@/lib/reviews/schema'
 import { headers } from 'next/headers'
+import { sendReviewRequestNotification } from '@/lib/notifications'
 
 export type ReviewFilterStatus = 'all' | 'pending' | 'approved' | 'hidden'
 
@@ -329,4 +330,53 @@ export async function getReviewLink(bookingId: string): Promise<string | null> {
   const proto = headersList.get('x-forwarded-proto') || 'https'
 
   return `${proto}://${host}/review/${booking.id}?token=${token}`
+}
+
+export async function sendReviewRequestEmail(bookingId: string) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('send-review-email', 10, 60000)
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  }
+
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, businessId },
+    include: {
+      customer: { select: { id: true, name: true, email: true } },
+      service: { select: { name: true } },
+      business: { select: { name: true, timezone: true } },
+    },
+  })
+
+  if (!bookingId || !booking) {
+    throw new ForbiddenError('Reserva no encontrada')
+  }
+
+  if (booking.status !== BookingStatus.completed) {
+    throw new Error('Solo puedes enviar solicitud de reseña para reservas completadas')
+  }
+
+  const token = booking.reviewToken
+  if (!token) {
+    throw new Error('Primero debes generar el link de reseña')
+  }
+
+  if (!booking.customer.email) {
+    return { success: false, skipped: 'La clienta no tiene email registrado' }
+  }
+
+  const headersList = await headers()
+  const host = headersList.get('x-forwarded-host') || headersList.get('host') || 'localhost:3000'
+  const proto = headersList.get('x-forwarded-proto') || 'https'
+  const reviewLink = `${proto}://${host}/review/${booking.id}?token=${token}`
+
+  return sendReviewRequestNotification({
+    businessName: booking.business.name,
+    customerName: booking.customer.name,
+    customerEmail: booking.customer.email,
+    serviceName: booking.service.name,
+    reviewLink,
+    startDateTime: booking.startDateTime,
+    businessTimezone: booking.business.timezone || 'America/Santiago',
+  })
 }

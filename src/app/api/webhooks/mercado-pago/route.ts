@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { applyApprovedPayment } from '@/server/services/finance'
 import { createHmac } from 'crypto'
+import { sendBookingConfirmedNotification, sendNotificationSafely } from '@/lib/notifications'
 
 // Mercado Pago webhook signature validation
 // Docs: https://www.mercadopago.cl/developers/en/docs/your-integrations/notifications/webhooks
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Idempotent application: only update if not already approved
-    const updated = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       return applyApprovedPayment({
         tx,
         bookingId: payment.bookingId,
@@ -106,9 +107,15 @@ export async function POST(request: NextRequest) {
       })
     })
 
-    if (!updated) throw new Error('Reserva no encontrada')
+    if (!result || !result.booking) throw new Error('Reserva no encontrada')
 
-    return NextResponse.json({ success: true, message: 'Payment approved', bookingId: updated.id })
+    if (result.wasConfirmed) {
+      await sendNotificationSafely('booking confirmed', () =>
+        sendBookingConfirmedNotification(payment.bookingId, payment.businessId),
+      )
+    }
+
+    return NextResponse.json({ success: true, message: 'Payment approved', bookingId: result.booking.id })
   } catch (error) {
     console.error('[Mercado Pago Webhook Error]', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
