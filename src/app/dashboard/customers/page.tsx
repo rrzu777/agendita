@@ -1,22 +1,34 @@
+import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
-import { Button } from '@/components/ui/button'
-import { Users } from 'lucide-react'
+import { getCustomers } from '@/server/actions/customers'
+import { getCurrentUserWithBusiness } from '@/lib/auth/user'
+import { CustomerList } from './customer-list'
 
-export default function CustomersPage() {
+export const dynamic = 'force-dynamic'
+
+export default async function CustomersPage() {
+  const userData = await getCurrentUserWithBusiness()
+
+  if (!userData?.business) {
+    redirect('/login')
+  }
+
+  let customers
+  let error: string | null = null
+  try {
+    customers = await getCustomers()
+  } catch (err) {
+    error = err instanceof Error ? err.message : 'Error al cargar clientas'
+  }
+
   return (
     <div>
-      <DashboardHeader title="Clientas" subtitle="Historial y datos de contacto de quienes reservan contigo." />
+      <DashboardHeader
+        title="Clientas"
+        subtitle="Historial y datos de contacto de quienes reservan contigo."
+      />
       <div className="p-5 md:p-10">
-        <div className="studio-card flex min-h-[320px] flex-col items-center justify-center p-8 text-center">
-          <div className="mb-5 flex size-16 items-center justify-center rounded-2xl bg-secondary text-primary">
-            <Users className="size-8" />
-          </div>
-          <h2 className="text-2xl font-semibold tracking-normal text-primary">Gestión de clientas</h2>
-          <p className="mt-2 max-w-md text-muted-foreground">
-            Esta sección queda preparada para listar clientas, historial de reservas y notas internas.
-          </p>
-          <Button className="mt-6" disabled>Próximamente</Button>
-        </div>
+        <CustomerList customers={customers ?? []} error={error} />
       </div>
     </div>
   )
