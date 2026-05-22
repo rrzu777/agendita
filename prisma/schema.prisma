@@ -164,7 +164,9 @@ model Booking {
   customer          Customer             @relation(fields: [customerId], references: [id])
   payments          Payment[]
   ledgerEntries     LedgerEntry[]
-  review            Review?
+  review              Review?
+  reviewToken         String?              @unique
+  reviewTokenCreatedAt DateTime?
 
   @@index([businessId, status, startDateTime, endDateTime])
 }
@@ -291,6 +293,7 @@ model Review {
   rating     Int
   comment    String?
   isApproved Boolean  @default(false)
+  isHidden   Boolean  @default(false)
   createdAt  DateTime @default(now())
 
   business   Business @relation(fields: [businessId], references: [id])

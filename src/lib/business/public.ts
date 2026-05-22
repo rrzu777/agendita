@@ -12,10 +12,17 @@ export const publicBusinessInclude = {
     orderBy: { dayOfWeek: 'asc' },
   },
   reviews: {
-    where: { isApproved: true },
+    where: { isApproved: true, isHidden: false },
     orderBy: { createdAt: 'desc' },
     take: 3,
     include: { customer: true },
+  },
+  _count: {
+    select: {
+      reviews: {
+        where: { isApproved: true, isHidden: false },
+      },
+    },
   },
 } satisfies Prisma.BusinessInclude
 
