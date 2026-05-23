@@ -1,14 +1,17 @@
-import { describe, it, expect } from 'vitest'
+import { afterAll, beforeAll, describe, it, expect, vi } from 'vitest'
 import { generateSlots } from '@/lib/availability/slots'
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
-import { vi } from 'vitest'
 
-/**
- * Test de roundtrip: generateSlots produce slots para un timezone del negocio,
- * y assertSlotIsAvailable debe aceptar esos mismos slots.
- * Este test debe pasar aunque el proceso corra con TZ=UTC.
- */
 describe('timezone roundtrip', () => {
+  beforeAll(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-19T00:00:00Z'))
+  })
+
+  afterAll(() => {
+    vi.useRealTimers()
+  })
+
   const timezone = 'America/Santiago'
 
   it('generateSlots -> assertSlotIsAvailable for 09:00 slot', async () => {

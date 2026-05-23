@@ -1,8 +1,16 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterAll, beforeAll, describe, it, expect, vi } from 'vitest'
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
-import { BookingStatus } from '@prisma/client'
 
 describe('assertSlotIsAvailable', () => {
+  beforeAll(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-19T00:00:00Z'))
+  })
+
+  afterAll(() => {
+    vi.useRealTimers()
+  })
+
   const businessId = 'biz-1'
   const serviceId = 'svc-1'
   // Todas las fechas están en UTC explícito (Z)

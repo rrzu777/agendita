@@ -14,6 +14,7 @@ export default defineConfig({
       '**/coverage/**',
       '**/.worktrees/**',
       'tests/e2e/**',
+      'tests/integration/**',
       'playwright.config.ts',
     ],
   },

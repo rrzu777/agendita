@@ -426,5 +426,130 @@ describe('applyApprovedPayment', () => {
       expect(tx.ledgerEntry.create).not.toHaveBeenCalled()
       expect(result.booking.depositPaid).toBe(8000)
     })
+
+    it('throws when explicit paymentId not found', async () => {
+      const tx = setupTx()
+      tx.booking.findUnique.mockResolvedValue(baseBooking)
+      tx.payment.findUnique.mockResolvedValue(null)
+
+      await expect(
+        applyApprovedPayment({
+          tx,
+          bookingId: 'booking-1',
+          businessId: 'biz-1',
+          amount: 8000,
+          currency: 'CLP',
+          provider: PaymentProvider.manual,
+          providerPaymentId: null,
+          paymentType: PaymentType.deposit,
+          paymentId: 'nonexistent',
+        })
+      ).rejects.toThrow('Pago no encontrado')
+    })
+
+    it('throws when explicit payment belongs to different booking', async () => {
+      const tx = setupTx()
+      tx.booking.findUnique.mockResolvedValue(baseBooking)
+      const wrongPayment = { id: 'pay-explicit', amount: 8000, status: 'pending', provider: PaymentProvider.manual, providerPaymentId: null, bookingId: 'booking-other', businessId: 'biz-1' }
+      tx.payment.findUnique.mockResolvedValue(wrongPayment)
+
+      await expect(
+        applyApprovedPayment({
+          tx,
+          bookingId: 'booking-1',
+          businessId: 'biz-1',
+          amount: 8000,
+          currency: 'CLP',
+          provider: PaymentProvider.manual,
+          providerPaymentId: null,
+          paymentType: PaymentType.deposit,
+          paymentId: 'pay-explicit',
+        })
+      ).rejects.toThrow('El pago no corresponde a esta reserva')
+    })
+
+    it('throws when explicit payment belongs to different business', async () => {
+      const tx = setupTx()
+      tx.booking.findUnique.mockResolvedValue(baseBooking)
+      const wrongPayment = { id: 'pay-explicit', amount: 8000, status: 'pending', provider: PaymentProvider.manual, providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-other' }
+      tx.payment.findUnique.mockResolvedValue(wrongPayment)
+
+      await expect(
+        applyApprovedPayment({
+          tx,
+          bookingId: 'booking-1',
+          businessId: 'biz-1',
+          amount: 8000,
+          currency: 'CLP',
+          provider: PaymentProvider.manual,
+          providerPaymentId: null,
+          paymentType: PaymentType.deposit,
+          paymentId: 'pay-explicit',
+        })
+      ).rejects.toThrow('El pago no pertenece al negocio')
+    })
+
+    it('throws when explicit payment amount does not match', async () => {
+      const tx = setupTx()
+      tx.booking.findUnique.mockResolvedValue(baseBooking)
+      const wrongPayment = { id: 'pay-explicit', amount: 5000, status: 'pending', provider: PaymentProvider.manual, providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-1' }
+      tx.payment.findUnique.mockResolvedValue(wrongPayment)
+
+      await expect(
+        applyApprovedPayment({
+          tx,
+          bookingId: 'booking-1',
+          businessId: 'biz-1',
+          amount: 8000,
+          currency: 'CLP',
+          provider: PaymentProvider.manual,
+          providerPaymentId: null,
+          paymentType: PaymentType.deposit,
+          paymentId: 'pay-explicit',
+        })
+      ).rejects.toThrow('El monto no coincide con el pago registrado')
+    })
+
+    it('throws when explicit payment provider does not match', async () => {
+      const tx = setupTx()
+      tx.booking.findUnique.mockResolvedValue(baseBooking)
+      const wrongPayment = { id: 'pay-explicit', amount: 8000, status: 'pending', provider: PaymentProvider.mercado_pago, providerPaymentId: 'mp-123', bookingId: 'booking-1', businessId: 'biz-1' }
+      tx.payment.findUnique.mockResolvedValue(wrongPayment)
+
+      await expect(
+        applyApprovedPayment({
+          tx,
+          bookingId: 'booking-1',
+          businessId: 'biz-1',
+          amount: 8000,
+          currency: 'CLP',
+          provider: PaymentProvider.manual,
+          providerPaymentId: 'mp-123',
+          paymentType: PaymentType.deposit,
+          paymentId: 'pay-explicit',
+        })
+      ).rejects.toThrow('El proveedor no coincide con el pago registrado')
+    })
+
+    it('throws when explicit payment providerPaymentId does not match', async () => {
+      const tx = setupTx()
+      tx.booking.findUnique.mockResolvedValue(baseBooking)
+      const wrongPayment = { id: 'pay-explicit', amount: 8000, status: 'pending', provider: PaymentProvider.manual, providerPaymentId: 'wrong-id', bookingId: 'booking-1', businessId: 'biz-1' }
+      tx.payment.findUnique.mockResolvedValue(wrongPayment)
+
+      await expect(
+        applyApprovedPayment({
+          tx,
+          bookingId: 'booking-1',
+          businessId: 'biz-1',
+          amount: 8000,
+          currency: 'CLP',
+          provider: PaymentProvider.manual,
+          providerPaymentId: 'mp-123',
+          paymentType: PaymentType.deposit,
+          paymentId: 'pay-explicit',
+        })
+      ).rejects.toThrow('El providerPaymentId no coincide con el pago registrado')
+    })
   })
 })
