@@ -5,6 +5,12 @@ export interface CreatePaymentInput {
   description: string
   returnUrl: string
   webhookUrl: string
+  /** ID del Payment local en DB, usado como external_reference para MP. */
+  localPaymentId?: string
+  /** Email del pagador para asociar a la preferencia de MP. */
+  customerEmail?: string | null
+  /** Metadata adicional que el provider puede incluir (ej. bookingId, businessId). */
+  metadata?: Record<string, string>
 }
 
 export interface CreatePaymentResult {

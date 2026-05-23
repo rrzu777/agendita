@@ -1,12 +1,13 @@
 import { PaymentProvider } from './types'
 import { mockPaymentProvider } from './mock-provider'
 import { manualPaymentProvider } from './manual-provider'
+import { mercadoPagoPaymentProvider } from './mercado-pago-provider'
 
 export type ProviderName = 'mock' | 'manual' | 'mercado_pago' | 'webpay'
 
 const VALID_PROVIDERS: ProviderName[] = ['mock', 'manual', 'mercado_pago', 'webpay']
 const ONLINE_PROVIDERS: ProviderName[] = ['mercado_pago', 'webpay']
-const IMPLEMENTED_PROVIDERS: ProviderName[] = ['mock', 'manual']
+const IMPLEMENTED_PROVIDERS: ProviderName[] = ['mock', 'manual', 'mercado_pago']
 
 function assertValidProviderName(name: string): asserts name is ProviderName {
   if (!VALID_PROVIDERS.includes(name as ProviderName)) {
@@ -25,7 +26,7 @@ export function getPaymentProvider(name: string): PaymentProvider {
     case 'manual':
       return manualPaymentProvider
     case 'mercado_pago':
-      throw new Error('Mercado Pago provider not yet implemented.')
+      return mercadoPagoPaymentProvider
     case 'webpay':
       throw new Error('Webpay provider not yet implemented.')
   }
@@ -77,7 +78,13 @@ export function isOnlinePaymentAvailable(): boolean {
 
   // Real online providers (mercado_pago, webpay)
   if (ONLINE_PROVIDERS.includes(name)) {
-    return IMPLEMENTED_PROVIDERS.includes(name)
+    if (!IMPLEMENTED_PROVIDERS.includes(name)) {
+      return false
+    }
+    if (name === 'mercado_pago' && !process.env.MERCADO_PAGO_ACCESS_TOKEN) {
+      return false
+    }
+    return true
   }
 
   return false
@@ -153,6 +160,27 @@ export function resolveOnlinePaymentAvailability(): OnlinePaymentAvailability {
         isMock: false,
       }
     }
+    if (name === 'mercado_pago') {
+      if (!process.env.MERCADO_PAGO_ACCESS_TOKEN) {
+        return {
+          available: false,
+          provider: 'mercado_pago',
+          reason: 'MERCADO_PAGO_ACCESS_TOKEN no está configurado.',
+          isMock: false,
+        }
+      }
+      if (
+        process.env.NODE_ENV === 'production' &&
+        !process.env.MERCADO_PAGO_WEBHOOK_SECRET
+      ) {
+        return {
+          available: false,
+          provider: 'mercado_pago',
+          reason: 'MERCADO_PAGO_WEBHOOK_SECRET no está configurado (requerido en producción).',
+          isMock: false,
+        }
+      }
+    }
     return { available: true, provider: name, isMock: false }
   }
 
@@ -224,10 +252,13 @@ export function getDefaultProvider(): PaymentProvider {
   }
 
   if (ONLINE_PROVIDERS.includes(configured)) {
-    throw new Error(
-      `${configured} provider not yet implemented. ` +
-        'Check the configuration or contact support to enable this provider.',
-    )
+    if (!IMPLEMENTED_PROVIDERS.includes(configured)) {
+      throw new Error(
+        `${configured} provider not yet implemented. ` +
+          'Check the configuration or contact support to enable this provider.',
+      )
+    }
+    return getPaymentProvider(configured)
   }
 
   throw new Error(`Unknown payment provider: ${configured}`)

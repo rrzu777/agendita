@@ -59,7 +59,14 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
         description: `Abono para ${data.serviceName}`,
       })
 
-      // Verify payment (server-side) with timeout
+      // Redirect-based providers (Mercado Pago): redirigir al usuario al checkout externo.
+      // No llamar verifyAndConfirmPayment: la confirmación ocurre via webhook.
+      if (paymentResult.redirectUrl) {
+        window.location.href = paymentResult.redirectUrl
+        return
+      }
+
+      // Flujo sin redirect (mock/dev): verificar y confirmar server-side
       await new Promise(resolve => setTimeout(resolve, 1500))
 
       const verifyPromise = verifyAndConfirmPayment(paymentResult.paymentId, booking.id)

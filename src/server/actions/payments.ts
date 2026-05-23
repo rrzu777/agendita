@@ -37,6 +37,10 @@ const verifyPaymentSchema = z.object({
  * Si el pago online no está disponible (provider no configurado,
  * configurado como manual, o no implementado), retorna error claro
  * sin crear registros de pago.
+ *
+ * Para proveedores con redirect (Mercado Pago), pre-crea un Payment
+ * local para usarlo como external_reference y evita duplicados
+ * por doble click.
  */
 export async function initiatePayment(data: {
   bookingId: string
@@ -68,6 +72,9 @@ export async function initiatePayment(data: {
       business: {
         select: { slug: true, subdomain: true, currency: true },
       },
+      customer: {
+        select: { email: true },
+      },
     },
   })
 
@@ -94,6 +101,69 @@ export async function initiatePayment(data: {
 
   const provider = getOnlinePaymentProvider()
   const baseUrl = getBusinessPublicUrl(booking.business)
+
+  // Mercado Pago (redirect-based): pre-crear Payment local antes de llamar al provider.
+  // El Payment.id se usa como external_reference en la preferencia de MP.
+  if (provider.name === 'mercado_pago') {
+    // Evitar múltiples Payment pending por doble click: reusar si ya existe
+    // uno pending para este booking + deposit.
+    const existingPending = await prisma.payment.findFirst({
+      where: {
+        bookingId: data.bookingId,
+        paymentType: PaymentType.deposit,
+        provider: 'mercado_pago',
+        status: 'pending',
+      },
+    })
+
+    let localPaymentId: string
+    if (existingPending) {
+      localPaymentId = existingPending.id
+    } else {
+      const payment = await prisma.payment.create({
+        data: {
+          businessId: booking.businessId,
+          bookingId: data.bookingId,
+          customerId: booking.customerId,
+          provider: PaymentProvider.mercado_pago,
+          providerPaymentId: null,
+          amount,
+          currency,
+          status: PaymentStatus.pending,
+          paymentType: PaymentType.deposit,
+        },
+      })
+      localPaymentId = payment.id
+    }
+
+    const result = await provider.createPayment({
+      amount,
+      currency,
+      bookingId: data.bookingId,
+      description,
+      returnUrl: `${baseUrl}/book/confirmation?bookingId=${data.bookingId}`,
+      webhookUrl: `${baseUrl}/api/webhooks/mercado-pago`,
+      localPaymentId,
+      customerEmail: booking.customer?.email ?? null,
+      metadata: {
+        bookingId: data.bookingId,
+        businessId: booking.businessId,
+        paymentType: 'deposit',
+        localPaymentId,
+      },
+    })
+
+    // Guardar rawPayload con datos de la preferencia (preferenceId, init_point)
+    await prisma.payment.update({
+      where: { id: localPaymentId },
+      data: { rawPayload: result.rawResponse },
+    })
+
+    revalidatePath('/dashboard/payments')
+    return result
+  }
+
+  // Flujo original para mock y otros providers sin redirect
   const result = await provider.createPayment({
     amount,
     currency,
@@ -134,6 +204,9 @@ export async function getOnlinePaymentAvailability() {
  * Flujo público: verifica un pago con el proveedor y, si está aprobado,
  * aplica el monto a la reserva. No requiere sesión.
  * Idempotente: si el pago ya está aprobado, retorna éxito sin duplicar.
+ *
+ * Para proveedores con redirect (mercado_pago), la confirmación ocurre
+ * via webhook. Esta función no debe confirmar pagos por redirect.
  */
 export async function verifyAndConfirmPayment(paymentId: string, bookingId: string) {
   const limit = await checkRateLimit('verify-payment', 30, 60000)
@@ -160,6 +233,15 @@ export async function verifyAndConfirmPayment(paymentId: string, bookingId: stri
   // Validar que payment y booking pertenecen al mismo negocio
   if (payment.businessId !== payment.booking.businessId) {
     throw new Error('Inconsistencia de negocio en el pago')
+  }
+
+  // Proveedores con redirect (mercado_pago): la confirmación ocurre via webhook.
+  // No confirmar desde redirect de success.
+  if (payment.provider === 'mercado_pago') {
+    return {
+      success: false,
+      message: 'Tu pago está siendo procesado por Mercado Pago. Recibirás una confirmación cuando se apruebe.',
+    }
   }
 
   // No confirmar si la reserva no es pagable (expired, cancelled, etc. o hold vencido)

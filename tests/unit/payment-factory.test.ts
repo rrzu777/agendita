@@ -33,10 +33,11 @@ describe('payment factory', () => {
       expect(provider.name).toBe('manual')
     })
 
-    it('throws for mercado_pago (not implemented)', async () => {
+    it('returns mercado_pago provider', async () => {
       setEnv({ NODE_ENV: 'development' })
       const { getPaymentProvider } = await import('@/lib/payments/factory')
-      expect(() => getPaymentProvider('mercado_pago')).toThrow(/not yet implemented/)
+      const provider = getPaymentProvider('mercado_pago')
+      expect(provider.name).toBe('mercado_pago')
     })
 
     it('throws for webpay (not implemented)', async () => {
@@ -144,10 +145,31 @@ describe('payment factory', () => {
       expect(isOnlinePaymentAvailable()).toBe(false)
     })
 
-    it('returns false for mercado_pago (not implemented)', async () => {
-      setEnv({ NODE_ENV: 'production', PAYMENT_PROVIDER: 'mercado_pago' })
+    it('returns false for mercado_pago without MERCADO_PAGO_ACCESS_TOKEN', async () => {
+      setEnv({ NODE_ENV: 'production', PAYMENT_PROVIDER: 'mercado_pago', MERCADO_PAGO_ACCESS_TOKEN: undefined })
       const { isOnlinePaymentAvailable } = await import('@/lib/payments/factory')
       expect(isOnlinePaymentAvailable()).toBe(false)
+    })
+
+    it('returns true for mercado_pago with MERCADO_PAGO_ACCESS_TOKEN in production', async () => {
+      setEnv({
+        NODE_ENV: 'production',
+        PAYMENT_PROVIDER: 'mercado_pago',
+        MERCADO_PAGO_ACCESS_TOKEN: 'test-token',
+        MERCADO_PAGO_WEBHOOK_SECRET: 'test-secret',
+      })
+      const { isOnlinePaymentAvailable } = await import('@/lib/payments/factory')
+      expect(isOnlinePaymentAvailable()).toBe(true)
+    })
+
+    it('returns true for mercado_pago with token in dev', async () => {
+      setEnv({
+        NODE_ENV: 'development',
+        PAYMENT_PROVIDER: 'mercado_pago',
+        MERCADO_PAGO_ACCESS_TOKEN: 'test-token',
+      })
+      const { isOnlinePaymentAvailable } = await import('@/lib/payments/factory')
+      expect(isOnlinePaymentAvailable()).toBe(true)
     })
 
     it('returns false for webpay (not implemented)', async () => {
@@ -240,14 +262,41 @@ describe('payment factory', () => {
       expect(result.isMock).toBe(true)
     })
 
-    it('PAYMENT_PROVIDER=mercado_pago: available=false (not implemented)', async () => {
-      setEnv({ NODE_ENV: 'production', PAYMENT_PROVIDER: 'mercado_pago' })
+    it('PAYMENT_PROVIDER=mercado_pago without token: available=false with reason', async () => {
+      setEnv({ NODE_ENV: 'production', PAYMENT_PROVIDER: 'mercado_pago', MERCADO_PAGO_ACCESS_TOKEN: undefined })
       const { resolveOnlinePaymentAvailability } = await import('@/lib/payments/factory')
       const result = resolveOnlinePaymentAvailability()
       expect(result.available).toBe(false)
       expect(result.provider).toBe('mercado_pago')
       expect(result.isMock).toBe(false)
-      expect(result.reason).toContain('no está implementado')
+      expect(result.reason).toContain('ACCESS_TOKEN')
+    })
+
+    it('PAYMENT_PROVIDER=mercado_pago in production without webhook secret: available=false', async () => {
+      setEnv({
+        NODE_ENV: 'production',
+        PAYMENT_PROVIDER: 'mercado_pago',
+        MERCADO_PAGO_ACCESS_TOKEN: 'test-token',
+        MERCADO_PAGO_WEBHOOK_SECRET: undefined,
+      })
+      const { resolveOnlinePaymentAvailability } = await import('@/lib/payments/factory')
+      const result = resolveOnlinePaymentAvailability()
+      expect(result.available).toBe(false)
+      expect(result.reason).toContain('WEBHOOK_SECRET')
+    })
+
+    it('PAYMENT_PROVIDER=mercado_pago with token and secret: available=true', async () => {
+      setEnv({
+        NODE_ENV: 'production',
+        PAYMENT_PROVIDER: 'mercado_pago',
+        MERCADO_PAGO_ACCESS_TOKEN: 'test-token',
+        MERCADO_PAGO_WEBHOOK_SECRET: 'test-secret',
+      })
+      const { resolveOnlinePaymentAvailability } = await import('@/lib/payments/factory')
+      const result = resolveOnlinePaymentAvailability()
+      expect(result.available).toBe(true)
+      expect(result.provider).toBe('mercado_pago')
+      expect(result.isMock).toBe(false)
     })
 
     it('PAYMENT_PROVIDER=webpay: available=false (not implemented)', async () => {
@@ -284,15 +333,27 @@ describe('payment factory', () => {
       expect(provider.name).toBe('mock')
     })
 
-    it('returns mock provider when online payment is available in production with override', async () => {
+    it('returns mercado_pago provider when online payment is available', async () => {
       setEnv({
-        NODE_ENV: 'production',
-        PAYMENT_PROVIDER: 'mock',
-        ALLOW_MOCK_PAYMENTS_IN_PRODUCTION: 'true',
+        NODE_ENV: 'development',
+        PAYMENT_PROVIDER: 'mercado_pago',
+        MERCADO_PAGO_ACCESS_TOKEN: 'test-token',
       })
       const { getOnlinePaymentProvider } = await import('@/lib/payments/factory')
       const provider = getOnlinePaymentProvider()
-      expect(provider.name).toBe('mock')
+      expect(provider.name).toBe('mercado_pago')
+    })
+
+    it('throws when mercado_pago configured without token', async () => {
+      setEnv({
+        NODE_ENV: 'development',
+        PAYMENT_PROVIDER: 'mercado_pago',
+        MERCADO_PAGO_ACCESS_TOKEN: undefined,
+      })
+      const { getOnlinePaymentProvider } = await import('@/lib/payments/factory')
+      expect(() => getOnlinePaymentProvider()).toThrow(
+        /Pago online no disponible/,
+      )
     })
   })
 
@@ -349,10 +410,24 @@ describe('payment factory', () => {
       expect(getDefaultProvider().name).toBe('manual')
     })
 
-    it('throws for mercado_pago in production (not implemented)', async () => {
-      setEnv({ NODE_ENV: 'production', PAYMENT_PROVIDER: 'mercado_pago' })
+    it('returns mercado_pago provider in production when configured', async () => {
+      setEnv({
+        NODE_ENV: 'production',
+        PAYMENT_PROVIDER: 'mercado_pago',
+        MERCADO_PAGO_ACCESS_TOKEN: 'test-token',
+      })
       const { getDefaultProvider } = await import('@/lib/payments/factory')
-      expect(() => getDefaultProvider()).toThrow(/not yet implemented/)
+      expect(getDefaultProvider().name).toBe('mercado_pago')
+    })
+
+    it('returns mercado_pago provider in development when configured', async () => {
+      setEnv({
+        NODE_ENV: 'development',
+        PAYMENT_PROVIDER: 'mercado_pago',
+        MERCADO_PAGO_ACCESS_TOKEN: 'test-token',
+      })
+      const { getDefaultProvider } = await import('@/lib/payments/factory')
+      expect(getDefaultProvider().name).toBe('mercado_pago')
     })
 
     it('throws for webpay in production (not implemented)', async () => {
@@ -361,10 +436,14 @@ describe('payment factory', () => {
       expect(() => getDefaultProvider()).toThrow(/not yet implemented/)
     })
 
-    it('throws for mercado_pago in development (not implemented)', async () => {
-      setEnv({ NODE_ENV: 'development', PAYMENT_PROVIDER: 'mercado_pago' })
+    it('returns mercado_pago provider in development when configured (already covered above)', async () => {
+      setEnv({
+        NODE_ENV: 'development',
+        PAYMENT_PROVIDER: 'mercado_pago',
+        MERCADO_PAGO_ACCESS_TOKEN: 'test-token',
+      })
       const { getDefaultProvider } = await import('@/lib/payments/factory')
-      expect(() => getDefaultProvider()).toThrow(/not yet implemented/)
+      expect(getDefaultProvider().name).toBe('mercado_pago')
     })
 
     it('throws for unknown provider in development', async () => {
