@@ -3,11 +3,35 @@ import { createClient } from './middleware'
 import { prisma } from '@/lib/db'
 
 function isE2EBypassEnabled(): boolean {
-  return process.env.ENABLE_E2E_AUTH_BYPASS === 'true'
+  if (process.env.ENABLE_E2E_AUTH_BYPASS !== 'true') return false
+
+  const isDevOrTest = process.env.NODE_ENV !== 'production'
+  if (isDevOrTest) return true
+
+  // Production gate: must explicitly opt in with APP_ENV=e2e + secret
+  return process.env.APP_ENV === 'e2e' && !!process.env.E2E_AUTH_BYPASS_SECRET
+}
+
+async function getE2EAuthSecret(): Promise<string | null> {
+  if (!isE2EBypassEnabled()) return null
+  const headersList = await headers()
+  const secret = headersList.get('x-e2e-auth-secret')
+  if (!secret) return null
+
+  // In dev/test without explicit secret, accept any header
+  if (process.env.NODE_ENV !== 'production' && !process.env.E2E_AUTH_BYPASS_SECRET) {
+    return secret
+  }
+
+  // In production-e2e or dev with secret: must match
+  if (secret === process.env.E2E_AUTH_BYPASS_SECRET) return secret
+
+  return null
 }
 
 async function getE2ETestEmail(): Promise<string | null> {
-  if (!isE2EBypassEnabled()) return null
+  const validSecret = await getE2EAuthSecret()
+  if (!validSecret) return null
   const headersList = await headers()
   return headersList.get('x-e2e-test-user-email') || null
 }

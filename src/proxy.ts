@@ -18,11 +18,12 @@ export async function proxy(request: NextRequest) {
 
   // Check auth for dashboard routes
   if (pathname.startsWith('/dashboard')) {
-    const isE2EBypass =
-      process.env.ENABLE_E2E_AUTH_BYPASS === 'true' &&
-      request.headers.get('x-e2e-test-user-email')
+    const e2eEmail = request.headers.get('x-e2e-test-user-email')
+    const e2eSecret = request.headers.get('x-e2e-auth-secret')
 
-    if (!isE2EBypass) {
+    // If both E2E headers are present, let the request through.
+    // The server-side auth (user.ts) validates the actual bypass.
+    if (!(e2eEmail && e2eSecret)) {
       const supabase = createMiddlewareClient(request)
       const { data: { session } } = await supabase.auth.getSession()
 
