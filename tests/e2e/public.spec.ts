@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test'
 
+const E2E_EMAIL = 'e2e@test.agendita.com'
+
 test.describe('public pages', () => {
   test('landing page loads', async ({ page }) => {
     await page.goto('/')
@@ -67,61 +69,62 @@ test.describe('auth guard (unauthenticated)', () => {
 })
 
 test.describe('dashboard (e2e auth bypass)', () => {
+  const E2E_SECRET = process.env.PLAYWRIGHT_E2E_AUTH_SECRET || 'e2e-secret-local'
+
   test.use({
     extraHTTPHeaders: {
-      'x-e2e-test-user-email': 'e2e@test.agendita.com',
-      'x-e2e-auth-secret': 'test-secret',
+      'x-e2e-test-user-email': E2E_EMAIL,
+      'x-e2e-auth-secret': E2E_SECRET,
     },
   })
 
-  test('dashboard loads without redirecting to login', async ({ page }) => {
+  test('dashboard overview loads', async ({ page }) => {
     await page.goto('/dashboard')
     await page.waitForLoadState('networkidle')
-    // If bypass works, stays on dashboard. Otherwise redirects to /login.
-    // Both are valid outcomes depending on build-time env vars.
-    const url = page.url()
-    expect(url).toMatch(/\/(?:dashboard|login)/)
+    expect(page.url()).toContain('/dashboard')
+    await expect(page.locator('h1').or(page.locator('h2')).first()).toBeVisible()
   })
 
-  test('dashboard services page loads', async ({ page }) => {
+  test('dashboard services page shows service list', async ({ page }) => {
     await page.goto('/dashboard/services')
     await page.waitForLoadState('networkidle')
-    expect(page.url()).toMatch(/\/(?:dashboard\/services|login)/)
+    expect(page.url()).toContain('/dashboard/services')
+    await expect(page.locator('text=Manicura').or(page.locator('text=Servicio')).first()).toBeVisible({ timeout: 10000 })
   })
 
   test('dashboard availability page loads', async ({ page }) => {
     await page.goto('/dashboard/availability')
     await page.waitForLoadState('networkidle')
-    expect(page.url()).toMatch(/\/(?:dashboard\/availability|login)/)
+    expect(page.url()).toContain('/dashboard/availability')
   })
 
   test('dashboard calendar page loads', async ({ page }) => {
     await page.goto('/dashboard/calendar')
     await page.waitForLoadState('networkidle')
-    expect(page.url()).toMatch(/\/(?:dashboard\/calendar|login)/)
+    expect(page.url()).toContain('/dashboard/calendar')
   })
 
-  test('dashboard bookings page loads', async ({ page }) => {
+  test('dashboard bookings page shows booking list', async ({ page }) => {
     await page.goto('/dashboard/bookings')
     await page.waitForLoadState('networkidle')
-    expect(page.url()).toMatch(/\/(?:dashboard\/bookings|login)/)
+    expect(page.url()).toContain('/dashboard/bookings')
   })
 
   test('dashboard customers page loads', async ({ page }) => {
     await page.goto('/dashboard/customers')
     await page.waitForLoadState('networkidle')
-    expect(page.url()).toMatch(/\/(?:dashboard\/customers|login)/)
+    expect(page.url()).toContain('/dashboard/customers')
   })
 
   test('dashboard settings page loads', async ({ page }) => {
     await page.goto('/dashboard/settings')
     await page.waitForLoadState('networkidle')
-    expect(page.url()).toMatch(/\/(?:dashboard\/settings|login)/)
+    expect(page.url()).toContain('/dashboard/settings')
   })
 
   test('dashboard payments page loads', async ({ page }) => {
     await page.goto('/dashboard/payments')
     await page.waitForLoadState('networkidle')
-    expect(page.url()).toMatch(/\/(?:dashboard\/payments|login)/)
+    expect(page.url()).toContain('/dashboard/payments')
   })
 })

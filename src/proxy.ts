@@ -20,10 +20,13 @@ export async function proxy(request: NextRequest) {
   if (pathname.startsWith('/dashboard')) {
     const e2eEmail = request.headers.get('x-e2e-test-user-email')
     const e2eSecret = request.headers.get('x-e2e-auth-secret')
+    // NEXT_PUBLIC_ vars are inlined at build time. If the secret was not
+    // set during the build, the comparison always fails → bypass is dead code.
+    // When set, only requests with the matching header pass through.
+    const e2eConfiguredSecret = process.env.NEXT_PUBLIC_E2E_AUTH_BYPASS_SECRET
+    const isE2EValid = e2eEmail && e2eSecret === e2eConfiguredSecret
 
-    // If both E2E headers are present, let the request through.
-    // The server-side auth (user.ts) validates the actual bypass.
-    if (!(e2eEmail && e2eSecret)) {
+    if (!isE2EValid) {
       const supabase = createMiddlewareClient(request)
       const { data: { session } } = await supabase.auth.getSession()
 

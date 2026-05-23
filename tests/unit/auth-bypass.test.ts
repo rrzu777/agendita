@@ -41,6 +41,10 @@ async function getModule() {
   return await import('@/lib/auth/user')
 }
 
+async function getE2EModule() {
+  return await import('@/lib/auth/e2e-bypass')
+}
+
 describe('E2E auth bypass', () => {
   beforeEach(() => {
     vi.resetModules()
@@ -61,7 +65,7 @@ describe('E2E auth bypass', () => {
     businesses: [{ business: { id: 'b1', isActive: true, slug: 'test' }, role: 'staff' }],
   }
 
-  function enableLocally() {
+  function enableDev() {
     setEnv({
       NODE_ENV: 'development',
       ENABLE_E2E_AUTH_BYPASS: 'true',
@@ -77,17 +81,95 @@ describe('E2E auth bypass', () => {
     headersMap.set('x-e2e-auth-secret', secret)
   }
 
-  describe('getCurrentUser', () => {
-    it('returns null when ENABLE_E2E_AUTH_BYPASS is not set', async () => {
-      setEnv({ NODE_ENV: 'development', ENABLE_E2E_AUTH_BYPASS: undefined })
-      setEmailHeader('e2e@test.agendita.com')
-      const { getCurrentUser } = await getModule()
-      const result = await getCurrentUser()
-      expect(result).toBeNull()
+  describe('isE2EBypassEnabled', () => {
+    it('returns false when ENABLE_E2E_AUTH_BYPASS is not set', async () => {
+      setEnv({ NODE_ENV: 'development' })
+      const { isE2EBypassEnabled } = await getE2EModule()
+      expect(isE2EBypassEnabled()).toBe(false)
     })
 
-    it('returns synthetic user when bypass is enabled and headers match', async () => {
-      enableLocally()
+    it('returns false when ENABLE_E2E_AUTH_BYPASS is set but not "true"', async () => {
+      setEnv({ NODE_ENV: 'development', ENABLE_E2E_AUTH_BYPASS: 'false' })
+      const { isE2EBypassEnabled } = await getE2EModule()
+      expect(isE2EBypassEnabled()).toBe(false)
+    })
+
+    it('returns true in development with ENABLE_E2E_AUTH_BYPASS=true', async () => {
+      enableDev()
+      const { isE2EBypassEnabled } = await getE2EModule()
+      expect(isE2EBypassEnabled()).toBe(true)
+    })
+
+    it('returns false in production without APP_ENV=e2e', async () => {
+      setEnv({ NODE_ENV: 'production', ENABLE_E2E_AUTH_BYPASS: 'true', E2E_AUTH_BYPASS_SECRET: 'secret' })
+      const { isE2EBypassEnabled } = await getE2EModule()
+      expect(isE2EBypassEnabled()).toBe(false)
+    })
+
+    it('returns true in production with APP_ENV=e2e and secret', async () => {
+      setEnv({ NODE_ENV: 'production', ENABLE_E2E_AUTH_BYPASS: 'true', APP_ENV: 'e2e', E2E_AUTH_BYPASS_SECRET: 'secret' })
+      const { isE2EBypassEnabled } = await getE2EModule()
+      expect(isE2EBypassEnabled()).toBe(true)
+    })
+
+    it('returns false in production with APP_ENV=e2e but no secret', async () => {
+      setEnv({ NODE_ENV: 'production', ENABLE_E2E_AUTH_BYPASS: 'true', APP_ENV: 'e2e', E2E_AUTH_BYPASS_SECRET: undefined })
+      const { isE2EBypassEnabled } = await getE2EModule()
+      expect(isE2EBypassEnabled()).toBe(false)
+    })
+  })
+
+  describe('validateE2EHeaders', () => {
+    it('returns null when bypass disabled', async () => {
+      setEnv({ NODE_ENV: 'development' })
+      setEmailHeader('e2e@test.agendita.com')
+      setSecretHeader('secret')
+      const { validateE2EHeaders } = await getE2EModule()
+      expect(await validateE2EHeaders()).toBeNull()
+    })
+
+    it('returns email when headers valid in dev (no secret required)', async () => {
+      enableDev()
+      setEmailHeader('e2e@test.agendita.com')
+      setSecretHeader('any-secret')
+      const { validateE2EHeaders } = await getE2EModule()
+      expect(await validateE2EHeaders()).toBe('e2e@test.agendita.com')
+    })
+
+    it('returns null when email header missing', async () => {
+      enableDev()
+      setSecretHeader('any-secret')
+      const { validateE2EHeaders } = await getE2EModule()
+      expect(await validateE2EHeaders()).toBeNull()
+    })
+
+    it('returns null when secret header missing', async () => {
+      enableDev()
+      setEmailHeader('e2e@test.agendita.com')
+      const { validateE2EHeaders } = await getE2EModule()
+      expect(await validateE2EHeaders()).toBeNull()
+    })
+
+    it('validates secret matches E2E_AUTH_BYPASS_SECRET in dev when set', async () => {
+      setEnv({ NODE_ENV: 'development', ENABLE_E2E_AUTH_BYPASS: 'true', E2E_AUTH_BYPASS_SECRET: 'correct' })
+      setEmailHeader('e2e@test.agendita.com')
+      setSecretHeader('correct')
+      const { validateE2EHeaders } = await getE2EModule()
+      expect(await validateE2EHeaders()).toBe('e2e@test.agendita.com')
+    })
+
+    it('rejects wrong secret in dev when E2E_AUTH_BYPASS_SECRET is set', async () => {
+      setEnv({ NODE_ENV: 'development', ENABLE_E2E_AUTH_BYPASS: 'true', E2E_AUTH_BYPASS_SECRET: 'correct' })
+      setEmailHeader('e2e@test.agendita.com')
+      setSecretHeader('wrong')
+      const { validateE2EHeaders } = await getE2EModule()
+      expect(await validateE2EHeaders()).toBeNull()
+    })
+  })
+
+  describe('getCurrentUser', () => {
+    it('returns synthetic user when bypass active', async () => {
+      enableDev()
       setEmailHeader('e2e@test.agendita.com')
       setSecretHeader('test-secret')
       mockPrisma.user.findUnique.mockResolvedValue(dbUser)
@@ -98,18 +180,9 @@ describe('E2E auth bypass', () => {
       expect(result!.email).toBe('e2e@test.agendita.com')
     })
 
-    it('returns null when email header is missing', async () => {
-      enableLocally()
-      mockPrisma.user.findUnique.mockResolvedValue(dbUser)
-      const { getCurrentUser } = await getModule()
-      const result = await getCurrentUser()
-      expect(result).toBeNull()
-    })
-
-    it('returns null when user not found in DB', async () => {
-      enableLocally()
-      setEmailHeader('nonexistent@test.com')
-      mockPrisma.user.findUnique.mockResolvedValue(null)
+    it('returns null when bypass off and no Supabase session', async () => {
+      setEnv({ NODE_ENV: 'development' })
+      setEmailHeader('e2e@test.agendita.com')
       const { getCurrentUser } = await getModule()
       const result = await getCurrentUser()
       expect(result).toBeNull()
@@ -117,8 +190,8 @@ describe('E2E auth bypass', () => {
   })
 
   describe('getCurrentUserWithBusiness', () => {
-    it('returns user + business when bypass is enabled', async () => {
-      enableLocally()
+    it('returns user + business when bypass active', async () => {
+      enableDev()
       setEmailHeader('e2e@test.agendita.com')
       setSecretHeader('test-secret')
       mockPrisma.user.findUnique.mockResolvedValue(dbUser)
@@ -128,96 +201,6 @@ describe('E2E auth bypass', () => {
       expect(result!.user.id).toBe('u-e2e')
       expect(result!.business).toBeDefined()
       expect(result!.role).toBe('staff')
-    })
-  })
-
-  describe('production blocking', () => {
-    it('bypass is disabled in production when APP_ENV is not e2e', async () => {
-      setEnv({
-        NODE_ENV: 'production',
-        ENABLE_E2E_AUTH_BYPASS: 'true',
-        E2E_AUTH_BYPASS_SECRET: 'test-secret',
-        APP_ENV: undefined,
-      })
-      setEmailHeader('e2e@test.agendita.com')
-      setSecretHeader('test-secret')
-      mockPrisma.user.findUnique.mockResolvedValue(dbUser)
-      const { getCurrentUser } = await getModule()
-      const result = await getCurrentUser()
-      expect(result).toBeNull()
-    })
-
-    it('bypass is enabled in production when APP_ENV=e2e with valid secret', async () => {
-      setEnv({
-        NODE_ENV: 'production',
-        APP_ENV: 'e2e',
-        ENABLE_E2E_AUTH_BYPASS: 'true',
-        E2E_AUTH_BYPASS_SECRET: 'e2e-secret-2026',
-      })
-      setEmailHeader('e2e@test.agendita.com')
-      setSecretHeader('e2e-secret-2026')
-      mockPrisma.user.findUnique.mockResolvedValue(dbUser)
-      const { getCurrentUser } = await getModule()
-      const result = await getCurrentUser()
-      expect(result).toBeDefined()
-      expect(result!.id).toBe('u-e2e')
-    })
-  })
-
-  describe('secret validation', () => {
-    it('rejects when secret header does not match E2E_AUTH_BYPASS_SECRET in dev', async () => {
-      setEnv({
-        NODE_ENV: 'development',
-        ENABLE_E2E_AUTH_BYPASS: 'true',
-        E2E_AUTH_BYPASS_SECRET: 'correct-secret',
-      })
-      setEmailHeader('e2e@test.agendita.com')
-      setSecretHeader('wrong-secret')
-      mockPrisma.user.findUnique.mockResolvedValue(dbUser)
-      const { getCurrentUser } = await getModule()
-      const result = await getCurrentUser()
-      expect(result).toBeNull()
-    })
-
-    it('accepts when secret header matches E2E_AUTH_BYPASS_SECRET in dev', async () => {
-      setEnv({
-        NODE_ENV: 'development',
-        ENABLE_E2E_AUTH_BYPASS: 'true',
-        E2E_AUTH_BYPASS_SECRET: 'correct-secret',
-      })
-      setEmailHeader('e2e@test.agendita.com')
-      setSecretHeader('correct-secret')
-      mockPrisma.user.findUnique.mockResolvedValue(dbUser)
-      const { getCurrentUser } = await getModule()
-      const result = await getCurrentUser()
-      expect(result).toBeDefined()
-      expect(result!.id).toBe('u-e2e')
-    })
-
-    it('accepts any secret when E2E_AUTH_BYPASS_SECRET is not set in dev', async () => {
-      enableLocally()
-      setEmailHeader('e2e@test.agendita.com')
-      setSecretHeader('any-random-secret')
-      mockPrisma.user.findUnique.mockResolvedValue(dbUser)
-      const { getCurrentUser } = await getModule()
-      const result = await getCurrentUser()
-      expect(result).toBeDefined()
-      expect(result!.id).toBe('u-e2e')
-    })
-
-    it('rejects in production when E2E_AUTH_BYPASS_SECRET is not set', async () => {
-      setEnv({
-        NODE_ENV: 'production',
-        APP_ENV: 'e2e',
-        ENABLE_E2E_AUTH_BYPASS: 'true',
-        E2E_AUTH_BYPASS_SECRET: undefined,
-      })
-      setEmailHeader('e2e@test.agendita.com')
-      setSecretHeader('any')
-      mockPrisma.user.findUnique.mockResolvedValue(dbUser)
-      const { getCurrentUser } = await getModule()
-      const result = await getCurrentUser()
-      expect(result).toBeNull()
     })
   })
 })
