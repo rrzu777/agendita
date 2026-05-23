@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Star } from 'lucide-react'
 import { submitReview } from '@/server/actions/reviews'
@@ -12,7 +11,6 @@ interface ReviewFormProps {
 }
 
 export function ReviewForm({ bookingId, token }: ReviewFormProps) {
-  const router = useRouter()
   const [rating, setRating] = useState(0)
   const [hoveredRating, setHoveredRating] = useState(0)
   const [comment, setComment] = useState('')

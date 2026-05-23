@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Banknote, CalendarCheck2, CreditCard, RotateCcw } from 'lucide-react'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- summary shape depends on server action return type
 export function FinanceStats({ summary }: { summary: any }) {
   const stats = [
     { label: 'Ingresos hoy', value: `$${summary.incomeToday.toLocaleString('es-CL')}`, icon: Banknote },

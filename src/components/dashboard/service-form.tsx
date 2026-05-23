@@ -56,7 +56,7 @@ export function ServiceForm({
   triggerLabel,
   triggerIcon,
 }: {
-  service?: any
+  service?: { id: string; name: string; description: string | null; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; isActive: boolean; sortOrder: number } | null
   onSuccess?: () => void
   triggerLabel?: string
   triggerIcon?: ReactNode

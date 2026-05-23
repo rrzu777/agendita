@@ -5,13 +5,13 @@ const mockRequireBusiness = vi.fn().mockResolvedValue({ businessId: 'biz-1' })
 const mockFindMany = vi.fn().mockResolvedValue([])
 
 vi.mock('@/lib/auth/server', () => ({
-  requireBusiness: (...args: any[]) => mockRequireBusiness(...args),
+  requireBusiness: (...args: unknown[]) => mockRequireBusiness(...args),
 }))
 
 vi.mock('@/lib/db', () => ({
   prisma: {
     timeBlock: {
-      findMany: (...args: any[]) => mockFindMany(...args),
+      findMany: (...args: unknown[]) => mockFindMany(...args),
     },
   },
 }))

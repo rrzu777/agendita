@@ -1,7 +1,7 @@
 export function normalizeWhatsapp(input: string | null | undefined): string | null {
   if (!input || input.trim() === '') return null
 
-  let cleaned = input.replace(/[^0-9+]/g, '')
+  const cleaned = input.replace(/[^0-9+]/g, '')
 
   if (cleaned === '') return null
 

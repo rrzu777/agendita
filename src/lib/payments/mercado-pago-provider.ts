@@ -130,9 +130,10 @@ export const mercadoPagoPaymentProvider: PaymentProvider = {
   },
 
   async handleWebhook(payload: unknown): Promise<WebhookPaymentResult> {
-    const data = payload as any
+    const data = payload as Record<string, unknown> | null
 
-    const mpPaymentId = data?.data?.id || data?.id
+    const dataField = data?.data as Record<string, unknown> | undefined
+    const mpPaymentId = (dataField?.id ?? data?.id) as string | undefined
     if (!mpPaymentId) {
       throw new Error('Invalid webhook payload: missing payment id')
     }

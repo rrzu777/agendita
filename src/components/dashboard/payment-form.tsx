@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { createManualPayment } from '@/server/actions/payments'
 import { Plus } from 'lucide-react'
 
-export function PaymentForm({ bookings }: { bookings: any[] }) {
+export function PaymentForm({ bookings }: { bookings: { id: string; service: { name: string } | null; customer: { name: string } | null; finalAmount: number; remainingBalance: number; depositPaid: number; status: string }[] }) {
   const [open, setOpen] = useState(false)
 
   async function handleSubmit(formData: FormData) {

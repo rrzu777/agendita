@@ -74,7 +74,7 @@ export function TimeBlockForm({ onSuccess }: { onSuccess?: () => void }) {
   )
 }
 
-export function TimeBlockList({ blocks: initialBlocks }: { blocks: any[] }) {
+export function TimeBlockList({ blocks: initialBlocks }: { blocks: { id: string; startDateTime: Date | string; endDateTime: Date | string; reason: string | null }[] }) {
   const [blocks, setBlocks] = useState(initialBlocks)
 
   async function handleDelete(id: string) {

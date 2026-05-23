@@ -16,6 +16,7 @@ function serializeDates<T extends { startDateTime: Date; endDateTime: Date }>(
     ...item,
     startDateTime: item.startDateTime.toISOString(),
     endDateTime: item.endDateTime.toISOString(),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generic spread with overridden Date→string fields
   })) as any
 }
 
@@ -47,7 +48,7 @@ export default async function CalendarPage({
   ])
 
   const bookingsByDay = groupBookingsByDay(bookings, timezone)
-  const timeBlocksByDay = groupBookingsByDay(timeBlocks, timezone)
+  const _timeBlocksByDay = groupBookingsByDay(timeBlocks, timezone) as unknown as typeof bookingsByDay
 
   const selectedDate = params.date || null
 

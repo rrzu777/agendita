@@ -2,7 +2,7 @@
 
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import type { Booking, Customer } from '@prisma/client'
+import type { Booking } from '@prisma/client'
 import { BookingStatus, BookingPaymentStatus, PaymentProvider, PaymentType } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -12,7 +12,6 @@ import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
 import { addMinutes } from 'date-fns'
 import {
-  sendBookingConfirmationToCustomer,
   sendBookingReceivedToCustomer,
   sendNewBookingNotificationToBusiness,
   sendBookingCancelledNotification,
@@ -483,7 +482,7 @@ export async function registerManualPayment(
 
   let wasConfirmed = false
 
-  const updated = await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx) => {
     const current = await tx.booking.findUnique({ where: { id: bookingId } })
     if (!current) throw new Error('Reserva no encontrada')
     if (current.remainingBalance <= 0) {

@@ -31,6 +31,7 @@ function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false)
   useEffect(() => {
     const mql = window.matchMedia('(max-width: 640px)')
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- matchMedia requires synchronous initial state read in effect
     setIsMobile(mql.matches)
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
     mql.addEventListener('change', handler)

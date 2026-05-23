@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { BookingStatus, BookingPaymentStatus, PaymentType } from '@prisma/client'
+import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 
 const mockPrisma = {
   booking: {
@@ -51,7 +51,6 @@ vi.mock('@/lib/booking-payments', () => ({
 
 // Import después de los mocks
 const { createManualPayment } = await import('@/server/actions/payments')
-const { applyApprovedPayment } = await import('@/server/services/finance')
 
 describe('createManualPayment', () => {
   const baseBooking = {

@@ -16,7 +16,8 @@ export const manualPaymentProvider: PaymentProvider = {
     }
   },
 
-  async verifyPayment(input: VerifyPaymentInput): Promise<VerifyPaymentResult> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- required by PaymentProvider interface
+  async verifyPayment(_input: VerifyPaymentInput): Promise<VerifyPaymentResult> {
     // Manual payments are verified by admin action, not by provider
     return {
       status: 'pending',
@@ -26,7 +27,8 @@ export const manualPaymentProvider: PaymentProvider = {
     }
   },
 
-  async handleWebhook(payload: unknown): Promise<WebhookPaymentResult> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- required by PaymentProvider interface
+  async handleWebhook(_payload: unknown): Promise<WebhookPaymentResult> {
     // Manual payments don't use webhooks
     throw new Error('Manual payments do not support webhooks')
   },

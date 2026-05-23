@@ -87,6 +87,22 @@ async function main() {
     ],
   })
 
+  // Create E2E test user (for Playwright E2E auth bypass)
+  const e2eUser = await prisma.user.create({
+    data: {
+      email: 'e2e@test.agendita.com',
+      name: 'E2E Test User',
+    },
+  })
+
+  await prisma.businessUser.create({
+    data: {
+      businessId: business.id,
+      userId: e2eUser.id,
+      role: 'staff',
+    },
+  })
+
   // Create availability rules
   await prisma.availabilityRule.createMany({
     data: [

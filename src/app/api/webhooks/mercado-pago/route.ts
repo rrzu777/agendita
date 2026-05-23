@@ -94,7 +94,11 @@ export async function POST(request: NextRequest) {
     // rechazamos por inconsistencia (más seguro que adivinar cuál usar).
     const url = new URL(request.url)
     const queryId = url.searchParams.get('data.id') || url.searchParams.get('id') || null
-    const bodyId = (payload as any)?.data?.id || (payload as any)?.id || null
+    const bodyData = (payload as Record<string, unknown> | null)
+    const rawBodyId = (bodyData?.data as Record<string, unknown> | undefined)?.id ?? bodyData?.id ?? null
+    const bodyId = typeof rawBodyId === 'string' || typeof rawBodyId === 'number'
+      ? String(rawBodyId)
+      : null
 
     if (queryId && bodyId && queryId !== bodyId) {
       console.error('[MP Webhook] data.id mismatch between query and body', { queryId, bodyId })

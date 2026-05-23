@@ -70,9 +70,6 @@ function createRequestInit(overrides: Record<string, string> = {}): Record<strin
 }
 
 const { applyApprovedPayment } = await import('@/server/services/finance')
-const { sendBookingConfirmedNotification, sendNotificationSafely } = await import(
-  '@/lib/notifications'
-)
 
 describe('Mercado Pago webhook', () => {
   let POST: (req: Request) => Promise<Response>
@@ -235,7 +232,7 @@ describe('Mercado Pago webhook', () => {
         booking: { id: 'booking-1', businessId: 'biz-1' },
         wasConfirmed: false,
       })
-      mockPrisma.$transaction.mockImplementation(async (fn: Function) => fn({ ...mockPrisma }))
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({ ...mockPrisma }))
 
       const url = new URL(
         'https://example.com/api/webhooks/mercado-pago?data.id=mp-pay-qp',
@@ -301,7 +298,7 @@ describe('Mercado Pago webhook', () => {
         booking: { id: 'booking-1', businessId: 'biz-1' },
         wasConfirmed: false,
       })
-      mockPrisma.$transaction.mockImplementation(async (fn: Function) => fn({ ...mockPrisma }))
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({ ...mockPrisma }))
 
       const body = { data: { id: dataId } }
       const req = makeRequest(body, {
@@ -333,7 +330,7 @@ describe('Mercado Pago webhook', () => {
       }
       ;(applyApprovedPayment as ReturnType<typeof vi.fn>).mockResolvedValue(applyResult)
 
-      mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
         return fn({ ...mockPrisma })
       })
 
@@ -507,7 +504,7 @@ describe('Mercado Pago webhook', () => {
       const updateCalls = (mockPrisma.payment.update as ReturnType<typeof vi.fn>).mock
         .calls
       const statusUpdates = updateCalls.filter(
-        (call: any[]) => call[0]?.data?.status === 'rejected',
+        (call: unknown[]) => (call[0] as Record<string, unknown>)?.data?.status === 'rejected',
       )
       expect(statusUpdates).toHaveLength(0)
     })

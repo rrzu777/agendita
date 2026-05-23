@@ -7,7 +7,7 @@ import { updateAvailabilityRule } from '@/server/actions/availability'
 
 const DAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
-export function AvailabilityEditor({ rules: initialRules }: { rules: any[] }) {
+export function AvailabilityEditor({ rules: initialRules }: { rules: { id: string; dayOfWeek: number; startTime: string; endTime: string; isActive: boolean }[] }) {
   const [rules, setRules] = useState(initialRules)
 
   async function handleToggle(id: string, isActive: boolean) {

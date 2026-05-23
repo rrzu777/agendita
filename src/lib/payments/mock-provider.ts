@@ -18,7 +18,8 @@ export const mockPaymentProvider: PaymentProvider = {
     }
   },
 
-  async verifyPayment(input: VerifyPaymentInput): Promise<VerifyPaymentResult> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- required by PaymentProvider interface
+  async verifyPayment(_input: VerifyPaymentInput): Promise<VerifyPaymentResult> {
     await new Promise(resolve => setTimeout(resolve, 300))
 
     // Mock always approves for development
@@ -32,13 +33,13 @@ export const mockPaymentProvider: PaymentProvider = {
 
   async handleWebhook(payload: unknown): Promise<WebhookPaymentResult> {
     // Mock webhooks are not expected, but handle gracefully
-    const data = payload as any
+    const data = payload as Record<string, unknown> | null
 
     return {
       status: 'approved',
-      paymentId: data?.paymentId || 'unknown',
-      providerPaymentId: data?.providerPaymentId || 'unknown',
-      amount: data?.amount || 0,
+      paymentId: (data?.paymentId as string) || 'unknown',
+      providerPaymentId: (data?.providerPaymentId as string) || 'unknown',
+      amount: (data?.amount as number) || 0,
       paidAt: new Date(),
       rawPayload: payload,
     }

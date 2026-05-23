@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    let customerMap: Map<string, { name: string; phone: string }> = new Map()
+    const customerMap: Map<string, { name: string; phone: string }> = new Map()
     if (unresolvedCustomerIds.size > 0) {
       const customers = await prisma.customer.findMany({
         where: {

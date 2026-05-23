@@ -13,11 +13,8 @@ import {
   Mail,
   Eye,
   CalendarDays,
-  Banknote,
-  Clock,
   Users,
   AlertCircle,
-  UserPlus,
   Filter,
   X,
 } from 'lucide-react'
@@ -46,9 +43,9 @@ export function CustomerList({ customers, error }: CustomerListProps) {
   const [showRecentOnly, setShowRecentOnly] = useState(false)
 
   const today = new Date()
-  const thirtyDaysAgo = new Date(today.getTime() - RECENT_DAYS * 24 * 60 * 60 * 1000)
 
   const filtered = useMemo(() => {
+    const thirtyDaysAgo = new Date(today.getTime() - RECENT_DAYS * 24 * 60 * 60 * 1000)
     let result = customers
 
     if (search.trim()) {

@@ -18,12 +18,18 @@ export async function proxy(request: NextRequest) {
 
   // Check auth for dashboard routes
   if (pathname.startsWith('/dashboard')) {
-    const supabase = createMiddlewareClient(request)
-    const { data: { session } } = await supabase.auth.getSession()
+    const isE2EBypass =
+      process.env.ENABLE_E2E_AUTH_BYPASS === 'true' &&
+      request.headers.get('x-e2e-test-user-email')
 
-    if (!session) {
-      const loginUrl = new URL('/login', request.url)
-      return NextResponse.redirect(loginUrl)
+    if (!isE2EBypass) {
+      const supabase = createMiddlewareClient(request)
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (!session) {
+        const loginUrl = new URL('/login', request.url)
+        return NextResponse.redirect(loginUrl)
+      }
     }
   }
 

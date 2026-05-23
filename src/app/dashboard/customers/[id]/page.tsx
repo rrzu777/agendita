@@ -12,13 +12,9 @@ import { CustomerNotesForm } from './notes-form'
 import {
   ArrowLeft,
   CalendarDays,
-  Phone,
-  Mail,
-  Clock,
   MessageCircle,
   Plus,
   Banknote,
-  User,
 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'

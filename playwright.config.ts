@@ -7,7 +7,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: 1,
   reporter: 'html',
-  timeout: 30000,
+  timeout: 60000,
   use: {
     baseURL: 'http://localhost:3000',
     trace: 'on-first-retry',
@@ -19,9 +19,13 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run start',
+    command: 'npm run dev',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
-  timeout: 60000,
+    timeout: 60000,
+    env: {
+      ...process.env,
+      ENABLE_E2E_AUTH_BYPASS: 'true',
+    },
   },
 })

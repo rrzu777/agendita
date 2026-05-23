@@ -1,4 +1,3 @@
-import { notFound } from 'next/navigation'
 import { Metadata } from 'next'
 import { getReviewRequest } from '@/server/actions/reviews'
 import { ReviewForm } from './review-form'
@@ -11,7 +10,7 @@ interface ReviewPageProps {
 }
 
 export async function generateMetadata({ params }: ReviewPageProps): Promise<Metadata> {
-  const { bookingId } = await params
+  const { bookingId: _bookingId } = await params
   return {
     title: `Reseña — Agendita`,
     robots: { index: false, follow: false },

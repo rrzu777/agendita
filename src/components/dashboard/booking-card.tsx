@@ -60,7 +60,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
   function handleStatusChange(status: string) {
     startTransition(async () => {
       try {
-        await updateBookingStatus(booking.id, status as any)
+        await updateBookingStatus(booking.id, status as 'cancelled' | 'completed' | 'no_show')
         router.refresh()
       } catch (err) {
         console.error('Error updating booking status:', err)

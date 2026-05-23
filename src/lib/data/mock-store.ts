@@ -1,4 +1,5 @@
 import { mockBusiness } from './mock-business'
+import type { Prisma } from '@prisma/client'
 
 // ⚠️ WARNING: This mock store uses in-memory mutable state.
 // In a serverless environment (Vercel, AWS Lambda), module-level state
@@ -81,7 +82,7 @@ export type Payment = {
   paymentType: 'deposit' | 'final_payment' | 'full_payment' | 'refund' | 'cancellation_fee' | 'manual_adjustment'
   paymentMethod: string | null
   paidAt: Date | null
-  rawPayload: any
+  rawPayload: Prisma.InputJsonValue
   createdAt: Date
 }
 

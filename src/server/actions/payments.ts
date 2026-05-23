@@ -2,7 +2,8 @@
 
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import { PaymentProvider, PaymentStatus, PaymentType, BookingStatus } from '@prisma/client'
+import { PaymentProvider, PaymentStatus, PaymentType } from '@prisma/client'
+import type { Prisma } from '@prisma/client'
 import {
   getDefaultProvider,
   isOnlinePaymentAvailable,
@@ -156,7 +157,7 @@ export async function initiatePayment(data: {
     // Guardar rawPayload con datos de la preferencia (preferenceId, init_point)
     await prisma.payment.update({
       where: { id: localPaymentId },
-      data: { rawPayload: result.rawResponse },
+      data: { rawPayload: result.rawResponse as Prisma.InputJsonValue },
     })
 
     revalidatePath('/dashboard/payments')

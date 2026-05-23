@@ -18,7 +18,7 @@ import { ServiceForm } from './service-form'
 import { toggleService, reorderServices } from '@/server/actions/services'
 import { Plus, EyeOff, Eye, ChevronUp, ChevronDown, AlertTriangle, X } from 'lucide-react'
 
-export function ServiceTable({ services: initialServices }: { services: any[] }) {
+export function ServiceTable({ services: initialServices }: { services: { id: string; name: string; description: string | null; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; isActive: boolean; sortOrder: number }[] }) {
   const [services, setServices] = useState(initialServices)
   const [showInactive, setShowInactive] = useState(true)
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null)

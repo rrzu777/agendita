@@ -18,7 +18,7 @@ export interface CreatePaymentResult {
   providerPaymentId: string | null
   redirectUrl: string | null
   status: 'pending' | 'approved' | 'rejected'
-  rawResponse: any
+  rawResponse: unknown
 }
 
 export interface VerifyPaymentInput {
@@ -30,7 +30,7 @@ export interface VerifyPaymentResult {
   status: 'approved' | 'rejected' | 'pending' | 'cancelled' | 'refunded'
   amount: number
   paidAt: Date | null
-  rawResponse: any
+  rawResponse: unknown
 }
 
 export interface WebhookPaymentResult {
@@ -39,7 +39,7 @@ export interface WebhookPaymentResult {
   providerPaymentId: string
   amount: number
   paidAt: Date | null
-  rawPayload: any
+  rawPayload: unknown
 }
 
 export interface PaymentProvider {

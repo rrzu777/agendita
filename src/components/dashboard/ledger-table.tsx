@@ -26,6 +26,7 @@ const typeLabels: Record<string, string> = {
   adjustment: 'Ajuste',
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- entries shape depends on server action return type
 export function LedgerTable({ entries }: { entries: any[] }) {
   return (
     <div className="studio-card overflow-hidden">
