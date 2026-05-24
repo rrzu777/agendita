@@ -113,7 +113,7 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
   // evitando doble-booking concurrente incluso entre slots con distinto startDateTime.
   const lockKey = `${businessId}:${localStartStr}`
   const hash = hashStringToInt(lockKey)
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(${hash})`
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(${hash})`
 
   const overlappingBookings = await tx.$queryRaw`
     SELECT "id" FROM "Booking"

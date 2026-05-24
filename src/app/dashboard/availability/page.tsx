@@ -36,7 +36,7 @@ export default async function AvailabilityPage() {
               <h2 className="text-2xl font-semibold tracking-normal text-primary">Bloqueos</h2>
               <p className="text-sm text-muted-foreground">Marca días o rangos en los que no estarás disponible.</p>
             </div>
-            <TimeBlockForm onSuccess={() => {}} />
+            <TimeBlockForm />
           </div>
           <TimeBlockList blocks={blocks} />
         </div>

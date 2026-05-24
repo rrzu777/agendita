@@ -27,6 +27,7 @@ describe('assertSlotIsAvailable', () => {
       service: { findFirst: vi.fn().mockResolvedValue(mocks.service ?? null) },
       availabilityRule: { findFirst: vi.fn().mockResolvedValue(mocks.rule ?? null) },
       timeBlock: { findFirst: vi.fn().mockResolvedValue(mocks.block ?? null) },
+      $executeRaw: vi.fn().mockResolvedValue(1),
       $queryRaw: vi.fn().mockResolvedValue(mocks.queryRawResult ?? []),
     } as unknown as Parameters<typeof assertSlotIsAvailable>[0]['tx']
   }
@@ -158,6 +159,7 @@ describe('assertSlotIsAvailable', () => {
     const end2 = new Date('2026-05-20T19:00:00Z')
 
     const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
+    const executeRawSpy = vi.fn().mockResolvedValue(1)
     const queryRawSpy = vi.fn().mockResolvedValue([])
 
     const makeTxWithSpy = () => ({
@@ -165,16 +167,18 @@ describe('assertSlotIsAvailable', () => {
       service: { findFirst: vi.fn().mockResolvedValue({ durationMinutes: 60 }) },
       availabilityRule: { findFirst: vi.fn().mockResolvedValue(rule) },
       timeBlock: { findFirst: vi.fn().mockResolvedValue(null) },
+      $executeRaw: executeRawSpy,
       $queryRaw: queryRawSpy,
     })
 
     await assertSlotIsAvailable({ tx: makeTxWithSpy() as unknown as Parameters<typeof assertSlotIsAvailable>[0]['tx'], businessId, serviceId, startDateTime: start1, endDateTime: end1, timezone })
     await assertSlotIsAvailable({ tx: makeTxWithSpy() as unknown as Parameters<typeof assertSlotIsAvailable>[0]['tx'], businessId, serviceId, startDateTime: start2, endDateTime: end2, timezone })
 
-    // $queryRaw se llama 4 veces: lock1, bookings1, lock2, bookings2
     // Los locks deben ser iguales (mismos args de template literal + hash)
-    const lockCall1 = queryRawSpy.mock.calls[0]
-    const lockCall2 = queryRawSpy.mock.calls[2]
+    const lockCall1 = executeRawSpy.mock.calls[0]
+    const lockCall2 = executeRawSpy.mock.calls[1]
+    expect(executeRawSpy).toHaveBeenCalledTimes(2)
     expect(lockCall1).toEqual(lockCall2)
+    expect(queryRawSpy).toHaveBeenCalledTimes(2)
   })
 })

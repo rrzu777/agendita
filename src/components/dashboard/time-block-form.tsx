@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -8,8 +9,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { createTimeBlock, deleteTimeBlock } from '@/server/actions/time-blocks'
 import { Ban, Plus, Trash2 } from 'lucide-react'
 
-export function TimeBlockForm({ onSuccess }: { onSuccess?: () => void }) {
+export function TimeBlockForm() {
   const [open, setOpen] = useState(false)
+  const router = useRouter()
 
   async function handleSubmit(formData: FormData) {
     const startDate = formData.get('startDate') as string
@@ -25,7 +27,7 @@ export function TimeBlockForm({ onSuccess }: { onSuccess?: () => void }) {
     })
 
     setOpen(false)
-    onSuccess?.()
+    router.refresh()
   }
 
   return (
@@ -75,11 +77,12 @@ export function TimeBlockForm({ onSuccess }: { onSuccess?: () => void }) {
 }
 
 export function TimeBlockList({ blocks: initialBlocks }: { blocks: { id: string; startDateTime: Date | string; endDateTime: Date | string; reason: string | null }[] }) {
-  const [blocks, setBlocks] = useState(initialBlocks)
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set())
+  const blocks = initialBlocks.filter((block) => !deletedIds.has(block.id))
 
   async function handleDelete(id: string) {
     await deleteTimeBlock(id)
-    setBlocks(blocks.filter(b => b.id !== id))
+    setDeletedIds((current) => new Set(current).add(id))
   }
 
   if (blocks.length === 0) {

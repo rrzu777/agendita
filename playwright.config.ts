@@ -34,6 +34,9 @@ export default defineConfig({
       ENABLE_E2E_AUTH_BYPASS: 'true',
       E2E_AUTH_BYPASS_SECRET: E2E_AUTH_SECRET,
       NEXT_PUBLIC_E2E_AUTH_BYPASS_SECRET: E2E_AUTH_SECRET,
+      PAYMENT_PROVIDER: 'mock',
+      RESEND_API_KEY: '',
+      FROM_EMAIL: '',
     },
   },
 })

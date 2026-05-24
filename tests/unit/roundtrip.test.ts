@@ -30,6 +30,7 @@ describe('timezone roundtrip', () => {
       service: { findFirst: vi.fn().mockResolvedValue({ durationMinutes: 60 }) },
       availabilityRule: { findFirst: vi.fn().mockResolvedValue({ dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }) },
       timeBlock: { findFirst: vi.fn().mockResolvedValue(null) },
+      $executeRaw: vi.fn().mockResolvedValue(1),
       $queryRaw: vi.fn().mockResolvedValue([]),
     } as unknown as Parameters<typeof assertSlotIsAvailable>[0]['tx']
 
