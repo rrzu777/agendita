@@ -31,6 +31,102 @@ vi.mock('@/lib/booking-payments', () => ({
 
 const { applyApprovedPayment } = await import('@/server/services/finance')
 
+describe('mapPaymentTypeToLedgerEntryType', () => {
+  it('deposit → deposit_paid', async () => {
+    const { mapPaymentTypeToLedgerEntryType } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerEntryType(PaymentType.deposit)).toBe('deposit_paid')
+  })
+
+  it('final_payment → final_payment_paid', async () => {
+    const { mapPaymentTypeToLedgerEntryType } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerEntryType(PaymentType.final_payment)).toBe('final_payment_paid')
+  })
+
+  it('full_payment → full_payment_paid', async () => {
+    const { mapPaymentTypeToLedgerEntryType } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerEntryType(PaymentType.full_payment)).toBe('full_payment_paid')
+  })
+
+  it('refund → refund_issued', async () => {
+    const { mapPaymentTypeToLedgerEntryType } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerEntryType(PaymentType.refund)).toBe('refund_issued')
+  })
+
+  it('cancellation_fee → cancellation_fee_charged', async () => {
+    const { mapPaymentTypeToLedgerEntryType } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerEntryType(PaymentType.cancellation_fee)).toBe('cancellation_fee_charged')
+  })
+
+  it('manual_adjustment → adjustment', async () => {
+    const { mapPaymentTypeToLedgerEntryType } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerEntryType(PaymentType.manual_adjustment)).toBe('adjustment')
+  })
+})
+
+describe('mapPaymentTypeToLedgerDirection', () => {
+  it('refund → expense', async () => {
+    const { mapPaymentTypeToLedgerDirection } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerDirection(PaymentType.refund)).toBe('expense')
+  })
+
+  it('deposit → income', async () => {
+    const { mapPaymentTypeToLedgerDirection } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerDirection(PaymentType.deposit)).toBe('income')
+  })
+
+  it('final_payment → income', async () => {
+    const { mapPaymentTypeToLedgerDirection } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerDirection(PaymentType.final_payment)).toBe('income')
+  })
+
+  it('full_payment → income', async () => {
+    const { mapPaymentTypeToLedgerDirection } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerDirection(PaymentType.full_payment)).toBe('income')
+  })
+
+  it('cancellation_fee → income', async () => {
+    const { mapPaymentTypeToLedgerDirection } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerDirection(PaymentType.cancellation_fee)).toBe('income')
+  })
+
+  it('manual_adjustment → income', async () => {
+    const { mapPaymentTypeToLedgerDirection } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerDirection(PaymentType.manual_adjustment)).toBe('income')
+  })
+})
+
+describe('getLedgerDescription', () => {
+  it('deposit → Abono para reserva', async () => {
+    const { getLedgerDescription } = await import('@/server/services/finance')
+    expect(getLedgerDescription(PaymentType.deposit, 'booking-abc123')).toBe('Abono para reserva c123')
+  })
+
+  it('final_payment → Pago final para reserva', async () => {
+    const { getLedgerDescription } = await import('@/server/services/finance')
+    expect(getLedgerDescription(PaymentType.final_payment, 'booking-abc123')).toBe('Pago final para reserva c123')
+  })
+
+  it('full_payment → Pago total para reserva', async () => {
+    const { getLedgerDescription } = await import('@/server/services/finance')
+    expect(getLedgerDescription(PaymentType.full_payment, 'booking-abc123')).toBe('Pago total para reserva c123')
+  })
+
+  it('refund → Reembolso para reserva', async () => {
+    const { getLedgerDescription } = await import('@/server/services/finance')
+    expect(getLedgerDescription(PaymentType.refund, 'booking-abc123')).toBe('Reembolso para reserva c123')
+  })
+
+  it('cancellation_fee → Cargo por cancelación para reserva', async () => {
+    const { getLedgerDescription } = await import('@/server/services/finance')
+    expect(getLedgerDescription(PaymentType.cancellation_fee, 'booking-abc123')).toBe('Cargo por cancelación para reserva c123')
+  })
+
+  it('manual_adjustment → Ajuste manual para reserva', async () => {
+    const { getLedgerDescription } = await import('@/server/services/finance')
+    expect(getLedgerDescription(PaymentType.manual_adjustment, 'booking-abc123')).toBe('Ajuste manual para reserva c123')
+  })
+})
+
 describe('applyApprovedPayment', () => {
   const baseBooking = {
     id: 'booking-1',
@@ -202,6 +298,39 @@ describe('applyApprovedPayment', () => {
     expect(result.wasConfirmed).toBe(false)
   })
 
+  it('final_payment after deposit creates ledger type final_payment_paid', async () => {
+    const tx = setupTx()
+    const existingPayments = [
+      { id: 'pay-1', amount: 10000, status: 'approved' },
+    ]
+    tx.booking.findUnique.mockResolvedValue({ ...baseBooking, depositPaid: 10000, remainingBalance: 10000, status: BookingStatus.confirmed })
+    tx.payment.findFirst.mockResolvedValue(null)
+    const newPayment = { id: 'pay-2', amount: 10000, status: 'approved', paymentType: PaymentType.final_payment }
+    tx.payment.create.mockResolvedValue(newPayment)
+    tx.payment.findMany.mockResolvedValue([...existingPayments, newPayment])
+    tx.ledgerEntry.findFirst.mockResolvedValue(null)
+    const updatedBooking = { ...baseBooking, depositPaid: 20000, remainingBalance: 0, paymentStatus: BookingPaymentStatus.fully_paid, status: BookingStatus.confirmed }
+    tx.booking.update.mockResolvedValue(updatedBooking)
+
+    await applyApprovedPayment({
+      tx,
+      bookingId: 'booking-1',
+      businessId: 'biz-1',
+      amount: 10000,
+      currency: 'CLP',
+      provider: PaymentProvider.manual,
+      providerPaymentId: null,
+      paymentType: PaymentType.final_payment,
+    })
+
+    // Verify ledger was created with final_payment_paid type, not full_payment_paid
+    expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(1)
+    const ledgerData = tx.ledgerEntry.create.mock.calls[0][0].data
+    expect(ledgerData.type).toBe('final_payment_paid')
+    expect(ledgerData.direction).toBe('income')
+    expect(ledgerData.description).toBe('Pago final para reserva ng-1')
+  })
+
   it('does not duplicate Payment or LedgerEntry for same providerPaymentId', async () => {
     const tx = setupTx()
     const existingPayment = { id: 'pay-1', amount: 10000, status: 'approved', provider: PaymentProvider.mercado_pago, providerPaymentId: 'mp-123' }
@@ -342,7 +471,7 @@ describe('applyApprovedPayment', () => {
   describe('with explicit paymentId', () => {
     it('reuses existing Payment and does not create a new one', async () => {
       const tx = setupTx()
-      const existingPayment = { id: 'pay-explicit', amount: 8000, status: 'pending', provider: PaymentProvider.manual, providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-1' }
+      const existingPayment = { id: 'pay-explicit', amount: 8000, status: 'pending', provider: PaymentProvider.manual, providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-1', paymentType: PaymentType.deposit }
       tx.booking.findUnique.mockResolvedValue(baseBooking)
       tx.payment.findUnique.mockResolvedValue(existingPayment)
       const updatedPayment = { ...existingPayment, status: 'approved' }
@@ -374,7 +503,7 @@ describe('applyApprovedPayment', () => {
 
     it('is idempotent when Payment is already approved', async () => {
       const tx = setupTx()
-      const existingPayment = { id: 'pay-explicit', amount: 8000, status: 'approved', provider: PaymentProvider.manual, providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-1' }
+      const existingPayment = { id: 'pay-explicit', amount: 8000, status: 'approved', provider: PaymentProvider.manual, providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-1', paymentType: PaymentType.deposit }
       tx.booking.findUnique.mockResolvedValue(baseBooking)
       tx.payment.findUnique.mockResolvedValue(existingPayment)
       tx.payment.findMany.mockResolvedValue([existingPayment])
@@ -402,7 +531,7 @@ describe('applyApprovedPayment', () => {
 
     it('does not duplicate LedgerEntry when called twice with same paymentId', async () => {
       const tx = setupTx()
-      const existingPayment = { id: 'pay-explicit', amount: 8000, status: 'approved', provider: PaymentProvider.manual, providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-1' }
+      const existingPayment = { id: 'pay-explicit', amount: 8000, status: 'approved', provider: PaymentProvider.manual, providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-1', paymentType: PaymentType.deposit }
       tx.booking.findUnique.mockResolvedValue(baseBooking)
       tx.payment.findUnique.mockResolvedValue(existingPayment)
       tx.payment.findMany.mockResolvedValue([existingPayment])
@@ -550,6 +679,59 @@ describe('applyApprovedPayment', () => {
           paymentId: 'pay-explicit',
         })
       ).rejects.toThrow('El providerPaymentId no coincide con el pago registrado')
+    })
+
+    it('with paymentType final_payment creates LedgerEntry final_payment_paid', async () => {
+      const tx = setupTx()
+      const existingPayment = { id: 'pay-explicit', amount: 8000, status: 'pending', provider: PaymentProvider.manual, providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-1', paymentType: PaymentType.final_payment }
+      tx.booking.findUnique.mockResolvedValue(baseBooking)
+      tx.payment.findUnique.mockResolvedValue(existingPayment)
+      const updatedPayment = { ...existingPayment, status: 'approved' }
+      tx.payment.update.mockResolvedValue(updatedPayment)
+      tx.payment.findMany.mockResolvedValue([updatedPayment])
+      tx.ledgerEntry.findFirst.mockResolvedValue(null)
+      const updatedBooking = { ...baseBooking, depositPaid: 8000, remainingBalance: 12000, paymentStatus: BookingPaymentStatus.unpaid, status: BookingStatus.pending_payment }
+      tx.booking.updateMany.mockResolvedValue({ count: 0 })
+      tx.booking.update.mockResolvedValue(updatedBooking)
+
+      await applyApprovedPayment({
+        tx,
+        bookingId: 'booking-1',
+        businessId: 'biz-1',
+        amount: 8000,
+        currency: 'CLP',
+        provider: PaymentProvider.manual,
+        providerPaymentId: null,
+        paymentType: PaymentType.final_payment,
+        paymentId: 'pay-explicit',
+      })
+
+      expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(1)
+      const ledgerData = tx.ledgerEntry.create.mock.calls[0][0].data
+      expect(ledgerData.type).toBe('final_payment_paid')
+      expect(ledgerData.direction).toBe('income')
+      expect(ledgerData.description).toBe('Pago final para reserva ng-1')
+    })
+
+    it('throws when explicit payment paymentType does not match', async () => {
+      const tx = setupTx()
+      tx.booking.findUnique.mockResolvedValue(baseBooking)
+      const wrongPayment = { id: 'pay-explicit', amount: 8000, status: 'pending', provider: PaymentProvider.manual, providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-1', paymentType: PaymentType.deposit }
+      tx.payment.findUnique.mockResolvedValue(wrongPayment)
+
+      await expect(
+        applyApprovedPayment({
+          tx,
+          bookingId: 'booking-1',
+          businessId: 'biz-1',
+          amount: 8000,
+          currency: 'CLP',
+          provider: PaymentProvider.manual,
+          providerPaymentId: null,
+          paymentType: PaymentType.final_payment,
+          paymentId: 'pay-explicit',
+        })
+      ).rejects.toThrow('El tipo de pago no coincide con el pago registrado')
     })
   })
 })

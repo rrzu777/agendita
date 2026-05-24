@@ -1,6 +1,74 @@
 import type { Prisma } from '@prisma/client'
 import { BookingStatus, BookingPaymentStatus, PaymentProvider, PaymentType } from '@prisma/client'
 import { assertBookingPayable } from '@/lib/booking-payments'
+import type { LedgerEntryType, LedgerDirection } from '@prisma/client'
+
+/**
+ * Mapea Payment.paymentType al LedgerEntry.type correspondiente.
+ * Usa switch exhaustivo: si el enum cambia, TypeScript lo hace visible.
+ *
+ * NOTA: manual_adjustment deja direction como gap — la implementación
+ * actual siempre usa income; si se necesita dirección variable, documentar
+ * como follow-up fuera de este prompt.
+ */
+export function mapPaymentTypeToLedgerEntryType(
+  paymentType: PaymentType
+): LedgerEntryType {
+  switch (paymentType) {
+    case 'deposit':
+      return 'deposit_paid'
+    case 'final_payment':
+      return 'final_payment_paid'
+    case 'full_payment':
+      return 'full_payment_paid'
+    case 'refund':
+      return 'refund_issued'
+    case 'cancellation_fee':
+      return 'cancellation_fee_charged'
+    case 'manual_adjustment':
+      return 'adjustment'
+    default: {
+      // Exhaustive check: si alguien agrega un nuevo PaymentType sin manejarlo,
+      // TypeScript falla aquí.
+      const _exhaustive: never = paymentType
+      return _exhaustive
+    }
+  }
+}
+
+/**
+ * Dirección del ledger según paymentType.
+ * refund → expense; todos los demás → income.
+ */
+export function mapPaymentTypeToLedgerDirection(paymentType: PaymentType): LedgerDirection {
+  if (paymentType === 'refund') return 'expense'
+  return 'income'
+}
+
+/**
+ * Description según paymentType para la entrada de ledger.
+ */
+export function getLedgerDescription(paymentType: PaymentType, bookingId: string): string {
+  const suffix = `reserva ${bookingId.slice(-4)}`
+  switch (paymentType) {
+    case 'deposit':
+      return `Abono para ${suffix}`
+    case 'final_payment':
+      return `Pago final para ${suffix}`
+    case 'full_payment':
+      return `Pago total para ${suffix}`
+    case 'refund':
+      return `Reembolso para ${suffix}`
+    case 'cancellation_fee':
+      return `Cargo por cancelación para ${suffix}`
+    case 'manual_adjustment':
+      return `Ajuste manual para ${suffix}`
+    default: {
+      const _exhaustive: never = paymentType
+      return _exhaustive
+    }
+  }
+}
 
 export interface ApplyApprovedPaymentInput {
   tx: Prisma.TransactionClient
@@ -50,7 +118,7 @@ export async function applyApprovedPayment({
 
   assertBookingPayable(booking)
 
-  let payment: { id: string; amount: number; status: string; provider: string; providerPaymentId: string | null } | null = null
+  let payment: { id: string; amount: number; status: string; provider: string; providerPaymentId: string | null; paymentType: PaymentType } | null = null
 
   if (explicitPaymentId) {
     const found = await tx.payment.findUnique({
@@ -73,6 +141,9 @@ export async function applyApprovedPayment({
     }
     if (found.providerPaymentId !== providerPaymentId) {
       throw new Error('El providerPaymentId no coincide con el pago registrado')
+    }
+    if (found.paymentType !== paymentType) {
+      throw new Error('El tipo de pago no coincide con el pago registrado')
     }
     payment = found
   } else if (providerPaymentId) {
@@ -125,23 +196,17 @@ export async function applyApprovedPayment({
   })
 
   if (!existingLedger) {
-    const approvedPayments = await tx.payment.findMany({
-      where: { bookingId, status: 'approved' },
-    })
-    const totalApproved = approvedPayments.reduce((sum, p) => sum + p.amount, 0)
-    const isFullPayment = totalApproved >= booking.finalAmount
-
     await tx.ledgerEntry.create({
       data: {
         businessId,
         bookingId,
         paymentId: payment.id,
         customerId: booking.customerId,
-        type: isFullPayment ? 'full_payment_paid' : 'deposit_paid',
-        direction: 'income',
+        type: mapPaymentTypeToLedgerEntryType(payment.paymentType),
+        direction: mapPaymentTypeToLedgerDirection(payment.paymentType),
         amount: payment.amount,
         currency,
-        description: `${isFullPayment ? 'Pago total' : 'Abono'} para reserva ${booking.id.slice(-4)}`,
+        description: getLedgerDescription(payment.paymentType, booking.id),
         occurredAt: new Date(),
         createdByUserId: createdByUserId ?? null,
       },

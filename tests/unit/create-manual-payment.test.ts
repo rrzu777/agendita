@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
+import { BookingStatus, BookingPaymentStatus, PaymentType } from '@prisma/client'
 
 const mockPrisma = {
   booking: {
@@ -73,7 +73,7 @@ describe('createManualPayment', () => {
     mockPrisma.booking.findFirst.mockResolvedValue(baseBooking)
     mockPrisma.booking.findUnique.mockResolvedValue(baseBooking)
 
-    const createdPayment = { id: 'pay-manual-1', amount: 10000, status: 'pending', provider: 'manual', providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-1' }
+    const createdPayment = { id: 'pay-manual-1', amount: 10000, status: 'pending', provider: 'manual', providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-1', paymentType: PaymentType.deposit }
     const approvedPayment = { ...createdPayment, status: 'approved', paidAt: new Date() }
     mockPrisma.payment.create.mockResolvedValue(createdPayment)
     // 1st findUnique: applyApprovedPayment reads the pending Payment
@@ -121,7 +121,7 @@ describe('createManualPayment', () => {
     mockPrisma.booking.findFirst.mockResolvedValue(baseBooking)
     mockPrisma.booking.findUnique.mockResolvedValue(baseBooking)
 
-    const createdPayment = { id: 'pay-manual-2', amount: 5000, status: 'pending', provider: 'manual', providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-1' }
+    const createdPayment = { id: 'pay-manual-2', amount: 5000, status: 'pending', provider: 'manual', providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-1', paymentType: PaymentType.deposit }
     const approvedPayment = { ...createdPayment, status: 'approved', paidAt: new Date() }
     mockPrisma.payment.create.mockResolvedValue(createdPayment)
     mockPrisma.payment.findUnique.mockResolvedValue(createdPayment)
