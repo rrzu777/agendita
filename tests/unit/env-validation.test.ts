@@ -23,6 +23,7 @@ describe('env validation', () => {
       setEnv({
         NODE_ENV: 'development',
         DATABASE_URL: 'postgresql://localhost/test',
+        DIRECT_URL: 'postgresql://localhost/test',
         NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
         NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
         APP_DOMAIN: 'localhost:3000',
@@ -40,6 +41,7 @@ describe('env validation', () => {
       setEnv({
         NODE_ENV: 'development',
         DATABASE_URL: 'postgresql://localhost/test',
+        DIRECT_URL: 'postgresql://localhost/test',
         NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
         NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
         APP_DOMAIN: 'localhost:3000',
@@ -58,6 +60,7 @@ describe('env validation', () => {
       setEnv({
         NODE_ENV: 'development',
         DATABASE_URL: undefined,
+        DIRECT_URL: undefined,
         NEXT_PUBLIC_SUPABASE_URL: undefined,
         NEXT_PUBLIC_SUPABASE_ANON_KEY: undefined,
         APP_DOMAIN: undefined,
@@ -66,9 +69,10 @@ describe('env validation', () => {
       })
       const { validateEnv } = await import('@/lib/env')
       const { errors } = validateEnv()
-      expect(errors.length).toBeGreaterThanOrEqual(5)
+      expect(errors.length).toBeGreaterThanOrEqual(6)
       const keys = errors.map((e) => e.key)
       expect(keys).toContain('DATABASE_URL')
+      expect(keys).toContain('DIRECT_URL')
       expect(keys).toContain('NEXT_PUBLIC_SUPABASE_URL')
       expect(keys).toContain('NEXT_PUBLIC_SUPABASE_ANON_KEY')
       expect(keys).toContain('APP_DOMAIN')
@@ -79,6 +83,7 @@ describe('env validation', () => {
       setEnv({
         NODE_ENV: 'development',
         DATABASE_URL: 'postgresql://localhost/test',
+        DIRECT_URL: 'postgresql://localhost/test',
         NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
         NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
         APP_DOMAIN: 'localhost:3000',
@@ -92,10 +97,29 @@ describe('env validation', () => {
       expect(paymentError!.message).toContain('invalid')
     })
 
+    it('PAYMENT_PROVIDER is always required', async () => {
+      setEnv({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost/test',
+        DIRECT_URL: 'postgresql://localhost/test',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+        APP_DOMAIN: 'localhost:3000',
+        NEXT_PUBLIC_APP_DOMAIN: 'localhost:3000',
+        PAYMENT_PROVIDER: undefined,
+      })
+      const { validateEnv } = await import('@/lib/env')
+      const { errors } = validateEnv()
+      const paymentError = errors.find((e) => e.key === 'PAYMENT_PROVIDER')
+      expect(paymentError).toBeDefined()
+      expect(paymentError!.message).toBe('PAYMENT_PROVIDER is required')
+    })
+
     it('requires PAYMENT_PROVIDER in production', async () => {
       setEnv({
         NODE_ENV: 'production',
         DATABASE_URL: 'postgresql://db/test',
+        DIRECT_URL: 'postgresql://db/test',
         NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
         NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
         APP_DOMAIN: 'app.agendita.com',
@@ -106,29 +130,14 @@ describe('env validation', () => {
       const { errors } = validateEnv()
       const paymentError = errors.find((e) => e.key === 'PAYMENT_PROVIDER')
       expect(paymentError).toBeDefined()
-      expect(paymentError!.message).toContain('required in production')
+      expect(paymentError!.message).toContain('required')
     })
 
-    it('does not require PAYMENT_PROVIDER in development', async () => {
-      setEnv({
-        NODE_ENV: 'development',
-        DATABASE_URL: 'postgresql://localhost/test',
-        NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
-        APP_DOMAIN: 'localhost:3000',
-        NEXT_PUBLIC_APP_DOMAIN: 'localhost:3000',
-        PAYMENT_PROVIDER: undefined,
-      })
-      const { validateEnv } = await import('@/lib/env')
-      const { errors } = validateEnv()
-      const paymentError = errors.find((e) => e.key === 'PAYMENT_PROVIDER')
-      expect(paymentError).toBeUndefined()
-    })
-
-    it('reports invalid ALLOW_MOCK_PAYMENTS_IN_PRODUCTION', async () => {
+    it('mock blocked in production without ALLOW_MOCK override', async () => {
       setEnv({
         NODE_ENV: 'production',
         DATABASE_URL: 'postgresql://db/test',
+        DIRECT_URL: 'postgresql://db/test',
         NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
         NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
         APP_DOMAIN: 'app.agendita.com',
@@ -138,9 +147,9 @@ describe('env validation', () => {
       })
       const { validateEnv } = await import('@/lib/env')
       const { errors } = validateEnv()
+      // When ALLOW_MOCK is not a strict boolean, mock is blocked
       const mockError = errors.find((e) => e.key === 'ALLOW_MOCK_PAYMENTS_IN_PRODUCTION')
       expect(mockError).toBeDefined()
-      expect(mockError!.message).toContain('invalid')
     })
   })
 

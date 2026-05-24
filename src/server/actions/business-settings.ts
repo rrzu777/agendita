@@ -1,7 +1,7 @@
 'use server'
 
 import { prisma } from '@/lib/db'
-import { revalidatePath, revalidateTag } from 'next/cache'
+import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusinessRole } from '@/lib/auth/server'
@@ -71,7 +71,6 @@ export async function updateBusinessSettings(data: UpdateBusinessInput) {
   })
 
   revalidatePath('/dashboard/settings')
-  revalidateTag('public-business', 'max')
   await revalidateBusinessPublicPaths(businessId)
 
   return updated

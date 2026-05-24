@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { logger } from '@/lib/logger'
 
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
 import { addMinutes } from 'date-fns'
@@ -273,6 +274,8 @@ export async function createBooking(data: {
 
     await fireBookingNotifications(business, bookingForNotification, service.name)
 
+    logger.booking.created(booking.id, businessId, booking.customer?.email ?? undefined)
+
     revalidatePath('/dashboard/bookings')
     await revalidateBusinessPublicPaths(businessId)
     return booking
@@ -296,6 +299,15 @@ export async function createBooking(data: {
         include: { service: true, customer: true },
       })
       if (existing) return existing
+    }
+    // Safe error handling: log internal error, return generic message
+    const msg = e instanceof Error ? e.message : String(e)
+    if (prismaError.code?.startsWith('P')) {
+      logger.error('booking.error', `Database error in createBooking: ${msg}`, {
+        businessId,
+        metadata: { error: msg },
+      })
+      throw new Error('Error de base de datos. Por favor intenta nuevamente.')
     }
     throw e
   }

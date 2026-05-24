@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { applyApprovedPayment } from '@/server/services/finance'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { sendBookingConfirmedNotification, sendNotificationSafely } from '@/lib/notifications'
+import { logger } from '@/lib/logger'
 import type { Prisma } from '@prisma/client'
 
 function mpFetch<T>(path: string, accessToken: string): Promise<T> {
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
       : null
 
     if (queryId && bodyId && queryId !== bodyId) {
-      console.error('[MP Webhook] data.id mismatch between query and body', { queryId, bodyId })
+      logger.webhook.rejected('mercado_pago', 'data.id mismatch between query and body')
       return NextResponse.json(
         { error: 'data.id mismatch between query params and body' },
         { status: 400 },
@@ -113,22 +114,27 @@ export async function POST(request: NextRequest) {
     // por lo que el query param es la fuente canónica para la firma.
     const effectiveId = queryId || bodyId
     mpPaymentId = effectiveId || undefined
+    const requestId = request.headers.get('x-request-id') ?? undefined
+
+    logger.webhook.received('mercado_pago', requestId)
 
     if (!mpPaymentId) {
+      logger.webhook.rejected('mercado_pago', 'Missing payment id', requestId)
       return NextResponse.json({ error: 'Missing payment id' }, { status: 400 })
     }
 
     // Validar firma
     const mpSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET
     if (process.env.NODE_ENV === 'production' && !mpSecret) {
-      console.error('[MP Webhook] MERCADO_PAGO_WEBHOOK_SECRET missing in production')
+      logger.webhook.rejected('mercado_pago', 'MERCADO_PAGO_WEBHOOK_SECRET missing in production', requestId)
       return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 })
     }
 
     if (mpSecret) {
       const signatureHeader = request.headers.get('x-signature')
-      const requestId = request.headers.get('x-request-id')
-      if (!verifyMercadoPagoSignature(mpPaymentId, requestId, signatureHeader, mpSecret)) {
+      const reqId = request.headers.get('x-request-id')
+      if (!verifyMercadoPagoSignature(mpPaymentId, reqId, signatureHeader, mpSecret)) {
+        logger.webhook.rejected('mercado_pago', 'Invalid signature', requestId)
         return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
       }
     } else {
@@ -145,7 +151,7 @@ export async function POST(request: NextRequest) {
     // Validar external_reference / localPaymentId
     const localPaymentId = mpPayment.external_reference
     if (!localPaymentId) {
-      console.error('[MP Webhook] missing external_reference for MP payment', mpPaymentId)
+      logger.webhook.rejected('mercado_pago', 'missing external_reference', requestId)
       return NextResponse.json({ error: 'Missing external_reference' }, { status: 400 })
     }
 
@@ -155,12 +161,12 @@ export async function POST(request: NextRequest) {
     })
 
     if (!payment) {
-      console.error('[MP Webhook] Payment not found by external_reference', localPaymentId)
+      logger.webhook.rejected('mercado_pago', 'Payment not found', requestId)
       return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
     }
 
     if (payment.provider !== 'mercado_pago') {
-      console.error('[MP Webhook] Payment provider mismatch', localPaymentId, payment.provider)
+      logger.webhook.rejected('mercado_pago', `Provider mismatch: ${payment.provider}`, requestId)
       return NextResponse.json({ error: 'Payment provider mismatch' }, { status: 400 })
     }
 
@@ -293,6 +299,8 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      logger.payment.approved(payment.id, payment.bookingId, payment.businessId)
+
       return NextResponse.json({
         success: true,
         message: 'Payment approved',
@@ -365,7 +373,7 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     )
   } catch (error) {
-    console.error('[MP Webhook Error]', error instanceof Error ? error.message : error)
+    logger.error('webhook.error', error instanceof Error ? error.message : String(error))
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

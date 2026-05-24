@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createMiddlewareClient } from './lib/auth/middleware'
+import { logger } from './lib/logger'
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -31,6 +32,7 @@ export async function proxy(request: NextRequest) {
       const { data: { session } } = await supabase.auth.getSession()
 
       if (!session) {
+        logger.auth.failure('no-session', undefined, undefined)
         const loginUrl = new URL('/login', request.url)
         return NextResponse.redirect(loginUrl)
       }

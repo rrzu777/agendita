@@ -181,13 +181,14 @@ describe('createBooking idempotency', () => {
     expect(result).toEqual(existingBooking)
   })
 
-  it('re-throws non-idempotency errors', async () => {
+  it('re-throws non-idempotency errors as safe generic message', async () => {
     mockPrisma.booking.findUnique.mockResolvedValue(null)
     const genericError = new Error('DB connection lost') as Error & { code: string }
     genericError.code = 'P1001'
     mockPrisma.$transaction.mockRejectedValue(genericError)
 
-    await expect(createBooking(baseInput, 'biz-1')).rejects.toThrow('DB connection lost')
+    // Prisma errors are caught and replaced with safe generic message
+    await expect(createBooking(baseInput, 'biz-1')).rejects.toThrow('Error de base de datos')
   })
 
   it('works without idempotencyKey (backward compatible)', async () => {

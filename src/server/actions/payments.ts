@@ -16,6 +16,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { sendBookingConfirmedNotification, sendNotificationSafely } from '@/lib/notifications'
+import { logger } from '@/lib/logger'
 
 
 const initiatePaymentSchema = z.object({
@@ -160,6 +161,8 @@ export async function initiatePayment(data: {
       data: { rawPayload: result.rawResponse as Prisma.InputJsonValue },
     })
 
+    logger.payment.initiated(localPaymentId, data.bookingId, booking.businessId)
+
     revalidatePath('/dashboard/payments')
     return result
   }
@@ -188,6 +191,8 @@ export async function initiatePayment(data: {
       paymentType: PaymentType.deposit,
     },
   })
+
+  logger.payment.initiated(result.paymentId, data.bookingId, booking.businessId)
 
   revalidatePath('/dashboard/payments')
   return result
@@ -296,6 +301,7 @@ export async function verifyAndConfirmPayment(paymentId: string, bookingId: stri
   if (!result || !result.booking) throw new Error('Reserva no encontrada')
 
   if (result.wasConfirmed) {
+    logger.payment.approved(payment.id, bookingId, payment.businessId)
     await sendNotificationSafely('booking confirmed', () =>
       sendBookingConfirmedNotification(bookingId, payment.businessId),
     )
