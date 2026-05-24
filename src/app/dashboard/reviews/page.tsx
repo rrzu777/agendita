@@ -35,6 +35,8 @@ export default async function ReviewsPage({ searchParams }: Props) {
   const filterRating = rating && rating >= 1 && rating <= 5 ? rating : undefined
   const search = params.search?.trim() || undefined
 
+  const hasActiveFilters = status !== 'all' || filterRating !== undefined || (search !== undefined && search.length > 0)
+
   let reviews: Awaited<ReturnType<typeof getDashboardReviews>> = []
   let pendingCount = 0
   let eligibleBookings: Awaited<ReturnType<typeof getCompletedBookingsWithoutReview>> = []
@@ -160,9 +162,22 @@ export default async function ReviewsPage({ searchParams }: Props) {
             <TableBody>
               {reviews.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
-                    <MessageSquare className="mx-auto mb-3 size-8 text-primary" />
-                    No hay reseñas que coincidan con los filtros
+                  <TableCell colSpan={7} className="py-12 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="flex size-14 items-center justify-center rounded-full bg-muted">
+                        <MessageSquare className="size-7 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="mb-1 text-base font-semibold text-primary">
+                          {hasActiveFilters ? 'No hay reseñas con estos filtros' : 'No hay reseñas'}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {hasActiveFilters
+                            ? 'Prueba con otros filtros o limpia la búsqueda.'
+                            : 'Las reseñas aparecerán después de que completes reservas.'}
+                        </p>
+                      </div>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (

@@ -100,7 +100,7 @@ export function CustomerList({ customers, error }: CustomerListProps) {
         </div>
         <h2 className="text-xl font-semibold text-primary">Sin clientas</h2>
         <p className="mt-2 max-w-md text-muted-foreground">
-          Las clientas apareceran aqui cuando realicen su primera reserva.
+          Las clientas aparecerán aquí cuando realicen su primera reserva.
         </p>
       </div>
     )
@@ -203,9 +203,11 @@ export function CustomerList({ customers, error }: CustomerListProps) {
       {filtered.length === 0 ? (
         <div className="studio-card flex min-h-[200px] flex-col items-center justify-center p-8 text-center">
           <p className="text-muted-foreground">
-            {search || activeFilters > 0
-              ? 'No se encontraron clientas con esos filtros.'
-              : 'No hay clientas todavia.'}
+            {activeFilters > 0
+              ? 'No hay clientas con estos filtros.'
+              : search
+              ? 'No se encontraron clientas con esa búsqueda.'
+              : 'No hay clientas todavía.'}
           </p>
         </div>
       ) : (

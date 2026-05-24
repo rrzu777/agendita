@@ -155,8 +155,27 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
           <TableBody>
             {displayedServices.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
-                  {showInactive ? 'No hay servicios todavía' : 'No hay servicios activos'}
+                <TableCell colSpan={8} className="py-12 text-center">
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="flex size-14 items-center justify-center rounded-full bg-muted">
+                      <svg className="size-7 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="mb-1 text-base font-semibold text-primary">
+                        {showInactive ? 'No tienes servicios todavía' : 'No hay servicios activos'}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Crea tu primer servicio para que las clientas puedan reservar.
+                      </p>
+                    </div>
+                    <ServiceForm
+                      onSuccess={refresh}
+                      triggerLabel="Crear mi primer servicio"
+                      triggerIcon={<Plus className="mr-2 size-4" />}
+                    />
+                  </div>
                 </TableCell>
               </TableRow>
             ) : displayedServices.map((service) => {

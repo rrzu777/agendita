@@ -43,7 +43,7 @@ function ServicePreview({ name, description, price, durationMinutes, depositAmou
         {price && <span>${parseInt(price).toLocaleString('es-CL')}</span>}
         {durationMinutes && <span>{durationMinutes} min</span>}
         {depositAmount && parseInt(depositAmount) > 0 && (
-          <span>Abono: ${parseInt(depositAmount).toLocaleString('es-CL')}</span>
+          <span>Abono requerido: ${parseInt(depositAmount).toLocaleString('es-CL')}</span>
         )}
       </div>
     </div>

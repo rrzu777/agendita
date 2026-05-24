@@ -15,7 +15,10 @@ export default async function ServicesPage() {
 
   return (
     <div>
-      <DashboardHeader title="Servicios" subtitle="Gestiona tus servicios y precios." />
+      <DashboardHeader
+        title="Servicios"
+        subtitle="Gestiona tus servicios y precios."
+      />
       <div className="p-5 md:p-10">
         <ServiceTable services={services} />
       </div>

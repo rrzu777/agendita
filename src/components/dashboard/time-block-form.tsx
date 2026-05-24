@@ -86,7 +86,16 @@ export function TimeBlockList({ blocks: initialBlocks }: { blocks: { id: string;
   }
 
   if (blocks.length === 0) {
-    return <p className="rounded-xl border border-dashed border-border p-6 text-center text-muted-foreground">No hay horarios bloqueados</p>
+    return (
+      <div className="rounded-xl border border-dashed border-border p-8 text-center">
+        <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-muted">
+          <svg className="size-6 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+          </svg>
+        </div>
+        <p className="text-sm text-muted-foreground">No hay horarios bloqueados. Usa bloqueos para indicar días de vacaciones o cuando no puedas atender.</p>
+      </div>
+    )
   }
 
   return (

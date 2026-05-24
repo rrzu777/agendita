@@ -21,14 +21,17 @@ export default async function PaymentsPage() {
 
   return (
     <div>
-      <DashboardHeader title="Pagos y finanzas" subtitle="Controla abonos, pagos finales y movimientos manuales." />
+      <DashboardHeader
+        title="Pagos y finanzas"
+        subtitle="Controla abonos, pagos finales y movimientos."
+      />
       <div className="space-y-8 p-5 md:p-10">
         <FinanceStats summary={summary} />
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-2xl font-semibold tracking-normal text-primary">Historial de movimientos</h2>
-            <p className="text-sm text-muted-foreground">Últimos ingresos, ajustes y pagos registrados.</p>
+            <p className="text-sm text-muted-foreground">Ingresos, abonos y ajustes registrados.</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <PaymentForm bookings={bookings} />

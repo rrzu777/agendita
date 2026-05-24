@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { CheckCircle2, Clock, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock, XCircle, Calendar, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { prisma } from '@/lib/db'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
@@ -49,92 +49,142 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
   const bookHref = tenant ? '/book' : `/book/${booking.business.slug}`
 
   const state = deriveConfirmationState(booking)
+  const startDate = new Date(booking.startDateTime)
+  const formattedDate = startDate.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
+  const formattedTime = startDate.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
+  const remainingBalance = booking.finalAmount - booking.depositPaid
+
+  const stateConfig = {
+    confirmed: {
+      icon: CheckCircle2,
+      iconColor: 'text-primary',
+      iconBg: 'bg-primary/10',
+      title: 'Reserva confirmada',
+      message: `${booking.business.name} recibió tu reserva. Te esperamos el ${formattedDate} a las ${formattedTime}.`,
+    },
+    verifying: {
+      icon: Clock,
+      iconColor: 'text-amber-500',
+      iconBg: 'bg-amber-50',
+      title: 'Verificando tu pago',
+      message: 'Mercado Pago está procesando el pago. Te confirmaremos por WhatsApp cuando se apruebe.',
+    },
+    rejected: {
+      icon: XCircle,
+      iconColor: 'text-destructive',
+      iconBg: 'bg-destructive/10',
+      title: 'Pago no aprobado',
+      message: 'El pago no pudo ser procesado. Tu reserva quedó pendiente.',
+    },
+    pending: {
+      icon: Clock,
+      iconColor: 'text-muted-foreground',
+      iconBg: 'bg-muted',
+      title: 'Reserva pendiente de pago',
+      message: 'Completa el pago del abono para confirmar tu reserva.',
+    },
+  }
+
+  const config = stateConfig[state]
+  const Icon = config.icon
 
   return (
-    <main className="studio-shell min-h-screen px-4 py-12">
-      <section className="studio-card mx-auto max-w-lg p-6 text-center">
-        {state === 'confirmed' && (
-          <>
-            <CheckCircle2 className="mx-auto mb-4 size-12 text-primary" />
-            <h1 className="mb-2 text-3xl font-semibold tracking-normal text-primary">Reserva confirmada</h1>
-            <p className="mb-6 text-muted-foreground">{booking.business.name} recibió tu reserva.</p>
-          </>
-        )}
+    <main className="studio-shell min-h-screen px-4 py-8 md:py-12">
+      <section className="mx-auto max-w-lg">
+        <div className="mb-8 text-center">
+          <div className={`mx-auto mb-6 flex size-16 items-center justify-center rounded-full ${config.iconBg}`}>
+            <Icon className={`size-8 ${config.iconColor}`} />
+          </div>
+          <h1 className="mb-3 text-3xl font-semibold tracking-normal text-primary">{config.title}</h1>
+          <p className="text-base leading-relaxed text-muted-foreground">{config.message}</p>
+        </div>
 
-        {state === 'verifying' && (
-          <>
-            <Clock className="mx-auto mb-4 size-12 text-amber-500" />
-            <h1 className="mb-2 text-3xl font-semibold tracking-normal text-primary">Estamos verificando tu pago</h1>
-            <p className="mb-6 text-muted-foreground">
-              Mercado Pago está procesando tu pago. Te confirmaremos cuando se apruebe.
-            </p>
-          </>
-        )}
+        <div className="studio-card mb-8 overflow-hidden">
+          <div className="border-b border-border/50 bg-muted/30 px-5 py-4">
+            <h2 className="text-lg font-semibold text-primary">Resumen de la reserva</h2>
+          </div>
+          <div className="p-5">
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3 text-muted-foreground">
+                  <div className="flex size-10 items-center justify-center rounded-lg bg-secondary">
+                    <Check className="size-5" />
+                  </div>
+                  <span className="text-sm font-medium">Servicio</span>
+                </div>
+                <span className="text-right font-semibold text-primary">{booking.service.name}</span>
+              </div>
 
-        {state === 'rejected' && (
-          <>
-            <XCircle className="mx-auto mb-4 size-12 text-destructive" />
-            <h1 className="mb-2 text-3xl font-semibold tracking-normal text-primary">Pago no aprobado</h1>
-            <p className="mb-6 text-muted-foreground">
-              El pago no pudo ser procesado. Tu reserva está pendiente de pago.
-            </p>
-            <div className="mb-6 flex gap-3 justify-center">
-              <Button asChild variant="outline">
-                <Link href={profileHref}>Volver al perfil</Link>
-              </Button>
-              <Button asChild>
-                <Link href={bookHref}>Intentar de nuevo</Link>
-              </Button>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3 text-muted-foreground">
+                  <div className="flex size-10 items-center justify-center rounded-lg bg-secondary">
+                    <Calendar className="size-5" />
+                  </div>
+                  <span className="text-sm font-medium">Fecha</span>
+                </div>
+                <span className="text-right font-semibold capitalize text-primary">{formattedDate}</span>
+              </div>
+
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3 text-muted-foreground">
+                  <div className="flex size-10 items-center justify-center rounded-lg bg-secondary">
+                    <Clock className="size-5" />
+                  </div>
+                  <span className="text-sm font-medium">Hora</span>
+                </div>
+                <span className="text-right font-semibold text-primary">{formattedTime}</span>
+              </div>
             </div>
-          </>
-        )}
 
-        {state === 'pending' && (
-          <>
-            <Clock className="mx-auto mb-4 size-12 text-muted-foreground" />
-            <h1 className="mb-2 text-3xl font-semibold tracking-normal text-primary">Reserva pendiente</h1>
-            <p className="mb-6 text-muted-foreground">
-              Tu reserva está pendiente de pago. Completa el pago para confirmarla.
-            </p>
-          </>
-        )}
+            <div className="mt-6 border-t border-border/50 pt-5">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Precio total</span>
+                <span className="font-semibold text-primary">${booking.finalAmount.toLocaleString('es-CL')}</span>
+              </div>
+              {booking.depositPaid > 0 && (
+                <div className="mt-2 flex justify-between text-sm">
+                  <span className="text-muted-foreground">Abono pagado</span>
+                  <span className="font-semibold text-green-700">${booking.depositPaid.toLocaleString('es-CL')}</span>
+                </div>
+              )}
+              {remainingBalance > 0 && (
+                <div className="mt-2 flex justify-between text-sm">
+                  <span className="text-muted-foreground">Saldo pendiente</span>
+                  <span className="font-semibold text-primary">${remainingBalance.toLocaleString('es-CL')}</span>
+                </div>
+              )}
+            </div>
 
-        <div className="mb-6 space-y-3 rounded-xl bg-muted/55 p-5 text-left">
-          <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground">Servicio</span>
-            <span className="font-semibold text-primary">{booking.service.name}</span>
-          </div>
-          <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground">Fecha y hora</span>
-            <span className="font-semibold text-primary">
-              {booking.startDateTime.toLocaleDateString('es-CL')}{' '}
-              {booking.startDateTime.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          </div>
-          <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground">Estado</span>
-            <span className="font-semibold text-primary">
-              {state === 'confirmed'
-                ? 'Confirmada'
-                : state === 'verifying'
-                  ? 'Pendiente de pago'
-                  : state === 'rejected'
-                    ? 'Pago rechazado'
-                    : 'Pendiente'}
-            </span>
-          </div>
-          <div className="flex justify-between gap-4 border-t border-border/60 pt-3">
-            <span className="text-muted-foreground">Total</span>
-            <span className="font-semibold text-primary">${booking.finalAmount.toLocaleString('es-CL')}</span>
+            <div className="mt-5 rounded-lg bg-muted/50 px-4 py-3 text-center">
+              <p className="text-sm text-muted-foreground">
+                Tu código de reserva: <span className="font-mono font-semibold text-primary">{booking.id.slice(0, 8).toUpperCase()}</span>
+              </p>
+            </div>
           </div>
         </div>
 
-        <p className="mb-6 text-sm text-muted-foreground">Número de reserva: {booking.id}</p>
+        {state === 'rejected' && (
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Button asChild variant="outline" className="h-12 flex-1 font-semibold">
+              <Link href={profileHref}>Volver al perfil</Link>
+            </Button>
+            <Button asChild className="h-12 flex-1 font-semibold">
+              <Link href={bookHref}>Intentar de nuevo</Link>
+            </Button>
+          </div>
+        )}
 
         {state !== 'rejected' && (
-          <Button asChild className="h-12 px-6 text-base font-semibold">
-            <Link href={profileHref}>Volver al perfil</Link>
-          </Button>
+          <div className="space-y-3">
+            <Button asChild className="h-12 w-full text-base font-semibold">
+              <Link href={profileHref}>Volver al perfil</Link>
+            </Button>
+            {booking.depositPaid === 0 && state === 'pending' && (
+              <p className="text-center text-sm text-muted-foreground">
+                Al completar el pago, recibirás una confirmación por WhatsApp.
+              </p>
+            )}
+          </div>
         )}
       </section>
     </main>

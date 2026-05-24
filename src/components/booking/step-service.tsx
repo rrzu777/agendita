@@ -12,10 +12,26 @@ interface StepServiceProps {
 }
 
 export function StepService({ data, services, onSelect }: StepServiceProps) {
+  if (services.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-muted">
+          <svg className="size-7 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+          </svg>
+        </div>
+        <h3 className="mb-2 text-lg font-semibold text-primary">No hay servicios disponibles</h3>
+        <p className="text-sm text-muted-foreground">
+          Este negocio aún no tiene servicios configurados.
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div>
-      <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Selecciona un servicio</h2>
-      <p className="mb-8 text-lg text-muted-foreground">Elige el tratamiento que deseas realizarte hoy.</p>
+      <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">¿Qué servicio necesitas?</h2>
+      <p className="mb-8 text-lg text-muted-foreground">Selecciona el tratamiento que quieres reservar.</p>
       <div className="space-y-4">
         {services.map((service) => (
           <button
@@ -37,7 +53,7 @@ export function StepService({ data, services, onSelect }: StepServiceProps) {
                     <h3 className="text-2xl font-semibold leading-tight text-primary">{service.name}</h3>
                     <p className="mt-4 flex items-center gap-2 text-base text-muted-foreground">
                       <Clock3 className="size-5 text-primary" />
-                      {service.durationMinutes} min
+                      {service.durationMinutes} minutos
                     </p>
                     {service.description && (
                       <p className="mt-5 text-base leading-relaxed text-muted-foreground">{service.description}</p>
@@ -45,11 +61,11 @@ export function StepService({ data, services, onSelect }: StepServiceProps) {
                   </div>
                   <div className="shrink-0 text-left sm:text-right">
                     <div className="text-3xl font-semibold leading-none tracking-normal text-primary">
-                      CLP {service.price.toLocaleString('es-CL')}
+                      ${service.price.toLocaleString('es-CL')}
                     </div>
                     {service.depositAmount > 0 && (
-                      <div className="mt-2 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                        Abono: CLP {service.depositAmount.toLocaleString('es-CL')}
+                      <div className="mt-2 text-sm font-semibold text-muted-foreground">
+                        Abono requerido: ${service.depositAmount.toLocaleString('es-CL')}
                       </div>
                     )}
                   </div>
@@ -58,9 +74,6 @@ export function StepService({ data, services, onSelect }: StepServiceProps) {
             </Card>
           </button>
         ))}
-      </div>
-      <div className="mt-8 rounded-2xl border border-border/70 bg-muted/50 p-5 text-base leading-relaxed text-muted-foreground">
-        Todos nuestros servicios incluyen preparación básica y confirmación digital de la reserva.
       </div>
     </div>
   )

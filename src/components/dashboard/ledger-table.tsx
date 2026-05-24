@@ -1,5 +1,6 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { CreditCard } from 'lucide-react'
 
 const directionLabels: Record<string, string> = {
   income: 'Ingreso',
@@ -43,8 +44,18 @@ export function LedgerTable({ entries }: { entries: any[] }) {
         <TableBody>
           {entries.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
-                No hay movimientos registrados
+              <TableCell colSpan={5} className="py-12 text-center">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="flex size-14 items-center justify-center rounded-full bg-muted">
+                    <CreditCard className="size-7 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="mb-1 text-base font-semibold text-primary">No hay movimientos registrados</p>
+                    <p className="text-sm text-muted-foreground">
+                      Los pagos aparecerán aquí cuando las clientas abonen o paguen.
+                    </p>
+                  </div>
+                </div>
               </TableCell>
             </TableRow>
           ) : (

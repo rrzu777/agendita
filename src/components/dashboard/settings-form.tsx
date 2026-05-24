@@ -213,7 +213,7 @@ export function SettingsForm({ business }: { business: Business }) {
             <Textarea id="bookingPolicy" {...register('bookingPolicy')} rows={3} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="depositPolicy">Política de depósito</Label>
+            <Label htmlFor="depositPolicy">Política de abono</Label>
             <Textarea id="depositPolicy" {...register('depositPolicy')} rows={3} />
           </div>
         </section>

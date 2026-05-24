@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
 import { createBooking } from '@/server/actions/bookings'
 import { initiatePayment, verifyAndConfirmPayment, getOnlinePaymentAvailability } from '@/server/actions/payments'
-import { AlertCircle, CreditCard, Loader2 } from 'lucide-react'
+import { AlertCircle, Loader2 } from 'lucide-react'
 
 function generateIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -160,9 +160,8 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
       </div>
 
       {availability.isMock && (
-        <div className="mb-6 flex gap-3 rounded-xl border border-border/70 bg-secondary/40 p-4 text-sm text-primary">
-          <CreditCard className="mt-0.5 size-5 shrink-0" />
-          <p>Modo de desarrollo: el pago se procesará con el proveedor simulado.</p>
+        <div className="mb-4 rounded-xl border border-border/70 bg-secondary/40 px-4 py-3 text-sm text-primary">
+          <p>Entorno de prueba: los pagos se procesan de forma simulada.</p>
         </div>
       )}
 

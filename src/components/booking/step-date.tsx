@@ -19,7 +19,7 @@ export function StepDate({ data, onSelect, onBack }: { data: BookingData; onSele
   return (
     <div>
       <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Elige una fecha</h2>
-      <p className="mb-8 text-lg text-muted-foreground">{data.serviceName} — {data.serviceDuration} min</p>
+      <p className="mb-8 text-lg text-muted-foreground">{data.serviceName} — {data.serviceDuration} minutos</p>
 
       <div className="flex justify-between items-center mb-4">
         <Button variant="outline" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} aria-label="Mes anterior">

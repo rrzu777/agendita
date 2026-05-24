@@ -204,7 +204,7 @@ export default async function CustomerDetailPage({ params }: Props) {
               {customer.bookings.length === 0 ? (
                 <div className="flex min-h-[120px] flex-col items-center justify-center text-center">
                   <CalendarDays className="mb-2 size-6 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">Sin reservas todavia</p>
+                  <p className="text-sm text-muted-foreground">Sin reservas todavía</p>
                 </div>
               ) : (
                 <>

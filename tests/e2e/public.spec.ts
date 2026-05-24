@@ -119,7 +119,7 @@ test.describe('dashboard (e2e auth bypass)', () => {
     await page.goto('/dashboard')
     await page.waitForLoadState('networkidle')
     expect(page.url()).toContain('/dashboard')
-    await expect(page.getByRole('heading', { name: /Hola, Mimos Nails/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /Resumen de Mimos Nails/ })).toBeVisible()
     await expect(page.getByText('Reservas hoy')).toBeVisible()
     await expect(page.getByText('Próximas citas')).toBeVisible()
   })
@@ -155,7 +155,7 @@ test.describe('dashboard (e2e auth bypass)', () => {
     await page.goto('/dashboard/bookings')
     await page.waitForLoadState('networkidle')
     expect(page.url()).toContain('/dashboard/bookings')
-    await expect(page.getByRole('heading', { name: 'Gestión de reservas' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Reservas', exact: true })).toBeVisible()
     await expect(page.getByText('Total')).toBeVisible()
     await expect(page.getByRole('columnheader', { name: 'Servicio' })).toBeVisible()
   })
@@ -196,7 +196,7 @@ test.describe('main beta flows', () => {
     const date = nextBookableDate()
 
     await page.goto('/book/mimosnails')
-    await page.getByRole('heading', { name: 'Selecciona un servicio' }).waitFor()
+    await page.getByRole('heading', { name: '¿Qué servicio necesitas?' }).waitFor()
     await page.getByRole('button').filter({ hasText: 'Manicura rusa' }).click()
 
     await expect(page.getByRole('heading', { name: 'Elige una fecha' })).toBeVisible()
@@ -221,7 +221,7 @@ test.describe('main beta flows', () => {
       'x-e2e-auth-secret': E2E_SECRET,
     })
     await page.goto('/dashboard/bookings')
-    await expect(page.getByRole('heading', { name: 'Gestión de reservas' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Reservas', exact: true })).toBeVisible()
     await expect(page.getByText(customerName)).toBeVisible({ timeout: 10000 })
     await expect(page.getByText('Manicura rusa').first()).toBeVisible()
   })

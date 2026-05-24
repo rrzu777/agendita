@@ -44,7 +44,7 @@ export default async function DashboardPage() {
 
   return (
     <div>
-      <DashboardHeader title={`Hola, ${business.name}`} subtitle="Aquí tienes un resumen del pulso de tu estudio para hoy." />
+      <DashboardHeader title={`Resumen de ${business.name}`} subtitle="Aquí tienes el pulso de tu estudio hoy." />
       <div className="p-5 md:p-10">
         <Card className="studio-card mb-8 border-border/60 bg-card">
           <CardContent className="p-6">
@@ -114,11 +114,17 @@ export default async function DashboardPage() {
             </a>
           </div>
           {upcomingBookings.length === 0 ? (
-            <div className="studio-card p-8 text-center text-muted-foreground">
-              <p className="mb-2 font-semibold text-primary">No tienes reservas próximas</p>
-              <p className="text-sm leading-relaxed">
-                Comparte tu link <code className="text-primary">{publicUrl}</code> para empezar a recibir reservas
+            <div className="studio-card p-8 text-center">
+              <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-muted">
+                <CalendarCheck2 className="size-7 text-muted-foreground" />
+              </div>
+              <h3 className="mb-2 text-lg font-semibold text-primary">No tienes reservas próximas</h3>
+              <p className="text-sm text-muted-foreground">
+                Comparte tu perfil público para recibir reservas de tus clientas.
               </p>
+              <code className="mt-3 inline-block rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm text-primary">
+                {publicUrl}
+              </code>
             </div>
           ) : (
             <div className="space-y-4">

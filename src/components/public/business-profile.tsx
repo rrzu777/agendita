@@ -87,7 +87,7 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
                   )}
                   <p className="mt-3 flex items-center gap-2 text-sm text-foreground">
                     <Clock3 className="size-4" />
-                    {service.durationMinutes} min
+                    {service.durationMinutes} minutos
                   </p>
                 </div>
                 <div className="ml-2 text-right">
@@ -95,7 +95,7 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
                     ${service.price.toLocaleString('es-CL')}
                   </span>
                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    Abono ${service.depositAmount.toLocaleString('es-CL')}
+                    Abono requerido: ${service.depositAmount.toLocaleString('es-CL')}
                   </p>
                   <span
                     className="mt-4 inline-block size-6 rounded-full border border-border"
