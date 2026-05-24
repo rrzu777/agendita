@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "node scripts/validate-env.js && prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest --run",
