@@ -3,7 +3,7 @@
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import type { Booking } from '@prisma/client'
-import { BookingStatus, BookingPaymentStatus, PaymentProvider, PaymentType } from '@prisma/client'
+import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
@@ -34,12 +34,6 @@ const confirmPaymentSchema = z.object({
   bookingId: z.string().min(1),
   paymentId: z.string().min(1),
   amount: z.number().positive(),
-})
-
-const registerManualPaymentSchema = z.object({
-  bookingId: z.string().min(1),
-  amount: z.number().positive(),
-  paymentMethod: z.string().min(1).max(50),
 })
 
 const VALID_STATUS_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
@@ -456,87 +450,4 @@ export async function getBookingsByRange(start: Date, end: Date) {
       customer: true,
     },
   })
-}
-
-export async function registerManualPayment(
-  bookingId: string,
-  amount: number,
-  paymentMethod: string
-) {
-  const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
-  const limit = await checkRateLimit('register-manual-payment', 30, 60000)
-  if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
-  }
-
-  const parsed = registerManualPaymentSchema.safeParse({
-    bookingId,
-    amount,
-    paymentMethod,
-  })
-  if (!parsed.success) {
-    throw new Error(
-      'Datos inválidos: ' + parsed.error.issues.map((i) => i.message).join(', ')
-    )
-  }
-
-  const booking = await prisma.booking.findFirst({
-    where: { id: bookingId, businessId },
-  })
-  if (!booking) throw new ForbiddenError('Reserva no encontrada')
-
-  const { assertBookingPayable } = await import('@/lib/booking-payments')
-  try {
-    assertBookingPayable(booking)
-  } catch (e) {
-    throw new Error(e instanceof Error ? e.message : 'No se puede registrar pago para esta reserva')
-  }
-
-  let wasConfirmed = false
-
-  await prisma.$transaction(async (tx) => {
-    const current = await tx.booking.findUnique({ where: { id: bookingId } })
-    if (!current) throw new Error('Reserva no encontrada')
-    if (current.remainingBalance <= 0) {
-      throw new Error('La reserva ya está pagada')
-    }
-    if (amount > current.remainingBalance) {
-      throw new Error('El monto excede el saldo pendiente')
-    }
-
-    const paymentType =
-      current.depositPaid > 0 ? PaymentType.final_payment : PaymentType.full_payment
-
-    const { applyApprovedPayment } = await import('@/server/services/finance')
-    const result = await applyApprovedPayment({
-      tx,
-      bookingId,
-      businessId,
-      amount,
-      currency: business.currency || 'CLP',
-      provider: PaymentProvider.manual,
-      providerPaymentId: null,
-      paymentType,
-      paymentMethod,
-    })
-    wasConfirmed = result.wasConfirmed
-    return result.booking
-  })
-
-  revalidatePath('/dashboard/calendar')
-  revalidatePath('/dashboard/bookings')
-  await revalidateBusinessPublicPaths(businessId)
-
-  const hydrated = await prisma.booking.findUnique({
-    where: { id: bookingId },
-    include: { service: true, customer: true },
-  })
-
-  if (hydrated && wasConfirmed) {
-    await sendNotificationSafely('booking confirmed', () =>
-      sendBookingConfirmedNotification(bookingId, businessId),
-    )
-  }
-
-  return hydrated
 }

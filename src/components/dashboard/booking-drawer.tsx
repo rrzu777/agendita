@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { registerManualPayment } from '@/server/actions/bookings'
+import { createManualPayment } from '@/server/actions/payments'
 import type { CalendarBooking } from './booking-card'
 import { BookingContactButtons } from './booking-contact-buttons'
 
@@ -90,7 +90,12 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
 
     startTransition(async () => {
       try {
-        await registerManualPayment(booking.id, numAmount, paymentMethod)
+        await createManualPayment({
+          bookingId: booking.id,
+          amount: numAmount,
+          currency: businessCurrency || 'CLP',
+          paymentMethod,
+        })
         router.refresh()
         setAmount('')
         setPaymentMethod('')

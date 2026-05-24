@@ -14,17 +14,12 @@ export function PaymentForm({ bookings }: { bookings: { id: string; service: { n
   async function handleSubmit(formData: FormData) {
     const bookingId = formData.get('bookingId') as string
     const amount = parseInt(formData.get('amount') as string)
-    const paymentType = formData.get('paymentType') as string
     const paymentMethod = formData.get('paymentMethod') as string
-
-    const booking = bookings.find(b => b.id === bookingId)
-    if (!booking) return
 
     await createManualPayment({
       bookingId,
       amount,
       currency: 'CLP',
-      paymentType,
       paymentMethod,
     })
 
@@ -56,14 +51,6 @@ export function PaymentForm({ bookings }: { bookings: { id: string; service: { n
                   Reserva {booking.id.slice(-4)} — ${booking.remainingBalance.toLocaleString('es-CL')} pendiente
                 </option>
               ))}
-            </select>
-          </div>
-          <div className="space-y-2">
-            <Label className="studio-eyebrow">Tipo de pago</Label>
-            <select name="paymentType" required className="min-h-12 w-full rounded-lg border border-border bg-card px-4 text-base focus:border-primary focus:outline-none">
-              <option value="deposit">Abono</option>
-              <option value="final_payment">Pago final</option>
-              <option value="full_payment">Pago total</option>
             </select>
           </div>
           <div className="space-y-2">

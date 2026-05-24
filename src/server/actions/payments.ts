@@ -11,6 +11,7 @@ import {
   resolveOnlinePaymentAvailability,
 } from '@/lib/payments/factory'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
+import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
@@ -337,7 +338,7 @@ const createManualPaymentSchema = z.object({
   bookingId: z.string().min(1),
   amount: z.number().positive(),
   currency: z.string().min(2).max(3),
-  paymentType: z.enum(['deposit', 'final_payment', 'full_payment']),
+  paymentType: z.enum(['deposit', 'final_payment', 'full_payment']).optional(),
   paymentMethod: z.string().min(1),
 })
 
@@ -346,12 +347,16 @@ const createManualPaymentSchema = z.object({
  * Payment y actualiza la reserva + ledger en una transacción.
  * No confía en customerId ni businessId del cliente.
  * Delega el recálculo financiero a applyApprovedPayment.
+ *
+ * paymentType se deriva server-side según estado de la reserva y monto.
+ * El cliente puede enviarlo para debug UI, pero se ignora si no coincide
+ * con la derivación, para evitar clasificaciones incorrectas del ledger.
  */
 export async function createManualPayment(data: {
   bookingId: string
   amount: number
   currency: string
-  paymentType: string
+  paymentType?: string
   paymentMethod: string
 }) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
@@ -383,7 +388,19 @@ export async function createManualPayment(data: {
     throw new Error('El monto excede el saldo pendiente')
   }
 
-  if (data.paymentType === 'full_payment' && data.amount < booking.remainingBalance) {
+  // Derivar paymentType en servidor — el cliente NO es fuente de verdad.
+  const derivedType = deriveManualPaymentType(booking, data.amount)
+
+  // Si el cliente envió un paymentType diferente al derivado, rechazar
+  // para evitar clasificación incorrecta del ledger.
+  if (data.paymentType && data.paymentType !== derivedType) {
+    throw new Error(
+      `Tipo de pago incompatible: el sistema derivó '${derivedType}' pero recibió '${data.paymentType}'. ` +
+      'El tipo se calcula automáticamente según el monto y estado de la reserva.',
+    )
+  }
+
+  if (derivedType === 'full_payment' && data.amount < booking.remainingBalance) {
     throw new Error('Un pago total debe cubrir el saldo completo')
   }
 
@@ -395,7 +412,7 @@ export async function createManualPayment(data: {
         businessId,
         bookingId: data.bookingId,
         customerId: booking.customerId,
-        paymentType: data.paymentType as PaymentType,
+        paymentType: derivedType as PaymentType,
         provider: 'manual',
         providerPaymentId: null,
         amount: data.amount,
@@ -414,7 +431,7 @@ export async function createManualPayment(data: {
       currency: data.currency,
       provider: 'manual',
       providerPaymentId: null,
-      paymentType: data.paymentType as PaymentType,
+      paymentType: derivedType as PaymentType,
       paymentMethod: data.paymentMethod,
       paymentId: payment.id,
     })

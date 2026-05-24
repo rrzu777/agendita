@@ -61,7 +61,7 @@ vi.mock('@/lib/notifications', () => ({
 vi.mock('resend', () => ({ Resend: vi.fn() }))
 vi.mock('@/lib/availability/validation', () => ({ assertSlotIsAvailable: vi.fn() }))
 
-const { confirmPayment, registerManualPayment } = await import('@/server/actions/bookings')
+const { confirmPayment } = await import('@/server/actions/bookings')
 
 function fullBooking(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -162,47 +162,6 @@ describe('confirmPayment notification behavior', () => {
     stubTx(false)
 
     await confirmPayment('booking-1', 'pay-1', 10000)
-
-    expect(mockSendBookingConfirmedNotification).not.toHaveBeenCalled()
-  })
-})
-
-describe('registerManualPayment notification behavior', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockPrisma.booking.findFirst.mockResolvedValue(pendingPayment())
-  })
-
-  function stubTx(confirmed = false) {
-    const updatedBooking = confirmed
-      ? { ...pendingPayment(), status: BookingStatus.confirmed }
-      : { ...pendingPayment(), depositPaid: 10000, remainingBalance: 10000, status: BookingStatus.confirmed }
-    mockApplyApprovedPayment.mockResolvedValue({ booking: updatedBooking, wasConfirmed: confirmed })
-    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
-      const tx = { ...mockPrisma }
-      tx.booking = { findUnique: vi.fn().mockResolvedValue(pendingPayment()) }
-      return fn(tx)
-    })
-    mockPrisma.booking.findUnique.mockResolvedValue(
-      fullBooking(confirmed ? { status: BookingStatus.confirmed } : { status: BookingStatus.confirmed, depositPaid: 10000 }),
-    )
-    mockPrisma.booking.findFirst.mockResolvedValue(
-      fullBooking(confirmed ? { status: BookingStatus.confirmed } : { status: BookingStatus.confirmed, depositPaid: 10000, remainingBalance: 10000 }),
-    )
-  }
-
-  it('sends booking confirmed email when wasConfirmed is true', async () => {
-    stubTx(true)
-
-    await registerManualPayment('booking-1', 10000, 'Efectivo')
-
-    expect(mockSendBookingConfirmedNotification).toHaveBeenCalledWith('booking-1', 'biz-1')
-  })
-
-  it('does NOT send confirmation when booking was already confirmed', async () => {
-    stubTx(false)
-
-    await registerManualPayment('booking-1', 5000, 'Efectivo')
 
     expect(mockSendBookingConfirmedNotification).not.toHaveBeenCalled()
   })
