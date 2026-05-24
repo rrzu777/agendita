@@ -164,7 +164,7 @@ test.describe('dashboard (e2e auth bypass)', () => {
     await page.goto('/dashboard/customers')
     await page.waitForLoadState('networkidle')
     expect(page.url()).toContain('/dashboard/customers')
-    await expect(page.getByRole('heading', { name: 'Clientas' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Clientas', exact: true })).toBeVisible()
     await expect(page.getByText('Historial y datos de contacto')).toBeVisible()
   })
 
