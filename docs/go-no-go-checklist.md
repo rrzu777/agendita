@@ -1,8 +1,8 @@
 # Go/No-Go Checklist — Beta
 
-## Status: ✅ READY FOR BETA
+## Status: ⏳ PARTIAL — Prompt 06 Not Yet Executed
 
-This checklist confirms all stabilization work is complete and the app is ready to run in production mode with real data.
+This checklist confirms stabilization work complete and the app ready to run in production mode with real data. **Prompt 06 (Mercado Pago sandbox QA) is pending execution — do not deploy to production with PAYMENT_PROVIDER=mercado_pago until TC-01 through TC-09 are passed.**
 
 ---
 
@@ -10,14 +10,15 @@ This checklist confirms all stabilization work is complete and the app is ready 
 
 | # | Prompt | Status |
 |---|--------|--------|
-| 01 | Centralize manual payment flow | ✅ Done — `createManualPayment` is single source of truth |
-| 02 | Eliminate duplicate payment registration | ✅ Done — `registerManualPayment` removed, `applyApprovedPayment` is the only financial service |
-| 03 | Mandatory env validation at build time | ✅ Done — `scripts/validate-env.js` runs before build |
-| 04 | Rate limiter hardening with Upstash | ✅ Done — block list, per-action limits, fail-closed, IP validation |
-| 05 | QA functional plan | ✅ Done — `docs/testing-qa-plan.md` with 20+ test cases |
+| 01 | Centralize manual payment flow | ✅ Done |
+| 02 | Eliminate duplicate payment registration | ✅ Done |
+| 03 | Mandatory env validation at build time | ✅ Done — `scripts/validate-env.js` (providers: mock, manual, mercado_pago, webpay) |
+| 04 | Rate limiter hardening with Upstash | ✅ Done — block list, per-action limits, fail-closed |
+| 05 | QA functional plan | ✅ Done — `docs/testing-qa-plan.md` |
+| 06 | Mercado Pago sandbox QA | ⏳ PENDING — `docs/payments/mercado-pago-qa.md` created, sandbox not yet executed |
 | 07 | Critical unit/integration/E2E tests | ✅ Done — 37 test files, 660 tests, all passing |
-| 08 | Production hardening + Vercel checklist | ✅ Done — `docs/deployment/vercel.md` + `docs/production-checklist.md` |
-| 09 | UX polish | ✅ Done — mobile copy, empty states, "Resumen de [name]" header |
+| 08 | Production hardening + Vercel checklist | ✅ Done |
+| 09 | UX polish | ✅ Done |
 
 ---
 
@@ -74,7 +75,8 @@ npm run test:e2e
 - `docs/deployment/env.md` — required/optional env vars
 - `docs/deployment/vercel.md` — deployment steps
 - `docs/production-checklist.md` — full prod checklist
-- `docs/testing-qa-plan.md` — 20+ QA test cases
+- `docs/testing-qa-plan.md` — manual/mock flow test cases
+- `docs/payments/mercado-pago-qa.md` — Mercado Pago sandbox test cases (**⏳ NOT EXECUTED — Prompt 06 pending**)
 - `docs/testing.md` — unit/integration/E2E guide
 
 ---
@@ -94,7 +96,7 @@ npm run build
 Before going live, the following must be configured **outside the codebase** (in Vercel or hosting provider):
 
 1. **Database** — `DATABASE_URL` + `DIRECT_URL` pointing to production PostgreSQL
-2. **Payment Provider** — Set `PAYMENT_PROVIDER=mercadopago` (or keep `mock` for testing)
+2. **Payment Provider** — Set `PAYMENT_PROVIDER=mercado_pago` (or keep `mock` for testing)
 3. **Upstash Redis** — `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` for rate limiting
 4. **Resend** — `RESEND_API_KEY` + `FROM_EMAIL` for transactional email
 5. **Mercado Pago** — `MERCADO_PAGO_ACCESS_TOKEN` + `MERCADO_PAGO_WEBHOOK_SECRET` + `NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY`

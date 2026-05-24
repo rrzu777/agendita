@@ -7,7 +7,7 @@
 | `DATABASE_URL` | PostgreSQL connection string (Prisma) |
 | `DIRECT_URL` | Direct database connection for Prisma migrations |
 | `APP_DOMAIN` | Application domain (e.g., `agendita.com`) |
-| `PAYMENT_PROVIDER` | Payment provider: `mock` or `mercadopago` |
+| `PAYMENT_PROVIDER` | Payment provider: `mock`, `manual`, `mercado_pago`, or `webpay` |
 
 ## Optional Variables
 
@@ -21,7 +21,7 @@
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (required in production) |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token (required in production) |
 | `RESEND_API_KEY` | Resend API key for transactional email |
-| `MERCADO_PAGO_ACCESS_TOKEN` | Mercado Pago access token (required when `PAYMENT_PROVIDER=mercadopago`) |
+| `MERCADO_PAGO_ACCESS_TOKEN` | Mercado Pago access token (required when `PAYMENT_PROVIDER=mercado_pago`) |
 | `MERCADO_PAGO_WEBHOOK_SECRET` | Mercado Pago webhook secret |
 | `NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY` | Mercado Pago public key |
 | `NEXT_PUBLIC_APP_DOMAIN` | Public app domain override |
@@ -40,9 +40,12 @@ The build-time check catches missing required variables before deployment. The r
 Set `PAYMENT_PROVIDER` to one of:
 
 - `mock` — development/sandbox mode (default)
-- `mercadopago` — production Mercado Pago integration
+- `mercadopago` — legacy name (invalid, will be rejected)
+- `mercado_pago` — production Mercado Pago integration
+- `manual` — manual payment recording only (no public checkout)
+- `webpay` — not yet implemented
 
-When using `mercadopago`, you must also set `MERCADO_PAGO_ACCESS_TOKEN`.
+When using `mercado_pago`, you must also set `MERCADO_PAGO_ACCESS_TOKEN` and `MERCADO_PAGO_WEBHOOK_SECRET`.
 
 ## Domain Format
 

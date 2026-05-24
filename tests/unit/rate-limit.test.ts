@@ -1,5 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { BookingStatus } from '@prisma/client'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   blockIp,
   unblockIp,
@@ -11,7 +10,6 @@ import { MemoryRateLimiter } from '@/lib/rate-limit'
 
 describe('block list', () => {
   afterEach(() => {
-    // Clean up blocked IPs after each test
     const blocked = getBlockedIps()
     blocked.forEach(ip => unblockIp(ip))
   })
@@ -89,22 +87,81 @@ describe('MemoryRateLimiter', () => {
 
   it('clears store correctly', () => {
     limiter.clear()
-    // After clear, a new check should start fresh
     expect(() => limiter.clear()).not.toThrow()
   })
 })
 
-describe('fail-closed behavior', () => {
-  // This test documents that when NODE_ENV=production but UPSTASH vars are missing,
-  // the limiter returns blocked (fail-closed). We test the FailClosedRateLimiter directly.
-  it('FailClosedRateLimiter always blocks', async () => {
-    const { checkRateLimit } = await import('@/lib/rate-limit')
-    // When not in production, MemoryRateLimiter is used, which does not fail-closed.
-    // This test documents the behavior - the actual production fail-closed is
-    // only active when NODE_ENV=production.
-    resetLimiter()
-    const result = await checkRateLimit('test', 10, 60_000, { ip: '1.1.1.1' })
-    // In non-production (test), MemoryRateLimiter is used so success should be true
-    expect(result.success).toBe(true)
+describe('fail-closed behavior in production', () => {
+  // Test that when NODE_ENV=production and Upstash vars are missing,
+  // checkRateLimit returns blocked (fail-closed). This mirrors the
+  // FailClosedRateLimiter logic in createRateLimiter().
+  it('blocks all requests when NODE_ENV=production and UPSTASH vars are absent', async () => {
+    // Save original env
+    const origNodeEnv = process.env.NODE_ENV
+    const origUpstashUrl = process.env.UPSTASH_REDIS_REST_URL
+    const origUpstashToken = process.env.UPSTASH_REDIS_REST_TOKEN
+
+    try {
+      // Force production without Upstash
+      process.env.NODE_ENV = 'production'
+      delete process.env.UPSTASH_REDIS_REST_URL
+      delete process.env.UPSTASH_REDIS_REST_TOKEN
+
+      // Reset singleton so createRateLimiter() picks up new env
+      resetLimiter()
+
+      const { checkRateLimit } = await import('@/lib/rate-limit')
+      const result = await checkRateLimit('test-action', 10, 60_000, { ip: '1.1.1.1' })
+
+      // Fail-closed: must block when production has no rate limiter
+      expect(result.success).toBe(false)
+      expect(result.remaining).toBe(0)
+    } finally {
+      // Restore original env
+      process.env.NODE_ENV = origNodeEnv
+      if (origUpstashUrl !== undefined) process.env.UPSTASH_REDIS_REST_URL = origUpstashUrl
+      else delete process.env.UPSTASH_REDIS_REST_URL
+      if (origUpstashToken !== undefined) process.env.UPSTASH_REDIS_REST_TOKEN = origUpstashToken
+      else delete process.env.UPSTASH_REDIS_REST_TOKEN
+
+      // Reset singleton back to normal for other tests
+      resetLimiter()
+    }
+  })
+
+  it('uses RedisRateLimiter and fails closed when fetch fails', async () => {
+    const origNodeEnv = process.env.NODE_ENV
+    const origUpstashUrl = process.env.UPSTASH_REDIS_REST_URL
+    const origUpstashToken = process.env.UPSTASH_REDIS_REST_TOKEN
+
+    try {
+      process.env.NODE_ENV = 'production'
+      process.env.UPSTASH_REDIS_REST_URL = 'https://test.upstash.io'
+      process.env.UPSTASH_REDIS_REST_TOKEN = 'test-token'
+
+      resetLimiter()
+
+      // Mock global fetch to simulate Redis being unreachable
+      const fetchMock = vi.fn().mockRejectedValue(new Error('Network unreachable'))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { checkRateLimit } = await import('@/lib/rate-limit')
+      const result = await checkRateLimit('test-action', 10, 60_000, { ip: '1.1.1.1' })
+
+      // Redis unreachable → fail closed (blocks request)
+      expect(result.success).toBe(false)
+      expect(result.remaining).toBe(0)
+      // Verify the Redis path was actually tried (fetch was called)
+      expect(fetchMock).toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+      process.env.NODE_ENV = origNodeEnv
+      if (origUpstashUrl !== undefined) process.env.UPSTASH_REDIS_REST_URL = origUpstashUrl
+      else delete process.env.UPSTASH_REDIS_REST_URL
+      if (origUpstashToken !== undefined) process.env.UPSTASH_REDIS_REST_TOKEN = origUpstashToken
+      else delete process.env.UPSTASH_REDIS_REST_TOKEN
+
+      resetLimiter()
+    }
   })
 })

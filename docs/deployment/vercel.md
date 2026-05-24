@@ -24,7 +24,7 @@ Set all required environment variables in Vercel's **Environment Variables** sec
 | `DIRECT_URL` | `postgresql://...` | Direct connection for migrations |
 | `APP_DOMAIN` | `yourdomain.com` | No path, no trailing slash |
 | `NEXT_PUBLIC_APP_DOMAIN` | `yourdomain.com` | Same as APP_DOMAIN |
-| `PAYMENT_PROVIDER` | `mock` (dev) or `mercadopago` (prod) | |
+| `PAYMENT_PROVIDER` | `mock` (dev) or `mercado_pago` (prod) | |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://xxx.supabase.co` | |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJ...` | |
 
@@ -37,9 +37,9 @@ Set all required environment variables in Vercel's **Environment Variables** sec
 | `UPSTASH_REDIS_REST_TOKEN` | `...` | Rate limiting |
 | `RESEND_API_KEY` | `re_...` | Email |
 | `FROM_EMAIL` | `noreply@yourdomain.com` | Must be verified domain in Resend |
-| `MERCADO_PAGO_ACCESS_TOKEN` | `APP_USR-...` | Only if PAYMENT_PROVIDER=mercadopago |
-| `MERCADO_PAGO_WEBHOOK_SECRET` | `...` | Only if PAYMENT_PROVIDER=mercadopago |
-| `NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY` | `APP_USR-...` | Only if PAYMENT_PROVIDER=mercadopago |
+| `MERCADO_PAGO_ACCESS_TOKEN` | `APP_USR-...` | Only if PAYMENT_PROVIDER=mercado_pago |
+| `MERCADO_PAGO_WEBHOOK_SECRET` | `...` | Only if PAYMENT_PROVIDER=mercado_pago |
+| `NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY` | `APP_USR-...` | Only if PAYMENT_PROVIDER=mercado_pago |
 
 > **Note**: `NEXT_PUBLIC_*` variables are inlined at build time. Changing them requires a new deployment.
 

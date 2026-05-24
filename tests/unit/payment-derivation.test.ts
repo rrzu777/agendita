@@ -1,5 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { BookingStatus, BookingPaymentStatus, PaymentType } from '@prisma/client'
+import { describe, it, expect } from 'vitest'
 import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
 import { deriveConfirmationState } from '@/lib/payments/confirmation-state'
 
