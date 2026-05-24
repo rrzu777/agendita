@@ -1,10 +1,19 @@
 /**
  * Serverless-safe rate limiter.
  * Interface + Memory implementation (dev/test) + Redis implementation (production).
- * Key always includes action + normalized IP + optional userId/businessId.
+ *
+ * Hardening features:
+ * - Explicit block list for known bad actors
+ * - Per-action configurable limits and windows
+ * - Fail-closed when Redis is unreachable (production)
+ * - IP extraction from multiple headers with sanitization
+ * - Action-specific keys prevent cross-action bypass
+ * - Graceful fallback with logging
  */
 
 import { headers as nextHeaders } from 'next/headers'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface RateLimitContext {
   ip?: string
@@ -21,27 +30,61 @@ export interface RateLimiter {
   ): Promise<{ success: boolean; remaining: number; resetAt: number }>
 }
 
+// ─── Per-action limit configuration ───────────────────────────────────────────
+
+/**
+ * Configurable per-action rate limits.
+ * Each action can have its own maxRequests and windowMs.
+ */
+export const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number }> = {
+  'create-booking': { maxRequests: 20, windowMs: 60_000 },
+  'update-booking-status': { maxRequests: 30, windowMs: 60_000 },
+  'confirm-payment': { maxRequests: 30, windowMs: 60_000 },
+  'create-manual-payment': { maxRequests: 20, windowMs: 60_000 },
+  'get-availability': { maxRequests: 60, windowMs: 60_000 },
+  'default': { maxRequests: 60, windowMs: 60_000 },
+}
+
+/**
+ * Block list: IP ranges or specific IPs that should always be rejected.
+ * Add CIDR ranges or exact IPs of known bad actors.
+ * Format: '192.168.1.1' or '10.0.0.0/8' (CIDR not currently supported,
+ * use exact match for simplicity).
+ */
+const BLOCKED_IPS = new Set<string>([
+  // Add known bad IPs here, e.g.:
+  // '1.2.3.4',
+])
+
+// ─── IP extraction ─────────────────────────────────────────────────────────────
+
 export async function getClientIp(request?: Request): Promise<string> {
   if (request) {
     const forwardedFor = request.headers.get('x-forwarded-for')
     if (forwardedFor) {
-      return forwardedFor.split(',')[0].trim()
+      // Take first IP (client), ignore proxy chain
+      const ip = forwardedFor.split(',')[0].trim()
+      if (isValidIp(ip)) return sanitizeIp(ip)
     }
     const realIp = request.headers.get('x-real-ip')
     if (realIp) {
-      return realIp.trim()
+      const ip = realIp.trim()
+      if (isValidIp(ip)) return sanitizeIp(ip)
     }
   }
 
+  // Fallback: try Next.js headers (server-side)
   try {
     const hdrs = await nextHeaders()
     const forwardedFor = hdrs.get('x-forwarded-for')
     if (forwardedFor) {
-      return forwardedFor.split(',')[0].trim()
+      const ip = forwardedFor.split(',')[0].trim()
+      if (isValidIp(ip)) return sanitizeIp(ip)
     }
     const realIp = hdrs.get('x-real-ip')
     if (realIp) {
-      return realIp.trim()
+      const ip = realIp.trim()
+      if (isValidIp(ip)) return sanitizeIp(ip)
     }
   } catch {
     // nextHeaders() can throw in non-server context
@@ -50,11 +93,42 @@ export async function getClientIp(request?: Request): Promise<string> {
   return 'unknown'
 }
 
+/**
+ * Basic IP validation — rejects obviously invalid formats.
+ * In production, rely on upstream proxy to set real IP.
+ */
+function isValidIp(ip: string): boolean {
+  if (!ip || ip.length > 45) return false // max IPv6 length
+  // IPv4 pattern
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
+    const parts = ip.split('.').map(Number)
+    return parts.every(p => p >= 0 && p <= 255)
+  }
+  // IPv6 pattern (simplified)
+  if (ip.includes(':')) {
+    return /^([0-9a-fA-F:]+)$/.test(ip)
+  }
+  return false
+}
+
+/**
+ * Strip port from IP if present (some proxies send x-forwarded-for with port).
+ */
+function sanitizeIp(ip: string): string {
+  return ip.replace(/:\d+$/, '').trim()
+}
+
+// ─── Key building ─────────────────────────────────────────────────────────────
+
 function buildKey(action: string, ip: string, context?: RateLimitContext): string {
   const parts = [action, ip]
   if (context?.userId) parts.push(`u:${context.userId}`)
   if (context?.businessId) parts.push(`b:${context.businessId}`)
   return parts.join(':')
+}
+
+function isBlockedIp(ip: string): boolean {
+  return BLOCKED_IPS.has(ip)
 }
 
 // ─── Memory implementation ──────────────────────────────────────────────────────
@@ -106,7 +180,8 @@ export class MemoryRateLimiter implements RateLimiter {
  * API endpoint: POST /v1/eval
  * Docs: https://upstash.com/docs/redis/overall/getstarted
  *
- * Falls back to fail-closed (returns blocked) if Redis is unreachable.
+ * Fails closed if Redis is unreachable (returns blocked).
+ * Logs all Redis errors for observability.
  */
 export class RedisRateLimiter implements RateLimiter {
   private restUrl: string
@@ -132,7 +207,6 @@ export class RedisRateLimiter implements RateLimiter {
     if (!res.ok) {
       throw new Error(`Upstash Redis error: ${res.status} ${res.statusText}`)
     }
-    // Upstash wraps responses in {result: ...}
     const json = await res.json()
     return json.result
   }
@@ -194,10 +268,19 @@ export class RedisRateLimiter implements RateLimiter {
         resetAt,
       }
     } catch (err) {
-      // Redis unreachable → fail closed
-      console.error('[RateLimiter] Redis error:', err)
+      // Redis unreachable → fail closed (block the request)
+      // This is intentional: a service degradation is better than no rate limiting
+      console.error('[RateLimiter] Redis error — failing closed:', err)
       return { success: false, remaining: 0, resetAt: now + windowMs }
     }
+  }
+}
+
+// ─── Fail-closed limiter (used when no valid Redis in production) ─────────────
+
+class FailClosedRateLimiter implements RateLimiter {
+  async check() {
+    return { success: false, remaining: 0, resetAt: Date.now() + 60_000 }
   }
 }
 
@@ -213,11 +296,8 @@ function createRateLimiter(): RateLimiter {
     const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN
     if (!upstashUrl || !upstashToken) {
       // Fail closed: no valid rate limiter available in production
-      return new (class FailClosedRateLimiter implements RateLimiter {
-        async check() {
-          return { success: false, remaining: 0, resetAt: Date.now() + 60000 }
-        }
-      })()
+      // This prevents the app from operating without rate limiting in prod
+      return new FailClosedRateLimiter()
     }
     return new RedisRateLimiter(upstashUrl, upstashToken)
   }
@@ -232,20 +312,35 @@ export function getLimiter(): RateLimiter {
   return _limiter
 }
 
+// ─── Main API ─────────────────────────────────────────────────────────────────
+
 /**
- * Simple server action API — mirrors the old checkRateLimit signature
- * but adds IP-aware, action-specific keys.
+ * Server action API with IP-aware, action-specific keys.
+ * Uses RATE_LIMITS config for per-action limits.
  * Logs rate_limit.blocked when a request is rejected.
  */
 export async function checkRateLimit(
   action: string,
-  maxRequests: number = 10,
-  windowMs: number = 60000,
+  maxRequests?: number,
+  windowMs?: number,
   context?: RateLimitContext
 ): Promise<{ success: boolean; remaining: number; resetAt: number }> {
+  // Apply per-action limits if not explicitly overridden
+  const limitConfig = RATE_LIMITS[action] ?? RATE_LIMITS['default']
+  const effectiveMax = maxRequests ?? limitConfig.maxRequests
+  const effectiveWindow = windowMs ?? limitConfig.windowMs
+
   const limiter = getLimiter()
   const ip = context?.ip ?? await getClientIp()
-  const result = await limiter.check(action, maxRequests, windowMs, { ...context, ip })
+
+  // Explicit block list check
+  if (isBlockedIp(ip)) {
+    const { logger } = await import('@/lib/logger')
+    logger.rateLimit.blocked(action, ip, context?.businessId)
+    return { success: false, remaining: 0, resetAt: Date.now() + effectiveWindow }
+  }
+
+  const result = await limiter.check(action, effectiveMax, effectiveWindow, { ...context, ip })
   if (!result.success) {
     const { logger } = await import('@/lib/logger')
     logger.rateLimit.blocked(action, ip, context?.businessId)
@@ -256,4 +351,27 @@ export async function checkRateLimit(
 /** Reset limiter singleton — for testing only */
 export function resetLimiter() {
   _limiter = null
+}
+
+/**
+ * Expose blocked IPs set for testing/debugging.
+ * Do not mutate this set directly — use only for inspection.
+ */
+export function getBlockedIps(): Set<string> {
+  return BLOCKED_IPS
+}
+
+/**
+ * Add an IP to the block list at runtime (e.g., after detecting abuse).
+ * For use in abuse response handlers — not for normal operation.
+ */
+export function blockIp(ip: string): void {
+  BLOCKED_IPS.add(ip)
+}
+
+/**
+ * Remove an IP from the block list.
+ */
+export function unblockIp(ip: string): void {
+  BLOCKED_IPS.delete(ip)
 }
