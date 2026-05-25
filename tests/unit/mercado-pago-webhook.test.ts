@@ -849,5 +849,32 @@ describe('Mercado Pago webhook', () => {
       expect(res.status).toBe(500)
       expect(applyApprovedPayment).not.toHaveBeenCalled()
     })
+
+    it('rejects approved payment when re-fetch with business token fails', async () => {
+      setupApprovedWebhook()
+      mockPrisma.paymentAccount.findFirst.mockResolvedValue({
+        id: 'pa-1',
+        businessId: 'biz-1',
+        provider: 'mercado_pago',
+        status: 'connected',
+        accessTokenEncrypted: 'encrypted-test-token',
+      })
+
+      // The beforeEach sets mockMpFetch.mockResolvedValue globally.
+      // For this test, first call (global lookup) succeeds, second (business re-verify) must fail.
+      // Queue: first call OK, second call rejects.
+      mockMpFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve(approvedPaymentBody),
+        })
+        .mockRejectedValueOnce(new Error('Network error on re-verify'))
+
+      const req = makeRequest(approvedPaymentBody)
+      const res = await POST(req)
+
+      expect(res.status).toBe(502)
+      expect(applyApprovedPayment).not.toHaveBeenCalled()
+    })
   })
 })
