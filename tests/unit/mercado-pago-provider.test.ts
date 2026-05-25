@@ -172,7 +172,7 @@ describe('mercadoPagoPaymentProvider', () => {
       vi.resetModules()
       provider = await getProvider()
 
-      await expect(
+      expect(() =>
         provider.createPayment({
           amount: 10000,
           currency: 'CLP',
@@ -181,8 +181,8 @@ describe('mercadoPagoPaymentProvider', () => {
           returnUrl: 'https://example.com/return',
           webhookUrl: 'https://example.com/webhook',
           localPaymentId: 'pay-local-1',
-        }),
-      ).rejects.toThrow('MERCADO_PAGO_ACCESS_TOKEN')
+        })
+      ).toThrow('MERCADO_PAGO_ACCESS_TOKEN')
     })
 
     it('throws when localPaymentId is missing', async () => {

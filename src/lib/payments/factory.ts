@@ -1,7 +1,10 @@
 import { PaymentProvider } from './types'
 import { mockPaymentProvider } from './mock-provider'
 import { manualPaymentProvider } from './manual-provider'
-import { mercadoPagoPaymentProvider } from './mercado-pago-provider'
+import { mercadoPagoPaymentProvider, createMercadoPagoProvider } from './mercado-pago-provider'
+import { prisma } from '@/lib/db'
+import { decryptSecret } from './encryption'
+import { PaymentAccountStatus } from '@prisma/client'
 
 export type ProviderName = 'mock' | 'manual' | 'mercado_pago' | 'webpay'
 
@@ -262,4 +265,89 @@ export function getDefaultProvider(): PaymentProvider {
   }
 
   throw new Error(`Unknown payment provider: ${configured}`)
+}
+
+/**
+ * Multi-tenant: resolves a Mercado Pago provider for a specific business.
+ * Creates a provider instance with the business's decrypted access token.
+ */
+export async function getMercadoPagoProviderForBusiness(
+  businessId: string
+): Promise<PaymentProvider> {
+  const account = await prisma.paymentAccount.findFirst({
+    where: {
+      businessId,
+      provider: 'mercado_pago',
+      status: PaymentAccountStatus.connected,
+    },
+  })
+
+  if (!account) {
+    throw new Error('Este negocio no tiene Mercado Pago conectado.')
+  }
+
+  let accessToken: string
+  try {
+    accessToken = decryptSecret(account.accessTokenEncrypted)
+  } catch {
+    throw new Error('Error al leer las credenciales de Mercado Pago.')
+  }
+
+  return createMercadoPagoProvider(accessToken)
+}
+
+/**
+ * Multi-tenant: resolves availability of online payments for a specific business.
+ */
+export async function resolveOnlinePaymentAvailabilityForBusiness(
+  businessId: string
+): Promise<OnlinePaymentAvailability> {
+  const account = await prisma.paymentAccount.findFirst({
+    where: {
+      businessId,
+      provider: 'mercado_pago',
+      status: { in: [PaymentAccountStatus.connected, PaymentAccountStatus.expired] },
+    },
+  })
+
+  if (!account) {
+    return {
+      available: false,
+      provider: null,
+      reason: 'Este negocio no tiene Mercado Pago conectado.',
+      isMock: false,
+    }
+  }
+
+  if (account.status === PaymentAccountStatus.expired) {
+    return {
+      available: false,
+      provider: 'mercado_pago',
+      reason: 'La conexión con Mercado Pago expiró. Reconecta tu cuenta.',
+      isMock: false,
+    }
+  }
+
+  return {
+    available: true,
+    provider: 'mercado_pago',
+    isMock: false,
+  }
+}
+
+/**
+ * Multi-tenant: gets the online payment provider for a business, or throws.
+ */
+export async function getOnlinePaymentProviderForBusiness(
+  businessId: string,
+): Promise<PaymentProvider> {
+  const availability = await resolveOnlinePaymentAvailabilityForBusiness(businessId)
+
+  if (!availability.available) {
+    throw new Error(
+      availability.reason ?? 'Pago online no disponible para este negocio.',
+    )
+  }
+
+  return getMercadoPagoProviderForBusiness(businessId)
 }

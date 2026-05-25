@@ -1,5 +1,12 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 
+vi.mock('@/lib/db', () => ({ prisma: {} }))
+vi.mock('@/lib/payments/encryption', () => ({
+  encryptSecret: vi.fn(),
+  decryptSecret: vi.fn(),
+}))
+vi.mock('@prisma/client', () => ({}))
+
 const originalEnv = { ...process.env }
 
 function setEnv(vars: Record<string, string | undefined>) {

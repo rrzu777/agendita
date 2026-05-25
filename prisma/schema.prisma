@@ -73,9 +73,40 @@ model Business {
   subscriptions      BusinessSubscription[]
   subscriptionPayments SubscriptionPayment[]
   subscriptionLogs   SubscriptionLog[]
+  paymentAccounts    PaymentAccount[]
   cancellationPolicy String?
   bookingPolicy      String?
   depositPolicy      String?
+}
+
+enum PaymentAccountStatus {
+  pending
+  connected
+  expired
+  disconnected
+  error
+}
+
+model PaymentAccount {
+  id                 String               @id @default(cuid())
+  businessId         String
+  provider           String
+  providerAccountId  String?
+  accessTokenEncrypted String
+  refreshTokenEncrypted String?
+  publicKeyEncrypted String?
+  expiresAt          DateTime?
+  status             PaymentAccountStatus @default(pending)
+  connectedAt        DateTime?
+  disconnectedAt     DateTime?
+  lastRefreshAt      DateTime?
+  rawMetadata        Json?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  business           Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, provider])
 }
 
 model Plan {

@@ -22,6 +22,9 @@ const mockPrisma = {
     create: vi.fn(),
   },
   $transaction: vi.fn(),
+  paymentAccount: {
+    findFirst: vi.fn(),
+  },
 }
 
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
@@ -37,6 +40,11 @@ vi.mock('@/lib/booking-payments', () => ({
 vi.mock('@/lib/notifications', () => ({
   sendBookingConfirmedNotification: vi.fn(),
   sendNotificationSafely: vi.fn(),
+}))
+
+vi.mock('@/lib/payments/encryption', () => ({
+  encryptSecret: vi.fn().mockReturnValue('encrypted-token'),
+  decryptSecret: vi.fn().mockReturnValue('test-access-token'),
 }))
 
 const originalEnv = { ...process.env }

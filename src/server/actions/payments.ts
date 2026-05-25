@@ -9,6 +9,7 @@ import {
   isOnlinePaymentAvailable,
   getOnlinePaymentProvider,
   resolveOnlinePaymentAvailability,
+  getOnlinePaymentProviderForBusiness,
 } from '@/lib/payments/factory'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
@@ -102,7 +103,7 @@ export async function initiatePayment(data: {
   const currency = booking.business.currency || 'CLP'
   const description = `Abono para ${booking.service?.name || 'servicio'}`
 
-  const provider = getOnlinePaymentProvider()
+  const provider = await getOnlinePaymentProviderForBusiness(booking.businessId)
   const baseUrl = getBusinessPublicUrl(booking.business)
 
   // Mercado Pago (redirect-based): pre-crear Payment local antes de llamar al provider.

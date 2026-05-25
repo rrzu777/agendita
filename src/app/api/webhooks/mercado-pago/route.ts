@@ -4,9 +4,10 @@ import { applyApprovedPayment } from '@/server/services/finance'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { sendBookingConfirmedNotification, sendNotificationSafely } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
+import { decryptSecret } from '@/lib/payments/encryption'
 import type { Prisma } from '@prisma/client'
 
-function mpFetch<T>(path: string, accessToken: string): Promise<T> {
+function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
   return fetch(`https://api.mercadopago.com${path}`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -19,14 +20,6 @@ function mpFetch<T>(path: string, accessToken: string): Promise<T> {
     }
     return res.json() as Promise<T>
   })
-}
-
-function getAccessToken(): string {
-  const token = process.env.MERCADO_PAGO_ACCESS_TOKEN
-  if (!token) {
-    throw new Error('MERCADO_PAGO_ACCESS_TOKEN no está configurado')
-  }
-  return token
 }
 
 interface MpPayment {
@@ -141,11 +134,19 @@ export async function POST(request: NextRequest) {
       console.warn('[MP Webhook] No MERCADO_PAGO_WEBHOOK_SECRET configured, skipping signature validation (dev only)')
     }
 
-    // Consultar pago real a Mercado Pago (no confiar en el payload)
-    const accessToken = getAccessToken()
-    const mpPayment = await mpFetch<MpPayment>(
+    // Consultar pago real a Mercado Pago.
+    // Paso 1: Usar token global (app-level) solo para la búsqueda inicial del
+    // external_reference. Esto es necesario porque aún no sabemos a qué negocio
+    // pertenece el pago. El token global NUNCA se usa para aplicar pagos.
+    const globalToken = process.env.MERCADO_PAGO_ACCESS_TOKEN
+    if (!globalToken) {
+      logger.webhook.rejected('mercado_pago', 'MERCADO_PAGO_ACCESS_TOKEN missing', requestId)
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+    }
+
+    const mpPayment = await mpFetchWithToken<MpPayment>(
       `/v1/payments/${mpPaymentId}`,
-      accessToken,
+      globalToken,
     )
 
     // Validar external_reference / localPaymentId
@@ -170,11 +171,56 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Payment provider mismatch' }, { status: 400 })
     }
 
+    // Paso 2: Resolver PaymentAccount del negocio para verificar con su token.
+    // Para pagos approved, reconsultamos MP con el token del negocio para
+    // asegurar que el pago realmente se hizo a su cuenta.
+    const mpStatus = mpPayment.status
+    let businessToken: string | null = null
+
+    if (mpStatus === 'approved') {
+      const paymentAccount = await prisma.paymentAccount.findFirst({
+        where: {
+          businessId: payment.businessId,
+          provider: 'mercado_pago',
+          status: 'connected',
+        },
+      })
+
+      if (!paymentAccount) {
+        console.warn('[MP Webhook] Business has no connected Mercado Pago account, verifying with global token', {
+          businessId: payment.businessId,
+        })
+      } else {
+        try {
+          businessToken = decryptSecret(paymentAccount.accessTokenEncrypted)
+        } catch {
+          logger.webhook.rejected('mercado_pago', 'Failed to decrypt business token', requestId)
+          return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+        }
+      }
+    }
+
+    // Si tenemos token del negocio, reconsultar MP con ese token para verificación
+    if (businessToken && businessToken !== globalToken) {
+      try {
+        const verifiedPayment = await mpFetchWithToken<MpPayment>(
+          `/v1/payments/${mpPaymentId}`,
+          businessToken,
+        )
+        // Usar los datos verificados con el token del negocio
+        Object.assign(mpPayment, verifiedPayment)
+      } catch (e) {
+        console.warn('[MP Webhook] Failed to verify payment with business token, using global token result', {
+          businessId: payment.businessId,
+          error: e instanceof Error ? e.message : 'Unknown',
+        })
+      }
+    }
+
     // Validar metadata contra DB.
     // Para pagos approved, la metadata con bookingId/businessId/paymentType/localPaymentId
     // es requerida para evitar confirmación fraudulenta.
     const metadata = mpPayment.metadata ?? {}
-    const mpStatus = mpPayment.status
 
     if (mpStatus === 'approved') {
       const requiredMetadataFields = ['localPaymentId', 'bookingId', 'businessId', 'paymentType'] as const
