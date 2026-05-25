@@ -52,12 +52,16 @@ function validate() {
     }
   }
 
-  // ── PAYMENT_PROVIDER — always required ─────────────────────────────────
+  // ── PAYMENT_PROVIDER — opcional en multi-tenant ─────────────────────────
   const provider = getEnv('PAYMENT_PROVIDER')
+  const hasMpOAuth =
+    !!getEnv('MERCADO_PAGO_CLIENT_ID') &&
+    !!getEnv('MERCADO_PAGO_CLIENT_SECRET') &&
+    !!getEnv('MERCADO_PAGO_REDIRECT_URI')
 
-  if (!provider) {
-    errors.push('MISSING: PAYMENT_PROVIDER')
-  } else if (!VALID_PAYMENT_PROVIDERS.includes(provider)) {
+  if (!provider && !hasMpOAuth) {
+    errors.push('MISSING: PAYMENT_PROVIDER (or configure Mercado Pago OAuth: CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)')
+  } else if (provider && !VALID_PAYMENT_PROVIDERS.includes(provider)) {
     errors.push(
       `Invalid PAYMENT_PROVIDER: "${provider}". Must be one of: ${VALID_PAYMENT_PROVIDERS.join(', ')}`
     )
@@ -103,11 +107,21 @@ function validate() {
 
   // ── Mercado Pago in production ─────────────────────────────────────────
   if (isProduction && provider === 'mercado_pago') {
-    if (!getEnv('MERCADO_PAGO_ACCESS_TOKEN')) {
-      errors.push('MISSING: MERCADO_PAGO_ACCESS_TOKEN (required in production with Mercado Pago)')
+    if (!hasMpOAuth && !getEnv('MERCADO_PAGO_ACCESS_TOKEN')) {
+      errors.push('MISSING: MERCADO_PAGO_ACCESS_TOKEN (required in production with Mercado Pago, or configure OAuth)')
     }
     if (!getEnv('MERCADO_PAGO_WEBHOOK_SECRET')) {
       errors.push('MISSING: MERCADO_PAGO_WEBHOOK_SECRET (required in production with Mercado Pago)')
+    }
+    if (!getEnv('ENCRYPTION_KEY')) {
+      errors.push('MISSING: ENCRYPTION_KEY (required in production with Mercado Pago for token encryption)')
+    }
+  } else if (isProduction && hasMpOAuth && !provider) {
+    if (!getEnv('MERCADO_PAGO_WEBHOOK_SECRET')) {
+      errors.push('MISSING: MERCADO_PAGO_WEBHOOK_SECRET (required in production with Mercado Pago OAuth)')
+    }
+    if (!getEnv('ENCRYPTION_KEY')) {
+      errors.push('MISSING: ENCRYPTION_KEY (required in production with Mercado Pago for token encryption)')
     }
   }
 

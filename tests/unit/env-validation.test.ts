@@ -97,7 +97,7 @@ describe('env validation', () => {
       expect(paymentError!.message).toContain('invalid')
     })
 
-    it('PAYMENT_PROVIDER is always required', async () => {
+    it('warns when PAYMENT_PROVIDER is missing and no OAuth configured', async () => {
       setEnv({
         NODE_ENV: 'development',
         DATABASE_URL: 'postgresql://localhost/test',
@@ -107,12 +107,15 @@ describe('env validation', () => {
         APP_DOMAIN: 'localhost:3000',
         NEXT_PUBLIC_APP_DOMAIN: 'localhost:3000',
         PAYMENT_PROVIDER: undefined,
+        MERCADO_PAGO_CLIENT_ID: undefined,
+        MERCADO_PAGO_CLIENT_SECRET: undefined,
+        MERCADO_PAGO_REDIRECT_URI: undefined,
       })
       const { validateEnv } = await import('@/lib/env')
-      const { errors } = validateEnv()
-      const paymentError = errors.find((e) => e.key === 'PAYMENT_PROVIDER')
-      expect(paymentError).toBeDefined()
-      expect(paymentError!.message).toBe('PAYMENT_PROVIDER is required')
+      const { warnings } = validateEnv()
+      const paymentWarning = warnings.find((e) => e.key === 'PAYMENT_PROVIDER')
+      expect(paymentWarning).toBeDefined()
+      expect(paymentWarning!.message).toContain('PAYMENT_PROVIDER is not configured')
     })
 
     it('requires PAYMENT_PROVIDER in production', async () => {

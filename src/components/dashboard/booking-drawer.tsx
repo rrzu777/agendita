@@ -26,6 +26,8 @@ import { Badge } from '@/components/ui/badge'
 import { createManualPayment } from '@/server/actions/payments'
 import type { CalendarBooking } from './booking-card'
 import { BookingContactButtons } from './booking-contact-buttons'
+import { CancelBookingButton } from './cancel-booking-button'
+import { RefreshCw } from 'lucide-react'
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false)
@@ -214,6 +216,23 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
                 {isPending ? 'Registrando...' : 'Registrar pago'}
               </Button>
             </form>
+          )}
+
+          {(booking.status === 'confirmed' || booking.status === 'pending_payment') && (
+            <div className="space-y-2 rounded-xl border border-border/60 p-3">
+              <h4 className="text-sm font-semibold">Acciones</h4>
+              <div className="flex gap-2">
+                <a href={`/dashboard/bookings/${booking.id}/reschedule`} className="flex-1">
+                  <Button type="button" variant="outline" size="sm" className="w-full">
+                    <RefreshCw className="mr-1 size-3" />
+                    Reprogramar
+                  </Button>
+                </a>
+                <div className="flex-1">
+                  <CancelBookingButton bookingId={booking.id} size="sm" />
+                </div>
+              </div>
+            </div>
           )}
         </div>
 

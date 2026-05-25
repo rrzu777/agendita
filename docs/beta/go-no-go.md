@@ -30,10 +30,13 @@
 
 | Item | Estado | Notas |
 |------|--------|-------|
-| Payment correcto | ✅ GO | Provider=manual, amount, currency validados server-side |
-| LedgerEntry correcto | ✅ GO | applyApprovedPayment central, una entrada por pago |
+| Payment correcto | ✅ GO | Provider=manual, amount, currency validados server-side. Abono inicial marca PaymentType=deposit (fix Prompt 1) |
+| LedgerEntry correcto | ✅ GO | applyApprovedPayment central, una entrada por pago. Ledger abono = deposit_paid (fix Prompt 1) |
 | No duplicados | ✅ GO | Unique constraint paymentId en LedgerEntry; idempotencia en applyApprovedPayment |
-| Saldo correcto | ✅ GO | recalcBookingFromPayments recalcula depositPaid, remainingBalance, paymentStatus |
+| Saldo correcto | ✅ GO | recalcBookingFromPayments recalcula depositPaid, remainingBalance, paymentStatus. Servicio sin abono con precio NO queda fully_paid (fix Prompt 1) |
+| Creación dashboard sin abono | ✅ GO | depositRequired=0, price>0 → confirmed + unpaid + remainingBalance=finalAmount |
+| Reserva pública manual (sin MP) | ✅ GO | Fallback: crea booking pending_payment sin initiatePayment; ConfirmationMode=pending: "Reserva recibida", "Total por pagar" = precio completo |
+| Switch PAYMENT_PROVIDER=manual | ✅ GO | Fuerza checkout offline incluso con PaymentAccount.connected; mock/webpay también bloquean MP |
 
 ### 4. Suscripción
 
@@ -96,27 +99,36 @@
 |------|--------|-------|
 | PaymentAccount model | ✅ GO | Por negocio, tokens cifrados AES-256-GCM |
 | Provider por negocio | ✅ GO | getOnlinePaymentProviderForBusiness |
-| initatePayment per-business | ✅ GO | Usa token del negocio, no global |
-| Webhook multi-tenant | ✅ GO | Busca PaymentAccount desde Payment.localPaymentId |
+| initatePayment per-business | ✅ GO | Guard global reemplazado por resolveOnlinePaymentAvailabilityForBusiness. Solo mercado_pago + connected |
+| getOnlinePaymentAvailability per-business | ✅ GO | Acepta businessId opcional, resuelve por negocio si se provee (fix Prompt 2) |
+| PAYMENT_PROVIDER opcional | ✅ GO | No requerido si hay OAuth configurado (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI) (fix Prompt 2) |
+| Webhook multi-tenant | ✅ GO | Busca PaymentAccount desde Payment.localPaymentId, re-verifica con token del negocio |
 | OAuth connect flow | ✅ GO | `/dashboard/settings/payments`, callback con state anti-CSRF |
 | Disconnect | ✅ GO | paymentAccount.status = 'disconnected' |
 | No split payments | ✅ GO | No implementado |
 | No comisiones | ✅ GO | No implementado |
 | No confirmar por redirect | ✅ GO | Solo webhook confirma |
 
-### Decisión GO / NO-GO
+### Decisión GO / NO-GO (actualizado 2026-05-25 post-Prompts 1-4)
 
 **GO para beta manual:**
 - Reservas públicas y manuales funcionan
+- Reserva pública sin MP crea pending_payment (fallback manual, fix Review 3.5)
 - Doble-booking bloqueado
 - Holds expiran
-- Ledger manual no duplica
-- Admin soporte existe
-- Legal publicado
-- Build y tests pasan
+- Ledger manual no duplica (abono = deposit_paid, final = final_payment_paid)
+- Servicio sin abono no queda fully_paid (fix Prompt 1)
+- Admin soporte existe (4 acciones: pago, extender trial, suspender, reactivar)
+- Legal publicado (términos, privacidad, reembolsos)
+- Onboarding checklist en dashboard
+- WhatsApp manual (confirmación + copiar resumen)
+- Tests: 722 tests pasan
+- Env: PAYMENT_PROVIDER=manual válido; production con OAuth válido sin access token global
+- Lint: 3 errores preexistentes (no-explicit-any en tests), 0 errores nuevos
 
 **GO para Mercado Pago sandbox:**
-- Infraestructura multi-tenant lista
+- Infraestructura multi-tenant lista (PaymentAccount, OAuth, webhook fail-closed)
+- initiatePayment usa per-business availability (fix Prompt 2)
 - Requires: MERCADO_PAGO_CLIENT_ID, MERCADO_PAGO_CLIENT_SECRET, MERCADO_PAGO_REDIRECT_URI
 - Requires: 2 cuentas sandbox de prueba
 - Requires: ejecutar plan QA

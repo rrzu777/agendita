@@ -13,6 +13,7 @@ const PRESETS = [
   { label: 'Almuerzo', icon: Coffee, startTime: '13:00', endTime: '14:00', color: 'bg-amber-100 text-amber-800' },
   { label: 'Tarde libre', icon: Moon, startTime: '14:00', endTime: '18:00', color: 'bg-indigo-100 text-indigo-800' },
   { label: 'Día completo', icon: Ban, startTime: '09:00', endTime: '18:00', color: 'bg-red-100 text-red-800' },
+  { label: 'Vacaciones', icon: Umbrella, startTime: '09:00', endTime: '18:00', color: 'bg-emerald-100 text-emerald-800' },
 ]
 
 export function TimeBlockForm() {

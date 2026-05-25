@@ -96,3 +96,40 @@ export function buildWhatsappBookingSummaryText(data: BookingWhatsappData): stri
   }
   return parts.join(' | ')
 }
+
+export function buildWhatsappReminderMessage(data: BookingWhatsappData): string {
+  const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
+  const total = fmtCurrency(data.totalPrice, data.businessCurrency)
+  const deposit = fmtCurrency(data.depositPaid || 0, data.businessCurrency)
+  const remaining = fmtCurrency(data.remainingBalance, data.businessCurrency)
+
+  const lines = [
+    `¡Hola ${data.customerName}!`,
+    `Te recordamos tu reserva en Agendita:`,
+    ``,
+    `📋 Servicio: ${data.serviceName}`,
+    `📅 Fecha y hora: ${dateStr}`,
+  ]
+  if (data.businessAddress) {
+    lines.push(`📍 Dirección: ${data.businessAddress}`)
+  }
+  lines.push(
+    ``,
+    `💰 Precio total: ${total}`,
+    `✅ Abono: ${deposit}`,
+  )
+  if (data.remainingBalance > 0) {
+    lines.push(`💳 Saldo pendiente: ${remaining}`)
+  }
+  lines.push(
+    ``,
+    `¡Te esperamos!`,
+  )
+
+  return lines.join('\n')
+}
+
+export function buildWhatsappReminderUrl(phone: string, data: BookingWhatsappData): string {
+  const message = buildWhatsappReminderMessage(data)
+  return buildWhatsappUrl(phone, message)
+}

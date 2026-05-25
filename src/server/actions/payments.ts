@@ -6,10 +6,9 @@ import { PaymentProvider, PaymentStatus, PaymentType } from '@prisma/client'
 import type { Prisma } from '@prisma/client'
 import {
   getDefaultProvider,
-  isOnlinePaymentAvailable,
-  getOnlinePaymentProvider,
   resolveOnlinePaymentAvailability,
   getOnlinePaymentProviderForBusiness,
+  resolveOnlinePaymentAvailabilityForBusiness,
 } from '@/lib/payments/factory'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
@@ -72,19 +71,12 @@ export async function initiatePayment(data: {
     throw new Error('Datos de pago inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
-  // Guard: no crear pagos si el checkout online no está disponible
-  if (!isOnlinePaymentAvailable()) {
-    throw new Error(
-      'Pago online no disponible. Contacta al negocio para coordinar el pago.',
-    )
-  }
-
   const booking = await prisma.booking.findUnique({
     where: { id: data.bookingId },
     include: {
       service: true,
       business: {
-        select: { slug: true, subdomain: true, currency: true },
+        select: { slug: true, subdomain: true, currency: true, id: true },
       },
       customer: {
         select: { email: true },
@@ -94,6 +86,15 @@ export async function initiatePayment(data: {
 
   if (!booking) {
     throw new Error('Reserva no encontrada')
+  }
+
+  // Per-business availability: verificar si este negocio tiene pago online
+  const businessAvailability = await resolveOnlinePaymentAvailabilityForBusiness(booking.businessId)
+  if (!businessAvailability.available) {
+    throw new Error(
+      businessAvailability.reason ||
+      'Este negocio aun no tiene pago online habilitado. Coordina el pago directamente con el negocio.',
+    )
   }
 
   // No iniciar pago si la reserva no está en estado pagable o hold expirado
@@ -212,9 +213,14 @@ export async function initiatePayment(data: {
 
 /**
  * Server action para que el frontend público consulte la disponibilidad de pago online.
+ * Si recibe businessId, resuelve por negocio (multi-tenant).
+ * Si no, usa la configuración global (modo legacy/deprecado).
  * Nunca lanza: siempre retorna un objeto con { available, provider, reason?, isMock }.
  */
-export async function getOnlinePaymentAvailability() {
+export async function getOnlinePaymentAvailability(businessId?: string) {
+  if (businessId) {
+    return resolveOnlinePaymentAvailabilityForBusiness(businessId)
+  }
   return resolveOnlinePaymentAvailability()
 }
 

@@ -1,11 +1,15 @@
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/db', () => ({ prisma: {} }))
+const mockPaymentAccountFindFirst = vi.fn()
+
+vi.mock('@/lib/db', () => ({ prisma: { paymentAccount: { findFirst: mockPaymentAccountFindFirst } } }))
 vi.mock('@/lib/payments/encryption', () => ({
   encryptSecret: vi.fn(),
   decryptSecret: vi.fn(),
 }))
-vi.mock('@prisma/client', () => ({}))
+vi.mock('@prisma/client', () => ({
+  PaymentAccountStatus: { connected: 'connected', expired: 'expired', disconnected: 'disconnected', pending: 'pending', error: 'error' },
+}))
 
 const originalEnv = { ...process.env }
 
@@ -21,7 +25,12 @@ function setEnv(vars: Record<string, string | undefined>) {
 
 afterEach(() => {
   process.env = { ...originalEnv }
+  mockPaymentAccountFindFirst.mockReset()
   vi.resetModules()
+})
+
+beforeEach(() => {
+  mockPaymentAccountFindFirst.mockReset()
 })
 
 describe('payment factory', () => {
@@ -457,6 +466,89 @@ describe('payment factory', () => {
       setEnv({ NODE_ENV: 'development', PAYMENT_PROVIDER: 'stripe' })
       const { getDefaultProvider } = await import('@/lib/payments/factory')
       expect(() => getDefaultProvider()).toThrow(/Unknown payment provider/)
+    })
+  })
+
+  describe('resolveOnlinePaymentAvailabilityForBusiness', () => {
+    const connectedAccount = { status: 'connected' as const, provider: 'mercado_pago' }
+    const expiredAccount = { status: 'expired' as const, provider: 'mercado_pago' }
+
+    it('PAYMENT_PROVIDER=manual returns unavailable even with connected PaymentAccount', async () => {
+      setEnv({ NODE_ENV: 'development', PAYMENT_PROVIDER: 'manual' })
+      mockPaymentAccountFindFirst.mockResolvedValue(connectedAccount)
+      const { resolveOnlinePaymentAvailabilityForBusiness } = await import('@/lib/payments/factory')
+      const result = await resolveOnlinePaymentAvailabilityForBusiness('biz-1')
+      expect(result.available).toBe(false)
+      expect(result.provider).toBeNull()
+    })
+
+    it('PAYMENT_PROVIDER=mock returns unavailable even with connected PaymentAccount', async () => {
+      setEnv({ NODE_ENV: 'development', PAYMENT_PROVIDER: 'mock' })
+      mockPaymentAccountFindFirst.mockResolvedValue(connectedAccount)
+      const { resolveOnlinePaymentAvailabilityForBusiness } = await import('@/lib/payments/factory')
+      const result = await resolveOnlinePaymentAvailabilityForBusiness('biz-1')
+      expect(result.available).toBe(false)
+      expect(result.provider).toBeNull()
+    })
+
+    it('PAYMENT_PROVIDER=webpay returns unavailable even with connected PaymentAccount', async () => {
+      setEnv({ NODE_ENV: 'development', PAYMENT_PROVIDER: 'webpay' })
+      mockPaymentAccountFindFirst.mockResolvedValue(connectedAccount)
+      const { resolveOnlinePaymentAvailabilityForBusiness } = await import('@/lib/payments/factory')
+      const result = await resolveOnlinePaymentAvailabilityForBusiness('biz-1')
+      expect(result.available).toBe(false)
+      expect(result.provider).toBeNull()
+    })
+
+    it('PAYMENT_PROVIDER=mercado_pago + PaymentAccount connected => available true', async () => {
+      setEnv({ NODE_ENV: 'development', PAYMENT_PROVIDER: 'mercado_pago', MERCADO_PAGO_ACCESS_TOKEN: 'tok' })
+      mockPaymentAccountFindFirst.mockResolvedValue(connectedAccount)
+      const { resolveOnlinePaymentAvailabilityForBusiness } = await import('@/lib/payments/factory')
+      const result = await resolveOnlinePaymentAvailabilityForBusiness('biz-1')
+      expect(result.available).toBe(true)
+      expect(result.provider).toBe('mercado_pago')
+      expect(result.isMock).toBe(false)
+    })
+
+    it('no PAYMENT_PROVIDER + OAuth full + PaymentAccount connected => available true', async () => {
+      setEnv({
+        NODE_ENV: 'development',
+        PAYMENT_PROVIDER: undefined,
+        MERCADO_PAGO_CLIENT_ID: 'client',
+        MERCADO_PAGO_CLIENT_SECRET: 'secret',
+        MERCADO_PAGO_REDIRECT_URI: 'https://app.agendita.com/callback',
+      })
+      mockPaymentAccountFindFirst.mockResolvedValue(connectedAccount)
+      const { resolveOnlinePaymentAvailabilityForBusiness } = await import('@/lib/payments/factory')
+      const result = await resolveOnlinePaymentAvailabilityForBusiness('biz-1')
+      expect(result.available).toBe(true)
+      expect(result.provider).toBe('mercado_pago')
+    })
+
+    it('no PAYMENT_PROVIDER + no OAuth => unavailable', async () => {
+      setEnv({ NODE_ENV: 'development', PAYMENT_PROVIDER: undefined })
+      const { resolveOnlinePaymentAvailabilityForBusiness } = await import('@/lib/payments/factory')
+      const result = await resolveOnlinePaymentAvailabilityForBusiness('biz-1')
+      expect(result.available).toBe(false)
+      expect(result.provider).toBeNull()
+    })
+
+    it('PaymentAccount expired => unavailable', async () => {
+      setEnv({ NODE_ENV: 'development', PAYMENT_PROVIDER: 'mercado_pago', MERCADO_PAGO_ACCESS_TOKEN: 'tok' })
+      mockPaymentAccountFindFirst.mockResolvedValue(expiredAccount)
+      const { resolveOnlinePaymentAvailabilityForBusiness } = await import('@/lib/payments/factory')
+      const result = await resolveOnlinePaymentAvailabilityForBusiness('biz-1')
+      expect(result.available).toBe(false)
+      expect(result.provider).toBe('mercado_pago')
+    })
+
+    it('no PaymentAccount => unavailable', async () => {
+      setEnv({ NODE_ENV: 'development', PAYMENT_PROVIDER: 'mercado_pago', MERCADO_PAGO_ACCESS_TOKEN: 'tok' })
+      mockPaymentAccountFindFirst.mockResolvedValue(null)
+      const { resolveOnlinePaymentAvailabilityForBusiness } = await import('@/lib/payments/factory')
+      const result = await resolveOnlinePaymentAvailabilityForBusiness('biz-1')
+      expect(result.available).toBe(false)
+      expect(result.provider).toBeNull()
     })
   })
 })

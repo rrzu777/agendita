@@ -15,7 +15,7 @@ function generateIdempotencyKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-export function StepPayment({ data, businessId, onSuccess, onBack }: { data: BookingData; businessId: string; onSuccess: (id: string) => void; onBack: () => void }) {
+export function StepPayment({ data, businessId, onSuccess, onBack }: { data: BookingData; businessId: string; onSuccess: (id: string, mode: 'paid' | 'pending') => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error'>('review')
   const [errorMessage, setErrorMessage] = useState('')
@@ -28,13 +28,40 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
   } | null>(null)
 
   useEffect(() => {
-    getOnlinePaymentAvailability().then(setAvailability)
-  }, [])
+    getOnlinePaymentAvailability(businessId).then(setAvailability)
+  }, [businessId])
 
   // Generar una key estable por montaje de StepPayment.
   // Retry dentro del mismo montaje (ej. "Intentar de nuevo") usa la misma key.
   // Si el usuario va "Atrás" y vuelve, el componente se remonta → nueva key.
   const idempotencyKey = useMemo(() => data.idempotencyKey || generateIdempotencyKey(), [data.idempotencyKey])
+
+  async function handleManualBooking() {
+    setLoading(true)
+    setStep('processing')
+    setErrorMessage('')
+
+    try {
+      const booking = await createBooking({
+        serviceId: data.serviceId!,
+        customerName: data.customerName,
+        customerPhone: data.customerPhone,
+        customerEmail: data.customerEmail,
+        startDateTime: data.timeSlot!.start,
+        idempotencyKey,
+        acceptedTerms,
+      }, businessId)
+
+      setStep('success')
+      onSuccess(booking.id, 'pending')
+    } catch (err) {
+      console.error('Booking error:', err)
+      setErrorMessage(err instanceof Error ? err.message : 'Error al crear la reserva')
+      setStep('error')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function handlePayment() {
     setLoading(true)
@@ -78,7 +105,7 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
       await Promise.race([verifyPromise, timeoutPromise])
 
       setStep('success')
-      onSuccess(booking.id)
+      onSuccess(booking.id, 'paid')
     } catch (err) {
       console.error('Payment error:', err)
       setErrorMessage(err instanceof Error ? err.message : 'Error al procesar el pago')
@@ -92,7 +119,7 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
     return (
       <div className="py-14 text-center">
         <Loader2 className="mx-auto mb-4 size-8 animate-spin text-primary" />
-        <h2 className="mb-2 text-2xl font-semibold tracking-normal text-primary">Procesando pago...</h2>
+        <h2 className="mb-2 text-2xl font-semibold tracking-normal text-primary">Procesando tu reserva...</h2>
         <p className="text-muted-foreground">Por favor no cierres esta ventana</p>
       </div>
     )
@@ -115,26 +142,50 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
   if (availability && !availability.available) {
     return (
       <div>
-        <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Pago de abono</h2>
+        <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Confirmar reserva</h2>
         <p className="mb-8 text-lg text-muted-foreground">Resumen de tu reserva</p>
 
         <div className="mb-6 space-y-3 rounded-xl bg-muted/55 p-5">
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">${data.servicePrice.toLocaleString('es-CL')}</span></div>
-          <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono a pagar</span><span className="font-semibold text-primary">${data.serviceDeposit.toLocaleString('es-CL')}</span></div>
+          <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono requerido</span><span className="font-semibold text-primary">${data.serviceDeposit.toLocaleString('es-CL')}</span></div>
         </div>
 
         <div className="mb-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <AlertCircle className="mt-0.5 size-5 shrink-0" />
           <div>
-            <p className="font-semibold">Pago online no disponible</p>
-            <p className="mt-1">{availability.reason || 'El checkout en línea no está habilitado para este negocio. Contacta al negocio para coordinar el pago de tu abono.'}</p>
+            <p className="font-semibold">Este negocio coordina el abono directamente por WhatsApp o transferencia</p>
+            <p className="mt-1">Tu reserva quedará pendiente hasta que el negocio confirme el abono.</p>
           </div>
+        </div>
+
+        <div className="mb-4 flex items-start gap-3">
+          <input
+            type="checkbox"
+            id="accept-terms"
+            checked={acceptedTerms}
+            onChange={(e) => setAcceptedTerms(e.target.checked)}
+            className="mt-0.5 size-4 rounded border-border accent-primary"
+          />
+          <label htmlFor="accept-terms" className="text-sm text-muted-foreground">
+            Acepto la{' '}
+            <a href="/refund-policy" target="_blank" className="font-semibold text-primary underline">
+              política de cancelación y reembolso
+            </a>{' '}
+            del negocio y los{' '}
+            <a href="/terms" target="_blank" className="font-semibold text-primary underline">
+              Términos y Condiciones
+            </a>{' '}
+            de Agendita
+          </label>
         </div>
 
         <div className="flex gap-3">
           <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
+          <Button className="h-12 flex-1 text-base font-semibold" onClick={handleManualBooking} disabled={loading || !acceptedTerms}>
+            {loading ? 'Creando reserva...' : 'Confirmar reserva'}
+          </Button>
         </div>
       </div>
     )

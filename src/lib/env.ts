@@ -88,9 +88,17 @@ export function validateEnv(): EnvValidationResult {
     }
   }
 
-  // --- PAYMENT_PROVIDER always required ---
-  if (!process.env.PAYMENT_PROVIDER) {
-    errors.push({ key: 'PAYMENT_PROVIDER', message: 'PAYMENT_PROVIDER is required' })
+  // --- PAYMENT_PROVIDER: opcional en multi-tenant (OAuth por negocio) ---
+  // Si no hay PAYMENT_PROVIDER pero si Mercado Pago OAuth envs, es multi-tenant válido.
+  const hasMpOAuth =
+    !!process.env.MERCADO_PAGO_CLIENT_ID &&
+    !!process.env.MERCADO_PAGO_CLIENT_SECRET &&
+    !!process.env.MERCADO_PAGO_REDIRECT_URI
+  if (!process.env.PAYMENT_PROVIDER && !hasMpOAuth) {
+    warnings.push({
+      key: 'PAYMENT_PROVIDER',
+      message: 'PAYMENT_PROVIDER is not configured. Set it to manual for dashboard-only reservations, or configure Mercado Pago OAuth for multi-tenant online payments.',
+    })
   }
 
   // --- Format validation: APP_DOMAIN ---
@@ -129,11 +137,11 @@ export function validateEnv(): EnvValidationResult {
     })
   }
 
-  // --- PAYMENT_PROVIDER required in production ---
-  if (isProduction && !configured) {
+  // --- PAYMENT_PROVIDER required in production unless OAuth is configured ---
+  if (isProduction && !configured && !hasMpOAuth) {
     errors.push({
       key: 'PAYMENT_PROVIDER',
-      message: 'PAYMENT_PROVIDER is required in production',
+      message: 'PAYMENT_PROVIDER is required in production. Set it to manual for dashboard-only reservations, or configure Mercado Pago OAuth (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI).',
     })
   }
 
@@ -164,16 +172,29 @@ export function validateEnv(): EnvValidationResult {
 
   // --- Mercado Pago in production ---
   if (isProduction && configured === 'mercado_pago') {
-    if (!process.env.MERCADO_PAGO_ACCESS_TOKEN) {
+    if (!hasMpOAuth && !process.env.MERCADO_PAGO_ACCESS_TOKEN) {
       errors.push({
         key: 'MERCADO_PAGO_ACCESS_TOKEN',
-        message: 'MERCADO_PAGO_ACCESS_TOKEN is required in production with Mercado Pago',
+        message: 'MERCADO_PAGO_ACCESS_TOKEN is required in production with Mercado Pago (or configure OAuth: CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)',
       })
     }
     if (!process.env.MERCADO_PAGO_WEBHOOK_SECRET) {
       errors.push({
         key: 'MERCADO_PAGO_WEBHOOK_SECRET',
         message: 'MERCADO_PAGO_WEBHOOK_SECRET is required in production with Mercado Pago',
+      })
+    }
+    if (!process.env.ENCRYPTION_KEY) {
+      errors.push({
+        key: 'ENCRYPTION_KEY',
+        message: 'ENCRYPTION_KEY is required in production with Mercado Pago for per-business token encryption',
+      })
+    }
+  } else if (isProduction && hasMpOAuth && !configured) {
+    if (!process.env.MERCADO_PAGO_WEBHOOK_SECRET) {
+      errors.push({
+        key: 'MERCADO_PAGO_WEBHOOK_SECRET',
+        message: 'MERCADO_PAGO_WEBHOOK_SECRET is required in production with Mercado Pago OAuth',
       })
     }
     if (!process.env.ENCRYPTION_KEY) {

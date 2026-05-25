@@ -84,8 +84,15 @@ export function isOnlinePaymentAvailable(): boolean {
     if (!IMPLEMENTED_PROVIDERS.includes(name)) {
       return false
     }
-    if (name === 'mercado_pago' && !process.env.MERCADO_PAGO_ACCESS_TOKEN) {
-      return false
+    if (name === 'mercado_pago') {
+      // Multi-tenant: el token global no es necesario si hay OAuth configurado
+      const hasMpOAuth =
+        !!process.env.MERCADO_PAGO_CLIENT_ID &&
+        !!process.env.MERCADO_PAGO_CLIENT_SECRET &&
+        !!process.env.MERCADO_PAGO_REDIRECT_URI
+      if (!process.env.MERCADO_PAGO_ACCESS_TOKEN && !hasMpOAuth) {
+        return false
+      }
     }
     return true
   }
@@ -164,11 +171,15 @@ export function resolveOnlinePaymentAvailability(): OnlinePaymentAvailability {
       }
     }
     if (name === 'mercado_pago') {
-      if (!process.env.MERCADO_PAGO_ACCESS_TOKEN) {
+      const hasMpOAuth =
+        !!process.env.MERCADO_PAGO_CLIENT_ID &&
+        !!process.env.MERCADO_PAGO_CLIENT_SECRET &&
+        !!process.env.MERCADO_PAGO_REDIRECT_URI
+      if (!process.env.MERCADO_PAGO_ACCESS_TOKEN && !hasMpOAuth) {
         return {
           available: false,
           provider: 'mercado_pago',
-          reason: 'MERCADO_PAGO_ACCESS_TOKEN no está configurado.',
+          reason: 'Mercado Pago no está configurado (ACCESS_TOKEN u OAuth requerido).',
           isMock: false,
         }
       }
@@ -298,10 +309,38 @@ export async function getMercadoPagoProviderForBusiness(
 
 /**
  * Multi-tenant: resolves availability of online payments for a specific business.
+ * Respeta el PAYMENT_PROVIDER global: si está en manual, nunca hay checkout online
+ * aunque el negocio tenga PaymentAccount.connected.
  */
 export async function resolveOnlinePaymentAvailabilityForBusiness(
   businessId: string
 ): Promise<OnlinePaymentAvailability> {
+  // Solo PAYMENT_PROVIDER=mercado_pago (u OAuth sin provider) habilita MP por negocio.
+  // manual, mock, webpay y cualquier otro proveedor => nunca checkout online MP.
+  const configured = getConfiguredPaymentProviderName()
+  const hasMpOAuth =
+    !!process.env.MERCADO_PAGO_CLIENT_ID &&
+    !!process.env.MERCADO_PAGO_CLIENT_SECRET &&
+    !!process.env.MERCADO_PAGO_REDIRECT_URI
+
+  if (configured && configured !== 'mercado_pago') {
+    return {
+      available: false,
+      provider: null,
+      reason: 'Este negocio coordina el abono directamente por WhatsApp o transferencia.',
+      isMock: false,
+    }
+  }
+
+  if (!configured && !hasMpOAuth) {
+    return {
+      available: false,
+      provider: null,
+      reason: 'Este negocio coordina el abono directamente por WhatsApp o transferencia.',
+      isMock: false,
+    }
+  }
+
   const account = await prisma.paymentAccount.findFirst({
     where: {
       businessId,

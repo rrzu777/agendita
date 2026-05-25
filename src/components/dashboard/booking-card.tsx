@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { BookingDrawer } from './booking-drawer'
 import { updateBookingStatus } from '@/server/actions/bookings'
-import { CheckCircle, XCircle, UserX, CreditCard, Eye } from 'lucide-react'
+import { CheckCircle, UserX, CreditCard, Eye, RefreshCw } from 'lucide-react'
+import { CancelBookingButton } from './cancel-booking-button'
 
 const statusLabels: Record<string, string> = {
   pending_payment: 'Pendiente de pago',
@@ -123,16 +124,21 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
               Completar
             </Button>
           )}
+          {booking.status === 'confirmed' && (
+            <a href={`/dashboard/bookings/${booking.id}/reschedule`}>
+              <Button size="xs" variant="outline" disabled={isPending}>
+                <RefreshCw className="mr-1 size-3" />
+                Reprogramar
+              </Button>
+            </a>
+          )}
           {canCancel && (
-            <Button
-              size="xs"
+            <CancelBookingButton
+              bookingId={booking.id}
               variant="destructive"
-              onClick={() => handleStatusChange('cancelled')}
-              disabled={isPending}
-            >
-              <XCircle className="mr-1 size-3" />
-              Cancelar
-            </Button>
+              size="xs"
+              label="Cancelar"
+            />
           )}
           {canNoShow && (
             <Button

@@ -3,7 +3,7 @@
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import type { Booking } from '@prisma/client'
-import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
+import { BookingStatus, BookingPaymentStatus, PaymentType } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
@@ -11,7 +11,6 @@ import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth
 import { logger } from '@/lib/logger'
 
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
-import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
 import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcement'
 import { addMinutes } from 'date-fns'
 import {
@@ -528,12 +527,15 @@ export async function createBookingFromDashboard(data: {
     }
 
     const noDepositNeeded = depositRequired === 0
-    const status = (markDepositPaid || noDepositNeeded) ? BookingStatus.confirmed : BookingStatus.pending_payment
-    const paymentStatus = markDepositPaid
-      ? (depositRequired >= finalAmount ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.deposit_paid)
-      : noDepositNeeded
-        ? BookingPaymentStatus.fully_paid
-        : BookingPaymentStatus.unpaid
+    const isFreeService = finalAmount === 0
+
+    const status = (markDepositPaid || noDepositNeeded)
+      ? BookingStatus.confirmed
+      : BookingStatus.pending_payment
+
+    const initialPaymentStatus = isFreeService
+      ? BookingPaymentStatus.fully_paid
+      : BookingPaymentStatus.unpaid
 
     const newBooking = await tx.booking.create({
       data: {
@@ -545,10 +547,10 @@ export async function createBookingFromDashboard(data: {
         status,
         totalPrice,
         depositRequired,
-        depositPaid: markDepositPaid ? depositRequired : 0,
-        remainingBalance: markDepositPaid ? Math.max(0, finalAmount - depositRequired) : finalAmount,
+        depositPaid: 0,
+        remainingBalance: finalAmount,
         finalAmount,
-        paymentStatus,
+        paymentStatus: initialPaymentStatus,
         internalNotes: data.internalNotes || null,
         holdExpiresAt: status === BookingStatus.pending_payment ? addMinutes(new Date(), 60) : null,
       },
@@ -557,14 +559,13 @@ export async function createBookingFromDashboard(data: {
 
     if (markDepositPaid && depositRequired > 0) {
       const { applyApprovedPayment } = await import('@/server/services/finance')
-      const derivedType = deriveManualPaymentType(newBooking, depositRequired)
 
-      await tx.payment.create({
+      const payment = await tx.payment.create({
         data: {
           businessId,
           bookingId: newBooking.id,
           customerId: customer.id,
-          paymentType: derivedType,
+          paymentType: PaymentType.deposit,
           provider: 'manual',
           providerPaymentId: null,
           amount: depositRequired,
@@ -575,11 +576,6 @@ export async function createBookingFromDashboard(data: {
         },
       })
 
-      const paymentForApply = await tx.payment.findFirstOrThrow({
-        where: { bookingId: newBooking.id },
-        orderBy: { createdAt: 'desc' },
-      })
-
       await applyApprovedPayment({
         tx,
         bookingId: newBooking.id,
@@ -588,9 +584,9 @@ export async function createBookingFromDashboard(data: {
         currency: business.currency || 'CLP',
         provider: 'manual',
         providerPaymentId: null,
-        paymentType: derivedType,
+        paymentType: PaymentType.deposit,
         paymentMethod: 'Efectivo / Transferencia',
-        paymentId: paymentForApply.id,
+        paymentId: payment.id,
       })
     }
 
@@ -603,11 +599,6 @@ export async function createBookingFromDashboard(data: {
 
   return booking
 }
-
-const cancelBookingSchema = z.object({
-  bookingId: z.string().min(1),
-  reason: z.string().max(500).optional(),
-})
 
 export async function cancelBooking(bookingId: string, reason?: string) {
   const { business, businessId } = await requireBusinessRole(['owner', 'admin'])
@@ -658,11 +649,6 @@ export async function cancelBooking(bookingId: string, reason?: string) {
 
   return { cancelled: true }
 }
-
-const rescheduleBookingSchema = z.object({
-  bookingId: z.string().min(1),
-  newStartDateTime: z.date(),
-})
 
 export async function rescheduleBooking(bookingId: string, newStartDateTime: Date) {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
