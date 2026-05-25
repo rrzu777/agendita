@@ -131,6 +131,15 @@ describe('Mercado Pago webhook', () => {
     })
     vi.clearAllMocks()
     mockMpFetch.mockReset()
+
+    mockPrisma.paymentAccount.findFirst.mockReset().mockResolvedValue({
+      id: 'pa-1',
+      businessId: 'biz-1',
+      provider: 'mercado_pago',
+      status: 'connected',
+      accessTokenEncrypted: 'encrypted-test-token',
+    })
+
     vi.resetModules()
 
     const handlers = await getHandlers()
@@ -154,12 +163,16 @@ describe('Mercado Pago webhook', () => {
   }
 
   describe('signature validation', () => {
+    beforeEach(() => {
+      mockPrisma.payment.findUnique.mockResolvedValue(basePayment)
+    })
+
     it('accepts valid signature', async () => {
       const secret = 'test-webhook-secret'
       const body = { data: { id: 'mp-pay-001' } }
       const signature = createMpSignatureHeader('mp-pay-001', 'req-123', secret)
 
-      mockMpFetch.mockResolvedValueOnce({
+      mockMpFetch.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve(baseMpPayment),
       })
@@ -217,7 +230,7 @@ describe('Mercado Pago webhook', () => {
       const secret = 'test-webhook-secret'
       const signature = createMpSignatureHeader('mp-pay-qp', 'req-qp', secret)
 
-      mockMpFetch.mockResolvedValueOnce({
+      mockMpFetch.mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
@@ -283,7 +296,7 @@ describe('Mercado Pago webhook', () => {
       const v1 = createHmac('sha256', secret).update(manifest).digest('hex')
       const signature = `ts=${ts},v1=${v1}`
 
-      mockMpFetch.mockResolvedValueOnce({
+      mockMpFetch.mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
@@ -325,7 +338,7 @@ describe('Mercado Pago webhook', () => {
       const body = { data: { id: 'mp-pay-001' } }
       const signature = createMpSignatureHeader('mp-pay-001', 'req-123', secret)
 
-      mockMpFetch.mockResolvedValueOnce({
+      mockMpFetch.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve(baseMpPayment),
       })
@@ -369,7 +382,7 @@ describe('Mercado Pago webhook', () => {
       const body = { data: { id: 'mp-pay-001' } }
       const signature = createMpSignatureHeader('mp-pay-001', 'req-123', secret)
 
-      mockMpFetch.mockResolvedValueOnce({
+      mockMpFetch.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve(baseMpPayment),
       })
@@ -397,7 +410,7 @@ describe('Mercado Pago webhook', () => {
       const body = { data: { id: 'mp-pay-002' } }
       const signature = createMpSignatureHeader('mp-pay-002', 'req-456', secret)
 
-      mockMpFetch.mockResolvedValueOnce({
+      mockMpFetch.mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
@@ -431,7 +444,7 @@ describe('Mercado Pago webhook', () => {
       const body = { data: { id: 'mp-pay-003' } }
       const signature = createMpSignatureHeader('mp-pay-003', 'req-789', secret)
 
-      mockMpFetch.mockResolvedValueOnce({
+      mockMpFetch.mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
@@ -475,7 +488,7 @@ describe('Mercado Pago webhook', () => {
       const body = { data: { id: 'mp-pay-004' } }
       const signature = createMpSignatureHeader('mp-pay-004', 'req-000', secret)
 
-      mockMpFetch.mockResolvedValueOnce({
+      mockMpFetch.mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
@@ -527,7 +540,7 @@ describe('Mercado Pago webhook', () => {
       const body = { data: { id: 'mp-pay-005' } }
       const signature = createMpSignatureHeader('mp-pay-005', 'req-111', secret)
 
-      mockMpFetch.mockResolvedValueOnce({
+      mockMpFetch.mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
@@ -559,7 +572,7 @@ describe('Mercado Pago webhook', () => {
       const body = { data: { id: 'mp-pay-006' } }
       const signature = createMpSignatureHeader('mp-pay-006', 'req-222', secret)
 
-      mockMpFetch.mockResolvedValueOnce({
+      mockMpFetch.mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
@@ -595,7 +608,7 @@ describe('Mercado Pago webhook', () => {
       const body = { data: { id: 'mp-pay-nometa' } }
       const signature = createMpSignatureHeader('mp-pay-nometa', 'req-nometa', secret)
 
-      mockMpFetch.mockResolvedValueOnce({
+      mockMpFetch.mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
@@ -627,7 +640,7 @@ describe('Mercado Pago webhook', () => {
       const body = { data: { id: 'mp-pay-partial' } }
       const signature = createMpSignatureHeader('mp-pay-partial', 'req-partial', secret)
 
-      mockMpFetch.mockResolvedValueOnce({
+      mockMpFetch.mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
@@ -663,7 +676,7 @@ describe('Mercado Pago webhook', () => {
       const body = { data: { id: 'mp-pay-lpmm' } }
       const signature = createMpSignatureHeader('mp-pay-lpmm', 'req-lpmm', secret)
 
-      mockMpFetch.mockResolvedValueOnce({
+      mockMpFetch.mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
@@ -723,7 +736,7 @@ describe('Mercado Pago webhook', () => {
       const body = { data: { id: 'mp-pay-007' } }
       const signature = createMpSignatureHeader('mp-pay-007', 'req-333', secret)
 
-      mockMpFetch.mockResolvedValueOnce({
+      mockMpFetch.mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
@@ -742,6 +755,98 @@ describe('Mercado Pago webhook', () => {
       const res = await POST(req)
 
       expect(res.status).toBe(404)
+      expect(applyApprovedPayment).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('approved payments fail-closed without business token', () => {
+    beforeEach(() => {
+      setEnv({
+        NODE_ENV: 'development',
+        MERCADO_PAGO_ACCESS_TOKEN: 'test-access-token',
+        MERCADO_PAGO_WEBHOOK_SECRET: undefined,
+      })
+      mockPrisma.paymentAccount.findFirst.mockReset()
+      mockPrisma.payment.findUnique.mockReset()
+      vi.clearAllMocks()
+    })
+
+    const approvedPaymentBody = {
+      ...baseMpPayment,
+      status: 'approved',
+      external_reference: 'pay-local-fc',
+      transaction_amount: 10000,
+      currency_id: 'CLP',
+      metadata: {
+        localPaymentId: 'pay-local-fc',
+        bookingId: 'booking-fc',
+        businessId: 'biz-1',
+        paymentType: 'deposit',
+      },
+    }
+
+    function setupApprovedWebhook() {
+      mockMpFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(approvedPaymentBody),
+      })
+
+      mockPrisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-local-fc',
+        bookingId: 'booking-fc',
+        businessId: 'biz-1',
+        provider: 'mercado_pago',
+        amount: 10000,
+        currency: 'CLP',
+        status: 'pending',
+        providerPaymentId: null,
+        paymentType: 'deposit',
+        paymentMethod: null,
+        booking: {
+          id: 'booking-fc',
+          businessId: 'biz-1',
+          customerId: 'cust-1',
+          status: 'pending_payment',
+          totalPrice: 20000,
+          depositRequired: 10000,
+          depositPaid: 0,
+          remainingBalance: 20000,
+          finalAmount: 20000,
+          paymentStatus: 'unpaid',
+        },
+      })
+    }
+
+    it('rejects approved payment when business has no connected PaymentAccount', async () => {
+      setupApprovedWebhook()
+      mockPrisma.paymentAccount.findFirst.mockResolvedValue(null)
+
+      const req = makeRequest(approvedPaymentBody)
+      const res = await POST(req)
+
+      expect(res.status).toBe(400)
+      expect(applyApprovedPayment).not.toHaveBeenCalled()
+    })
+
+    it('rejects approved payment when decrypt of business token fails', async () => {
+      setupApprovedWebhook()
+      mockPrisma.paymentAccount.findFirst.mockResolvedValue({
+        id: 'pa-1',
+        businessId: 'biz-1',
+        provider: 'mercado_pago',
+        status: 'connected',
+        accessTokenEncrypted: 'invalid-ciphertext',
+      })
+
+      const { decryptSecret } = await import('@/lib/payments/encryption')
+      vi.mocked(decryptSecret).mockImplementationOnce(() => {
+        throw new Error('Decrypt failed')
+      })
+
+      const req = makeRequest(approvedPaymentBody)
+      const res = await POST(req)
+
+      expect(res.status).toBe(500)
       expect(applyApprovedPayment).not.toHaveBeenCalled()
     })
   })

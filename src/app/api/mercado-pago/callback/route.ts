@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { encryptSecret } from '@/lib/payments/encryption'
-import { createHmac } from 'crypto'
+import { verifyStateSignature } from '@/lib/payments/oauth-state'
+import { createClient } from '@/lib/auth/middleware'
 
 function verifyState(state: string): { businessId: string; valid: boolean } {
   const parts = state.split(':')
@@ -16,24 +17,10 @@ function verifyState(state: string): { businessId: string; valid: boolean } {
     return { businessId: businessId || '', valid: false }
   }
 
-  const expectedSig = createHmac('sha256', process.env.ENCRYPTION_KEY || 'dev-secret')
-    .update(`${businessId}:${stateValue}:${expiresAt}`)
-    .digest('hex')
+  const payload = `${businessId}:${stateValue}:${expiresAtStr}`
+  const valid = verifyStateSignature(payload, signature)
 
-  if (!timingSafeEqualStr(signature, expectedSig)) {
-    return { businessId: businessId || '', valid: false }
-  }
-
-  return { businessId, valid: true }
-}
-
-function timingSafeEqualStr(a: string, b: string): boolean {
-  if (a.length !== b.length) return false
-  let result = 0
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i)
-  }
-  return result === 0
+  return { businessId: businessId || '', valid }
 }
 
 export async function GET(request: NextRequest) {
@@ -62,15 +49,54 @@ export async function GET(request: NextRequest) {
     )
   }
 
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.redirect(
+      new URL('/dashboard/settings/payments?error=not_authenticated', request.url),
+    )
+  }
+
+  const membership = await prisma.businessUser.findFirst({
+    where: { businessId, userId: user.id },
+    select: { role: true },
+  })
+
+  if (!membership || !['owner', 'admin'].includes(membership.role)) {
+    return NextResponse.redirect(
+      new URL('/dashboard/settings/payments?error=not_authorized', request.url),
+    )
+  }
+
+  const business = await prisma.business.findUnique({
+    where: { id: businessId, isActive: true },
+    select: { id: true },
+  })
+
+  if (!business) {
+    return NextResponse.redirect(
+      new URL('/dashboard/settings/payments?error=business_not_found', request.url),
+    )
+  }
+
+  const clientId = process.env.MERCADO_PAGO_CLIENT_ID
+  const clientSecret = process.env.MERCADO_PAGO_CLIENT_SECRET
   const redirectUri = process.env.MERCADO_PAGO_REDIRECT_URI
+
+  if (!clientId || !clientSecret || !redirectUri) {
+    return NextResponse.redirect(
+      new URL('/dashboard/settings/payments?error=mp_not_configured', request.url),
+    )
+  }
 
   try {
     const tokenRes = await fetch('https://api.mercadopago.com/oauth/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        client_id: process.env.MERCADO_PAGO_CLIENT_ID,
-        client_secret: process.env.MERCADO_PAGO_CLIENT_SECRET,
+        client_id: clientId,
+        client_secret: clientSecret,
         code,
         grant_type: 'authorization_code',
         redirect_uri: redirectUri,

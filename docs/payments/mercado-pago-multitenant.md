@@ -71,16 +71,21 @@ Unique constraint: `[businessId, provider]`
 
 1. Mercado Pago POST a `/api/webhooks/mercado-pago` con data.id
 2. Validar firma con `MERCADO_PAGO_WEBHOOK_SECRET` (HMAC SHA-256)
-3. Consultar pago a MP con **token global** (solo para obtener external_reference)
+3. Consultar pago a MP con **token global** (SOLO para obtener external_reference)
+   - El token global es MERCADO_PAGO_ACCESS_TOKEN, credencial a nivel de aplicación
+   - Se usa **exclusivamente** para el lookup inicial del external_reference
+   - NUNCA se usa para aplicar/confirmar pagos
 4. Resolver Payment local via external_reference = localPaymentId
 5. Obtener businessId desde Payment
-6. Buscar PaymentAccount.connected para ese businessId
-7. Desencriptar token del negocio
-8. Reconsultar MP con **token del negocio** para verificación
-9. Validar metadata: localPaymentId, bookingId, businessId, paymentType
-10. Validar amount, currency, provider
-11. Si approved: `applyApprovedPayment` vía servicio financiero central
-12. Si ya approved: retornar 200 idempotentemente
+6. **Para pagos approved: OBLIGATORIO** buscar PaymentAccount.connected para ese businessId
+   - Si no existe PaymentAccount → RECHAZAR (no aplicar pago)
+   - Si falla decrypt del token → RECHAZAR (no aplicar pago)
+   - Si falla fetch con token del negocio → RECHAZAR (no aplicar pago)
+   - Solo tras re-verificación exitosa con token del negocio → continuar
+7. Validar metadata: localPaymentId, bookingId, businessId, paymentType
+8. Validar amount, currency, provider
+9. Si approved: `applyApprovedPayment` vía servicio financiero central
+10. Si ya approved: retornar 200 idempotentemente
 
 ## Desconexión
 
@@ -96,10 +101,22 @@ Unique constraint: `[businessId, provider]`
 | MERCADO_PAGO_CLIENT_ID | OAuth client_id | Solo para OAuth connect |
 | MERCADO_PAGO_CLIENT_SECRET | OAuth client_secret | Solo para OAuth connect |
 | MERCADO_PAGO_REDIRECT_URI | OAuth callback URL | Solo para OAuth connect |
-| MERCADO_PAGO_ACCESS_TOKEN | Token global (webhook lookup inicial) | Sí (webhook fallback) |
+| MERCADO_PAGO_ACCESS_TOKEN | **Token nivel app. Solo para lookup inicial de external_reference en webhook. NUNCA para aplicar pagos.** | Sí (webhook lookup) |
 | MERCADO_PAGO_WEBHOOK_SECRET | Firma webhook HMAC | Sí en producción |
-| ENCRYPTION_KEY | Clave para cifrar/descifrar tokens | Sí |
-| APP_URL | URL base de la app | Sí |
+| ENCRYPTION_KEY | Clave para cifrar/descifrar tokens de negocios + firmar OAuth state | **Sí — obligatorio para Mercado Pago** |
+| APP_URL | URL base de la app (usada para notification_url del webhook) | Sí |
+
+### Semántica de MERCADO_PAGO_ACCESS_TOKEN
+
+El `MERCADO_PAGO_ACCESS_TOKEN` es una credencial a **nivel de aplicación** (no de negocio).
+Se usa **exclusivamente** para:
+1. El lookup inicial en el webhook (obtener `external_reference` desde un pago)
+2. Cualquier operación de infraestructura que no involucre dinero de tenants
+
+**NUNCA** se usa para:
+- Crear preferencias de pago para negocios (eso usa el token del negocio)
+- Aplicar/confirmar pagos (eso requiere re-verificación con token del negocio)
+- Cobrar a nombre de un negocio
 
 ## Restricciones
 

@@ -176,6 +176,12 @@ export function validateEnv(): EnvValidationResult {
         message: 'MERCADO_PAGO_WEBHOOK_SECRET is required in production with Mercado Pago',
       })
     }
+    if (!process.env.ENCRYPTION_KEY) {
+      errors.push({
+        key: 'ENCRYPTION_KEY',
+        message: 'ENCRYPTION_KEY is required in production with Mercado Pago for per-business token encryption',
+      })
+    }
   }
 
   // --- Email in production ---

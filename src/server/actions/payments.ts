@@ -21,7 +21,17 @@ import { sendBookingConfirmedNotification, sendNotificationSafely } from '@/lib/
 import { logger } from '@/lib/logger'
 
 
-const initiatePaymentSchema = z.object({
+function getAppUrl(): string {
+  const raw = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_DOMAIN || ''
+  const clean = raw.replace(/\/$/, '')
+  if (clean.startsWith('localhost') || clean.startsWith('127.0.0.1')) {
+    return `http://${clean}`
+  }
+  if (clean.startsWith('http')) {
+    return clean
+  }
+  return `https://${clean}`
+}const initiatePaymentSchema = z.object({
   bookingId: z.string().min(1),
   amount: z.number().positive().optional(),
   currency: z.string().min(2).max(3).optional(),
@@ -146,7 +156,7 @@ export async function initiatePayment(data: {
       bookingId: data.bookingId,
       description,
       returnUrl: `${baseUrl}/book/confirmation?bookingId=${data.bookingId}`,
-      webhookUrl: `${baseUrl}/api/webhooks/mercado-pago`,
+      webhookUrl: `${getAppUrl()}/api/webhooks/mercado-pago`,
       localPaymentId,
       customerEmail: booking.customer?.email ?? null,
       metadata: {
@@ -176,7 +186,7 @@ export async function initiatePayment(data: {
     bookingId: data.bookingId,
     description,
     returnUrl: `${baseUrl}/book/confirmation?bookingId=${data.bookingId}`,
-    webhookUrl: `${baseUrl}/api/webhooks/${provider.name}`,
+    webhookUrl: `${getAppUrl()}/api/webhooks/${provider.name}`,
   })
 
   await prisma.payment.create({

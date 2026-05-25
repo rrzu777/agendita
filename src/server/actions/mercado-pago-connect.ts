@@ -3,11 +3,11 @@
 import { prisma } from '@/lib/db'
 import { requireBusiness } from '@/lib/auth/server'
 import { encryptSecret } from '@/lib/payments/encryption'
-import { createHmac, randomBytes } from 'crypto'
+import { signState } from '@/lib/payments/oauth-state'
+import { randomBytes } from 'crypto'
 import { redirect } from 'next/navigation'
 
 const MP_AUTH_URL = 'https://auth.mercadopago.cl/authorization'
-const MP_TOKEN_URL = 'https://api.mercadopago.com/oauth/token'
 
 export async function startMercadoPagoConnect() {
   const { businessId } = await requireBusiness()
@@ -23,12 +23,16 @@ export async function startMercadoPagoConnect() {
 
   const stateValue = randomBytes(32).toString('hex')
   const expiresAt = Date.now() + 10 * 60 * 1000
+  const payload = `${businessId}:${stateValue}:${expiresAt}`
 
-  const signature = createHmac('sha256', process.env.ENCRYPTION_KEY || 'dev-secret')
-    .update(`${businessId}:${stateValue}:${expiresAt}`)
-    .digest('hex')
+  let signature: string
+  try {
+    signature = signState(payload)
+  } catch {
+    throw new Error('ENCRYPTION_KEY must be configured for Mercado Pago OAuth')
+  }
 
-  const state = `${businessId}:${stateValue}:${expiresAt}:${signature}`
+  const state = `${payload}:${signature}`
 
   const params = new URLSearchParams({
     client_id: clientId,

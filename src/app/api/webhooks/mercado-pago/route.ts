@@ -171,11 +171,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Payment provider mismatch' }, { status: 400 })
     }
 
-    // Paso 2: Resolver PaymentAccount del negocio para verificar con su token.
-    // Para pagos approved, reconsultamos MP con el token del negocio para
-    // asegurar que el pago realmente se hizo a su cuenta.
+    // Paso 2: Para pagos approved, REQUERIR verificación con token del negocio.
+    // El token global se usó solo para el lookup inicial del external_reference.
+    // NUNCA aplicar un pago approved sin re-verificar con el token del negocio.
     const mpStatus = mpPayment.status
-    let businessToken: string | null = null
 
     if (mpStatus === 'approved') {
       const paymentAccount = await prisma.paymentAccount.findFirst({
@@ -187,33 +186,34 @@ export async function POST(request: NextRequest) {
       })
 
       if (!paymentAccount) {
-        console.warn('[MP Webhook] Business has no connected Mercado Pago account, verifying with global token', {
-          businessId: payment.businessId,
-        })
-      } else {
-        try {
-          businessToken = decryptSecret(paymentAccount.accessTokenEncrypted)
-        } catch {
-          logger.webhook.rejected('mercado_pago', 'Failed to decrypt business token', requestId)
-          return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
-        }
+        logger.webhook.rejected('mercado_pago', 'No connected PaymentAccount for approved payment', requestId)
+        return NextResponse.json({
+          error: 'Business has no connected Mercado Pago account',
+        }, { status: 400 })
       }
-    }
 
-    // Si tenemos token del negocio, reconsultar MP con ese token para verificación
-    if (businessToken && businessToken !== globalToken) {
+      let businessToken: string
+      try {
+        businessToken = decryptSecret(paymentAccount.accessTokenEncrypted)
+      } catch {
+        logger.webhook.rejected('mercado_pago', 'Failed to decrypt business token for approved payment', requestId)
+        return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+      }
+
       try {
         const verifiedPayment = await mpFetchWithToken<MpPayment>(
           `/v1/payments/${mpPaymentId}`,
           businessToken,
         )
-        // Usar los datos verificados con el token del negocio
         Object.assign(mpPayment, verifiedPayment)
       } catch (e) {
-        console.warn('[MP Webhook] Failed to verify payment with business token, using global token result', {
-          businessId: payment.businessId,
-          error: e instanceof Error ? e.message : 'Unknown',
-        })
+        logger.webhook.rejected('mercado_pago',
+          `Failed to re-verify approved payment with business token: ${e instanceof Error ? e.message : 'Unknown'}`,
+          requestId,
+        )
+        return NextResponse.json({
+          error: 'Failed to verify payment with business credentials',
+        }, { status: 502 })
       }
     }
 
