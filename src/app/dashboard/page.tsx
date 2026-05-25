@@ -15,6 +15,10 @@ export default async function DashboardPage() {
     redirect('/login')
   }
 
+  if (!userData.business.onboardingCompletedAt) {
+    redirect('/dashboard/onboarding')
+  }
+
   const business = userData.business
   const bookings = await getBookings()
   const summary = await getFinancialSummary()

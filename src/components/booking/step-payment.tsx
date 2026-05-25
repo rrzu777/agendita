@@ -19,6 +19,7 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error'>('review')
   const [errorMessage, setErrorMessage] = useState('')
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [availability, setAvailability] = useState<{
     available: boolean
     provider: string | null
@@ -49,6 +50,7 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
         customerEmail: data.customerEmail,
         startDateTime: data.timeSlot!.start,
         idempotencyKey,
+        acceptedTerms,
       }, businessId)
 
       // Initiate payment with provider
@@ -165,9 +167,30 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
         </div>
       )}
 
+      <div className="mb-4 flex items-start gap-3">
+        <input
+          type="checkbox"
+          id="accept-terms"
+          checked={acceptedTerms}
+          onChange={(e) => setAcceptedTerms(e.target.checked)}
+          className="mt-0.5 size-4 rounded border-border accent-primary"
+        />
+        <label htmlFor="accept-terms" className="text-sm text-muted-foreground">
+          Acepto la{' '}
+          <a href="/refund-policy" target="_blank" className="font-semibold text-primary underline">
+            política de cancelación y reembolso
+          </a>{' '}
+          del negocio y los{' '}
+          <a href="/terms" target="_blank" className="font-semibold text-primary underline">
+            Términos y Condiciones
+          </a>{' '}
+          de Agendita
+        </label>
+      </div>
+
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
-        <Button className="h-12 flex-1 text-base font-semibold" onClick={handlePayment} disabled={loading}>
+        <Button className="h-12 flex-1 text-base font-semibold" onClick={handlePayment} disabled={loading || !acceptedTerms}>
           {loading ? 'Procesando...' : `Pagar abono $${data.serviceDeposit.toLocaleString('es-CL')}`}
         </Button>
       </div>

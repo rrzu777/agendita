@@ -7,6 +7,7 @@ import type {
   CancellationEmailData,
   ReviewRequestEmailData,
   NewBookingBusinessEmailData,
+  ReminderEmailData,
 } from './types'
 import {
   bookingConfirmationCustomerHtml,
@@ -19,6 +20,8 @@ import {
   bookingCancelledCustomerText,
   reviewRequestHtml,
   reviewRequestText,
+  bookingReminderHtml,
+  bookingReminderText,
 } from './templates'
 
 function getResend(): Resend | null {
@@ -262,4 +265,10 @@ export async function sendMultiNotificationSafely(
     console.error(`[notifications] ${label} failed:`, message)
     return [{ success: false, error: message }]
   }
+}
+
+export async function sendReminderEmail(data: ReminderEmailData): Promise<EmailResult> {
+  const html = bookingReminderHtml(data)
+  const text = bookingReminderText(data)
+  return sendEmail(data.customerEmail, 'Recordatorio de tu cita - Agendita', html, text)
 }

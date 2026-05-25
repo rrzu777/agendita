@@ -75,6 +75,7 @@ describe('createBooking idempotency', () => {
     customerPhone: '+56912345678',
     startDateTime: new Date('2026-05-20T14:00:00Z'),
     idempotencyKey: 'key-abc-123',
+    acceptedTerms: true,
   }
 
   beforeEach(() => {
@@ -223,5 +224,87 @@ describe('createBooking idempotency', () => {
 
     expect(result).toEqual(createdBooking)
     expect(mockPrisma.booking.findUnique).not.toHaveBeenCalled()
+  })
+})
+
+describe('createBooking acceptedTerms enforcement', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubEnv('RESEND_API_KEY', '')
+    vi.stubEnv('FROM_EMAIL', '')
+    mockPrisma.business.findUnique.mockResolvedValue({
+      id: 'biz-1',
+      timezone: 'America/Santiago',
+      name: 'Test Business',
+      whatsapp: '+56987654321',
+      addressText: 'Test Address',
+      currency: 'CLP',
+      cancellationPolicy: null,
+      slug: 'test',
+      subdomain: 'test',
+      subscriptionStatus: 'trialing',
+    })
+    mockPrisma.service.findFirst.mockResolvedValue({
+      id: 'svc-1',
+      businessId: 'biz-1',
+      isActive: true,
+      durationMinutes: 60,
+      price: 10000,
+      depositAmount: 5000,
+    })
+  })
+
+  const baseInput = {
+    serviceId: 'svc-1',
+    customerName: 'Juan',
+    customerPhone: '+56912345678',
+    startDateTime: new Date('2026-05-20T14:00:00Z'),
+  }
+
+  it('rejects when acceptedTerms is false', async () => {
+    await expect(
+      createBooking({ ...baseInput, acceptedTerms: false }, 'biz-1')
+    ).rejects.toThrow('Debes aceptar los términos')
+  })
+
+  it('rejects when acceptedTerms is omitted', async () => {
+    await expect(
+      createBooking(baseInput as any, 'biz-1')
+    ).rejects.toThrow('Datos de reserva inválidos')
+  })
+
+  it('allows booking when acceptedTerms is true', async () => {
+    const createdBooking = {
+      id: 'booking-ok',
+      businessId: 'biz-1',
+      serviceId: 'svc-1',
+      customerId: 'cust-1',
+      status: BookingStatus.pending_payment,
+      totalPrice: 10000,
+      depositRequired: 5000,
+      depositPaid: 0,
+      remainingBalance: 10000,
+      finalAmount: 10000,
+      paymentStatus: BookingPaymentStatus.unpaid,
+      startDateTime: new Date('2026-05-20T14:00:00Z'),
+      endDateTime: new Date('2026-05-20T15:00:00Z'),
+      service: { name: 'Manicure' },
+      customer: { name: 'Juan', phone: '+56912345678', email: null },
+    }
+
+    mockPrisma.customer.findFirst.mockResolvedValue(null)
+    mockPrisma.customer.create.mockResolvedValue({ id: 'cust-1' })
+
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
+      const tx = {
+        ...mockPrisma,
+        booking: { ...mockPrisma.booking, create: vi.fn().mockResolvedValue(createdBooking) },
+      }
+      return fn(tx)
+    })
+
+    const result = await createBooking({ ...baseInput, acceptedTerms: true }, 'biz-1')
+
+    expect(result).toEqual(createdBooking)
   })
 })

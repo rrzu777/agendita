@@ -3,7 +3,10 @@ import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 
 async function main() {
-  // Clean up
+  await prisma.subscriptionPayment.deleteMany()
+  await prisma.subscriptionLog.deleteMany()
+  await prisma.businessSubscription.deleteMany()
+  await prisma.plan.deleteMany()
   await prisma.ledgerEntry.deleteMany()
   await prisma.payment.deleteMany()
   await prisma.review.deleteMany()
@@ -17,7 +20,39 @@ async function main() {
   await prisma.business.deleteMany()
   await prisma.user.deleteMany()
 
-  // Create users
+  const betaFreePlan = await prisma.plan.create({
+    data: {
+      name: 'Beta gratis',
+      description: 'Plan gratuito para negocios durante la beta. Acceso completo a todas las funcionalidades.',
+      priceMonthly: 0,
+      priceYearly: 0,
+      isPublic: false,
+      sortOrder: 1,
+    },
+  })
+
+  await prisma.plan.create({
+    data: {
+      name: 'Básico',
+      description: 'Perfil público, reservas ilimitadas y recordatorios por email.',
+      priceMonthly: 14990,
+      priceYearly: 149900,
+      isPublic: true,
+      sortOrder: 2,
+    },
+  })
+
+  await prisma.plan.create({
+    data: {
+      name: 'Pro',
+      description: 'Todo lo del plan Básico más Mercado Pago integrado, WhatsApp recordatorios y reportes.',
+      priceMonthly: 24990,
+      priceYearly: 249900,
+      isPublic: true,
+      sortOrder: 3,
+    },
+  })
+
   const ownerUser = await prisma.user.create({
     data: {
       email: 'owner@mimosnails.com',
@@ -25,7 +60,11 @@ async function main() {
     },
   })
 
-  // Create business
+  const thirtyDaysFromNow = new Date()
+  thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30)
+  const ninetyDaysFromNow = new Date()
+  ninetyDaysFromNow.setDate(ninetyDaysFromNow.getDate() + 90)
+
   const business = await prisma.business.create({
     data: {
       name: 'Mimos Nails',
@@ -39,6 +78,22 @@ async function main() {
       city: 'Santiago',
       currency: 'CLP',
       timezone: 'America/Santiago',
+      planId: betaFreePlan.id,
+      subscriptionStatus: 'trialing',
+      trialEndsAt: ninetyDaysFromNow,
+    },
+  })
+
+  await prisma.businessSubscription.create({
+    data: {
+      businessId: business.id,
+      planId: betaFreePlan.id,
+      status: 'trialing',
+      interval: 'monthly',
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: ninetyDaysFromNow,
+      trialStartAt: new Date(),
+      trialEndAt: ninetyDaysFromNow,
     },
   })
 

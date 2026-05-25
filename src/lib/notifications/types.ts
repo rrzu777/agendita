@@ -61,3 +61,18 @@ export interface NotificationResult {
   customerEmail?: EmailResult
   businessEmails: EmailResult[]
 }
+
+export interface ReminderEmailData {
+  businessName: string
+  customerName: string
+  customerEmail: string
+  serviceName: string
+  startDateTime: Date
+  businessTimezone: string
+  businessWhatsapp?: string | null
+  businessAddress?: string | null
+  businessCurrency: string
+  totalPrice: number
+  remainingBalance: number
+  depositPaid: number
+}

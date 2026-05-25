@@ -18,7 +18,20 @@ const mockPrisma = {
     findFirst: vi.fn(),
     create: vi.fn(),
   },
-}
+  plan: {},
+  user: {},
+  business: {},
+  businessUser: {},
+  businessSubscription: {},
+  subscriptionPayment: {},
+  subscriptionLog: {},
+  service: {},
+  availabilityRule: {},
+  timeBlock: {},
+  customer: {},
+  review: {},
+  galleryImage: {},
+} as any
 
 vi.mock('@/lib/db', () => ({
   prisma: mockPrisma,

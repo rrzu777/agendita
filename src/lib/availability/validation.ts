@@ -10,6 +10,7 @@ export interface AssertSlotInput {
   startDateTime: Date
   endDateTime: Date
   timezone: string
+  excludeBookingId?: string
 }
 
 function hashStringToInt(str: string): number {
@@ -115,14 +116,24 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
   const hash = hashStringToInt(lockKey)
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(${hash})`
 
-  const overlappingBookings = await tx.$queryRaw`
-    SELECT "id" FROM "Booking"
-    WHERE "businessId" = ${businessId}
-      AND "status" IN ('pending_payment', 'confirmed', 'completed')
-      AND "startDateTime" < ${endDateTime}
-      AND "endDateTime" > ${startDateTime}
-    FOR UPDATE
-  `
+  const overlappingBookings = input.excludeBookingId
+    ? await tx.$queryRaw`
+      SELECT "id" FROM "Booking"
+      WHERE "businessId" = ${businessId}
+        AND "status" IN ('pending_payment', 'confirmed', 'completed')
+        AND "startDateTime" < ${endDateTime}
+        AND "endDateTime" > ${startDateTime}
+        AND "id" != ${input.excludeBookingId}
+      FOR UPDATE
+    `
+    : await tx.$queryRaw`
+      SELECT "id" FROM "Booking"
+      WHERE "businessId" = ${businessId}
+        AND "status" IN ('pending_payment', 'confirmed', 'completed')
+        AND "startDateTime" < ${endDateTime}
+        AND "endDateTime" > ${startDateTime}
+      FOR UPDATE
+    `
   if (Array.isArray(overlappingBookings) && overlappingBookings.length > 0) {
     logEvent('slot_validation_rejected', { businessId, reason: 'booking_overlap', overlappingCount: overlappingBookings.length })
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')

@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   LogOut,
   MessageSquareText,
+  ReceiptText,
   Scissors,
   Settings,
   Star,
@@ -27,6 +28,7 @@ const navItems = [
   { href: '/dashboard/availability', label: 'Horarios', icon: Clock3 },
   { href: '/dashboard/customers', label: 'Clientas', icon: Users },
   { href: '/dashboard/payments', label: 'Pagos', icon: CreditCard },
+  { href: '/dashboard/billing', label: 'Facturación', icon: ReceiptText },
   { href: '/dashboard/reviews', label: 'Reseñas', icon: Star },
   { href: '/dashboard/settings', label: 'Configuración', icon: Settings },
 ]

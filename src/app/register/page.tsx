@@ -13,10 +13,17 @@ export default function RegisterPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
 
   async function handleSubmit(formData: FormData) {
     setError('')
     setSuccess(false)
+
+    if (!acceptedTerms) {
+      setError('Debes aceptar los términos y condiciones y la política de privacidad')
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -98,7 +105,27 @@ export default function RegisterPage() {
                 <Input className="studio-input pl-12" id="password" name="password" type="password" placeholder="Mínimo 6 caracteres" required minLength={6} />
               </div>
             </div>
-            <Button type="submit" className="h-14 w-full rounded-lg text-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]" disabled={loading}>
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="accept-terms"
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)}
+                className="mt-0.5 size-4 rounded border-border accent-primary"
+              />
+              <input type="hidden" name="acceptedTerms" value={acceptedTerms ? 'true' : 'false'} />
+              <label htmlFor="accept-terms" className="text-sm text-muted-foreground">
+                Acepto los{' '}
+                <a href="/terms" target="_blank" className="font-semibold text-primary underline">
+                  Términos y Condiciones
+                </a>{' '}
+                y la{' '}
+                <a href="/privacy" target="_blank" className="font-semibold text-primary underline">
+                  Política de Privacidad
+                </a>
+              </label>
+            </div>
+            <Button type="submit" className="h-14 w-full rounded-lg text-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]" disabled={loading || !acceptedTerms}>
               {loading ? 'Creando cuenta...' : 'Crear cuenta'}
             </Button>
           </form>

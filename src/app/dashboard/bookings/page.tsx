@@ -5,8 +5,8 @@ import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { updateBookingStatus } from '@/server/actions/bookings'
-import { CalendarDays, Clock, User, CreditCard, Phone } from 'lucide-react'
+import { updateBookingStatus, rescheduleBooking } from '@/server/actions/bookings'
+import { CalendarDays, Clock, User, CreditCard, Phone, Plus, RefreshCw } from 'lucide-react'
 import { BookingContactButtons } from '@/components/dashboard/booking-contact-buttons'
 
 const statusLabels: Record<string, string> = {
@@ -159,6 +159,12 @@ export default async function BookingsPage() {
         subtitle="Administra tus citas y el estado de tus reservas."
       />
       <div className="space-y-6 p-5 md:p-10">
+        <a href="/dashboard/bookings/new">
+          <Button className="h-11 rounded-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]">
+            <Plus className="mr-2 size-4" />
+            Nueva reserva
+          </Button>
+        </a>
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="studio-card p-4">
             <p className="studio-eyebrow">Total</p>
@@ -242,6 +248,12 @@ export default async function BookingsPage() {
                               }}>
                                 <Button type="submit" size="sm" variant="outline">Completar</Button>
                               </form>
+                              <a href={`/dashboard/bookings/${booking.id}/reschedule`}>
+                                <Button type="button" size="sm" variant="outline">
+                                  <RefreshCw className="mr-1 size-3" />
+                                  Reprogramar
+                                </Button>
+                              </a>
                               <form action={async () => {
                                 'use server'
                                 await updateBookingStatus(booking.id, 'cancelled')
@@ -249,6 +261,14 @@ export default async function BookingsPage() {
                                 <Button type="submit" size="sm" variant="destructive">Cancelar</Button>
                               </form>
                             </>
+                          )}
+                          {booking.status === 'pending_payment' && (
+                            <form action={async () => {
+                              'use server'
+                              await updateBookingStatus(booking.id, 'cancelled')
+                            }}>
+                              <Button type="submit" size="sm" variant="destructive">Cancelar</Button>
+                            </form>
                           )}
                         </div>
                       </TableCell>

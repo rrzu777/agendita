@@ -19,41 +19,139 @@ model User {
   businesses BusinessUser[]
 }
 
-model Business {
-  id              String   @id @default(cuid())
-  name            String
-  slug            String   @unique
-  subdomain       String   @unique
-  customDomain    String?  @unique
-  ownerUserId     String
-  logoUrl         String?
-  profileImageUrl String?
-  bio             String?
-  whatsapp        String?
-  instagram       String?
-  addressText     String?
-  city            String
-  country         String   @default("CL")
-  currency        String   @default("CLP")
-  timezone        String   @default("America/Santiago")
-  bookingWindowDays Int    @default(90)
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  suspended
+  cancelled
+}
 
-  users           BusinessUser[]
-  services        Service[]
-  availability    AvailabilityRule[]
-  timeBlocks      TimeBlock[]
-  customers       Customer[]
-  bookings        Booking[]
-  payments        Payment[]
-  ledgerEntries   LedgerEntry[]
-  reviews         Review[]
-  galleryImages   GalleryImage[]
+enum BillingInterval {
+  monthly
+  yearly
+}
+
+model Business {
+  id                 String             @id @default(cuid())
+  name               String
+  slug               String             @unique
+  subdomain          String             @unique
+  customDomain       String?            @unique
+  ownerUserId        String
+  logoUrl            String?
+  profileImageUrl    String?
+  bio                String?
+  whatsapp           String?
+  instagram          String?
+  addressText        String?
+  city               String
+  country            String             @default("CL")
+  currency           String             @default("CLP")
+  timezone           String             @default("America/Santiago")
+  bookingWindowDays  Int                @default(90)
+  isActive           Boolean            @default(true)
+  planId             String?
+  subscriptionStatus SubscriptionStatus @default(trialing)
+  trialEndsAt        DateTime?
+  onboardingCompletedAt DateTime?
+  onboardingStep      Int?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  users              BusinessUser[]
+  services           Service[]
+  availability       AvailabilityRule[]
+  timeBlocks         TimeBlock[]
+  customers          Customer[]
+  bookings           Booking[]
+  payments           Payment[]
+  ledgerEntries      LedgerEntry[]
+  reviews            Review[]
+  galleryImages      GalleryImage[]
+  plan               Plan?              @relation(fields: [planId], references: [id])
+  subscriptions      BusinessSubscription[]
+  subscriptionPayments SubscriptionPayment[]
+  subscriptionLogs   SubscriptionLog[]
   cancellationPolicy String?
   bookingPolicy      String?
   depositPolicy      String?
+}
+
+model Plan {
+  id            String         @id @default(cuid())
+  name          String         @unique
+  description   String?
+  priceMonthly  Int
+  priceYearly   Int
+  isPublic      Boolean        @default(false)
+  sortOrder     Int            @default(0)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  businesses    Business[]
+  subscriptions BusinessSubscription[]
+}
+
+model BusinessSubscription {
+  id              String             @id @default(cuid())
+  businessId      String
+  planId          String
+  status          SubscriptionStatus @default(trialing)
+  interval        BillingInterval    @default(monthly)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  trialStartAt    DateTime?
+  trialEndAt      DateTime?
+  cancelledAt     DateTime?
+  suspendedAt     DateTime?
+  suspendedReason String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  business        Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  plan            Plan               @relation(fields: [planId], references: [id])
+  payments        SubscriptionPayment[]
+
+  @@index([businessId])
+}
+
+model SubscriptionPayment {
+  id              String             @id @default(cuid())
+  businessId      String
+  subscriptionId  String
+  amount          Int
+  currency        String             @default("CLP")
+  status          PaymentStatus      @default(pending)
+  paymentMethod   String?
+  notes           String?
+  createdByUserId String?
+  paidAt          DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  business        Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  subscription    BusinessSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+model SubscriptionLog {
+  id              String   @id @default(cuid())
+  businessId      String
+  action          String
+  beforeStatus    String?
+  afterStatus     String?
+  beforePlanId    String?
+  afterPlanId     String?
+  adminUserId     String?
+  adminEmail      String?
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
 }
 
 model BusinessUser {
@@ -63,7 +161,7 @@ model BusinessUser {
   role       BusinessRole
   createdAt  DateTime     @default(now())
 
-  business   Business     @relation(fields: [businessId], references: [id])
+  business        Business @relation(fields: [businessId], references: [id])
   user       User         @relation(fields: [userId], references: [id])
 
   @@unique([businessId, userId])
@@ -112,7 +210,7 @@ model TimeBlock {
   reason        String?
   createdAt     DateTime @default(now())
 
-  business      Business @relation(fields: [businessId], references: [id])
+  business        Business @relation(fields: [businessId], references: [id])
 
   @@index([businessId, startDateTime, endDateTime])
 }
@@ -167,6 +265,7 @@ model Booking {
   review              Review?
   reviewToken         String?              @unique
   reviewTokenCreatedAt DateTime?
+  reminderSentAt      DateTime?
 
   @@index([businessId, status, startDateTime, endDateTime])
 }

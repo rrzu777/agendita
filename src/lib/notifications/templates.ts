@@ -5,6 +5,7 @@ import type {
   CancellationEmailData,
   ReviewRequestEmailData,
   NewBookingBusinessEmailData,
+  ReminderEmailData,
 } from './types'
 
 function escapeHtml(str: string): string {
@@ -267,4 +268,55 @@ export function reviewRequestText(data: ReviewRequestEmailData): string {
     ``,
     `Enviado por ${data.businessName} a través de Agendita`,
   ].join('\n')
+}
+
+export function bookingReminderHtml(data: ReminderEmailData): string {
+  const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
+  const balanceLine = data.remainingBalance > 0
+    ? `<p style="font-size:14px;color:#e91e63;margin-top:12px">Saldo pendiente: ${fmtCurrency(data.remainingBalance, data.businessCurrency)}</p>`
+    : ''
+
+  const whatsappLine = data.businessWhatsapp
+    ? `<p style="font-size:14px;color:#666;margin-top:12px">WhatsApp: <a href="https://wa.me/${data.businessWhatsapp.replace(/^\+/, '')}" style="color:#e91e63">${escapeHtml(data.businessWhatsapp)}</a></p>`
+    : ''
+
+  return baseHtml(`
+    ${header('Recordatorio de tu cita')}
+    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)},</p>
+    <p style="font-size:14px;color:#666">Tu cita de <strong>${escapeHtml(data.serviceName)}</strong> es mañana:</p>
+    <div style="background:#f9f9f9;border-radius:12px;padding:20px;margin:16px 0">
+      <p style="font-size:18px;font-weight:600;color:#1a1a2e;margin:0">${dateStr}</p>
+      <p style="font-size:14px;color:#666;margin:8px 0 0">${escapeHtml(data.businessName)}</p>
+      ${data.businessAddress ? `<p style="font-size:13px;color:#999;margin:4px 0 0">${escapeHtml(data.businessAddress!)}</p>` : ''}
+    </div>
+    <p style="font-size:14px;color:#666">Total: ${fmtCurrency(data.totalPrice, data.businessCurrency)} | Abonado: ${fmtCurrency(data.depositPaid, data.businessCurrency)}</p>
+    ${balanceLine}
+    ${whatsappLine}
+    ${footer(data.businessName)}
+  `)
+}
+
+export function bookingReminderText(data: ReminderEmailData): string {
+  const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
+  const balanceLine = data.remainingBalance > 0
+    ? `Saldo pendiente: ${data.businessCurrency} ${data.remainingBalance}`
+    : ''
+
+  return [
+    `Recordatorio de tu cita`,
+    ``,
+    `Hola ${data.customerName},`,
+    ``,
+    `Tu cita de ${data.serviceName} es mañana:`,
+    ``,
+    `${dateStr}`,
+    `${data.businessName}`,
+    data.businessAddress ?? '',
+    ``,
+    `Total: ${data.businessCurrency} ${data.totalPrice} | Abonado: ${data.businessCurrency} ${data.depositPaid}`,
+    balanceLine,
+    data.businessWhatsapp ? `WhatsApp: ${data.businessWhatsapp}` : '',
+    ``,
+    `Enviado por ${data.businessName} a través de Agendita`,
+  ].filter(Boolean).join('\n')
 }

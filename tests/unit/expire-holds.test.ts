@@ -3,13 +3,14 @@ import { expireStaleHolds } from '@/lib/cron/expire-holds'
 import { BookingStatus } from '@prisma/client'
 
 describe('expireStaleHolds', () => {
-  function makeDb(overrides: Record<string, unknown> = {}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function makeDb(overrides: Record<string, any> = {}): any {
     return {
       booking: {
         findMany: vi.fn().mockResolvedValue(overrides.findMany ?? []),
         updateMany: vi.fn().mockResolvedValue(overrides.updateMany ?? { count: 0 }),
       },
-    } as unknown as Parameters<typeof expireStaleHolds>[1]
+    }
   }
 
   it('returns 0 when no stale holds exist', async () => {

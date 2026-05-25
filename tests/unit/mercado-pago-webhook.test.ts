@@ -504,7 +504,10 @@ describe('Mercado Pago webhook', () => {
       const updateCalls = (mockPrisma.payment.update as ReturnType<typeof vi.fn>).mock
         .calls
       const statusUpdates = updateCalls.filter(
-        (call: unknown[]) => (call[0] as Record<string, unknown>)?.data?.status === 'rejected',
+        (call: unknown[]) => {
+          const arg = call[0] as { data?: { status?: string } } | undefined
+          return arg?.data?.status === 'rejected'
+        },
       )
       expect(statusUpdates).toHaveLength(0)
     })

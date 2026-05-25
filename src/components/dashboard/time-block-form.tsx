@@ -7,22 +7,40 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { createTimeBlock, deleteTimeBlock } from '@/server/actions/time-blocks'
-import { Ban, Plus, Trash2 } from 'lucide-react'
+import { Ban, Coffee, Moon, Plus, Trash2, Umbrella } from 'lucide-react'
+
+const PRESETS = [
+  { label: 'Almuerzo', icon: Coffee, startTime: '13:00', endTime: '14:00', color: 'bg-amber-100 text-amber-800' },
+  { label: 'Tarde libre', icon: Moon, startTime: '14:00', endTime: '18:00', color: 'bg-indigo-100 text-indigo-800' },
+  { label: 'Día completo', icon: Ban, startTime: '09:00', endTime: '18:00', color: 'bg-red-100 text-red-800' },
+]
 
 export function TimeBlockForm() {
   const [open, setOpen] = useState(false)
+  const [startDate, setStartDate] = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [endTime, setEndTime] = useState('')
   const router = useRouter()
 
+  function applyPreset(preset: typeof PRESETS[number]) {
+    const today = new Date().toISOString().split('T')[0]
+    setStartDate(today)
+    setEndDate(today)
+    setStartTime(preset.startTime)
+    setEndTime(preset.endTime)
+  }
+
   async function handleSubmit(formData: FormData) {
-    const startDate = formData.get('startDate') as string
-    const startTime = formData.get('startTime') as string
-    const endDate = formData.get('endDate') as string
-    const endTime = formData.get('endTime') as string
+    const startDateVal = formData.get('startDate') as string
+    const startTimeVal = formData.get('startTime') as string
+    const endDateVal = formData.get('endDate') as string
+    const endTimeVal = formData.get('endTime') as string
     const reason = formData.get('reason') as string
 
     await createTimeBlock({
-      startDateTime: new Date(`${startDate}T${startTime}`),
-      endDateTime: new Date(`${endDate}T${endTime}`),
+      startDateTime: new Date(`${startDateVal}T${startTimeVal}`),
+      endDateTime: new Date(`${endDateVal}T${endTimeVal}`),
       reason: reason || null,
     })
 
@@ -43,24 +61,40 @@ export function TimeBlockForm() {
           <DialogTitle className="text-2xl font-semibold tracking-normal text-primary">Bloquear horario</DialogTitle>
         </DialogHeader>
         <form action={handleSubmit} className="space-y-5">
+          <div className="flex flex-wrap gap-2">
+            {PRESETS.map((preset) => {
+              const Icon = preset.icon
+              return (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => applyPreset(preset)}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors hover:opacity-80 ${preset.color}`}
+                >
+                  <Icon className="size-3" />
+                  {preset.label}
+                </button>
+              )
+            })}
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="studio-eyebrow">Fecha inicio</Label>
-              <Input className="studio-input" name="startDate" type="date" required />
+              <Input className="studio-input" name="startDate" type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label className="studio-eyebrow">Hora inicio</Label>
-              <Input className="studio-input" name="startTime" type="time" required />
+              <Input className="studio-input" name="startTime" type="time" required value={startTime} onChange={(e) => setStartTime(e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-y-4 gap-x-4">
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="studio-eyebrow">Fecha fin</Label>
-              <Input className="studio-input" name="endDate" type="date" required />
+              <Input className="studio-input" name="endDate" type="date" required value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label className="studio-eyebrow">Hora fin</Label>
-              <Input className="studio-input" name="endTime" type="time" required />
+              <Input className="studio-input" name="endTime" type="time" required value={endTime} onChange={(e) => setEndTime(e.target.value)} />
             </div>
           </div>
           <div className="space-y-2">

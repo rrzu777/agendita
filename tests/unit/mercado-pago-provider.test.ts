@@ -69,7 +69,7 @@ describe('mercadoPagoPaymentProvider', () => {
         'https://www.mercadopago.cl/checkout/v1/redirect?pref_id=pref-123',
       )
       expect(result.status).toBe('pending')
-      expect(result.rawResponse.preferenceId).toBe('pref-123')
+      expect((result.rawResponse as { preferenceId: string }).preferenceId).toBe('pref-123')
 
       const fetchCall = mockFetch.mock.calls[0] as [string, RequestInit]
       const body = JSON.parse(fetchCall[1].body as string)

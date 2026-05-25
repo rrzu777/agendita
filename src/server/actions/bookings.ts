@@ -11,6 +11,8 @@ import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth
 import { logger } from '@/lib/logger'
 
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
+import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
+import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcement'
 import { addMinutes } from 'date-fns'
 import {
   sendBookingReceivedToCustomer,
@@ -28,6 +30,7 @@ const createBookingSchema = z.object({
   customerEmail: z.string().email().optional().or(z.literal('')),
   startDateTime: z.date(),
   idempotencyKey: z.string().min(1).max(64).optional(),
+  acceptedTerms: z.boolean(),
 })
 
 const confirmPaymentSchema = z.object({
@@ -143,6 +146,7 @@ export async function createBooking(data: {
   customerEmail?: string
   startDateTime: Date
   idempotencyKey?: string
+  acceptedTerms: boolean
 }, businessId: string) {
   const limit = await checkRateLimit('create-booking', 20, 60000)
   if (!limit.success) {
@@ -154,7 +158,11 @@ export async function createBooking(data: {
     throw new Error('Datos de reserva inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
-  // Validar que el negocio exista y esté activo
+  if (parsed.data.acceptedTerms !== true) {
+    throw new Error('Debes aceptar los términos y condiciones y la política de cancelación')
+  }
+
+  // Validar que el negocio exista, esté activo y pueda recibir reservas
   const business = await prisma.business.findUnique({
     where: { id: businessId, isActive: true },
     select: {
@@ -167,11 +175,14 @@ export async function createBooking(data: {
       cancellationPolicy: true,
       slug: true,
       subdomain: true,
+      subscriptionStatus: true,
     },
   })
   if (!business) {
     throw new Error('Negocio no válido')
   }
+
+  assertBusinessCanReceiveBookings(business.subscriptionStatus)
 
   // Validar que el servicio pertenezca al negocio
   const service = await prisma.service.findFirst({
@@ -450,4 +461,265 @@ export async function getBookingsByRange(start: Date, end: Date) {
       customer: true,
     },
   })
+}
+
+const createBookingFromDashboardSchema = z.object({
+  serviceId: z.string().min(1),
+  customerName: z.string().min(1).max(100),
+  customerPhone: z.string().min(8).max(20),
+  customerEmail: z.string().email().optional().or(z.literal('')),
+  startDateTime: z.date(),
+  internalNotes: z.string().max(500).optional(),
+  markDepositPaid: z.boolean().optional().default(false),
+})
+
+export async function createBookingFromDashboard(data: {
+  serviceId: string
+  customerName: string
+  customerPhone: string
+  customerEmail?: string
+  startDateTime: Date
+  internalNotes?: string
+  markDepositPaid?: boolean
+}) {
+  const { business, businessId } = await requireBusinessRole(['owner', 'admin'])
+
+  const parsed = createBookingFromDashboardSchema.safeParse(data)
+  if (!parsed.success) {
+    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  }
+
+  const service = await prisma.service.findFirst({
+    where: { id: data.serviceId, businessId, isActive: true },
+  })
+  if (!service) {
+    throw new Error('Servicio no disponible')
+  }
+
+  const totalPrice = service.price
+  const depositRequired = service.depositAmount
+  const finalAmount = service.price
+  const endDateTime = addMinutes(data.startDateTime, service.durationMinutes)
+  const markDepositPaid = data.markDepositPaid ?? false
+
+  const booking = await prisma.$transaction(async (tx) => {
+    await assertSlotIsAvailable({
+      tx,
+      businessId,
+      serviceId: data.serviceId,
+      startDateTime: data.startDateTime,
+      endDateTime,
+      timezone: business.timezone || 'America/Santiago',
+    })
+
+    let customer = await tx.customer.findFirst({
+      where: { phone: data.customerPhone, name: data.customerName, businessId },
+    })
+
+    if (!customer) {
+      customer = await tx.customer.create({
+        data: {
+          businessId,
+          name: data.customerName,
+          phone: data.customerPhone,
+          email: data.customerEmail || null,
+        },
+      })
+    }
+
+    const noDepositNeeded = depositRequired === 0
+    const status = (markDepositPaid || noDepositNeeded) ? BookingStatus.confirmed : BookingStatus.pending_payment
+    const paymentStatus = markDepositPaid
+      ? (depositRequired >= finalAmount ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.deposit_paid)
+      : noDepositNeeded
+        ? BookingPaymentStatus.fully_paid
+        : BookingPaymentStatus.unpaid
+
+    const newBooking = await tx.booking.create({
+      data: {
+        businessId,
+        serviceId: data.serviceId,
+        customerId: customer.id,
+        startDateTime: data.startDateTime,
+        endDateTime,
+        status,
+        totalPrice,
+        depositRequired,
+        depositPaid: markDepositPaid ? depositRequired : 0,
+        remainingBalance: markDepositPaid ? Math.max(0, finalAmount - depositRequired) : finalAmount,
+        finalAmount,
+        paymentStatus,
+        internalNotes: data.internalNotes || null,
+        holdExpiresAt: status === BookingStatus.pending_payment ? addMinutes(new Date(), 60) : null,
+      },
+      include: { service: true, customer: true },
+    })
+
+    if (markDepositPaid && depositRequired > 0) {
+      const { applyApprovedPayment } = await import('@/server/services/finance')
+      const derivedType = deriveManualPaymentType(newBooking, depositRequired)
+
+      await tx.payment.create({
+        data: {
+          businessId,
+          bookingId: newBooking.id,
+          customerId: customer.id,
+          paymentType: derivedType,
+          provider: 'manual',
+          providerPaymentId: null,
+          amount: depositRequired,
+          currency: business.currency || 'CLP',
+          status: 'pending',
+          paymentMethod: 'Efectivo / Transferencia',
+          paidAt: null,
+        },
+      })
+
+      const paymentForApply = await tx.payment.findFirstOrThrow({
+        where: { bookingId: newBooking.id },
+        orderBy: { createdAt: 'desc' },
+      })
+
+      await applyApprovedPayment({
+        tx,
+        bookingId: newBooking.id,
+        businessId,
+        amount: depositRequired,
+        currency: business.currency || 'CLP',
+        provider: 'manual',
+        providerPaymentId: null,
+        paymentType: derivedType,
+        paymentMethod: 'Efectivo / Transferencia',
+        paymentId: paymentForApply.id,
+      })
+    }
+
+    return newBooking
+  })
+
+  revalidatePath('/dashboard/bookings')
+  revalidatePath('/dashboard/calendar')
+  await revalidateBusinessPublicPaths(businessId)
+
+  return booking
+}
+
+const cancelBookingSchema = z.object({
+  bookingId: z.string().min(1),
+  reason: z.string().max(500).optional(),
+})
+
+export async function cancelBooking(bookingId: string, reason?: string) {
+  const { business, businessId } = await requireBusinessRole(['owner', 'admin'])
+
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, businessId },
+    include: { service: true, customer: true },
+  })
+
+  if (!booking) {
+    throw new Error('Reserva no encontrada')
+  }
+
+  if (booking.status === 'completed') {
+    throw new Error('No se puede cancelar una reserva ya completada')
+  }
+
+  if (booking.status === 'cancelled') {
+    throw new Error('Esta reserva ya está cancelada')
+  }
+
+  await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      status: BookingStatus.cancelled,
+      internalNotes: reason
+        ? `${booking.internalNotes || ''}\n[CANCELADA: ${reason}]`.trim()
+        : booking.internalNotes,
+    },
+  })
+
+  if (booking.customer?.email) {
+    await sendNotificationSafely('booking cancelled', () =>
+      sendBookingCancelledNotification({
+        businessName: business.name,
+        customerName: booking.customer!.name,
+        customerEmail: booking.customer!.email,
+        serviceName: booking.service!.name,
+        startDateTime: booking.startDateTime,
+        businessTimezone: business.timezone || 'America/Santiago',
+      }),
+    )
+  }
+
+  revalidatePath('/dashboard/bookings')
+  revalidatePath('/dashboard/calendar')
+  await revalidateBusinessPublicPaths(businessId)
+
+  return { cancelled: true }
+}
+
+const rescheduleBookingSchema = z.object({
+  bookingId: z.string().min(1),
+  newStartDateTime: z.date(),
+})
+
+export async function rescheduleBooking(bookingId: string, newStartDateTime: Date) {
+  const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
+
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, businessId },
+    include: { service: true },
+  })
+
+  if (!booking) {
+    throw new Error('Reserva no encontrada')
+  }
+
+  if (booking.status === 'completed') {
+    throw new Error('No se puede reprogramar una reserva ya completada')
+  }
+
+  if (booking.status === 'cancelled') {
+    throw new Error('No se puede reprogramar una reserva cancelada')
+  }
+
+  const service = booking.service
+  if (!service) {
+    throw new Error('Servicio no encontrado')
+  }
+
+  const endDateTime = addMinutes(newStartDateTime, service.durationMinutes)
+  const oldDate = booking.startDateTime.toLocaleString('es-CL')
+
+  await prisma.$transaction(async (tx) => {
+    await assertSlotIsAvailable({
+      tx,
+      businessId,
+      serviceId: booking.serviceId,
+      startDateTime: newStartDateTime,
+      endDateTime,
+      timezone: business.timezone || 'America/Santiago',
+      excludeBookingId: bookingId,
+    })
+
+    const historyNote = `[REPROGRAMADA de ${oldDate}]`
+
+    await tx.booking.update({
+      where: { id: bookingId },
+      data: {
+        startDateTime: newStartDateTime,
+        endDateTime,
+        internalNotes: booking.internalNotes
+          ? `${booking.internalNotes}\n${historyNote}`
+          : historyNote,
+      },
+    })
+  })
+
+  revalidatePath('/dashboard/bookings')
+  revalidatePath('/dashboard/calendar')
+  await revalidateBusinessPublicPaths(businessId)
+
+  return { rescheduled: true }
 }

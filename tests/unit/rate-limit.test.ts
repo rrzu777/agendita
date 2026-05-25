@@ -96,72 +96,63 @@ describe('fail-closed behavior in production', () => {
   // checkRateLimit returns blocked (fail-closed). This mirrors the
   // FailClosedRateLimiter logic in createRateLimiter().
   it('blocks all requests when NODE_ENV=production and UPSTASH vars are absent', async () => {
-    // Save original env
-    const origNodeEnv = process.env.NODE_ENV
+    vi.stubEnv('NODE_ENV', 'production')
+
     const origUpstashUrl = process.env.UPSTASH_REDIS_REST_URL
     const origUpstashToken = process.env.UPSTASH_REDIS_REST_TOKEN
 
     try {
-      // Force production without Upstash
-      process.env.NODE_ENV = 'production'
       delete process.env.UPSTASH_REDIS_REST_URL
       delete process.env.UPSTASH_REDIS_REST_TOKEN
 
-      // Reset singleton so createRateLimiter() picks up new env
       resetLimiter()
 
       const { checkRateLimit } = await import('@/lib/rate-limit')
       const result = await checkRateLimit('test-action', 10, 60_000, { ip: '1.1.1.1' })
 
-      // Fail-closed: must block when production has no rate limiter
       expect(result.success).toBe(false)
       expect(result.remaining).toBe(0)
     } finally {
-      // Restore original env
-      process.env.NODE_ENV = origNodeEnv
       if (origUpstashUrl !== undefined) process.env.UPSTASH_REDIS_REST_URL = origUpstashUrl
       else delete process.env.UPSTASH_REDIS_REST_URL
       if (origUpstashToken !== undefined) process.env.UPSTASH_REDIS_REST_TOKEN = origUpstashToken
       else delete process.env.UPSTASH_REDIS_REST_TOKEN
 
-      // Reset singleton back to normal for other tests
       resetLimiter()
+      vi.unstubAllEnvs()
     }
   })
 
   it('uses RedisRateLimiter and fails closed when fetch fails', async () => {
-    const origNodeEnv = process.env.NODE_ENV
+    vi.stubEnv('NODE_ENV', 'production')
+
     const origUpstashUrl = process.env.UPSTASH_REDIS_REST_URL
     const origUpstashToken = process.env.UPSTASH_REDIS_REST_TOKEN
 
     try {
-      process.env.NODE_ENV = 'production'
       process.env.UPSTASH_REDIS_REST_URL = 'https://test.upstash.io'
       process.env.UPSTASH_REDIS_REST_TOKEN = 'test-token'
 
       resetLimiter()
 
-      // Mock global fetch to simulate Redis being unreachable
       const fetchMock = vi.fn().mockRejectedValue(new Error('Network unreachable'))
       vi.stubGlobal('fetch', fetchMock)
 
       const { checkRateLimit } = await import('@/lib/rate-limit')
       const result = await checkRateLimit('test-action', 10, 60_000, { ip: '1.1.1.1' })
 
-      // Redis unreachable → fail closed (blocks request)
       expect(result.success).toBe(false)
       expect(result.remaining).toBe(0)
-      // Verify the Redis path was actually tried (fetch was called)
       expect(fetchMock).toHaveBeenCalled()
     } finally {
       vi.unstubAllGlobals()
-      process.env.NODE_ENV = origNodeEnv
       if (origUpstashUrl !== undefined) process.env.UPSTASH_REDIS_REST_URL = origUpstashUrl
       else delete process.env.UPSTASH_REDIS_REST_URL
       if (origUpstashToken !== undefined) process.env.UPSTASH_REDIS_REST_TOKEN = origUpstashToken
       else delete process.env.UPSTASH_REDIS_REST_TOKEN
 
       resetLimiter()
+      vi.unstubAllEnvs()
     }
   })
 })
