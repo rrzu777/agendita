@@ -1,4 +1,44 @@
-export { sendBookingConfirmationToCustomer, sendBookingReceivedToCustomer, sendNewBookingNotificationToBusiness, sendBookingCancelledNotification, sendReviewRequestNotification, sendBookingConfirmedNotification, sendNotificationSafely, sendMultiNotificationSafely, sendReminderEmail } from './email-provider'
-export { buildWhatsappUrl, buildBookingConfirmationWhatsappMessage, buildReviewRequestWhatsappMessage, buildWhatsappBookingSummaryText, buildWhatsappReminderMessage, buildWhatsappReminderUrl } from './whatsapp'
+export {
+  sendBookingConfirmationToCustomer,
+  sendBookingReceivedToCustomer,
+  sendNewBookingNotificationToBusiness,
+  sendBookingCancelledNotification,
+  sendBookingConfirmedNotification,
+  sendReviewRequestNotification,
+  sendNotificationSafely,
+  sendMultiNotificationSafely,
+  sendReminderEmail,
+  sendBookingReminderNotification,
+  sendBookingCancelledNotificationById,
+  sendPaymentReceivedNotification,
+} from './email-provider'
+export {
+  buildWhatsappUrl,
+  buildBookingConfirmationWhatsappMessage,
+  buildReviewRequestWhatsappMessage,
+  buildWhatsappBookingSummaryText,
+  buildWhatsappReminderMessage,
+  buildWhatsappReminderUrl,
+} from './whatsapp'
+export {
+  BOOKING_CONFIRMED_TEMPLATE,
+  BOOKING_REMINDER_TEMPLATE,
+  BOOKING_CANCELLED_TEMPLATE,
+  PAYMENT_RECEIVED_TEMPLATE,
+  bookingConfirmationCustomerHtml,
+  bookingConfirmationCustomerText,
+  bookingReceivedCustomerHtml,
+  bookingReceivedCustomerText,
+  newBookingBusinessHtml,
+  newBookingBusinessText,
+  bookingCancelledCustomerHtml,
+  bookingCancelledCustomerText,
+  reviewRequestHtml,
+  reviewRequestText,
+  bookingReminderHtml,
+  bookingReminderText,
+  paymentReceivedHtml,
+  paymentReceivedText,
+} from './templates'
 export type { EmailResult, BookingEmailData, CancellationEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, ReminderEmailData, NotificationResult } from './types'
 export type { BookingWhatsappData, ReviewRequestWhatsappData } from './whatsapp'

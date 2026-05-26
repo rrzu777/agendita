@@ -8,6 +8,8 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
 export type LogEvent =
   | 'booking.created'
+  | 'booking.confirmed'
+  | 'booking.cancelled'
   | 'payment.initiated'
   | 'payment.approved'
   | 'payment.failed'
@@ -16,6 +18,7 @@ export type LogEvent =
   | 'auth.failure'
   | 'tenant.resolve.failed'
   | 'rate_limit.blocked'
+  | 'health_check'
 
 export type LogFields = {
   level: LogLevel
@@ -117,6 +120,19 @@ export const logger = {
         businessId,
         metadata: customerEmail ? { customerEmail: '[REDACTED]' } : undefined,
       })
+    },
+    confirmed(bookingId: string, businessId: string) {
+      emit('info', 'booking.confirmed', `Booking confirmed: ${bookingId}`, { bookingId, businessId })
+    },
+    cancelled(bookingId: string, businessId: string, reason?: string) {
+      emit('warn', 'booking.cancelled', `Booking cancelled: ${bookingId}`, {
+        bookingId,
+        businessId,
+        metadata: reason ? { reason } : undefined,
+      })
+    },
+    reminderSent(bookingId: string, businessId: string) {
+      emit('info', 'booking.reminder_sent', `Reminder sent for booking: ${bookingId}`, { bookingId, businessId })
     },
   },
   payment: {

@@ -1,0 +1,19 @@
+# Alert: Mercado Pago webhook rejection spike
+# Fires when >5 MP webhook rejections occur within 5 minutes
+# Requires: Prometheus + Grafana with alert rules configured
+# Channel: PagerDuty / Slack webhook (configure in Grafana notification channel)
+
+groups:
+  - name: agendita-webhooks
+    rules:
+      - alert: WebhookRejectionSpike
+        expr: |
+          sum(rate(agendita_webhook_events_total{provider="mercado_pago",status="rejected"}[5m])) > 5
+        for: 1m
+        labels:
+          severity: critical
+          team: payments
+        annotations:
+          summary: "Mercado Pago webhook rejection spike"
+          description: "More than 5 MP webhook rejections detected in the last 5 minutes. Current rate: {{ $value | printf \"%.2f\" }} rejections/min."
+          runbook_url: "https://docs.agendita.app/runbooks/webhook-rejections"

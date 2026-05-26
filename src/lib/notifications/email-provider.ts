@@ -1,6 +1,7 @@
 import { Resend } from 'resend'
 import { prisma } from '@/lib/db'
 import { BookingStatus } from '@prisma/client'
+import { logger } from '@/lib/logger'
 import type {
   EmailResult,
   BookingEmailData,
@@ -22,6 +23,12 @@ import {
   reviewRequestText,
   bookingReminderHtml,
   bookingReminderText,
+  paymentReceivedHtml,
+  paymentReceivedText,
+  BOOKING_CONFIRMED_TEMPLATE,
+  BOOKING_REMINDER_TEMPLATE,
+  BOOKING_CANCELLED_TEMPLATE,
+  PAYMENT_RECEIVED_TEMPLATE,
 } from './templates'
 
 function getResend(): Resend | null {
@@ -265,6 +272,157 @@ export async function sendMultiNotificationSafely(
     console.error(`[notifications] ${label} failed:`, message)
     return [{ success: false, error: message }]
   }
+}
+
+/**
+ * Sends a booking confirmed notification by booking ID.
+ * Uses BOOKING_CONFIRMED_TEMPLATE for subject/body.
+ */
+export async function sendBookingReminderNotification(
+  bookingId: string,
+  businessId: string,
+): Promise<EmailResult> {
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, businessId },
+    include: {
+      service: { select: { name: true } },
+      customer: { select: { name: true, phone: true, email: true } },
+      business: {
+        select: {
+          name: true,
+          timezone: true,
+          whatsapp: true,
+          addressText: true,
+          currency: true,
+        },
+      },
+    },
+  })
+
+  if (!booking || !booking.customer.email) {
+    logger.warn('sendBookingReminderNotification', 'Booking not found or customer has no email', {
+      bookingId,
+      businessId,
+    })
+    return { success: false, skipped: 'Booking not found or customer has no email' }
+  }
+
+  const business = booking.business
+  const tz = business.timezone || 'America/Santiago'
+  const curr = business.currency || 'CLP'
+
+  return sendReminderEmail({
+    businessName: business.name,
+    businessWhatsapp: business.whatsapp,
+    businessAddress: business.addressText,
+    businessTimezone: tz,
+    businessCurrency: curr,
+    customerName: booking.customer.name,
+    customerEmail: booking.customer.email,
+    serviceName: booking.service.name,
+    startDateTime: booking.startDateTime,
+    totalPrice: booking.totalPrice,
+    remainingBalance: booking.remainingBalance,
+    depositPaid: booking.depositPaid,
+  })
+}
+
+/**
+ * Sends a booking cancelled notification by booking ID.
+ * Uses BOOKING_CANCELLED_TEMPLATE for subject/body.
+ */
+export async function sendBookingCancelledNotificationById(
+  bookingId: string,
+  businessId: string,
+): Promise<EmailResult> {
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, businessId },
+    include: {
+      service: { select: { name: true } },
+      customer: { select: { name: true, email: true } },
+      business: {
+        select: {
+          name: true,
+          timezone: true,
+        },
+      },
+    },
+  })
+
+  if (!booking || !booking.customer.email) {
+    logger.warn('sendBookingCancelledNotificationById', 'Booking not found or customer has no email', {
+      bookingId,
+      businessId,
+    })
+    return { success: false, skipped: 'Booking not found or customer has no email' }
+  }
+
+  return sendBookingCancelledNotification({
+    businessName: booking.business.name,
+    customerName: booking.customer.name,
+    customerEmail: booking.customer.email,
+    serviceName: booking.service.name,
+    startDateTime: booking.startDateTime,
+    businessTimezone: booking.business.timezone || 'America/Santiago',
+  })
+}
+
+/**
+ * Sends a payment received notification by payment ID.
+ * Uses PAYMENT_RECEIVED_TEMPLATE for subject/body.
+ */
+export async function sendPaymentReceivedNotification(
+  paymentId: string,
+  businessId: string,
+): Promise<EmailResult> {
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId, businessId },
+    include: {
+      booking: {
+        include: {
+          service: { select: { name: true } },
+          customer: { select: { name: true, email: true } },
+          business: { select: { name: true, timezone: true, currency: true } },
+        },
+      },
+    },
+  })
+
+  if (!payment) {
+    logger.warn('sendPaymentReceivedNotification', 'Payment not found', { paymentId, businessId })
+    return { success: false, skipped: 'Payment not found' }
+  }
+
+  if (!payment.booking?.customer?.email) {
+    logger.warn('sendPaymentReceivedNotification', 'Customer has no email', { paymentId, businessId })
+    return { success: false, skipped: 'Customer has no email' }
+  }
+
+  const html = paymentReceivedHtml({
+    businessName: payment.booking.business.name,
+    customerName: payment.booking.customer.name,
+    customerEmail: payment.booking.customer.email,
+    serviceName: payment.booking.service.name,
+    startDateTime: payment.booking.startDateTime,
+    businessTimezone: payment.booking.business.timezone || 'America/Santiago',
+    amountPaid: payment.amount,
+    businessCurrency: payment.booking.business.currency || 'CLP',
+  })
+
+  const text = paymentReceivedText({
+    businessName: payment.booking.business.name,
+    customerName: payment.booking.customer.name,
+    serviceName: payment.booking.service.name,
+    startDateTime: payment.booking.startDateTime,
+    businessTimezone: payment.booking.business.timezone || 'America/Santiago',
+    amountPaid: payment.amount,
+    businessCurrency: payment.booking.business.currency || 'CLP',
+  })
+
+  const business = payment.booking.business
+  const subject = `Abono recibido — ${business.name}`
+
+  return sendEmail(payment.booking.customer.email, subject, html, text)
 }
 
 export async function sendReminderEmail(data: ReminderEmailData): Promise<EmailResult> {

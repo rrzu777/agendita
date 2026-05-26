@@ -3,9 +3,12 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
-import { getPaymentAccountStatus, startMercadoPagoConnect } from '@/server/actions/mercado-pago-connect'
+import {
+  getPaymentAccountStatus,
+  startMercadoPagoConnect,
+} from '@/server/actions/mercado-pago-connect'
 import { resolveOnlinePaymentAvailabilityForBusiness } from '@/lib/payments/factory'
-import { BadgeCheck, CircleAlert, CreditCard, Link2, Link2Off } from 'lucide-react'
+import { BadgeCheck, CircleAlert, Link2, Link2Off, TestTube } from 'lucide-react'
 import { DisconnectButton } from './disconnect-button'
 
 interface PaymentsSettingsPageProps {
@@ -29,6 +32,7 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
 
   const isConnected = account?.status === 'connected'
   const isDisconnected = account?.status === 'disconnected'
+  const isSandbox = process.env.NODE_ENV !== 'production'
 
   return (
     <div>
@@ -60,7 +64,20 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
                   <div className="flex items-center gap-3">
                     <BadgeCheck className="size-5 text-green-600" />
                     <div>
-                      <p className="font-semibold text-green-800">Cuenta conectada</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-green-800">Cuenta MP conectada</p>
+                        {!isSandbox && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                            producción
+                          </span>
+                        )}
+                        {isSandbox && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-700">
+                            <TestTube className="size-3" />
+                            pruebas
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-green-600">
                         {account?.connectedAt
                           ? `Conectada el ${account.connectedAt.toLocaleDateString('es-CL')}`

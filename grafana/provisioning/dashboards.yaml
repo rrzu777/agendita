@@ -1,0 +1,22 @@
+# Grafana provisioning — dashboard definitions
+# This file is read by the grafana-server on startup to provision dashboards from files.
+# Point to the JSON dashboard files checked into this repository.
+
+apiVersion: 1
+
+providers:
+  - name: "Agendita Dashboards"
+    orgId: 1
+    folder: "Agendita"
+    folderUid: "agendita"
+    type: file
+    disableChannels: []
+    updateIntervalSeconds: 30
+    allowUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/agendita
+      # If running in a container, mount the dashboards directory as a volume.
+      # For Vercel / cloud deployments, use the Git-based approach and sync
+      # the dashboards folder to the provisioning path on deploy.
+    editable: true
+    signStateless: false

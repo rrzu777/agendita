@@ -270,6 +270,81 @@ export function reviewRequestText(data: ReviewRequestEmailData): string {
   ].join('\n')
 }
 
+// Template definitions used for preview and rendering
+export const BOOKING_CONFIRMED_TEMPLATE = {
+  id: 'booking_confirmed',
+  subject: 'Tu reserva en {businessName} está confirmada',
+  variables: ['businessName', 'customerName', 'serviceName', 'startDateTime', 'price', 'amountPaid', 'remainingBalance'] as const,
+}
+
+export const BOOKING_REMINDER_TEMPLATE = {
+  id: 'booking_reminder',
+  subject: 'Recordatorio de tu reserva mañana en {businessName}',
+  variables: ['businessName', 'customerName', 'serviceName', 'startDateTime', 'price', 'amountPaid', 'remainingBalance'] as const,
+}
+
+export const BOOKING_CANCELLED_TEMPLATE = {
+  id: 'booking_cancelled',
+  subject: 'Tu reserva fue cancelada',
+  variables: ['businessName', 'customerName', 'serviceName', 'startDateTime'] as const,
+}
+
+export const PAYMENT_RECEIVED_TEMPLATE = {
+  id: 'payment_received',
+  subject: 'Abono recibido — {businessName}',
+  variables: ['businessName', 'customerName', 'serviceName', 'startDateTime', 'amountPaid'] as const,
+}
+
+export function paymentReceivedHtml(data: {
+  businessName: string
+  customerName: string
+  customerEmail?: string | null
+  serviceName: string
+  startDateTime: Date
+  businessTimezone: string
+  amountPaid: number
+  businessCurrency: string
+}): string {
+  const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
+  const amount = fmtCurrency(data.amountPaid, data.businessCurrency)
+
+  return baseHtml(`
+    ${header('Abono recibido')}
+    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, hemos recibido tu abono.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${dateStr}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Monto abonado</td><td style="padding:8px 0;font-weight:600;color:#2e7d32">${amount}</td></tr>
+    </table>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function paymentReceivedText(data: {
+  businessName: string
+  customerName: string
+  serviceName: string
+  startDateTime: Date
+  businessTimezone: string
+  amountPaid: number
+  businessCurrency: string
+}): string {
+  const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
+  const amount = fmtCurrency(data.amountPaid, data.businessCurrency)
+
+  return [
+    `Abono recibido`,
+    ``,
+    `Hola ${data.customerName}, hemos recibido tu abono.`,
+    ``,
+    `Servicio: ${data.serviceName}`,
+    `Fecha y hora: ${dateStr}`,
+    `Monto abonado: ${amount}`,
+    ``,
+    `Enviado por ${data.businessName} a través de Agendita`,
+  ].join('\n')
+}
+
 export function bookingReminderHtml(data: ReminderEmailData): string {
   const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
   const balanceLine = data.remainingBalance > 0

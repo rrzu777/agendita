@@ -1,0 +1,19 @@
+# Alert: High error rate (500s)
+# Fires when >3 HTTP 500 errors occur per minute, sustained for 3 minutes
+# Requires: logger output ingested into Prometheus via log-exporter or similar
+# Channel: PagerDuty + Slack
+
+groups:
+  - name: agendita-errors
+    rules:
+      - alert: ErrorRateHigh
+        expr: |
+          sum(rate(agendita_errors_total{type="error500"}[1m])) > 3
+        for: 3m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "High error rate detected on Agendita"
+          description: "Error 500 rate has exceeded 3/min for 3 consecutive minutes. Current rate: {{ $value | printf \"%.2f\" }} errors/min."
+          runbook_url: "https://docs.agendita.app/runbooks/error-rate"

@@ -10,6 +10,11 @@ import { redirect } from 'next/navigation'
 const MP_AUTH_URL = 'https://auth.mercadopago.cl/authorization'
 
 export async function startMercadoPagoConnect() {
+  const { redirectUrl } = await initiateMercadoPagoOAuth()
+  redirect(redirectUrl)
+}
+
+export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string }> {
   const { businessId } = await requireBusiness()
 
   const clientId = process.env.MERCADO_PAGO_CLIENT_ID
@@ -42,10 +47,10 @@ export async function startMercadoPagoConnect() {
     redirect_uri: redirectUri,
   })
 
-  redirect(`${MP_AUTH_URL}?${params.toString()}`)
+  return { redirectUrl: `${MP_AUTH_URL}?${params.toString()}` }
 }
 
-export async function disconnectMercadoPago() {
+export async function disconnectMercadoPagoConnection() {
   const { businessId } = await requireBusiness()
 
   const account = await prisma.paymentAccount.findFirst({
@@ -66,6 +71,9 @@ export async function disconnectMercadoPago() {
 
   return { disconnected: true }
 }
+
+// Backward-compatible alias
+export const disconnectMercadoPago = disconnectMercadoPagoConnection
 
 export async function getPaymentAccountStatus() {
   const { businessId } = await requireBusiness()

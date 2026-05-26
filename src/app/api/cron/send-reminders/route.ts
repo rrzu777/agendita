@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sendReminders } from '@/lib/cron/send-reminders'
+import { logger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -16,6 +17,7 @@ export async function POST(request: NextRequest) {
   const result = await sendReminders()
 
   console.log(`[cron:send-reminders] Sent ${result.sent}, skipped ${result.skipped}, errors ${result.errors} at ${new Date().toISOString()}`)
+  logger.info('booking.reminder_sent', `Cron send-reminders completed: sent=${result.sent} skipped=${result.skipped} errors=${result.errors}`)
 
   return NextResponse.json(result)
 }

@@ -1,0 +1,19 @@
+# Alert: Trial expiring soon
+# Fires daily at 09:00 when businesses have trial ending in the next 3 days
+# Requires: Prometheus metric agendita_trial_expiring_total or DB query via infinity plugin
+# Channel: Email notification (configure in Grafana notification channel)
+
+groups:
+  - name: agendita-trials
+    rules:
+      - alert: TrialExpiringSoon
+        expr: |
+          count(agendita_trial_expiringBusinesses) > 0
+        for: 0m
+        labels:
+          severity: warning
+          team: cSAT
+        annotations:
+          summary: "{{ $value }} business trial(s) expiring within 3 days"
+          description: "The following businesses have trials expiring soon. Consider reaching out or sending a conversion email."
+          # Table of business names is shown via the Trial Expiring Businesses panel in the dashboard
