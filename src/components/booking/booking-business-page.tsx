@@ -29,6 +29,7 @@ export function BookingBusinessPage({ business, profileHref }: BookingBusinessPa
         <BookingWizard
           businessId={business.id}
           services={business.services}
+          cancellationPolicy={business.cancellationPolicy}
         />
       </div>
     </main>

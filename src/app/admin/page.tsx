@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getCurrentUser } from '@/lib/auth/user'
 import { isPlatformAdmin } from '@/lib/auth/platform-admin'
+import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Building2, CircleAlert, CircleCheck } from 'lucide-react'
@@ -83,8 +84,8 @@ export default async function AdminPage() {
                         <span className="font-semibold text-primary">{business.name}</span>
                       </div>
                     </td>
-                    <td className="py-3 font-mono text-xs text-muted-foreground">
-                      {business.subdomain}.agendita.com
+                    <td className="py-3 text-muted-foreground">
+                      {getBusinessPublicUrl({ slug: business.slug, subdomain: business.subdomain })}
                     </td>
                     <td className="py-3 text-muted-foreground">
                       {business.plan?.name ?? '—'}

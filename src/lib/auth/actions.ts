@@ -7,6 +7,41 @@ import { validateSubdomain, generateDefaultSubdomain } from '@/lib/business/subd
 import { RegistrationError } from './registration-error'
 import { Prisma } from '@prisma/client'
 
+const BUSINESS_CATEGORIES = ['nails', 'barber', 'hair_salon', 'beauty', 'massage', 'therapy', 'other'] as const
+type BusinessCategoryInput = typeof BUSINESS_CATEGORIES[number]
+
+const SERVICE_TEMPLATES: Record<BusinessCategoryInput, Array<{ name: string; description: string; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; sortOrder: number }>> = {
+  nails: [
+    { name: 'Manicura rusa', description: 'Limpieza profunda de cutícula, nivelación y esmaltado.', durationMinutes: 120, price: 28000, depositAmount: 10000, pastelColor: '#FFB3BA', sortOrder: 1 },
+    { name: 'Esmaltado permanente', description: 'Esmaltado en gel con larga duración.', durationMinutes: 90, price: 22000, depositAmount: 8000, pastelColor: '#E2B3FF', sortOrder: 2 },
+    { name: 'Kapping gel', description: 'Refuerzo de uña natural con gel.', durationMinutes: 90, price: 25000, depositAmount: 8000, pastelColor: '#A3D8FF', sortOrder: 3 },
+  ],
+  barber: [
+    { name: 'Corte de cabello', description: 'Corte clásico o moderno con terminación.', durationMinutes: 45, price: 12000, depositAmount: 0, pastelColor: '#A3D8FF', sortOrder: 1 },
+    { name: 'Perfilado de barba', description: 'Diseño y perfilado de barba.', durationMinutes: 30, price: 9000, depositAmount: 0, pastelColor: '#B8E0D2', sortOrder: 2 },
+  ],
+  hair_salon: [
+    { name: 'Corte y brushing', description: 'Corte de cabello con brushing.', durationMinutes: 60, price: 18000, depositAmount: 0, pastelColor: '#FFDAC1', sortOrder: 1 },
+    { name: 'Coloración', description: 'Coloración o retoque de raíz.', durationMinutes: 120, price: 35000, depositAmount: 10000, pastelColor: '#E2B3FF', sortOrder: 2 },
+  ],
+  beauty: [
+    { name: 'Limpieza facial', description: 'Limpieza facial personalizada.', durationMinutes: 60, price: 25000, depositAmount: 8000, pastelColor: '#C7CEEA', sortOrder: 1 },
+    { name: 'Perfilado de cejas', description: 'Diseño y perfilado de cejas.', durationMinutes: 30, price: 10000, depositAmount: 0, pastelColor: '#FFB3BA', sortOrder: 2 },
+  ],
+  massage: [
+    { name: 'Masaje relajante', description: 'Sesión de masaje relajante.', durationMinutes: 60, price: 30000, depositAmount: 10000, pastelColor: '#B8E0D2', sortOrder: 1 },
+    { name: 'Masaje descontracturante', description: 'Masaje focalizado en tensión muscular.', durationMinutes: 60, price: 35000, depositAmount: 10000, pastelColor: '#A3D8FF', sortOrder: 2 },
+  ],
+  therapy: [
+    { name: 'Sesión individual', description: 'Atención terapéutica individual.', durationMinutes: 50, price: 30000, depositAmount: 0, pastelColor: '#C7CEEA', sortOrder: 1 },
+  ],
+  other: [],
+}
+
+function parseBusinessCategory(value: FormDataEntryValue | null): BusinessCategoryInput {
+  return BUSINESS_CATEGORIES.includes(value as BusinessCategoryInput) ? value as BusinessCategoryInput : 'other'
+}
+
 export async function signIn(formData: FormData) {
   const email = formData.get('email') as string
   const password = formData.get('password') as string
@@ -47,7 +82,9 @@ export async function signUp(formData: FormData) {
   const password = formData.get('password') as string
   const name = formData.get('name') as string
   const rawSubdomain = (formData.get('subdomain') as string) || undefined
+  const category = parseBusinessCategory(formData.get('category'))
   const acceptedTerms = formData.get('acceptedTerms') as string
+  const useServiceTemplate = formData.get('useServiceTemplate') === 'true'
 
   if (acceptedTerms !== 'true') {
     throw new RegistrationError('Debes aceptar los términos y condiciones y la política de privacidad', 'VALIDATION')
@@ -119,6 +156,8 @@ export async function signUp(formData: FormData) {
       email,
       name: name || undefined,
       subdomain: subdomainInput?.sanitized,
+      category,
+      useServiceTemplate,
     })
   } catch (error) {
     if (error instanceof RegistrationError) {
@@ -148,11 +187,14 @@ interface CreateBusinessInput {
   email: string
   name?: string
   subdomain?: string
+  category?: BusinessCategoryInput
+  useServiceTemplate?: boolean
 }
 
-async function createBusinessForUser({ userId, email, name, subdomain }: CreateBusinessInput) {
+export async function createBusinessForUser({ userId, email, name, subdomain, category = 'other', useServiceTemplate = false }: CreateBusinessInput) {
   const slug = subdomain || generateDefaultSubdomain(email)
   const finalSubdomain = subdomain || generateDefaultSubdomain(email)
+  const businessCategory = BUSINESS_CATEGORIES.includes(category) ? category : 'other'
 
   const betaPlan = await prisma.plan.findFirst({
     where: { name: 'Beta gratis' },
@@ -192,7 +234,8 @@ async function createBusinessForUser({ userId, email, name, subdomain }: CreateB
 
     const business = await tx.business.create({
       data: {
-        name: name ? `${name} Nails` : 'Mi Negocio',
+        name: name || 'Mi negocio',
+        category: businessCategory,
         slug,
         subdomain: finalSubdomain,
         ownerUserId: userId,
@@ -226,13 +269,14 @@ async function createBusinessForUser({ userId, email, name, subdomain }: CreateB
       },
     })
 
-    await tx.service.createMany({
-      data: [
-        { businessId: business.id, name: 'Manicura rusa', description: 'Limpieza profunda de cutícula, nivelación y esmaltado.', durationMinutes: 120, price: 28000, depositAmount: 10000, pastelColor: '#FFB3BA', sortOrder: 1 },
-        { businessId: business.id, name: 'Esmaltado permanente', description: 'Esmaltado en gel con larga duración.', durationMinutes: 90, price: 22000, depositAmount: 8000, pastelColor: '#E2B3FF', sortOrder: 2 },
-        { businessId: business.id, name: 'Kapping gel', description: 'Refuerzo de uña natural con gel.', durationMinutes: 90, price: 25000, depositAmount: 8000, pastelColor: '#A3D8FF', sortOrder: 3 },
-      ],
-    })
+    if (useServiceTemplate && businessCategory !== 'other') {
+      const serviceTemplate = SERVICE_TEMPLATES[businessCategory]
+      if (serviceTemplate.length > 0) {
+        await tx.service.createMany({
+          data: serviceTemplate.map((service) => ({ ...service, businessId: business.id })),
+        })
+      }
+    }
 
     await tx.availabilityRule.createMany({
       data: [

@@ -4,17 +4,17 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Card, CardContent } from '@/components/ui/card'
-import { adminExtendTrial, adminSuspendBusiness, adminActivateBusiness, adminRecordSubscriptionPayment } from '@/server/actions/admin'
+import { AdminChangePlanDialog } from './admin-change-plan-dialog'
 import { cn } from '@/lib/utils'
 
 interface AdminActionsProps {
   businessId: string
   businessName: string
   currentStatus: string
+  plans: Array<{ id: string; name: string }>
 }
 
-export function AdminActions({ businessId, businessName, currentStatus }: AdminActionsProps) {
+export function AdminActions({ businessId, businessName, currentStatus, plans }: AdminActionsProps) {
   const router = useRouter()
   const [loading, setLoading] = useState<string | null>(null)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -22,6 +22,7 @@ export function AdminActions({ businessId, businessName, currentStatus }: AdminA
   const [notes, setNotes] = useState('')
   const [trialDays, setTrialDays] = useState('30')
   const [suspendReason, setSuspendReason] = useState('')
+  const [showChangePlan, setShowChangePlan] = useState(false)
 
   async function handleAction(action: () => Promise<unknown>, actionName: string) {
     setLoading(actionName)
@@ -41,6 +42,8 @@ export function AdminActions({ businessId, businessName, currentStatus }: AdminA
   }
 
   const isSuspended = currentStatus === 'suspended'
+  const isCancelled = currentStatus === 'cancelled'
+  const isPastDue = currentStatus === 'past_due'
 
   return (
     <div className="space-y-4">
@@ -62,6 +65,7 @@ export function AdminActions({ businessId, businessName, currentStatus }: AdminA
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             className="h-10"
+            min="1"
           />
           <Input
             placeholder="Notas (opcional)"
@@ -71,11 +75,21 @@ export function AdminActions({ businessId, businessName, currentStatus }: AdminA
           />
           <Button
             className="w-full h-10"
-            onClick={() => handleAction(
-              () => adminRecordSubscriptionPayment(businessId, parseInt(amount), notes || undefined),
-              'payment'
-            )}
-            disabled={!amount || loading !== null}
+            onClick={() => {
+              const parsed = parseInt(amount, 10)
+              if (isNaN(parsed) || parsed <= 0) {
+                setMessage({ type: 'error', text: 'El monto debe ser un número positivo' })
+                return
+              }
+              return handleAction(
+                async () => {
+                  const { adminRecordSubscriptionPayment } = await import('@/server/actions/admin')
+                  return adminRecordSubscriptionPayment(businessId, parsed, notes || undefined)
+                },
+                'payment'
+              )
+            }}
+            disabled={loading !== null || !amount}
           >
             {loading === 'payment' ? 'Registrando...' : 'Registrar pago manual'}
           </Button>
@@ -91,14 +105,26 @@ export function AdminActions({ businessId, businessName, currentStatus }: AdminA
             value={trialDays}
             onChange={(e) => setTrialDays(e.target.value)}
             className="h-10 w-24"
+            min="1"
+            max="365"
           />
           <Button
             variant="outline"
             className="h-10 flex-1"
-            onClick={() => handleAction(
-              () => adminExtendTrial(businessId, parseInt(trialDays)),
-              'trial'
-            )}
+            onClick={() => {
+              const parsed = parseInt(trialDays, 10)
+              if (isNaN(parsed) || parsed < 1 || parsed > 365) {
+                setMessage({ type: 'error', text: 'Los días deben ser entre 1 y 365' })
+                return
+              }
+              return handleAction(
+                async () => {
+                  const { adminExtendTrial } = await import('@/server/actions/admin')
+                  return adminExtendTrial(businessId, parsed)
+                },
+                'trial'
+              )
+            }}
             disabled={loading !== null}
           >
             {loading === 'trial' ? 'Extendiendo...' : `Extender ${trialDays} días`}
@@ -123,8 +149,14 @@ export function AdminActions({ businessId, businessName, currentStatus }: AdminA
           className="w-full h-10"
           onClick={() => handleAction(
             isSuspended
-              ? () => adminActivateBusiness(businessId)
-              : () => adminSuspendBusiness(businessId, suspendReason || undefined),
+              ? async () => {
+                  const { adminActivateBusiness } = await import('@/server/actions/admin')
+                  return adminActivateBusiness(businessId)
+                }
+              : async () => {
+                  const { adminSuspendBusiness } = await import('@/server/actions/admin')
+                  return adminSuspendBusiness(businessId, suspendReason || undefined)
+                },
             'suspend'
           )}
           disabled={loading !== null}
@@ -136,6 +168,69 @@ export function AdminActions({ businessId, businessName, currentStatus }: AdminA
               : 'Suspender negocio'}
         </Button>
       </div>
+
+      <div className="space-y-2">
+        <p className="text-sm font-semibold text-muted-foreground">Plan</p>
+        <Button
+          variant="outline"
+          className="w-full h-10"
+          onClick={() => setShowChangePlan(true)}
+          disabled={loading !== null || isCancelled}
+        >
+          Cambiar plan
+        </Button>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-sm font-semibold text-muted-foreground">Estado de pago</p>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 h-9"
+            onClick={() => handleAction(
+              async () => {
+                const { adminMarkPastDue } = await import('@/server/actions/admin')
+                return adminMarkPastDue(businessId)
+              },
+              'pastdue'
+            )}
+            disabled={loading !== null || isCancelled || isPastDue}
+          >
+            {loading === 'pastdue' ? '...' : 'Marcar pendiente'}
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            className="flex-1 h-9"
+            onClick={() => handleAction(
+              async () => {
+                const { adminCancelSubscription } = await import('@/server/actions/admin')
+                return adminCancelSubscription(businessId)
+              },
+              'cancel'
+            )}
+            disabled={loading !== null || isCancelled}
+          >
+            {loading === 'cancel' ? '...' : 'Cancelar'}
+          </Button>
+        </div>
+      </div>
+
+      {showChangePlan && (
+        <AdminChangePlanDialog
+          businessId={businessId}
+          plans={plans}
+          currentStatus={currentStatus}
+          onClose={() => setShowChangePlan(false)}
+          onSuccess={() => {
+            setShowChangePlan(false)
+            setMessage({ type: 'success', text: 'Plan actualizado' })
+            router.refresh()
+          }}
+          onError={(msg) => setMessage({ type: 'error', text: msg })}
+        />
+      )}
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { prisma } from '@/lib/db'
 import { RescheduleForm } from './reschedule-form'
+import { formatInTimeZone } from 'date-fns-tz'
 
 interface ReschedulePageProps {
   params: Promise<{ id: string }>
@@ -25,9 +26,11 @@ export default async function ReschedulePage({ params }: ReschedulePageProps) {
     notFound()
   }
 
-  if (booking.status === 'completed' || booking.status === 'cancelled') {
+  if (['completed', 'cancelled', 'no_show', 'expired'].includes(booking.status)) {
     redirect(`/dashboard/bookings`)
   }
+
+  const timezone = userData.business.timezone || 'America/Santiago'
 
   return (
     <div>
@@ -37,9 +40,9 @@ export default async function ReschedulePage({ params }: ReschedulePageProps) {
           bookingId={booking.id}
           customerName={booking.customer?.name || ''}
           serviceName={booking.service?.name || ''}
-          currentDate={booking.startDateTime.toISOString().split('T')[0]}
-          currentTime={booking.startDateTime.toTimeString().slice(0, 5)}
-          businessId={userData.business.id}
+          currentDate={formatInTimeZone(booking.startDateTime, timezone, 'yyyy-MM-dd')}
+          currentTime={formatInTimeZone(booking.startDateTime, timezone, 'HH:mm')}
+          timezone={timezone}
         />
       </div>
     </div>

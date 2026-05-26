@@ -14,6 +14,16 @@ export default function RegisterPage() {
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [useServiceTemplate, setUseServiceTemplate] = useState(false)
+  const categories = [
+    { value: 'other', label: 'Otro rubro / lo configuro después' },
+    { value: 'nails', label: 'Uñas' },
+    { value: 'barber', label: 'Barbería' },
+    { value: 'hair_salon', label: 'Peluquería' },
+    { value: 'beauty', label: 'Belleza / estética' },
+    { value: 'massage', label: 'Masajes' },
+    { value: 'therapy', label: 'Terapia / consulta' },
+  ]
 
   async function handleSubmit(formData: FormData) {
     setError('')
@@ -105,6 +115,33 @@ export default function RegisterPage() {
                 <Input className="studio-input pl-12" id="password" name="password" type="password" placeholder="Mínimo 6 caracteres" required minLength={6} />
               </div>
             </div>
+            <div className="space-y-2">
+              <Label className="studio-eyebrow" htmlFor="category">Rubro</Label>
+              <select
+                id="category"
+                name="category"
+                defaultValue="other"
+                className="studio-input h-12 w-full rounded-lg border border-border bg-card px-4 text-primary"
+                onChange={(e) => setUseServiceTemplate(e.target.value === 'nails')}
+              >
+                {categories.map((category) => (
+                  <option key={category.value} value={category.value}>{category.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="useServiceTemplate"
+                name="useServiceTemplate"
+                checked={useServiceTemplate}
+                onChange={(e) => setUseServiceTemplate(e.target.checked)}
+                className="mt-0.5 size-4 rounded border-border accent-primary"
+              />
+              <label htmlFor="useServiceTemplate" className="text-sm text-muted-foreground">
+                Crear servicios de ejemplo para este rubro
+              </label>
+            </div>
             <div className="flex items-start gap-3">
               <input
                 type="checkbox"
@@ -122,6 +159,10 @@ export default function RegisterPage() {
                 y la{' '}
                 <a href="/privacy" target="_blank" className="font-semibold text-primary underline">
                   Política de Privacidad
+                </a>{' '}
+                y la{' '}
+                <a href="/refund-policy" target="_blank" className="font-semibold text-primary underline">
+                  Política de Reembolsos y Cancelación
                 </a>
               </label>
             </div>

@@ -17,6 +17,13 @@ const updateAvailabilityRuleSchema = z.object({
   isActive: z.boolean(),
 })
 
+const rescheduleSlotsSchema = z.object({
+  bookingId: z.string().min(1),
+  date: z.date(),
+})
+
+const NON_RESCHEDULABLE_STATUSES = ['completed', 'cancelled', 'no_show', 'expired'] as const
+
 export async function getAvailabilityRules() {
   const { businessId } = await requireBusiness()
   return prisma.availabilityRule.findMany({
@@ -76,6 +83,70 @@ export async function getAvailableTimeSlots(businessId: string, serviceId: strin
   }
 
   return generateSlots(date, service.durationMinutes, availabilityRules, timeBlocks, bookings, {
+    timezone,
+    now: new Date(),
+    bookingWindowDays,
+  })
+}
+
+export async function getAvailableSlotsForReschedule(bookingId: string, date: Date) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+
+  const parsed = rescheduleSlotsSchema.safeParse({ bookingId, date })
+  if (!parsed.success) {
+    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  }
+
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, businessId },
+    include: {
+      service: { select: { id: true, durationMinutes: true, name: true, isActive: true } },
+      business: { select: { timezone: true, bookingWindowDays: true } },
+    },
+  })
+
+  if (!booking) {
+    throw new ForbiddenError('Reserva no encontrada')
+  }
+
+  if (NON_RESCHEDULABLE_STATUSES.includes(booking.status as typeof NON_RESCHEDULABLE_STATUSES[number])) {
+    throw new Error('No se puede reprogramar una reserva en este estado')
+  }
+
+  if (!booking.service || !booking.service.isActive) {
+    throw new Error('Servicio no disponible')
+  }
+
+  const timezone = booking.business.timezone || 'America/Santiago'
+  const bookingWindowDays = booking.business.bookingWindowDays ?? 90
+  const { dayStart, dayEnd } = getBusinessDayRange(date, timezone)
+
+  const [availabilityRules, timeBlocks, bookings] = await Promise.all([
+    prisma.availabilityRule.findMany({
+      where: { businessId, isActive: true },
+      orderBy: { dayOfWeek: 'asc' },
+    }),
+    prisma.timeBlock.findMany({
+      where: {
+        businessId,
+        startDateTime: { lte: dayEnd },
+        endDateTime: { gte: dayStart },
+      },
+      orderBy: { startDateTime: 'asc' },
+    }),
+    prisma.booking.findMany({
+      where: {
+        businessId,
+        id: { not: bookingId },
+        status: { notIn: ['cancelled', 'no_show', 'expired'] },
+        startDateTime: { lte: dayEnd },
+        endDateTime: { gte: dayStart },
+      },
+      orderBy: { startDateTime: 'asc' },
+    }),
+  ])
+
+  return generateSlots(date, booking.service.durationMinutes, availabilityRules, timeBlocks, bookings, {
     timezone,
     now: new Date(),
     bookingWindowDays,

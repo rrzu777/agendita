@@ -12,6 +12,7 @@ import { logger } from '@/lib/logger'
 
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
 import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcement'
+import { normalizePhone } from '@/lib/customers/phone'
 import { addMinutes } from 'date-fns'
 import {
   sendBookingReceivedToCustomer,
@@ -246,7 +247,12 @@ export async function createBooking(data: {
         })
       }
 
-      const holdExpiresAt = addMinutes(new Date(), 15)
+      const noDepositRequired = depositRequired <= 0
+      const isFreeService = finalAmount <= 0
+
+      const status = noDepositRequired ? BookingStatus.confirmed : BookingStatus.pending_payment
+      const holdExpiresAt = status === BookingStatus.pending_payment ? addMinutes(new Date(), 15) : null
+      const bookingPaymentStatus = isFreeService ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid
 
       return tx.booking.create({
         data: {
@@ -255,12 +261,13 @@ export async function createBooking(data: {
           customerId: customer.id,
           startDateTime: data.startDateTime,
           endDateTime,
-          status: BookingStatus.pending_payment,
+          status,
           totalPrice,
           depositRequired,
+          depositPaid: 0,
           remainingBalance: finalAmount,
           finalAmount,
-          paymentStatus: BookingPaymentStatus.unpaid,
+          paymentStatus: bookingPaymentStatus,
           holdExpiresAt,
           idempotencyKey: data.idempotencyKey || null,
         },
@@ -470,7 +477,17 @@ const createBookingFromDashboardSchema = z.object({
   startDateTime: z.date(),
   internalNotes: z.string().max(500).optional(),
   markDepositPaid: z.boolean().optional().default(false),
+  paymentMode: z.enum(['none', 'deposit_paid', 'full_paid']).optional(),
+  paymentMethod: z.enum(['cash', 'transfer', 'external_card', 'other']).optional(),
+  customerId: z.string().min(1).optional(),
 })
+
+const PAYMENT_METHOD_MAP: Record<string, string> = {
+  cash: 'Efectivo',
+  transfer: 'Transferencia',
+  external_card: 'Tarjeta externa',
+  other: 'Otro',
+}
 
 export async function createBookingFromDashboard(data: {
   serviceId: string
@@ -480,6 +497,9 @@ export async function createBookingFromDashboard(data: {
   startDateTime: Date
   internalNotes?: string
   markDepositPaid?: boolean
+  paymentMode?: 'none' | 'deposit_paid' | 'full_paid'
+  paymentMethod?: string
+  customerId?: string
 }) {
   const { business, businessId } = await requireBusinessRole(['owner', 'admin'])
 
@@ -499,7 +519,37 @@ export async function createBookingFromDashboard(data: {
   const depositRequired = service.depositAmount
   const finalAmount = service.price
   const endDateTime = addMinutes(data.startDateTime, service.durationMinutes)
+
+  // Derive payment mode: new explicit mode takes precedence, fallback to legacy markDepositPaid
+  const rawPaymentMode = data.paymentMode
   const markDepositPaid = data.markDepositPaid ?? false
+  const paymentMode: 'none' | 'deposit_paid' | 'full_paid' =
+    rawPaymentMode ?? (markDepositPaid ? 'deposit_paid' : 'none')
+
+  const paymentMethod = data.paymentMethod ?? 'other'
+  const displayMethod = PAYMENT_METHOD_MAP[paymentMethod] ?? paymentMethod
+
+  // Validate paymentMethod when creating a payment
+  if ((paymentMode === 'deposit_paid' || paymentMode === 'full_paid') && !data.paymentMethod) {
+    throw new Error('Método de pago requerido')
+  }
+
+  // Reject deposit_paid when service has no required deposit
+  if (paymentMode === 'deposit_paid' && depositRequired <= 0) {
+    throw new Error('No se requiere abono para este servicio. Usa modo "Sin pago" o "Pago total".')
+  }
+
+  const noDepositNeeded = depositRequired <= 0
+  const isFreeService = finalAmount <= 0
+
+  // Payment mode determines if booking starts confirmed
+  const shouldConfirm = paymentMode === 'full_paid' || paymentMode === 'deposit_paid' || noDepositNeeded
+
+  const status = shouldConfirm ? BookingStatus.confirmed : BookingStatus.pending_payment
+
+  const initialPaymentStatus = isFreeService
+    ? BookingPaymentStatus.fully_paid
+    : BookingPaymentStatus.unpaid
 
   const booking = await prisma.$transaction(async (tx) => {
     await assertSlotIsAvailable({
@@ -511,31 +561,43 @@ export async function createBookingFromDashboard(data: {
       timezone: business.timezone || 'America/Santiago',
     })
 
-    let customer = await tx.customer.findFirst({
-      where: { phone: data.customerPhone, name: data.customerName, businessId },
-    })
+    let customer: { id: string; name: string; phone: string; email: string | null }
 
-    if (!customer) {
-      customer = await tx.customer.create({
-        data: {
-          businessId,
-          name: data.customerName,
-          phone: data.customerPhone,
-          email: data.customerEmail || null,
-        },
+    if (data.customerId) {
+      const existing = await tx.customer.findFirst({
+        where: { id: data.customerId, businessId },
       })
+      if (!existing) {
+        throw new Error('Cliente no encontrado')
+      }
+      customer = existing
+    } else {
+      const normalized = normalizePhone(data.customerPhone)
+
+      const existingByPhone = await tx.customer.findFirst({
+        where: { phone: normalized, businessId },
+      })
+
+      if (existingByPhone) {
+        customer = existingByPhone
+        if (data.customerEmail && !customer.email) {
+          await tx.customer.update({
+            where: { id: customer.id },
+            data: { email: data.customerEmail },
+          })
+          customer.email = data.customerEmail
+        }
+      } else {
+        customer = await tx.customer.create({
+          data: {
+            businessId,
+            name: data.customerName,
+            phone: normalized,
+            email: data.customerEmail || null,
+          },
+        })
+      }
     }
-
-    const noDepositNeeded = depositRequired === 0
-    const isFreeService = finalAmount === 0
-
-    const status = (markDepositPaid || noDepositNeeded)
-      ? BookingStatus.confirmed
-      : BookingStatus.pending_payment
-
-    const initialPaymentStatus = isFreeService
-      ? BookingPaymentStatus.fully_paid
-      : BookingPaymentStatus.unpaid
 
     const newBooking = await tx.booking.create({
       data: {
@@ -557,7 +619,7 @@ export async function createBookingFromDashboard(data: {
       include: { service: true, customer: true },
     })
 
-    if (markDepositPaid && depositRequired > 0) {
+    if (paymentMode === 'deposit_paid' && depositRequired > 0) {
       const { applyApprovedPayment } = await import('@/server/services/finance')
 
       const payment = await tx.payment.create({
@@ -571,7 +633,7 @@ export async function createBookingFromDashboard(data: {
           amount: depositRequired,
           currency: business.currency || 'CLP',
           status: 'pending',
-          paymentMethod: 'Efectivo / Transferencia',
+          paymentMethod: displayMethod,
           paidAt: null,
         },
       })
@@ -585,7 +647,40 @@ export async function createBookingFromDashboard(data: {
         provider: 'manual',
         providerPaymentId: null,
         paymentType: PaymentType.deposit,
-        paymentMethod: 'Efectivo / Transferencia',
+        paymentMethod: displayMethod,
+        paymentId: payment.id,
+      })
+    }
+
+    if (paymentMode === 'full_paid' && finalAmount > 0) {
+      const { applyApprovedPayment } = await import('@/server/services/finance')
+
+      const payment = await tx.payment.create({
+        data: {
+          businessId,
+          bookingId: newBooking.id,
+          customerId: customer.id,
+          paymentType: PaymentType.full_payment,
+          provider: 'manual',
+          providerPaymentId: null,
+          amount: finalAmount,
+          currency: business.currency || 'CLP',
+          status: 'pending',
+          paymentMethod: displayMethod,
+          paidAt: null,
+        },
+      })
+
+      await applyApprovedPayment({
+        tx,
+        bookingId: newBooking.id,
+        businessId,
+        amount: finalAmount,
+        currency: business.currency || 'CLP',
+        provider: 'manual',
+        providerPaymentId: null,
+        paymentType: PaymentType.full_payment,
+        paymentMethod: displayMethod,
         paymentId: payment.id,
       })
     }
@@ -662,12 +757,8 @@ export async function rescheduleBooking(bookingId: string, newStartDateTime: Dat
     throw new Error('Reserva no encontrada')
   }
 
-  if (booking.status === 'completed') {
-    throw new Error('No se puede reprogramar una reserva ya completada')
-  }
-
-  if (booking.status === 'cancelled') {
-    throw new Error('No se puede reprogramar una reserva cancelada')
+  if (['completed', 'cancelled', 'no_show', 'expired'].includes(booking.status)) {
+    throw new Error('No se puede reprogramar una reserva en este estado')
   }
 
   const service = booking.service
@@ -691,8 +782,12 @@ export async function rescheduleBooking(bookingId: string, newStartDateTime: Dat
 
     const historyNote = `[REPROGRAMADA de ${oldDate}]`
 
-    await tx.booking.update({
-      where: { id: bookingId },
+    const updateResult = await tx.booking.updateMany({
+      where: {
+        id: bookingId,
+        businessId,
+        status: { notIn: [BookingStatus.completed, BookingStatus.cancelled, BookingStatus.no_show, BookingStatus.expired] },
+      },
       data: {
         startDateTime: newStartDateTime,
         endDateTime,
@@ -701,6 +796,10 @@ export async function rescheduleBooking(bookingId: string, newStartDateTime: Dat
           : historyNote,
       },
     })
+
+    if (updateResult.count === 0) {
+      throw new Error('No se puede reprogramar una reserva en este estado')
+    }
   })
 
   revalidatePath('/dashboard/bookings')

@@ -12,8 +12,8 @@ export async function adminRecordSubscriptionPayment(
   const user = await getCurrentUser()
   requirePlatformAdmin(user?.email)
 
-  if (!amount || amount <= 0) {
-    throw new Error('El monto debe ser positivo')
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('El monto debe ser un número positivo')
   }
 
   const subscription = await prisma.businessSubscription.findFirst({
@@ -66,8 +66,8 @@ export async function adminExtendTrial(businessId: string, days: number) {
   const user = await getCurrentUser()
   requirePlatformAdmin(user?.email)
 
-  if (!days || days < 1) {
-    throw new Error('Debes extender al menos 1 día')
+  if (!Number.isFinite(days) || days < 1 || days > 365) {
+    throw new Error('Los días de extensión deben ser un número entre 1 y 365')
   }
 
   const subscription = await prisma.businessSubscription.findFirst({
@@ -127,7 +127,11 @@ export async function adminSuspendBusiness(businessId: string, reason?: string) 
     orderBy: { createdAt: 'desc' },
   })
 
-  const beforeStatus = subscription?.status ?? null
+  if (!subscription) {
+    throw new Error('No se encontró suscripción para este negocio')
+  }
+
+  const beforeStatus = subscription.status
 
   await prisma.$transaction([
     prisma.businessSubscription.updateMany({
@@ -165,7 +169,11 @@ export async function adminActivateBusiness(businessId: string) {
     orderBy: { createdAt: 'desc' },
   })
 
-  const beforeStatus = subscription?.status ?? null
+  if (!subscription) {
+    throw new Error('No se encontró suscripción para este negocio')
+  }
+
+  const beforeStatus = subscription.status
 
   await prisma.$transaction([
     prisma.businessSubscription.updateMany({
@@ -189,6 +197,135 @@ export async function adminActivateBusiness(businessId: string) {
         adminUserId: user?.id,
         adminEmail: user?.email,
         notes: 'Reactivado por admin',
+      },
+    }),
+  ])
+}
+
+export async function adminChangePlan(businessId: string, planId: string) {
+  const user = await getCurrentUser()
+  requirePlatformAdmin(user?.email)
+
+  if (!planId || typeof planId !== 'string') {
+    throw new Error('planId es requerido')
+  }
+
+  const plan = await prisma.plan.findUnique({ where: { id: planId } })
+  if (!plan) {
+    throw new Error('El plan no existe')
+  }
+
+  const subscription = await prisma.businessSubscription.findFirst({
+    where: { businessId },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  if (!subscription) {
+    throw new Error('No se encontró suscripción para este negocio')
+  }
+
+  const beforeStatus = subscription.status
+  const beforePlanId = subscription.planId
+
+  await prisma.$transaction([
+    prisma.businessSubscription.updateMany({
+      where: { businessId },
+      data: { planId },
+    }),
+    prisma.business.update({
+      where: { id: businessId },
+      data: { planId },
+    }),
+    prisma.subscriptionLog.create({
+      data: {
+        businessId,
+        action: 'plan_changed_by_admin',
+        beforeStatus,
+        afterStatus: beforeStatus,
+        beforePlanId,
+        afterPlanId: planId,
+        adminUserId: user?.id,
+        adminEmail: user?.email,
+        notes: `Plan cambiado a "${plan.name}" por admin`,
+      },
+    }),
+  ])
+}
+
+export async function adminMarkPastDue(businessId: string) {
+  const user = await getCurrentUser()
+  requirePlatformAdmin(user?.email)
+
+  const subscription = await prisma.businessSubscription.findFirst({
+    where: { businessId },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  if (!subscription) {
+    throw new Error('No se encontró suscripción para este negocio')
+  }
+
+  const beforeStatus = subscription.status
+
+  await prisma.$transaction([
+    prisma.businessSubscription.updateMany({
+      where: { businessId },
+      data: { status: 'past_due' },
+    }),
+    prisma.business.update({
+      where: { id: businessId },
+      data: { subscriptionStatus: 'past_due' },
+    }),
+    prisma.subscriptionLog.create({
+      data: {
+        businessId,
+        action: 'marked_past_due_by_admin',
+        beforeStatus,
+        afterStatus: 'past_due',
+        adminUserId: user?.id,
+        adminEmail: user?.email,
+        notes: 'Marcado como pago pendiente por admin',
+      },
+    }),
+  ])
+}
+
+export async function adminCancelSubscription(businessId: string, reason?: string) {
+  const user = await getCurrentUser()
+  requirePlatformAdmin(user?.email)
+
+  const subscription = await prisma.businessSubscription.findFirst({
+    where: { businessId },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  if (!subscription) {
+    throw new Error('No se encontró suscripción para este negocio')
+  }
+
+  const beforeStatus = subscription.status
+
+  await prisma.$transaction([
+    prisma.businessSubscription.updateMany({
+      where: { businessId },
+      data: {
+        status: 'cancelled',
+        cancelledAt: new Date(),
+      },
+    }),
+    prisma.business.update({
+      where: { id: businessId },
+      data: { subscriptionStatus: 'cancelled' },
+    }),
+    prisma.subscriptionLog.create({
+      data: {
+        businessId,
+        action: 'subscription_cancelled_by_admin',
+        beforeStatus,
+        afterStatus: 'cancelled',
+        adminUserId: user?.id,
+        adminEmail: user?.email,
+        notes: reason ?? 'Suscripción cancelada por admin',
       },
     }),
   ])

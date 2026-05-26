@@ -1,11 +1,13 @@
 'use server'
 
+import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { PaymentStatus, BookingStatus } from '@prisma/client'
 import { updateCustomerSchema, updateCustomerNotesSchema } from '@/lib/customers/schema'
+import { normalizePhone } from '@/lib/customers/phone'
 
 export type CustomerListItem = {
   id: string
@@ -319,4 +321,47 @@ export async function updateCustomerNotes(customerId: string, data: unknown) {
   revalidatePath('/dashboard/customers')
   revalidatePath(`/dashboard/customers/${customerId}`)
   return updated
+}
+
+const searchCustomersForBookingSchema = z.object({
+  query: z.string().min(1).max(100),
+})
+
+export type CustomerSearchResult = {
+  id: string
+  name: string
+  phone: string
+  email: string | null
+}
+
+export async function searchCustomersForBooking(query: string): Promise<CustomerSearchResult[]> {
+  const { businessId } = await requireBusiness()
+
+  const parsed = searchCustomersForBookingSchema.safeParse({ query })
+  if (!parsed.success) {
+    return []
+  }
+
+  const normalized = normalizePhone(query)
+  const digitsOnly = normalized.replace(/\D/g, '')
+
+  const customers = await prisma.customer.findMany({
+    where: {
+      businessId,
+      OR: [
+        { name: { contains: parsed.data.query, mode: 'insensitive' } },
+        ...(digitsOnly.length >= 8 ? [{ phone: { contains: digitsOnly } }] : []),
+      ],
+    },
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      email: true,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+  })
+
+  return customers
 }

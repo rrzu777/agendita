@@ -2,10 +2,12 @@ import { redirect } from 'next/navigation'
 import { notFound } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth/user'
 import { isPlatformAdmin } from '@/lib/auth/platform-admin'
+import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getSubscriptionStatusLabel } from '@/lib/subscriptions/enforcement'
 import { AdminActions } from './admin-actions'
+import { CopyLinkButton } from './copy-link-button'
 
 interface BusinessDetailPageProps {
   params: Promise<{ businessId: string }>
@@ -52,6 +54,13 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
   }
 
   const status = business.subscriptionStatus
+  const publicUrl = getBusinessPublicUrl({ slug: business.slug, subdomain: business.subdomain })
+  const bookingUrl = `${publicUrl}/book`
+
+  const plans = await prisma.plan.findMany({
+    select: { id: true, name: true },
+    orderBy: { sortOrder: 'asc' },
+  })
 
   return (
     <div>
@@ -63,7 +72,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
         <div>
           <h1 className="text-3xl font-semibold text-primary">{business.name}</h1>
           <p className="mt-1 text-muted-foreground">
-            {business.subdomain}.agendita.com · Creado {business.createdAt.toLocaleDateString('es-CL')}
+            Creado {business.createdAt.toLocaleDateString('es-CL')}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
@@ -199,6 +208,28 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
         <div className="space-y-6">
           <Card>
             <CardHeader>
+              <CardTitle>Links públicos</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <p className="mb-1.5 text-xs font-semibold text-muted-foreground">Perfil público</p>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 truncate text-sm text-primary">{publicUrl}</div>
+                  <CopyLinkButton url={publicUrl} />
+                </div>
+              </div>
+              <div>
+                <p className="mb-1.5 text-xs font-semibold text-muted-foreground">Reserva online</p>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 truncate text-sm text-primary">{bookingUrl}</div>
+                  <CopyLinkButton url={bookingUrl} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>Información</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
@@ -236,6 +267,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
                 businessId={business.id}
                 businessName={business.name}
                 currentStatus={status}
+                plans={plans}
               />
             </CardContent>
           </Card>

@@ -1,13 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { rescheduleBooking } from '@/server/actions/bookings'
-import { CalendarCheck2, Clock } from 'lucide-react'
+import { getAvailableSlotsForReschedule } from '@/server/actions/availability'
+import { CalendarCheck2, Clock3, Loader2 } from 'lucide-react'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 
 interface RescheduleFormProps {
   bookingId: string
@@ -15,7 +17,7 @@ interface RescheduleFormProps {
   serviceName: string
   currentDate: string
   currentTime: string
-  businessId: string
+  timezone: string
 }
 
 export function RescheduleForm({
@@ -24,32 +26,64 @@ export function RescheduleForm({
   serviceName,
   currentDate,
   currentTime,
+  timezone,
 }: RescheduleFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [loadingSlots, setLoadingSlots] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [date, setDate] = useState(currentDate)
+  const [slots, setSlots] = useState<{ start: Date; end: Date }[]>([])
+  const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null)
+  const ignoreRef = useRef(false)
+  const requestIdRef = useRef(0)
+
+  useEffect(() => {
+    if (!date) return
+
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
+    ignoreRef.current = false
+    setLoadingSlots(true)
+    setError('')
+    setSelectedSlot(null)
+
+    getAvailableSlotsForReschedule(bookingId, fromZonedTime(`${date} 00:00`, timezone))
+      .then((availableSlots) => {
+        if (ignoreRef.current || requestIdRef.current !== requestId) return
+        setSlots(availableSlots.map((slot) => ({
+          start: new Date(slot.start),
+          end: new Date(slot.end),
+        })))
+      })
+      .catch((err) => {
+        if (ignoreRef.current || requestIdRef.current !== requestId) return
+        setSlots([])
+        setError(err instanceof Error ? err.message : 'No se pudieron cargar los horarios')
+      })
+      .finally(() => {
+        if (!ignoreRef.current && requestIdRef.current === requestId) setLoadingSlots(false)
+      })
+
+    return () => {
+      ignoreRef.current = true
+    }
+  }, [bookingId, date, timezone])
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError('')
     setLoading(true)
 
-    const form = e.currentTarget
-    const formData = new FormData(form)
-    const dateStr = formData.get('date') as string
-    const timeStr = formData.get('time') as string
-
-    if (!dateStr || !timeStr) {
-      setError('Selecciona una fecha y hora')
+    if (!selectedSlot) {
+      setError('Selecciona un horario disponible')
       setLoading(false)
       return
     }
 
-    const newStartDateTime = new Date(`${dateStr}T${timeStr}:00`)
-
     try {
-      await rescheduleBooking(bookingId, newStartDateTime)
+      await rescheduleBooking(bookingId, selectedSlot.start)
       setSuccess(true)
       setTimeout(() => {
         router.push('/dashboard/bookings')
@@ -74,7 +108,7 @@ export function RescheduleForm({
     )
   }
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = formatInTimeZone(new Date(), timezone, 'yyyy-MM-dd')
 
   return (
     <Card>
@@ -94,22 +128,66 @@ export function RescheduleForm({
             </p>
           </div>
 
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="date">Nueva fecha *</Label>
-              <Input id="date" name="date" type="date" required min={today} className="h-10" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="time">Nueva hora *</Label>
-              <Input id="time" name="time" type="time" required className="h-10" />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="date">Nueva fecha *</Label>
+            <Input id="date" name="date" type="date" required min={today} value={date} onChange={(e) => setDate(e.target.value)} className="h-10" />
           </div>
+
+          <div className="space-y-3">
+            <Label>Horarios disponibles *</Label>
+            {loadingSlots ? (
+              <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                Cargando horarios...
+              </div>
+            ) : slots.length === 0 ? (
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
+                No hay horarios disponibles para esta fecha.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {slots.map((slot) => {
+                  const start = new Date(slot.start)
+                  const selected = selectedSlot?.start.getTime() === start.getTime()
+                  return (
+                    <button
+                      key={start.toISOString()}
+                      type="button"
+                      onClick={() => setSelectedSlot(slot)}
+                      className={`rounded-xl border p-3 text-center transition ${
+                        selected
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-card text-primary hover:border-primary hover:bg-accent'
+                      }`}
+                    >
+                      <div className="flex items-center justify-center gap-2 font-semibold">
+                        <Clock3 className="size-4" />
+                        {formatInTimeZone(start, timezone, 'HH:mm')}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {selectedSlot && (
+            <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-2">
+              <p className="text-sm font-semibold text-primary">Resumen del cambio</p>
+              <p className="text-sm text-muted-foreground">Cliente: {customerName}</p>
+              <p className="text-sm text-muted-foreground">Servicio: {serviceName}</p>
+              <p className="text-sm text-muted-foreground">Antes: {currentDate} a las {currentTime}</p>
+              <p className="text-sm text-muted-foreground">
+                Nuevo: {date} a las {formatInTimeZone(selectedSlot.start, timezone, 'HH:mm')}
+              </p>
+            </div>
+          )}
 
           <div className="flex gap-3">
             <Button type="button" variant="outline" onClick={() => router.back()} disabled={loading}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading} className="flex-1">
+            <Button type="submit" disabled={loading || loadingSlots || !selectedSlot} className="flex-1">
               {loading ? 'Reprogramando...' : 'Reprogramar reserva'}
             </Button>
           </div>

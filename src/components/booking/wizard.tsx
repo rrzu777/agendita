@@ -53,9 +53,10 @@ const steps = [
 interface BookingWizardProps {
   businessId: string
   services: Service[]
+  cancellationPolicy?: string | null
 }
 
-export function BookingWizard({ businessId, services }: BookingWizardProps) {
+export function BookingWizard({ businessId, services, cancellationPolicy }: BookingWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const [data, setData] = useState<BookingData>(initialData)
   const [bookingId, setBookingId] = useState<string | null>(null)
@@ -129,7 +130,7 @@ export function BookingWizard({ businessId, services }: BookingWizardProps) {
           </div>
         )}
         {currentStep === 5 && data.serviceId && data.timeSlot && (
-          <StepPayment data={data} businessId={businessId} onSuccess={(id, mode) => {
+          <StepPayment data={data} businessId={businessId} cancellationPolicy={cancellationPolicy} onSuccess={(id, mode) => {
             setBookingId(id)
             setConfirmationMode(mode)
             nextStep()

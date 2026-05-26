@@ -32,9 +32,20 @@ enum BillingInterval {
   yearly
 }
 
+enum BusinessCategory {
+  nails
+  barber
+  hair_salon
+  beauty
+  massage
+  therapy
+  other
+}
+
 model Business {
   id                 String             @id @default(cuid())
   name               String
+  category           BusinessCategory  @default(other)
   slug               String             @unique
   subdomain          String             @unique
   customDomain       String?            @unique

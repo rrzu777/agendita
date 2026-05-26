@@ -6,6 +6,9 @@ import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { getBookings } from '@/server/actions/bookings'
 import { getFinancialSummary } from '@/server/actions/ledger'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
+import { prisma } from '@/lib/db'
+import { buildSetupChecklist } from '@/lib/dashboard/setup-checklist'
+import { SetupChecklist } from '@/components/dashboard/setup-checklist'
 import { CalendarCheck2, CreditCard, ExternalLink, TrendingUp, Users } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -20,8 +23,13 @@ export default async function DashboardPage() {
   }
 
   const business = userData.business
-  const bookings = await getBookings()
-  const summary = await getFinancialSummary()
+  const [bookings, summary, servicesCount, availabilityCount, connectedPaymentAccounts] = await Promise.all([
+    getBookings(),
+    getFinancialSummary(),
+    prisma.service.count({ where: { businessId: business.id, isActive: true } }),
+    prisma.availabilityRule.count({ where: { businessId: business.id, isActive: true } }),
+    prisma.paymentAccount.count({ where: { businessId: business.id, status: 'connected' } }),
+  ])
 
   // Calcular estadísticas reales
   const today = new Date()
@@ -39,6 +47,15 @@ export default async function DashboardPage() {
 
   const publicUrl = getBusinessPublicUrl(business)
   const bookingUrl = getBusinessPublicUrl(business, '/book')
+  const checklist = buildSetupChecklist({
+    business,
+    servicesCount,
+    availabilityCount,
+    bookingsCount: bookings.length,
+    hasConnectedPaymentAccount: connectedPaymentAccounts > 0,
+    publicUrl,
+    bookingUrl,
+  })
   const stats = [
     { label: 'Reservas hoy', value: bookingsToday.length.toString(), hint: '+ hoy', icon: CalendarCheck2 },
     { label: 'Ingresos mes', value: `$${summary.incomeMonth.toLocaleString('es-CL')}`, hint: 'Este mes', icon: CreditCard },
@@ -56,7 +73,7 @@ export default async function DashboardPage() {
               <div>
                 <h3 className="mb-1 text-lg font-semibold text-primary">Tu perfil público</h3>
                 <p className="text-sm text-muted-foreground">
-                  Comparte este link con tus clientas para que reserven
+                  Comparte este link con tus clientes para que reserven
                 </p>
                 <code className="mt-3 inline-block max-w-full rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm text-primary">
                   {publicUrl}
@@ -87,6 +104,8 @@ export default async function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        <SetupChecklist checklist={checklist} />
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           {stats.map((stat) => {
@@ -124,7 +143,7 @@ export default async function DashboardPage() {
               </div>
               <h3 className="mb-2 text-lg font-semibold text-primary">No tienes reservas próximas</h3>
               <p className="text-sm text-muted-foreground">
-                Comparte tu perfil público para recibir reservas de tus clientas.
+                Comparte tu perfil público para recibir reservas de tus clientes.
               </p>
               <code className="mt-3 inline-block rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm text-primary">
                 {publicUrl}

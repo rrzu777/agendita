@@ -68,6 +68,7 @@ async function main() {
   const business = await prisma.business.create({
     data: {
       name: 'Mimos Nails',
+      category: 'nails',
       slug: 'mimosnails',
       subdomain: 'mimosnails',
       ownerUserId: ownerUser.id,

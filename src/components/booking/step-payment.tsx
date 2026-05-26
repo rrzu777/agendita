@@ -15,10 +15,41 @@ function generateIdempotencyKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-export function StepPayment({ data, businessId, onSuccess, onBack }: { data: BookingData; businessId: string; onSuccess: (id: string, mode: 'paid' | 'pending') => void; onBack: () => void }) {
+function LegalAcceptanceLabel() {
+  return (
+    <span>
+      Acepto la{' '}
+      <a href="/refund-policy" target="_blank" className="font-semibold text-primary underline">
+        política de cancelación y reembolso
+      </a>{' '}
+      del negocio, la{' '}
+      <a href="/privacy" target="_blank" className="font-semibold text-primary underline">
+        Política de Privacidad
+      </a>{' '}
+      y los{' '}
+      <a href="/terms" target="_blank" className="font-semibold text-primary underline">
+        Términos y Condiciones
+      </a>{' '}
+      de Agendita
+    </span>
+  )
+}
+
+function BusinessCancellationPolicy({ policy }: { policy?: string | null }) {
+  if (!policy) return null
+  return (
+    <div className="mb-4 rounded-xl border border-border/70 bg-muted/40 p-4 text-sm text-muted-foreground">
+      <p className="font-semibold text-primary">Política de cancelación del negocio</p>
+      <p className="mt-1 whitespace-pre-line">{policy}</p>
+    </div>
+  )
+}
+
+export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, onBack }: { data: BookingData; businessId: string; cancellationPolicy?: string | null; onSuccess: (id: string, mode: 'paid' | 'pending') => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error'>('review')
   const [errorMessage, setErrorMessage] = useState('')
+  const [availabilityError, setAvailabilityError] = useState('')
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [availability, setAvailability] = useState<{
     available: boolean
@@ -27,9 +58,30 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
     isMock: boolean
   } | null>(null)
 
+  const noDepositNeeded = data.serviceDeposit <= 0
+  const isFreeService = data.servicePrice <= 0
+
   useEffect(() => {
-    getOnlinePaymentAvailability(businessId).then(setAvailability)
-  }, [businessId])
+    if (noDepositNeeded) {
+      setAvailability(null)
+      setAvailabilityError('')
+      return
+    }
+    setAvailability(null)
+    setAvailabilityError('')
+    getOnlinePaymentAvailability(businessId)
+      .then(setAvailability)
+      .catch(() => {
+        const reason = 'No pudimos verificar pago online. Puedes confirmar la reserva y el negocio coordinará el abono.'
+        setAvailabilityError(reason)
+        setAvailability({
+          available: false,
+          provider: null,
+          isMock: false,
+          reason,
+        })
+      })
+  }, [businessId, noDepositNeeded])
 
   // Generar una key estable por montaje de StepPayment.
   // Retry dentro del mismo montaje (ej. "Intentar de nuevo") usa la misma key.
@@ -53,7 +105,8 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
       }, businessId)
 
       setStep('success')
-      onSuccess(booking.id, 'pending')
+      const mode = noDepositNeeded ? 'paid' as const : 'pending' as const
+      onSuccess(booking.id, mode)
     } catch (err) {
       console.error('Booking error:', err)
       setErrorMessage(err instanceof Error ? err.message : 'Error al crear la reserva')
@@ -68,8 +121,12 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
     setStep('processing')
     setErrorMessage('')
 
+    if (data.serviceDeposit <= 0) {
+      await handleManualBooking()
+      return
+    }
+
     try {
-      // Create booking with idempotencyKey
       const booking = await createBooking({
         serviceId: data.serviceId!,
         customerName: data.customerName,
@@ -80,7 +137,6 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
         acceptedTerms,
       }, businessId)
 
-      // Initiate payment with provider
       const paymentResult = await initiatePayment({
         bookingId: booking.id,
         amount: data.serviceDeposit,
@@ -139,6 +195,55 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
     )
   }
 
+  if (noDepositNeeded) {
+    return (
+      <div>
+        <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Confirmar reserva</h2>
+        <p className="mb-8 text-lg text-muted-foreground">Resumen de tu reserva</p>
+
+        <div className="mb-6 space-y-3 rounded-xl bg-muted/55 p-5">
+          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
+          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
+          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">${data.servicePrice.toLocaleString('es-CL')}</span></div>
+        </div>
+
+        {isFreeService ? (
+          <div className="mb-6 rounded-xl bg-green-50 p-4 text-sm text-green-800">
+            <p className="font-semibold">Este servicio es gratuito</p>
+            <p className="mt-1">No requiere pago. Tu reserva será confirmada inmediatamente.</p>
+          </div>
+        ) : (
+          <div className="mb-6 rounded-xl bg-blue-50 p-4 text-sm text-blue-800">
+            <p className="font-semibold">Sin abono requerido</p>
+            <p className="mt-1">El saldo se paga directamente al negocio.</p>
+          </div>
+        )}
+
+        <BusinessCancellationPolicy policy={cancellationPolicy} />
+
+        <div className="mb-4 flex items-start gap-3">
+          <input
+            type="checkbox"
+            id="accept-terms"
+            checked={acceptedTerms}
+            onChange={(e) => setAcceptedTerms(e.target.checked)}
+            className="mt-0.5 size-4 rounded border-border accent-primary"
+          />
+          <label htmlFor="accept-terms" className="text-sm text-muted-foreground">
+            <LegalAcceptanceLabel />
+          </label>
+        </div>
+
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
+          <Button className="h-12 flex-1 text-base font-semibold" onClick={handleManualBooking} disabled={loading || !acceptedTerms}>
+            {loading ? 'Confirmando...' : 'Confirmar reserva'}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   if (availability && !availability.available) {
     return (
       <div>
@@ -155,10 +260,16 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
         <div className="mb-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <AlertCircle className="mt-0.5 size-5 shrink-0" />
           <div>
-            <p className="font-semibold">Este negocio coordina el abono directamente por WhatsApp o transferencia</p>
-            <p className="mt-1">Tu reserva quedará pendiente hasta que el negocio confirme el abono.</p>
+            <p className="font-semibold">
+              {availabilityError || 'Este negocio coordina el abono directamente por WhatsApp o transferencia'}
+            </p>
+            {!availabilityError && (
+              <p className="mt-1">Tu reserva quedará pendiente hasta que el negocio confirme el abono.</p>
+            )}
           </div>
         </div>
+
+        <BusinessCancellationPolicy policy={cancellationPolicy} />
 
         <div className="mb-4 flex items-start gap-3">
           <input
@@ -169,15 +280,7 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
             className="mt-0.5 size-4 rounded border-border accent-primary"
           />
           <label htmlFor="accept-terms" className="text-sm text-muted-foreground">
-            Acepto la{' '}
-            <a href="/refund-policy" target="_blank" className="font-semibold text-primary underline">
-              política de cancelación y reembolso
-            </a>{' '}
-            del negocio y los{' '}
-            <a href="/terms" target="_blank" className="font-semibold text-primary underline">
-              Términos y Condiciones
-            </a>{' '}
-            de Agendita
+            <LegalAcceptanceLabel />
           </label>
         </div>
 
@@ -218,6 +321,8 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
         </div>
       )}
 
+      <BusinessCancellationPolicy policy={cancellationPolicy} />
+
       <div className="mb-4 flex items-start gap-3">
         <input
           type="checkbox"
@@ -227,15 +332,7 @@ export function StepPayment({ data, businessId, onSuccess, onBack }: { data: Boo
           className="mt-0.5 size-4 rounded border-border accent-primary"
         />
         <label htmlFor="accept-terms" className="text-sm text-muted-foreground">
-          Acepto la{' '}
-          <a href="/refund-policy" target="_blank" className="font-semibold text-primary underline">
-            política de cancelación y reembolso
-          </a>{' '}
-          del negocio y los{' '}
-          <a href="/terms" target="_blank" className="font-semibold text-primary underline">
-            Términos y Condiciones
-          </a>{' '}
-          de Agendita
+          <LegalAcceptanceLabel />
         </label>
       </div>
 

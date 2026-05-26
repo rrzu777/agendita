@@ -151,7 +151,7 @@ export function OnboardingWizard({
 
       <Card>
         <CardContent className="p-6 md:p-8">
-          {currentStep === 0 && <StepProfile business={business} />}
+          {currentStep === 0 && <StepProfile business={business} publicUrl={publicUrl} />}
           {currentStep === 1 && <StepServices servicesCount={servicesCount} />}
           {currentStep === 2 && <StepSchedule availabilityCount={availabilityCount} />}
           {currentStep === 3 && <StepPolicies />}
@@ -159,6 +159,7 @@ export function OnboardingWizard({
             <StepPublish
               publicUrl={publicUrl}
               bookingUrl={bookingUrl}
+              canPublish={servicesCount > 0 && availabilityCount > 0}
               copied={copied}
               onCopy={() => { navigator.clipboard.writeText(bookingUrl); setCopied(true) }}
             />
@@ -182,7 +183,7 @@ export function OnboardingWizard({
             <ArrowRight className="ml-2 size-4" />
           </Button>
         ) : (
-          <Button onClick={handleFinish} disabled={loading} className="shadow-[0_14px_32px_rgba(51,41,32,0.18)]">
+          <Button onClick={handleFinish} disabled={loading || servicesCount === 0 || availabilityCount === 0} className="shadow-[0_14px_32px_rgba(51,41,32,0.18)]">
             {loading ? 'Finalizando...' : '¡Listo! Ir al dashboard'}
           </Button>
         )}
@@ -191,7 +192,7 @@ export function OnboardingWizard({
   )
 }
 
-function StepProfile({ business }: { business: OnboardingPageProps['business'] }) {
+function StepProfile({ business, publicUrl }: { business: OnboardingPageProps['business']; publicUrl: string }) {
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-semibold text-primary">Datos de tu negocio</h2>
@@ -206,7 +207,7 @@ function StepProfile({ business }: { business: OnboardingPageProps['business'] }
         </div>
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Subdominio</p>
-          <p className="mt-1 font-mono text-sm text-primary">{business.subdomain}.agendita.com</p>
+          <p className="mt-1 break-all font-mono text-sm text-primary">{publicUrl}</p>
         </div>
         {business.city && (
           <div>
@@ -229,7 +230,7 @@ function StepServices({ servicesCount }: { servicesCount: number }) {
     <div className="space-y-4">
       <h2 className="text-2xl font-semibold text-primary">Tus servicios</h2>
       <p className="text-muted-foreground">
-        Las clientas elegirán entre estos servicios al reservar.
+        Los clientes elegirán entre estos servicios al reservar.
       </p>
 
       <div className="rounded-lg bg-muted/30 p-5 text-center">
@@ -258,7 +259,7 @@ function StepSchedule({ availabilityCount }: { availabilityCount: number }) {
     <div className="space-y-4">
       <h2 className="text-2xl font-semibold text-primary">Tus horarios</h2>
       <p className="text-muted-foreground">
-        Define cuándo aceptas reservas. Las clientas solo podrán agendar en estos horarios.
+        Define cuándo aceptas reservas. Los clientes solo podrán agendar en estos horarios.
       </p>
 
       <div className="rounded-lg bg-muted/30 p-5 text-center">
@@ -287,7 +288,7 @@ function StepPolicies() {
     <div className="space-y-4">
       <h2 className="text-2xl font-semibold text-primary">Políticas de reserva</h2>
       <p className="text-muted-foreground">
-        Define las reglas para tus clientas sobre abonos, cancelaciones y más.
+        Define las reglas para tus clientes sobre abonos, cancelaciones y más.
       </p>
 
       <div className="rounded-lg bg-muted/30 p-5 space-y-3">
@@ -315,11 +316,13 @@ function StepPolicies() {
 function StepPublish({
   publicUrl,
   bookingUrl,
+  canPublish,
   copied,
   onCopy,
 }: {
   publicUrl: string
   bookingUrl: string
+  canPublish: boolean
   copied: boolean
   onCopy: () => void
 }) {
@@ -329,9 +332,9 @@ function StepPublish({
         <CheckCircle2 className="size-8 text-green-600" />
       </div>
       <div>
-        <h2 className="text-2xl font-semibold text-primary">¡Tu negocio está listo!</h2>
+        <h2 className="text-2xl font-semibold text-primary">{canPublish ? '¡Tu negocio está listo!' : 'Faltan pasos para publicar'}</h2>
         <p className="mt-2 text-muted-foreground">
-          Comparte este link con tus clientas para que empiecen a reservar.
+          {canPublish ? 'Comparte este link con tus clientes para que empiecen a reservar.' : 'Agrega servicios y horarios antes de marcar el negocio como listo.'}
         </p>
       </div>
 

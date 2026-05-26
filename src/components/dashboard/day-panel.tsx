@@ -6,6 +6,7 @@ import { es } from 'date-fns/locale'
 import { formatInTimeZone } from 'date-fns-tz'
 import { BookingCard, type CalendarBooking } from './booking-card'
 import { TimeBlockCard, type CalendarTimeBlock } from './time-block-card'
+import { BlockTimeModal } from './block-time-modal'
 
 interface DayPanelProps {
   bookings: CalendarBooking[]
@@ -49,24 +50,30 @@ export function DayPanel({ bookings, timeBlocks, selectedDate, businessCurrency,
   if (items.length === 0) {
     return (
       <div className="mt-6 rounded-xl border border-border/60 bg-muted/40 p-5">
-        <h3 className="mb-2 font-semibold text-primary">
-          {format(headerDate, "EEEE d 'de' MMMM", { locale: es })}
-        </h3>
-        <p className="text-sm text-muted-foreground">No hay reservas para este día</p>
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-primary">
+            {format(headerDate, "EEEE d 'de' MMMM", { locale: es })}
+          </h3>
+          <BlockTimeModal defaultDate={selectedDate} timezone={timezone} />
+        </div>
+        <p className="mt-2 text-sm text-muted-foreground">No hay reservas para este día</p>
       </div>
     )
   }
 
   return (
     <div className="mt-6 space-y-3">
-      <h3 className="font-semibold text-primary">
-        {format(headerDate, "EEEE d 'de' MMMM", { locale: es })}
-      </h3>
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-primary">
+          {format(headerDate, "EEEE d 'de' MMMM", { locale: es })}
+        </h3>
+        <BlockTimeModal defaultDate={selectedDate} timezone={timezone} />
+      </div>
       {items.map((item) =>
         item.type === 'booking' ? (
           <BookingCard key={item.id} booking={item} businessCurrency={businessCurrency} businessTimezone={timezone} businessAddress={businessAddress} />
         ) : (
-          <TimeBlockCard key={item.id} timeBlock={item} />
+          <TimeBlockCard key={item.id} timeBlock={item} timezone={timezone} />
         )
       )}
     </div>

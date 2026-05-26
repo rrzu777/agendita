@@ -111,6 +111,9 @@ export async function initiatePayment(data: {
 
   // Monto autoritativo desde la base de datos (no confiamos en el frontend)
   const amount = Math.min(booking.depositRequired, booking.remainingBalance)
+  if (amount <= 0) {
+    throw new Error('No se requiere pago para esta reserva')
+  }
   const currency = booking.business.currency || 'CLP'
   const description = `Abono para ${booking.service?.name || 'servicio'}`
 

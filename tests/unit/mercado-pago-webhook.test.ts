@@ -877,4 +877,304 @@ describe('Mercado Pago webhook', () => {
       expect(applyApprovedPayment).not.toHaveBeenCalled()
     })
   })
+
+  describe('currency mismatch', () => {
+    it('rejects currency mismatch with 400 and does not call applyApprovedPayment', async () => {
+      const secret = 'test-webhook-secret'
+      const body = { data: { id: 'mp-pay-currency' } }
+      const signature = createMpSignatureHeader('mp-pay-currency', 'req-curr', secret)
+
+      mockMpFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            id: 'mp-pay-currency',
+            status: 'approved',
+            status_detail: 'accredited',
+            transaction_amount: 10000,
+            currency_id: 'USD',
+            date_approved: '2024-01-15T10:30:00Z',
+            date_created: '2024-01-15T10:25:00Z',
+            external_reference: 'pay-currency',
+            metadata: {
+              bookingId: 'booking-1',
+              businessId: 'biz-1',
+              paymentType: 'deposit',
+              localPaymentId: 'pay-currency',
+            },
+          }),
+      })
+
+      mockPrisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-currency',
+        bookingId: 'booking-1',
+        businessId: 'biz-1',
+        customerId: 'cust-1',
+        provider: 'mercado_pago',
+        providerPaymentId: null,
+        amount: 10000,
+        currency: 'CLP',
+        status: 'pending',
+        paymentType: 'deposit',
+        paymentMethod: null,
+        booking: {
+          id: 'booking-1',
+          businessId: 'biz-1',
+          status: 'pending_payment',
+        },
+      })
+
+      const req = makeRequest(body, {
+        'x-signature': signature,
+        'x-request-id': 'req-curr',
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toContain('Currency mismatch')
+      expect(applyApprovedPayment).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('metadata businessId mismatch', () => {
+    it('rejects metadata.businessId mismatch with 400 and does not call applyApprovedPayment', async () => {
+      const secret = 'test-webhook-secret'
+      const body = { data: { id: 'mp-pay-bizid' } }
+      const signature = createMpSignatureHeader('mp-pay-bizid', 'req-bizid', secret)
+
+      mockMpFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            id: 'mp-pay-bizid',
+            status: 'approved',
+            status_detail: 'accredited',
+            transaction_amount: 10000,
+            currency_id: 'CLP',
+            date_approved: '2024-01-15T10:30:00Z',
+            date_created: '2024-01-15T10:25:00Z',
+            external_reference: 'pay-bizid',
+            metadata: {
+              bookingId: 'booking-1',
+              businessId: 'biz-999',
+              paymentType: 'deposit',
+              localPaymentId: 'pay-bizid',
+            },
+          }),
+      })
+
+      mockPrisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-bizid',
+        bookingId: 'booking-1',
+        businessId: 'biz-1',
+        customerId: 'cust-1',
+        provider: 'mercado_pago',
+        providerPaymentId: null,
+        amount: 10000,
+        currency: 'CLP',
+        status: 'pending',
+        paymentType: 'deposit',
+        paymentMethod: null,
+        booking: {
+          id: 'booking-1',
+          businessId: 'biz-1',
+          status: 'pending_payment',
+        },
+      })
+
+      const req = makeRequest(body, {
+        'x-signature': signature,
+        'x-request-id': 'req-bizid',
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toContain('businessId mismatch')
+      expect(applyApprovedPayment).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('providerPaymentId conflict', () => {
+    it('rejects conflicting providerPaymentId with 409', async () => {
+      const secret = 'test-webhook-secret'
+      const body = { data: { id: 'mp-pay-conflict' } }
+      const signature = createMpSignatureHeader('mp-pay-conflict', 'req-conflict', secret)
+
+      mockMpFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            id: 'mp-pay-conflict',
+            status: 'approved',
+            status_detail: 'accredited',
+            transaction_amount: 10000,
+            currency_id: 'CLP',
+            date_approved: '2024-01-15T10:30:00Z',
+            date_created: '2024-01-15T10:25:00Z',
+            external_reference: 'pay-conflict',
+            metadata: {
+              bookingId: 'booking-1',
+              businessId: 'biz-1',
+              paymentType: 'deposit',
+              localPaymentId: 'pay-conflict',
+            },
+          }),
+      })
+
+      mockPrisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-conflict',
+        bookingId: 'booking-1',
+        businessId: 'biz-1',
+        customerId: 'cust-1',
+        provider: 'mercado_pago',
+        providerPaymentId: 'some-other-mp-id',
+        amount: 10000,
+        currency: 'CLP',
+        status: 'pending',
+        paymentType: 'deposit',
+        paymentMethod: null,
+        booking: {
+          id: 'booking-1',
+          businessId: 'biz-1',
+          status: 'pending_payment',
+        },
+      })
+
+      const req = makeRequest(body, {
+        'x-signature': signature,
+        'x-request-id': 'req-conflict',
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toContain('ProviderPaymentId conflict')
+    })
+  })
+
+  describe('cross-tenant isolation', () => {
+    it('does not modify Payment or Booking when metadata businessId belongs to different business', async () => {
+      const secret = 'test-webhook-secret'
+      const body = { data: { id: 'mp-pay-cross' } }
+      const signature = createMpSignatureHeader('mp-pay-cross', 'req-cross', secret)
+
+      mockMpFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            id: 'mp-pay-cross',
+            status: 'approved',
+            status_detail: 'accredited',
+            transaction_amount: 10000,
+            currency_id: 'CLP',
+            date_approved: '2024-01-15T10:30:00Z',
+            date_created: '2024-01-15T10:25:00Z',
+            external_reference: 'pay-cross',
+            metadata: {
+              bookingId: 'booking-1',
+              businessId: 'biz-999',
+              paymentType: 'deposit',
+              localPaymentId: 'pay-cross',
+            },
+          }),
+      })
+
+      mockPrisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-cross',
+        bookingId: 'booking-1',
+        businessId: 'biz-1',
+        customerId: 'cust-1',
+        provider: 'mercado_pago',
+        providerPaymentId: null,
+        amount: 10000,
+        currency: 'CLP',
+        status: 'pending',
+        paymentType: 'deposit',
+        paymentMethod: null,
+        booking: {
+          id: 'booking-1',
+          businessId: 'biz-1',
+          status: 'pending_payment',
+        },
+      })
+
+      const req = makeRequest(body, {
+        'x-signature': signature,
+        'x-request-id': 'req-cross',
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toContain('businessId mismatch')
+      expect(mockPrisma.payment.update).not.toHaveBeenCalled()
+      expect(mockPrisma.booking.update).not.toHaveBeenCalled()
+      expect(applyApprovedPayment).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('two fetch calls before apply', () => {
+    it('uses global token for first fetch and business token for second fetch before applying', async () => {
+      const secret = 'test-webhook-secret'
+      const body = { data: { id: 'mp-pay-twofet' } }
+      const signature = createMpSignatureHeader('mp-pay-twofet', 'req-twofet', secret)
+
+      const fetchCalls: string[] = []
+      mockMpFetch.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            setImmediate(() => {
+              fetchCalls.push('called')
+              resolve({
+                ok: true,
+                json: () =>
+                  Promise.resolve({
+                    id: 'mp-pay-twofet',
+                    status: 'approved',
+                    status_detail: 'accredited',
+                    transaction_amount: 10000,
+                    currency_id: 'CLP',
+                    date_approved: '2024-01-15T10:30:00Z',
+                    date_created: '2024-01-15T10:25:00Z',
+                    external_reference: 'pay-twofet',
+                    metadata: {
+                      bookingId: 'booking-1',
+                      businessId: 'biz-1',
+                      paymentType: 'deposit',
+                      localPaymentId: 'pay-twofet',
+                    },
+                  }),
+              })
+            })
+          }),
+      )
+
+      mockPrisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-twofet',
+        bookingId: 'booking-1',
+        businessId: 'biz-1',
+        customerId: 'cust-1',
+        provider: 'mercado_pago',
+        providerPaymentId: null,
+        amount: 10000,
+        currency: 'CLP',
+        status: 'pending',
+        paymentType: 'deposit',
+        paymentMethod: null,
+        booking: {
+          id: 'booking-1',
+          businessId: 'biz-1',
+          status: 'pending_payment',
+        },
+      })
+
+      const req = makeRequest(body, {
+        'x-signature': signature,
+        'x-request-id': 'req-twofet',
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(200)
+      expect(fetchCalls.length).toBe(2)
+      expect(applyApprovedPayment).toHaveBeenCalled()
+    })
+  })
 })

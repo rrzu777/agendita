@@ -2,11 +2,12 @@
 
 import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { MessageCircle, Copy, Check } from 'lucide-react'
+import { MessageCircle, Copy, Check, BellRing } from 'lucide-react'
 import {
   buildWhatsappUrl,
   buildBookingConfirmationWhatsappMessage,
   buildWhatsappBookingSummaryText,
+  buildWhatsappReminderMessage,
 } from '@/lib/notifications'
 
 export interface BookingContactData {
@@ -20,16 +21,18 @@ export interface BookingContactData {
   depositPaid: number
   remainingBalance: number
   businessAddress?: string | null
+  businessName?: string | null
 }
 
 interface BookingContactButtonsProps {
   booking: BookingContactData
-  /** Extra fields shown in the summary (optional) */
   variant?: 'default' | 'compact'
+  showReminder?: boolean
 }
 
-export function BookingContactButtons({ booking, variant = 'default' }: BookingContactButtonsProps) {
+export function BookingContactButtons({ booking, variant = 'default', showReminder = true }: BookingContactButtonsProps) {
   const [copied, setCopied] = useState(false)
+  const [reminderCopied, setReminderCopied] = useState(false)
 
   const phone = booking.customerPhone || ''
   const hasPhone = phone.replace(/\D/g, '').length >= 8
@@ -37,7 +40,7 @@ export function BookingContactButtons({ booking, variant = 'default' }: BookingC
     ? new Date(booking.startDateTime)
     : booking.startDateTime
 
-  const summaryText = buildWhatsappBookingSummaryText({
+  const bookingData = {
     customerName: booking.customerName,
     customerPhone: phone,
     serviceName: booking.serviceName,
@@ -48,20 +51,13 @@ export function BookingContactButtons({ booking, variant = 'default' }: BookingC
     depositPaid: booking.depositPaid || 0,
     remainingBalance: booking.remainingBalance || 0,
     businessAddress: booking.businessAddress || null,
-  })
+  }
 
-  const whatsappMessage = buildBookingConfirmationWhatsappMessage({
-    customerName: booking.customerName,
-    customerPhone: phone,
-    serviceName: booking.serviceName,
-    startDateTime: start,
-    businessTimezone: booking.businessTimezone,
-    businessCurrency: booking.businessCurrency,
-    totalPrice: booking.totalPrice || 0,
-    depositPaid: booking.depositPaid || 0,
-    remainingBalance: booking.remainingBalance || 0,
-    businessAddress: booking.businessAddress || null,
-  })
+  const summaryText = buildWhatsappBookingSummaryText(bookingData)
+
+  const whatsappMessage = buildBookingConfirmationWhatsappMessage(bookingData)
+
+  const reminderMessage = buildWhatsappReminderMessage(bookingData)
 
   const handleCopySummary = useCallback(async () => {
     try {
@@ -72,6 +68,16 @@ export function BookingContactButtons({ booking, variant = 'default' }: BookingC
       // clipboard API may not be available
     }
   }, [summaryText])
+
+  const handleCopyReminder = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(reminderMessage)
+      setReminderCopied(true)
+      setTimeout(() => setReminderCopied(false), 2000)
+    } catch {
+      // clipboard API may not be available
+    }
+  }, [reminderMessage])
 
   return (
     <div className="flex flex-wrap gap-2">
@@ -88,7 +94,24 @@ export function BookingContactButtons({ booking, variant = 'default' }: BookingC
             rel="noopener noreferrer"
           >
             <MessageCircle className="size-3.5" />
-            {variant === 'compact' ? 'WhatsApp' : 'Enviar confirmación por WhatsApp'}
+            {variant === 'compact' ? 'Confirmación' : 'Enviar confirmación'}
+          </a>
+        </Button>
+      )}
+      {showReminder && hasPhone && (
+        <Button
+          size={variant === 'compact' ? 'xs' : 'sm'}
+          variant="outline"
+          className="gap-1"
+          asChild
+        >
+          <a
+            href={buildWhatsappUrl(phone, reminderMessage)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <BellRing className="size-3.5" />
+            {variant === 'compact' ? 'Recordatorio' : 'Enviar recordatorio'}
           </a>
         </Button>
       )}
@@ -111,6 +134,30 @@ export function BookingContactButtons({ booking, variant = 'default' }: BookingC
           </>
         )}
       </Button>
+      {showReminder && (
+        <Button
+          size={variant === 'compact' ? 'xs' : 'sm'}
+          variant="ghost"
+          className="gap-1"
+          onClick={handleCopyReminder}
+          disabled={reminderCopied}
+        >
+          {reminderCopied ? (
+            <>
+              <Check className="size-3.5" />
+              Copiado
+            </>
+          ) : (
+            <>
+              <Copy className="size-3.5" />
+              {variant === 'compact' ? 'Recordatorio' : 'Copiar recordatorio'}
+            </>
+          )}
+        </Button>
+      )}
+      {!hasPhone && (
+        <p className="text-xs text-muted-foreground py-1">Sin teléfono registrado</p>
+      )}
     </div>
   )
 }

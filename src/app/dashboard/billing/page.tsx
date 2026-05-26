@@ -1,10 +1,9 @@
 import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { getCurrentSubscription } from '@/server/actions/subscriptions'
-import { BadgeCheck, CircleAlert, CircleX, Clock, CreditCard } from 'lucide-react'
+import { BadgeCheck, CircleAlert, CircleX, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const statusLabels: Record<string, string> = {
@@ -40,6 +39,7 @@ export default async function BillingPage() {
 
   const business = userData.business
   const { subscription, payments } = await getCurrentSubscription()
+  const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL
 
   if (!subscription) {
     return (
@@ -50,7 +50,11 @@ export default async function BillingPage() {
             <CardContent className="p-10 text-center">
               <CircleAlert className="mx-auto mb-3 size-10 text-muted-foreground" />
               <p className="text-muted-foreground">No se encontró información de suscripción.</p>
-              <p className="text-xs text-muted-foreground mt-1">Contacta a soporte para activar tu cuenta.</p>
+              {supportEmail && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Contacta a <a href={`mailto:${supportEmail}`} className="font-semibold text-primary">{supportEmail}</a>
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -190,9 +194,15 @@ export default async function BillingPage() {
                     <li>Confirmaremos el pago y activaremos tu suscripción.</li>
                   </ol>
                 </div>
-                <p className="text-xs">
-                  Pronto estará disponible el pago automático con tarjeta. El precio de lanzamiento se mantendrá para los primeros negocios.
-                </p>
+                {supportEmail ? (
+                  <p className="text-xs">
+                    Contacto para pagos: <a href={`mailto:${supportEmail}`} className="font-semibold text-primary underline">{supportEmail}</a>
+                  </p>
+                ) : (
+                  <p className="text-xs">
+                    Pronto estará disponible el pago automático con tarjeta.
+                  </p>
+                )}
               </CardContent>
             </Card>
 
@@ -221,9 +231,13 @@ export default async function BillingPage() {
                     <div>
                       <p className="font-semibold text-yellow-800">Pago pendiente</p>
                       <p className="text-sm text-yellow-600">
-                        Tu suscripción tiene un pago pendiente. Las reservas siguen funcionando durante la beta,
-                        pero regulariza tu pago pronto para evitar interrupciones.
+                        Tu suscripción tiene un pago pendiente. Regulariza tu pago pronto para evitar interrupciones.
                       </p>
+                      {supportEmail && (
+                        <p className="mt-1 text-sm text-yellow-700">
+                          Contacto: <a href={`mailto:${supportEmail}`} className="font-semibold underline">{supportEmail}</a>
+                        </p>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -238,8 +252,10 @@ export default async function BillingPage() {
                     <div>
                       <p className="font-semibold text-red-800">Cuenta suspendida</p>
                       <p className="text-sm text-red-600">
-                        Tu cuenta ha sido suspendida. Las nuevas reservas están temporalmente deshabilitadas.
-                        Contacta a soporte para reactivar tu cuenta.
+                        Tu cuenta ha sido suspendida.
+                        {supportEmail && (
+                          <> Contacta a <a href={`mailto:${supportEmail}`} className="font-semibold underline">{supportEmail}</a> para reactivar.</>
+                        )}
                       </p>
                     </div>
                   </div>

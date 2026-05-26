@@ -18,9 +18,9 @@ export default async function NewBookingPage() {
 
   return (
     <div>
-      <DashboardHeader title="Nueva reserva" subtitle="Crea una reserva manual para tus clientas" />
+      <DashboardHeader title="Nueva reserva" subtitle="Crea una reserva manual para tus clientes" />
       <div className="p-5 md:p-10">
-        <NewBookingForm businessId={userData.business.id} services={services} />
+        <NewBookingForm services={services} />
       </div>
     </div>
   )
