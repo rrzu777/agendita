@@ -1,8 +1,20 @@
 # Grafana provisioning — datasources
 # Grafana reads this file on startup to configure data sources.
-# Supports Prometheus, Loki, Tempo, Jaeger, etc.
 # For production: set PROMETHEUS_URL env var and reference it via ${PROMETHEUS_URL}
-# or hardcode the URL below and manage credentials via Grafana's secure JSON data.
+#
+# Grafana Cloud authentication for /api/metrics:
+#
+# Option A — Bearer token (recommended when METRICS_SECRET is set):
+#   In Grafana Cloud → "Add auth header" → "Authorization: Bearer <METRICS_SECRET>"
+#   Or when using Prometheus scraping, configure the scrape job with:
+#     bearer_token: "<METRICS_SECRET value>"
+#
+# Option B — Basic auth (service account):
+#   Grafana Cloud → Service Account → Create token → Use as Basic auth user:token
+#
+# Option C — No auth (METRICS_SECRET not set, dev/staging only):
+#   Leave authorization header out; endpoint allows unauthenticated access.
+#   WARNING: Do NOT use in production without METRICS_SECRET.
 
 apiVersion: 1
 
@@ -19,6 +31,5 @@ datasources:
       timeInterval: 15s
     # Secure settings (stored encrypted in Grafana, not in this file):
     # secureJsonData:
-    #   httpHeaderValue1: Bearer <your-token>
-    # Uncomment and set via environment variable or CI/CD secrets injection.
+    #   httpHeaderValue1: "Bearer <token>"   # For bearer auth to /api/metrics
     version: 1

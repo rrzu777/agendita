@@ -1,8 +1,20 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { BookingStatus, PaymentStatus, PaymentProvider } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
+
+// Metrics secret — if set, /api/metrics requires Bearer <METRICS_SECRET>
+const METRICS_SECRET = process.env.METRICS_SECRET
+
+// Prometheus-compatible text metrics endpoint.
+// Requires Bearer Authorization with METRICS_SECRET when env var METRICS_SECRET is set.
+// Grafana Cloud: add auth via "Add auth header" → "Authorization: Bearer <token>"
+// or use a Grafana Cloud Data Source with "Basic auth" and a service account token.
+//
+// Example Grafana Cloud scraping config:
+//  _url: https://your-app.vercel.app/api/metrics
+//   auth: Bearer with token = value of METRICS_SECRET env var
 
 // Simple in-memory cache (per-function-instance, resets on warm invocations)
 // For production use, use Redis or Vercel KV.
@@ -16,9 +28,9 @@ async function gatherMetrics(): Promise<string> {
   // agendita_bookings_total{businessId, status} COUNT
   try {
     const bookings = await prisma.$queryRaw<{ businessId: string; status: BookingStatus; count: BigInt }[]>`
-      SELECT business_id as "businessId", status, COUNT(*) as count
+      SELECT "businessId", status, COUNT(*) as count
       FROM "Booking"
-      GROUP BY business_id, status
+      GROUP BY "businessId", status
     `
     for (const row of bookings) {
       lines.push(`agendita_bookings_total{businessId="${row.businessId}",status="${row.status}"} ${row.count}`)
@@ -30,9 +42,9 @@ async function gatherMetrics(): Promise<string> {
   // agendita_payments_total{businessId, status} COUNT
   try {
     const payments = await prisma.$queryRaw<{ businessId: string; status: PaymentStatus; count: BigInt }[]>`
-      SELECT business_id as "businessId", status, COUNT(*) as count
+      SELECT "businessId", status, COUNT(*) as count
       FROM "Payment"
-      GROUP BY business_id, status
+      GROUP BY "businessId", status
     `
     for (const row of payments) {
       lines.push(`agendita_payments_total{businessId="${row.businessId}",status="${row.status}"} ${row.count}`)
@@ -42,8 +54,6 @@ async function gatherMetrics(): Promise<string> {
   }
 
   // agendita_webhook_events_total{provider, event, status} COUNT
-  // Aggregated from PaymentAccount records (provider) + webhook log events if present
-  // We approximate from Payment.provider distribution as a proxy
   try {
     const webhooks = await prisma.$queryRaw<{ provider: PaymentProvider; status: PaymentStatus; count: BigInt }[]>`
       SELECT provider, status, COUNT(*) as count
@@ -57,12 +67,10 @@ async function gatherMetrics(): Promise<string> {
     lines.push('# failed to gather webhook metrics')
   }
 
-  // agendita_rate_limit_blocked_total{action} COUNT — no persistent counter, emit 0 placeholder
-  lines.push('# agendita_rate_limit_blocked_total is tracked via logger events, not persisted')
+  // agendita_rate_limit_blocked_total{action} — no persistent counter
   lines.push('agendita_rate_limit_blocked_total{action="api"} 0')
 
-  // agendita_errors_total{type} COUNT — no persistent counter, emit 0 placeholder
-  lines.push('# agendita_errors_total requires a metrics store; use logger events aggregated externally')
+  // agendita_errors_total{type} — no persistent counter
   lines.push('agendita_errors_total{type="error500"} 0')
 
   lines.push(`# Generated at ${new Date().toISOString()}`)
@@ -70,7 +78,15 @@ async function gatherMetrics(): Promise<string> {
   return lines.join('\n')
 }
 
-export async function GET(): Promise<NextResponse> {
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  // Auth guard
+  if (METRICS_SECRET) {
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader || !authHeader.startsWith('Bearer ') || authHeader.slice(7) !== METRICS_SECRET) {
+      return new NextResponse('Unauthorized', { status: 401 })
+    }
+  }
+
   const now = Date.now()
 
   if (cachedMetrics && now - cacheTimestamp < CACHE_TTL_MS) {

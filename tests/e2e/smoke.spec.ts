@@ -69,7 +69,7 @@ async function clickContinueButton(page: Page) {
   await page.getByRole('button', { name: /continuar/i }).click()
 }
 
-// ─── Auth flows ─────────────────────────────────────────────────────────────────
+// ─── Auth flows ─────────────────────────────────────────────────────────────
 
 test.describe('auth - register', () => {
   test('register → should create business and redirect to onboarding', async ({ page }) => {
@@ -111,7 +111,7 @@ test.describe('auth - login', () => {
   })
 })
 
-// ─── Onboarding ─────────────────────────────────────────────────────────────────
+// ─── Onboarding ─────────────────────────────────────────────────────────────
 
 test.describe('onboarding', () => {
   test('onboarding wizard → complete all 5 steps → finally reach dashboard', async ({ page }) => {
@@ -166,7 +166,7 @@ test.describe('onboarding', () => {
   })
 })
 
-// ─── Public booking ─────────────────────────────────────────────────────────────
+// ─── Public booking ──────────────────────────────────────────────────────────
 
 test.describe('public booking', () => {
   test('public booking link → select service → select time → fill contact form → submit → booking created', async ({ page }) => {
@@ -202,7 +202,7 @@ test.describe('public booking', () => {
     // Step 5: Payment
     await expect(page.getByRole('heading', { name: /pago de abono|confirmar reserva/i })).toBeVisible({ timeout: 10_000 })
     await page.locator('input[type="checkbox"]#accept-terms').check()
-    const payBtn = page.getByRole('button', { name: /pagar abate|confirmar reserva/i }).first()
+    const payBtn = page.getByRole('button', { name: /pagar\s?abono|confirmar reserva/i }).first()
     await payBtn.click()
 
     // Step 6: Confirmation
@@ -257,7 +257,7 @@ test.describe('public booking', () => {
 
     // Should show "Confirmar reserva" — no "Pagar abono" for no-deposit service
     await expect(page.getByRole('heading', { name: /confirmar reserva/i })).toBeVisible({ timeout: 10_000 })
-    const payButton = page.getByRole('button', { name: /pagar abono/i })
+    const payButton = page.getByRole('button', { name: /pagar\s?abono/i })
     await expect(payButton).not.toBeVisible()
   })
 
@@ -276,7 +276,7 @@ test.describe('public booking', () => {
     await page.getByPlaceholder(/\+569/i).fill('+56933333333')
     await page.getByRole('button', { name: /continuar al pago/i }).click()
     await page.locator('input[type="checkbox"]#accept-terms').check()
-    await page.getByRole('button', { name: /pagar abono|confirmar reserva/i }).first().click()
+    await page.getByRole('button', { name: /pagar\s?abono|confirmar reserva/i }).first().click()
     await expect(page.getByRole('heading', { name: /reserva confirmada/i })).toBeVisible({ timeout: 30_000 })
 
     // Try second booking for same slot
@@ -284,35 +284,35 @@ test.describe('public booking', () => {
     const secondName = `Second ${Date.now()}`
     await page2.goto(`/book/${BUSINESS_SLUG}`)
     await page2.getByRole('heading', { name: /¿qué servicio/i }).waitFor({ timeout: 10_000 })
-    await page1.getByRole('button').filter({ hasText: /manicura/i }).first().click()
-    await selectBookingDate(page1, date)
-    await page1.waitForTimeout(500)
-    const timeSlotBtn = page1.locator('button').filter({ hasText: /^\d{2}:\d{2}$/ }).first()
+    await page2.getByRole('button').filter({ hasText: /manicura/i }).first().click()
+    await selectBookingDate(page2, date)
+    await page2.waitForTimeout(500)
+    const timeSlotBtn = page2.locator('button').filter({ hasText: /^\d{2}:\d{2}$/ }).first()
     const isVisible = await timeSlotBtn.isVisible({ timeout: 3_000 }).catch(() => false)
     if (!isVisible) {
       // Slot already gone — test passes
       return
     }
     await timeSlotBtn.click()
-    await clickContinueButton(page1)
-    await page1.getByPlaceholder(/tu nombre/i).fill(secondName)
-    await page1.getByPlaceholder(/\+569/i).fill('+56944444444')
-    await page1.getByRole('button', { name: /continuar al pago/i }).click()
+    await clickContinueButton(page2)
+    await page2.getByPlaceholder(/tu nombre/i).fill(secondName)
+    await page2.getByPlaceholder(/\+569/i).fill('+56944444444')
+    await page2.getByRole('button', { name: /continuar al pago/i }).click()
 
     // Server-side availability check should block the double-booking
-    const errorText = await page1.locator('[class*="error"], [class*="destructive"]').first().textContent().catch(() => null)
+    const errorText = await page2.locator('[class*="error"], [class*="destructive"]').first().textContent().catch(() => null)
     if (errorText) {
       expect(errorText.toLowerCase()).toMatch(/no disponible|unavailable|ocupado|error/i)
     } else {
-      await page1.getByRole('button', { name: /pagar abono|confirmar reserva/i }).first().click()
-      await expect(page1.getByRole('heading', { name: /reserva confirmada/i })).not.toBeVisible({ timeout: 10_000 }).catch(() => {
+      await page2.getByRole('button', { name: /pagar\s?abono|confirmar reserva/i }).first().click()
+      await expect(page2.getByRole('heading', { name: /reserva confirmada/i })).not.toBeVisible({ timeout: 10_000 }).catch(() => {
         // Expected — double booking should fail at some point
       })
     }
   })
 })
 
-// ─── Dashboard bookings ──────────────────────────────────────────────────────────
+// ─── Dashboard bookings ─────────────────────────────────────────────────────
 
 test.describe('dashboard bookings', () => {
   test('create manual booking → fill form → submit → appears in list', async ({ page }) => {
@@ -383,7 +383,7 @@ test.describe('dashboard bookings', () => {
     await expect(
       page.getByText(/reserva reprogramada|redirigiendo/i)
     ).toBeVisible({ timeout: 10_000 }).catch(async () => {
-      await page.wait ForURL('/dashboard/bookings', { timeout: 5_000 })
+      await page.waitForURL('/dashboard/bookings', { timeout: 5_000 })
     })
   })
 
@@ -428,7 +428,7 @@ test.describe('dashboard bookings', () => {
   })
 })
 
-// ─── Admin ───────────────────────────────────────────────────────────────────────
+// ─── Admin ────────────────────────────────────────────────────────────────────
 
 test.describe('admin', () => {
   test('admin list → shows businesses table', async ({ page }) => {
