@@ -294,12 +294,14 @@ function createRateLimiter(): RateLimiter {
   if (nodeEnv === 'production') {
     const upstashUrl = process.env.UPSTASH_REDIS_REST_URL
     const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN
-    if (!upstashUrl || !upstashToken) {
-      // Fail closed: no valid rate limiter available in production
-      // This prevents the app from operating without rate limiting in prod
-      return new FailClosedRateLimiter()
+    if (upstashUrl && upstashToken) {
+      return new RedisRateLimiter(upstashUrl, upstashToken)
     }
-    return new RedisRateLimiter(upstashUrl, upstashToken)
+    // Beta: fall back to in-memory rate limiting when Upstash is not configured.
+    // This is suitable for low-traffic deployments. For production scale,
+    // configure UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.
+    console.warn('[RateLimiter] Upstash not configured — using in-memory rate limiter (ok for beta, not for production scale)')
+    return new MemoryRateLimiter()
   }
 
   return new MemoryRateLimiter()

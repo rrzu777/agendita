@@ -52,7 +52,7 @@ function validate() {
     }
   }
 
-  // ── PAYMENT_PROVIDER — opcional en multi-tenant ─────────────────────────
+  // ── PAYMENT_PROVIDER — warning, no bloquea build (beta) ──────────────────
   const provider = getEnv('PAYMENT_PROVIDER')
   const hasMpOAuth =
     !!getEnv('MERCADO_PAGO_CLIENT_ID') &&
@@ -60,7 +60,7 @@ function validate() {
     !!getEnv('MERCADO_PAGO_REDIRECT_URI')
 
   if (!provider && !hasMpOAuth) {
-    errors.push('MISSING: PAYMENT_PROVIDER (or configure Mercado Pago OAuth: CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)')
+    console.warn('⚠  PAYMENT_PROVIDER not configured. Online payments disabled. Set to manual for dashboard-only reservations.')
   } else if (provider && !VALID_PAYMENT_PROVIDERS.includes(provider)) {
     errors.push(
       `Invalid PAYMENT_PROVIDER: "${provider}". Must be one of: ${VALID_PAYMENT_PROVIDERS.join(', ')}`
@@ -125,12 +125,10 @@ function validate() {
     }
   }
 
-  // ── Upstash Redis in production (required for rate limiting) ──────────
+  // ── Upstash Redis — warning, no bloquea build (beta usa memory fallback) ─
   if (isProduction) {
     if (!getEnv('UPSTASH_REDIS_REST_URL') || !getEnv('UPSTASH_REDIS_REST_TOKEN')) {
-      errors.push(
-        'MISSING: UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required in production for rate limiting.'
-      )
+      console.warn('⚠  UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN not configured. Rate limiting will use in-memory fallback (not suitable for production scale).')
     }
   }
 

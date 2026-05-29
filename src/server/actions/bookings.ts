@@ -440,6 +440,7 @@ export async function confirmPayment(bookingId: string, paymentId: string, amoun
   }
 
   revalidatePath('/dashboard/bookings')
+  revalidatePath('/dashboard')
   if (updated) {
     await revalidateBusinessPublicPaths(updated.businessId)
   }
@@ -690,6 +691,7 @@ export async function createBookingFromDashboard(data: {
 
   revalidatePath('/dashboard/bookings')
   revalidatePath('/dashboard/calendar')
+  revalidatePath('/dashboard')
   await revalidateBusinessPublicPaths(businessId)
 
   return booking
