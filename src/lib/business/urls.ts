@@ -18,6 +18,12 @@ function getProtocol(host: string) {
     : 'https'
 }
 
+export function getAppUrl(pathname = '') {
+  const host = getConfiguredAppDomain()
+  const cleanPath = pathname.startsWith('/') ? pathname : `/${pathname}`
+  return `${getProtocol(host)}://${host}${cleanPath === '/' ? '' : cleanPath}`
+}
+
 export function getBusinessPublicUrl(business: BusinessUrlInput, pathname = '') {
   const host = getConfiguredAppDomain()
 

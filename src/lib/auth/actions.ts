@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { validateSubdomain, generateDefaultSubdomain } from '@/lib/business/subdomain'
 import { RegistrationError } from './registration-error'
 import { Prisma } from '@prisma/client'
+import { getAppUrl } from '@/lib/business/urls'
 
 const BUSINESS_CATEGORIES = ['nails', 'barber', 'hair_salon', 'beauty', 'massage', 'therapy', 'other'] as const
 type BusinessCategoryInput = typeof BUSINESS_CATEGORIES[number]
@@ -47,7 +48,7 @@ export async function signIn(formData: FormData) {
   const password = formData.get('password') as string
 
   if (!email || !password) {
-    throw new Error('Email y contraseña son requeridos')
+    return { error: 'Email y contraseña son requeridos' }
   }
 
   const supabase = await createClient()
@@ -57,10 +58,43 @@ export async function signIn(formData: FormData) {
   })
 
   if (error) {
-    throw new Error(error.message)
+    return { error: 'Email o contraseña incorrectos' }
   }
 
   redirect('/dashboard')
+}
+
+export async function requestPasswordReset(formData: FormData) {
+  const email = (formData.get('email') as string | null)?.trim()
+  if (!email) {
+    return { error: 'Ingresa tu email' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: getAppUrl('/auth/callback?next=/reset-password'),
+  })
+
+  if (error) {
+    return { error: 'No pudimos enviar el email de recuperación. Intenta de nuevo.' }
+  }
+
+  return { success: true }
+}
+
+export async function updatePassword(formData: FormData) {
+  const password = (formData.get('password') as string | null) || ''
+  if (password.length < 6) {
+    return { error: 'La contraseña debe tener al menos 6 caracteres' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase.auth.updateUser({ password })
+  if (error) {
+    return { error: 'No pudimos actualizar tu contraseña. Solicita un nuevo enlace.' }
+  }
+
+  return { success: true }
 }
 
 export async function checkSubdomainAvailability(subdomain: string) {

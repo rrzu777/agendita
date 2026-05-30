@@ -18,7 +18,10 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      await signIn(formData)
+      const result = await signIn(formData)
+      if (result?.error) {
+        setError(result.error)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al iniciar sesión')
     } finally {
@@ -61,7 +64,7 @@ export default function LoginPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-4">
                 <Label className="studio-eyebrow" htmlFor="password">Contraseña</Label>
-                <span className="text-sm font-semibold text-primary">Olvidé mi contraseña</span>
+                <Link href="/forgot-password" className="text-sm font-semibold text-primary hover:underline">Olvidé mi contraseña</Link>
               </div>
               <div className="relative">
                 <Lock className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
