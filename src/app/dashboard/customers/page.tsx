@@ -9,8 +9,12 @@ export const dynamic = 'force-dynamic'
 export default async function CustomersPage() {
   const userData = await getCurrentUserWithBusiness()
 
-  if (!userData?.business) {
+  if (!userData?.user) {
     redirect('/login')
+  }
+
+  if (!userData?.business) {
+    redirect('/recover-business')
   }
 
   let customers

@@ -147,8 +147,12 @@ function BookingCard({ booking, businessCurrency, businessTimezone, businessAddr
 export default async function BookingsPage() {
   const userData = await getCurrentUserWithBusiness()
 
-  if (!userData?.business) {
+  if (!userData?.user) {
     redirect('/login')
+  }
+
+  if (!userData?.business) {
+    redirect('/recover-business')
   }
 
   const bookings = await getBookings()

@@ -9,8 +9,12 @@ import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 export default async function AvailabilityPage() {
   const userData = await getCurrentUserWithBusiness()
 
-  if (!userData?.business) {
+  if (!userData?.user) {
     redirect('/login')
+  }
+
+  if (!userData?.business) {
+    redirect('/recover-business')
   }
 
   const rules = await getAvailabilityRules()

@@ -20,15 +20,18 @@ export function RecoverBusinessForm({ email, name }: RecoverBusinessFormProps) {
     setError(null)
 
     startTransition(async () => {
-      const result = await recoverBusiness()
+      try {
+        const result = await recoverBusiness()
 
-      if (!result.success) {
-        setError(result.error)
-        return
+        if (!result.success) {
+          setError(result.error)
+          return
+        }
+
+        router.push(result.redirectTo)
+      } catch (err) {
+        setError('Error inesperado. Intenta de nuevo.')
       }
-
-      router.push(result.redirectTo)
-      router.refresh()
     })
   }
 

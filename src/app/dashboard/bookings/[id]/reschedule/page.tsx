@@ -13,8 +13,12 @@ export default async function ReschedulePage({ params }: ReschedulePageProps) {
   const userData = await getCurrentUserWithBusiness()
   const { id } = await params
 
-  if (!userData?.business) {
+  if (!userData?.user) {
     redirect('/login')
+  }
+
+  if (!userData?.business) {
+    redirect('/recover-business')
   }
 
   const booking = await prisma.booking.findFirst({

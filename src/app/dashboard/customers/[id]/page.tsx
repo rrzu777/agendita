@@ -66,8 +66,12 @@ interface Props {
 export default async function CustomerDetailPage({ params }: Props) {
   const userData = await getCurrentUserWithBusiness()
 
-  if (!userData?.business) {
+  if (!userData?.user) {
     redirect('/login')
+  }
+
+  if (!userData?.business) {
+    redirect('/recover-business')
   }
 
   const { id } = await params

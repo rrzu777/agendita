@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/auth/middleware'
 import { prisma } from '@/lib/db'
 import { generateDefaultSubdomain } from '@/lib/business/subdomain'
+import { Prisma } from '@prisma/client'
 
 type RecoverBusinessResult =
   | { success: true; alreadyExists?: boolean; redirectTo: string }
@@ -107,7 +108,7 @@ export async function recoverBusiness(): Promise<RecoverBusinessResult> {
 
         attempt++
         if (attempt > 20) {
-          candidateSubdomain = `${baseSubdomain}-${Date.now()}`
+          candidateSubdomain = `${baseSubdomain}-${Date.now().toString(36)}`
           break
         }
       }
@@ -169,6 +170,23 @@ export async function recoverBusiness(): Promise<RecoverBusinessResult> {
   } catch (error) {
     if (DEBUG) {
       console.error('[recoverBusiness] error:', error)
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const existingBusinessUser = await prisma.businessUser.findFirst({
+        where: { userId: supabaseUserId },
+        include: { business: true },
+      })
+
+      if (existingBusinessUser) {
+        return { success: true, alreadyExists: true, redirectTo: '/dashboard' }
+      }
+
+      return {
+        success: false,
+        error: 'Conflicto al crear tu negocio. Intenta de nuevo.',
+        code: 'CREATE_FAILED',
+      }
     }
 
     return {

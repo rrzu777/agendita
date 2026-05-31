@@ -26,8 +26,12 @@ export default async function CalendarPage({
   searchParams: Promise<{ month?: string; date?: string }>
 }) {
   const userData = await getCurrentUserWithBusiness()
-  if (!userData?.business) {
+  if (!userData?.user) {
     redirect('/login')
+  }
+
+  if (!userData?.business) {
+    redirect('/recover-business')
   }
 
   const business = userData.business

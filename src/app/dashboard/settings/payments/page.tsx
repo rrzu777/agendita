@@ -20,8 +20,12 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
   const userData = await getCurrentUserWithBusiness()
   const { success, error } = await props.searchParams
 
-  if (!userData?.business) {
+  if (!userData?.user) {
     redirect('/login')
+  }
+
+  if (!userData?.business) {
+    redirect('/recover-business')
   }
 
   const businessId = userData.business.id

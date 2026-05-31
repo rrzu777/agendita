@@ -7,8 +7,12 @@ import { prisma } from '@/lib/db'
 export default async function NewBookingPage() {
   const userData = await getCurrentUserWithBusiness()
 
-  if (!userData?.business) {
+  if (!userData?.user) {
     redirect('/login')
+  }
+
+  if (!userData?.business) {
+    redirect('/recover-business')
   }
 
   const services = await prisma.service.findMany({
