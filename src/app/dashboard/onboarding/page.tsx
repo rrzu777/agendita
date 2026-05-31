@@ -7,8 +7,12 @@ import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard'
 export default async function OnboardingPage() {
   const userData = await getCurrentUserWithBusiness()
 
-  if (!userData?.business) {
+  if (!userData?.user) {
     redirect('/login')
+  }
+
+  if (!userData?.business) {
+    redirect('/recover-business')
   }
 
   const business = userData.business

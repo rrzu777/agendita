@@ -14,8 +14,12 @@ import { CalendarCheck2, CreditCard, ExternalLink, TrendingUp, Users } from 'luc
 export default async function DashboardPage() {
   const userData = await getCurrentUserWithBusiness()
 
-  if (!userData?.business) {
+  if (!userData?.user) {
     redirect('/login')
+  }
+
+  if (!userData?.business) {
+    redirect('/recover-business')
   }
 
   if (!userData.business.onboardingCompletedAt) {
