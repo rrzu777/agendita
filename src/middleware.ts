@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server'
 import { createMiddlewareAuthClient } from './lib/auth/middleware'
 import { logger } from './lib/logger'
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Exchange Supabase auth codes directly in middleware
