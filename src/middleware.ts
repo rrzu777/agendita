@@ -2,17 +2,33 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createMiddlewareAuthClient } from './lib/auth/middleware'
 
+function sanitizeNext(next: string | null): string {
+  if (!next) return '/dashboard'
+  if (!next.startsWith('/')) return '/dashboard'
+  if (next.startsWith('//')) return '/dashboard'
+  return next
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Exchange Supabase auth codes directly in middleware
-  const code = request.nextUrl.searchParams.get('code')
-  if (code) {
-    const redirectTo = '/reset-password'
-    const response = NextResponse.redirect(new URL(redirectTo, request.url))
-    const supabase = createMiddlewareAuthClient(request, response)
-    await supabase.auth.exchangeCodeForSession(code)
-    return response
+  if (pathname === '/auth/callback') {
+    const code = request.nextUrl.searchParams.get('code')
+
+    if (code) {
+      const next = sanitizeNext(request.nextUrl.searchParams.get('next'))
+      const response = NextResponse.redirect(new URL(next, request.url))
+      const supabase = createMiddlewareAuthClient(request, response)
+      const { error } = await supabase.auth.exchangeCodeForSession(code)
+
+      if (error) {
+        return NextResponse.redirect(new URL('/login?error=auth_callback', request.url))
+      }
+
+      return response
+    }
+
+    return NextResponse.redirect(new URL('/login?error=missing_code', request.url))
   }
 
   // Skip middleware for static files, API routes, and auth pages
@@ -23,6 +39,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/register') ||
     pathname.startsWith('/forgot-password') ||
     pathname.startsWith('/reset-password') ||
+    pathname.startsWith('/recover-business') ||
     pathname.startsWith('/auth') ||
     pathname.includes('.')
   ) {
