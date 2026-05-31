@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { createMiddlewareClient, createMiddlewareAuthClient } from './lib/auth/middleware'
+import { createMiddlewareAuthClient } from './lib/auth/middleware'
 import { logger } from './lib/logger'
 
 export async function proxy(request: NextRequest) {
@@ -29,16 +29,15 @@ export async function proxy(request: NextRequest) {
 
   // Check auth for dashboard routes
   if (pathname.startsWith('/dashboard')) {
+    const response = NextResponse.next({ request })
+
     const e2eEmail = request.headers.get('x-e2e-test-user-email')
     const e2eSecret = request.headers.get('x-e2e-auth-secret')
-    // NEXT_PUBLIC_ vars are inlined at build time. If the secret was not
-    // set during the build, the comparison always fails → bypass is dead code.
-    // When set, only requests with the matching header pass through.
     const e2eConfiguredSecret = process.env.NEXT_PUBLIC_E2E_AUTH_BYPASS_SECRET
     const isE2EValid = e2eEmail && e2eSecret === e2eConfiguredSecret
 
     if (!isE2EValid) {
-      const supabase = createMiddlewareClient(request)
+      const supabase = createMiddlewareAuthClient(request, response)
       const { data: { session } } = await supabase.auth.getSession()
 
       if (!session) {
@@ -47,6 +46,8 @@ export async function proxy(request: NextRequest) {
         return NextResponse.redirect(loginUrl)
       }
     }
+
+    return response
   }
 
   // Extract subdomain from hostname for tenant resolution
