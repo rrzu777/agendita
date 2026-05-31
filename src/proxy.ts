@@ -6,14 +6,17 @@ import { logger } from './lib/logger'
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Forward Supabase auth callback codes from any landing URL to /auth/callback
+  // Exchange Supabase auth codes directly in middleware (reliable cookie handling)
   const code = request.nextUrl.searchParams.get('code')
-  if (code && !pathname.startsWith('/auth/callback')) {
-    const callbackUrl = new URL('/auth/callback', request.url)
-    request.nextUrl.searchParams.forEach((value, key) => {
-      callbackUrl.searchParams.set(key, value)
-    })
-    return NextResponse.redirect(callbackUrl)
+  if (code) {
+    const supabase = createMiddlewareClient(request)
+    await supabase.auth.exchangeCodeForSession(code)
+
+    // After recovery, redirect to reset-password. Otherwise go to dashboard.
+    const isRecovery = request.nextUrl.searchParams.get('type') === 'recovery'
+    const redirectTo = isRecovery ? '/reset-password' : '/dashboard'
+    const url = new URL(redirectTo, request.url)
+    return NextResponse.redirect(url)
   }
 
   // Skip middleware for static files, API routes, and auth pages
