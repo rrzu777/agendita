@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import Link from 'next/link'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,9 +10,17 @@ import { updatePassword } from '@/lib/auth/actions'
 import { Lock, Sparkles } from 'lucide-react'
 
 export default function ResetPasswordPage() {
+  const router = useRouter()
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (success) {
+      const timeout = setTimeout(() => router.push('/dashboard'), 2000)
+      return () => clearTimeout(timeout)
+    }
+  }, [success, router])
 
   async function handleSubmit(formData: FormData) {
     setError('')
@@ -43,9 +51,8 @@ export default function ResetPasswordPage() {
           {success ? (
             <div className="space-y-6">
               <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-                Contraseña actualizada. Ya puedes iniciar sesión.
+                Contraseña actualizada. Redirigiendo al dashboard...
               </div>
-              <Link href="/login" className="font-semibold text-primary hover:underline">Ir al login</Link>
             </div>
           ) : (
             <form action={handleSubmit} className="space-y-6">
