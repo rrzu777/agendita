@@ -6,6 +6,16 @@ import { logger } from './lib/logger'
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
+  // Forward Supabase auth callback codes from any landing URL to /auth/callback
+  const code = request.nextUrl.searchParams.get('code')
+  if (code && !pathname.startsWith('/auth/callback')) {
+    const callbackUrl = new URL('/auth/callback', request.url)
+    request.nextUrl.searchParams.forEach((value, key) => {
+      callbackUrl.searchParams.set(key, value)
+    })
+    return NextResponse.redirect(callbackUrl)
+  }
+
   // Skip middleware for static files, API routes, and auth pages
   if (
     pathname.startsWith('/_next') ||
