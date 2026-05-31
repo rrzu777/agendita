@@ -13,6 +13,10 @@ export default async function DashboardLayout({
     redirect('/login')
   }
 
+  if (!userData.business) {
+    redirect('/recover-business')
+  }
+
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <DashboardSidebar user={userData.user} business={userData.business} />
