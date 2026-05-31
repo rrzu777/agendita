@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createMiddlewareAuthClient } from './lib/auth/middleware'
-import { logger } from './lib/logger'
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -22,32 +21,12 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api') ||
     pathname.startsWith('/login') ||
     pathname.startsWith('/register') ||
+    pathname.startsWith('/forgot-password') ||
+    pathname.startsWith('/reset-password') ||
+    pathname.startsWith('/auth') ||
     pathname.includes('.')
   ) {
     return NextResponse.next()
-  }
-
-  // Check auth for dashboard routes
-  if (pathname.startsWith('/dashboard')) {
-    const response = NextResponse.next({ request })
-
-    const e2eEmail = request.headers.get('x-e2e-test-user-email')
-    const e2eSecret = request.headers.get('x-e2e-auth-secret')
-    const e2eConfiguredSecret = process.env.NEXT_PUBLIC_E2E_AUTH_BYPASS_SECRET
-    const isE2EValid = e2eEmail && e2eSecret === e2eConfiguredSecret
-
-    if (!isE2EValid) {
-      const supabase = createMiddlewareAuthClient(request, response)
-      const { data: { session } } = await supabase.auth.getSession()
-
-      if (!session) {
-        logger.auth.failure('no-session', undefined, undefined)
-        const loginUrl = new URL('/login', request.url)
-        return NextResponse.redirect(loginUrl)
-      }
-    }
-
-    return response
   }
 
   // Extract subdomain from hostname for tenant resolution
