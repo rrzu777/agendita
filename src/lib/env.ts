@@ -137,11 +137,11 @@ export function validateEnv(): EnvValidationResult {
     })
   }
 
-  // --- PAYMENT_PROVIDER required in production unless OAuth is configured ---
+  // --- PAYMENT_PROVIDER — warning, not blocking (beta) ---
   if (isProduction && !configured && !hasMpOAuth) {
-    errors.push({
+    warnings.push({
       key: 'PAYMENT_PROVIDER',
-      message: 'PAYMENT_PROVIDER is required in production. Set it to manual for dashboard-only reservations, or configure Mercado Pago OAuth (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI).',
+      message: 'PAYMENT_PROVIDER is not configured. Online payments disabled. Set to manual for dashboard-only reservations.',
     })
   }
 
@@ -225,14 +225,14 @@ export function validateEnv(): EnvValidationResult {
     }
   }
 
-  // --- Upstash Redis in production (only supported Redis provider) ---
+  // --- Upstash Redis — warning, not blocking (beta uses memory fallback) ---
   if (isProduction) {
     const hasUpstashUrl = !!process.env.UPSTASH_REDIS_REST_URL
     const hasUpstashToken = !!process.env.UPSTASH_REDIS_REST_TOKEN
     if (!hasUpstashUrl || !hasUpstashToken) {
-      errors.push({
+      warnings.push({
         key: 'UPSTASH_REDIS_REST_URL',
-        message: 'UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required in production for rate limiting',
+        message: 'UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN not configured. Rate limiting uses in-memory fallback (ok for beta).',
       })
     }
   }
