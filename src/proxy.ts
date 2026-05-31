@@ -1,22 +1,19 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { createMiddlewareClient } from './lib/auth/middleware'
+import { createMiddlewareClient, createMiddlewareAuthClient } from './lib/auth/middleware'
 import { logger } from './lib/logger'
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Exchange Supabase auth codes directly in middleware (reliable cookie handling)
+  // Exchange Supabase auth codes directly in middleware
   const code = request.nextUrl.searchParams.get('code')
   if (code) {
-    const supabase = createMiddlewareClient(request)
+    const redirectTo = '/reset-password'
+    const response = NextResponse.redirect(new URL(redirectTo, request.url))
+    const supabase = createMiddlewareAuthClient(request, response)
     await supabase.auth.exchangeCodeForSession(code)
-
-    // After recovery, redirect to reset-password. Otherwise go to dashboard.
-    const isRecovery = request.nextUrl.searchParams.get('type') === 'recovery'
-    const redirectTo = isRecovery ? '/reset-password' : '/dashboard'
-    const url = new URL(redirectTo, request.url)
-    return NextResponse.redirect(url)
+    return response
   }
 
   // Skip middleware for static files, API routes, and auth pages
