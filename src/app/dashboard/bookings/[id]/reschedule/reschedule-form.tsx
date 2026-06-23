@@ -39,6 +39,8 @@ export function RescheduleForm({
   const ignoreRef = useRef(false)
   const requestIdRef = useRef(0)
 
+  /* eslint-disable react-hooks/set-state-in-effect -- standard loading/reset-before-fetch;
+     concurrent responses are de-duped via requestIdRef/ignoreRef below. */
   useEffect(() => {
     if (!date) return
 
@@ -70,6 +72,7 @@ export function RescheduleForm({
       ignoreRef.current = true
     }
   }, [bookingId, date, timezone])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()

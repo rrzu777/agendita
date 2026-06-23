@@ -151,11 +151,12 @@ export function NewBookingForm({ services }: NewBookingFormProps) {
     }
   }, [selectedService, paymentMode])
 
-  useEffect(() => {
-    if (selectedService && selectedService.depositAmount <= 0 && paymentMode === 'deposit_paid') {
-      setPaymentMode('none')
-    }
-  }, [selectedService, paymentMode])
+  // Adjust during render (React-supported pattern, not an effect): a service
+  // with no deposit can't be in 'deposit_paid' mode. The setState is conditional
+  // and clears the condition, so it can't loop.
+  if (selectedService && selectedService.depositAmount <= 0 && paymentMode === 'deposit_paid') {
+    setPaymentMode('none')
+  }
 
   const paymentModeOptions = useMemo(() => {
     const options: Array<[PaymentMode, string]> = [

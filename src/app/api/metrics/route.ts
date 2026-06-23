@@ -27,7 +27,7 @@ async function gatherMetrics(): Promise<string> {
 
   // agendita_bookings_total{businessId, status} COUNT
   try {
-    const bookings = await prisma.$queryRaw<{ businessId: string; status: BookingStatus; count: BigInt }[]>`
+    const bookings = await prisma.$queryRaw<{ businessId: string; status: BookingStatus; count: bigint }[]>`
       SELECT "businessId", status, COUNT(*) as count
       FROM "Booking"
       GROUP BY "businessId", status
@@ -41,7 +41,7 @@ async function gatherMetrics(): Promise<string> {
 
   // agendita_payments_total{businessId, status} COUNT
   try {
-    const payments = await prisma.$queryRaw<{ businessId: string; status: PaymentStatus; count: BigInt }[]>`
+    const payments = await prisma.$queryRaw<{ businessId: string; status: PaymentStatus; count: bigint }[]>`
       SELECT "businessId", status, COUNT(*) as count
       FROM "Payment"
       GROUP BY "businessId", status
@@ -55,7 +55,7 @@ async function gatherMetrics(): Promise<string> {
 
   // agendita_webhook_events_total{provider, event, status} COUNT
   try {
-    const webhooks = await prisma.$queryRaw<{ provider: PaymentProvider; status: PaymentStatus; count: BigInt }[]>`
+    const webhooks = await prisma.$queryRaw<{ provider: PaymentProvider; status: PaymentStatus; count: bigint }[]>`
       SELECT provider, status, COUNT(*) as count
       FROM "Payment"
       GROUP BY provider, status

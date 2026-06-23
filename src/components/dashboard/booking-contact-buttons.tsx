@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { MessageCircle, Copy, Check, BellRing } from 'lucide-react'
 import {
@@ -59,7 +59,9 @@ export function BookingContactButtons({ booking, variant = 'default', showRemind
 
   const reminderMessage = buildWhatsappReminderMessage(bookingData)
 
-  const handleCopySummary = useCallback(async () => {
+  // Plain handlers — summaryText/reminderMessage are recomputed every render, so
+  // useCallback here memoized nothing. (React Compiler can't preserve it anyway.)
+  const handleCopySummary = async () => {
     try {
       await navigator.clipboard.writeText(summaryText)
       setCopied(true)
@@ -67,9 +69,9 @@ export function BookingContactButtons({ booking, variant = 'default', showRemind
     } catch {
       // clipboard API may not be available
     }
-  }, [summaryText])
+  }
 
-  const handleCopyReminder = useCallback(async () => {
+  const handleCopyReminder = async () => {
     try {
       await navigator.clipboard.writeText(reminderMessage)
       setReminderCopied(true)
@@ -77,7 +79,7 @@ export function BookingContactButtons({ booking, variant = 'default', showRemind
     } catch {
       // clipboard API may not be available
     }
-  }, [reminderMessage])
+  }
 
   return (
     <div className="flex flex-wrap gap-2">
