@@ -290,18 +290,24 @@ let _limiter: RateLimiter | null = null
 
 function createRateLimiter(): RateLimiter {
   const nodeEnv = process.env.NODE_ENV || 'development'
+  // The E2E harness runs with NODE_ENV=production but is not a real deployment
+  // and has no Upstash. Use the in-memory limiter there (same carve-out the env
+  // validation uses), so fail-closed doesn't block the test booking flow.
+  const isRealProduction = nodeEnv === 'production' && process.env.APP_ENV !== 'e2e'
 
-  if (nodeEnv === 'production') {
+  if (isRealProduction) {
     const upstashUrl = process.env.UPSTASH_REDIS_REST_URL
     const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN
     if (upstashUrl && upstashToken) {
       return new RedisRateLimiter(upstashUrl, upstashToken)
     }
-    // Beta: fall back to in-memory rate limiting when Upstash is not configured.
-    // This is suitable for low-traffic deployments. For production scale,
-    // configure UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.
-    console.warn('[RateLimiter] Upstash not configured — using in-memory rate limiter (ok for beta, not for production scale)')
-    return new MemoryRateLimiter()
+    // Production WITHOUT a distributed store: fail closed. An in-memory limiter
+    // is per-isolate on serverless and provides no real protection, so we block
+    // rather than silently allow unbounded requests. assertValidEnv() already
+    // makes a missing Upstash config a hard error, so we should never reach here
+    // in a correctly-configured deployment — this is the defensive fallback.
+    console.error('[RateLimiter] Upstash not configured in production — failing closed. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.')
+    return new FailClosedRateLimiter()
   }
 
   return new MemoryRateLimiter()

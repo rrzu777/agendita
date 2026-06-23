@@ -104,8 +104,9 @@ export async function GET(request: NextRequest) {
     })
 
     if (!tokenRes.ok) {
-      const errBody = await tokenRes.text()
-      console.error('[MP OAuth] Token exchange failed:', errBody)
+      // Do NOT log the raw response body — on error MP may echo back request
+      // params (including client_secret). Log only the status code.
+      console.error('[MP OAuth] Token exchange failed with status', tokenRes.status)
       return NextResponse.redirect(
         new URL('/dashboard/settings/payments?error=token_exchange_failed', request.url),
       )

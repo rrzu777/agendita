@@ -125,10 +125,10 @@ function validate() {
     }
   }
 
-  // ── Upstash Redis — warning, no bloquea build (beta usa memory fallback) ─
+  // ── Upstash Redis — REQUIRED in production (rate limiting fails closed) ─
   if (isProduction) {
     if (!getEnv('UPSTASH_REDIS_REST_URL') || !getEnv('UPSTASH_REDIS_REST_TOKEN')) {
-      console.warn('⚠  UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN not configured. Rate limiting will use in-memory fallback (not suitable for production scale).')
+      errors.push('MISSING: UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN (required in production — rate limiting fails closed without a distributed store)')
     }
   }
 

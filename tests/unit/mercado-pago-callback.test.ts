@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
-import { createHmac } from 'crypto'
+import { createHmac, createHash } from 'crypto'
 
 const originalEnv = { ...process.env }
 
@@ -48,10 +48,12 @@ function makeCallbackRequest(params: Record<string, string>): NextRequest {
 
 function createValidState(businessId: string): string {
   const key = 'test-encryption-key-for-mp!32b'
+  // Mirror oauth-state.ts: the HMAC key is domain-separated, not the raw env key.
+  const signingKey = createHash('sha256').update(`oauth-state-hmac:${key}`).digest()
   const expiresAt = Date.now() + 600000
   const stateValue = 'abc123'
   const payload = `${businessId}:${stateValue}:${expiresAt}`
-  const sig = createHmac('sha256', key).update(payload).digest('hex')
+  const sig = createHmac('sha256', signingKey).update(payload).digest('hex')
   return `${payload}:${sig}`
 }
 

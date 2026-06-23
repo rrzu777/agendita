@@ -4,7 +4,7 @@ import { BookingStatus } from '@prisma/client'
 const mockPrisma = {
   booking: {
     findMany: vi.fn(),
-    update: vi.fn(),
+    updateMany: vi.fn(),
   },
 }
 
@@ -55,10 +55,11 @@ describe('sendReminders', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockSendReminderEmail.mockResolvedValue({ success: true })
-    mockPrisma.booking.update.mockResolvedValue({})
+    // Default: the atomic claim succeeds (this worker won the reminderSentAt CAS).
+    mockPrisma.booking.updateMany.mockResolvedValue({ count: 1 })
   })
 
-  it('sends reminder and marks reminderSentAt', async () => {
+  it('sends reminder and atomically claims reminderSentAt before sending', async () => {
     mockPrisma.booking.findMany.mockResolvedValue([makeBooking()])
 
     const now = new Date('2026-05-20T12:00:00Z')
@@ -67,10 +68,23 @@ describe('sendReminders', () => {
     expect(result.sent).toBe(1)
     expect(result.errors).toBe(0)
     expect(mockSendReminderEmail).toHaveBeenCalledTimes(1)
-    expect(mockPrisma.booking.update).toHaveBeenCalledWith({
-      where: { id: 'b1' },
+    // Claim is a conditional updateMany guarded on reminderSentAt: null (CAS).
+    expect(mockPrisma.booking.updateMany).toHaveBeenCalledWith({
+      where: { id: 'b1', reminderSentAt: null },
       data: { reminderSentAt: expect.any(Date) },
     })
+  })
+
+  it('skips a booking already claimed by a concurrent run (claim count 0)', async () => {
+    mockPrisma.booking.findMany.mockResolvedValue([makeBooking()])
+    mockPrisma.booking.updateMany.mockResolvedValue({ count: 0 })
+
+    const now = new Date('2026-05-20T12:00:00Z')
+    const result = await sendReminders(now)
+
+    expect(result.sent).toBe(0)
+    expect(result.skipped).toBe(1)
+    expect(mockSendReminderEmail).not.toHaveBeenCalled()
   })
 
   it('skips bookings with no customer email', async () => {
@@ -127,7 +141,7 @@ describe('sendReminders', () => {
     expect(lte.getTime()).toBe(expectedLte.getTime())
   })
 
-  it('does not mark reminderSentAt if email fails', async () => {
+  it('releases the claim (resets reminderSentAt to null) if email throws', async () => {
     mockPrisma.booking.findMany.mockResolvedValue([makeBooking()])
     mockSendReminderEmail.mockRejectedValue(new Error('Boom'))
 
@@ -136,10 +150,14 @@ describe('sendReminders', () => {
 
     expect(result.errors).toBe(1)
     expect(result.sent).toBe(0)
-    expect(mockPrisma.booking.update).not.toHaveBeenCalled()
+    // The claim is released so a later run can retry.
+    expect(mockPrisma.booking.updateMany).toHaveBeenCalledWith({
+      where: { id: 'b1', reminderSentAt: now },
+      data: { reminderSentAt: null },
+    })
   })
 
-  it('does not mark reminderSentAt if email result.success is false', async () => {
+  it('releases the claim if email result.success is false', async () => {
     mockPrisma.booking.findMany.mockResolvedValue([makeBooking()])
     mockSendReminderEmail.mockResolvedValue({ success: false, skipped: 'no key' })
 
@@ -148,6 +166,9 @@ describe('sendReminders', () => {
 
     expect(result.sent).toBe(0)
     expect(result.skipped).toBe(1)
-    expect(mockPrisma.booking.update).not.toHaveBeenCalled()
+    expect(mockPrisma.booking.updateMany).toHaveBeenCalledWith({
+      where: { id: 'b1', reminderSentAt: now },
+      data: { reminderSentAt: null },
+    })
   })
 })

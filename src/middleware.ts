@@ -1,13 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createMiddlewareAuthClient } from './lib/auth/middleware'
-
-function sanitizeNext(next: string | null): string {
-  if (!next) return '/dashboard'
-  if (!next.startsWith('/')) return '/dashboard'
-  if (next.startsWith('//')) return '/dashboard'
-  return next
-}
+import { sanitizeNext } from './lib/auth/sanitize-next'
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl

@@ -116,11 +116,18 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
   const hash = hashStringToInt(lockKey)
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(${hash})`
 
+  // A pending_payment booking only blocks the slot while its hold is still live.
+  // Once holdExpiresAt is in the past the slot is free again, even if the cron
+  // that flips it to `expired` hasn't run yet — otherwise stale holds freeze
+  // slots until the next cron tick.
   const overlappingBookings = input.excludeBookingId
     ? await tx.$queryRaw`
       SELECT "id" FROM "Booking"
       WHERE "businessId" = ${businessId}
-        AND "status" IN ('pending_payment', 'confirmed', 'completed')
+        AND (
+          "status" IN ('confirmed', 'completed')
+          OR ("status" = 'pending_payment' AND ("holdExpiresAt" IS NULL OR "holdExpiresAt" > ${now}))
+        )
         AND "startDateTime" < ${endDateTime}
         AND "endDateTime" > ${startDateTime}
         AND "id" != ${input.excludeBookingId}
@@ -129,7 +136,10 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
     : await tx.$queryRaw`
       SELECT "id" FROM "Booking"
       WHERE "businessId" = ${businessId}
-        AND "status" IN ('pending_payment', 'confirmed', 'completed')
+        AND (
+          "status" IN ('confirmed', 'completed')
+          OR ("status" = 'pending_payment' AND ("holdExpiresAt" IS NULL OR "holdExpiresAt" > ${now}))
+        )
         AND "startDateTime" < ${endDateTime}
         AND "endDateTime" > ${startDateTime}
       FOR UPDATE

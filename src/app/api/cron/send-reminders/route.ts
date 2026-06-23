@@ -6,11 +6,9 @@ export async function POST(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
   const expectedSecret = process.env.CRON_SECRET
 
-  if (!expectedSecret) {
-    return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 })
-  }
-
-  if (authHeader !== `Bearer ${expectedSecret}`) {
+  // No configured secret => nobody can authenticate. Return 401 (not 500) so we
+  // don't leak whether the secret is configured to anonymous callers.
+  if (!expectedSecret || authHeader !== `Bearer ${expectedSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

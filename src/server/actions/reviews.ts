@@ -301,11 +301,22 @@ export async function ensureReviewTokenForBooking(bookingId: string) {
     return booking.reviewToken
   }
 
+  // Atomic claim: only the request that matches `reviewToken: null` wins, so two
+  // concurrent calls can't generate two tokens (last-writer-wins would otherwise
+  // hand the loser a token that no longer matches the DB).
   const token = crypto.randomUUID()
-  await prisma.booking.update({
-    where: { id: bookingId },
+  const result = await prisma.booking.updateMany({
+    where: { id: bookingId, businessId, reviewToken: null },
     data: { reviewToken: token, reviewTokenCreatedAt: new Date() },
   })
+  if (result.count === 0) {
+    // Another request set the token first — return the persisted value.
+    const fresh = await prisma.booking.findFirst({
+      where: { id: bookingId, businessId },
+      select: { reviewToken: true },
+    })
+    return fresh?.reviewToken ?? token
+  }
 
   return token
 }
@@ -345,6 +356,7 @@ export async function sendReviewRequestEmail(bookingId: string) {
       customer: { select: { id: true, name: true, email: true } },
       service: { select: { name: true } },
       business: { select: { name: true, timezone: true } },
+      review: { select: { id: true } },
     },
   })
 
@@ -354,6 +366,10 @@ export async function sendReviewRequestEmail(bookingId: string) {
 
   if (booking.status !== BookingStatus.completed) {
     throw new Error('Solo puedes enviar solicitud de reseña para reservas completadas')
+  }
+
+  if (booking.review) {
+    return { success: false, skipped: 'Ya existe una reseña para esta reserva' }
   }
 
   const token = booking.reviewToken

@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest'
-
-function sanitizeNext(next: string | null): string {
-  if (!next) return '/dashboard'
-  if (!next.startsWith('/')) return '/dashboard'
-  if (next.startsWith('//')) return '/dashboard'
-  return next
-}
+import { sanitizeNext } from '@/lib/auth/sanitize-next'
 
 describe('sanitizeNext', () => {
   it('returns /dashboard when null', () => {

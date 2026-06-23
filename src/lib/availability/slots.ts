@@ -11,6 +11,7 @@ export interface BookingLike {
   startDateTime: Date
   endDateTime: Date
   status: string
+  holdExpiresAt?: Date | null
 }
 
 export interface TimeBlockLike {
@@ -97,6 +98,10 @@ export function generateSlots(
 
     const blockedByBooking = bookings.some((booking) => {
       if (booking.status === 'cancelled' || booking.status === 'no_show' || booking.status === 'expired') return false
+      // A pending_payment hold that has already expired no longer blocks the
+      // slot, even if the cron hasn't flipped it to `expired` yet. Mirrors the
+      // server-side guard in assertSlotIsAvailable.
+      if (booking.status === 'pending_payment' && booking.holdExpiresAt && booking.holdExpiresAt <= now) return false
       return current < booking.endDateTime && booking.startDateTime < slotEnd
     })
 
