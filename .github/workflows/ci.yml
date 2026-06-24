@@ -66,8 +66,7 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npx prisma generate
-      - run: npx prisma db push --skip-generate
-      - run: npx prisma db execute --file prisma/migrations/20250518000000_add_exclude_constraint/migration.sql --schema prisma/schema.prisma
+      - run: npx prisma migrate deploy
       - run: npm run test:integration
 
   build:
@@ -150,8 +149,7 @@ jobs:
           name: next-build-e2e
           path: .next
       - run: npx prisma generate
-      - run: npx prisma db push --skip-generate
-      - run: npx prisma db execute --file prisma/migrations/20250518000000_add_exclude_constraint/migration.sql --schema prisma/schema.prisma
+      - run: npx prisma migrate deploy
       - run: npm run db:seed
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
