@@ -196,18 +196,25 @@ export class RedisRateLimiter implements RateLimiter {
     command: string,
     args: (string | number)[]
   ): Promise<unknown> {
-    const res = await fetch(`${this.restUrl}/v1/commands`, {
+    // Upstash REST API: a single command is POSTed to the base URL as a flat
+    // JSON array ["CMD", arg1, ...] and returns { result } (or { error }).
+    // (The previous "/v1/commands" path doesn't exist → every call 404'd, which
+    // tripped the fail-closed branch and blocked all rate-limited mutations.)
+    const res = await fetch(this.restUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.restToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify([[command, ...args]]),
+      body: JSON.stringify([command, ...args]),
     })
     if (!res.ok) {
       throw new Error(`Upstash Redis error: ${res.status} ${res.statusText}`)
     }
     const json = await res.json()
+    if (json.error) {
+      throw new Error(`Upstash Redis error: ${json.error}`)
+    }
     return json.result
   }
 
