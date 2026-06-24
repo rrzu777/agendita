@@ -135,6 +135,9 @@ jobs:
       # Grants the seeded admin@agendita.com platform-admin access for the
       # /admin smoke tests (setAdminAuth uses this email).
       PLATFORM_ADMIN_EMAILS: 'admin@agendita.com'
+      # Run the node test runner in the seeded business's timezone so runner-side
+      # date math (nextBookableDate) matches the browser (timezoneId).
+      TZ: 'America/Santiago'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

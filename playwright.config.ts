@@ -25,6 +25,10 @@ export default defineConfig({
     trace: 'on-first-retry',
     headless: true,
     screenshot: 'only-on-failure',
+    // The seeded business is in America/Santiago. Pin the browser to that zone so
+    // client-side date/time construction (e.g. the manual booking form) matches
+    // the business timezone regardless of where the runner executes (CI = UTC).
+    timezoneId: 'America/Santiago',
   },
   projects: [
     {
