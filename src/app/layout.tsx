@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
+import { Geist, Geist_Mono, Fraunces } from "next/font/google"
 import "./globals.css"
 
 const geistSans = Geist({
@@ -12,8 +12,16 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 })
 
+// Warm, soft optical serif for display headings — gives the boutique feel.
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
+})
+
 export const metadata: Metadata = {
-  title: "Agendita - Agenda online para manicuristas",
+  title: "Agendita - Agenda online para estudios de belleza",
   description: "Recibe reservas con abono y controla tus pagos desde un solo lugar.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
@@ -38,7 +46,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="es" className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html lang="es" className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable}`}>
       <body className="antialiased">
         {children}
       </body>

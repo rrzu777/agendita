@@ -76,20 +76,24 @@ export function BookingWizard({ businessId, services, cancellationPolicy }: Book
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="mb-8">
-        <div className="mb-3 h-1 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary transition-all"
-            style={{ width: `${(currentStep / steps.length) * 100}%` }}
-          />
+      <div className="mb-6">
+        <div className="mb-3 flex items-center gap-1.5">
+          {steps.map((step) => (
+            <div
+              key={step.id}
+              className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
+                step.id <= currentStep ? 'bg-primary' : 'bg-secondary'
+              }`}
+            />
+          ))}
         </div>
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-primary">Paso {currentStep} de {steps.length}</p>
-          <p className="text-sm text-muted-foreground">{steps[currentStep - 1]?.label}</p>
+        <div className="flex items-baseline justify-between">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Paso {currentStep} de {steps.length}</p>
+          <p className="font-heading text-base text-primary">{steps[currentStep - 1]?.label}</p>
         </div>
       </div>
 
-      <section className="studio-card p-5 sm:p-8">
+      <section className="rounded-[2rem] border border-border/50 bg-card p-5 shadow-[var(--cream-shadow)] sm:p-8">
         {currentStep === 1 && (
           <StepService data={data} services={services} onSelect={(service) => {
             updateData(service)

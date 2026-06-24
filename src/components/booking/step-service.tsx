@@ -1,9 +1,8 @@
 'use client'
 
-import { Card, CardContent } from '@/components/ui/card'
 import { BookingData } from './wizard'
 import type { Service } from '@prisma/client'
-import { Clock3 } from 'lucide-react'
+import { Clock, Plus, Sparkles } from 'lucide-react'
 
 interface StepServiceProps {
   data: BookingData
@@ -14,15 +13,13 @@ interface StepServiceProps {
 export function StepService({ data, services, onSelect }: StepServiceProps) {
   if (services.length === 0) {
     return (
-      <div className="text-center py-12">
-        <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-muted">
-          <svg className="size-7 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-          </svg>
+      <div className="py-12 text-center">
+        <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-3xl bg-secondary text-primary">
+          <Sparkles className="size-7" />
         </div>
-        <h3 className="mb-2 text-lg font-semibold text-primary">No hay servicios disponibles</h3>
-        <p className="text-sm text-muted-foreground">
-          Este negocio aún no tiene servicios configurados.
+        <h3 className="mb-2 font-heading text-2xl text-primary">Aún no hay servicios</h3>
+        <p className="text-base text-muted-foreground">
+          Este negocio todavía no publicó sus servicios.
         </p>
       </div>
     )
@@ -30,50 +27,64 @@ export function StepService({ data, services, onSelect }: StepServiceProps) {
 
   return (
     <div>
-      <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">¿Qué servicio necesitas?</h2>
-      <p className="mb-8 text-lg text-muted-foreground">Selecciona el tratamiento que quieres reservar.</p>
-      <div className="space-y-4">
-        {services.map((service) => (
-          <button
-            key={service.id}
-            onClick={() => onSelect({
-              serviceId: service.id,
-              serviceName: service.name,
-              servicePrice: service.price,
-              serviceDuration: service.durationMinutes,
-              serviceDeposit: service.depositAmount,
-              serviceColor: service.pastelColor,
-            })}
-            className="w-full text-left"
-          >
-            <Card className={`rounded-2xl border bg-card transition-all hover:border-primary hover:shadow-[var(--cream-shadow)] ${data.serviceId === service.id ? 'border-primary bg-secondary/35 shadow-[var(--cream-shadow)]' : 'border-border/70'}`}>
-              <CardContent className="p-5 sm:p-7">
-                <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <h3 className="text-2xl font-semibold leading-tight text-primary">{service.name}</h3>
-                    <p className="mt-4 flex items-center gap-2 text-base text-muted-foreground">
-                      <Clock3 className="size-5 text-primary" />
-                      {service.durationMinutes} minutos
-                    </p>
-                    {service.description && (
-                      <p className="mt-5 text-base leading-relaxed text-muted-foreground">{service.description}</p>
-                    )}
-                  </div>
-                  <div className="shrink-0 text-left sm:text-right">
-                    <div className="text-3xl font-semibold leading-none tracking-normal text-primary">
-                      ${service.price.toLocaleString('es-CL')}
-                    </div>
-                    {service.depositAmount > 0 && (
-                      <div className="mt-2 text-sm font-semibold text-muted-foreground">
-                        Abono requerido: ${service.depositAmount.toLocaleString('es-CL')}
-                      </div>
-                    )}
-                  </div>
+      <h2 className="mb-1.5 font-heading text-3xl leading-tight text-primary sm:text-4xl">¿Qué te hacemos hoy?</h2>
+      <p className="mb-7 text-base text-muted-foreground">Elige un servicio para empezar tu reserva.</p>
+
+      <div className="space-y-3">
+        {services.map((service) => {
+          const color = service.pastelColor || '#f4dbca'
+          const isSelected = data.serviceId === service.id
+          return (
+            <button
+              key={service.id}
+              onClick={() => onSelect({
+                serviceId: service.id,
+                serviceName: service.name,
+                servicePrice: service.price,
+                serviceDuration: service.durationMinutes,
+                serviceDeposit: service.depositAmount,
+                serviceColor: service.pastelColor,
+              })}
+              className="group w-full rounded-[1.75rem] border p-4 text-left transition-all hover:-translate-y-0.5 sm:p-5"
+              style={{
+                backgroundColor: `${color}24`,
+                borderColor: isSelected ? color : `${color}66`,
+                boxShadow: isSelected ? `0 0 0 2px ${color}` : 'none',
+              }}
+            >
+              <div className="flex items-center gap-4">
+                <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-card text-primary shadow-sm sm:size-14">
+                  <Sparkles className="size-5 sm:size-6" />
                 </div>
-              </CardContent>
-            </Card>
-          </button>
-        ))}
+
+                <div className="min-w-0 flex-1">
+                  <h3 className="truncate font-heading text-lg leading-snug text-primary sm:text-xl">{service.name}</h3>
+                  <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <Clock className="size-3.5" />
+                      {service.durationMinutes} min
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span className="font-medium text-primary">${service.price.toLocaleString('es-CL')}</span>
+                    {service.depositAmount > 0 && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span>abono ${service.depositAmount.toLocaleString('es-CL')}</span>
+                      </>
+                    )}
+                  </p>
+                  {service.description && (
+                    <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-muted-foreground/90">{service.description}</p>
+                  )}
+                </div>
+
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-card text-primary transition-transform group-hover:scale-105">
+                  <Plus className="size-4" />
+                </div>
+              </div>
+            </button>
+          )
+        })}
       </div>
     </div>
   )
