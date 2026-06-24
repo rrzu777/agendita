@@ -6,6 +6,19 @@ import { sanitizeNext } from './lib/auth/sanitize-next'
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
+  // Supabase falls back to the Site URL (the landing page, "/") when the
+  // requested redirect target isn't allowlisted, stranding the auth code there
+  // and looping on the landing page. Forward a stray code from the root to
+  // /auth/callback so the session exchange still runs. Scoped to "/" so it never
+  // touches API routes that legitimately use ?code= (e.g. the MP OAuth callback).
+  if (pathname === '/' && request.nextUrl.searchParams.get('code')) {
+    const url = new URL('/auth/callback', request.url)
+    url.searchParams.set('code', request.nextUrl.searchParams.get('code')!)
+    const next = request.nextUrl.searchParams.get('next')
+    if (next) url.searchParams.set('next', next)
+    return NextResponse.redirect(url)
+  }
+
   if (pathname === '/auth/callback') {
     const code = request.nextUrl.searchParams.get('code')
 

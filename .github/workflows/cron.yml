@@ -1,0 +1,33 @@
+name: Scheduled crons
+
+# Free-tier friendly scheduler: Vercel Hobby caps cron jobs at ~once/day, so we
+# drive the cron endpoints from GitHub Actions instead (free/unlimited on public
+# repos). The endpoints authenticate with Authorization: Bearer ${CRON_SECRET}.
+#
+# Setup: add a repository secret CRON_SECRET (Settings → Secrets and variables →
+# Actions) that matches the CRON_SECRET env var in Vercel. Optionally override the
+# base URL with a repository variable APP_BASE_URL.
+
+on:
+  schedule:
+    - cron: '0 * * * *' # hourly (GitHub may delay up to ~15 min under load)
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+concurrency:
+  group: scheduled-crons
+  cancel-in-progress: false
+
+jobs:
+  run-crons:
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: ${{ vars.APP_BASE_URL || 'https://www.agendita.cl' }}
+    steps:
+      - name: Expire stale holds
+        run: |
+          curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/expire-holds" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+      - name: Send reminders
+        run: |
+          curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/send-reminders" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
