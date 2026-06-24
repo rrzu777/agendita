@@ -32,5 +32,9 @@ export function getBusinessPublicUrl(business: BusinessUrlInput, pathname = '') 
   }
 
   const cleanPath = pathname.startsWith('/') ? pathname : `/${pathname}`
-  return `${getProtocol(host)}://${business.subdomain}.${host}${cleanPath === '/' ? '' : cleanPath}`
+  // Tenant subdomains live on the apex domain (e.g. tenant.agendita.cl). Strip a
+  // leading "www." so the URL never becomes tenant.www.agendita.cl when the app
+  // is hosted on the www host.
+  const apexHost = host.replace(/^www\./, '')
+  return `${getProtocol(host)}://${business.subdomain}.${apexHost}${cleanPath === '/' ? '' : cleanPath}`
 }
