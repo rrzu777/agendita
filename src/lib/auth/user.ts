@@ -1,8 +1,12 @@
+import { cache } from 'react'
 import { createClient } from './middleware'
 import { prisma } from '@/lib/db'
 import { validateE2EHeaders } from './e2e-bypass'
 
-async function getE2ETestUser() {
+// Wrapped in React cache() so a single request (layout + page + server actions
+// via requireBusiness) shares ONE Supabase auth.getUser() network call + DB
+// lookup instead of repeating it 2–3× per navigation.
+const getE2ETestUser = cache(async () => {
   const email = await validateE2EHeaders()
   if (!email) return null
 
@@ -12,7 +16,7 @@ async function getE2ETestUser() {
   })
 
   return dbUser
-}
+})
 
 function makeSyntheticUser(dbUser: NonNullable<Awaited<ReturnType<typeof getE2ETestUser>>>) {
   // Synthetic Supabase User — only for E2E test bypass
@@ -28,7 +32,7 @@ function makeSyntheticUser(dbUser: NonNullable<Awaited<ReturnType<typeof getE2ET
   } as any
 }
 
-export async function getCurrentUser() {
+export const getCurrentUser = cache(async () => {
   const e2eUser = await getE2ETestUser()
   if (e2eUser) {
     return makeSyntheticUser(e2eUser)
@@ -42,9 +46,9 @@ export async function getCurrentUser() {
   }
 
   return user
-}
+})
 
-export async function getCurrentSession() {
+export const getCurrentSession = cache(async () => {
   const e2eUser = await getE2ETestUser()
   if (e2eUser) {
     return {
@@ -66,9 +70,9 @@ export async function getCurrentSession() {
   }
 
   return session
-}
+})
 
-export async function getCurrentUserWithBusiness() {
+export const getCurrentUserWithBusiness = cache(async () => {
   const e2eUser = await getE2ETestUser()
   if (e2eUser) {
     const bizEntry = e2eUser.businesses[0]
@@ -93,4 +97,4 @@ export async function getCurrentUserWithBusiness() {
     business: businessUser?.business || null,
     role: businessUser?.role || null,
   }
-}
+})
