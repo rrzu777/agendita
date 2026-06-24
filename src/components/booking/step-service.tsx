@@ -17,7 +17,7 @@ export function StepService({ data, services, onSelect }: StepServiceProps) {
         <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-3xl bg-secondary text-primary">
           <Sparkles className="size-7" />
         </div>
-        <h3 className="mb-2 font-heading text-2xl text-primary">Aún no hay servicios</h3>
+        <h3 className="mb-2 font-heading text-2xl font-semibold text-primary">Aún no hay servicios</h3>
         <p className="text-base text-muted-foreground">
           Este negocio todavía no publicó sus servicios.
         </p>
@@ -27,7 +27,7 @@ export function StepService({ data, services, onSelect }: StepServiceProps) {
 
   return (
     <div>
-      <h2 className="mb-1.5 font-heading text-3xl leading-tight text-primary sm:text-4xl">¿Qué te hacemos hoy?</h2>
+      <h2 className="mb-1.5 font-heading text-3xl font-semibold leading-tight tracking-tight text-primary sm:text-4xl">¿Qué te hacemos hoy?</h2>
       <p className="mb-7 text-base text-muted-foreground">Elige un servicio para empezar tu reserva.</p>
 
       <div className="space-y-3">
@@ -58,7 +58,7 @@ export function StepService({ data, services, onSelect }: StepServiceProps) {
                 </div>
 
                 <div className="min-w-0 flex-1">
-                  <h3 className="truncate font-heading text-lg leading-snug text-primary sm:text-xl">{service.name}</h3>
+                  <h3 className="truncate font-heading text-lg font-semibold leading-snug text-primary sm:text-xl">{service.name}</h3>
                   <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
                       <Clock className="size-3.5" />

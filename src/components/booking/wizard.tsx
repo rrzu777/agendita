@@ -89,7 +89,7 @@ export function BookingWizard({ businessId, services, cancellationPolicy }: Book
         </div>
         <div className="flex items-baseline justify-between">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Paso {currentStep} de {steps.length}</p>
-          <p className="font-heading text-base text-primary">{steps[currentStep - 1]?.label}</p>
+          <p className="font-heading text-base font-semibold text-primary">{steps[currentStep - 1]?.label}</p>
         </div>
       </div>
 

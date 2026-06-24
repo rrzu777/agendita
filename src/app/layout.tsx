@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next"
-import { Geist, Geist_Mono, Fraunces } from "next/font/google"
+import { Geist, Geist_Mono, Plus_Jakarta_Sans } from "next/font/google"
 import "./globals.css"
 
 const geistSans = Geist({
@@ -12,12 +12,11 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 })
 
-// Warm, soft optical serif for display headings — gives the boutique feel.
-const fraunces = Fraunces({
-  variable: "--font-fraunces",
+// Clean, modern geometric sans for display headings — cool but elegant.
+const jakarta = Plus_Jakarta_Sans({
+  variable: "--font-jakarta",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  style: ["normal", "italic"],
+  weight: ["400", "500", "600", "700"],
 })
 
 export const metadata: Metadata = {
@@ -46,7 +45,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="es" className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable}`}>
+    <html lang="es" className={`${geistSans.variable} ${geistMono.variable} ${jakarta.variable}`}>
       <body className="antialiased">
         {children}
       </body>
