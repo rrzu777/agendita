@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { signIn } from '@/lib/auth/actions'
-import { Eye, Lock, Mail, Sparkles } from 'lucide-react'
+import { Eye, Loader2, Lock, Mail, Sparkles } from 'lucide-react'
 
 export default function LoginPage() {
   const [error, setError] = useState('')
@@ -73,6 +73,7 @@ export default function LoginPage() {
               </div>
             </div>
             <Button type="submit" className="h-14 w-full rounded-lg text-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]" disabled={loading}>
+              {loading && <Loader2 className="mr-2 size-4 animate-spin" />}
               {loading ? 'Iniciando sesión...' : 'Iniciar sesión'}
             </Button>
           </form>

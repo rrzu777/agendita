@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { requestPasswordReset } from '@/lib/auth/actions'
-import { Mail, Sparkles } from 'lucide-react'
+import { Loader2, Mail, Sparkles } from 'lucide-react'
 
 export default function ForgotPasswordPage() {
   const [error, setError] = useState('')
@@ -62,6 +62,7 @@ export default function ForgotPasswordPage() {
                 </div>
               </div>
               <Button type="submit" className="h-14 w-full rounded-lg text-lg font-semibold" disabled={loading}>
+                {loading && <Loader2 className="mr-2 size-4 animate-spin" />}
                 {loading ? 'Enviando...' : 'Enviar enlace'}
               </Button>
               <Link href="/login" className="block text-center font-semibold text-primary hover:underline">Volver al login</Link>

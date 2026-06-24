@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { signUp } from '@/lib/auth/actions'
-import { CheckCircle2, Lock, Mail, Sparkles, User } from 'lucide-react'
+import { CheckCircle2, Loader2, Lock, Mail, Sparkles, User } from 'lucide-react'
 
 export default function RegisterPage() {
   const [error, setError] = useState('')
@@ -167,6 +167,7 @@ export default function RegisterPage() {
               </label>
             </div>
             <Button type="submit" className="h-14 w-full rounded-lg text-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]" disabled={loading || !acceptedTerms}>
+              {loading && <Loader2 className="mr-2 size-4 animate-spin" />}
               {loading ? 'Creando cuenta...' : 'Crear cuenta'}
             </Button>
           </form>

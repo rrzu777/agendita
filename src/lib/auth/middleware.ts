@@ -1,6 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { NextRequest, NextResponse } from 'next/server'
+import { getAuthCookieDomain } from './cookie-domain'
+
+// Shared cookie domain (e.g. ".agendita.cl") so auth + PKCE cookies span apex,
+// www and tenant subdomains. undefined on localhost (host-only cookies).
+const COOKIE_DOMAIN = getAuthCookieDomain()
+const withDomain = (options: Record<string, unknown>) =>
+  COOKIE_DOMAIN ? { ...options, domain: COOKIE_DOMAIN } : options
 
 // Cliente para Server Components y Server Actions (Node.js runtime)
 export async function createClient() {
@@ -16,14 +23,14 @@ export async function createClient() {
         },
         set(name: string, value: string, options: Record<string, unknown>) {
           try {
-            cookieStore.set({ name, value, ...options })
+            cookieStore.set({ name, value, ...withDomain(options) })
           } catch {
             // Handle middleware context
           }
         },
         remove(name: string, options: Record<string, unknown>) {
           try {
-            cookieStore.set({ name, value: '', ...options })
+            cookieStore.set({ name, value: '', ...withDomain(options) })
           } catch {
             // Handle middleware context
           }
@@ -44,10 +51,10 @@ export function createMiddlewareClient(request: NextRequest) {
           return request.cookies.get(name)?.value
         },
         set(name: string, value: string, options: Record<string, unknown>) {
-          request.cookies.set({ name, value, ...options })
+          request.cookies.set({ name, value, ...withDomain(options) })
         },
         remove(name: string, options: Record<string, unknown>) {
-          request.cookies.set({ name, value: '', ...options })
+          request.cookies.set({ name, value: '', ...withDomain(options) })
         },
       },
     }
@@ -66,10 +73,10 @@ export function createMiddlewareAuthClient(request: NextRequest, response: NextR
           return request.cookies.get(name)?.value
         },
         set(name: string, value: string, options: Record<string, unknown>) {
-          response.cookies.set(name, value, options as Record<string, string>)
+          response.cookies.set(name, value, withDomain(options) as Record<string, string>)
         },
         remove(name: string, options: Record<string, unknown>) {
-          response.cookies.set(name, '', { ...options as Record<string, string>, maxAge: 0 })
+          response.cookies.set(name, '', { ...withDomain(options) as Record<string, string>, maxAge: 0 })
         },
       },
     }

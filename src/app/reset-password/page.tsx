@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { updatePassword } from '@/lib/auth/actions'
-import { Lock, Sparkles } from 'lucide-react'
+import { Loader2, Lock, Sparkles } from 'lucide-react'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
@@ -69,6 +69,7 @@ export default function ResetPasswordPage() {
                 </div>
               </div>
               <Button type="submit" className="h-14 w-full rounded-lg text-lg font-semibold" disabled={loading}>
+                {loading && <Loader2 className="mr-2 size-4 animate-spin" />}
                 {loading ? 'Guardando...' : 'Actualizar contraseña'}
               </Button>
             </form>
