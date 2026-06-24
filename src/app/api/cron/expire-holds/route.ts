@@ -5,12 +5,11 @@ import { expireStaleHolds } from '@/lib/cron/expire-holds'
 
 /**
  * Endpoint de cron para expirar reservas pending_payment sin pago.
- * Debe ser llamado periódicamente (ej. cada 5 minutos) por un scheduler externo
- * como Vercel Cron, AWS EventBridge, o similar.
- *
- * Requiere header Authorization: Bearer ${CRON_SECRET}
+ * Lo dispara Vercel Cron (GET) según el schedule en vercel.json; también acepta
+ * POST para invocación manual. Vercel adjunta Authorization: Bearer ${CRON_SECRET}
+ * automáticamente cuando CRON_SECRET está configurado.
  */
-export async function POST(request: NextRequest) {
+async function handler(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
   const expectedSecret = process.env.CRON_SECRET
 
@@ -31,3 +30,6 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ expired: result.expired })
 }
+
+export const GET = handler
+export const POST = handler

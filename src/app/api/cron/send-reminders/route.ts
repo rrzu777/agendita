@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { sendReminders } from '@/lib/cron/send-reminders'
 import { logger } from '@/lib/logger'
 
-export async function POST(request: NextRequest) {
+/**
+ * Endpoint de cron para enviar recordatorios ~24h antes de la cita.
+ * Lo dispara Vercel Cron (GET) según el schedule en vercel.json; también acepta
+ * POST para invocación manual. Vercel adjunta Authorization: Bearer ${CRON_SECRET}
+ * automáticamente cuando CRON_SECRET está configurado.
+ */
+async function handler(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
   const expectedSecret = process.env.CRON_SECRET
 
@@ -19,3 +25,6 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json(result)
 }
+
+export const GET = handler
+export const POST = handler
