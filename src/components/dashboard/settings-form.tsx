@@ -14,7 +14,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { updateBusinessSettings, updateBusinessSchema } from '@/server/actions/business-settings'
+import { updateBusinessSettings } from '@/server/actions/business-settings'
+// Import the Zod schema from the pure module, NOT the 'use server' action file —
+// re-exporting a non-function value through a server boundary turns it into a
+// server reference in the client bundle, which breaks zodResolver.
+import { updateBusinessSchema } from '@/lib/business/schema'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import type { Business } from '@prisma/client'
 import { Globe, ExternalLink, AlertCircle, CheckCircle2 } from 'lucide-react'
