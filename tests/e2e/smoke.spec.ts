@@ -267,6 +267,9 @@ test.describe('public booking', () => {
   })
 
   test('double booking same slot → should show slot unavailable', async ({ page, context }) => {
+    // Two full booking flows in one test (first booking + second attempt) — give
+    // it headroom beyond the 30s default so a cold server doesn't make it flaky.
+    test.setTimeout(90_000)
     // Create first booking
     const date = nextBookableDate(10)
     const firstName = `First ${Date.now()}`
