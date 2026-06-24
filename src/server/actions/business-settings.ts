@@ -12,7 +12,9 @@ const RESERVED_SUBDOMAINS = [
   'www', 'app', 'admin', 'dashboard', 'api', 'login', 'register', 'support',
 ]
 
-export { updateBusinessSchema }
+// NOTE: a 'use server' module must only export async functions. Don't re-export
+// the Zod schema here (import it from '@/lib/business/schema' instead) — doing so
+// turns it into a server reference in client bundles and breaks zodResolver.
 export type { UpdateBusinessInput }
 
 function trimToNull(value: string | undefined): string | null {
