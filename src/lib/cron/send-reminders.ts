@@ -49,6 +49,21 @@ export async function sendReminders(now: Date = new Date()): Promise<SendReminde
       continue
     }
 
+    // Atomically claim this reminder before sending. Vercel Cron has
+    // at-least-once delivery, so two concurrent invocations can read the same
+    // `reminderSentAt: null` batch. The conditional updateMany acts as a
+    // compare-and-swap: only the worker whose update matches (count === 1) is
+    // allowed to send, preventing duplicate emails.
+    const claim = await prisma.booking.updateMany({
+      where: { id: booking.id, reminderSentAt: null },
+      data: { reminderSentAt: now },
+    })
+    if (claim.count === 0) {
+      // Another concurrent run already claimed/sent this reminder.
+      skipped++
+      continue
+    }
+
     try {
       const result = await sendReminderEmail({
         businessName: booking.business.name,
@@ -66,15 +81,21 @@ export async function sendReminders(now: Date = new Date()): Promise<SendReminde
       })
 
       if (result.success) {
-        await prisma.booking.update({
-          where: { id: booking.id },
-          data: { reminderSentAt: new Date() },
-        })
         sent++
       } else {
+        // Release the claim so a later run can retry.
+        await prisma.booking.updateMany({
+          where: { id: booking.id, reminderSentAt: now },
+          data: { reminderSentAt: null },
+        })
         skipped++
       }
     } catch {
+      // Release the claim so a later run can retry.
+      await prisma.booking.updateMany({
+        where: { id: booking.id, reminderSentAt: now },
+        data: { reminderSentAt: null },
+      })
       logger.error('reminder.failed', `Failed to send reminder for booking ${booking.id}`)
       errors++
     }

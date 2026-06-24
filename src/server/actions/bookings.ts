@@ -227,11 +227,13 @@ export async function createBooking(data: {
         timezone: business.timezone || 'America/Santiago',
       })
 
-      // Buscar o crear cliente dentro de la transacción
+      // Buscar o crear cliente dentro de la transacción.
+      // Se identifica al cliente por (businessId, phone) — NO por nombre — para
+      // no crear duplicados cuando la misma persona escribe su nombre distinto
+      // entre reservas. Coincide con el flujo de createBookingFromDashboard.
       let customer = await tx.customer.findFirst({
         where: {
           phone: data.customerPhone,
-          name: data.customerName,
           businessId,
         },
       })
@@ -503,6 +505,10 @@ export async function createBookingFromDashboard(data: {
   customerId?: string
 }) {
   const { business, businessId } = await requireBusinessRole(['owner', 'admin'])
+
+  // A suspended/cancelled business must not accept new bookings through any path,
+  // including manual dashboard creation (mirrors the public createBooking flow).
+  assertBusinessCanReceiveBookings(business.subscriptionStatus)
 
   const parsed = createBookingFromDashboardSchema.safeParse(data)
   if (!parsed.success) {

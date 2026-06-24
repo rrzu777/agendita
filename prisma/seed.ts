@@ -159,6 +159,15 @@ async function main() {
     },
   })
 
+  // Platform-admin user for the /admin E2E smoke tests. Only grants admin access
+  // when this email is also listed in PLATFORM_ADMIN_EMAILS (see CI e2e job).
+  await prisma.user.create({
+    data: {
+      email: 'admin@agendita.com',
+      name: 'Platform Admin',
+    },
+  })
+
   // Create availability rules
   await prisma.availabilityRule.createMany({
     data: [

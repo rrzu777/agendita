@@ -191,27 +191,26 @@ export async function applyApprovedPayment({
     })
   }
 
-  const existingLedger = await tx.ledgerEntry.findFirst({
+  // Exactly one LedgerEntry per payment. upsert on the unique paymentId is
+  // atomic (INSERT ... ON CONFLICT), so concurrent transactions can't both
+  // create a duplicate the way a findFirst-then-create race could.
+  await tx.ledgerEntry.upsert({
     where: { paymentId: payment.id },
+    update: {},
+    create: {
+      businessId,
+      bookingId,
+      paymentId: payment.id,
+      customerId: booking.customerId,
+      type: mapPaymentTypeToLedgerEntryType(payment.paymentType),
+      direction: mapPaymentTypeToLedgerDirection(payment.paymentType),
+      amount: payment.amount,
+      currency,
+      description: getLedgerDescription(payment.paymentType, booking.id),
+      occurredAt: new Date(),
+      createdByUserId: createdByUserId ?? null,
+    },
   })
-
-  if (!existingLedger) {
-    await tx.ledgerEntry.create({
-      data: {
-        businessId,
-        bookingId,
-        paymentId: payment.id,
-        customerId: booking.customerId,
-        type: mapPaymentTypeToLedgerEntryType(payment.paymentType),
-        direction: mapPaymentTypeToLedgerDirection(payment.paymentType),
-        amount: payment.amount,
-        currency,
-        description: getLedgerDescription(payment.paymentType, booking.id),
-        occurredAt: new Date(),
-        createdByUserId: createdByUserId ?? null,
-      },
-    })
-  }
 
   return recalcBookingFromPayments(tx, bookingId)
 }
@@ -226,9 +225,16 @@ async function recalcBookingFromPayments(tx: Prisma.TransactionClient, bookingId
     where: { bookingId, status: 'approved' },
   })
 
-  const totalApproved = approvedPayments.reduce((sum, p) => sum + p.amount, 0)
-  const newDepositPaid = totalApproved
-  const newRemainingBalance = Math.max(0, booking.finalAmount - totalApproved)
+  // Net out money-out payments (refunds). Amounts are stored as positive
+  // integers regardless of direction, so a refund must subtract — otherwise it
+  // inflates depositPaid and can wrongly flip the booking to deposit_paid/
+  // fully_paid after a refund was issued.
+  const totalApproved = approvedPayments.reduce((sum, p) => {
+    const sign = mapPaymentTypeToLedgerDirection(p.paymentType) === 'expense' ? -1 : 1
+    return sum + sign * p.amount
+  }, 0)
+  const newDepositPaid = Math.max(0, totalApproved)
+  const newRemainingBalance = Math.max(0, booking.finalAmount - newDepositPaid)
 
   let newPaymentStatus: BookingPaymentStatus
   if (totalApproved >= booking.finalAmount) {

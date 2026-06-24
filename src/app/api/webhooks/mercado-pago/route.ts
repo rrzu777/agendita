@@ -34,6 +34,27 @@ interface MpPayment {
   metadata: Record<string, string> | null
 }
 
+/**
+ * Replay protection: reject signatures whose timestamp is outside the allowed
+ * window. OPT-IN — only enforced when MERCADO_PAGO_WEBHOOK_TOLERANCE_SECONDS is
+ * set, so we never risk rejecting a legitimate (possibly delayed/retried) MP
+ * webhook unless the operator deliberately opts into a tolerance. Idempotency
+ * already prevents double money-movement; this is defense-in-depth.
+ */
+function isTimestampFresh(ts: string): boolean {
+  const toleranceRaw = process.env.MERCADO_PAGO_WEBHOOK_TOLERANCE_SECONDS
+  if (!toleranceRaw) return true
+  const tolerance = Number(toleranceRaw)
+  if (!Number.isFinite(tolerance) || tolerance <= 0) return true
+
+  const tsNum = Number(ts)
+  if (!Number.isFinite(tsNum)) return false
+  // MP sends ts in seconds; tolerate millisecond timestamps just in case.
+  const tsSeconds = tsNum > 1e12 ? Math.floor(tsNum / 1000) : tsNum
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  return Math.abs(nowSeconds - tsSeconds) <= tolerance
+}
+
 // Mercado Pago webhook signature validation
 // Format: x-signature = "ts={timestamp},v1={hmac_sha256_hex}"
 // HMAC input: "id:{data.id};request-id:{x-request-id};ts:{ts};"
@@ -57,6 +78,7 @@ function verifyMercadoPagoSignature(
   }
 
   if (!ts || !v1) return false
+  if (!isTimestampFresh(ts)) return false
 
   const manifest = `id:${mpPaymentId};request-id:${requestId ?? ''};ts:${ts};`
   const expected = createHmac('sha256', secret).update(manifest).digest('hex')

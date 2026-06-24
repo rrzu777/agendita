@@ -95,10 +95,20 @@ export function validateEnv(): EnvValidationResult {
     !!process.env.MERCADO_PAGO_CLIENT_SECRET &&
     !!process.env.MERCADO_PAGO_REDIRECT_URI
   if (!process.env.PAYMENT_PROVIDER && !hasMpOAuth) {
-    warnings.push({
-      key: 'PAYMENT_PROVIDER',
-      message: 'PAYMENT_PROVIDER is not configured. Set it to manual for dashboard-only reservations, or configure Mercado Pago OAuth for multi-tenant online payments.',
-    })
+    if (isProduction) {
+      // In production a payment configuration is required: either an explicit
+      // PAYMENT_PROVIDER or full Mercado Pago OAuth credentials. Booking/payment
+      // flows are undefined otherwise.
+      errors.push({
+        key: 'PAYMENT_PROVIDER',
+        message: 'PAYMENT_PROVIDER is required in production. Set it to manual for dashboard-only reservations, or configure Mercado Pago OAuth for multi-tenant online payments.',
+      })
+    } else {
+      warnings.push({
+        key: 'PAYMENT_PROVIDER',
+        message: 'PAYMENT_PROVIDER is not configured. Set it to manual for dashboard-only reservations, or configure Mercado Pago OAuth for multi-tenant online payments.',
+      })
+    }
   }
 
   // --- Format validation: APP_DOMAIN ---
@@ -225,14 +235,20 @@ export function validateEnv(): EnvValidationResult {
     }
   }
 
-  // --- Upstash Redis — warning, not blocking (beta uses memory fallback) ---
-  if (isProduction) {
+  // --- Upstash Redis — REQUIRED in production ---
+  // The in-memory limiter is per-isolate and provides no real protection on
+  // serverless. In production we fail closed without a distributed store, so a
+  // missing Upstash config would block all rate-limited actions. Make it a hard
+  // error so the deployment fails fast instead of silently bricking bookings.
+  // The E2E harness (APP_ENV=e2e) runs as production but uses the memory limiter,
+  // so it's exempt — mirrors createRateLimiter().
+  if (isProduction && process.env.APP_ENV !== 'e2e') {
     const hasUpstashUrl = !!process.env.UPSTASH_REDIS_REST_URL
     const hasUpstashToken = !!process.env.UPSTASH_REDIS_REST_TOKEN
     if (!hasUpstashUrl || !hasUpstashToken) {
-      warnings.push({
+      errors.push({
         key: 'UPSTASH_REDIS_REST_URL',
-        message: 'UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN not configured. Rate limiting uses in-memory fallback (ok for beta).',
+        message: 'UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required in production. Rate limiting fails closed without a distributed store.',
       })
     }
   }

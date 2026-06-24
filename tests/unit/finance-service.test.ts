@@ -17,6 +17,7 @@ const mockPrisma = {
   ledgerEntry: {
     findFirst: vi.fn(),
     create: vi.fn(),
+    upsert: vi.fn(),
   },
   plan: {},
   user: {},
@@ -240,7 +241,7 @@ describe('applyApprovedPayment', () => {
     })
 
     expect(tx.payment.create).toHaveBeenCalledTimes(1)
-    expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(1)
+    expect(tx.ledgerEntry.upsert).toHaveBeenCalledTimes(1)
     expect(result.booking.depositPaid).toBe(5000)
     expect(result.booking.remainingBalance).toBe(15000)
     expect(result.booking.paymentStatus).toBe(BookingPaymentStatus.unpaid)
@@ -273,7 +274,7 @@ describe('applyApprovedPayment', () => {
     })
 
     expect(tx.payment.create).toHaveBeenCalledTimes(1)
-    expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(1)
+    expect(tx.ledgerEntry.upsert).toHaveBeenCalledTimes(1)
     expect(result.booking.depositPaid).toBe(10000)
     expect(result.booking.remainingBalance).toBe(10000)
     expect(result.booking.paymentStatus).toBe(BookingPaymentStatus.deposit_paid)
@@ -337,8 +338,8 @@ describe('applyApprovedPayment', () => {
     })
 
     // Verify ledger was created with final_payment_paid type, not full_payment_paid
-    expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(1)
-    const ledgerData = tx.ledgerEntry.create.mock.calls[0][0].data
+    expect(tx.ledgerEntry.upsert).toHaveBeenCalledTimes(1)
+    const ledgerData = tx.ledgerEntry.upsert.mock.calls[0][0].create
     expect(ledgerData.type).toBe('final_payment_paid')
     expect(ledgerData.direction).toBe('income')
     expect(ledgerData.description).toBe('Pago final para reserva ng-1')
@@ -366,7 +367,7 @@ describe('applyApprovedPayment', () => {
     })
 
     expect(tx.payment.create).not.toHaveBeenCalled()
-    expect(tx.ledgerEntry.create).not.toHaveBeenCalled()
+    expect(tx.ledgerEntry.upsert).not.toHaveBeenCalled()
     expect(tx.payment.update).not.toHaveBeenCalled()
     expect(result.booking.depositPaid).toBe(10000)
   })
@@ -396,7 +397,7 @@ describe('applyApprovedPayment', () => {
     })
 
     expect(tx.payment.update).toHaveBeenCalledTimes(1)
-    expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(1)
+    expect(tx.ledgerEntry.upsert).toHaveBeenCalledTimes(1)
     expect(result.booking.depositPaid).toBe(10000)
     expect(result.wasConfirmed).toBe(true)
   })
@@ -476,7 +477,7 @@ describe('applyApprovedPayment', () => {
     })
 
     expect(tx.payment.create).toHaveBeenCalledTimes(2)
-    expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(2)
+    expect(tx.ledgerEntry.upsert).toHaveBeenCalledTimes(2)
     expect(result.booking.depositPaid).toBe(8000)
     expect(result.booking.remainingBalance).toBe(12000)
   })
@@ -509,7 +510,7 @@ describe('applyApprovedPayment', () => {
 
       expect(tx.payment.create).not.toHaveBeenCalled()
       expect(tx.payment.update).toHaveBeenCalledTimes(1)
-      expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(1)
+      expect(tx.ledgerEntry.upsert).toHaveBeenCalledTimes(1)
       expect(result.booking.depositPaid).toBe(8000)
       expect(result.booking.remainingBalance).toBe(12000)
     })
@@ -538,7 +539,7 @@ describe('applyApprovedPayment', () => {
 
       expect(tx.payment.create).not.toHaveBeenCalled()
       expect(tx.payment.update).not.toHaveBeenCalled()
-      expect(tx.ledgerEntry.create).not.toHaveBeenCalled()
+      expect(tx.ledgerEntry.upsert).not.toHaveBeenCalled()
       expect(result.booking.depositPaid).toBe(8000)
     })
 
@@ -565,7 +566,7 @@ describe('applyApprovedPayment', () => {
         paymentId: 'pay-explicit',
       })
 
-      expect(tx.ledgerEntry.create).not.toHaveBeenCalled()
+      expect(tx.ledgerEntry.upsert).not.toHaveBeenCalled()
       expect(result.booking.depositPaid).toBe(8000)
     })
 
@@ -719,8 +720,8 @@ describe('applyApprovedPayment', () => {
         paymentId: 'pay-explicit',
       })
 
-      expect(tx.ledgerEntry.create).toHaveBeenCalledTimes(1)
-      const ledgerData = tx.ledgerEntry.create.mock.calls[0][0].data
+      expect(tx.ledgerEntry.upsert).toHaveBeenCalledTimes(1)
+      const ledgerData = tx.ledgerEntry.upsert.mock.calls[0][0].create
       expect(ledgerData.type).toBe('final_payment_paid')
       expect(ledgerData.direction).toBe('income')
       expect(ledgerData.description).toBe('Pago final para reserva ng-1')

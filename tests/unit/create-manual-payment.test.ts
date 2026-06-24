@@ -18,6 +18,7 @@ const mockPrisma = {
   ledgerEntry: {
     findFirst: vi.fn(),
     create: vi.fn(),
+    upsert: vi.fn(),
   },
   $transaction: vi.fn(),
 }
@@ -108,7 +109,7 @@ describe('createManualPayment', () => {
     // Verificar que solo se creó 1 Payment dentro de la transacción
     expect(mockPrisma.payment.create).toHaveBeenCalledTimes(1)
     // Verificar que se creó exactamente 1 LedgerEntry
-    expect(mockPrisma.ledgerEntry.create).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.ledgerEntry.upsert).toHaveBeenCalledTimes(1)
     // Verificar que no se creó un segundo Payment por applyApprovedPayment
     expect(mockPrisma.payment.create).toHaveBeenCalledTimes(1)
     expect(result.id).toBe('pay-manual-1')
@@ -151,7 +152,7 @@ describe('createManualPayment', () => {
     // En este test verificamos que, dentro de la transacción de una sola llamada,
     // solo se crea 1 Payment.
     expect(mockPrisma.payment.create).toHaveBeenCalledTimes(1)
-    expect(mockPrisma.ledgerEntry.create).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.ledgerEntry.upsert).toHaveBeenCalledTimes(1)
   })
 })
 

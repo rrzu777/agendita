@@ -203,8 +203,8 @@ model BusinessUser {
   role       BusinessRole
   createdAt  DateTime     @default(now())
 
-  business        Business @relation(fields: [businessId], references: [id])
-  user       User         @relation(fields: [userId], references: [id])
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, userId])
 }
@@ -229,8 +229,10 @@ model Service {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  business        Business @relation(fields: [businessId], references: [id])
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   bookings        Booking[]
+
+  @@index([businessId, isActive])
 }
 
 model AvailabilityRule {
@@ -241,7 +243,9 @@ model AvailabilityRule {
   endTime    String
   isActive   Boolean  @default(true)
 
-  business   Business @relation(fields: [businessId], references: [id])
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
 }
 
 model TimeBlock {
@@ -252,7 +256,7 @@ model TimeBlock {
   reason        String?
   createdAt     DateTime @default(now())
 
-  business        Business @relation(fields: [businessId], references: [id])
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, startDateTime, endDateTime])
 }
@@ -267,10 +271,13 @@ model Customer {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  business   Business @relation(fields: [businessId], references: [id])
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   bookings   Booking[]
   payments   Payment[]
   reviews    Review[]
+
+  @@index([businessId])
+  @@index([businessId, phone])
 }
 
 model Booking {
@@ -299,9 +306,9 @@ model Booking {
   @@unique([businessId, idempotencyKey])
   updatedAt         DateTime             @updatedAt
 
-  business          Business             @relation(fields: [businessId], references: [id])
-  service           Service              @relation(fields: [serviceId], references: [id])
-  customer          Customer             @relation(fields: [customerId], references: [id])
+  business          Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  service           Service              @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  customer          Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
   payments          Payment[]
   ledgerEntries     LedgerEntry[]
   review              Review?
@@ -345,9 +352,9 @@ model Payment {
   rawPayload        Json?
   createdAt         DateTime        @default(now())
 
-  business          Business        @relation(fields: [businessId], references: [id])
-  booking           Booking         @relation(fields: [bookingId], references: [id])
-  customer          Customer        @relation(fields: [customerId], references: [id])
+  business          Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  booking           Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
   ledgerEntries     LedgerEntry[]
 
   // Evita duplicar exactamente el mismo pago para la misma reserva.
@@ -355,6 +362,7 @@ model Payment {
   // varios pagos manuales (providerPaymentId = null) para el mismo booking
   // siguen permitidos, pero no se duplica un pago online con el mismo providerPaymentId.
   @@unique([bookingId, provider, providerPaymentId])
+  @@index([businessId, status])
 }
 
 enum PaymentProvider {
@@ -397,14 +405,16 @@ model LedgerEntry {
   createdAt       DateTime        @default(now())
   createdByUserId String?
 
-  business        Business        @relation(fields: [businessId], references: [id])
-  booking         Booking?        @relation(fields: [bookingId], references: [id])
-  payment         Payment?        @relation(fields: [paymentId], references: [id])
+  business        Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  booking         Booking?        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  payment         Payment?        @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
   // Garantiza exactamente un LedgerEntry por Payment aprobado.
   // En PostgreSQL, múltiples NULLs son permitidos, así que se permite
   // tener varias LedgerEntries sin paymentId (casos manuales u otros).
   @@unique([paymentId])
+  @@index([businessId, occurredAt])
+  @@index([bookingId])
 }
 
 enum LedgerEntryType {
@@ -437,9 +447,11 @@ model Review {
   isHidden   Boolean  @default(false)
   createdAt  DateTime @default(now())
 
-  business   Business @relation(fields: [businessId], references: [id])
-  booking    Booking  @relation(fields: [bookingId], references: [id])
-  customer   Customer @relation(fields: [customerId], references: [id])
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, isApproved, isHidden])
 }
 
 model GalleryImage {
@@ -450,5 +462,7 @@ model GalleryImage {
   sortOrder  Int      @default(0)
   createdAt  DateTime @default(now())
 
-  business   Business @relation(fields: [businessId], references: [id])
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
 }

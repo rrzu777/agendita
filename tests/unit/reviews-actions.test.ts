@@ -7,6 +7,7 @@ const mockPrisma = {
     findFirst: vi.fn(),
     findMany: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
   },
   review: {
     create: vi.fn(),
@@ -741,20 +742,17 @@ describe('ensureReviewTokenForBooking', () => {
       reviewToken: null,
     })
 
-    mockPrisma.booking.update.mockResolvedValue({
-      ...completedBooking,
-      reviewToken: 'new-generated-token',
-      reviewTokenCreatedAt: new Date(),
-    })
+    // Atomic claim succeeds (count 1) → the generated token is returned directly.
+    mockPrisma.booking.updateMany.mockResolvedValue({ count: 1 })
 
     const cryptoSpy = vi.spyOn(crypto, 'randomUUID').mockReturnValue('new-generated-token')
 
     const result = await ensureReviewTokenForBooking('booking-1')
 
     expect(result).toBe('new-generated-token')
-    expect(mockPrisma.booking.update).toHaveBeenCalledWith(
+    expect(mockPrisma.booking.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'booking-1' },
+        where: { id: 'booking-1', businessId: 'biz-1', reviewToken: null },
         data: expect.objectContaining({ reviewToken: 'new-generated-token' }),
       })
     )

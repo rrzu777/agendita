@@ -61,6 +61,8 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
   const noDepositNeeded = data.serviceDeposit <= 0
   const isFreeService = data.servicePrice <= 0
 
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional reset-before-async-fetch
+     so stale availability isn't shown while re-checking; guarded by the deps. */
   useEffect(() => {
     if (noDepositNeeded) {
       setAvailability(null)
@@ -82,6 +84,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
         })
       })
   }, [businessId, noDepositNeeded])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Generar una key estable por montaje de StepPayment.
   // Retry dentro del mismo montaje (ej. "Intentar de nuevo") usa la misma key.
