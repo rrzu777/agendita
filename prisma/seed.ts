@@ -82,6 +82,9 @@ async function main() {
       planId: betaFreePlan.id,
       subscriptionStatus: 'trialing',
       trialEndsAt: ninetyDaysFromNow,
+      // Mark onboarding complete so /dashboard renders the dashboard instead of
+      // redirecting to /dashboard/onboarding (most E2E flows assume this).
+      onboardingCompletedAt: new Date(),
     },
   })
 
@@ -178,6 +181,77 @@ async function main() {
       { businessId: business.id, dayOfWeek: 5, startTime: '09:00', endTime: '18:00' },
       { businessId: business.id, dayOfWeek: 6, startTime: '10:00', endTime: '15:00' },
     ],
+  })
+
+  // Seed a customer + booking + payment + ledger entry so dashboard and admin
+  // views (bookings list, customer history, payment history) have data in E2E.
+  const seedService = await prisma.service.findFirstOrThrow({
+    where: { businessId: business.id, name: 'Manicura rusa' },
+  })
+
+  const seedCustomer = await prisma.customer.create({
+    data: {
+      businessId: business.id,
+      name: 'Sofía Pérez',
+      phone: '+56987650001',
+      email: 'sofia.e2e@test.com',
+    },
+  })
+
+  // Far enough out (+14 days) that it never collides with slots the booking
+  // E2E tests pick (~+3 days).
+  const bookingStart = new Date()
+  bookingStart.setUTCDate(bookingStart.getUTCDate() + 14)
+  bookingStart.setUTCHours(14, 0, 0, 0)
+  const bookingEnd = new Date(bookingStart.getTime() + seedService.durationMinutes * 60_000)
+
+  const seedBooking = await prisma.booking.create({
+    data: {
+      businessId: business.id,
+      serviceId: seedService.id,
+      customerId: seedCustomer.id,
+      startDateTime: bookingStart,
+      endDateTime: bookingEnd,
+      status: 'confirmed',
+      totalPrice: seedService.price,
+      depositRequired: seedService.depositAmount,
+      depositPaid: seedService.depositAmount,
+      remainingBalance: seedService.price - seedService.depositAmount,
+      discountAmount: 0,
+      finalAmount: seedService.price,
+      paymentStatus: 'deposit_paid',
+    },
+  })
+
+  const seedPayment = await prisma.payment.create({
+    data: {
+      businessId: business.id,
+      bookingId: seedBooking.id,
+      customerId: seedCustomer.id,
+      provider: 'mock',
+      providerPaymentId: `seed-pay-${seedBooking.id}`,
+      amount: seedService.depositAmount,
+      currency: 'CLP',
+      status: 'approved',
+      paymentType: 'deposit',
+      paymentMethod: 'mock',
+      paidAt: new Date(),
+    },
+  })
+
+  await prisma.ledgerEntry.create({
+    data: {
+      businessId: business.id,
+      bookingId: seedBooking.id,
+      paymentId: seedPayment.id,
+      customerId: seedCustomer.id,
+      type: 'deposit_paid',
+      direction: 'income',
+      amount: seedService.depositAmount,
+      currency: 'CLP',
+      description: `Abono reserva ${seedBooking.id.slice(-4)}`,
+      occurredAt: new Date(),
+    },
   })
 
   console.log('Seed completed successfully')
