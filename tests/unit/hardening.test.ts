@@ -238,6 +238,14 @@ describe('RateLimiter', () => {
       const result = await limiter.check('create-booking', 10, 60000, { ip: '1.2.3.4' })
       expect(result.success).toBe(true)
       expect(result.remaining).toBe(9)
+
+      // Regression: must hit the Upstash REST base URL with a flat command array
+      // (the old "/v1/commands" path 404'd and tripped fail-closed in production).
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+      expect(url).toBe('https://test.upstash.io')
+      const body = JSON.parse(init.body as string)
+      expect(Array.isArray(body)).toBe(true)
+      expect(body[0]).toBe('EVAL')
     })
 
     it('blocks request when Redis returns limit exceeded', async () => {
