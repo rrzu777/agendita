@@ -196,7 +196,7 @@ test.describe('main beta flows', () => {
     const date = nextBookableDate()
 
     await page.goto('/book/mimosnails')
-    await page.getByRole('heading', { name: '¿Qué servicio necesitas?' }).waitFor()
+    await page.getByRole('heading', { name: '¿Qué te hacemos hoy?' }).waitFor()
     await page.getByRole('button').filter({ hasText: 'Manicura rusa' }).click()
 
     await expect(page.getByRole('heading', { name: 'Elige una fecha' })).toBeVisible()
