@@ -73,9 +73,9 @@ function BookingCard({ booking, businessCurrency, businessTimezone, businessAddr
         <div className="flex items-center gap-3 text-sm">
           <Clock className="size-4 text-muted-foreground" />
           <span className="text-muted-foreground">
-            {new Date(booking.startDateTime).toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short' })}
+            {new Date(booking.startDateTime).toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short', timeZone: businessTimezone })}
             {' · '}
-            {new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+            {new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: businessTimezone })}
           </span>
         </div>
         <div className="flex items-center gap-3 text-sm">
@@ -216,9 +216,9 @@ export default async function BookingsPage() {
                         <div className="text-xs font-normal text-muted-foreground">#{booking.id.slice(0, 8)}</div>
                       </TableCell>
                       <TableCell>
-                        <div>{new Date(booking.startDateTime).toLocaleDateString('es-CL')}</div>
+                        <div>{new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })}</div>
                         <div className="text-sm text-muted-foreground">
-                          {new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: businessTimezone })}
                         </div>
                       </TableCell>
                       <TableCell>{booking.customer?.name || '—'}</TableCell>

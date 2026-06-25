@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { format } from 'date-fns'
+import { formatInTimeZone } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -81,7 +81,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold text-primary">
-                {format(start, 'HH:mm', { locale: es })} - {format(end, 'HH:mm', { locale: es })}
+                {formatInTimeZone(start, businessTimezone, 'HH:mm', { locale: es })} - {formatInTimeZone(end, businessTimezone, 'HH:mm', { locale: es })}
               </span>
               <Badge className={statusBadgeClasses[booking.status] || ''}>
                 {statusLabels[booking.status] || booking.status}
