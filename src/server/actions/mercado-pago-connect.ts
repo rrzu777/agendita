@@ -72,8 +72,12 @@ export async function disconnectMercadoPagoConnection() {
   return { disconnected: true }
 }
 
-// Backward-compatible alias
-export const disconnectMercadoPago = disconnectMercadoPagoConnection
+// Backward-compatible alias. Must be a real `export async function` (not an
+// `export const`) — a 'use server' module should only export async functions so
+// the directive transform never has to register a non-function as a server ref.
+export async function disconnectMercadoPago() {
+  return disconnectMercadoPagoConnection()
+}
 
 export async function getPaymentAccountStatus() {
   const { businessId } = await requireBusiness()
