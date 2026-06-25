@@ -13,9 +13,11 @@ const RESERVED_SUBDOMAINS = [
 ]
 
 // NOTE: a 'use server' module must only export async functions. Don't re-export
-// the Zod schema here (import it from '@/lib/business/schema' instead) — doing so
-// turns it into a server reference in client bundles and breaks zodResolver.
-export type { UpdateBusinessInput }
+// the Zod schema OR types here — the 'use server' transform turns every export
+// into a runtime server reference, so even `export type { UpdateBusinessInput }`
+// emits a reference to a value that doesn't exist at runtime (types are erased),
+// throwing `ReferenceError: UpdateBusinessInput is not defined` when the action
+// runs. Import the schema and types directly from '@/lib/business/schema'.
 
 function trimToNull(value: string | undefined): string | null {
   if (value === undefined || value.trim() === '') return null
