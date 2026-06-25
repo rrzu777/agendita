@@ -178,7 +178,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
     return (
       <div className="py-14 text-center">
         <Loader2 className="mx-auto mb-4 size-8 animate-spin text-primary" />
-        <h2 className="mb-2 text-2xl font-semibold tracking-normal text-primary">Procesando tu reserva...</h2>
+        <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">Procesando tu reserva...</h2>
         <p className="text-muted-foreground">Por favor no cierres esta ventana</p>
       </div>
     )
@@ -188,11 +188,11 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
     return (
       <div className="py-12 text-center">
         <AlertCircle className="mx-auto mb-4 size-9 text-destructive" />
-        <h2 className="mb-2 text-2xl font-semibold tracking-normal text-primary">Error en el pago</h2>
+        <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">Error en el pago</h2>
         <p className="mb-5 text-muted-foreground">{errorMessage || 'No se pudo procesar el pago'}</p>
-        <div className="flex gap-3 justify-center">
-          <Button variant="outline" onClick={onBack}>Atrás</Button>
-          <Button onClick={() => setStep('review')}>Intentar de nuevo</Button>
+        <div className="flex justify-center gap-3">
+          <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
+          <Button className="h-12 rounded-full px-6" onClick={() => setStep('review')}>Intentar de nuevo</Button>
         </div>
       </div>
     )
@@ -201,10 +201,10 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
   if (noDepositNeeded) {
     return (
       <div>
-        <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Confirmar reserva</h2>
+        <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Confirmar reserva</h2>
         <p className="mb-8 text-lg text-muted-foreground">Resumen de tu reserva</p>
 
-        <div className="mb-6 space-y-3 rounded-xl bg-muted/55 p-5">
+        <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5">
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">${data.servicePrice.toLocaleString('es-CL')}</span></div>
@@ -238,8 +238,8 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
         </div>
 
         <div className="flex gap-3">
-          <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
-          <Button className="h-12 flex-1 text-base font-semibold" onClick={handleManualBooking} disabled={loading || !acceptedTerms}>
+          <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack} disabled={loading}>Atrás</Button>
+          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleManualBooking} disabled={loading || !acceptedTerms}>
             {loading ? 'Confirmando...' : 'Confirmar reserva'}
           </Button>
         </div>
@@ -250,10 +250,10 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
   if (availability && !availability.available) {
     return (
       <div>
-        <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Confirmar reserva</h2>
+        <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Confirmar reserva</h2>
         <p className="mb-8 text-lg text-muted-foreground">Resumen de tu reserva</p>
 
-        <div className="mb-6 space-y-3 rounded-xl bg-muted/55 p-5">
+        <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5">
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">${data.servicePrice.toLocaleString('es-CL')}</span></div>
@@ -288,8 +288,8 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
         </div>
 
         <div className="flex gap-3">
-          <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
-          <Button className="h-12 flex-1 text-base font-semibold" onClick={handleManualBooking} disabled={loading || !acceptedTerms}>
+          <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack} disabled={loading}>Atrás</Button>
+          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleManualBooking} disabled={loading || !acceptedTerms}>
             {loading ? 'Creando reserva...' : 'Confirmar reserva'}
           </Button>
         </div>
@@ -308,7 +308,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
 
   return (
     <div>
-      <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Pago de abono</h2>
+      <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Pago de abono</h2>
       <p className="mb-8 text-lg text-muted-foreground">Resumen de tu reserva</p>
 
       <div className="mb-6 space-y-3 rounded-xl bg-muted/55 p-5">
@@ -341,7 +341,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
 
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
-        <Button className="h-12 flex-1 text-base font-semibold" onClick={handlePayment} disabled={loading || !acceptedTerms}>
+        <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handlePayment} disabled={loading || !acceptedTerms}>
           {loading ? 'Procesando...' : `Pagar abono $${data.serviceDeposit.toLocaleString('es-CL')}`}
         </Button>
       </div>

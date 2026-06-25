@@ -17,7 +17,7 @@ export function BookingBusinessPage({ business, profileHref }: BookingBusinessPa
             <ArrowLeft className="size-6" />
           </Link>
           <div className="text-center">
-            <h1 className="text-xl font-semibold tracking-normal text-primary">Agendita</h1>
+            <h1 className="font-heading text-xl font-semibold tracking-tight text-primary">Agendita</h1>
             <p className="text-sm text-muted-foreground">{business.name}</p>
           </div>
           <div className="flex size-10 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-primary">

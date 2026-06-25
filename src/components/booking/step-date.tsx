@@ -18,8 +18,8 @@ export function StepDate({ data, onSelect, onBack }: { data: BookingData; onSele
 
   return (
     <div>
-      <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Elige una fecha</h2>
-      <p className="mb-8 text-lg text-muted-foreground">{data.serviceName} — {data.serviceDuration} minutos</p>
+      <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Elige una fecha</h2>
+      <p className="mb-7 text-base text-muted-foreground">{data.serviceName} · {data.serviceDuration} min</p>
 
       <div className="flex justify-between items-center mb-4">
         <Button variant="outline" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} aria-label="Mes anterior">
@@ -54,8 +54,8 @@ export function StepDate({ data, onSelect, onBack }: { data: BookingData; onSele
       </div>
 
       <div className="mt-8 flex gap-3">
-        <Button variant="outline" onClick={onBack}>Atrás</Button>
-        <Button className="h-12 flex-1 text-base font-semibold" disabled={!selectedDate}
+        <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
+        <Button className="h-12 flex-1 rounded-full text-base font-semibold" disabled={!selectedDate}
           onClick={() => selectedDate && onSelect(selectedDate)}>
           Continuar
         </Button>
