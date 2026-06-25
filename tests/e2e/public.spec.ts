@@ -49,7 +49,7 @@ test.describe('public pages', () => {
   test('landing page has navigation', async ({ page }) => {
     await page.goto('/')
     const bodyText = await page.locator('body').innerText()
-    expect(bodyText).toContain('Agenda')
+    expect(bodyText).toContain('Reservas')
     expect(bodyText).toContain('Crear cuenta')
     expect(bodyText).toContain('Iniciar sesión')
   })
