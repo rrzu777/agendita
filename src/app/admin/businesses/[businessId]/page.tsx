@@ -246,7 +246,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
                 <p className="text-primary">{business.services.length}</p>
               </div>
               <div>
-                <p className="font-semibold text-muted-foreground">Clientas</p>
+                <p className="font-semibold text-muted-foreground">Clientes</p>
                 <p className="text-primary">{business._count.customers}</p>
               </div>
               {business.trialEndsAt && (

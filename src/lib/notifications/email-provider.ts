@@ -107,7 +107,7 @@ function buildDashboardLink(): string {
 
 export async function sendBookingConfirmationToCustomer(data: BookingEmailData): Promise<EmailResult> {
   if (!data.customerEmail) {
-    return { success: false, skipped: 'Clienta sin email' }
+    return { success: false, skipped: 'Cliente sin email' }
   }
 
   const html = bookingConfirmationCustomerHtml(data)
@@ -123,7 +123,7 @@ export async function sendBookingConfirmationToCustomer(data: BookingEmailData):
 
 export async function sendBookingReceivedToCustomer(data: BookingEmailData): Promise<EmailResult> {
   if (!data.customerEmail) {
-    return { success: false, skipped: 'Clienta sin email' }
+    return { success: false, skipped: 'Cliente sin email' }
   }
 
   const html = bookingReceivedCustomerHtml(data)
@@ -179,7 +179,7 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
   })
 
   if (!booking || !booking.customer.email) {
-    return { success: false, skipped: 'Clienta sin email o booking no encontrado' }
+    return { success: false, skipped: 'Cliente sin email o booking no encontrado' }
   }
 
   const business = booking.business
@@ -207,7 +207,7 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
 
 export async function sendBookingCancelledNotification(data: CancellationEmailData): Promise<EmailResult> {
   if (!data.customerEmail) {
-    return { success: false, skipped: 'Clienta sin email' }
+    return { success: false, skipped: 'Cliente sin email' }
   }
 
   const html = bookingCancelledCustomerHtml(data)
@@ -223,7 +223,7 @@ export async function sendBookingCancelledNotification(data: CancellationEmailDa
 
 export async function sendReviewRequestNotification(data: ReviewRequestEmailData): Promise<EmailResult> {
   if (!data.customerEmail) {
-    return { success: false, skipped: 'Clienta sin email' }
+    return { success: false, skipped: 'Cliente sin email' }
   }
 
   const html = reviewRequestHtml(data)
