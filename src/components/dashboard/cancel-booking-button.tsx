@@ -65,7 +65,7 @@ export function CancelBookingButton({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="text-xl font-semibold tracking-normal text-primary">
+            <DialogTitle className="text-xl font-heading font-semibold tracking-tight text-primary">
               Confirmar cancelación
             </DialogTitle>
             <DialogDescription>

@@ -59,7 +59,7 @@ export function TimeBlockForm() {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="text-2xl font-semibold tracking-normal text-primary">Bloquear horario</DialogTitle>
+          <DialogTitle className="text-2xl font-heading font-semibold tracking-tight text-primary">Bloquear horario</DialogTitle>
         </DialogHeader>
         <form action={handleSubmit} className="space-y-5">
           <div className="flex flex-wrap gap-2">

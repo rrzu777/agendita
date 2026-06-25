@@ -34,7 +34,7 @@ export default async function PaymentsPage() {
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-2xl font-semibold tracking-normal text-primary">Historial de movimientos</h2>
+            <h2 className="text-2xl font-heading font-semibold tracking-tight text-primary">Historial de movimientos</h2>
             <p className="text-sm text-muted-foreground">Ingresos, abonos y ajustes registrados.</p>
           </div>
           <div className="flex flex-wrap gap-3">

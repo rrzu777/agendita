@@ -39,7 +39,7 @@ export function PaymentForm({ bookings }: { bookings: { id: string; service: { n
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="text-2xl font-semibold tracking-normal text-primary">Registrar pago manual</DialogTitle>
+          <DialogTitle className="text-2xl font-heading font-semibold tracking-tight text-primary">Registrar pago manual</DialogTitle>
         </DialogHeader>
         <form action={handleSubmit} className="space-y-5">
           <div className="space-y-2">

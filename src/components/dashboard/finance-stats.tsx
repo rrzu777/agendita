@@ -27,7 +27,7 @@ export function FinanceStats({ summary }: { summary: any }) {
             <CardTitle className="text-sm font-semibold text-muted-foreground">{stat.label}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold tracking-normal text-primary">{stat.value}</div>
+            <div className="text-2xl font-heading font-semibold tracking-tight text-primary">{stat.value}</div>
           </CardContent>
         </Card>
         )
