@@ -42,7 +42,7 @@ export default function ResetPasswordPage() {
           <div className="mb-2 flex size-11 items-center justify-center rounded-xl bg-secondary text-primary">
             <Sparkles className="size-5" />
           </div>
-          <CardTitle className="text-4xl font-semibold tracking-normal text-primary">Nueva contraseña</CardTitle>
+          <CardTitle className="font-heading text-4xl font-semibold tracking-tight text-primary">Nueva contraseña</CardTitle>
           <CardDescription className="text-base text-muted-foreground">
             Crea una nueva contraseña para tu cuenta.
           </CardDescription>
@@ -68,7 +68,7 @@ export default function ResetPasswordPage() {
                   <Input className="studio-input pl-12" id="password" name="password" type="password" placeholder="Mínimo 6 caracteres" required minLength={6} />
                 </div>
               </div>
-              <Button type="submit" className="h-14 w-full rounded-lg text-lg font-semibold" disabled={loading}>
+              <Button type="submit" className="h-14 w-full rounded-full text-lg font-semibold" disabled={loading}>
                 {loading && <Loader2 className="mr-2 size-4 animate-spin" />}
                 {loading ? 'Guardando...' : 'Actualizar contraseña'}
               </Button>

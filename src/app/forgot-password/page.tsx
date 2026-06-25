@@ -34,7 +34,7 @@ export default function ForgotPasswordPage() {
           <div className="mb-2 flex size-11 items-center justify-center rounded-xl bg-secondary text-primary">
             <Sparkles className="size-5" />
           </div>
-          <CardTitle className="text-4xl font-semibold tracking-normal text-primary">Recuperar contraseña</CardTitle>
+          <CardTitle className="font-heading text-4xl font-semibold tracking-tight text-primary">Recuperar contraseña</CardTitle>
           <CardDescription className="text-base text-muted-foreground">
             Te enviaremos un enlace para crear una nueva contraseña.
           </CardDescription>
@@ -61,7 +61,7 @@ export default function ForgotPasswordPage() {
                   <Input className="studio-input pl-12" id="email" name="email" type="email" placeholder="ejemplo@correo.com" required />
                 </div>
               </div>
-              <Button type="submit" className="h-14 w-full rounded-lg text-lg font-semibold" disabled={loading}>
+              <Button type="submit" className="h-14 w-full rounded-full text-lg font-semibold" disabled={loading}>
                 {loading && <Loader2 className="mr-2 size-4 animate-spin" />}
                 {loading ? 'Enviando...' : 'Enviar enlace'}
               </Button>
