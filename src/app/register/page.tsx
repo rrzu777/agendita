@@ -54,7 +54,7 @@ export default function RegisterPage() {
             <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-xl bg-secondary text-primary">
               <CheckCircle2 className="size-6" />
             </div>
-            <CardTitle className="text-3xl text-primary">Verifica tu email</CardTitle>
+            <CardTitle className="font-heading text-3xl font-semibold tracking-tight text-primary">Verifica tu email</CardTitle>
             <CardDescription>
               Te enviamos un email de confirmación. Haz clic en el enlace para activar tu cuenta.
             </CardDescription>
@@ -76,7 +76,7 @@ export default function RegisterPage() {
     <main className="studio-shell flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-[440px]">
         <div className="mb-10 text-center">
-          <h1 className="text-6xl font-semibold tracking-normal text-primary sm:text-7xl">Agendita</h1>
+          <h1 className="font-heading text-6xl font-semibold tracking-tight text-primary sm:text-7xl">Agendita</h1>
           <p className="mt-3 text-xl text-muted-foreground">Tu estudio, ordenado desde el primer día</p>
         </div>
       <Card className="studio-card w-full px-4 py-6 sm:px-8">
@@ -84,7 +84,7 @@ export default function RegisterPage() {
           <div className="mb-2 flex size-11 items-center justify-center rounded-xl bg-secondary text-primary">
             <Sparkles className="size-5" />
           </div>
-          <CardTitle className="text-4xl font-semibold tracking-normal text-primary">Crea tu cuenta</CardTitle>
+          <CardTitle className="font-heading text-4xl font-semibold tracking-tight text-primary">Crea tu cuenta</CardTitle>
           <CardDescription className="text-base text-muted-foreground">Empieza a recibir reservas online</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
@@ -166,7 +166,7 @@ export default function RegisterPage() {
                 </a>
               </label>
             </div>
-            <Button type="submit" className="h-14 w-full rounded-lg text-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]" disabled={loading || !acceptedTerms}>
+            <Button type="submit" className="h-14 w-full rounded-full text-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]" disabled={loading || !acceptedTerms}>
               {loading && <Loader2 className="mr-2 size-4 animate-spin" />}
               {loading ? 'Creando cuenta...' : 'Crear cuenta'}
             </Button>
