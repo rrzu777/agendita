@@ -336,14 +336,14 @@ describe('customers actions', () => {
     it('rejects customer from another business', async () => {
       mockPrisma.customer.findFirst.mockResolvedValue(null)
 
-      await expect(getCustomerDetail('cust-1')).rejects.toThrow('Clienta no encontrada')
+      await expect(getCustomerDetail('cust-1')).rejects.toThrow('Cliente no encontrado')
     })
 
     it('validates ownership with businessId from session', async () => {
       mockRequireBusiness.mockResolvedValue({ businessId: 'other-biz' })
       mockPrisma.customer.findFirst.mockResolvedValue(null)
 
-      await expect(getCustomerDetail('cust-1')).rejects.toThrow('Clienta no encontrada')
+      await expect(getCustomerDetail('cust-1')).rejects.toThrow('Cliente no encontrado')
 
       expect(mockPrisma.customer.findFirst).toHaveBeenCalledWith({
         where: { id: 'cust-1', businessId: 'other-biz' },
@@ -478,7 +478,7 @@ describe('customers actions', () => {
       mockPrisma.customer.findFirst.mockResolvedValue(null)
 
       await expect(updateCustomer('cust-1', validUpdate)).rejects.toThrow(
-        'Clienta no encontrada'
+        'Cliente no encontrado'
       )
       expect(mockPrisma.customer.update).not.toHaveBeenCalled()
     })
@@ -545,7 +545,7 @@ describe('customers actions', () => {
       mockRequireBusinessRole.mockResolvedValue({ businessId: 'real-biz' })
       mockPrisma.customer.findFirst.mockResolvedValue(null)
 
-      await expect(updateCustomer('cust-1', validUpdate)).rejects.toThrow('Clienta no encontrada')
+      await expect(updateCustomer('cust-1', validUpdate)).rejects.toThrow('Cliente no encontrado')
 
       expect(mockPrisma.customer.findFirst).toHaveBeenCalledWith({
         where: { id: 'cust-1', businessId: 'real-biz' },
@@ -608,7 +608,7 @@ describe('customers actions', () => {
       mockPrisma.customer.findFirst.mockResolvedValue(null)
 
       await expect(updateCustomerNotes('cust-1', { notes: 'Test' })).rejects.toThrow(
-        'Clienta no encontrada'
+        'Cliente no encontrado'
       )
       expect(mockPrisma.customer.update).not.toHaveBeenCalled()
     })
