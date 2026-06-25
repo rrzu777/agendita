@@ -75,6 +75,7 @@ export default async function CustomerDetailPage({ params }: Props) {
   }
 
   const { id } = await params
+  const businessTimezone = userData.business.timezone || 'America/Santiago'
 
   let customer
   let error: string | null = null
@@ -223,10 +224,11 @@ export default async function CustomerDetailPage({ params }: Props) {
                           <div>
                             <p className="font-semibold text-primary">{booking.serviceName}</p>
                             <p className="text-xs text-muted-foreground">
-                              {new Date(booking.startDateTime).toLocaleDateString('es-CL')}{' '}
+                              {new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })}{' '}
                               {new Date(booking.startDateTime).toLocaleTimeString('es-CL', {
                                 hour: '2-digit',
                                 minute: '2-digit',
+                                timeZone: businessTimezone,
                               })}
                             </p>
                           </div>
@@ -271,10 +273,11 @@ export default async function CustomerDetailPage({ params }: Props) {
                               {booking.serviceName}
                             </TableCell>
                             <TableCell className="text-sm text-muted-foreground">
-                              {new Date(booking.startDateTime).toLocaleDateString('es-CL')}{' '}
+                              {new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })}{' '}
                               {new Date(booking.startDateTime).toLocaleTimeString('es-CL', {
                                 hour: '2-digit',
                                 minute: '2-digit',
+                                timeZone: businessTimezone,
                               })}
                             </TableCell>
                             <TableCell>

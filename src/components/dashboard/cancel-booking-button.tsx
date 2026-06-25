@@ -69,7 +69,7 @@ export function CancelBookingButton({
               Confirmar cancelación
             </DialogTitle>
             <DialogDescription>
-              ¿Estás segura de cancelar esta reserva? Esta acción no se puede deshacer.
+              ¿Confirmas que quieres cancelar esta reserva? Esta acción no se puede deshacer.
             </DialogDescription>
           </DialogHeader>
 

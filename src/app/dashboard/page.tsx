@@ -160,7 +160,7 @@ export default async function DashboardPage() {
                   <div className="flex items-center gap-5">
                     <div className="flex size-16 flex-col items-center justify-center rounded-xl bg-accent text-primary">
                       <span className="text-xl font-semibold">
-                        {new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: business.timezone })}
                       </span>
                     </div>
                     <div>

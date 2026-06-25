@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { format } from 'date-fns'
+import { formatInTimeZone } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
 import {
   Sheet,
@@ -115,7 +115,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
         <SheetHeader>
           <SheetTitle>Detalle de reserva</SheetTitle>
           <SheetDescription>
-            {booking.service?.name} — {format(start, "EEEE d 'de' MMMM, HH:mm", { locale: es })}
+            {booking.service?.name} — {formatInTimeZone(start, businessTimezone, "EEEE d 'de' MMMM, HH:mm", { locale: es })}
           </SheetDescription>
         </SheetHeader>
 
