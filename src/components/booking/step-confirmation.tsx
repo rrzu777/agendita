@@ -17,7 +17,7 @@ export function StepConfirmation({ data, bookingId, mode }: { data: BookingData;
       ) : (
         <CheckCircle2 className="mx-auto mb-4 size-12 text-primary" />
       )}
-      <h2 className="mb-2 text-3xl font-semibold tracking-normal text-primary">
+      <h2 className="mb-2 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">
         {isPending ? 'Reserva recibida' : 'Reserva confirmada'}
       </h2>
       <p className="mb-6 text-muted-foreground">
@@ -30,7 +30,7 @@ export function StepConfirmation({ data, bookingId, mode }: { data: BookingData;
               : 'Tu reserva ha sido confirmada. El saldo se paga directamente al negocio.'}
       </p>
 
-      <div className="mb-6 space-y-3 rounded-xl bg-muted/55 p-5 text-left">
+      <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5 text-left">
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">${data.servicePrice.toLocaleString('es-CL')}</span></div>
@@ -56,7 +56,7 @@ export function StepConfirmation({ data, bookingId, mode }: { data: BookingData;
       <p className="mb-6 text-sm text-muted-foreground">Número de reserva: {bookingId}</p>
 
       <Link href="/">
-        <Button className="h-12 px-6 text-base font-semibold">Volver al inicio</Button>
+        <Button className="h-12 rounded-full px-7 text-base font-semibold">Volver al inicio</Button>
       </Link>
     </div>
   )

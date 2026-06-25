@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import type { PublicBusiness } from '@/lib/business/public'
-import { BadgeCheck, CalendarDays, Camera, Clock3, MapPin, MessageCircle, Star } from 'lucide-react'
+import { BadgeCheck, CalendarDays, Camera, Clock, Clock3, MapPin, MessageCircle, Sparkles, Star } from 'lucide-react'
 
 interface BusinessProfileProps {
   business: PublicBusiness
@@ -31,7 +31,7 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
               <BadgeCheck className="size-4" />
             </div>
           </div>
-          <h1 className="mb-2 text-4xl font-semibold tracking-normal text-primary">{business.name}</h1>
+          <h1 className="mb-2 font-heading text-4xl font-semibold tracking-tight text-primary">{business.name}</h1>
           {business.bio && <p className="mx-auto max-w-[310px] text-base leading-relaxed text-muted-foreground">{business.bio}</p>}
 
           <div className="mt-6 flex justify-center gap-4">
@@ -69,46 +69,51 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
 
         <section className="mb-7">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-2xl font-semibold tracking-normal text-primary">Servicios</h2>
-            <span className="rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
+            <h2 className="font-heading text-2xl font-semibold tracking-tight text-primary">Servicios</h2>
+            <span className="rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-primary">
               {business.services.length} disponibles
             </span>
           </div>
-          <div className="space-y-4">
-            {business.services.map((service) => (
-              <article
-                key={service.id}
-                className="studio-card flex items-center justify-between gap-4 p-5 shadow-[0_10px_24px_rgba(51,41,32,0.06)]"
-              >
-                <div className="flex-1">
-                  <h3 className="text-xl font-semibold text-primary">{service.name}</h3>
-                  {service.description && (
-                    <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">{service.description}</p>
-                  )}
-                  <p className="mt-3 flex items-center gap-2 text-sm text-foreground">
-                    <Clock3 className="size-4" />
-                    {service.durationMinutes} minutos
-                  </p>
-                </div>
-                <div className="ml-2 text-right">
-                  <span className="text-2xl font-semibold tracking-normal text-primary">
-                    ${service.price.toLocaleString('es-CL')}
-                  </span>
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    Abono requerido: ${service.depositAmount.toLocaleString('es-CL')}
-                  </p>
-                  <span
-                    className="mt-4 inline-block size-6 rounded-full border border-border"
-                    style={{ backgroundColor: service.pastelColor || 'var(--accent)' }}
-                  />
-                </div>
-              </article>
-            ))}
+          <div className="space-y-3">
+            {business.services.map((service) => {
+              const color = service.pastelColor || '#f4dbca'
+              return (
+                <article
+                  key={service.id}
+                  className="flex items-center gap-4 rounded-[1.75rem] border p-4"
+                  style={{ backgroundColor: `${color}24`, borderColor: `${color}66` }}
+                >
+                  <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-card text-primary shadow-sm">
+                    <Sparkles className="size-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate font-heading text-lg font-semibold leading-snug text-primary">{service.name}</h3>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="size-3.5" />
+                        {service.durationMinutes} min
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <span className="font-semibold text-primary">${service.price.toLocaleString('es-CL')}</span>
+                      {service.depositAmount > 0 && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span>abono ${service.depositAmount.toLocaleString('es-CL')}</span>
+                        </>
+                      )}
+                    </p>
+                    {service.description && (
+                      <p className="mt-1 line-clamp-1 text-sm text-muted-foreground/90">{service.description}</p>
+                    )}
+                  </div>
+                </article>
+              )
+            })}
           </div>
         </section>
 
         <section className="studio-card mb-7 p-6">
-          <h2 className="mb-5 flex items-center gap-3 text-2xl font-semibold tracking-normal text-primary">
+          <h2 className="mb-5 flex items-center gap-3 font-heading text-2xl font-semibold tracking-tight text-primary">
             <Clock3 className="size-6" />
             Horarios
           </h2>
@@ -126,7 +131,7 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
 
         {business.reviews.length > 0 && (
           <section className="mb-7">
-            <h2 className="mb-4 text-2xl font-semibold tracking-normal text-primary">Reseñas</h2>
+            <h2 className="mb-4 font-heading text-2xl font-semibold tracking-tight text-primary">Reseñas</h2>
             <div className="studio-card p-6">
               {business.reviews.map((review) => (
                 <div key={review.id} className="border-b pb-4 last:border-0 last:pb-0">
@@ -137,7 +142,7 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
                   </div>
                   <p className="text-sm italic leading-relaxed text-foreground">{review.comment}</p>
                   <p className="mt-3 text-sm font-semibold text-primary">
-                    {review.customer?.name || 'Clienta'}
+                    {review.customer?.name || 'Cliente'}
                   </p>
                 </div>
               ))}
@@ -151,7 +156,7 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
               <MapPin className="size-5" />
             </div>
             <div>
-              <h2 className="font-semibold text-primary">Ubicación</h2>
+              <h2 className="font-heading font-semibold text-primary">Ubicación</h2>
               <p className="text-sm text-muted-foreground">{business.addressText}</p>
             </div>
           </section>
@@ -160,7 +165,7 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
 
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border/50 bg-background/85 px-4 py-4 backdrop-blur">
         <div className="mx-auto max-w-[420px]">
-          <Button asChild className="h-16 w-full rounded-xl text-lg font-semibold shadow-[0_12px_28px_rgba(51,41,32,0.22)]">
+          <Button asChild className="h-16 w-full rounded-full text-lg font-semibold shadow-[0_12px_28px_rgba(51,41,32,0.22)]">
             <Link href={bookingHref}>
               <CalendarDays className="mr-2 size-5" />
               Reservar ahora

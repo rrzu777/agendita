@@ -63,32 +63,32 @@ export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) 
   if (slots.length === 0) {
     return (
       <div>
-        <h2 className="mb-2 text-3xl font-semibold tracking-normal text-primary">No hay horarios disponibles</h2>
+        <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary sm:text-3xl">No hay horarios disponibles</h2>
         <p className="mb-6 text-muted-foreground">
           {errorMessage || 'No hay horarios disponibles para esta fecha. Por favor, selecciona otra fecha.'}
         </p>
-        <Button variant="outline" onClick={onBack}>Atrás</Button>
+        <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
       </div>
     )
   }
 
   return (
     <div>
-      <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Elige una hora</h2>
-      <p className="mb-8 text-lg text-muted-foreground">
-        {data.serviceName} — {data.date?.toLocaleDateString('es-CL')}
+      <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Elige una hora</h2>
+      <p className="mb-7 text-base text-muted-foreground">
+        {data.serviceName} · {data.date?.toLocaleDateString('es-CL')}
       </p>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         {slots.map((slot) => (
           <button
             key={slot.start.toISOString()}
             onClick={() => setSelectedSlot(slot)}
             className={`
-              rounded-xl border p-4 text-center transition
+              rounded-2xl border p-4 text-center transition-all
               ${selectedSlot?.start.getTime() === slot.start.getTime()
-                ? 'border-primary bg-primary text-primary-foreground'
-                : 'border-border bg-card text-primary hover:border-primary hover:bg-accent'}
+                ? 'border-primary bg-primary text-primary-foreground shadow-[var(--cream-shadow)]'
+                : 'border-border/70 bg-card text-primary hover:-translate-y-0.5 hover:border-primary'}
             `}
           >
             <div className="flex items-center justify-center gap-2 font-semibold">
@@ -100,8 +100,8 @@ export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) 
       </div>
 
       <div className="mt-8 flex gap-3">
-        <Button variant="outline" onClick={onBack}>Atrás</Button>
-        <Button className="h-12 flex-1 text-base font-semibold" disabled={!selectedSlot}
+        <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
+        <Button className="h-12 flex-1 rounded-full text-base font-semibold" disabled={!selectedSlot}
           onClick={() => selectedSlot && onSelect(selectedSlot)}>
           Continuar
         </Button>

@@ -179,7 +179,7 @@ test.describe('public booking', () => {
     const date = nextBookableDate(7)
 
     await page.goto(`/book/${BUSINESS_SLUG}`)
-    await page.getByRole('heading', { name: /¿qué servicio/i }).waitFor({ timeout: 10_000 })
+    await page.getByRole('heading', { name: /¿qué te hacemos hoy/i }).waitFor({ timeout: 10_000 })
 
     // Step 1: Select service
     await page.getByRole('button').filter({ hasText: /manicura/i }).first().click()
@@ -218,7 +218,7 @@ test.describe('public booking', () => {
 
   test('booking without deposit → verify pending_payment status', async ({ page }) => {
     await page.goto(`/book/${BUSINESS_SLUG}`)
-    await page.getByRole('heading', { name: /¿qué servicio/i }).waitFor({ timeout: 10_000 })
+    await page.getByRole('heading', { name: /¿qué te hacemos hoy/i }).waitFor({ timeout: 10_000 })
 
     // Select first available service
     const firstService = page.getByRole('button').filter({ hasText: /\w/i }).first()
@@ -247,7 +247,7 @@ test.describe('public booking', () => {
 
   test('booking without deposit → verify no online payment initiated (step-payment fallback)', async ({ page }) => {
     await page.goto(`/book/${BUSINESS_SLUG}`)
-    await page.getByRole('heading', { name: /¿qué servicio/i }).waitFor({ timeout: 10_000 })
+    await page.getByRole('heading', { name: /¿qué te hacemos hoy/i }).waitFor({ timeout: 10_000 })
     await page.getByRole('button').filter({ hasText: /manicura/i }).first().click()
 
     const date = nextBookableDate(9)
@@ -274,7 +274,7 @@ test.describe('public booking', () => {
     const date = nextBookableDate(10)
     const firstName = `First ${Date.now()}`
     await page.goto(`/book/${BUSINESS_SLUG}`)
-    await page.getByRole('heading', { name: /¿qué servicio/i }).waitFor({ timeout: 10_000 })
+    await page.getByRole('heading', { name: /¿qué te hacemos hoy/i }).waitFor({ timeout: 10_000 })
     await page.getByRole('button').filter({ hasText: /manicura/i }).first().click()
     await selectBookingDate(page, date)
     await clickContinueButton(page)
@@ -291,7 +291,7 @@ test.describe('public booking', () => {
     const page2 = await context.newPage()
     const secondName = `Second ${Date.now()}`
     await page2.goto(`/book/${BUSINESS_SLUG}`)
-    await page2.getByRole('heading', { name: /¿qué servicio/i }).waitFor({ timeout: 10_000 })
+    await page2.getByRole('heading', { name: /¿qué te hacemos hoy/i }).waitFor({ timeout: 10_000 })
     await page2.getByRole('button').filter({ hasText: /manicura/i }).first().click()
     await selectBookingDate(page2, date)
     await page2.waitForTimeout(500)
@@ -464,7 +464,7 @@ test.describe('admin', () => {
   test('admin suspend business → business can no longer receive public bookings', async ({ page }) => {
     setAdminAuth(page)
     await page.goto(`/book/${BUSINESS_SLUG}`)
-    const serviceHeading = page.getByRole('heading', { name: /¿qué servicio/i })
+    const serviceHeading = page.getByRole('heading', { name: /¿qué te hacemos hoy/i })
     const bookingPageWorksBefore = await serviceHeading.isVisible({ timeout: 5_000 }).catch(() => false)
     if (!bookingPageWorksBefore) {
       // Booking page not accessible before suspend test — skip
@@ -483,7 +483,7 @@ test.describe('admin', () => {
     // After suspending, verify booking page behavior
     await page.goto(`/book/${BUSINESS_SLUG}`)
     await page.waitForLoadState('networkidle')
-    const isAccessible = await page.getByRole('heading', { name: /¿qué servicio/i }).isVisible({ timeout: 5_000 }).catch(() => false)
+    const isAccessible = await page.getByRole('heading', { name: /¿qué te hacemos hoy/i }).isVisible({ timeout: 5_000 }).catch(() => false)
     const isBlocked = await page.getByText(/suspendido|bloqueado/i).isVisible({ timeout: 5_000 }).catch(() => false)
     expect(isAccessible || isBlocked).toBeTruthy()
 

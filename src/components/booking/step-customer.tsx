@@ -23,8 +23,8 @@ export function StepCustomer({ data, onSubmit, onBack }: { data: BookingData; on
 
   return (
     <div>
-      <h2 className="mb-2 text-4xl font-semibold tracking-normal text-primary">Tus datos</h2>
-      <p className="mb-8 text-lg text-muted-foreground">Ingresa tus datos para confirmar la reserva.</p>
+      <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Tus datos</h2>
+      <p className="mb-7 text-base text-muted-foreground">Ingresa tus datos para confirmar la reserva.</p>
 
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-2">
@@ -62,8 +62,8 @@ export function StepCustomer({ data, onSubmit, onBack }: { data: BookingData; on
         </div>
 
         <div className="mt-8 flex gap-3">
-          <Button type="button" variant="outline" onClick={onBack}>Atrás</Button>
-          <Button type="submit" className="h-12 flex-1 text-base font-semibold">
+          <Button type="button" variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
+          <Button type="submit" className="h-12 flex-1 rounded-full text-base font-semibold">
             Continuar al pago
           </Button>
         </div>
