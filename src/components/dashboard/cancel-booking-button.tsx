@@ -81,7 +81,7 @@ export function CancelBookingButton({
               id="cancelReason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Ej: La clienta canceló, reprogramar..."
+              placeholder="Ej: El cliente canceló, reprogramar..."
               className="studio-input"
             />
           </div>

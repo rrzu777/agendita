@@ -34,7 +34,7 @@ function EmptyState() {
       </div>
       <h3 className="mb-2 text-lg font-semibold text-primary">No tienes reservas todavía</h3>
       <p className="mb-6 text-sm text-muted-foreground">
-        Cuando una clienta reserve a través de tu enlace, aparecerá aquí.
+        Cuando un cliente reserve a través de tu enlace, aparecerá aquí.
       </p>
     </div>
   )

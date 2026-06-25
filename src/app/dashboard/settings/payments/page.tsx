@@ -40,11 +40,11 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
 
   return (
     <div>
-      <DashboardHeader title="Pagos online" subtitle="Conecta Mercado Pago para recibir pagos de tus clientas" />
+      <DashboardHeader title="Pagos online" subtitle="Conecta Mercado Pago para recibir pagos de tus clientes" />
       <div className="p-5 md:p-10 max-w-2xl">
         {success && (
           <div className="mb-6 rounded-lg border border-green-200 bg-green-50/50 p-4 text-sm text-green-800">
-            Cuenta de Mercado Pago conectada exitosamente. Tus clientas ya pueden pagar con tarjeta.
+            Cuenta de Mercado Pago conectada exitosamente. Tus clientes ya pueden pagar con tarjeta.
           </div>
         )}
         {error && (
@@ -57,7 +57,7 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
           <CardHeader>
             <CardTitle>Mercado Pago</CardTitle>
             <CardDescription>
-              Los pagos de tus clientas van directo a tu cuenta de Mercado Pago.
+              Los pagos de tus clientes van directo a tu cuenta de Mercado Pago.
               Agendita no retiene ni cobra comisión sobre los pagos.
             </CardDescription>
           </CardHeader>
@@ -125,7 +125,7 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
                     <div>
                       <p className="font-semibold text-primary">Mercado Pago no configurado</p>
                       <p className="text-sm text-muted-foreground">
-                        Conecta tu cuenta de Mercado Pago para que tus clientas paguen con tarjeta.
+                        Conecta tu cuenta de Mercado Pago para que tus clientes paguen con tarjeta.
                         El dinero cae directamente en tu cuenta.
                       </p>
                     </div>
@@ -145,7 +145,7 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
               <p className="font-semibold text-primary">¿Cómo funciona?</p>
               <ul className="list-disc pl-4 space-y-1">
                 <li>Conectas tu cuenta de Mercado Pago (gratis, sin costo adicional).</li>
-                <li>Tus clientas pagan con tarjeta, débito o crédito.</li>
+                <li>Tus clientes pagan con tarjeta, débito o crédito.</li>
                 <li>El dinero llega directamente a tu cuenta de Mercado Pago.</li>
                 <li>Agendita no retiene ni cobra comisiones sobre reservas.</li>
                 <li>La suscripción de Agendita se paga por separado.</li>

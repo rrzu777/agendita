@@ -52,7 +52,7 @@ export function LedgerTable({ entries }: { entries: any[] }) {
                   <div>
                     <p className="mb-1 text-base font-semibold text-primary">No hay movimientos registrados</p>
                     <p className="text-sm text-muted-foreground">
-                      Los pagos aparecerán aquí cuando las clientas abonen o paguen.
+                      Los pagos aparecerán aquí cuando los clientes abonen o paguen.
                     </p>
                   </div>
                 </div>

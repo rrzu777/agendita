@@ -167,7 +167,7 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
                         {showInactive ? 'No tienes servicios todavía' : 'No hay servicios activos'}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        Crea tu primer servicio para que las clientas puedan reservar.
+                        Crea tu primer servicio para que los clientes puedan reservar.
                       </p>
                     </div>
                     <ServiceForm

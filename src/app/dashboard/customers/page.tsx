@@ -22,13 +22,13 @@ export default async function CustomersPage() {
   try {
     customers = await getCustomers()
   } catch (err) {
-    error = err instanceof Error ? err.message : 'Error al cargar clientas'
+    error = err instanceof Error ? err.message : 'Error al cargar clientes'
   }
 
   return (
     <div>
       <DashboardHeader
-        title="Clientas"
+        title="Clientes"
         subtitle="Historial y datos de contacto de quienes reservan contigo."
       />
       <div className="p-5 md:p-10">
