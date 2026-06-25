@@ -168,7 +168,7 @@ export function newBookingBusinessHtml(data: NewBookingBusinessEmailData): strin
     ${header('Nueva reserva recibida')}
     <p style="font-size:15px">${escapeHtml(data.customerName)} acaba de agendar una cita.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
-      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Cliente</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Teléfono</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerPhone)}</td></tr>
       ${data.customerEmail ? `<tr><td style="padding:8px 0;color:#666">Email</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerEmail)}</td></tr>` : ''}
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
@@ -191,7 +191,7 @@ export function newBookingBusinessText(data: NewBookingBusinessEmailData): strin
     ``,
     `${data.customerName} acaba de agendar una cita.`,
     ``,
-    `Clienta: ${data.customerName}`,
+    `Cliente: ${data.customerName}`,
     `Teléfono: ${data.customerPhone}`,
   ]
   if (data.customerEmail) lines.push(`Email: ${data.customerEmail}`)

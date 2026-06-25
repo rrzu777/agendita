@@ -165,7 +165,7 @@ describe('sendBookingConfirmedNotification', () => {
     const result = await sendBookingConfirmedNotification('nonexistent', 'biz-1')
 
     expect(result.success).toBe(false)
-    expect(result.skipped).toBe('Clienta sin email o booking no encontrado')
+    expect(result.skipped).toBe('Cliente sin email o booking no encontrado')
   })
 
   it('returns graceful result when Resend API throws', async () => {

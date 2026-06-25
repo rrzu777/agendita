@@ -404,7 +404,7 @@ describe('email-provider: sendBookingConfirmationToCustomer', () => {
       customerEmail: null,
     })
     expect(result.success).toBe(false)
-    expect(result.skipped).toBe('Clienta sin email')
+    expect(result.skipped).toBe('Cliente sin email')
   })
 
   it('skips when RESEND_API_KEY is not set', async () => {
@@ -553,7 +553,7 @@ describe('email-provider: sendBookingCancelledNotification', () => {
       customerEmail: null,
     })
     expect(result.success).toBe(false)
-    expect(result.skipped).toBe('Clienta sin email')
+    expect(result.skipped).toBe('Cliente sin email')
   })
 
   it('sends cancellation email', async () => {
@@ -585,7 +585,7 @@ describe('email-provider: sendReviewRequestNotification', () => {
       customerEmail: null,
     })
     expect(result.success).toBe(false)
-    expect(result.skipped).toBe('Clienta sin email')
+    expect(result.skipped).toBe('Cliente sin email')
   })
 
   it('sends review request email', async () => {

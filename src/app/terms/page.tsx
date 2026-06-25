@@ -20,7 +20,7 @@ export default function TermsPage() {
           <h2 className="mb-3 mt-8 text-xl font-semibold text-primary">2. La Plataforma</h2>
           <p>
             Agendita proporciona herramientas para que profesionales y negocios (&ldquo;Negocios&rdquo;) gestionen sus reservas,
-            horarios y pagos. Las clientas (&ldquo;Clientas&rdquo;) pueden reservar servicios con los Negocios a través de la Plataforma.
+            horarios y pagos. Los clientes (&ldquo;Clientes&rdquo;) pueden reservar servicios con los Negocios a través de la Plataforma.
           </p>
           <p className="mt-2">
             Agendita actúa exclusivamente como plataforma de agenda. No presta servicios de manicura, peluquería,
@@ -31,7 +31,7 @@ export default function TermsPage() {
         <section>
           <h2 className="mb-3 mt-8 text-xl font-semibold text-primary">3. Pagos</h2>
           <p>
-            Los pagos que las Clientas realizan a través de la Plataforma van directamente a la cuenta de Mercado Pago
+            Los pagos que los Clientes realizan a través de la Plataforma van directamente a la cuenta de Mercado Pago
             del Negocio correspondiente. Agendita no retiene, procesa ni intermedia el dinero de las reservas entre
             Cliente y Negocio.
           </p>
