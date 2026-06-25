@@ -27,7 +27,7 @@ export default async function AvailabilityPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-semibold tracking-normal text-primary">Horario semanal</h2>
+              <h2 className="text-2xl font-heading font-semibold tracking-tight text-primary">Horario semanal</h2>
               <p className="text-sm text-muted-foreground">Define los días y horas en que atiendes.</p>
             </div>
           </div>
@@ -37,7 +37,7 @@ export default async function AvailabilityPage() {
         <div className="space-y-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-2xl font-semibold tracking-normal text-primary">Bloqueos</h2>
+              <h2 className="text-2xl font-heading font-semibold tracking-tight text-primary">Bloqueos</h2>
               <p className="text-sm text-muted-foreground">Marca días o rangos en los que no estarás disponible.</p>
             </div>
             <TimeBlockForm />

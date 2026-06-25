@@ -128,7 +128,7 @@ export function ServiceForm({
       </DialogTrigger>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-semibold tracking-normal text-primary">{service ? 'Editar servicio' : 'Nuevo servicio'}</DialogTitle>
+          <DialogTitle className="text-2xl font-heading font-semibold tracking-tight text-primary">{service ? 'Editar servicio' : 'Nuevo servicio'}</DialogTitle>
         </DialogHeader>
         <form action={handleSubmit} className="space-y-5">
           <div className="space-y-2">

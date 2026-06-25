@@ -98,9 +98,9 @@ export function CustomerList({ customers, error }: CustomerListProps) {
         <div className="mb-5 flex size-16 items-center justify-center rounded-2xl bg-secondary text-primary">
           <Users className="size-8" />
         </div>
-        <h2 className="text-xl font-semibold text-primary">Sin clientas</h2>
+        <h2 className="text-xl font-semibold text-primary">Sin clientes</h2>
         <p className="mt-2 max-w-md text-muted-foreground">
-          Las clientas aparecerán aquí cuando realicen su primera reserva.
+          Los clientes aparecerán aquí cuando realicen su primera reserva.
         </p>
       </div>
     )
@@ -204,10 +204,10 @@ export function CustomerList({ customers, error }: CustomerListProps) {
         <div className="studio-card flex min-h-[200px] flex-col items-center justify-center p-8 text-center">
           <p className="text-muted-foreground">
             {activeFilters > 0
-              ? 'No hay clientas con estos filtros.'
+              ? 'No hay clientes con estos filtros.'
               : search
-              ? 'No se encontraron clientas con esa búsqueda.'
-              : 'No hay clientas todavía.'}
+              ? 'No se encontraron clientes con esa búsqueda.'
+              : 'No hay clientes todavía.'}
           </p>
         </div>
       ) : (
@@ -354,7 +354,7 @@ export function CustomerList({ customers, error }: CustomerListProps) {
           </div>
 
           <p className="mt-2 text-xs text-muted-foreground">
-            {filtered.length} de {customers.length} clientas
+            {filtered.length} de {customers.length} clientes
             {activeFilters > 0 && ' (filtradas)'}
           </p>
         </>

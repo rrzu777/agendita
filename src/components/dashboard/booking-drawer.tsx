@@ -163,7 +163,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
           )}
 
           <div className="space-y-2 rounded-xl border border-border/60 p-3">
-            <h4 className="text-sm font-semibold">Contactar clienta</h4>
+            <h4 className="text-sm font-semibold">Contactar cliente</h4>
             <BookingContactButtons
               booking={{
                 customerName: booking.customer?.name || '',

@@ -109,7 +109,7 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
 
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-normal text-primary">Catálogo de servicios</h2>
+          <h2 className="text-2xl font-heading font-semibold tracking-tight text-primary">Catálogo de servicios</h2>
           <p className="text-sm text-muted-foreground">
             {activeCount} activo{activeCount !== 1 ? 's' : ''}
             {inactiveCount > 0 && `, ${inactiveCount} inactivo${inactiveCount !== 1 ? 's' : ''}`}
@@ -167,7 +167,7 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
                         {showInactive ? 'No tienes servicios todavía' : 'No hay servicios activos'}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        Crea tu primer servicio para que las clientas puedan reservar.
+                        Crea tu primer servicio para que los clientes puedan reservar.
                       </p>
                     </div>
                     <ServiceForm

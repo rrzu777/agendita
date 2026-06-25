@@ -65,7 +65,7 @@ export function CancelBookingButton({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="text-xl font-semibold tracking-normal text-primary">
+            <DialogTitle className="text-xl font-heading font-semibold tracking-tight text-primary">
               Confirmar cancelación
             </DialogTitle>
             <DialogDescription>
@@ -81,7 +81,7 @@ export function CancelBookingButton({
               id="cancelReason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Ej: La clienta canceló, reprogramar..."
+              placeholder="Ej: El cliente canceló, reprogramar..."
               className="studio-input"
             />
           </div>

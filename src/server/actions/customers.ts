@@ -161,7 +161,7 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
   })
 
   if (!customer) {
-    throw new ForbiddenError('Clienta no encontrada')
+    throw new ForbiddenError('Cliente no encontrado')
   }
 
   const [bookings, payments, paymentSum, bookingStats, pendingBalanceSum] = await Promise.all([
@@ -272,7 +272,7 @@ export async function updateCustomer(customerId: string, data: unknown) {
     where: { id: customerId, businessId },
   })
   if (!existing) {
-    throw new ForbiddenError('Clienta no encontrada')
+    throw new ForbiddenError('Cliente no encontrado')
   }
 
   const emailClean = (parsed.data.email === '' || parsed.data.email === null) ? null : parsed.data.email
@@ -308,7 +308,7 @@ export async function updateCustomerNotes(customerId: string, data: unknown) {
     where: { id: customerId, businessId },
   })
   if (!existing) {
-    throw new ForbiddenError('Clienta no encontrada')
+    throw new ForbiddenError('Cliente no encontrado')
   }
 
   const notesClean = parsed.data.notes === '' ? null : (parsed.data.notes ?? undefined)

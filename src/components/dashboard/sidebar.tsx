@@ -26,7 +26,7 @@ const navItems = [
   { href: '/dashboard/calendar', label: 'Calendario', icon: CalendarDays },
   { href: '/dashboard/services', label: 'Servicios', icon: Scissors },
   { href: '/dashboard/availability', label: 'Horarios', icon: Clock3 },
-  { href: '/dashboard/customers', label: 'Clientas', icon: Users },
+  { href: '/dashboard/customers', label: 'Clientes', icon: Users },
   { href: '/dashboard/payments', label: 'Pagos', icon: CreditCard },
   { href: '/dashboard/billing', label: 'Facturación', icon: ReceiptText },
   { href: '/dashboard/reviews', label: 'Reseñas', icon: Star },
@@ -47,7 +47,7 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
     <>
     <aside className="hidden min-h-screen w-72 shrink-0 flex-col border-r border-border/50 bg-sidebar md:flex">
       <div className="p-6">
-        <Link href="/" className="text-3xl font-semibold tracking-normal text-primary">
+        <Link href="/" className="font-heading text-3xl font-semibold tracking-tight text-primary">
           Agendita
         </Link>
         {business && (

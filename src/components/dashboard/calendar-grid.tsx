@@ -49,7 +49,7 @@ export function CalendarGrid({ bookingsByDay, currentMonth, selectedDate }: Cale
             <ChevronLeft className="size-4" />
           </Link>
         </Button>
-        <h2 className="text-2xl font-semibold capitalize tracking-normal text-primary">
+        <h2 className="font-heading text-2xl font-semibold capitalize tracking-tight text-primary">
           {format(currentMonth, 'MMMM yyyy', { locale: es })}
         </h2>
         <Button variant="outline" size="icon" asChild>

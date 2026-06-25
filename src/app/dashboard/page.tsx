@@ -126,7 +126,7 @@ export default async function DashboardPage() {
                   <CardTitle className="text-sm font-semibold text-muted-foreground">{stat.label}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-4xl font-semibold tracking-normal text-primary">{stat.value}</div>
+                  <div className="text-4xl font-heading font-semibold tracking-tight text-primary">{stat.value}</div>
                 </CardContent>
               </Card>
             )
@@ -135,7 +135,7 @@ export default async function DashboardPage() {
 
         <section className="mt-10">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-2xl font-semibold tracking-normal text-primary">Próximas citas</h2>
+            <h2 className="text-2xl font-heading font-semibold tracking-tight text-primary">Próximas citas</h2>
             <a href="/dashboard/calendar" className="text-sm font-semibold text-muted-foreground hover:text-primary">
               Ver calendario completo
             </a>
