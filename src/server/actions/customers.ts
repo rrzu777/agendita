@@ -15,6 +15,7 @@ export type CustomerListItem = {
   phone: string
   email: string | null
   notes: string | null
+  birthDate: Date | null
   bookingCount: number
   lastBookingAt: Date | null
   totalPaidApproved: number
@@ -33,6 +34,7 @@ export async function getCustomers(): Promise<CustomerListItem[]> {
       phone: true,
       email: true,
       notes: true,
+      birthDate: true,
       createdAt: true,
     },
     take: 500,
@@ -100,6 +102,7 @@ export async function getCustomers(): Promise<CustomerListItem[]> {
       phone: c.phone,
       email: c.email,
       notes: c.notes,
+      birthDate: c.birthDate,
       bookingCount,
       lastBookingAt,
       totalPaidApproved,
@@ -126,6 +129,7 @@ export type CustomerDetail = {
   phone: string
   email: string | null
   notes: string | null
+  birthDate: Date | null
   bookingCount: number
   lastBookingAt: Date | null
   totalPaidApproved: number
@@ -227,6 +231,7 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
     phone: customer.phone,
     email: customer.email,
     notes: customer.notes,
+    birthDate: customer.birthDate,
     bookingCount: bookingStats._count.id,
     lastBookingAt: bookingStats._max.startDateTime,
     totalPaidApproved: paymentSum._sum.amount ?? 0,
@@ -276,6 +281,9 @@ export async function updateCustomer(customerId: string, data: unknown) {
   }
 
   const emailClean = (parsed.data.email === '' || parsed.data.email === null) ? null : parsed.data.email
+  // birthDate llega como 'YYYY-MM-DD' o null. Lo anclamos a medianoche UTC para
+  // que la columna DATE no se corra de día por la zona horaria.
+  const birthDateClean = parsed.data.birthDate ? new Date(`${parsed.data.birthDate}T00:00:00Z`) : null
 
   const updated = await prisma.customer.update({
     where: { id: customerId },
@@ -283,6 +291,7 @@ export async function updateCustomer(customerId: string, data: unknown) {
       name: parsed.data.name,
       phone: parsed.data.phone,
       email: emailClean,
+      birthDate: birthDateClean,
     },
   })
 

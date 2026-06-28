@@ -24,6 +24,26 @@ export const updateCustomerSchema = z.object({
     .optional()
     .nullable()
     .or(z.literal('')),
+  // Fecha de nacimiento (YYYY-MM-DD). Opcional. '' o null => sin fecha.
+  birthDate: z
+    .string()
+    .trim()
+    .optional()
+    .nullable()
+    .or(z.literal(''))
+    .transform((v) => (v ? v : null))
+    .refine(
+      (v) => v === null || /^\d{4}-\d{2}-\d{2}$/.test(v),
+      'Fecha de nacimiento invalida',
+    )
+    .refine((v) => {
+      if (v === null) return true
+      const d = new Date(`${v}T00:00:00Z`)
+      if (isNaN(d.getTime())) return false
+      const year = d.getUTCFullYear()
+      // Rango razonable: entre 1900 y hoy (sin fechas futuras).
+      return year >= 1900 && d.getTime() <= Date.now()
+    }, 'La fecha de nacimiento no es valida'),
 }).strip()
 
 export const updateCustomerNotesSchema = z.object({
