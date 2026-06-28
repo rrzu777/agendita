@@ -14,6 +14,7 @@ import { assertSlotIsAvailable } from '@/lib/availability/validation'
 import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcement'
 import { normalizePhone } from '@/lib/customers/phone'
 import { addMinutes } from 'date-fns'
+import { applyPromotionInTx } from '@/lib/promotions/apply'
 import {
   sendBookingReceivedToCustomer,
   sendNewBookingNotificationToBusiness,
@@ -31,6 +32,7 @@ const createBookingSchema = z.object({
   startDateTime: z.date(),
   idempotencyKey: z.string().min(1).max(64).optional(),
   acceptedTerms: z.boolean(),
+  promotionCode: z.string().trim().max(40).optional(),
 })
 
 const confirmPaymentSchema = z.object({
@@ -147,6 +149,7 @@ export async function createBooking(data: {
   startDateTime: Date
   idempotencyKey?: string
   acceptedTerms: boolean
+  promotionCode?: string
 }, businessId: string) {
   const limit = await checkRateLimit('create-booking', 20, 60000)
   if (!limit.success) {
@@ -256,7 +259,7 @@ export async function createBooking(data: {
       const holdExpiresAt = status === BookingStatus.pending_payment ? addMinutes(new Date(), 15) : null
       const bookingPaymentStatus = isFreeService ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid
 
-      return tx.booking.create({
+      const booking = await tx.booking.create({
         data: {
           businessId,
           serviceId: data.serviceId,
@@ -278,6 +281,47 @@ export async function createBooking(data: {
           customer: true,
         },
       })
+
+      // Aplicar promo por código (server-authoritative) dentro de la misma tx.
+      // Si el código es inválido/agotado, applyPromotionInTx lanza y TODA la
+      // transacción (booking + canje + incremento) hace rollback: no se crea reserva.
+      const promoRes = await applyPromotionInTx(tx, {
+        businessId,
+        code: parsed.data.promotionCode,
+        serviceId: data.serviceId,
+        customerId: customer.id,
+        totalPrice: service.price,
+        bookingId: booking.id,
+        source: 'public_booking',
+      })
+
+      if (!promoRes) return booking
+
+      // Recalcular montos y estado con el descuento aplicado y persistirlos en la
+      // reserva, para que initiatePayment cobre el monto descontado a Mercado Pago.
+      const discountAmount = promoRes.discountAmount
+      const discountedFinal = service.price - discountAmount
+      const discountedDeposit = Math.min(service.depositAmount, discountedFinal)
+      const noDeposit = discountedDeposit <= 0
+      const free = discountedFinal <= 0
+      const newStatus = noDeposit ? BookingStatus.confirmed : BookingStatus.pending_payment
+      const newHold = newStatus === BookingStatus.pending_payment ? addMinutes(new Date(), 15) : null
+      const newPaymentStatus = free ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid
+
+      const updated = await tx.booking.update({
+        where: { id: booking.id },
+        data: {
+          discountAmount,
+          finalAmount: discountedFinal,
+          depositRequired: discountedDeposit,
+          remainingBalance: discountedFinal,
+          status: newStatus,
+          holdExpiresAt: newHold,
+          paymentStatus: newPaymentStatus,
+        },
+        include: { service: true, customer: true },
+      })
+      return updated
     })
 
     const bookingForNotification = booking as Booking & {
