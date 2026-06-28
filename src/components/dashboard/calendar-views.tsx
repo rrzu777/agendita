@@ -106,9 +106,9 @@ export function CalendarViews({
 
   return (
     <div className="studio-card p-4 md:p-6">
-      {/* Barra de control */}
-      <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-2">
+      {/* Barra de control — apila hasta lg para no apretarse en tablet */}
+      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="icon" asChild>
             <Link href={hrefFor(view, prev)} aria-label="Anterior">
               <ChevronLeft className="size-4" />
@@ -122,12 +122,12 @@ export function CalendarViews({
               <ChevronRight className="size-4" />
             </Link>
           </Button>
-          <h2 className="ml-2 font-heading text-lg font-semibold capitalize text-primary">
+          <h2 className="ml-1 whitespace-nowrap font-heading text-lg font-semibold capitalize text-primary">
             {periodLabel}
           </h2>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ViewSwitch view={view} date={date} />
           {view !== 'month' && <BlockTimeModal defaultDate={date} timezone={timezone} />}
         </div>
