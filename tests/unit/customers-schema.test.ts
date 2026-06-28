@@ -213,6 +213,58 @@ describe('updateCustomerSchema', () => {
     const result = updateCustomerSchema.safeParse({ name: 'Maria' })
     expect(result.success).toBe(false)
   })
+
+  it('accepts a valid birthDate', () => {
+    const result = updateCustomerSchema.safeParse({ ...validCustomer, birthDate: '1990-05-15' })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.birthDate).toBe('1990-05-15')
+    }
+  })
+
+  it('normalizes empty-string birthDate to null', () => {
+    const result = updateCustomerSchema.safeParse({ ...validCustomer, birthDate: '' })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.birthDate).toBeNull()
+    }
+  })
+
+  it('accepts null birthDate', () => {
+    const result = updateCustomerSchema.safeParse({ ...validCustomer, birthDate: null })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.birthDate).toBeNull()
+    }
+  })
+
+  it('treats a missing birthDate as null', () => {
+    const result = updateCustomerSchema.safeParse(validCustomer)
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.birthDate).toBeNull()
+    }
+  })
+
+  it('rejects a malformed birthDate', () => {
+    const result = updateCustomerSchema.safeParse({ ...validCustomer, birthDate: '15-05-1990' })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects a future birthDate', () => {
+    const result = updateCustomerSchema.safeParse({ ...validCustomer, birthDate: '2999-01-01' })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects a birthDate before 1900', () => {
+    const result = updateCustomerSchema.safeParse({ ...validCustomer, birthDate: '1899-12-31' })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects an impossible calendar date that JS would roll over (Feb 30)', () => {
+    const result = updateCustomerSchema.safeParse({ ...validCustomer, birthDate: '1990-02-30' })
+    expect(result.success).toBe(false)
+  })
 })
 
 describe('updateCustomerNotesSchema', () => {
