@@ -21,6 +21,12 @@ const statusColors: Record<string, string> = {
   released: 'bg-muted text-muted-foreground',
 }
 
+const sourceLabels: Record<string, string> = {
+  public_booking: 'Reserva online',
+  dashboard_booking: 'Reserva manual',
+  system: 'Sistema',
+}
+
 function formatDateTime(value: Date | string | null) {
   if (!value) return '—'
   return new Date(value).toLocaleString('es-CL', {
@@ -32,13 +38,16 @@ function formatDateTime(value: Date | string | null) {
   })
 }
 
-// Escapa un campo CSV: comillas dobles duplicadas + envoltura si contiene
-// coma, comilla o salto de línea.
-function csvField(value: string): string {
-  if (/[",\n\r]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`
-  }
-  return value
+// Escapa un campo CSV. El CSV lo abre el comerciante en Excel/Sheets, así que
+// primero neutralizamos inyección de fórmulas: un nombre de clienta como
+// =HYPERLINK(...) o @cmd se interpretaría como fórmula viva. Si el campo empieza
+// con = + - @ (o tab/CR), lo prefijamos con ' para forzar texto. Luego aplicamos
+// el escape estándar (comillas duplicadas + envoltura por coma/comilla/salto).
+function csvField(value: unknown): string {
+  let s = value == null ? '' : String(value)
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s
+  if (/[",\n\r]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"'
+  return s
 }
 
 export function RedemptionsButton({
@@ -81,7 +90,7 @@ export function RedemptionsButton({
           csvField(formatDateTime(r.booking?.startDateTime ?? null)),
           csvField(formatMoney(r.discountAmount, currency)),
           csvField(formatDateTime(r.createdAt)),
-          csvField(r.source ?? ''),
+          csvField(sourceLabels[r.source] ?? r.source),
           csvField(statusLabels[r.status] ?? r.status),
         ].join(','),
       )
@@ -151,7 +160,7 @@ export function RedemptionsButton({
                     <TableCell>{formatDateTime(r.booking?.startDateTime ?? null)}</TableCell>
                     <TableCell>{formatMoney(r.discountAmount, currency)}</TableCell>
                     <TableCell>{formatDateTime(r.createdAt)}</TableCell>
-                    <TableCell>{r.source}</TableCell>
+                    <TableCell>{sourceLabels[r.source] ?? r.source}</TableCell>
                     <TableCell>
                       <Badge className={statusColors[r.status] ?? 'bg-muted text-muted-foreground'}>
                         {statusLabels[r.status] ?? r.status}
