@@ -6,9 +6,11 @@ const mockAssertSlotIsAvailable = vi.fn()
 
 const mockPrisma = {
   service: { findFirst: vi.fn() },
-  booking: { create: vi.fn() },
+  booking: { create: vi.fn(), update: vi.fn() },
   customer: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   payment: { create: vi.fn() },
+  promotion: { findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+  promotionRedemption: { count: vi.fn(), create: vi.fn() },
   $transaction: vi.fn(),
 }
 
@@ -67,7 +69,41 @@ function setupTx() {
     customer: mockPrisma.customer,
     booking: mockPrisma.booking,
     payment: mockPrisma.payment,
+    promotion: mockPrisma.promotion,
+    promotionRedemption: mockPrisma.promotionRedemption,
   }))
+}
+
+/** Mocks tx so applyPromotionInTx resolves a redeemable promo. */
+function setupPromo(overrides: Record<string, unknown> = {}) {
+  mockPrisma.promotion.findFirst.mockResolvedValue({
+    id: 'p1',
+    code: 'V20',
+    triggerType: 'code',
+    isActive: true,
+    validFrom: null,
+    validUntil: null,
+    maxRedemptions: null,
+    maxPerCustomer: null,
+    minSpend: null,
+    appliesToAll: true,
+    rewardType: 'percentage',
+    rewardValue: 20,
+    maxDiscount: null,
+    redemptionCount: 0,
+    services: [],
+    ...overrides,
+  })
+  mockPrisma.promotion.update.mockResolvedValue({})
+  mockPrisma.promotion.updateMany.mockResolvedValue({ count: 1 })
+  mockPrisma.promotionRedemption.count.mockResolvedValue(0)
+  mockPrisma.promotionRedemption.create.mockResolvedValue({ id: 'red-1' })
+  mockPrisma.booking.update.mockResolvedValue({
+    id: 'booking-1',
+    businessId,
+    service: { name: 'Manicure' },
+    customer: { name: 'Maria Perez', phone: '56912345678', email: 'maria@test.com' },
+  })
 }
 
 function setupService(price: number, depositAmount: number) {
@@ -206,6 +242,83 @@ describe('createBookingFromDashboard advanced payment modes', () => {
 
     await expect(createBookingFromDashboard({ ...baseInput, customerId: 'other-customer', paymentMode: 'none' }))
       .rejects.toThrow(/Cliente no encontrado/)
+  })
+})
+
+describe('createBookingFromDashboard promo discount (money path)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupTx()
+    setupCustomer()
+    setupBooking()
+    mockPrisma.payment.create.mockResolvedValue({ id: 'payment-1' })
+    mockApplyApprovedPayment.mockResolvedValue({ booking: { id: 'booking-1' }, wasConfirmed: true })
+    mockAssertSlotIsAvailable.mockResolvedValue(undefined)
+  })
+
+  it('discounted deposit charges the discounted amount, not the full price', async () => {
+    // deposit == full price so the 20% discount actually moves the charged deposit:
+    // effFinal = 20000 - 4000 = 16000; effDeposit = min(20000, 16000) = 16000.
+    setupService(20000, 20000)
+    setupPromo()
+
+    await createBookingFromDashboard({
+      ...baseInput,
+      paymentMode: 'deposit_paid',
+      paymentMethod: 'transfer',
+      promotionCode: 'V20',
+    })
+
+    // The discount reaches the real Payment row.
+    expect(mockPrisma.payment.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        paymentType: PaymentType.deposit,
+        provider: 'manual',
+        amount: 16000,
+      }),
+    }))
+    expect(mockApplyApprovedPayment).toHaveBeenCalledWith(expect.objectContaining({
+      amount: 16000,
+      paymentType: PaymentType.deposit,
+      paymentId: 'payment-1',
+    }))
+
+    // And it was persisted on the booking before the payment branch ran.
+    expect(mockPrisma.booking.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        discountAmount: 4000,
+        finalAmount: 16000,
+        depositRequired: 16000,
+        remainingBalance: 16000,
+      }),
+    }))
+  })
+
+  it('100%-off full_paid creates no Payment and confirms fully_paid', async () => {
+    // fixed_amount above total caps to the full price -> effFinal = 0.
+    setupService(20000, 5000)
+    setupPromo({ rewardType: 'fixed_amount', rewardValue: 1000000 })
+
+    await createBookingFromDashboard({
+      ...baseInput,
+      paymentMode: 'full_paid',
+      paymentMethod: 'cash',
+      promotionCode: 'V20',
+    })
+
+    // effFinal = 0 -> full_paid branch is skipped entirely.
+    expect(mockPrisma.payment.create).not.toHaveBeenCalled()
+    expect(mockApplyApprovedPayment).not.toHaveBeenCalled()
+
+    expect(mockPrisma.booking.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        discountAmount: 20000,
+        finalAmount: 0,
+        remainingBalance: 0,
+        status: BookingStatus.confirmed,
+        paymentStatus: BookingPaymentStatus.fully_paid,
+      }),
+    }))
   })
 })
 
