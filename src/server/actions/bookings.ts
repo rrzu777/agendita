@@ -534,6 +534,7 @@ const createBookingFromDashboardSchema = z.object({
   paymentMode: z.enum(['none', 'deposit_paid', 'full_paid']).optional(),
   paymentMethod: z.enum(['cash', 'transfer', 'external_card', 'other']).optional(),
   customerId: z.string().min(1).optional(),
+  promotionCode: z.string().trim().max(40).optional(),
 })
 
 const PAYMENT_METHOD_MAP: Record<string, string> = {
@@ -554,8 +555,9 @@ export async function createBookingFromDashboard(data: {
   paymentMode?: 'none' | 'deposit_paid' | 'full_paid'
   paymentMethod?: string
   customerId?: string
+  promotionCode?: string
 }) {
-  const { business, businessId } = await requireBusinessRole(['owner', 'admin'])
+  const { user, business, businessId } = await requireBusinessRole(['owner', 'admin'])
 
   // A suspended/cancelled business must not accept new bookings through any path,
   // including manual dashboard creation (mirrors the public createBooking flow).
@@ -677,7 +679,54 @@ export async function createBookingFromDashboard(data: {
       include: { service: true, customer: true },
     })
 
-    if (paymentMode === 'deposit_paid' && depositRequired > 0) {
+    // Aplicar promo por código (server-authoritative) dentro de la misma tx.
+    // Si el código es inválido/agotado, applyPromotionInTx lanza y TODA la
+    // transacción (booking + canje + incremento + pagos) hace rollback.
+    const promoRes = await applyPromotionInTx(tx, {
+      businessId,
+      code: parsed.data.promotionCode,
+      serviceId: data.serviceId,
+      customerId: customer.id,
+      totalPrice: service.price,
+      bookingId: newBooking.id,
+      source: 'dashboard_booking',
+      createdByUserId: user.id,
+    })
+
+    // Montos efectivos: descontados cuando aplicó una promo, precio total si no.
+    const discountAmount = promoRes?.discountAmount ?? 0
+    const effFinal = service.price - discountAmount
+    const effDeposit = Math.min(service.depositAmount, effFinal)
+
+    // Si aplicó una promo, persistir el descuento y recalcular estado/montos con
+    // los valores EFECTIVOS ANTES de las ramas de pago, porque applyApprovedPayment
+    // recalcula remainingBalance/paymentStatus a partir del booking.finalAmount /
+    // booking.depositRequired ya persistidos.
+    let bookingResult = newBooking
+    if (promoRes) {
+      const effNoDeposit = effDeposit <= 0
+      const effFree = effFinal <= 0
+      // Mantener la semántica actual: full_paid/deposit_paid o sin abono => confirmed.
+      const effShouldConfirm = paymentMode === 'full_paid' || paymentMode === 'deposit_paid' || effNoDeposit
+      const effStatus = effShouldConfirm ? BookingStatus.confirmed : BookingStatus.pending_payment
+      const effPaymentStatus = effFree ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid
+      const effHold = effStatus === BookingStatus.pending_payment ? addMinutes(new Date(), 60) : null
+      bookingResult = await tx.booking.update({
+        where: { id: newBooking.id },
+        data: {
+          discountAmount,
+          finalAmount: effFinal,
+          depositRequired: effDeposit,
+          remainingBalance: effFinal,
+          status: effStatus,
+          paymentStatus: effPaymentStatus,
+          holdExpiresAt: effHold,
+        },
+        include: { service: true, customer: true },
+      })
+    }
+
+    if (paymentMode === 'deposit_paid' && effDeposit > 0) {
       const { applyApprovedPayment } = await import('@/server/services/finance')
 
       const payment = await tx.payment.create({
@@ -688,7 +737,7 @@ export async function createBookingFromDashboard(data: {
           paymentType: PaymentType.deposit,
           provider: 'manual',
           providerPaymentId: null,
-          amount: depositRequired,
+          amount: effDeposit,
           currency: business.currency || 'CLP',
           status: 'pending',
           paymentMethod: displayMethod,
@@ -700,7 +749,7 @@ export async function createBookingFromDashboard(data: {
         tx,
         bookingId: newBooking.id,
         businessId,
-        amount: depositRequired,
+        amount: effDeposit,
         currency: business.currency || 'CLP',
         provider: 'manual',
         providerPaymentId: null,
@@ -710,7 +759,7 @@ export async function createBookingFromDashboard(data: {
       })
     }
 
-    if (paymentMode === 'full_paid' && finalAmount > 0) {
+    if (paymentMode === 'full_paid' && effFinal > 0) {
       const { applyApprovedPayment } = await import('@/server/services/finance')
 
       const payment = await tx.payment.create({
@@ -721,7 +770,7 @@ export async function createBookingFromDashboard(data: {
           paymentType: PaymentType.full_payment,
           provider: 'manual',
           providerPaymentId: null,
-          amount: finalAmount,
+          amount: effFinal,
           currency: business.currency || 'CLP',
           status: 'pending',
           paymentMethod: displayMethod,
@@ -733,7 +782,7 @@ export async function createBookingFromDashboard(data: {
         tx,
         bookingId: newBooking.id,
         businessId,
-        amount: finalAmount,
+        amount: effFinal,
         currency: business.currency || 'CLP',
         provider: 'manual',
         providerPaymentId: null,
@@ -743,7 +792,7 @@ export async function createBookingFromDashboard(data: {
       })
     }
 
-    return newBooking
+    return bookingResult
   })
 
   revalidatePath('/dashboard/bookings')

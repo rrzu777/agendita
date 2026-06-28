@@ -22,6 +22,7 @@ vi.mock('@/lib/auth/server', () => ({
   requireBusiness: vi.fn().mockResolvedValue({ businessId: 'biz-1' }),
   requireBusinessRole: vi.fn().mockResolvedValue({
     businessId: 'biz-1',
+    user: { id: 'user-1' },
     business: { timezone: 'America/Santiago', currency: 'CLP' },
   }),
   ForbiddenError: class extends Error {},
