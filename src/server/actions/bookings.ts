@@ -349,9 +349,16 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
     throw new ForbiddenError(`No se puede cambiar el estado de ${existing.status} a ${status}`)
   }
 
+  // Al completar, generamos el token de reseña de inmediato para que el link
+  // esté listo en el momento adecuado (sin un paso manual extra después).
+  const completing = status === BookingStatus.completed && !existing.reviewToken
+  const reviewTokenData = completing
+    ? { reviewToken: crypto.randomUUID(), reviewTokenCreatedAt: new Date() }
+    : {}
+
   const updateResult = await prisma.booking.updateMany({
     where: { id, businessId },
-    data: { status },
+    data: { status, ...reviewTokenData },
   })
   if (updateResult.count === 0) {
     throw new ForbiddenError('Reserva no encontrada')

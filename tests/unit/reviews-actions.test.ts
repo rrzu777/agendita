@@ -61,6 +61,7 @@ const {
   hideReview,
   ensureReviewTokenForBooking,
   getReviewLink,
+  getReviewWhatsappLink,
 } = await import('@/server/actions/reviews')
 
 const completedBooking = {
@@ -817,5 +818,69 @@ describe('getReviewLink', () => {
     await getReviewLink('booking-1')
 
     expect(mockRequireBusinessRole).toHaveBeenCalledWith(['owner', 'admin'])
+  })
+})
+
+describe('getReviewWhatsappLink', () => {
+  beforeEach(() => {
+    mockRequireBusinessRole.mockResolvedValue({ businessId: 'biz-1', business: { id: 'biz-1' }, role: 'owner', user: {} })
+  })
+
+  it('builds a wa.me URL with normalized phone and the review link', async () => {
+    mockPrisma.booking.findFirst.mockResolvedValue({
+      id: 'booking-1',
+      status: BookingStatus.completed,
+      reviewToken: 'tok-1',
+      customer: { name: 'Ana Pérez', phone: '+56 9 1234 5678' },
+      business: { name: 'Mimos Nails' },
+    })
+
+    const result = await getReviewWhatsappLink('booking-1')
+
+    expect(result).not.toBeNull()
+    expect(result!.reviewLink).toBe('https://agendita.app/review/booking-1?token=tok-1')
+    expect(result!.waUrl).toContain('https://wa.me/56912345678?text=')
+    expect(decodeURIComponent(result!.waUrl!)).toContain('https://agendita.app/review/booking-1?token=tok-1')
+    expect(decodeURIComponent(result!.waUrl!)).toContain('Ana') // saludo con primer nombre
+  })
+
+  it('prepends country code for a 9-digit local number', async () => {
+    mockPrisma.booking.findFirst.mockResolvedValue({
+      id: 'booking-1',
+      status: BookingStatus.completed,
+      reviewToken: 'tok-1',
+      customer: { name: 'Ana', phone: '912345678' },
+      business: { name: 'Mimos Nails' },
+    })
+
+    const result = await getReviewWhatsappLink('booking-1')
+    expect(result!.waUrl).toContain('https://wa.me/56912345678?text=')
+  })
+
+  it('returns waUrl null (link only) when the customer has no phone', async () => {
+    mockPrisma.booking.findFirst.mockResolvedValue({
+      id: 'booking-1',
+      status: BookingStatus.completed,
+      reviewToken: 'tok-1',
+      customer: { name: 'Ana', phone: null },
+      business: { name: 'Mimos Nails' },
+    })
+
+    const result = await getReviewWhatsappLink('booking-1')
+    expect(result!.waUrl).toBeNull()
+    expect(result!.reviewLink).toBe('https://agendita.app/review/booking-1?token=tok-1')
+  })
+
+  it('returns null for a booking that is not completed', async () => {
+    mockPrisma.booking.findFirst.mockResolvedValue({
+      id: 'booking-1',
+      status: BookingStatus.confirmed,
+      reviewToken: null,
+      customer: { name: 'Ana', phone: '912345678' },
+      business: { name: 'Mimos Nails' },
+    })
+
+    const result = await getReviewWhatsappLink('booking-1')
+    expect(result).toBeNull()
   })
 })

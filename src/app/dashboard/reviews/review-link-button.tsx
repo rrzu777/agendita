@@ -2,8 +2,12 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Copy, Link, Loader2 } from 'lucide-react'
-import { ensureReviewTokenForBooking, getReviewLink } from '@/server/actions/reviews'
+import { Copy, Link, Loader2, MessageCircle } from 'lucide-react'
+import {
+  ensureReviewTokenForBooking,
+  getReviewLink,
+  getReviewWhatsappLink,
+} from '@/server/actions/reviews'
 
 interface ReviewLinkButtonProps {
   bookingId: string
@@ -11,12 +15,12 @@ interface ReviewLinkButtonProps {
 }
 
 export function ReviewLinkButton({ bookingId, hasToken }: ReviewLinkButtonProps) {
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState<null | 'copy' | 'whatsapp'>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   async function handleGenerateAndCopy() {
-    setLoading(true)
+    setLoading('copy')
     setError(null)
     setCopied(false)
 
@@ -37,27 +41,75 @@ export function ReviewLinkButton({ bookingId, hasToken }: ReviewLinkButtonProps)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al generar link')
     } finally {
-      setLoading(false)
+      setLoading(null)
+    }
+  }
+
+  async function handleWhatsapp() {
+    setLoading('whatsapp')
+    setError(null)
+
+    // Abrimos la ventana de inmediato (gesto del usuario) y luego fijamos la URL,
+    // para no toparnos con el bloqueador de pop-ups tras el await.
+    const win = window.open('', '_blank')
+
+    try {
+      const result = await getReviewWhatsappLink(bookingId)
+      if (!result) {
+        win?.close()
+        setError('No se pudo preparar el mensaje')
+        return
+      }
+
+      if (result.waUrl) {
+        if (win) win.location.href = result.waUrl
+        else window.open(result.waUrl, '_blank')
+      } else {
+        // Sin teléfono: caemos a copiar el link.
+        win?.close()
+        await navigator.clipboard.writeText(result.reviewLink)
+        setError('La clienta no tiene teléfono. Copiamos el link al portapapeles.')
+      }
+    } catch (err) {
+      win?.close()
+      setError(err instanceof Error ? err.message : 'Error al preparar WhatsApp')
+    } finally {
+      setLoading(null)
     }
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={handleGenerateAndCopy}
-        disabled={loading}
-      >
-        {loading ? (
-          <Loader2 className="mr-1 size-4 animate-spin" />
-        ) : copied ? (
-          <Copy className="mr-1 size-4 text-green-600" />
-        ) : (
-          <Link className="mr-1 size-4" />
-        )}
-        {copied ? 'Copiado' : loading ? 'Generando...' : 'Link reseña'}
-      </Button>
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          className="bg-[#25D366] text-white hover:bg-[#1ebe5b]"
+          onClick={handleWhatsapp}
+          disabled={loading !== null}
+        >
+          {loading === 'whatsapp' ? (
+            <Loader2 className="mr-1 size-4 animate-spin" />
+          ) : (
+            <MessageCircle className="mr-1 size-4" />
+          )}
+          WhatsApp
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleGenerateAndCopy}
+          disabled={loading !== null}
+        >
+          {loading === 'copy' ? (
+            <Loader2 className="mr-1 size-4 animate-spin" />
+          ) : copied ? (
+            <Copy className="mr-1 size-4 text-green-600" />
+          ) : (
+            <Link className="mr-1 size-4" />
+          )}
+          {copied ? 'Copiado' : 'Copiar link'}
+        </Button>
+      </div>
       {error && <span className="text-xs text-destructive">{error}</span>}
     </div>
   )
