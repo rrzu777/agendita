@@ -16,6 +16,15 @@ const PASTEL_COLORS = [
 
 const HEX_COLOR_REGEX = /^#[0-9A-Fa-f]{6}$/
 
+const DURATION_PRESETS = [15, 30, 45, 60, 90, 120]
+
+function formatDuration(min: number): string {
+  if (min < 60) return `${min} min`
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return m === 0 ? `${h} h` : `${h} h ${m}`
+}
+
 function ServicePreview({ name, description, price, durationMinutes, depositAmount, color }: {
   name: string
   description: string
@@ -70,8 +79,14 @@ export function ServiceForm({
   const [previewName, setPreviewName] = useState(service?.name || '')
   const [previewDescription, setPreviewDescription] = useState(service?.description || '')
   const [previewPrice, setPreviewPrice] = useState(service?.price?.toString() || '')
-  const [previewDuration, setPreviewDuration] = useState(service?.durationMinutes?.toString() || '')
   const [previewDeposit, setPreviewDeposit] = useState(service?.depositAmount?.toString() || '')
+
+  const initialDuration = service?.durationMinutes ?? 30
+  const [duration, setDuration] = useState<number>(initialDuration)
+  const [showCustomDuration, setShowCustomDuration] = useState(
+    service?.durationMinutes != null && !DURATION_PRESETS.includes(service.durationMinutes)
+  )
+  const previewDuration = duration > 0 ? duration.toString() : ''
 
   function handleHexChange(value: string) {
     setCustomHex(value)
@@ -88,6 +103,12 @@ export function ServiceForm({
   async function handleSubmit(formData: FormData) {
     setLoading(true)
     setError(null)
+
+    if (!duration || duration < 1) {
+      setError('Indica cuánto dura el servicio')
+      setLoading(false)
+      return
+    }
 
     const data: Record<string, unknown> = {
       name: (formData.get('name') as string).trim(),
@@ -150,7 +171,7 @@ export function ServiceForm({
               onChange={(e) => setPreviewDescription(e.target.value)}
             />
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="studio-eyebrow">Precio</Label>
               <Input
@@ -160,17 +181,6 @@ export function ServiceForm({
                 defaultValue={service?.price}
                 required
                 onChange={(e) => setPreviewPrice(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="studio-eyebrow">Duración (min)</Label>
-              <Input
-                className="studio-input"
-                name="durationMinutes"
-                type="number"
-                defaultValue={service?.durationMinutes}
-                required
-                onChange={(e) => setPreviewDuration(e.target.value)}
               />
             </div>
             <div className="space-y-2">
@@ -184,6 +194,57 @@ export function ServiceForm({
                 onChange={(e) => setPreviewDeposit(e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="studio-eyebrow">¿Cuánto dura?</Label>
+            {/* Valor real que viaja en el form; los chips solo lo controlan. */}
+            <input type="hidden" name="durationMinutes" value={duration} />
+            <div className="flex flex-wrap gap-2">
+              {DURATION_PRESETS.map((min) => {
+                const active = !showCustomDuration && duration === min
+                return (
+                  <button
+                    key={min}
+                    type="button"
+                    onClick={() => { setShowCustomDuration(false); setDuration(min) }}
+                    className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                      active
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border bg-card text-foreground hover:border-primary/50'
+                    }`}
+                  >
+                    {formatDuration(min)}
+                  </button>
+                )
+              })}
+              <button
+                type="button"
+                onClick={() => setShowCustomDuration(true)}
+                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                  showCustomDuration
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-card text-foreground hover:border-primary/50'
+                }`}
+              >
+                Otro
+              </button>
+            </div>
+            {showCustomDuration && (
+              <div className="flex items-center gap-2 pt-1">
+                <Input
+                  className="studio-input w-28"
+                  type="number"
+                  min={1}
+                  step={5}
+                  value={duration || ''}
+                  onChange={(e) => setDuration(parseInt(e.target.value) || 0)}
+                  placeholder="Minutos"
+                  autoFocus
+                />
+                <span className="text-sm text-muted-foreground">minutos</span>
+              </div>
+            )}
           </div>
           <div>
             <Label className="studio-eyebrow">Color</Label>

@@ -8,13 +8,22 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { createManualPayment } from '@/server/actions/payments'
 import { Plus } from 'lucide-react'
 
+// Opciones comunes + "Otro" (campo libre). El valor guardado es la etiqueta,
+// que es lo que se muestra en el historial de pagos.
+const PAYMENT_METHODS = ['Efectivo', 'Transferencia', 'Tarjeta', 'Mercado Pago'] as const
+const OTHER = 'Otro'
+
 export function PaymentForm({ bookings }: { bookings: { id: string; service: { name: string } | null; customer: { name: string } | null; finalAmount: number; remainingBalance: number; depositPaid: number; status: string }[] }) {
   const [open, setOpen] = useState(false)
+  const [method, setMethod] = useState<string>(PAYMENT_METHODS[0])
+  const [otherMethod, setOtherMethod] = useState('')
 
   async function handleSubmit(formData: FormData) {
     const bookingId = formData.get('bookingId') as string
     const amount = parseInt(formData.get('amount') as string)
-    const paymentMethod = formData.get('paymentMethod') as string
+    const paymentMethod = method === OTHER ? otherMethod.trim() : method
+
+    if (!paymentMethod) return
 
     await createManualPayment({
       bookingId,
@@ -48,7 +57,8 @@ export function PaymentForm({ bookings }: { bookings: { id: string; service: { n
               <option value="">Selecciona una reserva</option>
               {pendingBookings.map((booking) => (
                 <option key={booking.id} value={booking.id}>
-                  Reserva {booking.id.slice(-4)} — ${booking.remainingBalance.toLocaleString('es-CL')} pendiente
+                  {booking.customer?.name ? `${booking.customer.name} — ` : `Reserva ${booking.id.slice(-4)} — `}
+                  ${booking.remainingBalance.toLocaleString('es-CL')} pendiente
                 </option>
               ))}
             </select>
@@ -59,7 +69,26 @@ export function PaymentForm({ bookings }: { bookings: { id: string; service: { n
           </div>
           <div className="space-y-2">
             <Label className="studio-eyebrow">Método de pago</Label>
-            <Input className="studio-input" name="paymentMethod" placeholder="Efectivo, transferencia, etc." required />
+            <select
+              value={method}
+              onChange={(e) => setMethod(e.target.value)}
+              className="min-h-12 w-full rounded-lg border border-border bg-card px-4 text-base focus:border-primary focus:outline-none"
+            >
+              {PAYMENT_METHODS.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+              <option value={OTHER}>{OTHER}…</option>
+            </select>
+            {method === OTHER && (
+              <Input
+                className="studio-input"
+                value={otherMethod}
+                onChange={(e) => setOtherMethod(e.target.value)}
+                placeholder="Especifica el método"
+                required
+                autoFocus
+              />
+            )}
           </div>
           <Button type="submit" className="h-12 w-full font-semibold">
             Registrar pago
