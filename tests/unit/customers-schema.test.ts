@@ -260,6 +260,11 @@ describe('updateCustomerSchema', () => {
     const result = updateCustomerSchema.safeParse({ ...validCustomer, birthDate: '1899-12-31' })
     expect(result.success).toBe(false)
   })
+
+  it('rejects an impossible calendar date that JS would roll over (Feb 30)', () => {
+    const result = updateCustomerSchema.safeParse({ ...validCustomer, birthDate: '1990-02-30' })
+    expect(result.success).toBe(false)
+  })
 })
 
 describe('updateCustomerNotesSchema', () => {
