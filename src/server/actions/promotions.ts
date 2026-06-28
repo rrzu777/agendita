@@ -4,8 +4,8 @@ import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
-import { createPromotionSchema, updatePromotionSchema } from '@/lib/promotions/schema'
-import { fromZonedTime } from 'date-fns-tz'
+import { createPromotionSchema, updatePromotionSchema, type CreatePromotionInput } from '@/lib/promotions/schema'
+import { startOfLocalDay, endOfLocalDay } from '@/lib/availability/timezone'
 
 async function assertServicesBelong(businessId: string, serviceIds: string[]) {
   if (serviceIds.length === 0) return
@@ -13,15 +13,25 @@ async function assertServicesBelong(businessId: string, serviceIds: string[]) {
   if (count !== serviceIds.length) throw new Error('Servicio inválido')
 }
 
-// Construye los límites de vigencia como instantes UTC reales del día local del
-// negocio (mismo patrón que getBusinessDayRange en lib/availability/timezone):
-// validFrom = 00:00:00 local, validUntil = 23:59:59.999 local. Sin esto, un
-// negocio en America/Santiago (UTC-4) veía su promo expirar ~4h antes en prod.
-function startOfBusinessDay(dateStr: string, timezone: string): Date {
-  return fromZonedTime(`${dateStr}T00:00:00.000`, timezone)
-}
-function endOfBusinessDay(dateStr: string, timezone: string): Date {
-  return fromZonedTime(`${dateStr}T23:59:59.999`, timezone)
+// Campos escalares compartidos por create y update. Los que difieren entre
+// ambas (code, services, audit user) se arman en cada acción. La vigencia se
+// fija como instantes UTC reales del día local del negocio (validFrom = 00:00,
+// validUntil = 23:59:59.999 local); sin esto, un negocio en America/Santiago
+// (UTC-4) veía su promo expirar ~4h antes en prod.
+function promotionScalars(d: CreatePromotionInput, timezone: string) {
+  return {
+    name: d.name,
+    description: d.description,
+    rewardType: d.rewardType,
+    rewardValue: d.rewardValue,
+    maxDiscount: d.maxDiscount ?? null,
+    appliesToAll: d.appliesToAll,
+    validFrom: d.validFrom ? startOfLocalDay(d.validFrom, timezone) : null,
+    validUntil: d.validUntil ? endOfLocalDay(d.validUntil, timezone) : null,
+    minSpend: d.minSpend ?? null,
+    maxRedemptions: d.maxRedemptions ?? null,
+    maxPerCustomer: d.maxPerCustomer ?? null,
+  }
 }
 
 export async function createPromotion(data: unknown) {
@@ -40,20 +50,10 @@ export async function createPromotion(data: unknown) {
     .create({
       data: {
         businessId,
-        name: d.name,
-        description: d.description,
+        ...promotionScalars(d, business.timezone),
         triggerType: 'code',
         code: d.code,
-        rewardType: d.rewardType,
-        rewardValue: d.rewardValue,
-        maxDiscount: d.maxDiscount ?? null,
-        appliesToAll: d.appliesToAll,
         services: d.appliesToAll ? undefined : { connect: d.serviceIds.map(id => ({ id })) },
-        validFrom: d.validFrom ? startOfBusinessDay(d.validFrom, business.timezone) : null,
-        validUntil: d.validUntil ? endOfBusinessDay(d.validUntil, business.timezone) : null,
-        minSpend: d.minSpend ?? null,
-        maxRedemptions: d.maxRedemptions ?? null,
-        maxPerCustomer: d.maxPerCustomer ?? null,
         createdByUserId: user.id,
       },
     })
@@ -90,19 +90,9 @@ export async function updatePromotion(id: string, data: unknown) {
     .update({
       where: { id },
       data: {
-        name: d.name,
-        description: d.description,
+        ...promotionScalars(d, business.timezone),
         code,
-        rewardType: d.rewardType,
-        rewardValue: d.rewardValue,
-        maxDiscount: d.maxDiscount ?? null,
-        appliesToAll: d.appliesToAll,
         services: { set: d.appliesToAll ? [] : d.serviceIds.map(sid => ({ id: sid })) },
-        validFrom: d.validFrom ? startOfBusinessDay(d.validFrom, business.timezone) : null,
-        validUntil: d.validUntil ? endOfBusinessDay(d.validUntil, business.timezone) : null,
-        minSpend: d.minSpend ?? null,
-        maxRedemptions: d.maxRedemptions ?? null,
-        maxPerCustomer: d.maxPerCustomer ?? null,
         updatedByUserId: user.id,
       },
     })

@@ -21,7 +21,7 @@ const dateStr = z.string().trim().optional().nullable().or(z.literal(''))
 
 export const createPromotionSchema = z.object({
   name: z.string().trim().min(1, 'El nombre es requerido').max(100),
-  description: z.string().trim().max(500).optional().nullable().or(z.literal('')).transform((v) => (v ? v : null)),
+  description: z.string().trim().max(500).optional().nullable().transform((v) => (v ? v : null)),
   code: z.string().trim().max(40).optional().nullable().or(z.literal(''))
     .transform((v) => normalizeCode(v))
     .refine((v) => v === null || /^[A-Z0-9_-]{2,40}$/.test(v), 'Código inválido (2–40, A–Z 0–9 _ -)'),
