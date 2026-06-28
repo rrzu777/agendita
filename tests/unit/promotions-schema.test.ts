@@ -43,4 +43,13 @@ describe('createPromotionSchema', () => {
     expect(r.success).toBe(true)
     if (r.success) expect(r.data.rewardValue).toBe(0)
   })
+  it('rejects a non-date string', () => {
+    expect(createPromotionSchema.safeParse({ ...base, validUntil: 'garbage' }).success).toBe(false)
+  })
+  it('rejects an impossible calendar date', () => {
+    expect(createPromotionSchema.safeParse({ ...base, validFrom: '2026-02-30' }).success).toBe(false)
+  })
+  it('accepts valid ISO dates', () => {
+    expect(createPromotionSchema.safeParse({ ...base, validFrom: '2026-07-01', validUntil: '2026-07-10' }).success).toBe(true)
+  })
 })
