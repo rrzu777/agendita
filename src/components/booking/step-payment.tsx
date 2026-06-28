@@ -61,6 +61,12 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
     isMock: boolean
   } | null>(null)
 
+  // El estado del código vive en este componente a propósito: StepPayment se
+  // desmonta al ir "Atrás" (render condicional sin key en el wizard), así que el
+  // código aplicado se limpia solo si la clienta cambia servicio/teléfono y vuelve.
+  // Por eso acá NO hace falta el guard de "limpiar promo al cambiar servicio" que
+  // sí tiene new-booking-form (componente long-lived). Si un refactor futuro sube
+  // el promo a BookingData o agrega key/keep-alive, reintroducir ese guard.
   const [promoCode, setPromoCode] = useState('')
   const [appliedPromo, setAppliedPromo] = useState<{ code: string; discount: number; finalAmount: number } | null>(null)
   const [promoError, setPromoError] = useState<string | null>(null)
