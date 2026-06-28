@@ -243,7 +243,7 @@ test.describe('main beta flows', () => {
     await page.locator('input[name="name"]').fill(serviceName)
     await page.locator('textarea[name="description"]').fill('Servicio creado por Playwright')
     await page.locator('input[name="price"]').fill('19000')
-    await page.locator('input[name="durationMinutes"]').fill('45')
+    await page.getByRole('button', { name: '45 min', exact: true }).click()
     await page.locator('input[name="depositAmount"]').fill('5000')
     await page.getByRole('button', { name: 'Guardar' }).click()
     await expect(page.getByText(serviceName)).toBeVisible({ timeout: 15000 })
