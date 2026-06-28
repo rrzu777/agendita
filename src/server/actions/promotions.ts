@@ -4,8 +4,9 @@ import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
-import { createPromotionSchema, updatePromotionSchema, type CreatePromotionInput } from '@/lib/promotions/schema'
+import { createPromotionSchema, updatePromotionSchema, normalizeCode, type CreatePromotionInput } from '@/lib/promotions/schema'
 import { startOfLocalDay, endOfLocalDay } from '@/lib/availability/timezone'
+import { isRedeemable } from '@/lib/promotions/evaluate'
 
 async function assertServicesBelong(businessId: string, serviceIds: string[]) {
   if (serviceIds.length === 0) return
@@ -135,4 +136,42 @@ export async function getPromotionRedemptions(promotionId: string) {
       booking: { select: { id: true, startDateTime: true } },
     },
   })
+}
+
+const GENERIC_INVALID = { ok: false as const, message: 'Código inválido o no aplicable' }
+
+/** Preview público: NO crea canje. Tenant-scoped + rate-limited + respuesta genérica
+ *  (no revela si el código existe). */
+export async function previewPromotion(input: { businessId: string; code: string; serviceId: string; phone?: string }) {
+  const limit = await checkRateLimit('preview-promotion', 30, 60000)
+  if (!limit.success) return GENERIC_INVALID
+
+  const code = normalizeCode(input.code)
+  if (!code) return GENERIC_INVALID
+
+  const [promo, service] = await Promise.all([
+    prisma.promotion.findFirst({
+      where: { businessId: input.businessId, code, triggerType: 'code' },
+      include: { services: { select: { id: true } } },
+    }),
+    prisma.service.findFirst({ where: { id: input.serviceId, businessId: input.businessId, isActive: true } }),
+  ])
+  if (!promo || !service) return GENERIC_INVALID
+
+  let customerRedemptions = 0
+  if (input.phone && promo.maxPerCustomer != null) {
+    const customer = await prisma.customer.findFirst({ where: { businessId: input.businessId, phone: input.phone }, select: { id: true } })
+    if (customer) {
+      customerRedemptions = await prisma.promotionRedemption.count({
+        where: { promotionId: promo.id, customerId: customer.id, status: 'applied' },
+      })
+    }
+  }
+
+  const result = isRedeemable({
+    promo: { ...promo, serviceIds: promo.services.map(s => s.id) },
+    serviceId: input.serviceId, totalPrice: service.price, customerRedemptions, now: new Date(),
+  })
+  if (!result.ok) return GENERIC_INVALID
+  return { ok: true as const, discount: result.discount, finalAmount: service.price - result.discount }
 }
