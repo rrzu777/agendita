@@ -104,8 +104,8 @@ export function ServiceForm({
     setLoading(true)
     setError(null)
 
-    if (!duration || duration < 1) {
-      setError('Indica cuánto dura el servicio')
+    if (!duration || duration < 15) {
+      setError('La duración mínima es 15 minutos')
       setLoading(false)
       return
     }
@@ -235,7 +235,8 @@ export function ServiceForm({
                 <Input
                   className="studio-input w-28"
                   type="number"
-                  min={1}
+                  min={15}
+                  max={480}
                   step={5}
                   value={duration || ''}
                   onChange={(e) => setDuration(parseInt(e.target.value) || 0)}
