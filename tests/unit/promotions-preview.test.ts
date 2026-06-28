@@ -23,4 +23,14 @@ describe('previewPromotion', () => {
     const r = await previewPromotion({ businessId: 'biz-1', code: 'VERANO20', serviceId: 'svc1' })
     expect(r).toMatchObject({ ok: true, discount: 4000, finalAmount: 16000 })
   })
+  it('normalizes the phone before the customer lookup', async () => {
+    mockPrisma.promotion.findFirst.mockResolvedValue({ id: 'p1', isActive: true, validFrom: null, validUntil: null, maxRedemptions: null, maxPerCustomer: 1, minSpend: null, appliesToAll: true, rewardType: 'percentage', rewardValue: 20, maxDiscount: null, redemptionCount: 0, services: [] })
+    mockPrisma.service.findFirst.mockResolvedValue({ id: 'svc1', price: 20000 })
+    mockPrisma.customer.findFirst.mockResolvedValue({ id: 'c1' })
+    mockPrisma.promotionRedemption.count.mockResolvedValue(0)
+    await previewPromotion({ businessId: 'biz-1', code: 'VERANO20', serviceId: 'svc1', phone: '+56 9 1234 5678' })
+    expect(mockPrisma.customer.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ phone: '56912345678' }) }),
+    )
+  })
 })

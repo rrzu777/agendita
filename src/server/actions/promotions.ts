@@ -7,6 +7,7 @@ import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth
 import { createPromotionSchema, updatePromotionSchema, normalizeCode, type CreatePromotionInput } from '@/lib/promotions/schema'
 import { startOfLocalDay, endOfLocalDay } from '@/lib/availability/timezone'
 import { isRedeemable } from '@/lib/promotions/evaluate'
+import { normalizePhone } from '@/lib/customers/phone'
 
 async function assertServicesBelong(businessId: string, serviceIds: string[]) {
   if (serviceIds.length === 0) return
@@ -149,29 +150,39 @@ export async function previewPromotion(input: { businessId: string; code: string
   const code = normalizeCode(input.code)
   if (!code) return GENERIC_INVALID
 
-  const [promo, service] = await Promise.all([
-    prisma.promotion.findFirst({
-      where: { businessId: input.businessId, code, triggerType: 'code' },
-      include: { services: { select: { id: true } } },
-    }),
-    prisma.service.findFirst({ where: { id: input.serviceId, businessId: input.businessId, isActive: true } }),
-  ])
-  if (!promo || !service) return GENERIC_INVALID
+  // Preview es una ayuda de UI no autoritativa (la validación real ocurre al
+  // aplicar, dentro de createBooking). Un error transitorio de Prisma degrada a
+  // la misma respuesta genérica en vez de romper el wizard con un 500.
+  try {
+    const [promo, service] = await Promise.all([
+      prisma.promotion.findFirst({
+        where: { businessId: input.businessId, code, triggerType: 'code' },
+        include: { services: { select: { id: true } } },
+      }),
+      prisma.service.findFirst({ where: { id: input.serviceId, businessId: input.businessId, isActive: true } }),
+    ])
+    if (!promo || !service) return GENERIC_INVALID
 
-  let customerRedemptions = 0
-  if (input.phone && promo.maxPerCustomer != null) {
-    const customer = await prisma.customer.findFirst({ where: { businessId: input.businessId, phone: input.phone }, select: { id: true } })
-    if (customer) {
-      customerRedemptions = await prisma.promotionRedemption.count({
-        where: { promotionId: promo.id, customerId: customer.id, status: 'applied' },
-      })
+    let customerRedemptions = 0
+    if (input.phone && promo.maxPerCustomer != null) {
+      // Los clientes se guardan con el teléfono normalizado (createBooking usa
+      // normalizePhone); buscar con el raw no haría match → cap mal evaluado.
+      const phone = normalizePhone(input.phone)
+      const customer = await prisma.customer.findFirst({ where: { businessId: input.businessId, phone }, select: { id: true } })
+      if (customer) {
+        customerRedemptions = await prisma.promotionRedemption.count({
+          where: { promotionId: promo.id, customerId: customer.id, status: 'applied' },
+        })
+      }
     }
-  }
 
-  const result = isRedeemable({
-    promo: { ...promo, serviceIds: promo.services.map(s => s.id) },
-    serviceId: input.serviceId, totalPrice: service.price, customerRedemptions, now: new Date(),
-  })
-  if (!result.ok) return GENERIC_INVALID
-  return { ok: true as const, discount: result.discount, finalAmount: service.price - result.discount }
+    const result = isRedeemable({
+      promo: { ...promo, serviceIds: promo.services.map(s => s.id) },
+      serviceId: input.serviceId, totalPrice: service.price, customerRedemptions, now: new Date(),
+    })
+    if (!result.ok) return GENERIC_INVALID
+    return { ok: true as const, discount: result.discount, finalAmount: service.price - result.discount }
+  } catch {
+    return GENERIC_INVALID
+  }
 }
