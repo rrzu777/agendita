@@ -85,6 +85,7 @@ model Business {
   subscriptionPayments SubscriptionPayment[]
   subscriptionLogs   SubscriptionLog[]
   paymentAccounts    PaymentAccount[]
+  promotions         Promotion[]
   cancellationPolicy String?
   bookingPolicy      String?
   depositPolicy      String?
@@ -231,6 +232,7 @@ model Service {
 
   business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   bookings        Booking[]
+  promotions      Promotion[] @relation("PromotionServices")
 
   @@index([businessId, isActive])
 }
@@ -276,6 +278,7 @@ model Customer {
   bookings   Booking[]
   payments   Payment[]
   reviews    Review[]
+  redemptions PromotionRedemption[]
 
   @@index([businessId])
   @@index([businessId, phone])
@@ -312,6 +315,7 @@ model Booking {
   customer          Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
   payments          Payment[]
   ledgerEntries     LedgerEntry[]
+  redemption          PromotionRedemption?
   review              Review?
   reviewToken         String?              @unique
   reviewTokenCreatedAt DateTime?
@@ -466,4 +470,91 @@ model GalleryImage {
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
+}
+
+enum PromotionTrigger {
+  code
+  automatic
+  granted
+}
+
+enum PromotionReward {
+  percentage
+  fixed_amount
+  free_service
+}
+
+enum RedemptionStatus {
+  applied
+  released
+}
+
+enum RedemptionSource {
+  public_booking
+  dashboard_booking
+  system
+}
+
+enum RedemptionRelease {
+  cancelled
+  no_show
+  hold_expired
+  refunded
+}
+
+model Promotion {
+  id              String           @id @default(cuid())
+  businessId      String
+  name            String
+  description     String?
+  triggerType     PromotionTrigger @default(code)
+  code            String?
+  conditions      Json?
+  rewardType      PromotionReward
+  rewardValue     Int
+  maxDiscount     Int?
+  appliesToAll    Boolean          @default(true)
+  validFrom       DateTime?
+  validUntil      DateTime?
+  minSpend        Int?
+  maxRedemptions  Int?
+  maxPerCustomer  Int?
+  redemptionCount Int              @default(0)
+  isActive        Boolean          @default(true)
+  metadata        Json?
+  createdByUserId String?
+  updatedByUserId String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  business        Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  services        Service[]             @relation("PromotionServices")
+  redemptions     PromotionRedemption[]
+
+  @@unique([businessId, code])
+  @@index([businessId, isActive])
+}
+
+model PromotionRedemption {
+  id              String             @id @default(cuid())
+  businessId      String
+  promotionId     String
+  bookingId       String
+  customerId      String
+  discountAmount  Int
+  status          RedemptionStatus   @default(applied)
+  releaseReason   RedemptionRelease?
+  releasedAt      DateTime?
+  source          RedemptionSource
+  createdByUserId String?
+  metadata        Json?
+  createdAt       DateTime           @default(now())
+
+  promotion       Promotion @relation(fields: [promotionId], references: [id])
+  booking         Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer        Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId])
+  @@index([businessId, promotionId])
+  @@index([promotionId, customerId])
 }
