@@ -134,7 +134,7 @@ export async function submitReview(data: {
       },
     })
 
-    revalidateBusinessPublicPaths(booking.businessId)
+    await revalidateBusinessPublicPaths(booking.businessId)
     revalidatePath('/dashboard/reviews')
 
     return review
@@ -247,7 +247,7 @@ export async function approveReview(reviewId: string) {
   })
 
   revalidatePath('/dashboard/reviews')
-  revalidateBusinessPublicPaths(businessId)
+  await revalidateBusinessPublicPaths(businessId)
 
   return updated
 }
@@ -273,7 +273,7 @@ export async function hideReview(reviewId: string) {
   })
 
   revalidatePath('/dashboard/reviews')
-  revalidateBusinessPublicPaths(businessId)
+  await revalidateBusinessPublicPaths(businessId)
 
   return updated
 }
