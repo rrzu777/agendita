@@ -68,11 +68,16 @@ export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' |
   })
 
   if (overlappingBookings.length > 0 && confirmOverlap !== true) {
-    throw new Error(
-      'El bloqueo se solapa con reservas existentes. ' +
-      'Marca la casilla de confirmación si deseas crearlo de todas formas ' +
-      '(no se cancelarán las reservas existentes).',
-    )
+    // No es un error: es un estado "requiere confirmación". Devolvemos un
+    // resultado estructurado en lugar de lanzar, para no generar un 500 (y su
+    // ruido en los logs) en un flujo de validación esperado.
+    return {
+      requiresConfirmation: true as const,
+      message:
+        'El bloqueo se solapa con reservas existentes. ' +
+        'Marca la casilla de confirmación si deseas crearlo de todas formas ' +
+        '(no se cancelarán las reservas existentes).',
+    }
   }
 
   const newBlock = await prisma.timeBlock.create({

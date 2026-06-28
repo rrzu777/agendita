@@ -71,11 +71,16 @@ describe('createTimeBlock', () => {
     expect(mockPrisma.timeBlock.create).toHaveBeenCalledTimes(1)
   })
 
-  it('rejects when overlapping bookings exist and confirmOverlap is false', async () => {
+  it('returns requiresConfirmation (no throw, no 500) when overlapping and confirmOverlap is false', async () => {
     mockPrisma.booking.findMany.mockResolvedValue([{ id: 'booking-1' }])
 
-    await expect(createTimeBlock({ ...baseInput, confirmOverlap: false }))
-      .rejects.toThrow(/solapa con reservas/)
+    const result = await createTimeBlock({ ...baseInput, confirmOverlap: false })
+
+    expect(result).toEqual({
+      requiresConfirmation: true,
+      message: expect.stringMatching(/solapa con reservas/),
+    })
+    expect(mockPrisma.timeBlock.create).not.toHaveBeenCalled()
   })
 
   it('creates block when overlapping bookings exist and confirmOverlap is true', async () => {
