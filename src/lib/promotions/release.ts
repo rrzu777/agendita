@@ -9,19 +9,25 @@ export async function releaseRedemptionForBooking(
   bookingId: string,
   reason: RedemptionRelease,
 ): Promise<void> {
+  // Need promotionId for the decrement.
   const r = await tx.promotionRedemption.findUnique({ where: { bookingId } })
   if (!r || r.status !== 'applied') return
-  await tx.promotionRedemption.update({
-    where: { id: r.id },
+  // Atomic guard: only the call that flips applied->released proceeds to decrement.
+  const flipped = await tx.promotionRedemption.updateMany({
+    where: { bookingId, status: 'applied' },
     data: { status: 'released', releaseReason: reason, releasedAt: new Date() },
   })
+  if (flipped.count === 0) return // lost the race; another release already flipped it
   await tx.promotion.updateMany({
     where: { id: r.promotionId, redemptionCount: { gt: 0 } },
     data: { redemptionCount: { decrement: 1 } },
   })
 }
 
-/** Recalcula redemptionCount de una promo desde el libro de canjes (sana drift). */
+/** Mantenimiento: recalcula redemptionCount de una promo desde el libro de canjes
+ *  para sanar drift. Escribe un valor ABSOLUTO, así que puede pisar el incremento
+ *  de un apply concurrente — correr sólo cuando no hay aplicaciones en curso
+ *  (mantenimiento), nunca en un hot path. */
 export async function reconcileRedemptionCount(
   db: PrismaClient,
   promotionId: string,
