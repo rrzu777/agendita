@@ -43,8 +43,16 @@ export async function expireStaleHolds(
         status: BookingStatus.expired,
       },
     })
+    // Filter through the booking relation so we only release redemptions whose
+    // booking ACTUALLY transitioned to `expired` in this same tx snapshot.
+    // A booking that won the payment race (got confirmed/paid in the race window)
+    // is re-excluded by the in-tx updateMany guard above; releasing it would
+    // corrupt a live redemption and free a capped slot still in use.
     const reds = await tx.promotionRedemption.findMany({
-      where: { bookingId: { in: expiredIds }, status: 'applied' },
+      where: {
+        status: 'applied',
+        booking: { id: { in: expiredIds }, status: BookingStatus.expired },
+      },
       select: { bookingId: true },
     })
     for (const r of reds) {
