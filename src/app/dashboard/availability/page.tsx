@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { AvailabilityEditor } from '@/components/dashboard/availability-editor'
-import { TimeBlockForm, TimeBlockList } from '@/components/dashboard/time-block-form'
+import { TimeBlockList } from '@/components/dashboard/time-block-form'
+import { BlockTimeModal } from '@/components/dashboard/block-time-modal'
 import { getAvailabilityRules } from '@/server/actions/availability'
 import { getTimeBlocks } from '@/server/actions/time-blocks'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
@@ -19,6 +20,7 @@ export default async function AvailabilityPage() {
 
   const rules = await getAvailabilityRules()
   const blocks = await getTimeBlocks()
+  const timezone = userData.business.timezone || 'America/Santiago'
 
   return (
     <div>
@@ -40,7 +42,7 @@ export default async function AvailabilityPage() {
               <h2 className="text-2xl font-heading font-semibold tracking-tight text-primary">Bloqueos</h2>
               <p className="text-sm text-muted-foreground">Marca días o rangos en los que no estarás disponible.</p>
             </div>
-            <TimeBlockForm />
+            <BlockTimeModal defaultDate={null} timezone={timezone} />
           </div>
           <TimeBlockList blocks={blocks} />
         </div>

@@ -115,12 +115,16 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
         const start = parseTimeUTC(date, startTime, timezone)
         const end = parseTimeUTC(date, endTime, timezone)
 
-        await createTimeBlock({
+        const result = await createTimeBlock({
           startDateTime: start,
           endDateTime: end,
           reason: reason || null,
           confirmOverlap,
         })
+        if (result && 'requiresConfirmation' in result) {
+          setError(result.message)
+          return
+        }
         router.refresh()
         setOpen(false)
       } catch (err: unknown) {
