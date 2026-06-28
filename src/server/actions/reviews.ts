@@ -343,6 +343,63 @@ export async function getReviewLink(bookingId: string): Promise<string | null> {
   return `${proto}://${host}/review/${booking.id}?token=${token}`
 }
 
+/**
+ * Normaliza un teléfono chileno a formato wa.me (solo dígitos, con código país).
+ * Devuelve null si no hay teléfono utilizable.
+ */
+function toWhatsappPhone(phone: string | null | undefined): string | null {
+  if (!phone) return null
+  const digits = phone.replace(/\D/g, '')
+  if (!digits) return null
+  if (digits.startsWith('56')) return digits
+  if (digits.length === 9 && digits.startsWith('9')) return `56${digits}`
+  if (digits.length === 8) return `569${digits}`
+  return digits
+}
+
+/**
+ * Prepara el envío de la solicitud de reseña por WhatsApp: asegura el token,
+ * arma el link de reseña y un mensaje pre-redactado para wa.me.
+ * `waUrl` es null si la clienta no tiene teléfono (se cae a copiar el link).
+ */
+export async function getReviewWhatsappLink(
+  bookingId: string,
+): Promise<{ waUrl: string | null; reviewLink: string } | null> {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, businessId },
+    select: {
+      id: true,
+      status: true,
+      reviewToken: true,
+      customer: { select: { name: true, phone: true } },
+      business: { select: { name: true } },
+    },
+  })
+
+  if (!booking || booking.status !== BookingStatus.completed) {
+    return null
+  }
+
+  const token = booking.reviewToken ?? (await ensureReviewTokenForBooking(bookingId))
+
+  const headersList = await headers()
+  const host = headersList.get('x-forwarded-host') || headersList.get('host') || 'localhost:3000'
+  const proto = headersList.get('x-forwarded-proto') || 'https'
+  const reviewLink = `${proto}://${host}/review/${booking.id}?token=${token}`
+
+  const firstName = booking.customer.name?.split(' ')[0] || ''
+  const message =
+    `Hola ${firstName}! ✨ Gracias por venir a ${booking.business.name}. ` +
+    `¿Nos dejas una reseña? Te toma menos de un minuto 🙏\n${reviewLink}`
+
+  const waPhone = toWhatsappPhone(booking.customer.phone)
+  const waUrl = waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(message)}` : null
+
+  return { waUrl, reviewLink }
+}
+
 export async function sendReviewRequestEmail(bookingId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('send-review-email', 10, 60000)
