@@ -11,12 +11,12 @@ vi.mock('@/lib/rate-limit', () => ({
 }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/auth/server', () => ({
-  requireBusiness: vi.fn().mockResolvedValue({ businessId: 'biz-1', business: { id: 'biz-1' }, role: 'owner', user: { id: 'u1' } }),
-  requireBusinessRole: vi.fn().mockResolvedValue({ businessId: 'biz-1', business: { id: 'biz-1' }, role: 'owner', user: { id: 'u1' } }),
+  requireBusiness: vi.fn().mockResolvedValue({ businessId: 'biz-1', business: { id: 'biz-1', timezone: 'America/Santiago' }, role: 'owner', user: { id: 'u1' } }),
+  requireBusinessRole: vi.fn().mockResolvedValue({ businessId: 'biz-1', business: { id: 'biz-1', timezone: 'America/Santiago' }, role: 'owner', user: { id: 'u1' } }),
   ForbiddenError: class ForbiddenError extends Error { constructor(msg?: string) { super(msg || 'Forbidden') } },
 }))
 
-const { createPromotion, updatePromotion } = await import('@/server/actions/promotions')
+const { createPromotion, updatePromotion, setPromotionActive, getPromotionRedemptions } = await import('@/server/actions/promotions')
 
 describe('createPromotion', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -31,6 +31,12 @@ describe('createPromotion', () => {
     await expect(createPromotion({ name: 'X', rewardType: 'percentage', rewardValue: 10, appliesToAll: false, serviceIds: ['s-foreign'] }))
       .rejects.toThrow('Servicio inválido')
   })
+  it('surfaces a friendly message on a duplicate-code conflict (P2002)', async () => {
+    mockPrisma.service.count.mockResolvedValue(0)
+    mockPrisma.promotion.create.mockRejectedValue({ code: 'P2002' })
+    await expect(createPromotion({ name: 'X', code: 'DUP', rewardType: 'percentage', rewardValue: 10, appliesToAll: true }))
+      .rejects.toThrow('Ya existe una promoción con ese código')
+  })
 })
 
 describe('updatePromotion', () => {
@@ -41,5 +47,28 @@ describe('updatePromotion', () => {
     mockPrisma.promotion.update.mockResolvedValue({ id: 'p1' })
     await updatePromotion('p1', { name: 'X', code: 'NEW', rewardType: 'percentage', rewardValue: 10, appliesToAll: true })
     expect(mockPrisma.promotion.update.mock.calls[0][0].data.code).toBe('OLD')
+  })
+  it('rejects when the promo is not found in the tenant', async () => {
+    mockPrisma.promotion.findFirst.mockResolvedValue(null)
+    await expect(updatePromotion('p-foreign', { name: 'X', rewardType: 'percentage', rewardValue: 10, appliesToAll: true }))
+      .rejects.toThrow()
+  })
+})
+
+describe('setPromotionActive', () => {
+  beforeEach(() => vi.clearAllMocks())
+  it('rejects when the promo is not found in the tenant', async () => {
+    mockPrisma.promotion.findFirst.mockResolvedValue(null)
+    await expect(setPromotionActive('p-foreign', false)).rejects.toThrow()
+  })
+})
+
+describe('getPromotionRedemptions', () => {
+  beforeEach(() => vi.clearAllMocks())
+  it('scopes the query by businessId and promotionId', async () => {
+    mockPrisma.promotionRedemption.findMany.mockResolvedValue([])
+    await getPromotionRedemptions('p1')
+    const where = mockPrisma.promotionRedemption.findMany.mock.calls[0][0].where
+    expect(where).toMatchObject({ businessId: 'biz-1', promotionId: 'p1' })
   })
 })

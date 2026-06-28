@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { createPromotionSchema, updatePromotionSchema } from '@/lib/promotions/schema'
+import { fromZonedTime } from 'date-fns-tz'
 
 async function assertServicesBelong(businessId: string, serviceIds: string[]) {
   if (serviceIds.length === 0) return
@@ -12,9 +13,20 @@ async function assertServicesBelong(businessId: string, serviceIds: string[]) {
   if (count !== serviceIds.length) throw new Error('Servicio inválido')
 }
 
+// Construye los límites de vigencia como instantes UTC reales del día local del
+// negocio (mismo patrón que getBusinessDayRange en lib/availability/timezone):
+// validFrom = 00:00:00 local, validUntil = 23:59:59.999 local. Sin esto, un
+// negocio en America/Santiago (UTC-4) veía su promo expirar ~4h antes en prod.
+function startOfBusinessDay(dateStr: string, timezone: string): Date {
+  return fromZonedTime(`${dateStr}T00:00:00.000`, timezone)
+}
+function endOfBusinessDay(dateStr: string, timezone: string): Date {
+  return fromZonedTime(`${dateStr}T23:59:59.999`, timezone)
+}
+
 export async function createPromotion(data: unknown) {
-  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
-  const limit = await checkRateLimit('default', 30, 60000)
+  const { businessId, business, user } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('create-promotion', 30, 60000)
   if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
 
   const parsed = createPromotionSchema.safeParse(data)
@@ -37,8 +49,8 @@ export async function createPromotion(data: unknown) {
         maxDiscount: d.maxDiscount ?? null,
         appliesToAll: d.appliesToAll,
         services: d.appliesToAll ? undefined : { connect: d.serviceIds.map(id => ({ id })) },
-        validFrom: d.validFrom ? new Date(d.validFrom) : null,
-        validUntil: d.validUntil ? new Date(`${d.validUntil}T23:59:59`) : null,
+        validFrom: d.validFrom ? startOfBusinessDay(d.validFrom, business.timezone) : null,
+        validUntil: d.validUntil ? endOfBusinessDay(d.validUntil, business.timezone) : null,
         minSpend: d.minSpend ?? null,
         maxRedemptions: d.maxRedemptions ?? null,
         maxPerCustomer: d.maxPerCustomer ?? null,
@@ -55,7 +67,10 @@ export async function createPromotion(data: unknown) {
 }
 
 export async function updatePromotion(id: string, data: unknown) {
-  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, business, user } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('manage-promotion', 60, 60000)
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+
   const existing = await prisma.promotion.findFirst({ where: { id, businessId } })
   if (!existing) throw new ForbiddenError('Promoción no encontrada')
 
@@ -66,8 +81,9 @@ export async function updatePromotion(id: string, data: unknown) {
   const d = parsed.data
   await assertServicesBelong(businessId, d.serviceIds)
 
-  // Si ya tiene canjes, el código queda bloqueado para mantener consistencia
-  // en el reporte de redenciones.
+  // Solo el código se bloquea tras el primer canje (los reportes se llevan por
+  // código). rewardValue/rewardType siguen editables: cada PromotionRedemption
+  // guarda su discountAmount, así que el historial no cambia retroactivamente.
   const code = existing.redemptionCount > 0 ? existing.code : d.code
 
   const updated = await prisma.promotion
@@ -82,8 +98,8 @@ export async function updatePromotion(id: string, data: unknown) {
         maxDiscount: d.maxDiscount ?? null,
         appliesToAll: d.appliesToAll,
         services: { set: d.appliesToAll ? [] : d.serviceIds.map(sid => ({ id: sid })) },
-        validFrom: d.validFrom ? new Date(d.validFrom) : null,
-        validUntil: d.validUntil ? new Date(`${d.validUntil}T23:59:59`) : null,
+        validFrom: d.validFrom ? startOfBusinessDay(d.validFrom, business.timezone) : null,
+        validUntil: d.validUntil ? endOfBusinessDay(d.validUntil, business.timezone) : null,
         minSpend: d.minSpend ?? null,
         maxRedemptions: d.maxRedemptions ?? null,
         maxPerCustomer: d.maxPerCustomer ?? null,
@@ -101,6 +117,9 @@ export async function updatePromotion(id: string, data: unknown) {
 
 export async function setPromotionActive(id: string, isActive: boolean) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('manage-promotion', 60, 60000)
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+
   const existing = await prisma.promotion.findFirst({ where: { id, businessId } })
   if (!existing) throw new ForbiddenError('Promoción no encontrada')
   await prisma.promotion.update({ where: { id }, data: { isActive } })
