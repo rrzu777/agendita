@@ -1,0 +1,441 @@
+'use client'
+
+import { useState } from 'react'
+import Link from 'next/link'
+import {
+  format,
+  addDays,
+  subDays,
+  addWeeks,
+  subWeeks,
+  addMonths,
+  subMonths,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  isSameMonth,
+  parseISO,
+} from 'date-fns'
+import { es } from 'date-fns/locale'
+import { Button } from '@/components/ui/button'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { BookingDrawer } from './booking-drawer'
+import { BlockTimeModal } from './block-time-modal'
+import type { CalendarBooking } from './booking-card'
+import type { CalendarTimeBlock } from './time-block-card'
+import {
+  localDayKey,
+  computeHourRange,
+  packLanes,
+  type PositionedItem,
+} from '@/lib/calendar/timeline'
+
+export type CalendarView = 'day' | 'week' | 'month'
+
+export type TimelineBooking = CalendarBooking & {
+  service: { name: string; pastelColor?: string } | null
+}
+
+interface CalendarViewsProps {
+  bookings: TimelineBooking[]
+  timeBlocks: CalendarTimeBlock[]
+  view: CalendarView
+  /** Día enfocado en formato yyyy-MM-dd */
+  date: string
+  /** Hoy en la zona del negocio (yyyy-MM-dd), calculado en el servidor para evitar hydration mismatch */
+  todayKey: string
+  timezone: string
+  businessCurrency: string
+  businessAddress: string | null
+}
+
+const HOUR_HEIGHT = 56 // px por hora
+const WEEK_STARTS = { locale: es, weekStartsOn: 1 } as const
+
+const statusDotColors: Record<string, string> = {
+  pending_payment: 'bg-orange-400',
+  confirmed: 'bg-green-500',
+  completed: 'bg-gray-400',
+  cancelled: 'bg-gray-300',
+  no_show: 'bg-red-400',
+}
+
+const statusBlockClasses: Record<string, string> = {
+  pending_payment: 'border-orange-300 bg-orange-50 text-orange-900',
+  confirmed: 'border-green-300 bg-green-50 text-green-900',
+  completed: 'border-gray-300 bg-gray-50 text-gray-700',
+  cancelled: 'border-gray-200 bg-gray-50 text-gray-400 line-through',
+  no_show: 'border-red-300 bg-red-50 text-red-900',
+}
+
+function hrefFor(view: CalendarView, date: Date): string {
+  return `/dashboard/calendar?view=${view}&date=${format(date, 'yyyy-MM-dd')}`
+}
+
+export function CalendarViews({
+  bookings,
+  timeBlocks,
+  view,
+  date,
+  todayKey,
+  timezone,
+  businessCurrency,
+  businessAddress,
+}: CalendarViewsProps) {
+  const focus = parseISO(`${date}T12:00:00`)
+  const [activeBooking, setActiveBooking] = useState<TimelineBooking | null>(null)
+
+  // Navegación previo/siguiente según la vista
+  const prev =
+    view === 'day' ? subDays(focus, 1) : view === 'week' ? subWeeks(focus, 1) : subMonths(focus, 1)
+  const next =
+    view === 'day' ? addDays(focus, 1) : view === 'week' ? addWeeks(focus, 1) : addMonths(focus, 1)
+
+  let periodLabel: string
+  if (view === 'day') {
+    periodLabel = format(focus, "EEEE d 'de' MMMM", { locale: es })
+  } else if (view === 'week') {
+    const ws = startOfWeek(focus, WEEK_STARTS)
+    const we = endOfWeek(focus, WEEK_STARTS)
+    periodLabel = `${format(ws, "d MMM", { locale: es })} – ${format(we, "d MMM yyyy", { locale: es })}`
+  } else {
+    periodLabel = format(focus, 'MMMM yyyy', { locale: es })
+  }
+
+  return (
+    <div className="studio-card p-4 md:p-6">
+      {/* Barra de control */}
+      <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon" asChild>
+            <Link href={hrefFor(view, prev)} aria-label="Anterior">
+              <ChevronLeft className="size-4" />
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/dashboard/calendar?view=${view}&date=${todayKey}`}>Hoy</Link>
+          </Button>
+          <Button variant="outline" size="icon" asChild>
+            <Link href={hrefFor(view, next)} aria-label="Siguiente">
+              <ChevronRight className="size-4" />
+            </Link>
+          </Button>
+          <h2 className="ml-2 font-heading text-lg font-semibold capitalize text-primary">
+            {periodLabel}
+          </h2>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <ViewSwitch view={view} date={date} />
+          {view !== 'month' && <BlockTimeModal defaultDate={date} timezone={timezone} />}
+        </div>
+      </div>
+
+      {view === 'month' && (
+        <MonthView bookings={bookings} focus={focus} timezone={timezone} todayKey={todayKey} />
+      )}
+      {view === 'week' && (
+        <TimelineView
+          days={eachDayOfInterval({
+            start: startOfWeek(focus, WEEK_STARTS),
+            end: endOfWeek(focus, WEEK_STARTS),
+          })}
+          bookings={bookings}
+          timeBlocks={timeBlocks}
+          timezone={timezone}
+          todayKey={todayKey}
+          onBookingClick={setActiveBooking}
+        />
+      )}
+      {view === 'day' && (
+        <TimelineView
+          days={[focus]}
+          bookings={bookings}
+          timeBlocks={timeBlocks}
+          timezone={timezone}
+          todayKey={todayKey}
+          onBookingClick={setActiveBooking}
+        />
+      )}
+
+      {activeBooking && (
+        <BookingDrawer
+          booking={activeBooking}
+          open={!!activeBooking}
+          onOpenChange={(o) => !o && setActiveBooking(null)}
+          businessCurrency={businessCurrency}
+          businessTimezone={timezone}
+          businessAddress={businessAddress}
+        />
+      )}
+    </div>
+  )
+}
+
+function ViewSwitch({ view, date }: { view: CalendarView; date: string }) {
+  const options: Array<{ key: CalendarView; label: string }> = [
+    { key: 'day', label: 'Día' },
+    { key: 'week', label: 'Semana' },
+    { key: 'month', label: 'Mes' },
+  ]
+  return (
+    <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+      {options.map((o) => (
+        <Link
+          key={o.key}
+          href={`/dashboard/calendar?view=${o.key}&date=${date}`}
+          className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+            view === o.key
+              ? 'bg-card text-primary shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {o.label}
+        </Link>
+      ))}
+    </div>
+  )
+}
+
+function MonthView({
+  bookings,
+  focus,
+  timezone,
+  todayKey,
+}: {
+  bookings: TimelineBooking[]
+  focus: Date
+  timezone: string
+  todayKey: string
+}) {
+  const monthStart = startOfMonth(focus)
+  const monthEnd = endOfMonth(monthStart)
+  const days = eachDayOfInterval({
+    start: startOfWeek(monthStart, WEEK_STARTS),
+    end: endOfWeek(monthEnd, WEEK_STARTS),
+  })
+  const weekDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+
+  const byDay: Record<string, TimelineBooking[]> = {}
+  for (const b of bookings) {
+    const key = localDayKey(new Date(b.startDateTime), timezone)
+    ;(byDay[key] ??= []).push(b)
+  }
+
+  return (
+    <div>
+      <div className="grid grid-cols-7 gap-1 md:gap-2">
+        {weekDays.map((d) => (
+          <div key={d} className="py-1 text-center text-xs font-semibold text-muted-foreground">
+            {d}
+          </div>
+        ))}
+        {days.map((day) => {
+          const key = format(day, 'yyyy-MM-dd')
+          const dayBookings = (byDay[key] || []).filter(
+            (b) => b.status !== 'cancelled' && b.status !== 'no_show',
+          )
+          const inMonth = isSameMonth(day, monthStart)
+          const isToday = key === todayKey
+          return (
+            <Link
+              key={key}
+              href={hrefFor('day', day)}
+              className={`flex min-h-16 flex-col rounded-lg border p-1.5 transition hover:border-primary/50 md:min-h-24 ${
+                inMonth ? 'border-border bg-card' : 'border-transparent bg-muted/30 text-muted-foreground'
+              }`}
+            >
+              <span
+                className={`text-xs font-medium ${
+                  isToday
+                    ? 'flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground'
+                    : ''
+                }`}
+              >
+                {format(day, 'd')}
+              </span>
+              <div className="mt-1 space-y-0.5 overflow-hidden">
+                {dayBookings.slice(0, 3).map((b) => (
+                  <div key={b.id} className="flex items-center gap-1">
+                    <span className={`size-1.5 shrink-0 rounded-full ${statusDotColors[b.status] || 'bg-gray-300'}`} />
+                    <span className="truncate text-[10px] leading-tight text-foreground">
+                      {b.customer?.name || b.service?.name || 'Reserva'}
+                    </span>
+                  </div>
+                ))}
+                {dayBookings.length > 3 && (
+                  <span className="text-[10px] text-muted-foreground">+{dayBookings.length - 3} más</span>
+                )}
+              </div>
+            </Link>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function TimelineView({
+  days,
+  bookings,
+  timeBlocks,
+  timezone,
+  todayKey,
+  onBookingClick,
+}: {
+  days: Date[]
+  bookings: TimelineBooking[]
+  timeBlocks: CalendarTimeBlock[]
+  timezone: string
+  todayKey: string
+  onBookingClick: (b: TimelineBooking) => void
+}) {
+  const allItems = [...bookings, ...timeBlocks]
+  const { startHour, endHour } = computeHourRange(allItems, timezone)
+  const hours = Array.from({ length: endHour - startHour }, (_, i) => startHour + i)
+  const bodyHeight = (endHour - startHour) * HOUR_HEIGHT
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="flex min-w-fit">
+        {/* Eje de horas */}
+        <div className="w-12 shrink-0 pt-8">
+          {hours.map((h) => (
+            <div key={h} style={{ height: HOUR_HEIGHT }} className="relative">
+              <span className="absolute -top-2 right-1 text-[11px] text-muted-foreground">
+                {String(h).padStart(2, '0')}:00
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Columnas de días */}
+        <div className="flex flex-1">
+          {days.map((day) => {
+            const dayKey = format(day, 'yyyy-MM-dd')
+            const isToday = dayKey === todayKey
+            const dayBookings = bookings.filter((b) => localDayKey(new Date(b.startDateTime), timezone) === dayKey)
+            const dayBlocks = timeBlocks.filter((tb) => localDayKey(new Date(tb.startDateTime), timezone) === dayKey)
+            const positioned = packLanes(dayBookings, timezone, startHour)
+            const positionedBlocks = packLanes(dayBlocks, timezone, startHour)
+
+            return (
+              <div
+                key={dayKey}
+                className={`min-w-32 flex-1 border-l border-border ${days.length > 1 ? '' : 'min-w-0'}`}
+              >
+                {/* Cabecera del día */}
+                <Link
+                  href={hrefFor('day', day)}
+                  className="flex h-8 items-center justify-center gap-1.5 border-b border-border text-xs font-medium hover:bg-muted/40"
+                >
+                  <span className="capitalize text-muted-foreground">{format(day, 'EEE', { locale: es })}</span>
+                  <span
+                    className={
+                      isToday
+                        ? 'flex size-5 items-center justify-center rounded-full bg-primary text-[11px] text-primary-foreground'
+                        : 'text-foreground'
+                    }
+                  >
+                    {format(day, 'd')}
+                  </span>
+                </Link>
+
+                {/* Cuerpo con líneas de hora + bloques */}
+                <div className="relative" style={{ height: bodyHeight }}>
+                  {hours.map((h, idx) => (
+                    <div
+                      key={h}
+                      className="absolute inset-x-0 border-b border-border/40"
+                      style={{ top: idx * HOUR_HEIGHT, height: HOUR_HEIGHT }}
+                    />
+                  ))}
+
+                  {/* Bloqueos (bandas grises) */}
+                  {positionedBlocks.map((p) => (
+                    <BlockBand key={p.item.id} p={p} />
+                  ))}
+
+                  {/* Reservas */}
+                  {positioned.map((p) => (
+                    <BookingBlock
+                      key={p.item.id}
+                      p={p}
+                      timezone={timezone}
+                      onClick={() => onBookingClick(p.item)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BookingBlock({
+  p,
+  timezone,
+  onClick,
+}: {
+  p: PositionedItem<TimelineBooking>
+  timezone: string
+  onClick: () => void
+}) {
+  const b = p.item
+  const widthPct = 100 / p.lanes
+  const leftPct = p.lane * widthPct
+  const accent = b.service?.pastelColor
+  const start = localTime(b.startDateTime, timezone)
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`absolute overflow-hidden rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight shadow-sm transition hover:z-10 hover:shadow-md ${
+        statusBlockClasses[b.status] || 'border-gray-300 bg-gray-50'
+      }`}
+      style={{
+        top: (p.topMin / 60) * HOUR_HEIGHT,
+        height: Math.max((p.heightMin / 60) * HOUR_HEIGHT - 2, 18),
+        left: `calc(${leftPct}% + 2px)`,
+        width: `calc(${widthPct}% - 4px)`,
+        borderLeftWidth: accent ? 3 : undefined,
+        borderLeftColor: accent,
+      }}
+    >
+      <div className="font-semibold">{start}</div>
+      <div className="truncate">{b.customer?.name || 'Cliente'}</div>
+      {p.heightMin >= 45 && b.service?.name && (
+        <div className="truncate opacity-70">{b.service.name}</div>
+      )}
+    </button>
+  )
+}
+
+function BlockBand({ p }: { p: PositionedItem<CalendarTimeBlock> }) {
+  return (
+    <div
+      className="absolute inset-x-0.5 overflow-hidden rounded-md border border-dashed border-muted-foreground/40 bg-[repeating-linear-gradient(45deg,transparent,transparent_6px,rgba(0,0,0,0.04)_6px,rgba(0,0,0,0.04)_12px)] px-1.5 py-1 text-[10px] text-muted-foreground"
+      style={{
+        top: (p.topMin / 60) * HOUR_HEIGHT,
+        height: Math.max((p.heightMin / 60) * HOUR_HEIGHT - 2, 16),
+      }}
+    >
+      {p.item.reason || 'Bloqueado'}
+    </div>
+  )
+}
+
+function localTime(iso: string, timezone: string): string {
+  // Pequeño helper local para evitar importar date-fns-tz en el cliente solo por esto.
+  return new Date(iso).toLocaleTimeString('es-CL', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: timezone,
+  })
+}

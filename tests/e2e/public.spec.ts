@@ -148,7 +148,9 @@ test.describe('dashboard (e2e auth bypass)', () => {
     await page.waitForLoadState('networkidle')
     expect(page.url()).toContain('/dashboard/calendar')
     await expect(page.getByRole('heading', { name: 'Calendario' })).toBeVisible()
-    await expect(page.getByText('Vista mensual para revisar disponibilidad y citas.')).toBeVisible()
+    await expect(page.getByText('Revisa tus citas por día, semana o mes.')).toBeVisible()
+    // Conmutador de vistas
+    await expect(page.getByRole('link', { name: 'Semana', exact: true })).toBeVisible()
   })
 
   test('dashboard bookings page shows booking list', async ({ page }) => {
