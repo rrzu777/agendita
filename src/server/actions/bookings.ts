@@ -15,6 +15,7 @@ import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcemen
 import { normalizePhone } from '@/lib/customers/phone'
 import { addMinutes } from 'date-fns'
 import { applyPromotionInTx } from '@/lib/promotions/apply'
+import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import {
   sendBookingReceivedToCustomer,
   sendNewBookingNotificationToBusiness,
@@ -400,9 +401,22 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
     ? { reviewToken: crypto.randomUUID(), reviewTokenCreatedAt: new Date() }
     : {}
 
-  const updateResult = await prisma.booking.updateMany({
-    where: { id, businessId },
-    data: { status, ...reviewTokenData },
+  const updateResult = await prisma.$transaction(async (tx) => {
+    const res = await tx.booking.updateMany({
+      where: { id, businessId },
+      data: { status, ...reviewTokenData },
+    })
+    if (
+      res.count > 0 &&
+      (status === BookingStatus.cancelled || status === BookingStatus.no_show)
+    ) {
+      await releaseRedemptionForBooking(
+        tx,
+        id,
+        status === BookingStatus.cancelled ? 'cancelled' : 'no_show',
+      )
+    }
+    return res
   })
   if (updateResult.count === 0) {
     throw new ForbiddenError('Reserva no encontrada')
@@ -823,14 +837,17 @@ export async function cancelBooking(bookingId: string, reason?: string) {
     throw new Error('Esta reserva ya está cancelada')
   }
 
-  await prisma.booking.update({
-    where: { id: bookingId },
-    data: {
-      status: BookingStatus.cancelled,
-      internalNotes: reason
-        ? `${booking.internalNotes || ''}\n[CANCELADA: ${reason}]`.trim()
-        : booking.internalNotes,
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.booking.update({
+      where: { id: bookingId },
+      data: {
+        status: BookingStatus.cancelled,
+        internalNotes: reason
+          ? `${booking.internalNotes || ''}\n[CANCELADA: ${reason}]`.trim()
+          : booking.internalNotes,
+      },
+    })
+    await releaseRedemptionForBooking(tx, bookingId, 'cancelled')
   })
 
   if (booking.customer?.email) {

@@ -5,6 +5,7 @@ import { createHmac, timingSafeEqual } from 'crypto'
 import { sendBookingConfirmedNotification, sendNotificationSafely } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
 import { decryptSecret } from '@/lib/payments/encryption'
+import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import type { Prisma } from '@prisma/client'
 
 function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
@@ -419,13 +420,18 @@ export async function POST(request: NextRequest) {
             ? 'refunded'
             : 'rejected'
 
-      await prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: finalStatus,
-          providerPaymentId: mpPayment.id,
-          rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
-        },
+      await prisma.$transaction(async (tx) => {
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: finalStatus,
+            providerPaymentId: mpPayment.id,
+            rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+          },
+        })
+        if (finalStatus === 'refunded' && payment.bookingId) {
+          await releaseRedemptionForBooking(tx, payment.bookingId, 'refunded')
+        }
       })
 
       return NextResponse.json({
