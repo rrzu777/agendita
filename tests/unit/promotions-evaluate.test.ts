@@ -25,6 +25,15 @@ describe('computeDiscount', () => {
   it('free_service discounts the full total', () => {
     expect(computeDiscount(promo({ rewardType: 'free_service', rewardValue: 0 }), 20000)).toBe(20000)
   })
+  it('never returns a negative discount on a negative price', () => {
+    expect(computeDiscount(promo({ rewardType: 'fixed_amount', rewardValue: 5000 }), -1000)).toBe(0)
+  })
+  it('percentage on zero total is zero', () => {
+    expect(computeDiscount(promo({ rewardType: 'percentage', rewardValue: 50 }), 0)).toBe(0)
+  })
+  it('free_service on zero total is zero', () => {
+    expect(computeDiscount(promo({ rewardType: 'free_service', rewardValue: 0 }), 0)).toBe(0)
+  })
 })
 
 describe('isRedeemable', () => {

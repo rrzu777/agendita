@@ -14,14 +14,15 @@ export interface PromoCore {
 }
 
 export function computeDiscount(promo: PromoCore, totalPrice: number): number {
+  const cap = Math.max(0, totalPrice)
   if (promo.rewardType === 'percentage') {
-    const raw = Math.floor((totalPrice * promo.rewardValue) / 100)
-    return Math.min(raw, promo.maxDiscount ?? Infinity, totalPrice)
+    const raw = Math.floor((cap * promo.rewardValue) / 100)
+    return Math.min(Math.max(0, raw), promo.maxDiscount ?? Infinity, cap)
   }
   if (promo.rewardType === 'fixed_amount') {
-    return Math.min(promo.rewardValue, totalPrice)
+    return Math.min(Math.max(0, promo.rewardValue), cap)
   }
-  return totalPrice // free_service
+  return cap // free_service
 }
 
 export type RedeemReason =
@@ -42,6 +43,6 @@ export function isRedeemable(input: {
   if (promo.maxRedemptions != null && promo.redemptionCount >= promo.maxRedemptions) return { ok: false, reason: 'sold_out' }
   if (promo.maxPerCustomer != null && customerRedemptions >= promo.maxPerCustomer) return { ok: false, reason: 'per_customer_cap' }
   if (promo.minSpend != null && totalPrice < promo.minSpend) return { ok: false, reason: 'min_spend' }
-  if (!promo.appliesToAll && !promo.serviceIds.includes(serviceId)) return { ok: false, reason: 'out_of_scope' }
+  if (!promo.appliesToAll && !(promo.serviceIds ?? []).includes(serviceId)) return { ok: false, reason: 'out_of_scope' }
   return { ok: true, discount: computeDiscount(promo, totalPrice) }
 }
