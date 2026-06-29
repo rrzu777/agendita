@@ -58,7 +58,9 @@ export async function adjustCustomerPoints(customerId: string, delta: unknown, n
     // Advisory lock por-clienta: bajo READ COMMITTED el aggregate NO toma lock, así
     // que sin esto dos ajustes concurrentes podrían ambos pasar el chequeo de
     // saldo>=0 y sobregirar. El lock serializa solo los ajustes de esta misma clienta.
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${customerId}))`
+    // $executeRaw (no $queryRaw): pg_advisory_xact_lock devuelve void y $queryRaw
+    // falla al deserializar esa columna.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${customerId}))`
     const agg = await tx.loyaltyLedger.aggregate({ where: { customerId, businessId }, _sum: { points: true } })
     const balance = agg._sum.points ?? 0
     if (balance + parsed.data.delta < 0) {
