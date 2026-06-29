@@ -10,7 +10,10 @@ function tx(redemption: any, flippedCount = 1) {
       findUnique: vi.fn().mockResolvedValue(redemption),
       updateMany: vi.fn().mockResolvedValue({ count: flippedCount }),
     },
-    promotion: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    promotion: {
+      findUnique: vi.fn().mockResolvedValue({ triggerType: 'code' }),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
   } as any
 }
 
