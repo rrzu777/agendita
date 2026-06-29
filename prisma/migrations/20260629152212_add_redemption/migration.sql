@@ -1,4 +1,3 @@
-zsh: command not found: _nvm_load
 -- CreateEnum
 CREATE TYPE "GrantStatus" AS ENUM ('active', 'redeemed', 'expired', 'reversed');
 
