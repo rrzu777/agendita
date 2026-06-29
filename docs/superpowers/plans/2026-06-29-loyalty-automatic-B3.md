@@ -25,6 +25,61 @@
 
 ---
 
+## ⚠️ Correcciones obligatorias de la revisión adversarial (aplican sobre las tasks)
+
+Estas correcciones surgieron de una revisión profunda y **anulan/ajustan** lo que diga el cuerpo
+de cada task. Leerlas antes de implementar la task referida.
+
+- **[R-EMIT] (T9, T10) — emitir FUERA de la tx del evento.** En Postgres un P2002 aborta toda la
+  `$transaction` y atraparlo en JS no la recupera (Prisma 5.22 no usa SAVEPOINT por query). **NO**
+  encadenar `creditVisitPoints` + first_visit + referral con `try/catch P2002` en una sola tx. La
+  tx del evento hace su trabajo y commitea; **cada emisión automática corre en su propia
+  `prisma.$transaction` post-commit** (como el cron). En `updateBookingStatus`: la tx principal
+  hace flip + marcas (`firstCompletedAt`/`lastCompletedAt`) + `creditVisitPoints` y devuelve
+  `{ customerId, isFirstVisit }`; después, ya fuera de la tx, se corren first_visit y referral en
+  txns separadas. En `submitReview`: crear la review (con su P2002 propio) y **luego**, en tx
+  aparte, emitir el premio.
+- **[R-TOKEN] (T1, T14, T16) — token de referido separado.** `Customer.referralToken String? @unique`
+  distinto del `loyaltyToken`. Helper lazy nuevo `ensureReferralToken(db, customer)` (molde de
+  `ensureLoyaltyToken`). El `?ref` resuelve por `referralToken`, no por `loyaltyToken`.
+- **[R-WINBACK] (T7) — guard de cooldown correcto.** Excluir winback para una clienta si existe
+  emisión suya posterior a `lastCompletedAt`: ledger `bonus` con `sourcePromotionId=<winbackRuleId>`
+  **o** `PromotionGrant` con `promotionId=<winbackRuleId>` y `createdAt > lastCompletedAt`; respetar
+  `cooldownDays`. Precargar ambos sets por negocio. Mirar solo el ledger re-emite grants a diario.
+- **[R-CAP] (T2, T4) — `maxPerCustomer` en los 6 kinds.** Reusar `Promotion.maxPerCustomer`.
+  Agregar `maxPerCustomer: optPositiveInt` a `automaticRuleSchema` y persistirlo. En
+  `emitAutomaticReward`, antes de emitir, si `rule.maxPerCustomer != null` contar emisiones previas
+  de esa regla a esa clienta (ledger `sourcePromotionId=rule.id` + grants `promotionId=rule.id`); si
+  `>= maxPerCustomer` ⇒ devolver null (no emitir).
+- **[R-PHONE] (T11) — normalizar teléfono en `createBooking` público.** Usar `normalizePhone`
+  (el mismo que usa `createBookingFromDashboard`) antes de match/create de la clienta y antes de
+  `captureReferral`. Bug preexistente que B3 amplifica.
+- **[R-BACKFILL] (T1) — backfill en la migración.** Tras agregar las columnas, `UPDATE "Customer"`
+  con `firstCompletedAt`/`lastCompletedAt` = min/max `startDateTime` de `Booking` completadas.
+- **[R-CLAWBACK] (T12) — solo refund.** No cablear cancel/no_show (la reserva gatillante está
+  `completed`, estado terminal). Solo el webhook MP `refunded`. `reverseAutoRewardsForBooking`
+  recibe y filtra por `businessId`.
+- **[R-INDEX] (T1, T4, T5) — columnas reales, no JSON.** `LoyaltyLedger` +`triggeringBookingId`
+  (índice) +`sourcePromotionId` (índice con businessId); `PromotionGrant` +`triggeringBookingId`
+  (índice). `emitAutomaticReward` setea estas columnas (no solo metadata); clawback y guard de
+  winback filtran por columna + `businessId` (sin `metadata:{path}`).
+- **[R-NAMES] (T7-nota, T14, T16) — nombres/rutas reales.** Token lazy de tarjeta =
+  `ensureLoyaltyToken` (NO `resolveOrCreateToken`). URL pública = `getBusinessPublicUrl(business, path)`
+  de `@/lib/business/urls`. Funnel = `src/app/book/[slug]/page.tsx` + `src/app/book/page.tsx`
+  (subdominio) + wizard `src/components/booking/step-payment.tsx` (llama `createBooking` ~líneas
+  215/249). Ambas pages deben leer `searchParams.ref` y pasarlo por el wizard; `createBooking`
+  schema suma `referralToken`.
+- **[R-MIGRATE] (T1, T17) — DIRECT_URL + db execute.** `migrate diff` y `db execute` contra
+  `DIRECT_URL` (no el pooler). Aplicar con `db execute` del `.sql`, **nunca** `migrate deploy`.
+- **[R-GUARD] (T-apply) — defensa en `apply.ts`.** En la rama grant de `applyPromotionInTx`,
+  antes de `computeDiscount`, `if (p.rewardType == null) throw new Error('Recompensa inválida')`
+  (una regla de puntos nunca emite grant, pero es barato).
+- **[R-TEST] (T10) — mocks.** `tests/unit/reviews-actions.test.ts` mockea `review.create` directo;
+  al envolver en `$transaction` hay que mockear `prisma.$transaction` (callback con `tx.review.create`,
+  `tx.loyaltyConfig.findUnique→null`, `tx.promotion.findMany→[]`).
+
+---
+
 ## Mapa de archivos
 
 **Crear:**
@@ -81,21 +136,34 @@ enum ReferralStatus {
 }
 ```
 
-En `model Promotion` agregar (junto a `pointsCost`/`grantExpiryDays`):
+En `model Promotion` agregar (junto a `pointsCost`/`grantExpiryDays`; `maxPerCustomer` ya existe y se reusa):
 
 ```prisma
   rewardPoints    Int?
   priority        Int              @default(0)
 ```
 
-En `model LoyaltyLedger` agregar el campo y el unique:
+En `model LoyaltyLedger` agregar los campos, el unique y los índices (R-INDEX):
 
 ```prisma
-  dedupeKey       String?
+  dedupeKey         String?
+  triggeringBookingId String?
+  sourcePromotionId String?
 ```
 y en la zona de índices del modelo:
 ```prisma
   @@unique([businessId, dedupeKey])
+  @@index([triggeringBookingId])
+  @@index([businessId, sourcePromotionId])
+```
+
+En `model PromotionGrant` agregar (R-INDEX, para el clawback):
+```prisma
+  triggeringBookingId String?
+```
+y en sus índices:
+```prisma
+  @@index([triggeringBookingId])
 ```
 
 En `model LoyaltyConfig` agregar:
@@ -103,10 +171,11 @@ En `model LoyaltyConfig` agregar:
   clawbackAutoRewardOnRefund Boolean @default(false)
 ```
 
-En `model Customer` agregar campos + relación:
+En `model Customer` agregar campos + relación (R-TOKEN: `referralToken` separado del `loyaltyToken`):
 ```prisma
   firstCompletedAt DateTime?
   lastCompletedAt  DateTime?
+  referralToken    String?   @unique
 
   referralsMade     Referral[] @relation("ReferralReferrer")
   referralReceived  Referral?  @relation("ReferralReferred")
@@ -148,7 +217,21 @@ npx prisma migrate diff \
 ```
 > Generar el `.sql` real con el flujo que ya usó B2 (`migrate diff` contra el estado de la DB). **Revisar la primera línea** del `.sql`: si dice `zsh: command not found: _nvm_load`, borrarla (`sed -i '' '1d' <file>`). El archivo final va en `prisma/migrations/<timestamp>_add_automatic_loyalty/migration.sql` y debe contener: `ALTER TYPE "LoyaltyReason" ADD VALUE 'bonus'`/`'bonus_reversal'`; `CREATE TYPE "ReferralStatus"`; `ALTER TABLE "Promotion" ADD COLUMN "rewardPoints"`, `"priority"`; `ALTER TABLE "LoyaltyLedger" ADD COLUMN "dedupeKey"` + índice unique `("businessId","dedupeKey")`; `ALTER TABLE "LoyaltyConfig" ADD COLUMN "clawbackAutoRewardOnRefund"`; `ALTER TABLE "Customer" ADD COLUMN "firstCompletedAt"`, `"lastCompletedAt"`; `CREATE TABLE "Referral"` + índices + FKs.
 
-> **`ADD VALUE` de enum** no corre dentro de una transacción en Postgres. Si la migración falla por eso, separar los `ALTER TYPE ... ADD VALUE` en su propia sentencia sin envolver en `BEGIN/COMMIT` (db execute los corre sueltos).
+> **`ADD VALUE` de enum** no corre dentro de una transacción en Postgres. Si la migración falla por eso, separar los `ALTER TYPE ... ADD VALUE` en su propia sentencia sin envolver en `BEGIN/COMMIT` (db execute los corre sueltos). **Generar `migrate diff` y aplicar `db execute` contra `DIRECT_URL`, no el pooler** (R-MIGRATE).
+
+- [ ] **Step 2b: Agregar el backfill al final del `.sql`** (R-BACKFILL) — para que aniversario/win-back funcionen con la base actual:
+
+```sql
+UPDATE "Customer" c SET
+  "firstCompletedAt" = sub.min_dt,
+  "lastCompletedAt"  = sub.max_dt
+FROM (
+  SELECT "customerId", MIN("startDateTime") AS min_dt, MAX("startDateTime") AS max_dt
+  FROM "Booking" WHERE "status" = 'completed' AND "customerId" IS NOT NULL
+  GROUP BY "customerId"
+) sub
+WHERE c."id" = sub."customerId";
+```
 
 - [ ] **Step 3: NO aplicar a la DB todavía.** La aplicación queda para Task 17 con confirmación explícita del usuario. Verificar solo que el cliente compila:
 
@@ -1077,7 +1160,19 @@ export async function loadAutomaticRule(tx: Tx, businessId: string, kind: string
 }
 ```
 
-- [ ] **Step 2: Editar `updateBookingStatus`** — dentro del `$transaction`, en el branch `status === completed`, después del `creditVisitPoints` existente. Reemplazar el bloque:
+> **⚠️ CORRECCIÓN R-EMIT (obligatoria):** el bloque de abajo muestra los emits DENTRO de la tx —
+> **NO implementarlo así**. La tx principal debe hacer SOLO flip + marcas (`firstCompletedAt`/
+> `lastCompletedAt`) + `creditVisitPoints`, y devolver `{ customerId, isFirstVisit }` (calcular
+> `isFirstVisit = prevCompleted === 0` dentro de la tx). **Después del commit**, ya fuera de la tx,
+> emitir en transacciones separadas: si `isFirstVisit`, `await prisma.$transaction(tx =>
+> emitAutomaticReward(tx, {... first_visit, dedupeKey: firstVisitKey, triggeringBookingId: id}))`
+> (precedido de `loadAutomaticRule`); y siempre `await prisma.$transaction(tx =>
+> rewardReferralOnCompletion(tx, {businessId, referredCustomerId: customerId, bookingId: id, rule,
+> config, now}))` si hay regla referral. Cada emisión es idempotente; una pérdida por crash
+> post-commit es aceptable. Gate `loyaltyConfig.isActive` antes de emitir. El email transaccional
+> (G4) va best-effort tras cada emisión, fuera de la tx.
+
+- [ ] **Step 2: Editar `updateBookingStatus`** — el bloque de referencia (a SEPARAR según R-EMIT). Dentro del `$transaction`, en el branch `status === completed`, después del `creditVisitPoints` existente, la lógica conceptual es:
 
 ```ts
     if (res.count > 0 && status === BookingStatus.completed && loyaltyConfig?.isActive) {

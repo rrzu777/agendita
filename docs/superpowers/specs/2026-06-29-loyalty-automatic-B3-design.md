@@ -45,6 +45,50 @@ endurecimiento anti-fraude de referidas con identidad fuerte (D).
 - **Una regla por (negocio, kind)** (M1): a lo sumo una regla automática activa por tipo.
 - **Gate `config.isActive`** (M3): programa pausado ⇒ ninguna regla automática emite.
 
+### Correcciones de la revisión adversarial (incorporadas)
+
+- **R-EMIT — emisión fuera de la tx del evento (bug P2002):** en Postgres un error aborta
+  toda la transacción; atraparlo en JS no la des-aborta y Prisma 5.22 no usa SAVEPOINT por
+  query en tx interactivas. Por eso **cada emisión automática corre en su propia
+  `prisma.$transaction`**, separada de la tx del evento (igual que el cron). La tx del evento
+  (`updateBookingStatus`/`submitReview`) hace su trabajo y commitea; las emisiones se disparan
+  **después**, idempotentes por dedupeKey (una emisión perdida por crash post-commit es
+  aceptable y un retry es seguro). Elimina además el riesgo de timeout de 5s.
+- **R-TOKEN — token de referido separado:** `Customer.referralToken` (cuid, lazy) **distinto**
+  del `loyaltyToken`. El `?ref` resuelve por `referralToken` y **no** es navegable a
+  `/tarjeta/[token]` (que muestra saldo y permite canjear). Forward-compatible con D (un código
+  de referido es público por diseño; el acceso a la cuenta irá por login).
+- **R-WINBACK — guard de cooldown correcto:** win-back se considera ya emitido para la racha
+  actual si existe una emisión suya (**ledger `bonus` `sourcePromotionId=<rule>`** *o*
+  **`PromotionGrant` `promotionId=<rule>`**) con `createdAt > lastCompletedAt`; además respeta
+  `cooldownDays`. Mirar solo el ledger re-emitía un grant nuevo cada día.
+- **R-CAP — `maxPerCustomer` en los 6 kinds:** se reusa `Promotion.maxPerCustomer` como tope
+  de recompensas por clienta para CADA regla automática (anti-farmeo de referidas/reseñas).
+  El emisor cuenta emisiones previas (ledger `sourcePromotionId` + grants `promotionId`) y no
+  emite si alcanzó el tope. Default sin tope.
+- **R-PHONE — normalizar teléfono en `createBooking` público:** hoy usa el teléfono crudo (el
+  dashboard sí normaliza). Sin esto el guard self-referral y la detección "clienta nueva"
+  fallan con formatos distintos. Se normaliza antes de match/create y antes de `captureReferral`.
+- **R-BACKFILL — backfill en la migración:** `firstCompletedAt`/`lastCompletedAt` se rellenan
+  desde `Booking` (min/max de completadas) o aniversario/win-back nacen muertos para la base
+  actual.
+- **R-CLAWBACK — solo refund:** la reserva gatillante de `first_visit`/`referral` está
+  **completada** y `completed` es estado terminal (no admite cancel/no_show), así que el
+  clawback solo aplica en el webhook MP `refunded`. Se acota el §8 (antes mencionaba cancel/no_show).
+- **R-INDEX — columnas indexadas en vez de filtro JSON:** `LoyaltyLedger` suma
+  `triggeringBookingId` (clawback) y `sourcePromotionId` (guard win-back / `maxPerCustomer`),
+  ambas indexadas; `PromotionGrant` suma `triggeringBookingId`. Evita seq-scans JSON
+  multi-tenant. Todas las queries de clawback/cron scopean por `businessId`.
+- **R-NAMES — nombres/rutas reales:** token lazy = `ensureLoyaltyToken` (no `resolveOrCreateToken`);
+  URL pública = `getBusinessPublicUrl(business, path)`; funnel = `src/app/book/[slug]/page.tsx`
+  + `src/app/book/page.tsx` (subdominio) + wizard `src/components/booking/step-payment.tsx`;
+  `createBooking` suma `referralToken` al schema y las pages leen `searchParams.ref`.
+- **R-MIGRATE — DIRECT_URL, no pooler:** `migrate diff` + `db execute` corren contra
+  `DIRECT_URL` (Supabase directo, 5432), no el pooler pgbouncer; `ADD VALUE` como statements
+  sueltos sin `BEGIN/COMMIT`; **nunca** `migrate deploy`.
+- **R-GUARD — defensa en `apply.ts`:** la rama grant valida `rewardType != null` antes de
+  `computeDiscount` (una regla de puntos nunca emite grant, pero es seguro barato).
+
 ## 3. Disparadores
 
 | kind | Cuándo | Enganche |
@@ -78,15 +122,18 @@ mes/día. `firstCompletedAt` ídem para aniversario.
 
 Recompensa (campos de `Promotion`): `rewardPoints` (puntos) **o** `rewardType`+`rewardValue`+
 `services`/`appliesToAll`+`grantExpiryDays` (grant). Validación: una regla automática define
-exactamente una de las dos formas.
+exactamente una de las dos formas. Tope opcional `maxPerCustomer` (reusa la columna de B2) en
+los 6 kinds.
 
 ## 5. Idempotencia / dedup (uniforme grant + puntos)
 
 - **Puntos:** `LoyaltyLedger.dedupeKey String?` + `@@unique([businessId, dedupeKey])` (NULL
   múltiple permitido en Postgres → visit/adjustment intactos). Reason nuevo `bonus`
-  (+ `bonus_reversal` para clawback). Los `bonus` van con `bookingId = null` +
-  `metadata.triggeringBookingId` para no chocar con `@@unique([bookingId, reason])` cuando
-  `first_visit` y `referral` caen en la misma reserva.
+  (+ `bonus_reversal` para clawback). Los `bonus` van con `bookingId = null` y las columnas
+  reales `triggeringBookingId` (clawback) y `sourcePromotionId` (regla origen: guard win-back y
+  `maxPerCustomer`), ambas indexadas — **sin filtros JSON** en paths calientes. `bookingId=null`
+  evita chocar con `@@unique([bookingId, reason])` cuando `first_visit` y `referral` caen en la
+  misma reserva.
 - **Grants:** `requestId` determinista ⇒ reusa `@@unique([customerId, requestId])` de B2.
   Emitidos con `pointsSpent = 0` y **`refundOnExpiry = false`** (G1: nunca se pagaron puntos,
   no hay reembolso fantasma en vencimiento).
@@ -119,27 +166,33 @@ insert gana (no P2002), listo; si pierde (ya había emisión de ocasión), no se
 - Entidad `Referral { id, businessId, referrerCustomerId, referredCustomerId @unique,
   status: ReferralStatus(pending|rewarded|void), triggeringBookingId String?, rewardedAt
   DateTime?, createdAt }` + índices `[businessId, status]`, `[referrerCustomerId]`.
-- **Link:** URL pública de reserva con `?ref=<loyaltyToken referidora>` (reusa token de "Mi
-  tarjeta", lazy vía `resolveOrCreateToken`). "Mi tarjeta" muestra "Referí a una amiga" con
-  prefill wa.me (molde de `getReviewWhatsappLink`).
-- **Captura** en `createBooking` (público): si llega `ref` válido, la clienta es **nueva** (sin
-  match por teléfono en el negocio) y su teléfono ≠ el de la referidora ⇒ `Referral.create(pending)`.
-  Guard self-referral (M4). Falla suave: si el ref es inválido, la reserva se crea igual sin referral.
+- **Link:** URL pública de reserva (`getBusinessPublicUrl(business, '/book?ref=<referralToken>')`)
+  con el **`Customer.referralToken`** de la referidora (token propio, lazy, **distinto** del
+  `loyaltyToken` de la tarjeta — R-TOKEN). "Mi tarjeta" muestra "Referí a una amiga" con prefill
+  wa.me (molde de `getReviewWhatsappLink`).
+- **Captura** en `createBooking` (público): teléfono **normalizado** (R-PHONE); si llega `ref`
+  válido, la clienta es **nueva** (sin match por teléfono en el negocio) y su teléfono ≠ el de
+  la referidora ⇒ `Referral.create(pending)`. Guard self-referral (M4). Falla suave: si el ref
+  es inválido, la reserva se crea igual sin referral.
 - **Emisión** en `updateBookingStatus(completed)` de la referida: flip atómico
   `updateMany({ where:{ referredCustomerId, status:'pending' }, data:{ status:'rewarded',
   rewardedAt, triggeringBookingId } })`; si `count===1`, emite a referida y/o referidora según
   `beneficiary`. Idempotente por el flip + dedupeKeys.
 
-## 8. Clawback (configurable, default off)
+## 8. Clawback (configurable, default off) — solo refund
 
-Si `LoyaltyConfig.clawbackAutoRewardOnRefund`: al reembolsar/cancelar la reserva gatillante
-(en el path que ya llama `releaseRedemptionForBooking` — webhook MP `refunded` y cancel/no_show),
-`reverseAutoRewardsForBooking(tx, bookingId)`:
-- puntos: busca `loyaltyLedger` con `metadata.triggeringBookingId == bookingId` y reason `bonus`
-  sin reversa; inserta `bonus_reversal` por `-points` (idempotente por dedupeKey de reversa).
-- grant: busca grants automáticos (`metadata.triggeringBookingId == bookingId`); si `active`
+Si `LoyaltyConfig.clawbackAutoRewardOnRefund`: al **reembolsar** la reserva gatillante (webhook
+MP `refunded`, donde ya se llama `releaseRedemptionForBooking`), `reverseAutoRewardsForBooking(tx,
+businessId, bookingId)`:
+- puntos: busca `loyaltyLedger` con `businessId` + `triggeringBookingId == bookingId` + reason
+  `bonus` sin reversa; inserta `bonus_reversal` por `-points` (idempotente por dedupeKey de reversa).
+- grant: busca grants automáticos (`businessId` + `triggeringBookingId == bookingId`); si `active`
   ⇒ flip a `reversed`; si ya `redeemed`/aplicado, se respeta (ya se usó). Idempotente por guard.
 - Las recompensas temporales (sin `triggeringBookingId`) nunca se tocan.
+
+**Solo refund (R-CLAWBACK):** la reserva que gatilla `first_visit`/`referral` está **completada**,
+y `completed` es estado terminal (no admite cancel/no_show), así que el único modo de deshacerla
+es el reembolso MP. No hay path de cancel/no_show que clawbackear.
 
 ## 9. Integración con módulos existentes (gaps cerrados)
 
@@ -156,15 +209,24 @@ Si `LoyaltyConfig.clawbackAutoRewardOnRefund`: al reembolsar/cancelar la reserva
 
 - `enum LoyaltyReason` +`bonus` +`bonus_reversal`
 - `enum ReferralStatus { pending, rewarded, void }`
-- `Promotion` +`rewardPoints Int?` +`priority Int @default(0)`
+- `Promotion` +`rewardPoints Int?` +`priority Int @default(0)` (reusa `maxPerCustomer` existente)
 - `LoyaltyLedger` +`dedupeKey String?` + `@@unique([businessId, dedupeKey])`
+  +`triggeringBookingId String?` + `@@index([triggeringBookingId])`
+  +`sourcePromotionId String?` + `@@index([businessId, sourcePromotionId])`
+- `PromotionGrant` +`triggeringBookingId String?` + `@@index([triggeringBookingId])`
 - `LoyaltyConfig` +`clawbackAutoRewardOnRefund Boolean @default(false)`
-- `Customer` +`firstCompletedAt DateTime?` + relaciones a `Referral`
+- `Customer` +`firstCompletedAt DateTime?` +`lastCompletedAt DateTime?`
+  +`referralToken String? @unique` + relaciones a `Referral`
 - modelo `Referral` (arriba)
+- **Backfill (R-BACKFILL):** `UPDATE "Customer"` con `firstCompletedAt = min(startDateTime)` y
+  `lastCompletedAt = max(startDateTime)` de sus `Booking` con `status='completed'`.
 
 **Gate de migración:** se aplica a la DB **solo con confirmación explícita** del usuario; nunca
-prod sin OK. Al generar con `prisma migrate diff --script > file`, **verificar que no se cuele la
-línea de ruido del shell** (`zsh: command not found: _nvm_load`) en la línea 1 del `.sql` (pasó en B2).
+prod sin OK. **Usar `DIRECT_URL`** (Supabase directo 5432, no el pooler pgbouncer) para
+`migrate diff` y `db execute`; aplicar con **`db execute` del `.sql`** (no `migrate deploy`);
+los `ALTER TYPE ... ADD VALUE` van como statements sueltos sin `BEGIN/COMMIT`. Al generar con
+`prisma migrate diff --script > file`, **verificar que no se cuele la línea de ruido del shell**
+(`zsh: command not found: _nvm_load`) en la línea 1 del `.sql` (pasó en B2).
 
 ## 11. Testing
 
