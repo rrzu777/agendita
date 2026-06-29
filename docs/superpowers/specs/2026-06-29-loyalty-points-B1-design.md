@@ -58,16 +58,20 @@ enum LoyaltyReason {
 }
 
 model LoyaltyConfig {
-  id            String   @id @default(cuid())
-  businessId    String   @unique
-  isActive      Boolean  @default(false)
-  programName   String   // ej. "Puntos Mismoxita"
-  pointsPerVisit Int     @default(0)   // puntos fijos por reserva completada
-  spendPerPoint Int?                    // "cada $X = 1 punto"; null/0 = off
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  businessId      String   @unique
+  isActive        Boolean  @default(false)
+  programName     String   // ej. "Puntos Mismoxita"
+  pointsLabel     String   @default("puntos") // nombre de la unidad: "puntos"/"estrellas"/"sellos"
+  pointsPerVisit  Int      @default(0)   // puntos fijos por reserva completada
+  spendPerPoint   Int?                    // "cada $X = 1 punto"; null/0 = off
+  minSpendToEarn  Int?                    // piso de gasto para acreditar; null = sin piso
+  cardMessage     String?                 // fine-print libre mostrado en "Mi tarjeta"
+  updatedByUserId String?                 // quién tocó el programa por última vez (traza)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }
 
 model LoyaltyLedger {
@@ -117,7 +121,11 @@ Y en `Customer`:
 `src/lib/loyalty/earn.ts` — función pura, sin I/O, unit-testeada como `evaluate.ts` de A.
 
 ```ts
-export interface EarnConfig { pointsPerVisit: number; spendPerPoint: number | null }
+export interface EarnConfig {
+  pointsPerVisit: number
+  spendPerPoint: number | null
+  minSpendToEarn: number | null
+}
 export interface EarnInput { finalAmount: number }
 export interface EarnBreakdown {
   total: number
@@ -125,31 +133,46 @@ export interface EarnBreakdown {
   pointsFromSpend: number
   finalAmount: number
   spendPerPoint: number | null
+  belowMinSpend: boolean
 }
 
 export function computeEarnedPoints(config: EarnConfig, input: EarnInput): EarnBreakdown {
-  const pointsPerVisit = Math.max(0, config.pointsPerVisit | 0)
-  const spendPerPoint = config.spendPerPoint && config.spendPerPoint > 0 ? config.spendPerPoint : null
   const finalAmount = Math.max(0, input.finalAmount | 0)
+  const spendPerPoint = config.spendPerPoint && config.spendPerPoint > 0 ? config.spendPerPoint : null
+  const floor = config.minSpendToEarn && config.minSpendToEarn > 0 ? config.minSpendToEarn : null
+
+  // Piso de gasto: si está configurado y no se alcanza, no se acredita NADA
+  // (ni visita ni gasto) — es una decisión explícita del negocio.
+  const belowMinSpend = floor != null && finalAmount < floor
+  if (belowMinSpend) {
+    return { total: 0, pointsPerVisit: 0, pointsFromSpend: 0, finalAmount, spendPerPoint, belowMinSpend }
+  }
+
+  const pointsPerVisit = Math.max(0, config.pointsPerVisit | 0)
   const pointsFromSpend = spendPerPoint ? Math.floor(finalAmount / spendPerPoint) : 0
   return {
     total: pointsPerVisit + pointsFromSpend,
-    pointsPerVisit, pointsFromSpend, finalAmount, spendPerPoint,
+    pointsPerVisit, pointsFromSpend, finalAmount, spendPerPoint, belowMinSpend,
   }
 }
 ```
 
-- Usa `Booking.finalAmount` (lo realmente cobrado tras el descuento de A).
+- Usa `Booking.finalAmount` (lo realmente cobrado tras el descuento de A) — el **valor del
+  servicio**, no `depositPaid`.
+- **Reserva gratis** (`finalAmount = 0`, p. ej. servicio gratis por promo de A) y **sin** piso
+  configurado → igual acredita `pointsPerVisit` (vino al estudio); solo no suma puntos por gasto.
+  Si el negocio configuró `minSpendToEarn`, entonces por debajo del piso no acredita nada.
 - El `EarnBreakdown` se guarda **completo** en `ledger.metadata` (trazabilidad máxima:
   permite que la tarjeta diga "+10 por visita, +16 por tu gasto de $16.000").
+- `pointsLabel` es **solo display** (no entra al motor de cálculo).
 
 ## Earn — flujo
 
-Helper `creditVisitPoints(tx, booking, config)` (en `src/lib/loyalty/credit.ts`), llamado
-**dondequiera que una reserva entra a `completed`**:
-
-1. `updateBookingStatus(completed)` — dentro del `$transaction` existente (junto al `reviewToken`).
-2. Cualquier path que cree la reserva ya en `completed` (p. ej. carga manual desde dashboard).
+Helper `creditVisitPoints(tx, booking, config)` (en `src/lib/loyalty/credit.ts`), llamado en
+**el único sitio que lleva una reserva a `completed`**: `updateBookingStatus(completed)`, dentro
+del `$transaction` existente (junto al `reviewToken`, `src/server/actions/bookings.ts:411`).
+*(Verificado: ningún path de creación produce `completed` — los `create` salen
+`pending`/`confirmed`; a `completed` solo se llega por `updateBookingStatus`.)*
 
 Lógica:
 - Si `!config?.isActive` → no hace nada.
@@ -189,14 +212,18 @@ Server action `adjustCustomerPoints(customerId, delta, note)`:
 
 ## "Mi tarjeta" — superficie de la clienta
 
-- Ruta pública `src/app/tarjeta/[token]/page.tsx` (sin auth).
+- Ruta pública `src/app/tarjeta/[token]/page.tsx` (sin auth). **`noindex`** vía
+  `export const metadata = { robots: { index: false, follow: false } }` — una tarjeta es un
+  capability link y no debe aparecer en buscadores.
 - `resolveLoyaltyCustomer(token)` → `Customer` por `loyaltyToken` (+ su `business` y `LoyaltyConfig`).
 - Si token inválido o no existe → "no disponible" amigable (no revela si el token existió).
 - Si `config.isActive === false` → **banner "programa pausado"** + saldo read-only (no se pierde
   la cara ante la clienta; no se emiten links nuevos ni se acredita).
+- **Branding reusado:** `Business.logoUrl` + `Business.name` (no theming nuevo).
 - Muestra: `programName`, **primer nombre** de la clienta (sin apellido/teléfono/email),
-  **saldo grande "{n} pts"** (`max(0, saldo)`), e historial (fecha · etiqueta de motivo · ±delta,
-  con desglose desde `metadata` cuando exista). Solo lectura — canjear es B2.
+  **saldo grande "{n} {pointsLabel}"** (`max(0, saldo)`), `cardMessage` si está seteado, e
+  historial (fecha · etiqueta de motivo · ±delta, con desglose desde `metadata` cuando exista).
+  Solo lectura — canjear es B2.
 - Etiquetas de motivo: `visit`→"Visita", `visit_reversal`→"Reembolso", `adjustment`→"Ajuste".
 
 **Token (lazy):** `ensureLoyaltyToken(customer)` genera `crypto.randomUUID()` y lo persiste la
@@ -209,14 +236,14 @@ Extender las plantillas de **confirmación de reserva** y **reserva completada**
 con una línea "Tu tarjeta de puntos: {url}", **solo si `config.isActive`**:
 - `url = ${baseUrl}/tarjeta/${ensureLoyaltyToken(customer)}`.
 - Currency-clean: cualquier monto en las plantillas usa `formatMoney` (los puntos no son moneda;
-  se muestran como "{n} pts").
+  se muestran como "{n} {pointsLabel}").
 
 ## Panel de la dueña
 
 - **Nueva página** `src/app/dashboard/fidelizacion/page.tsx` + ítem en sidebar
   (`src/components/dashboard/sidebar.tsx`, ícono `Sparkles`). Form de config: toggle `isActive`,
-  `programName`, `pointsPerVisit`, `spendPerPoint`. Server actions `getLoyaltyConfig` /
-  `upsertLoyaltyConfig`.
+  `programName`, `pointsLabel`, `pointsPerVisit`, `spendPerPoint`, `minSpendToEarn`, `cardMessage`.
+  Server actions `getLoyaltyConfig` / `upsertLoyaltyConfig` (esta última setea `updatedByUserId`).
 - **Detalle de clienta** (`src/app/dashboard/customers/[id]/page.tsx`): tarjeta con saldo +
   historial + form de ajuste manual (delta + nota).
 
@@ -245,7 +272,7 @@ src/app/tarjeta/[token]/page.tsx             # Mi tarjeta (pública)
 src/app/dashboard/fidelizacion/page.tsx      # config (+ form client component)
 src/app/dashboard/customers/[id]/page.tsx    # +tarjeta de puntos + ajuste (modificar)
 src/components/dashboard/sidebar.tsx          # +ítem Fidelización (modificar)
-src/server/actions/bookings.ts               # creditVisitPoints en path(s) completed (modificar)
+src/server/actions/bookings.ts               # creditVisitPoints en updateBookingStatus(completed) (modificar)
 src/app/api/webhooks/mercado-pago/route.ts   # reverseVisitPoints en refunded (modificar)
 src/lib/notifications/*                       # línea "Mi tarjeta" en confirmación + completada (modificar)
 ```
@@ -270,8 +297,13 @@ Unit (estilo A, densidad alta):
 5. **No backfill retroactivo** al prender el programa (la dueña usa ajuste manual si quiere).
 6. **Ajuste no permite saldo negativo**; chequeo sum+insert en `$transaction`.
 7. **Programa pausado** → tarjeta muestra saldo read-only con banner, no acredita.
-8. **Trazabilidad máxima**: cada asiento guarda desglose en `metadata`.
+8. **Trazabilidad máxima**: cada asiento guarda desglose en `metadata`; `LoyaltyConfig.updatedByUserId`.
 9. **Sin `customerId`** → no se acredita (guard walk-in).
+10. **`pointsLabel` configurable** — el negocio nombra su unidad ("puntos"/"estrellas"/"sellos"); solo display.
+11. **`minSpendToEarn` configurable** (null = sin piso) — bajo el piso no se acredita nada (ni visita ni gasto).
+12. **`cardMessage` configurable** — fine-print libre en la tarjeta.
+13. **Earn = un solo hook** (`updateBookingStatus(completed)`); verificado que ningún `create` produce `completed`.
+14. **Reserva gratis sin piso** → igual da `pointsPerVisit`. **`noindex`** en `/tarjeta`. Tarjeta reusa `logoUrl`+`name`.
 
 ## Compatibilidad con sub-rebanadas futuras
 
