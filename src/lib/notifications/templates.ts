@@ -41,6 +41,12 @@ function footer(businessName: string): string {
   return `<hr style="border:0;border-top:1px solid #e0e0e0;margin:24px 0 0"><p style="font-size:12px;color:#999;margin-top:8px">Enviado por ${escapeHtml(businessName)} a través de Agendita</p>`
 }
 
+function loyaltyLinkHtml(link: string | undefined): string {
+  return link
+    ? `<p style="margin-top:16px"><a href="${link}" style="color:#e91e63;text-decoration:none;font-weight:600">Ver mi tarjeta de puntos</a></p>`
+    : ''
+}
+
 export function bookingConfirmationCustomerHtml(data: BookingEmailData): string {
   const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
   const total = fmtCurrency(data.totalPrice, data.businessCurrency)
@@ -55,9 +61,7 @@ export function bookingConfirmationCustomerHtml(data: BookingEmailData): string 
     ? `<p style="margin-top:16px"><a href="${data.reviewLink}" style="color:#e91e63;text-decoration:none;font-weight:600">Dejar una reseña</a></p>`
     : ''
 
-  const loyaltySection = data.loyaltyCardLink
-    ? `<p style="margin-top:16px"><a href="${data.loyaltyCardLink}" style="color:#e91e63;text-decoration:none;font-weight:600">Ver mi tarjeta de puntos</a></p>`
-    : ''
+  const loyaltySection = loyaltyLinkHtml(data.loyaltyCardLink)
 
   const whatsappSection = data.businessWhatsapp
     ? `<p style="margin-top:16px"><a href="https://wa.me/${data.businessWhatsapp.replace(/\D/g, '')}" style="color:#25D366;text-decoration:none;font-weight:600">Escribir por WhatsApp</a></p>`
@@ -262,9 +266,7 @@ export function bookingCancelledCustomerText(data: CancellationEmailData): strin
 export function reviewRequestHtml(data: ReviewRequestEmailData): string {
   const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
 
-  const loyaltySection = data.loyaltyCardLink
-    ? `<p style="margin-top:16px"><a href="${data.loyaltyCardLink}" style="color:#e91e63;text-decoration:none;font-weight:600">Ver mi tarjeta de puntos</a></p>`
-    : ''
+  const loyaltySection = loyaltyLinkHtml(data.loyaltyCardLink)
 
   return baseHtml(`
     ${header('¿Cómo te fue?')}

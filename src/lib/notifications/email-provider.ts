@@ -2,7 +2,8 @@ import { Resend } from 'resend'
 import { prisma } from '@/lib/db'
 import { BookingStatus } from '@prisma/client'
 import { logger } from '@/lib/logger'
-import { ensureLoyaltyToken } from '@/lib/loyalty/token'
+import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
+import { getAppUrl } from '@/lib/business/urls'
 import type {
   EmailResult,
   BookingEmailData,
@@ -174,6 +175,7 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
           addressText: true,
           currency: true,
           cancellationPolicy: true,
+          loyaltyConfig: { select: { isActive: true } },
         },
       },
     },
@@ -188,19 +190,12 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
   const curr = business.currency || 'CLP'
 
   // Link "Mi tarjeta" solo si el programa de fidelización está activo.
-  const loyaltyConfig = await prisma.loyaltyConfig.findUnique({ where: { businessId } })
-  let loyaltyCardLink: string | undefined
-  if (loyaltyConfig?.isActive) {
-    const domain = getAppDomain()
-    const protocol = domain.startsWith('localhost') || domain.endsWith('.localhost') || domain.startsWith('127.0.0.1')
-      ? 'http'
-      : 'https'
-    const token = await ensureLoyaltyToken(prisma, {
-      id: booking.customer.id,
-      loyaltyToken: booking.customer.loyaltyToken ?? null,
-    })
-    loyaltyCardLink = `${protocol}://${domain}/tarjeta/${token}`
-  }
+  const loyaltyCardLink = await buildLoyaltyCardLink(
+    prisma,
+    booking.customer,
+    business.loyaltyConfig,
+    getAppUrl(''),
+  )
 
   return sendBookingConfirmationToCustomer({
     businessName: business.name,

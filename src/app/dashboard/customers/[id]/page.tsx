@@ -207,13 +207,15 @@ export default async function CustomerDetailPage({ params }: Props) {
               <CustomerNotesForm customerId={customer.id} initialNotes={customer.notes} />
             </div>
 
-            {/* Loyalty */}
-            <LoyaltyPanel
-              customerId={id}
-              balance={balance}
-              history={history}
-              label={loyaltyConfig?.pointsLabel ?? 'puntos'}
-            />
+            {/* Loyalty — solo si el negocio configuró el programa */}
+            {loyaltyConfig && (
+              <LoyaltyPanel
+                customerId={id}
+                balance={balance}
+                history={history}
+                label={loyaltyConfig.pointsLabel}
+              />
+            )}
           </div>
 
           {/* Right: history */}

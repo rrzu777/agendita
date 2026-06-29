@@ -9,7 +9,7 @@ import { BookingStatus, Prisma } from '@prisma/client'
 import { submitReviewSchema } from '@/lib/reviews/schema'
 import { headers } from 'next/headers'
 import { sendReviewRequestNotification } from '@/lib/notifications'
-import { ensureLoyaltyToken } from '@/lib/loyalty/token'
+import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
 
 export type ReviewFilterStatus = 'all' | 'pending' | 'approved' | 'hidden'
 
@@ -413,7 +413,7 @@ export async function sendReviewRequestEmail(bookingId: string) {
     include: {
       customer: { select: { id: true, name: true, email: true, loyaltyToken: true } },
       service: { select: { name: true } },
-      business: { select: { name: true, timezone: true } },
+      business: { select: { name: true, timezone: true, loyaltyConfig: { select: { isActive: true } } } },
       review: { select: { id: true } },
     },
   })
@@ -445,15 +445,12 @@ export async function sendReviewRequestEmail(bookingId: string) {
   const reviewLink = `${proto}://${host}/review/${booking.id}?token=${token}`
 
   // Link "Mi tarjeta" solo si el programa de fidelización está activo.
-  const loyaltyConfig = await prisma.loyaltyConfig.findUnique({ where: { businessId: booking.businessId } })
-  let loyaltyCardLink: string | undefined
-  if (loyaltyConfig?.isActive) {
-    const loyaltyToken = await ensureLoyaltyToken(prisma, {
-      id: booking.customer.id,
-      loyaltyToken: booking.customer.loyaltyToken ?? null,
-    })
-    loyaltyCardLink = `${proto}://${host}/tarjeta/${loyaltyToken}`
-  }
+  const loyaltyCardLink = await buildLoyaltyCardLink(
+    prisma,
+    booking.customer,
+    booking.business.loyaltyConfig,
+    `${proto}://${host}`,
+  )
 
   return sendReviewRequestNotification({
     businessName: booking.business.name,
