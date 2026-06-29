@@ -9,6 +9,8 @@ export interface BookingWhatsappData {
   businessTimezone: string
   businessCurrency: string
   totalPrice: number
+  discountAmount?: number
+  finalAmount?: number
   depositPaid: number
   remainingBalance: number
   businessAddress?: string | null
@@ -61,6 +63,14 @@ export function buildBookingConfirmationWhatsappMessage(data: BookingWhatsappDat
   lines.push(
     ``,
     `💰 Precio total: ${total}`,
+  )
+  if ((data.discountAmount ?? 0) > 0) {
+    lines.push(
+      `🎟️ Descuento: −${fmtCurrency(data.discountAmount!, data.businessCurrency)}`,
+      `💵 Total con descuento: ${fmtCurrency(data.finalAmount ?? (data.totalPrice - data.discountAmount!), data.businessCurrency)}`,
+    )
+  }
+  lines.push(
     `✅ Abono: ${deposit}`,
     `💳 Saldo pendiente: ${remaining}`,
     ``,

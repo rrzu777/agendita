@@ -48,7 +48,7 @@ function BusinessCancellationPolicy({ policy }: { policy?: string | null }) {
   )
 }
 
-export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, onBack }: { data: BookingData; businessId: string; cancellationPolicy?: string | null; onSuccess: (id: string, mode: 'paid' | 'pending') => void; onBack: () => void }) {
+export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, onBack }: { data: BookingData; businessId: string; cancellationPolicy?: string | null; onSuccess: (id: string, mode: 'paid' | 'pending', promo?: { discountAmount: number; finalAmount: number } | null) => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error'>('review')
   const [errorMessage, setErrorMessage] = useState('')
@@ -225,7 +225,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
 
       setStep('success')
       const mode = noDepositNeeded ? 'paid' as const : 'pending' as const
-      onSuccess(booking.id, mode)
+      onSuccess(booking.id, mode, appliedPromo ? { discountAmount: appliedPromo.discount, finalAmount: appliedPromo.finalAmount } : null)
     } catch (err) {
       console.error('Booking error:', err)
       setErrorMessage(err instanceof Error ? err.message : 'Error al crear la reserva')
@@ -281,7 +281,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
       await Promise.race([verifyPromise, timeoutPromise])
 
       setStep('success')
-      onSuccess(booking.id, 'paid')
+      onSuccess(booking.id, 'paid', appliedPromo ? { discountAmount: appliedPromo.discount, finalAmount: appliedPromo.finalAmount } : null)
     } catch (err) {
       console.error('Payment error:', err)
       setErrorMessage(err instanceof Error ? err.message : 'Error al procesar el pago')

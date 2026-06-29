@@ -65,6 +65,8 @@ async function fireBookingNotifications(
   booking: {
     customer: { name: string; phone: string; email: string | null }
     totalPrice: number
+    discountAmount: number
+    finalAmount: number
     depositRequired: number
     depositPaid: number
     remainingBalance: number
@@ -99,6 +101,8 @@ async function fireBookingNotifications(
           serviceName,
           startDateTime: booking.startDateTime,
           totalPrice: booking.totalPrice,
+          discountAmount: booking.discountAmount,
+          finalAmount: booking.finalAmount,
           depositRequired: booking.depositRequired,
           depositPaid: booking.depositPaid,
           remainingBalance: booking.remainingBalance,

@@ -4,11 +4,18 @@ import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
 import Link from 'next/link'
 import { CheckCircle2, Clock } from 'lucide-react'
+import { formatMoney } from '@/lib/money'
 
-export function StepConfirmation({ data, bookingId, mode }: { data: BookingData; bookingId: string | null; mode: 'paid' | 'pending' }) {
+export function StepConfirmation({ data, bookingId, mode, promo }: { data: BookingData; bookingId: string | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null }) {
   const isPending = mode === 'pending'
   const isFree = data.servicePrice <= 0
   const noDeposit = data.serviceDeposit <= 0
+
+  // Display-only: si la reserva trae un descuento, el precio efectivo para los
+  // cálculos de "Total por pagar" / "Saldo" es el finalAmount persistido.
+  // "Precio total" sigue mostrando el precio original (pre-descuento).
+  const hasDiscount = promo != null && promo.discountAmount > 0
+  const effectiveFinal = hasDiscount ? promo!.finalAmount : data.servicePrice
 
   return (
     <div className="text-center">
@@ -33,21 +40,27 @@ export function StepConfirmation({ data, bookingId, mode }: { data: BookingData;
       <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5 text-left">
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
-        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">${data.servicePrice.toLocaleString('es-CL')}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice)}</span></div>
+        {hasDiscount && (
+          <>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(promo!.discountAmount)}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinal)}</span></div>
+          </>
+        )}
         {noDeposit && !isFree ? (
           <div className="flex justify-between gap-4 border-t border-border/60 pt-3">
             <span className="text-muted-foreground">Saldo pendiente</span>
-            <span className="font-semibold text-primary">${data.servicePrice.toLocaleString('es-CL')}</span>
+            <span className="font-semibold text-primary">{formatMoney(effectiveFinal)}</span>
           </div>
         ) : !noDeposit ? (
           <>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">{isPending ? 'Abono requerido' : 'Abono pagado'}</span>
-              <span className="font-semibold text-primary">${data.serviceDeposit.toLocaleString('es-CL')}</span>
+              <span className="font-semibold text-primary">{formatMoney(data.serviceDeposit)}</span>
             </div>
             <div className="flex justify-between gap-4 border-t border-border/60 pt-3">
               <span className="text-muted-foreground">{isPending ? 'Total por pagar' : 'Saldo pendiente'}</span>
-              <span className="font-semibold text-primary">${isPending ? data.servicePrice.toLocaleString('es-CL') : (data.servicePrice - data.serviceDeposit).toLocaleString('es-CL')}</span>
+              <span className="font-semibold text-primary">{formatMoney(isPending ? effectiveFinal : effectiveFinal - data.serviceDeposit)}</span>
             </div>
           </>
         ) : null}

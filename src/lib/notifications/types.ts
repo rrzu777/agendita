@@ -18,6 +18,8 @@ export interface BookingEmailData {
   serviceName: string
   startDateTime: Date
   totalPrice: number
+  discountAmount?: number
+  finalAmount?: number
   depositRequired: number
   depositPaid: number
   remainingBalance: number
