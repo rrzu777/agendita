@@ -6,7 +6,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { createPromotionSchema, updatePromotionSchema, normalizeCode, type CreatePromotionInput } from '@/lib/promotions/schema'
 import { startOfLocalDay, endOfLocalDay } from '@/lib/availability/timezone'
-import { isRedeemable } from '@/lib/promotions/evaluate'
+import { isRedeemable, computeDiscount } from '@/lib/promotions/evaluate'
 import { normalizePhone } from '@/lib/customers/phone'
 
 async function assertServicesBelong(businessId: string, serviceIds: string[]) {
@@ -121,7 +121,7 @@ export async function setPromotionActive(id: string, isActive: boolean) {
 export async function listPromotions() {
   const { businessId } = await requireBusiness()
   return prisma.promotion.findMany({
-    where: { businessId },
+    where: { businessId, triggerType: { not: 'granted' } },
     orderBy: { createdAt: 'desc' },
     include: { services: { select: { id: true, name: true } } },
   })
@@ -154,14 +154,31 @@ export async function previewPromotion(input: { businessId: string; code: string
   // aplicar, dentro de createBooking). Un error transitorio de Prisma degrada a
   // la misma respuesta genérica en vez de romper el wizard con un 500.
   try {
-    const [promo, service] = await Promise.all([
-      prisma.promotion.findFirst({
-        where: { businessId: input.businessId, code, triggerType: 'code' },
-        include: { services: { select: { id: true } } },
-      }),
-      prisma.service.findFirst({ where: { id: input.serviceId, businessId: input.businessId, isActive: true } }),
-    ])
-    if (!promo || !service) return GENERIC_INVALID
+    const service = await prisma.service.findFirst({
+      where: { id: input.serviceId, businessId: input.businessId, isActive: true },
+    })
+    if (!service) return GENERIC_INVALID
+
+    // Rama grant (canje de puntos)
+    const grant = await prisma.promotionGrant.findFirst({
+      where: { businessId: input.businessId, code, status: 'active' },
+      include: { promotion: { include: { services: { select: { id: true } } } } },
+    })
+    if (grant) {
+      const p = grant.promotion
+      if (grant.expiresAt && new Date() > grant.expiresAt) return GENERIC_INVALID
+      if (!p.appliesToAll && !p.services.some((s: { id: string }) => s.id === input.serviceId)) return GENERIC_INVALID
+      if (p.minSpend != null && service.price < p.minSpend) return GENERIC_INVALID
+      const discount = computeDiscount({ ...p, serviceIds: p.services.map((s: { id: string }) => s.id) } as Parameters<typeof computeDiscount>[0], service.price)
+      return { ok: true as const, discount, finalAmount: service.price - discount }
+    }
+
+    // Rama código (triggerType='code') — reusa `service`, ya no se vuelve a buscar
+    const promo = await prisma.promotion.findFirst({
+      where: { businessId: input.businessId, code, triggerType: 'code' },
+      include: { services: { select: { id: true } } },
+    })
+    if (!promo) return GENERIC_INVALID
 
     let customerRedemptions = 0
     if (input.phone && promo.maxPerCustomer != null) {

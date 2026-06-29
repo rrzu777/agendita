@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { adjustCustomerPoints } from '@/server/actions/loyalty'
-import { loyaltyReasonLabel, displayBalance } from '@/lib/loyalty/view'
+import { adjustCustomerPoints, redeemPointsAsOwner } from '@/server/actions/loyalty'
+import { loyaltyReasonLabel, displayBalance, canAfford } from '@/lib/loyalty/view'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { LoyaltyLedger } from '@prisma/client'
@@ -12,11 +12,15 @@ export function LoyaltyPanel({
   balance,
   history,
   label,
+  catalog,
+  grants,
 }: {
   customerId: string
   balance: number
   history: Array<Pick<LoyaltyLedger, 'id' | 'points' | 'reason' | 'note' | 'createdAt'>>
   label: string
+  catalog: Array<{ id: string; name: string; pointsCost: number | null }>
+  grants: Array<{ id: string; code: string; expiresAt: Date | null; promotion: { name: string } }>
 }) {
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
@@ -33,6 +37,18 @@ export function LoyaltyPanel({
       try {
         await adjustCustomerPoints(customerId, delta, note)
         form.reset()
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Error')
+      }
+    })
+  }
+
+  function onRedeem(optionId: string) {
+    setError(null)
+    const requestId = crypto.randomUUID()
+    startTransition(async () => {
+      try {
+        await redeemPointsAsOwner(customerId, optionId, requestId)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Error')
       }
@@ -57,6 +73,46 @@ export function LoyaltyPanel({
         </Button>
       </form>
       {error && <p className="mt-1 text-sm text-destructive">{error}</p>}
+
+      {catalog.length > 0 && (
+        <div className="mt-4">
+          <h4 className="text-sm font-semibold text-primary">Canjear recompensa</h4>
+          <ul className="mt-2 space-y-1">
+            {catalog.map((o) => (
+              <li key={o.id} className="flex items-center justify-between text-sm">
+                <span>{o.name} · {o.pointsCost} {label}</span>
+                <Button
+                  size="sm"
+                  disabled={isPending || !canAfford(balance, o.pointsCost ?? 0)}
+                  onClick={() => onRedeem(o.id)}
+                >
+                  Canjear
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {grants.length > 0 && (
+        <div className="mt-4">
+          <h4 className="text-sm font-semibold text-primary">Recompensas activas</h4>
+          <ul className="mt-2 space-y-1 text-sm">
+            {grants.map((g) => (
+              <li key={g.id} className="flex items-center justify-between">
+                <span>
+                  {g.promotion.name} — <code className="font-mono">{g.code}</code>
+                </span>
+                {g.expiresAt && (
+                  <span className="text-xs text-muted-foreground">
+                    vence {new Intl.DateTimeFormat('es', { day: '2-digit', month: 'short' }).format(new Date(g.expiresAt))}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {history.length > 0 && (
         <ul className="mt-3 divide-y divide-border/60">

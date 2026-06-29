@@ -25,6 +25,9 @@ export function LoyaltyConfigForm({ config }: { config: LoyaltyConfig | null }) 
       spendPerPoint: fd.get('spendPerPoint') ? Number(fd.get('spendPerPoint')) : null,
       minSpendToEarn: fd.get('minSpendToEarn') ? Number(fd.get('minSpendToEarn')) : null,
       cardMessage: String(fd.get('cardMessage') ?? '') || null,
+      grantExpiryDays: fd.get('grantExpiryDays') ? Number(fd.get('grantExpiryDays')) : null,
+      refundPointsOnExpiry: fd.get('refundPointsOnExpiry') === 'on',
+      forfeitGrantOnNoShow: fd.get('forfeitGrantOnNoShow') === 'on',
     }
     startTransition(async () => {
       try {
@@ -49,6 +52,33 @@ export function LoyaltyConfigForm({ config }: { config: LoyaltyConfig | null }) 
       <Field name="spendPerPoint" label="Pesos por punto (cada $X = 1 punto; vacío = off)" type="number" defaultValue={config?.spendPerPoint != null ? String(config.spendPerPoint) : ''} />
       <Field name="minSpendToEarn" label="Gasto mínimo para acreditar (vacío = sin mínimo)" type="number" defaultValue={config?.minSpendToEarn != null ? String(config.minSpendToEarn) : ''} />
       <Field name="cardMessage" label="Mensaje en la tarjeta (opcional)" defaultValue={config?.cardMessage ?? ''} />
+
+      <Field
+        name="grantExpiryDays"
+        label="Días para vencer una recompensa (vacío = no vence)"
+        type="number"
+        defaultValue={config?.grantExpiryDays != null ? String(config.grantExpiryDays) : ''}
+      />
+
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          name="refundPointsOnExpiry"
+          defaultChecked={config?.refundPointsOnExpiry ?? true}
+          className="size-4"
+        />
+        <span className="text-sm text-foreground">Devolver puntos si la recompensa vence</span>
+      </label>
+
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          name="forfeitGrantOnNoShow"
+          defaultChecked={config?.forfeitGrantOnNoShow ?? false}
+          className="size-4"
+        />
+        <span className="text-sm text-foreground">Quitar la recompensa si la clienta no asiste (no-show)</span>
+      </label>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
       {saved && <p className="text-sm text-green-600">Guardado.</p>}

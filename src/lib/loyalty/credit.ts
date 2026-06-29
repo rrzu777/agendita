@@ -10,7 +10,7 @@ export interface CreditConfig {
   minSpendToEarn: number | null
 }
 
-function isP2002(e: unknown): boolean {
+export function isP2002(e: unknown): boolean {
   return !!e && typeof e === 'object' && (e as { code?: string }).code === 'P2002'
 }
 

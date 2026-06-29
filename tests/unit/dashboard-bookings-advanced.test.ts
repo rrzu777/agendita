@@ -10,6 +10,7 @@ const mockPrisma = {
   customer: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   payment: { create: vi.fn() },
   promotion: { findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+  promotionGrant: { findFirst: vi.fn().mockResolvedValue(null) },
   promotionRedemption: { count: vi.fn(), create: vi.fn() },
   $transaction: vi.fn(),
 }
@@ -70,6 +71,7 @@ function setupTx() {
     booking: mockPrisma.booking,
     payment: mockPrisma.payment,
     promotion: mockPrisma.promotion,
+    promotionGrant: mockPrisma.promotionGrant,
     promotionRedemption: mockPrisma.promotionRedemption,
   }))
 }
