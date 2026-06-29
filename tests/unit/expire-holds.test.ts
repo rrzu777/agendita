@@ -5,11 +5,26 @@ import { BookingStatus } from '@prisma/client'
 describe('expireStaleHolds', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function makeDb(overrides: Record<string, any> = {}): any {
+    // tx.booking.updateMany is the one whose result drives `expired`.
+    const updateMany = vi.fn().mockResolvedValue(overrides.updateMany ?? { count: 0 })
+    const tx = {
+      booking: { updateMany },
+      promotionRedemption: {
+        // No applied redemptions on the expired holds by default.
+        findMany: vi.fn().mockResolvedValue([]),
+        findUnique: vi.fn().mockResolvedValue(null),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      promotion: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    }
     return {
       booking: {
         findMany: vi.fn().mockResolvedValue(overrides.findMany ?? []),
-        updateMany: vi.fn().mockResolvedValue(overrides.updateMany ?? { count: 0 }),
+        // Exposed so assertions can target the booking.updateMany inside the tx.
+        updateMany,
       },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      $transaction: (fn: any) => fn(tx),
     }
   }
 

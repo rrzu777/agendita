@@ -2,9 +2,12 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { BookingData } from './wizard'
 import { createBooking } from '@/server/actions/bookings'
+import { previewPromotion } from '@/server/actions/promotions'
 import { initiatePayment, verifyAndConfirmPayment, getOnlinePaymentAvailability } from '@/server/actions/payments'
+import { formatMoney } from '@/lib/money'
 import { AlertCircle, Loader2 } from 'lucide-react'
 
 function generateIdempotencyKey(): string {
@@ -58,8 +61,120 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
     isMock: boolean
   } | null>(null)
 
-  const noDepositNeeded = data.serviceDeposit <= 0
-  const isFreeService = data.servicePrice <= 0
+  // El estado del código vive en este componente a propósito: StepPayment se
+  // desmonta al ir "Atrás" (render condicional sin key en el wizard), así que el
+  // código aplicado se limpia solo si la clienta cambia servicio/teléfono y vuelve.
+  // Por eso acá NO hace falta el guard de "limpiar promo al cambiar servicio" que
+  // sí tiene new-booking-form (componente long-lived). Si un refactor futuro sube
+  // el promo a BookingData o agrega key/keep-alive, reintroducir ese guard.
+  const [promoCode, setPromoCode] = useState('')
+  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discount: number; finalAmount: number } | null>(null)
+  const [promoError, setPromoError] = useState<string | null>(null)
+  const [promoPending, setPromoPending] = useState(false)
+
+  // Valores efectivos: si hay un código aplicado, reflejan lo que el servidor
+  // cobrará (el servidor sigue siendo autoritativo; esto es solo display).
+  // depositRequired espeja la lógica server: min(depositAmount, finalAmount).
+  const effectiveFinalPrice = appliedPromo ? appliedPromo.finalAmount : data.servicePrice
+  const effectiveDeposit = appliedPromo
+    ? Math.min(data.serviceDeposit, appliedPromo.finalAmount)
+    : data.serviceDeposit
+
+  // Un código 100%-off (finalAmount <= 0) hace que la reserva no requiera pago
+  // online: el servidor la marca confirmada/pagada. Tratarla como path gratuito
+  // para no mostrar un botón "Pagar abono $0".
+  const promoMakesFree = appliedPromo != null && appliedPromo.finalAmount <= 0
+
+  const noDepositNeeded = effectiveDeposit <= 0
+  const isFreeService = effectiveFinalPrice <= 0
+
+  async function handleApplyPromo() {
+    const code = promoCode.trim()
+    if (!code || !data.serviceId) return
+    setPromoPending(true)
+    setPromoError(null)
+    try {
+      const res = await previewPromotion({
+        businessId,
+        code,
+        serviceId: data.serviceId,
+        phone: data.customerPhone || undefined,
+      })
+      if (res.ok) {
+        setAppliedPromo({ code, discount: res.discount, finalAmount: res.finalAmount })
+        setPromoError(null)
+      } else {
+        setPromoError(res.message)
+        setAppliedPromo(null)
+      }
+    } catch {
+      setPromoError('No se pudo validar el código')
+      setAppliedPromo(null)
+    } finally {
+      setPromoPending(false)
+    }
+  }
+
+  function handleRemovePromo() {
+    setAppliedPromo(null)
+    setPromoCode('')
+    setPromoError(null)
+  }
+
+  const promoSection = (
+      <div className="mb-6 rounded-xl border border-border/60 bg-card p-4">
+        <label htmlFor="promo-code" className="text-sm font-semibold text-primary">
+          ¿Tienes un código de descuento?
+        </label>
+        {appliedPromo ? (
+          <div className="mt-3 space-y-2 text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Código</span>
+              <span className="font-semibold text-primary">{appliedPromo.code}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Descuento</span>
+              <span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Precio final</span>
+              <span className="font-semibold text-primary">{formatMoney(appliedPromo.finalAmount)}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleRemovePromo}
+              disabled={loading}
+              className="font-semibold text-primary underline"
+            >
+              Quitar
+            </button>
+          </div>
+        ) : (
+          <div className="mt-3 flex gap-2">
+            <Input
+              id="promo-code"
+              value={promoCode}
+              onChange={(e) => setPromoCode(e.target.value)}
+              placeholder="Ingresa tu código"
+              className="h-11"
+              disabled={promoPending}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 rounded-full px-6"
+              onClick={handleApplyPromo}
+              disabled={promoPending || !promoCode.trim() || !data.serviceId}
+            >
+              {promoPending ? 'Validando...' : 'Aplicar'}
+            </Button>
+          </div>
+        )}
+        {promoError && (
+          <p className="mt-2 text-sm text-destructive">{promoError}</p>
+        )}
+      </div>
+  )
 
   /* eslint-disable react-hooks/set-state-in-effect -- intentional reset-before-async-fetch
      so stale availability isn't shown while re-checking; guarded by the deps. */
@@ -105,6 +220,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
         startDateTime: data.timeSlot!.start,
         idempotencyKey,
         acceptedTerms,
+        promotionCode: appliedPromo?.code,
       }, businessId)
 
       setStep('success')
@@ -124,7 +240,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
     setStep('processing')
     setErrorMessage('')
 
-    if (data.serviceDeposit <= 0) {
+    if (effectiveDeposit <= 0) {
       await handleManualBooking()
       return
     }
@@ -138,11 +254,12 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
         startDateTime: data.timeSlot!.start,
         idempotencyKey,
         acceptedTerms,
+        promotionCode: appliedPromo?.code,
       }, businessId)
 
       const paymentResult = await initiatePayment({
         bookingId: booking.id,
-        amount: data.serviceDeposit,
+        amount: effectiveDeposit,
         currency: 'CLP',
         description: `Abono para ${data.serviceName}`,
       })
@@ -207,12 +324,20 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
         <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5">
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
-          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">${data.servicePrice.toLocaleString('es-CL')}</span></div>
+          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice)}</span></div>
+          {appliedPromo && (
+            <>
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount)}</span></div>
+              <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinalPrice)}</span></div>
+            </>
+          )}
         </div>
+
+        {promoSection}
 
         {isFreeService ? (
           <div className="mb-6 rounded-xl bg-green-50 p-4 text-sm text-green-800">
-            <p className="font-semibold">Este servicio es gratuito</p>
+            <p className="font-semibold">{promoMakesFree ? 'Tu código cubre el total' : 'Este servicio es gratuito'}</p>
             <p className="mt-1">No requiere pago. Tu reserva será confirmada inmediatamente.</p>
           </div>
         ) : (
@@ -256,9 +381,17 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
         <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5">
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
-          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">${data.servicePrice.toLocaleString('es-CL')}</span></div>
-          <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono requerido</span><span className="font-semibold text-primary">${data.serviceDeposit.toLocaleString('es-CL')}</span></div>
+          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice)}</span></div>
+          {appliedPromo && (
+            <>
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount)}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinalPrice)}</span></div>
+            </>
+          )}
+          <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono requerido</span><span className="font-semibold text-primary">{formatMoney(effectiveDeposit)}</span></div>
         </div>
+
+        {promoSection}
 
         <div className="mb-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <AlertCircle className="mt-0.5 size-5 shrink-0" />
@@ -314,9 +447,17 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
       <div className="mb-6 space-y-3 rounded-xl bg-muted/55 p-5">
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
-        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">${data.servicePrice.toLocaleString('es-CL')}</span></div>
-        <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono a pagar</span><span className="font-semibold text-primary">${data.serviceDeposit.toLocaleString('es-CL')}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice)}</span></div>
+        {appliedPromo && (
+          <>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount)}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinalPrice)}</span></div>
+          </>
+        )}
+        <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono a pagar</span><span className="font-semibold text-primary">{formatMoney(effectiveDeposit)}</span></div>
       </div>
+
+      {promoSection}
 
       {availability.isMock && (
         <div className="mb-4 rounded-xl border border-border/70 bg-secondary/40 px-4 py-3 text-sm text-primary">
@@ -342,7 +483,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
         <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handlePayment} disabled={loading || !acceptedTerms}>
-          {loading ? 'Procesando...' : `Pagar abono $${data.serviceDeposit.toLocaleString('es-CL')}`}
+          {loading ? 'Procesando...' : `Pagar abono ${formatMoney(effectiveDeposit)}`}
         </Button>
       </div>
     </div>

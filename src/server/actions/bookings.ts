@@ -14,6 +14,8 @@ import { assertSlotIsAvailable } from '@/lib/availability/validation'
 import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcement'
 import { normalizePhone } from '@/lib/customers/phone'
 import { addMinutes } from 'date-fns'
+import { applyPromotionInTx } from '@/lib/promotions/apply'
+import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import {
   sendBookingReceivedToCustomer,
   sendNewBookingNotificationToBusiness,
@@ -31,6 +33,7 @@ const createBookingSchema = z.object({
   startDateTime: z.date(),
   idempotencyKey: z.string().min(1).max(64).optional(),
   acceptedTerms: z.boolean(),
+  promotionCode: z.string().trim().max(40).optional(),
 })
 
 const confirmPaymentSchema = z.object({
@@ -147,6 +150,7 @@ export async function createBooking(data: {
   startDateTime: Date
   idempotencyKey?: string
   acceptedTerms: boolean
+  promotionCode?: string
 }, businessId: string) {
   const limit = await checkRateLimit('create-booking', 20, 60000)
   if (!limit.success) {
@@ -256,7 +260,7 @@ export async function createBooking(data: {
       const holdExpiresAt = status === BookingStatus.pending_payment ? addMinutes(new Date(), 15) : null
       const bookingPaymentStatus = isFreeService ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid
 
-      return tx.booking.create({
+      const booking = await tx.booking.create({
         data: {
           businessId,
           serviceId: data.serviceId,
@@ -278,7 +282,51 @@ export async function createBooking(data: {
           customer: true,
         },
       })
-    })
+
+      // Aplicar promo por código (server-authoritative) dentro de la misma tx.
+      // Si el código es inválido/agotado, applyPromotionInTx lanza y TODA la
+      // transacción (booking + canje + incremento) hace rollback: no se crea reserva.
+      const promoRes = await applyPromotionInTx(tx, {
+        businessId,
+        code: parsed.data.promotionCode,
+        serviceId: data.serviceId,
+        customerId: customer.id,
+        totalPrice: service.price,
+        bookingId: booking.id,
+        source: 'public_booking',
+      })
+
+      if (!promoRes) return booking
+
+      // Recalcular montos y estado con el descuento aplicado y persistirlos en la
+      // reserva, para que initiatePayment cobre el monto descontado a Mercado Pago.
+      const discountAmount = promoRes.discountAmount
+      const discountedFinal = service.price - discountAmount
+      const discountedDeposit = Math.min(service.depositAmount, discountedFinal)
+      const noDeposit = discountedDeposit <= 0
+      const free = discountedFinal <= 0
+      const newStatus = noDeposit ? BookingStatus.confirmed : BookingStatus.pending_payment
+      const newHold = newStatus === BookingStatus.pending_payment ? addMinutes(new Date(), 15) : null
+      const newPaymentStatus = free ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid
+
+      const updated = await tx.booking.update({
+        where: { id: booking.id },
+        data: {
+          discountAmount,
+          finalAmount: discountedFinal,
+          depositRequired: discountedDeposit,
+          remainingBalance: discountedFinal,
+          status: newStatus,
+          holdExpiresAt: newHold,
+          paymentStatus: newPaymentStatus,
+        },
+        include: { service: true, customer: true },
+      })
+      return updated
+      // 15s: la tx hace lock de slot + upsert de cliente + creación de reserva +
+      // aplicación de promo + update; el default de 5s queda corto cuando se aplica
+      // un código (varias queries extra) o si la latencia a la DB es alta.
+    }, { timeout: 15_000 })
 
     const bookingForNotification = booking as Booking & {
       service: { name: string }
@@ -356,9 +404,22 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
     ? { reviewToken: crypto.randomUUID(), reviewTokenCreatedAt: new Date() }
     : {}
 
-  const updateResult = await prisma.booking.updateMany({
-    where: { id, businessId },
-    data: { status, ...reviewTokenData },
+  const updateResult = await prisma.$transaction(async (tx) => {
+    const res = await tx.booking.updateMany({
+      where: { id, businessId },
+      data: { status, ...reviewTokenData },
+    })
+    if (
+      res.count > 0 &&
+      (status === BookingStatus.cancelled || status === BookingStatus.no_show)
+    ) {
+      await releaseRedemptionForBooking(
+        tx,
+        id,
+        status === BookingStatus.cancelled ? 'cancelled' : 'no_show',
+      )
+    }
+    return res
   })
   if (updateResult.count === 0) {
     throw new ForbiddenError('Reserva no encontrada')
@@ -490,6 +551,7 @@ const createBookingFromDashboardSchema = z.object({
   paymentMode: z.enum(['none', 'deposit_paid', 'full_paid']).optional(),
   paymentMethod: z.enum(['cash', 'transfer', 'external_card', 'other']).optional(),
   customerId: z.string().min(1).optional(),
+  promotionCode: z.string().trim().max(40).optional(),
 })
 
 const PAYMENT_METHOD_MAP: Record<string, string> = {
@@ -510,8 +572,9 @@ export async function createBookingFromDashboard(data: {
   paymentMode?: 'none' | 'deposit_paid' | 'full_paid'
   paymentMethod?: string
   customerId?: string
+  promotionCode?: string
 }) {
-  const { business, businessId } = await requireBusinessRole(['owner', 'admin'])
+  const { user, business, businessId } = await requireBusinessRole(['owner', 'admin'])
 
   // A suspended/cancelled business must not accept new bookings through any path,
   // including manual dashboard creation (mirrors the public createBooking flow).
@@ -633,7 +696,54 @@ export async function createBookingFromDashboard(data: {
       include: { service: true, customer: true },
     })
 
-    if (paymentMode === 'deposit_paid' && depositRequired > 0) {
+    // Aplicar promo por código (server-authoritative) dentro de la misma tx.
+    // Si el código es inválido/agotado, applyPromotionInTx lanza y TODA la
+    // transacción (booking + canje + incremento + pagos) hace rollback.
+    const promoRes = await applyPromotionInTx(tx, {
+      businessId,
+      code: parsed.data.promotionCode,
+      serviceId: data.serviceId,
+      customerId: customer.id,
+      totalPrice: service.price,
+      bookingId: newBooking.id,
+      source: 'dashboard_booking',
+      createdByUserId: user.id,
+    })
+
+    // Montos efectivos: descontados cuando aplicó una promo, precio total si no.
+    const discountAmount = promoRes?.discountAmount ?? 0
+    const effFinal = service.price - discountAmount
+    const effDeposit = Math.min(service.depositAmount, effFinal)
+
+    // Si aplicó una promo, persistir el descuento y recalcular estado/montos con
+    // los valores EFECTIVOS ANTES de las ramas de pago, porque applyApprovedPayment
+    // recalcula remainingBalance/paymentStatus a partir del booking.finalAmount /
+    // booking.depositRequired ya persistidos.
+    let bookingResult = newBooking
+    if (promoRes) {
+      const effNoDeposit = effDeposit <= 0
+      const effFree = effFinal <= 0
+      // Mantener la semántica actual: full_paid/deposit_paid o sin abono => confirmed.
+      const effShouldConfirm = paymentMode === 'full_paid' || paymentMode === 'deposit_paid' || effNoDeposit
+      const effStatus = effShouldConfirm ? BookingStatus.confirmed : BookingStatus.pending_payment
+      const effPaymentStatus = effFree ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid
+      const effHold = effStatus === BookingStatus.pending_payment ? addMinutes(new Date(), 60) : null
+      bookingResult = await tx.booking.update({
+        where: { id: newBooking.id },
+        data: {
+          discountAmount,
+          finalAmount: effFinal,
+          depositRequired: effDeposit,
+          remainingBalance: effFinal,
+          status: effStatus,
+          paymentStatus: effPaymentStatus,
+          holdExpiresAt: effHold,
+        },
+        include: { service: true, customer: true },
+      })
+    }
+
+    if (paymentMode === 'deposit_paid' && effDeposit > 0) {
       const { applyApprovedPayment } = await import('@/server/services/finance')
 
       const payment = await tx.payment.create({
@@ -644,7 +754,7 @@ export async function createBookingFromDashboard(data: {
           paymentType: PaymentType.deposit,
           provider: 'manual',
           providerPaymentId: null,
-          amount: depositRequired,
+          amount: effDeposit,
           currency: business.currency || 'CLP',
           status: 'pending',
           paymentMethod: displayMethod,
@@ -656,7 +766,7 @@ export async function createBookingFromDashboard(data: {
         tx,
         bookingId: newBooking.id,
         businessId,
-        amount: depositRequired,
+        amount: effDeposit,
         currency: business.currency || 'CLP',
         provider: 'manual',
         providerPaymentId: null,
@@ -666,7 +776,7 @@ export async function createBookingFromDashboard(data: {
       })
     }
 
-    if (paymentMode === 'full_paid' && finalAmount > 0) {
+    if (paymentMode === 'full_paid' && effFinal > 0) {
       const { applyApprovedPayment } = await import('@/server/services/finance')
 
       const payment = await tx.payment.create({
@@ -677,7 +787,7 @@ export async function createBookingFromDashboard(data: {
           paymentType: PaymentType.full_payment,
           provider: 'manual',
           providerPaymentId: null,
-          amount: finalAmount,
+          amount: effFinal,
           currency: business.currency || 'CLP',
           status: 'pending',
           paymentMethod: displayMethod,
@@ -689,7 +799,7 @@ export async function createBookingFromDashboard(data: {
         tx,
         bookingId: newBooking.id,
         businessId,
-        amount: finalAmount,
+        amount: effFinal,
         currency: business.currency || 'CLP',
         provider: 'manual',
         providerPaymentId: null,
@@ -699,8 +809,10 @@ export async function createBookingFromDashboard(data: {
       })
     }
 
-    return newBooking
-  })
+    return bookingResult
+    // 15s: la tx hace creación de reserva + aplicación de promo + creación de pago
+    // + applyApprovedPayment (con upserts de ledger); el default de 5s queda corto.
+  }, { timeout: 15_000 })
 
   revalidatePath('/dashboard/bookings')
   revalidatePath('/dashboard/calendar')
@@ -730,14 +842,17 @@ export async function cancelBooking(bookingId: string, reason?: string) {
     throw new Error('Esta reserva ya está cancelada')
   }
 
-  await prisma.booking.update({
-    where: { id: bookingId },
-    data: {
-      status: BookingStatus.cancelled,
-      internalNotes: reason
-        ? `${booking.internalNotes || ''}\n[CANCELADA: ${reason}]`.trim()
-        : booking.internalNotes,
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.booking.update({
+      where: { id: bookingId },
+      data: {
+        status: BookingStatus.cancelled,
+        internalNotes: reason
+          ? `${booking.internalNotes || ''}\n[CANCELADA: ${reason}]`.trim()
+          : booking.internalNotes,
+      },
+    })
+    await releaseRedemptionForBooking(tx, bookingId, 'cancelled')
   })
 
   if (booking.customer?.email) {

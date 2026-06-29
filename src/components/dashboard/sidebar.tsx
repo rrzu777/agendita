@@ -20,6 +20,7 @@ import {
   Scissors,
   Settings,
   Star,
+  Ticket,
   Users,
 } from 'lucide-react'
 
@@ -31,6 +32,7 @@ const navItems = [
   { href: '/dashboard/availability', label: 'Horarios', icon: Clock3 },
   { href: '/dashboard/customers', label: 'Clientes', icon: Users },
   { href: '/dashboard/payments', label: 'Pagos', icon: CreditCard },
+  { href: '/dashboard/promociones', label: 'Promociones', icon: Ticket },
   { href: '/dashboard/billing', label: 'Facturación', icon: ReceiptText },
   { href: '/dashboard/reviews', label: 'Reseñas', icon: Star },
   { href: '/dashboard/settings', label: 'Configuración', icon: Settings },

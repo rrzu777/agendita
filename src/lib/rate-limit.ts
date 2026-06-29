@@ -42,6 +42,9 @@ export const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number
   'confirm-payment': { maxRequests: 30, windowMs: 60_000 },
   'create-manual-payment': { maxRequests: 20, windowMs: 60_000 },
   'get-availability': { maxRequests: 60, windowMs: 60_000 },
+  'create-promotion': { maxRequests: 30, windowMs: 60_000 },
+  'manage-promotion': { maxRequests: 60, windowMs: 60_000 },
+  'preview-promotion': { maxRequests: 30, windowMs: 60_000 },
   'default': { maxRequests: 60, windowMs: 60_000 },
 }
 

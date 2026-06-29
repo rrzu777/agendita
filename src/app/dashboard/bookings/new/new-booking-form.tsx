@@ -7,13 +7,16 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { createBookingFromDashboard } from '@/server/actions/bookings'
+import { previewPromotion } from '@/server/actions/promotions'
 import { searchCustomersForBooking } from '@/server/actions/customers'
 import type { CustomerSearchResult } from '@/server/actions/customers'
+import { formatMoney } from '@/lib/money'
 import { CalendarCheck2, User, Search, X } from 'lucide-react'
 import type { Service } from '@prisma/client'
 
 interface NewBookingFormProps {
   services: Service[]
+  businessId: string
 }
 
 type PaymentMode = 'none' | 'deposit_paid' | 'full_paid'
@@ -26,11 +29,16 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   other: 'Otro',
 }
 
-export function NewBookingForm({ services }: NewBookingFormProps) {
+export function NewBookingForm({ services, businessId }: NewBookingFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+
+  const [promoCode, setPromoCode] = useState('')
+  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discount: number; finalAmount: number; serviceId: string } | null>(null)
+  const [promoError, setPromoError] = useState<string | null>(null)
+  const [promoPending, setPromoPending] = useState(false)
 
   const [serviceId, setServiceId] = useState('')
   const [customerName, setCustomerName] = useState('')
@@ -103,10 +111,51 @@ export function NewBookingForm({ services }: NewBookingFormProps) {
     setCustomerEmail('')
   }
 
+  async function handleApplyPromo() {
+    const code = promoCode.trim()
+    if (!code || !serviceId) return
+    setPromoPending(true)
+    setPromoError(null)
+    try {
+      const res = await previewPromotion({
+        businessId,
+        code,
+        serviceId,
+        phone: customerPhone || undefined,
+      })
+      if (res.ok) {
+        setAppliedPromo({ code, discount: res.discount, finalAmount: res.finalAmount, serviceId })
+        setPromoError(null)
+      } else {
+        setPromoError(res.message)
+        setAppliedPromo(null)
+      }
+    } catch {
+      setPromoError('No se pudo validar el código')
+      setAppliedPromo(null)
+    } finally {
+      setPromoPending(false)
+    }
+  }
+
+  function handleRemovePromo() {
+    setAppliedPromo(null)
+    setPromoCode('')
+    setPromoError(null)
+  }
+
   const selectedService = useMemo(
     () => services.find((s) => s.id === serviceId) ?? null,
     [services, serviceId],
   )
+
+  // Un código se validó contra un servicio específico; si cambia el servicio el
+  // descuento ya no aplica. Limpiar en render (patrón soportado por React, no
+  // un effect): la condición se borra al limpiar, así que no puede ciclar.
+  if (appliedPromo && appliedPromo.serviceId !== serviceId) {
+    setAppliedPromo(null)
+    setPromoError(null)
+  }
 
   const summary = useMemo(() => {
     if (!selectedService) return null
@@ -193,6 +242,7 @@ export function NewBookingForm({ services }: NewBookingFormProps) {
         paymentMode: paymentMode === 'none' ? undefined : paymentMode,
         paymentMethod: paymentMode !== 'none' ? paymentMethod : undefined,
         customerId: selectedCustomerId || undefined,
+        promotionCode: appliedPromo?.code,
       })
       setSuccess(true)
       setTimeout(() => {
@@ -389,6 +439,58 @@ export function NewBookingForm({ services }: NewBookingFormProps) {
             )}
           </div>
 
+          <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
+            <Label htmlFor="promoCode" className="text-sm font-semibold text-primary">
+              Código de descuento (opcional)
+            </Label>
+            {appliedPromo ? (
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Código</span>
+                  <span className="font-medium">{appliedPromo.code}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Descuento</span>
+                  <span className="font-medium text-green-700">−{formatMoney(appliedPromo.discount)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Precio final</span>
+                  <span className="font-medium">{formatMoney(appliedPromo.finalAmount)}</span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  className="text-primary"
+                  onClick={handleRemovePromo}
+                  disabled={loading}
+                >
+                  Quitar
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Input
+                  id="promoCode"
+                  value={promoCode}
+                  onChange={(e) => setPromoCode(e.target.value)}
+                  placeholder="Ingresa un código"
+                  className="h-10"
+                  disabled={promoPending}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleApplyPromo}
+                  disabled={promoPending || !promoCode.trim() || !serviceId}
+                >
+                  {promoPending ? 'Validando...' : 'Aplicar'}
+                </Button>
+              </div>
+            )}
+            {promoError && <p className="text-sm text-destructive">{promoError}</p>}
+          </div>
+
           {summary && (
             <div className="rounded-xl border border-border/60 bg-muted/40 p-4">
               <h4 className="mb-3 text-sm font-semibold text-primary">Resumen</h4>
@@ -401,6 +503,18 @@ export function NewBookingForm({ services }: NewBookingFormProps) {
                   <span className="text-muted-foreground">Precio</span>
                   <span className="font-medium">${summary.price.toLocaleString('es-CL')}</span>
                 </div>
+                {appliedPromo && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Descuento</span>
+                      <span className="font-medium text-green-700">−{formatMoney(appliedPromo.discount)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Precio final</span>
+                      <span className="font-medium">{formatMoney(appliedPromo.finalAmount)}</span>
+                    </div>
+                  </>
+                )}
                 {!summary.noDeposit && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Abono requerido</span>
