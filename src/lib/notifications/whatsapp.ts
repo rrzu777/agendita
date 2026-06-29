@@ -14,12 +14,14 @@ export interface BookingWhatsappData {
   depositPaid: number
   remainingBalance: number
   businessAddress?: string | null
+  loyaltyCardLink?: string
 }
 
 export interface ReviewRequestWhatsappData {
   customerName: string
   serviceName: string
   reviewLink: string
+  loyaltyCardLink?: string
 }
 
 function fmtDate(date: Date, timezone: string): string {
@@ -77,11 +79,13 @@ export function buildBookingConfirmationWhatsappMessage(data: BookingWhatsappDat
     `¡Te esperamos!`,
   )
 
-  return lines.join('\n')
+  let body = lines.join('\n')
+  if (data.loyaltyCardLink) body += `\n\nTu tarjeta de puntos: ${data.loyaltyCardLink}`
+  return body
 }
 
 export function buildReviewRequestWhatsappMessage(data: ReviewRequestWhatsappData): string {
-  return [
+  let body = [
     `¡Hola ${data.customerName}! 🌟`,
     ``,
     `Gracias por visitarnos. Nos encantaría saber cómo te fue con tu servicio de ${data.serviceName}.`,
@@ -91,6 +95,8 @@ export function buildReviewRequestWhatsappMessage(data: ReviewRequestWhatsappDat
     ``,
     `¡Gracias!`,
   ].join('\n')
+  if (data.loyaltyCardLink) body += `\n\nTu tarjeta de puntos: ${data.loyaltyCardLink}`
+  return body
 }
 
 export function buildWhatsappBookingSummaryText(data: BookingWhatsappData): string {

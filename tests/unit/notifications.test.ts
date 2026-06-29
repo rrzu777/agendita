@@ -132,6 +132,17 @@ describe('templates: bookingConfirmationCustomerHtml', () => {
     })
     expect(html).not.toContain('wa.me')
   })
+
+  it('incluye el link de Mi tarjeta cuando se provee', () => {
+    const html = bookingConfirmationCustomerHtml({ ...sampleBookingData, loyaltyCardLink: 'https://x.test/tarjeta/abc' })
+    expect(html).toContain('/tarjeta/abc')
+    expect(html).toContain('tarjeta de puntos')
+  })
+
+  it('omite la sección si no hay link', () => {
+    const html = bookingConfirmationCustomerHtml({ ...sampleBookingData, loyaltyCardLink: undefined })
+    expect(html).not.toContain('tarjeta de puntos')
+  })
 })
 
 describe('templates: bookingConfirmationCustomerText', () => {
