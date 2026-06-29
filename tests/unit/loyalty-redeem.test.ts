@@ -35,6 +35,13 @@ describe('redeemForGrant', () => {
     expect(tx.promotionGrant.create).toHaveBeenCalled()
     expect(grant).toEqual({ id: 'g1', code: 'ABC123' })
   })
+  it('rechaza si el programa está pausado (config.isActive=false)', async () => {
+    const tx = fakeTx({ balance: 100 })
+    await expect(redeemForGrant(tx, { businessId: 'b1', customerId: 'c1',
+      promotion: PROMO as any, config: { ...CONFIG, isActive: false }, requestId: 'r1' }))
+      .rejects.toThrow(/pausado/)
+    expect(tx.promotionGrant.create).not.toHaveBeenCalled()
+  })
   it('idempotente: si ya hay grant con ese requestId lo devuelve sin tocar nada', async () => {
     const tx = fakeTx({ balance: 100, existing: { id: 'gOld' } })
     const grant = await redeemForGrant(tx, { businessId: 'b1', customerId: 'c1',

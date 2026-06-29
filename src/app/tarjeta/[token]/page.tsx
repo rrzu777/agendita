@@ -8,10 +8,12 @@ import { redeemPointsAsCustomer } from '@/server/actions/loyalty'
 
 export const metadata: Metadata = { robots: { index: false, follow: false } }
 
-async function redeemAction(formData: FormData) {
+// El token va bindeado server-side (no como hidden input): es la credencial del
+// carnet y no debe confiarse desde el body del form.
+async function redeemAction(token: string, formData: FormData) {
   'use server'
   await redeemPointsAsCustomer(
-    String(formData.get('token')),
+    token,
     String(formData.get('optionId')),
     String(formData.get('requestId')),
   )
@@ -86,8 +88,7 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
               return (
                 <li key={o.id} className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm">
                   <span className={afford ? '' : 'text-gray-400'}>{o.name} · {o.pointsCost} {label}</span>
-                  <form action={redeemAction}>
-                    <input type="hidden" name="token" value={token} />
+                  <form action={redeemAction.bind(null, token)}>
                     <input type="hidden" name="optionId" value={o.id} />
                     <input type="hidden" name="requestId" value={crypto.randomUUID()} />
                     <button type="submit" disabled={!afford} className="rounded-md bg-pink-600 px-3 py-1 text-white disabled:opacity-40">Canjear</button>

@@ -75,6 +75,10 @@ export async function redeemForGrant(tx: Tx, args: {
 
   await reconcileExpiredGrants(tx, customerId, businessId, now)
 
+  // Pausa global del programa: bloquea el canje en AMBAS superficies (owner y clienta),
+  // no sólo en redeemPointsAsCustomer (decisión #9 del spec).
+  if (!config.isActive) throw new Error('El programa de fidelización está pausado')
+
   if (promotion.triggerType !== 'granted' || !promotion.isActive || promotion.pointsCost == null) {
     throw new Error('La recompensa no está disponible')
   }
