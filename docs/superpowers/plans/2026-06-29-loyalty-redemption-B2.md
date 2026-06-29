@@ -127,6 +127,10 @@ model PromotionGrant {
 }
 ```
 
+> **Nota — `redeemedBookingId` es un soft-link a propósito** (un `String?` con `@unique`, SIN relación FK a `Booking`). Así la baja de una reserva no toca el historial del grant y `Booking` no necesita campo inverso. La reactivación lo busca por `findFirst({ where: { redeemedBookingId } })`.
+>
+> **Nota — enum en transacción:** la migración hace `ALTER TYPE "LoyaltyReason" ADD VALUE` y en el mismo archivo crea/usa `GrantStatus`. En Postgres 12+ (Supabase es 15) esto aplica sin problema porque los nuevos valores de `LoyaltyReason` NO se usan dentro de la misma migración. Si `migrate deploy` (Step en Task 13) llegara a quejarse por "ALTER TYPE ... ADD VALUE cannot run inside a transaction block", separar los dos `ADD VALUE` a su propia migración previa.
+
 - [ ] **Step 7: Validar que el schema es válido**
 
 Run: `npx prisma validate`
@@ -401,7 +405,11 @@ type TxLike = Prisma.TransactionClient | PrismaClient
 
 /** Reconcilia los grants vencidos de una clienta (lazy, sin cron). Idempotente:
  *  el guard `updateMany` garantiza que sólo la llamada que hace el flip inserta el
- *  reembolso. Corre en toda superficie que muestre saldo. */
+ *  reembolso. Corre en toda superficie que muestre saldo.
+ *  IMPORTANTE: debe ejecutarse DENTRO de una transacción para que el flip a
+ *  `reversed` y el asiento de reembolso sean atómicos (un crash entre ambos dejaría
+ *  el grant consumido sin devolver los puntos). `redeemForGrant` ya la llama dentro
+ *  de su tx; los demás callers la envuelven en `prisma.$transaction(tx => ...)`. */
 export async function reconcileExpiredGrants(
   db: TxLike,
   customerId: string,
@@ -1170,7 +1178,7 @@ export async function getCustomerLoyalty(customerId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const customer = await prisma.customer.findFirst({ where: { id: customerId, businessId }, select: { id: true } })
   if (!customer) throw new ForbiddenError('Clienta no encontrada')
-  await reconcileExpiredGrants(prisma, customerId, businessId)
+  await prisma.$transaction((tx) => reconcileExpiredGrants(tx, customerId, businessId))
   const [balance, history, grants, catalog] = await Promise.all([
     getLoyaltyBalance(prisma, customerId, businessId),
     getLoyaltyHistory(prisma, customerId, businessId, 50),
@@ -1189,7 +1197,7 @@ export async function getCustomerLoyalty(customerId: string) {
 }
 ```
 
-> **Nota:** `resolveLoyaltyCustomer` ya incluye `business.loyaltyConfig` (lo usa la página de tarjeta). Si TypeScript se queja de `config.isActive`, verificar el `include` en `src/lib/loyalty/token.ts` y ampliarlo a `loyaltyConfig: true` dentro de `business`.
+> **Nota:** `resolveLoyaltyCustomer` ya devuelve `business: { select: { name, logoUrl, loyaltyConfig } }` (confirmado en `src/lib/loyalty/token.ts:32`), así que `customer.business.loyaltyConfig` está tipado y disponible — no hace falta tocar el include.
 
 - [ ] **Step 4: Correr el test + typecheck del módulo**
 
@@ -1261,24 +1269,35 @@ Expected: FAIL (preview no mira grants).
 
 (a) `computeDiscount` ya se puede importar de `@/lib/promotions/evaluate` (sumar al import existente de `isRedeemable`).
 
-(b) En `previewPromotion`, dentro del `try`, **antes** del `Promise.all` de promo+service, resolver un grant:
+(b) En `previewPromotion`, dentro del `try`, buscar el servicio **una sola vez** al inicio y reusarlo en ambas ramas (evita el doble lookup). Reemplazar el `Promise.all([promo, service])` existente por: primero el `service`, luego intentar grant, y si no hay grant, buscar la promo por código:
 ```ts
-    const grantService = await prisma.service.findFirst({ where: { id: input.serviceId, businessId: input.businessId, isActive: true } })
+    const service = await prisma.service.findFirst({
+      where: { id: input.serviceId, businessId: input.businessId, isActive: true },
+    })
+    if (!service) return GENERIC_INVALID
+
+    // Rama grant (canje de puntos)
     const grant = await prisma.promotionGrant.findFirst({
       where: { businessId: input.businessId, code, status: 'active' },
       include: { promotion: { include: { services: { select: { id: true } } } } },
     })
     if (grant) {
-      if (!grantService) return GENERIC_INVALID
       const p = grant.promotion
       if (grant.expiresAt && new Date() > grant.expiresAt) return GENERIC_INVALID
       if (!p.appliesToAll && !p.services.some(s => s.id === input.serviceId)) return GENERIC_INVALID
-      if (p.minSpend != null && grantService.price < p.minSpend) return GENERIC_INVALID
-      const discount = computeDiscount({ ...p, serviceIds: p.services.map(s => s.id) } as Parameters<typeof computeDiscount>[0], grantService.price)
-      return { ok: true as const, discount, finalAmount: grantService.price - discount }
+      if (p.minSpend != null && service.price < p.minSpend) return GENERIC_INVALID
+      const discount = computeDiscount({ ...p, serviceIds: p.services.map(s => s.id) } as Parameters<typeof computeDiscount>[0], service.price)
+      return { ok: true as const, discount, finalAmount: service.price - discount }
     }
+
+    // Rama código (triggerType='code') — reusa `service`, ya no se vuelve a buscar
+    const promo = await prisma.promotion.findFirst({
+      where: { businessId: input.businessId, code, triggerType: 'code' },
+      include: { services: { select: { id: true } } },
+    })
+    if (!promo) return GENERIC_INVALID
 ```
-(Dejar el resto del flujo de promo por código tal cual; reusa su propio `service` lookup.)
+Mantener desde acá el resto del flujo de código existente (cálculo de `customerRedemptions` por `phone`, `isRedeemable`, y el `return { ok, discount, finalAmount: service.price - result.discount }`), pero usando la variable `service` ya resuelta arriba en lugar del `service` que venía del `Promise.all`.
 
 (c) **`listPromotions`**: filtrar para que las opciones de catálogo (`granted`) no aparezcan en la UI de promos por código:
 ```ts
@@ -1472,7 +1491,7 @@ git commit -m "feat(loyalty): UI catálogo de canje + toggles de vencimiento/no-
 **Files:**
 - Modify: `src/app/dashboard/customers/[id]/loyalty-panel.tsx`, `src/app/dashboard/customers/[id]/page.tsx`
 
-- [ ] **Step 1: Pasar `catalog` y `grants` al panel.** En `customers/[id]/page.tsx`, `getCustomerLoyalty` ahora devuelve `{ balance, history, grants, catalog }`. Pasar `grants` y `catalog` como props a `<LoyaltyPanel />` (además de los ya existentes).
+- [ ] **Step 1: Pasar `catalog` y `grants` al panel.** En `customers/[id]/page.tsx:112`, cambiar el destructure `const [{ balance, history }, loyaltyConfig] = await Promise.all([getCustomerLoyalty(id), ...])` por `const [{ balance, history, grants, catalog }, loyaltyConfig] = ...`, y en el `<LoyaltyPanel ... />` (~línea 212) sumar las props `grants={grants}` y `catalog={catalog}` (además de las ya existentes `customerId`, `balance`, `history`, `label`).
 
 - [ ] **Step 2: Extender `loyalty-panel.tsx`.** Sumar a las props `catalog` (opciones activas con `id, name, pointsCost`) y `grants` (activos con `id, code, expiresAt, promotion.name`). Debajo del form de ajuste, dos bloques:
   - **Canjear**: por cada opción del catálogo, un botón "Canjear (N pts)" deshabilitado si `!canAfford(balance, pointsCost)`. Al click: generar `requestId` con `crypto.randomUUID()` y llamar `redeemPointsAsOwner(customerId, optionId, requestId)` dentro de `startTransition`; en éxito refrescar (la action ya hace `revalidatePath`).
@@ -1495,6 +1514,7 @@ function onRedeem(optionId: string) {
   })
 }
 ```
+> Doble-click: el botón está `disabled={isPending}`, así que el segundo click queda bloqueado mientras corre la transición; el `requestId` cubre además reintentos de red (idempotencia en `redeemForGrant`).
 Bloque de canje:
 ```tsx
 {catalog.length > 0 && (
@@ -1544,7 +1564,7 @@ git commit -m "feat(loyalty): canjear + recompensas activas en panel de clienta"
 **Files:**
 - Modify: `src/app/tarjeta/[token]/page.tsx`
 
-- [ ] **Step 1: Reconciliar vencidos + cargar catálogo y grants.** En la página (RSC), tras `resolveLoyaltyCustomer`, llamar `await reconcileExpiredGrants(prisma, customer.id, customer.businessId)` **antes** de leer saldo/historial. Cargar también:
+- [ ] **Step 1: Reconciliar vencidos + cargar catálogo y grants.** En la página (RSC), tras `resolveLoyaltyCustomer`, llamar `await prisma.$transaction((tx) => reconcileExpiredGrants(tx, customer.id, customer.businessId))` **antes** de leer saldo/historial (en tx: el flip + reembolso deben ser atómicos). Cargar también:
 ```ts
 const catalog = config?.isActive
   ? await prisma.promotion.findMany({
