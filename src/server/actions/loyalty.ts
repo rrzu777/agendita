@@ -8,6 +8,7 @@ import { loyaltyConfigSchema, adjustPointsSchema, redemptionOptionSchema, redeem
 import { getLoyaltyBalance, getLoyaltyHistory } from '@/lib/loyalty/balance'
 import { reconcileExpiredGrants } from '@/lib/loyalty/grant'
 import { redeemForGrant, type RedeemPromotion } from '@/lib/loyalty/redeem'
+import { isP2002 } from '@/lib/loyalty/credit'
 import { resolveLoyaltyCustomer } from '@/lib/loyalty/token'
 
 // Module-local helpers — NOT exported (use server modules may only export async functions)
@@ -26,11 +27,14 @@ async function runRedemption(args: {
   createdByUserId: string | null
 }): Promise<void> {
   const { businessId, customerId, optionId, requestId } = args
-  const promotion = await prisma.promotion.findFirst({
-    where: { id: optionId, ...redemptionOptionWhere(businessId) }, select: REDEEM_SELECT,
-  })
+  // Lecturas independientes en paralelo (opción + config).
+  const [promotion, cfg] = await Promise.all([
+    prisma.promotion.findFirst({
+      where: { id: optionId, ...redemptionOptionWhere(businessId) }, select: REDEEM_SELECT,
+    }),
+    prisma.loyaltyConfig.findUnique({ where: { businessId } }),
+  ])
   if (!promotion) throw new Error('La recompensa no está disponible')
-  const cfg = await prisma.loyaltyConfig.findUnique({ where: { businessId } })
   const config = {
     isActive: cfg?.isActive ?? false,
     grantExpiryDays: cfg?.grantExpiryDays ?? null,
@@ -43,7 +47,7 @@ async function runRedemption(args: {
       createdByUserId: args.createdByUserId,
     }))
   } catch (e) {
-    if ((e as { code?: string })?.code === 'P2002') {
+    if (isP2002(e)) {
       const existing = await prisma.promotionGrant.findUnique({
         where: { customerId_requestId: { customerId, requestId } },
       })

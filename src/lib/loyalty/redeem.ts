@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto'
 import type { Prisma } from '@prisma/client'
 import { reconcileExpiredGrants } from './grant'
+import { getLoyaltyBalance } from './balance'
 
 type Tx = Prisma.TransactionClient
 
@@ -86,8 +87,7 @@ export async function redeemForGrant(tx: Tx, args: {
     if (claimed >= promotion.maxPerCustomer) throw new Error('Ya alcanzaste el límite de esta recompensa')
   }
 
-  const agg = await tx.loyaltyLedger.aggregate({ where: { customerId, businessId }, _sum: { points: true } })
-  const balance = agg._sum.points ?? 0
+  const balance = await getLoyaltyBalance(tx, customerId, businessId)
   if (balance < pointsCost) throw new Error('No tienes puntos suficientes')
 
   // Stock atómico (el lock per-customer NO cubre el stock compartido entre clientas).

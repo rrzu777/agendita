@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient, RedemptionRelease } from '@prisma/client'
+import { expireGrantWithRefund } from '@/lib/loyalty/grant'
 
 type TxLike = Prisma.TransactionClient | PrismaClient
 
@@ -51,24 +52,7 @@ async function reactivateGrantForBooking(
   const now = new Date()
   const expired = grant.expiresAt != null && now > grant.expiresAt
   if (expired) {
-    if (grant.refundOnExpiry) {
-      const f = await tx.promotionGrant.updateMany({
-        where: { id: grant.id, status: 'redeemed' },
-        data: { status: 'reversed', reversedAt: now },
-      })
-      if (f.count === 1) {
-        await tx.loyaltyLedger.create({
-          data: {
-            businessId: grant.businessId, customerId: grant.customerId, points: grant.pointsSpent,
-            reason: 'redemption_reversal', metadata: { grantId: grant.id },
-          },
-        })
-      }
-    } else {
-      await tx.promotionGrant.updateMany({
-        where: { id: grant.id, status: 'redeemed' }, data: { status: 'expired' },
-      })
-    }
+    await expireGrantWithRefund(tx, grant, 'redeemed', now)
     return
   }
 

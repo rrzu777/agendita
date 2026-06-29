@@ -22,6 +22,9 @@ type RedemptionOption = {
   services: { id: string; name: string }[]
 }
 
+/** Lee un campo numérico opcional del form: vacío/ausente => null. */
+const optNum = (v: FormDataEntryValue | null): number | null => (v ? Number(v) : null)
+
 function rewardSummary(o: RedemptionOption, currency: string): string {
   if (o.rewardType === 'fixed_amount') {
     return formatMoney(o.rewardValue, currency)
@@ -54,16 +57,16 @@ export function RedemptionCatalog({
       name: String(fd.get('name') ?? ''),
       rewardType: String(fd.get('rewardType') ?? 'free_service'),
       rewardValue: Number(fd.get('rewardValue') ?? 0),
-      maxDiscount: fd.get('maxDiscount') ? Number(fd.get('maxDiscount')) : null,
+      maxDiscount: optNum(fd.get('maxDiscount')),
       pointsCost: Number(fd.get('pointsCost') ?? 0),
       appliesToAll,
       serviceIds: appliesToAll
         ? []
         : services.filter((s) => fd.get(`svc_${s.id}`) === 'on').map((s) => s.id),
-      grantExpiryDays: fd.get('grantExpiryDays') ? Number(fd.get('grantExpiryDays')) : null,
-      maxRedemptions: fd.get('maxRedemptions') ? Number(fd.get('maxRedemptions')) : null,
-      maxPerCustomer: fd.get('maxPerCustomer') ? Number(fd.get('maxPerCustomer')) : null,
-      isActive: fd.get('isActive') !== null ? fd.get('isActive') === 'on' : true,
+      grantExpiryDays: optNum(fd.get('grantExpiryDays')),
+      maxRedemptions: optNum(fd.get('maxRedemptions')),
+      maxPerCustomer: optNum(fd.get('maxPerCustomer')),
+      isActive: fd.get('isActive') === 'on',
     }
     start(async () => {
       try {

@@ -33,26 +33,25 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
   await prisma.$transaction((tx) => reconcileExpiredGrants(tx, customer.id, customer.businessId))
 
   const config = customer.business.loyaltyConfig
-  const [balance, history] = await Promise.all([
+  // La reconciliación ya corrió; las 4 lecturas son independientes => en paralelo.
+  const [balance, history, catalog, grants] = await Promise.all([
     getLoyaltyBalance(prisma, customer.id, customer.businessId),
     getLoyaltyHistory(prisma, customer.id, customer.businessId, 50),
+    config?.isActive
+      ? prisma.promotion.findMany({
+          where: { businessId: customer.businessId, triggerType: 'granted', pointsCost: { not: null }, isActive: true },
+          orderBy: { pointsCost: 'asc' },
+          select: { id: true, name: true, pointsCost: true },
+        })
+      : Promise.resolve([] as { id: string; name: string; pointsCost: number | null }[]),
+    prisma.promotionGrant.findMany({
+      where: { customerId: customer.id, businessId: customer.businessId, status: 'active' },
+      orderBy: { createdAt: 'desc' },
+      include: { promotion: { select: { name: true } } },
+    }),
   ])
   const label = config?.pointsLabel ?? 'puntos'
   const firstName = customer.name.split(' ')[0]
-
-  const catalog = config?.isActive
-    ? await prisma.promotion.findMany({
-        where: { businessId: customer.businessId, triggerType: 'granted', pointsCost: { not: null }, isActive: true },
-        orderBy: { pointsCost: 'asc' },
-        select: { id: true, name: true, pointsCost: true },
-      })
-    : []
-
-  const grants = await prisma.promotionGrant.findMany({
-    where: { customerId: customer.id, businessId: customer.businessId, status: 'active' },
-    orderBy: { createdAt: 'desc' },
-    include: { promotion: { select: { name: true } } },
-  })
 
   return (
     <main className="mx-auto max-w-md px-4 py-10">
