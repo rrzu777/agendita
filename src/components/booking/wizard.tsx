@@ -62,6 +62,7 @@ export function BookingWizard({ businessId, services, cancellationPolicy }: Book
   const [data, setData] = useState<BookingData>(initialData)
   const [bookingId, setBookingId] = useState<string | null>(null)
   const [confirmationMode, setConfirmationMode] = useState<'paid' | 'pending'>('paid')
+  const [confirmationPromo, setConfirmationPromo] = useState<{ discountAmount: number; finalAmount: number } | null>(null)
 
   function updateData(partial: Partial<BookingData>) {
     setData(prev => ({ ...prev, ...partial }))
@@ -135,9 +136,10 @@ export function BookingWizard({ businessId, services, cancellationPolicy }: Book
           </div>
         )}
         {currentStep === 5 && data.serviceId && data.timeSlot && (
-          <StepPayment data={data} businessId={businessId} cancellationPolicy={cancellationPolicy} onSuccess={(id, mode) => {
+          <StepPayment data={data} businessId={businessId} cancellationPolicy={cancellationPolicy} onSuccess={(id, mode, promo) => {
             setBookingId(id)
             setConfirmationMode(mode)
+            setConfirmationPromo(promo ?? null)
             nextStep()
           }} onBack={prevStep} />
         )}
@@ -148,7 +150,7 @@ export function BookingWizard({ businessId, services, cancellationPolicy }: Book
           </div>
         )}
         {currentStep === 6 && (
-          <StepConfirmation data={data} bookingId={bookingId} mode={confirmationMode} />
+          <StepConfirmation data={data} bookingId={bookingId} mode={confirmationMode} promo={confirmationPromo} />
         )}
       </section>
     </div>

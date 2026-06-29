@@ -108,6 +108,12 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
   const total = fmtCurrency(data.totalPrice, data.businessCurrency)
   const deposit = fmtCurrency(data.depositRequired, data.businessCurrency)
 
+  const hasDiscount = (data.discountAmount ?? 0) > 0
+  const discountSection = hasDiscount
+    ? `<tr><td style="padding:8px 0;color:#666">Descuento</td><td style="padding:8px 0;font-weight:600;color:#2e7d32">−${fmtCurrency(data.discountAmount!, data.businessCurrency)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Total con descuento</td><td style="padding:8px 0;font-weight:600">${fmtCurrency(data.finalAmount ?? (data.totalPrice - data.discountAmount!), data.businessCurrency)}</td></tr>`
+    : ''
+
   const policySection = data.businessCancellationPolicy
     ? `<p style="font-size:13px;color:#666;margin-top:8px"><strong>Política de cancelación:</strong> ${escapeHtml(data.businessCancellationPolicy)}</p>`
     : ''
@@ -124,6 +130,7 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${dateStr}</td></tr>
       ${data.businessAddress ? `<tr><td style="padding:8px 0;color:#666">Dirección</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.businessAddress)}</td></tr>` : ''}
       <tr><td style="padding:8px 0;color:#666">Precio total</td><td style="padding:8px 0;font-weight:600">${total}</td></tr>
+      ${discountSection}
       <tr><td style="padding:8px 0;color:#666">Abono requerido</td><td style="padding:8px 0;font-weight:600">${deposit}</td></tr>
     </table>
     <p style="font-size:13px;color:#666;margin-top:16px">Recibirás una confirmación cuando el pago sea registrado.</p>
@@ -146,8 +153,14 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
     `Fecha y hora: ${dateStr}`,
   ]
   if (data.businessAddress) lines.push(`Dirección: ${data.businessAddress}`)
+  lines.push(`Precio total: ${total}`)
+  if ((data.discountAmount ?? 0) > 0) {
+    lines.push(
+      `Descuento: −${fmtCurrency(data.discountAmount!, data.businessCurrency)}`,
+      `Total con descuento: ${fmtCurrency(data.finalAmount ?? (data.totalPrice - data.discountAmount!), data.businessCurrency)}`,
+    )
+  }
   lines.push(
-    `Precio total: ${total}`,
     `Abono requerido: ${deposit}`,
     ``,
     `Recibirás una confirmación cuando el pago sea registrado.`,
