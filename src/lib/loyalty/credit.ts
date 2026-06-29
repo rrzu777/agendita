@@ -24,7 +24,9 @@ export async function creditVisitPoints(tx: Tx, args: {
   config: CreditConfig | null
 }): Promise<EarnBreakdown | null> {
   const { config, customerId } = args
-  if (!config || !config.isActive || !customerId) return null
+  // bookingId no-vacío es requisito de la idempotencia: la unique (bookingId, reason)
+  // no aplica con NULL en Postgres, así que un bookingId vacío permitiría doble crédito.
+  if (!config || !config.isActive || !customerId || !args.bookingId) return null
 
   const breakdown = computeEarnedPoints(config, { finalAmount: args.finalAmount })
   if (breakdown.total <= 0) return null

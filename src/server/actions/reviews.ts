@@ -10,6 +10,7 @@ import { submitReviewSchema } from '@/lib/reviews/schema'
 import { headers } from 'next/headers'
 import { sendReviewRequestNotification } from '@/lib/notifications'
 import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
+import { getAppUrl } from '@/lib/business/urls'
 
 export type ReviewFilterStatus = 'all' | 'pending' | 'approved' | 'hidden'
 
@@ -445,11 +446,14 @@ export async function sendReviewRequestEmail(bookingId: string) {
   const reviewLink = `${proto}://${host}/review/${booking.id}?token=${token}`
 
   // Link "Mi tarjeta" solo si el programa de fidelización está activo.
+  // El link a "Mi tarjeta" usa el dominio canónico (getAppUrl), igual que la
+  // confirmación, para no depender del host del request (host-injection) ni divergir
+  // entre ambos correos. El reviewLink de arriba sí usa el host del tenant.
   const loyaltyCardLink = await buildLoyaltyCardLink(
     prisma,
     booking.customer,
     booking.business.loyaltyConfig,
-    `${proto}://${host}`,
+    getAppUrl(''),
   )
 
   return sendReviewRequestNotification({

@@ -21,6 +21,7 @@ describe('adjustCustomerPoints', () => {
   it('rechaza si dejaría el saldo negativo', async () => {
     ;(prisma.customer.findFirst as any).mockResolvedValue({ id: 'c1', businessId: 'b1' })
     ;(prisma.$transaction as any).mockImplementation(async (fn: any) => fn({
+      $queryRaw: vi.fn().mockResolvedValue([]),
       loyaltyLedger: {
         aggregate: vi.fn().mockResolvedValue({ _sum: { points: 10 } }),
         create: vi.fn(),
@@ -36,6 +37,7 @@ describe('adjustCustomerPoints', () => {
     ;(prisma.customer.findFirst as any).mockResolvedValue({ id: 'c1', businessId: 'b1' })
     const create = vi.fn().mockResolvedValue({})
     ;(prisma.$transaction as any).mockImplementation(async (fn: any) => fn({
+      $queryRaw: vi.fn().mockResolvedValue([]),
       loyaltyLedger: { aggregate: vi.fn().mockResolvedValue({ _sum: { points: 100 } }), create },
     }))
     await adjustCustomerPoints('c1', -50, 'cortesía')

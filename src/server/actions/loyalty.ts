@@ -14,7 +14,7 @@ export async function getLoyaltyConfig() {
 
 export async function upsertLoyaltyConfig(data: unknown) {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
-  const limit = await checkRateLimit('loyalty-config', 30, 60000)
+  const limit = await checkRateLimit('loyalty-config', 30, 60000, { userId: user.id, businessId })
   if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
 
   const parsed = loyaltyConfigSchema.safeParse(data)
@@ -36,15 +36,15 @@ export async function getCustomerLoyalty(customerId: string) {
   const customer = await prisma.customer.findFirst({ where: { id: customerId, businessId }, select: { id: true } })
   if (!customer) throw new ForbiddenError('Clienta no encontrada')
   const [balance, history] = await Promise.all([
-    getLoyaltyBalance(prisma, customerId),
-    getLoyaltyHistory(prisma, customerId, 50),
+    getLoyaltyBalance(prisma, customerId, businessId),
+    getLoyaltyHistory(prisma, customerId, businessId, 50),
   ])
   return { balance, history }
 }
 
 export async function adjustCustomerPoints(customerId: string, delta: unknown, note: unknown) {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
-  const limit = await checkRateLimit('loyalty-adjust', 30, 60000)
+  const limit = await checkRateLimit('loyalty-adjust', 30, 60000, { userId: user.id, businessId })
   if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
 
   const parsed = adjustPointsSchema.safeParse({ delta, note })
@@ -54,9 +54,12 @@ export async function adjustCustomerPoints(customerId: string, delta: unknown, n
   const customer = await prisma.customer.findFirst({ where: { id: customerId, businessId }, select: { id: true } })
   if (!customer) throw new ForbiddenError('Clienta no encontrada')
 
-  // sum + insert en la MISMA tx para evitar TOCTOU en el chequeo de saldo >= 0.
   await prisma.$transaction(async (tx) => {
-    const agg = await tx.loyaltyLedger.aggregate({ where: { customerId }, _sum: { points: true } })
+    // Advisory lock por-clienta: bajo READ COMMITTED el aggregate NO toma lock, así
+    // que sin esto dos ajustes concurrentes podrían ambos pasar el chequeo de
+    // saldo>=0 y sobregirar. El lock serializa solo los ajustes de esta misma clienta.
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${customerId}))`
+    const agg = await tx.loyaltyLedger.aggregate({ where: { customerId, businessId }, _sum: { points: true } })
     const balance = agg._sum.points ?? 0
     if (balance + parsed.data.delta < 0) {
       throw new Error('El ajuste dejaría el saldo en negativo')

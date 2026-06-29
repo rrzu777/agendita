@@ -21,8 +21,8 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
 
   const config = customer.business.loyaltyConfig
   const [balance, history] = await Promise.all([
-    getLoyaltyBalance(prisma, customer.id),
-    getLoyaltyHistory(prisma, customer.id, 50),
+    getLoyaltyBalance(prisma, customer.id, customer.businessId),
+    getLoyaltyHistory(prisma, customer.id, customer.businessId, 50),
   ])
   const label = config?.pointsLabel ?? 'puntos'
   const firstName = customer.name.split(' ')[0]

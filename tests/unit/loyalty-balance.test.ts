@@ -11,25 +11,25 @@ function fakeDb() {
 }
 
 describe('getLoyaltyBalance', () => {
-  it('devuelve la suma de points', async () => {
+  it('devuelve la suma de points (scopeado por businessId)', async () => {
     const db = fakeDb()
-    expect(await getLoyaltyBalance(db, 'cus1')).toBe(140)
+    expect(await getLoyaltyBalance(db, 'cus1', 'b1')).toBe(140)
     expect(db.loyaltyLedger.aggregate).toHaveBeenCalledWith({
-      where: { customerId: 'cus1' }, _sum: { points: true },
+      where: { customerId: 'cus1', businessId: 'b1' }, _sum: { points: true },
     })
   })
   it('devuelve 0 cuando no hay asientos', async () => {
     const db = { loyaltyLedger: { aggregate: vi.fn().mockResolvedValue({ _sum: { points: null } }) } } as any
-    expect(await getLoyaltyBalance(db, 'cus1')).toBe(0)
+    expect(await getLoyaltyBalance(db, 'cus1', 'b1')).toBe(0)
   })
 })
 
 describe('getLoyaltyHistory', () => {
-  it('pide los últimos N desc', async () => {
+  it('pide los últimos N desc (scopeado por businessId)', async () => {
     const db = fakeDb()
-    await getLoyaltyHistory(db, 'cus1', 50)
+    await getLoyaltyHistory(db, 'cus1', 'b1', 50)
     expect(db.loyaltyLedger.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { customerId: 'cus1' }, orderBy: { createdAt: 'desc' }, take: 50,
+      where: { customerId: 'cus1', businessId: 'b1' }, orderBy: { createdAt: 'desc' }, take: 50,
     }))
   })
 })

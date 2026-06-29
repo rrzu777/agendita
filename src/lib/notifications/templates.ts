@@ -43,7 +43,7 @@ function footer(businessName: string): string {
 
 function loyaltyLinkHtml(link: string | undefined): string {
   return link
-    ? `<p style="margin-top:16px"><a href="${link}" style="color:#e91e63;text-decoration:none;font-weight:600">Ver mi tarjeta de puntos</a></p>`
+    ? `<p style="margin-top:16px"><a href="${escapeHtml(link)}" style="color:#e91e63;text-decoration:none;font-weight:600">Ver mi tarjeta de puntos</a></p>`
     : ''
 }
 
