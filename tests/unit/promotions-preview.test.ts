@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 const mockPrisma: any = {
+  promotionGrant: { findFirst: vi.fn().mockResolvedValue(null) },
   promotion: { findFirst: vi.fn() }, service: { findFirst: vi.fn() },
   customer: { findFirst: vi.fn() }, promotionRedemption: { count: vi.fn() },
 }
