@@ -5,10 +5,12 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { getCustomerDetail } from '@/server/actions/customers'
+import { getCustomerLoyalty, getLoyaltyConfig } from '@/server/actions/loyalty'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { normalizePhone } from '@/lib/customers/phone'
 import { CustomerEditForm } from './edit-form'
 import { CustomerNotesForm } from './notes-form'
+import { LoyaltyPanel } from './loyalty-panel'
 import {
   ArrowLeft,
   CalendarDays,
@@ -107,6 +109,11 @@ export default async function CustomerDetailPage({ params }: Props) {
     )
   }
 
+  const [{ balance, history }, loyaltyConfig] = await Promise.all([
+    getCustomerLoyalty(id),
+    getLoyaltyConfig(),
+  ])
+
   const cleanPhone = normalizePhone(customer.phone)
   const hasWhatsapp = cleanPhone.length >= 8
 
@@ -199,6 +206,16 @@ export default async function CustomerDetailPage({ params }: Props) {
               </p>
               <CustomerNotesForm customerId={customer.id} initialNotes={customer.notes} />
             </div>
+
+            {/* Loyalty — solo si el negocio configuró el programa */}
+            {loyaltyConfig && (
+              <LoyaltyPanel
+                customerId={id}
+                balance={balance}
+                history={history}
+                label={loyaltyConfig.pointsLabel}
+              />
+            )}
           </div>
 
           {/* Right: history */}

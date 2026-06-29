@@ -24,6 +24,7 @@ export interface BookingEmailData {
   depositPaid: number
   remainingBalance: number
   reviewLink?: string
+  loyaltyCardLink?: string
 }
 
 export interface CancellationEmailData {
@@ -43,6 +44,7 @@ export interface ReviewRequestEmailData {
   reviewLink: string
   startDateTime: Date
   businessTimezone: string
+  loyaltyCardLink?: string
 }
 
 export interface NewBookingBusinessEmailData {

@@ -41,6 +41,12 @@ function footer(businessName: string): string {
   return `<hr style="border:0;border-top:1px solid #e0e0e0;margin:24px 0 0"><p style="font-size:12px;color:#999;margin-top:8px">Enviado por ${escapeHtml(businessName)} a través de Agendita</p>`
 }
 
+function loyaltyLinkHtml(link: string | undefined): string {
+  return link
+    ? `<p style="margin-top:16px"><a href="${escapeHtml(link)}" style="color:#e91e63;text-decoration:none;font-weight:600">Ver mi tarjeta de puntos</a></p>`
+    : ''
+}
+
 export function bookingConfirmationCustomerHtml(data: BookingEmailData): string {
   const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
   const total = fmtCurrency(data.totalPrice, data.businessCurrency)
@@ -54,6 +60,8 @@ export function bookingConfirmationCustomerHtml(data: BookingEmailData): string 
   const reviewSection = data.reviewLink
     ? `<p style="margin-top:16px"><a href="${data.reviewLink}" style="color:#e91e63;text-decoration:none;font-weight:600">Dejar una reseña</a></p>`
     : ''
+
+  const loyaltySection = loyaltyLinkHtml(data.loyaltyCardLink)
 
   const whatsappSection = data.businessWhatsapp
     ? `<p style="margin-top:16px"><a href="https://wa.me/${data.businessWhatsapp.replace(/\D/g, '')}" style="color:#25D366;text-decoration:none;font-weight:600">Escribir por WhatsApp</a></p>`
@@ -70,7 +78,7 @@ export function bookingConfirmationCustomerHtml(data: BookingEmailData): string 
       <tr><td style="padding:8px 0;color:#666">Abono pagado</td><td style="padding:8px 0;font-weight:600">${deposit}</td></tr>
       ${remaining !== deposit ? `<tr><td style="padding:8px 0;color:#666">Saldo pendiente</td><td style="padding:8px 0;font-weight:600">${remaining}</td></tr>` : ''}
     </table>
-    ${policySection}${reviewSection}${whatsappSection}
+    ${policySection}${reviewSection}${loyaltySection}${whatsappSection}
     ${footer(data.businessName)}
   `)
 }
@@ -97,6 +105,7 @@ export function bookingConfirmationCustomerText(data: BookingEmailData): string 
   if (remaining !== deposit) lines.push(`Saldo pendiente: ${remaining}`)
   if (data.businessCancellationPolicy) lines.push(``, `Política de cancelación: ${data.businessCancellationPolicy}`)
   if (data.reviewLink) lines.push(``, `Dejar una reseña: ${data.reviewLink}`)
+  if (data.loyaltyCardLink) lines.push(``, `Tu tarjeta de puntos: ${data.loyaltyCardLink}`)
   if (data.businessWhatsapp) lines.push(``, `WhatsApp: https://wa.me/${data.businessWhatsapp.replace(/\D/g, '')}`)
   lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)
 
@@ -257,11 +266,14 @@ export function bookingCancelledCustomerText(data: CancellationEmailData): strin
 export function reviewRequestHtml(data: ReviewRequestEmailData): string {
   const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
 
+  const loyaltySection = loyaltyLinkHtml(data.loyaltyCardLink)
+
   return baseHtml(`
     ${header('¿Cómo te fue?')}
     <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, gracias por visitar ${escapeHtml(data.businessName)}.</p>
     <p style="font-size:14px;color:#666">Tu cita de <strong>${escapeHtml(data.serviceName)}</strong> del ${dateStr} ya fue completada. Nos encantaría saber tu opinión.</p>
     <p style="margin-top:24px"><a href="${data.reviewLink}" style="background:#e91e63;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block">Dejar reseña</a></p>
+    ${loyaltySection}
     <p style="font-size:12px;color:#999;margin-top:16px">Tu opinión ayuda a ${escapeHtml(data.businessName)} a mejorar.</p>
     ${footer(data.businessName)}
   `)
@@ -270,7 +282,7 @@ export function reviewRequestHtml(data: ReviewRequestEmailData): string {
 export function reviewRequestText(data: ReviewRequestEmailData): string {
   const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
 
-  return [
+  const lines = [
     `¿Cómo te fue?`,
     ``,
     `Hola ${data.customerName}, gracias por visitar ${data.businessName}.`,
@@ -278,9 +290,11 @@ export function reviewRequestText(data: ReviewRequestEmailData): string {
     `Tu cita de ${data.serviceName} del ${dateStr} ya fue completada. Nos encantaría saber tu opinión.`,
     ``,
     `Dejar reseña: ${data.reviewLink}`,
-    ``,
-    `Enviado por ${data.businessName} a través de Agendita`,
-  ].join('\n')
+  ]
+  if (data.loyaltyCardLink) lines.push(``, `Tu tarjeta de puntos: ${data.loyaltyCardLink}`)
+  lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)
+
+  return lines.join('\n')
 }
 
 // Template definitions used for preview and rendering

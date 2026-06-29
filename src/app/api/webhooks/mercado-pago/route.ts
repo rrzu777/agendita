@@ -6,6 +6,7 @@ import { sendBookingConfirmedNotification, sendNotificationSafely } from '@/lib/
 import { logger } from '@/lib/logger'
 import { decryptSecret } from '@/lib/payments/encryption'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
+import { reverseVisitPoints } from '@/lib/loyalty/credit'
 import type { Prisma } from '@prisma/client'
 
 function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
@@ -431,6 +432,7 @@ export async function POST(request: NextRequest) {
         })
         if (finalStatus === 'refunded' && payment.bookingId) {
           await releaseRedemptionForBooking(tx, payment.bookingId, 'refunded')
+          await reverseVisitPoints(tx, payment.bookingId)
         }
       })
 

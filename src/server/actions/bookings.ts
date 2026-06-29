@@ -16,6 +16,7 @@ import { normalizePhone } from '@/lib/customers/phone'
 import { addMinutes } from 'date-fns'
 import { applyPromotionInTx } from '@/lib/promotions/apply'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
+import { creditVisitPoints } from '@/lib/loyalty/credit'
 import {
   sendBookingReceivedToCustomer,
   sendNewBookingNotificationToBusiness,
@@ -408,6 +409,12 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
     ? { reviewToken: crypto.randomUUID(), reviewTokenCreatedAt: new Date() }
     : {}
 
+  // Config de fidelización (puede ser null si el negocio no la activó nunca).
+  const loyaltyConfig =
+    status === BookingStatus.completed
+      ? await prisma.loyaltyConfig.findUnique({ where: { businessId } })
+      : null
+
   const updateResult = await prisma.$transaction(async (tx) => {
     const res = await tx.booking.updateMany({
       where: { id, businessId },
@@ -422,6 +429,15 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
         id,
         status === BookingStatus.cancelled ? 'cancelled' : 'no_show',
       )
+    }
+    if (res.count > 0 && status === BookingStatus.completed && loyaltyConfig?.isActive) {
+      await creditVisitPoints(tx, {
+        businessId,
+        customerId: existing.customerId,
+        finalAmount: existing.finalAmount,
+        bookingId: id,
+        config: loyaltyConfig,
+      })
     }
     return res
   })

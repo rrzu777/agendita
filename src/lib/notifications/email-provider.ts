@@ -2,6 +2,8 @@ import { Resend } from 'resend'
 import { prisma } from '@/lib/db'
 import { BookingStatus } from '@prisma/client'
 import { logger } from '@/lib/logger'
+import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
+import { getAppUrl } from '@/lib/business/urls'
 import type {
   EmailResult,
   BookingEmailData,
@@ -164,7 +166,7 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
     where: { id: bookingId, businessId, status: BookingStatus.confirmed },
     include: {
       service: { select: { name: true } },
-      customer: { select: { name: true, phone: true, email: true } },
+      customer: { select: { id: true, name: true, phone: true, email: true, loyaltyToken: true } },
       business: {
         select: {
           name: true,
@@ -173,6 +175,7 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
           addressText: true,
           currency: true,
           cancellationPolicy: true,
+          loyaltyConfig: { select: { isActive: true } },
         },
       },
     },
@@ -185,6 +188,14 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
   const business = booking.business
   const tz = business.timezone || 'America/Santiago'
   const curr = business.currency || 'CLP'
+
+  // Link "Mi tarjeta" solo si el programa de fidelización está activo.
+  const loyaltyCardLink = await buildLoyaltyCardLink(
+    prisma,
+    booking.customer,
+    business.loyaltyConfig,
+    getAppUrl(''),
+  )
 
   return sendBookingConfirmationToCustomer({
     businessName: business.name,
@@ -202,6 +213,7 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
     depositRequired: booking.depositRequired,
     depositPaid: booking.depositPaid,
     remainingBalance: booking.remainingBalance,
+    loyaltyCardLink,
   })
 }
 

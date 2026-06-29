@@ -46,6 +46,9 @@ vi.mock('@/lib/db', () => {
           },
         }),
       },
+      loyaltyConfig: {
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
     },
   }
 })

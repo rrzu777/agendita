@@ -9,6 +9,8 @@ import { BookingStatus, Prisma } from '@prisma/client'
 import { submitReviewSchema } from '@/lib/reviews/schema'
 import { headers } from 'next/headers'
 import { sendReviewRequestNotification } from '@/lib/notifications'
+import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
+import { getAppUrl } from '@/lib/business/urls'
 
 export type ReviewFilterStatus = 'all' | 'pending' | 'approved' | 'hidden'
 
@@ -410,9 +412,9 @@ export async function sendReviewRequestEmail(bookingId: string) {
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, businessId },
     include: {
-      customer: { select: { id: true, name: true, email: true } },
+      customer: { select: { id: true, name: true, email: true, loyaltyToken: true } },
       service: { select: { name: true } },
-      business: { select: { name: true, timezone: true } },
+      business: { select: { name: true, timezone: true, loyaltyConfig: { select: { isActive: true } } } },
       review: { select: { id: true } },
     },
   })
@@ -443,6 +445,17 @@ export async function sendReviewRequestEmail(bookingId: string) {
   const proto = headersList.get('x-forwarded-proto') || 'https'
   const reviewLink = `${proto}://${host}/review/${booking.id}?token=${token}`
 
+  // Link "Mi tarjeta" solo si el programa de fidelización está activo.
+  // El link a "Mi tarjeta" usa el dominio canónico (getAppUrl), igual que la
+  // confirmación, para no depender del host del request (host-injection) ni divergir
+  // entre ambos correos. El reviewLink de arriba sí usa el host del tenant.
+  const loyaltyCardLink = await buildLoyaltyCardLink(
+    prisma,
+    booking.customer,
+    booking.business.loyaltyConfig,
+    getAppUrl(''),
+  )
+
   return sendReviewRequestNotification({
     businessName: booking.business.name,
     customerName: booking.customer.name,
@@ -451,5 +464,6 @@ export async function sendReviewRequestEmail(bookingId: string) {
     reviewLink,
     startDateTime: booking.startDateTime,
     businessTimezone: booking.business.timezone || 'America/Santiago',
+    loyaltyCardLink,
   })
 }
