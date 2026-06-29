@@ -43,52 +43,54 @@ enum BusinessCategory {
 }
 
 model Business {
-  id                 String             @id @default(cuid())
-  name               String
-  category           BusinessCategory  @default(other)
-  slug               String             @unique
-  subdomain          String             @unique
-  customDomain       String?            @unique
-  ownerUserId        String
-  logoUrl            String?
-  profileImageUrl    String?
-  bio                String?
-  whatsapp           String?
-  instagram          String?
-  addressText        String?
-  city               String
-  country            String             @default("CL")
-  currency           String             @default("CLP")
-  timezone           String             @default("America/Santiago")
-  bookingWindowDays  Int                @default(90)
-  isActive           Boolean            @default(true)
-  planId             String?
-  subscriptionStatus SubscriptionStatus @default(trialing)
-  trialEndsAt        DateTime?
+  id                    String             @id @default(cuid())
+  name                  String
+  category              BusinessCategory   @default(other)
+  slug                  String             @unique
+  subdomain             String             @unique
+  customDomain          String?            @unique
+  ownerUserId           String
+  logoUrl               String?
+  profileImageUrl       String?
+  bio                   String?
+  whatsapp              String?
+  instagram             String?
+  addressText           String?
+  city                  String
+  country               String             @default("CL")
+  currency              String             @default("CLP")
+  timezone              String             @default("America/Santiago")
+  bookingWindowDays     Int                @default(90)
+  isActive              Boolean            @default(true)
+  planId                String?
+  subscriptionStatus    SubscriptionStatus @default(trialing)
+  trialEndsAt           DateTime?
   onboardingCompletedAt DateTime?
-  onboardingStep      Int?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  onboardingStep        Int?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 
-  users              BusinessUser[]
-  services           Service[]
-  availability       AvailabilityRule[]
-  timeBlocks         TimeBlock[]
-  customers          Customer[]
-  bookings           Booking[]
-  payments           Payment[]
-  ledgerEntries      LedgerEntry[]
-  reviews            Review[]
-  galleryImages      GalleryImage[]
-  plan               Plan?              @relation(fields: [planId], references: [id])
-  subscriptions      BusinessSubscription[]
+  users                BusinessUser[]
+  services             Service[]
+  availability         AvailabilityRule[]
+  timeBlocks           TimeBlock[]
+  customers            Customer[]
+  bookings             Booking[]
+  payments             Payment[]
+  ledgerEntries        LedgerEntry[]
+  reviews              Review[]
+  galleryImages        GalleryImage[]
+  plan                 Plan?                  @relation(fields: [planId], references: [id])
+  subscriptions        BusinessSubscription[]
   subscriptionPayments SubscriptionPayment[]
-  subscriptionLogs   SubscriptionLog[]
-  paymentAccounts    PaymentAccount[]
-  promotions         Promotion[]
-  cancellationPolicy String?
-  bookingPolicy      String?
-  depositPolicy      String?
+  subscriptionLogs     SubscriptionLog[]
+  paymentAccounts      PaymentAccount[]
+  promotions           Promotion[]
+  loyaltyConfig        LoyaltyConfig?
+  loyaltyLedger        LoyaltyLedger[]
+  cancellationPolicy   String?
+  bookingPolicy        String?
+  depositPolicy        String?
 }
 
 enum PaymentAccountStatus {
@@ -100,99 +102,99 @@ enum PaymentAccountStatus {
 }
 
 model PaymentAccount {
-  id                 String               @id @default(cuid())
-  businessId         String
-  provider           String
-  providerAccountId  String?
-  accessTokenEncrypted String
+  id                    String               @id @default(cuid())
+  businessId            String
+  provider              String
+  providerAccountId     String?
+  accessTokenEncrypted  String
   refreshTokenEncrypted String?
-  publicKeyEncrypted String?
-  expiresAt          DateTime?
-  status             PaymentAccountStatus @default(pending)
-  connectedAt        DateTime?
-  disconnectedAt     DateTime?
-  lastRefreshAt      DateTime?
-  rawMetadata        Json?
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  publicKeyEncrypted    String?
+  expiresAt             DateTime?
+  status                PaymentAccountStatus @default(pending)
+  connectedAt           DateTime?
+  disconnectedAt        DateTime?
+  lastRefreshAt         DateTime?
+  rawMetadata           Json?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
 
-  business           Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, provider])
 }
 
 model Plan {
-  id            String         @id @default(cuid())
-  name          String         @unique
-  description   String?
-  priceMonthly  Int
-  priceYearly   Int
-  isPublic      Boolean        @default(false)
-  sortOrder     Int            @default(0)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id           String   @id @default(cuid())
+  name         String   @unique
+  description  String?
+  priceMonthly Int
+  priceYearly  Int
+  isPublic     Boolean  @default(false)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   businesses    Business[]
   subscriptions BusinessSubscription[]
 }
 
 model BusinessSubscription {
-  id              String             @id @default(cuid())
-  businessId      String
-  planId          String
-  status          SubscriptionStatus @default(trialing)
-  interval        BillingInterval    @default(monthly)
+  id                 String             @id @default(cuid())
+  businessId         String
+  planId             String
+  status             SubscriptionStatus @default(trialing)
+  interval           BillingInterval    @default(monthly)
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
-  trialStartAt    DateTime?
-  trialEndAt      DateTime?
-  cancelledAt     DateTime?
-  suspendedAt     DateTime?
-  suspendedReason String?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  trialStartAt       DateTime?
+  trialEndAt         DateTime?
+  cancelledAt        DateTime?
+  suspendedAt        DateTime?
+  suspendedReason    String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
-  business        Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  plan            Plan               @relation(fields: [planId], references: [id])
-  payments        SubscriptionPayment[]
+  business Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  plan     Plan                  @relation(fields: [planId], references: [id])
+  payments SubscriptionPayment[]
 
   @@index([businessId])
 }
 
 model SubscriptionPayment {
-  id              String             @id @default(cuid())
+  id              String        @id @default(cuid())
   businessId      String
   subscriptionId  String
   amount          Int
-  currency        String             @default("CLP")
-  status          PaymentStatus      @default(pending)
+  currency        String        @default("CLP")
+  status          PaymentStatus @default(pending)
   paymentMethod   String?
   notes           String?
   createdByUserId String?
   paidAt          DateTime?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
-  business        Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  subscription    BusinessSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  business     Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  subscription BusinessSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
 }
 
 model SubscriptionLog {
-  id              String   @id @default(cuid())
-  businessId      String
-  action          String
-  beforeStatus    String?
-  afterStatus     String?
-  beforePlanId    String?
-  afterPlanId     String?
-  adminUserId     String?
-  adminEmail      String?
-  notes           String?
-  createdAt       DateTime @default(now())
+  id           String   @id @default(cuid())
+  businessId   String
+  action       String
+  beforeStatus String?
+  afterStatus  String?
+  beforePlanId String?
+  afterPlanId  String?
+  adminUserId  String?
+  adminEmail   String?
+  notes        String?
+  createdAt    DateTime @default(now())
 
-  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, createdAt])
 }
@@ -204,8 +206,8 @@ model BusinessUser {
   role       BusinessRole
   createdAt  DateTime     @default(now())
 
-  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, userId])
 }
@@ -230,22 +232,22 @@ model Service {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  bookings        Booking[]
-  promotions      Promotion[] @relation("PromotionServices")
+  business   Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  bookings   Booking[]
+  promotions Promotion[] @relation("PromotionServices")
 
   @@index([businessId, isActive])
 }
 
 model AvailabilityRule {
-  id         String   @id @default(cuid())
+  id         String  @id @default(cuid())
   businessId String
   dayOfWeek  Int
   startTime  String
   endTime    String
-  isActive   Boolean  @default(true)
+  isActive   Boolean @default(true)
 
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
 }
@@ -258,69 +260,72 @@ model TimeBlock {
   reason        String?
   createdAt     DateTime @default(now())
 
-  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, startDateTime, endDateTime])
 }
 
 model Customer {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   businessId String
   name       String
   phone      String
   email      String?
   notes      String?
   birthDate  DateTime? @db.Date
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  bookings   Booking[]
-  payments   Payment[]
-  reviews    Review[]
-  redemptions PromotionRedemption[]
+  loyaltyToken String? @unique
+
+  business      Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  bookings      Booking[]
+  payments      Payment[]
+  reviews       Review[]
+  redemptions   PromotionRedemption[]
+  loyaltyLedger LoyaltyLedger[]
 
   @@index([businessId])
   @@index([businessId, phone])
 }
 
 model Booking {
-  id                String               @id @default(cuid())
-  businessId        String
-  serviceId         String
-  customerId        String
-  startDateTime     DateTime
-  endDateTime       DateTime
-  status            BookingStatus
+  id            String        @id @default(cuid())
+  businessId    String
+  serviceId     String
+  customerId    String
+  startDateTime DateTime
+  endDateTime   DateTime
+  status        BookingStatus
 
-  totalPrice        Int
-  depositRequired   Int
-  depositPaid       Int                  @default(0)
-  remainingBalance  Int
-  discountAmount    Int                  @default(0)
-  finalAmount       Int
-  paymentStatus     BookingPaymentStatus
+  totalPrice       Int
+  depositRequired  Int
+  depositPaid      Int                  @default(0)
+  remainingBalance Int
+  discountAmount   Int                  @default(0)
+  finalAmount      Int
+  paymentStatus    BookingPaymentStatus
 
-  customerNotes     String?
-  internalNotes     String?
-  holdExpiresAt     DateTime?
-  idempotencyKey    String?
-  createdAt         DateTime             @default(now())
+  customerNotes  String?
+  internalNotes  String?
+  holdExpiresAt  DateTime?
+  idempotencyKey String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  business             Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  service              Service              @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  customer             Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  payments             Payment[]
+  ledgerEntries        LedgerEntry[]
+  redemption           PromotionRedemption?
+  review               Review?
+  loyaltyLedger        LoyaltyLedger[]
+  reviewToken          String?              @unique
+  reviewTokenCreatedAt DateTime?
+  reminderSentAt       DateTime?
 
   @@unique([businessId, idempotencyKey])
-  updatedAt         DateTime             @updatedAt
-
-  business          Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  service           Service              @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  customer          Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  payments          Payment[]
-  ledgerEntries     LedgerEntry[]
-  redemption          PromotionRedemption?
-  review              Review?
-  reviewToken         String?              @unique
-  reviewTokenCreatedAt DateTime?
-  reminderSentAt      DateTime?
-
   @@index([businessId, status, startDateTime, endDateTime])
 }
 
@@ -357,10 +362,10 @@ model Payment {
   rawPayload        Json?
   createdAt         DateTime        @default(now())
 
-  business          Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  booking           Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  ledgerEntries     LedgerEntry[]
+  business      Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  booking       Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  ledgerEntries LedgerEntry[]
 
   // Evita duplicar exactamente el mismo pago para la misma reserva.
   // En PostgreSQL, múltiples NULLs no se consideran iguales, por lo que
@@ -410,9 +415,9 @@ model LedgerEntry {
   createdAt       DateTime        @default(now())
   createdByUserId String?
 
-  business        Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  booking         Booking?        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  payment         Payment?        @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  booking  Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  payment  Payment? @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
   // Garantiza exactamente un LedgerEntry por Payment aprobado.
   // En PostgreSQL, múltiples NULLs son permitidos, así que se permite
@@ -452,9 +457,9 @@ model Review {
   isHidden   Boolean  @default(false)
   createdAt  DateTime @default(now())
 
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  booking  Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([businessId, isApproved, isHidden])
 }
@@ -467,9 +472,15 @@ model GalleryImage {
   sortOrder  Int      @default(0)
   createdAt  DateTime @default(now())
 
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
+}
+
+enum LoyaltyReason {
+  visit
+  visit_reversal
+  adjustment
 }
 
 enum PromotionTrigger {
@@ -527,9 +538,9 @@ model Promotion {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  business        Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  services        Service[]             @relation("PromotionServices")
-  redemptions     PromotionRedemption[]
+  business    Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  services    Service[]             @relation("PromotionServices")
+  redemptions PromotionRedemption[]
 
   @@unique([businessId, code])
   @@index([businessId, isActive])
@@ -550,11 +561,49 @@ model PromotionRedemption {
   metadata        Json?
   createdAt       DateTime           @default(now())
 
-  promotion       Promotion @relation(fields: [promotionId], references: [id])
-  booking         Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  customer        Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  promotion Promotion @relation(fields: [promotionId], references: [id])
+  booking   Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer  Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@unique([bookingId])
   @@index([businessId, promotionId])
   @@index([promotionId, customerId])
+}
+
+model LoyaltyConfig {
+  id              String   @id @default(cuid())
+  businessId      String   @unique
+  isActive        Boolean  @default(false)
+  programName     String
+  pointsLabel     String   @default("puntos")
+  pointsPerVisit  Int      @default(0)
+  spendPerPoint   Int?
+  minSpendToEarn  Int?
+  cardMessage     String?
+  updatedByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model LoyaltyLedger {
+  id              String        @id @default(cuid())
+  businessId      String
+  customerId      String
+  points          Int
+  reason          LoyaltyReason
+  bookingId       String?
+  note            String?
+  metadata        Json?
+  createdByUserId String?
+  createdAt       DateTime      @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  booking  Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@unique([bookingId, reason])
+  @@index([businessId, customerId])
+  @@index([customerId])
 }
