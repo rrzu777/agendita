@@ -88,6 +88,7 @@ model Business {
   promotions           Promotion[]
   loyaltyConfig        LoyaltyConfig?
   loyaltyLedger        LoyaltyLedger[]
+  promotionGrants      PromotionGrant[]
   cancellationPolicy   String?
   bookingPolicy        String?
   depositPolicy        String?
@@ -284,6 +285,7 @@ model Customer {
   reviews       Review[]
   redemptions   PromotionRedemption[]
   loyaltyLedger LoyaltyLedger[]
+  loyaltyGrants PromotionGrant[]
 
   @@index([businessId])
   @@index([businessId, phone])
@@ -481,12 +483,21 @@ enum LoyaltyReason {
   visit
   visit_reversal
   adjustment
+  redemption
+  redemption_reversal
 }
 
 enum PromotionTrigger {
   code
   automatic
   granted
+}
+
+enum GrantStatus {
+  active
+  redeemed
+  expired
+  reversed
 }
 
 enum PromotionReward {
@@ -537,10 +548,13 @@ model Promotion {
   updatedByUserId String?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
+  pointsCost      Int?
+  grantExpiryDays Int?
 
   business    Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
   services    Service[]             @relation("PromotionServices")
   redemptions PromotionRedemption[]
+  grants      PromotionGrant[]
 
   @@unique([businessId, code])
   @@index([businessId, isActive])
@@ -570,6 +584,35 @@ model PromotionRedemption {
   @@index([promotionId, customerId])
 }
 
+model PromotionGrant {
+  id                String      @id @default(cuid())
+  businessId        String
+  promotionId       String
+  customerId        String
+  code              String
+  pointsSpent       Int
+  status            GrantStatus @default(active)
+  expiresAt         DateTime?
+  refundOnExpiry    Boolean
+  forfeitOnNoShow   Boolean
+  requestId         String
+  redeemedBookingId String?     @unique
+  redeemedAt        DateTime?
+  reversedAt        DateTime?
+  metadata          Json?
+  createdByUserId   String?
+  createdAt         DateTime    @default(now())
+
+  business  Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  promotion Promotion @relation(fields: [promotionId], references: [id])
+  customer  Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, code])
+  @@unique([customerId, requestId])
+  @@index([customerId, status])
+  @@index([businessId, promotionId])
+}
+
 model LoyaltyConfig {
   id              String   @id @default(cuid())
   businessId      String   @unique
@@ -579,10 +622,13 @@ model LoyaltyConfig {
   pointsPerVisit  Int      @default(0)
   spendPerPoint   Int?
   minSpendToEarn  Int?
-  cardMessage     String?
-  updatedByUserId String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  cardMessage          String?
+  grantExpiryDays      Int?
+  refundPointsOnExpiry Boolean  @default(true)
+  forfeitGrantOnNoShow Boolean  @default(false)
+  updatedByUserId      String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }
