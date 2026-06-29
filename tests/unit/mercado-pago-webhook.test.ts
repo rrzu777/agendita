@@ -47,6 +47,14 @@ vi.mock('@/lib/payments/encryption', () => ({
   decryptSecret: vi.fn().mockReturnValue('test-access-token'),
 }))
 
+vi.mock('@/lib/promotions/release', () => ({
+  releaseRedemptionForBooking: vi.fn(),
+}))
+
+vi.mock('@/lib/loyalty/credit', () => ({
+  reverseVisitPoints: vi.fn(),
+}))
+
 const originalEnv = { ...process.env }
 
 function setEnv(vars: Record<string, string | undefined>) {
@@ -78,6 +86,7 @@ function createRequestInit(overrides: Record<string, string> = {}): Record<strin
 }
 
 const { applyApprovedPayment } = await import('@/server/services/finance')
+const { reverseVisitPoints } = await import('@/lib/loyalty/credit')
 
 describe('Mercado Pago webhook', () => {
   let POST: (req: Request) => Promise<Response>
@@ -531,6 +540,64 @@ describe('Mercado Pago webhook', () => {
         },
       )
       expect(statusUpdates).toHaveLength(0)
+    })
+  })
+
+  describe('refunded payment', () => {
+    it('reverses loyalty visit points for the booking on refund', async () => {
+      const secret = 'test-webhook-secret'
+      const body = { data: { id: 'mp-pay-refund' } }
+      const signature = createMpSignatureHeader('mp-pay-refund', 'req-refund', secret)
+
+      mockMpFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            ...baseMpPayment,
+            id: 'mp-pay-refund',
+            status: 'refunded',
+            date_approved: null,
+            external_reference: 'pay-local-refund',
+            metadata: {
+              ...baseMpPayment.metadata,
+              localPaymentId: 'pay-local-refund',
+            },
+          }),
+      })
+
+      mockPrisma.payment.findUnique
+        .mockReset()
+        .mockResolvedValueOnce({
+          ...basePayment,
+          id: 'pay-local-refund',
+        })
+        .mockResolvedValueOnce({
+          ...basePayment,
+          id: 'pay-local-refund',
+          status: 'pending',
+        })
+
+      mockPrisma.$transaction.mockImplementation(
+        async (fn: (tx: unknown) => unknown) => fn({ ...mockPrisma }),
+      )
+
+      const req = makeRequest(body, {
+        'x-signature': signature,
+        'x-request-id': 'req-refund',
+      })
+      const res = await POST(req)
+
+      expect(res.status).toBe(200)
+      expect(mockPrisma.payment.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'pay-local-refund' },
+          data: expect.objectContaining({ status: 'refunded' }),
+        }),
+      )
+      expect(reverseVisitPoints).toHaveBeenCalledWith(
+        expect.anything(),
+        'booking-1',
+      )
     })
   })
 
