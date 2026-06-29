@@ -6,6 +6,8 @@ const REASON_LABELS: Record<LoyaltyReason, string> = {
   adjustment: 'Ajuste',
   redemption: 'Canje',
   redemption_reversal: 'Reembolso de canje',
+  bonus: 'Bonificación',
+  bonus_reversal: 'Reverso de bonificación',
 }
 
 export function loyaltyReasonLabel(reason: LoyaltyReason): string {

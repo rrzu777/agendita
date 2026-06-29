@@ -89,6 +89,7 @@ model Business {
   loyaltyConfig        LoyaltyConfig?
   loyaltyLedger        LoyaltyLedger[]
   promotionGrants      PromotionGrant[]
+  referrals            Referral[]
   cancellationPolicy   String?
   bookingPolicy        String?
   depositPolicy        String?
@@ -279,6 +280,10 @@ model Customer {
 
   loyaltyToken String? @unique
 
+  firstCompletedAt DateTime?
+  lastCompletedAt  DateTime?
+  referralToken    String?   @unique
+
   business      Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
   bookings      Booking[]
   payments      Payment[]
@@ -286,6 +291,9 @@ model Customer {
   redemptions   PromotionRedemption[]
   loyaltyLedger LoyaltyLedger[]
   loyaltyGrants PromotionGrant[]
+
+  referralsMade     Referral[] @relation("ReferralReferrer")
+  referralReceived  Referral?  @relation("ReferralReferred")
 
   @@index([businessId])
   @@index([businessId, phone])
@@ -485,6 +493,14 @@ enum LoyaltyReason {
   adjustment
   redemption
   redemption_reversal
+  bonus
+  bonus_reversal
+}
+
+enum ReferralStatus {
+  pending
+  rewarded
+  void
 }
 
 enum PromotionTrigger {
@@ -550,6 +566,8 @@ model Promotion {
   updatedAt       DateTime         @updatedAt
   pointsCost      Int?
   grantExpiryDays Int?
+  rewardPoints    Int?
+  priority        Int              @default(0)
 
   business    Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
   services    Service[]             @relation("PromotionServices")
@@ -603,6 +621,8 @@ model PromotionGrant {
   createdByUserId   String?
   createdAt         DateTime    @default(now())
 
+  triggeringBookingId String?
+
   business  Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   promotion Promotion @relation(fields: [promotionId], references: [id])
   customer  Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -611,6 +631,7 @@ model PromotionGrant {
   @@unique([customerId, requestId])
   @@index([customerId, status])
   @@index([businessId, promotionId])
+  @@index([triggeringBookingId])
 }
 
 model LoyaltyConfig {
@@ -626,6 +647,7 @@ model LoyaltyConfig {
   grantExpiryDays      Int?
   refundPointsOnExpiry Boolean  @default(true)
   forfeitGrantOnNoShow Boolean  @default(false)
+  clawbackAutoRewardOnRefund Boolean @default(false)
   updatedByUserId      String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -645,11 +667,36 @@ model LoyaltyLedger {
   createdByUserId String?
   createdAt       DateTime      @default(now())
 
+  dedupeKey           String?
+  triggeringBookingId String?
+  sourcePromotionId   String?
+
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   booking  Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
 
   @@unique([bookingId, reason])
+  @@unique([businessId, dedupeKey])
   @@index([businessId, customerId])
   @@index([customerId])
+  @@index([triggeringBookingId])
+  @@index([businessId, sourcePromotionId])
+}
+
+model Referral {
+  id                  String         @id @default(cuid())
+  businessId          String
+  referrerCustomerId  String
+  referredCustomerId  String         @unique
+  status              ReferralStatus @default(pending)
+  triggeringBookingId String?
+  rewardedAt          DateTime?
+  createdAt           DateTime       @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  referrer Customer @relation("ReferralReferrer", fields: [referrerCustomerId], references: [id], onDelete: Cascade)
+  referred Customer @relation("ReferralReferred", fields: [referredCustomerId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, status])
+  @@index([referrerCustomerId])
 }
