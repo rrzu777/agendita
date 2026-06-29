@@ -109,7 +109,7 @@ export default async function CustomerDetailPage({ params }: Props) {
     )
   }
 
-  const [{ balance, history }, loyaltyConfig] = await Promise.all([
+  const [{ balance, history, grants, catalog }, loyaltyConfig] = await Promise.all([
     getCustomerLoyalty(id),
     getLoyaltyConfig(),
   ])
@@ -214,6 +214,8 @@ export default async function CustomerDetailPage({ params }: Props) {
                 balance={balance}
                 history={history}
                 label={loyaltyConfig.pointsLabel}
+                grants={grants}
+                catalog={catalog}
               />
             )}
           </div>
