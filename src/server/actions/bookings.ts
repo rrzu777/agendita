@@ -323,7 +323,10 @@ export async function createBooking(data: {
         include: { service: true, customer: true },
       })
       return updated
-    })
+      // 15s: la tx hace lock de slot + upsert de cliente + creación de reserva +
+      // aplicación de promo + update; el default de 5s queda corto cuando se aplica
+      // un código (varias queries extra) o si la latencia a la DB es alta.
+    }, { timeout: 15_000 })
 
     const bookingForNotification = booking as Booking & {
       service: { name: string }
@@ -807,7 +810,9 @@ export async function createBookingFromDashboard(data: {
     }
 
     return bookingResult
-  })
+    // 15s: la tx hace creación de reserva + aplicación de promo + creación de pago
+    // + applyApprovedPayment (con upserts de ledger); el default de 5s queda corto.
+  }, { timeout: 15_000 })
 
   revalidatePath('/dashboard/bookings')
   revalidatePath('/dashboard/calendar')
