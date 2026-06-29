@@ -3,6 +3,7 @@ import { applyPromotionInTx } from '@/lib/promotions/apply'
 
 function tx(promo: any, opts: { incCount?: number } = {}) {
   return {
+    promotionGrant: { findFirst: vi.fn().mockResolvedValue(null) },
     promotion: {
       findFirst: vi.fn().mockResolvedValue(promo),
       update: vi.fn().mockResolvedValue({}),
