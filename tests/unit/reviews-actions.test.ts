@@ -16,6 +16,12 @@ const mockPrisma = {
     update: vi.fn(),
     count: vi.fn(),
   },
+  loyaltyConfig: {
+    findUnique: vi.fn().mockResolvedValue(null),
+  },
+  // Premio por reseña (R-EMIT): tx aparte best-effort. Con loyaltyConfig null el
+  // premio se short-circuita y nunca toca loadAutomaticRule/emit.
+  $transaction: vi.fn(async (fn) => fn(mockPrisma)),
 }
 
 vi.mock('@/lib/db', () => ({
