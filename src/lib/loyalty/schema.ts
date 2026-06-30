@@ -17,6 +17,7 @@ export const loyaltyConfigSchema = z.object({
   grantExpiryDays: optPositiveInt,
   refundPointsOnExpiry: z.boolean().optional().default(true),
   forfeitGrantOnNoShow: z.boolean().optional().default(false),
+  clawbackAutoRewardOnRefund: z.boolean().optional().default(false),
   cardMessage: optText(200),
 }).strip()
 

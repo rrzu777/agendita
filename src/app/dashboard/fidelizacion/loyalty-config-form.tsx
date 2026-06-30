@@ -28,6 +28,7 @@ export function LoyaltyConfigForm({ config }: { config: LoyaltyConfig | null }) 
       grantExpiryDays: fd.get('grantExpiryDays') ? Number(fd.get('grantExpiryDays')) : null,
       refundPointsOnExpiry: fd.get('refundPointsOnExpiry') === 'on',
       forfeitGrantOnNoShow: fd.get('forfeitGrantOnNoShow') === 'on',
+      clawbackAutoRewardOnRefund: fd.get('clawbackAutoRewardOnRefund') === 'on',
     }
     startTransition(async () => {
       try {
@@ -78,6 +79,16 @@ export function LoyaltyConfigForm({ config }: { config: LoyaltyConfig | null }) 
           className="size-4"
         />
         <span className="text-sm text-foreground">Quitar la recompensa si la clienta no asiste (no-show)</span>
+      </label>
+
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          name="clawbackAutoRewardOnRefund"
+          defaultChecked={config?.clawbackAutoRewardOnRefund ?? false}
+          className="size-4"
+        />
+        <span className="text-sm text-foreground">Revertir recompensas automáticas al reembolsar</span>
       </label>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
