@@ -31,6 +31,18 @@ export type EmittedReward =
   | { kind: 'grant'; grantId: string; code: string }
   | null // ya emitido (dedup) o regla sin recompensa válida
 
+/** Carga la regla automática activa de un kind para un negocio (a lo sumo una). */
+export async function loadAutomaticRule(tx: Tx, businessId: string, kind: string): Promise<AutomaticRule | null> {
+  const rules = await tx.promotion.findMany({
+    where: { businessId, triggerType: 'automatic', isActive: true },
+    select: { id: true, businessId: true, conditions: true, rewardPoints: true, rewardType: true,
+      rewardValue: true, maxDiscount: true, appliesToAll: true, grantExpiryDays: true, priority: true,
+      maxPerCustomer: true,
+      services: { select: { id: true } } },
+  })
+  return rules.find((r) => (r.conditions as { kind?: string })?.kind === kind) ?? null
+}
+
 /** Emite la recompensa de una regla automática (puntos o grant), idempotente.
  *  - puntos: asiento `bonus` con `dedupeKey` (unique businessId+dedupeKey) y
  *    columnas `triggeringBookingId`/`sourcePromotionId` para el clawback/guard. `bookingId` queda null.

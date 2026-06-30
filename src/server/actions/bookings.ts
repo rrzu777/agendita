@@ -17,6 +17,9 @@ import { addMinutes } from 'date-fns'
 import { applyPromotionInTx } from '@/lib/promotions/apply'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { creditVisitPoints } from '@/lib/loyalty/credit'
+import { emitAutomaticReward, loadAutomaticRule } from '@/lib/loyalty/automatic'
+import { rewardReferralOnCompletion } from '@/lib/loyalty/referral'
+import { firstVisitKey } from '@/lib/loyalty/automatic-match'
 import {
   sendBookingReceivedToCustomer,
   sendNewBookingNotificationToBusiness,
@@ -415,6 +418,7 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
       ? await prisma.loyaltyConfig.findUnique({ where: { businessId } })
       : null
 
+  let isFirstVisit = false
   const updateResult = await prisma.$transaction(async (tx) => {
     const res = await tx.booking.updateMany({
       where: { id, businessId },
@@ -430,19 +434,76 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
         status === BookingStatus.cancelled ? 'cancelled' : 'no_show',
       )
     }
-    if (res.count > 0 && status === BookingStatus.completed && loyaltyConfig?.isActive) {
-      await creditVisitPoints(tx, {
-        businessId,
-        customerId: existing.customerId,
-        finalAmount: existing.finalAmount,
-        bookingId: id,
-        config: loyaltyConfig,
+    if (res.count > 0 && status === BookingStatus.completed && existing.customerId) {
+      // Marca de primera/última completación (sirve a aniversario y win-back del cron).
+      const prevCompleted = await tx.booking.count({
+        where: { customerId: existing.customerId, status: BookingStatus.completed, id: { not: id } },
       })
+      isFirstVisit = prevCompleted === 0
+      const now = new Date()
+      await tx.customer.update({
+        where: { id: existing.customerId },
+        data: { lastCompletedAt: now, ...(isFirstVisit ? { firstCompletedAt: now } : {}) },
+      })
+      if (loyaltyConfig?.isActive) {
+        await creditVisitPoints(tx, {
+          businessId,
+          customerId: existing.customerId,
+          finalAmount: existing.finalAmount,
+          bookingId: id,
+          config: loyaltyConfig,
+        })
+      }
     }
     return res
   })
   if (updateResult.count === 0) {
     throw new ForbiddenError('Reserva no encontrada')
+  }
+
+  // R-EMIT: emisiones automáticas FUERA de la tx del evento (cada una en su propia tx, post-commit).
+  if (status === BookingStatus.completed && existing.customerId && loyaltyConfig?.isActive) {
+    const customerId = existing.customerId
+    const emitCfg = {
+      grantExpiryDays: loyaltyConfig.grantExpiryDays,
+      forfeitGrantOnNoShow: loyaltyConfig.forfeitGrantOnNoShow,
+    }
+    const now = new Date()
+    if (isFirstVisit) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          const rule = await loadAutomaticRule(tx, businessId, 'first_visit')
+          if (rule)
+            await emitAutomaticReward(tx, {
+              rule,
+              businessId,
+              customerId,
+              dedupeKey: firstVisitKey(customerId),
+              config: emitCfg,
+              triggeringBookingId: id,
+              now,
+            })
+        })
+      } catch (e) {
+        logger.error('loyalty.first_visit_emit_failed', `first_visit emit falló booking=${id}: ${String(e)}`)
+      }
+    }
+    try {
+      await prisma.$transaction(async (tx) => {
+        const refRule = await loadAutomaticRule(tx, businessId, 'referral')
+        if (refRule)
+          await rewardReferralOnCompletion(tx, {
+            businessId,
+            referredCustomerId: customerId,
+            bookingId: id,
+            rule: refRule,
+            config: emitCfg,
+            now,
+          })
+      })
+    } catch (e) {
+      logger.error('loyalty.referral_emit_failed', `referral emit falló booking=${id}: ${String(e)}`)
+    }
   }
 
   if (status === BookingStatus.cancelled && existing.customer.email) {
