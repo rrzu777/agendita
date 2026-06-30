@@ -1,5 +1,10 @@
 -- CreateEnum
-CREATE TYPE "ReferralStatus" AS ENUM ('pending', 'rewarded', 'void');
+DO $$
+BEGIN
+  CREATE TYPE "ReferralStatus" AS ENUM ('pending', 'rewarded', 'void');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AlterEnum
 -- This migration adds more than one value to an enum.
@@ -13,27 +18,27 @@ ALTER TYPE "LoyaltyReason" ADD VALUE IF NOT EXISTS 'bonus';
 ALTER TYPE "LoyaltyReason" ADD VALUE IF NOT EXISTS 'bonus_reversal';
 
 -- AlterTable
-ALTER TABLE "Customer" ADD COLUMN     "firstCompletedAt" TIMESTAMP(3),
-ADD COLUMN     "lastCompletedAt" TIMESTAMP(3),
-ADD COLUMN     "referralToken" TEXT;
+ALTER TABLE "Customer" ADD COLUMN IF NOT EXISTS "firstCompletedAt" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "lastCompletedAt" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "referralToken" TEXT;
 
 -- AlterTable
-ALTER TABLE "LoyaltyConfig" ADD COLUMN     "clawbackAutoRewardOnRefund" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "LoyaltyConfig" ADD COLUMN IF NOT EXISTS "clawbackAutoRewardOnRefund" BOOLEAN NOT NULL DEFAULT false;
 
 -- AlterTable
-ALTER TABLE "LoyaltyLedger" ADD COLUMN     "dedupeKey" TEXT,
-ADD COLUMN     "sourcePromotionId" TEXT,
-ADD COLUMN     "triggeringBookingId" TEXT;
+ALTER TABLE "LoyaltyLedger" ADD COLUMN IF NOT EXISTS "dedupeKey" TEXT,
+ADD COLUMN IF NOT EXISTS "sourcePromotionId" TEXT,
+ADD COLUMN IF NOT EXISTS "triggeringBookingId" TEXT;
 
 -- AlterTable
-ALTER TABLE "Promotion" ADD COLUMN     "priority" INTEGER NOT NULL DEFAULT 0,
-ADD COLUMN     "rewardPoints" INTEGER;
+ALTER TABLE "Promotion" ADD COLUMN IF NOT EXISTS "priority" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS "rewardPoints" INTEGER;
 
 -- AlterTable
-ALTER TABLE "PromotionGrant" ADD COLUMN     "triggeringBookingId" TEXT;
+ALTER TABLE "PromotionGrant" ADD COLUMN IF NOT EXISTS "triggeringBookingId" TEXT;
 
 -- CreateTable
-CREATE TABLE "Referral" (
+CREATE TABLE IF NOT EXISTS "Referral" (
     "id" TEXT NOT NULL,
     "businessId" TEXT NOT NULL,
     "referrerCustomerId" TEXT NOT NULL,
@@ -47,37 +52,42 @@ CREATE TABLE "Referral" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Referral_referredCustomerId_key" ON "Referral"("referredCustomerId");
+CREATE UNIQUE INDEX IF NOT EXISTS "Referral_referredCustomerId_key" ON "Referral"("referredCustomerId");
 
 -- CreateIndex
-CREATE INDEX "Referral_businessId_status_idx" ON "Referral"("businessId", "status");
+CREATE INDEX IF NOT EXISTS "Referral_businessId_status_idx" ON "Referral"("businessId", "status");
 
 -- CreateIndex
-CREATE INDEX "Referral_referrerCustomerId_idx" ON "Referral"("referrerCustomerId");
+CREATE INDEX IF NOT EXISTS "Referral_referrerCustomerId_idx" ON "Referral"("referrerCustomerId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Customer_referralToken_key" ON "Customer"("referralToken");
+CREATE UNIQUE INDEX IF NOT EXISTS "Customer_referralToken_key" ON "Customer"("referralToken");
 
 -- CreateIndex
-CREATE INDEX "LoyaltyLedger_triggeringBookingId_idx" ON "LoyaltyLedger"("triggeringBookingId");
+CREATE INDEX IF NOT EXISTS "LoyaltyLedger_triggeringBookingId_idx" ON "LoyaltyLedger"("triggeringBookingId");
 
 -- CreateIndex
-CREATE INDEX "LoyaltyLedger_businessId_sourcePromotionId_idx" ON "LoyaltyLedger"("businessId", "sourcePromotionId");
+CREATE INDEX IF NOT EXISTS "LoyaltyLedger_businessId_sourcePromotionId_idx" ON "LoyaltyLedger"("businessId", "sourcePromotionId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "LoyaltyLedger_businessId_dedupeKey_key" ON "LoyaltyLedger"("businessId", "dedupeKey");
+CREATE UNIQUE INDEX IF NOT EXISTS "LoyaltyLedger_businessId_dedupeKey_key" ON "LoyaltyLedger"("businessId", "dedupeKey");
 
 -- CreateIndex
-CREATE INDEX "PromotionGrant_triggeringBookingId_idx" ON "PromotionGrant"("triggeringBookingId");
+CREATE INDEX IF NOT EXISTS "PromotionGrant_triggeringBookingId_idx" ON "PromotionGrant"("triggeringBookingId");
 
 -- AddForeignKey
-ALTER TABLE "Referral" ADD CONSTRAINT "Referral_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Referral" ADD CONSTRAINT "Referral_referrerCustomerId_fkey" FOREIGN KEY ("referrerCustomerId") REFERENCES "Customer"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Referral" ADD CONSTRAINT "Referral_referredCustomerId_fkey" FOREIGN KEY ("referredCustomerId") REFERENCES "Customer"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Referral_businessId_fkey') THEN
+    ALTER TABLE "Referral" ADD CONSTRAINT "Referral_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Referral_referrerCustomerId_fkey') THEN
+    ALTER TABLE "Referral" ADD CONSTRAINT "Referral_referrerCustomerId_fkey" FOREIGN KEY ("referrerCustomerId") REFERENCES "Customer"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Referral_referredCustomerId_fkey') THEN
+    ALTER TABLE "Referral" ADD CONSTRAINT "Referral_referredCustomerId_fkey" FOREIGN KEY ("referredCustomerId") REFERENCES "Customer"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
 -- Backfill firstCompletedAt / lastCompletedAt desde reservas completadas existentes.
 UPDATE "Customer" c SET

@@ -88,11 +88,11 @@ ADD COLUMN IF NOT EXISTS "grantExpiryDays" INTEGER,
 ADD COLUMN IF NOT EXISTS "refundPointsOnExpiry" BOOLEAN NOT NULL DEFAULT true;
 
 -- AlterTable
-ALTER TABLE "Promotion" ADD COLUMN     "grantExpiryDays" INTEGER,
-ADD COLUMN     "pointsCost" INTEGER;
+ALTER TABLE "Promotion" ADD COLUMN IF NOT EXISTS "grantExpiryDays" INTEGER,
+ADD COLUMN IF NOT EXISTS "pointsCost" INTEGER;
 
 -- CreateTable
-CREATE TABLE "PromotionGrant" (
+CREATE TABLE IF NOT EXISTS "PromotionGrant" (
     "id" TEXT NOT NULL,
     "businessId" TEXT NOT NULL,
     "promotionId" TEXT NOT NULL,
@@ -115,25 +115,30 @@ CREATE TABLE "PromotionGrant" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "PromotionGrant_redeemedBookingId_key" ON "PromotionGrant"("redeemedBookingId");
+CREATE UNIQUE INDEX IF NOT EXISTS "PromotionGrant_redeemedBookingId_key" ON "PromotionGrant"("redeemedBookingId");
 
 -- CreateIndex
-CREATE INDEX "PromotionGrant_customerId_status_idx" ON "PromotionGrant"("customerId", "status");
+CREATE INDEX IF NOT EXISTS "PromotionGrant_customerId_status_idx" ON "PromotionGrant"("customerId", "status");
 
 -- CreateIndex
-CREATE INDEX "PromotionGrant_businessId_promotionId_idx" ON "PromotionGrant"("businessId", "promotionId");
+CREATE INDEX IF NOT EXISTS "PromotionGrant_businessId_promotionId_idx" ON "PromotionGrant"("businessId", "promotionId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "PromotionGrant_businessId_code_key" ON "PromotionGrant"("businessId", "code");
+CREATE UNIQUE INDEX IF NOT EXISTS "PromotionGrant_businessId_code_key" ON "PromotionGrant"("businessId", "code");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "PromotionGrant_customerId_requestId_key" ON "PromotionGrant"("customerId", "requestId");
+CREATE UNIQUE INDEX IF NOT EXISTS "PromotionGrant_customerId_requestId_key" ON "PromotionGrant"("customerId", "requestId");
 
 -- AddForeignKey
-ALTER TABLE "PromotionGrant" ADD CONSTRAINT "PromotionGrant_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "PromotionGrant" ADD CONSTRAINT "PromotionGrant_promotionId_fkey" FOREIGN KEY ("promotionId") REFERENCES "Promotion"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "PromotionGrant" ADD CONSTRAINT "PromotionGrant_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PromotionGrant_businessId_fkey') THEN
+    ALTER TABLE "PromotionGrant" ADD CONSTRAINT "PromotionGrant_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PromotionGrant_promotionId_fkey') THEN
+    ALTER TABLE "PromotionGrant" ADD CONSTRAINT "PromotionGrant_promotionId_fkey" FOREIGN KEY ("promotionId") REFERENCES "Promotion"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PromotionGrant_customerId_fkey') THEN
+    ALTER TABLE "PromotionGrant" ADD CONSTRAINT "PromotionGrant_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
