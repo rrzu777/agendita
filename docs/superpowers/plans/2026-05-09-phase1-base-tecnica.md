@@ -135,7 +135,7 @@ MERCADO_PAGO_WEBHOOK_SECRET=""
 
 # Email (Resend - fill later)
 RESEND_API_KEY=""
-FROM_EMAIL="hola@agendita.com"
+FROM_EMAIL="Agendita <no-reply@agendita.cl>"
 
 # Cloudflare R2 (fill later)
 R2_ENDPOINT=""

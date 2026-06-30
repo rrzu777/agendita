@@ -149,7 +149,7 @@ async function main() {
   // Create E2E test user (for Playwright E2E auth bypass)
   const e2eUser = await prisma.user.create({
     data: {
-      email: 'e2e@test.agendita.com',
+      email: 'e2e@test.agendita.cl',
       name: 'E2E Test User',
     },
   })
@@ -166,7 +166,7 @@ async function main() {
   // when this email is also listed in PLATFORM_ADMIN_EMAILS (see CI e2e job).
   await prisma.user.create({
     data: {
-      email: 'admin@agendita.com',
+      email: 'admin@agendita.cl',
       name: 'Platform Admin',
     },
   })

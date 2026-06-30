@@ -15,6 +15,7 @@ import {
 
 const sampleBookingData = {
   businessName: 'Nails by Ana',
+  businessReplyToEmail: 'owner@nails.com',
   businessWhatsapp: '+56912345678',
   businessAddress: 'Av. Siempre Viva 742, Santiago',
   businessTimezone: 'America/Santiago',
@@ -48,6 +49,7 @@ const sampleBusinessData = {
 
 const sampleCancellationData = {
   businessName: 'Nails by Ana',
+  businessReplyToEmail: 'owner@nails.com',
   customerName: 'Maria',
   customerEmail: 'maria@example.com',
   serviceName: 'Manicure semipermanente',
@@ -57,6 +59,7 @@ const sampleCancellationData = {
 
 const sampleReviewData = {
   businessName: 'Nails by Ana',
+  businessReplyToEmail: 'owner@nails.com',
   customerName: 'Maria',
   customerEmail: 'maria@example.com',
   serviceName: 'Manicure semipermanente',
@@ -438,7 +441,7 @@ describe('email-provider: sendBookingConfirmationToCustomer', () => {
 
   it('sends email when env and email are configured', async () => {
     vi.stubEnv('RESEND_API_KEY', 're_test_123')
-    vi.stubEnv('FROM_EMAIL', 'hola@agendita.com')
+    vi.stubEnv('FROM_EMAIL', 'Agendita <no-reply@agendita.cl>')
     mockResendSend.mockResolvedValue({ data: { id: 'msg_123' }, error: null })
 
     const result = await sendBookingConfirmationToCustomer(sampleBookingData)
@@ -446,8 +449,9 @@ describe('email-provider: sendBookingConfirmationToCustomer', () => {
     expect(MockResend).toHaveBeenCalledWith('re_test_123')
     expect(mockResendSend).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: 'hola@agendita.com',
+        from: 'Agendita <no-reply@agendita.cl>',
         to: ['maria@example.com'],
+        replyTo: 'owner@nails.com',
         subject: 'Reserva confirmada - Nails by Ana',
       })
     )
@@ -457,7 +461,7 @@ describe('email-provider: sendBookingConfirmationToCustomer', () => {
 
   it('returns error when Resend fails', async () => {
     vi.stubEnv('RESEND_API_KEY', 're_test_123')
-    vi.stubEnv('FROM_EMAIL', 'hola@agendita.com')
+    vi.stubEnv('FROM_EMAIL', 'Agendita <no-reply@agendita.cl>')
     mockResendSend.mockResolvedValue({ data: null, error: { message: 'Rate limited' } })
 
     const result = await sendBookingConfirmationToCustomer(sampleBookingData)
@@ -467,7 +471,7 @@ describe('email-provider: sendBookingConfirmationToCustomer', () => {
 
   it('handles thrown errors gracefully', async () => {
     vi.stubEnv('RESEND_API_KEY', 're_test_123')
-    vi.stubEnv('FROM_EMAIL', 'hola@agendita.com')
+    vi.stubEnv('FROM_EMAIL', 'Agendita <no-reply@agendita.cl>')
     mockResendSend.mockRejectedValue(new Error('Network error'))
 
     const result = await sendBookingConfirmationToCustomer(sampleBookingData)
@@ -493,7 +497,7 @@ describe('email-provider: sendNewBookingNotificationToBusiness', () => {
 
   it('sends to owner and admin users', async () => {
     vi.stubEnv('RESEND_API_KEY', 're_test_123')
-    vi.stubEnv('FROM_EMAIL', 'hola@agendita.com')
+    vi.stubEnv('FROM_EMAIL', 'Agendita <no-reply@agendita.cl>')
     mockResendSend.mockResolvedValue({ data: { id: 'msg_ok' }, error: null })
 
     mockPrismaForEmail.businessUser.findMany.mockResolvedValue([
@@ -507,12 +511,14 @@ describe('email-provider: sendNewBookingNotificationToBusiness', () => {
     expect(mockResendSend).toHaveBeenCalledWith(
       expect.objectContaining({
         to: ['owner@nails.com'],
+        replyTo: 'maria@example.com',
         subject: 'Nueva reserva - Maria',
       })
     )
     expect(mockResendSend).toHaveBeenCalledWith(
       expect.objectContaining({
         to: ['admin@nails.com'],
+        replyTo: 'maria@example.com',
         subject: 'Nueva reserva - Maria',
       })
     )
@@ -522,7 +528,7 @@ describe('email-provider: sendNewBookingNotificationToBusiness', () => {
 
   it('filters out users without email', async () => {
     vi.stubEnv('RESEND_API_KEY', 're_test_123')
-    vi.stubEnv('FROM_EMAIL', 'hola@agendita.com')
+    vi.stubEnv('FROM_EMAIL', 'Agendita <no-reply@agendita.cl>')
     mockResendSend.mockResolvedValue({ data: { id: 'msg_ok' }, error: null })
 
     mockPrismaForEmail.businessUser.findMany.mockResolvedValue([
@@ -537,7 +543,7 @@ describe('email-provider: sendNewBookingNotificationToBusiness', () => {
 
   it('filters out staff role', async () => {
     vi.stubEnv('RESEND_API_KEY', 're_test_123')
-    vi.stubEnv('FROM_EMAIL', 'hola@agendita.com')
+    vi.stubEnv('FROM_EMAIL', 'Agendita <no-reply@agendita.cl>')
     mockResendSend.mockResolvedValue({ data: { id: 'msg_ok' }, error: null })
 
     await sendNewBookingNotificationToBusiness('biz-1', sampleBusinessData)
@@ -569,7 +575,7 @@ describe('email-provider: sendBookingCancelledNotification', () => {
 
   it('sends cancellation email', async () => {
     vi.stubEnv('RESEND_API_KEY', 're_test_123')
-    vi.stubEnv('FROM_EMAIL', 'hola@agendita.com')
+    vi.stubEnv('FROM_EMAIL', 'Agendita <no-reply@agendita.cl>')
     mockResendSend.mockResolvedValue({ data: { id: 'msg_456' }, error: null })
 
     const result = await sendBookingCancelledNotification(sampleCancellationData)
@@ -577,6 +583,7 @@ describe('email-provider: sendBookingCancelledNotification', () => {
     expect(mockResendSend).toHaveBeenCalledWith(
       expect.objectContaining({
         to: ['maria@example.com'],
+        replyTo: 'owner@nails.com',
         subject: 'Reserva cancelada - Nails by Ana',
       })
     )
@@ -601,7 +608,7 @@ describe('email-provider: sendReviewRequestNotification', () => {
 
   it('sends review request email', async () => {
     vi.stubEnv('RESEND_API_KEY', 're_test_123')
-    vi.stubEnv('FROM_EMAIL', 'hola@agendita.com')
+    vi.stubEnv('FROM_EMAIL', 'Agendita <no-reply@agendita.cl>')
     mockResendSend.mockResolvedValue({ data: { id: 'msg_789' }, error: null })
 
     const result = await sendReviewRequestNotification(sampleReviewData)
@@ -609,6 +616,7 @@ describe('email-provider: sendReviewRequestNotification', () => {
     expect(mockResendSend).toHaveBeenCalledWith(
       expect.objectContaining({
         to: ['maria@example.com'],
+        replyTo: 'owner@nails.com',
         subject: '¿Cómo te fue? - Nails by Ana',
       })
     )

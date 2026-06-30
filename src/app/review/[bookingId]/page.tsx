@@ -65,9 +65,6 @@ export default async function ReviewPage({ params, searchParams }: ReviewPagePro
           <p className="mt-2 text-muted-foreground">
             Ya enviaste tu reseña para <strong>{reviewRequest.serviceName}</strong> en <strong>{reviewRequest.businessName}</strong>.
           </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Tu reseña está pendiente de aprobación y será visible pronto en el perfil del negocio.
-          </p>
         </div>
       </main>
     )

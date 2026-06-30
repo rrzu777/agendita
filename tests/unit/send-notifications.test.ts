@@ -30,6 +30,11 @@ vi.mock('@/lib/db', () => {
       booking: {
         findFirst: vi.fn().mockResolvedValue(mockBooking),
       },
+      businessUser: {
+        findMany: vi.fn().mockResolvedValue([
+          { user: { email: 'owner@nails.com', name: 'Ana' } },
+        ]),
+      },
       payment: {
         findUnique: vi.fn().mockResolvedValue({
           id: 'pay-1',
@@ -65,7 +70,7 @@ vi.mock('@/lib/logger', () => ({
 
 const mockFetch = vi.fn()
 vi.stubEnv('RESEND_API_KEY', 're_test_123')
-vi.stubEnv('FROM_EMAIL', 'hola@agendita.com')
+vi.stubEnv('FROM_EMAIL', 'Agendita <no-reply@agendita.cl>')
 
 vi.stubEnv('NEXT_PUBLIC_APP_DOMAIN', 'localhost:3000')
 
@@ -140,8 +145,9 @@ describe('sendBookingConfirmedNotification', () => {
 
     expect(mockResendSend).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: 'hola@agendita.com',
+        from: 'Agendita <no-reply@agendita.cl>',
         to: ['maria@example.com'],
+        replyTo: 'owner@nails.com',
         subject: expect.stringContaining('Nails by Ana'),
       }),
     )
@@ -202,7 +208,7 @@ describe('sendBookingReminderNotification', () => {
 
     expect(mockResendSend).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: 'hola@agendita.com',
+        from: 'Agendita <no-reply@agendita.cl>',
         to: ['maria@example.com'],
         subject: expect.stringContaining('Recordatorio'),
       }),
@@ -234,8 +240,9 @@ describe('sendBookingCancelledNotificationById', () => {
 
     expect(mockResendSend).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: 'hola@agendita.com',
+        from: 'Agendita <no-reply@agendita.cl>',
         to: ['maria@example.com'],
+        replyTo: 'owner@nails.com',
         subject: expect.stringContaining('cancelada'),
       }),
     )
@@ -266,8 +273,9 @@ describe('sendPaymentReceivedNotification', () => {
 
     expect(mockResendSend).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: 'hola@agendita.com',
+        from: 'Agendita <no-reply@agendita.cl>',
         to: ['maria@example.com'],
+        replyTo: 'owner@nails.com',
         subject: expect.stringContaining('Abono recibido'),
       }),
     )
@@ -333,7 +341,7 @@ describe('email provider: missing env', () => {
 
   it('skips when RESEND_API_KEY is not set', async () => {
     vi.stubEnv('RESEND_API_KEY', '')
-    vi.stubEnv('FROM_EMAIL', 'hola@agendita.com')
+    vi.stubEnv('FROM_EMAIL', 'Agendita <no-reply@agendita.cl>')
 
     const { sendBookingConfirmedNotification: fn } = await import('@/lib/notifications/email-provider')
     const result = await fn('booking-1', 'biz-1')

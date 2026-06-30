@@ -79,8 +79,8 @@ export default function PrivacyPage() {
           <h2 className="mb-3 mt-8 text-xl font-semibold text-primary">7. Contacto</h2>
           <p>
             Para ejercer tus derechos o consultar sobre esta política:{' '}
-            <a href="mailto:hola@agendita.com" className="font-semibold text-primary underline">
-              hola@agendita.com
+            <a href="mailto:hola@agendita.cl" className="font-semibold text-primary underline">
+              hola@agendita.cl
             </a>
           </p>
         </section>

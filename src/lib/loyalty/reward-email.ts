@@ -2,24 +2,26 @@ import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { buildLoyaltyCardLink } from './token'
 import { getAppUrl } from '@/lib/business/urls'
-import { sendNotificationSafely, sendLoyaltyRewardNotification } from '@/lib/notifications'
+import { getBusinessReplyToEmail, sendNotificationSafely, sendLoyaltyRewardNotification } from '@/lib/notifications'
 
 /** Envía (best-effort, post-commit) el email de recompensa automática a una clienta.
  *  Arma el link a "Mi tarjeta" y delega en `sendNotificationSafely`. Nunca rompe ni
  *  bloquea la emisión: cualquier fallo se loguea y se traga. */
 export async function sendRewardEmail(args: {
+  businessId: string
   customer: { id: string; name: string; email: string; loyaltyToken: string | null }
   businessName: string
   config: { isActive: boolean } | null | undefined
   rewardLabel: string
   reason: 'birthday' | 'winback' | 'referral'
 }): Promise<void> {
-  const { customer, businessName, config, rewardLabel, reason } = args
+  const { businessId, customer, businessName, config, rewardLabel, reason } = args
   try {
     const loyaltyCardLink = await buildLoyaltyCardLink(prisma, customer, config, getAppUrl(''))
-    await sendNotificationSafely('loyalty_reward', () =>
+    await sendNotificationSafely('loyalty_reward', async () =>
       sendLoyaltyRewardNotification({
         businessName,
+        businessReplyToEmail: await getBusinessReplyToEmail(businessId),
         customerName: customer.name,
         customerEmail: customer.email,
         rewardLabel,

@@ -53,8 +53,8 @@ export default function RefundPolicyPage() {
           <h2 className="mb-3 mt-8 text-xl font-semibold text-primary">4. Contacto</h2>
           <p>
             Para dudas sobre reembolsos:{' '}
-            <a href="mailto:hola@agendita.com" className="font-semibold text-primary underline">
-              hola@agendita.com
+            <a href="mailto:hola@agendita.cl" className="font-semibold text-primary underline">
+              hola@agendita.cl
             </a>
           </p>
         </section>

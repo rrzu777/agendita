@@ -48,7 +48,7 @@ export function ReviewForm({ bookingId, token }: ReviewFormProps) {
         <div className="mb-4 text-4xl text-primary">★</div>
         <h2 className="text-xl font-semibold text-primary">¡Gracias por tu reseña!</h2>
         <p className="mt-2 text-muted-foreground">
-          Tu reseña está pendiente de aprobación y será visible pronto en el perfil del negocio.
+          Gracias por compartir tu experiencia.
         </p>
       </div>
     )

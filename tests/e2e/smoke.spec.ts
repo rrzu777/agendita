@@ -2,9 +2,9 @@ import { test, expect, Page } from '@playwright/test'
 
 // ─── Test data constants ───────────────────────────────────────────────────────
 const E2E_SECRET = process.env.PLAYWRIGHT_E2E_AUTH_SECRET || 'e2e-secret-local'
-const E2E_EMAIL = process.env.PLAYWRIGHT_E2E_EMAIL || 'e2e@test.agendita.com'
+const E2E_EMAIL = process.env.PLAYWRIGHT_E2E_EMAIL || 'e2e@test.agendita.cl'
 const E2E_OWNER_EMAIL = process.env.PLAYWRIGHT_E2E_OWNER_EMAIL || 'owner@mimosnails.com'
-const E2E_ADMIN_EMAIL = process.env.PLAYWRIGHT_E2E_ADMIN_EMAIL || 'admin@agendita.com'
+const E2E_ADMIN_EMAIL = process.env.PLAYWRIGHT_E2E_ADMIN_EMAIL || 'admin@agendita.cl'
 const BUSINESS_SLUG = 'mimosnails'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────

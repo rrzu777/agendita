@@ -120,6 +120,7 @@ export async function notifyReferralReward(
   for (const c of customers) {
     if (!c.email) continue
     await sendRewardEmail({
+      businessId,
       customer: { id: c.id, name: c.name, email: c.email, loyaltyToken: c.loyaltyToken },
       businessName: biz.name,
       config: biz.loyaltyConfig,

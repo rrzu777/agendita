@@ -27,6 +27,7 @@ import {
   sendBookingConfirmedNotification,
   sendNotificationSafely,
   sendMultiNotificationSafely,
+  getBusinessReplyToEmail,
 } from '@/lib/notifications'
 
 const createBookingSchema = z.object({
@@ -86,6 +87,7 @@ async function fireBookingNotifications(
   const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '')
   const protocol = cleanDomain.startsWith('localhost') || cleanDomain.endsWith('.localhost') || cleanDomain.startsWith('127.0.0.1') ? 'http' : 'https'
   const dashboardLink = `${protocol}://${cleanDomain}/dashboard/bookings`
+  const businessReplyToEmail = await getBusinessReplyToEmail(booking.businessId)
 
   const promises: Promise<unknown>[] = []
 
@@ -94,6 +96,7 @@ async function fireBookingNotifications(
       sendNotificationSafely('customer received', () =>
         sendBookingReceivedToCustomer({
           businessName: business.name,
+          businessReplyToEmail,
           businessWhatsapp: business.whatsapp,
           businessAddress: business.addressText,
           businessTimezone,
@@ -524,9 +527,10 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
   }
 
   if (status === BookingStatus.cancelled && existing.customer.email) {
-    await sendNotificationSafely('cancellation', () =>
+    await sendNotificationSafely('cancellation', async () =>
       sendBookingCancelledNotification({
         businessName: existing.business.name,
+        businessReplyToEmail: await getBusinessReplyToEmail(businessId),
         customerName: existing.customer.name,
         customerEmail: existing.customer.email,
         serviceName: existing.service.name,
@@ -954,9 +958,10 @@ export async function cancelBooking(bookingId: string, reason?: string) {
   })
 
   if (booking.customer?.email) {
-    await sendNotificationSafely('booking cancelled', () =>
+    await sendNotificationSafely('booking cancelled', async () =>
       sendBookingCancelledNotification({
         businessName: business.name,
+        businessReplyToEmail: await getBusinessReplyToEmail(businessId),
         customerName: booking.customer!.name,
         customerEmail: booking.customer!.email,
         serviceName: booking.service!.name,

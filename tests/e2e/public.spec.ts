@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-const E2E_EMAIL = 'e2e@test.agendita.com'
+const E2E_EMAIL = 'e2e@test.agendita.cl'
 const E2E_OWNER_EMAIL = 'owner@mimosnails.com'
 
 test.beforeEach(async ({ page }) => {

@@ -14,6 +14,7 @@ vi.mock('@/lib/db', () => ({
 
 const mockSendReminderEmail = vi.fn()
 vi.mock('@/lib/notifications', () => ({
+  getBusinessReplyToEmail: vi.fn().mockResolvedValue('owner@mimosnails.cl'),
   sendReminderEmail: mockSendReminderEmail,
 }))
 
