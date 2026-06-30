@@ -44,6 +44,7 @@ vi.mock('resend', () => ({
 }))
 
 vi.mock('@/lib/notifications', () => ({
+  getBusinessReplyToEmail: vi.fn().mockResolvedValue('owner@test.com'),
   sendBookingConfirmationToCustomer: vi.fn(),
   sendBookingReceivedToCustomer: vi.fn(),
   sendNewBookingNotificationToBusiness: vi.fn().mockResolvedValue([]),

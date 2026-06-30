@@ -1,11 +1,16 @@
 -- CreateEnum
-CREATE TYPE "LoyaltyReason" AS ENUM ('visit', 'visit_reversal', 'adjustment');
+DO $$
+BEGIN
+  CREATE TYPE "LoyaltyReason" AS ENUM ('visit', 'visit_reversal', 'adjustment');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AlterTable
-ALTER TABLE "Customer" ADD COLUMN     "loyaltyToken" TEXT;
+ALTER TABLE "Customer" ADD COLUMN IF NOT EXISTS "loyaltyToken" TEXT;
 
 -- CreateTable
-CREATE TABLE "LoyaltyConfig" (
+CREATE TABLE IF NOT EXISTS "LoyaltyConfig" (
     "id" TEXT NOT NULL,
     "businessId" TEXT NOT NULL,
     "isActive" BOOLEAN NOT NULL DEFAULT false,
@@ -23,7 +28,7 @@ CREATE TABLE "LoyaltyConfig" (
 );
 
 -- CreateTable
-CREATE TABLE "LoyaltyLedger" (
+CREATE TABLE IF NOT EXISTS "LoyaltyLedger" (
     "id" TEXT NOT NULL,
     "businessId" TEXT NOT NULL,
     "customerId" TEXT NOT NULL,
@@ -39,28 +44,33 @@ CREATE TABLE "LoyaltyLedger" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "LoyaltyConfig_businessId_key" ON "LoyaltyConfig"("businessId");
+CREATE UNIQUE INDEX IF NOT EXISTS "LoyaltyConfig_businessId_key" ON "LoyaltyConfig"("businessId");
 
 -- CreateIndex
-CREATE INDEX "LoyaltyLedger_businessId_customerId_idx" ON "LoyaltyLedger"("businessId", "customerId");
+CREATE INDEX IF NOT EXISTS "LoyaltyLedger_businessId_customerId_idx" ON "LoyaltyLedger"("businessId", "customerId");
 
 -- CreateIndex
-CREATE INDEX "LoyaltyLedger_customerId_idx" ON "LoyaltyLedger"("customerId");
+CREATE INDEX IF NOT EXISTS "LoyaltyLedger_customerId_idx" ON "LoyaltyLedger"("customerId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "LoyaltyLedger_bookingId_reason_key" ON "LoyaltyLedger"("bookingId", "reason");
+CREATE UNIQUE INDEX IF NOT EXISTS "LoyaltyLedger_bookingId_reason_key" ON "LoyaltyLedger"("bookingId", "reason");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Customer_loyaltyToken_key" ON "Customer"("loyaltyToken");
+CREATE UNIQUE INDEX IF NOT EXISTS "Customer_loyaltyToken_key" ON "Customer"("loyaltyToken");
 
 -- AddForeignKey
-ALTER TABLE "LoyaltyConfig" ADD CONSTRAINT "LoyaltyConfig_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "LoyaltyLedger" ADD CONSTRAINT "LoyaltyLedger_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "LoyaltyLedger" ADD CONSTRAINT "LoyaltyLedger_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "LoyaltyLedger" ADD CONSTRAINT "LoyaltyLedger_bookingId_fkey" FOREIGN KEY ("bookingId") REFERENCES "Booking"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'LoyaltyConfig_businessId_fkey') THEN
+    ALTER TABLE "LoyaltyConfig" ADD CONSTRAINT "LoyaltyConfig_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'LoyaltyLedger_businessId_fkey') THEN
+    ALTER TABLE "LoyaltyLedger" ADD CONSTRAINT "LoyaltyLedger_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'LoyaltyLedger_customerId_fkey') THEN
+    ALTER TABLE "LoyaltyLedger" ADD CONSTRAINT "LoyaltyLedger_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'LoyaltyLedger_bookingId_fkey') THEN
+    ALTER TABLE "LoyaltyLedger" ADD CONSTRAINT "LoyaltyLedger_bookingId_fkey" FOREIGN KEY ("bookingId") REFERENCES "Booking"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;

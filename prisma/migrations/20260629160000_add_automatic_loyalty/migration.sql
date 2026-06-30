@@ -9,8 +9,8 @@ CREATE TYPE "ReferralStatus" AS ENUM ('pending', 'rewarded', 'void');
 -- the enum.
 
 
-ALTER TYPE "LoyaltyReason" ADD VALUE 'bonus';
-ALTER TYPE "LoyaltyReason" ADD VALUE 'bonus_reversal';
+ALTER TYPE "LoyaltyReason" ADD VALUE IF NOT EXISTS 'bonus';
+ALTER TYPE "LoyaltyReason" ADD VALUE IF NOT EXISTS 'bonus_reversal';
 
 -- AlterTable
 ALTER TABLE "Customer" ADD COLUMN     "firstCompletedAt" TIMESTAMP(3),
