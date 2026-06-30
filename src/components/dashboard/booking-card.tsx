@@ -10,6 +10,7 @@ import { BookingDrawer } from './booking-drawer'
 import { updateBookingStatus } from '@/server/actions/bookings'
 import { CheckCircle, UserX, CreditCard, Eye, RefreshCw } from 'lucide-react'
 import { CancelBookingButton } from './cancel-booking-button'
+import { isManualPaymentAllowed } from './manual-payment-utils'
 
 const statusLabels: Record<string, string> = {
   pending_payment: 'Pendiente de pago',
@@ -36,6 +37,7 @@ export type CalendarBooking = {
   customer: { name: string; phone: string; email: string | null } | null
   totalPrice: number
   depositPaid: number
+  depositRequired: number
   finalAmount: number
   remainingBalance: number
   paymentStatus: string
@@ -72,7 +74,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
   const canComplete = booking.status === 'confirmed'
   const canCancel = booking.status === 'pending_payment' || booking.status === 'confirmed'
   const canNoShow = booking.status === 'confirmed'
-  const canRegisterPayment = booking.status === 'confirmed' && booking.remainingBalance > 0
+  const canRegisterPayment = isManualPaymentAllowed(booking)
 
   return (
     <>
