@@ -1,9 +1,9 @@
 import { Page, expect } from '@playwright/test'
 
 const E2E_SECRET = process.env.PLAYWRIGHT_E2E_AUTH_SECRET || 'e2e-secret-local'
-const E2E_EMAIL = process.env.PLAYWRIGHT_E2E_EMAIL || 'e2e@test.agendita.com'
+const E2E_EMAIL = process.env.PLAYWRIGHT_E2E_EMAIL || 'e2e@test.agendita.cl'
 const E2E_OWNER_EMAIL = process.env.PLAYWRIGHT_E2E_OWNER_EMAIL || 'owner@mimosnails.com'
-const E2E_ADMIN_EMAIL = process.env.PLAYWRIGHT_E2E_ADMIN_EMAIL || 'admin@agendita.com'
+const E2E_ADMIN_EMAIL = process.env.PLAYWRIGHT_E2E_ADMIN_EMAIL || 'admin@agendita.cl'
 
 /**
  * Set E2E auth bypass headers for a regular business user (staff role).
@@ -37,7 +37,7 @@ export function setAdminAuth(page: Page) {
 }
 
 /**
- * Login as the pre-seeded business user (e2e@test.agendita.com)
+ * Login as the pre-seeded business user (e2e@test.agendita.cl)
  * via the E2E auth bypass mechanism.
  */
 export async function loginAsBusiness(page: Page) {

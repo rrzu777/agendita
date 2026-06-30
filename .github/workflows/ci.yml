@@ -131,9 +131,9 @@ jobs:
       E2E_AUTH_BYPASS_SECRET: 'e2e-secret-ci-2026'
       APP_ENV: 'e2e'
       PLAYWRIGHT_E2E_AUTH_SECRET: 'e2e-secret-ci-2026'
-      # Grants the seeded admin@agendita.com platform-admin access for the
+      # Grants the seeded admin@agendita.cl platform-admin access for the
       # /admin smoke tests (setAdminAuth uses this email).
-      PLATFORM_ADMIN_EMAILS: 'admin@agendita.com'
+      PLATFORM_ADMIN_EMAILS: 'admin@agendita.cl'
       # Run the node test runner in the seeded business's timezone so runner-side
       # date math (nextBookableDate) matches the browser (timezoneId).
       TZ: 'America/Santiago'

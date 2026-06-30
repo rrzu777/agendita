@@ -7,6 +7,7 @@ export {
   sendReviewRequestNotification,
   sendNotificationSafely,
   sendMultiNotificationSafely,
+  getBusinessReplyToEmail,
   sendReminderEmail,
   sendBookingReminderNotification,
   sendBookingCancelledNotificationById,

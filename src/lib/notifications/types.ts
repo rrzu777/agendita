@@ -7,6 +7,7 @@ export interface EmailResult {
 
 export interface BookingEmailData {
   businessName: string
+  businessReplyToEmail?: string | null
   businessWhatsapp?: string | null
   businessAddress?: string | null
   businessTimezone: string
@@ -29,6 +30,7 @@ export interface BookingEmailData {
 
 export interface CancellationEmailData {
   businessName: string
+  businessReplyToEmail?: string | null
   customerName: string
   customerEmail?: string | null
   serviceName: string
@@ -38,6 +40,7 @@ export interface CancellationEmailData {
 
 export interface ReviewRequestEmailData {
   businessName: string
+  businessReplyToEmail?: string | null
   customerName: string
   customerEmail?: string | null
   serviceName: string
@@ -63,6 +66,7 @@ export interface NewBookingBusinessEmailData {
 
 export interface LoyaltyRewardEmailData {
   businessName: string
+  businessReplyToEmail?: string | null
   customerName: string
   customerEmail: string
   rewardLabel: string
@@ -77,6 +81,7 @@ export interface NotificationResult {
 
 export interface ReminderEmailData {
   businessName: string
+  businessReplyToEmail?: string | null
   customerName: string
   customerEmail: string
   serviceName: string

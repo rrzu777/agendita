@@ -132,19 +132,26 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
         {business.reviews.length > 0 && (
           <section className="mb-7">
             <h2 className="mb-4 font-heading text-2xl font-semibold tracking-tight text-primary">Reseñas</h2>
-            <div className="studio-card p-6">
+            <div className="space-y-3">
               {business.reviews.map((review) => (
-                <div key={review.id} className="border-b pb-4 last:border-0 last:pb-0">
-                  <div className="mb-2 flex items-center gap-1">
-                    {Array.from({ length: review.rating }).map((_, i) => (
-                      <Star key={i} className="size-4 fill-primary text-primary" />
-                    ))}
+                <article key={review.id} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-primary">
+                      {review.customer?.name || 'Cliente'}
+                    </p>
+                    <div className="flex shrink-0 items-center gap-0.5" aria-label={`${review.rating} de 5 estrellas`}>
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Star
+                          key={i}
+                          className={`size-4 ${i < review.rating ? 'fill-primary text-primary' : 'text-muted-foreground/25'}`}
+                        />
+                      ))}
+                    </div>
                   </div>
-                  <p className="text-sm italic leading-relaxed text-foreground">{review.comment}</p>
-                  <p className="mt-3 text-sm font-semibold text-primary">
-                    {review.customer?.name || 'Cliente'}
-                  </p>
-                </div>
+                  {review.comment && (
+                    <p className="text-sm leading-relaxed text-foreground">{review.comment}</p>
+                  )}
+                </article>
               ))}
             </div>
           </section>

@@ -8,7 +8,7 @@ import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth
 import { BookingStatus, Prisma } from '@prisma/client'
 import { submitReviewSchema } from '@/lib/reviews/schema'
 import { headers } from 'next/headers'
-import { sendReviewRequestNotification } from '@/lib/notifications'
+import { getBusinessReplyToEmail, sendReviewRequestNotification } from '@/lib/notifications'
 import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
 import { getAppUrl } from '@/lib/business/urls'
 import { emitAutomaticReward, loadAutomaticRule } from '@/lib/loyalty/automatic'
@@ -482,6 +482,7 @@ export async function sendReviewRequestEmail(bookingId: string) {
 
   return sendReviewRequestNotification({
     businessName: booking.business.name,
+    businessReplyToEmail: await getBusinessReplyToEmail(businessId),
     customerName: booking.customer.name,
     customerEmail: booking.customer.email,
     serviceName: booking.service.name,

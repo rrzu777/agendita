@@ -59,7 +59,7 @@ describe('E2E auth bypass', () => {
 
   const dbUser = {
     id: 'u-e2e',
-    email: 'e2e@test.agendita.com',
+    email: 'e2e@test.agendita.cl',
     name: 'E2E User',
     createdAt: new Date(),
     businesses: [{ business: { id: 'b1', isActive: true, slug: 'test' }, role: 'staff' }],
@@ -122,7 +122,7 @@ describe('E2E auth bypass', () => {
   describe('validateE2EHeaders', () => {
     it('returns null when bypass disabled', async () => {
       setEnv({ NODE_ENV: 'development' })
-      setEmailHeader('e2e@test.agendita.com')
+      setEmailHeader('e2e@test.agendita.cl')
       setSecretHeader('secret')
       const { validateE2EHeaders } = await getE2EModule()
       expect(await validateE2EHeaders()).toBeNull()
@@ -130,10 +130,10 @@ describe('E2E auth bypass', () => {
 
     it('returns email when headers valid in dev (no secret required)', async () => {
       enableDev()
-      setEmailHeader('e2e@test.agendita.com')
+      setEmailHeader('e2e@test.agendita.cl')
       setSecretHeader('any-secret')
       const { validateE2EHeaders } = await getE2EModule()
-      expect(await validateE2EHeaders()).toBe('e2e@test.agendita.com')
+      expect(await validateE2EHeaders()).toBe('e2e@test.agendita.cl')
     })
 
     it('returns null when email header missing', async () => {
@@ -145,22 +145,22 @@ describe('E2E auth bypass', () => {
 
     it('returns null when secret header missing', async () => {
       enableDev()
-      setEmailHeader('e2e@test.agendita.com')
+      setEmailHeader('e2e@test.agendita.cl')
       const { validateE2EHeaders } = await getE2EModule()
       expect(await validateE2EHeaders()).toBeNull()
     })
 
     it('validates secret matches E2E_AUTH_BYPASS_SECRET in dev when set', async () => {
       setEnv({ NODE_ENV: 'development', ENABLE_E2E_AUTH_BYPASS: 'true', E2E_AUTH_BYPASS_SECRET: 'correct' })
-      setEmailHeader('e2e@test.agendita.com')
+      setEmailHeader('e2e@test.agendita.cl')
       setSecretHeader('correct')
       const { validateE2EHeaders } = await getE2EModule()
-      expect(await validateE2EHeaders()).toBe('e2e@test.agendita.com')
+      expect(await validateE2EHeaders()).toBe('e2e@test.agendita.cl')
     })
 
     it('rejects wrong secret in dev when E2E_AUTH_BYPASS_SECRET is set', async () => {
       setEnv({ NODE_ENV: 'development', ENABLE_E2E_AUTH_BYPASS: 'true', E2E_AUTH_BYPASS_SECRET: 'correct' })
-      setEmailHeader('e2e@test.agendita.com')
+      setEmailHeader('e2e@test.agendita.cl')
       setSecretHeader('wrong')
       const { validateE2EHeaders } = await getE2EModule()
       expect(await validateE2EHeaders()).toBeNull()
@@ -170,19 +170,19 @@ describe('E2E auth bypass', () => {
   describe('getCurrentUser', () => {
     it('returns synthetic user when bypass active', async () => {
       enableDev()
-      setEmailHeader('e2e@test.agendita.com')
+      setEmailHeader('e2e@test.agendita.cl')
       setSecretHeader('test-secret')
       mockPrisma.user.findUnique.mockResolvedValue(dbUser)
       const { getCurrentUser } = await getModule()
       const result = await getCurrentUser()
       expect(result).toBeDefined()
       expect(result!.id).toBe('u-e2e')
-      expect(result!.email).toBe('e2e@test.agendita.com')
+      expect(result!.email).toBe('e2e@test.agendita.cl')
     })
 
     it('returns null when bypass off and no Supabase session', async () => {
       setEnv({ NODE_ENV: 'development' })
-      setEmailHeader('e2e@test.agendita.com')
+      setEmailHeader('e2e@test.agendita.cl')
       const { getCurrentUser } = await getModule()
       const result = await getCurrentUser()
       expect(result).toBeNull()
@@ -192,7 +192,7 @@ describe('E2E auth bypass', () => {
   describe('getCurrentUserWithBusiness', () => {
     it('returns user + business when bypass active', async () => {
       enableDev()
-      setEmailHeader('e2e@test.agendita.com')
+      setEmailHeader('e2e@test.agendita.cl')
       setSecretHeader('test-secret')
       mockPrisma.user.findUnique.mockResolvedValue(dbUser)
       const { getCurrentUserWithBusiness } = await getModule()

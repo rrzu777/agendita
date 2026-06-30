@@ -51,15 +51,31 @@ function getAppDomain(): string {
   return raw.replace(/^https?:\/\//, '').replace(/\/$/, '')
 }
 
-async function sendEmail(to: string, subject: string, html: string, text: string): Promise<EmailResult> {
+type SendEmailOptions = {
+  replyTo?: string | null
+}
+
+async function sendEmail(
+  to: string,
+  subject: string,
+  html: string,
+  text: string,
+  options?: SendEmailOptions,
+): Promise<EmailResult> {
   const resend = getResend()
   const from = getFromEmail()
 
   if (!resend) {
+    logger.warn('notification.email.skipped', 'RESEND_API_KEY no configurada', {
+      metadata: { to, subject },
+    })
     return { success: false, skipped: 'RESEND_API_KEY no configurada' }
   }
 
   if (!from) {
+    logger.warn('notification.email.skipped', 'FROM_EMAIL no configurado', {
+      metadata: { to, subject },
+    })
     return { success: false, skipped: 'FROM_EMAIL no configurado' }
   }
 
@@ -70,17 +86,25 @@ async function sendEmail(to: string, subject: string, html: string, text: string
       subject,
       html,
       text,
+      ...(options?.replyTo ? { replyTo: options.replyTo } : {}),
     })
 
     if (error) {
-      console.error('[notifications] Resend error:', error)
+      logger.error('notification.email.failed', 'Resend rejected email', {
+        metadata: { to, subject, reason: error.message },
+      })
       return { success: false, error: error.message }
     }
 
+    logger.info('notification.email.sent', 'Email sent', {
+      metadata: { to, subject, messageId: data?.id },
+    })
     return { success: true, messageId: data?.id }
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Error desconocido al enviar email'
-    console.error('[notifications] Error al enviar email:', message)
+    logger.error('notification.email.failed', 'Error al enviar email', {
+      metadata: { to, subject, reason: message },
+    })
     return { success: false, error: message }
   }
 }
@@ -99,6 +123,11 @@ async function getBusinessOwnerEmails(businessId: string): Promise<{ email: stri
   return users
     .filter((bu) => bu.user.email)
     .map((bu) => ({ email: bu.user.email, name: bu.user.name }))
+}
+
+export async function getBusinessReplyToEmail(businessId: string): Promise<string | null> {
+  const [owner] = await getBusinessOwnerEmails(businessId)
+  return owner?.email ?? null
 }
 
 function buildDashboardLink(): string {
@@ -123,6 +152,7 @@ export async function sendBookingConfirmationToCustomer(data: BookingEmailData):
     `Reserva confirmada - ${data.businessName}`,
     html,
     text,
+    { replyTo: data.businessReplyToEmail },
   )
 }
 
@@ -139,6 +169,7 @@ export async function sendBookingReceivedToCustomer(data: BookingEmailData): Pro
     `Reserva recibida - ${data.businessName}`,
     html,
     text,
+    { replyTo: data.businessReplyToEmail },
   )
 }
 
@@ -157,7 +188,9 @@ export async function sendNewBookingNotificationToBusiness(
 
   const results = await Promise.all(
     ownerEmails.map((owner) =>
-      sendEmail(owner.email, `Nueva reserva - ${data.customerName}`, html, text),
+      sendEmail(owner.email, `Nueva reserva - ${data.customerName}`, html, text, {
+        replyTo: data.customerEmail,
+      }),
     ),
   )
 
@@ -202,6 +235,7 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
 
   return sendBookingConfirmationToCustomer({
     businessName: business.name,
+    businessReplyToEmail: await getBusinessReplyToEmail(businessId),
     businessWhatsapp: business.whatsapp,
     businessAddress: business.addressText,
     businessTimezone: tz,
@@ -233,6 +267,7 @@ export async function sendBookingCancelledNotification(data: CancellationEmailDa
     `Reserva cancelada - ${data.businessName}`,
     html,
     text,
+    { replyTo: data.businessReplyToEmail },
   )
 }
 
@@ -249,6 +284,7 @@ export async function sendReviewRequestNotification(data: ReviewRequestEmailData
     `¿Cómo te fue? - ${data.businessName}`,
     html,
     text,
+    { replyTo: data.businessReplyToEmail },
   )
 }
 
@@ -273,6 +309,7 @@ export async function sendLoyaltyRewardNotification(data: LoyaltyRewardEmailData
     `${LOYALTY_REWARD_SUBJECTS[data.reason]} — ${data.businessName}`,
     html,
     text,
+    { replyTo: data.businessReplyToEmail },
   )
 }
 
@@ -288,10 +325,18 @@ export async function sendNotificationSafely(
   fn: () => Promise<EmailResult>,
 ): Promise<EmailResult> {
   try {
-    return await fn()
+    const result = await fn()
+    if (!result.success) {
+      logger.warn('notification.delivery.not_sent', `Notification not sent: ${label}`, {
+        metadata: { label, skipped: result.skipped, error: result.error },
+      })
+    }
+    return result
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Error desconocido'
-    console.error(`[notifications] ${label} failed:`, message)
+    logger.error('notification.delivery.failed', `Notification failed: ${label}`, {
+      metadata: { label, reason: message },
+    })
     return { success: false, error: message }
   }
 }
@@ -305,10 +350,24 @@ export async function sendMultiNotificationSafely(
   fn: () => Promise<EmailResult[]>,
 ): Promise<EmailResult[]> {
   try {
-    return await fn()
+    const results = await fn()
+    const failed = results.filter((result) => !result.success)
+    if (failed.length > 0) {
+      logger.warn('notification.delivery.partial', `Some notifications were not sent: ${label}`, {
+        metadata: {
+          label,
+          failedCount: failed.length,
+          skipped: failed.map((result) => result.skipped).filter(Boolean),
+          errors: failed.map((result) => result.error).filter(Boolean),
+        },
+      })
+    }
+    return results
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Error desconocido'
-    console.error(`[notifications] ${label} failed:`, message)
+    logger.error('notification.delivery.failed', `Notifications failed: ${label}`, {
+      metadata: { label, reason: message },
+    })
     return [{ success: false, error: message }]
   }
 }
@@ -398,6 +457,7 @@ export async function sendBookingCancelledNotificationById(
 
   return sendBookingCancelledNotification({
     businessName: booking.business.name,
+    businessReplyToEmail: await getBusinessReplyToEmail(businessId),
     customerName: booking.customer.name,
     customerEmail: booking.customer.email,
     serviceName: booking.service.name,
@@ -461,11 +521,15 @@ export async function sendPaymentReceivedNotification(
   const business = payment.booking.business
   const subject = `Abono recibido — ${business.name}`
 
-  return sendEmail(payment.booking.customer.email, subject, html, text)
+  return sendEmail(payment.booking.customer.email, subject, html, text, {
+    replyTo: await getBusinessReplyToEmail(businessId),
+  })
 }
 
 export async function sendReminderEmail(data: ReminderEmailData): Promise<EmailResult> {
   const html = bookingReminderHtml(data)
   const text = bookingReminderText(data)
-  return sendEmail(data.customerEmail, 'Recordatorio de tu cita - Agendita', html, text)
+  return sendEmail(data.customerEmail, 'Recordatorio de tu cita - Agendita', html, text, {
+    replyTo: data.businessReplyToEmail,
+  })
 }

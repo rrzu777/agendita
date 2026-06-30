@@ -117,6 +117,7 @@ export async function runAutomaticLoyalty(now: Date = new Date()): Promise<RunAu
             )
             if (rewardLabel && c.email) {
               await sendRewardEmail({
+                businessId: biz.id,
                 customer: { id: c.id, name: c.name, email: c.email, loyaltyToken: c.loyaltyToken },
                 businessName: biz.name,
                 config: biz.loyaltyConfig,

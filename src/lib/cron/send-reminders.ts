@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { BookingStatus } from '@prisma/client'
 import {
+  getBusinessReplyToEmail,
   sendReminderEmail,
 } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
@@ -67,6 +68,7 @@ export async function sendReminders(now: Date = new Date()): Promise<SendReminde
     try {
       const result = await sendReminderEmail({
         businessName: booking.business.name,
+        businessReplyToEmail: await getBusinessReplyToEmail(booking.business.id),
         customerName: booking.customer!.name,
         customerEmail: booking.customer!.email!,
         serviceName: booking.service?.name ?? 'Servicio',
