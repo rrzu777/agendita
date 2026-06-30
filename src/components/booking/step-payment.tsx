@@ -48,7 +48,7 @@ function BusinessCancellationPolicy({ policy }: { policy?: string | null }) {
   )
 }
 
-export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, onBack }: { data: BookingData; businessId: string; cancellationPolicy?: string | null; onSuccess: (id: string, mode: 'paid' | 'pending', promo?: { discountAmount: number; finalAmount: number } | null) => void; onBack: () => void }) {
+export function StepPayment({ data, businessId, cancellationPolicy, referralToken, onSuccess, onBack }: { data: BookingData; businessId: string; cancellationPolicy?: string | null; referralToken?: string; onSuccess: (id: string, mode: 'paid' | 'pending', promo?: { discountAmount: number; finalAmount: number } | null) => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error'>('review')
   const [errorMessage, setErrorMessage] = useState('')
@@ -221,6 +221,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
         idempotencyKey,
         acceptedTerms,
         promotionCode: appliedPromo?.code,
+        referralToken,
       }, businessId)
 
       setStep('success')
@@ -255,6 +256,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, onSuccess, o
         idempotencyKey,
         acceptedTerms,
         promotionCode: appliedPromo?.code,
+        referralToken,
       }, businessId)
 
       const paymentResult = await initiatePayment({

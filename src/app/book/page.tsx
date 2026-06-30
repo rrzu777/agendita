@@ -5,7 +5,14 @@ import { BookingBusinessPage } from '@/components/booking/booking-business-page'
 import { getBookingBusinessBySubdomain } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 
-export default async function BookIndexPage() {
+export default async function BookIndexPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  const { ref } = await searchParams
+  const referralToken = typeof ref === 'string' && ref.length <= 64 ? ref : undefined
+
   const requestHeaders = await headers()
   const tenant = await getTenantFromRequest(requestHeaders)
 
@@ -13,7 +20,7 @@ export default async function BookIndexPage() {
     const business = await getBookingBusinessBySubdomain(tenant.subdomain)
 
     if (business) {
-      return <BookingBusinessPage business={business} profileHref="/" />
+      return <BookingBusinessPage business={business} profileHref="/" referralToken={referralToken} />
     }
   }
 

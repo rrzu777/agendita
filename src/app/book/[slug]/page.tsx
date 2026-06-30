@@ -7,10 +7,13 @@ import { getTenantFromRequest } from '@/lib/tenant/resolver'
 
 interface BookPageProps {
   params: Promise<{ slug: string }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }
 
-export default async function BookPage({ params }: BookPageProps) {
+export default async function BookPage({ params, searchParams }: BookPageProps) {
   const { slug } = await params
+  const { ref } = await searchParams
+  const referralToken = typeof ref === 'string' && ref.length <= 64 ? ref : undefined
   const tenant = await getTenantFromRequest()
 
   if (tenant) {
@@ -27,5 +30,5 @@ export default async function BookPage({ params }: BookPageProps) {
     notFound()
   }
 
-  return <BookingBusinessPage business={business} profileHref={`/b/${business.slug}`} />
+  return <BookingBusinessPage business={business} profileHref={`/b/${business.slug}`} referralToken={referralToken} />
 }

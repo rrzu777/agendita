@@ -6,9 +6,10 @@ import type { BookingBusiness } from '@/lib/business/public'
 interface BookingBusinessPageProps {
   business: BookingBusiness
   profileHref: string
+  referralToken?: string
 }
 
-export function BookingBusinessPage({ business, profileHref }: BookingBusinessPageProps) {
+export function BookingBusinessPage({ business, profileHref, referralToken }: BookingBusinessPageProps) {
   return (
     <main className="studio-shell">
       <header className="sticky top-0 z-40 border-b border-border/50 bg-background/85 backdrop-blur">
@@ -30,6 +31,7 @@ export function BookingBusinessPage({ business, profileHref }: BookingBusinessPa
           businessId={business.id}
           services={business.services}
           cancellationPolicy={business.cancellationPolicy}
+          referralToken={referralToken}
         />
       </div>
     </main>
