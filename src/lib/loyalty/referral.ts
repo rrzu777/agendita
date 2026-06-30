@@ -55,13 +55,13 @@ export async function rewardReferralOnCompletion(tx: Tx, args: {
 }): Promise<ReferralRewardResult | null> {
   const emit = args.emit ?? emitAutomaticReward
   const flip = await tx.referral.updateMany({
-    where: { referredCustomerId: args.referredCustomerId, status: 'pending' },
+    where: { businessId: args.businessId, referredCustomerId: args.referredCustomerId, status: 'pending' },
     data: { status: 'rewarded', rewardedAt: args.now, triggeringBookingId: args.bookingId },
   })
   if (flip.count === 0) return null // sin referral pendiente o ya premiado
 
-  const ref = await tx.referral.findUnique({
-    where: { referredCustomerId: args.referredCustomerId },
+  const ref = await tx.referral.findFirst({
+    where: { businessId: args.businessId, referredCustomerId: args.referredCustomerId },
     select: { referrerCustomerId: true, referredCustomerId: true },
   })
   if (!ref) return null

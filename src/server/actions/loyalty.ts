@@ -275,7 +275,9 @@ export async function upsertAutomaticRule(data: unknown, id?: string) {
 }
 
 export async function archiveAutomaticRule(id: string) {
-  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('automatic-rule', 30, 60000, { userId: user.id, businessId })
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
   const existing = await prisma.promotion.findFirst({ where: { id, ...automaticRuleWhere(businessId) }, select: { id: true } })
   if (!existing) throw new ForbiddenError('Regla no encontrada')
   await prisma.promotion.update({ where: { id }, data: { isActive: false } })

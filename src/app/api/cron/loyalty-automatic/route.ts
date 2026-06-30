@@ -19,7 +19,6 @@ async function handler(request: NextRequest) {
 
   const result = await runAutomaticLoyalty()
 
-  console.log(`[cron:loyalty-automatic] Businesses ${result.businesses}, emitted ${result.emitted}, errors ${result.errors} at ${new Date().toISOString()}`)
   logger.info('loyalty.automatic_cron', `Cron loyalty-automatic: businesses=${result.businesses} emitted=${result.emitted} errors=${result.errors}`)
 
   return NextResponse.json(result)

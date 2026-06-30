@@ -33,7 +33,7 @@ describe('rewardReferralOnCompletion', () => {
     const t = {
       referral: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        findUnique: vi.fn().mockResolvedValue({ referrerCustomerId: 'ref1', referredCustomerId: 'c2' }),
+        findFirst: vi.fn().mockResolvedValue({ referrerCustomerId: 'ref1', referredCustomerId: 'c2' }),
       },
     } as any
     const rule = { id: 'r', businessId: 'b1', conditions: { kind: 'referral', beneficiary: 'both' },
@@ -45,7 +45,7 @@ describe('rewardReferralOnCompletion', () => {
   })
   it('no emite si no había referral pendiente (count 0)', async () => {
     const emit = vi.fn()
-    const t = { referral: { updateMany: vi.fn().mockResolvedValue({ count: 0 }), findUnique: vi.fn() } } as any
+    const t = { referral: { updateMany: vi.fn().mockResolvedValue({ count: 0 }), findFirst: vi.fn() } } as any
     await rewardReferralOnCompletion(t, { businessId: 'b1', referredCustomerId: 'c2', bookingId: 'bk',
       rule: {} as any, config: { grantExpiryDays: null, forfeitGrantOnNoShow: false }, now: new Date(), emit })
     expect(emit).not.toHaveBeenCalled()

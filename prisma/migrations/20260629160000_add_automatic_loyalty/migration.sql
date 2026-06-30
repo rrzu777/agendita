@@ -84,7 +84,7 @@ UPDATE "Customer" c SET
   "firstCompletedAt" = sub.min_dt,
   "lastCompletedAt"  = sub.max_dt
 FROM (
-  SELECT "customerId", MIN("startDateTime") AS min_dt, MAX("startDateTime") AS max_dt
+  SELECT "customerId", MIN("updatedAt") AS min_dt, MAX("updatedAt") AS max_dt
   FROM "Booking" WHERE "status" = 'completed' AND "customerId" IS NOT NULL
   GROUP BY "customerId"
 ) sub

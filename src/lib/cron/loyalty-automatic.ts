@@ -97,7 +97,8 @@ export async function runAutomaticLoyalty(now: Date = new Date()): Promise<RunAu
         if (conditionKind(r.conditions) !== 'winback') return true
         const emittedAt = winbackEmittedAt.get(c.id)
         if (!emittedAt) return true
-        return !(c.lastCompletedAt && emittedAt > c.lastCompletedAt)
+        // Re-elegible solo si volvió a visitar después de la última emisión win-back.
+        return c.lastCompletedAt == null || emittedAt <= c.lastCompletedAt
       })
       const rule = selectTimedRuleForCustomer(applicable, c, now, tz)
       if (!rule) continue
