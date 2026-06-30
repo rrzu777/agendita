@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { emitAutomaticReward } from '@/lib/loyalty/automatic'
+import { emitAutomaticReward, reverseAutoRewardsForBooking } from '@/lib/loyalty/automatic'
 
 const cfg = { grantExpiryDays: 90, forfeitGrantOnNoShow: false }
 
@@ -45,5 +45,33 @@ describe('emitAutomaticReward', () => {
     expect(tx.promotionGrant.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ pointsSpent: 0, refundOnExpiry: false, requestId: 'k2' }) }))
     expect(out).toEqual({ kind: 'grant', grantId: 'g1', code: 'ABC' })
+  })
+})
+
+describe('reverseAutoRewardsForBooking', () => {
+  function clawbackTx(bonuses: any[], grants: any[]) {
+    return {
+      loyaltyLedger: {
+        findMany: vi.fn().mockResolvedValue(bonuses),
+        create: vi.fn().mockResolvedValue({ id: 'rev' }),
+      },
+      promotionGrant: {
+        findMany: vi.fn().mockResolvedValue(grants),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    } as any
+  }
+  it('reversa los puntos bonus de la reserva con un asiento bonus_reversal', async () => {
+    const tx = clawbackTx([{ id: 'l1', businessId: 'b1', customerId: 'c1', points: 150 }], [])
+    await reverseAutoRewardsForBooking(tx, 'bk1', new Date())
+    expect(tx.loyaltyLedger.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ points: -150, reason: 'bonus_reversal', dedupeKey: 'reversal:l1' }) }))
+  })
+  it('reversa grants automáticos activos (flip a reversed)', async () => {
+    const tx = clawbackTx([], [{ id: 'g1' }])
+    await reverseAutoRewardsForBooking(tx, 'bk1', new Date())
+    expect(tx.promotionGrant.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: 'g1', status: 'active' }),
+      data: expect.objectContaining({ status: 'reversed' }) }))
   })
 })

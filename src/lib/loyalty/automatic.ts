@@ -80,3 +80,41 @@ export async function emitAutomaticReward(tx: Tx, args: {
     throw e
   }
 }
+
+/** Clawback de recompensas automáticas gatilladas por una reserva (first_visit/referral),
+ *  cuando `LoyaltyConfig.clawbackAutoRewardOnRefund` está activo. Idempotente.
+ *  - puntos bonus: asiento `bonus_reversal` por -points (dedup `reversal:${ledgerId}`).
+ *  - grants ganados activos: flip a `reversed`. Si ya se aplicaron/redimieron, se respetan.
+ *  Filtra por la COLUMNA `triggeringBookingId` (no metadata) y opcionalmente por `businessId`. */
+export async function reverseAutoRewardsForBooking(
+  tx: Tx, bookingId: string, now: Date, businessId?: string,
+): Promise<void> {
+  const scope = businessId ? { businessId } : {}
+  const bonuses = await tx.loyaltyLedger.findMany({
+    where: { ...scope, reason: 'bonus', triggeringBookingId: bookingId },
+    select: { id: true, businessId: true, customerId: true, points: true },
+  })
+  for (const b of bonuses) {
+    try {
+      await tx.loyaltyLedger.create({
+        data: { businessId: b.businessId, customerId: b.customerId, points: -b.points,
+          reason: 'bonus_reversal', bookingId: null, dedupeKey: `reversal:${b.id}`,
+          triggeringBookingId: bookingId,
+          metadata: { reversedLedgerId: b.id, triggeringBookingId: bookingId } },
+      })
+    } catch (e) {
+      if (!isP2002(e)) throw e // ya reversado
+    }
+  }
+
+  const grants = await tx.promotionGrant.findMany({
+    where: { ...scope, status: 'active', triggeringBookingId: bookingId },
+    select: { id: true },
+  })
+  for (const g of grants) {
+    await tx.promotionGrant.updateMany({
+      where: { id: g.id, status: 'active' },
+      data: { status: 'reversed', reversedAt: now },
+    })
+  }
+}
