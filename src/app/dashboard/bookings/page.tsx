@@ -9,6 +9,8 @@ import { updateBookingStatus } from '@/server/actions/bookings'
 import { CalendarDays, Clock, User, CreditCard, Phone, Plus, RefreshCw } from 'lucide-react'
 import { BookingContactButtons } from '@/components/dashboard/booking-contact-buttons'
 import { CancelBookingButton } from '@/components/dashboard/cancel-booking-button'
+import { ManualPaymentDialog } from '@/components/dashboard/manual-payment-dialog'
+import { isManualPaymentAllowed } from '@/components/dashboard/manual-payment-utils'
 
 const statusLabels: Record<string, string> = {
   pending_payment: 'Pendiente de pago',
@@ -46,10 +48,11 @@ function BookingCard({ booking, businessCurrency, businessTimezone, businessAddr
     startDateTime: Date
     status: string
     depositPaid: number
+    depositRequired: number
     finalAmount: number
-    paymentStatus?: string
-    totalPrice?: number
-    remainingBalance?: number
+    paymentStatus: string
+    totalPrice: number
+    remainingBalance: number
     service: { name: string } | null
     customer: { name: string; phone: string | null } | null
   }
@@ -57,6 +60,8 @@ function BookingCard({ booking, businessCurrency, businessTimezone, businessAddr
   businessTimezone: string
   businessAddress: string | null
 }) {
+  const canRegisterPayment = isManualPaymentAllowed(booking)
+
   return (
     <article className="studio-card p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
@@ -133,11 +138,31 @@ function BookingCard({ booking, businessCurrency, businessTimezone, businessAddr
           <div className="flex-1">
             <CancelBookingButton bookingId={booking.id} size="default" />
           </div>
+          {canRegisterPayment && (
+            <ManualPaymentDialog
+              bookings={[booking]}
+              businessCurrency={businessCurrency}
+              defaultBookingId={booking.id}
+              triggerVariant="outline"
+              triggerClassName="flex-1 h-10 text-sm font-semibold"
+            />
+          )}
         </div>
       )}
       {booking.status === 'pending_payment' && (
         <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
-          <CancelBookingButton bookingId={booking.id} size="default" />
+          {canRegisterPayment && (
+            <ManualPaymentDialog
+              bookings={[booking]}
+              businessCurrency={businessCurrency}
+              defaultBookingId={booking.id}
+              triggerVariant="outline"
+              triggerClassName="flex-1 h-10 text-sm font-semibold"
+            />
+          )}
+          {booking.status === 'pending_payment' && (
+            <CancelBookingButton bookingId={booking.id} size="default" />
+          )}
         </div>
       )}
     </article>
@@ -231,6 +256,11 @@ export default async function BookingsPage() {
                         <span className={booking.paymentStatus === 'fully_paid' ? 'font-semibold text-green-700' : 'font-semibold text-primary'}>
                           ${booking.depositPaid.toLocaleString('es-CL')} / ${booking.finalAmount.toLocaleString('es-CL')}
                         </span>
+                        {booking.remainingBalance > 0 && (
+                          <div className="text-xs text-muted-foreground">
+                            Saldo: ${booking.remainingBalance.toLocaleString('es-CL')}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <BookingContactButtons
@@ -270,6 +300,15 @@ export default async function BookingsPage() {
                           )}
                           {booking.status === 'pending_payment' && (
                             <CancelBookingButton bookingId={booking.id} size="sm" />
+                          )}
+                          {isManualPaymentAllowed(booking) && (
+                            <ManualPaymentDialog
+                              bookings={[booking]}
+                              businessCurrency={businessCurrency}
+                              defaultBookingId={booking.id}
+                              triggerSize="sm"
+                              triggerVariant="outline"
+                            />
                           )}
                         </div>
                       </TableCell>

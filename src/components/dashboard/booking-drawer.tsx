@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { formatInTimeZone } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
 import {
@@ -13,21 +12,13 @@ import {
   SheetFooter,
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { createManualPayment } from '@/server/actions/payments'
 import type { CalendarBooking } from './booking-card'
 import { BookingContactButtons } from './booking-contact-buttons'
 import { CancelBookingButton } from './cancel-booking-button'
 import { RefreshCw } from 'lucide-react'
+import { ManualPaymentDialog } from './manual-payment-dialog'
+import { isManualPaymentAllowed } from './manual-payment-utils'
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false)
@@ -69,45 +60,8 @@ interface BookingDrawerProps {
 
 export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, businessTimezone, businessAddress }: BookingDrawerProps) {
   const isMobile = useIsMobile()
-  const [amount, setAmount] = useState('')
-  const [paymentMethod, setPaymentMethod] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [isPending, startTransition] = useTransition()
-  const router = useRouter()
 
   const start = new Date(booking.startDateTime)
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError(null)
-    const numAmount = Number(amount)
-    if (!numAmount || numAmount <= 0) {
-      setError('Monto inválido')
-      return
-    }
-    if (!paymentMethod) {
-      setError('Selecciona un método de pago')
-      return
-    }
-
-    startTransition(async () => {
-      try {
-        await createManualPayment({
-          bookingId: booking.id,
-          amount: numAmount,
-          currency: businessCurrency || 'CLP',
-          paymentMethod,
-        })
-        router.refresh()
-        setAmount('')
-        setPaymentMethod('')
-        onOpenChange(false)
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Error al registrar pago'
-        setError(message)
-      }
-    })
-  }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -183,39 +137,17 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
             )}
           </div>
 
-          {booking.remainingBalance > 0 && booking.status === 'confirmed' && (
-            <form onSubmit={handleSubmit} className="space-y-3 rounded-xl border border-border/60 p-3">
+          {isManualPaymentAllowed(booking) && (
+            <div className="space-y-3 rounded-xl border border-border/60 p-3">
               <h4 className="text-sm font-semibold">Registrar pago</h4>
-              <div>
-                <Label htmlFor="amount">Monto</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  min={1}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder={`Máx ${booking.remainingBalance}`}
-                />
-              </div>
-              <div>
-                <Label htmlFor="method">Método</Label>
-                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger id="method">
-                    <SelectValue placeholder="Selecciona método" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="efectivo">Efectivo</SelectItem>
-                    <SelectItem value="transferencia">Transferencia</SelectItem>
-                    <SelectItem value="tarjeta">Tarjeta</SelectItem>
-                    <SelectItem value="otro">Otro</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {error && <p className="text-xs text-destructive">{error}</p>}
-              <Button type="submit" disabled={isPending} className="w-full">
-                {isPending ? 'Registrando...' : 'Registrar pago'}
-              </Button>
-            </form>
+              <ManualPaymentDialog
+                bookings={[booking]}
+                businessCurrency={businessCurrency || 'CLP'}
+                defaultBookingId={booking.id}
+                triggerClassName="w-full"
+                triggerLabel="Abrir modal de pago"
+              />
+            </div>
           )}
 
           {(booking.status === 'confirmed' || booking.status === 'pending_payment') && (
