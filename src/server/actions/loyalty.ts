@@ -1,20 +1,26 @@
 'use server'
 
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
-import { loyaltyConfigSchema, adjustPointsSchema, redemptionOptionSchema, redeemSchema } from '@/lib/loyalty/schema'
+import { loyaltyConfigSchema, adjustPointsSchema, redemptionOptionSchema, redeemSchema, automaticRuleSchema, buildConditions } from '@/lib/loyalty/schema'
 import { getLoyaltyBalance, getLoyaltyHistory } from '@/lib/loyalty/balance'
 import { reconcileExpiredGrants } from '@/lib/loyalty/grant'
 import { redeemForGrant, type RedeemPromotion } from '@/lib/loyalty/redeem'
 import { isP2002 } from '@/lib/loyalty/credit'
-import { resolveLoyaltyCustomer } from '@/lib/loyalty/token'
+import { resolveLoyaltyCustomer, ensureReferralToken } from '@/lib/loyalty/token'
+import { getBookingFunnelUrl } from '@/lib/business/urls'
 
 // Module-local helpers — NOT exported (use server modules may only export async functions)
 
 function redemptionOptionWhere(businessId: string) {
   return { businessId, triggerType: 'granted' as const, pointsCost: { not: null } }
+}
+
+function automaticRuleWhere(businessId: string) {
+  return { businessId, triggerType: 'automatic' as const }
 }
 
 const REDEEM_SELECT = {
@@ -214,4 +220,82 @@ export async function redeemPointsAsCustomer(loyaltyToken: string, optionId: unk
   if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
   await runRedemption({ businessId: customer.businessId, customerId: customer.id, optionId: parsed.data.optionId, requestId: parsed.data.requestId, createdByUserId: null })
   await revalidatePath(`/tarjeta/${loyaltyToken}`)
+}
+
+export async function listAutomaticRules() {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  return prisma.promotion.findMany({
+    where: automaticRuleWhere(businessId),
+    orderBy: { priority: 'desc' },
+    include: { services: { select: { id: true, name: true } } },
+  })
+}
+
+export async function upsertAutomaticRule(data: unknown, id?: string) {
+  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('automatic-rule', 30, 60000, { userId: user.id, businessId })
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+
+  const parsed = automaticRuleSchema.safeParse(data)
+  if (!parsed.success) throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  const d = parsed.data
+  if (d.rewardKind === 'grant' && d.serviceIds.length) {
+    const count = await prisma.service.count({ where: { id: { in: d.serviceIds }, businessId } })
+    if (count !== d.serviceIds.length) throw new Error('Servicio inválido')
+  }
+  // Una regla por (negocio, kind): si ya existe OTRA del mismo kind, rechazar.
+  const sameKind = (await prisma.promotion.findMany({
+    where: { ...automaticRuleWhere(businessId), ...(id ? { id: { not: id } } : {}) },
+    select: { id: true, conditions: true },
+  })).find((p) => (p.conditions as { kind?: string })?.kind === d.kind)
+  if (sameKind) throw new Error('Ya existe una regla para esta condición')
+
+  const scalars = {
+    name: `auto:${d.kind}`, rewardType: d.rewardType ?? 'percentage', rewardValue: d.rewardValue,
+    maxDiscount: d.maxDiscount, appliesToAll: d.appliesToAll, rewardPoints: d.rewardPoints,
+    grantExpiryDays: d.grantExpiryDays, priority: d.priority, isActive: d.isActive,
+    maxPerCustomer: d.maxPerCustomer,
+    conditions: buildConditions(d) as Prisma.InputJsonValue,
+  }
+  if (id) {
+    const existing = await prisma.promotion.findFirst({ where: { id, ...automaticRuleWhere(businessId) }, select: { id: true } })
+    if (!existing) throw new ForbiddenError('Regla no encontrada')
+    await prisma.promotion.update({
+      where: { id },
+      data: { ...scalars, updatedByUserId: user.id,
+        services: d.appliesToAll || d.rewardKind === 'points' ? { set: [] } : { set: d.serviceIds.map(sid => ({ id: sid })) } },
+    })
+  } else {
+    await prisma.promotion.create({
+      data: { businessId, triggerType: 'automatic', ...scalars, createdByUserId: user.id,
+        services: d.rewardKind === 'grant' && !d.appliesToAll ? { connect: d.serviceIds.map(sid => ({ id: sid })) } : undefined },
+    })
+  }
+  await revalidatePath('/dashboard/fidelizacion')
+}
+
+export async function archiveAutomaticRule(id: string) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const existing = await prisma.promotion.findFirst({ where: { id, ...automaticRuleWhere(businessId) }, select: { id: true } })
+  if (!existing) throw new ForbiddenError('Regla no encontrada')
+  await prisma.promotion.update({ where: { id }, data: { isActive: false } })
+  await revalidatePath('/dashboard/fidelizacion')
+}
+
+export async function getReferralShareLink(customerId: string): Promise<{ url: string; waUrl: string | null } | null> {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const customer = await prisma.customer.findFirst({
+    where: { id: customerId, businessId },
+    select: {
+      id: true, name: true, phone: true, referralToken: true,
+      business: { select: { slug: true, subdomain: true, name: true } },
+    },
+  })
+  if (!customer) throw new ForbiddenError('Clienta no encontrada')
+  const token = await ensureReferralToken(prisma, customer)
+  // El link abre el FUNNEL: subdominio => /book ; sin subdominio => /book/{slug}.
+  const url = getBookingFunnelUrl(customer.business, `ref=${token}`)
+  const message = `Te invito a ${customer.business.name} ✨ Reservá con mi link y las dos ganamos un premio:\n${url}`
+  const waUrl = customer.phone ? `https://wa.me/?text=${encodeURIComponent(message)}` : null
+  return { url, waUrl }
 }

@@ -38,3 +38,19 @@ export function getBusinessPublicUrl(business: BusinessUrlInput, pathname = '') 
   const apexHost = host.replace(/^www\./, '')
   return `${getProtocol(host)}://${business.subdomain}.${apexHost}${cleanPath === '/' ? '' : cleanPath}`
 }
+
+/** URL del funnel público de reserva (/book). Con subdominio vive en el apex del
+ *  tenant (`https://sub.apex/book`); sin subdominio usa el path `/book/{slug}`.
+ *  `search` (sin '?') agrega la query string (ej. `ref=TOKEN`). */
+export function getBookingFunnelUrl(business: BusinessUrlInput, search = '') {
+  const host = getConfiguredAppDomain()
+  const protocol = getProtocol(host)
+  const query = search ? `?${search}` : ''
+
+  if (!business.subdomain) {
+    return `${protocol}://${host}/book/${business.slug}${query}`
+  }
+
+  const apexHost = host.replace(/^www\./, '')
+  return `${protocol}://${business.subdomain}.${apexHost}/book${query}`
+}

@@ -13,6 +13,17 @@ export async function ensureLoyaltyToken(
   return token
 }
 
+/** Devuelve el referralToken de la clienta, generándolo (lazy) si falta. */
+export async function ensureReferralToken(
+  db: Db,
+  customer: { id: string; referralToken: string | null },
+): Promise<string> {
+  if (customer.referralToken) return customer.referralToken
+  const token = crypto.randomUUID()
+  await db.customer.update({ where: { id: customer.id }, data: { referralToken: token } })
+  return token
+}
+
 /** Construye el link a "Mi tarjeta" si el programa está activo. Encapsula el guard
  *  + la generación lazy del token. El `baseUrl` (sin barra final) lo decide cada
  *  caller: la confirmación usa el dominio configurado (puede correr desde webhook),
