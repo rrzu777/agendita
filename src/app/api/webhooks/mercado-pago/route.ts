@@ -7,6 +7,7 @@ import { logger } from '@/lib/logger'
 import { decryptSecret } from '@/lib/payments/encryption'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { reverseVisitPoints } from '@/lib/loyalty/credit'
+import { reverseAutoRewardsForBooking } from '@/lib/loyalty/automatic'
 import type { Prisma } from '@prisma/client'
 
 function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
@@ -433,6 +434,13 @@ export async function POST(request: NextRequest) {
         if (finalStatus === 'refunded' && payment.bookingId) {
           await releaseRedemptionForBooking(tx, payment.bookingId, 'refunded')
           await reverseVisitPoints(tx, payment.bookingId)
+          const cfg = await tx.loyaltyConfig.findUnique({
+            where: { businessId: payment.businessId },
+            select: { clawbackAutoRewardOnRefund: true },
+          })
+          if (cfg?.clawbackAutoRewardOnRefund) {
+            await reverseAutoRewardsForBooking(tx, payment.bookingId, new Date(), payment.businessId)
+          }
         }
       })
 
