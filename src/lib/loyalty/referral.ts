@@ -1,9 +1,26 @@
 import type { Prisma } from '@prisma/client'
+import { prisma } from '@/lib/db'
+import { logger } from '@/lib/logger'
 import { isP2002 } from './credit'
 import { referralKey } from './automatic-match'
 import { emitAutomaticReward, type AutomaticRule, type EmitConfig, type EmittedReward } from './automatic'
+import { describeReward } from './view'
+import { buildLoyaltyCardLink } from './token'
+import { getAppUrl } from '@/lib/business/urls'
+import { sendNotificationSafely, sendLoyaltyRewardNotification } from '@/lib/notifications'
 
 type Tx = Prisma.TransactionClient
+
+/** Resultado liviano de `rewardReferralOnCompletion`: null si no premió, o las clientas
+ *  beneficiadas + la recompensa emitida, para disparar el email post-commit. */
+export type ReferralRewardResult = {
+  referrerCustomerId: string
+  referredCustomerId: string
+  beneficiary: 'both' | 'referred' | 'referrer'
+  reward: EmittedReward
+  rewardType: AutomaticRule['rewardType']
+  rewardValue: number
+}
 
 /** Estampa la atribución de referida al crear la reserva pública: resuelve a la referidora
  *  por su `referralToken` (mismo negocio), descarta self-referral, y crea el Referral(pending).
@@ -38,29 +55,86 @@ type EmitFn = (tx: Tx, a: {
 export async function rewardReferralOnCompletion(tx: Tx, args: {
   businessId: string; referredCustomerId: string; bookingId: string
   rule: AutomaticRule; config: EmitConfig; now: Date; emit?: EmitFn
-}): Promise<void> {
+}): Promise<ReferralRewardResult | null> {
   const emit = args.emit ?? emitAutomaticReward
   const flip = await tx.referral.updateMany({
     where: { referredCustomerId: args.referredCustomerId, status: 'pending' },
     data: { status: 'rewarded', rewardedAt: args.now, triggeringBookingId: args.bookingId },
   })
-  if (flip.count === 0) return // sin referral pendiente o ya premiado
+  if (flip.count === 0) return null // sin referral pendiente o ya premiado
 
   const ref = await tx.referral.findUnique({
     where: { referredCustomerId: args.referredCustomerId },
     select: { referrerCustomerId: true, referredCustomerId: true },
   })
-  if (!ref) return
-  const beneficiary = (args.rule.conditions as { beneficiary?: string } | null)?.beneficiary ?? 'both'
+  if (!ref) return null
+  const beneficiary = ((args.rule.conditions as { beneficiary?: string } | null)?.beneficiary ?? 'both') as
+    'both' | 'referred' | 'referrer'
 
+  let reward: EmittedReward = null
   if (beneficiary === 'both' || beneficiary === 'referred') {
-    await emit(tx, { rule: args.rule, businessId: args.businessId, customerId: ref.referredCustomerId,
+    reward = await emit(tx, { rule: args.rule, businessId: args.businessId, customerId: ref.referredCustomerId,
       dedupeKey: `${referralKey(ref.referredCustomerId)}:referred`, config: args.config,
-      triggeringBookingId: args.bookingId, now: args.now })
+      triggeringBookingId: args.bookingId, now: args.now }) ?? reward
   }
   if (beneficiary === 'both' || beneficiary === 'referrer') {
-    await emit(tx, { rule: args.rule, businessId: args.businessId, customerId: ref.referrerCustomerId,
+    reward = await emit(tx, { rule: args.rule, businessId: args.businessId, customerId: ref.referrerCustomerId,
       dedupeKey: `${referralKey(ref.referredCustomerId)}:referrer`, config: args.config,
-      triggeringBookingId: args.bookingId, now: args.now })
+      triggeringBookingId: args.bookingId, now: args.now }) ?? reward
+  }
+
+  return {
+    referrerCustomerId: ref.referrerCustomerId,
+    referredCustomerId: ref.referredCustomerId,
+    beneficiary,
+    reward,
+    rewardType: args.rule.rewardType,
+    rewardValue: args.rule.rewardValue,
+  }
+}
+
+/** Dispara (best-effort, post-commit) el email de recompensa de referido a las clientas
+ *  beneficiadas según `beneficiary`. No bloquea ni rompe nada si el email falla. */
+export async function notifyReferralReward(
+  result: ReferralRewardResult,
+  businessId: string,
+): Promise<void> {
+  if (!result.reward) return
+
+  const biz = await prisma.business.findUnique({
+    where: { id: businessId },
+    select: { name: true, currency: true,
+      loyaltyConfig: { select: { isActive: true, pointsLabel: true } } },
+  })
+  if (!biz) return
+
+  const label = describeReward(result.reward, result, biz.loyaltyConfig?.pointsLabel ?? 'puntos', biz.currency || 'CLP')
+  if (!label) return
+
+  const ids: string[] = []
+  if (result.beneficiary === 'both' || result.beneficiary === 'referred') ids.push(result.referredCustomerId)
+  if (result.beneficiary === 'both' || result.beneficiary === 'referrer') ids.push(result.referrerCustomerId)
+
+  const customers = await prisma.customer.findMany({
+    where: { id: { in: ids }, businessId },
+    select: { id: true, name: true, email: true, loyaltyToken: true },
+  })
+
+  for (const c of customers) {
+    if (!c.email) continue
+    try {
+      const loyaltyCardLink = await buildLoyaltyCardLink(prisma, c, biz.loyaltyConfig, getAppUrl(''))
+      await sendNotificationSafely('loyalty_reward', () =>
+        sendLoyaltyRewardNotification({
+          businessName: biz.name,
+          customerName: c.name,
+          customerEmail: c.email!,
+          rewardLabel: label,
+          reason: 'referral',
+          loyaltyCardLink: loyaltyCardLink ?? null,
+        }))
+    } catch (e) {
+      logger.error('loyalty.referral_reward_email_failed', `referral reward email falló customer=${c.id}: ${String(e)}`)
+    }
   }
 }

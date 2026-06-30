@@ -18,7 +18,7 @@ import { applyPromotionInTx } from '@/lib/promotions/apply'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { creditVisitPoints } from '@/lib/loyalty/credit'
 import { emitAutomaticReward, loadAutomaticRule } from '@/lib/loyalty/automatic'
-import { rewardReferralOnCompletion, captureReferral } from '@/lib/loyalty/referral'
+import { rewardReferralOnCompletion, captureReferral, notifyReferralReward } from '@/lib/loyalty/referral'
 import { firstVisitKey } from '@/lib/loyalty/automatic-match'
 import {
   sendBookingReceivedToCustomer,
@@ -500,18 +500,22 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
       }
     }
     try {
-      await prisma.$transaction(async (tx) => {
+      const referralResult = await prisma.$transaction(async (tx) => {
         const refRule = await loadAutomaticRule(tx, businessId, 'referral')
-        if (refRule)
-          await rewardReferralOnCompletion(tx, {
-            businessId,
-            referredCustomerId: customerId,
-            bookingId: id,
-            rule: refRule,
-            config: emitCfg,
-            now,
-          })
+        if (!refRule) return null
+        return rewardReferralOnCompletion(tx, {
+          businessId,
+          referredCustomerId: customerId,
+          bookingId: id,
+          rule: refRule,
+          config: emitCfg,
+          now,
+        })
       })
+      // Email de recompensa de referido — best-effort, FUERA de la tx.
+      if (referralResult) {
+        await notifyReferralReward(referralResult, businessId)
+      }
     } catch (e) {
       logger.error('loyalty.referral_emit_failed', `referral emit falló booking=${id}: ${String(e)}`)
     }

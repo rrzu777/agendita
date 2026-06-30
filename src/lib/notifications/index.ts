@@ -11,6 +11,7 @@ export {
   sendBookingReminderNotification,
   sendBookingCancelledNotificationById,
   sendPaymentReceivedNotification,
+  sendLoyaltyRewardNotification,
 } from './email-provider'
 export {
   buildWhatsappUrl,
@@ -39,6 +40,8 @@ export {
   bookingReminderText,
   paymentReceivedHtml,
   paymentReceivedText,
+  loyaltyRewardHtml,
+  loyaltyRewardText,
 } from './templates'
-export type { EmailResult, BookingEmailData, CancellationEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, ReminderEmailData, NotificationResult } from './types'
+export type { EmailResult, BookingEmailData, CancellationEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, ReminderEmailData, LoyaltyRewardEmailData, NotificationResult } from './types'
 export type { BookingWhatsappData, ReviewRequestWhatsappData } from './whatsapp'

@@ -11,6 +11,7 @@ import type {
   ReviewRequestEmailData,
   NewBookingBusinessEmailData,
   ReminderEmailData,
+  LoyaltyRewardEmailData,
 } from './types'
 import {
   bookingConfirmationCustomerHtml,
@@ -27,6 +28,8 @@ import {
   bookingReminderText,
   paymentReceivedHtml,
   paymentReceivedText,
+  loyaltyRewardHtml,
+  loyaltyRewardText,
   BOOKING_CONFIRMED_TEMPLATE,
   BOOKING_REMINDER_TEMPLATE,
   BOOKING_CANCELLED_TEMPLATE,
@@ -244,6 +247,30 @@ export async function sendReviewRequestNotification(data: ReviewRequestEmailData
   return sendEmail(
     data.customerEmail,
     `¿Cómo te fue? - ${data.businessName}`,
+    html,
+    text,
+  )
+}
+
+const LOYALTY_REWARD_SUBJECTS: Record<LoyaltyRewardEmailData['reason'], string> = {
+  birthday: '¡Feliz cumpleaños! Tenés un regalo',
+  winback: 'Te echamos de menos — tenés un regalo',
+  referral: 'Gracias por recomendarnos — tenés un regalo',
+}
+
+/** Email transaccional de recompensa automática (cumpleaños/winback/referral). Best-effort:
+ *  degrada suave (skipped) si falta el email de la clienta o el provider no está configurado. */
+export async function sendLoyaltyRewardNotification(data: LoyaltyRewardEmailData): Promise<EmailResult> {
+  if (!data.customerEmail) {
+    return { success: false, skipped: 'Cliente sin email' }
+  }
+
+  const html = loyaltyRewardHtml(data)
+  const text = loyaltyRewardText(data)
+
+  return sendEmail(
+    data.customerEmail,
+    `${LOYALTY_REWARD_SUBJECTS[data.reason]} — ${data.businessName}`,
     html,
     text,
   )

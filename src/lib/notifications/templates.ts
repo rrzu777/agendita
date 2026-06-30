@@ -6,6 +6,7 @@ import type {
   ReviewRequestEmailData,
   NewBookingBusinessEmailData,
   ReminderEmailData,
+  LoyaltyRewardEmailData,
 } from './types'
 
 function escapeHtml(str: string): string {
@@ -294,6 +295,56 @@ export function reviewRequestText(data: ReviewRequestEmailData): string {
   if (data.loyaltyCardLink) lines.push(``, `Tu tarjeta de puntos: ${data.loyaltyCardLink}`)
   lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)
 
+  return lines.join('\n')
+}
+
+/** Copy contextual por motivo de la recompensa automática. */
+function loyaltyRewardCopy(data: LoyaltyRewardEmailData): { title: string; intro: string } {
+  switch (data.reason) {
+    case 'birthday':
+      return {
+        title: '¡Feliz cumpleaños! Tenés un regalo',
+        intro: `¡Feliz cumpleaños, ${data.customerName}! En ${data.businessName} queremos celebrarlo con vos.`,
+      }
+    case 'winback':
+      return {
+        title: 'Te echamos de menos — tenés un regalo',
+        intro: `Hola ${data.customerName}, hace rato que no te vemos por ${data.businessName} y te extrañamos.`,
+      }
+    case 'referral':
+      return {
+        title: 'Gracias por recomendarnos',
+        intro: `Hola ${data.customerName}, gracias por recomendar ${data.businessName}. ¡Tenés un regalo!`,
+      }
+  }
+}
+
+export function loyaltyRewardHtml(data: LoyaltyRewardEmailData): string {
+  const { title, intro } = loyaltyRewardCopy(data)
+  const cta = data.loyaltyCardLink
+    ? `<p style="margin-top:24px"><a href="${escapeHtml(data.loyaltyCardLink)}" style="background:#e91e63;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block">Ver mi tarjeta</a></p>`
+    : ''
+
+  return baseHtml(`
+    ${header(title)}
+    <p style="font-size:15px">${escapeHtml(intro)}</p>
+    <p style="font-size:16px;margin-top:16px">Te regalamos <strong>${escapeHtml(data.rewardLabel)}</strong>.</p>
+    ${cta}
+    ${footer(data.businessName)}
+  `)
+}
+
+export function loyaltyRewardText(data: LoyaltyRewardEmailData): string {
+  const { title, intro } = loyaltyRewardCopy(data)
+  const lines = [
+    title,
+    ``,
+    intro,
+    ``,
+    `Te regalamos ${data.rewardLabel}.`,
+  ]
+  if (data.loyaltyCardLink) lines.push(``, `Ver mi tarjeta: ${data.loyaltyCardLink}`)
+  lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)
   return lines.join('\n')
 }
 

@@ -5,11 +5,18 @@ import {
   occasionKey, sortByPriorityDesc,
 } from '@/lib/loyalty/automatic-match'
 import { emitAutomaticReward, type AutomaticRule } from '@/lib/loyalty/automatic'
+import { describeReward } from '@/lib/loyalty/view'
+import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
+import { getAppUrl } from '@/lib/business/urls'
+import { sendNotificationSafely, sendLoyaltyRewardNotification } from '@/lib/notifications'
 
 export interface RunAutomaticLoyaltyResult { businesses: number; emitted: number; errors: number }
 
 type TimedRule = AutomaticRule & { priority: number }
-type Candidate = { id: string; birthDate: Date | null; firstCompletedAt: Date | null; lastCompletedAt: Date | null }
+type Candidate = {
+  id: string; birthDate: Date | null; firstCompletedAt: Date | null; lastCompletedAt: Date | null
+  name: string; email: string | null; loyaltyToken: string | null
+}
 
 const TIMED_KINDS = ['birthday', 'anniversary', 'winback'] as const
 
@@ -37,8 +44,9 @@ export async function runAutomaticLoyalty(now: Date = new Date()): Promise<RunAu
   const businesses = await prisma.business.findMany({
     where: { loyaltyConfig: { isActive: true },
       promotions: { some: { triggerType: 'automatic', isActive: true } } },
-    select: { id: true, timezone: true,
-      loyaltyConfig: { select: { grantExpiryDays: true, forfeitGrantOnNoShow: true } } },
+    select: { id: true, name: true, timezone: true,
+      loyaltyConfig: { select: { grantExpiryDays: true, forfeitGrantOnNoShow: true, isActive: true, pointsLabel: true } },
+      currency: true },
   })
 
   let emitted = 0, errors = 0
@@ -81,7 +89,8 @@ export async function runAutomaticLoyalty(now: Date = new Date()): Promise<RunAu
     const customers = await prisma.customer.findMany({
       where: { businessId: biz.id,
         OR: [{ birthDate: { not: null } }, { firstCompletedAt: { not: null } }] },
-      select: { id: true, birthDate: true, firstCompletedAt: true, lastCompletedAt: true },
+      select: { id: true, birthDate: true, firstCompletedAt: true, lastCompletedAt: true,
+        name: true, email: true, loyaltyToken: true },
     })
 
     for (const c of customers) {
@@ -98,7 +107,35 @@ export async function runAutomaticLoyalty(now: Date = new Date()): Promise<RunAu
       try {
         const out = await prisma.$transaction((tx) =>
           emitAutomaticReward(tx, { rule, businessId: biz.id, customerId: c.id, dedupeKey, config, now }))
-        if (out) emitted++
+        if (out) {
+          emitted++
+          // Email transaccional de recompensa — SOLO birthday/winback (anniversary queda mudo).
+          // Best-effort: nunca rompe ni bloquea la emisión (sendNotificationSafely + try/catch defensivo).
+          const kind = (rule.conditions as { kind?: string })?.kind
+          if (kind === 'birthday' || kind === 'winback') {
+            try {
+              const rewardLabel = describeReward(
+                out, rule, biz.loyaltyConfig?.pointsLabel ?? 'puntos', biz.currency || 'CLP',
+              )
+              if (rewardLabel && c.email) {
+                const loyaltyCardLink = await buildLoyaltyCardLink(
+                  prisma, c, biz.loyaltyConfig, getAppUrl(''),
+                )
+                await sendNotificationSafely('loyalty_reward', () =>
+                  sendLoyaltyRewardNotification({
+                    businessName: biz.name,
+                    customerName: c.name,
+                    customerEmail: c.email!,
+                    rewardLabel,
+                    reason: kind,
+                    loyaltyCardLink: loyaltyCardLink ?? null,
+                  }))
+              }
+            } catch (notifErr) {
+              logger.error('loyalty.reward_email_failed', `reward email falló customer=${c.id} rule=${rule.id}: ${String(notifErr)}`)
+            }
+          }
+        }
       } catch (e) {
         errors++
         logger.error('loyalty.automatic_emit_failed', `cron emit falló customer=${c.id} rule=${rule.id}: ${String(e)}`)
