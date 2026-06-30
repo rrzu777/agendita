@@ -16,6 +16,7 @@ export interface AutomaticRule {
   maxDiscount: number | null
   appliesToAll: boolean
   grantExpiryDays: number | null
+  maxPerCustomer?: number | null
   priority?: number
   services?: { id: string }[]
 }
@@ -48,6 +49,15 @@ export async function emitAutomaticReward(tx: Tx, args: {
   const triggeringBookingId = args.triggeringBookingId ?? null
   const kind = (rule.conditions as { kind?: string } | null)?.kind ?? 'unknown'
   const meta = { ruleId: rule.id, kind, triggeringBookingId, auto: true } as Prisma.InputJsonValue
+
+  // R-CAP: tope de emisiones de esta regla por clienta (reusa Promotion.maxPerCustomer).
+  if (rule.maxPerCustomer != null) {
+    const [prevPoints, prevGrants] = await Promise.all([
+      tx.loyaltyLedger.count({ where: { businessId, customerId, sourcePromotionId: rule.id } }),
+      tx.promotionGrant.count({ where: { businessId, customerId, promotionId: rule.id } }),
+    ])
+    if (prevPoints + prevGrants >= rule.maxPerCustomer) return null
+  }
 
   // Rama puntos
   if (rule.rewardPoints != null) {

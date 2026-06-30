@@ -9,11 +9,13 @@ function fakeTx(opts: { ledgerThrows?: boolean } = {}) {
       create: opts.ledgerThrows
         ? vi.fn().mockRejectedValue({ code: 'P2002' })
         : vi.fn().mockResolvedValue({ id: 'l1' }),
+      count: vi.fn().mockResolvedValue(0),
     },
     promotion: { findFirst: vi.fn().mockResolvedValue(null) },
     promotionGrant: {
       findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn().mockResolvedValue({ id: 'g1', code: 'ABC' }),
+      count: vi.fn().mockResolvedValue(0),
     },
   } as any
 }
@@ -45,6 +47,15 @@ describe('emitAutomaticReward', () => {
     expect(tx.promotionGrant.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ pointsSpent: 0, refundOnExpiry: false, requestId: 'k2' }) }))
     expect(out).toEqual({ kind: 'grant', grantId: 'g1', code: 'ABC' })
+  })
+  it('R-CAP: si la clienta ya alcanzó maxPerCustomer => null sin emitir', async () => {
+    const tx = fakeTx()
+    tx.loyaltyLedger.count = vi.fn().mockResolvedValue(1)
+    tx.promotionGrant.count = vi.fn().mockResolvedValue(0)
+    const out = await emitAutomaticReward(tx, { rule: { ...pointsRule, maxPerCustomer: 1 } as any,
+      businessId: 'b1', customerId: 'c1', dedupeKey: 'k9', config: cfg, now: new Date('2026-06-29') })
+    expect(out).toBeNull()
+    expect(tx.loyaltyLedger.create).not.toHaveBeenCalled()
   })
 })
 
