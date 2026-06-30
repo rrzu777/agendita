@@ -18,7 +18,7 @@ import { applyPromotionInTx } from '@/lib/promotions/apply'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { creditVisitPoints } from '@/lib/loyalty/credit'
 import { emitAutomaticReward, loadAutomaticRule } from '@/lib/loyalty/automatic'
-import { rewardReferralOnCompletion } from '@/lib/loyalty/referral'
+import { rewardReferralOnCompletion, captureReferral } from '@/lib/loyalty/referral'
 import { firstVisitKey } from '@/lib/loyalty/automatic-match'
 import {
   sendBookingReceivedToCustomer,
@@ -159,6 +159,7 @@ export async function createBooking(data: {
   idempotencyKey?: string
   acceptedTerms: boolean
   promotionCode?: string
+  referralToken?: string
 }, businessId: string) {
   const limit = await checkRateLimit('create-booking', 20, 60000)
   if (!limit.success) {
@@ -243,9 +244,10 @@ export async function createBooking(data: {
       // Se identifica al cliente por (businessId, phone) — NO por nombre — para
       // no crear duplicados cuando la misma persona escribe su nombre distinto
       // entre reservas. Coincide con el flujo de createBookingFromDashboard.
+      const normalizedPhone = normalizePhone(data.customerPhone)
       let customer = await tx.customer.findFirst({
         where: {
-          phone: data.customerPhone,
+          phone: normalizedPhone,
           businessId,
         },
       })
@@ -255,10 +257,19 @@ export async function createBooking(data: {
           data: {
             businessId,
             name: data.customerName,
-            phone: data.customerPhone,
+            phone: normalizedPhone,
             email: data.customerEmail || null,
           },
         })
+        // Atribución de referida: SOLO clientas nuevas (recién creadas).
+        if (data.referralToken) {
+          await captureReferral(tx, {
+            businessId,
+            referredCustomerId: customer.id,
+            referrerToken: data.referralToken,
+            referredPhone: normalizedPhone,
+          })
+        }
       }
 
       const noDepositRequired = depositRequired <= 0

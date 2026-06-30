@@ -121,7 +121,7 @@ export async function setPromotionActive(id: string, isActive: boolean) {
 export async function listPromotions() {
   const { businessId } = await requireBusiness()
   return prisma.promotion.findMany({
-    where: { businessId, triggerType: { not: 'granted' } },
+    where: { businessId, triggerType: 'code' },
     orderBy: { createdAt: 'desc' },
     include: { services: { select: { id: true, name: true } } },
   })
