@@ -55,9 +55,10 @@ interface BookingWizardProps {
   businessId: string
   services: Service[]
   cancellationPolicy?: string | null
+  referralToken?: string
 }
 
-export function BookingWizard({ businessId, services, cancellationPolicy }: BookingWizardProps) {
+export function BookingWizard({ businessId, services, cancellationPolicy, referralToken }: BookingWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const [data, setData] = useState<BookingData>(initialData)
   const [bookingId, setBookingId] = useState<string | null>(null)
@@ -136,7 +137,7 @@ export function BookingWizard({ businessId, services, cancellationPolicy }: Book
           </div>
         )}
         {currentStep === 5 && data.serviceId && data.timeSlot && (
-          <StepPayment data={data} businessId={businessId} cancellationPolicy={cancellationPolicy} onSuccess={(id, mode, promo) => {
+          <StepPayment data={data} businessId={businessId} cancellationPolicy={cancellationPolicy} referralToken={referralToken} onSuccess={(id, mode, promo) => {
             setBookingId(id)
             setConfirmationMode(mode)
             setConfirmationPromo(promo ?? null)

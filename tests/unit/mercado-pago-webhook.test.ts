@@ -25,6 +25,15 @@ const mockPrisma = {
   paymentAccount: {
     findFirst: vi.fn(),
   },
+  loyaltyConfig: {
+    findUnique: vi.fn().mockResolvedValue(null),
+  },
+  loyaltyLedger: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  promotionGrant: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
 }
 
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
@@ -53,6 +62,10 @@ vi.mock('@/lib/promotions/release', () => ({
 
 vi.mock('@/lib/loyalty/credit', () => ({
   reverseVisitPoints: vi.fn(),
+}))
+
+vi.mock('@/lib/loyalty/automatic', () => ({
+  reverseAutoRewardsForBooking: vi.fn(),
 }))
 
 const originalEnv = { ...process.env }

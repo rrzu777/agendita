@@ -5,7 +5,18 @@ import { BookingBusinessPage } from '@/components/booking/booking-business-page'
 import { getBookingBusinessBySubdomain } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 
-export default async function BookIndexPage() {
+// Los referralToken son UUID v4 (crypto.randomUUID). Validar la forma reduce la
+// superficie y evita lookups innecesarios con tokens arbitrarios.
+const REFERRAL_TOKEN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export default async function BookIndexPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  const { ref } = await searchParams
+  const referralToken = typeof ref === 'string' && REFERRAL_TOKEN_RE.test(ref) ? ref : undefined
+
   const requestHeaders = await headers()
   const tenant = await getTenantFromRequest(requestHeaders)
 
@@ -13,7 +24,7 @@ export default async function BookIndexPage() {
     const business = await getBookingBusinessBySubdomain(tenant.subdomain)
 
     if (business) {
-      return <BookingBusinessPage business={business} profileHref="/" />
+      return <BookingBusinessPage business={business} profileHref="/" referralToken={referralToken} />
     }
   }
 

@@ -1,9 +1,13 @@
 import type { Metadata } from 'next'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { resolveLoyaltyCustomer } from '@/lib/loyalty/token'
+import { resolveLoyaltyCustomer, ensureReferralToken } from '@/lib/loyalty/token'
+import { getBookingFunnelUrl } from '@/lib/business/urls'
+import { ReferralShare } from './referral-share'
 import { getLoyaltyBalance, getLoyaltyHistory } from '@/lib/loyalty/balance'
 import { loyaltyReasonLabel, displayBalance, canAfford } from '@/lib/loyalty/view'
 import { reconcileExpiredGrants } from '@/lib/loyalty/grant'
+import { conditionKind } from '@/lib/loyalty/automatic-match'
 import { redeemPointsAsCustomer } from '@/server/actions/loyalty'
 
 export const metadata: Metadata = { robots: { index: false, follow: false } }
@@ -36,7 +40,7 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
 
   const config = customer.business.loyaltyConfig
   // La reconciliación ya corrió; las 4 lecturas son independientes => en paralelo.
-  const [balance, history, catalog, grants] = await Promise.all([
+  const [balance, history, catalog, grants, referralRules] = await Promise.all([
     getLoyaltyBalance(prisma, customer.id, customer.businessId),
     getLoyaltyHistory(prisma, customer.id, customer.businessId, 50),
     config?.isActive
@@ -51,7 +55,22 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
       orderBy: { createdAt: 'desc' },
       include: { promotion: { select: { name: true } } },
     }),
+    config?.isActive
+      ? prisma.promotion.findMany({
+          where: { businessId: customer.businessId, triggerType: 'automatic', isActive: true },
+          select: { id: true, conditions: true },
+        })
+      : Promise.resolve([] as { id: string; conditions: Prisma.JsonValue }[]),
   ])
+
+  // Bloque "Referí a una amiga": solo si la fidelización está activa y existe una
+  // regla automática `referral` activa. El token de referido se genera lazy.
+  const hasReferralRule = referralRules.some(
+    (r) => conditionKind(r.conditions) === 'referral',
+  )
+  const referralUrl = hasReferralRule
+    ? getBookingFunnelUrl(customer.business, `ref=${await ensureReferralToken(prisma, customer)}`)
+    : null
   const label = config?.pointsLabel ?? 'puntos'
   const firstName = customer.name.split(' ')[0]
 
@@ -114,6 +133,8 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
           </ul>
         </section>
       )}
+
+      {referralUrl && <ReferralShare url={referralUrl} firstName={firstName} />}
 
       <section className="mt-8">
         <h2 className="mb-2 text-sm font-semibold text-gray-700">Movimientos</h2>

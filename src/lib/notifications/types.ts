@@ -61,6 +61,15 @@ export interface NewBookingBusinessEmailData {
   dashboardLink: string
 }
 
+export interface LoyaltyRewardEmailData {
+  businessName: string
+  customerName: string
+  customerEmail: string
+  rewardLabel: string
+  reason: 'birthday' | 'winback' | 'referral'
+  loyaltyCardLink: string | null
+}
+
 export interface NotificationResult {
   customerEmail?: EmailResult
   businessEmails: EmailResult[]

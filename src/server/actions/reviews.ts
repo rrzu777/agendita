@@ -11,6 +11,9 @@ import { headers } from 'next/headers'
 import { sendReviewRequestNotification } from '@/lib/notifications'
 import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
 import { getAppUrl } from '@/lib/business/urls'
+import { emitAutomaticReward, loadAutomaticRule } from '@/lib/loyalty/automatic'
+import { reviewKey } from '@/lib/loyalty/automatic-match'
+import { logger } from '@/lib/logger'
 
 export type ReviewFilterStatus = 'all' | 'pending' | 'approved' | 'hidden'
 
@@ -123,8 +126,9 @@ export async function submitReview(data: {
     throw new Error('Ya enviaste una reseña para esta reserva')
   }
 
+  let review
   try {
-    const review = await prisma.review.create({
+    review = await prisma.review.create({
       data: {
         businessId: booking.businessId,
         bookingId: booking.id,
@@ -135,11 +139,6 @@ export async function submitReview(data: {
         isHidden: false,
       },
     })
-
-    await revalidateBusinessPublicPaths(booking.businessId)
-    revalidatePath('/dashboard/reviews')
-
-    return review
   } catch (e: unknown) {
     const prismaError = e as { code?: string }
     if (prismaError.code === 'P2002') {
@@ -147,6 +146,31 @@ export async function submitReview(data: {
     }
     throw e
   }
+
+  // Premio por reseña (R-EMIT: tx aparte, post-commit, best-effort; 1 por reserva vía dedupeKey).
+  if (booking.customerId) {
+    const customerId = booking.customerId
+    try {
+      await prisma.$transaction(async (tx) => {
+        const config = await tx.loyaltyConfig.findUnique({ where: { businessId: booking.businessId } })
+        if (config?.isActive) {
+          const rule = await loadAutomaticRule(tx, booking.businessId, 'review')
+          if (rule) await emitAutomaticReward(tx, {
+            rule, businessId: booking.businessId, customerId,
+            dedupeKey: reviewKey(customerId, booking.id),
+            config: { grantExpiryDays: config.grantExpiryDays, forfeitGrantOnNoShow: config.forfeitGrantOnNoShow },
+            triggeringBookingId: booking.id, now: new Date(),
+          })
+        }
+      })
+    } catch (e) {
+      logger.error('loyalty.review_emit_failed', `review emit falló booking=${booking.id}: ${String(e)}`)
+    }
+  }
+
+  await revalidateBusinessPublicPaths(booking.businessId)
+  revalidatePath('/dashboard/reviews')
+  return review
 }
 
 export async function getDashboardReviews(filters?: ReviewFilters): Promise<ReviewListItem[]> {
