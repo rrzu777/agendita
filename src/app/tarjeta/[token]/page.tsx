@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { resolveLoyaltyCustomer, ensureReferralToken } from '@/lib/loyalty/token'
 import { getBookingFunnelUrl } from '@/lib/business/urls'
@@ -6,6 +7,7 @@ import { ReferralShare } from './referral-share'
 import { getLoyaltyBalance, getLoyaltyHistory } from '@/lib/loyalty/balance'
 import { loyaltyReasonLabel, displayBalance, canAfford } from '@/lib/loyalty/view'
 import { reconcileExpiredGrants } from '@/lib/loyalty/grant'
+import { conditionKind } from '@/lib/loyalty/automatic-match'
 import { redeemPointsAsCustomer } from '@/server/actions/loyalty'
 
 export const metadata: Metadata = { robots: { index: false, follow: false } }
@@ -58,13 +60,13 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
           where: { businessId: customer.businessId, triggerType: 'automatic', isActive: true },
           select: { id: true, conditions: true },
         })
-      : Promise.resolve([] as { id: string; conditions: unknown }[]),
+      : Promise.resolve([] as { id: string; conditions: Prisma.JsonValue }[]),
   ])
 
   // Bloque "Referí a una amiga": solo si la fidelización está activa y existe una
   // regla automática `referral` activa. El token de referido se genera lazy.
   const hasReferralRule = referralRules.some(
-    (r) => (r.conditions as { kind?: string } | null)?.kind === 'referral',
+    (r) => conditionKind(r.conditions) === 'referral',
   )
   const referralUrl = hasReferralRule
     ? getBookingFunnelUrl(customer.business, `ref=${await ensureReferralToken(prisma, customer)}`)

@@ -1,8 +1,17 @@
-import type { Prisma, PromotionReward } from '@prisma/client'
+import type { Prisma, PromotionReward, PrismaClient } from '@prisma/client'
 import { generateGrantCode } from './redeem'
 import { isP2002 } from './credit'
+import { conditionKind } from './automatic-match'
 
 type Tx = Prisma.TransactionClient
+
+/** Shape compartido para cargar reglas automáticas (cron + carga puntual). */
+export const AUTOMATIC_RULE_SELECT = {
+  id: true, businessId: true, conditions: true, rewardPoints: true, rewardType: true,
+  rewardValue: true, maxDiscount: true, appliesToAll: true, grantExpiryDays: true, priority: true,
+  maxPerCustomer: true,
+  services: { select: { id: true } },
+} satisfies Prisma.PromotionSelect
 
 const DAY_MS = 86_400_000
 
@@ -31,16 +40,18 @@ export type EmittedReward =
   | { kind: 'grant'; grantId: string; code: string }
   | null // ya emitido (dedup) o regla sin recompensa válida
 
+/** Carga todas las reglas automáticas activas de un negocio. Acepta el client global o una tx. */
+export async function loadAutomaticRules(db: Tx | PrismaClient, businessId: string): Promise<AutomaticRule[]> {
+  return db.promotion.findMany({
+    where: { businessId, triggerType: 'automatic', isActive: true },
+    select: AUTOMATIC_RULE_SELECT,
+  })
+}
+
 /** Carga la regla automática activa de un kind para un negocio (a lo sumo una). */
 export async function loadAutomaticRule(tx: Tx, businessId: string, kind: string): Promise<AutomaticRule | null> {
-  const rules = await tx.promotion.findMany({
-    where: { businessId, triggerType: 'automatic', isActive: true },
-    select: { id: true, businessId: true, conditions: true, rewardPoints: true, rewardType: true,
-      rewardValue: true, maxDiscount: true, appliesToAll: true, grantExpiryDays: true, priority: true,
-      maxPerCustomer: true,
-      services: { select: { id: true } } },
-  })
-  return rules.find((r) => (r.conditions as { kind?: string })?.kind === kind) ?? null
+  const rules = await loadAutomaticRules(tx, businessId)
+  return rules.find((r) => conditionKind(r.conditions) === kind) ?? null
 }
 
 /** Emite la recompensa de una regla automática (puntos o grant), idempotente.
@@ -59,7 +70,7 @@ export async function emitAutomaticReward(tx: Tx, args: {
 }): Promise<EmittedReward> {
   const { rule, businessId, customerId, dedupeKey, config, now } = args
   const triggeringBookingId = args.triggeringBookingId ?? null
-  const kind = (rule.conditions as { kind?: string } | null)?.kind ?? 'unknown'
+  const kind = conditionKind(rule.conditions) ?? 'unknown'
   const meta = { ruleId: rule.id, kind, triggeringBookingId, auto: true } as Prisma.InputJsonValue
 
   // R-CAP: tope de emisiones de esta regla por clienta (reusa Promotion.maxPerCustomer).

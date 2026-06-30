@@ -1,13 +1,10 @@
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { logger } from '@/lib/logger'
 import { isP2002 } from './credit'
 import { referralKey } from './automatic-match'
 import { emitAutomaticReward, type AutomaticRule, type EmitConfig, type EmittedReward } from './automatic'
 import { describeReward } from './view'
-import { buildLoyaltyCardLink } from './token'
-import { getAppUrl } from '@/lib/business/urls'
-import { sendNotificationSafely, sendLoyaltyRewardNotification } from '@/lib/notifications'
+import { sendRewardEmail } from './reward-email'
 
 type Tx = Prisma.TransactionClient
 
@@ -122,19 +119,12 @@ export async function notifyReferralReward(
 
   for (const c of customers) {
     if (!c.email) continue
-    try {
-      const loyaltyCardLink = await buildLoyaltyCardLink(prisma, c, biz.loyaltyConfig, getAppUrl(''))
-      await sendNotificationSafely('loyalty_reward', () =>
-        sendLoyaltyRewardNotification({
-          businessName: biz.name,
-          customerName: c.name,
-          customerEmail: c.email!,
-          rewardLabel: label,
-          reason: 'referral',
-          loyaltyCardLink: loyaltyCardLink ?? null,
-        }))
-    } catch (e) {
-      logger.error('loyalty.referral_reward_email_failed', `referral reward email falló customer=${c.id}: ${String(e)}`)
-    }
+    await sendRewardEmail({
+      customer: { id: c.id, name: c.name, email: c.email, loyaltyToken: c.loyaltyToken },
+      businessName: biz.name,
+      config: biz.loyaltyConfig,
+      rewardLabel: label,
+      reason: 'referral',
+    })
   }
 }

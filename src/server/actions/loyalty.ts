@@ -10,8 +10,8 @@ import { getLoyaltyBalance, getLoyaltyHistory } from '@/lib/loyalty/balance'
 import { reconcileExpiredGrants } from '@/lib/loyalty/grant'
 import { redeemForGrant, type RedeemPromotion } from '@/lib/loyalty/redeem'
 import { isP2002 } from '@/lib/loyalty/credit'
-import { resolveLoyaltyCustomer, ensureReferralToken } from '@/lib/loyalty/token'
-import { getBookingFunnelUrl } from '@/lib/business/urls'
+import { resolveLoyaltyCustomer } from '@/lib/loyalty/token'
+import { conditionKind } from '@/lib/loyalty/automatic-match'
 
 // Module-local helpers — NOT exported (use server modules may only export async functions)
 
@@ -247,7 +247,7 @@ export async function upsertAutomaticRule(data: unknown, id?: string) {
   const sameKind = (await prisma.promotion.findMany({
     where: { ...automaticRuleWhere(businessId), ...(id ? { id: { not: id } } : {}) },
     select: { id: true, conditions: true },
-  })).find((p) => (p.conditions as { kind?: string })?.kind === d.kind)
+  })).find((p) => conditionKind(p.conditions) === d.kind)
   if (sameKind) throw new Error('Ya existe una regla para esta condición')
 
   const scalars = {
@@ -280,22 +280,4 @@ export async function archiveAutomaticRule(id: string) {
   if (!existing) throw new ForbiddenError('Regla no encontrada')
   await prisma.promotion.update({ where: { id }, data: { isActive: false } })
   await revalidatePath('/dashboard/fidelizacion')
-}
-
-export async function getReferralShareLink(customerId: string): Promise<{ url: string; waUrl: string | null } | null> {
-  const { businessId } = await requireBusinessRole(['owner', 'admin'])
-  const customer = await prisma.customer.findFirst({
-    where: { id: customerId, businessId },
-    select: {
-      id: true, name: true, phone: true, referralToken: true,
-      business: { select: { slug: true, subdomain: true, name: true } },
-    },
-  })
-  if (!customer) throw new ForbiddenError('Clienta no encontrada')
-  const token = await ensureReferralToken(prisma, customer)
-  // El link abre el FUNNEL: subdominio => /book ; sin subdominio => /book/{slug}.
-  const url = getBookingFunnelUrl(customer.business, `ref=${token}`)
-  const message = `Te invito a ${customer.business.name} ✨ Reservá con mi link y las dos ganamos un premio:\n${url}`
-  const waUrl = customer.phone ? `https://wa.me/?text=${encodeURIComponent(message)}` : null
-  return { url, waUrl }
 }

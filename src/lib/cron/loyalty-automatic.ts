@@ -2,13 +2,11 @@ import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import {
   matchesBirthday, matchesAnniversary, isWinbackInactive,
-  occasionKey, sortByPriorityDesc,
+  occasionKey, sortByPriorityDesc, conditionKind,
 } from '@/lib/loyalty/automatic-match'
-import { emitAutomaticReward, type AutomaticRule } from '@/lib/loyalty/automatic'
+import { emitAutomaticReward, AUTOMATIC_RULE_SELECT, type AutomaticRule } from '@/lib/loyalty/automatic'
 import { describeReward } from '@/lib/loyalty/view'
-import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
-import { getAppUrl } from '@/lib/business/urls'
-import { sendNotificationSafely, sendLoyaltyRewardNotification } from '@/lib/notifications'
+import { sendRewardEmail } from '@/lib/loyalty/reward-email'
 
 export interface RunAutomaticLoyaltyResult { businesses: number; emitted: number; errors: number }
 
@@ -22,7 +20,7 @@ const TIMED_KINDS = ['birthday', 'anniversary', 'winback'] as const
 
 /** ¿La clienta matchea esta regla temporal hoy? */
 function ruleMatches(rule: TimedRule, c: Candidate, now: Date, tz: string): boolean {
-  const k = (rule.conditions as { kind: string }).kind
+  const k = conditionKind(rule.conditions)
   const p = rule.conditions as { windowDays?: number; inactivityDays?: number }
   if (k === 'birthday') return matchesBirthday(c.birthDate, now, tz, p.windowDays ?? 0)
   if (k === 'anniversary') return matchesAnniversary(c.firstCompletedAt, now, tz, p.windowDays ?? 0)
@@ -57,15 +55,15 @@ export async function runAutomaticLoyalty(now: Date = new Date()): Promise<RunAu
 
     const rules = (await prisma.promotion.findMany({
       where: { businessId: biz.id, triggerType: 'automatic', isActive: true },
-      select: { id: true, businessId: true, conditions: true, rewardPoints: true, rewardType: true,
-        rewardValue: true, maxDiscount: true, appliesToAll: true, grantExpiryDays: true, priority: true,
-        maxPerCustomer: true,
-        services: { select: { id: true } } },
-    })).filter((r) => TIMED_KINDS.includes((r.conditions as { kind?: string })?.kind as never)) as TimedRule[]
+      select: AUTOMATIC_RULE_SELECT,
+    })).filter((r) => {
+      const k = conditionKind(r.conditions)
+      return k != null && TIMED_KINDS.includes(k as (typeof TIMED_KINDS)[number])
+    }) as TimedRule[]
     if (rules.length === 0) continue
 
     // R-WINBACK: precargar emisiones win-back previas por clienta (ledger + grants), por COLUMNA.
-    const winbackRule = rules.find((r) => (r.conditions as { kind?: string })?.kind === 'winback')
+    const winbackRule = rules.find((r) => conditionKind(r.conditions) === 'winback')
     const winbackEmittedAt = new Map<string, Date>()
     if (winbackRule) {
       const [ledgerHits, grantHits] = await Promise.all([
@@ -96,7 +94,7 @@ export async function runAutomaticLoyalty(now: Date = new Date()): Promise<RunAu
     for (const c of customers) {
       // R-WINBACK: excluir win-back si ya hubo emisión posterior a su última visita.
       const applicable = rules.filter((r) => {
-        if ((r.conditions as { kind?: string })?.kind !== 'winback') return true
+        if (conditionKind(r.conditions) !== 'winback') return true
         const emittedAt = winbackEmittedAt.get(c.id)
         if (!emittedAt) return true
         return !(c.lastCompletedAt && emittedAt > c.lastCompletedAt)
@@ -110,29 +108,20 @@ export async function runAutomaticLoyalty(now: Date = new Date()): Promise<RunAu
         if (out) {
           emitted++
           // Email transaccional de recompensa — SOLO birthday/winback (anniversary queda mudo).
-          // Best-effort: nunca rompe ni bloquea la emisión (sendNotificationSafely + try/catch defensivo).
-          const kind = (rule.conditions as { kind?: string })?.kind
+          // Best-effort: nunca rompe ni bloquea la emisión (sendRewardEmail traga errores).
+          const kind = conditionKind(rule.conditions)
           if (kind === 'birthday' || kind === 'winback') {
-            try {
-              const rewardLabel = describeReward(
-                out, rule, biz.loyaltyConfig?.pointsLabel ?? 'puntos', biz.currency || 'CLP',
-              )
-              if (rewardLabel && c.email) {
-                const loyaltyCardLink = await buildLoyaltyCardLink(
-                  prisma, c, biz.loyaltyConfig, getAppUrl(''),
-                )
-                await sendNotificationSafely('loyalty_reward', () =>
-                  sendLoyaltyRewardNotification({
-                    businessName: biz.name,
-                    customerName: c.name,
-                    customerEmail: c.email!,
-                    rewardLabel,
-                    reason: kind,
-                    loyaltyCardLink: loyaltyCardLink ?? null,
-                  }))
-              }
-            } catch (notifErr) {
-              logger.error('loyalty.reward_email_failed', `reward email falló customer=${c.id} rule=${rule.id}: ${String(notifErr)}`)
+            const rewardLabel = describeReward(
+              out, rule, biz.loyaltyConfig?.pointsLabel ?? 'puntos', biz.currency || 'CLP',
+            )
+            if (rewardLabel && c.email) {
+              await sendRewardEmail({
+                customer: { id: c.id, name: c.name, email: c.email, loyaltyToken: c.loyaltyToken },
+                businessName: biz.name,
+                config: biz.loyaltyConfig,
+                rewardLabel,
+                reason: kind,
+              })
             }
           }
         }

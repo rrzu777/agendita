@@ -1,6 +1,12 @@
+import type { Prisma } from '@prisma/client'
 import { formatInTimeZone } from 'date-fns-tz'
 
 const DAY_MS = 86_400_000
+
+/** Lee el discriminador `kind` del JSON conditions de una regla automática. */
+export function conditionKind(conditions: Prisma.JsonValue | null): string | null {
+  return (conditions as { kind?: string } | null)?.kind ?? null
+}
 
 /** mes/día (1-based) de una fecha en la zona horaria dada. */
 function monthDay(date: Date, timeZone: string): { m: number; d: number } {

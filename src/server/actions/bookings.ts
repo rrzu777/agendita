@@ -17,9 +17,9 @@ import { addMinutes } from 'date-fns'
 import { applyPromotionInTx } from '@/lib/promotions/apply'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { creditVisitPoints } from '@/lib/loyalty/credit'
-import { emitAutomaticReward, loadAutomaticRule } from '@/lib/loyalty/automatic'
+import { emitAutomaticReward, loadAutomaticRules } from '@/lib/loyalty/automatic'
 import { rewardReferralOnCompletion, captureReferral, notifyReferralReward } from '@/lib/loyalty/referral'
-import { firstVisitKey } from '@/lib/loyalty/automatic-match'
+import { firstVisitKey, conditionKind } from '@/lib/loyalty/automatic-match'
 import {
   sendBookingReceivedToCustomer,
   sendNewBookingNotificationToBusiness,
@@ -480,44 +480,46 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
       forfeitGrantOnNoShow: loyaltyConfig.forfeitGrantOnNoShow,
     }
     const now = new Date()
-    if (isFirstVisit) {
+    // Cargá las reglas automáticas UNA vez (fuera de tx); cada emisión abre su propia tx
+    // post-commit solo si hay regla aplicable (evita transacciones vacías en el caso común).
+    const autoRules = await loadAutomaticRules(prisma, businessId)
+    const firstVisitRule = autoRules.find((r) => conditionKind(r.conditions) === 'first_visit')
+    const referralRule = autoRules.find((r) => conditionKind(r.conditions) === 'referral')
+
+    if (isFirstVisit && firstVisitRule) {
       try {
-        await prisma.$transaction(async (tx) => {
-          const rule = await loadAutomaticRule(tx, businessId, 'first_visit')
-          if (rule)
-            await emitAutomaticReward(tx, {
-              rule,
-              businessId,
-              customerId,
-              dedupeKey: firstVisitKey(customerId),
-              config: emitCfg,
-              triggeringBookingId: id,
-              now,
-            })
-        })
+        await prisma.$transaction((tx) =>
+          emitAutomaticReward(tx, {
+            rule: firstVisitRule,
+            businessId,
+            customerId,
+            dedupeKey: firstVisitKey(customerId),
+            config: emitCfg,
+            triggeringBookingId: id,
+            now,
+          }))
       } catch (e) {
         logger.error('loyalty.first_visit_emit_failed', `first_visit emit falló booking=${id}: ${String(e)}`)
       }
     }
-    try {
-      const referralResult = await prisma.$transaction(async (tx) => {
-        const refRule = await loadAutomaticRule(tx, businessId, 'referral')
-        if (!refRule) return null
-        return rewardReferralOnCompletion(tx, {
-          businessId,
-          referredCustomerId: customerId,
-          bookingId: id,
-          rule: refRule,
-          config: emitCfg,
-          now,
-        })
-      })
-      // Email de recompensa de referido — best-effort, FUERA de la tx.
-      if (referralResult) {
-        await notifyReferralReward(referralResult, businessId)
+    if (referralRule) {
+      try {
+        const referralResult = await prisma.$transaction((tx) =>
+          rewardReferralOnCompletion(tx, {
+            businessId,
+            referredCustomerId: customerId,
+            bookingId: id,
+            rule: referralRule,
+            config: emitCfg,
+            now,
+          }))
+        // Email de recompensa de referido — best-effort, FUERA de la tx.
+        if (referralResult) {
+          await notifyReferralReward(referralResult, businessId)
+        }
+      } catch (e) {
+        logger.error('loyalty.referral_emit_failed', `referral emit falló booking=${id}: ${String(e)}`)
       }
-    } catch (e) {
-      logger.error('loyalty.referral_emit_failed', `referral emit falló booking=${id}: ${String(e)}`)
     }
   }
 
