@@ -137,7 +137,13 @@ export function CalendarViews({
       </div>
 
       {view === 'month' && (
-        <MonthView bookings={bookings} focus={focus} timezone={timezone} todayKey={todayKey} />
+        <MonthView
+          bookings={bookings}
+          focus={focus}
+          timezone={timezone}
+          todayKey={todayKey}
+          onBookingClick={setActiveBooking}
+        />
       )}
       {view === 'week' && (
         <TimelineView
@@ -219,11 +225,13 @@ function MonthView({
   focus,
   timezone,
   todayKey,
+  onBookingClick,
 }: {
   bookings: TimelineBooking[]
   focus: Date
   timezone: string
   todayKey: string
+  onBookingClick: (b: TimelineBooking) => void
 }) {
   const monthStart = startOfMonth(focus)
   const monthEnd = endOfMonth(monthStart)
@@ -255,15 +263,19 @@ function MonthView({
           const inMonth = isSameMonth(day, monthStart)
           const isToday = key === todayKey
           return (
-            <Link
+            <div
               key={key}
-              href={hrefFor('day', day)}
-              className={`flex min-h-16 flex-col rounded-lg border p-1.5 transition hover:border-primary/50 md:min-h-24 ${
+              className={`relative flex min-h-16 flex-col rounded-lg border p-1.5 transition hover:border-primary/50 md:min-h-24 ${
                 inMonth ? 'border-border bg-card' : 'border-transparent bg-muted/30 text-muted-foreground'
               }`}
             >
+              <Link
+                href={hrefFor('day', day)}
+                className="absolute inset-0 rounded-lg"
+                aria-label={`Ver ${format(day, "EEEE d 'de' MMMM", { locale: es })}`}
+              />
               <span
-                className={`text-xs font-medium ${
+                className={`pointer-events-none relative text-xs font-medium ${
                   isToday
                     ? 'flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground'
                     : ''
@@ -271,13 +283,20 @@ function MonthView({
               >
                 {format(day, 'd')}
               </span>
-              <div className="mt-1 space-y-0.5 overflow-hidden">
+              <div className="pointer-events-none relative mt-1 space-y-0.5 overflow-hidden">
                 {dayBookings.slice(0, 3).map((b) => {
                   const appearance = bookingAppearance(b.service?.pastelColor, b.status)
+                  const bookingLabel = `${b.customer?.name || b.service?.name || 'Reserva'} — ${localTime(b.startDateTime, timezone)}`
                   return (
-                    <div
+                    <button
                       key={b.id}
-                      className="flex items-center gap-1 rounded px-1"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onBookingClick(b)
+                      }}
+                      aria-label={bookingLabel}
+                      className="pointer-events-auto flex w-full items-center gap-1 rounded px-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
                       style={{
                         backgroundColor: appearance.background,
                         color: appearance.textColor,
@@ -294,14 +313,14 @@ function MonthView({
                       >
                         {b.customer?.name || b.service?.name || 'Reserva'}
                       </span>
-                    </div>
+                    </button>
                   )
                 })}
                 {dayBookings.length > 3 && (
                   <span className="text-[10px] text-muted-foreground">+{dayBookings.length - 3} más</span>
                 )}
               </div>
-            </Link>
+            </div>
           )
         })}
       </div>

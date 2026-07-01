@@ -93,3 +93,16 @@ describe('CalendarViews — bloqueo interactivo (día)', () => {
     expect(html).toContain('aria-label="Bloqueo: Almuerzo"')
   })
 })
+
+describe('CalendarViews — reserva clicable en vista de mes (stretched link)', () => {
+  it('la celda mantiene un link de fondo y la reserva es un botón independiente', () => {
+    const html = renderToStaticMarkup(
+      // @ts-expect-error props mínimos de prueba
+      <CalendarViews {...baseProps} view="month" date="2026-06-30" bookings={[booking]} />,
+    )
+    expect(html).toContain('view=day')
+    expect(html).toContain('pointer-events-none')
+    expect(html).toContain('pointer-events-auto')
+    expect(html).toContain('aria-label="Ana —')
+  })
+})
