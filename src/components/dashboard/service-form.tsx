@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { createService, updateService } from '@/server/actions/services'
+import { formatDuration } from '@/lib/format-duration'
 import { Pencil, AlertCircle } from 'lucide-react'
 import type { ReactNode } from 'react'
 
@@ -17,19 +18,19 @@ const PASTEL_COLORS = [
 const HEX_COLOR_REGEX = /^#[0-9A-Fa-f]{6}$/
 
 const DURATION_PRESETS = [15, 30, 45, 60, 90, 120]
+const MAX_DURATION_MINUTES = 480
 
-function formatDuration(min: number): string {
-  if (min < 60) return `${min} min`
-  const h = Math.floor(min / 60)
-  const m = min % 60
-  return m === 0 ? `${h} h` : `${h} h ${m}`
+function clampDurationPart(value: string, min: number, max: number): number {
+  const parsed = parseInt(value)
+  if (Number.isNaN(parsed)) return min
+  return Math.min(Math.max(parsed, min), max)
 }
 
 function ServicePreview({ name, description, price, durationMinutes, depositAmount, color }: {
   name: string
   description: string
   price: string
-  durationMinutes: string
+  durationMinutes: number
   depositAmount: string
   color: string
 }) {
@@ -50,7 +51,7 @@ function ServicePreview({ name, description, price, durationMinutes, depositAmou
       </div>
       <div className="flex gap-4 text-xs text-muted-foreground">
         {price && <span>${parseInt(price).toLocaleString('es-CL')}</span>}
-        {durationMinutes && <span>{durationMinutes} min</span>}
+        {durationMinutes > 0 && <span>{formatDuration(durationMinutes)}</span>}
         {depositAmount && parseInt(depositAmount) > 0 && (
           <span>Abono requerido: ${parseInt(depositAmount).toLocaleString('es-CL')}</span>
         )}
@@ -70,6 +71,8 @@ export function ServiceForm({
   triggerLabel?: string
   triggerIcon?: ReactNode
 }) {
+  const durationHoursId = useId()
+  const durationMinutesId = useId()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -83,10 +86,37 @@ export function ServiceForm({
 
   const initialDuration = service?.durationMinutes ?? 30
   const [duration, setDuration] = useState<number>(initialDuration)
+  const [durationHours, setDurationHours] = useState(Math.floor(initialDuration / 60))
+  const [durationRemainderMinutes, setDurationRemainderMinutes] = useState(initialDuration % 60)
   const [showCustomDuration, setShowCustomDuration] = useState(
     service?.durationMinutes != null && !DURATION_PRESETS.includes(service.durationMinutes)
   )
-  const previewDuration = duration > 0 ? duration.toString() : ''
+
+  function setDurationParts(totalMinutes: number) {
+    const clampedTotal = Math.min(Math.max(totalMinutes, 0), MAX_DURATION_MINUTES)
+    setDuration(clampedTotal)
+    setDurationHours(Math.floor(clampedTotal / 60))
+    setDurationRemainderMinutes(clampedTotal % 60)
+  }
+
+  function handleHoursChange(value: string) {
+    const hours = clampDurationPart(value, 0, 8)
+    const minutes = hours >= 8 ? 0 : durationRemainderMinutes
+    const totalMinutes = hours * 60 + minutes
+    setDurationHours(hours)
+    setDurationRemainderMinutes(minutes)
+    setDuration(totalMinutes)
+    setShowCustomDuration(!DURATION_PRESETS.includes(totalMinutes))
+  }
+
+  function handleMinutesChange(value: string) {
+    const maxMinutes = durationHours >= 8 ? 0 : 59
+    const minutes = clampDurationPart(value, 0, maxMinutes)
+    const totalMinutes = durationHours * 60 + minutes
+    setDurationRemainderMinutes(minutes)
+    setDuration(totalMinutes)
+    setShowCustomDuration(!DURATION_PRESETS.includes(totalMinutes))
+  }
 
   function handleHexChange(value: string) {
     setCustomHex(value)
@@ -106,6 +136,12 @@ export function ServiceForm({
 
     if (!duration || duration < 15) {
       setError('La duración mínima es 15 minutos')
+      setLoading(false)
+      return
+    }
+
+    if (duration > MAX_DURATION_MINUTES) {
+      setError('La duración máxima es 8 horas')
       setLoading(false)
       return
     }
@@ -150,6 +186,9 @@ export function ServiceForm({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-2xl font-heading font-semibold tracking-tight text-primary">{service ? 'Editar servicio' : 'Nuevo servicio'}</DialogTitle>
+          <DialogDescription className="sr-only">
+            Configura el nombre, precio, duración y color del servicio.
+          </DialogDescription>
         </DialogHeader>
         <form action={handleSubmit} className="space-y-5">
           <div className="space-y-2">
@@ -207,7 +246,7 @@ export function ServiceForm({
                   <button
                     key={min}
                     type="button"
-                    onClick={() => { setShowCustomDuration(false); setDuration(min) }}
+                    onClick={() => { setShowCustomDuration(false); setDurationParts(min) }}
                     className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
                       active
                         ? 'border-primary bg-primary text-primary-foreground'
@@ -230,22 +269,39 @@ export function ServiceForm({
                 Otro
               </button>
             </div>
-            {showCustomDuration && (
-              <div className="flex items-center gap-2 pt-1">
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div className="space-y-1">
+                <Label htmlFor={durationHoursId} className="text-xs font-medium text-muted-foreground">Horas</Label>
                 <Input
-                  className="studio-input w-28"
+                  id={durationHoursId}
+                  className="studio-input"
                   type="number"
-                  min={15}
-                  max={480}
-                  step={5}
-                  value={duration || ''}
-                  onChange={(e) => setDuration(parseInt(e.target.value) || 0)}
-                  placeholder="Minutos"
-                  autoFocus
+                  min={0}
+                  max={8}
+                  step={1}
+                  value={durationHours}
+                  onChange={(e) => handleHoursChange(e.target.value)}
+                  inputMode="numeric"
                 />
-                <span className="text-sm text-muted-foreground">minutos</span>
               </div>
-            )}
+              <div className="space-y-1">
+                <Label htmlFor={durationMinutesId} className="text-xs font-medium text-muted-foreground">Minutos</Label>
+                <Input
+                  id={durationMinutesId}
+                  className="studio-input"
+                  type="number"
+                  min={0}
+                  max={durationHours >= 8 ? 0 : 59}
+                  step={5}
+                  value={durationRemainderMinutes}
+                  onChange={(e) => handleMinutesChange(e.target.value)}
+                  inputMode="numeric"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Total: {duration > 0 ? formatDuration(duration) : '0 min'}
+            </p>
           </div>
           <div>
             <Label className="studio-eyebrow">Color</Label>
@@ -281,7 +337,7 @@ export function ServiceForm({
               name={previewName}
               description={previewDescription}
               price={previewPrice}
-              durationMinutes={previewDuration}
+              durationMinutes={duration}
               depositAmount={previewDeposit}
               color={selectedColor}
             />

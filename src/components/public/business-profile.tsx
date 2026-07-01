@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import type { PublicBusiness } from '@/lib/business/public'
+import { formatDuration } from '@/lib/format-duration'
 import { BadgeCheck, CalendarDays, Camera, Clock, Clock3, MapPin, MessageCircle, Sparkles, Star } from 'lucide-react'
 
 interface BusinessProfileProps {
@@ -91,7 +92,7 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
                     <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
                         <Clock className="size-3.5" />
-                        {service.durationMinutes} min
+                        {formatDuration(service.durationMinutes)}
                       </span>
                       <span aria-hidden="true">·</span>
                       <span className="font-semibold text-primary">${service.price.toLocaleString('es-CL')}</span>

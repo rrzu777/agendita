@@ -2,6 +2,7 @@
 
 import { BookingData } from './wizard'
 import type { Service } from '@prisma/client'
+import { formatDuration } from '@/lib/format-duration'
 import { Clock, Plus, Sparkles } from 'lucide-react'
 
 interface StepServiceProps {
@@ -62,7 +63,7 @@ export function StepService({ data, services, onSelect }: StepServiceProps) {
                   <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
                       <Clock className="size-3.5" />
-                      {service.durationMinutes} min
+                      {formatDuration(service.durationMinutes)}
                     </span>
                     <span aria-hidden="true">·</span>
                     <span className="font-medium text-primary">${service.price.toLocaleString('es-CL')}</span>

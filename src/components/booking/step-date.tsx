@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isBefore, startOfDay } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
+import { formatDuration } from '@/lib/format-duration'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 export function StepDate({ data, onSelect, onBack }: { data: BookingData; onSelect: (date: Date) => void; onBack: () => void }) {
@@ -19,7 +20,7 @@ export function StepDate({ data, onSelect, onBack }: { data: BookingData; onSele
   return (
     <div>
       <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Elige una fecha</h2>
-      <p className="mb-7 text-base text-muted-foreground">{data.serviceName} · {data.serviceDuration} min</p>
+      <p className="mb-7 text-base text-muted-foreground">{data.serviceName} · {formatDuration(data.serviceDuration)}</p>
 
       <div className="flex justify-between items-center mb-4">
         <Button variant="outline" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} aria-label="Mes anterior">
