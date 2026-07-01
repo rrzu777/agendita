@@ -10,6 +10,7 @@ import { createBookingFromDashboard } from '@/server/actions/bookings'
 import { previewPromotion } from '@/server/actions/promotions'
 import { searchCustomersForBooking } from '@/server/actions/customers'
 import type { CustomerSearchResult } from '@/server/actions/customers'
+import { formatDuration } from '@/lib/format-duration'
 import { formatMoney } from '@/lib/money'
 import { CalendarCheck2, User, Search, X } from 'lucide-react'
 import type { Service } from '@prisma/client'
@@ -295,7 +296,7 @@ export function NewBookingForm({ services, businessId }: NewBookingFormProps) {
                   <option value="">Selecciona un servicio</option>
                   {services.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name} — ${s.price.toLocaleString('es-CL')} ({s.durationMinutes} min)
+                      {s.name} — ${s.price.toLocaleString('es-CL')} ({formatDuration(s.durationMinutes)})
                     </option>
                   ))}
                 </select>
@@ -497,7 +498,7 @@ export function NewBookingForm({ services, businessId }: NewBookingFormProps) {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Servicio</span>
-                  <span className="font-medium">{summary.serviceName} ({summary.duration} min)</span>
+                  <span className="font-medium">{summary.serviceName} ({formatDuration(summary.duration)})</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Precio</span>

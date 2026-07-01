@@ -16,6 +16,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ServiceForm } from './service-form'
 import { toggleService, reorderServices } from '@/server/actions/services'
+import { formatDuration } from '@/lib/format-duration'
 import { Plus, EyeOff, Eye, ChevronUp, ChevronDown, AlertTriangle, X } from 'lucide-react'
 
 export function ServiceTable({ services: initialServices }: { services: { id: string; name: string; description: string | null; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; isActive: boolean; sortOrder: number }[] }) {
@@ -210,7 +211,7 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
                     <div className="max-w-md text-sm font-normal text-muted-foreground">{service.description}</div>
                   </TableCell>
                   <TableCell className="font-semibold">${service.price.toLocaleString('es-CL')}</TableCell>
-                  <TableCell>{service.durationMinutes} min</TableCell>
+                  <TableCell>{formatDuration(service.durationMinutes)}</TableCell>
                   <TableCell>${service.depositAmount.toLocaleString('es-CL')}</TableCell>
                   <TableCell>
                     <div className="size-7 rounded-full border border-border" style={{ backgroundColor: service.pastelColor }} />
