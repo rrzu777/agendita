@@ -3,7 +3,6 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Dialog,
@@ -23,6 +22,7 @@ import {
 import { createTimeBlock, deleteTimeBlock } from '@/server/actions/time-blocks'
 import { Lock, Trash2 } from 'lucide-react'
 import { fromZonedTime } from 'date-fns-tz'
+import { BlockFormFields } from './block-form-fields'
 
 const PRESETS = [
   { label: 'Personalizado', value: 'custom' },
@@ -171,47 +171,16 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
               </Select>
             </div>
 
-            <div>
-              <Label htmlFor="block-date">Fecha</Label>
-              <Input
-                id="block-date"
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="start-time">Hora inicio</Label>
-                <Input
-                  id="start-time"
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="end-time">Hora fin</Label>
-                <Input
-                  id="end-time"
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="block-reason">Motivo (opcional)</Label>
-              <Input
-                id="block-reason"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Ej: Almuerzo, reunión..."
-                maxLength={255}
-              />
-            </div>
+            <BlockFormFields
+              date={date}
+              onDateChange={setDate}
+              startTime={startTime}
+              onStartTimeChange={setStartTime}
+              endTime={endTime}
+              onEndTimeChange={setEndTime}
+              reason={reason}
+              onReasonChange={setReason}
+            />
 
             <div className="rounded-xl border border-muted-foreground/30 bg-muted/30 p-3">
               <p className="text-xs text-muted-foreground">
