@@ -2,6 +2,7 @@ import {
   DEFAULT_SERVICE_COLOR,
   readableTextColor,
   deriveBorderColor,
+  parseHex,
 } from './color'
 
 export type StatusIcon = 'clock' | 'check' | 'x' | 'dash'
@@ -46,9 +47,7 @@ export function bookingAppearance(
   status: string,
 ): BookingAppearance {
   const background =
-    pastelColor && /^#[0-9a-fA-F]{6}$/.test(pastelColor)
-      ? pastelColor
-      : DEFAULT_SERVICE_COLOR
+    pastelColor && parseHex(pastelColor) !== null ? pastelColor : DEFAULT_SERVICE_COLOR
   const meta = STATUS_META[status] ?? FALLBACK_META
   return {
     background,

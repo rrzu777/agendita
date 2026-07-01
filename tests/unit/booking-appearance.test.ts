@@ -48,4 +48,8 @@ describe('bookingAppearance', () => {
     const a = bookingAppearance('nope', 'confirmed')
     expect(a.background).toBe(DEFAULT_SERVICE_COLOR)
   })
+  it('color válido sin # inicial: se usa tal cual', () => {
+    const a = bookingAppearance('FFB3BA', 'confirmed')
+    expect(a.background).toBe('FFB3BA')
+  })
 })
