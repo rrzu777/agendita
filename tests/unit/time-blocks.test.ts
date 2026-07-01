@@ -298,4 +298,17 @@ describe('updateTimeBlock', () => {
       where: { id: 'block-1', businessId: 'biz-1' },
     })
   })
+
+  it('throws ForbiddenError if the block was deleted concurrently before the update lands', async () => {
+    mockPrisma.timeBlock.updateMany.mockResolvedValue({ count: 0 })
+
+    await expect(
+      updateTimeBlock('block-1', {
+        startDateTime: new Date('2026-06-01T11:00:00Z'),
+        endDateTime: new Date('2026-06-01T12:00:00Z'),
+        reason: baseInput.reason,
+        confirmOverlap: false,
+      }),
+    ).rejects.toThrow('Bloque no encontrado')
+  })
 })

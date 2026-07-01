@@ -186,10 +186,13 @@ export async function updateTimeBlock(
     }
   }
 
-  await prisma.timeBlock.updateMany({
+  const updateResult = await prisma.timeBlock.updateMany({
     where: { id, businessId },
     data: { startDateTime, endDateTime, reason },
   })
+  if (updateResult.count === 0) {
+    throw new ForbiddenError('Bloque no encontrado')
+  }
 
   revalidatePath('/dashboard/availability')
   revalidatePath('/dashboard/calendar')
