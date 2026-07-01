@@ -50,26 +50,48 @@ cambian.
 ### 2. Contraste del texto (automático)
 
 - Un helper nuevo calcula la **luminancia relativa** del `pastelColor` y decide si el
-  texto va oscuro o claro, garantizando legibilidad aunque el usuario elija un pastel
-  más saturado.
+  texto va oscuro o claro. **Objetivo medible: contraste ≥ 4.5:1 (WCAG AA)** entre el
+  texto y el fondo. El helper elige el color de texto (oscuro/claro) que cumpla ese
+  umbral; si ninguno lo cumple con holgura, gana el de mayor contraste.
 - Ubicación: `src/lib/calendar/color.ts` (helper puro, testeable, sin dependencias de
-  React), p. ej. `readableTextColor(hex): 'light' | 'dark'` y un helper para derivar
-  un tono de borde.
+  React): `readableTextColor(hex): 'light' | 'dark'`, un helper de ratio de contraste,
+  y un helper para derivar un tono de borde.
+- **Se elimina el `opacity-70`** de la tercera línea (nombre del servicio, línea 414):
+  sobre un fondo oscuro deja el texto ilegible. Todas las líneas usan el color de texto
+  calculado, con la misma opacidad.
 - Se añade un **borde sutil un tono más oscuro** que el color del servicio, para
-  separar bloques de colores parecidos o adyacentes.
+  separar bloques de colores parecidos o adyacentes. El borde debe garantizar un
+  **mínimo de contraste contra el fondo de la tarjeta**, para que un pastel casi blanco
+  no quede sin separación visible.
 
 ### 3. Estado de la reserva (opción D)
 
-- **Puntito/insignia de estado** en una esquina del bloque, reutilizando la paleta
-  `statusDotColors` que ya existe. Para que resalte sobre cualquier color de fondo, el
-  puntito lleva un **aro/halo** (ring blanco).
+- **Paleta de puntitos rediseñada.** La actual (`completed: bg-gray-400`,
+  `cancelled: bg-gray-300`) es casi invisible sobre un relleno pastel. Se define una
+  **paleta de puntitos saturados** (colores plenos, no pasteles), cada uno con
+  **aro/halo** (ring blanco o borde fino) para separarlo del relleno. El puntito se
+  posiciona **absoluto en una esquina** del bloque, sin depender del espacio de texto.
+- **Refuerzo para daltonismo (default):** además del color, cada estado lleva un
+  micro-ícono/forma distinguible (p. ej. reloj = pendiente, check = confirmada/completada,
+  ✕ = cancelada), para que el estado no dependa solo del color.
 - **Estados negativos** (`cancelled`, `no_show`, `expired`): el bloque se **atenúa**
   (opacidad reducida) y el nombre va **tachado** (`line-through`). Hoy solo `cancelled`
-  tiene `line-through`; se extiende el criterio a `no_show` y `expired`.
-- **Estados activos** (`pending_payment`, `confirmed`, `completed`): relleno sólido con
-  el color del servicio + puntito de estado.
+  tiene `line-through`; se extiende a `no_show` y `expired`.
+- **`completed` se atenúa levemente** (menos que las negativas, sin tachado) para no
+  confundirse con `confirmed`, que hoy se distinguía por el gris apagado. Así se
+  conserva la señal "ya pasó / hecha" de un vistazo.
+- **Estados activos plenos** (`pending_payment`, `confirmed`): relleno sólido con el
+  color del servicio + puntito.
 - Nota: `expired` existe en `BookingStatus` pero hoy no está en los mapas de color; el
   helper de estado debe tener un valor por defecto seguro para estados no mapeados.
+
+### 3.1. Bloques muy cortos y foco/accesibilidad (defaults)
+
+- **Bloques mínimos (~18px, reservas de 15–20 min):** el puntito de estado va absoluto
+  en la esquina y **se oculta la línea del nombre del servicio** (ya condicionada a
+  `heightMin >= 45`); se prioriza hora + nombre del cliente truncado.
+- **Foco/hover accesible:** se conserva el realce de hover y se agrega un **anillo de
+  foco visible** para navegación por teclado sobre el bloque (`button`).
 
 ### 4. Vista de mes
 
@@ -97,10 +119,13 @@ cambian.
 
 ## Verificación
 
-- Reservas de varios servicios/colores se ven con **relleno** y **texto legible** en
-  día, semana y mes.
-- El **estado** se distingue de un vistazo: puntito visible sobre cualquier color;
-  negativas atenuadas y tachadas.
+- Reservas de varios servicios/colores se ven con **relleno** y **texto legible**
+  (contraste ≥ 4.5:1) en día, semana y mes.
+- El **estado** se distingue de un vistazo: puntito saturado + ícono visible sobre
+  cualquier color; `completed` levemente atenuada; negativas atenuadas y tachadas.
+- Un **bloque mínimo** (15–20 min) muestra hora + cliente + puntito sin romper layout.
+- El bloque es **enfocable por teclado** con anillo de foco visible.
 - Los **bloqueos** siguen viéndose como banda gris rayada.
-- El helper de contraste tiene tests unitarios (colores claros → texto oscuro; colores
-  oscuros → texto claro; hex inválido/ausente → fallback).
+- El helper de contraste tiene tests unitarios: colores claros → texto oscuro; colores
+  oscuros → texto claro; **el par elegido cumple ≥ 4.5:1**; hex inválido/ausente →
+  fallback.
