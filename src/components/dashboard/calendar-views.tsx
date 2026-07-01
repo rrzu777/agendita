@@ -20,7 +20,7 @@ import {
 } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock, Check, X, Minus } from 'lucide-react'
 import { BookingDrawer } from './booking-drawer'
 import { BlockTimeModal } from './block-time-modal'
 import type { CalendarBooking } from './booking-card'
@@ -31,6 +31,7 @@ import {
   packLanes,
   type PositionedItem,
 } from '@/lib/calendar/timeline'
+import { bookingAppearance, type StatusIcon } from '@/lib/calendar/booking-appearance'
 
 export type CalendarView = 'day' | 'week' | 'month'
 
@@ -54,20 +55,20 @@ interface CalendarViewsProps {
 const HOUR_HEIGHT = 56 // px por hora
 const WEEK_STARTS = { locale: es, weekStartsOn: 1 } as const
 
-const statusDotColors: Record<string, string> = {
-  pending_payment: 'bg-orange-400',
-  confirmed: 'bg-green-500',
-  completed: 'bg-gray-400',
-  cancelled: 'bg-gray-300',
-  no_show: 'bg-red-400',
+const statusIcons: Record<StatusIcon, typeof Clock> = {
+  clock: Clock,
+  check: Check,
+  x: X,
+  dash: Minus,
 }
 
-const statusBlockClasses: Record<string, string> = {
-  pending_payment: 'border-orange-300 bg-orange-50 text-orange-900',
-  confirmed: 'border-green-300 bg-green-50 text-green-900',
-  completed: 'border-gray-300 bg-gray-50 text-gray-700',
-  cancelled: 'border-gray-200 bg-gray-50 text-gray-400 line-through',
-  no_show: 'border-red-300 bg-red-50 text-red-900',
+const statusLabels: Record<string, string> = {
+  pending_payment: 'Pendiente de pago',
+  confirmed: 'Confirmada',
+  completed: 'Completada',
+  cancelled: 'Cancelada',
+  no_show: 'No asistió',
+  expired: 'Expirada',
 }
 
 function hrefFor(view: CalendarView, date: Date): string {
@@ -257,14 +258,31 @@ function MonthView({
                 {format(day, 'd')}
               </span>
               <div className="mt-1 space-y-0.5 overflow-hidden">
-                {dayBookings.slice(0, 3).map((b) => (
-                  <div key={b.id} className="flex items-center gap-1">
-                    <span className={`size-1.5 shrink-0 rounded-full ${statusDotColors[b.status] || 'bg-gray-300'}`} />
-                    <span className="truncate text-[10px] leading-tight text-foreground">
-                      {b.customer?.name || b.service?.name || 'Reserva'}
-                    </span>
-                  </div>
-                ))}
+                {dayBookings.slice(0, 3).map((b) => {
+                  const appearance = bookingAppearance(b.service?.pastelColor, b.status)
+                  return (
+                    <div
+                      key={b.id}
+                      className="flex items-center gap-1 rounded px-1"
+                      style={{
+                        backgroundColor: appearance.background,
+                        color: appearance.textColor,
+                        opacity: appearance.opacity,
+                      }}
+                    >
+                      <span
+                        className="size-1.5 shrink-0 rounded-full ring-1 ring-white"
+                        style={{ backgroundColor: appearance.dotColor }}
+                      />
+                      <span
+                        className="truncate text-[10px] leading-tight"
+                        style={appearance.strikeThrough ? { textDecoration: 'line-through' } : undefined}
+                      >
+                        {b.customer?.name || b.service?.name || 'Reserva'}
+                      </span>
+                    </div>
+                  )
+                })}
                 {dayBookings.length > 3 && (
                   <span className="text-[10px] text-muted-foreground">+{dayBookings.length - 3} más</span>
                 )}
@@ -389,30 +407,40 @@ function BookingBlock({
   const b = p.item
   const widthPct = 100 / p.lanes
   const leftPct = p.lane * widthPct
-  const accent = b.service?.pastelColor
+  const appearance = bookingAppearance(b.service?.pastelColor, b.status)
+  const Icon = statusIcons[appearance.icon]
   const start = localTime(b.startDateTime, timezone)
+  const strike = appearance.strikeThrough ? 'line-through' : ''
+  const statusLabel = statusLabels[b.status] ?? 'Reserva'
+  const ariaLabel = `${statusLabel} — ${b.customer?.name || 'Cliente'} — ${start}`
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`absolute overflow-hidden rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight shadow-sm transition hover:z-10 hover:shadow-md ${
-        statusBlockClasses[b.status] || 'border-gray-300 bg-gray-50'
-      }`}
+      aria-label={ariaLabel}
+      className="absolute overflow-hidden rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight shadow-sm transition hover:z-10 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
       style={{
         top: (p.topMin / 60) * HOUR_HEIGHT,
         height: Math.max((p.heightMin / 60) * HOUR_HEIGHT - 2, 18),
         left: `calc(${leftPct}% + 2px)`,
         width: `calc(${widthPct}% - 4px)`,
-        borderLeftWidth: accent ? 3 : undefined,
-        borderLeftColor: accent,
+        backgroundColor: appearance.background,
+        borderColor: appearance.borderColor,
+        color: appearance.textColor,
+        opacity: appearance.opacity,
       }}
     >
-      <div className="font-semibold">{start}</div>
-      <div className="truncate">{b.customer?.name || 'Cliente'}</div>
-      {p.heightMin >= 45 && b.service?.name && (
-        <div className="truncate opacity-70">{b.service.name}</div>
-      )}
+      <span
+        className="absolute right-0.5 top-0.5 flex size-3 items-center justify-center rounded-full ring-1 ring-white"
+        style={{ backgroundColor: appearance.dotColor }}
+        aria-hidden="true"
+      >
+        <Icon className="size-2 text-white" strokeWidth={3} />
+      </span>
+      <div className={`font-semibold ${strike}`}>{start}</div>
+      <div className={`truncate ${strike}`}>{b.customer?.name || 'Cliente'}</div>
+      {p.heightMin >= 45 && b.service?.name && <div className="truncate">{b.service.name}</div>}
     </button>
   )
 }
