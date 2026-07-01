@@ -264,13 +264,20 @@ function MonthView({
                     <div
                       key={b.id}
                       className="flex items-center gap-1 rounded px-1"
-                      style={{ backgroundColor: appearance.background, color: appearance.textColor }}
+                      style={{
+                        backgroundColor: appearance.background,
+                        color: appearance.textColor,
+                        opacity: appearance.opacity,
+                      }}
                     >
                       <span
                         className="size-1.5 shrink-0 rounded-full ring-1 ring-white"
                         style={{ backgroundColor: appearance.dotColor }}
                       />
-                      <span className="truncate text-[10px] leading-tight">
+                      <span
+                        className="truncate text-[10px] leading-tight"
+                        style={appearance.strikeThrough ? { textDecoration: 'line-through' } : undefined}
+                      >
                         {b.customer?.name || b.service?.name || 'Reserva'}
                       </span>
                     </div>

@@ -59,3 +59,17 @@ describe('CalendarViews — accesibilidad de estado (día)', () => {
     expect(html).toContain('aria-label="Cancelada')
   })
 })
+
+describe('CalendarViews — estado visible en mes', () => {
+  it('una reserva completada se ve atenuada en la vista de mes', () => {
+    // El filtro de MonthView oculta 'cancelled' y 'no_show' por completo, así que
+    // se usa 'completed' (kind 'done', opacity 0.85) para verificar que la opacidad
+    // por estado sí se aplica en las filas de la vista de mes.
+    const completed = { ...booking, id: 'b3', status: 'completed' }
+    const html = renderToStaticMarkup(
+      // @ts-expect-error props mínimos de prueba
+      <CalendarViews {...baseProps} view="month" date="2026-06-30" bookings={[completed]} />,
+    )
+    expect(html).toContain('opacity:0.85')
+  })
+})
