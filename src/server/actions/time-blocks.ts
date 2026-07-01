@@ -128,3 +128,72 @@ export async function deleteTimeBlock(id: string) {
   revalidatePath('/dashboard/calendar')
   await revalidateBusinessPublicPaths(businessId)
 }
+
+export async function updateTimeBlock(
+  id: string,
+  data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId'> & { confirmOverlap?: boolean },
+) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('update-timeblock', 20, 60000)
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  }
+
+  const raw = data as unknown as Record<string, unknown>
+  const { startDateTime, endDateTime, reason, confirmOverlap } = parseTimeBlockInput(raw)
+
+  const parsed = createTimeBlockSchema.safeParse({ startDateTime, endDateTime, reason, confirmOverlap })
+  if (!parsed.success) {
+    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  }
+
+  const durationMs = differenceInMilliseconds(endDateTime, startDateTime)
+  if (durationMs > MAX_BLOCK_DURATION_MS) {
+    throw new Error('La duración máxima de un bloqueo es de 32 días')
+  }
+
+  const existing = await prisma.timeBlock.findFirst({
+    where: { id, businessId },
+  })
+  if (!existing) {
+    throw new ForbiddenError('Bloque no encontrado')
+  }
+
+  const timeChanged =
+    existing.startDateTime.getTime() !== startDateTime.getTime() ||
+    existing.endDateTime.getTime() !== endDateTime.getTime()
+
+  if (timeChanged) {
+    const overlappingBookings = await prisma.booking.findMany({
+      where: {
+        businessId,
+        status: { in: ['pending_payment', 'confirmed', 'completed'] },
+        startDateTime: { lt: endDateTime },
+        endDateTime: { gt: startDateTime },
+      },
+      select: { id: true },
+      take: 1,
+    })
+
+    if (overlappingBookings.length > 0 && confirmOverlap !== true) {
+      return {
+        requiresConfirmation: true as const,
+        message:
+          'El bloqueo se solapa con reservas existentes. ' +
+          'Marca la casilla de confirmación si deseas guardarlo de todas formas ' +
+          '(no se cancelarán las reservas existentes).',
+      }
+    }
+  }
+
+  await prisma.timeBlock.updateMany({
+    where: { id, businessId },
+    data: { startDateTime, endDateTime, reason },
+  })
+
+  revalidatePath('/dashboard/availability')
+  revalidatePath('/dashboard/calendar')
+  await revalidateBusinessPublicPaths(businessId)
+
+  return { ...existing, startDateTime, endDateTime, reason }
+}
