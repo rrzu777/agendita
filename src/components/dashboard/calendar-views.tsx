@@ -62,6 +62,15 @@ const statusIcons: Record<StatusIcon, typeof Clock> = {
   dash: Minus,
 }
 
+const statusLabels: Record<string, string> = {
+  pending_payment: 'Pendiente de pago',
+  confirmed: 'Confirmada',
+  completed: 'Completada',
+  cancelled: 'Cancelada',
+  no_show: 'No asistió',
+  expired: 'Expirada',
+}
+
 function hrefFor(view: CalendarView, date: Date): string {
   return `/dashboard/calendar?view=${view}&date=${format(date, 'yyyy-MM-dd')}`
 }
@@ -395,11 +404,14 @@ function BookingBlock({
   const Icon = statusIcons[appearance.icon]
   const start = localTime(b.startDateTime, timezone)
   const strike = appearance.strikeThrough ? 'line-through' : ''
+  const statusLabel = statusLabels[b.status] ?? 'Reserva'
+  const ariaLabel = `${statusLabel} — ${b.customer?.name || 'Cliente'} — ${start}`
 
   return (
     <button
       type="button"
       onClick={onClick}
+      aria-label={ariaLabel}
       className="absolute overflow-hidden rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight shadow-sm transition hover:z-10 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
       style={{
         top: (p.topMin / 60) * HOUR_HEIGHT,

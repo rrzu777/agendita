@@ -48,3 +48,14 @@ describe('CalendarViews — relleno de color (mes)', () => {
     expect(html).toContain('background-color:#ffb3ba')
   })
 })
+
+describe('CalendarViews — accesibilidad de estado (día)', () => {
+  it('el botón de una reserva cancelada expone el estado en su aria-label', () => {
+    const cancelled = { ...booking, id: 'b2', status: 'cancelled' }
+    const html = renderToStaticMarkup(
+      // @ts-expect-error props mínimos de prueba
+      <CalendarViews {...baseProps} view="day" date="2026-06-30" bookings={[cancelled]} />,
+    )
+    expect(html).toContain('aria-label="Cancelada')
+  })
+})
