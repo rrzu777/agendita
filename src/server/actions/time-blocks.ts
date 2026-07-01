@@ -132,7 +132,7 @@ export async function deleteTimeBlock(id: string) {
 export async function updateTimeBlock(
   id: string,
   data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId'> & { confirmOverlap?: boolean },
-) {
+): Promise<TimeBlock | { requiresConfirmation: true; message: string }> {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('update-timeblock', 20, 60000)
   if (!limit.success) {
