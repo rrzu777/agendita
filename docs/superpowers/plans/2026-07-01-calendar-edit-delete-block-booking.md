@@ -750,7 +750,15 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
             </DialogHeader>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setConfirmingDelete(false)} disabled={isPending}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setConfirmingDelete(false)
+                  setError(null)
+                }}
+                disabled={isPending}
+              >
                 Cancelar
               </Button>
               <Button type="button" variant="destructive" onClick={handleDelete} disabled={isPending}>
@@ -803,7 +811,10 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
                   type="button"
                   variant="ghost"
                   className="text-destructive hover:text-destructive/80"
-                  onClick={() => setConfirmingDelete(true)}
+                  onClick={() => {
+                    setConfirmingDelete(true)
+                    setError(null)
+                  }}
                   disabled={isPending}
                 >
                   Eliminar
@@ -914,6 +925,7 @@ Después del bloque `{activeBooking && <BookingDrawer ... />}`, agrega:
 ```tsx
 {activeBlock && (
   <EditBlockDialog
+    key={activeBlock.id}
     block={activeBlock}
     timezone={timezone}
     open={!!activeBlock}
@@ -921,6 +933,8 @@ Después del bloque `{activeBooking && <BookingDrawer ... />}`, agrega:
   />
 )}
 ```
+
+El `key={activeBlock.id}` fuerza a React a desmontar/remontar `EditBlockDialog` si `activeBlock` cambiara de un bloqueo a otro sin pasar por `null` — así el estado interno (`date`, `startTime`, etc., derivado de `deriveBlockFormValues` en el montaje) nunca queda desactualizado respecto al bloqueo mostrado. En la práctica el overlay del diálogo ya bloquea el clic en otro bloqueo mientras uno está abierto, pero el `key` cierra esa clase de bug sin depender de ese supuesto.
 
 - [ ] **Step 6: `TimelineView` recibe y propaga `onBlockClick`**
 
@@ -948,11 +962,12 @@ Reemplaza la función `BlockBand` completa por:
 ```tsx
 function BlockBand({ p, onClick }: { p: PositionedItem<CalendarTimeBlock>; onClick: () => void }) {
   const reason = p.item.reason || 'Bloqueado'
+  const ariaLabel = p.item.reason ? `Bloqueo: ${p.item.reason}` : 'Bloqueo de horario'
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={`Bloqueo: ${reason}`}
+      aria-label={ariaLabel}
       className="absolute inset-x-0.5 overflow-hidden rounded-md border border-dashed border-muted-foreground/40 bg-[repeating-linear-gradient(45deg,transparent,transparent_6px,rgba(0,0,0,0.04)_6px,rgba(0,0,0,0.04)_12px)] px-1.5 py-1 text-left text-[10px] text-muted-foreground transition hover:border-muted-foreground/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
       style={{
         top: (p.topMin / 60) * HOUR_HEIGHT,
@@ -1001,9 +1016,12 @@ describe('CalendarViews — reserva clicable en vista de mes (stretched link)', 
     expect(html).toContain('view=day')
     expect(html).toContain('pointer-events-none')
     expect(html).toContain('pointer-events-auto')
+    expect(html).toContain('aria-label="Ana —')
   })
 })
 ```
+
+(El `aria-label` incluye la hora local calculada con `localTime()` — se verifica solo el prefijo "Ana —" para no depender de calcular a mano la conversión de zona horaria exacta en el test, siguiendo el mismo patrón ya usado en el test de accesibilidad de `BookingBlock`.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1043,6 +1061,7 @@ return (
     <div className="pointer-events-none relative mt-1 space-y-0.5 overflow-hidden">
       {dayBookings.slice(0, 3).map((b) => {
         const appearance = bookingAppearance(b.service?.pastelColor, b.status)
+        const bookingLabel = `${b.customer?.name || b.service?.name || 'Reserva'} — ${localTime(b.startDateTime, timezone)}`
         return (
           <button
             key={b.id}
@@ -1051,7 +1070,8 @@ return (
               e.stopPropagation()
               onBookingClick(b)
             }}
-            className="pointer-events-auto flex w-full items-center gap-1 rounded px-1 text-left"
+            aria-label={bookingLabel}
+            className="pointer-events-auto flex w-full items-center gap-1 rounded px-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
             style={{
               backgroundColor: appearance.background,
               color: appearance.textColor,
