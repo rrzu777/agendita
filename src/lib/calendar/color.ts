@@ -31,3 +31,21 @@ export function contrastRatio(hexA: string, hexB: string): number {
   const darker = Math.min(la, lb)
   return (lighter + 0.05) / (darker + 0.05)
 }
+
+const DARK_TEXT = '#1f2937' // gray-800
+const LIGHT_TEXT = '#ffffff'
+
+export function readableTextColor(bgHex: string): string {
+  const darkRatio = contrastRatio(bgHex, DARK_TEXT)
+  const lightRatio = contrastRatio(bgHex, LIGHT_TEXT)
+  if (darkRatio >= 4.5) return DARK_TEXT
+  if (lightRatio >= 4.5) return LIGHT_TEXT
+  return darkRatio >= lightRatio ? DARK_TEXT : LIGHT_TEXT
+}
+
+export function deriveBorderColor(bgHex: string): string {
+  const rgb = parseHex(bgHex) ?? parseHex(DEFAULT_SERVICE_COLOR)!
+  const factor = 0.72 // ~28% más oscuro
+  const toHex = (c: number) => Math.round(c * factor).toString(16).padStart(2, '0')
+  return `#${toHex(rgb.r)}${toHex(rgb.g)}${toHex(rgb.b)}`
+}
