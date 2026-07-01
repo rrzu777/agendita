@@ -38,3 +38,13 @@ describe('CalendarViews — relleno de color (día)', () => {
     expect(html).toContain('ana')
   })
 })
+
+describe('CalendarViews — relleno de color (mes)', () => {
+  it('pinta la filita de reserva con el color del servicio', () => {
+    const html = renderToStaticMarkup(
+      // @ts-expect-error props mínimos de prueba
+      <CalendarViews {...baseProps} view="month" date="2026-06-30" bookings={[booking]} />,
+    ).toLowerCase()
+    expect(html).toContain('background-color:#ffb3ba')
+  })
+})

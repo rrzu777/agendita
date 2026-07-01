@@ -62,14 +62,6 @@ const statusIcons: Record<StatusIcon, typeof Clock> = {
   dash: Minus,
 }
 
-const statusDotColors: Record<string, string> = {
-  pending_payment: 'bg-orange-400',
-  confirmed: 'bg-green-500',
-  completed: 'bg-gray-400',
-  cancelled: 'bg-gray-300',
-  no_show: 'bg-red-400',
-}
-
 function hrefFor(view: CalendarView, date: Date): string {
   return `/dashboard/calendar?view=${view}&date=${format(date, 'yyyy-MM-dd')}`
 }
@@ -257,14 +249,24 @@ function MonthView({
                 {format(day, 'd')}
               </span>
               <div className="mt-1 space-y-0.5 overflow-hidden">
-                {dayBookings.slice(0, 3).map((b) => (
-                  <div key={b.id} className="flex items-center gap-1">
-                    <span className={`size-1.5 shrink-0 rounded-full ${statusDotColors[b.status] || 'bg-gray-300'}`} />
-                    <span className="truncate text-[10px] leading-tight text-foreground">
-                      {b.customer?.name || b.service?.name || 'Reserva'}
-                    </span>
-                  </div>
-                ))}
+                {dayBookings.slice(0, 3).map((b) => {
+                  const appearance = bookingAppearance(b.service?.pastelColor, b.status)
+                  return (
+                    <div
+                      key={b.id}
+                      className="flex items-center gap-1 rounded px-1"
+                      style={{ backgroundColor: appearance.background, color: appearance.textColor }}
+                    >
+                      <span
+                        className="size-1.5 shrink-0 rounded-full ring-1 ring-white"
+                        style={{ backgroundColor: appearance.dotColor }}
+                      />
+                      <span className="truncate text-[10px] leading-tight">
+                        {b.customer?.name || b.service?.name || 'Reserva'}
+                      </span>
+                    </div>
+                  )
+                })}
                 {dayBookings.length > 3 && (
                   <span className="text-[10px] text-muted-foreground">+{dayBookings.length - 3} más</span>
                 )}
