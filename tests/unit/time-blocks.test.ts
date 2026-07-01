@@ -4,6 +4,8 @@ const mockPrisma = {
   timeBlock: {
     create: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
+    updateMany: vi.fn(),
     deleteMany: vi.fn(),
   },
   booking: {
@@ -41,7 +43,7 @@ vi.mock('@/server/actions/revalidate-business', () => ({
   revalidateBusinessPublicPaths: vi.fn().mockResolvedValue(undefined),
 }))
 
-const { createTimeBlock, deleteTimeBlock } = await import('@/server/actions/time-blocks')
+const { createTimeBlock, deleteTimeBlock, updateTimeBlock } = await import('@/server/actions/time-blocks')
 
 const baseInput = {
   startDateTime: new Date('2026-06-01T09:00:00Z'),
@@ -166,5 +168,147 @@ describe('deleteTimeBlock', () => {
 
     expect(revalidatePath).toHaveBeenCalledWith('/dashboard/calendar')
     expect(revalidatePath).toHaveBeenCalledWith('/dashboard/availability')
+  })
+})
+
+describe('updateTimeBlock', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPrisma.timeBlock.findFirst.mockResolvedValue({
+      id: 'block-1',
+      businessId: 'biz-1',
+      startDateTime: baseInput.startDateTime,
+      endDateTime: baseInput.endDateTime,
+      reason: baseInput.reason,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    })
+    mockPrisma.timeBlock.updateMany.mockResolvedValue({ count: 1 })
+    mockPrisma.booking.findMany.mockResolvedValue([])
+  })
+
+  it('updates a time block when no overlap and the time window changed', async () => {
+    const result = await updateTimeBlock('block-1', {
+      startDateTime: new Date('2026-06-01T11:00:00Z'),
+      endDateTime: new Date('2026-06-01T12:00:00Z'),
+      reason: 'Updated reason',
+      confirmOverlap: false,
+    })
+
+    expect('id' in result && result.id).toBe('block-1')
+    expect(mockPrisma.timeBlock.updateMany).toHaveBeenCalledWith({
+      where: { id: 'block-1', businessId: 'biz-1' },
+      data: {
+        startDateTime: new Date('2026-06-01T11:00:00Z'),
+        endDateTime: new Date('2026-06-01T12:00:00Z'),
+        reason: 'Updated reason',
+      },
+    })
+  })
+
+  it('checks overlap when the time window changed', async () => {
+    mockPrisma.booking.findMany.mockResolvedValue([{ id: 'booking-1' }])
+
+    const result = await updateTimeBlock('block-1', {
+      startDateTime: new Date('2026-06-01T11:00:00Z'),
+      endDateTime: new Date('2026-06-01T12:00:00Z'),
+      reason: 'Updated reason',
+      confirmOverlap: false,
+    })
+
+    expect(result).toEqual({
+      requiresConfirmation: true,
+      message: expect.stringMatching(/solapa con reservas/),
+    })
+    expect(mockPrisma.timeBlock.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('does not re-check overlap when only the reason changed (same time window)', async () => {
+    mockPrisma.booking.findMany.mockResolvedValue([{ id: 'booking-1' }])
+
+    const result = await updateTimeBlock('block-1', {
+      startDateTime: baseInput.startDateTime,
+      endDateTime: baseInput.endDateTime,
+      reason: 'Solo cambia el motivo',
+      confirmOverlap: false,
+    })
+
+    expect(mockPrisma.booking.findMany).not.toHaveBeenCalled()
+    expect('id' in result && result.id).toBe('block-1')
+    expect(mockPrisma.timeBlock.updateMany).toHaveBeenCalledTimes(1)
+  })
+
+  it('updates when overlapping bookings exist and confirmOverlap is true', async () => {
+    mockPrisma.booking.findMany.mockResolvedValue([{ id: 'booking-1' }])
+
+    const result = await updateTimeBlock('block-1', {
+      startDateTime: new Date('2026-06-01T11:00:00Z'),
+      endDateTime: new Date('2026-06-01T12:00:00Z'),
+      reason: baseInput.reason,
+      confirmOverlap: true,
+    })
+
+    expect('id' in result && result.id).toBe('block-1')
+    expect(mockPrisma.timeBlock.updateMany).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects when end is before start', async () => {
+    await expect(
+      updateTimeBlock('block-1', {
+        startDateTime: new Date('2026-06-01T10:00:00Z'),
+        endDateTime: new Date('2026-06-01T09:00:00Z'),
+        reason: null,
+        confirmOverlap: false,
+      }),
+    ).rejects.toThrow(/fecha de fin debe ser posterior/)
+  })
+
+  it('rejects when duration exceeds 32 days', async () => {
+    await expect(
+      updateTimeBlock('block-1', {
+        startDateTime: new Date('2026-06-01T00:00:00Z'),
+        endDateTime: new Date('2026-07-05T00:00:00Z'),
+        reason: null,
+        confirmOverlap: false,
+      }),
+    ).rejects.toThrow(/duración máxima/)
+  })
+
+  it('throws ForbiddenError when the block does not exist for this business', async () => {
+    mockPrisma.timeBlock.findFirst.mockResolvedValue(null)
+
+    await expect(
+      updateTimeBlock('nonexistent', {
+        startDateTime: baseInput.startDateTime,
+        endDateTime: baseInput.endDateTime,
+        reason: null,
+        confirmOverlap: false,
+      }),
+    ).rejects.toThrow('Bloque no encontrado')
+  })
+
+  it('scopes the existence check to businessId', async () => {
+    await updateTimeBlock('block-1', {
+      startDateTime: new Date('2026-06-01T11:00:00Z'),
+      endDateTime: new Date('2026-06-01T12:00:00Z'),
+      reason: baseInput.reason,
+      confirmOverlap: false,
+    })
+
+    expect(mockPrisma.timeBlock.findFirst).toHaveBeenCalledWith({
+      where: { id: 'block-1', businessId: 'biz-1' },
+    })
+  })
+
+  it('throws ForbiddenError if the block was deleted concurrently before the update lands', async () => {
+    mockPrisma.timeBlock.updateMany.mockResolvedValue({ count: 0 })
+
+    await expect(
+      updateTimeBlock('block-1', {
+        startDateTime: new Date('2026-06-01T11:00:00Z'),
+        endDateTime: new Date('2026-06-01T12:00:00Z'),
+        reason: baseInput.reason,
+        confirmOverlap: false,
+      }),
+    ).rejects.toThrow('Bloque no encontrado')
   })
 })

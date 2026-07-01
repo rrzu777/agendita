@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { ChevronLeft, ChevronRight, Clock, Check, X, Minus } from 'lucide-react'
 import { BookingDrawer } from './booking-drawer'
 import { BlockTimeModal } from './block-time-modal'
+import { EditBlockDialog } from './edit-block-dialog'
 import type { CalendarBooking } from './booking-card'
 import type { CalendarTimeBlock } from './time-block-card'
 import {
@@ -87,6 +88,7 @@ export function CalendarViews({
 }: CalendarViewsProps) {
   const focus = parseISO(`${date}T12:00:00`)
   const [activeBooking, setActiveBooking] = useState<TimelineBooking | null>(null)
+  const [activeBlock, setActiveBlock] = useState<CalendarTimeBlock | null>(null)
 
   // Navegación previo/siguiente según la vista
   const prev =
@@ -135,7 +137,13 @@ export function CalendarViews({
       </div>
 
       {view === 'month' && (
-        <MonthView bookings={bookings} focus={focus} timezone={timezone} todayKey={todayKey} />
+        <MonthView
+          bookings={bookings}
+          focus={focus}
+          timezone={timezone}
+          todayKey={todayKey}
+          onBookingClick={setActiveBooking}
+        />
       )}
       {view === 'week' && (
         <TimelineView
@@ -148,6 +156,7 @@ export function CalendarViews({
           timezone={timezone}
           todayKey={todayKey}
           onBookingClick={setActiveBooking}
+          onBlockClick={setActiveBlock}
         />
       )}
       {view === 'day' && (
@@ -158,6 +167,7 @@ export function CalendarViews({
           timezone={timezone}
           todayKey={todayKey}
           onBookingClick={setActiveBooking}
+          onBlockClick={setActiveBlock}
         />
       )}
 
@@ -169,6 +179,16 @@ export function CalendarViews({
           businessCurrency={businessCurrency}
           businessTimezone={timezone}
           businessAddress={businessAddress}
+        />
+      )}
+
+      {activeBlock && (
+        <EditBlockDialog
+          key={activeBlock.id}
+          block={activeBlock}
+          timezone={timezone}
+          open={!!activeBlock}
+          onOpenChange={(o) => !o && setActiveBlock(null)}
         />
       )}
     </div>
@@ -205,11 +225,13 @@ function MonthView({
   focus,
   timezone,
   todayKey,
+  onBookingClick,
 }: {
   bookings: TimelineBooking[]
   focus: Date
   timezone: string
   todayKey: string
+  onBookingClick: (b: TimelineBooking) => void
 }) {
   const monthStart = startOfMonth(focus)
   const monthEnd = endOfMonth(monthStart)
@@ -241,15 +263,19 @@ function MonthView({
           const inMonth = isSameMonth(day, monthStart)
           const isToday = key === todayKey
           return (
-            <Link
+            <div
               key={key}
-              href={hrefFor('day', day)}
-              className={`flex min-h-16 flex-col rounded-lg border p-1.5 transition hover:border-primary/50 md:min-h-24 ${
+              className={`relative flex min-h-16 flex-col rounded-lg border p-1.5 transition hover:border-primary/50 md:min-h-24 ${
                 inMonth ? 'border-border bg-card' : 'border-transparent bg-muted/30 text-muted-foreground'
               }`}
             >
+              <Link
+                href={hrefFor('day', day)}
+                className="absolute inset-0 rounded-lg"
+                aria-label={`Ver ${format(day, "EEEE d 'de' MMMM", { locale: es })}`}
+              />
               <span
-                className={`text-xs font-medium ${
+                className={`pointer-events-none relative text-xs font-medium ${
                   isToday
                     ? 'flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground'
                     : ''
@@ -257,13 +283,20 @@ function MonthView({
               >
                 {format(day, 'd')}
               </span>
-              <div className="mt-1 space-y-0.5 overflow-hidden">
+              <div className="pointer-events-none relative mt-1 space-y-0.5 overflow-hidden">
                 {dayBookings.slice(0, 3).map((b) => {
                   const appearance = bookingAppearance(b.service?.pastelColor, b.status)
+                  const bookingLabel = `${b.customer?.name || b.service?.name || 'Reserva'} — ${localTime(b.startDateTime, timezone)}`
                   return (
-                    <div
+                    <button
                       key={b.id}
-                      className="flex items-center gap-1 rounded px-1"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onBookingClick(b)
+                      }}
+                      aria-label={bookingLabel}
+                      className="pointer-events-auto flex w-full items-center gap-1 rounded px-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
                       style={{
                         backgroundColor: appearance.background,
                         color: appearance.textColor,
@@ -280,14 +313,14 @@ function MonthView({
                       >
                         {b.customer?.name || b.service?.name || 'Reserva'}
                       </span>
-                    </div>
+                    </button>
                   )
                 })}
                 {dayBookings.length > 3 && (
                   <span className="text-[10px] text-muted-foreground">+{dayBookings.length - 3} más</span>
                 )}
               </div>
-            </Link>
+            </div>
           )
         })}
       </div>
@@ -302,6 +335,7 @@ function TimelineView({
   timezone,
   todayKey,
   onBookingClick,
+  onBlockClick,
 }: {
   days: Date[]
   bookings: TimelineBooking[]
@@ -309,6 +343,7 @@ function TimelineView({
   timezone: string
   todayKey: string
   onBookingClick: (b: TimelineBooking) => void
+  onBlockClick: (b: CalendarTimeBlock) => void
 }) {
   const allItems = [...bookings, ...timeBlocks]
   const { startHour, endHour } = computeHourRange(allItems, timezone)
@@ -373,7 +408,7 @@ function TimelineView({
 
                   {/* Bloqueos (bandas grises) */}
                   {positionedBlocks.map((p) => (
-                    <BlockBand key={p.item.id} p={p} />
+                    <BlockBand key={p.item.id} p={p} onClick={() => onBlockClick(p.item)} />
                   ))}
 
                   {/* Reservas */}
@@ -445,17 +480,22 @@ function BookingBlock({
   )
 }
 
-function BlockBand({ p }: { p: PositionedItem<CalendarTimeBlock> }) {
+function BlockBand({ p, onClick }: { p: PositionedItem<CalendarTimeBlock>; onClick: () => void }) {
+  const reason = p.item.reason || 'Bloqueado'
+  const ariaLabel = p.item.reason ? `Bloqueo: ${p.item.reason}` : 'Bloqueo de horario'
   return (
-    <div
-      className="absolute inset-x-0.5 overflow-hidden rounded-md border border-dashed border-muted-foreground/40 bg-[repeating-linear-gradient(45deg,transparent,transparent_6px,rgba(0,0,0,0.04)_6px,rgba(0,0,0,0.04)_12px)] px-1.5 py-1 text-[10px] text-muted-foreground"
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className="absolute inset-x-0.5 overflow-hidden rounded-md border border-dashed border-muted-foreground/40 bg-[repeating-linear-gradient(45deg,transparent,transparent_6px,rgba(0,0,0,0.04)_6px,rgba(0,0,0,0.04)_12px)] px-1.5 py-1 text-left text-[10px] text-muted-foreground transition hover:border-muted-foreground/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
       style={{
         top: (p.topMin / 60) * HOUR_HEIGHT,
         height: Math.max((p.heightMin / 60) * HOUR_HEIGHT - 2, 16),
       }}
     >
-      {p.item.reason || 'Bloqueado'}
-    </div>
+      {reason}
+    </button>
   )
 }
 

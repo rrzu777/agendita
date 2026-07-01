@@ -7,6 +7,9 @@ vi.mock('@/components/dashboard/block-time-modal', () => ({
 vi.mock('@/components/dashboard/booking-drawer', () => ({
   BookingDrawer: () => null,
 }))
+vi.mock('@/components/dashboard/edit-block-dialog', () => ({
+  EditBlockDialog: () => null,
+}))
 
 import { CalendarViews } from '@/components/dashboard/calendar-views'
 
@@ -71,5 +74,35 @@ describe('CalendarViews — estado visible en mes', () => {
       <CalendarViews {...baseProps} view="month" date="2026-06-30" bookings={[completed]} />,
     )
     expect(html).toContain('opacity:0.85')
+  })
+})
+
+const timeBlock = {
+  id: 'block-1',
+  startDateTime: '2026-06-30T17:00:00.000Z',
+  endDateTime: '2026-06-30T18:00:00.000Z',
+  reason: 'Almuerzo',
+}
+
+describe('CalendarViews — bloqueo interactivo (día)', () => {
+  it('el bloqueo se renderiza como botón con aria-label descriptivo', () => {
+    const html = renderToStaticMarkup(
+      <CalendarViews {...baseProps} view="day" date="2026-06-30" bookings={[]} timeBlocks={[timeBlock]} />,
+    )
+    expect(html).toContain('<button')
+    expect(html).toContain('aria-label="Bloqueo: Almuerzo"')
+  })
+})
+
+describe('CalendarViews — reserva clicable en vista de mes (stretched link)', () => {
+  it('la celda mantiene un link de fondo y la reserva es un botón independiente', () => {
+    const html = renderToStaticMarkup(
+      // @ts-expect-error props mínimos de prueba
+      <CalendarViews {...baseProps} view="month" date="2026-06-30" bookings={[booking]} />,
+    )
+    expect(html).toContain('view=day')
+    expect(html).toContain('pointer-events-none')
+    expect(html).toContain('pointer-events-auto')
+    expect(html).toContain('aria-label="Ana —')
   })
 })
