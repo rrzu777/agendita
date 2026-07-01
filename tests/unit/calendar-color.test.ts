@@ -62,4 +62,9 @@ describe('deriveBorderColor', () => {
   it('para hex inválido usa el color por defecto', () => {
     expect(deriveBorderColor('nope')).toBe(deriveBorderColor(DEFAULT_SERVICE_COLOR))
   })
+  it('garantiza contraste mínimo contra el fondo blanco de la tarjeta para pasteles casi blancos', () => {
+    const nearWhite = '#fdfdf9'
+    const border = deriveBorderColor(nearWhite)
+    expect(contrastRatio(border, '#ffffff')).toBeGreaterThanOrEqual(2.5)
+  })
 })

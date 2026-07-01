@@ -43,9 +43,20 @@ export function readableTextColor(bgHex: string): string {
   return darkRatio >= lightRatio ? DARK_TEXT : LIGHT_TEXT
 }
 
+const MIN_BORDER_CONTRAST = 2.5
+const CARD_BACKGROUND = '#ffffff'
+
 export function deriveBorderColor(bgHex: string): string {
   const rgb = parseHex(bgHex) ?? parseHex(DEFAULT_SERVICE_COLOR)!
-  const factor = 0.72 // ~28% más oscuro
-  const toHex = (c: number) => Math.round(c * factor).toString(16).padStart(2, '0')
-  return `#${toHex(rgb.r)}${toHex(rgb.g)}${toHex(rgb.b)}`
+  const toHex = (c: number) => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, '0')
+  const render = (factor: number) =>
+    `#${toHex(rgb.r * factor)}${toHex(rgb.g * factor)}${toHex(rgb.b * factor)}`
+
+  let factor = 0.72 // ~28% más oscuro, caso base
+  let candidate = render(factor)
+  while (contrastRatio(candidate, CARD_BACKGROUND) < MIN_BORDER_CONTRAST && factor > 0.1) {
+    factor -= 0.1
+    candidate = render(factor)
+  }
+  return candidate
 }
