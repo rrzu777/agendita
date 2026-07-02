@@ -94,6 +94,8 @@ model Business {
   cancellationPolicy   String?
   bookingPolicy        String?
   depositPolicy        String?
+  packageProducts      PackageProduct[]
+  packagePurchases     PackagePurchase[]
 }
 
 enum PaymentAccountStatus {
@@ -235,9 +237,10 @@ model Service {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  business   Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  bookings   Booking[]
-  promotions Promotion[] @relation("PromotionServices")
+  business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  bookings        Booking[]
+  promotions      Promotion[]      @relation("PromotionServices")
+  packageProducts PackageProduct[] @relation("PackageProductServices")
 
   @@index([businessId, isActive])
 }
@@ -269,19 +272,19 @@ model TimeBlock {
 }
 
 model TimeBlockSeries {
-  id          String   @id @default(cuid())
-  businessId  String
-  daysOfWeek  Int[]
-  startTime   String
-  endTime     String
-  reason      String?
-  anchorDate  DateTime
-  until       DateTime?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  id         String    @id @default(cuid())
+  businessId String
+  daysOfWeek Int[]
+  startTime  String
+  endTime    String
+  reason     String?
+  anchorDate DateTime
+  until      DateTime?
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
 
-  business    Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  exceptions  TimeBlockException[]
+  business   Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  exceptions TimeBlockException[]
 
   @@index([businessId, isActive])
 }
@@ -295,7 +298,7 @@ model TimeBlockException {
   endDateTime    DateTime?
   reason         String?
 
-  series         TimeBlockSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  series TimeBlockSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
 
   @@unique([seriesId, occurrenceDate])
 }
@@ -325,8 +328,9 @@ model Customer {
   loyaltyLedger LoyaltyLedger[]
   loyaltyGrants PromotionGrant[]
 
-  referralsMade     Referral[] @relation("ReferralReferrer")
-  referralReceived  Referral?  @relation("ReferralReferred")
+  referralsMade    Referral[]        @relation("ReferralReferrer")
+  referralReceived Referral?         @relation("ReferralReferred")
+  packagePurchases PackagePurchase[]
 
   @@index([businessId])
   @@index([businessId, phone])
@@ -655,35 +659,90 @@ model PromotionGrant {
   createdAt         DateTime    @default(now())
 
   triggeringBookingId String?
+  packagePurchaseId   String?
 
-  business  Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  promotion Promotion @relation(fields: [promotionId], references: [id])
-  customer  Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  promotion       Promotion        @relation(fields: [promotionId], references: [id])
+  customer        Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  packagePurchase PackagePurchase? @relation(fields: [packagePurchaseId], references: [id])
 
   @@unique([businessId, code])
   @@unique([customerId, requestId])
   @@index([customerId, status])
   @@index([businessId, promotionId])
   @@index([triggeringBookingId])
+  @@index([packagePurchaseId])
+}
+
+model PackageProduct {
+  id              String   @id @default(cuid())
+  businessId      String
+  name            String
+  quantity        Int
+  bonusQuantity   Int      @default(0)
+  price           Int
+  expiryDays      Int?
+  appliesToAll    Boolean  @default(true)
+  isActive        Boolean  @default(true)
+  createdByUserId String?
+  updatedByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  business  Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  services  Service[]         @relation("PackageProductServices")
+  purchases PackagePurchase[]
+
+  @@index([businessId, isActive])
+}
+
+model PackagePurchase {
+  id                String    @id @default(cuid())
+  businessId        String
+  customerId        String
+  packageProductId  String
+  pricePaid         Int
+  quantity          Int
+  bonusQuantity     Int       @default(0)
+  coversAll         Boolean   @default(true)
+  coveredServiceIds String[]
+  source            String
+  paymentMethod     String?
+  paidAt            DateTime  @default(now())
+  status            String    @default("active")
+  expiresAt         DateTime?
+  refundedAt        DateTime?
+  refundedAmount    Int?
+  createdByUserId   String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  business Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product  PackageProduct   @relation(fields: [packageProductId], references: [id])
+  grants   PromotionGrant[]
+
+  @@index([businessId, status])
+  @@index([customerId, status])
 }
 
 model LoyaltyConfig {
-  id              String   @id @default(cuid())
-  businessId      String   @unique
-  isActive        Boolean  @default(false)
-  programName     String
-  pointsLabel     String   @default("puntos")
-  pointsPerVisit  Int      @default(0)
-  spendPerPoint   Int?
-  minSpendToEarn  Int?
-  cardMessage          String?
-  grantExpiryDays      Int?
-  refundPointsOnExpiry Boolean  @default(true)
-  forfeitGrantOnNoShow Boolean  @default(false)
-  clawbackAutoRewardOnRefund Boolean @default(false)
-  updatedByUserId      String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                         String   @id @default(cuid())
+  businessId                 String   @unique
+  isActive                   Boolean  @default(false)
+  programName                String
+  pointsLabel                String   @default("puntos")
+  pointsPerVisit             Int      @default(0)
+  spendPerPoint              Int?
+  minSpendToEarn             Int?
+  cardMessage                String?
+  grantExpiryDays            Int?
+  refundPointsOnExpiry       Boolean  @default(true)
+  forfeitGrantOnNoShow       Boolean  @default(false)
+  clawbackAutoRewardOnRefund Boolean  @default(false)
+  updatedByUserId            String?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }
