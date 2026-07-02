@@ -13,6 +13,7 @@ const mockPrisma = {
   },
   availabilityRule: { findMany: vi.fn() },
   timeBlock: { findMany: vi.fn() },
+  timeBlockSeries: { findMany: vi.fn() },
   $transaction: vi.fn(),
 }
 
@@ -69,6 +70,7 @@ describe('getAvailableSlotsForReschedule', () => {
     mockPrisma.booking.findFirst.mockResolvedValue(booking)
     mockPrisma.availabilityRule.findMany.mockResolvedValue([{ dayOfWeek: 1, startTime: '09:00', endTime: '18:00', isActive: true }])
     mockPrisma.timeBlock.findMany.mockResolvedValue([])
+    mockPrisma.timeBlockSeries.findMany.mockResolvedValue([])
     mockPrisma.booking.findMany.mockResolvedValue([])
     mockGenerateSlots.mockReturnValue([
       { start: new Date('2026-06-15T14:00:00Z'), end: new Date('2026-06-15T15:00:00Z') },
@@ -105,7 +107,7 @@ describe('getAvailableSlotsForReschedule', () => {
       expect.any(Date),
       60,
       expect.any(Array),
-      [block],
+      [expect.objectContaining({ startDateTime: block.startDateTime, endDateTime: block.endDateTime })],
       [busyBooking],
       expect.objectContaining({ timezone: 'America/Santiago', bookingWindowDays: 90 }),
     )
@@ -138,7 +140,9 @@ describe('getAvailableSlotsForReschedule', () => {
 
     await getAvailableSlotsForReschedule('booking-1', new Date('2026-06-15T00:00:00Z'))
 
-    expect(mockGenerateSlots.mock.calls[0][3]).toEqual([block])
+    expect(mockGenerateSlots.mock.calls[0][3]).toEqual([
+      expect.objectContaining({ startDateTime: block.startDateTime, endDateTime: block.endDateTime }),
+    ])
   })
 })
 

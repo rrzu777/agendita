@@ -4,7 +4,8 @@ import { AvailabilityEditor } from '@/components/dashboard/availability-editor'
 import { TimeBlockList } from '@/components/dashboard/time-block-form'
 import { BlockTimeModal } from '@/components/dashboard/block-time-modal'
 import { getAvailabilityRules } from '@/server/actions/availability'
-import { getTimeBlocks } from '@/server/actions/time-blocks'
+import { getTimeBlocks, getTimeBlockSeries } from '@/server/actions/time-blocks'
+import { RecurringBlockList } from '@/components/dashboard/recurring-block-list'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 
 export default async function AvailabilityPage() {
@@ -20,6 +21,7 @@ export default async function AvailabilityPage() {
 
   const rules = await getAvailabilityRules()
   const blocks = await getTimeBlocks()
+  const recurringSeries = await getTimeBlockSeries()
   const timezone = userData.business.timezone || 'America/Santiago'
 
   return (
@@ -45,6 +47,19 @@ export default async function AvailabilityPage() {
             <BlockTimeModal defaultDate={null} timezone={timezone} />
           </div>
           <TimeBlockList blocks={blocks} />
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-muted-foreground">Bloqueos recurrentes</h3>
+            <RecurringBlockList
+              series={recurringSeries.map((s) => ({
+                id: s.id,
+                daysOfWeek: s.daysOfWeek,
+                startTime: s.startTime,
+                endTime: s.endTime,
+                reason: s.reason,
+                until: s.until ? s.until.toISOString() : null,
+              }))}
+            />
+          </div>
         </div>
       </div>
     </div>
