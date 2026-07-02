@@ -44,4 +44,23 @@ describe('createTimeBlockSeries', () => {
     const count = await prisma.timeBlockSeries.count({ where: { businessId } })
     expect(count).toBe(1)
   })
+
+  it('skipSeriesOccurrence crea una excepción isSkipped', async () => {
+    const { createTimeBlockSeries, skipSeriesOccurrence } = await import('@/server/actions/time-blocks')
+    const { series } = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever' }) as { series: { id: string } }
+    await skipSeriesOccurrence(series.id, new Date('2026-06-08T04:00:00Z'))
+    const exc = await prisma.timeBlockException.findFirst({ where: { seriesId: series.id } })
+    expect(exc?.isSkipped).toBe(true)
+  })
+
+  it('overrideSeriesOccurrence hace upsert de un override', async () => {
+    const { createTimeBlockSeries, overrideSeriesOccurrence } = await import('@/server/actions/time-blocks')
+    const { series } = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever' }) as { series: { id: string } }
+    const occDate = new Date('2026-06-15T04:00:00Z')
+    await overrideSeriesOccurrence(series.id, occDate, { startDateTime: new Date('2026-06-15T18:00:00Z'), endDateTime: new Date('2026-06-15T19:00:00Z'), reason: 'Movido' })
+    await overrideSeriesOccurrence(series.id, occDate, { startDateTime: new Date('2026-06-15T19:00:00Z'), endDateTime: new Date('2026-06-15T20:00:00Z'), reason: 'Movido otra vez' })
+    const exc = await prisma.timeBlockException.findMany({ where: { seriesId: series.id, isSkipped: false } })
+    expect(exc).toHaveLength(1)
+    expect(exc[0].reason).toBe('Movido otra vez')
+  })
 })

@@ -267,3 +267,48 @@ export async function createTimeBlockSeries(data: {
 
   return { series, overlappingDates }
 }
+
+async function assertSeriesOwned(seriesId: string, businessId: string) {
+  const series = await prisma.timeBlockSeries.findFirst({ where: { id: seriesId, businessId } })
+  if (!series) throw new ForbiddenError('Serie no encontrada')
+  return series
+}
+
+export async function skipSeriesOccurrence(seriesId: string, occurrenceDate: Date) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('update-timeblock', 20, 60000)
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  await assertSeriesOwned(seriesId, businessId)
+
+  await prisma.timeBlockException.upsert({
+    where: { seriesId_occurrenceDate: { seriesId, occurrenceDate } },
+    create: { seriesId, occurrenceDate, isSkipped: true },
+    update: { isSkipped: true, startDateTime: null, endDateTime: null, reason: null },
+  })
+
+  revalidatePath('/dashboard/availability')
+  revalidatePath('/dashboard/calendar')
+  await revalidateBusinessPublicPaths(businessId)
+}
+
+export async function overrideSeriesOccurrence(
+  seriesId: string,
+  occurrenceDate: Date,
+  data: { startDateTime: Date; endDateTime: Date; reason?: string | null },
+) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('update-timeblock', 20, 60000)
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  if (data.endDateTime <= data.startDateTime) throw new Error('La hora de fin debe ser posterior a la de inicio')
+  await assertSeriesOwned(seriesId, businessId)
+
+  await prisma.timeBlockException.upsert({
+    where: { seriesId_occurrenceDate: { seriesId, occurrenceDate } },
+    create: { seriesId, occurrenceDate, isSkipped: false, startDateTime: data.startDateTime, endDateTime: data.endDateTime, reason: data.reason ?? null },
+    update: { isSkipped: false, startDateTime: data.startDateTime, endDateTime: data.endDateTime, reason: data.reason ?? null },
+  })
+
+  revalidatePath('/dashboard/availability')
+  revalidatePath('/dashboard/calendar')
+  await revalidateBusinessPublicPaths(businessId)
+}
