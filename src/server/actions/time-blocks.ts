@@ -8,6 +8,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { differenceInMilliseconds } from 'date-fns'
+import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 
 const MAX_BLOCK_DURATION_MS = 32 * 24 * 60 * 60 * 1000 // 32 dias
 
@@ -97,17 +98,9 @@ export async function getTimeBlocksByRange(start: Date, end: Date) {
   if (start > end) {
     throw new Error('La fecha de inicio debe ser anterior a la fecha de término')
   }
-  return prisma.timeBlock.findMany({
-    where: {
-      businessId,
-      OR: [
-        { startDateTime: { gte: start, lte: end } },
-        { endDateTime: { gte: start, lte: end } },
-        { startDateTime: { lte: start }, endDateTime: { gte: end } },
-      ],
-    },
-    orderBy: { startDateTime: 'asc' },
-  })
+  const business = await prisma.business.findUnique({ where: { id: businessId }, select: { timezone: true } })
+  const timezone = business?.timezone || 'America/Santiago'
+  return getEffectiveBlocks(businessId, start, end, timezone)
 }
 
 export async function deleteTimeBlock(id: string) {
