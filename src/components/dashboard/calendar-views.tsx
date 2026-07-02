@@ -24,6 +24,7 @@ import { ChevronLeft, ChevronRight, Clock, Check, X, Minus } from 'lucide-react'
 import { BookingDrawer } from './booking-drawer'
 import { BlockTimeModal } from './block-time-modal'
 import { EditBlockDialog } from './edit-block-dialog'
+import { EditSeriesOccurrenceDialog } from './edit-series-occurrence-dialog'
 import type { CalendarBooking } from './booking-card'
 import type { CalendarTimeBlock } from './time-block-card'
 import {
@@ -182,7 +183,15 @@ export function CalendarViews({
         />
       )}
 
-      {activeBlock && (
+      {activeBlock && (activeBlock.seriesId ? (
+        <EditSeriesOccurrenceDialog
+          key={activeBlock.id}
+          block={activeBlock}
+          timezone={timezone}
+          open={!!activeBlock}
+          onOpenChange={(o) => !o && setActiveBlock(null)}
+        />
+      ) : (
         <EditBlockDialog
           key={activeBlock.id}
           block={activeBlock}
@@ -190,7 +199,7 @@ export function CalendarViews({
           open={!!activeBlock}
           onOpenChange={(o) => !o && setActiveBlock(null)}
         />
-      )}
+      ))}
     </div>
   )
 }

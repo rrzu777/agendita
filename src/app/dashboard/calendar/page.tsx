@@ -97,7 +97,14 @@ export default async function CalendarPage({
       <div className="max-w-6xl p-5 md:p-10">
         <CalendarViews
           bookings={serializeDates(bookings)}
-          timeBlocks={serializeDates(timeBlocks)}
+          timeBlocks={timeBlocks.map((tb) => ({
+            id: tb.id,
+            startDateTime: tb.startDateTime.toISOString(),
+            endDateTime: tb.endDateTime.toISOString(),
+            reason: tb.reason ?? null,
+            seriesId: tb.seriesId,
+            occurrenceDate: tb.occurrenceDate ? tb.occurrenceDate.toISOString() : undefined,
+          }))}
           view={view}
           date={dateStr}
           todayKey={todayStr}

@@ -10,6 +10,7 @@ vi.mock('@/components/dashboard/booking-drawer', () => ({
 vi.mock('@/components/dashboard/edit-block-dialog', () => ({
   EditBlockDialog: () => null,
 }))
+vi.mock('@/components/dashboard/edit-series-occurrence-dialog', () => ({ EditSeriesOccurrenceDialog: () => null }))
 
 import { CalendarViews } from '@/components/dashboard/calendar-views'
 
