@@ -294,41 +294,38 @@ export async function skipSeriesOccurrence(seriesId: string, occurrenceDate: Dat
 
 export async function updateTimeBlockSeries(
   seriesId: string,
-  newRule: { daysOfWeek: number[]; startTime: string; endTime: string; reason?: string | null; endMode: SeriesEndMode; weeks?: number | null },
+  changes: { startTime: string; endTime: string; reason?: string | null },
 ) {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   await rateLimitOrThrow('update-timeblock')
 
-  const parsed = createSeriesSchema.safeParse({ ...newRule, anchorDate: new Date() })
-  if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
+  const timeRe = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
+  if (!timeRe.test(changes.startTime) || !timeRe.test(changes.endTime) || changes.endTime <= changes.startTime) {
+    throw new Error('Datos inválidos: la hora de fin debe ser posterior a la de inicio')
   }
 
   const existing = await assertSeriesOwned(seriesId, businessId)
   const timezone = business.timezone || 'America/Santiago'
 
-  // Split en hoy: la serie vieja termina AYER (último día incluido); la nueva
-  // arranca hoy. `until` de la vieja debe ser ayer (no hoy): en expandSeries la
-  // comparación `cursor <= untilStr` es inclusiva — si fuera hoy, vieja y nueva
-  // generarían ambas la ocurrencia de hoy (bloqueo duplicado). El pasado queda
-  // inmutable; las excepciones futuras se resetean porque pertenecen a la vieja.
+  // Split en hoy: la serie vieja termina AYER (inclusivo), la nueva arranca hoy y
+  // CONSERVA el patrón de días y la fecha de fin (until) originales — el diálogo de
+  // edición solo cambia hora/motivo. Reset de excepciones futuras (viven en la vieja).
   const todayStr = formatInTimeZone(new Date(), timezone, 'yyyy-MM-dd')
   const yesterdayStr = formatInTimeZone(addDays(new Date(), -1), timezone, 'yyyy-MM-dd')
   const oldUntil = fromZonedTime(`${yesterdayStr} 00:00:00`, timezone)
   const anchorToday = fromZonedTime(`${todayStr} 00:00:00`, timezone)
-  const until = computeSeriesUntil(anchorToday, newRule.endMode, newRule.weeks ?? null, timezone)
 
   const [, newSeries] = await prisma.$transaction([
     prisma.timeBlockSeries.update({ where: { id: seriesId }, data: { until: oldUntil, isActive: existing.anchorDate <= oldUntil } }),
     prisma.timeBlockSeries.create({
       data: {
         businessId,
-        daysOfWeek: newRule.daysOfWeek,
-        startTime: newRule.startTime,
-        endTime: newRule.endTime,
-        reason: newRule.reason ?? null,
+        daysOfWeek: existing.daysOfWeek,
+        startTime: changes.startTime,
+        endTime: changes.endTime,
+        reason: changes.reason ?? null,
         anchorDate: anchorToday,
-        until,
+        until: existing.until,
       },
     }),
   ])

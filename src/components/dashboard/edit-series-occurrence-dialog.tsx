@@ -10,7 +10,6 @@ import {
   skipSeriesOccurrence, overrideSeriesOccurrence, updateTimeBlockSeries, deleteTimeBlockSeries,
 } from '@/server/actions/time-blocks'
 import { deriveBlockFormValues, parseTimeUTC } from '@/lib/calendar/block-form-values'
-import { getLocalDayOfWeek } from '@/lib/availability/timezone'
 import { BlockFormFields } from './block-form-fields'
 import type { CalendarTimeBlock } from './time-block-card'
 
@@ -66,14 +65,8 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
         reason: reason || null,
       }))
     } else {
-      // Editar toda la serie = split en hoy con la regla de este formulario,
-      // conservando el mismo día de semana LOCAL de la ocurrencia editada.
-      const dow = getLocalDayOfWeek(occurrenceDate, timezone)
-      run(async () => {
-        await updateTimeBlockSeries(seriesId, {
-          daysOfWeek: [dow], startTime, endTime, reason: reason || null, endMode: 'forever', weeks: null,
-        })
-      })
+      // Editar toda la serie = cambiar hora/motivo de toda la serie (conserva días y fin).
+      run(async () => { await updateTimeBlockSeries(seriesId, { startTime, endTime, reason: reason || null }) })
     }
   }
 

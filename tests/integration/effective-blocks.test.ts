@@ -77,4 +77,17 @@ describe('getEffectiveBlocks', () => {
       prisma.$transaction((tx) => assertSlotIsAvailable({ tx, ...input })),
     ).resolves.toBeUndefined()
   })
+
+  it('C1: una serie acotada sigue bloqueando su ÚLTIMO día (rangeStart a media tarde)', async () => {
+    // serie de 1 semana Lun-Vie 13:00-14:00, ancla lunes 2026-06-01, until = viernes 2026-06-05 (00:00 local)
+    await prisma.timeBlockException.deleteMany()
+    await prisma.timeBlockSeries.deleteMany()
+    await prisma.timeBlock.deleteMany({ where: { businessId } })
+    await prisma.timeBlockSeries.create({
+      data: { businessId, daysOfWeek: [1, 2, 3, 4, 5], startTime: '13:00', endTime: '14:00', reason: 'Almuerzo', anchorDate: new Date('2026-06-01T04:00:00Z'), until: new Date('2026-06-05T04:00:00Z') },
+    })
+    // rango de un solo día = el último día (viernes), arrancando a las 13:00 local (17:00Z)
+    const blocks = await getEffectiveBlocks(businessId, new Date('2026-06-05T17:00:00Z'), new Date('2026-06-05T18:00:00Z'), TZ)
+    expect(blocks.some((b) => b.reason === 'Almuerzo')).toBe(true)
+  })
 })

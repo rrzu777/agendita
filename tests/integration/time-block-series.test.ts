@@ -4,9 +4,10 @@ import { requireTestDatabase } from './setup'
 
 requireTestDatabase()
 
+const mockBusiness = { id: 'tbs-biz-1', timezone: 'America/Santiago', bookingWindowDays: 90 }
 vi.mock('@/lib/auth/server', () => ({
-  requireBusiness: async () => ({ businessId: 'tbs-biz-1' }),
-  requireBusinessRole: async () => ({ businessId: 'tbs-biz-1' }),
+  requireBusiness: async () => ({ businessId: 'tbs-biz-1', business: mockBusiness }),
+  requireBusinessRole: async () => ({ businessId: 'tbs-biz-1', business: mockBusiness }),
   ForbiddenError: class extends Error {},
 }))
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: async () => ({ success: true }) }))
@@ -64,14 +65,35 @@ describe('createTimeBlockSeries', () => {
     expect(exc[0].reason).toBe('Movido otra vez')
   })
 
-  it('updateTimeBlockSeries hace split: cierra la vieja en hoy y crea una nueva', async () => {
+  it('updateTimeBlockSeries hace split conservando los días y cambiando la hora', async () => {
     const { createTimeBlockSeries, updateTimeBlockSeries } = await import('@/server/actions/time-blocks')
     const { series } = await createTimeBlockSeries({ daysOfWeek: [1, 2, 3, 4], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2020-01-06T04:00:00Z'), endMode: 'forever' }) as { series: { id: string } }
-    const res = await updateTimeBlockSeries(series.id, { daysOfWeek: [1, 2, 3, 4, 5], startTime: '13:00', endTime: '14:00', reason: 'A', endMode: 'forever', weeks: null })
+    const res = await updateTimeBlockSeries(series.id, { startTime: '12:30', endTime: '13:30', reason: 'A2' })
     const old = await prisma.timeBlockSeries.findUniqueOrThrow({ where: { id: series.id } })
-    expect(old.until).not.toBeNull()
-    expect(res.series.id).not.toBe(series.id)
-    expect(res.series.daysOfWeek).toContain(5)
+    expect(old.until).not.toBeNull() // vieja cerrada
+    expect(res.series.id).not.toBe(series.id) // serie nueva
+    expect(res.series.daysOfWeek).toEqual([1, 2, 3, 4]) // días PRESERVADOS
+    expect(res.series.startTime).toBe('12:30') // hora cambiada
+  })
+
+  it('C1: assertSlotIsAvailable rechaza un slot en el ÚLTIMO día de una serie acotada', async () => {
+    // Reloj fijo antes del slot para que pase lead-time/booking-window (que usan Date real).
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-05-28T12:00:00Z'))
+    try {
+      const { createTimeBlockSeries } = await import('@/server/actions/time-blocks')
+      const { assertSlotIsAvailable } = await import('@/lib/availability/validation')
+      await prisma.availabilityRule.deleteMany({ where: { businessId } })
+      await prisma.availabilityRule.create({ data: { businessId, dayOfWeek: 5, startTime: '09:00', endTime: '18:00', isActive: true } })
+      const svc = await prisma.service.create({ data: { businessId, name: 'C1 svc', durationMinutes: 60, price: 10000, depositAmount: 0, pastelColor: '#FFD700', isActive: true } })
+      // serie hasta viernes 2026-06-05 (00:00 local); slot ese viernes 13:00-14:00 (17:00Z-18:00Z)
+      await createTimeBlockSeries({ daysOfWeek: [5], startTime: '13:00', endTime: '14:00', reason: 'Almuerzo', anchorDate: new Date('2026-05-29T04:00:00Z'), endMode: 'weeks', weeks: 1 })
+      await expect(
+        prisma.$transaction((tx) => assertSlotIsAvailable({ tx, businessId, serviceId: svc.id, startDateTime: new Date('2026-06-05T17:00:00Z'), endDateTime: new Date('2026-06-05T18:00:00Z'), timezone: 'America/Santiago' })),
+      ).rejects.toThrow()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('deleteTimeBlockSeries borra la serie y sus excepciones', async () => {

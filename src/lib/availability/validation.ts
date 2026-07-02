@@ -1,6 +1,6 @@
 import { addMinutes, differenceInMinutes, addDays } from 'date-fns'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
-import { getLocalDayOfWeek } from './timezone'
+import { getLocalDayOfWeek, getLocalDateStr, startOfLocalDay } from './timezone'
 import { expandSeries } from '@/lib/calendar/expand-series'
 import type { PrismaClient, Prisma } from '@prisma/client'
 
@@ -107,7 +107,10 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
         businessId,
         isActive: true,
         anchorDate: { lte: endDateTime },
-        OR: [{ until: null }, { until: { gte: startDateTime } }],
+        // `until` es marcador de día (00:00 local); comparamos contra el piso del
+        // día local del slot para no descartar el último día de una serie acotada.
+        // Superconjunto seguro: expandSeries filtra el día con precisión.
+        OR: [{ until: null }, { until: { gte: startOfLocalDay(getLocalDateStr(startDateTime, timezone), timezone) } }],
       },
       include: { exceptions: true },
     }),
