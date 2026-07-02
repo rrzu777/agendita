@@ -9,6 +9,8 @@ import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { differenceInMilliseconds } from 'date-fns'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
+import { computeSeriesUntil, expandSeries, type SeriesEndMode } from '@/lib/calendar/expand-series'
+import { formatInTimeZone } from 'date-fns-tz'
 
 const MAX_BLOCK_DURATION_MS = 32 * 24 * 60 * 60 * 1000 // 32 dias
 
@@ -192,4 +194,76 @@ export async function updateTimeBlock(
   await revalidateBusinessPublicPaths(businessId)
 
   return { ...existing, startDateTime, endDateTime, reason }
+}
+
+const createSeriesSchema = z.object({
+  daysOfWeek: z.array(z.number().int().min(0).max(6)).min(1, 'Selecciona al menos un día'),
+  startTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+  endTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+  reason: z.string().max(255).optional().nullable(),
+  anchorDate: z.date(),
+  endMode: z.enum(['forever', 'month', 'weeks']),
+  weeks: z.number().int().min(1).max(52).optional().nullable(),
+}).refine((d) => d.endTime > d.startTime, { message: 'La hora de fin debe ser posterior a la de inicio' })
+
+export async function createTimeBlockSeries(data: {
+  daysOfWeek: number[]
+  startTime: string
+  endTime: string
+  reason?: string | null
+  anchorDate: Date
+  endMode: SeriesEndMode
+  weeks?: number | null
+}) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('create-timeblock', 20, 60000)
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  }
+
+  const parsed = createSeriesSchema.safeParse(data)
+  if (!parsed.success) {
+    throw new Error('Datos inválidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
+  }
+
+  const business = await prisma.business.findUnique({ where: { id: businessId }, select: { timezone: true, bookingWindowDays: true } })
+  const timezone = business?.timezone || 'America/Santiago'
+  const bookingWindowDays = business?.bookingWindowDays ?? 90
+
+  const until = computeSeriesUntil(data.anchorDate, data.endMode, data.weeks ?? null, timezone)
+
+  const series = await prisma.timeBlockSeries.create({
+    data: {
+      businessId,
+      daysOfWeek: data.daysOfWeek,
+      startTime: data.startTime,
+      endTime: data.endTime,
+      reason: data.reason ?? null,
+      anchorDate: data.anchorDate,
+      until,
+    },
+  })
+
+  // Aviso "crear igual + avisar": listar días (yyyy-MM-dd) dentro de la ventana de
+  // reserva cuyas ocurrencias se solapan con reservas existentes. No se cancela nada.
+  const windowEnd = new Date(Date.now() + bookingWindowDays * 24 * 60 * 60 * 1000)
+  const occurrences = expandSeries(series, [], data.anchorDate, windowEnd, timezone)
+  const bookings = await prisma.booking.findMany({
+    where: {
+      businessId,
+      status: { in: ['pending_payment', 'confirmed', 'completed'] },
+      startDateTime: { lt: windowEnd },
+      endDateTime: { gt: data.anchorDate },
+    },
+    select: { startDateTime: true, endDateTime: true },
+  })
+  const overlappingDates = occurrences
+    .filter((occ) => bookings.some((b) => occ.startDateTime < b.endDateTime && b.startDateTime < occ.endDateTime))
+    .map((occ) => formatInTimeZone(occ.startDateTime, timezone, 'yyyy-MM-dd'))
+
+  revalidatePath('/dashboard/availability')
+  revalidatePath('/dashboard/calendar')
+  await revalidateBusinessPublicPaths(businessId)
+
+  return { series, overlappingDates }
 }
