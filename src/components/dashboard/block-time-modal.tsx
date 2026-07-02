@@ -19,10 +19,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { createTimeBlock, deleteTimeBlock } from '@/server/actions/time-blocks'
+import { createTimeBlock, deleteTimeBlock, createTimeBlockSeries } from '@/server/actions/time-blocks'
 import { Lock, Trash2 } from 'lucide-react'
 import { fromZonedTime } from 'date-fns-tz'
 import { BlockFormFields } from './block-form-fields'
+import { RecurrenceFields } from './recurrence-fields'
+import type { SeriesEndMode } from '@/lib/calendar/expand-series'
 
 const PRESETS = [
   { label: 'Personalizado', value: 'custom' },
@@ -49,6 +51,11 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
   const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('10:00')
   const [reason, setReason] = useState('')
+  const [recurring, setRecurring] = useState(false)
+  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([])
+  const [endMode, setEndMode] = useState<SeriesEndMode>('forever')
+  const [weeks, setWeeks] = useState(3)
+  const [notice, setNotice] = useState<string | null>(null)
   const [confirmOverlap, setConfirmOverlap] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -93,6 +100,7 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
     if (!newOpen) {
       setConfirmOverlap(false)
       setError(null)
+      setNotice(null)
     }
     setOpen(newOpen)
   }
@@ -112,19 +120,21 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
 
     startTransition(async () => {
       try {
-        const start = parseTimeUTC(date, startTime, timezone)
-        const end = parseTimeUTC(date, endTime, timezone)
-
-        const result = await createTimeBlock({
-          startDateTime: start,
-          endDateTime: end,
-          reason: reason || null,
-          confirmOverlap,
-        })
-        if (result && 'requiresConfirmation' in result) {
-          setError(result.message)
+        if (recurring) {
+          if (daysOfWeek.length === 0) { setError('Selecciona al menos un día'); return }
+          const anchorDate = fromZonedTime(`${date} 00:00:00`, timezone)
+          const res = await createTimeBlockSeries({ daysOfWeek, startTime, endTime, reason: reason || null, anchorDate, endMode, weeks: endMode === 'weeks' ? weeks : null })
+          if (res.overlappingDates.length > 0) {
+            setNotice(`Serie creada. Estos días se solapan con reservas existentes (no se cancelaron): ${res.overlappingDates.join(', ')}`)
+          }
+          router.refresh()
+          setOpen(false)
           return
         }
+        const start = parseTimeUTC(date, startTime, timezone)
+        const end = parseTimeUTC(date, endTime, timezone)
+        const result = await createTimeBlock({ startDateTime: start, endDateTime: end, reason: reason || null, confirmOverlap })
+        if (result && 'requiresConfirmation' in result) { setError(result.message); return }
         router.refresh()
         setOpen(false)
       } catch (err: unknown) {
@@ -182,6 +192,17 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
               onReasonChange={setReason}
             />
 
+            <RecurrenceFields
+              recurring={recurring}
+              onRecurringChange={setRecurring}
+              daysOfWeek={daysOfWeek}
+              onDaysOfWeekChange={setDaysOfWeek}
+              endMode={endMode}
+              onEndModeChange={setEndMode}
+              weeks={weeks}
+              onWeeksChange={setWeeks}
+            />
+
             <div className="rounded-xl border border-muted-foreground/30 bg-muted/30 p-3">
               <p className="text-xs text-muted-foreground">
                 Si el horario se solapa con reservas existentes,
@@ -203,6 +224,7 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
             </div>
 
             {error && <p className="text-sm text-destructive">{error}</p>}
+            {notice && <p className="text-sm text-amber-600">{notice}</p>}
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
