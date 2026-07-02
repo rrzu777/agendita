@@ -45,6 +45,9 @@ export type ApplyPresetSummary = { applied: string[]; skipped: string[] }
 
 const DEFAULT_PROGRAM_NAME = 'Programa de fidelidad'
 
+// Espeja los kinds del motor (AUTOMATIC_KINDS) para el resumen legible. `anniversary`
+// aún no tiene preset en el catálogo, pero se deja para forward-compat; todo lookup
+// tiene fallback `?? kind`.
 const KIND_LABELS: Record<string, string> = {
   birthday: 'Cumpleaños', first_visit: 'Primera visita', review: 'Reseña',
   anniversary: 'Aniversario', winback: 'Reactivar inactivas', referral: 'Referidas',
@@ -146,6 +149,9 @@ export function redemptionSignature(o: {
   return `${o.rewardType}:${o.rewardValue}:${o.pointsCost}:${o.appliesToAll}`
 }
 
+// Garantiza kinds únicos en el payload de un combo (invariante que promete
+// `buildPresetPayload`). El único combo actual no tiene kinds repetidos, pero esto
+// protege combos futuros cuyos componentes compartan un kind.
 function dedupeRulesByKind(rules: AutomaticRuleFormInput[]): AutomaticRuleFormInput[] {
   const seen = new Set<string>()
   const out: AutomaticRuleFormInput[] = []

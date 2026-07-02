@@ -1,15 +1,9 @@
 import { test, expect, Page } from '@playwright/test'
+import { setOwnerAuth } from './helpers/auth'
 
 // ─── B-onboarding: Presets de fidelización ─────────────────────────────────────
 // Aplica el combo "Programa recomendado" y verifica que siembre config + canje, y
 // que re-aplicar sea idempotente (no duplica el canje). Contra el stack real (bypass).
-
-const E2E_SECRET = process.env.PLAYWRIGHT_E2E_AUTH_SECRET || 'e2e-secret-local'
-const E2E_OWNER_EMAIL = process.env.PLAYWRIGHT_E2E_OWNER_EMAIL || 'owner@mimosnails.com'
-
-function setOwnerAuth(page: Page) {
-  page.setExtraHTTPHeaders({ 'x-e2e-test-user-email': E2E_OWNER_EMAIL, 'x-e2e-auth-secret': E2E_SECRET })
-}
 
 async function gotoStable(page: Page, path: string, attempts = 4): Promise<void> {
   for (let i = 0; i < attempts; i++) {
@@ -51,6 +45,9 @@ function redemptionRowsNamed(page: Page, name: string) {
 
 test.describe('Presets de fidelización', () => {
   test('aplicar "Programa recomendado" siembra config + canje, idempotente', async ({ page }) => {
+    // Flujo largo contra el stack real: 2 applies + 4 navegaciones + 2 bloques toPass(15s).
+    // El default de 30s queda al filo (medido ~28s), así que le damos margen.
+    test.setTimeout(90_000)
     setOwnerAuth(page)
     await gotoStable(page, '/dashboard/fidelizacion')
     await waitForHydration(page)

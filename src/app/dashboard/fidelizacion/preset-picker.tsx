@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { applyLoyaltyPreset } from '@/server/actions/loyalty'
 import type { ApplyPresetSummary } from '@/lib/loyalty/presets'
 
@@ -69,9 +70,7 @@ function Card({ preset, hasActiveProgram }: { preset: PresetCard; hasActiveProgr
       <div className="flex items-start justify-between gap-2">
         <h5 className="font-medium text-foreground">{preset.name}</h5>
         {preset.recommended && (
-          <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-            Recomendado
-          </span>
+          <Badge className="bg-primary/10 text-primary">Recomendado</Badge>
         )}
       </div>
       <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">

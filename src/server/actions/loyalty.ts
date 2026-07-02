@@ -90,7 +90,11 @@ async function loadLoyaltyState(tx: Prisma.TransactionClient, businessId: string
 }> {
   const [configRow, autoRules, redemptions] = await Promise.all([
     tx.loyaltyConfig.findUnique({ where: { businessId } }),
+    // Reglas: sin filtro isActive → un kind existente (incluso archivado) bloquea el
+    // reseed, igual que la unicidad por kind de upsertAutomaticRule.
     tx.promotion.findMany({ where: automaticRuleWhere(businessId), select: { conditions: true } }),
+    // Canjes: solo activos → re-aplicar un preset puede resembrar una recompensa
+    // archivada (comportamiento aditivo, a diferencia de las reglas).
     tx.promotion.findMany({
       where: { ...redemptionOptionWhere(businessId), isActive: true },
       select: { rewardType: true, rewardValue: true, pointsCost: true, appliesToAll: true },
@@ -350,6 +354,10 @@ export async function applyLoyaltyPreset(presetId: unknown): Promise<ApplyPreset
     const plan = planPresetApply(payload, state)
 
     if (plan.configToWrite) {
+      // Merge: el patch del preset pisa solo los escalares del modelo de acumulación;
+      // el resto de la fila (toggles, cardMessage, grantExpiryDays) se preserva. Depende
+      // de que loyaltyConfigSchema use .strip() para descartar columnas solo-de-DB
+      // (id, businessId, createdAt, updatedAt, updatedByUserId) antes del upsert.
       const merged = { ...configRow, ...plan.configToWrite }
       const parsed = loyaltyConfigSchema.safeParse(merged)
       if (!parsed.success) throw new Error('Config de fidelización inválida')
