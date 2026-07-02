@@ -124,11 +124,13 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
           if (daysOfWeek.length === 0) { setError('Selecciona al menos un día'); return }
           const anchorDate = fromZonedTime(`${date} 00:00:00`, timezone)
           const res = await createTimeBlockSeries({ daysOfWeek, startTime, endTime, reason: reason || null, anchorDate, endMode, weeks: endMode === 'weeks' ? weeks : null })
-          if (res.overlappingDates.length > 0) {
-            setNotice(`Serie creada. Estos días se solapan con reservas existentes (no se cancelaron): ${res.overlappingDates.join(', ')}`)
-          }
           router.refresh()
-          setOpen(false)
+          if (res.overlappingDates.length > 0) {
+            // Mantener el diálogo abierto para que el aviso sea visible; el usuario lo cierra manualmente.
+            setNotice(`Serie creada. Estos días se solapan con reservas existentes (no se cancelaron): ${res.overlappingDates.join(', ')}`)
+          } else {
+            setOpen(false)
+          }
           return
         }
         const start = parseTimeUTC(date, startTime, timezone)
