@@ -12,8 +12,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { updateTimeBlock, deleteTimeBlock } from '@/server/actions/time-blocks'
-import { fromZonedTime } from 'date-fns-tz'
-import { deriveBlockFormValues } from '@/lib/calendar/block-form-values'
+import { deriveBlockFormValues, parseTimeUTC } from '@/lib/calendar/block-form-values'
 import { BlockFormFields } from './block-form-fields'
 import type { CalendarTimeBlock } from './time-block-card'
 
@@ -22,10 +21,6 @@ interface EditBlockDialogProps {
   timezone: string
   open: boolean
   onOpenChange: (open: boolean) => void
-}
-
-function parseTimeUTC(dateStr: string, timeStr: string, timezone: string): Date {
-  return fromZonedTime(`${dateStr} ${timeStr}`, timezone)
 }
 
 export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlockDialogProps) {

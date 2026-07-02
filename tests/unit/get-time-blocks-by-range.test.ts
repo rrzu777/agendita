@@ -1,28 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getTimeBlocksByRange } from '@/server/actions/time-blocks'
 
-const mockRequireBusiness = vi.fn().mockResolvedValue({ businessId: 'biz-1' })
-const mockFindMany = vi.fn().mockResolvedValue([])
+const mockRequireBusiness = vi
+  .fn()
+  .mockResolvedValue({ businessId: 'biz-1', business: { timezone: 'America/Santiago' } })
+const mockGetEffectiveBlocks = vi.fn().mockResolvedValue([])
 
 vi.mock('@/lib/auth/server', () => ({
   requireBusiness: (...args: unknown[]) => mockRequireBusiness(...args),
 }))
 
-vi.mock('@/lib/db', () => ({
-  prisma: {
-    timeBlock: {
-      findMany: (...args: unknown[]) => mockFindMany(...args),
-    },
-  },
+vi.mock('@/lib/availability/effective-blocks', () => ({
+  getEffectiveBlocks: (...args: unknown[]) => mockGetEffectiveBlocks(...args),
 }))
 
 describe('getTimeBlocksByRange', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockRequireBusiness.mockResolvedValue({ businessId: 'biz-1', business: { timezone: 'America/Santiago' } })
   })
 
-  it('returns time blocks filtered by business and date range overlap', async () => {
-    mockFindMany.mockResolvedValueOnce([
+  it('routes through getEffectiveBlocks with the business timezone', async () => {
+    mockGetEffectiveBlocks.mockResolvedValueOnce([
       { id: 'tb1', startDateTime: new Date('2026-05-18T10:00:00Z') },
     ])
     const start = new Date('2026-05-01')
@@ -33,20 +32,20 @@ describe('getTimeBlocksByRange', () => {
     expect(result.length).toBe(1)
     expect(result[0].id).toBe('tb1')
     expect(mockRequireBusiness).toHaveBeenCalledTimes(1)
-    expect(mockFindMany).toHaveBeenCalledWith({
-      where: {
-        businessId: 'biz-1',
-        OR: [
-          { startDateTime: { gte: start, lte: end } },
-          { endDateTime: { gte: start, lte: end } },
-          { startDateTime: { lte: start }, endDateTime: { gte: end } },
-        ],
-      },
-      orderBy: { startDateTime: 'asc' },
-    })
+    expect(mockGetEffectiveBlocks).toHaveBeenCalledWith('biz-1', start, end, 'America/Santiago')
   })
 
-  it('returns empty array when no time blocks match', async () => {
+  it('falls back to America/Santiago when the business has no timezone', async () => {
+    mockRequireBusiness.mockResolvedValueOnce({ businessId: 'biz-1', business: { timezone: null } })
+    const start = new Date('2026-05-01')
+    const end = new Date('2026-05-31')
+
+    await getTimeBlocksByRange(start, end)
+
+    expect(mockGetEffectiveBlocks).toHaveBeenCalledWith('biz-1', start, end, 'America/Santiago')
+  })
+
+  it('returns empty array when no blocks match', async () => {
     const result = await getTimeBlocksByRange(
       new Date('2026-05-01'),
       new Date('2026-05-31')

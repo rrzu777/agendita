@@ -10,6 +10,8 @@ export type CalendarTimeBlock = {
   startDateTime: string
   endDateTime: string
   reason?: string | null
+  seriesId?: string
+  occurrenceDate?: string
 }
 
 interface TimeBlockCardProps {

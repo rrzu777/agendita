@@ -74,6 +74,7 @@ model Business {
   services             Service[]
   availability         AvailabilityRule[]
   timeBlocks           TimeBlock[]
+  timeBlockSeries      TimeBlockSeries[]
   customers            Customer[]
   bookings             Booking[]
   payments             Payment[]
@@ -265,6 +266,38 @@ model TimeBlock {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, startDateTime, endDateTime])
+}
+
+model TimeBlockSeries {
+  id          String   @id @default(cuid())
+  businessId  String
+  daysOfWeek  Int[]
+  startTime   String
+  endTime     String
+  reason      String?
+  anchorDate  DateTime
+  until       DateTime?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  business    Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  exceptions  TimeBlockException[]
+
+  @@index([businessId, isActive])
+}
+
+model TimeBlockException {
+  id             String    @id @default(cuid())
+  seriesId       String
+  occurrenceDate DateTime
+  isSkipped      Boolean   @default(false)
+  startDateTime  DateTime?
+  endDateTime    DateTime?
+  reason         String?
+
+  series         TimeBlockSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+
+  @@unique([seriesId, occurrenceDate])
 }
 
 model Customer {

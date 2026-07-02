@@ -215,7 +215,7 @@ Expected: FAIL — "Cannot find module '@/lib/calendar/expand-series'".
 
 ```ts
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
-import { addDays, parseISO } from 'date-fns'
+import { addDays, getISODay, parseISO } from 'date-fns'
 
 export interface SeriesLike {
   id: string
@@ -253,10 +253,7 @@ function localDateStr(date: Date, timezone: string): string {
 
 /** Día de la semana (0=dom…6=sáb) de una fecha local yyyy-MM-dd. */
 function dayOfWeekOfLocalDate(dateStr: string): number {
-  // Anclamos a mediodía UTC y leemos el día ISO (1=lun…7=dom) también en UTC,
-  // para que NO dependa de la zona horaria de la máquina (getISODay/getDay leen
-  // en TZ local y desplazan el día cuando la máquina no está en UTC).
-  return Number(formatInTimeZone(parseISO(`${dateStr}T12:00:00Z`), 'UTC', 'i')) % 7
+  return getISODay(parseISO(`${dateStr}T00:00:00Z`)) % 7
 }
 
 /** Siguiente fecha local yyyy-MM-dd (aritmética segura a mediodía UTC). */
