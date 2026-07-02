@@ -63,4 +63,23 @@ describe('createTimeBlockSeries', () => {
     expect(exc).toHaveLength(1)
     expect(exc[0].reason).toBe('Movido otra vez')
   })
+
+  it('updateTimeBlockSeries hace split: cierra la vieja en hoy y crea una nueva', async () => {
+    const { createTimeBlockSeries, updateTimeBlockSeries } = await import('@/server/actions/time-blocks')
+    const { series } = await createTimeBlockSeries({ daysOfWeek: [1, 2, 3, 4], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2020-01-06T04:00:00Z'), endMode: 'forever' }) as { series: { id: string } }
+    const res = await updateTimeBlockSeries(series.id, { daysOfWeek: [1, 2, 3, 4, 5], startTime: '13:00', endTime: '14:00', reason: 'A', endMode: 'forever', weeks: null })
+    const old = await prisma.timeBlockSeries.findUniqueOrThrow({ where: { id: series.id } })
+    expect(old.until).not.toBeNull()
+    expect(res.series.id).not.toBe(series.id)
+    expect(res.series.daysOfWeek).toContain(5)
+  })
+
+  it('deleteTimeBlockSeries borra la serie y sus excepciones', async () => {
+    const { createTimeBlockSeries, skipSeriesOccurrence, deleteTimeBlockSeries } = await import('@/server/actions/time-blocks')
+    const { series } = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever' }) as { series: { id: string } }
+    await skipSeriesOccurrence(series.id, new Date('2026-06-08T04:00:00Z'))
+    await deleteTimeBlockSeries(series.id)
+    expect(await prisma.timeBlockSeries.findUnique({ where: { id: series.id } })).toBeNull()
+    expect(await prisma.timeBlockException.count({ where: { seriesId: series.id } })).toBe(0)
+  })
 })
