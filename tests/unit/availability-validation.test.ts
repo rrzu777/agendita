@@ -27,6 +27,7 @@ describe('assertSlotIsAvailable', () => {
       service: { findFirst: vi.fn().mockResolvedValue(mocks.service ?? null) },
       availabilityRule: { findFirst: vi.fn().mockResolvedValue(mocks.rule ?? null) },
       timeBlock: { findFirst: vi.fn().mockResolvedValue(mocks.block ?? null) },
+      timeBlockSeries: { findMany: vi.fn().mockResolvedValue(mocks.series ?? []) },
       $executeRaw: vi.fn().mockResolvedValue(1),
       $queryRaw: vi.fn().mockResolvedValue(mocks.queryRawResult ?? []),
     } as unknown as Parameters<typeof assertSlotIsAvailable>[0]['tx']

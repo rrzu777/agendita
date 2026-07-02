@@ -1,6 +1,7 @@
 import { addMinutes, differenceInMinutes, addDays } from 'date-fns'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { getLocalDayOfWeek } from './timezone'
+import { expandSeries } from '@/lib/calendar/expand-series'
 import type { PrismaClient, Prisma } from '@prisma/client'
 
 export interface AssertSlotInput {
@@ -96,15 +97,32 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }
 
-  const block = await tx.timeBlock.findFirst({
-    where: {
-      businessId,
-      startDateTime: { lt: endDateTime },
-      endDateTime: { gt: startDateTime },
-    },
-    select: { id: true },
-  })
-  if (block) {
+  const [oneOffBlock, blockSeries] = await Promise.all([
+    tx.timeBlock.findFirst({
+      where: { businessId, startDateTime: { lt: endDateTime }, endDateTime: { gt: startDateTime } },
+      select: { id: true },
+    }),
+    tx.timeBlockSeries.findMany({
+      where: {
+        businessId,
+        isActive: true,
+        anchorDate: { lte: endDateTime },
+        OR: [{ until: null }, { until: { gte: startDateTime } }],
+      },
+      include: { exceptions: true },
+    }),
+  ])
+
+  // El chequeo de bloqueo corre ANTES del advisory lock; expandir las series en
+  // memoria aquí no pierde ninguna garantía de concurrencia (esta protege
+  // booking-vs-booking, no bloqueos).
+  const blockedBySeries = blockSeries.some((s) =>
+    expandSeries(s, s.exceptions, startDateTime, endDateTime, timezone).some(
+      (occ) => occ.startDateTime < endDateTime && startDateTime < occ.endDateTime,
+    ),
+  )
+
+  if (oneOffBlock || blockedBySeries) {
     logEvent('slot_validation_rejected', { businessId, reason: 'timeblock_overlap' })
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }

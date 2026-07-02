@@ -56,4 +56,25 @@ describe('getEffectiveBlocks', () => {
     const slots = await getAvailableTimeSlots(businessId, svc.id, new Date('2026-06-01T15:00:00Z'))
     expect(slots.some((s) => s.start.toISOString() === '2026-06-01T17:00:00.000Z')).toBe(false)
   })
+
+  it('assertSlotIsAvailable rechaza un slot dentro de una ocurrencia recurrente y lo libera al saltarla', async () => {
+    const { assertSlotIsAvailable } = await import('@/lib/availability/validation')
+    await prisma.availabilityRule.deleteMany({ where: { businessId } })
+    await prisma.availabilityRule.create({ data: { businessId, dayOfWeek: 1, startTime: '09:00', endTime: '18:00', isActive: true } })
+    const svc = await prisma.service.create({ data: { businessId, name: 'Corte V', durationMinutes: 60, price: 10000, depositAmount: 0, pastelColor: '#FFD700', isActive: true } })
+    const series = await prisma.timeBlockSeries.findFirstOrThrow({ where: { businessId } })
+
+    const start = new Date('2026-06-01T17:00:00Z') // 13:00 local, lunes (en daysOfWeek [1..4])
+    const end = new Date('2026-06-01T18:00:00Z')
+    const input = { businessId, serviceId: svc.id, startDateTime: start, endDateTime: end, timezone: TZ }
+
+    await expect(
+      prisma.$transaction((tx) => assertSlotIsAvailable({ tx, ...input })),
+    ).rejects.toThrow()
+
+    await prisma.timeBlockException.create({ data: { seriesId: series.id, occurrenceDate: new Date('2026-06-01T04:00:00Z'), isSkipped: true } })
+    await expect(
+      prisma.$transaction((tx) => assertSlotIsAvailable({ tx, ...input })),
+    ).resolves.toBeUndefined()
+  })
 })
