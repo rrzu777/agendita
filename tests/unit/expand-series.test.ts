@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { expandSeries, type SeriesLike } from '@/lib/calendar/expand-series'
+import { expandSeries, computeSeriesUntil, type SeriesLike } from '@/lib/calendar/expand-series'
 
 const TZ = 'America/Santiago'
 
@@ -102,3 +102,26 @@ describe('expandSeries', () => {
     expect(occ.endDateTime.toISOString()).toBe('2026-09-07T17:00:00.000Z')
   })
 })
+
+describe('computeSeriesUntil', () => {
+  const anchor = new Date('2026-06-01T04:00:00.000Z') // 2026-06-01 local America/Santiago
+
+  it('forever -> null', () => {
+    expect(computeSeriesUntil(anchor, 'forever', null, 'America/Santiago')).toBeNull()
+  })
+
+  it('month -> mismo día un mes después (local)', () => {
+    const until = computeSeriesUntil(anchor, 'month', null, 'America/Santiago')
+    expect(formatUntil(until)).toBe('2026-07-01')
+  })
+
+  it('weeks -> anchor + N semanas (local)', () => {
+    const until = computeSeriesUntil(anchor, 'weeks', 3, 'America/Santiago')
+    expect(formatUntil(until)).toBe('2026-06-22')
+  })
+})
+
+function formatUntil(d: Date | null): string {
+  if (!d) return 'null'
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+}

@@ -1,5 +1,5 @@
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
-import { addDays, parseISO } from 'date-fns'
+import { addDays, addMonths, addWeeks, parseISO } from 'date-fns'
 
 export interface SeriesLike {
   id: string
@@ -97,4 +97,24 @@ export function expandSeries(
   }
 
   return result
+}
+
+export type SeriesEndMode = 'forever' | 'month' | 'weeks'
+
+/**
+ * Calcula el instante `until` (último día incluido, 00:00 local) a partir del
+ * modo de fin. `forever` -> null. `weeks` usa `weeks` (>=1).
+ */
+export function computeSeriesUntil(
+  anchorDate: Date,
+  mode: SeriesEndMode,
+  weeks: number | null,
+  timezone: string,
+): Date | null {
+  if (mode === 'forever') return null
+  const anchorStr = formatInTimeZone(anchorDate, timezone, 'yyyy-MM-dd')
+  const anchorNoon = parseISO(`${anchorStr}T12:00:00Z`)
+  const lastNoon = mode === 'month' ? addMonths(anchorNoon, 1) : addWeeks(anchorNoon, Math.max(1, weeks ?? 1))
+  const lastStr = formatInTimeZone(lastNoon, 'UTC', 'yyyy-MM-dd')
+  return fromZonedTime(`${lastStr} 00:00:00`, timezone)
 }
