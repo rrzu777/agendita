@@ -31,7 +31,8 @@ A cuid slice is not memorable, not dictatable over the phone, and not a stable r
 3. **Not traceable:** the number must NOT reveal booking volume or ordinal position. A fixed start (e.g. everyone starts at 1000) fails this — `1002` still reads as "the 2nd booking". So:
    - **Random start** per business: base ∈ [1000, 9999], chosen with `crypto.randomInt`.
    - **Random step** per booking: +2…+9, chosen with `crypto.randomInt`.
-   - Result: business A → `4732, 4738, 4741, 4749…`; business B → `1180, 1185, 1191…`. Monotonic per business (nice for support/sorting), but neither the start nor the gaps are predictable, so you can't read volume off it.
+   - Result: business A → `4732, 4738, 4741, 4749…`; business B → `1180, 1185, 1191…`. Monotonic per business (nice for support/sorting).
+   - **Honest scope of the guarantee:** the random *base* fully defeats the headline read ("`#1002` = the 2nd booking") — that goal is met. The random *step* hides small deltas but does **not** hide cumulative volume from a determined competitor who samples the sequence over time (two of their own numbers, N bookings apart, differ by ≈ `N × 5.5 ± 2.3√N` — the relative error shrinks with volume). No monotonic small-step scheme can prevent this; a non-monotonic (Feistel/format-preserving) scheme could, but it loses the ordering property we deliberately want. We accept this: the threat model is "a customer glances at their own number," not "a competitor runs statistics." Do NOT claim the number hides volume.
 4. **Scope:** replace the cuid slice in all current display sites **+** include the number in confirmation emails & WhatsApp. (The public lookup flow is PR B.)
 
 ## Data model
@@ -51,7 +52,11 @@ A cuid slice is not memorable, not dictatable over the phone, and not a stable r
 
 ### Why a dedicated counter (not `max(bookingNumber)+step`)
 
-The anti-double-booking advisory lock in `assertSlotIsAvailable` is scoped to `(business, time-slot)`, **not** to the business. Two bookings for the same business at different times run concurrently with no shared lock, so a `SELECT max(bookingNumber) … + step` read would race and could assign duplicates. An atomic `UPDATE … SET seq = seq + step RETURNING seq` on the `Business` row serializes correctly (row lock) and is the source of truth.
+The anti-double-booking advisory lock in `assertSlotIsAvailable` (`validation.ts:136`) is keyed on `${businessId}:${localDayStr}` — per `(business, calendar DAY)`, **not** per business and **not** per slot. So two bookings for the **same business on different days** run concurrently with no shared lock; a `SELECT max(bookingNumber) … + step` read would race there and could assign duplicates. An atomic `UPDATE … SET seq = seq + step RETURNING seq` on the `Business` row serializes correctly (row lock) and is the source of truth.
+
+**Collision impossibility (load-bearing invariant).** The unique index `@@unique([businessId, bookingNumber])` can only be violated if `bookingNumberSeq` ever sits *below* an already-assigned number for that business. The migration sets `seq = max(bookingNumber)` **atomically** (Prisma runs each `migration.sql` in a single transaction on Postgres, which has transactional DDL), and the only runtime writer is the monotonic atomic `increment`. Therefore `seq ≥ max(assigned)` always holds, and each new number (`seq + step`) is strictly greater than every existing one → no collision is possible. A retry-on-P2002 is deliberately NOT added: after a unique violation Postgres aborts the whole transaction, so an in-tx retry cannot work; correctness rests on the invariant, not on catching the error. (Old code writing `NULL` bookingNumber during the deploy window is harmless — NULLs don't collide.)
+
+**Lock order (invariant for future writers).** A booking transaction acquires locks in the order: advisory lock (`pg_advisory_xact_lock`) → `Business` row (the `bookingNumberSeq` increment) → `Promotion` rows (promo path). All same-business bookings therefore serialize briefly on the `Business` row for the tail of their transaction; at this app's scale that latency is negligible. Future code that writes the `Business` row must not invert this order.
 
 ## Number generation
 
@@ -117,7 +122,9 @@ Ordered statements in one migration:
 
 6. `CREATE UNIQUE INDEX "Booking_businessId_bookingNumber_key" ON "Booking"("businessId", "bookingNumber");`
 
-On the fresh CI/test DB (no rows) steps 4–5 are no-ops (step 3 randomizes the seeded business's base harmlessly); the constraint is still created. The backfill correctness only matters for prod.
+On the fresh CI/test DB (no rows) steps 4–5 are no-ops (step 3 randomizes the seeded business's base harmlessly); the constraint is still created. The backfill correctness only matters for prod. Prisma wraps the whole `migration.sql` in one transaction (Postgres transactional DDL), so steps 1–6 apply atomically — the `seq = max` high-water mark and the unique index can never disagree.
+
+**Operational note (prod):** the backfill `UPDATE`s every `Booking` row and the non-`CONCURRENTLY` `CREATE UNIQUE INDEX` briefly blocks writes to `Booking`. This app's booking table is small, so a single-shot migration is fine — run it as normal. If the table ever grows large, split the index out to `CREATE UNIQUE INDEX CONCURRENTLY` run *outside* the migration transaction and deploy off-peak. Recorded here so the choice is deliberate, not accidental.
 
 **Because step 3 randomizes the base for ALL businesses, the business-creation patch is a belt-and-suspenders nicety, not strictly required** — but new businesses created after deploy still need a random base, so the creation path must set one (or a lazy-init in `assignBookingNumber` when seq is still at a sentinel). Locked during planning once the creation site is located.
 
@@ -128,7 +135,12 @@ A tiny formatter `formatBookingNumber(n: number | null, fallbackId: string): str
 - `src/app/book/confirmation/page.tsx` — ensure the fetch selects `bookingNumber`; render `#{bookingNumber}`.
 - `src/components/booking/step-confirmation.tsx` — currently gets only `bookingId`; thread `bookingNumber` through so it shows `#{bookingNumber}`.
 - `src/app/dashboard/bookings/page.tsx` — card (line ~70) + table (line ~241): `#{bookingNumber}`. `getBookings` already returns all scalar fields.
-- `src/components/dashboard/manual-payment-dialog.tsx` — fallback label uses `#{bookingNumber}`.
+- `src/components/dashboard/manual-payment-dialog.tsx` — fallback label uses `#{bookingNumber}` (field added to `ManualPaymentBooking` in `manual-payment-utils.ts`).
+- `src/app/dashboard/customers/[id]/page.tsx` — the customer's booking-history table (owner reads it while the customer quotes their number): show `#{bookingNumber}` per row.
+- `src/app/dashboard/bookings/[id]/reschedule/page.tsx` — header/subtitle: include `#{bookingNumber}`.
+- `src/server/services/finance.ts` — `getLedgerDescription` builds "reserva XXXX" from `bookingId.slice(-4)`; thread `bookingNumber` in so ledger descriptions read `reserva #4738` (owner-facing). Caller at `finance.ts:~209` passes it.
+
+**Cross-business collisions & logs:** the same `#4738` will belong to many businesses (all start low). It is only ever unambiguous *with* its business context. Keep the internal cuid in all logs (`logger.booking.*`) and never present `#number` as a sole identifier in a support/log surface. The composite `@@unique([businessId, bookingNumber])` already forces any lookup to be tenant-scoped.
 
 ## Notifications (add the number)
 
@@ -147,7 +159,9 @@ Thread `bookingNumber` into the notification payloads and render it in each temp
 
 ## Out of scope (PR A)
 
-- Public "buscar mi reserva por número" lookup (PR B).
+- **Dashboard search by `#number`** — deferred to **PR C** (the dashboard-tables PR); it touches `getBookings` query shape + filter UI. Known follow-up: without it, the owner can display the number but not yet jump to a booking by it. Flagged so PR A doesn't read as "complete" when the owner's own lookup use case is unmet.
+- Public "buscar mi reserva por número" lookup → **PR B**. PR A sets it up correctly: `@@unique([businessId, bookingNumber])` forces PR B to query tenant-scoped (`subdomain → businessId`, then `(businessId, bookingNumber)`) — never a global `findUnique({ where: { bookingNumber } })`. `bookingNumber` is a plain `Int`, so PR B parses user input with `parseInt` (strip a leading `#`).
+- MercadoPago item description and the review-request email/WhatsApp — cheap on-theme nice-to-haves, deferred (not core to A's confirmation+reminder notification scope). MercadoPago `external_reference` stays the `Payment` id — do NOT touch it.
 - Backfilling the number into already-sent notifications (not possible; only future notifications carry it).
 - Changing the internal `id` (cuid) — all internal lookups/routes keep using the cuid; `bookingNumber` is a **display + customer-facing lookup** value only.
 

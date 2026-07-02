@@ -2,59 +2,43 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Give every booking a short, non-traceable, human-readable number (`#4738`) shown to customers everywhere the cuid slice is shown today, plus in confirmation/reminder notifications.
+**Goal:** Give every booking a short, non-traceable, human-readable number (`#4738`) shown to customers and owners everywhere the cuid slice is shown today, plus in confirmation/reminder notifications.
 
-**Architecture:** Per-business counter `Business.bookingNumberSeq` (random base). Each booking atomically increments it by a random step (2–9) inside the existing creation transaction and stores the result in `Booking.bookingNumber Int?` (unique per business). Display via a `formatBookingNumber` helper with a cuid fallback. See spec: `docs/superpowers/specs/2026-07-02-readable-booking-number-design.md`.
+**Architecture:** Per-business counter `Business.bookingNumberSeq` (random base). Each booking atomically increments it by a random step (2–9) inside the existing creation transaction and stores the result in `Booking.bookingNumber Int?` (unique per business). Display via a `formatBookingNumber` helper with a cuid fallback. Full rationale + invariants: `docs/superpowers/specs/2026-07-02-readable-booking-number-design.md` (read the "Why a dedicated counter" section — the collision-impossibility invariant and lock order are load-bearing).
 
-**Tech Stack:** Next.js (App Router, custom — read `node_modules/next/dist/docs/` before touching framework APIs), Prisma + PostgreSQL, vitest (unit), CI-only integration tests (no local DB), `renderToStaticMarkup` component tests (must mock `next/navigation`).
+**Tech Stack:** Next.js (App Router, custom — read `node_modules/next/dist/docs/` before touching framework APIs), Prisma + PostgreSQL, vitest. Tests live in `tests/unit/**` and `tests/integration/**` (NOT co-located in `src/`). Integration tests need a local Postgres and are gated by `requireTestDatabase()` — validated in CI.
 
 **Conventions (project landmines):**
-- `'use server'` files may only export async functions.
+- `'use server'` files may only export async functions. `src/lib/bookings/number.ts` is a plain lib (not `'use server'`), so its non-async exports are fine to import into server actions.
 - `revalidateBusinessPublicPaths` must be `await`ed.
-- Component tests using a component that calls `useRouter()` must `vi.mock('next/navigation', …)`.
-- No local DB → integration tests are validated in CI only. Migrations are hand-written / generated offline.
+- Component tests use `renderToStaticMarkup`; mock `next/navigation` only when the rendered tree calls `useRouter()`.
+- Migrations: one `migration.sql` per timestamped folder; CI runs the full chain (`00000000000000_init` baseline → … → this) via `prisma migrate deploy` against fresh Postgres in the `integration` and `e2e` jobs, so the backfill SQL actually executes in CI.
+- Required CI checks: `lint`, `unit`, `integration`, `build`. `e2e` is NOT required (known public-booking flake).
 
 ---
 
 ## File Structure
 
-- **Create:** `src/lib/bookings/number.ts` — `assignBookingNumber(tx, businessId)` + `formatBookingNumber(n, fallbackId)`.
-- **Create:** `src/lib/bookings/number.test.ts` — unit tests for the formatter + step bounds.
-- **Create:** `prisma/migrations/<ts>_readable_booking_number/migration.sql` — DDL + backfill.
-- **Modify:** `prisma/schema.prisma` — add `Booking.bookingNumber`, `@@unique`, `Business.bookingNumberSeq`.
-- **Modify:** `src/server/actions/bookings.ts` — assign number in both create paths; thread into notifications.
-- **Modify:** `src/server/actions/recover-business.ts`, `src/lib/auth/actions.ts` — seed random base.
-- **Modify:** display sites — `src/app/book/confirmation/page.tsx`, `src/app/dashboard/bookings/page.tsx`, `src/components/dashboard/manual-payment-dialog.tsx`.
-- **Modify:** wizard — `src/components/booking/step-payment.tsx`, `wizard.tsx`, `step-confirmation.tsx`.
-- **Modify:** notifications — `src/lib/notifications/types.ts`, `templates.ts`, `whatsapp.ts`, `email-provider.ts` (if needed), `src/lib/cron/send-reminders.ts`, `src/components/dashboard/booking-contact-buttons.tsx`, and the `sendBookingConfirmedNotification` path.
+- **Create:** `src/lib/bookings/number.ts` — `assignBookingNumber`, `randomBookingNumberBase`, `formatBookingNumber`.
+- **Create:** `tests/unit/booking-number.test.ts`, `tests/integration/booking-number-assignment.test.ts`.
+- **Create:** `prisma/migrations/20260702000000_readable_booking_number/migration.sql`.
+- **Modify:** `prisma/schema.prisma`; `src/server/actions/bookings.ts`; `src/server/actions/recover-business.ts`; `src/lib/auth/actions.ts`.
+- **Modify (display):** `src/app/book/confirmation/page.tsx`; `src/app/dashboard/bookings/page.tsx`; `src/components/dashboard/manual-payment-dialog.tsx` + `src/lib/.../manual-payment-utils.ts`; `src/app/dashboard/customers/[id]/page.tsx`; `src/app/dashboard/bookings/[id]/reschedule/page.tsx`; `src/server/services/finance.ts`; the wizard (`step-payment.tsx`, `wizard.tsx`, `step-confirmation.tsx`).
+- **Modify (notifications):** `src/lib/notifications/types.ts`, `templates.ts`, `whatsapp.ts`, `email-provider.ts`; `src/lib/cron/send-reminders.ts`; `src/components/dashboard/booking-contact-buttons.tsx` (+ its callers `page.tsx`, `booking-drawer.tsx`).
 
 ---
 
 ### Task 1: Schema + migration
 
-**Files:**
-- Modify: `prisma/schema.prisma` (Booking model ~line 335, Business model line 45)
-- Create: `prisma/migrations/<timestamp>_readable_booking_number/migration.sql`
+**Files:** Modify `prisma/schema.prisma`; Create `prisma/migrations/20260702000000_readable_booking_number/migration.sql`
 
 - [ ] **Step 1: Add fields to schema**
 
-In `model Booking`, add after `idempotencyKey`:
-```prisma
-  bookingNumber  Int?
-```
-And add to the model's block-attributes (next to the existing `@@unique`/`@@index`):
-```prisma
-  @@unique([businessId, bookingNumber])
-```
+`model Booking`: add `bookingNumber Int?` after `idempotencyKey`, and add block attribute `@@unique([businessId, bookingNumber])`.
+`model Business`: add `bookingNumberSeq Int @default(1000)` after `bookingWindowDays`.
 
-In `model Business`, add after `bookingWindowDays`:
-```prisma
-  bookingNumberSeq      Int                @default(1000)
-```
+- [ ] **Step 2: Generate the exact DDL offline (MANDATORY — do not hand-write the ALTER/INDEX)**
 
-- [ ] **Step 2: Generate the exact DDL offline (no DB needed)**
-
-Keep a copy of the pre-change schema first, then diff datamodel-to-datamodel:
 ```bash
 git show HEAD:prisma/schema.prisma > /tmp/old-schema.prisma
 npx prisma migrate diff \
@@ -62,14 +46,14 @@ npx prisma migrate diff \
   --to-schema-datamodel prisma/schema.prisma \
   --script
 ```
-Expected output: `ALTER TABLE "Business" ADD COLUMN "bookingNumberSeq" INTEGER NOT NULL DEFAULT 1000;`, `ALTER TABLE "Booking" ADD COLUMN "bookingNumber" INTEGER;`, and `CREATE UNIQUE INDEX "Booking_businessId_bookingNumber_key" ON "Booking"("businessId", "bookingNumber");`. Use this exact DDL (names/types) in the migration file so it stays in sync with what Prisma expects.
+Use the emitted DDL verbatim (exact column types + the `Booking_businessId_bookingNumber_key` index name) so Prisma Client queries match the built schema in CI. **If line 1 is shell noise like `zsh: command not found: _nvm_load`, delete it** — keep only real SQL.
 
 - [ ] **Step 3: Write the migration file**
 
-Create `prisma/migrations/20260702000000_readable_booking_number/migration.sql` with the DDL from Step 2, **inserting the backfill between the ADD COLUMNs and the CREATE UNIQUE INDEX** (order matters — the unique index must be created only after `bookingNumber` is populated):
+Create `prisma/migrations/20260702000000_readable_booking_number/migration.sql` with the Step-2 DDL, inserting the backfill **between the ADD COLUMNs and the CREATE UNIQUE INDEX** (Prisma runs the whole file in one transaction on Postgres, so this is atomic):
 
 ```sql
--- Columns
+-- Columns (from `prisma migrate diff`)
 ALTER TABLE "Business" ADD COLUMN "bookingNumberSeq" INTEGER NOT NULL DEFAULT 1000;
 ALTER TABLE "Booking" ADD COLUMN "bookingNumber" INTEGER;
 
@@ -96,34 +80,27 @@ SET "bookingNumberSeq" = m.maxnum
 FROM (SELECT "businessId", max("bookingNumber") AS maxnum FROM "Booking" GROUP BY "businessId") m
 WHERE biz.id = m."businessId";
 
--- Unique constraint (after backfill)
+-- Unique constraint (after backfill) — use the EXACT name from `prisma migrate diff`
 CREATE UNIQUE INDEX "Booking_businessId_bookingNumber_key" ON "Booking"("businessId", "bookingNumber");
 ```
 
-- [ ] **Step 4: Regenerate Prisma client + typecheck**
+**Operational note (prod):** booking table is small → single-shot migration is fine. (If it ever grows large, split the index to `CREATE UNIQUE INDEX CONCURRENTLY` outside the migration txn, off-peak.)
 
-Run: `npx prisma generate && npx tsc --noEmit`
-Expected: client regenerates; tsc error count stays at the repo baseline (no *new* errors). `bookingNumber` / `bookingNumberSeq` now exist on the generated types.
+- [ ] **Step 4: Regenerate client + typecheck** — `npx prisma generate && npx tsc --noEmit` → baseline error count unchanged; `bookingNumber`/`bookingNumberSeq` now on generated types.
 
-- [ ] **Step 5: Commit**
-```bash
-git add prisma/schema.prisma prisma/migrations
-git commit -m "feat(booking-number): schema + backfill migration"
-```
+- [ ] **Step 5: Commit** — `feat(booking-number): schema + backfill migration`
 
 ---
 
-### Task 2: `assignBookingNumber` + `formatBookingNumber` helpers
+### Task 2: `assignBookingNumber` / `randomBookingNumberBase` / `formatBookingNumber`
 
-**Files:**
-- Create: `src/lib/bookings/number.ts`
-- Create: `src/lib/bookings/number.test.ts`
+**Files:** Create `src/lib/bookings/number.ts`; Create `tests/unit/booking-number.test.ts`
 
-- [ ] **Step 1: Write the failing test** (`src/lib/bookings/number.test.ts`)
+- [ ] **Step 1: Write the failing unit test** (`tests/unit/booking-number.test.ts`)
 
 ```ts
 import { describe, it, expect, vi } from 'vitest'
-import { assignBookingNumber, formatBookingNumber } from './number'
+import { assignBookingNumber, formatBookingNumber, randomBookingNumberBase } from '@/lib/bookings/number'
 
 describe('formatBookingNumber', () => {
   it('renders #<number> when present', () => {
@@ -134,13 +111,22 @@ describe('formatBookingNumber', () => {
   })
 })
 
+describe('randomBookingNumberBase', () => {
+  it('is within [1000, 9999]', () => {
+    for (let i = 0; i < 100; i++) {
+      const b = randomBookingNumberBase()
+      expect(b).toBeGreaterThanOrEqual(1000)
+      expect(b).toBeLessThanOrEqual(9999)
+    }
+  })
+})
+
 describe('assignBookingNumber', () => {
-  it('atomically increments the business seq by a step in [2,9] and returns the new value', async () => {
+  it('atomically increments seq by a step in [2,9] and returns the new value', async () => {
     const update = vi.fn().mockResolvedValue({ bookingNumberSeq: 1042 })
     const tx = { business: { update } } as unknown as Parameters<typeof assignBookingNumber>[0]
     const result = await assignBookingNumber(tx, 'biz1')
     expect(result).toBe(1042)
-    expect(update).toHaveBeenCalledOnce()
     const arg = update.mock.calls[0][0]
     expect(arg.where).toEqual({ id: 'biz1' })
     expect(arg.select).toEqual({ bookingNumberSeq: true })
@@ -148,17 +134,17 @@ describe('assignBookingNumber', () => {
     expect(step).toBeGreaterThanOrEqual(2)
     expect(step).toBeLessThanOrEqual(9)
   })
-  it('uses a variety of steps across many calls (randomized)', async () => {
+  it('uses a variety of steps across many calls', async () => {
     const update = vi.fn().mockResolvedValue({ bookingNumberSeq: 1 })
     const tx = { business: { update } } as unknown as Parameters<typeof assignBookingNumber>[0]
     const steps = new Set<number>()
-    for (let i = 0; i < 50; i++) { await assignBookingNumber(tx, 'b') ; steps.add(update.mock.calls[i][0].data.bookingNumberSeq.increment) }
+    for (let i = 0; i < 50; i++) { await assignBookingNumber(tx, 'b'); steps.add(update.mock.calls[i][0].data.bookingNumberSeq.increment) }
     expect(steps.size).toBeGreaterThan(1)
   })
 })
 ```
 
-- [ ] **Step 2: Run it, expect failure** — `npx vitest run src/lib/bookings/number.test.ts` → FAIL (module not found).
+- [ ] **Step 2: Run it, expect failure** — `npx vitest run tests/unit/booking-number.test.ts` → FAIL (module not found).
 
 - [ ] **Step 3: Implement** (`src/lib/bookings/number.ts`)
 
@@ -169,11 +155,12 @@ import type { Prisma } from '@prisma/client'
 type TxClient = Prisma.TransactionClient
 
 /**
- * Atomically assign the next booking number for a business.
- * Increments Business.bookingNumberSeq by a random step (2–9) and returns the
- * new value. The DB-level increment is atomic (row lock), so concurrent callers
- * for the same business each receive a distinct number even though the slot
- * advisory lock does NOT serialize per-business.
+ * Atomically assign the next booking number for a business. Increments
+ * Business.bookingNumberSeq by a random step (2–9) and returns the new value.
+ * The DB-level increment is atomic (row lock), so concurrent bookings for the
+ * same business (which do NOT share the per-day advisory lock across days) each
+ * get a distinct number. Collisions are impossible because the migration sets
+ * seq = max(bookingNumber) atomically and seq only ever increases (see spec).
  */
 export async function assignBookingNumber(tx: TxClient, businessId: string): Promise<number> {
   const step = randomInt(2, 10) // [2, 9]
@@ -196,219 +183,128 @@ export function formatBookingNumber(n: number | null | undefined, fallbackId: st
 }
 ```
 
-- [ ] **Step 4: Run tests, expect pass** — `npx vitest run src/lib/bookings/number.test.ts` → PASS.
-
+- [ ] **Step 4: Run tests, expect pass.**
 - [ ] **Step 5: Commit** — `feat(booking-number): assignBookingNumber + formatBookingNumber helpers`
 
 ---
 
-### Task 3: Assign the number in both creation paths
+### Task 3: Assign the number in both creation paths (+ integration tests)
 
-**Files:**
-- Modify: `src/server/actions/bookings.ts` (`createBooking` tx ~line 285; `createBookingFromDashboard` tx ~line 781)
-- Test: `src/**/booking-number-assignment.integration.test.ts` (follow existing integration test layout; CI-only)
+**Files:** Modify `src/server/actions/bookings.ts`; Create `tests/integration/booking-number-assignment.test.ts`
 
 - [ ] **Step 1: Write the failing integration test**
 
-Create an integration test (mirror an existing `*.integration.test.ts` for setup/teardown + `requireTestDatabase()`). Assertions:
-- Creating a booking sets `bookingNumber` to a value `>` the business's `bookingNumberSeq` before creation... (capture seq before, assert `bookingNumber > seqBefore` and `<= seqAfter`).
-- Two sequential bookings for the same business get strictly increasing `bookingNumber`s.
-- `bookingNumber` is unique per business (attempt/verify no collision across N bookings).
+Mirror `tests/integration/booking.test.ts` exactly for setup (top-level `requireTestDatabase()` from `./setup`; `new PrismaClient()`; `deleteMany` cleanup in FK order; create business/user/service/customer). Test the **`assignBookingNumber(tx, businessId)` unit inside `prisma.$transaction`** — NOT the `createBooking` server action (the harness has no auth/rate-limit mock; `requireBusiness()` would fail). Assertions:
+1. `assignBookingNumber` returns a value `>` the business's `bookingNumberSeq` before the call and equal to the persisted `bookingNumberSeq` after.
+2. Two sequential calls return strictly increasing numbers.
+3. **Concurrency:** fire ~20 `assignBookingNumber` calls for the same business via `Promise.all`, each in its own `prisma.$transaction` — assert the returned set has 20 distinct values (no collision).
+4. **Backfill uniqueness/monotonicity:** insert several bookings with `bookingNumber = null` (raw `prisma.booking.create`), then run the backfill core via `prisma.$executeRawUnsafe` (the two `UPDATE … WITH seq` + seq-raise statements from the migration) and assert every booking got a distinct, monotonic-by-(createdAt,id) `bookingNumber` and `Business.bookingNumberSeq >= max`.
+5. **Unique constraint:** creating two bookings with the same explicit `(businessId, bookingNumber)` rejects — `await expect(...).rejects.toThrow()` (mirror `booking.test.ts`'s EXCLUDE-constraint pattern).
 
-(If the repo has no integration harness reachable without a DB, write the test to the established pattern and rely on CI — per project convention.)
+- [ ] **Step 2: Run it** — locally requires Postgres; expected to run/pass in CI's `integration` job. If a local DB is available, `npm run test:integration`.
 
-- [ ] **Step 2: Run it, expect failure** (locally will skip/fail without DB; that's expected — it runs in CI).
+- [ ] **Step 3: Wire into `createBooking`**
 
-- [ ] **Step 3: Wire `assignBookingNumber` into `createBooking`**
-
-In `src/server/actions/bookings.ts`, import the helper:
-```ts
-import { assignBookingNumber } from '@/lib/bookings/number'
-```
-Inside the `createBooking` transaction, right before `const booking = await tx.booking.create({`, add:
+Import `import { assignBookingNumber } from '@/lib/bookings/number'`. Inside the `createBooking` transaction, immediately before `const booking = await tx.booking.create({`, add:
 ```ts
       const bookingNumber = await assignBookingNumber(tx, businessId)
 ```
-Add `bookingNumber,` to the `data: { … }` of that `tx.booking.create`.
+and add `bookingNumber,` to that create's `data`.
 
-- [ ] **Step 4: Wire into `createBookingFromDashboard`**
+- [ ] **Step 4: Wire into `createBookingFromDashboard`** — same edit before `const newBooking = await tx.booking.create({`; add `bookingNumber,` to its `data`.
 
-Same edit inside its transaction before `const newBooking = await tx.booking.create({`:
-```ts
-    const bookingNumber = await assignBookingNumber(tx, businessId)
-```
-Add `bookingNumber,` to that create's `data`.
-
-- [ ] **Step 5: Typecheck** — `npx tsc --noEmit` → baseline error count unchanged.
-
+- [ ] **Step 5: Typecheck** — `npx tsc --noEmit` baseline unchanged.
 - [ ] **Step 6: Commit** — `feat(booking-number): assign number in both creation transactions`
 
 ---
 
 ### Task 4: Seed a random base at business creation
 
-**Files:**
-- Modify: `src/server/actions/recover-business.ts` (~line 116)
-- Modify: `src/lib/auth/actions.ts` (~line 269)
+**Files:** Modify `src/server/actions/recover-business.ts` (~line 116); `src/lib/auth/actions.ts` (~line 269)
 
-- [ ] **Step 1: Import the helper in both files**
-```ts
-import { randomBookingNumberBase } from '@/lib/bookings/number'
-```
-(Note: `recover-business.ts` may be `'use server'` — importing a value that is only used internally is fine; you are NOT adding a non-async export.)
-
-- [ ] **Step 2: Add the field to both `tx.business.create({ data: { … } })` calls**
-```ts
-        bookingNumberSeq: randomBookingNumberBase(),
-```
-
-- [ ] **Step 3: Typecheck** — `npx tsc --noEmit` → baseline unchanged.
-
+- [ ] **Step 1:** In both files: `import { randomBookingNumberBase } from '@/lib/bookings/number'`.
+- [ ] **Step 2:** Add `bookingNumberSeq: randomBookingNumberBase(),` to both `tx.business.create({ data: { … } })` blocks.
+- [ ] **Step 3: Typecheck** — baseline unchanged.
 - [ ] **Step 4: Commit** — `feat(booking-number): seed random base for new businesses`
 
 ---
 
-### Task 5: Display sites (dashboard + public confirmation + manual payment)
+### Task 5: Display — dashboard bookings + confirmation + manual payment
 
-**Files:**
-- Modify: `src/app/book/confirmation/page.tsx:160`
-- Modify: `src/app/dashboard/bookings/page.tsx` (card `~line 70`, table `~line 241`, and the `BookingCard` prop type `~lines 55–58`)
-- Modify: `src/components/dashboard/manual-payment-dialog.tsx:151` (and its `payableBookings` type — ensure `bookingNumber` is present)
+**Files:** `src/app/dashboard/bookings/page.tsx` (export `BookingCard` at ~L45; card ~L70; table ~L241; card prop type ~L45–58); `src/app/book/confirmation/page.tsx:160`; `src/components/dashboard/manual-payment-dialog.tsx:151` + `manual-payment-utils.ts` (`ManualPaymentBooking` ~L3–12)
 
-- [ ] **Step 1: Public confirmation page**
+- [ ] **Step 1: Public confirmation page** — import `formatBookingNumber`; replace line 160's identifier with `{formatBookingNumber(booking.bookingNumber, booking.id)}` (page already fetches via `include`, so `bookingNumber` is present; drops the old `.slice(0,8).toUpperCase()`).
 
-The page fetches with `include` (not `select`) at line 20, so `booking.bookingNumber` is already available. Replace line 160's content:
-```tsx
-Tu código de reserva: <span className="font-mono font-semibold text-primary">{formatBookingNumber(booking.bookingNumber, booking.id)}</span>
-```
-Import: `import { formatBookingNumber } from '@/lib/bookings/number'`. (This is fine to import in a server component.)
+- [ ] **Step 2: Dashboard bookings — card + table** — `export function BookingCard` (add `export` so a component test can import it). Add `bookingNumber: number | null` to the card's inline booking prop type. Replace card L70 and table L241 `#{booking.id.slice(0,8)}` with `{formatBookingNumber(booking.bookingNumber, booking.id)}` (import the helper).
 
-- [ ] **Step 2: Dashboard bookings — card + table**
+- [ ] **Step 3: Manual payment dialog** — add `bookingNumber: number | null` to `ManualPaymentBooking` (`manual-payment-utils.ts`). Replace L151 fallback with `` `Reserva ${formatBookingNumber(booking.bookingNumber, booking.id)} - ` `` (import helper). Data source is `getBookings()` (full rows) — no select widening needed.
 
-Import `formatBookingNumber` in `src/app/dashboard/bookings/page.tsx`. Add `bookingNumber: number | null` to the `BookingCard` booking prop type (the inline type around lines 45–58). Replace:
-- Card line ~70: `#{booking.id.slice(0, 8)}` → `{formatBookingNumber(booking.bookingNumber, booking.id)}`
-- Table line ~241: same replacement.
+- [ ] **Step 4: Component test** (`tests/unit/booking-number-display.test.tsx`) — import the now-exported `BookingCard`; render with `bookingNumber: 4738` → assert `#4738`; render with `bookingNumber: null` → assert `#<slice>` fallback. Mirror `tests/unit/recurring-block-list.test.tsx`; add `vi.mock('next/navigation', …)` only if the extracted card renders a `useRouter()` child (verify after adding `export`).
 
-`getBookings` returns full Booking rows, so `bookingNumber` is present at runtime; only the inline prop type needs the field added.
-
-- [ ] **Step 3: Manual payment dialog**
-
-In `src/components/dashboard/manual-payment-dialog.tsx`, ensure the `payableBookings` item type includes `bookingNumber: number | null` (add it to the prop type). Replace line 151's fallback:
-```tsx
-{booking.customer?.name ? `${booking.customer.name} - ` : `Reserva ${formatBookingNumber(booking.bookingNumber, booking.id)} - `}
-```
-Import `formatBookingNumber`. Verify the parent that passes `payableBookings` provides `bookingNumber` (full booking rows do); add to the query `select` if it uses a narrowing `select`.
-
-- [ ] **Step 4: Component test** (dashboard bookings render)
-
-Add/extend a component test that renders the bookings table/card with a booking having `bookingNumber: 4738` and asserts `#4738` appears; and one with `bookingNumber: null` asserting the `#<slice>` fallback. `vi.mock('next/navigation', …)` if the component tree calls `useRouter()`.
-
-- [ ] **Step 5: Run tests + typecheck** — targeted vitest + `npx tsc --noEmit` (baseline unchanged).
-
-- [ ] **Step 6: Commit** — `feat(booking-number): show #number in dashboard + confirmation + manual payment`
+- [ ] **Step 5: Run tests + typecheck.**
+- [ ] **Step 6: Commit** — `feat(booking-number): show #number in dashboard bookings + confirmation + manual payment`
 
 ---
 
 ### Task 6: Thread the number through the booking wizard
 
-**Files:**
-- Modify: `src/components/booking/step-payment.tsx` (`onSuccess` calls ~lines 215–260)
-- Modify: `src/components/booking/wizard.tsx` (state line 64, `StepPayment.onSuccess` ~line 140, `StepConfirmation` render ~line 153)
-- Modify: `src/components/booking/step-confirmation.tsx:9,69`
+**Files:** `src/components/booking/step-payment.tsx` (`onSuccess` calls ~L229/L286; prop type ~L51); `src/components/booking/wizard.tsx` (state L64; `StepPayment.onSuccess` ~L140; `StepConfirmation` render ~L154); `src/components/booking/step-confirmation.tsx:9,69`
 
-- [ ] **Step 1: Widen `onSuccess` to carry the number**
-
-In `wizard.tsx`, add state next to `bookingId`:
-```ts
-const [bookingNumber, setBookingNumber] = useState<number | null>(null)
-```
-Change the `StepPayment` `onSuccess` signature to `(id, mode, promo, number)` (append a new last param) and call `setBookingNumber(number ?? null)`.
-
-In `step-payment.tsx`, both `createBooking` result handlers currently call `onSuccess(booking.id, mode, promo)`. Change to `onSuccess(booking.id, mode, promo, booking.bookingNumber)`. (Update the `onSuccess` prop type on `StepPayment` accordingly.)
-
-- [ ] **Step 2: Pass to `StepConfirmation`**
-
-Render (line ~153): `<StepConfirmation data={data} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} />`.
-
-- [ ] **Step 3: Show it in `step-confirmation.tsx`**
-
-Add `bookingNumber: number | null` to the props type. Replace line 69:
-```tsx
-<p className="mb-6 text-sm text-muted-foreground">Número de reserva: {formatBookingNumber(bookingNumber, bookingId ?? '')}</p>
-```
-Import `formatBookingNumber`. (When both are missing it renders `#` — acceptable; in practice `bookingNumber` is always set.)
-
-- [ ] **Step 4: Component test** — render `StepConfirmation` with `bookingNumber={4738}` → asserts `#4738`. Mock `next/navigation` if needed.
-
+- [ ] **Step 1:** In `wizard.tsx` add `const [bookingNumber, setBookingNumber] = useState<number | null>(null)`. Widen `StepPayment`'s `onSuccess` to a trailing `number: number | null` param; in the callback `setBookingNumber(number ?? null)`.
+- [ ] **Step 2:** In `step-payment.tsx`, both handlers call `onSuccess(booking.id, mode, promo, booking.bookingNumber)`; update the `onSuccess` prop type accordingly.
+- [ ] **Step 3:** Render `<StepConfirmation … bookingNumber={bookingNumber} … />`. In `step-confirmation.tsx` add `bookingNumber: number | null` to props; replace L69 with `Número de reserva: {formatBookingNumber(bookingNumber, bookingId ?? '')}` (import helper). `StepConfirmation` is exported and does not call `useRouter`.
+- [ ] **Step 4: Component test** — render `StepConfirmation` with `bookingNumber={4738}` → `#4738` (no router mock needed).
 - [ ] **Step 5: Run tests + typecheck.**
-
-- [ ] **Step 6: Commit** — `feat(booking-number): show #number in booking wizard confirmation`
+- [ ] **Step 6: Commit** — `feat(booking-number): show #number in wizard confirmation`
 
 ---
 
-### Task 7: Notification types + templates render the number
+### Task 7: Display — customer history + reschedule header + ledger descriptions
 
-**Files:**
-- Modify: `src/lib/notifications/types.ts` (BookingEmailData, NewBookingBusinessEmailData, ReminderEmailData)
-- Modify: `src/lib/notifications/whatsapp.ts` (BookingWhatsappData + 3 builders)
-- Modify: `src/lib/notifications/templates.ts` (4 html + text pairs)
-- Test: `src/lib/notifications/*.test.ts` (extend existing template tests if present)
+**Files:** `src/app/dashboard/customers/[id]/page.tsx` (~L226 booking-history table); `src/app/dashboard/bookings/[id]/reschedule/page.tsx` (~L41 header); `src/server/services/finance.ts` (`getLedgerDescription` ~L52, caller ~L209)
 
-- [ ] **Step 1: Add the field to the data types**
+- [ ] **Step 1: Customer booking-history table** — the page loads the customer's bookings; add a `#{formatBookingNumber(b.bookingNumber, b.id)}` cell/line per booking row (verify the query returns full booking rows or add `bookingNumber` to its `select`). Import the helper.
 
-To `BookingEmailData`, `NewBookingBusinessEmailData`, `ReminderEmailData` (types.ts) and `BookingWhatsappData` (whatsapp.ts), add:
-```ts
-  bookingNumber?: number | null
-```
+- [ ] **Step 2: Reschedule page header** — add `#{formatBookingNumber(booking.bookingNumber, booking.id)}` to the header/subtitle. The page fetches the booking by id; add `bookingNumber` to its `select` if it narrows.
 
-- [ ] **Step 2: Write failing tests**
+- [ ] **Step 3: Ledger descriptions** — change `getLedgerDescription` to accept the booking number and render `reserva #4738` instead of `reserva ${bookingId.slice(-4)}`. Thread it from the caller (`finance.ts:~209`) — the surrounding code has the booking in scope (`booking.bookingNumber`). Keep the cuid available for logs; only the human-readable description changes.
 
-Add tests asserting each builder includes `#<n>` when `bookingNumber` is set, and omits the line cleanly when it's null/undefined. Cover: `bookingConfirmationCustomerHtml/Text`, `bookingReceivedCustomerHtml/Text`, `newBookingBusinessHtml/Text`, `bookingReminderHtml/Text`, `buildBookingConfirmationWhatsappMessage`, `buildWhatsappReminderMessage`.
+- [ ] **Step 4: Test** — extend/adjust any existing `finance` test for the new description format; a unit test that `getLedgerDescription` with a number renders `reserva #4738` and falls back cleanly when null.
 
-- [ ] **Step 3: Render the number**
+- [ ] **Step 5: Typecheck + tests.**
+- [ ] **Step 6: Commit** — `feat(booking-number): show #number in customer history, reschedule, ledger`
 
-In each email template, add a row/line near the top of the summary, e.g. HTML:
-```html
-${data.bookingNumber != null ? `<tr><td style="padding:8px 0;color:#666">Reserva</td><td style="padding:8px 0;font-weight:600">#${data.bookingNumber}</td></tr>` : ''}
-```
-and the text equivalent: `if (data.bookingNumber != null) lines.push(\`Reserva: #${data.bookingNumber}\`)`.
+---
 
-In WhatsApp builders, add a line after the greeting: `if (data.bookingNumber != null) lines.push(\`🔖 Reserva #${data.bookingNumber}\`)` (place before the blank separator).
+### Task 8: Notification types + templates render the number
 
-Keep it guarded so a missing number never renders a stray `#` or empty row.
+**Files:** `src/lib/notifications/types.ts`; `src/lib/notifications/whatsapp.ts`; `src/lib/notifications/templates.ts`; extend `tests/unit/notifications.test.ts` + `tests/unit/whatsapp-notifications.test.ts`
+
+- [ ] **Step 1:** Add `bookingNumber?: number | null` to `BookingEmailData`, `NewBookingBusinessEmailData`, `ReminderEmailData` (types.ts) and `BookingWhatsappData` (whatsapp.ts).
+
+- [ ] **Step 2: Failing tests** — assert each builder includes `#<n>` when set and omits the line cleanly (no stray `#`/empty row) when null/undefined. Cover: `bookingConfirmationCustomerHtml/Text`, `bookingReceivedCustomerHtml/Text`, `newBookingBusinessHtml/Text`, `bookingReminderHtml/Text`, `buildBookingConfirmationWhatsappMessage`, `buildWhatsappReminderMessage`.
+
+- [ ] **Step 3: Render** — email templates: a guarded summary row, e.g.
+  `${data.bookingNumber != null ? `<tr><td style="padding:8px 0;color:#666">Reserva</td><td style="padding:8px 0;font-weight:600">#${data.bookingNumber}</td></tr>` : ''}` (+ text equivalent `if (data.bookingNumber != null) lines.push(\`Reserva: #${data.bookingNumber}\`)`). WhatsApp: `if (data.bookingNumber != null) lines.push(\`🔖 Reserva #${data.bookingNumber}\`)` before the blank separator.
 
 - [ ] **Step 4: Run tests, expect pass.**
-
 - [ ] **Step 5: Commit** — `feat(booking-number): include #number in email + whatsapp templates`
 
 ---
 
-### Task 8: Thread the number from every notification caller
+### Task 9: Thread the number from every notification caller
 
-**Files:**
-- Modify: `src/server/actions/bookings.ts` (`fireBookingNotifications` payloads ~lines 92–137)
-- Modify: the `sendBookingConfirmedNotification` implementation in `src/lib/notifications` (locate it; it fetches the booking by id — add `bookingNumber` to its select + pass to the confirmation template)
-- Modify: `src/lib/cron/send-reminders.ts` (pass `bookingNumber: booking.bookingNumber` to `sendReminderEmail`, ~line 69)
-- Modify: `src/components/dashboard/booking-contact-buttons.tsx` (add `bookingNumber` to the `bookingData` it builds ~line 60; ensure its booking prop carries the field)
+**Files:** `src/server/actions/bookings.ts` (`fireBookingNotifications` param type ~L70–79 + payloads ~L97–135); `src/lib/notifications/email-provider.ts` (`sendBookingConfirmedNotification` ~L200); `src/lib/cron/send-reminders.ts` (~L69); `src/components/dashboard/booking-contact-buttons.tsx` (`BookingContactData` ~L13–25) + its construction sites (`src/app/dashboard/bookings/page.tsx` ~L107 & ~L268, `src/components/dashboard/booking-drawer.tsx` ~L121)
 
-- [ ] **Step 1: `fireBookingNotifications`**
+- [ ] **Step 1: `fireBookingNotifications`** — add `bookingNumber: number | null` to its inline `booking` param type; pass `bookingNumber: booking.bookingNumber` into the `sendBookingReceivedToCustomer` and `sendNewBookingNotificationToBusiness` payloads. The `booking` from `createBooking` already carries it.
 
-Add `bookingNumber: number | null` to the `booking` param type of `fireBookingNotifications`, and include `bookingNumber: booking.bookingNumber` in the `sendBookingReceivedToCustomer` and `sendNewBookingNotificationToBusiness` payloads. The `booking` passed in from `createBooking` already has the field.
+- [ ] **Step 2: `sendBookingConfirmedNotification`** (`email-provider.ts:200`) — its booking fetch already uses top-level `include`, so `booking.bookingNumber` is available **without** widening any select. Pass it into the `bookingConfirmationCustomerHtml/Text` payload (and the WhatsApp confirmation message if that path builds one).
 
-- [ ] **Step 2: `sendBookingConfirmedNotification`**
+- [ ] **Step 3: Reminder cron** (`send-reminders.ts:~69`) — top-level `findMany` uses `include`, so `booking.bookingNumber` is available; add `bookingNumber: booking.bookingNumber,` to the `sendReminderEmail` payload.
 
-Locate it in `src/lib/notifications` (called from `confirmPayment` / `updateBookingStatus`). It fetches the booking internally — add `bookingNumber` to that `select`/`include` and pass it into `bookingConfirmationCustomerHtml/Text` (and the WhatsApp confirmation message if it sends one).
+- [ ] **Step 4: WhatsApp reminder button** — `booking-contact-buttons.tsx` uses a flat DTO `BookingContactData` (not a Prisma row). Add `bookingNumber: number | null` to that interface, pass it into `buildWhatsappReminderMessage`/confirmation builders, and add `bookingNumber` to every inline object that constructs a `BookingContactData` (bookings `page.tsx` ~L107 & ~L268, `booking-drawer.tsx` ~L121) — sourced from `getBookings()` full rows.
 
-- [ ] **Step 3: Reminder cron**
-
-In `src/lib/cron/send-reminders.ts`, the top-level `findMany` uses `include`, so `booking.bookingNumber` is available. Add `bookingNumber: booking.bookingNumber,` to the object passed to `sendReminderEmail` (line ~69).
-
-- [ ] **Step 4: WhatsApp reminder button**
-
-In `src/components/dashboard/booking-contact-buttons.tsx`, add `bookingNumber` to the `bookingData` object passed to `buildWhatsappReminderMessage` (and to the confirmation message builder if used here). Ensure the component's `booking` prop type includes `bookingNumber: number | null`; add it to the server query feeding this component if it uses a narrowing `select`.
-
-- [ ] **Step 5: Typecheck + targeted tests** — `npx tsc --noEmit` baseline unchanged; run notification + affected component tests.
-
+- [ ] **Step 5: Typecheck + targeted tests** (`send-reminders.test.ts`, notification tests, affected component tests) — baseline unchanged.
 - [ ] **Step 6: Commit** — `feat(booking-number): pass #number from all notification callers`
 
 ---
@@ -417,15 +313,17 @@ In `src/components/dashboard/booking-contact-buttons.tsx`, add `bookingNumber` t
 
 - [ ] `npx tsc --noEmit` — no new errors vs. baseline.
 - [ ] `npx vitest run` — all unit/component green.
-- [ ] Grep for remaining raw cuid-slice displays of a booking id to confirm none were missed: `rg "booking\.id\.slice"` — each hit should either be intentional (internal/debug) or converted.
+- [ ] `rg "\.id\.slice\("` — every remaining booking-id slice is either intentional-internal or converted; confirm none is a leftover user-facing booking display.
 - [ ] `/simplify` on the branch diff → apply safe cleanups.
 - [ ] Expert code review (superpowers:code-reviewer) → fix findings.
-- [ ] Open PR, ensure required checks (build/integration/lint/unit) pass, merge (squash). e2e is not required (known flake).
+- [ ] Open PR; required checks (build/integration/lint/unit) green; merge (squash). e2e not required (known flake).
 
-## Self-review notes (gaps already considered)
+## Invariants & gaps already resolved (do not re-litigate)
 
-- **Backfill ordering** — unique index is created only after `bookingNumber` is populated (Task 1 Step 3). Disjoint per-row ranges (`*7 + jitter[0..5]`) guarantee no collision.
-- **Nullable column** — chosen for migration/deploy safety; every display path uses `formatBookingNumber` with a fallback, so a transient null never crashes.
-- **Concurrency** — atomic `increment` in the same tx as `booking.create`; rollback (e.g. promo failure) rolls back the increment too (no wasted number, no gap-based leak).
-- **Two create paths + two business-creation paths** — both covered (Tasks 3 & 4).
-- **Reminder select** — top-level `include` already exposes `bookingNumber`; no select widening needed there (Task 8 Step 3).
+- **Collision impossibility:** migration runs in one Postgres transaction (Prisma default) setting `seq = max(bookingNumber)`; runtime only ever atomically increments → next number always `> max` → no P2002 on `bookingNumber`. No retry is added (a post-error tx is poisoned in Postgres; correctness rests on the invariant). Deploy-window NULLs are harmless.
+- **Advisory lock is per (business, DAY)** (`validation.ts:136`), not per slot; different-day same-business bookings run concurrently → the atomic counter is required and sufficient.
+- **Lock order** advisory → Business row → Promotion rows; same-business bookings serialize briefly on the Business row (negligible at this scale). Future Business writers must not invert.
+- **Backfill** is ordered (unique index last) with disjoint per-row ranges (`*7 + jitter[0..5]`); zero-booking businesses still get a random base.
+- **Nullable column** for deploy safety; every display uses `formatBookingNumber` fallback.
+- **Traceability:** random base defeats "read the ordinal"; it does NOT hide cumulative volume from a sampling competitor — accepted (spec documents this honestly). Step stays 2–9.
+- **Deferred:** dashboard search by #number → PR C; public lookup → PR B (must be tenant-scoped); MercadoPago description / review email → fast-follow. `external_reference` untouched.
