@@ -31,6 +31,17 @@ function parseTimeBlockInput(raw: Record<string, unknown>): { startDateTime: Dat
   return { startDateTime, endDateTime, reason, confirmOverlap }
 }
 
+async function rateLimitOrThrow(key: string) {
+  const limit = await checkRateLimit(key, 20, 60000)
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+}
+
+function revalidateTimeBlocks(businessId: string) {
+  revalidatePath('/dashboard/availability')
+  revalidatePath('/dashboard/calendar')
+  return revalidateBusinessPublicPaths(businessId)
+}
+
 export async function getTimeBlocks() {
   const { businessId } = await requireBusiness()
   return prisma.timeBlock.findMany({
@@ -93,15 +104,14 @@ export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' |
 }
 
 export async function getTimeBlocksByRange(start: Date, end: Date) {
-  const { businessId } = await requireBusiness()
+  const { businessId, business } = await requireBusiness()
   if (!(start instanceof Date) || isNaN(start.getTime()) || !(end instanceof Date) || isNaN(end.getTime())) {
     throw new Error('Rango de fechas inválido')
   }
   if (start > end) {
     throw new Error('La fecha de inicio debe ser anterior a la fecha de término')
   }
-  const business = await prisma.business.findUnique({ where: { id: businessId }, select: { timezone: true } })
-  const timezone = business?.timezone || 'America/Santiago'
+  const timezone = business.timezone || 'America/Santiago'
   return getEffectiveBlocks(businessId, start, end, timezone)
 }
 
@@ -215,20 +225,16 @@ export async function createTimeBlockSeries(data: {
   endMode: SeriesEndMode
   weeks?: number | null
 }) {
-  const { businessId } = await requireBusinessRole(['owner', 'admin'])
-  const limit = await checkRateLimit('create-timeblock', 20, 60000)
-  if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
-  }
+  const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
+  await rateLimitOrThrow('create-timeblock')
 
   const parsed = createSeriesSchema.safeParse(data)
   if (!parsed.success) {
     throw new Error('Datos inválidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
   }
 
-  const business = await prisma.business.findUnique({ where: { id: businessId }, select: { timezone: true, bookingWindowDays: true } })
-  const timezone = business?.timezone || 'America/Santiago'
-  const bookingWindowDays = business?.bookingWindowDays ?? 90
+  const timezone = business.timezone || 'America/Santiago'
+  const bookingWindowDays = business.bookingWindowDays ?? 90
 
   const until = computeSeriesUntil(data.anchorDate, data.endMode, data.weeks ?? null, timezone)
 
@@ -261,9 +267,7 @@ export async function createTimeBlockSeries(data: {
     .filter((occ) => bookings.some((b) => occ.startDateTime < b.endDateTime && b.startDateTime < occ.endDateTime))
     .map((occ) => formatInTimeZone(occ.startDateTime, timezone, 'yyyy-MM-dd'))
 
-  revalidatePath('/dashboard/availability')
-  revalidatePath('/dashboard/calendar')
-  await revalidateBusinessPublicPaths(businessId)
+  await revalidateTimeBlocks(businessId)
 
   return { series, overlappingDates }
 }
@@ -276,8 +280,7 @@ async function assertSeriesOwned(seriesId: string, businessId: string) {
 
 export async function skipSeriesOccurrence(seriesId: string, occurrenceDate: Date) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
-  const limit = await checkRateLimit('update-timeblock', 20, 60000)
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  await rateLimitOrThrow('update-timeblock')
   await assertSeriesOwned(seriesId, businessId)
 
   await prisma.timeBlockException.upsert({
@@ -286,18 +289,15 @@ export async function skipSeriesOccurrence(seriesId: string, occurrenceDate: Dat
     update: { isSkipped: true, startDateTime: null, endDateTime: null, reason: null },
   })
 
-  revalidatePath('/dashboard/availability')
-  revalidatePath('/dashboard/calendar')
-  await revalidateBusinessPublicPaths(businessId)
+  await revalidateTimeBlocks(businessId)
 }
 
 export async function updateTimeBlockSeries(
   seriesId: string,
   newRule: { daysOfWeek: number[]; startTime: string; endTime: string; reason?: string | null; endMode: SeriesEndMode; weeks?: number | null },
 ) {
-  const { businessId } = await requireBusinessRole(['owner', 'admin'])
-  const limit = await checkRateLimit('update-timeblock', 20, 60000)
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
+  await rateLimitOrThrow('update-timeblock')
 
   const parsed = createSeriesSchema.safeParse({ ...newRule, anchorDate: new Date() })
   if (!parsed.success) {
@@ -305,8 +305,7 @@ export async function updateTimeBlockSeries(
   }
 
   const existing = await assertSeriesOwned(seriesId, businessId)
-  const business = await prisma.business.findUnique({ where: { id: businessId }, select: { timezone: true } })
-  const timezone = business?.timezone || 'America/Santiago'
+  const timezone = business.timezone || 'America/Santiago'
 
   // Split en hoy: la serie vieja termina AYER (último día incluido); la nueva
   // arranca hoy. `until` de la vieja debe ser ayer (no hoy): en expandSeries la
@@ -334,25 +333,20 @@ export async function updateTimeBlockSeries(
     }),
   ])
 
-  revalidatePath('/dashboard/availability')
-  revalidatePath('/dashboard/calendar')
-  await revalidateBusinessPublicPaths(businessId)
+  await revalidateTimeBlocks(businessId)
 
   return { series: newSeries }
 }
 
 export async function deleteTimeBlockSeries(seriesId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
-  const limit = await checkRateLimit('delete-timeblock', 20, 60000)
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  await rateLimitOrThrow('delete-timeblock')
   await assertSeriesOwned(seriesId, businessId)
 
   // onDelete: Cascade en TimeBlockException borra las excepciones.
   await prisma.timeBlockSeries.delete({ where: { id: seriesId } })
 
-  revalidatePath('/dashboard/availability')
-  revalidatePath('/dashboard/calendar')
-  await revalidateBusinessPublicPaths(businessId)
+  await revalidateTimeBlocks(businessId)
 }
 
 export async function getTimeBlockSeries() {
@@ -369,8 +363,7 @@ export async function overrideSeriesOccurrence(
   data: { startDateTime: Date; endDateTime: Date; reason?: string | null },
 ) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
-  const limit = await checkRateLimit('update-timeblock', 20, 60000)
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  await rateLimitOrThrow('update-timeblock')
   if (data.endDateTime <= data.startDateTime) throw new Error('La hora de fin debe ser posterior a la de inicio')
   await assertSeriesOwned(seriesId, businessId)
 
@@ -380,7 +373,5 @@ export async function overrideSeriesOccurrence(
     update: { isSkipped: false, startDateTime: data.startDateTime, endDateTime: data.endDateTime, reason: data.reason ?? null },
   })
 
-  revalidatePath('/dashboard/availability')
-  revalidatePath('/dashboard/calendar')
-  await revalidateBusinessPublicPaths(businessId)
+  await revalidateTimeBlocks(businessId)
 }

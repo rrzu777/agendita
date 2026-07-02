@@ -1,20 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getTimeBlocksByRange } from '@/server/actions/time-blocks'
 
-const mockRequireBusiness = vi.fn().mockResolvedValue({ businessId: 'biz-1' })
-const mockBusinessFindUnique = vi.fn().mockResolvedValue({ timezone: 'America/Santiago' })
+const mockRequireBusiness = vi
+  .fn()
+  .mockResolvedValue({ businessId: 'biz-1', business: { timezone: 'America/Santiago' } })
 const mockGetEffectiveBlocks = vi.fn().mockResolvedValue([])
 
 vi.mock('@/lib/auth/server', () => ({
   requireBusiness: (...args: unknown[]) => mockRequireBusiness(...args),
-}))
-
-vi.mock('@/lib/db', () => ({
-  prisma: {
-    business: {
-      findUnique: (...args: unknown[]) => mockBusinessFindUnique(...args),
-    },
-  },
 }))
 
 vi.mock('@/lib/availability/effective-blocks', () => ({
@@ -24,7 +17,7 @@ vi.mock('@/lib/availability/effective-blocks', () => ({
 describe('getTimeBlocksByRange', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockBusinessFindUnique.mockResolvedValue({ timezone: 'America/Santiago' })
+    mockRequireBusiness.mockResolvedValue({ businessId: 'biz-1', business: { timezone: 'America/Santiago' } })
   })
 
   it('routes through getEffectiveBlocks with the business timezone', async () => {
@@ -43,7 +36,7 @@ describe('getTimeBlocksByRange', () => {
   })
 
   it('falls back to America/Santiago when the business has no timezone', async () => {
-    mockBusinessFindUnique.mockResolvedValueOnce(null)
+    mockRequireBusiness.mockResolvedValueOnce({ businessId: 'biz-1', business: { timezone: null } })
     const start = new Date('2026-05-01')
     const end = new Date('2026-05-31')
 

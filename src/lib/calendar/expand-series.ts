@@ -1,5 +1,6 @@
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { addDays, addMonths, addWeeks, parseISO } from 'date-fns'
+import { getLocalDateStr } from '@/lib/availability/timezone'
 
 export interface SeriesLike {
   id: string
@@ -31,10 +32,6 @@ export interface EffectiveBlock {
 /** Tope de días que expande una serie de una sola pasada (evita rangos patológicos). */
 export const MAX_EXPANSION_DAYS = 366
 
-function localDateStr(date: Date, timezone: string): string {
-  return formatInTimeZone(date, timezone, 'yyyy-MM-dd')
-}
-
 /** Día de la semana (0=dom…6=sáb) de una fecha local yyyy-MM-dd. */
 function dayOfWeekOfLocalDate(dateStr: string): number {
   // Anclamos a mediodía UTC y leemos el día ISO (1=lun…7=dom) también en UTC,
@@ -54,16 +51,16 @@ export function expandSeries(
   rangeEnd: Date,
   timezone: string,
 ): EffectiveBlock[] {
-  const anchorStr = localDateStr(series.anchorDate, timezone)
-  const untilStr = series.until ? localDateStr(series.until, timezone) : null
+  const anchorStr = getLocalDateStr(series.anchorDate, timezone)
+  const untilStr = series.until ? getLocalDateStr(series.until, timezone) : null
 
   const exceptionByDate = new Map<string, ExceptionLike>()
   for (const exc of exceptions) {
-    exceptionByDate.set(localDateStr(exc.occurrenceDate, timezone), exc)
+    exceptionByDate.set(getLocalDateStr(exc.occurrenceDate, timezone), exc)
   }
 
-  const startStr = localDateStr(rangeStart, timezone)
-  const endStr = localDateStr(rangeEnd, timezone)
+  const startStr = getLocalDateStr(rangeStart, timezone)
+  const endStr = getLocalDateStr(rangeEnd, timezone)
 
   const result: EffectiveBlock[] = []
   let cursor = startStr

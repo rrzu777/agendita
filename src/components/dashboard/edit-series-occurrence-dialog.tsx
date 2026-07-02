@@ -9,8 +9,7 @@ import {
 import {
   skipSeriesOccurrence, overrideSeriesOccurrence, updateTimeBlockSeries, deleteTimeBlockSeries,
 } from '@/server/actions/time-blocks'
-import { fromZonedTime } from 'date-fns-tz'
-import { deriveBlockFormValues } from '@/lib/calendar/block-form-values'
+import { deriveBlockFormValues, parseTimeUTC } from '@/lib/calendar/block-form-values'
 import { getLocalDayOfWeek } from '@/lib/availability/timezone'
 import { BlockFormFields } from './block-form-fields'
 import type { CalendarTimeBlock } from './time-block-card'
@@ -23,10 +22,6 @@ interface Props {
 }
 
 type Scope = 'occurrence' | 'series'
-
-function parseTimeUTC(dateStr: string, timeStr: string, timezone: string): Date {
-  return fromZonedTime(`${dateStr} ${timeStr}`, timezone)
-}
 
 export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange }: Props) {
   const initial = deriveBlockFormValues(block, timezone)

@@ -22,6 +22,7 @@ import {
 import { createTimeBlock, deleteTimeBlock, createTimeBlockSeries } from '@/server/actions/time-blocks'
 import { Lock, Trash2 } from 'lucide-react'
 import { fromZonedTime } from 'date-fns-tz'
+import { parseTimeUTC } from '@/lib/calendar/block-form-values'
 import { BlockFormFields } from './block-form-fields'
 import { RecurrenceFields } from './recurrence-fields'
 import type { SeriesEndMode } from '@/lib/calendar/expand-series'
@@ -38,10 +39,6 @@ const PRESETS = [
 interface BlockTimeModalProps {
   defaultDate: string | null
   timezone: string
-}
-
-function parseTimeUTC(dateStr: string, timeStr: string, timezone: string): Date {
-  return fromZonedTime(`${dateStr} ${timeStr}`, timezone)
 }
 
 export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
