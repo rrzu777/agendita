@@ -61,6 +61,7 @@ model Business {
   currency              String             @default("CLP")
   timezone              String             @default("America/Santiago")
   bookingWindowDays     Int                @default(90)
+  bookingNumberSeq      Int                @default(1000)
   isActive              Boolean            @default(true)
   planId                String?
   subscriptionStatus    SubscriptionStatus @default(trialing)
@@ -353,6 +354,7 @@ model Booking {
   internalNotes  String?
   holdExpiresAt  DateTime?
   idempotencyKey String?
+  bookingNumber  Int?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -369,6 +371,7 @@ model Booking {
   reminderSentAt       DateTime?
 
   @@unique([businessId, idempotencyKey])
+  @@unique([businessId, bookingNumber])
   @@index([businessId, status, startDateTime, endDateTime])
 }
 
