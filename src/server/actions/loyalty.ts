@@ -5,13 +5,14 @@ import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
-import { loyaltyConfigSchema, adjustPointsSchema, redemptionOptionSchema, redeemSchema, automaticRuleSchema, buildConditions } from '@/lib/loyalty/schema'
+import { loyaltyConfigSchema, adjustPointsSchema, redemptionOptionSchema, redeemSchema, automaticRuleSchema, buildConditions, type AutomaticRuleInput } from '@/lib/loyalty/schema'
 import { getLoyaltyBalance, getLoyaltyHistory } from '@/lib/loyalty/balance'
 import { reconcileExpiredGrants } from '@/lib/loyalty/grant'
 import { redeemForGrant, type RedeemPromotion } from '@/lib/loyalty/redeem'
 import { isP2002 } from '@/lib/loyalty/credit'
 import { resolveLoyaltyCustomer } from '@/lib/loyalty/token'
 import { conditionKind } from '@/lib/loyalty/automatic-match'
+import { buildPresetPayload, planPresetApply, summarizeApply, redemptionSignature, type CurrentLoyaltyState, type ApplyPresetSummary } from '@/lib/loyalty/presets'
 
 // Module-local helpers — NOT exported (use server modules may only export async functions)
 
@@ -61,6 +62,58 @@ async function runRedemption(args: {
     }
     throw e
   }
+}
+
+/** Crea una Promotion automatic a partir de una regla ya validada. Module-local
+ *  (los módulos 'use server' solo exportan funciones async). */
+async function createAutomaticRuleFromInput(
+  tx: Prisma.TransactionClient, businessId: string, userId: string, d: AutomaticRuleInput,
+): Promise<void> {
+  await tx.promotion.create({
+    data: {
+      businessId, triggerType: 'automatic',
+      name: `auto:${d.kind}`, rewardType: d.rewardType ?? 'percentage', rewardValue: d.rewardValue,
+      maxDiscount: d.maxDiscount, appliesToAll: d.appliesToAll, rewardPoints: d.rewardPoints,
+      grantExpiryDays: d.grantExpiryDays, priority: d.priority, isActive: d.isActive,
+      maxPerCustomer: d.maxPerCustomer,
+      conditions: buildConditions(d) as Prisma.InputJsonValue,
+      createdByUserId: userId,
+      services: d.rewardKind === 'grant' && !d.appliesToAll
+        ? { connect: d.serviceIds.map((sid) => ({ id: sid })) } : undefined,
+    },
+  })
+}
+
+/** Estado de fidelización relevante para planificar un preset (dentro de una tx). */
+async function loadLoyaltyState(tx: Prisma.TransactionClient, businessId: string): Promise<{
+  state: CurrentLoyaltyState; configRow: Awaited<ReturnType<typeof tx.loyaltyConfig.findUnique>>
+}> {
+  const [configRow, autoRules, redemptions] = await Promise.all([
+    tx.loyaltyConfig.findUnique({ where: { businessId } }),
+    // Reglas: sin filtro isActive → un kind existente (incluso archivado) bloquea el
+    // reseed, igual que la unicidad por kind de upsertAutomaticRule.
+    tx.promotion.findMany({ where: automaticRuleWhere(businessId), select: { conditions: true } }),
+    // Canjes: solo activos → re-aplicar un preset puede resembrar una recompensa
+    // archivada (comportamiento aditivo, a diferencia de las reglas).
+    tx.promotion.findMany({
+      where: { ...redemptionOptionWhere(businessId), isActive: true },
+      select: { rewardType: true, rewardValue: true, pointsCost: true, appliesToAll: true },
+    }),
+  ])
+  const state: CurrentLoyaltyState = {
+    config: configRow ? {
+      pointsLabel: configRow.pointsLabel, pointsPerVisit: configRow.pointsPerVisit,
+      spendPerPoint: configRow.spendPerPoint, minSpendToEarn: configRow.minSpendToEarn,
+      programName: configRow.programName,
+    } : null,
+    existingRuleKinds: autoRules
+      .map((p) => conditionKind(p.conditions))
+      .filter((k): k is string => k != null),
+    existingRedemptionSignatures: redemptions.map((o) => redemptionSignature({
+      rewardType: o.rewardType, rewardValue: o.rewardValue, pointsCost: o.pointsCost ?? 0, appliesToAll: o.appliesToAll,
+    })),
+  }
+  return { state, configRow }
 }
 
 // Exported async actions
@@ -282,4 +335,63 @@ export async function archiveAutomaticRule(id: string) {
   if (!existing) throw new ForbiddenError('Regla no encontrada')
   await prisma.promotion.update({ where: { id }, data: { isActive: false } })
   await revalidatePath('/dashboard/fidelizacion')
+}
+
+export async function applyLoyaltyPreset(presetId: unknown): Promise<ApplyPresetSummary> {
+  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('loyalty-preset', 30, 60000, { userId: user.id, businessId })
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (typeof presetId !== 'string') throw new Error('Preset inválido')
+  const payload = buildPresetPayload(presetId) // lanza si el id no existe
+
+  const summary = await prisma.$transaction(async (tx) => {
+    // Advisory lock: serializa los applies de este negocio. Sin unique de DB para
+    // "una regla por kind" (kind vive en JSON) ni para la firma de canje, dos applies
+    // concurrentes (o doble-clic) crearían duplicados. $executeRaw (no $queryRaw).
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${businessId}))`
+
+    const { state, configRow } = await loadLoyaltyState(tx, businessId)
+    const plan = planPresetApply(payload, state)
+
+    if (plan.configToWrite) {
+      // Merge: el patch del preset pisa solo los escalares del modelo de acumulación;
+      // el resto de la fila (toggles, cardMessage, grantExpiryDays) se preserva. Depende
+      // de que loyaltyConfigSchema use .strip() para descartar columnas solo-de-DB
+      // (id, businessId, createdAt, updatedAt, updatedByUserId) antes del upsert.
+      const merged = { ...configRow, ...plan.configToWrite }
+      const parsed = loyaltyConfigSchema.safeParse(merged)
+      if (!parsed.success) throw new Error('Config de fidelización inválida')
+      await tx.loyaltyConfig.upsert({
+        where: { businessId },
+        create: { businessId, ...parsed.data, updatedByUserId: user.id },
+        update: { ...parsed.data, updatedByUserId: user.id },
+      })
+    }
+
+    for (const r of plan.rulesToCreate) {
+      const parsed = automaticRuleSchema.safeParse(r)
+      if (!parsed.success) throw new Error('Regla de preset inválida')
+      await createAutomaticRuleFromInput(tx, businessId, user.id, parsed.data)
+    }
+
+    for (const o of plan.redemptionsToCreate) {
+      const parsed = redemptionOptionSchema.safeParse(o)
+      if (!parsed.success) throw new Error('Recompensa de preset inválida')
+      const d = parsed.data
+      await tx.promotion.create({
+        data: {
+          businessId, triggerType: 'granted', name: d.name, rewardType: d.rewardType,
+          rewardValue: d.rewardValue, maxDiscount: d.maxDiscount, appliesToAll: d.appliesToAll,
+          pointsCost: d.pointsCost, grantExpiryDays: d.grantExpiryDays,
+          maxRedemptions: d.maxRedemptions, maxPerCustomer: d.maxPerCustomer,
+          isActive: d.isActive, createdByUserId: user.id,
+        },
+      })
+    }
+
+    return summarizeApply(plan)
+  })
+
+  await revalidatePath('/dashboard/fidelizacion')
+  return summary
 }

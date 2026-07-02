@@ -48,7 +48,7 @@ export function LoyaltyConfigForm({ config }: { config: LoyaltyConfig | null }) 
       </label>
 
       <Field name="programName" label="Nombre del programa" defaultValue={config?.programName ?? ''} required />
-      <Field name="pointsLabel" label="Nombre de la unidad (ej. puntos, estrellas)" defaultValue={config?.pointsLabel ?? 'puntos'} />
+      <PointsLabelField defaultValue={config?.pointsLabel ?? 'puntos'} />
       <Field name="pointsPerVisit" label="Puntos por visita" type="number" defaultValue={String(config?.pointsPerVisit ?? 0)} />
       <Field name="spendPerPoint" label="Pesos por punto (cada $X = 1 punto; vacío = off)" type="number" defaultValue={config?.spendPerPoint != null ? String(config.spendPerPoint) : ''} />
       <Field name="minSpendToEarn" label="Gasto mínimo para acreditar (vacío = sin mínimo)" type="number" defaultValue={config?.minSpendToEarn != null ? String(config.minSpendToEarn) : ''} />
@@ -118,6 +118,35 @@ function Field({
     <div className="space-y-1.5">
       <Label htmlFor={name}>{label}</Label>
       <Input id={name} name={name} type={type} defaultValue={defaultValue} required={required} />
+    </div>
+  )
+}
+
+const POINTS_LABEL_OPTIONS = ['puntos', 'estrellas', 'sellos', 'visitas']
+
+function PointsLabelField({ defaultValue }: { defaultValue: string }) {
+  const isPreset = POINTS_LABEL_OPTIONS.includes(defaultValue)
+  const [choice, setChoice] = useState(isPreset ? defaultValue : 'otro')
+
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="pointsLabel-choice">Nombre de la unidad</Label>
+      <select
+        id="pointsLabel-choice"
+        value={choice}
+        onChange={(e) => setChoice(e.target.value)}
+        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+      >
+        {POINTS_LABEL_OPTIONS.map((o) => (
+          <option key={o} value={o}>{o}</option>
+        ))}
+        <option value="otro">Otro…</option>
+      </select>
+      {choice === 'otro' ? (
+        <Input name="pointsLabel" defaultValue={isPreset ? '' : defaultValue} placeholder="Ej. corazones" required />
+      ) : (
+        <input type="hidden" name="pointsLabel" value={choice} />
+      )}
     </div>
   )
 }
