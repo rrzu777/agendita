@@ -193,6 +193,16 @@ describe('expandSeries', () => {
     // no explota; devuelve una cantidad acotada
     expect(occ.length).toBeLessThan(365)
   })
+
+  it('compone la hora correctamente cruzando la transición DST de Chile', () => {
+    // Chile pasa a horario de verano (UTC-3) en septiembre. El lunes 2026-09-07
+    // ya es DST -> 13:00 local = 16:00Z (en junio, UTC-4, sería 17:00Z).
+    const start = new Date('2026-09-07T00:00:00-03:00')
+    const end = new Date('2026-09-07T23:59:59-03:00')
+    const [occ] = expandSeries(base, [], start, end, TZ)
+    expect(occ.startDateTime.toISOString()).toBe('2026-09-07T16:00:00.000Z')
+    expect(occ.endDateTime.toISOString()).toBe('2026-09-07T17:00:00.000Z')
+  })
 })
 ```
 
@@ -410,7 +420,7 @@ git commit -m "feat(#1): computeSeriesUntil helper"
 
 ```ts
 import { PrismaClient } from '@prisma/client'
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { requireTestDatabase } from './setup'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 
@@ -422,6 +432,11 @@ describe('getEffectiveBlocks', () => {
   const TZ = 'America/Santiago'
 
   beforeAll(async () => {
+    // Reloj fijo un viernes; el lunes 2026-06-01 queda en el futuro y dentro de
+    // la ventana de reserva (necesario para los tests de slots/validación de
+    // Tasks 5 y 6, que usan `new Date()` real vía lead-time/booking-window).
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-05-29T12:00:00Z'))
     prisma = new PrismaClient()
     await prisma.timeBlockException.deleteMany()
     await prisma.timeBlockSeries.deleteMany()
@@ -444,7 +459,7 @@ describe('getEffectiveBlocks', () => {
     })
   })
 
-  afterAll(async () => { await prisma.$disconnect() })
+  afterAll(async () => { await prisma.$disconnect(); vi.useRealTimers() })
 
   it('une bloqueos sueltos + ocurrencias expandidas de la serie', async () => {
     const start = new Date('2026-06-01T00:00:00-04:00')
@@ -549,7 +564,7 @@ it('un almuerzo recurrente bloquea el slot correspondiente en getAvailableTimeSl
 })
 ```
 
-> Nota: `getAvailableTimeSlots` usa `checkRateLimit` y `new Date()` real. El test corre en fecha real; usa un lunes futuro dentro de la ventana de 90 días si `2026-06-01` ya pasó al ejecutar. Ajusta la fecha a un lunes futuro cercano si es necesario (documenta el cálculo en el test).
+> Nota: `getAvailableTimeSlots` usa `new Date()` real vía lead-time/ventana. El `vi.setSystemTime(2026-05-29)` del `beforeAll` (Task 4) fija "ahora" un viernes, así que el lunes 2026-06-01 queda futuro y dentro de la ventana. Si `checkRateLimit` interfiere (backend redis no configurado en test), añade `vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: async () => ({ success: true }) }))` al inicio del archivo.
 
 - [ ] **Step 2: Correr para ver que falla**
 
@@ -603,21 +618,31 @@ git commit -m "feat(#1): route public availability through getEffectiveBlocks"
 ```ts
 it('assertSlotIsAvailable rechaza un slot dentro de una ocurrencia recurrente y lo libera al saltarla', async () => {
   const { assertSlotIsAvailable } = await import('@/lib/availability/validation')
+  // Requisitos para llegar al chequeo de bloqueo: regla de disponibilidad que
+  // cubra el horario y un servicio real de 60 min (mismo día de semana, lunes=1).
+  await prisma.availabilityRule.deleteMany({ where: { businessId } })
+  await prisma.availabilityRule.create({ data: { businessId, dayOfWeek: 1, startTime: '09:00', endTime: '18:00', isActive: true } })
+  const svc = await prisma.service.create({ data: { businessId, name: 'Corte V', durationMinutes: 60, price: 10000, isActive: true } })
   const series = await prisma.timeBlockSeries.findFirstOrThrow({ where: { businessId } })
-  const start = new Date('2026-06-01T17:00:00Z') // 13:00 local, lunes (en daysOfWeek)
-  const end = new Date('2026-06-01T18:00:00Z')
 
+  const start = new Date('2026-06-01T17:00:00Z') // 13:00 local, lunes (en daysOfWeek [1..4])
+  const end = new Date('2026-06-01T18:00:00Z')
+  const input = { businessId, serviceId: svc.id, startDateTime: start, endDateTime: end, timezone: TZ }
+
+  // Antes de saltar: rechaza por solapar con la ocurrencia recurrente.
   await expect(
-    prisma.$transaction((tx) => assertSlotIsAvailable({ tx, businessId, serviceId: 'x', startDateTime: start, endDateTime: end, timezone: TZ } as never)),
+    prisma.$transaction((tx) => assertSlotIsAvailable({ tx, ...input })),
   ).rejects.toThrow()
 
-  // saltar esa ocurrencia
+  // Saltar esa ocurrencia la libera: ya no hay bloqueo ni reservas -> resuelve.
   await prisma.timeBlockException.create({ data: { seriesId: series.id, occurrenceDate: new Date('2026-06-01T04:00:00Z'), isSkipped: true } })
-  // ahora el chequeo de bloqueo no rechaza (puede fallar por otras validaciones de fecha/lead-time, pero NO por timeblock_overlap)
+  await expect(
+    prisma.$transaction((tx) => assertSlotIsAvailable({ tx, ...input })),
+  ).resolves.toBeUndefined()
 })
 ```
 
-> Ajusta la firma exacta de `assertSlotIsAvailable` a la real del archivo (revisa su `input` type). El objetivo del test es el chequeo de bloqueo; si otras validaciones (lead time, ventana) interfieren con fecha pasada, usa un lunes futuro y un `serviceId` real, y afirma específicamente sobre el rechazo por bloqueo vs su ausencia.
+> `AssertSlotInput = { tx, businessId, serviceId, startDateTime, endDateTime, timezone, excludeBookingId? }`. El reloj fijo (2026-05-29) del `beforeAll` mantiene el lunes 2026-06-01 dentro de lead-time/ventana. Este `it` vive en el mismo `describe` que Tasks 4/5; ejecútalo después del de slots (o resetea `availabilityRule`/`service` como ya hace).
 
 - [ ] **Step 2: Correr para ver que falla**
 
@@ -826,7 +851,13 @@ En `src/server/actions/time-blocks.ts`, añadir imports:
 
 ```ts
 import { computeSeriesUntil, expandSeries, type SeriesEndMode } from '@/lib/calendar/expand-series'
-import { formatInTimeZone } from 'date-fns-tz'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+```
+
+Y ampliar el import existente de `date-fns` (línea 10) para incluir `addDays` (lo usa el split de Task 10):
+
+```ts
+import { differenceInMilliseconds, addDays } from 'date-fns'
 ```
 
 Añadir la acción (todas exportadas son `async` — respeta el límite `'use server'`):
@@ -1070,16 +1101,20 @@ export async function updateTimeBlockSeries(
   const business = await prisma.business.findUnique({ where: { id: businessId }, select: { timezone: true } })
   const timezone = business?.timezone || 'America/Santiago'
 
-  // Split en hoy: la serie vieja termina ayer (último día incluido); la nueva
-  // arranca hoy. El pasado queda inmutable; las excepciones futuras se resetean
-  // porque pertenecen a la serie vieja (que ya no genera futuro).
+  // Split en hoy: la serie vieja termina AYER (último día incluido); la nueva
+  // arranca hoy. Importante: `until` de la vieja debe ser ayer (no hoy), porque
+  // en expandSeries la comparación `cursor <= untilStr` es inclusiva — si fuera
+  // hoy, vieja y nueva generarían ambas la ocurrencia de hoy (bloqueo duplicado).
+  // El pasado queda inmutable; las excepciones futuras se resetean porque
+  // pertenecen a la serie vieja (que ya no genera futuro).
   const todayStr = formatInTimeZone(new Date(), timezone, 'yyyy-MM-dd')
-  const yesterdayEnd = fromZonedTime(`${todayStr} 00:00:00`, timezone)
+  const yesterdayStr = formatInTimeZone(addDays(new Date(), -1), timezone, 'yyyy-MM-dd')
+  const oldUntil = fromZonedTime(`${yesterdayStr} 00:00:00`, timezone)
   const anchorToday = fromZonedTime(`${todayStr} 00:00:00`, timezone)
   const until = computeSeriesUntil(anchorToday, newRule.endMode, newRule.weeks ?? null, timezone)
 
   const [, newSeries] = await prisma.$transaction([
-    prisma.timeBlockSeries.update({ where: { id: seriesId }, data: { until: yesterdayEnd, isActive: existing.anchorDate < yesterdayEnd } }),
+    prisma.timeBlockSeries.update({ where: { id: seriesId }, data: { until: oldUntil, isActive: existing.anchorDate <= oldUntil } }),
     prisma.timeBlockSeries.create({
       data: {
         businessId,
@@ -1740,12 +1775,10 @@ import { getTimeBlocks, getTimeBlockSeries } from '@/server/actions/time-blocks'
 import { RecurringBlockList } from '@/components/dashboard/recurring-block-list'
 ```
 
-2. Cargar las series (junto a `const blocks = await getTimeBlocks()`):
+2. Cargar las series (mantén `const blocks = await getTimeBlocks()` tal cual; añade una línea):
 ```ts
-  const series = await getTimeBlocks()
   const recurringSeries = await getTimeBlockSeries()
 ```
-(mantén `const blocks = await getTimeBlocks()`; añade `recurringSeries`.)
 
 3. Dentro de la sección "Bloqueos", tras `<TimeBlockList blocks={blocks} />` (línea 47), añadir:
 ```tsx
@@ -1832,3 +1865,9 @@ Crear PR (base `main`), esperar checks requeridos (build/integration/lint/unit; 
 - Tests unit + integración + landmines → distribuidos + Task 14. ✅
 
 **Nota de decisión pendiente para el implementador:** "editar toda la serie" desde una ocurrencia (Task 12) usa como regla los valores del formulario con **el mismo día de semana de la ocurrencia editada**. Si se quiere permitir cambiar el conjunto de días al editar la serie completa, habría que añadir los chips de `RecurrenceFields` al diálogo de edición (fuera de alcance del MVP; anotado como mejora futura).
+
+## Mejoras futuras (fuera del MVP, no implementar ahora)
+
+- **Default de días** (Task 11): al activar "Repetir", prellenar `daysOfWeek` con el día de semana local de la fecha ancla en vez de dejarlo vacío. Requiere derivar el weekday del `date` en `BlockTimeModal` cuando `recurring` pasa a `true`.
+- **Limpiar excepciones huérfanas tras el split** (Task 10): las excepciones futuras de la serie vieja quedan sin uso (inofensivas). Podrían borrarse en la misma `$transaction` (`deleteMany` de excepciones con `occurrenceDate >= hoy`).
+- **Distinguir visualmente las ocurrencias recurrentes** en el calendario (un icono de repetición en `BlockBand`), ya que hoy se renderizan igual que un bloqueo suelto.
