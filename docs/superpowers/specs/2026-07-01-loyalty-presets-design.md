@@ -134,6 +134,10 @@ export type PresetPayload = {
 Los campos por-kind no aplicables se omiten (el zod los llena con default). `anniversary`
 existe en el motor pero se deja fuera del catálogo v1 (poco común; disponible en config manual).
 
+> **Default a tunear (no bloquea):** `points-per-visit` da 20% a 100 pts = 10 visitas, un pelín
+> tacaño frente a `stamp-card` (10 sellos → servicio gratis). Los valores son editables desde la
+> pantalla de canje; se dejan así por ahora y se pueden ajustar sin tocar código de apply.
+
 **Combo:**
 
 - `recommended-program` — **Programa recomendado** (recommended)
@@ -144,7 +148,9 @@ existe en el motor pero se deja fuera del catálogo v1 (poco común; disponible 
 
 ```ts
 /** Aplana un preset a su payload sembrable. Para combo, mergea componentes:
- *  toma el config del único base, concatena redemptionOptions y rules, sin kinds duplicados. */
+ *  toma el config del único base, concatena redemptionOptions y rules, sin kinds duplicados.
+ *  Lanza si el id no existe, si un componentId de un combo no existe, o si el combo no
+ *  compone exactamente un base. */
 export function buildPresetPayload(presetId: string): PresetPayload
 
 /** Metadata de display para el cliente (sin exponer payload completo si no hace falta). */
@@ -153,8 +159,8 @@ export function presetCatalog(): Array<Pick<LoyaltyPreset, 'id'|'kind'|'name'|'r
 /** Estado actual relevante para decidir qué sembrar (aditivo). */
 export type CurrentLoyaltyState = {
   config: EarnModelPatch & { programName: string | null } | null
-  existingRuleKinds: string[]            // kinds de reglas automatic ya presentes (activas o no)
-  existingRedemptionSignatures: string[] // `${rewardType}:${rewardValue}:${pointsCost}` activas
+  existingRuleKinds: string[]            // kinds de reglas automatic ya presentes (activas O archivadas)
+  existingRedemptionSignatures: string[] // firmas de canjes activos (ver firma abajo)
 }
 
 export type PresetPlan = {
@@ -163,6 +169,12 @@ export type PresetPlan = {
   redemptionsToCreate: RedemptionOptionFormInput[]
   skipped: { rules: string[]; redemptions: string[] }  // para el resumen
 }
+
+/** Firma de una opción de canje para dedup idempotente. Incluye appliesToAll para no
+ *  confundir una recompensa a un servicio con la equivalente para todos. */
+export function redemptionSignature(o: {
+  rewardType: string; rewardValue: number; pointsCost: number; appliesToAll: boolean
+}): string  // `${rewardType}:${rewardValue}:${pointsCost}:${appliesToAll}`
 
 /** Decide, de forma aditiva e idempotente, qué del payload se siembra dado el estado actual. */
 export function planPresetApply(payload: PresetPayload, state: CurrentLoyaltyState): PresetPlan
@@ -177,9 +189,11 @@ export function planPresetApply(payload: PresetPayload, state: CurrentLoyaltySta
   - Si el payload no trae config (preset add-on suelto), `configToWrite: null`.
 - **rules:** por cada rule del payload cuyo `kind` **no** esté en `state.existingRuleKinds`,
   incluir en `rulesToCreate`; los kinds ya presentes van a `skipped.rules` (no se tocan).
-- **redemptions:** por cada opción del payload cuya firma
-  `${rewardType}:${rewardValue}:${pointsCost}` **no** esté en `state.existingRedemptionSignatures`,
-  incluir; las equivalentes van a `skipped.redemptions`.
+  `existingRuleKinds` incluye reglas **archivadas** a propósito: si la dueña archivó
+  Cumpleaños y re-aplica el combo, **no** se resucita (se respeta su decisión); el resumen lo
+  refleja como "ya existía".
+- **redemptions:** por cada opción del payload cuya `redemptionSignature(...)` **no** esté en
+  `state.existingRedemptionSignatures`, incluir; las equivalentes van a `skipped.redemptions`.
 
 Idempotencia: re-aplicar con el estado ya sembrado ⇒ `rulesToCreate` y `redemptionsToCreate`
 vacíos; `configToWrite` reproduce el mismo merge (no cambia nada).
@@ -187,7 +201,9 @@ vacíos; `configToWrite` reproduce el mismo merge (no cambia nada).
 ## `applyLoyaltyPreset` — server action
 
 ```ts
-export async function applyLoyaltyPreset(presetId: unknown): Promise<void>
+/** Devuelve el resumen legible de lo que se encendió vs lo que ya existía (para el picker). */
+export type ApplyPresetSummary = { applied: string[]; skipped: string[] }
+export async function applyLoyaltyPreset(presetId: unknown): Promise<ApplyPresetSummary>
 ```
 
 1. `requireBusinessRole(['owner','admin'])`.
@@ -196,9 +212,17 @@ export async function applyLoyaltyPreset(presetId: unknown): Promise<void>
 4. Cargar `CurrentLoyaltyState`:
    - `loyaltyConfig.findUnique` (earn scalars + programName);
    - `promotion.findMany(automaticRuleWhere)` → derivar kinds vía `conditionKind`;
-   - `promotion.findMany(redemptionOptionWhere + isActive)` → firmas.
+   - `promotion.findMany(redemptionOptionWhere + isActive)` → `redemptionSignature`.
 5. `plan = planPresetApply(buildPresetPayload(presetId), state)`.
 6. Ejecutar en **una** `prisma.$transaction(async tx => { ... })`:
+   - **Primera línea — advisory lock que serializa los applies de este negocio:**
+     `await tx.$executeRaw\`SELECT pg_advisory_xact_lock(hashtext(${businessId}))\``.
+     Sin unique de DB para "una regla por kind" (el kind vive en JSON `conditions`) ni para la
+     firma de canje, dos applies concurrentes (o un doble-clic) leerían ambos "no existe" y
+     crearían duplicados. El lock los serializa; el segundo re-lee el estado ya sembrado y no
+     duplica. (Mismo patrón que `adjustCustomerPoints`; `$executeRaw`, no `$queryRaw`.)
+   - **Re-leer el estado dentro del lock** y recomputar el plan, para que la serialización
+     surta efecto (el estado del paso 4 pudo quedar viejo).
    - si `plan.configToWrite`: `tx.loyaltyConfig.upsert` con el objeto completo mergeado
      (validado antes con `loyaltyConfigSchema` para reusar defaults de los toggles/labels
      ausentes; ver nota);
@@ -208,6 +232,8 @@ export async function applyLoyaltyPreset(presetId: unknown): Promise<void>
      luego `tx.promotion.create({ triggerType: 'granted', ... })`.
    - Todos los presets usan `appliesToAll: true` ⇒ sin `serviceIds`, sin validación de servicios.
 7. `await revalidatePath('/dashboard/fidelizacion')`.
+8. Devolver `ApplyPresetSummary` con labels legibles (nombres de reglas/canjes sembrados vs
+   salteados), derivados del plan recomputado.
 
 **Nota (evitar duplicar lógica):** la creación de una regla automática desde un
 `AutomaticRuleInput` validado se extrae a un helper module-local **no exportado**
@@ -226,20 +252,27 @@ sanos y uno con config conserva sus toggles.
 
 ### `preset-picker.tsx` (nuevo, client)
 
-- Sección "Programas recomendados" con grilla de cards.
-- Orden: combo recommended primero, luego bases, luego add-ons. Badge **"Recomendado"** en
-  los `recommended`.
+- Sección "Programas recomendados", con el **combo destacado arriba** y dos grupos etiquetados:
+  - **"Elegí cómo ganan (programa base)"** — las cards `kind: 'base'`.
+  - **"Sumá recompensas automáticas"** — las cards `kind: 'addon'`.
+- Badge **"Recomendado"** en los `recommended`.
 - Cada card: nombre, `describe` (lenguaje natural), botón *Aplicar*.
 - Al hacer *Aplicar*: diálogo de confirmación mostrando `describe` + la línea fija
-  "Se aplicará sobre tu programa actual sin borrar lo que ya configuraste." → confirmar llama
-  `applyLoyaltyPreset(id)` en `useTransition` → al terminar, mensaje "Aplicado" (la página
-  revalida y las pantallas de abajo reflejan lo sembrado).
+  "Se aplicará sobre tu programa actual sin borrar lo que ya configuraste."
+  - **Aviso base-sobre-base:** si el preset es `base`/`combo` y `hasActiveProgram` es true,
+    agregar una línea de aviso: "Ya tenés un programa activo. Esto cambiará cómo se acumula y
+    sumará una recompensa nueva; tus puntos acumulados no se pierden."
+  - Confirmar llama `applyLoyaltyPreset(id)` en `useTransition`; el botón se **deshabilita**
+    durante la transición (evita doble-submit).
+- Al terminar: mostrar el `ApplyPresetSummary` ("Se encendió: … · Ya tenías: …"). La página
+  revalida y las pantallas de abajo reflejan lo sembrado.
 - Errores: mostrar el `message` de la action.
 
 ### `page.tsx` (modificar)
 
-Renderizar `<PresetPicker presets={presetCatalog()} />` arriba de las secciones actuales de
-config/reglas/canje. No necesita el estado actual (el action lo recomputa).
+Renderizar `<PresetPicker presets={presetCatalog()} hasActiveProgram={config?.isActive ?? false} />`
+arriba de las secciones actuales de config/reglas/canje. `config` ya se carga en la página. El
+picker solo usa `hasActiveProgram` para el aviso; el action recomputa el estado real.
 
 ### `loyalty-config-form.tsx` (modificar)
 
@@ -256,14 +289,21 @@ cambios. Si el valor actual no está entre las opciones, se preselecciona "otro"
    - config (si base/combo) que, mergeada con un `programName` dummy, valida contra
      `loyaltyConfigSchema`;
    - cada redemption valida contra `redemptionOptionSchema`;
-   - cada rule valida contra `automaticRuleSchema`.
+   - cada rule valida contra `automaticRuleSchema`;
+   - los números de `describe` (p.ej. "10 sellos", "20%") coinciden con los params del payload
+     (guard anti-drift: regex sobre los valores clave).
 2. **Combo:** `recommended-program` aplana a config del base + rules de sus add-ons, sin kinds
-   duplicados, con exactamente un config.
+   duplicados, con exactamente un config. `buildPresetPayload` **lanza** con id inexistente,
+   componentId inexistente, o combo sin exactamente un base.
 3. **`planPresetApply` aditivo/idempotente:**
    - estado limpio → escribe config, crea todas las rules y la redemption;
-   - estado con una rule del mismo kind → ese kind en `skipped.rules`, los demás creados;
-   - estado con redemption de firma equivalente → en `skipped.redemptions`;
+   - estado con una rule del mismo kind (activa **o archivada**) → ese kind en `skipped.rules`,
+     los demás creados (no resucita la archivada);
+   - estado con redemption de firma equivalente (misma `redemptionSignature`) → en
+     `skipped.redemptions`;
    - estado con config previa → merge pisa earn scalars, preserva `programName`, `isActive:true`;
+   - base-sobre-base: aplicar `points-per-visit` sobre estado de `stamp-card` pisa los earn
+     scalars y **crea** la segunda redemption (firma distinta), sin borrar la anterior;
    - re-aplicar (estado = post-primera-aplicación) → `rulesToCreate` y `redemptionsToCreate`
      vacíos.
 
