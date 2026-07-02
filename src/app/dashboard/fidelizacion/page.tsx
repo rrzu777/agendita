@@ -6,6 +6,8 @@ import { getServices } from '@/server/actions/services'
 import { LoyaltyConfigForm } from './loyalty-config-form'
 import { RedemptionCatalog } from './redemption-catalog'
 import { AutomaticRules } from './automatic-rules'
+import { PresetPicker } from './preset-picker'
+import { presetCatalog } from '@/lib/loyalty/presets'
 
 export default async function FidelizacionPage() {
   const userData = await getCurrentUserWithBusiness()
@@ -36,6 +38,7 @@ export default async function FidelizacionPage() {
       />
       <div className="p-5 md:p-10">
         <div className="mx-auto max-w-2xl">
+          <PresetPicker presets={presetCatalog()} hasActiveProgram={config?.isActive ?? false} />
           <LoyaltyConfigForm config={config} />
           <RedemptionCatalog options={options} services={services} />
           <AutomaticRules
