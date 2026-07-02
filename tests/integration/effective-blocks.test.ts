@@ -1,0 +1,50 @@
+import { PrismaClient } from '@prisma/client'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import { requireTestDatabase } from './setup'
+import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
+
+requireTestDatabase()
+
+describe('getEffectiveBlocks', () => {
+  let prisma: PrismaClient
+  const businessId = 'eb-biz-1'
+  const TZ = 'America/Santiago'
+
+  beforeAll(async () => {
+    // Reloj fijo un viernes; el lunes 2026-06-01 queda en el futuro y dentro de
+    // la ventana de reserva (necesario para los tests de slots/validación de
+    // Tasks 5 y 6, que usan `new Date()` real vía lead-time/booking-window).
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-05-29T12:00:00Z'))
+    prisma = new PrismaClient()
+    await prisma.timeBlockException.deleteMany()
+    await prisma.timeBlockSeries.deleteMany()
+    await prisma.timeBlock.deleteMany()
+    await prisma.businessUser.deleteMany()
+    await prisma.business.deleteMany()
+    await prisma.user.deleteMany()
+
+    const user = await prisma.user.create({ data: { id: 'eb-u1', email: 'eb@t.test', name: 'EB' } })
+    await prisma.business.create({
+      data: { id: businessId, name: 'EB', slug: 'eb', subdomain: 'eb', ownerUserId: user.id, city: 'Santiago', country: 'CL', currency: 'CLP', timezone: TZ, bookingWindowDays: 90 },
+    })
+    await prisma.timeBlock.create({
+      data: { businessId, startDateTime: new Date('2026-06-05T14:00:00Z'), endDateTime: new Date('2026-06-05T15:00:00Z'), reason: 'Suelto' },
+    })
+    await prisma.timeBlockSeries.create({
+      data: { businessId, daysOfWeek: [1, 2, 3, 4], startTime: '13:00', endTime: '14:00', reason: 'Almuerzo', anchorDate: new Date('2026-06-01T04:00:00Z'), until: null },
+    })
+  })
+
+  afterAll(async () => { await prisma.$disconnect(); vi.useRealTimers() })
+
+  it('une bloqueos sueltos + ocurrencias expandidas de la serie', async () => {
+    const start = new Date('2026-06-01T00:00:00-04:00')
+    const end = new Date('2026-06-05T23:59:59-04:00')
+    const blocks = await getEffectiveBlocks(businessId, start, end, TZ)
+    const reasons = blocks.map((b) => b.reason).sort()
+    expect(blocks).toHaveLength(5) // 4 almuerzos (Lun-Jue) + 1 suelto (viernes)
+    expect(reasons.filter((r) => r === 'Almuerzo')).toHaveLength(4)
+    expect(reasons.filter((r) => r === 'Suelto')).toHaveLength(1)
+  })
+})
