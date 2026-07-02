@@ -7,6 +7,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { generateSlots } from '@/lib/availability/slots'
 import { getBusinessDayRange } from '@/lib/availability/timezone'
+import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 
 const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
@@ -59,14 +60,7 @@ export async function getAvailableTimeSlots(businessId: string, serviceId: strin
       where: { businessId, isActive: true },
       orderBy: { dayOfWeek: 'asc' },
     }),
-    prisma.timeBlock.findMany({
-      where: {
-        businessId,
-        startDateTime: { lte: dayEnd },
-        endDateTime: { gte: dayStart },
-      },
-      orderBy: { startDateTime: 'asc' },
-    }),
+    getEffectiveBlocks(businessId, dayStart, dayEnd, timezone),
     prisma.booking.findMany({
       where: {
         businessId,
@@ -126,14 +120,7 @@ export async function getAvailableSlotsForReschedule(bookingId: string, date: Da
       where: { businessId, isActive: true },
       orderBy: { dayOfWeek: 'asc' },
     }),
-    prisma.timeBlock.findMany({
-      where: {
-        businessId,
-        startDateTime: { lte: dayEnd },
-        endDateTime: { gte: dayStart },
-      },
-      orderBy: { startDateTime: 'asc' },
-    }),
+    getEffectiveBlocks(businessId, dayStart, dayEnd, timezone),
     prisma.booking.findMany({
       where: {
         businessId,

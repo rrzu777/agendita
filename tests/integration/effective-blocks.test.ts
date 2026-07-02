@@ -47,4 +47,13 @@ describe('getEffectiveBlocks', () => {
     expect(reasons.filter((r) => r === 'Almuerzo')).toHaveLength(4)
     expect(reasons.filter((r) => r === 'Suelto')).toHaveLength(1)
   })
+
+  it('un almuerzo recurrente bloquea el slot correspondiente en getAvailableTimeSlots', async () => {
+    const { getAvailableTimeSlots } = await import('@/server/actions/availability')
+    await prisma.availabilityRule.deleteMany({ where: { businessId } })
+    await prisma.availabilityRule.create({ data: { businessId, dayOfWeek: 1, startTime: '09:00', endTime: '18:00', isActive: true } })
+    const svc = await prisma.service.create({ data: { businessId, name: 'Corte', durationMinutes: 60, price: 10000, depositAmount: 0, pastelColor: '#FFD700', isActive: true } })
+    const slots = await getAvailableTimeSlots(businessId, svc.id, new Date('2026-06-01T15:00:00Z'))
+    expect(slots.some((s) => s.start.toISOString() === '2026-06-01T17:00:00.000Z')).toBe(false)
+  })
 })
