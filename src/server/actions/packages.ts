@@ -146,9 +146,19 @@ export async function refundPackagePurchase(purchaseId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('package-refund', 30, 60000, { businessId })
   if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  // Sesiones no usadas = grants activos NO vencidos (consistente con getCustomerPackages
+  // y getActivePackagesForCustomer). Los grants vencidos siguen en status 'active' (la
+  // expiración es lazy), pero no tienen valor redimible, así que no se reembolsan.
+  const now = new Date()
   const purchase = await prisma.packagePurchase.findFirst({
     where: { id: purchaseId, businessId },
-    include: { _count: { select: { grants: { where: { status: 'active' } } } } },
+    include: {
+      _count: {
+        select: {
+          grants: { where: { status: 'active', OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] } },
+        },
+      },
+    },
   })
   if (!purchase) throw new ForbiddenError('Compra no encontrada')
   if (purchase.status === 'refunded') return // idempotente
@@ -173,7 +183,9 @@ export async function refundPackagePurchase(purchaseId: string) {
 // ── queries ─────────────────────────────────────────────────────────────
 // PÚBLICA (funnel): sin auth, patrón previewPromotion, defensiva.
 export async function getActivePackagesForCustomer(input: { businessId: string; phone: string; serviceId: string }): Promise<{ remaining: number }> {
-  const limit = await checkRateLimit('preview-promotion', 30, 60000)
+  // Balde de rate-limit propio (no compartir con previewPromotion) para que el uso
+  // intensivo de una feature no agote la otra por IP.
+  const limit = await checkRateLimit('preview-package', 30, 60000)
   if (!limit.success) return { remaining: 0 }
   const normalized = normalizePhone(input.phone)
   if (!normalized) return { remaining: 0 }

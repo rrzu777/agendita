@@ -81,18 +81,25 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
 
   const packageCovers = packageRemaining > 0 && usePackage
 
-  // Valores efectivos: si hay un código aplicado, reflejan lo que el servidor
-  // cobrará (el servidor sigue siendo autoritativo; esto es solo display).
-  // depositRequired espeja la lógica server: min(depositAmount, finalAmount).
-  const effectiveFinalPrice = appliedPromo ? appliedPromo.finalAmount : data.servicePrice
-  const effectiveDeposit = appliedPromo
-    ? Math.min(data.serviceDeposit, appliedPromo.finalAmount)
-    : data.serviceDeposit
+  // Valores efectivos: reflejan lo que el servidor cobrará (el servidor sigue siendo
+  // autoritativo; esto es solo display). Un paquete que cubre el servicio deja la
+  // reserva en $0 (el servidor la marca confirmada/pagada), así que tiene precedencia
+  // sobre el código. depositRequired espeja la lógica server: min(depositAmount, finalAmount).
+  const effectiveFinalPrice = packageCovers
+    ? 0
+    : appliedPromo
+      ? appliedPromo.finalAmount
+      : data.servicePrice
+  const effectiveDeposit = packageCovers
+    ? 0
+    : appliedPromo
+      ? Math.min(data.serviceDeposit, appliedPromo.finalAmount)
+      : data.serviceDeposit
 
-  // Un código 100%-off (finalAmount <= 0) hace que la reserva no requiera pago
-  // online: el servidor la marca confirmada/pagada. Tratarla como path gratuito
-  // para no mostrar un botón "Pagar abono $0".
-  const promoMakesFree = appliedPromo != null && appliedPromo.finalAmount <= 0
+  // Un código 100%-off (finalAmount <= 0) o un paquete que cubre el servicio hacen que
+  // la reserva no requiera pago online: el servidor la marca confirmada/pagada. Se trata
+  // como path gratuito para no mostrar un botón "Pagar abono $0" ni llamar initiatePayment.
+  const promoMakesFree = (appliedPromo != null && appliedPromo.finalAmount <= 0) || packageCovers
 
   const noDepositNeeded = effectiveDeposit <= 0
   const isFreeService = effectiveFinalPrice <= 0
@@ -371,7 +378,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
 
         {isFreeService ? (
           <div className="mb-6 rounded-xl bg-green-50 p-4 text-sm text-green-800">
-            <p className="font-semibold">{promoMakesFree ? 'Tu código cubre el total' : 'Este servicio es gratuito'}</p>
+            <p className="font-semibold">{packageCovers ? 'Tu paquete cubre esta sesión' : promoMakesFree ? 'Tu código cubre el total' : 'Este servicio es gratuito'}</p>
             <p className="mt-1">No requiere pago. Tu reserva será confirmada inmediatamente.</p>
           </div>
         ) : (
