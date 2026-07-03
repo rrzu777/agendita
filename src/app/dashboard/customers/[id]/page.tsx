@@ -111,8 +111,11 @@ export default async function CustomerDetailPage({ params }: Props) {
     )
   }
 
-  const [{ balance, history, grants, catalog }, loyaltyConfig, packages, packageProducts] = await Promise.all([
-    getCustomerLoyalty(id),
+  // getCustomerLoyalty corre una transacción interactiva (reconcileExpiredGrants). Si se
+  // ejecuta en paralelo con otras lecturas sobre un pool chico (pgbouncer), la tx puede no
+  // conseguir conexión para arrancar (P2028). Se corre sola y luego el resto en paralelo.
+  const { balance, history, grants, catalog } = await getCustomerLoyalty(id)
+  const [loyaltyConfig, packages, packageProducts] = await Promise.all([
     getLoyaltyConfig(),
     getCustomerPackages(id),
     listPackageProducts(),
