@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { resolveLoyaltyCustomer, ensureReferralToken } from '@/lib/loyalty/token'
 import { getBookingFunnelUrl } from '@/lib/business/urls'
+import { formatShortDate } from '@/lib/format-date'
 import { ReferralShare } from './referral-share'
 import { getLoyaltyBalance, getLoyaltyHistory } from '@/lib/loyalty/balance'
 import { loyaltyReasonLabel, displayBalance, canAfford } from '@/lib/loyalty/view'
@@ -66,7 +67,11 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
     prisma.packagePurchase.findMany({
       where: { customerId: customer.id, status: 'active' },
       orderBy: { createdAt: 'desc' },
-      include: {
+      // Página pública: seleccionar solo lo que la UI usa (evita traer coveredServiceIds,
+      // paymentMethod, refundedAmount, createdByUserId, etc.).
+      select: {
+        id: true,
+        expiresAt: true,
         product: { select: { name: true } },
         _count: {
           select: {
@@ -141,7 +146,7 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
               <li key={g.id} className="rounded-lg bg-pink-50 px-3 py-2 text-sm">
                 <div className="font-medium text-pink-700">{g.promotion.name}</div>
                 <div>Código: <code className="font-mono text-base">{g.code}</code></div>
-                {g.expiresAt && <div className="text-xs text-pink-700/70">Válido hasta {new Intl.DateTimeFormat('es', { day: '2-digit', month: 'short' }).format(g.expiresAt)}</div>}
+                {g.expiresAt && <div className="text-xs text-pink-700/70">Válido hasta {formatShortDate(g.expiresAt)}</div>}
               </li>
             ))}
           </ul>
@@ -156,7 +161,7 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
               <li key={p.id} className="rounded-lg bg-pink-50 px-3 py-2 text-sm">
                 <div className="font-medium text-pink-700">{p.product.name}</div>
                 <div>{p._count.grants} sesiones disponibles</div>
-                {p.expiresAt && <div className="text-xs text-pink-700/70">Válido hasta {new Intl.DateTimeFormat('es', { day: '2-digit', month: 'short' }).format(p.expiresAt)}</div>}
+                {p.expiresAt && <div className="text-xs text-pink-700/70">Válido hasta {formatShortDate(p.expiresAt)}</div>}
               </li>
             ))}
           </ul>

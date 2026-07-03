@@ -9,7 +9,10 @@ export async function findApplicablePackageGrant(
   args: { businessId: string; customerId: string; serviceId: string; now?: Date },
 ) {
   const now = args.now ?? new Date()
-  const grants = await tx.promotionGrant.findMany({
+  // findFirst aplica LIMIT 1: solo materializa el grant elegido, no todos los activos
+  // de la clienta (hot path: corre dentro de la tx de creación de reserva). Postgres
+  // ordena NULLS LAST por defecto en ASC, así que expiresAt null cae al final.
+  return tx.promotionGrant.findFirst({
     where: {
       businessId: args.businessId, customerId: args.customerId, status: 'active',
       packagePurchaseId: { not: null },
@@ -22,8 +25,6 @@ export async function findApplicablePackageGrant(
     include: { packagePurchase: { select: { id: true } } },
     orderBy: [{ expiresAt: 'asc' }],
   })
-  // Postgres ordena NULLS LAST por defecto en ASC, así que expiresAt null cae al final.
-  return grants[0] ?? null
 }
 
 /** Aplica un grant de paquete a la reserva (auto-select + flip atómico + PromotionRedemption).

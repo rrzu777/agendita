@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { createBookingFromDashboard } from '@/server/actions/bookings'
 import { previewPromotion } from '@/server/actions/promotions'
-import { getActivePackagesForCustomer } from '@/server/actions/packages'
+import { usePackageAvailability } from '@/lib/packages/use-package-availability'
 import { searchCustomersForBooking } from '@/server/actions/customers'
 import type { CustomerSearchResult } from '@/server/actions/customers'
 import { formatDuration } from '@/lib/format-duration'
@@ -53,8 +53,8 @@ export function NewBookingForm({ services, businessId }: NewBookingFormProps) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
 
-  const [packageRemaining, setPackageRemaining] = useState(0)
-  const [usePackage, setUsePackage] = useState(true)
+  const { remaining: packageRemaining, usePackage, setUsePackage } =
+    usePackageAvailability(businessId, customerPhone, serviceId)
 
   // Customer search state
   const [customerSearch, setCustomerSearch] = useState('')
@@ -74,23 +74,6 @@ export function NewBookingForm({ services, businessId }: NewBookingFormProps) {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
-
-  // Paquete prepago: cuando hay cliente (teléfono) + servicio, consultar sesiones
-  // que cubran el servicio. Reactivo igual que la revalidación de promo al cambiar servicio.
-  /* eslint-disable react-hooks/set-state-in-effect -- reset stale remaining when
-     phone/service is incomplete, guarded by deps so it can't cascade. */
-  useEffect(() => {
-    if (!customerPhone || !serviceId) {
-      setPackageRemaining(0)
-      return
-    }
-    let cancelled = false
-    getActivePackagesForCustomer({ businessId, phone: customerPhone, serviceId })
-      .then((res) => { if (!cancelled) setPackageRemaining(res.remaining) })
-      .catch(() => { if (!cancelled) setPackageRemaining(0) })
-    return () => { cancelled = true }
-  }, [businessId, customerPhone, serviceId])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleCustomerSearch = useCallback((value: string) => {
     setCustomerSearch(value)

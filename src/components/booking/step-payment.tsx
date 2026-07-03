@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { BookingData } from './wizard'
 import { createBooking } from '@/server/actions/bookings'
 import { previewPromotion } from '@/server/actions/promotions'
-import { getActivePackagesForCustomer } from '@/server/actions/packages'
+import { usePackageAvailability } from '@/lib/packages/use-package-availability'
 import { initiatePayment, verifyAndConfirmPayment, getOnlinePaymentAvailability } from '@/server/actions/payments'
 import { formatMoney } from '@/lib/money'
 import { AlertCircle, Loader2 } from 'lucide-react'
@@ -76,25 +76,8 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
   // Paquete prepago: si la clienta tiene sesiones que cubren este servicio, se
   // ofrece usarlas (precedencia sobre promo). El servidor aplica el paquete en la
   // transacción; skipPackage:!usePackage respeta la elección de la clienta.
-  const [packageRemaining, setPackageRemaining] = useState(0)
-  const [usePackage, setUsePackage] = useState(true)
-
-  /* eslint-disable react-hooks/set-state-in-effect -- reset stale remaining when
-     phone/service is incomplete, guarded by deps so it can't cascade. */
-  useEffect(() => {
-    const phone = data.customerPhone
-    const serviceId = data.serviceId
-    if (!phone || !serviceId) {
-      setPackageRemaining(0)
-      return
-    }
-    let cancelled = false
-    getActivePackagesForCustomer({ businessId, phone, serviceId })
-      .then((res) => { if (!cancelled) setPackageRemaining(res.remaining) })
-      .catch(() => { if (!cancelled) setPackageRemaining(0) })
-    return () => { cancelled = true }
-  }, [businessId, data.customerPhone, data.serviceId])
-  /* eslint-enable react-hooks/set-state-in-effect */
+  const { remaining: packageRemaining, usePackage, setUsePackage } =
+    usePackageAvailability(businessId, data.customerPhone, data.serviceId)
 
   const packageCovers = packageRemaining > 0 && usePackage
 

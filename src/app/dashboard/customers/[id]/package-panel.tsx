@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { sellPackage, refundPackagePurchase } from '@/server/actions/packages'
 import { formatMoney } from '@/lib/money'
+import { formatShortDate } from '@/lib/format-date'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -92,7 +93,7 @@ export function PackagePanel({
                   </p>
                   {p.expiresAt && (
                     <p className="text-xs text-muted-foreground">
-                      vence {new Intl.DateTimeFormat('es', { day: '2-digit', month: 'short' }).format(new Date(p.expiresAt))}
+                      vence {formatShortDate(p.expiresAt)}
                     </p>
                   )}
                 </div>

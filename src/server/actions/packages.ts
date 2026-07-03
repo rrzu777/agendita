@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
+import { addDays } from 'date-fns'
 import { Prisma } from '@prisma/client'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
@@ -101,7 +102,7 @@ export async function sellPackage(data: unknown) {
   if (!customer) throw new ForbiddenError('Clienta no encontrada')
 
   const now = new Date()
-  const expiresAt = product.expiryDays ? new Date(now.getTime() + product.expiryDays * 86_400_000) : null
+  const expiresAt = product.expiryDays ? addDays(now, product.expiryDays) : null
   const total = product.quantity + product.bonusQuantity
 
   try {
