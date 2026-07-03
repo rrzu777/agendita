@@ -62,6 +62,7 @@ export function BookingWizard({ businessId, services, cancellationPolicy, referr
   const [currentStep, setCurrentStep] = useState(1)
   const [data, setData] = useState<BookingData>(initialData)
   const [bookingId, setBookingId] = useState<string | null>(null)
+  const [bookingNumber, setBookingNumber] = useState<number | null>(null)
   const [confirmationMode, setConfirmationMode] = useState<'paid' | 'pending'>('paid')
   const [confirmationPromo, setConfirmationPromo] = useState<{ discountAmount: number; finalAmount: number } | null>(null)
 
@@ -137,8 +138,9 @@ export function BookingWizard({ businessId, services, cancellationPolicy, referr
           </div>
         )}
         {currentStep === 5 && data.serviceId && data.timeSlot && (
-          <StepPayment data={data} businessId={businessId} cancellationPolicy={cancellationPolicy} referralToken={referralToken} onSuccess={(id, mode, promo) => {
+          <StepPayment data={data} businessId={businessId} cancellationPolicy={cancellationPolicy} referralToken={referralToken} onSuccess={(id, mode, promo, number) => {
             setBookingId(id)
+            setBookingNumber(number ?? null)
             setConfirmationMode(mode)
             setConfirmationPromo(promo ?? null)
             nextStep()
@@ -151,7 +153,7 @@ export function BookingWizard({ businessId, services, cancellationPolicy, referr
           </div>
         )}
         {currentStep === 6 && (
-          <StepConfirmation data={data} bookingId={bookingId} mode={confirmationMode} promo={confirmationPromo} />
+          <StepConfirmation data={data} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} />
         )}
       </section>
     </div>
