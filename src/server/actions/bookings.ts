@@ -77,7 +77,7 @@ async function fireBookingNotifications(
     depositPaid: number
     remainingBalance: number
     startDateTime: Date
-  } & { id: string; businessId: string },
+  } & { id: string; businessId: string; bookingNumber: number | null },
   serviceName: string,
 ) {
   const customerEmail = booking.customer.email
@@ -97,6 +97,7 @@ async function fireBookingNotifications(
       sendNotificationSafely('customer received', () =>
         sendBookingReceivedToCustomer({
           businessName: business.name,
+          bookingNumber: booking.bookingNumber,
           businessReplyToEmail,
           businessWhatsapp: business.whatsapp,
           businessAddress: business.addressText,
@@ -123,6 +124,7 @@ async function fireBookingNotifications(
     sendMultiNotificationSafely('business notification', () =>
       sendNewBookingNotificationToBusiness(booking.businessId, {
         businessName: business.name,
+        bookingNumber: booking.bookingNumber,
         customerName: booking.customer.name,
         customerPhone: booking.customer.phone,
         customerEmail: customerEmail || null,

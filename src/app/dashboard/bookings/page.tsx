@@ -107,6 +107,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
         <BookingContactButtons
           variant="compact"
           booking={{
+            bookingNumber: booking.bookingNumber,
             customerName: booking.customer?.name || '',
             customerPhone: booking.customer?.phone || null,
             serviceName: booking.service?.name || '',
@@ -268,6 +269,7 @@ export default async function BookingsPage() {
                         <BookingContactButtons
                           variant="compact"
                           booking={{
+                            bookingNumber: booking.bookingNumber,
                             customerName: booking.customer?.name || '',
                             customerPhone: booking.customer?.phone || null,
                             serviceName: booking.service?.name || '',

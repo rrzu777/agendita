@@ -120,6 +120,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
             <h4 className="text-sm font-semibold">Contactar cliente</h4>
             <BookingContactButtons
               booking={{
+                bookingNumber: booking.bookingNumber,
                 customerName: booking.customer?.name || '',
                 customerPhone: booking.customer?.phone || null,
                 serviceName: booking.service?.name || '',
