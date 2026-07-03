@@ -40,7 +40,7 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
 
   const config = customer.business.loyaltyConfig
   // La reconciliación ya corrió; las 4 lecturas son independientes => en paralelo.
-  const [balance, history, catalog, grants, referralRules] = await Promise.all([
+  const [balance, history, catalog, grants, referralRules, packages] = await Promise.all([
     getLoyaltyBalance(prisma, customer.id, customer.businessId),
     getLoyaltyHistory(prisma, customer.id, customer.businessId, 50),
     config?.isActive
@@ -63,6 +63,18 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
           select: { id: true, conditions: true },
         })
       : Promise.resolve([] as { id: string; conditions: Prisma.JsonValue }[]),
+    prisma.packagePurchase.findMany({
+      where: { customerId: customer.id, status: 'active' },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        product: { select: { name: true } },
+        _count: {
+          select: {
+            grants: { where: { status: 'active', OR: [{ expiresAt: null }, { expiresAt: { gte: new Date() } }] } },
+          },
+        },
+      },
+    }),
   ])
 
   // Bloque "Referí a una amiga": solo si la fidelización está activa y existe una
@@ -130,6 +142,21 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
                 <div className="font-medium text-pink-700">{g.promotion.name}</div>
                 <div>Código: <code className="font-mono text-base">{g.code}</code></div>
                 {g.expiresAt && <div className="text-xs text-pink-700/70">Válido hasta {new Intl.DateTimeFormat('es', { day: '2-digit', month: 'short' }).format(g.expiresAt)}</div>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {packages.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-2 text-sm font-semibold text-gray-700">Mis paquetes</h2>
+          <ul className="space-y-2">
+            {packages.map(p => (
+              <li key={p.id} className="rounded-lg bg-pink-50 px-3 py-2 text-sm">
+                <div className="font-medium text-pink-700">{p.product.name}</div>
+                <div>{p._count.grants} sesiones disponibles</div>
+                {p.expiresAt && <div className="text-xs text-pink-700/70">Válido hasta {new Intl.DateTimeFormat('es', { day: '2-digit', month: 'short' }).format(p.expiresAt)}</div>}
               </li>
             ))}
           </ul>

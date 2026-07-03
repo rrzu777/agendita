@@ -15,6 +15,10 @@ vi.mock('@/server/actions/payments', () => ({
   getOnlinePaymentAvailability: mockGetOnlinePaymentAvailability,
 }))
 
+vi.mock('@/server/actions/packages', () => ({
+  getActivePackagesForCustomer: vi.fn().mockResolvedValue({ remaining: 0 }),
+}))
+
 const bookingData = {
   serviceId: 'svc-1',
   serviceName: 'Manicure',

@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { createBookingFromDashboard } from '@/server/actions/bookings'
 import { previewPromotion } from '@/server/actions/promotions'
+import { getActivePackagesForCustomer } from '@/server/actions/packages'
 import { searchCustomersForBooking } from '@/server/actions/customers'
 import type { CustomerSearchResult } from '@/server/actions/customers'
 import { formatDuration } from '@/lib/format-duration'
@@ -52,6 +53,9 @@ export function NewBookingForm({ services, businessId }: NewBookingFormProps) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
 
+  const [packageRemaining, setPackageRemaining] = useState(0)
+  const [usePackage, setUsePackage] = useState(true)
+
   // Customer search state
   const [customerSearch, setCustomerSearch] = useState('')
   const [suggestions, setSuggestions] = useState<CustomerSearchResult[]>([])
@@ -70,6 +74,23 @@ export function NewBookingForm({ services, businessId }: NewBookingFormProps) {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  // Paquete prepago: cuando hay cliente (teléfono) + servicio, consultar sesiones
+  // que cubran el servicio. Reactivo igual que la revalidación de promo al cambiar servicio.
+  /* eslint-disable react-hooks/set-state-in-effect -- reset stale remaining when
+     phone/service is incomplete, guarded by deps so it can't cascade. */
+  useEffect(() => {
+    if (!customerPhone || !serviceId) {
+      setPackageRemaining(0)
+      return
+    }
+    let cancelled = false
+    getActivePackagesForCustomer({ businessId, phone: customerPhone, serviceId })
+      .then((res) => { if (!cancelled) setPackageRemaining(res.remaining) })
+      .catch(() => { if (!cancelled) setPackageRemaining(0) })
+    return () => { cancelled = true }
+  }, [businessId, customerPhone, serviceId])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleCustomerSearch = useCallback((value: string) => {
     setCustomerSearch(value)
@@ -244,6 +265,7 @@ export function NewBookingForm({ services, businessId }: NewBookingFormProps) {
         paymentMethod: paymentMode !== 'none' ? paymentMethod : undefined,
         customerId: selectedCustomerId || undefined,
         promotionCode: appliedPromo?.code,
+        skipPackage: !usePackage,
       })
       setSuccess(true)
       setTimeout(() => {
@@ -439,6 +461,26 @@ export function NewBookingForm({ services, businessId }: NewBookingFormProps) {
               </div>
             )}
           </div>
+
+          {packageRemaining > 0 && (
+            <div className="space-y-2 rounded-lg border border-green-200 bg-green-50 p-4">
+              <label className="flex items-start gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={usePackage}
+                  onChange={(e) => setUsePackage(e.target.checked)}
+                  className="mt-0.5 size-4 rounded border-border accent-primary"
+                />
+                <span className="text-green-800">
+                  <span className="font-semibold">Usar paquete (quedan {packageRemaining})</span>
+                  <span className="mt-0.5 block">
+                    El cliente tiene un paquete que cubre este servicio.
+                    {usePackage && ' Se consumirá una sesión y no se cobrará pago.'}
+                  </span>
+                </span>
+              </label>
+            </div>
+          )}
 
           <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
             <Label htmlFor="promoCode" className="text-sm font-semibold text-primary">

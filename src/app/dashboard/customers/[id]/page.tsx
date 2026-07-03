@@ -6,11 +6,13 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { getCustomerDetail } from '@/server/actions/customers'
 import { getCustomerLoyalty, getLoyaltyConfig } from '@/server/actions/loyalty'
+import { getCustomerPackages, listPackageProducts } from '@/server/actions/packages'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { normalizePhone } from '@/lib/customers/phone'
 import { CustomerEditForm } from './edit-form'
 import { CustomerNotesForm } from './notes-form'
 import { LoyaltyPanel } from './loyalty-panel'
+import { PackagePanel } from './package-panel'
 import {
   ArrowLeft,
   CalendarDays,
@@ -109,10 +111,17 @@ export default async function CustomerDetailPage({ params }: Props) {
     )
   }
 
-  const [{ balance, history, grants, catalog }, loyaltyConfig] = await Promise.all([
+  const [{ balance, history, grants, catalog }, loyaltyConfig, packages, packageProducts] = await Promise.all([
     getCustomerLoyalty(id),
     getLoyaltyConfig(),
+    getCustomerPackages(id),
+    listPackageProducts(),
   ])
+
+  const currency = userData.business.currency || 'CLP'
+  const sellableProducts = packageProducts
+    .filter((p) => p.isActive)
+    .map((p) => ({ id: p.id, name: p.name, price: p.price }))
 
   const cleanPhone = normalizePhone(customer.phone)
   const hasWhatsapp = cleanPhone.length >= 8
@@ -216,6 +225,15 @@ export default async function CustomerDetailPage({ params }: Props) {
                 label={loyaltyConfig.pointsLabel}
                 grants={grants}
                 catalog={catalog}
+              />
+            )}
+
+            {(packages.length > 0 || sellableProducts.length > 0) && (
+              <PackagePanel
+                customerId={id}
+                packages={packages}
+                products={sellableProducts}
+                currency={currency}
               />
             )}
           </div>

@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { BookingData } from './wizard'
 import { createBooking } from '@/server/actions/bookings'
 import { previewPromotion } from '@/server/actions/promotions'
+import { getActivePackagesForCustomer } from '@/server/actions/packages'
 import { initiatePayment, verifyAndConfirmPayment, getOnlinePaymentAvailability } from '@/server/actions/payments'
 import { formatMoney } from '@/lib/money'
 import { AlertCircle, Loader2 } from 'lucide-react'
@@ -71,6 +72,31 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
   const [appliedPromo, setAppliedPromo] = useState<{ code: string; discount: number; finalAmount: number } | null>(null)
   const [promoError, setPromoError] = useState<string | null>(null)
   const [promoPending, setPromoPending] = useState(false)
+
+  // Paquete prepago: si la clienta tiene sesiones que cubren este servicio, se
+  // ofrece usarlas (precedencia sobre promo). El servidor aplica el paquete en la
+  // transacción; skipPackage:!usePackage respeta la elección de la clienta.
+  const [packageRemaining, setPackageRemaining] = useState(0)
+  const [usePackage, setUsePackage] = useState(true)
+
+  /* eslint-disable react-hooks/set-state-in-effect -- reset stale remaining when
+     phone/service is incomplete, guarded by deps so it can't cascade. */
+  useEffect(() => {
+    const phone = data.customerPhone
+    const serviceId = data.serviceId
+    if (!phone || !serviceId) {
+      setPackageRemaining(0)
+      return
+    }
+    let cancelled = false
+    getActivePackagesForCustomer({ businessId, phone, serviceId })
+      .then((res) => { if (!cancelled) setPackageRemaining(res.remaining) })
+      .catch(() => { if (!cancelled) setPackageRemaining(0) })
+    return () => { cancelled = true }
+  }, [businessId, data.customerPhone, data.serviceId])
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const packageCovers = packageRemaining > 0 && usePackage
 
   // Valores efectivos: si hay un código aplicado, reflejan lo que el servidor
   // cobrará (el servidor sigue siendo autoritativo; esto es solo display).
@@ -176,6 +202,26 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
       </div>
   )
 
+  const packageSection = packageRemaining > 0 ? (
+      <div className="mb-6 rounded-xl border border-border/60 bg-green-50 p-4">
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            checked={usePackage}
+            onChange={(e) => setUsePackage(e.target.checked)}
+            className="mt-0.5 size-4 rounded border-border accent-primary"
+          />
+          <span>
+            <span className="font-semibold text-green-800">Usar mi paquete</span>
+            <span className="mt-0.5 block text-green-800">
+              Tenés un paquete que cubre este servicio (quedan {packageRemaining} sesiones).
+              {usePackage && ' Se usará una sesión y no se cobrará pago.'}
+            </span>
+          </span>
+        </label>
+      </div>
+  ) : null
+
   /* eslint-disable react-hooks/set-state-in-effect -- intentional reset-before-async-fetch
      so stale availability isn't shown while re-checking; guarded by the deps. */
   useEffect(() => {
@@ -222,6 +268,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
         acceptedTerms,
         promotionCode: appliedPromo?.code,
         referralToken,
+        skipPackage: !usePackage,
       }, businessId)
 
       setStep('success')
@@ -257,6 +304,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
         acceptedTerms,
         promotionCode: appliedPromo?.code,
         referralToken,
+        skipPackage: !usePackage,
       }, businessId)
 
       const paymentResult = await initiatePayment({
@@ -335,7 +383,8 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
           )}
         </div>
 
-        {promoSection}
+        {packageSection}
+        {!packageCovers && promoSection}
 
         {isFreeService ? (
           <div className="mb-6 rounded-xl bg-green-50 p-4 text-sm text-green-800">
@@ -393,7 +442,8 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
           <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono requerido</span><span className="font-semibold text-primary">{formatMoney(effectiveDeposit)}</span></div>
         </div>
 
-        {promoSection}
+        {packageSection}
+        {!packageCovers && promoSection}
 
         <div className="mb-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <AlertCircle className="mt-0.5 size-5 shrink-0" />
@@ -459,7 +509,8 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
         <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono a pagar</span><span className="font-semibold text-primary">{formatMoney(effectiveDeposit)}</span></div>
       </div>
 
-      {promoSection}
+      {packageSection}
+      {!packageCovers && promoSection}
 
       {availability.isMock && (
         <div className="mb-4 rounded-xl border border-border/70 bg-secondary/40 px-4 py-3 text-sm text-primary">
