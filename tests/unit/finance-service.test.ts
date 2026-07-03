@@ -110,40 +110,46 @@ describe('mapPaymentTypeToLedgerDirection', () => {
 })
 
 describe('getLedgerDescription', () => {
-  it('deposit → Abono para reserva', async () => {
+  it('deposit → Abono para reserva #<n>', async () => {
     const { getLedgerDescription } = await import('@/server/services/finance')
-    expect(getLedgerDescription(PaymentType.deposit, 'booking-abc123')).toBe('Abono para reserva c123')
+    expect(getLedgerDescription(PaymentType.deposit, 'booking-abc123', 4738)).toBe('Abono para reserva #4738')
   })
 
-  it('final_payment → Pago final para reserva', async () => {
+  it('final_payment → Pago final para reserva #<n>', async () => {
     const { getLedgerDescription } = await import('@/server/services/finance')
-    expect(getLedgerDescription(PaymentType.final_payment, 'booking-abc123')).toBe('Pago final para reserva c123')
+    expect(getLedgerDescription(PaymentType.final_payment, 'booking-abc123', 4738)).toBe('Pago final para reserva #4738')
   })
 
-  it('full_payment → Pago total para reserva', async () => {
+  it('full_payment → Pago total para reserva #<n>', async () => {
     const { getLedgerDescription } = await import('@/server/services/finance')
-    expect(getLedgerDescription(PaymentType.full_payment, 'booking-abc123')).toBe('Pago total para reserva c123')
+    expect(getLedgerDescription(PaymentType.full_payment, 'booking-abc123', 4738)).toBe('Pago total para reserva #4738')
   })
 
-  it('refund → Reembolso para reserva', async () => {
+  it('refund → Reembolso para reserva #<n>', async () => {
     const { getLedgerDescription } = await import('@/server/services/finance')
-    expect(getLedgerDescription(PaymentType.refund, 'booking-abc123')).toBe('Reembolso para reserva c123')
+    expect(getLedgerDescription(PaymentType.refund, 'booking-abc123', 4738)).toBe('Reembolso para reserva #4738')
   })
 
-  it('cancellation_fee → Cargo por cancelación para reserva', async () => {
+  it('cancellation_fee → Cargo por cancelación para reserva #<n>', async () => {
     const { getLedgerDescription } = await import('@/server/services/finance')
-    expect(getLedgerDescription(PaymentType.cancellation_fee, 'booking-abc123')).toBe('Cargo por cancelación para reserva c123')
+    expect(getLedgerDescription(PaymentType.cancellation_fee, 'booking-abc123', 4738)).toBe('Cargo por cancelación para reserva #4738')
   })
 
-  it('manual_adjustment → Ajuste manual para reserva', async () => {
+  it('manual_adjustment → Ajuste manual para reserva #<n>', async () => {
     const { getLedgerDescription } = await import('@/server/services/finance')
-    expect(getLedgerDescription(PaymentType.manual_adjustment, 'booking-abc123')).toBe('Ajuste manual para reserva c123')
+    expect(getLedgerDescription(PaymentType.manual_adjustment, 'booking-abc123', 4738)).toBe('Ajuste manual para reserva #4738')
+  })
+
+  it('falls back to the cuid slice when bookingNumber is null', async () => {
+    const { getLedgerDescription } = await import('@/server/services/finance')
+    expect(getLedgerDescription(PaymentType.deposit, 'booking-abc123', null)).toBe('Abono para reserva #booking-')
   })
 })
 
 describe('applyApprovedPayment', () => {
   const baseBooking = {
     id: 'booking-1',
+    bookingNumber: 4242,
     businessId: 'biz-1',
     customerId: 'cust-1',
     finalAmount: 20000,
@@ -342,7 +348,7 @@ describe('applyApprovedPayment', () => {
     const ledgerData = tx.ledgerEntry.upsert.mock.calls[0][0].create
     expect(ledgerData.type).toBe('final_payment_paid')
     expect(ledgerData.direction).toBe('income')
-    expect(ledgerData.description).toBe('Pago final para reserva ng-1')
+    expect(ledgerData.description).toBe('Pago final para reserva #4242')
   })
 
   it('does not duplicate Payment or LedgerEntry for same providerPaymentId', async () => {
@@ -724,7 +730,7 @@ describe('applyApprovedPayment', () => {
       const ledgerData = tx.ledgerEntry.upsert.mock.calls[0][0].create
       expect(ledgerData.type).toBe('final_payment_paid')
       expect(ledgerData.direction).toBe('income')
-      expect(ledgerData.description).toBe('Pago final para reserva ng-1')
+      expect(ledgerData.description).toBe('Pago final para reserva #4242')
     })
 
     it('throws when explicit payment paymentType does not match', async () => {

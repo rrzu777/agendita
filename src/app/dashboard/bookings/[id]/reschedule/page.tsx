@@ -4,6 +4,7 @@ import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { prisma } from '@/lib/db'
 import { RescheduleForm } from './reschedule-form'
 import { formatInTimeZone } from 'date-fns-tz'
+import { formatBookingNumber } from '@/lib/bookings/number'
 
 interface ReschedulePageProps {
   params: Promise<{ id: string }>
@@ -38,7 +39,7 @@ export default async function ReschedulePage({ params }: ReschedulePageProps) {
 
   return (
     <div>
-      <DashboardHeader title="Reprogramar reserva" subtitle={booking.service?.name || 'Servicio'} />
+      <DashboardHeader title="Reprogramar reserva" subtitle={`${booking.service?.name || 'Servicio'} · ${formatBookingNumber(booking.bookingNumber, booking.id)}`} />
       <div className="p-5 md:p-10">
         <RescheduleForm
           bookingId={booking.id}

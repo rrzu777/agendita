@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import { BookingStatus, BookingPaymentStatus, PaymentProvider, PaymentType } from '@prisma/client'
 import { assertBookingPayable } from '@/lib/booking-payments'
+import { formatBookingNumber } from '@/lib/bookings/number'
 import type { LedgerEntryType, LedgerDirection } from '@prisma/client'
 
 /**
@@ -48,8 +49,8 @@ export function mapPaymentTypeToLedgerDirection(paymentType: PaymentType): Ledge
 /**
  * Description según paymentType para la entrada de ledger.
  */
-export function getLedgerDescription(paymentType: PaymentType, bookingId: string): string {
-  const suffix = `reserva ${bookingId.slice(-4)}`
+export function getLedgerDescription(paymentType: PaymentType, bookingId: string, bookingNumber?: number | null): string {
+  const suffix = `reserva ${formatBookingNumber(bookingNumber, bookingId)}`
   switch (paymentType) {
     case 'deposit':
       return `Abono para ${suffix}`
@@ -206,7 +207,7 @@ export async function applyApprovedPayment({
       direction: mapPaymentTypeToLedgerDirection(payment.paymentType),
       amount: payment.amount,
       currency,
-      description: getLedgerDescription(payment.paymentType, booking.id),
+      description: getLedgerDescription(payment.paymentType, booking.id, booking.bookingNumber),
       occurredAt: new Date(),
       createdByUserId: createdByUserId ?? null,
     },

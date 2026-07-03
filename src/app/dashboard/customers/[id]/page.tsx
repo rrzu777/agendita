@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { getCustomerDetail } from '@/server/actions/customers'
+import { formatBookingNumber } from '@/lib/bookings/number'
 import { getCustomerLoyalty, getLoyaltyConfig } from '@/server/actions/loyalty'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { normalizePhone } from '@/lib/customers/phone'
@@ -242,6 +243,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <p className="font-semibold text-primary">{booking.serviceName}</p>
+                            <p className="text-xs text-muted-foreground">{formatBookingNumber(booking.bookingNumber, booking.id)}</p>
                             <p className="text-xs text-muted-foreground">
                               {new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })}{' '}
                               {new Date(booking.startDateTime).toLocaleTimeString('es-CL', {
@@ -289,7 +291,8 @@ export default async function CustomerDetailPage({ params }: Props) {
                         {customer.bookings.map((booking) => (
                           <TableRow key={booking.id}>
                             <TableCell className="font-semibold text-primary">
-                              {booking.serviceName}
+                              <div>{booking.serviceName}</div>
+                              <div className="text-xs font-normal text-muted-foreground">{formatBookingNumber(booking.bookingNumber, booking.id)}</div>
                             </TableCell>
                             <TableCell className="text-sm text-muted-foreground">
                               {new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })}{' '}
