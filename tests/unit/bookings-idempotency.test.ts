@@ -3,7 +3,7 @@ import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 
 // Mocks de dependencias server-only
 const mockPrisma = {
-  business: { findUnique: vi.fn() },
+  business: { findUnique: vi.fn(), update: vi.fn().mockResolvedValue({ bookingNumberSeq: 4242 }) },
   service: { findFirst: vi.fn() },
   booking: {
     findUnique: vi.fn(),

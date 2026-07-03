@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { prisma } from '@/lib/db'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { deriveConfirmationState } from '@/lib/payments/confirmation-state'
+import { formatBookingNumber } from '@/lib/bookings/number'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
@@ -157,7 +158,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
 
             <div className="mt-5 rounded-lg bg-muted/50 px-4 py-3 text-center">
               <p className="text-sm text-muted-foreground">
-                Tu código de reserva: <span className="font-mono font-semibold text-primary">{booking.id.slice(0, 8).toUpperCase()}</span>
+                Tu código de reserva: <span className="font-mono font-semibold text-primary">{formatBookingNumber(booking.bookingNumber, booking.id)}</span>
               </p>
             </div>
           </div>

@@ -2,6 +2,7 @@ export type ManualPaymentMode = 'fixed' | 'percentage'
 
 export type ManualPaymentBooking = {
   id: string
+  bookingNumber: number | null
   status: string
   depositPaid: number
   depositRequired: number

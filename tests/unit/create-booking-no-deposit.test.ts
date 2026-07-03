@@ -93,7 +93,7 @@ function setupMocks(depositAmount: number, servicePrice: number) {
   mockPrisma.booking.create.mockResolvedValue(createBookingResult)
   mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
     const tx = {
-      business: { findUnique: mockPrisma.business.findUnique },
+      business: { findUnique: mockPrisma.business.findUnique, update: vi.fn().mockResolvedValue({ bookingNumberSeq: 4242 }) },
       service: { findFirst: mockPrisma.service.findFirst },
       booking: { create: mockPrisma.booking.create },
       customer: {

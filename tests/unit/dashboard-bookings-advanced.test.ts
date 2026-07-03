@@ -12,6 +12,7 @@ const mockPrisma = {
   promotion: { findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   promotionGrant: { findFirst: vi.fn().mockResolvedValue(null) },
   promotionRedemption: { count: vi.fn(), create: vi.fn() },
+  business: { update: vi.fn().mockResolvedValue({ bookingNumberSeq: 4242 }) },
   $transaction: vi.fn(),
 }
 
@@ -73,6 +74,7 @@ function setupTx() {
     promotion: mockPrisma.promotion,
     promotionGrant: mockPrisma.promotionGrant,
     promotionRedemption: mockPrisma.promotionRedemption,
+    business: mockPrisma.business,
   }))
 }
 

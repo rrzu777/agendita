@@ -15,6 +15,7 @@ import {
   type ManualPaymentBooking,
   type ManualPaymentMode,
 } from './manual-payment-utils'
+import { formatBookingNumber } from '@/lib/bookings/number'
 
 const PAYMENT_METHODS = ['Efectivo', 'Transferencia', 'Tarjeta', 'Mercado Pago'] as const
 const OTHER = 'Otro'
@@ -148,7 +149,7 @@ export function ManualPaymentDialog({
               <option value="">Selecciona una reserva</option>
               {payableBookings.map((booking) => (
                 <option key={booking.id} value={booking.id}>
-                  {booking.customer?.name ? `${booking.customer.name} - ` : `Reserva ${booking.id.slice(-4)} - `}
+                  {booking.customer?.name ? `${booking.customer.name} - ` : `Reserva ${formatBookingNumber(booking.bookingNumber, booking.id)} - `}
                   {formatMoney(booking.remainingBalance, businessCurrency)} pendiente
                 </option>
               ))}
