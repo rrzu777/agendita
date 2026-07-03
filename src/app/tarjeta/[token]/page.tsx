@@ -51,7 +51,9 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
         })
       : Promise.resolve([] as { id: string; name: string; pointsCost: number | null }[]),
     prisma.promotionGrant.findMany({
-      where: { customerId: customer.id, businessId: customer.businessId, status: 'active' },
+      // Excluir grants de paquete prepago (packagePurchaseId no null): se consumen
+      // automáticamente en la reserva, no son recompensas al portador para la tarjeta.
+      where: { customerId: customer.id, businessId: customer.businessId, status: 'active', packagePurchaseId: null },
       orderBy: { createdAt: 'desc' },
       include: { promotion: { select: { name: true } } },
     }),
