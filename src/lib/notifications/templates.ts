@@ -42,6 +42,12 @@ function footer(businessName: string): string {
   return `<hr style="border:0;border-top:1px solid #e0e0e0;margin:24px 0 0"><p style="font-size:12px;color:#999;margin-top:8px">Enviado por ${escapeHtml(businessName)} a través de Agendita</p>`
 }
 
+function bookingNumberRowHtml(n: number | null | undefined): string {
+  return n != null
+    ? `<tr><td style="padding:8px 0;color:#666">Reserva</td><td style="padding:8px 0;font-weight:600">#${n}</td></tr>`
+    : ''
+}
+
 function loyaltyLinkHtml(link: string | undefined): string {
   return link
     ? `<p style="margin-top:16px"><a href="${escapeHtml(link)}" style="color:#e91e63;text-decoration:none;font-weight:600">Ver mi tarjeta de puntos</a></p>`
@@ -72,6 +78,7 @@ export function bookingConfirmationCustomerHtml(data: BookingEmailData): string 
     ${header('¡Reserva confirmada!')}
     <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, tu reserva está confirmada y lista en la agenda.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      ${bookingNumberRowHtml(data.bookingNumber)}
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${dateStr}</td></tr>
       ${data.businessAddress ? `<tr><td style="padding:8px 0;color:#666">Dirección</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.businessAddress)}</td></tr>` : ''}
@@ -95,6 +102,7 @@ export function bookingConfirmationCustomerText(data: BookingEmailData): string 
     ``,
     `Hola ${data.customerName}, tu reserva está confirmada y lista en la agenda.`,
     ``,
+    ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
     `Servicio: ${data.serviceName}`,
     `Fecha y hora: ${dateStr}`,
   ]
@@ -136,6 +144,7 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
     ${header('Reserva recibida')}
     <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, recibimos tu reserva. Está pendiente de pago para quedar confirmada.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      ${bookingNumberRowHtml(data.bookingNumber)}
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${dateStr}</td></tr>
       ${data.businessAddress ? `<tr><td style="padding:8px 0;color:#666">Dirección</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.businessAddress)}</td></tr>` : ''}
@@ -159,6 +168,7 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
     ``,
     `Hola ${data.customerName}, recibimos tu reserva. Está pendiente de pago para quedar confirmada.`,
     ``,
+    ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
     `Servicio: ${data.serviceName}`,
     `Fecha y hora: ${dateStr}`,
   ]
@@ -191,6 +201,7 @@ export function newBookingBusinessHtml(data: NewBookingBusinessEmailData): strin
     ${header('Nueva reserva recibida')}
     <p style="font-size:15px">${escapeHtml(data.customerName)} acaba de agendar una cita.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      ${bookingNumberRowHtml(data.bookingNumber)}
       <tr><td style="padding:8px 0;color:#666">Cliente</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Teléfono</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerPhone)}</td></tr>
       ${data.customerEmail ? `<tr><td style="padding:8px 0;color:#666">Email</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerEmail)}</td></tr>` : ''}
@@ -214,6 +225,7 @@ export function newBookingBusinessText(data: NewBookingBusinessEmailData): strin
     ``,
     `${data.customerName} acaba de agendar una cita.`,
     ``,
+    ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
     `Cliente: ${data.customerName}`,
     `Teléfono: ${data.customerPhone}`,
   ]
@@ -436,6 +448,7 @@ export function bookingReminderHtml(data: ReminderEmailData): string {
   return baseHtml(`
     ${header('Recordatorio de tu cita')}
     <p style="font-size:15px">Hola ${escapeHtml(data.customerName)},</p>
+    ${data.bookingNumber != null ? `<p style="font-size:13px;color:#999;margin:0 0 8px">Reserva #${data.bookingNumber}</p>` : ''}
     <p style="font-size:14px;color:#666">Tu cita de <strong>${escapeHtml(data.serviceName)}</strong> es mañana:</p>
     <div style="background:#f9f9f9;border-radius:12px;padding:20px;margin:16px 0">
       <p style="font-size:18px;font-weight:600;color:#1a1a2e;margin:0">${dateStr}</p>
@@ -460,6 +473,7 @@ export function bookingReminderText(data: ReminderEmailData): string {
     ``,
     `Hola ${data.customerName},`,
     ``,
+    ...(data.bookingNumber != null ? [`Reserva #${data.bookingNumber}`] : []),
     `Tu cita de ${data.serviceName} es mañana:`,
     ``,
     `${dateStr}`,

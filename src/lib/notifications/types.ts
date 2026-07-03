@@ -7,6 +7,7 @@ export interface EmailResult {
 
 export interface BookingEmailData {
   businessName: string
+  bookingNumber?: number | null
   businessReplyToEmail?: string | null
   businessWhatsapp?: string | null
   businessAddress?: string | null
@@ -52,6 +53,7 @@ export interface ReviewRequestEmailData {
 
 export interface NewBookingBusinessEmailData {
   businessName: string
+  bookingNumber?: number | null
   customerName: string
   customerPhone: string
   customerEmail?: string | null
@@ -81,6 +83,7 @@ export interface NotificationResult {
 
 export interface ReminderEmailData {
   businessName: string
+  bookingNumber?: number | null
   businessReplyToEmail?: string | null
   customerName: string
   customerEmail: string
