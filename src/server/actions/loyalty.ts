@@ -151,7 +151,9 @@ export async function getCustomerLoyalty(customerId: string) {
     getLoyaltyBalance(prisma, customerId, businessId),
     getLoyaltyHistory(prisma, customerId, businessId, 50),
     prisma.promotionGrant.findMany({
-      where: { customerId, businessId, status: 'active' },
+      // Excluir grants de paquete prepago: se consumen automáticamente en la reserva,
+      // no son recompensas al portador para mostrar/canjear en la tarjeta.
+      where: { customerId, businessId, status: 'active', packagePurchaseId: null },
       orderBy: { createdAt: 'desc' },
       include: { promotion: { select: { name: true } } },
     }),

@@ -10,7 +10,7 @@ const mockPrisma = {
   customer: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   payment: { create: vi.fn() },
   promotion: { findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
-  promotionGrant: { findFirst: vi.fn().mockResolvedValue(null) },
+  promotionGrant: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
   promotionRedemption: { count: vi.fn(), create: vi.fn() },
   business: { update: vi.fn().mockResolvedValue({ bookingNumberSeq: 4242 }) },
   $transaction: vi.fn(),

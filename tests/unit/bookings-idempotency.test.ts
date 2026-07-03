@@ -18,6 +18,7 @@ const mockPrisma = {
       { user: { email: 'owner@test.com', name: 'Owner' } },
     ]),
   },
+  promotionGrant: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
   $transaction: vi.fn(),
 }
 

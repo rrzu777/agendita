@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { BookingData } from './wizard'
 import { createBooking } from '@/server/actions/bookings'
 import { previewPromotion } from '@/server/actions/promotions'
+import { usePackageAvailability } from '@/lib/packages/use-package-availability'
 import { initiatePayment, verifyAndConfirmPayment, getOnlinePaymentAvailability } from '@/server/actions/payments'
 import { formatMoney } from '@/lib/money'
 import { AlertCircle, Loader2 } from 'lucide-react'
@@ -72,18 +73,33 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
   const [promoError, setPromoError] = useState<string | null>(null)
   const [promoPending, setPromoPending] = useState(false)
 
-  // Valores efectivos: si hay un código aplicado, reflejan lo que el servidor
-  // cobrará (el servidor sigue siendo autoritativo; esto es solo display).
-  // depositRequired espeja la lógica server: min(depositAmount, finalAmount).
-  const effectiveFinalPrice = appliedPromo ? appliedPromo.finalAmount : data.servicePrice
-  const effectiveDeposit = appliedPromo
-    ? Math.min(data.serviceDeposit, appliedPromo.finalAmount)
-    : data.serviceDeposit
+  // Paquete prepago: si la clienta tiene sesiones que cubren este servicio, se
+  // ofrece usarlas (precedencia sobre promo). El servidor aplica el paquete en la
+  // transacción; skipPackage:!usePackage respeta la elección de la clienta.
+  const { remaining: packageRemaining, usePackage, setUsePackage } =
+    usePackageAvailability(businessId, data.customerPhone, data.serviceId)
 
-  // Un código 100%-off (finalAmount <= 0) hace que la reserva no requiera pago
-  // online: el servidor la marca confirmada/pagada. Tratarla como path gratuito
-  // para no mostrar un botón "Pagar abono $0".
-  const promoMakesFree = appliedPromo != null && appliedPromo.finalAmount <= 0
+  const packageCovers = packageRemaining > 0 && usePackage
+
+  // Valores efectivos: reflejan lo que el servidor cobrará (el servidor sigue siendo
+  // autoritativo; esto es solo display). Un paquete que cubre el servicio deja la
+  // reserva en $0 (el servidor la marca confirmada/pagada), así que tiene precedencia
+  // sobre el código. depositRequired espeja la lógica server: min(depositAmount, finalAmount).
+  const effectiveFinalPrice = packageCovers
+    ? 0
+    : appliedPromo
+      ? appliedPromo.finalAmount
+      : data.servicePrice
+  const effectiveDeposit = packageCovers
+    ? 0
+    : appliedPromo
+      ? Math.min(data.serviceDeposit, appliedPromo.finalAmount)
+      : data.serviceDeposit
+
+  // Un código 100%-off (finalAmount <= 0) o un paquete que cubre el servicio hacen que
+  // la reserva no requiera pago online: el servidor la marca confirmada/pagada. Se trata
+  // como path gratuito para no mostrar un botón "Pagar abono $0" ni llamar initiatePayment.
+  const promoMakesFree = (appliedPromo != null && appliedPromo.finalAmount <= 0) || packageCovers
 
   const noDepositNeeded = effectiveDeposit <= 0
   const isFreeService = effectiveFinalPrice <= 0
@@ -176,6 +192,26 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
       </div>
   )
 
+  const packageSection = packageRemaining > 0 ? (
+      <div className="mb-6 rounded-xl border border-border/60 bg-green-50 p-4">
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            checked={usePackage}
+            onChange={(e) => setUsePackage(e.target.checked)}
+            className="mt-0.5 size-4 rounded border-border accent-primary"
+          />
+          <span>
+            <span className="font-semibold text-green-800">Usar mi paquete</span>
+            <span className="mt-0.5 block text-green-800">
+              Tenés un paquete que cubre este servicio (quedan {packageRemaining} sesiones).
+              {usePackage && ' Se usará una sesión y no se cobrará pago.'}
+            </span>
+          </span>
+        </label>
+      </div>
+  ) : null
+
   /* eslint-disable react-hooks/set-state-in-effect -- intentional reset-before-async-fetch
      so stale availability isn't shown while re-checking; guarded by the deps. */
   useEffect(() => {
@@ -222,6 +258,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
         acceptedTerms,
         promotionCode: appliedPromo?.code,
         referralToken,
+        skipPackage: !usePackage,
       }, businessId)
 
       setStep('success')
@@ -257,6 +294,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
         acceptedTerms,
         promotionCode: appliedPromo?.code,
         referralToken,
+        skipPackage: !usePackage,
       }, businessId)
 
       const paymentResult = await initiatePayment({
@@ -335,11 +373,12 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
           )}
         </div>
 
-        {promoSection}
+        {packageSection}
+        {!packageCovers && promoSection}
 
         {isFreeService ? (
           <div className="mb-6 rounded-xl bg-green-50 p-4 text-sm text-green-800">
-            <p className="font-semibold">{promoMakesFree ? 'Tu código cubre el total' : 'Este servicio es gratuito'}</p>
+            <p className="font-semibold">{packageCovers ? 'Tu paquete cubre esta sesión' : promoMakesFree ? 'Tu código cubre el total' : 'Este servicio es gratuito'}</p>
             <p className="mt-1">No requiere pago. Tu reserva será confirmada inmediatamente.</p>
           </div>
         ) : (
@@ -393,7 +432,8 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
           <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono requerido</span><span className="font-semibold text-primary">{formatMoney(effectiveDeposit)}</span></div>
         </div>
 
-        {promoSection}
+        {packageSection}
+        {!packageCovers && promoSection}
 
         <div className="mb-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <AlertCircle className="mt-0.5 size-5 shrink-0" />
@@ -459,7 +499,8 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
         <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono a pagar</span><span className="font-semibold text-primary">{formatMoney(effectiveDeposit)}</span></div>
       </div>
 
-      {promoSection}
+      {packageSection}
+      {!packageCovers && promoSection}
 
       {availability.isMock && (
         <div className="mb-4 rounded-xl border border-border/70 bg-secondary/40 px-4 py-3 text-sm text-primary">

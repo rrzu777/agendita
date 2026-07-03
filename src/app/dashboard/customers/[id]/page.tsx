@@ -7,11 +7,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { getCustomerDetail } from '@/server/actions/customers'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { getCustomerLoyalty, getLoyaltyConfig } from '@/server/actions/loyalty'
+import { getCustomerPackages, listPackageProducts } from '@/server/actions/packages'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { normalizePhone } from '@/lib/customers/phone'
 import { CustomerEditForm } from './edit-form'
 import { CustomerNotesForm } from './notes-form'
 import { LoyaltyPanel } from './loyalty-panel'
+import { PackagePanel } from './package-panel'
 import {
   ArrowLeft,
   CalendarDays,
@@ -110,10 +112,20 @@ export default async function CustomerDetailPage({ params }: Props) {
     )
   }
 
-  const [{ balance, history, grants, catalog }, loyaltyConfig] = await Promise.all([
-    getCustomerLoyalty(id),
+  // getCustomerLoyalty corre una transacción interactiva (reconcileExpiredGrants). Si se
+  // ejecuta en paralelo con otras lecturas sobre un pool chico (pgbouncer), la tx puede no
+  // conseguir conexión para arrancar (P2028). Se corre sola y luego el resto en paralelo.
+  const { balance, history, grants, catalog } = await getCustomerLoyalty(id)
+  const [loyaltyConfig, packages, packageProducts] = await Promise.all([
     getLoyaltyConfig(),
+    getCustomerPackages(id),
+    listPackageProducts(),
   ])
+
+  const currency = userData.business.currency || 'CLP'
+  const sellableProducts = packageProducts
+    .filter((p) => p.isActive)
+    .map((p) => ({ id: p.id, name: p.name, price: p.price }))
 
   const cleanPhone = normalizePhone(customer.phone)
   const hasWhatsapp = cleanPhone.length >= 8
@@ -217,6 +229,15 @@ export default async function CustomerDetailPage({ params }: Props) {
                 label={loyaltyConfig.pointsLabel}
                 grants={grants}
                 catalog={catalog}
+              />
+            )}
+
+            {(packages.length > 0 || sellableProducts.length > 0) && (
+              <PackagePanel
+                customerId={id}
+                packages={packages}
+                products={sellableProducts}
+                currency={currency}
               />
             )}
           </div>
