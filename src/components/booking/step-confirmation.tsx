@@ -67,7 +67,7 @@ export function StepConfirmation({ data, bookingId, bookingNumber, mode, promo }
         ) : null}
       </div>
 
-      <p className="mb-6 text-sm text-muted-foreground">Número de reserva: {formatBookingNumber(bookingNumber, bookingId ?? '')}</p>
+      <p className="mb-6 text-sm text-muted-foreground">Número de reserva: {formatBookingNumber(bookingNumber, bookingId)}</p>
 
       <Link href="/">
         <Button className="h-12 rounded-full px-7 text-base font-semibold">Volver al inicio</Button>

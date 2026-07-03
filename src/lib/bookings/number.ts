@@ -30,6 +30,6 @@ export function randomBookingNumberBase(): number {
 }
 
 /** Display helper: `#4738`, or a cuid-slice fallback if the number is missing. */
-export function formatBookingNumber(n: number | null | undefined, fallbackId: string): string {
-  return n != null ? `#${n}` : `#${fallbackId.slice(0, 8)}`
+export function formatBookingNumber(n: number | null | undefined, fallbackId: string | null | undefined): string {
+  return n != null ? `#${n}` : `#${(fallbackId ?? '').slice(0, 8)}`
 }
