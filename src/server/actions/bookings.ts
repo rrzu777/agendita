@@ -11,6 +11,7 @@ import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth
 import { logger } from '@/lib/logger'
 
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
+import { assignBookingNumber } from '@/lib/bookings/number'
 import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcement'
 import { normalizePhone } from '@/lib/customers/phone'
 import { addMinutes } from 'date-fns'
@@ -76,7 +77,7 @@ async function fireBookingNotifications(
     depositPaid: number
     remainingBalance: number
     startDateTime: Date
-  } & { id: string; businessId: string },
+  } & { id: string; businessId: string; bookingNumber: number | null },
   serviceName: string,
 ) {
   const customerEmail = booking.customer.email
@@ -96,6 +97,7 @@ async function fireBookingNotifications(
       sendNotificationSafely('customer received', () =>
         sendBookingReceivedToCustomer({
           businessName: business.name,
+          bookingNumber: booking.bookingNumber,
           businessReplyToEmail,
           businessWhatsapp: business.whatsapp,
           businessAddress: business.addressText,
@@ -122,6 +124,7 @@ async function fireBookingNotifications(
     sendMultiNotificationSafely('business notification', () =>
       sendNewBookingNotificationToBusiness(booking.businessId, {
         businessName: business.name,
+        bookingNumber: booking.bookingNumber,
         customerName: booking.customer.name,
         customerPhone: booking.customer.phone,
         customerEmail: customerEmail || null,
@@ -282,6 +285,8 @@ export async function createBooking(data: {
       const holdExpiresAt = status === BookingStatus.pending_payment ? addMinutes(new Date(), 15) : null
       const bookingPaymentStatus = isFreeService ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid
 
+      const bookingNumber = await assignBookingNumber(tx, businessId)
+
       const booking = await tx.booking.create({
         data: {
           businessId,
@@ -298,6 +303,7 @@ export async function createBooking(data: {
           paymentStatus: bookingPaymentStatus,
           holdExpiresAt,
           idempotencyKey: data.idempotencyKey || null,
+          bookingNumber,
         },
         include: {
           service: true,
@@ -778,6 +784,8 @@ export async function createBookingFromDashboard(data: {
       }
     }
 
+    const bookingNumber = await assignBookingNumber(tx, businessId)
+
     const newBooking = await tx.booking.create({
       data: {
         businessId,
@@ -794,6 +802,7 @@ export async function createBookingFromDashboard(data: {
         paymentStatus: initialPaymentStatus,
         internalNotes: data.internalNotes || null,
         holdExpiresAt: status === BookingStatus.pending_payment ? addMinutes(new Date(), 60) : null,
+        bookingNumber,
       },
       include: { service: true, customer: true },
     })

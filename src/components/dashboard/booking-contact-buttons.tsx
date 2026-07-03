@@ -11,6 +11,7 @@ import {
 } from '@/lib/notifications'
 
 export interface BookingContactData {
+  bookingNumber?: number | null
   customerName: string
   customerPhone: string | null
   serviceName: string
@@ -41,6 +42,7 @@ export function BookingContactButtons({ booking, variant = 'default', showRemind
     : booking.startDateTime
 
   const bookingData = {
+    bookingNumber: booking.bookingNumber ?? null,
     customerName: booking.customerName,
     customerPhone: phone,
     serviceName: booking.serviceName,

@@ -2,6 +2,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
 
 export interface BookingWhatsappData {
+  bookingNumber?: number | null
   customerName: string
   customerPhone: string
   serviceName: string
@@ -56,6 +57,7 @@ export function buildBookingConfirmationWhatsappMessage(data: BookingWhatsappDat
     `¡Hola ${data.customerName}! 🎉`,
     `Tu reserva en Agendita fue creada exitosamente:`,
     ``,
+    ...(data.bookingNumber != null ? [`🔖 Reserva #${data.bookingNumber}`] : []),
     `📋 Servicio: ${data.serviceName}`,
     `📅 Fecha y hora: ${dateStr}`,
   ]
@@ -123,6 +125,7 @@ export function buildWhatsappReminderMessage(data: BookingWhatsappData): string 
     `¡Hola ${data.customerName}!`,
     `Te recordamos tu reserva en Agendita:`,
     ``,
+    ...(data.bookingNumber != null ? [`🔖 Reserva #${data.bookingNumber}`] : []),
     `📋 Servicio: ${data.serviceName}`,
     `📅 Fecha y hora: ${dateStr}`,
   ]

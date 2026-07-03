@@ -11,6 +11,7 @@ import { BookingContactButtons } from '@/components/dashboard/booking-contact-bu
 import { CancelBookingButton } from '@/components/dashboard/cancel-booking-button'
 import { ManualPaymentDialog } from '@/components/dashboard/manual-payment-dialog'
 import { isManualPaymentAllowed } from '@/components/dashboard/manual-payment-utils'
+import { formatBookingNumber } from '@/lib/bookings/number'
 
 const statusLabels: Record<string, string> = {
   pending_payment: 'Pendiente de pago',
@@ -42,9 +43,10 @@ function EmptyState() {
   )
 }
 
-function BookingCard({ booking, businessCurrency, businessTimezone, businessAddress }: {
+export function BookingCard({ booking, businessCurrency, businessTimezone, businessAddress }: {
   booking: {
     id: string
+    bookingNumber: number | null
     startDateTime: Date
     status: string
     depositPaid: number
@@ -67,7 +69,7 @@ function BookingCard({ booking, businessCurrency, businessTimezone, businessAddr
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-lg font-semibold text-primary truncate">{booking.service?.name || 'Servicio'}</h3>
-          <p className="text-sm text-muted-foreground">#{booking.id.slice(0, 8)}</p>
+          <p className="text-sm text-muted-foreground">{formatBookingNumber(booking.bookingNumber, booking.id)}</p>
         </div>
         <Badge className={`shrink-0 ${statusColors[booking.status]}`}>
           {statusLabels[booking.status]}
@@ -105,6 +107,7 @@ function BookingCard({ booking, businessCurrency, businessTimezone, businessAddr
         <BookingContactButtons
           variant="compact"
           booking={{
+            bookingNumber: booking.bookingNumber,
             customerName: booking.customer?.name || '',
             customerPhone: booking.customer?.phone || null,
             serviceName: booking.service?.name || '',
@@ -238,7 +241,7 @@ export default async function BookingsPage() {
                     <TableRow key={booking.id}>
                       <TableCell className="font-semibold text-primary">
                         <div>{booking.service?.name || 'Servicio'}</div>
-                        <div className="text-xs font-normal text-muted-foreground">#{booking.id.slice(0, 8)}</div>
+                        <div className="text-xs font-normal text-muted-foreground">{formatBookingNumber(booking.bookingNumber, booking.id)}</div>
                       </TableCell>
                       <TableCell>
                         <div>{new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })}</div>
@@ -266,6 +269,7 @@ export default async function BookingsPage() {
                         <BookingContactButtons
                           variant="compact"
                           booking={{
+                            bookingNumber: booking.bookingNumber,
                             customerName: booking.customer?.name || '',
                             customerPhone: booking.customer?.phone || null,
                             serviceName: booking.service?.name || '',

@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/auth/middleware'
 import { prisma } from '@/lib/db'
 import { generateDefaultSubdomain } from '@/lib/business/subdomain'
+import { randomBookingNumberBase } from '@/lib/bookings/number'
 import { Prisma } from '@prisma/client'
 
 type RecoverBusinessResult =
@@ -126,6 +127,7 @@ export async function recoverBusiness(): Promise<RecoverBusinessResult> {
           planId: betaPlan.id,
           subscriptionStatus: 'trialing',
           trialEndsAt: thirtyDaysFromNow,
+          bookingNumberSeq: randomBookingNumberBase(),
         },
       })
 

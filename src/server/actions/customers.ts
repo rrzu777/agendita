@@ -138,6 +138,7 @@ export type CustomerDetail = {
   updatedAt: Date
   bookings: {
     id: string
+    bookingNumber: number | null
     serviceName: string
     startDateTime: Date
     status: string
@@ -174,6 +175,7 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
       orderBy: { startDateTime: 'desc' },
       select: {
         id: true,
+        bookingNumber: true,
         startDateTime: true,
         status: true,
         totalPrice: true,
@@ -240,6 +242,7 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
     updatedAt: customer.updatedAt,
     bookings: bookings.map((b) => ({
       id: b.id,
+      bookingNumber: b.bookingNumber,
       serviceName: b.service.name,
       startDateTime: b.startDateTime,
       status: b.status,

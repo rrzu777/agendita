@@ -235,6 +235,7 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
 
   return sendBookingConfirmationToCustomer({
     businessName: business.name,
+    bookingNumber: booking.bookingNumber,
     businessReplyToEmail: await getBusinessReplyToEmail(businessId),
     businessWhatsapp: business.whatsapp,
     businessAddress: business.addressText,
@@ -411,6 +412,7 @@ export async function sendBookingReminderNotification(
 
   return sendReminderEmail({
     businessName: business.name,
+    bookingNumber: booking.bookingNumber,
     businessWhatsapp: business.whatsapp,
     businessAddress: business.addressText,
     businessTimezone: tz,

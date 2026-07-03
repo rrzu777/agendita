@@ -30,6 +30,7 @@ const statusBadgeClasses: Record<string, string> = {
 
 export type CalendarBooking = {
   id: string
+  bookingNumber: number | null
   status: string
   startDateTime: string
   endDateTime: string

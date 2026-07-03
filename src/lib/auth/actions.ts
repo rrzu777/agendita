@@ -4,6 +4,7 @@ import { createClient } from './middleware'
 import { prisma } from '@/lib/db'
 import { redirect } from 'next/navigation'
 import { validateSubdomain, generateDefaultSubdomain } from '@/lib/business/subdomain'
+import { randomBookingNumberBase } from '@/lib/bookings/number'
 import { RegistrationError } from './registration-error'
 import { Prisma } from '@prisma/client'
 import { getAppUrl } from '@/lib/business/urls'
@@ -279,6 +280,7 @@ export async function createBusinessForUser({ userId, email, name, subdomain, ca
         planId: betaPlan.id,
         subscriptionStatus: 'trialing',
         trialEndsAt: thirtyDaysFromNow,
+        bookingNumberSeq: randomBookingNumberBase(),
       },
     })
 
