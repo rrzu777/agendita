@@ -9,6 +9,8 @@ import {
   newBookingBusinessText,
   bookingCancelledCustomerHtml,
   bookingCancelledCustomerText,
+  bookingRescheduledCustomerHtml,
+  bookingRescheduledCustomerText,
   reviewRequestHtml,
   reviewRequestText,
 } from '@/lib/notifications/templates'
@@ -55,6 +57,20 @@ const sampleCancellationData = {
   serviceName: 'Manicure semipermanente',
   startDateTime: new Date('2026-06-15T18:00:00Z'),
   businessTimezone: 'America/Santiago',
+}
+
+const sampleRescheduleData = {
+  businessName: 'Nails by Ana',
+  businessReplyToEmail: 'owner@nails.com',
+  businessWhatsapp: '+56912345678',
+  businessAddress: 'Av. Siempre Viva 742, Santiago',
+  businessTimezone: 'America/Santiago',
+  customerName: 'Maria',
+  customerEmail: 'maria@example.com',
+  customerPhone: '+56987654321',
+  serviceName: 'Manicure semipermanente',
+  previousStartDateTime: new Date('2026-06-15T18:00:00Z'),
+  newStartDateTime: new Date('2026-06-16T19:30:00Z'),
 }
 
 const sampleReviewData = {
@@ -208,6 +224,28 @@ describe('templates: bookingCancelledCustomerText', () => {
     const text = bookingCancelledCustomerText(sampleCancellationData)
     expect(text).toContain('Maria')
     expect(text).toContain('cancelada')
+  })
+})
+
+describe('templates: bookingRescheduledCustomer', () => {
+  it('contains previous and new schedule in html', () => {
+    const html = bookingRescheduledCustomerHtml(sampleRescheduleData)
+
+    expect(html).toContain('Maria')
+    expect(html).toContain('Manicure semipermanente')
+    expect(html).toContain('Horario anterior')
+    expect(html).toContain('Nuevo horario')
+    expect(html).toContain('Av. Siempre Viva')
+    expect(html).toContain('wa.me/56912345678')
+  })
+
+  it('contains previous and new schedule in text', () => {
+    const text = bookingRescheduledCustomerText(sampleRescheduleData)
+
+    expect(text).toContain('Reserva reprogramada')
+    expect(text).toContain('Horario anterior')
+    expect(text).toContain('Nuevo horario')
+    expect(text).toContain('Manicure semipermanente')
   })
 })
 

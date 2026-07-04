@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const mockRequireBusinessRole = vi.fn()
 const mockGenerateSlots = vi.fn()
 const mockAssertSlotIsAvailable = vi.fn()
+const mockSendBookingRescheduledNotification = vi.fn()
+const mockSendNotificationSafely = vi.fn()
 
 const mockPrisma = {
   booking: {
@@ -44,8 +46,10 @@ vi.mock('@/lib/availability/validation', () => ({
 }))
 
 vi.mock('@/lib/notifications', () => ({
+  getBusinessReplyToEmail: vi.fn().mockResolvedValue('owner@example.com'),
   sendBookingCancelledNotification: vi.fn(),
-  sendNotificationSafely: vi.fn().mockResolvedValue({ success: true }),
+  sendBookingRescheduledNotification: (...args: unknown[]) => mockSendBookingRescheduledNotification(...args),
+  sendNotificationSafely: (...args: unknown[]) => mockSendNotificationSafely(...args),
 }))
 
 const { getAvailableSlotsForReschedule } = await import('@/server/actions/availability')
@@ -60,6 +64,8 @@ const booking = {
   startDateTime: new Date('2026-06-15T14:00:00Z'),
   endDateTime: new Date('2026-06-15T15:00:00Z'),
   service: { id: 'svc-1', durationMinutes: 60, name: 'Manicure', isActive: true },
+  customer: { name: 'Maria', email: 'maria@example.com', phone: '+56912345678' },
+  bookingNumber: 42,
   business: { timezone: 'America/Santiago', bookingWindowDays: 90 },
 }
 
@@ -149,9 +155,19 @@ describe('getAvailableSlotsForReschedule', () => {
 describe('rescheduleBooking terminal states and availability', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockRequireBusinessRole.mockResolvedValue({ businessId, business: { timezone: 'America/Santiago' } })
+    mockRequireBusinessRole.mockResolvedValue({
+      businessId,
+      business: {
+        name: 'Nails by Ana',
+        timezone: 'America/Santiago',
+        whatsapp: '+56911111111',
+        addressText: 'Av. Principal 123',
+      },
+    })
     mockPrisma.booking.findFirst.mockResolvedValue(booking)
     mockPrisma.booking.updateMany.mockResolvedValue({ count: 1 })
+    mockSendNotificationSafely.mockImplementation(async (_label, fn) => fn())
+    mockSendBookingRescheduledNotification.mockResolvedValue({ success: true })
     mockPrisma.$transaction.mockImplementation(async (fn) => fn({
       booking: { updateMany: mockPrisma.booking.updateMany },
     }))
@@ -167,6 +183,27 @@ describe('rescheduleBooking terminal states and availability', () => {
       businessId,
       serviceId: 'svc-1',
       excludeBookingId: 'booking-1',
+    }))
+  })
+
+  it('notifies the customer by email after the booking is rescheduled', async () => {
+    const newStart = new Date('2026-06-16T14:00:00Z')
+
+    await rescheduleBooking('booking-1', newStart)
+
+    expect(mockSendBookingRescheduledNotification).toHaveBeenCalledWith(expect.objectContaining({
+      businessName: 'Nails by Ana',
+      businessReplyToEmail: 'owner@example.com',
+      businessWhatsapp: '+56911111111',
+      businessAddress: 'Av. Principal 123',
+      businessTimezone: 'America/Santiago',
+      customerName: 'Maria',
+      customerEmail: 'maria@example.com',
+      customerPhone: '+56912345678',
+      serviceName: 'Manicure',
+      previousStartDateTime: new Date('2026-06-15T14:00:00Z'),
+      newStartDateTime: newStart,
+      bookingNumber: 42,
     }))
   })
 

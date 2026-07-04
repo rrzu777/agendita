@@ -25,6 +25,15 @@ export interface ReviewRequestWhatsappData {
   loyaltyCardLink?: string
 }
 
+export interface BookingRescheduledWhatsappData {
+  customerName: string
+  serviceName: string
+  previousStartDateTime: Date
+  newStartDateTime: Date
+  businessTimezone: string
+  businessAddress?: string | null
+}
+
 function fmtDate(date: Date, timezone: string): string {
   return formatInTimeZone(date, timezone, "EEEE d 'de' MMMM 'de' yyyy, HH:mm", { locale: es })
 }
@@ -151,4 +160,25 @@ export function buildWhatsappReminderMessage(data: BookingWhatsappData): string 
 export function buildWhatsappReminderUrl(phone: string, data: BookingWhatsappData): string {
   const message = buildWhatsappReminderMessage(data)
   return buildWhatsappUrl(phone, message)
+}
+
+export function buildBookingRescheduledWhatsappMessage(data: BookingRescheduledWhatsappData): string {
+  const previousDateStr = fmtDate(data.previousStartDateTime, data.businessTimezone)
+  const newDateStr = fmtDate(data.newStartDateTime, data.businessTimezone)
+
+  const lines = [
+    `Hola ${data.customerName}, te avisamos que tu reserva fue reprogramada:`,
+    ``,
+    `Servicio: ${data.serviceName}`,
+    `Horario anterior: ${previousDateStr}`,
+    `Nuevo horario: ${newDateStr}`,
+  ]
+  if (data.businessAddress) lines.push(`Dirección: ${data.businessAddress}`)
+  lines.push(``, `Si este nuevo horario no te acomoda, respondeme por aquí.`)
+
+  return lines.join('\n')
+}
+
+export function buildBookingRescheduledWhatsappUrl(phone: string, data: BookingRescheduledWhatsappData): string {
+  return buildWhatsappUrl(phone, buildBookingRescheduledWhatsappMessage(data))
 }

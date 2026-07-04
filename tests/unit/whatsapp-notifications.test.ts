@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
+  buildBookingRescheduledWhatsappMessage,
+  buildBookingRescheduledWhatsappUrl,
   buildWhatsappReminderMessage,
   buildWhatsappReminderUrl,
 } from '@/lib/notifications/whatsapp'
@@ -100,5 +102,41 @@ describe('buildWhatsappReminderUrl', () => {
 
     const decoded = decodeURIComponent(url.split('?text=')[1])
     expect(decoded).not.toContain('Saldo pendiente')
+  })
+})
+
+describe('buildBookingRescheduledWhatsappUrl', () => {
+  it('generates a prefilled reschedule message with old and new date', () => {
+    const url = buildBookingRescheduledWhatsappUrl('56912345678', {
+      customerName: 'Maria',
+      serviceName: 'Manicure',
+      previousStartDateTime: new Date('2026-06-15T14:00:00-04:00'),
+      newStartDateTime: new Date('2026-06-16T15:30:00-04:00'),
+      businessTimezone: 'America/Santiago',
+      businessAddress: 'Av. Principal 123',
+    })
+
+    const decoded = decodeURIComponent(url.split('?text=')[1])
+    expect(url).toContain('https://wa.me/56912345678')
+    expect(decoded).toContain('Maria')
+    expect(decoded).toContain('Manicure')
+    expect(decoded).toContain('Horario anterior')
+    expect(decoded).toContain('Nuevo horario')
+    expect(decoded).toContain('Av. Principal 123')
+  })
+})
+
+describe('buildBookingRescheduledWhatsappMessage', () => {
+  it('omits business address when unavailable', () => {
+    const message = buildBookingRescheduledWhatsappMessage({
+      customerName: 'Maria',
+      serviceName: 'Manicure',
+      previousStartDateTime: new Date('2026-06-15T14:00:00-04:00'),
+      newStartDateTime: new Date('2026-06-16T15:30:00-04:00'),
+      businessTimezone: 'America/Santiago',
+      businessAddress: null,
+    })
+
+    expect(message).not.toContain('Dirección')
   })
 })

@@ -44,10 +44,12 @@ export default async function ReschedulePage({ params }: ReschedulePageProps) {
         <RescheduleForm
           bookingId={booking.id}
           customerName={booking.customer?.name || ''}
+          customerPhone={booking.customer?.phone || ''}
           serviceName={booking.service?.name || ''}
           currentDate={formatInTimeZone(booking.startDateTime, timezone, 'yyyy-MM-dd')}
           currentTime={formatInTimeZone(booking.startDateTime, timezone, 'HH:mm')}
           timezone={timezone}
+          businessAddress={userData.business.addressText}
         />
       </div>
     </div>

@@ -7,6 +7,7 @@ import type {
   NewBookingBusinessEmailData,
   ReminderEmailData,
   LoyaltyRewardEmailData,
+  RescheduledEmailData,
 } from './types'
 
 function escapeHtml(str: string): string {
@@ -274,6 +275,55 @@ export function bookingCancelledCustomerText(data: CancellationEmailData): strin
     ``,
     `Enviado por ${data.businessName} a través de Agendita`,
   ].join('\n')
+}
+
+export function bookingRescheduledCustomerHtml(data: RescheduledEmailData): string {
+  const previousDateStr = fmtDate(data.previousStartDateTime, data.businessTimezone)
+  const newDateStr = fmtDate(data.newStartDateTime, data.businessTimezone)
+
+  const whatsappSection = data.businessWhatsapp
+    ? `<p style="margin-top:16px"><a href="https://wa.me/${data.businessWhatsapp.replace(/\D/g, '')}" style="color:#25D366;text-decoration:none;font-weight:600">Escribir por WhatsApp</a></p>`
+    : ''
+
+  return baseHtml(`
+    ${header('Reserva reprogramada')}
+    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, ${escapeHtml(data.businessName)} reprogramó tu reserva.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      ${bookingNumberRowHtml(data.bookingNumber)}
+      <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Horario anterior</td><td style="padding:8px 0;font-weight:600">${previousDateStr}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Nuevo horario</td><td style="padding:8px 0;font-weight:600">${newDateStr}</td></tr>
+      ${data.businessAddress ? `<tr><td style="padding:8px 0;color:#666">Dirección</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.businessAddress)}</td></tr>` : ''}
+    </table>
+    <p style="font-size:13px;color:#666;margin-top:16px">Si este nuevo horario no te acomoda, contacta a ${escapeHtml(data.businessName)}.</p>
+    ${whatsappSection}
+    ${footer(data.businessName)}
+  `)
+}
+
+export function bookingRescheduledCustomerText(data: RescheduledEmailData): string {
+  const previousDateStr = fmtDate(data.previousStartDateTime, data.businessTimezone)
+  const newDateStr = fmtDate(data.newStartDateTime, data.businessTimezone)
+
+  const lines = [
+    `Reserva reprogramada`,
+    ``,
+    `Hola ${data.customerName}, ${data.businessName} reprogramó tu reserva.`,
+    ``,
+    ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
+    `Servicio: ${data.serviceName}`,
+    `Horario anterior: ${previousDateStr}`,
+    `Nuevo horario: ${newDateStr}`,
+  ]
+  if (data.businessAddress) lines.push(`Dirección: ${data.businessAddress}`)
+  lines.push(
+    ``,
+    `Si este nuevo horario no te acomoda, contacta a ${data.businessName}.`,
+  )
+  if (data.businessWhatsapp) lines.push(`WhatsApp: https://wa.me/${data.businessWhatsapp.replace(/\D/g, '')}`)
+  lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)
+
+  return lines.join('\n')
 }
 
 export function reviewRequestHtml(data: ReviewRequestEmailData): string {
