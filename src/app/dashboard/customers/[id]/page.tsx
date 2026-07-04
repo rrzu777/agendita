@@ -129,6 +129,7 @@ export default async function CustomerDetailPage({ params }: Props) {
 
   const cleanPhone = normalizePhone(customer.phone)
   const hasWhatsapp = cleanPhone.length >= 8
+  const customerTotalValue = customer.totalPaidApproved + customer.pendingBalance
 
   return (
     <div>
@@ -168,11 +169,17 @@ export default async function CustomerDetailPage({ params }: Props) {
         </div>
 
         {/* Financial summary */}
-        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
           <div className="studio-card p-4">
             <p className="studio-eyebrow">Reservas</p>
             <p className="mt-1 text-2xl font-semibold text-primary">
               {customer.bookingCount}
+            </p>
+          </div>
+          <div className="studio-card p-4">
+            <p className="studio-eyebrow">Total</p>
+            <p className="mt-1 text-2xl font-semibold text-primary">
+              ${formatCLP(customerTotalValue)}
             </p>
           </div>
           <div className="studio-card p-4">

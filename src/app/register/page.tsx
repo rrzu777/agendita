@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import Link from 'next/link'
+import { unstable_rethrow } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,7 +26,9 @@ export default function RegisterPage() {
     { value: 'therapy', label: 'Terapia / consulta' },
   ]
 
-  async function handleSubmit(formData: FormData) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
     setError('')
     setSuccess(false)
 
@@ -37,9 +40,11 @@ export default function RegisterPage() {
     setLoading(true)
 
     try {
+      const formData = new FormData(event.currentTarget)
       await signUp(formData)
       setSuccess(true)
     } catch (err) {
+      unstable_rethrow(err)
       setError(err instanceof Error ? err.message : 'Error al crear cuenta')
     } finally {
       setLoading(false)
@@ -88,7 +93,7 @@ export default function RegisterPage() {
           <CardDescription className="text-base text-muted-foreground">Empieza a recibir reservas online</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
-          <form action={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
               <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
                 {error}
@@ -166,7 +171,13 @@ export default function RegisterPage() {
                 </a>
               </label>
             </div>
-            <Button type="submit" className="h-14 w-full rounded-full text-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]" disabled={loading || !acceptedTerms}>
+            <Button
+              type="submit"
+              className="h-14 w-full rounded-full text-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]"
+              disabled={loading || !acceptedTerms}
+              data-auth-loading={loading ? 'true' : undefined}
+              aria-busy={loading}
+            >
               {loading && <Loader2 className="mr-2 size-4 animate-spin" />}
               {loading ? 'Creando cuenta...' : 'Crear cuenta'}
             </Button>
