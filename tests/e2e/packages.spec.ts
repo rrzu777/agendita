@@ -42,6 +42,12 @@ async function waitForHydration(page: Page): Promise<void> {
   await page.waitForTimeout(800)
 }
 
+async function selectDashboardTime(page: Page, time: string): Promise<void> {
+  const [hour, minute] = time.split(':')
+  await page.getByLabel('Hora hora').selectOption(hour.padStart(2, '0'))
+  await page.getByLabel('Hora minutos').selectOption(minute.padStart(2, '0'))
+}
+
 /** Panel "Paquetes" del detalle de clienta (studio-card cuyo <h3> es "Paquetes"). */
 function packagePanel(page: Page) {
   return page.locator('div.studio-card').filter({
@@ -207,7 +213,7 @@ test.describe('Paquetes prepagados', () => {
     const hour = 9 + Math.floor(Math.random() * 7)
     const minute = [0, 15, 30, 45][Math.floor(Math.random() * 4)]
     await page.locator('input#date').fill(dateStr)
-    await page.locator('input#time').fill(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`)
+    await selectDashboardTime(page, `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`)
 
     const packageToggle = page.locator('label', { hasText: 'Usar paquete' })
     await expect(packageToggle).toBeVisible({ timeout: 15_000 })
