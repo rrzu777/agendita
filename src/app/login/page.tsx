@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import Link from 'next/link'
+import { unstable_rethrow } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,16 +14,20 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  async function handleSubmit(formData: FormData) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
     setError('')
     setLoading(true)
 
     try {
+      const formData = new FormData(event.currentTarget)
       const result = await signIn(formData)
       if (result?.error) {
         setError(result.error)
       }
     } catch (err) {
+      unstable_rethrow(err)
       setError(err instanceof Error ? err.message : 'Error al iniciar sesión')
     } finally {
       setLoading(false)
@@ -48,7 +53,7 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="px-0">
-          <form action={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
               <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
                 {error}
@@ -72,7 +77,13 @@ export default function LoginPage() {
                 <Eye className="pointer-events-none absolute right-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
               </div>
             </div>
-            <Button type="submit" className="h-14 w-full rounded-full text-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]" disabled={loading}>
+            <Button
+              type="submit"
+              className="h-14 w-full rounded-full text-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]"
+              disabled={loading}
+              data-auth-loading={loading ? 'true' : undefined}
+              aria-busy={loading}
+            >
               {loading && <Loader2 className="mr-2 size-4 animate-spin" />}
               {loading ? 'Iniciando sesión...' : 'Iniciar sesión'}
             </Button>
