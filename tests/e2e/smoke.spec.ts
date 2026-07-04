@@ -23,6 +23,12 @@ function setOwnerAuth(page: Page) {
   })
 }
 
+async function selectDashboardTime(page: Page, time: string): Promise<void> {
+  const [hour, minute] = time.split(':')
+  await page.getByLabel('Hora hora').selectOption(hour.padStart(2, '0'))
+  await page.getByLabel('Hora minutos').selectOption(minute.padStart(2, '0'))
+}
+
 function setAdminAuth(page: Page) {
   page.setExtraHTTPHeaders({
     'x-e2e-test-user-email': E2E_ADMIN_EMAIL,
@@ -346,7 +352,7 @@ test.describe('dashboard bookings', () => {
     await page.locator('input#date').fill(dateStr)
     // 10:00 fits every availability rule (incl. Saturday 10:00–15:00) for the
     // selected service duration, regardless of which weekday the date lands on.
-    await page.locator('input#time').fill('10:00')
+    await selectDashboardTime(page, '10:00')
 
     // Submit
     await page.getByRole('button', { name: /crear reserva/i }).click()

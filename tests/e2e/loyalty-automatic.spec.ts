@@ -66,6 +66,12 @@ async function waitForHydration(page: Page): Promise<void> {
   await page.waitForTimeout(800)
 }
 
+async function selectDashboardTime(page: Page, time: string): Promise<void> {
+  const [hour, minute] = time.split(':')
+  await page.getByLabel('Hora hora').selectOption(hour.padStart(2, '0'))
+  await page.getByLabel('Hora minutos').selectOption(minute.padStart(2, '0'))
+}
+
 /** Fecha en día de semana, al menos `afterDays` días en el futuro (idéntico a smoke). */
 function nextBookableDate(afterDays = 3): Date {
   const date = new Date()
@@ -108,7 +114,7 @@ async function createManualBooking(
     await page.getByLabel('Nombre').fill(opts.name)
     await page.getByLabel('Teléfono').fill(opts.phone)
     await page.locator('input#date').fill(dateStr)
-    await page.locator('input#time').fill(time)
+    await selectDashboardTime(page, time)
 
     // Pago total ('full_paid') + método: garantiza estado 'confirmed' AUNQUE el servicio
     // pida abono (con 'none' + abono requerido la reserva nacería 'pending_payment' y NO
