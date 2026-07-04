@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
+import { TimeInput } from '@/components/ui/time-input'
 import { createBookingFromDashboard } from '@/server/actions/bookings'
 import { previewPromotion } from '@/server/actions/promotions'
 import { usePackageAvailability } from '@/lib/packages/use-package-availability'
@@ -386,7 +387,7 @@ export function NewBookingForm({ services, businessId }: NewBookingFormProps) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="time">Hora *</Label>
-              <Input id="time" type="time" required value={time} onChange={(e) => setTime(e.target.value)} className="h-10" />
+              <TimeInput id="time" value={time} onChange={setTime} ariaLabel="Hora" />
             </div>
           </div>
 

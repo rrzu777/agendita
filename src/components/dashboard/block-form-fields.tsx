@@ -2,6 +2,7 @@
 
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { TimeInput } from '@/components/ui/time-input'
 
 interface BlockFormFieldsProps {
   date: string
@@ -36,23 +37,23 @@ export function BlockFormFields({
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <Label htmlFor="start-time">Hora inicio</Label>
-          <Input
+          <TimeInput
             id="start-time"
-            type="time"
             value={startTime}
-            onChange={(e) => onStartTimeChange(e.target.value)}
+            onChange={onStartTimeChange}
+            ariaLabel="Hora inicio"
           />
         </div>
         <div>
           <Label htmlFor="end-time">Hora fin</Label>
-          <Input
+          <TimeInput
             id="end-time"
-            type="time"
             value={endTime}
-            onChange={(e) => onEndTimeChange(e.target.value)}
+            onChange={onEndTimeChange}
+            ariaLabel="Hora fin"
           />
         </div>
       </div>

@@ -17,8 +17,10 @@ describe('BlockFormFields', () => {
       />,
     )
     expect(html).toContain('value="2026-06-01"')
-    expect(html).toContain('value="13:00"')
-    expect(html).toContain('value="14:00"')
+    expect(html).toContain('aria-label="Hora inicio hora"')
+    expect(html).toContain('value="13" selected=""')
+    expect(html).toContain('aria-label="Hora fin hora"')
+    expect(html).toContain('value="14" selected=""')
     expect(html).toContain('value="Almuerzo"')
   })
 })
