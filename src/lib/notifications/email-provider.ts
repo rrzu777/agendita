@@ -12,6 +12,7 @@ import type {
   NewBookingBusinessEmailData,
   ReminderEmailData,
   LoyaltyRewardEmailData,
+  RescheduledEmailData,
 } from './types'
 import {
   bookingConfirmationCustomerHtml,
@@ -22,6 +23,8 @@ import {
   newBookingBusinessText,
   bookingCancelledCustomerHtml,
   bookingCancelledCustomerText,
+  bookingRescheduledCustomerHtml,
+  bookingRescheduledCustomerText,
   reviewRequestHtml,
   reviewRequestText,
   bookingReminderHtml,
@@ -266,6 +269,23 @@ export async function sendBookingCancelledNotification(data: CancellationEmailDa
   return sendEmail(
     data.customerEmail,
     `Reserva cancelada - ${data.businessName}`,
+    html,
+    text,
+    { replyTo: data.businessReplyToEmail },
+  )
+}
+
+export async function sendBookingRescheduledNotification(data: RescheduledEmailData): Promise<EmailResult> {
+  if (!data.customerEmail) {
+    return { success: false, skipped: 'Cliente sin email' }
+  }
+
+  const html = bookingRescheduledCustomerHtml(data)
+  const text = bookingRescheduledCustomerText(data)
+
+  return sendEmail(
+    data.customerEmail,
+    `Reserva reprogramada - ${data.businessName}`,
     html,
     text,
     { replyTo: data.businessReplyToEmail },

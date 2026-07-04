@@ -3,6 +3,7 @@ export {
   sendBookingReceivedToCustomer,
   sendNewBookingNotificationToBusiness,
   sendBookingCancelledNotification,
+  sendBookingRescheduledNotification,
   sendBookingConfirmedNotification,
   sendReviewRequestNotification,
   sendNotificationSafely,
@@ -21,6 +22,8 @@ export {
   buildWhatsappBookingSummaryText,
   buildWhatsappReminderMessage,
   buildWhatsappReminderUrl,
+  buildBookingRescheduledWhatsappMessage,
+  buildBookingRescheduledWhatsappUrl,
 } from './whatsapp'
 export {
   BOOKING_CONFIRMED_TEMPLATE,
@@ -35,6 +38,8 @@ export {
   newBookingBusinessText,
   bookingCancelledCustomerHtml,
   bookingCancelledCustomerText,
+  bookingRescheduledCustomerHtml,
+  bookingRescheduledCustomerText,
   reviewRequestHtml,
   reviewRequestText,
   bookingReminderHtml,
@@ -44,5 +49,5 @@ export {
   loyaltyRewardHtml,
   loyaltyRewardText,
 } from './templates'
-export type { EmailResult, BookingEmailData, CancellationEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, ReminderEmailData, LoyaltyRewardEmailData, NotificationResult } from './types'
-export type { BookingWhatsappData, ReviewRequestWhatsappData } from './whatsapp'
+export type { EmailResult, BookingEmailData, CancellationEmailData, RescheduledEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, ReminderEmailData, LoyaltyRewardEmailData, NotificationResult } from './types'
+export type { BookingWhatsappData, BookingRescheduledWhatsappData, ReviewRequestWhatsappData } from './whatsapp'

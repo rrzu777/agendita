@@ -28,6 +28,7 @@ import {
   sendNewBookingNotificationToBusiness,
   sendBookingCancelledNotification,
   sendBookingConfirmedNotification,
+  sendBookingRescheduledNotification,
   sendNotificationSafely,
   sendMultiNotificationSafely,
   getBusinessReplyToEmail,
@@ -1003,7 +1004,7 @@ export async function rescheduleBooking(bookingId: string, newStartDateTime: Dat
 
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, businessId },
-    include: { service: true },
+    include: { service: true, customer: true },
   })
 
   if (!booking) {
@@ -1021,6 +1022,7 @@ export async function rescheduleBooking(bookingId: string, newStartDateTime: Dat
 
   const endDateTime = addMinutes(newStartDateTime, service.durationMinutes)
   const oldDate = booking.startDateTime.toLocaleString('es-CL')
+  const previousStartDateTime = booking.startDateTime
 
   await prisma.$transaction(async (tx) => {
     await assertSlotIsAvailable({
@@ -1054,6 +1056,25 @@ export async function rescheduleBooking(bookingId: string, newStartDateTime: Dat
       throw new Error('No se puede reprogramar una reserva en este estado')
     }
   })
+
+  if (booking.customer?.email) {
+    await sendNotificationSafely('booking rescheduled', async () =>
+      sendBookingRescheduledNotification({
+        businessName: business.name,
+        bookingNumber: booking.bookingNumber,
+        businessReplyToEmail: await getBusinessReplyToEmail(businessId),
+        businessWhatsapp: business.whatsapp,
+        businessAddress: business.addressText,
+        businessTimezone: business.timezone || 'America/Santiago',
+        customerName: booking.customer!.name,
+        customerEmail: booking.customer!.email,
+        customerPhone: booking.customer!.phone,
+        serviceName: service.name,
+        previousStartDateTime,
+        newStartDateTime,
+      }),
+    )
+  }
 
   revalidatePath('/dashboard/bookings')
   revalidatePath('/dashboard/calendar')

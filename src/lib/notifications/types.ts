@@ -39,6 +39,21 @@ export interface CancellationEmailData {
   businessTimezone: string
 }
 
+export interface RescheduledEmailData {
+  businessName: string
+  bookingNumber?: number | null
+  businessReplyToEmail?: string | null
+  businessWhatsapp?: string | null
+  businessAddress?: string | null
+  businessTimezone: string
+  customerName: string
+  customerEmail?: string | null
+  customerPhone: string
+  serviceName: string
+  previousStartDateTime: Date
+  newStartDateTime: Date
+}
+
 export interface ReviewRequestEmailData {
   businessName: string
   businessReplyToEmail?: string | null

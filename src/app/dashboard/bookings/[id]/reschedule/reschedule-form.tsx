@@ -8,31 +8,37 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { rescheduleBooking } from '@/server/actions/bookings'
 import { getAvailableSlotsForReschedule } from '@/server/actions/availability'
-import { CalendarCheck2, Clock3, Loader2 } from 'lucide-react'
+import { CalendarCheck2, Clock3, Loader2, MessageCircle } from 'lucide-react'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { buildBookingRescheduledWhatsappUrl } from '@/lib/notifications/whatsapp'
 
 interface RescheduleFormProps {
   bookingId: string
   customerName: string
+  customerPhone: string
   serviceName: string
   currentDate: string
   currentTime: string
   timezone: string
+  businessAddress?: string | null
 }
 
 export function RescheduleForm({
   bookingId,
   customerName,
+  customerPhone,
   serviceName,
   currentDate,
   currentTime,
   timezone,
+  businessAddress,
 }: RescheduleFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [whatsappUrl, setWhatsappUrl] = useState('')
   const [date, setDate] = useState(currentDate)
   const [slots, setSlots] = useState<{ start: Date; end: Date }[]>([])
   const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null)
@@ -87,11 +93,18 @@ export function RescheduleForm({
 
     try {
       await rescheduleBooking(bookingId, selectedSlot.start)
+      const canSendWhatsapp = customerPhone.replace(/\D/g, '').length > 0
+      setWhatsappUrl(canSendWhatsapp
+        ? buildBookingRescheduledWhatsappUrl(customerPhone, {
+            customerName,
+            serviceName,
+            previousStartDateTime: fromZonedTime(`${currentDate} ${currentTime}`, timezone),
+            newStartDateTime: selectedSlot.start,
+            businessTimezone: timezone,
+            businessAddress,
+          })
+        : '')
       setSuccess(true)
-      setTimeout(() => {
-        router.push('/dashboard/bookings')
-        router.refresh()
-      }, 1500)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al reprogramar')
     } finally {
@@ -105,7 +118,27 @@ export function RescheduleForm({
         <CardContent className="p-10 text-center">
           <CalendarCheck2 className="mx-auto mb-3 size-10 text-green-600" />
           <h3 className="text-xl font-semibold text-primary">Reserva reprogramada</h3>
-          <p className="mt-1 text-muted-foreground">Redirigiendo...</p>
+          <p className="mt-1 text-muted-foreground">Se avisará por email si la clienta tiene correo registrado.</p>
+          <div className="mt-5 flex flex-col justify-center gap-3 sm:flex-row">
+            {whatsappUrl && (
+              <Button asChild>
+                <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
+                  <MessageCircle className="mr-2 size-4" />
+                  Enviar WhatsApp
+                </a>
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant={whatsappUrl ? 'outline' : 'default'}
+              onClick={() => {
+                router.push('/dashboard/bookings')
+                router.refresh()
+              }}
+            >
+              Volver a reservas
+            </Button>
+          </div>
         </CardContent>
       </Card>
     )
