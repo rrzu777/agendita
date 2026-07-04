@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { createTimeBlock, deleteTimeBlock, createTimeBlockSeries } from '@/server/actions/time-blocks'
-import { Lock, Trash2 } from 'lucide-react'
+import { CheckCircle2, Lock, Trash2, X } from 'lucide-react'
 import { fromZonedTime } from 'date-fns-tz'
 import { parseTimeUTC } from '@/lib/calendar/block-form-values'
 import { BlockFormFields } from './block-form-fields'
@@ -52,10 +52,12 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([])
   const [endMode, setEndMode] = useState<SeriesEndMode>('forever')
   const [weeks, setWeeks] = useState(3)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<string | null>(null)
   const [confirmOverlap, setConfirmOverlap] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const submittingRef = useRef(false)
   const router = useRouter()
 
   function applyPreset(value: string) {
@@ -94,17 +96,22 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
   }
 
   function handleOpenChange(newOpen: boolean) {
+    if (newOpen) {
+      setFeedback(null)
+    }
     if (!newOpen) {
       setConfirmOverlap(false)
       setError(null)
-      setNotice(null)
     }
     setOpen(newOpen)
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (submittingRef.current || isSubmitting || isPending) return
+
     setError(null)
+    setFeedback(null)
 
     if (!date) {
       setError('Selecciona una fecha')
@@ -114,20 +121,25 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
       setError('Define hora de inicio y fin')
       return
     }
+    if (recurring && daysOfWeek.length === 0) {
+      setError('Selecciona al menos un día')
+      return
+    }
 
+    submittingRef.current = true
+    setIsSubmitting(true)
     startTransition(async () => {
       try {
         if (recurring) {
-          if (daysOfWeek.length === 0) { setError('Selecciona al menos un día'); return }
           const anchorDate = fromZonedTime(`${date} 00:00:00`, timezone)
           const res = await createTimeBlockSeries({ daysOfWeek, startTime, endTime, reason: reason || null, anchorDate, endMode, weeks: endMode === 'weeks' ? weeks : null })
           router.refresh()
           if (res.overlappingDates.length > 0) {
-            // Mantener el diálogo abierto para que el aviso sea visible; el usuario lo cierra manualmente.
-            setNotice(`Serie creada. Estos días se solapan con reservas existentes (no se cancelaron): ${res.overlappingDates.join(', ')}`)
+            setFeedback(`Serie creada. Estos días se solapan con reservas existentes (no se cancelaron): ${res.overlappingDates.join(', ')}`)
           } else {
-            setOpen(false)
+            setFeedback('Bloqueo recurrente creado')
           }
+          setOpen(false)
           return
         }
         const start = parseTimeUTC(date, startTime, timezone)
@@ -135,9 +147,13 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
         const result = await createTimeBlock({ startDateTime: start, endDateTime: end, reason: reason || null, confirmOverlap })
         if (result && 'requiresConfirmation' in result) { setError(result.message); return }
         router.refresh()
+        setFeedback('Bloqueo creado')
         setOpen(false)
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Error al crear bloqueo')
+      } finally {
+        submittingRef.current = false
+        setIsSubmitting(false)
       }
     })
   }
@@ -223,19 +239,37 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
             </div>
 
             {error && <p className="text-sm text-destructive">{error}</p>}
-            {notice && <p className="text-sm text-amber-600">{notice}</p>}
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isPending}>
-                {isPending ? 'Creando...' : 'Bloquear'}
+              <Button type="submit" disabled={isPending || isSubmitting}>
+                {isPending || isSubmitting ? 'Creando...' : 'Bloquear'}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      {feedback && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed right-4 bottom-4 z-50 flex max-w-sm items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950 shadow-lg"
+        >
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-700" />
+          <span className="min-w-0 flex-1">{feedback}</span>
+          <button
+            type="button"
+            className="rounded p-0.5 text-emerald-800 hover:bg-emerald-100"
+            onClick={() => setFeedback(null)}
+            aria-label="Cerrar aviso"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
     </>
   )
 }
