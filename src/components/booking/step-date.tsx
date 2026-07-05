@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths } from 'date-fns'
-import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { fromZonedTime } from 'date-fns-tz'
+import { getLocalDateStr } from '@/lib/availability/timezone'
 import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
 import { formatDuration } from '@/lib/format-duration'
@@ -13,7 +14,7 @@ export function StepDate({ data, timezone, onSelect, onBack }: { data: BookingDa
   // Selección por fecha local del negocio (yyyy-MM-dd): el grid del mes es el
   // mismo set de fechas en cualquier timezone; solo importan las etiquetas.
   const [selectedDay, setSelectedDay] = useState<string | null>(
-    data.date ? formatInTimeZone(data.date, timezone, 'yyyy-MM-dd') : null
+    data.date ? getLocalDateStr(data.date, timezone) : null
   )
 
   const monthStart = startOfMonth(currentMonth)
@@ -21,7 +22,7 @@ export function StepDate({ data, timezone, onSelect, onBack }: { data: BookingDa
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd })
 
   // "Hoy" es el hoy del negocio, no el del dispositivo de la clienta
-  const businessToday = formatInTimeZone(new Date(), timezone, 'yyyy-MM-dd')
+  const businessToday = getLocalDateStr(new Date(), timezone)
 
   const weekDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 

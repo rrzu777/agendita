@@ -10,7 +10,7 @@ import { getServices } from '@/server/actions/services'
 import { getTimeBlocks, getTimeBlockSeries } from '@/server/actions/time-blocks'
 import { RecurringBlockList } from '@/components/dashboard/recurring-block-list'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
-import { computeServiceFit } from '@/lib/availability/service-fit'
+import { computeServiceFit, SERVICE_FIT_WINDOW_DAYS } from '@/lib/availability/service-fit'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 
 export default async function AvailabilityPage() {
@@ -24,16 +24,19 @@ export default async function AvailabilityPage() {
     redirect('/recover-business')
   }
 
-  const rules = await getAvailabilityRules()
-  const blocks = await getTimeBlocks()
-  const recurringSeries = await getTimeBlockSeries()
-  const services = await getServices()
   const timezone = userData.business.timezone || 'America/Santiago'
-
-  // Fit de servicios: semana simulada (próximos 7 días) con reglas activas y
-  // bloqueos efectivos (sueltos + series expandidas), sin reservas ni lead time.
   const now = new Date()
-  const effectiveBlocks = await getEffectiveBlocks(userData.business.id, now, addDays(now, 8), timezone)
+
+  // Fit de servicios: semana simulada con reglas activas y bloqueos efectivos
+  // (sueltos + series expandidas), sin reservas ni lead time. Todas las cargas
+  // son independientes entre sí.
+  const [rules, blocks, recurringSeries, services, effectiveBlocks] = await Promise.all([
+    getAvailabilityRules(),
+    getTimeBlocks(),
+    getTimeBlockSeries(),
+    getServices(),
+    getEffectiveBlocks(userData.business.id, now, addDays(now, SERVICE_FIT_WINDOW_DAYS + 1), timezone),
+  ])
   const serviceFits = computeServiceFit(
     services,
     rules.filter((r) => r.isActive),

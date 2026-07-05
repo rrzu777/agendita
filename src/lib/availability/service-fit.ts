@@ -2,6 +2,13 @@ import { addDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { generateSlots, type AvailabilityRuleLike, type TimeBlockLike } from './slots'
 
+/**
+ * Días de la semana simulada. Los consumidores que cargan bloqueos efectivos
+ * deben cubrir [now, now + SERVICE_FIT_WINDOW_DAYS + 1) — la simulación corre
+ * sobre los días now+1..now+SERVICE_FIT_WINDOW_DAYS.
+ */
+export const SERVICE_FIT_WINDOW_DAYS = 7
+
 export interface ServiceFitServiceLike {
   id: string
   name: string
@@ -36,7 +43,7 @@ export function computeServiceFit(
   timezone: string,
   now: Date = new Date(),
 ): ServiceFitResult[] {
-  const days = Array.from({ length: 7 }, (_, i) => addDays(now, i + 1))
+  const days = Array.from({ length: SERVICE_FIT_WINDOW_DAYS }, (_, i) => addDays(now, i + 1))
 
   return services
     .filter((s) => s.isActive)

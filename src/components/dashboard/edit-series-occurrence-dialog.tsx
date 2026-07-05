@@ -47,14 +47,16 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
     onOpenChange(newOpen)
   }
 
-  function run(fn: () => Promise<unknown>, onRequiresConfirmation?: (message: string) => void) {
+  function run(
+    fn: () => Promise<{ requiresConfirmation: true; message: string } | object | undefined | void>,
+    onRequiresConfirmation?: (message: string) => void,
+  ) {
     startTransition(async () => {
       try {
         const res = await fn()
-        if (
-          res && typeof res === 'object' && 'requiresConfirmation' in res &&
-          'message' in res && typeof res.message === 'string' && onRequiresConfirmation
-        ) {
+        // Mismo guard que los otros diálogos de bloqueos: el union tipado hace
+        // innecesaria la inspección estructural campo a campo.
+        if (res && 'requiresConfirmation' in res && onRequiresConfirmation) {
           onRequiresConfirmation(res.message)
           return
         }

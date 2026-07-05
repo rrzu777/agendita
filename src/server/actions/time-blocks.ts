@@ -9,7 +9,7 @@ import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { differenceInMilliseconds, addDays } from 'date-fns'
 import { getEffectiveBlocks, type EffectiveBlock } from '@/lib/availability/effective-blocks'
-import { computeServiceFit } from '@/lib/availability/service-fit'
+import { computeServiceFit, SERVICE_FIT_WINDOW_DAYS } from '@/lib/availability/service-fit'
 import { getLocalDateStr } from '@/lib/availability/timezone'
 import { computeSeriesUntil, expandSeries, type SeriesEndMode } from '@/lib/calendar/expand-series'
 import { timeToMinutes } from '@/lib/availability/time-range'
@@ -17,9 +17,6 @@ import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 
 const MAX_BLOCK_DURATION_MS = 32 * 24 * 60 * 60 * 1000 // 32 dias
 
-// Días hacia adelante que se inspeccionan al buscar reservas que chocan con
-// las ocurrencias de una serie propuesta (crear/editar serie completa).
-const SERIES_CONFLICT_WINDOW_DAYS = 60
 
 /**
  * Filtro de reservas activas que solapan [start, end]. Un hold
@@ -43,6 +40,46 @@ function overlappingActiveBookingsWhere(businessId: string, start: Date, end: Da
 }
 
 /**
+ * Ocurrencias de una serie propuesta que chocan con reservas activas dentro de
+ * la ventana de reserva del negocio (la misma que ven las clientas al agendar).
+ * Devuelve las fechas locales en conflicto (yyyy-MM-dd, deduplicadas) y las
+ * ocurrencias expandidas, para reutilizarlas en el addendum de fit.
+ */
+async function findSeriesBookingConflicts(
+  businessId: string,
+  proposed: Parameters<typeof expandSeries>[0],
+  timezone: string,
+  now: Date,
+  bookingWindowDays: number,
+): Promise<{ occurrences: EffectiveBlock[]; overlappingDates: string[] }> {
+  const checkEnd = addDays(now, bookingWindowDays)
+  const occurrences = expandSeries(proposed, [], now, checkEnd, timezone)
+  const bookings = await prisma.booking.findMany({
+    where: overlappingActiveBookingsWhere(businessId, now, checkEnd, now),
+    select: { startDateTime: true, endDateTime: true },
+  })
+  const overlappingDates = Array.from(
+    new Set(
+      occurrences
+        .filter((occ) => bookings.some((b) => occ.startDateTime < b.endDateTime && b.startDateTime < occ.endDateTime))
+        .map((occ) => getLocalDateStr(occ.startDateTime, timezone)),
+    ),
+  )
+  return { occurrences, overlappingDates }
+}
+
+/** Mensaje de confirmación para una serie en conflicto (lista truncada a 3 fechas). */
+function buildSeriesConflictMessage(intro: string, overlappingDates: string[], instruction: string, addendum: string): string {
+  const firstDates = overlappingDates.slice(0, 3).join(', ')
+  const suffix = overlappingDates.length > 3 ? ', …' : ''
+  return (
+    `${intro} se solapa con reservas existentes en ${overlappingDates.length} día(s): ${firstDates}${suffix}. ` +
+    `${instruction} (no se cancelarán las reservas existentes).` +
+    addendum
+  )
+}
+
+/**
  * Texto adicional para los mensajes de confirmación: servicios activos que hoy
  * caben en algún día pero que con el bloqueo propuesto no cabrían en ninguno.
  * Es un aviso best-effort — si algo falla, no rompe el flujo de guardado.
@@ -61,14 +98,28 @@ async function serviceFitAddendum(
     ])
     if (services.length === 0 || rules.length === 0) return ''
 
-    let blocks = await getEffectiveBlocks(businessId, now, addDays(now, 8), timezone)
+    const fitWindowEnd = addDays(now, SERVICE_FIT_WINDOW_DAYS + 1)
+    let blocks = await getEffectiveBlocks(businessId, now, fitWindowEnd, timezone)
     if (excludeBlock) blocks = blocks.filter((b) => !excludeBlock(b))
+    // Las ocurrencias fuera de la ventana simulada son ruido puro para el fit
+    const proposedInWindow = proposedBlocks.filter((b) => b.startDateTime < fitWindowEnd)
 
-    const before = computeServiceFit(services, rules, blocks, timezone, now)
-    const after = computeServiceFit(services, rules, [...blocks, ...proposedBlocks], timezone, now)
+    const withProposed = computeServiceFit(services, rules, [...blocks, ...proposedInWindow], timezone, now)
+    const candidates = withProposed.filter((a) => a.fitsNowhere)
+    if (candidates.length === 0) return ''
 
-    return after
-      .filter((a) => a.fitsNowhere && before.some((b) => b.serviceId === a.serviceId && !b.fitsNowhere))
+    // La pasada "antes" solo hace falta para los servicios que quedarían sin
+    // días: un servicio que ya no cabía hoy no "pasa a no caber" por el bloqueo.
+    const before = computeServiceFit(
+      services.filter((svc) => candidates.some((c) => c.serviceId === svc.id)),
+      rules,
+      blocks,
+      timezone,
+      now,
+    )
+
+    return candidates
+      .filter((a) => before.some((b) => b.serviceId === a.serviceId && !b.fitsNowhere))
       .map((s) => ` Además, con este bloqueo "${s.serviceName}" no cabría en ningún día.`)
       .join('')
   } catch {
@@ -78,28 +129,20 @@ async function serviceFitAddendum(
 
 const TOLERANCE_TOO_BIG_MESSAGE = 'La tolerancia no puede superar la mitad de la duración del bloqueo'
 
+// La coerción vive en el schema (una sola fuente): las server actions pueden
+// recibir Date o string serializado según el transporte.
 const createTimeBlockSchema = z.object({
-  startDateTime: z.date(),
-  endDateTime: z.date(),
-  reason: z.string().max(255).optional().nullable(),
-  overlapToleranceMinutes: z.number().int().min(0).max(240).optional(),
-  confirmOverlap: z.boolean().optional(),
+  startDateTime: z.coerce.date(),
+  endDateTime: z.coerce.date(),
+  reason: z.string().max(255).nullable().default(null),
+  overlapToleranceMinutes: z.coerce.number().int().min(0).max(240).default(0),
+  confirmOverlap: z.boolean().default(false),
 }).refine(data => data.endDateTime > data.startDateTime, {
   message: 'La fecha de fin debe ser posterior a la de inicio',
 }).refine(data => {
-  const tolerance = data.overlapToleranceMinutes ?? 0
   const durationMinutes = (data.endDateTime.getTime() - data.startDateTime.getTime()) / 60_000
-  return tolerance <= durationMinutes / 2
+  return data.overlapToleranceMinutes <= durationMinutes / 2
 }, { message: TOLERANCE_TOO_BIG_MESSAGE })
-
-function parseTimeBlockInput(raw: Record<string, unknown>): { startDateTime: Date; endDateTime: Date; reason: string | null; overlapToleranceMinutes: number; confirmOverlap: boolean } {
-  const startDateTime = raw.startDateTime instanceof Date ? raw.startDateTime : new Date(raw.startDateTime as string)
-  const endDateTime = raw.endDateTime instanceof Date ? raw.endDateTime : new Date(raw.endDateTime as string)
-  const reason = typeof raw.reason === 'string' ? raw.reason : null
-  const overlapToleranceMinutes = typeof raw.overlapToleranceMinutes === 'number' ? raw.overlapToleranceMinutes : 0
-  const confirmOverlap = raw.confirmOverlap === true
-  return { startDateTime, endDateTime, reason, overlapToleranceMinutes, confirmOverlap }
-}
 
 async function rateLimitOrThrow(key: string) {
   const limit = await checkRateLimit(key, 20, 60000)
@@ -127,13 +170,11 @@ export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' |
     throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
-  const raw = data as unknown as Record<string, unknown>
-  const { startDateTime, endDateTime, reason, overlapToleranceMinutes, confirmOverlap } = parseTimeBlockInput(raw)
-
-  const parsed = createTimeBlockSchema.safeParse({ startDateTime, endDateTime, reason, overlapToleranceMinutes, confirmOverlap })
+  const parsed = createTimeBlockSchema.safeParse(data)
   if (!parsed.success) {
     throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
+  const { startDateTime, endDateTime, reason, overlapToleranceMinutes, confirmOverlap } = parsed.data
 
   const durationMs = differenceInMilliseconds(endDateTime, startDateTime)
   if (durationMs > MAX_BLOCK_DURATION_MS) {
@@ -213,13 +254,11 @@ export async function updateTimeBlock(
     throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
-  const raw = data as unknown as Record<string, unknown>
-  const { startDateTime, endDateTime, reason, overlapToleranceMinutes, confirmOverlap } = parseTimeBlockInput(raw)
-
-  const parsed = createTimeBlockSchema.safeParse({ startDateTime, endDateTime, reason, overlapToleranceMinutes, confirmOverlap })
+  const parsed = createTimeBlockSchema.safeParse(data)
   if (!parsed.success) {
     throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
+  const { startDateTime, endDateTime, reason, overlapToleranceMinutes, confirmOverlap } = parsed.data
 
   const durationMs = differenceInMilliseconds(endDateTime, startDateTime)
   if (durationMs > MAX_BLOCK_DURATION_MS) {
@@ -322,45 +361,28 @@ export async function createTimeBlockSeries(data: {
 
   const until = computeSeriesUntil(data.anchorDate, data.endMode, data.weeks ?? null, timezone)
 
-  // Chequeo ANTES de crear: se expanden las ocurrencias de la serie propuesta
-  // para los próximos días y se buscan reservas activas que solapen. Si hay y
-  // no viene confirmación, NO se crea nada.
+  // Chequeo ANTES de crear: ocurrencias de la serie propuesta vs reservas
+  // activas dentro de la ventana de reserva del negocio. Si hay conflicto y no
+  // viene confirmación, NO se crea nada.
   const now = new Date()
-  const checkEnd = addDays(now, SERIES_CONFLICT_WINDOW_DAYS)
-  const proposed = {
-    id: 'proposed',
-    daysOfWeek: data.daysOfWeek,
-    startTime: data.startTime,
-    endTime: data.endTime,
-    reason: data.reason ?? null,
-    anchorDate: data.anchorDate,
-    until,
-  }
-  const occurrences = expandSeries(proposed, [], now, checkEnd, timezone)
-  const bookings = await prisma.booking.findMany({
-    where: overlappingActiveBookingsWhere(businessId, now, checkEnd, now),
-    select: { startDateTime: true, endDateTime: true },
-  })
-  const overlappingDates = Array.from(
-    new Set(
-      occurrences
-        .filter((occ) => bookings.some((b) => occ.startDateTime < b.endDateTime && b.startDateTime < occ.endDateTime))
-        .map((occ) => formatInTimeZone(occ.startDateTime, timezone, 'yyyy-MM-dd')),
-    ),
+  const { occurrences, overlappingDates } = await findSeriesBookingConflicts(
+    businessId,
+    { id: 'proposed', daysOfWeek: data.daysOfWeek, startTime: data.startTime, endTime: data.endTime, reason: data.reason ?? null, anchorDate: data.anchorDate, until },
+    timezone,
+    now,
+    business.bookingWindowDays ?? 90,
   )
 
   if (overlappingDates.length > 0 && data.confirmed !== true) {
-    const firstDates = overlappingDates.slice(0, 3).join(', ')
-    const suffix = overlappingDates.length > 3 ? ', …' : ''
     const addendum = await serviceFitAddendum(businessId, timezone, occurrences, now)
     return {
       requiresConfirmation: true as const,
-      message:
-        `El bloqueo recurrente se solapa con reservas existentes en ${overlappingDates.length} ` +
-        `día(s): ${firstDates}${suffix}. ` +
-        'Marca la casilla de confirmación si deseas crearlo de todas formas ' +
-        '(no se cancelarán las reservas existentes).' +
+      message: buildSeriesConflictMessage(
+        'El bloqueo recurrente',
+        overlappingDates,
+        'Marca la casilla de confirmación si deseas crearlo de todas formas',
         addendum,
+      ),
     }
   }
 
@@ -428,41 +450,25 @@ export async function updateTimeBlockSeries(
 
   // Chequeo ANTES de guardar: ocurrencias futuras del NUEVO horario vs
   // reservas activas. Mismo patrón requiresConfirmation que los bloqueos sueltos.
-  const checkEnd = addDays(now, SERIES_CONFLICT_WINDOW_DAYS)
-  const proposed = {
-    id: 'proposed',
-    daysOfWeek: existing.daysOfWeek,
-    startTime: changes.startTime,
-    endTime: changes.endTime,
-    reason: changes.reason ?? null,
-    anchorDate: anchorToday,
-    until: existing.until,
-  }
-  const occurrences = expandSeries(proposed, [], now, checkEnd, timezone)
-  const bookings = await prisma.booking.findMany({
-    where: overlappingActiveBookingsWhere(businessId, now, checkEnd, now),
-    select: { startDateTime: true, endDateTime: true },
-  })
-  const overlappingDates = Array.from(
-    new Set(
-      occurrences
-        .filter((occ) => bookings.some((b) => occ.startDateTime < b.endDateTime && b.startDateTime < occ.endDateTime))
-        .map((occ) => formatInTimeZone(occ.startDateTime, timezone, 'yyyy-MM-dd')),
-    ),
+  const { occurrences, overlappingDates } = await findSeriesBookingConflicts(
+    businessId,
+    { id: 'proposed', daysOfWeek: existing.daysOfWeek, startTime: changes.startTime, endTime: changes.endTime, reason: changes.reason ?? null, anchorDate: anchorToday, until: existing.until },
+    timezone,
+    now,
+    business.bookingWindowDays ?? 90,
   )
 
   if (overlappingDates.length > 0 && changes.confirmed !== true) {
-    const firstDates = overlappingDates.slice(0, 3).join(', ')
-    const suffix = overlappingDates.length > 3 ? ', …' : ''
     // La serie original se excluye del "antes": su horario será reemplazado.
     const addendum = await serviceFitAddendum(businessId, timezone, occurrences, now, (b) => b.seriesId === seriesId)
     return {
       requiresConfirmation: true as const,
-      message:
-        `El nuevo horario de la serie se solapa con reservas existentes en ${overlappingDates.length} ` +
-        `día(s): ${firstDates}${suffix}. ` +
-        'Confirma si deseas guardarlo de todas formas (no se cancelarán las reservas existentes).' +
+      message: buildSeriesConflictMessage(
+        'El nuevo horario de la serie',
+        overlappingDates,
+        'Confirma si deseas guardarlo de todas formas',
         addendum,
+      ),
     }
   }
 

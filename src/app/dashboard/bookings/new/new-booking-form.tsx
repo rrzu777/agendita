@@ -13,7 +13,8 @@ import { usePackageAvailability } from '@/lib/packages/use-package-availability'
 import { searchCustomersForBooking } from '@/server/actions/customers'
 import type { CustomerSearchResult } from '@/server/actions/customers'
 import { formatDuration } from '@/lib/format-duration'
-import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { fromZonedTime } from 'date-fns-tz'
+import { getLocalDateStr } from '@/lib/availability/timezone'
 import { formatMoney } from '@/lib/money'
 import { CalendarCheck2, User, Search, X } from 'lucide-react'
 import type { Service } from '@prisma/client'
@@ -278,7 +279,7 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
     )
   }
 
-  const today = formatInTimeZone(new Date(), timezone, 'yyyy-MM-dd')
+  const today = getLocalDateStr(new Date(), timezone)
 
   return (
     <Card>

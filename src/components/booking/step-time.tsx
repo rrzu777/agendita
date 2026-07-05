@@ -22,8 +22,7 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
   const [slots, setSlots] = useState<{ start: Date; end: Date }[]>([])
   const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null)
   const [loading, setLoading] = useState(true)
-  const [errorMessage, setErrorMessage] = useState('')
-  const [hasError, setHasError] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
   const ignoreRef = useRef(false)
 
@@ -33,8 +32,7 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     ignoreRef.current = false
     // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting loading state before fetch is a standard UI pattern
     setLoading(true)
-    setErrorMessage('')
-    setHasError(false)
+    setError(null)
     setSelectedSlot(null)
 
     getAvailableTimeSlots(businessId, data.serviceId, data.date)
@@ -42,11 +40,10 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
         if (ignoreRef.current) return
         setSlots(availableSlots)
       })
-      .catch((error) => {
+      .catch((err) => {
         if (ignoreRef.current) return
         setSlots([])
-        setHasError(true)
-        setErrorMessage(error instanceof Error ? error.message : 'No se pudieron cargar los horarios')
+        setError(err instanceof Error ? err.message : 'No se pudieron cargar los horarios')
       })
       .finally(() => {
         if (!ignoreRef.current) setLoading(false)
@@ -66,13 +63,11 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     )
   }
 
-  if (hasError) {
+  if (error !== null) {
     return (
       <div>
         <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary sm:text-3xl">No pudimos cargar los horarios</h2>
-        <p className="mb-6 text-muted-foreground">
-          {errorMessage || 'Ocurrió un error al cargar los horarios. Intenta de nuevo.'}
-        </p>
+        <p className="mb-6 text-muted-foreground">{error}</p>
         <div className="flex gap-3">
           <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
           <Button className="h-12 rounded-full px-6" onClick={() => setRetryKey((k) => k + 1)}>Reintentar</Button>
