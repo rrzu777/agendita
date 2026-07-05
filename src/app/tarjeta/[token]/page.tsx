@@ -41,6 +41,13 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
         data={data}
         redeemAction={redeemAction.bind(null, token)}
       />
+      {!customer.userId && (
+        <p className="mt-8 text-center text-sm">
+          <a href={`/ingresar?next=/tarjeta/${token}/vincular`} className="font-semibold text-pink-700 hover:underline">
+            Guardar mi tarjeta en mi cuenta
+          </a>
+        </p>
+      )}
     </main>
   )
 }
