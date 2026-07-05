@@ -30,6 +30,7 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
   const [reason, setReason] = useState(initial.reason)
   const [error, setError] = useState<string | null>(null)
   const [pendingScope, setPendingScope] = useState<null | { action: 'save' | 'delete' }>(null)
+  const [overlapPrompt, setOverlapPrompt] = useState<null | { message: string; confirm: () => void }>(null)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -38,6 +39,7 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
 
   function reset() {
     setPendingScope(null)
+    setOverlapPrompt(null)
     setError(null)
   }
   function handleOpenChange(newOpen: boolean) {
@@ -45,10 +47,14 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
     onOpenChange(newOpen)
   }
 
-  function run(fn: () => Promise<void>) {
+  function run(fn: () => Promise<unknown>, onRequiresConfirmation?: (message: string) => void) {
     startTransition(async () => {
       try {
-        await fn()
+        const res = await fn()
+        if (res && typeof res === 'object' && 'requiresConfirmation' in res && onRequiresConfirmation) {
+          onRequiresConfirmation((res as { message: string }).message)
+          return
+        }
         router.refresh()
         handleOpenChange(false)
       } catch (err: unknown) {
@@ -57,17 +63,20 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
     })
   }
 
-  function saveScope(scope: Scope) {
-    if (scope === 'occurrence') {
-      run(() => overrideSeriesOccurrence(seriesId, occurrenceDate, {
-        startDateTime: parseTimeUTC(date, startTime, timezone),
-        endDateTime: parseTimeUTC(date, endTime, timezone),
-        reason: reason || null,
-      }))
-    } else {
-      // Editar toda la serie = cambiar hora/motivo de toda la serie (conserva días y fin).
-      run(async () => { await updateTimeBlockSeries(seriesId, { startTime, endTime, reason: reason || null }) })
-    }
+  function saveScope(scope: Scope, confirmed = false) {
+    const call =
+      scope === 'occurrence'
+        ? () => overrideSeriesOccurrence(seriesId, occurrenceDate, {
+            startDateTime: parseTimeUTC(date, startTime, timezone),
+            endDateTime: parseTimeUTC(date, endTime, timezone),
+            reason: reason || null,
+            confirmed,
+          })
+        // Editar toda la serie = cambiar hora/motivo de toda la serie (conserva días y fin).
+        : () => updateTimeBlockSeries(seriesId, { startTime, endTime, reason: reason || null, confirmed })
+    // Si hay reservas que chocan, el servidor no guarda y pide confirmación:
+    // mostramos el detalle y un botón para reintentar con confirmed=true.
+    run(call, (message) => setOverlapPrompt({ message, confirm: () => saveScope(scope, true) }))
   }
 
   function deleteScope(scope: Scope) {
@@ -81,7 +90,23 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
-        {pendingScope ? (
+        {overlapPrompt ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Reservas en el horario</DialogTitle>
+              <DialogDescription>{overlapPrompt.message}</DialogDescription>
+            </DialogHeader>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setOverlapPrompt(null)} disabled={isPending}>
+                Cancelar
+              </Button>
+              <Button type="button" onClick={overlapPrompt.confirm} disabled={isPending}>
+                {isPending ? 'Guardando...' : 'Guardar de todas formas'}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : pendingScope ? (
           <>
             <DialogHeader>
               <DialogTitle>{pendingScope.action === 'delete' ? 'Eliminar' : 'Guardar cambios'}</DialogTitle>
