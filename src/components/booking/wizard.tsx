@@ -53,12 +53,13 @@ const steps = [
 
 interface BookingWizardProps {
   businessId: string
+  timezone: string
   services: Service[]
   cancellationPolicy?: string | null
   referralToken?: string
 }
 
-export function BookingWizard({ businessId, services, cancellationPolicy, referralToken }: BookingWizardProps) {
+export function BookingWizard({ businessId, timezone, services, cancellationPolicy, referralToken }: BookingWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const [data, setData] = useState<BookingData>(initialData)
   const [bookingId, setBookingId] = useState<string | null>(null)
@@ -105,15 +106,16 @@ export function BookingWizard({ businessId, services, cancellationPolicy, referr
           }} />
         )}
         {currentStep === 2 && (
-          <StepDate data={data} onSelect={(date) => {
+          <StepDate data={data} timezone={timezone} onSelect={(date) => {
             updateData({ date })
             nextStep()
           }} onBack={prevStep} />
         )}
         {currentStep === 3 && data.date && (
-          <StepTime 
+          <StepTime
             businessId={businessId}
-            data={data} 
+            timezone={timezone}
+            data={data}
             onSelect={(timeSlot) => {
               updateData({ timeSlot })
               nextStep()
@@ -138,7 +140,7 @@ export function BookingWizard({ businessId, services, cancellationPolicy, referr
           </div>
         )}
         {currentStep === 5 && data.serviceId && data.timeSlot && (
-          <StepPayment data={data} businessId={businessId} cancellationPolicy={cancellationPolicy} referralToken={referralToken} onSuccess={(id, mode, promo, number) => {
+          <StepPayment data={data} businessId={businessId} timezone={timezone} cancellationPolicy={cancellationPolicy} referralToken={referralToken} onSuccess={(id, mode, promo, number) => {
             setBookingId(id)
             setBookingNumber(number ?? null)
             setConfirmationMode(mode)
@@ -153,7 +155,7 @@ export function BookingWizard({ businessId, services, cancellationPolicy, referr
           </div>
         )}
         {currentStep === 6 && (
-          <StepConfirmation data={data} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} />
+          <StepConfirmation data={data} timezone={timezone} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} />
         )}
       </section>
     </div>

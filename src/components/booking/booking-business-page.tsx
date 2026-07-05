@@ -29,6 +29,7 @@ export function BookingBusinessPage({ business, profileHref, referralToken }: Bo
       <div className="mx-auto max-w-2xl px-4 py-8">
         <BookingWizard
           businessId={business.id}
+          timezone={business.timezone || 'America/Santiago'}
           services={business.services}
           cancellationPolicy={business.cancellationPolicy}
           referralToken={referralToken}
