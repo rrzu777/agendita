@@ -132,7 +132,10 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
       try {
         if (recurring) {
           const anchorDate = fromZonedTime(`${date} 00:00:00`, timezone)
-          const res = await createTimeBlockSeries({ daysOfWeek, startTime, endTime, reason: reason || null, anchorDate, endMode, weeks: endMode === 'weeks' ? weeks : null })
+          const res = await createTimeBlockSeries({ daysOfWeek, startTime, endTime, reason: reason || null, anchorDate, endMode, weeks: endMode === 'weeks' ? weeks : null, confirmed: confirmOverlap })
+          // Mismo patrón que los bloqueos sueltos: si hay reservas que chocan,
+          // la serie NO se crea hasta que la dueña marque la confirmación.
+          if ('requiresConfirmation' in res) { setError(res.message); return }
           router.refresh()
           if (res.overlappingDates.length > 0) {
             setFeedback(`Serie creada. Estos días se solapan con reservas existentes (no se cancelaron): ${res.overlappingDates.join(', ')}`)

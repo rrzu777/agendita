@@ -71,6 +71,7 @@ describe('createTimeBlockSeries', () => {
     const res = await updateTimeBlockSeries(series.id, { startTime: '12:30', endTime: '13:30', reason: 'A2' })
     const old = await prisma.timeBlockSeries.findUniqueOrThrow({ where: { id: series.id } })
     expect(old.until).not.toBeNull() // vieja cerrada
+    if (!('series' in res)) throw new Error('esperaba split, no requiresConfirmation')
     expect(res.series.id).not.toBe(series.id) // serie nueva
     expect(res.series.daysOfWeek).toEqual([1, 2, 3, 4]) // días PRESERVADOS
     expect(res.series.startTime).toBe('12:30') // hora cambiada

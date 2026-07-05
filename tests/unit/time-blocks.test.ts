@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { addDays } from 'date-fns'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 
 const mockPrisma = {
   timeBlock: {
@@ -8,9 +10,25 @@ const mockPrisma = {
     updateMany: vi.fn(),
     deleteMany: vi.fn(),
   },
+  timeBlockSeries: {
+    create: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
+    update: vi.fn(),
+  },
+  timeBlockException: {
+    upsert: vi.fn(),
+  },
+  service: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  availabilityRule: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
   booking: {
     findMany: vi.fn(),
   },
+  $transaction: vi.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
 }
 
 vi.mock('@/lib/db', () => ({
@@ -43,7 +61,16 @@ vi.mock('@/server/actions/revalidate-business', () => ({
   revalidateBusinessPublicPaths: vi.fn().mockResolvedValue(undefined),
 }))
 
-const { createTimeBlock, deleteTimeBlock, updateTimeBlock } = await import('@/server/actions/time-blocks')
+const {
+  createTimeBlock,
+  deleteTimeBlock,
+  updateTimeBlock,
+  createTimeBlockSeries,
+  updateTimeBlockSeries,
+  overrideSeriesOccurrence,
+} = await import('@/server/actions/time-blocks')
+
+const TZ = 'America/Santiago'
 
 const baseInput = {
   startDateTime: new Date('2026-06-01T09:00:00Z'),
@@ -130,18 +157,249 @@ describe('createTimeBlock', () => {
 
     const findManyCall = mockPrisma.booking.findMany.mock.calls[0][0]
     expect(findManyCall.where.businessId).toBe('biz-1')
-    expect(findManyCall.where.status.in).toEqual(['pending_payment', 'confirmed', 'completed'])
+    expect(findManyCall.where.OR).toEqual([
+      { status: { in: ['confirmed', 'completed'] } },
+      expect.objectContaining({ status: 'pending_payment' }),
+    ])
   })
 
-  it('only checks active bookings for overlap', async () => {
+  it('only checks active bookings for overlap, ignoring expired pending_payment holds', async () => {
     mockPrisma.booking.findMany.mockResolvedValue([])
 
     await createTimeBlock({ ...baseInput, confirmOverlap: false })
 
     const findManyCall = mockPrisma.booking.findMany.mock.calls[0][0]
-    expect(findManyCall.where.status.in).not.toContain('cancelled')
-    expect(findManyCall.where.status.in).not.toContain('expired')
-    expect(findManyCall.where.status.in).not.toContain('no_show')
+    const statuses = findManyCall.where.OR.flatMap(
+      (clause: { status: string | { in: string[] } }) =>
+        typeof clause.status === 'string' ? [clause.status] : clause.status.in,
+    )
+    expect(statuses).not.toContain('cancelled')
+    expect(statuses).not.toContain('expired')
+    expect(statuses).not.toContain('no_show')
+
+    // Un hold pending_payment ya expirado no cuenta como conflicto
+    const pendingClause = findManyCall.where.OR.find(
+      (clause: { status: string | { in: string[] } }) => clause.status === 'pending_payment',
+    )
+    expect(pendingClause.OR).toEqual([
+      { holdExpiresAt: null },
+      { holdExpiresAt: { gt: expect.any(Date) } },
+    ])
+  })
+
+  it('appends the service-fit warning to the confirmation message when a service would fit nowhere', async () => {
+    mockPrisma.booking.findMany.mockResolvedValue([{ id: 'booking-1' }])
+    mockPrisma.service.findMany.mockResolvedValueOnce([
+      { id: 'svc-1', name: 'CORTE', durationMinutes: 120, isActive: true },
+    ])
+
+    // Regla solo el día del bloqueo propuesto: 09:00-12:00 (180 min, el
+    // servicio de 120 cabe hoy). El bloqueo 10:00-12:00 deja 60 min → no cabe.
+    const day = addDays(new Date(), 3)
+    const dayStr = formatInTimeZone(day, TZ, 'yyyy-MM-dd')
+    const dow = Number(formatInTimeZone(day, TZ, 'i')) % 7
+    mockPrisma.availabilityRule.findMany.mockResolvedValueOnce([
+      { dayOfWeek: dow, startTime: '09:00', endTime: '12:00', isActive: true },
+    ])
+
+    const result = await createTimeBlock({
+      ...baseInput,
+      startDateTime: fromZonedTime(`${dayStr} 10:00:00`, TZ),
+      endDateTime: fromZonedTime(`${dayStr} 12:00:00`, TZ),
+      confirmOverlap: false,
+    })
+
+    expect(result).toEqual({
+      requiresConfirmation: true,
+      message: expect.stringMatching(/Además, con este bloqueo "CORTE" no cabría en ningún día\./),
+    })
+    expect(mockPrisma.timeBlock.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('createTimeBlockSeries', () => {
+  const seriesInput = {
+    daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+    startTime: '12:00',
+    endTime: '14:00',
+    reason: 'Almuerzo',
+    anchorDate: fromZonedTime(`${formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd')} 00:00:00`, TZ),
+    endMode: 'forever' as const,
+    weeks: null,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPrisma.booking.findMany.mockResolvedValue([])
+    mockPrisma.timeBlockSeries.create.mockResolvedValue({ id: 'series-1', businessId: 'biz-1' })
+  })
+
+  it('creates the series when no bookings overlap', async () => {
+    const result = await createTimeBlockSeries(seriesInput)
+
+    expect('series' in result && result.series.id).toBe('series-1')
+    expect('overlappingDates' in result && result.overlappingDates).toEqual([])
+    expect(mockPrisma.timeBlockSeries.create).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns requiresConfirmation WITHOUT creating when occurrences overlap bookings', async () => {
+    const tomorrowStr = formatInTimeZone(addDays(new Date(), 1), TZ, 'yyyy-MM-dd')
+    mockPrisma.booking.findMany.mockResolvedValue([
+      {
+        startDateTime: fromZonedTime(`${tomorrowStr} 12:30:00`, TZ),
+        endDateTime: fromZonedTime(`${tomorrowStr} 13:00:00`, TZ),
+      },
+    ])
+
+    const result = await createTimeBlockSeries(seriesInput)
+
+    expect(result).toEqual({
+      requiresConfirmation: true,
+      message: expect.stringMatching(new RegExp(`se solapa con reservas existentes.*${tomorrowStr}`)),
+    })
+    expect(mockPrisma.timeBlockSeries.create).not.toHaveBeenCalled()
+  })
+
+  it('creates the series when confirmed despite overlaps, reporting the dates', async () => {
+    const tomorrowStr = formatInTimeZone(addDays(new Date(), 1), TZ, 'yyyy-MM-dd')
+    mockPrisma.booking.findMany.mockResolvedValue([
+      {
+        startDateTime: fromZonedTime(`${tomorrowStr} 12:30:00`, TZ),
+        endDateTime: fromZonedTime(`${tomorrowStr} 13:00:00`, TZ),
+      },
+    ])
+
+    const result = await createTimeBlockSeries({ ...seriesInput, confirmed: true })
+
+    expect('series' in result && result.series.id).toBe('series-1')
+    expect('overlappingDates' in result && result.overlappingDates).toContain(tomorrowStr)
+    expect(mockPrisma.timeBlockSeries.create).toHaveBeenCalledTimes(1)
+  })
+
+  it('overlap query excludes expired pending_payment holds', async () => {
+    await createTimeBlockSeries(seriesInput)
+
+    const findManyCall = mockPrisma.booking.findMany.mock.calls[0][0]
+    expect(findManyCall.where.businessId).toBe('biz-1')
+    expect(findManyCall.where.OR).toEqual([
+      { status: { in: ['confirmed', 'completed'] } },
+      {
+        status: 'pending_payment',
+        OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: expect.any(Date) } }],
+      },
+    ])
+  })
+})
+
+describe('updateTimeBlockSeries', () => {
+  const existingSeries = {
+    id: 'series-1',
+    businessId: 'biz-1',
+    daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+    startTime: '12:00',
+    endTime: '14:00',
+    reason: 'Almuerzo',
+    anchorDate: new Date('2026-01-01T03:00:00Z'),
+    until: null,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPrisma.booking.findMany.mockResolvedValue([])
+    mockPrisma.timeBlockSeries.findFirst.mockResolvedValue(existingSeries)
+    mockPrisma.timeBlockSeries.update.mockResolvedValue(existingSeries)
+    mockPrisma.timeBlockSeries.create.mockResolvedValue({ id: 'series-2', businessId: 'biz-1' })
+  })
+
+  it('splits the series when no bookings overlap the new schedule', async () => {
+    const result = await updateTimeBlockSeries('series-1', { startTime: '13:00', endTime: '15:00' })
+
+    expect('series' in result && result.series.id).toBe('series-2')
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns requiresConfirmation WITHOUT splitting when the new schedule overlaps bookings', async () => {
+    const tomorrowStr = formatInTimeZone(addDays(new Date(), 1), TZ, 'yyyy-MM-dd')
+    mockPrisma.booking.findMany.mockResolvedValue([
+      {
+        startDateTime: fromZonedTime(`${tomorrowStr} 13:30:00`, TZ),
+        endDateTime: fromZonedTime(`${tomorrowStr} 14:30:00`, TZ),
+      },
+    ])
+
+    const result = await updateTimeBlockSeries('series-1', { startTime: '13:00', endTime: '15:00' })
+
+    expect(result).toEqual({
+      requiresConfirmation: true,
+      message: expect.stringMatching(/se solapa con reservas existentes/),
+    })
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('splits the series when confirmed despite overlaps', async () => {
+    const tomorrowStr = formatInTimeZone(addDays(new Date(), 1), TZ, 'yyyy-MM-dd')
+    mockPrisma.booking.findMany.mockResolvedValue([
+      {
+        startDateTime: fromZonedTime(`${tomorrowStr} 13:30:00`, TZ),
+        endDateTime: fromZonedTime(`${tomorrowStr} 14:30:00`, TZ),
+      },
+    ])
+
+    const result = await updateTimeBlockSeries('series-1', {
+      startTime: '13:00',
+      endTime: '15:00',
+      confirmed: true,
+    })
+
+    expect('series' in result && result.series.id).toBe('series-2')
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('overrideSeriesOccurrence', () => {
+  const occurrenceDate = fromZonedTime('2026-08-03 00:00:00', TZ)
+  const overrideData = {
+    startDateTime: fromZonedTime('2026-08-03 12:00:00', TZ),
+    endDateTime: fromZonedTime('2026-08-03 15:00:00', TZ),
+    reason: 'Almuerzo largo',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPrisma.booking.findMany.mockResolvedValue([])
+    mockPrisma.timeBlockSeries.findFirst.mockResolvedValue({ id: 'series-1', businessId: 'biz-1' })
+    mockPrisma.timeBlockException.upsert.mockResolvedValue({})
+  })
+
+  it('saves the override when no bookings overlap the new range', async () => {
+    const result = await overrideSeriesOccurrence('series-1', occurrenceDate, overrideData)
+
+    expect(result).toBeUndefined()
+    expect(mockPrisma.timeBlockException.upsert).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns requiresConfirmation WITHOUT saving when the new range overlaps bookings', async () => {
+    mockPrisma.booking.findMany.mockResolvedValue([{ id: 'booking-1' }])
+
+    const result = await overrideSeriesOccurrence('series-1', occurrenceDate, overrideData)
+
+    expect(result).toEqual({
+      requiresConfirmation: true,
+      message: expect.stringMatching(/se solapa con reservas existentes/),
+    })
+    expect(mockPrisma.timeBlockException.upsert).not.toHaveBeenCalled()
+  })
+
+  it('saves the override when confirmed despite overlaps', async () => {
+    mockPrisma.booking.findMany.mockResolvedValue([{ id: 'booking-1' }])
+
+    const result = await overrideSeriesOccurrence('series-1', occurrenceDate, {
+      ...overrideData,
+      confirmed: true,
+    })
+
+    expect(result).toBeUndefined()
+    expect(mockPrisma.timeBlockException.upsert).toHaveBeenCalledTimes(1)
   })
 })
 

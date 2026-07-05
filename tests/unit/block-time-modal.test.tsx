@@ -59,6 +59,46 @@ describe('BlockTimeModal', () => {
     await unmount()
   })
 
+  it('NO cierra el modal y muestra el mensaje cuando la serie requiere confirmación', async () => {
+    mockCreateTimeBlockSeries.mockResolvedValue({
+      requiresConfirmation: true,
+      message: 'El bloqueo recurrente se solapa con reservas existentes en 1 día(s): 2026-06-01. Además, con este bloqueo "MANICURA" no cabría en ningún día.',
+    })
+    const { unmount } = await renderBlockTimeModal()
+
+    await clickButton(document.body, 'Bloquear horario')
+    await changeCheckbox(document.body, 'recurring', true)
+    await clickButton(document.body, 'Lun')
+    await clickButton(document.body, 'Bloquear')
+    await flushPromises()
+
+    expect(mockCreateTimeBlockSeries).toHaveBeenCalledTimes(1)
+    expect(mockCreateTimeBlockSeries.mock.calls[0][0].confirmed).toBe(false)
+    expect(mockRefresh).not.toHaveBeenCalled()
+    // El modal sigue abierto mostrando el detalle del conflicto
+    expect(document.body.textContent).toContain('se solapa con reservas existentes en 1 día(s)')
+    expect(document.body.textContent).toContain('"MANICURA" no cabría en ningún día')
+
+    await unmount()
+  })
+
+  it('envía confirmed=true cuando la casilla de confirmación está marcada', async () => {
+    mockCreateTimeBlockSeries.mockResolvedValue({ series: { id: 'series-1' }, overlappingDates: [] })
+    const { unmount } = await renderBlockTimeModal()
+
+    await clickButton(document.body, 'Bloquear horario')
+    await changeCheckbox(document.body, 'recurring', true)
+    await clickButton(document.body, 'Lun')
+    await changeCheckbox(document.body, 'confirm-overlap', true)
+    await clickButton(document.body, 'Bloquear')
+    await flushPromises()
+
+    expect(mockCreateTimeBlockSeries).toHaveBeenCalledTimes(1)
+    expect(mockCreateTimeBlockSeries.mock.calls[0][0].confirmed).toBe(true)
+
+    await unmount()
+  })
+
   it('cierra el modal y muestra snack-bar cuando crea una serie con solapes', async () => {
     mockCreateTimeBlockSeries.mockResolvedValue({
       series: { id: 'series-1' },
