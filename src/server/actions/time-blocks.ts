@@ -8,11 +8,72 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { differenceInMilliseconds, addDays } from 'date-fns'
-import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
+import { getEffectiveBlocks, type EffectiveBlock } from '@/lib/availability/effective-blocks'
+import { computeServiceFit } from '@/lib/availability/service-fit'
+import { getLocalDateStr } from '@/lib/availability/timezone'
 import { computeSeriesUntil, expandSeries, type SeriesEndMode } from '@/lib/calendar/expand-series'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 
 const MAX_BLOCK_DURATION_MS = 32 * 24 * 60 * 60 * 1000 // 32 dias
+
+// Días hacia adelante que se inspeccionan al buscar reservas que chocan con
+// las ocurrencias de una serie propuesta (crear/editar serie completa).
+const SERIES_CONFLICT_WINDOW_DAYS = 60
+
+/**
+ * Filtro de reservas activas que solapan [start, end]. Un hold
+ * `pending_payment` con `holdExpiresAt` ya vencido no bloquea (misma semántica
+ * que generateSlots/assertSlotIsAvailable), aunque el cron aún no lo haya
+ * marcado como `expired`.
+ */
+function overlappingActiveBookingsWhere(businessId: string, start: Date, end: Date, now: Date) {
+  return {
+    businessId,
+    startDateTime: { lt: end },
+    endDateTime: { gt: start },
+    OR: [
+      { status: { in: ['confirmed', 'completed'] } },
+      {
+        status: 'pending_payment',
+        OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: now } }],
+      },
+    ],
+  }
+}
+
+/**
+ * Texto adicional para los mensajes de confirmación: servicios activos que hoy
+ * caben en algún día pero que con el bloqueo propuesto no cabrían en ninguno.
+ * Es un aviso best-effort — si algo falla, no rompe el flujo de guardado.
+ */
+async function serviceFitAddendum(
+  businessId: string,
+  timezone: string,
+  proposedBlocks: { startDateTime: Date; endDateTime: Date }[],
+  now: Date,
+  excludeBlock?: (block: EffectiveBlock) => boolean,
+): Promise<string> {
+  try {
+    const [services, rules] = await Promise.all([
+      prisma.service.findMany({ where: { businessId, isActive: true } }),
+      prisma.availabilityRule.findMany({ where: { businessId, isActive: true } }),
+    ])
+    if (services.length === 0 || rules.length === 0) return ''
+
+    let blocks = await getEffectiveBlocks(businessId, now, addDays(now, 8), timezone)
+    if (excludeBlock) blocks = blocks.filter((b) => !excludeBlock(b))
+
+    const before = computeServiceFit(services, rules, blocks, timezone, now)
+    const after = computeServiceFit(services, rules, [...blocks, ...proposedBlocks], timezone, now)
+
+    return after
+      .filter((a) => a.fitsNowhere && before.some((b) => b.serviceId === a.serviceId && !b.fitsNowhere))
+      .map((s) => ` Además, con este bloqueo "${s.serviceName}" no cabría en ningún día.`)
+      .join('')
+  } catch {
+    return ''
+  }
+}
 
 const createTimeBlockSchema = z.object({
   startDateTime: z.date(),
@@ -51,7 +112,7 @@ export async function getTimeBlocks() {
 }
 
 export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId'> & { confirmOverlap?: boolean }) {
-  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('create-timeblock', 20, 60000)
   if (!limit.success) {
     throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
@@ -70,13 +131,9 @@ export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' |
     throw new Error('La duración máxima de un bloqueo es de 32 días')
   }
 
+  const now = new Date()
   const overlappingBookings = await prisma.booking.findMany({
-    where: {
-      businessId,
-      status: { in: ['pending_payment', 'confirmed', 'completed'] },
-      startDateTime: { lt: endDateTime },
-      endDateTime: { gt: startDateTime },
-    },
+    where: overlappingActiveBookingsWhere(businessId, startDateTime, endDateTime, now),
     select: { id: true },
     take: 1,
   })
@@ -85,12 +142,15 @@ export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' |
     // No es un error: es un estado "requiere confirmación". Devolvemos un
     // resultado estructurado en lugar de lanzar, para no generar un 500 (y su
     // ruido en los logs) en un flujo de validación esperado.
+    const timezone = business.timezone || 'America/Santiago'
+    const addendum = await serviceFitAddendum(businessId, timezone, [{ startDateTime, endDateTime }], now)
     return {
       requiresConfirmation: true as const,
       message:
         'El bloqueo se solapa con reservas existentes. ' +
         'Marca la casilla de confirmación si deseas crearlo de todas formas ' +
-        '(no se cancelarán las reservas existentes).',
+        '(no se cancelarán las reservas existentes).' +
+        addendum,
     }
   }
 
@@ -138,7 +198,7 @@ export async function updateTimeBlock(
   id: string,
   data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId'> & { confirmOverlap?: boolean },
 ): Promise<TimeBlock | { requiresConfirmation: true; message: string }> {
-  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('update-timeblock', 20, 60000)
   if (!limit.success) {
     throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
@@ -169,24 +229,31 @@ export async function updateTimeBlock(
     existing.endDateTime.getTime() !== endDateTime.getTime()
 
   if (timeChanged) {
+    const now = new Date()
     const overlappingBookings = await prisma.booking.findMany({
-      where: {
-        businessId,
-        status: { in: ['pending_payment', 'confirmed', 'completed'] },
-        startDateTime: { lt: endDateTime },
-        endDateTime: { gt: startDateTime },
-      },
+      where: overlappingActiveBookingsWhere(businessId, startDateTime, endDateTime, now),
       select: { id: true },
       take: 1,
     })
 
     if (overlappingBookings.length > 0 && confirmOverlap !== true) {
+      const timezone = business.timezone || 'America/Santiago'
+      // El bloqueo editado se excluye del "antes": lo que importa es el efecto
+      // de su nuevo horario, no el del horario que se está reemplazando.
+      const addendum = await serviceFitAddendum(
+        businessId,
+        timezone,
+        [{ startDateTime, endDateTime }],
+        now,
+        (b) => b.id === id,
+      )
       return {
         requiresConfirmation: true as const,
         message:
           'El bloqueo se solapa con reservas existentes. ' +
           'Marca la casilla de confirmación si deseas guardarlo de todas formas ' +
-          '(no se cancelarán las reservas existentes).',
+          '(no se cancelarán las reservas existentes).' +
+          addendum,
       }
     }
   }
@@ -224,6 +291,7 @@ export async function createTimeBlockSeries(data: {
   anchorDate: Date
   endMode: SeriesEndMode
   weeks?: number | null
+  confirmed?: boolean
 }) {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   await rateLimitOrThrow('create-timeblock')
@@ -234,9 +302,50 @@ export async function createTimeBlockSeries(data: {
   }
 
   const timezone = business.timezone || 'America/Santiago'
-  const bookingWindowDays = business.bookingWindowDays ?? 90
 
   const until = computeSeriesUntil(data.anchorDate, data.endMode, data.weeks ?? null, timezone)
+
+  // Chequeo ANTES de crear: se expanden las ocurrencias de la serie propuesta
+  // para los próximos días y se buscan reservas activas que solapen. Si hay y
+  // no viene confirmación, NO se crea nada.
+  const now = new Date()
+  const checkEnd = addDays(now, SERIES_CONFLICT_WINDOW_DAYS)
+  const proposed = {
+    id: 'proposed',
+    daysOfWeek: data.daysOfWeek,
+    startTime: data.startTime,
+    endTime: data.endTime,
+    reason: data.reason ?? null,
+    anchorDate: data.anchorDate,
+    until,
+  }
+  const occurrences = expandSeries(proposed, [], now, checkEnd, timezone)
+  const bookings = await prisma.booking.findMany({
+    where: overlappingActiveBookingsWhere(businessId, now, checkEnd, now),
+    select: { startDateTime: true, endDateTime: true },
+  })
+  const overlappingDates = Array.from(
+    new Set(
+      occurrences
+        .filter((occ) => bookings.some((b) => occ.startDateTime < b.endDateTime && b.startDateTime < occ.endDateTime))
+        .map((occ) => formatInTimeZone(occ.startDateTime, timezone, 'yyyy-MM-dd')),
+    ),
+  )
+
+  if (overlappingDates.length > 0 && data.confirmed !== true) {
+    const firstDates = overlappingDates.slice(0, 3).join(', ')
+    const suffix = overlappingDates.length > 3 ? ', …' : ''
+    const addendum = await serviceFitAddendum(businessId, timezone, occurrences, now)
+    return {
+      requiresConfirmation: true as const,
+      message:
+        `El bloqueo recurrente se solapa con reservas existentes en ${overlappingDates.length} ` +
+        `día(s): ${firstDates}${suffix}. ` +
+        'Marca la casilla de confirmación si deseas crearlo de todas formas ' +
+        '(no se cancelarán las reservas existentes).' +
+        addendum,
+    }
+  }
 
   const series = await prisma.timeBlockSeries.create({
     data: {
@@ -249,23 +358,6 @@ export async function createTimeBlockSeries(data: {
       until,
     },
   })
-
-  // Aviso "crear igual + avisar": listar días (yyyy-MM-dd) dentro de la ventana de
-  // reserva cuyas ocurrencias se solapan con reservas existentes. No se cancela nada.
-  const windowEnd = new Date(Date.now() + bookingWindowDays * 24 * 60 * 60 * 1000)
-  const occurrences = expandSeries(series, [], data.anchorDate, windowEnd, timezone)
-  const bookings = await prisma.booking.findMany({
-    where: {
-      businessId,
-      status: { in: ['pending_payment', 'confirmed', 'completed'] },
-      startDateTime: { lt: windowEnd },
-      endDateTime: { gt: data.anchorDate },
-    },
-    select: { startDateTime: true, endDateTime: true },
-  })
-  const overlappingDates = occurrences
-    .filter((occ) => bookings.some((b) => occ.startDateTime < b.endDateTime && b.startDateTime < occ.endDateTime))
-    .map((occ) => formatInTimeZone(occ.startDateTime, timezone, 'yyyy-MM-dd'))
 
   await revalidateTimeBlocks(businessId)
 
@@ -294,7 +386,7 @@ export async function skipSeriesOccurrence(seriesId: string, occurrenceDate: Dat
 
 export async function updateTimeBlockSeries(
   seriesId: string,
-  changes: { startTime: string; endTime: string; reason?: string | null },
+  changes: { startTime: string; endTime: string; reason?: string | null; confirmed?: boolean },
 ) {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   await rateLimitOrThrow('update-timeblock')
@@ -310,10 +402,51 @@ export async function updateTimeBlockSeries(
   // Split en hoy: la serie vieja termina AYER (inclusivo), la nueva arranca hoy y
   // CONSERVA el patrón de días y la fecha de fin (until) originales — el diálogo de
   // edición solo cambia hora/motivo. Reset de excepciones futuras (viven en la vieja).
-  const todayStr = formatInTimeZone(new Date(), timezone, 'yyyy-MM-dd')
-  const yesterdayStr = formatInTimeZone(addDays(new Date(), -1), timezone, 'yyyy-MM-dd')
+  const now = new Date()
+  const todayStr = formatInTimeZone(now, timezone, 'yyyy-MM-dd')
+  const yesterdayStr = formatInTimeZone(addDays(now, -1), timezone, 'yyyy-MM-dd')
   const oldUntil = fromZonedTime(`${yesterdayStr} 00:00:00`, timezone)
   const anchorToday = fromZonedTime(`${todayStr} 00:00:00`, timezone)
+
+  // Chequeo ANTES de guardar: ocurrencias futuras del NUEVO horario vs
+  // reservas activas. Mismo patrón requiresConfirmation que los bloqueos sueltos.
+  const checkEnd = addDays(now, SERIES_CONFLICT_WINDOW_DAYS)
+  const proposed = {
+    id: 'proposed',
+    daysOfWeek: existing.daysOfWeek,
+    startTime: changes.startTime,
+    endTime: changes.endTime,
+    reason: changes.reason ?? null,
+    anchorDate: anchorToday,
+    until: existing.until,
+  }
+  const occurrences = expandSeries(proposed, [], now, checkEnd, timezone)
+  const bookings = await prisma.booking.findMany({
+    where: overlappingActiveBookingsWhere(businessId, now, checkEnd, now),
+    select: { startDateTime: true, endDateTime: true },
+  })
+  const overlappingDates = Array.from(
+    new Set(
+      occurrences
+        .filter((occ) => bookings.some((b) => occ.startDateTime < b.endDateTime && b.startDateTime < occ.endDateTime))
+        .map((occ) => formatInTimeZone(occ.startDateTime, timezone, 'yyyy-MM-dd')),
+    ),
+  )
+
+  if (overlappingDates.length > 0 && changes.confirmed !== true) {
+    const firstDates = overlappingDates.slice(0, 3).join(', ')
+    const suffix = overlappingDates.length > 3 ? ', …' : ''
+    // La serie original se excluye del "antes": su horario será reemplazado.
+    const addendum = await serviceFitAddendum(businessId, timezone, occurrences, now, (b) => b.seriesId === seriesId)
+    return {
+      requiresConfirmation: true as const,
+      message:
+        `El nuevo horario de la serie se solapa con reservas existentes en ${overlappingDates.length} ` +
+        `día(s): ${firstDates}${suffix}. ` +
+        'Confirma si deseas guardarlo de todas formas (no se cancelarán las reservas existentes).' +
+        addendum,
+    }
+  }
 
   const [, newSeries] = await prisma.$transaction([
     prisma.timeBlockSeries.update({ where: { id: seriesId }, data: { until: oldUntil, isActive: existing.anchorDate <= oldUntil } }),
@@ -357,12 +490,43 @@ export async function getTimeBlockSeries() {
 export async function overrideSeriesOccurrence(
   seriesId: string,
   occurrenceDate: Date,
-  data: { startDateTime: Date; endDateTime: Date; reason?: string | null },
-) {
-  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  data: { startDateTime: Date; endDateTime: Date; reason?: string | null; confirmed?: boolean },
+): Promise<{ requiresConfirmation: true; message: string } | undefined> {
+  const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   await rateLimitOrThrow('update-timeblock')
   if (data.endDateTime <= data.startDateTime) throw new Error('La hora de fin debe ser posterior a la de inicio')
   await assertSeriesOwned(seriesId, businessId)
+
+  // Mismo patrón requiresConfirmation que los bloqueos sueltos: el nuevo rango
+  // del día no debe pisar reservas activas sin confirmación explícita.
+  const now = new Date()
+  const overlappingBookings = await prisma.booking.findMany({
+    where: overlappingActiveBookingsWhere(businessId, data.startDateTime, data.endDateTime, now),
+    select: { id: true },
+    take: 1,
+  })
+
+  if (overlappingBookings.length > 0 && data.confirmed !== true) {
+    const timezone = business.timezone || 'America/Santiago'
+    // La ocurrencia original de ese día se excluye del "antes": será reemplazada.
+    const addendum = await serviceFitAddendum(
+      businessId,
+      timezone,
+      [{ startDateTime: data.startDateTime, endDateTime: data.endDateTime }],
+      now,
+      (b) =>
+        b.seriesId === seriesId &&
+        b.occurrenceDate != null &&
+        getLocalDateStr(b.occurrenceDate, timezone) === getLocalDateStr(occurrenceDate, timezone),
+    )
+    return {
+      requiresConfirmation: true as const,
+      message:
+        'El bloqueo se solapa con reservas existentes. ' +
+        'Confirma si deseas guardarlo de todas formas (no se cancelarán las reservas existentes).' +
+        addendum,
+    }
+  }
 
   await prisma.timeBlockException.upsert({
     where: { seriesId_occurrenceDate: { seriesId, occurrenceDate } },
