@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/lib/auth/user'
 import { ensureUserRow, AccountConflictError } from '@/lib/auth/ensure-user-row'
 import { linkCustomerByLoyaltyToken, CardLinkError } from '@/lib/customers/link'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { PageMessage } from '@/components/ui/page-message'
 
 export const metadata: Metadata = { robots: { index: false, follow: false } }
 
@@ -15,7 +16,7 @@ export default async function VincularPage({ params }: { params: Promise<{ token
 
   const limit = await checkRateLimit('card-link', 10, 60000, { userId: user.id })
   if (!limit.success) {
-    return <ErrorCard message="Demasiados intentos. Espera un momento y vuelve a intentar." />
+    return <LinkError message="Demasiados intentos. Espera un momento y vuelve a intentar." />
   }
 
   try {
@@ -23,7 +24,7 @@ export default async function VincularPage({ params }: { params: Promise<{ token
     await linkCustomerByLoyaltyToken(prisma, user.id, token)
   } catch (e) {
     if (e instanceof AccountConflictError || e instanceof CardLinkError) {
-      return <ErrorCard message={e.message} />
+      return <LinkError message={e.message} />
     }
     throw e
   }
@@ -31,11 +32,6 @@ export default async function VincularPage({ params }: { params: Promise<{ token
   redirect('/mi')
 }
 
-function ErrorCard({ message }: { message: string }) {
-  return (
-    <main className="mx-auto max-w-md px-4 py-16 text-center">
-      <h1 className="text-xl font-semibold">No pudimos vincular tu tarjeta</h1>
-      <p className="mt-2 text-gray-500">{message}</p>
-    </main>
-  )
+function LinkError({ message }: { message: string }) {
+  return <PageMessage title="No pudimos vincular tu tarjeta" message={message} />
 }

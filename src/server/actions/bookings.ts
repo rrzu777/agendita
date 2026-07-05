@@ -9,6 +9,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { getCurrentUser } from '@/lib/auth/user'
+import { linkCustomerFromBookingSession } from '@/lib/customers/link'
 import { logger } from '@/lib/logger'
 
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
@@ -287,20 +288,10 @@ export async function createBooking(data: {
         }
       }
 
-      // Vía 3 de vinculación: reserva hecha con sesión activa. Guards:
-      // - nunca pisar un userId existente
-      // - NO vincular a miembros del negocio (owner/staff reservando para
-      //   clientas — y el bypass e2e usa la sesión de la dueña)
-      // - solo si la fila User de Prisma existe (clientas que ya pasaron por
-      //   /mi; si no, quedará vinculada en su próxima visita a /mi)
-      if (sessionUser && !customer.userId) {
-        const [isMember, userRow] = await Promise.all([
-          tx.businessUser.findFirst({ where: { userId: sessionUser.id, businessId }, select: { id: true } }),
-          tx.user.findUnique({ where: { id: sessionUser.id }, select: { id: true } }),
-        ])
-        if (!isMember && userRow) {
-          customer = await tx.customer.update({ where: { id: customer.id }, data: { userId: sessionUser.id } })
-        }
+      // Vía 3 de vinculación: reserva hecha con sesión activa (los guards
+      // viven en el helper, junto a las otras dos vías).
+      if (sessionUser) {
+        await linkCustomerFromBookingSession(tx, customer, sessionUser.id, businessId)
       }
 
       const noDepositRequired = depositRequired <= 0

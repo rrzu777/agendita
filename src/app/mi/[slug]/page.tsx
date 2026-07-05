@@ -6,18 +6,10 @@ import { LoyaltyCard } from '@/components/loyalty/loyalty-card'
 import { redeemPointsAsMe } from '@/server/actions/loyalty'
 import { getBookingFunnelUrl } from '@/lib/business/urls'
 import { formatBookingNumber } from '@/lib/bookings/number'
+import { bookingStatusLabels } from '@/lib/bookings/status-labels'
 import { formatShortDate } from '@/lib/format-date'
 
 const UPCOMING_STATUSES = ['pending_payment', 'confirmed'] as const
-
-const STATUS_LABEL: Record<string, string> = {
-  pending_payment: 'Pendiente de pago',
-  confirmed: 'Confirmada',
-  completed: 'Completada',
-  cancelled: 'Cancelada',
-  no_show: 'No asistió',
-  expired: 'Expirada',
-}
 
 async function redeemAction(customerId: string, formData: FormData) {
   'use server'
@@ -78,6 +70,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
           business={{ name: business.name, logoUrl: business.logoUrl }}
           data={cards[i]}
           redeemAction={redeemAction.bind(null, c.id)}
+          titleAs="h2"
         />
       ))}
 
@@ -90,7 +83,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
             {upcoming.map((b) => (
               <li key={b.id} className="rounded-lg border border-gray-100 px-3 py-2 text-sm">
                 <div className="font-medium">{b.service?.name}</div>
-                <div className="text-gray-500">{formatShortDate(b.startDateTime)} · {STATUS_LABEL[b.status] ?? b.status} · {formatBookingNumber(b.bookingNumber, b.id)}</div>
+                <div className="text-gray-500">{formatShortDate(b.startDateTime)} · {bookingStatusLabels[b.status]} · {formatBookingNumber(b.bookingNumber, b.id)}</div>
               </li>
             ))}
           </ul>
@@ -112,7 +105,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
             {past.map((b) => (
               <li key={b.id} className="flex items-center justify-between py-2 text-sm">
                 <span>{b.service?.name}</span>
-                <span className="text-gray-400">{formatShortDate(b.startDateTime)} · {STATUS_LABEL[b.status] ?? b.status}</span>
+                <span className="text-gray-400">{formatShortDate(b.startDateTime)} · {bookingStatusLabels[b.status]}</span>
               </li>
             ))}
           </ul>

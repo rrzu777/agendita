@@ -9,9 +9,11 @@ interface LoyaltyCardProps {
   data: LoyaltyCardData
   /** Server action ya bindeada con la credencial (token o customerId). */
   redeemAction: (formData: FormData) => Promise<void>
+  /** 'h2' cuando la página ya tiene su propio h1 (ej. /mi/[slug]). */
+  titleAs?: 'h1' | 'h2'
 }
 
-export function LoyaltyCard({ customerName, business, data, redeemAction }: LoyaltyCardProps) {
+export function LoyaltyCard({ customerName, business, data, redeemAction, titleAs: TitleTag = 'h1' }: LoyaltyCardProps) {
   const { config, balance, history, catalog, grants, packages, referralUrl } = data
   const label = config?.pointsLabel ?? 'puntos'
   const firstName = customerName.split(' ')[0]
@@ -22,7 +24,7 @@ export function LoyaltyCard({ customerName, business, data, redeemAction }: Loya
         // eslint-disable-next-line @next/next/no-img-element
         <img src={business.logoUrl} alt={business.name} className="mx-auto mb-4 h-12 w-auto" />
       )}
-      <h1 className="text-center text-lg font-semibold">{config?.programName ?? 'Mi tarjeta'}</h1>
+      <TitleTag className="text-center text-lg font-semibold">{config?.programName ?? 'Mi tarjeta'}</TitleTag>
       <p className="text-center text-sm text-gray-500">Hola, {firstName}</p>
 
       {config?.isActive === false && (

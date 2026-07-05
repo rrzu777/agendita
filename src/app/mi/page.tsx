@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth/user'
 import { getLoyaltyBalance } from '@/lib/loyalty/balance'
 import { displayBalance } from '@/lib/loyalty/view'
+import { PageMessage } from '@/components/ui/page-message'
 
 export default async function MiHomePage() {
   const user = await getCurrentUser()
@@ -23,12 +24,10 @@ export default async function MiHomePage() {
 
   if (customers.length === 0) {
     return (
-      <main className="mx-auto max-w-md px-4 py-16 text-center">
-        <h1 className="text-xl font-semibold">Todavía no hay nada por aquí</h1>
-        <p className="mt-2 text-gray-500">
-          Abre el enlace de tu tarjeta de beneficios, o haz una reserva con este email, y tus negocios van a aparecer acá.
-        </p>
-      </main>
+      <PageMessage
+        title="Todavía no hay nada por aquí"
+        message="Abre el enlace de tu tarjeta de beneficios, o haz una reserva con este email, y tus negocios van a aparecer acá."
+      />
     )
   }
 

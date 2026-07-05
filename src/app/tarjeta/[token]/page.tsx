@@ -4,6 +4,7 @@ import { resolveLoyaltyCustomer } from '@/lib/loyalty/token'
 import { loadLoyaltyCardData } from '@/lib/loyalty/card-data'
 import { LoyaltyCard } from '@/components/loyalty/loyalty-card'
 import { redeemPointsAsCustomer } from '@/server/actions/loyalty'
+import { PageMessage } from '@/components/ui/page-message'
 
 export const metadata: Metadata = { robots: { index: false, follow: false } }
 
@@ -23,12 +24,7 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
   const customer = await resolveLoyaltyCustomer(prisma, token)
 
   if (!customer) {
-    return (
-      <main className="mx-auto max-w-md px-4 py-16 text-center">
-        <h1 className="text-xl font-semibold">Tarjeta no disponible</h1>
-        <p className="mt-2 text-gray-500">El enlace no es válido o ya no está activo.</p>
-      </main>
-    )
+    return <PageMessage title="Tarjeta no disponible" message="El enlace no es válido o ya no está activo." />
   }
 
   const data = await loadLoyaltyCardData(customer)

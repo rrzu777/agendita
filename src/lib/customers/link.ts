@@ -25,6 +25,31 @@ export async function linkCustomersByVerifiedEmail(db: Db, userId: string, email
   return res.count
 }
 
+/** Vía 3: reserva hecha con sesión activa. Guards: nunca pisar un userId
+ *  existente; NO vincular a miembros del negocio (owner/staff reservando para
+ *  clientas — y el bypass e2e usa la sesión de la dueña); solo si la fila User
+ *  de Prisma existe (clientas que ya pasaron por /mi; si no, quedará vinculada
+ *  en su próxima visita a /mi). Pensada para correr dentro de la tx de
+ *  createBooking. */
+export async function linkCustomerFromBookingSession(
+  db: Db,
+  customer: { id: string; userId: string | null },
+  sessionUserId: string,
+  businessId: string,
+): Promise<boolean> {
+  if (customer.userId) return false
+  const [isMember, userRow] = await Promise.all([
+    db.businessUser.findFirst({ where: { userId: sessionUserId, businessId }, select: { id: true } }),
+    db.user.findUnique({ where: { id: sessionUserId }, select: { id: true } }),
+  ])
+  if (isMember || !userRow) return false
+  const res = await db.customer.updateMany({
+    where: { id: customer.id, userId: null },
+    data: { userId: sessionUserId },
+  })
+  return res.count > 0
+}
+
 export class CardLinkError extends Error {
   constructor(message: string) {
     super(message)

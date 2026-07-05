@@ -5,6 +5,7 @@ import { ensureUserRow, AccountConflictError } from '@/lib/auth/ensure-user-row'
 import { isVerifiedEmail, linkCustomersByVerifiedEmail } from '@/lib/customers/link'
 import { prisma } from '@/lib/db'
 import { signOut } from '@/lib/auth/actions'
+import { PageMessage } from '@/components/ui/page-message'
 
 // Superficie personal: fuera de los índices, como /tarjeta/[token].
 export const metadata: Metadata = { robots: { index: false, follow: false } }
@@ -22,12 +23,7 @@ export default async function MiLayout({ children }: { children: React.ReactNode
     await ensureUserRow(user)
   } catch (e) {
     if (e instanceof AccountConflictError) {
-      return (
-        <main className="mx-auto max-w-md px-4 py-16 text-center">
-          <h1 className="text-xl font-semibold">No pudimos preparar tu cuenta</h1>
-          <p className="mt-2 text-gray-500">{e.message}</p>
-        </main>
-      )
+      return <PageMessage title="No pudimos preparar tu cuenta" message={e.message} />
     }
     throw e
   }
