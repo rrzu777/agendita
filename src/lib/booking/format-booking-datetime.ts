@@ -1,4 +1,5 @@
 import { formatInTimeZone } from 'date-fns-tz'
+import { getLocalTimeStr } from '@/lib/availability/timezone'
 
 /** Fecha local del negocio en formato chileno dd-MM-yyyy. */
 export function formatBookingDate(date: Date, timezone: string): string {
@@ -7,7 +8,7 @@ export function formatBookingDate(date: Date, timezone: string): string {
 
 /** Hora local del negocio HH:mm. */
 export function formatBookingTime(date: Date, timezone: string): string {
-  return formatInTimeZone(date, timezone, 'HH:mm')
+  return getLocalTimeStr(date, timezone)
 }
 
 /** Fecha y hora locales del negocio. */
