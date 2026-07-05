@@ -745,6 +745,8 @@ export async function createBookingFromDashboard(data: {
       startDateTime: data.startDateTime,
       endDateTime,
       timezone: business.timezone || 'America/Santiago',
+      // La dueña puede anotar walk-ins que empiezan ahora mismo
+      leadTimeMinutes: 0,
     })
 
     let customer: { id: string; name: string; phone: string; email: string | null }
@@ -1033,6 +1035,8 @@ export async function rescheduleBooking(bookingId: string, newStartDateTime: Dat
       endDateTime,
       timezone: business.timezone || 'America/Santiago',
       excludeBookingId: bookingId,
+      // Reagendar desde el dashboard no exige anticipación (la dueña manda)
+      leadTimeMinutes: 0,
     })
 
     const historyNote = `[REPROGRAMADA de ${oldDate}]`
