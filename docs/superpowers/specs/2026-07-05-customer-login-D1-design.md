@@ -123,3 +123,9 @@ Cada PR sigue el ciclo estándar: writing-plans → subagent-driven-development 
 - Compra de paquetes online (B4b — se apoya en esta superficie cuando llegue).
 - Enforcement estricto de `maxPerCustomer` por identidad verificada (mejora natural post-D, fast-follow).
 - CTA "¿Ya tenés cuenta? Ingresá" dentro del funnel público (fast-follow). Caveat técnico documentado: el funnel vive en el subdominio del tenant y el callback OAuth aterriza en el apex; `sanitizeNext` solo permite paths root-relative, así que volver al funnel post-login requiere resolver el redirect cross-host. La vía "reserva logueada" de D1 aplica a clientas que ya tenían sesión (cookie compartida entre subdominios).
+- **Fast-follows de integración con otros módulos** (revisión 2026-07-05, no bloquean D1-a):
+  - Prefill del funnel para clienta logueada (nombre/teléfono/email desde su Customer del negocio). Hoy la vía 3 depende de que escriba el mismo teléfono; el prefill lo garantiza y mejora conversión.
+  - El toggle "usar paquete" del funnel (`use-package-availability`, keyed por teléfono) podría autodetectar por sesión — encaja con B4b.
+  - Badge "tiene cuenta" en el detalle de clienta del dashboard (`customers/[id]`) — visibilidad para la dueña de qué clientas ya usan /mi.
+  - Notificaciones: agregar link a `/mi` junto al link de tarjeta (`buildLoyaltyCardLink`) cuando haya proveedor de email (C/D2).
+  - `redeemPointsAsOwner` no revalida la tarjeta pública del Customer (gap PRE-existente al canje del lado dueña; mismo patrón que el fix de `redeemPointsAsMe`).

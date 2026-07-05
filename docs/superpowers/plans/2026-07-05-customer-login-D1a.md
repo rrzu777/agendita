@@ -15,6 +15,7 @@
 **Google OAuth NO está configurado** (el login de dueñas es email+contraseña). Para que el flujo funcione contra Supabase real:
 1. Google Cloud Console → crear OAuth Client ID (tipo Web). Authorized redirect URI: `https://<proyecto>.supabase.co/auth/v1/callback`.
 2. Supabase Dashboard → Authentication → Providers → Google → habilitar con ese client id/secret.
+3. Supabase Dashboard → Authentication → URL Configuration → **Redirect URLs** debe permitir `https://<dominio-app>/auth/callback` (con el `?next=` que agregamos). Si el target no está permitido, Supabase cae al Site URL (`/`) y el `next` puede perderse — el middleware rescata el `code` desde `/`, pero una clienta NUEVA sin `next` termina en `/dashboard` → `/recover-business` (no tiene Customer vinculados todavía). Este es el mismo problema que ya está comentado en `src/middleware.ts:9`.
 
 Los tests unit/component/integration NO dependen de esto (mockean Supabase). El e2e usa el header bypass (tampoco depende). Solo la prueba manual del login real lo necesita.
 
@@ -1081,7 +1082,7 @@ export async function redeemPointsAsMe(customerId: string, optionId: unknown, re
   // Ownership por sesión: el Customer debe estar vinculado a esta cuenta.
   const customer = await prisma.customer.findFirst({
     where: { id: customerId, userId: user.id },
-    select: { id: true, businessId: true, business: { select: { slug: true, loyaltyConfig: true } } },
+    select: { id: true, businessId: true, loyaltyToken: true, business: { select: { slug: true, loyaltyConfig: true } } },
   })
   if (!customer) throw new ForbiddenError('Tarjeta no disponible')
   const config = customer.business.loyaltyConfig
@@ -1090,6 +1091,11 @@ export async function redeemPointsAsMe(customerId: string, optionId: unknown, re
   if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
   await runRedemption({ businessId: customer.businessId, customerId: customer.id, optionId: parsed.data.optionId, requestId: parsed.data.requestId, createdByUserId: null })
   await revalidatePath(`/mi/${customer.business.slug}`)
+  // La tarjeta pública del mismo Customer se cachea (redeemPointsAsCustomer ya
+  // la revalida) — un canje desde /mi también debe refrescarla o queda stale.
+  if (customer.loyaltyToken) {
+    await revalidatePath(`/tarjeta/${customer.loyaltyToken}`)
+  }
 }
 ```
 
