@@ -130,6 +130,54 @@ describe('generateSlots', () => {
     expect(slots.length).toBe(0)
   })
 
+  it('re-anchors slots after an off-grid booking instead of losing the free space', () => {
+    // Caso real (Jackeline): regla 09:00-14:30, servicio 90 min,
+    // cita existente 09:45-11:15 (13:45Z-15:15Z).
+    const localRules = [
+      { dayOfWeek: 1, startTime: '09:00', endTime: '14:30', isActive: true },
+    ]
+    const bookings = [
+      {
+        startDateTime: new Date('2026-05-11T13:45:00Z'),
+        endDateTime: new Date('2026-05-11T15:15:00Z'),
+        status: 'confirmed',
+      },
+    ]
+    const slots = generateSlots(baseDate, 90, localRules, [], bookings, { timezone, now: testNow })
+    // Antes: solo quedaba 12:00 (16:00Z). Ahora: 11:15 y 12:45, pegados a la cita.
+    expect(slots.map((s) => s.start.toISOString())).toEqual([
+      '2026-05-11T15:15:00.000Z', // 11:15 Santiago
+      '2026-05-11T16:45:00.000Z', // 12:45 Santiago
+    ])
+  })
+
+  it('re-anchors slots after a time block', () => {
+    // Regla 09:00-18:00, servicio 60, almuerzo 12:30-14:00 (16:30Z-18:00Z)
+    const blocks = [
+      { startDateTime: new Date('2026-05-11T16:30:00Z'), endDateTime: new Date('2026-05-11T18:00:00Z') },
+    ]
+    const slots = generateSlots(baseDate, 60, rules, blocks, [], { timezone, now: testNow })
+    const starts = slots.map((s) => s.start.toISOString())
+    // Mañana anclada a apertura: 09:00..11:00 (12:00-13:00 pisa el bloqueo)
+    expect(starts).toContain('2026-05-11T13:00:00.000Z') // 09:00
+    expect(starts).toContain('2026-05-11T15:00:00.000Z') // 11:00
+    expect(starts).not.toContain('2026-05-11T16:00:00.000Z') // 12:00 pisa el bloqueo
+    // Tarde re-anclada al fin del bloqueo: 14:00..17:00
+    expect(starts).toContain('2026-05-11T18:00:00.000Z') // 14:00
+    expect(starts).toContain('2026-05-11T21:00:00.000Z') // 17:00
+  })
+
+  it('excludes slots beyond bookingWindowDays even on the boundary day', () => {
+    // now = domingo 10 mayo 14:00 Santiago (18:00Z); window 1 día
+    // => maxStart = lunes 11 mayo 14:00 Santiago (18:00Z)
+    const now = new Date('2026-05-10T18:00:00Z')
+    const slots = generateSlots(baseDate, 60, rules, [], [], { timezone, now, bookingWindowDays: 1 })
+    expect(slots.length).toBeGreaterThan(0)
+    const lastStart = slots[slots.length - 1].start.toISOString()
+    // Último slot ofrecible: 14:00 Santiago (18:00Z); antes se ofrecían hasta las 17:00
+    expect(lastStart).toBe('2026-05-11T18:00:00.000Z')
+  })
+
   it('excludes expired bookings from slot generation', () => {
     const bookings = [
       {
