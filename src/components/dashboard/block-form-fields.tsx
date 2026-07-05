@@ -13,6 +13,9 @@ interface BlockFormFieldsProps {
   onEndTimeChange: (value: string) => void
   reason: string
   onReasonChange: (value: string) => void
+  /** Tolerancia de solape en minutos (string del input). Si no se pasa handler, el campo no se muestra. */
+  overlapTolerance?: string
+  onOverlapToleranceChange?: (value: string) => void
 }
 
 export function BlockFormFields({
@@ -24,6 +27,8 @@ export function BlockFormFields({
   onEndTimeChange,
   reason,
   onReasonChange,
+  overlapTolerance,
+  onOverlapToleranceChange,
 }: BlockFormFieldsProps) {
   return (
     <>
@@ -68,6 +73,24 @@ export function BlockFormFields({
           maxLength={255}
         />
       </div>
+
+      {onOverlapToleranceChange ? (
+        <div>
+          <Label htmlFor="block-overlap-tolerance">Permitir que una cita invada hasta (min)</Label>
+          <Input
+            id="block-overlap-tolerance"
+            type="number"
+            min={0}
+            max={240}
+            step={5}
+            value={overlapTolerance ?? '0'}
+            onChange={(e) => onOverlapToleranceChange(e.target.value)}
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            0 = el bloqueo es estricto. Con tolerancia, una cita puede pisar los primeros o últimos minutos del bloqueo.
+          </p>
+        </div>
+      ) : null}
     </>
   )
 }

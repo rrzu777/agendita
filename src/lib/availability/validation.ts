@@ -2,6 +2,7 @@ import { addMinutes, differenceInMinutes, addDays } from 'date-fns'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { getLocalDayOfWeek, getLocalDateStr, startOfLocalDay } from './timezone'
 import { LEAD_TIME_MINUTES } from './constants'
+import { shrinkBlock } from './shrink-block'
 import { expandSeries } from '@/lib/calendar/expand-series'
 import type { PrismaClient, Prisma } from '@prisma/client'
 
@@ -101,10 +102,13 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }
 
-  const [oneOffBlock, blockSeries] = await Promise.all([
-    tx.timeBlock.findFirst({
+  const [oneOffBlocks, blockSeries] = await Promise.all([
+    // Query por bordes crudos (superconjunto); la tolerancia se aplica en
+    // memoria con shrinkBlock — un bloqueo tolerante puede no bloquear el slot
+    // aunque sus bordes crudos lo solapen.
+    tx.timeBlock.findMany({
       where: { businessId, startDateTime: { lt: endDateTime }, endDateTime: { gt: startDateTime } },
-      select: { id: true },
+      select: { startDateTime: true, endDateTime: true, overlapToleranceMinutes: true },
     }),
     tx.timeBlockSeries.findMany({
       where: {
@@ -120,16 +124,21 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
     }),
   ])
 
+  const overlapsShrunk = (block: { startDateTime: Date; endDateTime: Date; overlapToleranceMinutes?: number }): boolean => {
+    const core = shrinkBlock(block)
+    return core !== null && core.start < endDateTime && startDateTime < core.end
+  }
+
+  const blockedByOneOff = oneOffBlocks.some(overlapsShrunk)
+
   // El chequeo de bloqueo corre ANTES del advisory lock; expandir las series en
   // memoria aquí no pierde ninguna garantía de concurrencia (esta protege
   // booking-vs-booking, no bloqueos).
   const blockedBySeries = blockSeries.some((s) =>
-    expandSeries(s, s.exceptions, startDateTime, endDateTime, timezone).some(
-      (occ) => occ.startDateTime < endDateTime && startDateTime < occ.endDateTime,
-    ),
+    expandSeries(s, s.exceptions, startDateTime, endDateTime, timezone).some(overlapsShrunk),
   )
 
-  if (oneOffBlock || blockedBySeries) {
+  if (blockedByOneOff || blockedBySeries) {
     logEvent('slot_validation_rejected', { businessId, reason: 'timeblock_overlap' })
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }

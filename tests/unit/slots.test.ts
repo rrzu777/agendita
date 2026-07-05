@@ -178,6 +178,25 @@ describe('generateSlots', () => {
     expect(lastStart).toBe('2026-05-11T18:00:00.000Z')
   })
 
+  it('lets a service eat into a tolerant block (caso MANICURA + almuerzo)', () => {
+    // Regla 09:00-14:30, servicio 225 min, almuerzo 12:00-14:00 con tolerancia 45
+    const localRules = [
+      { dayOfWeek: 1, startTime: '09:00', endTime: '14:30', isActive: true },
+    ]
+    const blocks = [
+      {
+        startDateTime: new Date('2026-05-11T16:00:00Z'), // 12:00 Santiago
+        endDateTime: new Date('2026-05-11T18:00:00Z'),   // 14:00 Santiago
+        overlapToleranceMinutes: 45,
+      },
+    ]
+    // Sin tolerancia: 0 slots (09:00-12:45 pisa el almuerzo). Con 45: 09:00 existe.
+    const strict = generateSlots(baseDate, 225, localRules, [{ ...blocks[0], overlapToleranceMinutes: 0 }], [], { timezone, now: testNow })
+    expect(strict).toEqual([])
+    const slots = generateSlots(baseDate, 225, localRules, blocks, [], { timezone, now: testNow })
+    expect(slots.map((s) => s.start.toISOString())).toEqual(['2026-05-11T13:00:00.000Z'])
+  })
+
   it('excludes expired bookings from slot generation', () => {
     const bookings = [
       {

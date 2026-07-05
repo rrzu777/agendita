@@ -265,6 +265,8 @@ model TimeBlock {
   startDateTime DateTime
   endDateTime   DateTime
   reason        String?
+  // Minutos que una cita puede invadir por cada borde del bloqueo (0 = estricto)
+  overlapToleranceMinutes Int @default(0)
   createdAt     DateTime @default(now())
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -279,6 +281,8 @@ model TimeBlockSeries {
   startTime  String
   endTime    String
   reason     String?
+  // Minutos que una cita puede invadir por cada borde de cada ocurrencia (0 = estricto)
+  overlapToleranceMinutes Int @default(0)
   anchorDate DateTime
   until      DateTime?
   isActive   Boolean   @default(true)

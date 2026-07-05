@@ -54,6 +54,7 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
   const [weeks, setWeeks] = useState(3)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [confirmOverlap, setConfirmOverlap] = useState(false)
+  const [overlapTolerance, setOverlapTolerance] = useState('0')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -132,7 +133,7 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
       try {
         if (recurring) {
           const anchorDate = fromZonedTime(`${date} 00:00:00`, timezone)
-          const res = await createTimeBlockSeries({ daysOfWeek, startTime, endTime, reason: reason || null, anchorDate, endMode, weeks: endMode === 'weeks' ? weeks : null, confirmed: confirmOverlap })
+          const res = await createTimeBlockSeries({ daysOfWeek, startTime, endTime, reason: reason || null, anchorDate, endMode, weeks: endMode === 'weeks' ? weeks : null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmed: confirmOverlap })
           // Mismo patrón que los bloqueos sueltos: si hay reservas que chocan,
           // la serie NO se crea hasta que la dueña marque la confirmación.
           if ('requiresConfirmation' in res) { setError(res.message); return }
@@ -147,7 +148,7 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
         }
         const start = parseTimeUTC(date, startTime, timezone)
         const end = parseTimeUTC(date, endTime, timezone)
-        const result = await createTimeBlock({ startDateTime: start, endDateTime: end, reason: reason || null, confirmOverlap })
+        const result = await createTimeBlock({ startDateTime: start, endDateTime: end, reason: reason || null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmOverlap })
         if (result && 'requiresConfirmation' in result) { setError(result.message); return }
         router.refresh()
         setFeedback('Bloqueo creado')
@@ -208,6 +209,8 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
               onEndTimeChange={setEndTime}
               reason={reason}
               onReasonChange={setReason}
+              overlapTolerance={overlapTolerance}
+              onOverlapToleranceChange={setOverlapTolerance}
             />
 
             <RecurrenceFields

@@ -12,6 +12,7 @@ import { getEffectiveBlocks, type EffectiveBlock } from '@/lib/availability/effe
 import { computeServiceFit } from '@/lib/availability/service-fit'
 import { getLocalDateStr } from '@/lib/availability/timezone'
 import { computeSeriesUntil, expandSeries, type SeriesEndMode } from '@/lib/calendar/expand-series'
+import { timeToMinutes } from '@/lib/availability/time-range'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 
 const MAX_BLOCK_DURATION_MS = 32 * 24 * 60 * 60 * 1000 // 32 dias
@@ -75,21 +76,29 @@ async function serviceFitAddendum(
   }
 }
 
+const TOLERANCE_TOO_BIG_MESSAGE = 'La tolerancia no puede superar la mitad de la duración del bloqueo'
+
 const createTimeBlockSchema = z.object({
   startDateTime: z.date(),
   endDateTime: z.date(),
   reason: z.string().max(255).optional().nullable(),
+  overlapToleranceMinutes: z.number().int().min(0).max(240).optional(),
   confirmOverlap: z.boolean().optional(),
 }).refine(data => data.endDateTime > data.startDateTime, {
   message: 'La fecha de fin debe ser posterior a la de inicio',
-})
+}).refine(data => {
+  const tolerance = data.overlapToleranceMinutes ?? 0
+  const durationMinutes = (data.endDateTime.getTime() - data.startDateTime.getTime()) / 60_000
+  return tolerance <= durationMinutes / 2
+}, { message: TOLERANCE_TOO_BIG_MESSAGE })
 
-function parseTimeBlockInput(raw: Record<string, unknown>): { startDateTime: Date; endDateTime: Date; reason: string | null; confirmOverlap: boolean } {
+function parseTimeBlockInput(raw: Record<string, unknown>): { startDateTime: Date; endDateTime: Date; reason: string | null; overlapToleranceMinutes: number; confirmOverlap: boolean } {
   const startDateTime = raw.startDateTime instanceof Date ? raw.startDateTime : new Date(raw.startDateTime as string)
   const endDateTime = raw.endDateTime instanceof Date ? raw.endDateTime : new Date(raw.endDateTime as string)
   const reason = typeof raw.reason === 'string' ? raw.reason : null
+  const overlapToleranceMinutes = typeof raw.overlapToleranceMinutes === 'number' ? raw.overlapToleranceMinutes : 0
   const confirmOverlap = raw.confirmOverlap === true
-  return { startDateTime, endDateTime, reason, confirmOverlap }
+  return { startDateTime, endDateTime, reason, overlapToleranceMinutes, confirmOverlap }
 }
 
 async function rateLimitOrThrow(key: string) {
@@ -111,7 +120,7 @@ export async function getTimeBlocks() {
   })
 }
 
-export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId'> & { confirmOverlap?: boolean }) {
+export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean }) {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('create-timeblock', 20, 60000)
   if (!limit.success) {
@@ -119,9 +128,9 @@ export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' |
   }
 
   const raw = data as unknown as Record<string, unknown>
-  const { startDateTime, endDateTime, reason, confirmOverlap } = parseTimeBlockInput(raw)
+  const { startDateTime, endDateTime, reason, overlapToleranceMinutes, confirmOverlap } = parseTimeBlockInput(raw)
 
-  const parsed = createTimeBlockSchema.safeParse({ startDateTime, endDateTime, reason, confirmOverlap })
+  const parsed = createTimeBlockSchema.safeParse({ startDateTime, endDateTime, reason, overlapToleranceMinutes, confirmOverlap })
   if (!parsed.success) {
     throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
@@ -155,7 +164,7 @@ export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' |
   }
 
   const newBlock = await prisma.timeBlock.create({
-    data: { startDateTime, endDateTime, reason, businessId },
+    data: { startDateTime, endDateTime, reason, overlapToleranceMinutes, businessId },
   })
   revalidatePath('/dashboard/availability')
   revalidatePath('/dashboard/calendar')
@@ -196,7 +205,7 @@ export async function deleteTimeBlock(id: string) {
 
 export async function updateTimeBlock(
   id: string,
-  data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId'> & { confirmOverlap?: boolean },
+  data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean },
 ): Promise<TimeBlock | { requiresConfirmation: true; message: string }> {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('update-timeblock', 20, 60000)
@@ -205,9 +214,9 @@ export async function updateTimeBlock(
   }
 
   const raw = data as unknown as Record<string, unknown>
-  const { startDateTime, endDateTime, reason, confirmOverlap } = parseTimeBlockInput(raw)
+  const { startDateTime, endDateTime, reason, overlapToleranceMinutes, confirmOverlap } = parseTimeBlockInput(raw)
 
-  const parsed = createTimeBlockSchema.safeParse({ startDateTime, endDateTime, reason, confirmOverlap })
+  const parsed = createTimeBlockSchema.safeParse({ startDateTime, endDateTime, reason, overlapToleranceMinutes, confirmOverlap })
   if (!parsed.success) {
     throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
@@ -260,7 +269,7 @@ export async function updateTimeBlock(
 
   const updateResult = await prisma.timeBlock.updateMany({
     where: { id, businessId },
-    data: { startDateTime, endDateTime, reason },
+    data: { startDateTime, endDateTime, reason, overlapToleranceMinutes },
   })
   if (updateResult.count === 0) {
     throw new ForbiddenError('Bloque no encontrado')
@@ -281,7 +290,11 @@ const createSeriesSchema = z.object({
   anchorDate: z.date(),
   endMode: z.enum(['forever', 'month', 'weeks']),
   weeks: z.number().int().min(1).max(52).optional().nullable(),
+  overlapToleranceMinutes: z.number().int().min(0).max(240).optional(),
 }).refine((d) => d.endTime > d.startTime, { message: 'La hora de fin debe ser posterior a la de inicio' })
+  .refine((d) => (d.overlapToleranceMinutes ?? 0) <= (timeToMinutes(d.endTime) - timeToMinutes(d.startTime)) / 2, {
+    message: TOLERANCE_TOO_BIG_MESSAGE,
+  })
 
 export async function createTimeBlockSeries(data: {
   daysOfWeek: number[]
@@ -291,6 +304,7 @@ export async function createTimeBlockSeries(data: {
   anchorDate: Date
   endMode: SeriesEndMode
   weeks?: number | null
+  overlapToleranceMinutes?: number
   confirmed?: boolean
 }): Promise<
   | { requiresConfirmation: true; message: string }
@@ -359,6 +373,7 @@ export async function createTimeBlockSeries(data: {
       reason: data.reason ?? null,
       anchorDate: data.anchorDate,
       until,
+      overlapToleranceMinutes: data.overlapToleranceMinutes ?? 0,
     },
   })
 
@@ -462,6 +477,8 @@ export async function updateTimeBlockSeries(
         reason: changes.reason ?? null,
         anchorDate: anchorToday,
         until: existing.until,
+        // La tolerancia es de la serie y el diálogo no la edita: se conserva
+        overlapToleranceMinutes: existing.overlapToleranceMinutes ?? 0,
       },
     }),
   ])

@@ -10,6 +10,8 @@ export interface SeriesLike {
   reason: string | null
   anchorDate: Date
   until: Date | null
+  /** Minutos que una cita puede invadir por cada borde de cada ocurrencia. */
+  overlapToleranceMinutes?: number
 }
 
 export interface ExceptionLike {
@@ -27,6 +29,8 @@ export interface EffectiveBlock {
   reason: string | null
   seriesId?: string
   occurrenceDate?: Date
+  /** Minutos que una cita puede invadir por cada borde del bloqueo. */
+  overlapToleranceMinutes?: number
 }
 
 /** Tope de días que expande una serie de una sola pasada (evita rangos patológicos). */
@@ -87,6 +91,8 @@ export function expandSeries(
           reason,
           seriesId: series.id,
           occurrenceDate: fromZonedTime(`${cursor} 00:00:00`, timezone),
+          // Los override de excepción cambian hora/motivo; la tolerancia es de la serie
+          overlapToleranceMinutes: series.overlapToleranceMinutes ?? 0,
         })
       }
     }
