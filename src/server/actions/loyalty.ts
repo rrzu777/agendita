@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
-import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { requireBusiness, requireBusinessRole, requireUser, ForbiddenError } from '@/lib/auth/server'
 import { loyaltyConfigSchema, adjustPointsSchema, redemptionOptionSchema, redeemSchema, automaticRuleSchema, buildConditions, type AutomaticRuleInput } from '@/lib/loyalty/schema'
 import { getLoyaltyBalance, getLoyaltyHistory } from '@/lib/loyalty/balance'
 import { reconcileExpiredGrants } from '@/lib/loyalty/grant'
@@ -275,6 +275,29 @@ export async function redeemPointsAsCustomer(loyaltyToken: string, optionId: unk
   if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
   await runRedemption({ businessId: customer.businessId, customerId: customer.id, optionId: parsed.data.optionId, requestId: parsed.data.requestId, createdByUserId: null })
   await revalidatePath(`/tarjeta/${loyaltyToken}`)
+}
+
+export async function redeemPointsAsMe(customerId: string, optionId: unknown, requestId: unknown) {
+  const user = await requireUser()
+  const parsed = redeemSchema.safeParse({ optionId, requestId })
+  if (!parsed.success) throw new Error('Datos inválidos')
+  // Ownership por sesión: el Customer debe estar vinculado a esta cuenta.
+  const customer = await prisma.customer.findFirst({
+    where: { id: customerId, userId: user.id },
+    select: { id: true, businessId: true, loyaltyToken: true, business: { select: { slug: true, loyaltyConfig: true } } },
+  })
+  if (!customer) throw new ForbiddenError('Tarjeta no disponible')
+  const config = customer.business.loyaltyConfig
+  if (!config || !config.isActive) throw new Error('El programa no está disponible')
+  const limit = await checkRateLimit('loyalty-redeem-public', 10, 60000, { businessId: customer.businessId, userId: user.id })
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  await runRedemption({ businessId: customer.businessId, customerId: customer.id, optionId: parsed.data.optionId, requestId: parsed.data.requestId, createdByUserId: null })
+  await revalidatePath(`/mi/${customer.business.slug}`)
+  // La tarjeta pública del mismo Customer se cachea (redeemPointsAsCustomer ya
+  // la revalida) — un canje desde /mi también debe refrescarla o queda stale.
+  if (customer.loyaltyToken) {
+    await revalidatePath(`/tarjeta/${customer.loyaltyToken}`)
+  }
 }
 
 export async function listAutomaticRules() {
