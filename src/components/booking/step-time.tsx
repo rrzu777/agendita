@@ -5,7 +5,10 @@ import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
 import { getAvailableTimeSlots } from '@/server/actions/availability'
+import { LEAD_TIME_MINUTES } from '@/lib/availability/constants'
 import { Clock3, Loader2 } from 'lucide-react'
+
+const LEAD_TIME_HINT = `Los horarios con menos de ${LEAD_TIME_MINUTES / 60} horas de anticipación no se muestran.`
 
 interface StepTimeProps {
   businessId: string
@@ -19,6 +22,8 @@ export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) 
   const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null)
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
+  const [hasError, setHasError] = useState(false)
+  const [retryKey, setRetryKey] = useState(0)
   const ignoreRef = useRef(false)
 
   useEffect(() => {
@@ -29,6 +34,8 @@ export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) 
     setLoading(true)
     // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing error/reset UI is required before each fetch attempt
     setErrorMessage('')
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing error/reset UI is required before each fetch attempt
+    setHasError(false)
     // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing previous slot selection avoids stale state on new fetch
     setSelectedSlot(null)
 
@@ -40,6 +47,7 @@ export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) 
       .catch((error) => {
         if (ignoreRef.current) return
         setSlots([])
+        setHasError(true)
         setErrorMessage(error instanceof Error ? error.message : 'No se pudieron cargar los horarios')
       })
       .finally(() => {
@@ -49,7 +57,7 @@ export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) 
     return () => {
       ignoreRef.current = true
     }
-  }, [businessId, data.date, data.serviceId])
+  }, [businessId, data.date, data.serviceId, retryKey])
 
   if (loading) {
     return (
@@ -60,13 +68,29 @@ export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) 
     )
   }
 
+  if (hasError) {
+    return (
+      <div>
+        <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary sm:text-3xl">No pudimos cargar los horarios</h2>
+        <p className="mb-6 text-muted-foreground">
+          {errorMessage || 'Ocurrió un error al cargar los horarios. Intenta de nuevo.'}
+        </p>
+        <div className="flex gap-3">
+          <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
+          <Button className="h-12 rounded-full px-6" onClick={() => setRetryKey((k) => k + 1)}>Reintentar</Button>
+        </div>
+      </div>
+    )
+  }
+
   if (slots.length === 0) {
     return (
       <div>
         <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary sm:text-3xl">No hay horarios disponibles</h2>
-        <p className="mb-6 text-muted-foreground">
-          {errorMessage || 'No hay horarios disponibles para esta fecha. Por favor, selecciona otra fecha.'}
+        <p className="mb-2 text-muted-foreground">
+          No hay horarios disponibles para esta fecha. Por favor, selecciona otra fecha.
         </p>
+        <p className="mb-6 text-sm text-muted-foreground">{LEAD_TIME_HINT}</p>
         <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
       </div>
     )
@@ -98,6 +122,8 @@ export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) 
           </button>
         ))}
       </div>
+
+      <p className="mt-5 text-sm text-muted-foreground">{LEAD_TIME_HINT}</p>
 
       <div className="mt-8 flex gap-3">
         <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
