@@ -32,11 +32,8 @@ export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) 
     ignoreRef.current = false
     // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting loading state before fetch is a standard UI pattern
     setLoading(true)
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing error/reset UI is required before each fetch attempt
     setErrorMessage('')
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing error/reset UI is required before each fetch attempt
     setHasError(false)
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing previous slot selection avoids stale state on new fetch
     setSelectedSlot(null)
 
     getAvailableTimeSlots(businessId, data.serviceId, data.date)
