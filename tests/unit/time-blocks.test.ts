@@ -459,6 +459,7 @@ describe('updateTimeBlock', () => {
         startDateTime: new Date('2026-06-01T11:00:00Z'),
         endDateTime: new Date('2026-06-01T12:00:00Z'),
         reason: 'Updated reason',
+        overlapToleranceMinutes: 0,
       },
     })
   })
@@ -568,5 +569,88 @@ describe('updateTimeBlock', () => {
         confirmOverlap: false,
       }),
     ).rejects.toThrow('Bloque no encontrado')
+  })
+})
+
+describe('overlapToleranceMinutes', () => {
+  const anchorDate = fromZonedTime('2026-06-01 00:00:00', TZ)
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPrisma.booking.findMany.mockResolvedValue([])
+    mockPrisma.timeBlock.create.mockResolvedValue({ id: 'block-1' })
+    mockPrisma.timeBlockSeries.create.mockResolvedValue({ id: 'series-1' })
+  })
+
+  it('persists tolerance when creating a one-off block', async () => {
+    await createTimeBlock({ ...baseInput, overlapToleranceMinutes: 15 })
+    expect(mockPrisma.timeBlock.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ overlapToleranceMinutes: 15 }) }),
+    )
+  })
+
+  it('defaults tolerance to 0 when not provided', async () => {
+    await createTimeBlock(baseInput)
+    expect(mockPrisma.timeBlock.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ overlapToleranceMinutes: 0 }) }),
+    )
+  })
+
+  it('rejects tolerance beyond half the block duration', async () => {
+    // baseInput dura 60 min → máximo 30
+    await expect(createTimeBlock({ ...baseInput, overlapToleranceMinutes: 31 }))
+      .rejects.toThrow('Datos inválidos')
+    expect(mockPrisma.timeBlock.create).not.toHaveBeenCalled()
+  })
+
+  it('persists tolerance when creating a series', async () => {
+    const res = await createTimeBlockSeries({
+      daysOfWeek: [1],
+      startTime: '12:00',
+      endTime: '14:00',
+      reason: null,
+      anchorDate,
+      endMode: 'forever',
+      weeks: null,
+      overlapToleranceMinutes: 45,
+    })
+    expect('series' in res).toBe(true)
+    expect(mockPrisma.timeBlockSeries.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ overlapToleranceMinutes: 45 }) }),
+    )
+  })
+
+  it('rejects series tolerance beyond half the occurrence duration', async () => {
+    await expect(createTimeBlockSeries({
+      daysOfWeek: [1],
+      startTime: '12:00',
+      endTime: '13:00',
+      reason: null,
+      anchorDate,
+      endMode: 'forever',
+      weeks: null,
+      overlapToleranceMinutes: 31,
+    })).rejects.toThrow('Datos inválidos')
+    expect(mockPrisma.timeBlockSeries.create).not.toHaveBeenCalled()
+  })
+
+  it('preserves the series tolerance across a whole-series edit split', async () => {
+    mockPrisma.timeBlockSeries.findFirst.mockResolvedValue({
+      id: 'series-1',
+      businessId: 'biz-1',
+      daysOfWeek: [1],
+      startTime: '12:00',
+      endTime: '14:00',
+      reason: null,
+      anchorDate,
+      until: null,
+      isActive: true,
+      overlapToleranceMinutes: 30,
+    })
+    mockPrisma.timeBlockSeries.update.mockResolvedValue({})
+    await updateTimeBlockSeries('series-1', { startTime: '12:30', endTime: '14:00' })
+    expect(mockPrisma.timeBlockSeries.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ overlapToleranceMinutes: 30 }) }),
+    )
   })
 })
