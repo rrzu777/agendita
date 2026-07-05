@@ -1,6 +1,7 @@
 import { addMinutes, differenceInMinutes, addDays } from 'date-fns'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { getLocalDayOfWeek, getLocalDateStr, startOfLocalDay } from './timezone'
+import { LEAD_TIME_MINUTES } from './constants'
 import { expandSeries } from '@/lib/calendar/expand-series'
 import type { PrismaClient, Prisma } from '@prisma/client'
 
@@ -12,6 +13,8 @@ export interface AssertSlotInput {
   endDateTime: Date
   timezone: string
   excludeBookingId?: string
+  /** Anticipación mínima en minutos; los flujos de la dueña pasan 0 (walk-ins). Default: LEAD_TIME_MINUTES. */
+  leadTimeMinutes?: number
 }
 
 function hashStringToInt(str: string): number {
@@ -40,8 +43,9 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
 
   const now = new Date()
 
-  // Lead time mínimo: 2 horas antes del slot
-  const minStart = addMinutes(now, 120)
+  // Lead time mínimo (default 2 horas); 0 = permitir desde "ahora" (dueña)
+  const leadTimeMinutes = input.leadTimeMinutes ?? LEAD_TIME_MINUTES
+  const minStart = addMinutes(now, leadTimeMinutes)
   if (startDateTime < minStart) {
     logEvent('slot_validation_rejected', { businessId, reason: 'lead_time', slotStart: startDateTime.toISOString() })
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')

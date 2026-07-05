@@ -1,6 +1,7 @@
 import { addMinutes, addDays } from 'date-fns'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { getLocalDayOfWeek } from './timezone'
+import { LEAD_TIME_MINUTES } from './constants'
 
 export interface TimeSlot {
   start: Date
@@ -57,7 +58,7 @@ export function generateSlots(
   const {
     timezone = 'America/Santiago',
     now = new Date(),
-    leadTimeMinutes = 120,
+    leadTimeMinutes = LEAD_TIME_MINUTES,
     bookingWindowDays = 90,
   } = options
 
