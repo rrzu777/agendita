@@ -1,0 +1,59 @@
+import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import { prisma } from '@/lib/db'
+import { getCurrentUser } from '@/lib/auth/user'
+import { getLoyaltyBalance } from '@/lib/loyalty/balance'
+import { displayBalance } from '@/lib/loyalty/view'
+
+export default async function MiHomePage() {
+  const user = await getCurrentUser()
+  if (!user) redirect('/ingresar?next=/mi')
+
+  const customers = await prisma.customer.findMany({
+    where: { userId: user.id },
+    select: {
+      id: true,
+      name: true,
+      business: {
+        select: { id: true, name: true, slug: true, logoUrl: true, loyaltyConfig: { select: { isActive: true, pointsLabel: true } } },
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  if (customers.length === 0) {
+    return (
+      <main className="mx-auto max-w-md px-4 py-16 text-center">
+        <h1 className="text-xl font-semibold">Todavía no hay nada por aquí</h1>
+        <p className="mt-2 text-gray-500">
+          Abre el enlace de tu tarjeta de beneficios, o haz una reserva con este email, y tus negocios van a aparecer acá.
+        </p>
+      </main>
+    )
+  }
+
+  // Lecturas simples (agregados), sin tx interactiva → paralelo seguro.
+  const balances = await Promise.all(
+    customers.map((c) => getLoyaltyBalance(prisma, c.id, c.business.id)),
+  )
+
+  return (
+    <main className="mx-auto max-w-md px-4 pb-10">
+      <h1 className="text-lg font-semibold">Mis negocios</h1>
+      <ul className="mt-4 space-y-3">
+        {customers.map((c, i) => (
+          <li key={c.id}>
+            <Link href={`/mi/${c.business.slug}`} className="block rounded-2xl border border-gray-100 bg-pink-50/50 px-4 py-4 hover:bg-pink-50">
+              <div className="font-medium">{c.business.name}</div>
+              {c.business.loyaltyConfig?.isActive && (
+                <div className="mt-1 text-sm text-pink-700">
+                  {displayBalance(balances[i])} {c.business.loyaltyConfig.pointsLabel}
+                </div>
+              )}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </main>
+  )
+}
