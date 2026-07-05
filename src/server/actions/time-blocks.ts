@@ -2,7 +2,7 @@
 
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import type { TimeBlock } from '@prisma/client'
+import type { Prisma, TimeBlock, TimeBlockSeries } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
@@ -26,7 +26,7 @@ const SERIES_CONFLICT_WINDOW_DAYS = 60
  * que generateSlots/assertSlotIsAvailable), aunque el cron aún no lo haya
  * marcado como `expired`.
  */
-function overlappingActiveBookingsWhere(businessId: string, start: Date, end: Date, now: Date) {
+function overlappingActiveBookingsWhere(businessId: string, start: Date, end: Date, now: Date): Prisma.BookingWhereInput {
   return {
     businessId,
     startDateTime: { lt: end },
@@ -292,7 +292,10 @@ export async function createTimeBlockSeries(data: {
   endMode: SeriesEndMode
   weeks?: number | null
   confirmed?: boolean
-}) {
+}): Promise<
+  | { requiresConfirmation: true; message: string }
+  | { series: TimeBlockSeries; overlappingDates: string[] }
+> {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   await rateLimitOrThrow('create-timeblock')
 
@@ -387,7 +390,7 @@ export async function skipSeriesOccurrence(seriesId: string, occurrenceDate: Dat
 export async function updateTimeBlockSeries(
   seriesId: string,
   changes: { startTime: string; endTime: string; reason?: string | null; confirmed?: boolean },
-) {
+): Promise<{ requiresConfirmation: true; message: string } | { series: TimeBlockSeries }> {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   await rateLimitOrThrow('update-timeblock')
 

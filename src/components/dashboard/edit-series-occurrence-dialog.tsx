@@ -51,8 +51,11 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
     startTransition(async () => {
       try {
         const res = await fn()
-        if (res && typeof res === 'object' && 'requiresConfirmation' in res && onRequiresConfirmation) {
-          onRequiresConfirmation((res as { message: string }).message)
+        if (
+          res && typeof res === 'object' && 'requiresConfirmation' in res &&
+          'message' in res && typeof res.message === 'string' && onRequiresConfirmation
+        ) {
+          onRequiresConfirmation(res.message)
           return
         }
         router.refresh()
