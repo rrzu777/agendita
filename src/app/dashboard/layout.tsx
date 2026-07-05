@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { DashboardSidebar } from '@/components/dashboard/sidebar'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
+import { prisma } from '@/lib/db'
 
 export default async function DashboardLayout({
   children,
@@ -14,7 +15,10 @@ export default async function DashboardLayout({
   }
 
   if (!userData.business) {
-    redirect('/recover-business')
+    // Una clienta logueada que cae en /dashboard no debe terminar en el flujo
+    // de recuperación de negocio: si tiene Customer vinculados, su casa es /mi.
+    const linkedCustomers = await prisma.customer.count({ where: { userId: userData.user.id } })
+    redirect(linkedCustomers > 0 ? '/mi' : '/recover-business')
   }
 
   return (
