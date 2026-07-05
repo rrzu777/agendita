@@ -60,6 +60,45 @@ describe('AvailabilityEditor', () => {
     expect(mockUpdateAvailabilityRule).not.toHaveBeenCalled()
   })
 
+  it('rejects an inverted time range without calling the server', async () => {
+    mockUpdateAvailabilityRule.mockResolvedValue(undefined)
+    const container = renderEditor()
+    const hourSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Lunes inicio hora"]')
+
+    await act(async () => {
+      hourSelect!.value = '19'
+      hourSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(mockUpdateAvailabilityRule).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('La hora de inicio debe ser anterior a la de término')
+  })
+
+  it('clears the error and persists once the range becomes valid', async () => {
+    mockUpdateAvailabilityRule.mockResolvedValue(undefined)
+    const container = renderEditor()
+    const startHour = container.querySelector<HTMLSelectElement>('select[aria-label="Lunes inicio hora"]')
+
+    await act(async () => {
+      startHour!.value = '19'
+      startHour!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(mockUpdateAvailabilityRule).not.toHaveBeenCalled()
+
+    const endHour = container.querySelector<HTMLSelectElement>('select[aria-label="Lunes fin hora"]')
+    await act(async () => {
+      endHour!.value = '21'
+      endHour!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(mockUpdateAvailabilityRule).toHaveBeenCalledWith('rule-monday', {
+      startTime: '19:00',
+      endTime: '21:00',
+      isActive: true,
+    })
+    expect(container.textContent).not.toContain('La hora de inicio debe ser anterior a la de término')
+  })
+
   function renderEditor() {
     const container = document.createElement('div')
     document.body.appendChild(container)

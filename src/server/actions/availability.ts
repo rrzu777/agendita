@@ -9,6 +9,7 @@ import { generateSlots } from '@/lib/availability/slots'
 import { getBusinessDayRange } from '@/lib/availability/timezone'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { isValidTimeRange } from '@/lib/availability/time-range'
 
 const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
 
@@ -16,6 +17,8 @@ const updateAvailabilityRuleSchema = z.object({
   startTime: z.string().regex(timeRegex, 'Formato de hora inválido (HH:MM)'),
   endTime: z.string().regex(timeRegex, 'Formato de hora inválido (HH:MM)'),
   isActive: z.boolean(),
+}).refine((d) => isValidTimeRange(d.startTime, d.endTime), {
+  message: 'La hora de inicio debe ser anterior a la de término',
 })
 
 const rescheduleSlotsSchema = z.object({
