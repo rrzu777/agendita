@@ -2,6 +2,7 @@ import { addMinutes, addDays } from 'date-fns'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { getLocalDayOfWeek } from './timezone'
 import { LEAD_TIME_MINUTES } from './constants'
+import { shrinkBlock } from './shrink-block'
 
 export interface TimeSlot {
   start: Date
@@ -18,6 +19,8 @@ export interface BookingLike {
 export interface TimeBlockLike {
   startDateTime: Date
   endDateTime: Date
+  /** Minutos que una cita puede invadir por cada borde del bloqueo (0/ausente = estricto). */
+  overlapToleranceMinutes?: number
 }
 
 export interface AvailabilityRuleLike {
@@ -91,9 +94,12 @@ export function generateSlots(
     return true
   }
 
-  // Obstáculos que intersectan la ventana del día, ordenados por inicio
+  // Obstáculos que intersectan la ventana del día, ordenados por inicio.
+  // Los bloqueos se encogen según su tolerancia de solape (shrinkBlock).
   const obstacles = [
-    ...blocks.map((b) => ({ start: b.startDateTime, end: b.endDateTime })),
+    ...blocks
+      .map((b) => shrinkBlock(b))
+      .filter((b): b is { start: Date; end: Date } => b !== null),
     ...bookings.filter(blocksSlot).map((b) => ({ start: b.startDateTime, end: b.endDateTime })),
   ]
     .filter((o) => o.start < availabilityEnd && o.end > availabilityStart)
