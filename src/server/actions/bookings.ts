@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { getCurrentUser } from '@/lib/auth/user'
 import { logger } from '@/lib/logger'
 
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
@@ -222,6 +223,9 @@ export async function createBooking(data: {
   const finalAmount = service.price
   const endDateTime = addMinutes(data.startDateTime, service.durationMinutes)
 
+  // Vía 3 de vinculación (leer sesión ANTES de la tx: toca Supabase/cookies).
+  const sessionUser = await getCurrentUser()
+
   // Idempotencia: si llega key, buscar booking existente fuera de tx (fast path).
   // El race final se maneja con el unique constraint de DB dentro de la tx.
   if (data.idempotencyKey) {
@@ -280,6 +284,22 @@ export async function createBooking(data: {
             referrerToken: data.referralToken,
             referredPhone: normalizedPhone,
           })
+        }
+      }
+
+      // Vía 3 de vinculación: reserva hecha con sesión activa. Guards:
+      // - nunca pisar un userId existente
+      // - NO vincular a miembros del negocio (owner/staff reservando para
+      //   clientas — y el bypass e2e usa la sesión de la dueña)
+      // - solo si la fila User de Prisma existe (clientas que ya pasaron por
+      //   /mi; si no, quedará vinculada en su próxima visita a /mi)
+      if (sessionUser && !customer.userId) {
+        const [isMember, userRow] = await Promise.all([
+          tx.businessUser.findFirst({ where: { userId: sessionUser.id, businessId }, select: { id: true } }),
+          tx.user.findUnique({ where: { id: sessionUser.id }, select: { id: true } }),
+        ])
+        if (!isMember && userRow) {
+          customer = await tx.customer.update({ where: { id: customer.id }, data: { userId: sessionUser.id } })
         }
       }
 
