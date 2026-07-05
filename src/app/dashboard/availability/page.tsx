@@ -1,12 +1,17 @@
 import { redirect } from 'next/navigation'
+import { addDays } from 'date-fns'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { AvailabilityEditor } from '@/components/dashboard/availability-editor'
 import { TimeBlockList } from '@/components/dashboard/time-block-form'
 import { BlockTimeModal } from '@/components/dashboard/block-time-modal'
+import { ServiceFitWarnings } from '@/components/dashboard/service-fit-warnings'
 import { getAvailabilityRules } from '@/server/actions/availability'
+import { getServices } from '@/server/actions/services'
 import { getTimeBlocks, getTimeBlockSeries } from '@/server/actions/time-blocks'
 import { RecurringBlockList } from '@/components/dashboard/recurring-block-list'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
+import { computeServiceFit } from '@/lib/availability/service-fit'
+import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 
 export default async function AvailabilityPage() {
   const userData = await getCurrentUserWithBusiness()
@@ -22,12 +27,26 @@ export default async function AvailabilityPage() {
   const rules = await getAvailabilityRules()
   const blocks = await getTimeBlocks()
   const recurringSeries = await getTimeBlockSeries()
+  const services = await getServices()
   const timezone = userData.business.timezone || 'America/Santiago'
+
+  // Fit de servicios: semana simulada (próximos 7 días) con reglas activas y
+  // bloqueos efectivos (sueltos + series expandidas), sin reservas ni lead time.
+  const now = new Date()
+  const effectiveBlocks = await getEffectiveBlocks(userData.business.id, now, addDays(now, 8), timezone)
+  const serviceFits = computeServiceFit(
+    services,
+    rules.filter((r) => r.isActive),
+    effectiveBlocks,
+    timezone,
+    now,
+  )
 
   return (
     <div>
       <DashboardHeader title="Disponibilidad" subtitle="Configura tus horarios de atención y bloqueos." />
       <div className="space-y-8 p-5 md:p-10">
+        <ServiceFitWarnings fits={serviceFits} />
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
