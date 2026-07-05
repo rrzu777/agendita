@@ -43,8 +43,9 @@ model Business {
 ## 2. Auth y guards
 
 - **Gap crítico #1 (verificado):** la fila `User` de Prisma solo se crea al registrar un negocio (`createBusinessForUser`, `src/lib/auth/actions.ts:246`). Fix: **`ensureUserRow()`** — upsert por `id` (= Supabase auth id) con email/nombre del token — corre al entrar a cualquier superficie de clienta, antes de cualquier vinculación.
+  - **Conflicto de email único:** `User.email` es `@unique`. Si existe una fila con el mismo email pero otro id (cuenta Supabase recreada), el upsert tira P2002. Comportamiento definido: NO adoptar la fila existente (podría tener `BusinessUser`); mostrar error claro dirigiendo a soporte/`recover-business`. Caso raro, pero con comportamiento explícito y testeado.
 - **Gap crítico #2 (verificado):** `sanitizeNext` defaultea a `/dashboard` y el layout del dashboard manda a authed-sin-negocio a `/recover-business` (le recrearía un negocio a una clienta). Fix: (a) `/ingresar` siempre manda `next=/mi`; (b) el redirect de "sin negocio" del dashboard decide: si el user tiene `Customer` vinculados → `/mi`; si no → `/recover-business` como hoy.
-- **`/ingresar`:** página pública mínima, botón Google, `?next=` sanitizado con `sanitizeNext` (default `/mi` en este contexto). Reusa el flujo PKCE/callback existente sin cambios.
+- **`/ingresar`:** página pública mínima, botón Google, `?next=` sanitizado. **`sanitizeNext` hoy hardcodea el fallback `/dashboard`** — se parametriza (`sanitizeNext(next, fallback = '/dashboard')`) para que el contexto clienta use `/mi` sin tocar el comportamiento de dueña. Reusa el flujo PKCE/callback existente sin cambios.
 - **Guard nuevo:** `requireCustomerSession()` en `src/lib/auth/` — exige sesión Supabase, devuelve `{ user }`. No exige `BusinessUser`. Toda action de clienta valida ownership con `customer.userId === user.id`; jamás confía en ids del cliente.
 - **Dashboard intacto:** `requireBusiness`/`requireBusinessRole` siguen protegiendo el dashboard. Test explícito: clienta logueada no accede a `/dashboard`.
 - **e2e bypass:** `getE2ETestUser` ya tolera users sin negocios; los e2e de clienta usan el mismo header bypass con un user sin `BusinessUser`. Verificar, no construir.
@@ -67,9 +68,10 @@ Riesgo aceptado (decisión explícita): un typo de email ajeno en un Customer po
 ## 4. Superficie `/mi`
 
 - **`/mi`** — home multi-negocio: una card por Customer vinculado agrupadas por negocio (nombre, puntos, próxima reserva). Estado vacío explicativo ("abrí el link de tu tarjeta o hacé una reserva con este email"). Header mínimo con "Salir" (signOut existente).
-- **`/mi/[slug]`** — detalle por negocio: tarjeta completa (puntos, recompensas, canje, paquetes) + próximas reservas + historial. Si hay más de un Customer vinculado en el mismo negocio (duplicados), el detalle lista cada tarjeta por separado — no se combinan saldos.
-  - **Cero reimplementación:** los componentes de `/tarjeta/[token]` se extraen a compartidos; ambas rutas los renderizan. La diferencia es solo cómo se resuelve el Customer (token vs sesión).
-  - El canje reusa `redeemForGrant` con ownership por sesión en vez de token.
+- **`/mi/[slug]`** — detalle por negocio (`slug` = `Business.slug`, único; NO `subdomain`, que es nullable): tarjeta completa (puntos, recompensas, canje, paquetes) + próximas reservas + historial (con límite/paginación simple — puede ser largo). Si hay más de un Customer vinculado en el mismo negocio (duplicados), el detalle lista cada tarjeta por separado — no se combinan saldos.
+  - **Cero reimplementación:** los componentes de `/tarjeta/[token]` (`page.tsx`, ~200 líneas) se extraen a compartidos; ambas rutas los renderizan. La diferencia es solo cómo se resuelve el Customer (token vs sesión).
+  - El canje reusa el camino de `redeemPointsAsCustomer` (`src/server/actions/loyalty.ts:267`, hoy token-based): se extrae su core y se agrega la variante por sesión con ownership `customer.userId === user.id`. Un solo camino de config/stock, no se cablea `redeemForGrant` crudo.
+  - Negocio suspendido/cancelado: la tarjeta se muestra igual (los puntos son de la clienta); lo que se bloquea son las mutaciones de reserva (ver §5).
   - **Landmine P2028:** `getCustomerLoyalty` corre tx interactiva — correrla sola primero y el resto de lecturas en paralelo después (mismo fix que `customers/[id]/page.tsx`).
 - **`/tarjeta/[token]` sigue viva** como superficie guest y punto de entrada de vinculación.
 
@@ -81,7 +83,8 @@ Riesgo aceptado (decisión explícita): un typo de email ajeno en un Customer po
   - `cancelMyBooking(bookingId)` — guards: sesión + ownership + status `pending_payment` o `confirmed` (los únicos con transición válida a `cancelled`) + ventana `startDateTime − now > selfServiceCutoffHours` (0 = sin límite). Depósito intacto.
   - `rescheduleMyBooking(bookingId, newStart)` — misma ventana **sobre el horario actual** (el nuevo slot no tiene restricción de ventana: se rige por las mismas reglas que una reserva nueva del funnel); nuevo slot validado con disponibilidad real (`getEffectiveBlocks` — read path obligatorio para bloqueos — + anti-doble-booking) y dentro de `bookingWindowDays`.
   - Todas con `checkRateLimit` y todo `revalidate*` con `await` (landmine §2.2), incluyendo revalidación de paths del dashboard para que la agenda de la dueña refleje el cambio.
-- **Notificaciones:** nueva `sendOwnerBookingChangedNotification` (email a la dueña: "X canceló/reprogramó su reserva") + confirmación a la clienta. Vía `sendNotificationSafely`. Nota operativa: con Resend caído no salen emails; la señal garantizada es el cambio en la agenda del dashboard.
+- **Guard de negocio suspendido:** crear reservas ya está bloqueado para negocios suspendidos/cancelados (`bookings.ts:688`); `rescheduleMyBooking` crea un slot nuevo → el core compartido de `mutate.ts` conserva ese guard.
+- **Notificaciones:** nueva `sendOwnerBookingChangedNotification` (email a la dueña: "X canceló/reprogramó su reserva") + confirmación a la clienta. Reusa la infra owner-directed existente (`getBusinessOwnerEmails` en `src/lib/notifications/email-provider.ts` — ya resuelve emails de owner/admin del negocio). Vía `sendNotificationSafely`. Nota operativa: con Resend caído no salen emails; la señal garantizada es el cambio en la agenda del dashboard.
 - **UI:** botones cancelar/reprogramar en `/mi/[slug]` solo cuando la ventana lo permite (el server igual re-valida); fuera de ventana, mensaje "contactá al negocio" con la política del negocio. Reprogramar reusa el picker de fecha/hora del funnel público.
 - **Settings:** campo "Ventana de autogestión (horas)" en settings de reservas del dashboard, default 24, rango 0–720, con nota "0 = sin límite".
 
@@ -97,10 +100,10 @@ Cada PR sigue el ciclo estándar: writing-plans → subagent-driven-development 
 
 ## 7. Testing
 
-- **Unit:** matching de email (case/trim/verified-only/no-pisar), cálculo de ventana (incluye 0 = sin límite y borde exacto), guards de ownership, `ensureUserRow` idempotente (upsert, conflicto de email único).
+- **Unit:** matching de email (case/trim/verified-only/no-pisar), cálculo de ventana (incluye 0 = sin límite y borde exacto), guards de ownership, `ensureUserRow` idempotente (upsert; conflicto de email único → error de soporte, no adopción).
 - **Component:** mock de `next/navigation` para todo componente que use `useRouter` (landmine §2.5).
 - **Integración (CI):** 3 vías de vinculación (incl. no-pisar y token inválido), cancel/reschedule con ownership ajeno, fuera de ventana, status no cancelable, doble-booking en reschedule.
-- **e2e (mimosnails, header bypass):** login de clienta (user sin `BusinessUser`), `/mi` con tarjeta vinculada, cancelar dentro de ventana. No es check requerido; deja artefactos en prod.
+- **e2e (mimosnails, header bypass):** login de clienta (user sin `BusinessUser`), `/mi` con tarjeta vinculada, cancelar dentro de ventana. No es check requerido; deja artefactos en prod (incluido el user clienta de prueba — práctica ya aceptada para los e2e reales).
 - **tsc:** cero errores nuevos sobre los ~17 pre-existentes.
 
 ## 8. Seguridad
@@ -118,3 +121,4 @@ Cada PR sigue el ciclo estándar: writing-plans → subagent-driven-development 
 - Reembolso automático de depósitos vía Mercado Pago.
 - Compra de paquetes online (B4b — se apoya en esta superficie cuando llegue).
 - Enforcement estricto de `maxPerCustomer` por identidad verificada (mejora natural post-D, fast-follow).
+- CTA "¿Ya tenés cuenta? Ingresá" dentro del funnel público (fast-follow). Caveat técnico documentado: el funnel vive en el subdominio del tenant y el callback OAuth aterriza en el apex; `sanitizeNext` solo permite paths root-relative, así que volver al funnel post-login requiere resolver el redirect cross-host. La vía "reserva logueada" de D1 aplica a clientas que ya tenían sesión (cookie compartida entre subdominios).
