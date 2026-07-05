@@ -34,7 +34,9 @@ export async function getAvailabilityRules() {
 }
 
 export async function getAvailableTimeSlots(businessId: string, serviceId: string, date: Date) {
-  const limit = await checkRateLimit('available-slots', 10, 60000)
+  // Config 'get-availability' (60/min por IP): una clienta explorando fechas
+  // hace un request por click; 10/min se agotaba en uso humano normal.
+  const limit = await checkRateLimit('get-availability')
   if (!limit.success) {
     throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
