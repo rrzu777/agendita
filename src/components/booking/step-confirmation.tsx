@@ -6,8 +6,9 @@ import Link from 'next/link'
 import { CheckCircle2, Clock } from 'lucide-react'
 import { formatMoney } from '@/lib/money'
 import { formatBookingNumber } from '@/lib/bookings/number'
+import { formatBookingDate, formatBookingTime } from '@/lib/booking/format-booking-datetime'
 
-export function StepConfirmation({ data, bookingId, bookingNumber, mode, promo }: { data: BookingData; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null }) {
+export function StepConfirmation({ data, timezone, bookingId, bookingNumber, mode, promo }: { data: BookingData; timezone: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null }) {
   const isPending = mode === 'pending'
   const isFree = data.servicePrice <= 0
   const noDeposit = data.serviceDeposit <= 0
@@ -40,7 +41,7 @@ export function StepConfirmation({ data, bookingId, bookingNumber, mode, promo }
 
       <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5 text-left">
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
-        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date ? formatBookingDate(data.date, timezone) : ''} {data.timeSlot ? formatBookingTime(data.timeSlot.start, timezone) : ''}</span></div>
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice)}</span></div>
         {hasDiscount && (
           <>

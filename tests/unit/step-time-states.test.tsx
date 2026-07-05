@@ -37,7 +37,7 @@ describe('StepTime states', () => {
   async function render() {
     root = createRoot(container)
     await act(async () => {
-      root?.render(<StepTime businessId="biz-1" data={data} onSelect={() => {}} onBack={() => {}} />)
+      root?.render(<StepTime businessId="biz-1" timezone="Asia/Tokyo" data={data} onSelect={() => {}} onBack={() => {}} />)
     })
   }
 
@@ -69,6 +69,15 @@ describe('StepTime states', () => {
     await render()
     expect(container.textContent).toContain('No hay horarios disponibles')
     expect(container.textContent).toContain('2 horas de anticipación')
+  })
+
+  it('renders slot times in the business timezone', async () => {
+    vi.mocked(getAvailableTimeSlots).mockResolvedValue([
+      { start: new Date('2026-07-09T13:00:00Z'), end: new Date('2026-07-09T14:30:00Z') },
+    ])
+    await render()
+    // 13:00Z = 22:00 en Tokio; con el código viejo se renderizaba la hora de la máquina
+    expect(container.textContent).toContain('22:00')
   })
 
   it('slot grid shows the lead time hint', async () => {

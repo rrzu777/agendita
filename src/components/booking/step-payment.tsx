@@ -10,6 +10,7 @@ import { usePackageAvailability } from '@/lib/packages/use-package-availability'
 import { initiatePayment, verifyAndConfirmPayment, getOnlinePaymentAvailability } from '@/server/actions/payments'
 import { formatMoney } from '@/lib/money'
 import { AlertCircle, Loader2 } from 'lucide-react'
+import { formatBookingDate, formatBookingTime } from '@/lib/booking/format-booking-datetime'
 
 function generateIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -49,7 +50,7 @@ function BusinessCancellationPolicy({ policy }: { policy?: string | null }) {
   )
 }
 
-export function StepPayment({ data, businessId, cancellationPolicy, referralToken, onSuccess, onBack }: { data: BookingData; businessId: string; cancellationPolicy?: string | null; referralToken?: string; onSuccess: (id: string, mode: 'paid' | 'pending', promo?: { discountAmount: number; finalAmount: number } | null, bookingNumber?: number | null) => void; onBack: () => void }) {
+export function StepPayment({ data, businessId, timezone, cancellationPolicy, referralToken, onSuccess, onBack }: { data: BookingData; businessId: string; timezone: string; cancellationPolicy?: string | null; referralToken?: string; onSuccess: (id: string, mode: 'paid' | 'pending', promo?: { discountAmount: number; finalAmount: number } | null, bookingNumber?: number | null) => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error'>('review')
   const [errorMessage, setErrorMessage] = useState('')
@@ -363,7 +364,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
 
         <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5">
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
-          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
+          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date ? formatBookingDate(data.date, timezone) : ''} {data.timeSlot ? formatBookingTime(data.timeSlot.start, timezone) : ''}</span></div>
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice)}</span></div>
           {appliedPromo && (
             <>
@@ -421,7 +422,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
 
         <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5">
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
-          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
+          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date ? formatBookingDate(data.date, timezone) : ''} {data.timeSlot ? formatBookingTime(data.timeSlot.start, timezone) : ''}</span></div>
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice)}</span></div>
           {appliedPromo && (
             <>
@@ -488,7 +489,7 @@ export function StepPayment({ data, businessId, cancellationPolicy, referralToke
 
       <div className="mb-6 space-y-3 rounded-xl bg-muted/55 p-5">
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
-        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date?.toLocaleDateString('es-CL')} {data.timeSlot?.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.date ? formatBookingDate(data.date, timezone) : ''} {data.timeSlot ? formatBookingTime(data.timeSlot.start, timezone) : ''}</span></div>
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice)}</span></div>
         {appliedPromo && (
           <>

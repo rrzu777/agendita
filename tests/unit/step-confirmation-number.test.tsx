@@ -18,14 +18,14 @@ const data = {
 describe('StepConfirmation booking number', () => {
   it('renders #<number> when present', () => {
     const html = renderToStaticMarkup(
-      <StepConfirmation data={data} bookingId="clabc12345" bookingNumber={4738} mode="paid" promo={null} />,
+      <StepConfirmation timezone="America/Santiago" data={data} bookingId="clabc12345" bookingNumber={4738} mode="paid" promo={null} />,
     )
     expect(html).toContain('#4738')
   })
 
   it('falls back to the cuid slice when number is null', () => {
     const html = renderToStaticMarkup(
-      <StepConfirmation data={data} bookingId="clabc12345" bookingNumber={null} mode="paid" promo={null} />,
+      <StepConfirmation timezone="America/Santiago" data={data} bookingId="clabc12345" bookingNumber={null} mode="paid" promo={null} />,
     )
     expect(html).toContain('#clabc123')
   })

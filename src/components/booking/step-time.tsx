@@ -1,23 +1,24 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
 import { getAvailableTimeSlots } from '@/server/actions/availability'
 import { LEAD_TIME_MINUTES } from '@/lib/availability/constants'
+import { formatBookingDate, formatBookingTime } from '@/lib/booking/format-booking-datetime'
 import { Clock3, Loader2 } from 'lucide-react'
 
 const LEAD_TIME_HINT = `Los horarios con menos de ${LEAD_TIME_MINUTES / 60} horas de anticipación no se muestran.`
 
 interface StepTimeProps {
   businessId: string
+  timezone: string
   data: BookingData
   onSelect: (slot: { start: Date; end: Date }) => void
   onBack: () => void
 }
 
-export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) {
+export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepTimeProps) {
   const [slots, setSlots] = useState<{ start: Date; end: Date }[]>([])
   const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null)
   const [loading, setLoading] = useState(true)
@@ -97,7 +98,7 @@ export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) 
     <div>
       <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Elige una hora</h2>
       <p className="mb-7 text-base text-muted-foreground">
-        {data.serviceName} · {data.date?.toLocaleDateString('es-CL')}
+        {data.serviceName} · {data.date ? formatBookingDate(data.date, timezone) : ''}
       </p>
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
@@ -114,7 +115,7 @@ export function StepTime({ businessId, data, onSelect, onBack }: StepTimeProps) 
           >
             <div className="flex items-center justify-center gap-2 font-semibold">
               <Clock3 className="size-4" />
-              {format(slot.start, 'HH:mm')}
+              {formatBookingTime(slot.start, timezone)}
             </div>
           </button>
         ))}

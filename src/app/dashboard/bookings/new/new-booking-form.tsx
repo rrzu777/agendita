@@ -13,6 +13,7 @@ import { usePackageAvailability } from '@/lib/packages/use-package-availability'
 import { searchCustomersForBooking } from '@/server/actions/customers'
 import type { CustomerSearchResult } from '@/server/actions/customers'
 import { formatDuration } from '@/lib/format-duration'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { formatMoney } from '@/lib/money'
 import { CalendarCheck2, User, Search, X } from 'lucide-react'
 import type { Service } from '@prisma/client'
@@ -20,6 +21,7 @@ import type { Service } from '@prisma/client'
 interface NewBookingFormProps {
   services: Service[]
   businessId: string
+  timezone: string
 }
 
 type PaymentMode = 'none' | 'deposit_paid' | 'full_paid'
@@ -32,7 +34,7 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   other: 'Otro',
 }
 
-export function NewBookingForm({ services, businessId }: NewBookingFormProps) {
+export function NewBookingForm({ services, businessId, timezone }: NewBookingFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -235,7 +237,8 @@ export function NewBookingForm({ services, businessId }: NewBookingFormProps) {
       return
     }
 
-    const startDateTime = new Date(`${date}T${time}:00`)
+    // Instante real en el timezone del negocio (no el del dispositivo de la dueña)
+    const startDateTime = fromZonedTime(`${date} ${time}`, timezone)
 
     try {
       await createBookingFromDashboard({
@@ -275,7 +278,7 @@ export function NewBookingForm({ services, businessId }: NewBookingFormProps) {
     )
   }
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = formatInTimeZone(new Date(), timezone, 'yyyy-MM-dd')
 
   return (
     <Card>
