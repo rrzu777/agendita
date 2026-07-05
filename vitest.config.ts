@@ -13,6 +13,9 @@ export default defineConfig({
       '**/.next/**',
       '**/coverage/**',
       '**/.worktrees/**',
+      // Los worktrees de Claude viven bajo .claude/worktrees/ — sin esto, correr
+      // vitest desde el checkout principal ejecuta copias duplicadas de los tests.
+      '.claude/**',
       'tests/e2e/**',
       'tests/integration/**',
       'playwright.config.ts',
