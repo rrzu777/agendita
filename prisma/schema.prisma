@@ -17,6 +17,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   businesses BusinessUser[]
+  customers  Customer[]
 }
 
 enum SubscriptionStatus {
@@ -43,33 +44,34 @@ enum BusinessCategory {
 }
 
 model Business {
-  id                    String             @id @default(cuid())
-  name                  String
-  category              BusinessCategory   @default(other)
-  slug                  String             @unique
-  subdomain             String             @unique
-  customDomain          String?            @unique
-  ownerUserId           String
-  logoUrl               String?
-  profileImageUrl       String?
-  bio                   String?
-  whatsapp              String?
-  instagram             String?
-  addressText           String?
-  city                  String
-  country               String             @default("CL")
-  currency              String             @default("CLP")
-  timezone              String             @default("America/Santiago")
-  bookingWindowDays     Int                @default(90)
-  bookingNumberSeq      Int                @default(1000)
-  isActive              Boolean            @default(true)
-  planId                String?
-  subscriptionStatus    SubscriptionStatus @default(trialing)
-  trialEndsAt           DateTime?
-  onboardingCompletedAt DateTime?
-  onboardingStep        Int?
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
+  id                     String             @id @default(cuid())
+  name                   String
+  category               BusinessCategory   @default(other)
+  slug                   String             @unique
+  subdomain              String             @unique
+  customDomain           String?            @unique
+  ownerUserId            String
+  logoUrl                String?
+  profileImageUrl        String?
+  bio                    String?
+  whatsapp               String?
+  instagram              String?
+  addressText            String?
+  city                   String
+  country                String             @default("CL")
+  currency               String             @default("CLP")
+  timezone               String             @default("America/Santiago")
+  bookingWindowDays      Int                @default(90)
+  selfServiceCutoffHours Int                @default(24) // ventana para cancelar/reprogramar self-service; 0 = sin límite (se usa en D1-b)
+  bookingNumberSeq       Int                @default(1000)
+  isActive               Boolean            @default(true)
+  planId                 String?
+  subscriptionStatus     SubscriptionStatus @default(trialing)
+  trialEndsAt            DateTime?
+  onboardingCompletedAt  DateTime?
+  onboardingStep         Int?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
 
   users                BusinessUser[]
   services             Service[]
@@ -321,7 +323,10 @@ model Customer {
   lastCompletedAt  DateTime?
   referralToken    String?   @unique
 
+  userId String?
+
   business      Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user          User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
   bookings      Booking[]
   payments      Payment[]
   reviews       Review[]
@@ -335,6 +340,7 @@ model Customer {
 
   @@index([businessId])
   @@index([businessId, phone])
+  @@index([userId])
 }
 
 model Booking {
