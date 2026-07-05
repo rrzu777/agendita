@@ -101,7 +101,7 @@ function setupMocks(depositAmount: number, servicePrice: number) {
         create: mockPrisma.customer.create,
       },
       promotionGrant: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
-      timeBlock: { findFirst: mockPrisma.timeBlock?.findFirst || vi.fn().mockResolvedValue(null) },
+      timeBlock: { findMany: mockPrisma.timeBlock?.findMany || vi.fn().mockResolvedValue([]) },
       availabilityRule: {
         findFirst: vi.fn().mockResolvedValue({
           startTime: '08:00',

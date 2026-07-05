@@ -31,7 +31,7 @@ describe('DST America/Santiago', () => {
       business: { findUnique: vi.fn().mockResolvedValue({ bookingWindowDays }) },
       service: { findFirst: vi.fn().mockResolvedValue({ durationMinutes: 60 }) },
       availabilityRule: { findFirst: vi.fn().mockResolvedValue({ dayOfWeek: 6, startTime: '09:00', endTime: '18:00', isActive: true }) },
-      timeBlock: { findFirst: vi.fn().mockResolvedValue(null) },
+      timeBlock: { findMany: vi.fn().mockResolvedValue([]) },
       timeBlockSeries: { findMany: vi.fn().mockResolvedValue([]) },
       $executeRaw: vi.fn().mockResolvedValue(1),
       $queryRaw: vi.fn().mockResolvedValue([]),

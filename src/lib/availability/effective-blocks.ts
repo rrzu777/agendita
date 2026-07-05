@@ -43,6 +43,7 @@ export async function getEffectiveBlocks(
     startDateTime: b.startDateTime,
     endDateTime: b.endDateTime,
     reason: b.reason,
+    overlapToleranceMinutes: b.overlapToleranceMinutes,
   }))
 
   for (const s of series) {

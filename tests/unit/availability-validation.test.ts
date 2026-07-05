@@ -26,7 +26,7 @@ describe('assertSlotIsAvailable', () => {
       business: { findUnique: vi.fn().mockResolvedValue({ bookingWindowDays: 90 }) },
       service: { findFirst: vi.fn().mockResolvedValue(mocks.service ?? null) },
       availabilityRule: { findFirst: vi.fn().mockResolvedValue(mocks.rule ?? null) },
-      timeBlock: { findFirst: vi.fn().mockResolvedValue(mocks.block ?? null) },
+      timeBlock: { findMany: vi.fn().mockResolvedValue(mocks.block ? [mocks.block] : []) },
       timeBlockSeries: { findMany: vi.fn().mockResolvedValue(mocks.series ?? []) },
       $executeRaw: vi.fn().mockResolvedValue(1),
       $queryRaw: vi.fn().mockResolvedValue(mocks.queryRawResult ?? []),
@@ -77,7 +77,8 @@ describe('assertSlotIsAvailable', () => {
 
   it('rejects when overlapping time block exists', async () => {
     const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
-    const block = { id: 'tb-1' }
+    // 10:00-11:00 Santiago = solapa exactamente el slot bajo prueba
+    const block = { id: 'tb-1', startDateTime: new Date('2026-05-20T14:00:00Z'), endDateTime: new Date('2026-05-20T15:00:00Z'), overlapToleranceMinutes: 0 }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule, block })
     await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
       .rejects.toThrow('Ese horario ya no está disponible')
@@ -167,7 +168,7 @@ describe('assertSlotIsAvailable', () => {
       ...makeTx(),
       service: { findFirst: vi.fn().mockResolvedValue({ durationMinutes: 60 }) },
       availabilityRule: { findFirst: vi.fn().mockResolvedValue(rule) },
-      timeBlock: { findFirst: vi.fn().mockResolvedValue(null) },
+      timeBlock: { findMany: vi.fn().mockResolvedValue([]) },
       $executeRaw: executeRawSpy,
       $queryRaw: queryRawSpy,
     })
@@ -208,6 +209,55 @@ describe('assertSlotIsAvailable', () => {
     const rule = { dayOfWeek: 1, startTime: '09:00', endTime: '22:00', isActive: true }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule })
     await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: pastStart, endDateTime: pastEnd, timezone, leadTimeMinutes: 0 }))
+      .rejects.toThrow('Ese horario ya no está disponible')
+  })
+
+  it('accepts a slot that only eats into the tolerance of a one-off block', async () => {
+    const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
+    // Bloqueo 10:30-12:30 Santiago (14:30Z-16:30Z) con tolerancia 45:
+    // núcleo efectivo 11:15-11:45 → el slot 10:00-11:00 no lo toca.
+    const block = {
+      startDateTime: new Date('2026-05-20T14:30:00Z'),
+      endDateTime: new Date('2026-05-20T16:30:00Z'),
+      overlapToleranceMinutes: 45,
+    }
+    const tx = makeTx({ service: { durationMinutes: 60 }, rule, block })
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+      .resolves.toBeUndefined()
+  })
+
+  it('still rejects the same slot when the block has no tolerance', async () => {
+    const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
+    const block = {
+      startDateTime: new Date('2026-05-20T14:30:00Z'),
+      endDateTime: new Date('2026-05-20T16:30:00Z'),
+      overlapToleranceMinutes: 0,
+    }
+    const tx = makeTx({ service: { durationMinutes: 60 }, rule, block })
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+      .rejects.toThrow('Ese horario ya no está disponible')
+  })
+
+  it('applies series tolerance to expanded occurrences', async () => {
+    const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
+    // Serie los miércoles 10:30-12:30 con tolerancia 45 → núcleo 11:15-11:45
+    const makeSeries = (tolerance: number) => [{
+      id: 'series-1',
+      daysOfWeek: [3],
+      startTime: '10:30',
+      endTime: '12:30',
+      reason: null,
+      anchorDate: new Date('2026-05-01T04:00:00Z'),
+      until: null,
+      overlapToleranceMinutes: tolerance,
+      exceptions: [],
+    }]
+    const tolerant = makeTx({ service: { durationMinutes: 60 }, rule, series: makeSeries(45) })
+    await expect(assertSlotIsAvailable({ tx: tolerant, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+      .resolves.toBeUndefined()
+
+    const strict = makeTx({ service: { durationMinutes: 60 }, rule, series: makeSeries(0) })
+    await expect(assertSlotIsAvailable({ tx: strict, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 })

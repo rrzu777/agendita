@@ -22,6 +22,15 @@ function range(startLocal: string, endLocal: string) {
 }
 
 describe('expandSeries', () => {
+  it('propaga overlapToleranceMinutes de la serie a cada ocurrencia', () => {
+    const { start, end } = range('2026-06-01', '2026-06-07')
+    const occ = expandSeries({ ...base, overlapToleranceMinutes: 30 }, [], start, end, TZ)
+    expect(occ.length).toBeGreaterThan(0)
+    for (const o of occ) {
+      expect(o.overlapToleranceMinutes).toBe(30)
+    }
+  })
+
   it('genera una ocurrencia por cada día de la semana en daysOfWeek dentro del rango', () => {
     const { start, end } = range('2026-06-01', '2026-06-07')
     const occ = expandSeries(base, [], start, end, TZ)
