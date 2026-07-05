@@ -10,6 +10,7 @@
 3. **Login opcional:** el funnel guest por teléfono queda intacto. Login solo agrega valor, nunca fricción.
 4. **Vinculación por 3 vías:** email verificado (auto-link), token de tarjeta (explícito), reserva logueada.
 5. **Auth:** solo Google OAuth en D1. Email OTP es D2 (bloqueado por proveedor de email: Resend caído → rotar key o migrar a Brevo).
+   - **Corrección (verificada en plan):** el brief decía "ya hay infra OAuth Google" — es FALSO. El login de dueña es email+contraseña (`signInWithPassword`); no hay `signInWithOAuth` en el código. La maquinaria PKCE/callback sí existe (recovery de contraseña la usa). **Prerequisito operativo (usuario):** crear OAuth client en Google Cloud Console y habilitar el provider Google en Supabase (redirect URI: `https://<proyecto>.supabase.co/auth/v1/callback`). Google sigue siendo la mejor opción: email+contraseña requeriría verificación de email (Resend caído) y peor UX.
 6. **Alcance:** tarjeta completa + historial + próximas reservas + canje, **y** cancelar/reprogramar sola.
 7. **Ventana de autogestión:** configurable por negocio (`selfServiceCutoffHours`, default 24; 0 = sin límite).
 8. **Depósitos al cancelar:** sin reembolso automático. El release de promo/paquete es automático (lógica existente); la plata la resuelve la dueña como hoy.
@@ -46,7 +47,7 @@ model Business {
   - **Conflicto de email único:** `User.email` es `@unique`. Si existe una fila con el mismo email pero otro id (cuenta Supabase recreada), el upsert tira P2002. Comportamiento definido: NO adoptar la fila existente (podría tener `BusinessUser`); mostrar error claro dirigiendo a soporte/`recover-business`. Caso raro, pero con comportamiento explícito y testeado.
 - **Gap crítico #2 (verificado):** `sanitizeNext` defaultea a `/dashboard` y el layout del dashboard manda a authed-sin-negocio a `/recover-business` (le recrearía un negocio a una clienta). Fix: (a) `/ingresar` siempre manda `next=/mi`; (b) el redirect de "sin negocio" del dashboard decide: si el user tiene `Customer` vinculados → `/mi`; si no → `/recover-business` como hoy.
 - **`/ingresar`:** página pública mínima, botón Google, `?next=` sanitizado. **`sanitizeNext` hoy hardcodea el fallback `/dashboard`** — se parametriza (`sanitizeNext(next, fallback = '/dashboard')`) para que el contexto clienta use `/mi` sin tocar el comportamiento de dueña. Reusa el flujo PKCE/callback existente sin cambios.
-- **Guard nuevo:** `requireCustomerSession()` en `src/lib/auth/` — exige sesión Supabase, devuelve `{ user }`. No exige `BusinessUser`. Toda action de clienta valida ownership con `customer.userId === user.id`; jamás confía en ids del cliente.
+- **Guard:** se reusa `requireUser()` existente (`src/lib/auth/server.ts:18`) — exige sesión Supabase sin exigir `BusinessUser`. No se crea guard nuevo. Toda action de clienta valida ownership con `customer.userId === user.id`; jamás confía en ids del cliente.
 - **Dashboard intacto:** `requireBusiness`/`requireBusinessRole` siguen protegiendo el dashboard. Test explícito: clienta logueada no accede a `/dashboard`.
 - **e2e bypass:** `getE2ETestUser` ya tolera users sin negocios; los e2e de clienta usan el mismo header bypass con un user sin `BusinessUser`. Verificar, no construir.
 
@@ -70,7 +71,7 @@ Riesgo aceptado (decisión explícita): un typo de email ajeno en un Customer po
 - **`/mi`** — home multi-negocio: una card por Customer vinculado agrupadas por negocio (nombre, puntos, próxima reserva). Estado vacío explicativo ("abrí el link de tu tarjeta o hacé una reserva con este email"). Header mínimo con "Salir" (signOut existente).
 - **`/mi/[slug]`** — detalle por negocio (`slug` = `Business.slug`, único; NO `subdomain`, que es nullable): tarjeta completa (puntos, recompensas, canje, paquetes) + próximas reservas + historial (con límite/paginación simple — puede ser largo). Si hay más de un Customer vinculado en el mismo negocio (duplicados), el detalle lista cada tarjeta por separado — no se combinan saldos.
   - **Cero reimplementación:** los componentes de `/tarjeta/[token]` (`page.tsx`, ~200 líneas) se extraen a compartidos; ambas rutas los renderizan. La diferencia es solo cómo se resuelve el Customer (token vs sesión).
-  - El canje reusa el camino de `redeemPointsAsCustomer` (`src/server/actions/loyalty.ts:267`, hoy token-based): se extrae su core y se agrega la variante por sesión con ownership `customer.userId === user.id`. Un solo camino de config/stock, no se cablea `redeemForGrant` crudo.
+  - El canje: el core ya está extraído (`runRedemption`, module-local en `src/server/actions/loyalty.ts`) — se agrega `redeemPointsAsMe` (variante por sesión con ownership `customer.userId === user.id`) que lo llama, igual que hacen `redeemPointsAsOwner`/`redeemPointsAsCustomer`. Un solo camino de config/stock.
   - Negocio suspendido/cancelado: la tarjeta se muestra igual (los puntos son de la clienta); lo que se bloquea son las mutaciones de reserva (ver §5).
   - **Landmine P2028:** `getCustomerLoyalty` corre tx interactiva — correrla sola primero y el resto de lecturas en paralelo después (mismo fix que `customers/[id]/page.tsx`).
 - **`/tarjeta/[token]` sigue viva** como superficie guest y punto de entrada de vinculación.
@@ -103,7 +104,7 @@ Cada PR sigue el ciclo estándar: writing-plans → subagent-driven-development 
 - **Unit:** matching de email (case/trim/verified-only/no-pisar), cálculo de ventana (incluye 0 = sin límite y borde exacto), guards de ownership, `ensureUserRow` idempotente (upsert; conflicto de email único → error de soporte, no adopción).
 - **Component:** mock de `next/navigation` para todo componente que use `useRouter` (landmine §2.5).
 - **Integración (CI):** 3 vías de vinculación (incl. no-pisar y token inválido), cancel/reschedule con ownership ajeno, fuera de ventana, status no cancelable, doble-booking en reschedule.
-- **e2e (mimosnails, header bypass):** login de clienta (user sin `BusinessUser`), `/mi` con tarjeta vinculada, cancelar dentro de ventana. No es check requerido; deja artefactos en prod (incluido el user clienta de prueba — práctica ya aceptada para los e2e reales).
+- **e2e (mimosnails, header bypass):** estrategia sin seed nuevo — el bypass requiere una fila `User` existente, así que el e2e usa `owner@mimosnails.com` como "clienta": crea (vía dashboard) un Customer con su propio email, visita `/mi` → el auto-link vincula → verifica la tarjeta. De paso prueba el caso dual dueña+clienta y que `/dashboard` sigue funcionando. Requiere que el user sintético del bypass exponga email verificado (`makeSyntheticUser` debe setear `email_confirmed_at` — el bypass es confiable por definición). No es check requerido; deja artefactos en prod (práctica ya aceptada).
 - **tsc:** cero errores nuevos sobre los ~17 pre-existentes.
 
 ## 8. Seguridad
