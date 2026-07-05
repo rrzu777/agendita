@@ -7,9 +7,9 @@
  *
  * Edge-safe: pure string logic, no Node APIs (used from middleware).
  */
-export function sanitizeNext(next: string | null): string {
-  if (!next) return '/dashboard'
-  if (!next.startsWith('/')) return '/dashboard'
-  if (next.startsWith('//')) return '/dashboard'
+export function sanitizeNext(next: string | null, fallback = '/dashboard'): string {
+  if (!next) return fallback
+  if (!next.startsWith('/')) return fallback
+  if (next.startsWith('//')) return fallback
   return next
 }
