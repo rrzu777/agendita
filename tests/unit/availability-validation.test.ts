@@ -182,4 +182,32 @@ describe('assertSlotIsAvailable', () => {
     expect(lockCall1).toEqual(lockCall2)
     expect(queryRawSpy).toHaveBeenCalledTimes(2)
   })
+
+  it('accepts a near-term slot when leadTimeMinutes is 0 (walk-in de la dueña)', async () => {
+    // 30 min desde ahora: 2026-05-19T00:30Z = lunes 18 20:30 Santiago
+    const soonStart = new Date('2026-05-19T00:30:00Z')
+    const soonEnd = new Date('2026-05-19T01:30:00Z')
+    const rule = { dayOfWeek: 1, startTime: '09:00', endTime: '22:00', isActive: true }
+    const tx = makeTx({ service: { durationMinutes: 60 }, rule })
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: soonStart, endDateTime: soonEnd, timezone, leadTimeMinutes: 0 }))
+      .resolves.toBeUndefined()
+  })
+
+  it('still rejects a near-term slot with the default lead time', async () => {
+    const soonStart = new Date('2026-05-19T00:30:00Z')
+    const soonEnd = new Date('2026-05-19T01:30:00Z')
+    const rule = { dayOfWeek: 1, startTime: '09:00', endTime: '22:00', isActive: true }
+    const tx = makeTx({ service: { durationMinutes: 60 }, rule })
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: soonStart, endDateTime: soonEnd, timezone }))
+      .rejects.toThrow('Ese horario ya no está disponible')
+  })
+
+  it('rejects a slot in the past even with leadTimeMinutes 0', async () => {
+    const pastStart = new Date('2026-05-18T20:00:00Z') // 4h antes de "ahora"
+    const pastEnd = new Date('2026-05-18T21:00:00Z')
+    const rule = { dayOfWeek: 1, startTime: '09:00', endTime: '22:00', isActive: true }
+    const tx = makeTx({ service: { durationMinutes: 60 }, rule })
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: pastStart, endDateTime: pastEnd, timezone, leadTimeMinutes: 0 }))
+      .rejects.toThrow('Ese horario ya no está disponible')
+  })
 })
