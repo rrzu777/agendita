@@ -22,5 +22,27 @@ describe('BlockFormFields', () => {
     expect(html).toContain('aria-label="Hora fin hora"')
     expect(html).toContain('value="14" selected=""')
     expect(html).toContain('value="Almuerzo"')
+    // Sin handler de tolerancia, el campo no aparece
+    expect(html).not.toContain('block-overlap-tolerance')
+  })
+
+  it('renderiza el campo de tolerancia cuando se pasa el handler', () => {
+    const html = renderToStaticMarkup(
+      <BlockFormFields
+        date="2026-06-01"
+        onDateChange={() => {}}
+        startTime="13:00"
+        onStartTimeChange={() => {}}
+        endTime="14:00"
+        onEndTimeChange={() => {}}
+        reason="Almuerzo"
+        onReasonChange={() => {}}
+        overlapTolerance="45"
+        onOverlapToleranceChange={() => {}}
+      />,
+    )
+    expect(html).toContain('block-overlap-tolerance')
+    expect(html).toContain('value="45"')
+    expect(html).toContain('invada')
   })
 })

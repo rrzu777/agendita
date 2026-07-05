@@ -14,6 +14,7 @@ describe('deriveBlockFormValues', () => {
       startTime: '13:00',
       endTime: '14:00',
       reason: 'Almuerzo',
+      overlapTolerance: '0',
     })
   })
 

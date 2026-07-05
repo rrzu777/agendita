@@ -29,6 +29,7 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
   const [startTime, setStartTime] = useState(initial.startTime)
   const [endTime, setEndTime] = useState(initial.endTime)
   const [reason, setReason] = useState(initial.reason)
+  const [overlapTolerance, setOverlapTolerance] = useState(initial.overlapTolerance)
   const [confirmOverlap, setConfirmOverlap] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -66,6 +67,7 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
           startDateTime: start,
           endDateTime: end,
           reason: reason || null,
+          overlapToleranceMinutes: Number(overlapTolerance) || 0,
           confirmOverlap,
         })
         if (result && 'requiresConfirmation' in result) {
@@ -138,6 +140,8 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
                 onEndTimeChange={setEndTime}
                 reason={reason}
                 onReasonChange={setReason}
+                overlapTolerance={overlapTolerance}
+                onOverlapToleranceChange={setOverlapTolerance}
               />
 
               <div className="rounded-xl border border-muted-foreground/30 bg-muted/30 p-3">
