@@ -289,7 +289,9 @@ export async function redeemPointsAsMe(customerId: string, optionId: unknown, re
   if (!customer) throw new ForbiddenError('Tarjeta no disponible')
   const config = customer.business.loyaltyConfig
   if (!config || !config.isActive) throw new Error('El programa no está disponible')
-  const limit = await checkRateLimit('loyalty-redeem-public', 10, 60000, { businessId: customer.businessId, userId: user.id })
+  // Mismo bucket que redeemPointsAsCustomer (keyed por customer.id): alternar
+  // tarjeta pública y /mi no debe duplicar el cupo de intentos sobre una tarjeta.
+  const limit = await checkRateLimit('loyalty-redeem-public', 10, 60000, { businessId: customer.businessId, userId: customer.id })
   if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
   await runRedemption({ businessId: customer.businessId, customerId: customer.id, optionId: parsed.data.optionId, requestId: parsed.data.requestId, createdByUserId: null })
   await revalidatePath(`/mi/${customer.business.slug}`)

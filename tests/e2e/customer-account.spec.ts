@@ -1,23 +1,27 @@
 import { test, expect, Page } from '@playwright/test'
-import { setOwnerAuth } from './helpers/auth'
+import { setOwnerAuth, setAdminAuth } from './helpers/auth'
 
 // ─── Task 14: e2e de /mi (cuenta de clienta) ───────────────────────────────────
 //
-// Estrategia sin seed nuevo: el bypass e2e (`setOwnerAuth`) resuelve un Prisma
-// `User` existente por email (owner@mimosnails.com) y ahora fabrica un usuario
-// sintético CON `email_confirmed_at` (Paso 1 de esta tarea), lo que habilita
-// `isVerifiedEmail()` → el layout de /mi corre `linkCustomersByVerifiedEmail`.
+// Estrategia sin seed nuevo: el bypass e2e resuelve un Prisma `User` existente
+// por email y fabrica un usuario sintético CON `email_confirmed_at`, lo que
+// habilita `isVerifiedEmail()` → el layout de /mi corre
+// `linkCustomersByVerifiedEmail`.
 //
-// Para ejercer el auto-link creamos (vía el form real de "Nueva reserva" del
-// dashboard) una Customer con email=owner@mimosnails.com. Esa Customer con
-// userId=null queda disponible para el auto-link la próxima vez que la dueña
-// visite /mi. Esto también cubre el rol dual dueña+clienta.
+// IMPORTANTE (guard de miembros, code review D1-a): owner/staff NO pueden
+// vincularse Customers de su propio negocio — así que la dueña ya no sirve de
+// "clienta" en mimosnails. Usamos la identidad del platform admin
+// (admin@agendita.cl), que tiene fila User pero NO membresía en mimosnails:
+// la dueña crea (form real de "Nueva reserva") una Customer con el email del
+// admin, y luego la sesión admin visita /mi → auto-link.
 //
-// Idempotente: si una corrida previa ya vinculó una Customer con ese email,
-// /mi ya mostrará el negocio sin necesitar crear una nueva — igual creamos una
-// (nombre único por timestamp) para que la aserción no dependa de estado previo:
-// ambas (la vieja y la nueva) matchean por email y se linkean; /mi muestra el
-// negocio de todas formas.
+// Si la fila User del admin no existe en la DB target, el bypass no puede
+// fabricar la sesión y /mi redirige a /ingresar → el test se salta (skip) en
+// runtime en vez de dar un rojo falso.
+//
+// Idempotente: creamos una Customer nueva (nombre único por timestamp) en cada
+// corrida; tanto si una corrida previa ya vinculó otra con ese email como si
+// no, /mi debe mostrar el negocio.
 
 /**
  * page.goto con reintento ante blips transitorios del dev server (mismo patrón
@@ -117,18 +121,22 @@ test.describe('cuenta de clienta (/mi)', () => {
     test.setTimeout(90_000)
     setOwnerAuth(page)
 
-    const OWNER_EMAIL = process.env.PLAYWRIGHT_E2E_OWNER_EMAIL || 'owner@mimosnails.com'
+    const ADMIN_EMAIL = process.env.PLAYWRIGHT_E2E_ADMIN_EMAIL || 'admin@agendita.cl'
     const ts = Date.now()
     const name = `E2E Cuenta ${ts}`
     const phone = `+5699${String(ts).slice(-7)}`
 
-    // 1. Asegurar que exista una Customer con email=OWNER_EMAIL en mimosnails.
-    //    Creamos una nueva (nombre único) en vez de depender de una corrida previa:
-    //    tanto si ya había una vinculada como si no, /mi debe mostrar el negocio.
-    await createCustomerWithOwnerEmail(page, { name, phone, email: OWNER_EMAIL, afterDays: 4 + (ts % 50) })
+    // 1. Como dueña: crear una Customer en mimosnails con el email del admin
+    //    (identidad "clienta" sin membresía — el guard de miembros bloquea a la
+    //    dueña de auto-vincularse clientas propias).
+    await createCustomerWithOwnerEmail(page, { name, phone, email: ADMIN_EMAIL, afterDays: 4 + (ts % 50) })
 
-    // 2. Visitar /mi → el layout corre ensureUserRow + auto-link por email verificado.
+    // 2. Cambiar a la sesión del admin y visitar /mi → ensureUserRow + auto-link.
+    setAdminAuth(page)
     await gotoStable(page, '/mi')
+    if (page.url().includes('/ingresar')) {
+      test.skip(true, 'La fila User del admin no existe en la DB target — el bypass no puede fabricar la sesión')
+    }
 
     // Tarjeta del negocio (Mimos Nails) visible en "Mis negocios".
     const businessLink = page.locator('a[href^="/mi/"]').filter({ hasText: /\S/ }).first()

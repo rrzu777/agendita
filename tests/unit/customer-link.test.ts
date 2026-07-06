@@ -15,6 +15,7 @@ function makeDb() {
     },
     businessUser: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
     },
     user: {
       findUnique: vi.fn(),
@@ -22,22 +23,26 @@ function makeDb() {
   }
 }
 
+const verifiedSession = { id: 'user-1', email: 'ana@example.com', email_confirmed_at: '2026-01-01T00:00:00Z' }
+
 describe('isVerifiedEmail', () => {
-  it('true con user_metadata.email_verified', () => {
-    expect(isVerifiedEmail({ email: 'a@b.c', user_metadata: { email_verified: true }, email_confirmed_at: null })).toBe(true)
-  })
   it('true con email_confirmed_at', () => {
-    expect(isVerifiedEmail({ email: 'a@b.c', user_metadata: {}, email_confirmed_at: '2026-01-01T00:00:00Z' })).toBe(true)
+    expect(isVerifiedEmail({ email: 'a@b.c', email_confirmed_at: '2026-01-01T00:00:00Z' })).toBe(true)
   })
-  it('false sin verificación o sin email', () => {
-    expect(isVerifiedEmail({ email: 'a@b.c', user_metadata: {}, email_confirmed_at: null })).toBe(false)
-    expect(isVerifiedEmail({ email: null, user_metadata: { email_verified: true }, email_confirmed_at: '2026-01-01T00:00:00Z' })).toBe(false)
+  it('false sin email_confirmed_at — user_metadata.email_verified NO cuenta (escribible por el usuario)', () => {
+    expect(isVerifiedEmail({ email: 'a@b.c', email_confirmed_at: null, user_metadata: { email_verified: true } } as never)).toBe(false)
+  })
+  it('false sin email', () => {
+    expect(isVerifiedEmail({ email: null, email_confirmed_at: '2026-01-01T00:00:00Z' })).toBe(false)
   })
 })
 
 describe('linkCustomersByVerifiedEmail', () => {
   let db: ReturnType<typeof makeDb>
-  beforeEach(() => { db = makeDb() })
+  beforeEach(() => {
+    db = makeDb()
+    db.businessUser.findMany.mockResolvedValue([])
+  })
 
   it('matches trimmed + case-insensitive y solo Customer sin userId', async () => {
     db.customer.updateMany.mockResolvedValue({ count: 2 })
@@ -45,6 +50,20 @@ describe('linkCustomersByVerifiedEmail', () => {
     expect(count).toBe(2)
     expect(db.customer.updateMany).toHaveBeenCalledWith({
       where: { email: { equals: 'Ana@Example.com', mode: 'insensitive' }, userId: null },
+      data: { userId: 'user-1' },
+    })
+  })
+
+  it('excluye negocios donde el user es miembro (owner/staff no reclaman clientas propias)', async () => {
+    db.businessUser.findMany.mockResolvedValue([{ businessId: 'b-mio' }])
+    db.customer.updateMany.mockResolvedValue({ count: 1 })
+    await linkCustomersByVerifiedEmail(db as never, 'user-1', 'ana@example.com')
+    expect(db.customer.updateMany).toHaveBeenCalledWith({
+      where: {
+        email: { equals: 'ana@example.com', mode: 'insensitive' },
+        userId: null,
+        businessId: { notIn: ['b-mio'] },
+      },
       data: { userId: 'user-1' },
     })
   })
@@ -58,10 +77,13 @@ describe('linkCustomersByVerifiedEmail', () => {
 
 describe('linkCustomerByLoyaltyToken', () => {
   let db: ReturnType<typeof makeDb>
-  beforeEach(() => { db = makeDb() })
+  beforeEach(() => {
+    db = makeDb()
+    db.businessUser.findFirst.mockResolvedValue(null)
+  })
 
   it('vincula un Customer sin dueño (update atómico where userId null)', async () => {
-    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: null })
+    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: null, businessId: 'b1' })
     db.customer.updateMany.mockResolvedValue({ count: 1 })
     await linkCustomerByLoyaltyToken(db as never, 'user-1', 'tok')
     expect(db.customer.updateMany).toHaveBeenCalledWith({
@@ -71,13 +93,13 @@ describe('linkCustomerByLoyaltyToken', () => {
   })
 
   it('es no-op si ya está vinculado a la misma cuenta', async () => {
-    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: 'user-1' })
+    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: 'user-1', businessId: 'b1' })
     await linkCustomerByLoyaltyToken(db as never, 'user-1', 'tok')
     expect(db.customer.updateMany).not.toHaveBeenCalled()
   })
 
   it('CardLinkError si está vinculado a otra cuenta', async () => {
-    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: 'user-2' })
+    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: 'user-2', businessId: 'b1' })
     await expect(linkCustomerByLoyaltyToken(db as never, 'user-1', 'tok')).rejects.toBeInstanceOf(CardLinkError)
   })
 
@@ -86,8 +108,15 @@ describe('linkCustomerByLoyaltyToken', () => {
     await expect(linkCustomerByLoyaltyToken(db as never, 'user-1', 'nope')).rejects.toBeInstanceOf(CardLinkError)
   })
 
+  it('CardLinkError si el user es miembro del negocio (la dueña tiene todos los tokens)', async () => {
+    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: null, businessId: 'b1' })
+    db.businessUser.findFirst.mockResolvedValue({ id: 'bu1' })
+    await expect(linkCustomerByLoyaltyToken(db as never, 'user-1', 'tok')).rejects.toBeInstanceOf(CardLinkError)
+    expect(db.customer.updateMany).not.toHaveBeenCalled()
+  })
+
   it('CardLinkError si otro ganó la carrera (updateMany count 0)', async () => {
-    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: null })
+    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: null, businessId: 'b1' })
     db.customer.updateMany.mockResolvedValue({ count: 0 })
     await expect(linkCustomerByLoyaltyToken(db as never, 'user-1', 'tok')).rejects.toBeInstanceOf(CardLinkError)
   })
@@ -98,16 +127,36 @@ describe('linkCustomerFromBookingSession', () => {
   beforeEach(() => { db = makeDb() })
 
   it('no-op si el customer ya tiene dueño (sin queries)', async () => {
-    const linked = await linkCustomerFromBookingSession(db as never, { id: 'c1', userId: 'other' }, 'user-1', 'b1')
+    const linked = await linkCustomerFromBookingSession(
+      db as never, { id: 'c1', userId: 'other', email: 'ana@example.com' }, verifiedSession, 'b1',
+    )
     expect(linked).toBe(false)
     expect(db.businessUser.findFirst).not.toHaveBeenCalled()
     expect(db.customer.updateMany).not.toHaveBeenCalled()
   })
 
+  it('no vincula si el email de la fila no coincide con el de la sesión (reserva con teléfono ajeno)', async () => {
+    const linked = await linkCustomerFromBookingSession(
+      db as never, { id: 'c1', userId: null, email: 'amiga@example.com' }, verifiedSession, 'b1',
+    )
+    expect(linked).toBe(false)
+    expect(db.businessUser.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('no vincula si la sesión no tiene email verificado', async () => {
+    const linked = await linkCustomerFromBookingSession(
+      db as never, { id: 'c1', userId: null, email: 'ana@example.com' },
+      { id: 'user-1', email: 'ana@example.com', email_confirmed_at: null }, 'b1',
+    )
+    expect(linked).toBe(false)
+  })
+
   it('no vincula a miembros del negocio', async () => {
     db.businessUser.findFirst.mockResolvedValue({ id: 'bu1' })
     db.user.findUnique.mockResolvedValue({ id: 'user-1' })
-    const linked = await linkCustomerFromBookingSession(db as never, { id: 'c1', userId: null }, 'user-1', 'b1')
+    const linked = await linkCustomerFromBookingSession(
+      db as never, { id: 'c1', userId: null, email: 'ana@example.com' }, verifiedSession, 'b1',
+    )
     expect(linked).toBe(false)
     expect(db.customer.updateMany).not.toHaveBeenCalled()
   })
@@ -115,16 +164,20 @@ describe('linkCustomerFromBookingSession', () => {
   it('no vincula si la fila User de Prisma no existe', async () => {
     db.businessUser.findFirst.mockResolvedValue(null)
     db.user.findUnique.mockResolvedValue(null)
-    const linked = await linkCustomerFromBookingSession(db as never, { id: 'c1', userId: null }, 'user-1', 'b1')
+    const linked = await linkCustomerFromBookingSession(
+      db as never, { id: 'c1', userId: null, email: 'ana@example.com' }, verifiedSession, 'b1',
+    )
     expect(linked).toBe(false)
     expect(db.customer.updateMany).not.toHaveBeenCalled()
   })
 
-  it('vincula con update atómico (where userId null)', async () => {
+  it('vincula con emails coincidentes (case/trim-insensitive) y update atómico', async () => {
     db.businessUser.findFirst.mockResolvedValue(null)
     db.user.findUnique.mockResolvedValue({ id: 'user-1' })
     db.customer.updateMany.mockResolvedValue({ count: 1 })
-    const linked = await linkCustomerFromBookingSession(db as never, { id: 'c1', userId: null }, 'user-1', 'b1')
+    const linked = await linkCustomerFromBookingSession(
+      db as never, { id: 'c1', userId: null, email: ' Ana@Example.com ' }, verifiedSession, 'b1',
+    )
     expect(linked).toBe(true)
     expect(db.customer.updateMany).toHaveBeenCalledWith({
       where: { id: 'c1', userId: null },

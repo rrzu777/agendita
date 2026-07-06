@@ -21,6 +21,10 @@ describe('sanitizeNext fallback', () => {
     expect(sanitizeNext('https://evil.com', '/mi')).toBe('/mi')
     expect(sanitizeNext('/mi/negocio', '/mi')).toBe('/mi/negocio')
   })
+  it('bloquea backslash open-redirect (/\\evil.com → //evil.com al normalizar)', () => {
+    expect(sanitizeNext('/\\evil.com')).toBe('/dashboard')
+    expect(sanitizeNext('/\\/evil.com', '/mi')).toBe('/mi')
+  })
 })
 
 describe('signInWithGoogle', () => {
@@ -51,11 +55,11 @@ describe('signInWithGoogle', () => {
     expect(signInWithOAuth.mock.calls[0][0].options.redirectTo).toBe('https://agendita.test/auth/callback?next=%2Fmi')
   })
 
-  it('devuelve error amigable si Supabase falla', async () => {
+  it('si Supabase falla redirige a /ingresar con error visible (el form descarta returns)', async () => {
     const signInWithOAuth = vi.fn().mockResolvedValue({ data: { url: null }, error: new Error('boom') })
     mockCreateClient.mockResolvedValue({ auth: { signInWithOAuth } })
     const { signInWithGoogle } = await import('@/lib/auth/actions')
 
-    await expect(signInWithGoogle(null)).resolves.toEqual({ error: 'No se pudo iniciar sesión con Google. Intenta de nuevo.' })
+    await expect(signInWithGoogle(null)).rejects.toThrow('REDIRECT:/ingresar?error=oauth&next=%2Fmi')
   })
 })

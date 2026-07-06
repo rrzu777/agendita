@@ -11,8 +11,8 @@ async function signInWithGoogleAction(next: string | null) {
   await signInWithGoogle(next)
 }
 
-export default async function IngresarPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
-  const { next } = await searchParams
+export default async function IngresarPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
+  const { next, error } = await searchParams
   const action = signInWithGoogleAction.bind(null, next ?? null)
 
   return (
@@ -30,6 +30,11 @@ export default async function IngresarPage({ searchParams }: { searchParams: Pro
             </CardDescription>
           </CardHeader>
           <CardContent className="px-0">
+            {error && (
+              <div className="mb-6 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                No se pudo iniciar sesión con Google. Intenta de nuevo.
+              </div>
+            )}
             <form action={action}>
               <Button type="submit" className="h-14 w-full rounded-full text-lg font-semibold">
                 Continuar con Google

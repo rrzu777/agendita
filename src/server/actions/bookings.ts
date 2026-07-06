@@ -291,7 +291,7 @@ export async function createBooking(data: {
       // Vía 3 de vinculación: reserva hecha con sesión activa (los guards
       // viven en el helper, junto a las otras dos vías).
       if (sessionUser) {
-        await linkCustomerFromBookingSession(tx, customer, sessionUser.id, businessId)
+        await linkCustomerFromBookingSession(tx, customer, sessionUser, businessId)
       }
 
       const noDepositRequired = depositRequired <= 0

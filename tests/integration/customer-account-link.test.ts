@@ -14,7 +14,9 @@ const BIZ = 'cal-biz-1'
 const OWNER_USER = 'cal-owner-1'
 const LOGGED_USER = 'test-user-1'
 
-let mockSessionUser: { id: string; email: string } | null = null
+// email_confirmed_at requerido: la vía 3 solo vincula con email de sesión VERIFICADO.
+let mockSessionUser: { id: string; email: string; email_confirmed_at: string | null } | null = null
+const CONFIRMED = '2026-01-01T00:00:00Z'
 
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: async () => ({ success: true, remaining: 30, resetAt: 0 }) }))
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
@@ -126,7 +128,7 @@ describe('customer-account link (vía 3)', () => {
       create: { id: LOGGED_USER, email: 'logged-1@cal.test', name: 'Logged Client' },
       update: {},
     })
-    mockSessionUser = { id: LOGGED_USER, email: 'logged-1@cal.test' }
+    mockSessionUser = { id: LOGGED_USER, email: 'logged-1@cal.test', email_confirmed_at: CONFIRMED }
 
     const phone = '+56911100001'
     const booking = await createBooking(
@@ -134,6 +136,8 @@ describe('customer-account link (vía 3)', () => {
         serviceId: svc.id,
         customerName: 'Ana',
         customerPhone: phone,
+        // La vía 3 exige que el email de la fila coincida con el de la sesión.
+        customerEmail: 'logged-1@cal.test',
         startDateTime: futureDate(2, 15),
         acceptedTerms: true,
       },
@@ -167,11 +171,13 @@ describe('customer-account link (vía 3)', () => {
         businessId: BIZ,
         name: 'Bea',
         phone,
+        // Mismo email que la sesión: si no fuera por el userId existente, vincularía.
+        email: 'logged-2@cal.test',
         userId: otherUserId,
       },
     })
 
-    mockSessionUser = { id: LOGGED_USER, email: 'logged-2@cal.test' }
+    mockSessionUser = { id: LOGGED_USER, email: 'logged-2@cal.test', email_confirmed_at: CONFIRMED }
 
     await createBooking(
       {
@@ -193,7 +199,8 @@ describe('customer-account link (vía 3)', () => {
     const { createBooking } = await import('@/server/actions/bookings')
 
     // OWNER_USER is already a BusinessUser member of BIZ (seeded in beforeAll).
-    mockSessionUser = { id: OWNER_USER, email: 'owner@cal.test' }
+    // Email coincidente a propósito: lo que bloquea acá es el guard de miembro.
+    mockSessionUser = { id: OWNER_USER, email: 'owner@cal.test', email_confirmed_at: CONFIRMED }
 
     const phone = '+56911100003'
     await createBooking(
@@ -201,7 +208,36 @@ describe('customer-account link (vía 3)', () => {
         serviceId: svc.id,
         customerName: 'Cata',
         customerPhone: phone,
+        customerEmail: 'owner@cal.test',
         startDateTime: futureDate(4, 15),
+        acceptedTerms: true,
+      },
+      BIZ,
+    )
+
+    const customer = await prisma.customer.findFirst({ where: { businessId: BIZ, phone } })
+    expect(customer).not.toBeNull()
+    expect(customer!.userId).toBeNull()
+  })
+
+  it('does not link when the row email does not match the session email (booking for a friend)', async () => {
+    const { createBooking } = await import('@/server/actions/bookings')
+
+    await prisma.user.upsert({
+      where: { id: LOGGED_USER },
+      create: { id: LOGGED_USER, email: 'logged-3@cal.test', name: 'Logged Client' },
+      update: {},
+    })
+    mockSessionUser = { id: LOGGED_USER, email: 'logged-3@cal.test', email_confirmed_at: CONFIRMED }
+
+    const phone = '+56911100006'
+    await createBooking(
+      {
+        serviceId: svc.id,
+        customerName: 'Amiga',
+        customerPhone: phone,
+        customerEmail: 'amiga@cal.test',
+        startDateTime: futureDate(5, 15),
         acceptedTerms: true,
       },
       BIZ,

@@ -12,4 +12,9 @@ describe('/ingresar', () => {
     expect(html).toContain('Google')
     expect(html).toContain('href="/login"')
   })
+
+  it('muestra el error de OAuth cuando viene ?error=', async () => {
+    const html = renderToStaticMarkup(await IngresarPage({ searchParams: Promise.resolve({ error: 'oauth' }) }))
+    expect(html).toContain('No se pudo iniciar sesión con Google')
+  })
 })

@@ -64,6 +64,14 @@ Módulo único `src/lib/customers/link.ts`, tres puntos de entrada:
 
 Regla única de conflictos: **nunca sobrescribir un `userId` existente.** Desvincular/merge queda fuera de D1 (soporte manual).
 
+**Endurecimiento post code-review (2026-07-05, implementado):**
+- **Guard de miembros en las 3 vías:** owner/staff NO se vinculan Customers de negocios donde tienen `BusinessUser` — el staff suele cargar clientas con su propio email (vía 1), tiene acceso a todos los tokens de tarjeta (vía 2) y reserva en nombre de clientas (vía 3). Sin este guard, podían reclamar tarjetas ajenas y canjear puntos de clientas.
+- **Vía 3 exige match de email:** el email de la fila Customer debe coincidir (trim/case-insensitive) con el email verificado de la sesión — reservar con el teléfono de otra persona no vincula el Customer de esa persona a tu cuenta.
+- **`isVerifiedEmail` solo confía en `email_confirmed_at`:** `user_metadata.email_verified` es escribible por el propio usuario (updateUser) y NO es señal confiable.
+- **`sanitizeNext` bloquea `/\`** además de `//`: los browsers normalizan backslash a slash (`/\evil.com` → `https://evil.com/`) — open redirect.
+- **Error de OAuth visible:** `signInWithGoogle` redirige a `/ingresar?error=oauth` (el form action descarta returns — sin esto el fallo era un botón muerto).
+- **Consecuencia e2e:** la dueña ya no puede actuar de "clienta" en su negocio; el e2e usa la identidad del platform admin (sin membresía) y se salta en runtime si su fila User no existe.
+
 Riesgo aceptado (decisión explícita): un typo de email ajeno en un Customer podría auto-vincular el historial de otra persona a la cuenta dueña de ese email. Impacto bajo (ve puntos/reservas), mitigado porque el email debe coincidir exacto y estar verificado en el lado de la cuenta.
 
 ## 4. Superficie `/mi`

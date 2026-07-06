@@ -16,7 +16,7 @@ export default async function VincularPage({ params }: { params: Promise<{ token
 
   const limit = await checkRateLimit('card-link', 10, 60000, { userId: user.id })
   if (!limit.success) {
-    return <LinkError message="Demasiados intentos. Espera un momento y vuelve a intentar." />
+    return <PageMessage title="No pudimos vincular tu tarjeta" message="Demasiados intentos. Espera un momento y vuelve a intentar." />
   }
 
   try {
@@ -24,14 +24,10 @@ export default async function VincularPage({ params }: { params: Promise<{ token
     await linkCustomerByLoyaltyToken(prisma, user.id, token)
   } catch (e) {
     if (e instanceof AccountConflictError || e instanceof CardLinkError) {
-      return <LinkError message={e.message} />
+      return <PageMessage title="No pudimos vincular tu tarjeta" message={e.message} />
     }
     throw e
   }
 
   redirect('/mi')
-}
-
-function LinkError({ message }: { message: string }) {
-  return <PageMessage title="No pudimos vincular tu tarjeta" message={message} />
 }

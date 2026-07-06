@@ -348,7 +348,9 @@ export async function signInWithGoogle(next: string | null) {
     options: { redirectTo: getAppUrl(`/auth/callback?next=${encodeURIComponent(safeNext)}`) },
   })
   if (error || !data?.url) {
-    return { error: 'No se pudo iniciar sesión con Google. Intenta de nuevo.' }
+    // El form action descarta el valor de retorno — sin este redirect el error
+    // sería un botón muerto. Se preserva `next` para reintentar.
+    redirect(`/ingresar?error=oauth&next=${encodeURIComponent(safeNext)}`)
   }
   redirect(data.url)
 }
