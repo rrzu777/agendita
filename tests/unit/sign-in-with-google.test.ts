@@ -63,3 +63,25 @@ describe('signInWithGoogle', () => {
     await expect(signInWithGoogle(null)).rejects.toThrow('REDIRECT:/ingresar?error=oauth&next=%2Fmi')
   })
 })
+
+describe('authErrorRedirectPath', () => {
+  it('flujos de clienta (/mi, /tarjeta) vuelven a /ingresar preservando next', async () => {
+    const { authErrorRedirectPath } = await import('@/lib/auth/sanitize-next')
+    expect(authErrorRedirectPath('/mi', 'auth_callback')).toBe('/ingresar?error=auth_callback&next=%2Fmi')
+    expect(authErrorRedirectPath('/mi/mimosnails', 'missing_code')).toBe('/ingresar?error=missing_code&next=%2Fmi%2Fmimosnails')
+    expect(authErrorRedirectPath('/tarjeta/tok1/vincular', 'auth_callback')).toBe('/ingresar?error=auth_callback&next=%2Ftarjeta%2Ftok1%2Fvincular')
+  })
+
+  it('flujos de dueña (default y otros next) siguen yendo a /login', async () => {
+    const { authErrorRedirectPath } = await import('@/lib/auth/sanitize-next')
+    expect(authErrorRedirectPath(null, 'missing_code')).toBe('/login?error=missing_code')
+    expect(authErrorRedirectPath('/reset-password', 'auth_callback')).toBe('/login?error=auth_callback')
+    expect(authErrorRedirectPath('/dashboard', 'auth_callback')).toBe('/login?error=auth_callback')
+  })
+
+  it('un next malicioso no cambia el destino del error (sanitizado primero)', async () => {
+    const { authErrorRedirectPath } = await import('@/lib/auth/sanitize-next')
+    expect(authErrorRedirectPath('//evil.com/mi', 'auth_callback')).toBe('/login?error=auth_callback')
+    expect(authErrorRedirectPath('/mimosnails-fake', 'auth_callback')).toBe('/login?error=auth_callback')
+  })
+})

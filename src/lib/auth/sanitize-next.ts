@@ -16,3 +16,20 @@ export function sanitizeNext(next: string | null, fallback = '/dashboard'): stri
   if (next.startsWith('//') || next.startsWith('/\\')) return fallback
   return next
 }
+
+/**
+ * A qué login volver cuando el callback de auth falla. Las clientas entran por
+ * /ingresar (superficies /mi y /tarjeta); las dueñas por /login. Sin esto, una
+ * clienta con un error de OAuth aterriza en el login de dueñas (email+password),
+ * que no le sirve para nada.
+ *
+ * Edge-safe: string puro (lo usa el middleware).
+ */
+export function authErrorRedirectPath(next: string | null, error: string): string {
+  const safeNext = sanitizeNext(next)
+  const isCustomerFlow = safeNext === '/mi' || safeNext.startsWith('/mi/') || safeNext.startsWith('/tarjeta/')
+  if (isCustomerFlow) {
+    return `/ingresar?error=${encodeURIComponent(error)}&next=${encodeURIComponent(safeNext)}`
+  }
+  return `/login?error=${encodeURIComponent(error)}`
+}
