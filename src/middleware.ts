@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createMiddlewareAuthClient } from './lib/auth/middleware'
-import { sanitizeNext } from './lib/auth/sanitize-next'
+import { sanitizeNext, authErrorRedirectPath } from './lib/auth/sanitize-next'
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -21,21 +21,22 @@ export async function middleware(request: NextRequest) {
 
   if (pathname === '/auth/callback') {
     const code = request.nextUrl.searchParams.get('code')
+    const rawNext = request.nextUrl.searchParams.get('next')
 
     if (code) {
-      const next = sanitizeNext(request.nextUrl.searchParams.get('next'))
+      const next = sanitizeNext(rawNext)
       const response = NextResponse.redirect(new URL(next, request.url))
       const supabase = createMiddlewareAuthClient(request, response)
       const { error } = await supabase.auth.exchangeCodeForSession(code)
 
       if (error) {
-        return NextResponse.redirect(new URL('/login?error=auth_callback', request.url))
+        return NextResponse.redirect(new URL(authErrorRedirectPath(rawNext, 'auth_callback'), request.url))
       }
 
       return response
     }
 
-    return NextResponse.redirect(new URL('/login?error=missing_code', request.url))
+    return NextResponse.redirect(new URL(authErrorRedirectPath(rawNext, 'missing_code'), request.url))
   }
 
   // Skip middleware for static files, API routes, and auth pages

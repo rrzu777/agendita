@@ -1,8 +1,8 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { signInWithGoogle } from '@/lib/auth/actions'
+import { GoogleButton } from './google-button'
 
 export const metadata: Metadata = { title: 'Ingresar — Agendita' }
 
@@ -36,9 +36,7 @@ export default async function IngresarPage({ searchParams }: { searchParams: Pro
               </div>
             )}
             <form action={action}>
-              <Button type="submit" className="h-14 w-full rounded-full text-lg font-semibold">
-                Continuar con Google
-              </Button>
+              <GoogleButton />
             </form>
             <div className="my-8 h-px bg-border/50" />
             <p className="text-center text-base text-muted-foreground">
