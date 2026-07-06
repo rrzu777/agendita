@@ -46,6 +46,31 @@ describe('StepDate timezone', () => {
     expect(formatInTimeZone(emitted, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm')).toBe(`${dayStr} 12:00`)
   })
 
+  it('aligns the first day of the month with its real weekday column', () => {
+    // Julio 2026 parte en miércoles: el día 1 debe caer en la 3ª columna
+    // (lunes-primero), o sea 2 celdas de relleno antes del primer botón.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 6, 6, 12, 0, 0))
+    try {
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      act(() => {
+        root?.render(<StepDate data={data} timezone="America/Santiago" onSelect={() => {}} onBack={() => {}} />)
+      })
+
+      const grid = container.querySelector('.grid-cols-7')!
+      const cells = Array.from(grid.children)
+      // 7 encabezados (Lun..Dom) + 2 rellenos, la celda 9 es el día 1
+      expect(cells[9].getAttribute('data-day')).toBe('2026-07-01')
+      // El lunes 6 de julio queda en la columna LUN (índice % 7 === 0)
+      const monday6 = cells.findIndex(c => c.getAttribute('data-day') === '2026-07-06')
+      expect(monday6 % 7).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('disables days that are already past in the business timezone', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)

@@ -20,6 +20,8 @@ export function StepDate({ data, timezone, onSelect, onBack }: { data: BookingDa
   const monthStart = startOfMonth(currentMonth)
   const monthEnd = endOfMonth(monthStart)
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd })
+  // Celdas vacías para que el día 1 caiga en su columna real (semana lunes-primero)
+  const leadingBlanks = (monthStart.getDay() + 6) % 7
 
   // "Hoy" es el hoy del negocio, no el del dispositivo de la clienta
   const businessToday = getLocalDateStr(new Date(), timezone)
@@ -43,6 +45,7 @@ export function StepDate({ data, timezone, onSelect, onBack }: { data: BookingDa
 
       <div className="mb-4 grid grid-cols-7 gap-1">
         {weekDays.map(d => <div key={d} className="py-2 text-center text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{d}</div>)}
+        {Array.from({ length: leadingBlanks }, (_, i) => <div key={`blank-${i}`} aria-hidden="true" />)}
         {days.map((day) => {
           const dayStr = format(day, 'yyyy-MM-dd')
           // Comparación lexicográfica de yyyy-MM-dd equivale a comparar fechas
