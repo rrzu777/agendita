@@ -30,14 +30,17 @@ describe('AvailabilityEditor', () => {
     mockUpdateAvailabilityRule.mockReset()
   })
 
-  it('updates weekly availability minutes through the shared time input', async () => {
+  it('does not persist time changes until the save button is clicked', async () => {
     mockUpdateAvailabilityRule.mockResolvedValue(undefined)
     const container = renderEditor()
-    const minuteSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Lunes inicio minutos"]')
 
+    await changeSelect(container, 'select[aria-label="Lunes inicio minutos"]', '45')
+    expect(mockUpdateAvailabilityRule).not.toHaveBeenCalled()
+
+    const saveButton = findSaveButton(container)
+    expect(saveButton).toBeTruthy()
     await act(async () => {
-      minuteSelect!.value = '45'
-      minuteSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+      saveButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(mockUpdateAvailabilityRule).toHaveBeenCalledWith('rule-monday', {
@@ -45,50 +48,45 @@ describe('AvailabilityEditor', () => {
       endTime: '18:00',
       isActive: true,
     })
+    expect(container.textContent).toContain('Guardado')
   })
 
-  it('does not save when selecting the current minute value again', async () => {
-    mockUpdateAvailabilityRule.mockResolvedValue(undefined)
+  it('shows no save button when there are no pending changes', () => {
     const container = renderEditor()
-    const minuteSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Lunes inicio minutos"]')
+    expect(findSaveButton(container)).toBeUndefined()
+  })
 
-    await act(async () => {
-      minuteSelect!.value = '00'
-      minuteSelect!.dispatchEvent(new Event('change', { bubbles: true }))
-    })
+  it('hides the save button and feedback again after reverting to the saved value', async () => {
+    const container = renderEditor()
+    await changeSelect(container, 'select[aria-label="Lunes inicio minutos"]', '45')
+    expect(findSaveButton(container)).toBeTruthy()
 
+    await changeSelect(container, 'select[aria-label="Lunes inicio minutos"]', '00')
+    expect(findSaveButton(container)).toBeUndefined()
     expect(mockUpdateAvailabilityRule).not.toHaveBeenCalled()
   })
 
-  it('rejects an inverted time range without calling the server', async () => {
-    mockUpdateAvailabilityRule.mockResolvedValue(undefined)
+  it('disables saving an inverted time range and shows the validation error', async () => {
     const container = renderEditor()
-    const hourSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Lunes inicio hora"]')
+    await changeSelect(container, 'select[aria-label="Lunes inicio hora"]', '19')
 
-    await act(async () => {
-      hourSelect!.value = '19'
-      hourSelect!.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    expect(mockUpdateAvailabilityRule).not.toHaveBeenCalled()
     expect(container.textContent).toContain('La hora de inicio debe ser anterior a la de término')
+    const saveButton = findSaveButton(container)
+    expect(saveButton?.disabled).toBe(true)
+    expect(mockUpdateAvailabilityRule).not.toHaveBeenCalled()
   })
 
-  it('clears the error and persists once the range becomes valid', async () => {
+  it('clears the error and saves once the range becomes valid', async () => {
     mockUpdateAvailabilityRule.mockResolvedValue(undefined)
     const container = renderEditor()
-    const startHour = container.querySelector<HTMLSelectElement>('select[aria-label="Lunes inicio hora"]')
 
-    await act(async () => {
-      startHour!.value = '19'
-      startHour!.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-    expect(mockUpdateAvailabilityRule).not.toHaveBeenCalled()
+    await changeSelect(container, 'select[aria-label="Lunes inicio hora"]', '19')
+    await changeSelect(container, 'select[aria-label="Lunes fin hora"]', '21')
+    expect(container.textContent).not.toContain('La hora de inicio debe ser anterior a la de término')
 
-    const endHour = container.querySelector<HTMLSelectElement>('select[aria-label="Lunes fin hora"]')
+    const saveButton = findSaveButton(container)
     await act(async () => {
-      endHour!.value = '21'
-      endHour!.dispatchEvent(new Event('change', { bubbles: true }))
+      saveButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(mockUpdateAvailabilityRule).toHaveBeenCalledWith('rule-monday', {
@@ -96,8 +94,55 @@ describe('AvailabilityEditor', () => {
       endTime: '21:00',
       isActive: true,
     })
-    expect(container.textContent).not.toContain('La hora de inicio debe ser anterior a la de término')
   })
+
+  it('keeps the pending changes and shows an error when the server fails', async () => {
+    mockUpdateAvailabilityRule.mockRejectedValue(new Error('boom'))
+    const container = renderEditor()
+
+    await changeSelect(container, 'select[aria-label="Lunes inicio minutos"]', '45')
+    const saveButton = findSaveButton(container)
+    await act(async () => {
+      saveButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('No pudimos guardar los cambios')
+    // El botón sigue disponible para reintentar y el borrador no se pierde
+    expect(findSaveButton(container)).toBeTruthy()
+    const minuteSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Lunes inicio minutos"]')
+    expect(minuteSelect!.value).toBe('45')
+  })
+
+  it('persists the toggle immediately using the saved times, discarding drafts', async () => {
+    mockUpdateAvailabilityRule.mockResolvedValue(undefined)
+    const container = renderEditor()
+
+    await changeSelect(container, 'select[aria-label="Lunes inicio minutos"]', '45')
+    const toggle = container.querySelector<HTMLButtonElement>('[role="switch"]')!
+    await act(async () => {
+      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(mockUpdateAvailabilityRule).toHaveBeenCalledTimes(1)
+    expect(mockUpdateAvailabilityRule).toHaveBeenCalledWith('rule-monday', {
+      startTime: '09:00',
+      endTime: '18:00',
+      isActive: false,
+    })
+    expect(findSaveButton(container)).toBeUndefined()
+  })
+
+  async function changeSelect(container: HTMLElement, selector: string, value: string) {
+    const select = container.querySelector<HTMLSelectElement>(selector)
+    await act(async () => {
+      select!.value = value
+      select!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+  }
+
+  function findSaveButton(container: HTMLElement) {
+    return Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Guardar'))
+  }
 
   function renderEditor() {
     const container = document.createElement('div')
