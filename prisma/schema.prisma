@@ -62,6 +62,7 @@ model Business {
   currency               String             @default("CLP")
   timezone               String             @default("America/Santiago")
   bookingWindowDays      Int                @default(90)
+  slotStepMinutes        Int?               @default(30) // cada cuántos min ofrecer inicios de hora; null = duración del servicio
   selfServiceCutoffHours Int                @default(24) // ventana para cancelar/reprogramar self-service; 0 = sin límite (se usa en D1-b)
   bookingNumberSeq       Int                @default(1000)
   isActive               Boolean            @default(true)

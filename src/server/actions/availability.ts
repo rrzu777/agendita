@@ -46,7 +46,7 @@ export async function getAvailableTimeSlots(businessId: string, serviceId: strin
 
   const business = await prisma.business.findUnique({
     where: { id: businessId, isActive: true },
-    select: { id: true, timezone: true, bookingWindowDays: true },
+    select: { id: true, timezone: true, bookingWindowDays: true, slotStepMinutes: true },
   })
   if (!business) {
     throw new Error('Negocio no válido')
@@ -85,6 +85,7 @@ export async function getAvailableTimeSlots(businessId: string, serviceId: strin
     timezone,
     now: new Date(),
     bookingWindowDays,
+    slotStepMinutes: business.slotStepMinutes,
   })
 }
 
@@ -100,7 +101,7 @@ export async function getAvailableSlotsForReschedule(bookingId: string, date: Da
     where: { id: bookingId, businessId },
     include: {
       service: { select: { id: true, durationMinutes: true, name: true, isActive: true } },
-      business: { select: { timezone: true, bookingWindowDays: true } },
+      business: { select: { timezone: true, bookingWindowDays: true, slotStepMinutes: true } },
     },
   })
 
@@ -142,6 +143,7 @@ export async function getAvailableSlotsForReschedule(bookingId: string, date: Da
     timezone,
     now: new Date(),
     bookingWindowDays,
+    slotStepMinutes: booking.business.slotStepMinutes,
   })
 }
 

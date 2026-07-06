@@ -35,15 +35,19 @@ export interface GenerateSlotsOptions {
   now?: Date
   leadTimeMinutes?: number
   bookingWindowDays?: number
+  /** Cada cuántos minutos ofrecer inicios dentro de cada hueco libre; null/ausente = duración del servicio (agenda compacta). */
+  slotStepMinutes?: number | null
 }
 
 /**
  * Genera slots disponibles para un día y servicio dado, por sustracción de
  * intervalos: ventana de la regla − bloqueos − reservas activas = intervalos
  * libres; en cada intervalo libre se anclan slots a su inicio con paso =
- * `durationMinutes`. Así los slots quedan pegados al término de cada cita o
- * bloqueo (agenda compacta, sin espacio libre desperdiciado), incluso cuando
- * una reserva existente no calza con la grilla de apertura.
+ * `slotStepMinutes` (o `durationMinutes` si es null). Así los slots quedan
+ * pegados al término de cada cita o bloqueo (la grilla se re-ancla en cada
+ * borde), incluso cuando una reserva existente no calza con la grilla de
+ * apertura. Un paso menor que la duración ofrece más opciones de inicio a
+ * costa de posibles huecos muertos de hasta `step` minutos.
  *
  * Devuelve instantes Date UTC reales. Por ejemplo, para negocio
  * America/Santiago con regla 09:00, el primer slot será 13:00Z.
@@ -66,7 +70,9 @@ export function generateSlots(
     now = new Date(),
     leadTimeMinutes = LEAD_TIME_MINUTES,
     bookingWindowDays = 90,
+    slotStepMinutes = null,
   } = options
+  const stepMinutes = slotStepMinutes ?? durationMinutes
 
   const localDateStr = formatInTimeZone(date, timezone, 'yyyy-MM-dd')
   const localDayOfWeek = getLocalDayOfWeek(date, timezone)
@@ -126,7 +132,7 @@ export function generateSlots(
       if (current >= cutoff && current <= maxStart) {
         slots.push({ start: new Date(current), end: addMinutes(current, durationMinutes) })
       }
-      current = addMinutes(current, durationMinutes)
+      current = addMinutes(current, stepMinutes)
     }
   }
 

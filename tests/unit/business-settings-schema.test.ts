@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { updateBusinessSchema } from '@/lib/business/schema'
+import { updateBusinessSchema, slotStepToMinutes } from '@/lib/business/schema'
 
 describe('updateBusinessSchema', () => {
   it('accepts valid data', () => {
@@ -105,6 +105,30 @@ describe('updateBusinessSchema', () => {
 
   it('rejects city with only spaces', () => {
     const result = updateBusinessSchema.safeParse({ name: 'Test', city: '   ', subdomain: 'test' })
+    expect(result.success).toBe(false)
+  })
+
+  it('defaults slotStepMinutes to "30" when not provided', () => {
+    const result = updateBusinessSchema.safeParse({
+      name: 'Test', city: 'Santiago', subdomain: 'test',
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.slotStepMinutes).toBe('30')
+    }
+  })
+
+  it('converts form values to minutes for the DB (null = service duration)', () => {
+    expect(slotStepToMinutes('service')).toBeNull()
+    expect(slotStepToMinutes('15')).toBe(15)
+    expect(slotStepToMinutes('30')).toBe(30)
+  })
+
+  it('rejects steps outside the allowed set', () => {
+    const result = updateBusinessSchema.safeParse({
+      name: 'Test', city: 'Santiago', subdomain: 'test',
+      slotStepMinutes: '20',
+    })
     expect(result.success).toBe(false)
   })
 

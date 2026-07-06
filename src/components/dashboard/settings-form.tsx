@@ -32,6 +32,14 @@ const TIMEZONES = [
   { value: 'America/Bogota', label: 'América/Bogotá (Colombia)' },
 ]
 
+const SLOT_STEP_OPTIONS = [
+  { value: '15', label: 'Cada 15 minutos' },
+  { value: '30', label: 'Cada 30 minutos' },
+  { value: '45', label: 'Cada 45 minutos' },
+  { value: '60', label: 'Cada 1 hora' },
+  { value: 'service', label: 'Según la duración del servicio' },
+]
+
 type FormData = z.input<typeof updateBusinessSchema>
 
 export function SettingsForm({ business }: { business: Business }) {
@@ -57,6 +65,7 @@ export function SettingsForm({ business }: { business: Business }) {
       addressText: business.addressText || '',
       city: business.city,
       timezone: business.timezone,
+      slotStepMinutes: business.slotStepMinutes == null ? 'service' : String(business.slotStepMinutes) as FormData['slotStepMinutes'],
       subdomain: business.subdomain,
       cancellationPolicy: business.cancellationPolicy || '',
       bookingPolicy: business.bookingPolicy || '',
@@ -192,6 +201,27 @@ export function SettingsForm({ business }: { business: Business }) {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="slotStepMinutes">Ofrecer horas de reserva</Label>
+            <Select
+              value={watchedValues.slotStepMinutes}
+              onValueChange={(val) => setValue('slotStepMinutes', val as FormData['slotStepMinutes'])}
+            >
+              <SelectTrigger id="slotStepMinutes">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SLOT_STEP_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Cada cuánto se ofrecen horas de inicio en tu página de reservas. &quot;Según la duración del servicio&quot; deja las citas pegadas una tras otra (sin huecos), pero da menos opciones de hora a tus clientas.
+            </p>
           </div>
           {/* Currency is intentionally read-only.
               Changing currency would break existing payment integrations

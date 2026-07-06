@@ -1,6 +1,57 @@
 import { describe, it, expect } from 'vitest'
 import { generateSlots } from '@/lib/availability/slots'
 
+describe('generateSlots slotStepMinutes', () => {
+  const timezone = 'America/Santiago'
+  const baseDate = new Date('2026-05-11T04:00:00Z')
+  const testNow = new Date('2026-05-10T04:00:00Z')
+  const rules = [
+    { dayOfWeek: 1, startTime: '08:00', endTime: '13:00', isActive: true },
+  ]
+
+  it('offers candidate starts every slotStepMinutes within each free interval', () => {
+    // 08:00-13:00 Santiago, servicio 90 min, paso 30: 08:00..11:30
+    const slots = generateSlots(baseDate, 90, rules, [], [], { timezone, now: testNow, slotStepMinutes: 30 })
+    const starts = slots.map((s) => s.start.toISOString())
+    expect(starts).toEqual([
+      '2026-05-11T12:00:00.000Z', // 08:00
+      '2026-05-11T12:30:00.000Z', // 08:30
+      '2026-05-11T13:00:00.000Z', // 09:00
+      '2026-05-11T13:30:00.000Z', // 09:30
+      '2026-05-11T14:00:00.000Z', // 10:00
+      '2026-05-11T14:30:00.000Z', // 10:30
+      '2026-05-11T15:00:00.000Z', // 11:00
+      '2026-05-11T15:30:00.000Z', // 11:30 (11:30+90 = 13:00, justo cabe)
+    ])
+  })
+
+  it('re-anchors the step grid at the edge of an existing booking', () => {
+    // Reserva 09:00-10:30 Santiago (13:00-14:30 UTC): el hueco 08:00-09:00 no
+    // aguanta 90 min, y después de la cita la grilla parte pegada a las 10:30.
+    const bookings = [
+      { startDateTime: new Date('2026-05-11T13:00:00Z'), endDateTime: new Date('2026-05-11T14:30:00Z'), status: 'confirmed' },
+    ]
+    const slots = generateSlots(baseDate, 90, rules, [], bookings, { timezone, now: testNow, slotStepMinutes: 30 })
+    const starts = slots.map((s) => s.start.toISOString())
+    expect(starts).toEqual([
+      '2026-05-11T14:30:00.000Z', // 10:30 (re-anclado al borde de la cita)
+      '2026-05-11T15:00:00.000Z', // 11:00
+      '2026-05-11T15:30:00.000Z', // 11:30
+    ])
+  })
+
+  it('falls back to the service duration as step when slotStepMinutes is null', () => {
+    const withNull = generateSlots(baseDate, 90, rules, [], [], { timezone, now: testNow, slotStepMinutes: null })
+    const withoutOption = generateSlots(baseDate, 90, rules, [], [], { timezone, now: testNow })
+    expect(withNull.map((s) => s.start.toISOString())).toEqual(withoutOption.map((s) => s.start.toISOString()))
+    expect(withNull.map((s) => s.start.toISOString())).toEqual([
+      '2026-05-11T12:00:00.000Z', // 08:00
+      '2026-05-11T13:30:00.000Z', // 09:30
+      '2026-05-11T15:00:00.000Z', // 11:00
+    ])
+  })
+})
+
 describe('generateSlots', () => {
   const timezone = 'America/Santiago'
   // 2026-05-11T04:00:00Z = 00:00 lunes en Santiago
