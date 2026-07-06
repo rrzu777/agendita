@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusinessRole } from '@/lib/auth/server'
-import { updateBusinessSchema, type UpdateBusinessInput } from '@/lib/business/schema'
+import { updateBusinessSchema, slotStepToMinutes, type UpdateBusinessInput } from '@/lib/business/schema'
 import { normalizeWhatsapp, normalizeInstagram } from '@/lib/business/normalize'
 
 const RESERVED_SUBDOMAINS = [
@@ -63,6 +63,7 @@ export async function updateBusinessSettings(data: UpdateBusinessInput) {
     addressText: trimToNull(validated.addressText),
     city: validated.city.trim(),
     timezone: validated.timezone,
+    slotStepMinutes: slotStepToMinutes(validated.slotStepMinutes),
     subdomain: validated.subdomain,
     cancellationPolicy: trimToNull(validated.cancellationPolicy),
     bookingPolicy: trimToNull(validated.bookingPolicy),
