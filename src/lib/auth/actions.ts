@@ -8,6 +8,7 @@ import { randomBookingNumberBase } from '@/lib/bookings/number'
 import { RegistrationError } from './registration-error'
 import { Prisma } from '@prisma/client'
 import { getAppUrl } from '@/lib/business/urls'
+import { sanitizeNext } from './sanitize-next'
 
 const BUSINESS_CATEGORIES = ['nails', 'barber', 'hair_salon', 'beauty', 'massage', 'therapy', 'other'] as const
 type BusinessCategoryInput = typeof BUSINESS_CATEGORIES[number]
@@ -334,4 +335,22 @@ export async function signOut() {
     throw new Error(error.message)
   }
   redirect('/')
+}
+
+/** Login de clienta (y de cualquier persona) con Google. Reusa el flujo PKCE:
+ *  Supabase redirige a /auth/callback, el middleware intercambia el code y
+ *  redirige a `next`. Requiere el provider Google habilitado en Supabase. */
+export async function signInWithGoogle(next: string | null) {
+  const supabase = await createClient()
+  const safeNext = sanitizeNext(next, '/mi')
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: getAppUrl(`/auth/callback?next=${encodeURIComponent(safeNext)}`) },
+  })
+  if (error || !data?.url) {
+    // El form action descarta el valor de retorno — sin este redirect el error
+    // sería un botón muerto. Se preserva `next` para reintentar.
+    redirect(`/ingresar?error=oauth&next=${encodeURIComponent(safeNext)}`)
+  }
+  redirect(data.url)
 }

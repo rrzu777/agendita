@@ -8,6 +8,8 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { getCurrentUser } from '@/lib/auth/user'
+import { linkCustomerFromBookingSession } from '@/lib/customers/link'
 import { logger } from '@/lib/logger'
 
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
@@ -222,6 +224,9 @@ export async function createBooking(data: {
   const finalAmount = service.price
   const endDateTime = addMinutes(data.startDateTime, service.durationMinutes)
 
+  // Vía 3 de vinculación (leer sesión ANTES de la tx: toca Supabase/cookies).
+  const sessionUser = await getCurrentUser()
+
   // Idempotencia: si llega key, buscar booking existente fuera de tx (fast path).
   // El race final se maneja con el unique constraint de DB dentro de la tx.
   if (data.idempotencyKey) {
@@ -281,6 +286,12 @@ export async function createBooking(data: {
             referredPhone: normalizedPhone,
           })
         }
+      }
+
+      // Vía 3 de vinculación: reserva hecha con sesión activa (los guards
+      // viven en el helper, junto a las otras dos vías).
+      if (sessionUser) {
+        await linkCustomerFromBookingSession(tx, customer, sessionUser, businessId)
       }
 
       const noDepositRequired = depositRequired <= 0

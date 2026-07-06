@@ -36,6 +36,10 @@ vi.mock('@/lib/auth/server', () => ({
   ForbiddenError: class extends Error {},
 }))
 
+vi.mock('@/lib/auth/user', () => ({
+  getCurrentUser: vi.fn().mockResolvedValue(null),
+}))
+
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
 }))

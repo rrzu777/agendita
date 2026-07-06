@@ -45,7 +45,7 @@ export async function resolveLoyaltyCustomer(db: Db, token: string) {
   const customer = await db.customer.findUnique({
     where: { loyaltyToken: token },
     select: {
-      id: true, name: true, businessId: true, referralToken: true,
+      id: true, name: true, businessId: true, referralToken: true, userId: true,
       business: { select: { id: true, name: true, slug: true, subdomain: true, logoUrl: true, loyaltyConfig: true } },
     },
   })

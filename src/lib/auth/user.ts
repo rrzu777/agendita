@@ -27,6 +27,7 @@ function makeSyntheticUser(dbUser: NonNullable<Awaited<ReturnType<typeof getE2ET
     app_metadata: {},
     aud: 'authenticated',
     created_at: dbUser.createdAt.toISOString(),
+    email_confirmed_at: dbUser.createdAt.toISOString(),
     role: 'authenticated',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- must match Supabase User shape dynamically
   } as any
