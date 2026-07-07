@@ -77,6 +77,32 @@ describe('createTimeBlockSeries', () => {
     expect(res.series.startTime).toBe('12:30') // hora cambiada
   })
 
+  it('updateTimeBlockSeries edita en el lugar una serie solo-futura (sin split, misma id)', async () => {
+    const { createTimeBlockSeries, updateTimeBlockSeries } = await import('@/server/actions/time-blocks')
+    // Ancla muy en el futuro: no hay ocurrencias pasadas que preservar.
+    const { series } = await createTimeBlockSeries({ daysOfWeek: [1, 2, 3], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2099-01-05T04:00:00Z'), endMode: 'forever' }) as { series: { id: string } }
+    const before = await prisma.timeBlockSeries.count({ where: { businessId } })
+    const res = await updateTimeBlockSeries(series.id, { startTime: '12:30', endTime: '13:30', reason: 'A2' })
+    if (!('series' in res)) throw new Error('esperaba edición en el lugar, no requiresConfirmation')
+    expect(res.series.id).toBe(series.id) // MISMA serie, no una nueva
+    expect(res.series.startTime).toBe('12:30')
+    expect(await prisma.timeBlockSeries.count({ where: { businessId } })).toBe(before) // no proliferan filas
+  })
+
+  it('updateTimeBlockSeries NO crea una serie fantasma al editar una serie ya terminada', async () => {
+    const { createTimeBlockSeries, updateTimeBlockSeries } = await import('@/server/actions/time-blocks')
+    // Serie totalmente en el pasado (anchor 2020, 1 semana): until << hoy.
+    const { series } = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2020-01-06T04:00:00Z'), endMode: 'weeks', weeks: 1 }) as { series: { id: string } }
+    const res = await updateTimeBlockSeries(series.id, { startTime: '12:30', endTime: '13:30', reason: 'A2' })
+    if (!('series' in res)) throw new Error('esperaba edición en el lugar')
+    expect(res.series.id).toBe(series.id)
+    // Ninguna serie del negocio debe quedar con until anterior al anchor (fantasma).
+    const all = await prisma.timeBlockSeries.findMany({ where: { businessId } })
+    for (const s of all) {
+      if (s.until) expect(s.until.getTime()).toBeGreaterThanOrEqual(s.anchorDate.getTime())
+    }
+  })
+
   it('C1: assertSlotIsAvailable rechaza un slot en el ÚLTIMO día de una serie acotada', async () => {
     // Reloj fijo antes del slot para que pase lead-time/booking-window (que usan Date real).
     vi.useFakeTimers({ toFake: ['Date'] })

@@ -12,6 +12,7 @@ import { getEffectiveBlocks, type EffectiveBlock } from '@/lib/availability/effe
 import { computeServiceFit, SERVICE_FIT_WINDOW_DAYS } from '@/lib/availability/service-fit'
 import { getLocalDateStr } from '@/lib/availability/timezone'
 import { computeSeriesUntil, expandSeries, type SeriesEndMode } from '@/lib/calendar/expand-series'
+import { planSeriesUpdate } from '@/lib/calendar/series-update-plan'
 import { timeToMinutes } from '@/lib/availability/time-range'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 
@@ -439,39 +440,65 @@ export async function updateTimeBlockSeries(
   const existing = await assertSeriesOwned(seriesId, businessId)
   const timezone = business.timezone || 'America/Santiago'
 
-  // Split en hoy: la serie vieja termina AYER (inclusivo), la nueva arranca hoy y
-  // CONSERVA el patrón de días y la fecha de fin (until) originales — el diálogo de
-  // edición solo cambia hora/motivo. Reset de excepciones futuras (viven en la vieja).
   const now = new Date()
   const todayStr = formatInTimeZone(now, timezone, 'yyyy-MM-dd')
   const yesterdayStr = formatInTimeZone(addDays(now, -1), timezone, 'yyyy-MM-dd')
   const oldUntil = fromZonedTime(`${yesterdayStr} 00:00:00`, timezone)
   const anchorToday = fromZonedTime(`${todayStr} 00:00:00`, timezone)
 
-  // Chequeo ANTES de guardar: ocurrencias futuras del NUEVO horario vs
-  // reservas activas. Mismo patrón requiresConfirmation que los bloqueos sueltos.
-  const { occurrences, overlappingDates } = await findSeriesBookingConflicts(
-    businessId,
-    { id: 'proposed', daysOfWeek: existing.daysOfWeek, startTime: changes.startTime, endTime: changes.endTime, reason: changes.reason ?? null, anchorDate: anchorToday, until: existing.until },
-    timezone,
-    now,
-    business.bookingWindowDays ?? 90,
-  )
+  // Partir la serie solo cuando conviene conservar el historial (hay pasado Y
+  // futuro). Si es solo-futura o ya terminó, editar en el lugar: el split
+  // crearía una serie fantasma con anchor>until que no se renderiza (bug real).
+  const anchorStr = getLocalDateStr(existing.anchorDate, timezone)
+  const untilStr = existing.until ? getLocalDateStr(existing.until, timezone) : null
+  const { mode, hasFuture } = planSeriesUpdate(anchorStr, untilStr, todayStr, yesterdayStr)
 
-  if (overlappingDates.length > 0 && changes.confirmed !== true) {
-    // La serie original se excluye del "antes": su horario será reemplazado.
-    const addendum = await serviceFitAddendum(businessId, timezone, occurrences, now, (b) => b.seriesId === seriesId)
-    return {
-      requiresConfirmation: true as const,
-      message: buildSeriesConflictMessage(
-        'El nuevo horario de la serie',
-        overlappingDates,
-        'Confirma si deseas guardarlo de todas formas',
-        addendum,
-      ),
+  // Chequeo ANTES de guardar: ocurrencias que TOMARÁN el horario nuevo (de hoy en
+  // adelante) vs reservas activas. En split arrancan hoy; in-place solo-futura
+  // arrancan en su propio anchor (>= hoy). Sin futuro no hay nada que chequear.
+  if (hasFuture) {
+    const futureAnchor = mode === 'split' ? anchorToday : existing.anchorDate
+    const { occurrences, overlappingDates } = await findSeriesBookingConflicts(
+      businessId,
+      { id: 'proposed', daysOfWeek: existing.daysOfWeek, startTime: changes.startTime, endTime: changes.endTime, reason: changes.reason ?? null, anchorDate: futureAnchor, until: existing.until },
+      timezone,
+      now,
+      business.bookingWindowDays ?? 90,
+    )
+
+    if (overlappingDates.length > 0 && changes.confirmed !== true) {
+      // La serie original se excluye del "antes": su horario será reemplazado.
+      const addendum = await serviceFitAddendum(businessId, timezone, occurrences, now, (b) => b.seriesId === seriesId)
+      return {
+        requiresConfirmation: true as const,
+        message: buildSeriesConflictMessage(
+          'El nuevo horario de la serie',
+          overlappingDates,
+          'Confirma si deseas guardarlo de todas formas',
+          addendum,
+        ),
+      }
     }
   }
 
+  if (mode === 'in-place') {
+    // Cambia el registro directamente (conserva días, anchor, until, tolerancia).
+    // Misma id → la UI re-renderiza el horario nuevo al refrescar. Restablece las
+    // ocurrencias editadas individualmente de hoy en adelante (igual que el split).
+    const [, updated] = await prisma.$transaction([
+      prisma.timeBlockException.deleteMany({ where: { seriesId, occurrenceDate: { gte: anchorToday } } }),
+      prisma.timeBlockSeries.update({
+        where: { id: seriesId },
+        data: { startTime: changes.startTime, endTime: changes.endTime, reason: changes.reason ?? null },
+      }),
+    ])
+    await revalidateTimeBlocks(businessId)
+    return { series: updated }
+  }
+
+  // Split en hoy: la serie vieja termina AYER (inclusivo), la nueva arranca hoy y
+  // CONSERVA el patrón de días y la fecha de fin (until) originales — el diálogo de
+  // edición solo cambia hora/motivo. Reset de excepciones futuras (viven en la vieja).
   const [, newSeries] = await prisma.$transaction([
     prisma.timeBlockSeries.update({ where: { id: seriesId }, data: { until: oldUntil, isActive: existing.anchorDate <= oldUntil } }),
     prisma.timeBlockSeries.create({
