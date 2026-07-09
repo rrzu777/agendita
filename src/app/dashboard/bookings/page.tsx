@@ -3,7 +3,6 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { getBookings } from '@/server/actions/bookings'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { updateBookingStatus } from '@/server/actions/bookings'
 import { CalendarDays, Clock, User, CreditCard, Phone, Plus, RefreshCw } from 'lucide-react'
@@ -16,22 +15,6 @@ import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { BookingRowActions } from '@/components/dashboard/booking-row-actions'
-
-const statusLabels: Record<string, string> = {
-  pending_payment: 'Pendiente de pago',
-  confirmed: 'Confirmada',
-  completed: 'Completada',
-  cancelled: 'Cancelada',
-  no_show: 'No asistió',
-}
-
-const statusColors: Record<string, string> = {
-  pending_payment: 'bg-orange-100 text-orange-800',
-  confirmed: 'bg-green-100 text-green-800',
-  completed: 'bg-secondary text-secondary-foreground',
-  cancelled: 'bg-muted text-muted-foreground',
-  no_show: 'bg-destructive/10 text-destructive',
-}
 
 function EmptyState() {
   return (
@@ -75,9 +58,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           <h3 className="text-lg font-semibold text-primary truncate">{booking.service?.name || 'Servicio'}</h3>
           <p className="text-sm text-muted-foreground">{formatBookingNumber(booking.bookingNumber, booking.id)}</p>
         </div>
-        <Badge className={`shrink-0 ${statusColors[booking.status]}`}>
-          {statusLabels[booking.status]}
-        </Badge>
+        <StatusBadge status={booking.status} className="shrink-0" />
       </div>
 
       <div className="mb-4 space-y-2">
