@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
-import { StatusBadge } from '@/components/ui/status-badge'
+import { StatusBadge, STATUS_MAPS } from '@/components/ui/status-badge'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -13,11 +13,6 @@ import { getPromotionRedemptions } from '@/server/actions/promotions'
 import { formatMoney } from '@/lib/money'
 
 type Redemption = Awaited<ReturnType<typeof getPromotionRedemptions>>[number]
-
-const statusLabels: Record<string, string> = {
-  applied: 'Aplicado',
-  released: 'Liberado',
-}
 
 const sourceLabels: Record<string, string> = {
   public_booking: 'Reserva online',
@@ -101,7 +96,7 @@ export function RedemptionsButton({
           csvField(formatMoney(r.discountAmount, currency)),
           csvField(formatDateTime(r.createdAt)),
           csvField(sourceLabels[r.source] ?? r.source),
-          csvField(statusLabels[r.status] ?? r.status),
+          csvField(STATUS_MAPS.redemption[r.status]?.label ?? r.status),
         ].join(','),
       )
     }
