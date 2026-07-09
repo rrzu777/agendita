@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TableActions } from '@/components/ui/table-actions'
@@ -11,6 +11,34 @@ import { isManualPaymentAllowed, type ManualPaymentBooking } from './manual-paym
 import { updateBookingStatus } from '@/server/actions/bookings'
 
 type RowBooking = ManualPaymentBooking
+
+function CompleteBookingButton({ bookingId }: { bookingId: string }) {
+  const [pending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+  return (
+    <div className="flex flex-col items-end">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={pending}
+        onClick={() => {
+          setError(null)
+          startTransition(async () => {
+            try {
+              await updateBookingStatus(bookingId, 'completed')
+            } catch (e) {
+              setError(e instanceof Error ? e.message : 'Error al completar')
+            }
+          })
+        }}
+      >
+        {pending ? 'Completando…' : 'Completar'}
+      </Button>
+      {error && <span className="text-xs text-destructive">{error}</span>}
+    </div>
+  )
+}
 
 export function BookingRowActions({
   booking,
@@ -34,13 +62,7 @@ export function BookingRowActions({
   }
 
   const primary = isConfirmed ? (
-    <form
-      action={async () => {
-        await updateBookingStatus(booking.id, 'completed')
-      }}
-    >
-      <Button type="submit" size="sm" variant="outline">Completar</Button>
-    </form>
+    <CompleteBookingButton bookingId={booking.id} />
   ) : (
     <Button type="button" size="sm" variant="outline" onClick={() => setPayOpen(true)}>
       Cobrar

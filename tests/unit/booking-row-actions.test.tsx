@@ -52,6 +52,9 @@ function rowBooking(overrides: Record<string, unknown> = {}) {
   }
 }
 
+// The conditional kebab items (Reprogramar / Registrar pago) aren't asserted here:
+// Radix DropdownMenuContent renders into a portal that renderToStaticMarkup doesn't
+// emit, so these tests cover the primary action + kebab trigger only, on purpose.
 describe('BookingRowActions', () => {
   it('shows Completar as primary + kebab for a confirmed booking', () => {
     const html = renderToStaticMarkup(<BookingRowActions booking={rowBooking() as never} businessCurrency="CLP" />)

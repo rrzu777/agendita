@@ -85,6 +85,9 @@ export function ManualPaymentDialog({
     else setInternalOpen(nextOpen)
   }
 
+  // Must re-initialize selection/mode/error on every open transition — including
+  // parent-controlled reopens (hoisted dialogs) — so it deliberately depends only
+  // on `open`. Do not add other deps: they would reset the form mid-edit.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- re-selecting/prefilling on open is required so parent-controlled opens (hoisted dialogs) prefill correctly
     if (open) selectBooking(defaultBookingId || payableBookings[0]?.id || '')
