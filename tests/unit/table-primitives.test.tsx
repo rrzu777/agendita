@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest'
 import { Table } from '@/components/ui/table'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
+import { TableActions } from '@/components/ui/table-actions'
 
 describe('Table fixed', () => {
   it('applies table-fixed when fixed is set', () => {
@@ -56,5 +57,26 @@ describe('TruncatedCell', () => {
   it('omits the secondary line when not provided', () => {
     const html = render(<TruncatedCell primary="Servicio" />)
     expect(html).not.toContain('text-muted-foreground')
+  })
+})
+
+describe('TableActions', () => {
+  it('renders the primary action', () => {
+    const html = renderToStaticMarkup(<TableActions primary={<button>Completar</button>} />)
+    expect(html).toContain('Completar')
+  })
+
+  it('renders the kebab trigger when there are menu children', () => {
+    const html = renderToStaticMarkup(
+      <TableActions primary={<button>Completar</button>}>
+        <span>item</span>
+      </TableActions>,
+    )
+    expect(html).toContain('Más acciones')
+  })
+
+  it('does not render the kebab when there are no children', () => {
+    const html = renderToStaticMarkup(<TableActions primary={<button>Completar</button>} />)
+    expect(html).not.toContain('Más acciones')
   })
 })
