@@ -5,28 +5,12 @@ import { useRouter } from 'next/navigation'
 import { formatInTimeZone } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { BookingDrawer } from './booking-drawer'
 import { updateBookingStatus } from '@/server/actions/bookings'
 import { CheckCircle, UserX, CreditCard, Eye, RefreshCw } from 'lucide-react'
 import { CancelBookingButton } from './cancel-booking-button'
 import { isManualPaymentAllowed } from './manual-payment-utils'
-
-const statusLabels: Record<string, string> = {
-  pending_payment: 'Pendiente de pago',
-  confirmed: 'Confirmada',
-  completed: 'Completada',
-  cancelled: 'Cancelada',
-  no_show: 'No asistió',
-}
-
-const statusBadgeClasses: Record<string, string> = {
-  pending_payment: 'bg-orange-100 text-orange-800',
-  confirmed: 'bg-green-100 text-green-800',
-  completed: 'bg-secondary text-secondary-foreground',
-  cancelled: 'bg-muted text-muted-foreground',
-  no_show: 'bg-destructive/10 text-destructive',
-}
 
 export type CalendarBooking = {
   id: string
@@ -86,9 +70,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
               <span className="text-sm font-semibold text-primary">
                 {formatInTimeZone(start, businessTimezone, 'HH:mm', { locale: es })} - {formatInTimeZone(end, businessTimezone, 'HH:mm', { locale: es })}
               </span>
-              <Badge className={statusBadgeClasses[booking.status] || ''}>
-                {statusLabels[booking.status] || booking.status}
-              </Badge>
+              <StatusBadge status={booking.status} />
             </div>
             <div className="mt-1 text-sm font-medium text-foreground">
               {booking.service?.name || 'Servicio desconocido'}
