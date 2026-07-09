@@ -62,6 +62,11 @@ const SUBSCRIPTION_STATUS: Record<string, StatusEntry> = {
   cancelled: { label: 'Cancelado', className: 'bg-muted text-muted-foreground' },
 }
 
+const REDEMPTION_STATUS: Record<string, StatusEntry> = {
+  applied: { label: 'Aplicado', className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
+  released: { label: 'Liberado', className: 'bg-muted text-muted-foreground' },
+}
+
 export const STATUS_MAPS = {
   booking: BOOKING_STATUS,
   service: SERVICE_STATUS,
@@ -70,6 +75,7 @@ export const STATUS_MAPS = {
   promo: PROMO_STATUS,
   direction: DIRECTION_STATUS,
   subscription: SUBSCRIPTION_STATUS,
+  redemption: REDEMPTION_STATUS,
 } as const
 
 export function StatusBadge({

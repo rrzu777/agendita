@@ -23,4 +23,8 @@ describe('StatusBadge domain maps', () => {
     expect(renderToStaticMarkup(<StatusBadge map="subscription" status="trialing" />)).toContain('En prueba')
     expect(renderToStaticMarkup(<StatusBadge map="subscription" status="past_due" />)).toContain('Pago pendiente')
   })
+  it('redemption map: applied/released', () => {
+    expect(renderToStaticMarkup(<StatusBadge map="redemption" status="applied" />)).toContain('Aplicado')
+    expect(renderToStaticMarkup(<StatusBadge map="redemption" status="released" />)).toContain('Liberado')
+  })
 })

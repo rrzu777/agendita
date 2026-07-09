@@ -2,8 +2,11 @@
 
 import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { TruncatedCell } from '@/components/ui/truncated-cell'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { TableMobileCard } from '@/components/ui/table-mobile-card'
+import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Receipt, Download } from 'lucide-react'
 import { getPromotionRedemptions } from '@/server/actions/promotions'
@@ -14,11 +17,6 @@ type Redemption = Awaited<ReturnType<typeof getPromotionRedemptions>>[number]
 const statusLabels: Record<string, string> = {
   applied: 'Aplicado',
   released: 'Liberado',
-}
-
-const statusColors: Record<string, string> = {
-  applied: 'bg-green-100 text-green-800',
-  released: 'bg-muted text-muted-foreground',
 }
 
 const sourceLabels: Record<string, string> = {
@@ -155,36 +153,60 @@ export function RedemptionsButton({
         ) : rows && rows.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">Aún no hay canjes de esta promoción.</p>
         ) : (
-          <div className="studio-card overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead>Clienta</TableHead>
-                  <TableHead>Reserva</TableHead>
-                  <TableHead>Descuento</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Origen</TableHead>
-                  <TableHead>Estado</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows?.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell className="font-semibold text-primary">{r.customer?.name || '—'}</TableCell>
-                    <TableCell>{formatDateTime(r.booking?.startDateTime ?? null)}</TableCell>
-                    <TableCell>{formatMoney(r.discountAmount, currency)}</TableCell>
-                    <TableCell>{formatDateTime(r.createdAt)}</TableCell>
-                    <TableCell>{sourceLabels[r.source] ?? r.source}</TableCell>
-                    <TableCell>
-                      <Badge className={statusColors[r.status] ?? 'bg-muted text-muted-foreground'}>
-                        {statusLabels[r.status] ?? r.status}
-                      </Badge>
-                    </TableCell>
+          <>
+            {/* Mobile: cards */}
+            <div className="space-y-3 lg:hidden">
+              {rows?.map((r) => (
+                <TableMobileCard
+                  key={r.id}
+                  title={r.customer?.name || '—'}
+                  subtitle={formatDateTime(r.booking?.startDateTime ?? null)}
+                  badge={<StatusBadge map="redemption" status={r.status} />}
+                  rows={[
+                    { label: 'Descuento', value: formatMoney(r.discountAmount, currency) },
+                    { label: 'Fecha', value: formatDateTime(r.createdAt) },
+                    { label: 'Origen', value: sourceLabels[r.source] ?? r.source },
+                  ]}
+                />
+              ))}
+            </div>
+
+            {/* Desktop: table */}
+            <div className="hidden lg:block studio-card overflow-hidden">
+              <Table fixed className={TABLE_MIN_WIDTH}>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead>Clienta</TableHead>
+                    <TableHead className={TABLE_COL.date}>Reserva</TableHead>
+                    <TableHead className={TABLE_COL.money}>Descuento</TableHead>
+                    <TableHead className={TABLE_COL.date}>Fecha</TableHead>
+                    <TableHead className={TABLE_COL.label}>Origen</TableHead>
+                    <TableHead className={TABLE_COL.status}>Estado</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {rows?.map((r) => (
+                    <TableRow key={r.id}>
+                      <TruncatedCell className="font-semibold text-primary" primary={r.customer?.name || '—'} />
+                      <TableCell className={`${TABLE_COL.date} text-sm`}>
+                        {formatDateTime(r.booking?.startDateTime ?? null)}
+                      </TableCell>
+                      <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
+                        {formatMoney(r.discountAmount, currency)}
+                      </TableCell>
+                      <TableCell className={`${TABLE_COL.date} text-sm`}>{formatDateTime(r.createdAt)}</TableCell>
+                      <TableCell className={`${TABLE_COL.label} text-sm`}>
+                        {sourceLabels[r.source] ?? r.source}
+                      </TableCell>
+                      <TableCell className={TABLE_COL.status}>
+                        <StatusBadge map="redemption" status={r.status} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
       </DialogContent>
     </Dialog>
