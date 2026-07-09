@@ -4,7 +4,7 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({ className, fixed, ...props }: React.ComponentProps<"table"> & { fixed?: boolean }) {
   return (
     <div
       data-slot="table-container"
@@ -12,7 +12,7 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
     >
       <table
         data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
+        className={cn("w-full caption-bottom text-sm", fixed && "table-fixed", className)}
         {...props}
       />
     </div>
