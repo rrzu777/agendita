@@ -50,6 +50,25 @@ const DIRECTION_STATUS: Record<string, StatusEntry> = {
   neutral: { label: 'Neutral', className: 'bg-muted text-muted-foreground' },
 }
 
+// Mismos 5 estados y labels que `getSubscriptionStatusLabel` en
+// src/lib/subscriptions/enforcement.ts (esa función sigue siendo la fuente
+// canónica de las labels; este mapa solo agrega color para celdas de tabla).
+// Reemplaza el bucketing de 3 colores de admin/page.tsx. El badge decorativo
+// de arriba en billing/page.tsx (no es una celda de tabla, fuera de alcance
+// de la iniciativa de tablas) sigue con su propio mapa local sin tocar.
+const SUBSCRIPTION_STATUS: Record<string, StatusEntry> = {
+  trialing: { label: 'En prueba', className: 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300' },
+  active: { label: 'Activo', className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
+  past_due: { label: 'Pago pendiente', className: 'bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300' },
+  suspended: { label: 'Suspendido', className: 'bg-destructive/10 text-destructive dark:bg-destructive/20' },
+  cancelled: { label: 'Cancelado', className: 'bg-muted text-muted-foreground' },
+}
+
+const REDEMPTION_STATUS: Record<string, StatusEntry> = {
+  applied: { label: 'Aplicado', className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
+  released: { label: 'Liberado', className: 'bg-muted text-muted-foreground' },
+}
+
 export const STATUS_MAPS = {
   booking: BOOKING_STATUS,
   service: SERVICE_STATUS,
@@ -57,6 +76,8 @@ export const STATUS_MAPS = {
   payment: PAYMENT_STATUS,
   promo: PROMO_STATUS,
   direction: DIRECTION_STATUS,
+  subscription: SUBSCRIPTION_STATUS,
+  redemption: REDEMPTION_STATUS,
 } as const
 
 export function StatusBadge({

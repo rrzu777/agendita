@@ -5,6 +5,12 @@ import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { getCurrentSubscription } from '@/server/actions/subscriptions'
 import { BadgeCheck, CircleAlert, CircleX, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { TruncatedCell } from '@/components/ui/truncated-cell'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { formatMoney } from '@/lib/money'
+import { TableMobileCard } from '@/components/ui/table-mobile-card'
+import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 
 const statusLabels: Record<string, string> = {
   trialing: 'En prueba',
@@ -140,43 +146,60 @@ export default async function BillingPage() {
                   <CardDescription>Pagos de suscripción registrados</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border">
-                          <th className="py-3 text-left font-semibold text-muted-foreground">Fecha</th>
-                          <th className="py-3 text-left font-semibold text-muted-foreground">Monto</th>
-                          <th className="py-3 text-left font-semibold text-muted-foreground">Método</th>
-                          <th className="py-3 text-left font-semibold text-muted-foreground">Estado</th>
-                          <th className="py-3 text-left font-semibold text-muted-foreground">Notas</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {payments.map((payment) => (
-                          <tr key={payment.id} className="border-b border-border/50">
-                            <td className="py-3 text-primary">
-                              {payment.paidAt
-                                ? payment.paidAt.toLocaleDateString('es-CL')
-                                : payment.createdAt.toLocaleDateString('es-CL')}
-                            </td>
-                            <td className="py-3 font-semibold text-primary">
-                              ${payment.amount.toLocaleString('es-CL')}
-                            </td>
-                            <td className="py-3 text-muted-foreground">{payment.paymentMethod ?? '—'}</td>
-                            <td className="py-3">
-                              <span className={cn(
-                                'inline-flex rounded-full px-2 py-0.5 text-xs font-semibold',
-                                payment.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                              )}>
-                                {payment.status === 'approved' ? 'Pagado' : payment.status}
-                              </span>
-                            </td>
-                            <td className="py-3 text-muted-foreground max-w-[200px] truncate">{payment.notes ?? '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <>
+                    {/* Mobile: cards */}
+                    <div className="space-y-3 lg:hidden">
+                      {payments.map((payment) => (
+                        <TableMobileCard
+                          key={payment.id}
+                          title={formatMoney(payment.amount)}
+                          subtitle={payment.paymentMethod ?? '—'}
+                          badge={<StatusBadge map="payment" status={payment.status} />}
+                          rows={[
+                            {
+                              label: 'Fecha',
+                              value: (payment.paidAt ?? payment.createdAt).toLocaleDateString('es-CL'),
+                            },
+                            { label: 'Notas', value: payment.notes ?? '—' },
+                          ]}
+                        />
+                      ))}
+                    </div>
+
+                    {/* Desktop: table */}
+                    <div className="hidden lg:block studio-card overflow-hidden">
+                      <Table fixed className={TABLE_MIN_WIDTH}>
+                        <TableHeader>
+                          <TableRow className="bg-muted/50">
+                            <TableHead className={TABLE_COL.date}>Fecha</TableHead>
+                            <TableHead className={TABLE_COL.money}>Monto</TableHead>
+                            <TableHead className={TABLE_COL.label}>Método</TableHead>
+                            <TableHead className={TABLE_COL.status}>Estado</TableHead>
+                            <TableHead>Notas</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {payments.map((payment) => (
+                            <TableRow key={payment.id}>
+                              <TableCell className={TABLE_COL.date}>
+                                {(payment.paidAt ?? payment.createdAt).toLocaleDateString('es-CL')}
+                              </TableCell>
+                              <TableCell className={`${TABLE_COL.money} whitespace-normal font-semibold`}>
+                                {formatMoney(payment.amount)}
+                              </TableCell>
+                              <TableCell className={`${TABLE_COL.label} text-muted-foreground`}>
+                                {payment.paymentMethod ?? '—'}
+                              </TableCell>
+                              <TableCell className={TABLE_COL.status}>
+                                <StatusBadge map="payment" status={payment.status} />
+                              </TableCell>
+                              <TruncatedCell className="text-muted-foreground" primary={payment.notes ?? '—'} />
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </>
                 </CardContent>
               </Card>
             )}

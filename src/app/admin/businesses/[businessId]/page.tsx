@@ -6,6 +6,12 @@ import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getSubscriptionStatusLabel } from '@/lib/subscriptions/enforcement'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { TruncatedCell } from '@/components/ui/truncated-cell'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { TableMobileCard } from '@/components/ui/table-mobile-card'
+import { formatMoney } from '@/lib/money'
+import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { AdminActions } from './admin-actions'
 import { CopyLinkButton } from './copy-link-button'
 
@@ -98,38 +104,58 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
               {business.bookings.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Sin reservas registradas</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="py-2 text-left font-semibold text-muted-foreground">Cliente</th>
-                        <th className="py-2 text-left font-semibold text-muted-foreground">Servicio</th>
-                        <th className="py-2 text-left font-semibold text-muted-foreground">Fecha</th>
-                        <th className="py-2 text-left font-semibold text-muted-foreground">Estado</th>
-                        <th className="py-2 text-right font-semibold text-muted-foreground">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {business.bookings.map((booking) => (
-                        <tr key={booking.id} className="border-b border-border/50">
-                          <td className="py-2 text-primary">{booking.customer?.name ?? '—'}</td>
-                          <td className="py-2 text-muted-foreground">{booking.service?.name ?? '—'}</td>
-                          <td className="py-2 text-muted-foreground">
-                            {booking.startDateTime.toLocaleDateString('es-CL')}
-                          </td>
-                          <td className="py-2">
-                            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold">
-                              {booking.status}
-                            </span>
-                          </td>
-                          <td className="py-2 text-right text-primary">
-                            ${booking.finalAmount.toLocaleString('es-CL')}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  {/* Mobile: cards */}
+                  <div className="space-y-3 lg:hidden">
+                    {business.bookings.map((booking) => (
+                      <TableMobileCard
+                        key={booking.id}
+                        title={booking.customer?.name ?? '—'}
+                        subtitle={booking.service?.name ?? '—'}
+                        badge={<StatusBadge map="booking" status={booking.status} />}
+                        rows={[
+                          { label: 'Fecha', value: booking.startDateTime.toLocaleDateString('es-CL') },
+                          { label: 'Total', value: formatMoney(booking.finalAmount, business.currency) },
+                        ]}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Desktop: table */}
+                  <div className="hidden lg:block studio-card overflow-hidden">
+                    <Table fixed className={TABLE_MIN_WIDTH}>
+                      <TableHeader>
+                        <TableRow className="bg-muted/50">
+                          <TableHead>Cliente</TableHead>
+                          <TableHead className={TABLE_COL.label}>Servicio</TableHead>
+                          <TableHead className={TABLE_COL.date}>Fecha</TableHead>
+                          <TableHead className={TABLE_COL.status}>Estado</TableHead>
+                          <TableHead className={TABLE_COL.money}>Total</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {business.bookings.map((booking) => (
+                          <TableRow key={booking.id}>
+                            <TruncatedCell className="text-primary" primary={booking.customer?.name ?? '—'} />
+                            <TruncatedCell
+                              className={`${TABLE_COL.label} text-muted-foreground`}
+                              primary={booking.service?.name ?? '—'}
+                            />
+                            <TableCell className={`${TABLE_COL.date} text-muted-foreground`}>
+                              {booking.startDateTime.toLocaleDateString('es-CL')}
+                            </TableCell>
+                            <TableCell className={TABLE_COL.status}>
+                              <StatusBadge map="booking" status={booking.status} />
+                            </TableCell>
+                            <TableCell className={`${TABLE_COL.money} whitespace-normal text-primary`}>
+                              {formatMoney(booking.finalAmount, business.currency)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>
@@ -142,32 +168,52 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
               {business.payments.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Sin pagos registrados</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="py-2 text-left font-semibold text-muted-foreground">Fecha</th>
-                        <th className="py-2 text-left font-semibold text-muted-foreground">Tipo</th>
-                        <th className="py-2 text-left font-semibold text-muted-foreground">Proveedor</th>
-                        <th className="py-2 text-right font-semibold text-muted-foreground">Monto</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {business.payments.map((payment) => (
-                        <tr key={payment.id} className="border-b border-border/50">
-                          <td className="py-2 text-muted-foreground">
-                            {payment.createdAt.toLocaleDateString('es-CL')}
-                          </td>
-                          <td className="py-2 text-primary">{payment.paymentType}</td>
-                          <td className="py-2 text-muted-foreground">{payment.provider}</td>
-                          <td className="py-2 text-right text-primary">
-                            ${payment.amount.toLocaleString('es-CL')}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  {/* Mobile: cards */}
+                  <div className="space-y-3 lg:hidden">
+                    {business.payments.map((payment) => (
+                      <TableMobileCard
+                        key={payment.id}
+                        title={formatMoney(payment.amount, payment.currency)}
+                        subtitle={payment.paymentType}
+                        rows={[
+                          { label: 'Fecha', value: payment.createdAt.toLocaleDateString('es-CL') },
+                          { label: 'Proveedor', value: payment.provider },
+                        ]}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Desktop: table */}
+                  <div className="hidden lg:block studio-card overflow-hidden">
+                    <Table fixed className={TABLE_MIN_WIDTH}>
+                      <TableHeader>
+                        <TableRow className="bg-muted/50">
+                          <TableHead className={TABLE_COL.date}>Fecha</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead className={TABLE_COL.label}>Proveedor</TableHead>
+                          <TableHead className={TABLE_COL.money}>Monto</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {business.payments.map((payment) => (
+                          <TableRow key={payment.id}>
+                            <TableCell className={`${TABLE_COL.date} text-muted-foreground`}>
+                              {payment.createdAt.toLocaleDateString('es-CL')}
+                            </TableCell>
+                            <TruncatedCell className="text-primary" primary={payment.paymentType} />
+                            <TableCell className={`${TABLE_COL.label} text-muted-foreground`}>
+                              {payment.provider}
+                            </TableCell>
+                            <TableCell className={`${TABLE_COL.money} whitespace-normal text-primary`}>
+                              {formatMoney(payment.amount, payment.currency)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>
