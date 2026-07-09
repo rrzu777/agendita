@@ -27,7 +27,7 @@ type RowService = {
   sortOrder: number
 }
 
-function DeactivateServiceDialog({
+export function DeactivateServiceDialog({
   service,
   loading,
   open,
