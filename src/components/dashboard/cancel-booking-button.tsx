@@ -21,6 +21,9 @@ interface CancelBookingButtonProps {
   variant?: 'default' | 'destructive' | 'outline' | 'ghost'
   size?: 'default' | 'sm' | 'xs'
   label?: string
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
 }
 
 export function CancelBookingButton({
@@ -28,8 +31,17 @@ export function CancelBookingButton({
   variant = 'destructive',
   size = 'sm',
   label = 'Cancelar',
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
 }: CancelBookingButtonProps) {
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const isControlled = controlledOpen !== undefined
+  const open = isControlled ? controlledOpen : internalOpen
+  const setOpen = (next: boolean) => {
+    if (isControlled) onOpenChange?.(next)
+    else setInternalOpen(next)
+  }
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -52,15 +64,17 @@ export function CancelBookingButton({
 
   return (
     <>
-      <Button
-        type="button"
-        variant={variant}
-        size={size}
-        onClick={() => setOpen(true)}
-      >
-        <XCircle className="mr-1 size-3" />
-        {label}
-      </Button>
+      {!hideTrigger && (
+        <Button
+          type="button"
+          variant={variant}
+          size={size}
+          onClick={() => setOpen(true)}
+        >
+          <XCircle className="mr-1 size-3" />
+          {label}
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
