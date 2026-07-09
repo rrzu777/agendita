@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { TruncatedCell } from '@/components/ui/truncated-cell'
+import { TableMobileCard } from '@/components/ui/table-mobile-card'
+import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import type { CustomerListItem } from '@/server/actions/customers'
 import {
   Search,
@@ -23,12 +26,6 @@ const RECENT_DAYS = 30
 
 function formatCLP(value: number): string {
   return value.toLocaleString('es-CL')
-}
-
-function truncate(text: string | null, max: number): string | null {
-  if (!text) return null
-  if (text.length <= max) return text
-  return text.slice(0, max) + '…'
 }
 
 interface CustomerListProps {
@@ -213,144 +210,154 @@ export function CustomerList({ customers, error }: CustomerListProps) {
       ) : (
         <>
           {/* Mobile: cards */}
-          <div className="grid gap-3 md:hidden">
+          <div className="grid gap-3 lg:hidden">
             {filtered.map((customer) => (
-              <Link
+              <TableMobileCard
                 key={customer.id}
-                href={`/dashboard/customers/${customer.id}`}
-                className="studio-card block p-4 transition-colors hover:border-primary/40"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-primary">{customer.name}</p>
-                    {customer.phone && (
-                      <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                        <Phone className="size-3" />
-                        {customer.phone}
-                      </p>
-                    )}
-                    {customer.email && (
-                      <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                        <Mail className="size-3" />
-                        {truncate(customer.email, 32)}
-                      </p>
-                    )}
-                    {customer.notes && (
-                      <p className="mt-1 text-xs text-muted-foreground/70 italic">
-                        {truncate(customer.notes, 60)}
-                      </p>
-                    )}
-                  </div>
-                  <Eye className="mt-1 size-4 shrink-0 text-muted-foreground" />
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                  {customer.bookingCount > 0 ? (
-                    <Badge variant="secondary" className="text-xs">
-                      {customer.bookingCount}{' '}
-                      {customer.bookingCount === 1 ? 'reserva' : 'reservas'}
-                    </Badge>
-                  ) : (
-                    <span className="text-muted-foreground">Sin reservas</span>
-                  )}
-                  {customer.pendingBalance > 0 && (
-                    <span className="font-semibold text-destructive">
-                      ${formatCLP(customer.pendingBalance)} pendiente
+                title={customer.name}
+                subtitle={
+                  (customer.phone || customer.email) && (
+                    <span className="flex flex-col gap-0.5">
+                      {customer.phone && (
+                        <span className="flex items-center gap-1">
+                          <Phone className="size-3" />
+                          {customer.phone}
+                        </span>
+                      )}
+                      {customer.email && (
+                        <span className="flex items-center gap-1">
+                          <Mail className="size-3" />
+                          {customer.email}
+                        </span>
+                      )}
                     </span>
-                  )}
-                  {customer.totalPaidApproved > 0 && (
-                    <span className="font-semibold text-green-700">
-                      ${formatCLP(customer.totalPaidApproved)} pagado
-                    </span>
-                  )}
-                </div>
-              </Link>
+                  )
+                }
+                rows={[
+                  {
+                    label: 'Reservas',
+                    value: customer.bookingCount > 0 ? (
+                      <Badge variant="secondary" className="text-xs">
+                        {customer.bookingCount}{' '}
+                        {customer.bookingCount === 1 ? 'reserva' : 'reservas'}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">Sin reservas</span>
+                    ),
+                  },
+                  ...(customer.totalPaidApproved > 0
+                    ? [{ label: 'Pagado', value: <span className="font-semibold text-green-700">${formatCLP(customer.totalPaidApproved)}</span> }]
+                    : []),
+                  ...(customer.pendingBalance > 0
+                    ? [{ label: 'Pendiente', value: <span className="font-semibold text-destructive">${formatCLP(customer.pendingBalance)}</span> }]
+                    : []),
+                  ...(customer.notes
+                    ? [{ label: 'Notas', value: <span className="italic text-muted-foreground/70">{customer.notes}</span> }]
+                    : []),
+                ]}
+                actions={
+                  <Link href={`/dashboard/customers/${customer.id}`}>
+                    <Button size="sm" variant="outline">
+                      <Eye className="mr-1 size-3.5" />
+                      Ver
+                    </Button>
+                  </Link>
+                }
+              />
             ))}
           </div>
 
           {/* Desktop: table */}
-          <div className="hidden md:block">
-            <div className="studio-card overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/50">
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Contacto</TableHead>
-                    <TableHead className="text-center">Reservas</TableHead>
-                    <TableHead>Ultima reserva</TableHead>
-                    <TableHead className="text-right">Pagado</TableHead>
-                    <TableHead className="text-right">Pendiente</TableHead>
-                    <TableHead>Notas</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((customer) => (
-                    <TableRow key={customer.id}>
-                      <TableCell className="font-semibold text-primary">
-                        {customer.name}
-                      </TableCell>
-                      <TableCell>
-                        {customer.phone && (
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <div className="hidden lg:block studio-card overflow-hidden">
+            <Table fixed className={TABLE_MIN_WIDTH}>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead>Nombre</TableHead>
+                  <TableHead className="w-[180px]">Contacto</TableHead>
+                  <TableHead className={TABLE_COL.count}>Reservas</TableHead>
+                  <TableHead className={TABLE_COL.date}>Última reserva</TableHead>
+                  <TableHead className={TABLE_COL.money}>Pagado</TableHead>
+                  <TableHead className={TABLE_COL.money}>Pendiente</TableHead>
+                  <TableHead className="w-[160px]">Notas</TableHead>
+                  <TableHead className={`${TABLE_COL.actions} text-right`}>Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((customer) => (
+                  <TableRow key={customer.id}>
+                    <TruncatedCell className="font-semibold text-primary" primary={customer.name} />
+                    <TruncatedCell
+                      className="w-[180px] text-xs text-muted-foreground"
+                      primary={
+                        customer.phone ? (
+                          <span className="flex items-center gap-1">
                             <Phone className="size-3" />
                             {customer.phone}
-                          </div>
-                        )}
-                        {customer.email && (
-                          <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                          </span>
+                        ) : customer.email ? (
+                          <span className="flex items-center gap-1">
                             <Mail className="size-3" />
-                            {truncate(customer.email, 28)}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant="secondary" className="text-xs">
-                          {customer.bookingCount}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {customer.lastBookingAt ? (
-                          <span className="flex items-center gap-1 text-muted-foreground">
-                            <CalendarDays className="size-3" />
-                            {new Date(customer.lastBookingAt).toLocaleDateString('es-CL')}
+                            {customer.email}
                           </span>
-                        ) : (
-                          <span className="text-muted-foreground/50">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {customer.totalPaidApproved > 0 ? (
-                          <span className="font-semibold text-green-700">
-                            ${formatCLP(customer.totalPaidApproved)}
+                        ) : '—'
+                      }
+                      secondary={
+                        customer.phone && customer.email ? (
+                          <span className="flex items-center gap-1">
+                            <Mail className="size-3" />
+                            {customer.email}
                           </span>
-                        ) : (
-                          <span className="text-muted-foreground">$0</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {customer.pendingBalance > 0 ? (
-                          <span className="font-semibold text-destructive">
-                            ${formatCLP(customer.pendingBalance)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">$0</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="max-w-[160px] text-xs text-muted-foreground">
-                        {truncate(customer.notes, 60) || '—'}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Link href={`/dashboard/customers/${customer.id}`}>
-                          <Button size="xs" variant="ghost">
-                            <Eye className="size-4" />
-                          </Button>
-                        </Link>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                        ) : undefined
+                      }
+                    />
+                    <TableCell className={TABLE_COL.count}>
+                      <Badge variant="secondary" className="text-xs">
+                        {customer.bookingCount}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className={`${TABLE_COL.date} text-sm`}>
+                      {customer.lastBookingAt ? (
+                        <span className="flex items-center gap-1 text-muted-foreground">
+                          <CalendarDays className="size-3" />
+                          {new Date(customer.lastBookingAt).toLocaleDateString('es-CL')}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
+                      {customer.totalPaidApproved > 0 ? (
+                        <span className="font-semibold text-green-700">
+                          ${formatCLP(customer.totalPaidApproved)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">$0</span>
+                      )}
+                    </TableCell>
+                    <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
+                      {customer.pendingBalance > 0 ? (
+                        <span className="font-semibold text-destructive">
+                          ${formatCLP(customer.pendingBalance)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">$0</span>
+                      )}
+                    </TableCell>
+                    <TruncatedCell
+                      className="w-[160px] text-xs text-muted-foreground"
+                      primary={customer.notes || '—'}
+                    />
+                    <TableCell className={`${TABLE_COL.actions} text-right`}>
+                      <Link href={`/dashboard/customers/${customer.id}`}>
+                        <Button size="sm" variant="outline">
+                          Ver
+                        </Button>
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
 
           <p className="mt-2 text-xs text-muted-foreground">
