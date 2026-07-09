@@ -86,6 +86,7 @@ export function ManualPaymentDialog({
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-selecting/prefilling on open is required so parent-controlled opens (hoisted dialogs) prefill correctly
     if (open) selectBooking(defaultBookingId || payableBookings[0]?.id || '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
