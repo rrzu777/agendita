@@ -5,8 +5,9 @@ export const TABLE_COL = {
   count: 'w-[64px]',
   date: 'w-[104px]',
   time: 'w-[80px]',
+  customer: 'w-[176px]',
   status: 'w-[132px]',
-  money: 'w-[148px]',
+  money: 'w-[172px]',
   contact: 'w-[112px]',
   actions: 'w-[120px]',
 } as const

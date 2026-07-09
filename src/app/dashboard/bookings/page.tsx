@@ -214,7 +214,7 @@ export default async function BookingsPage() {
                   <TableRow className="bg-muted/50">
                     <TableHead>Servicio</TableHead>
                     <TableHead className={TABLE_COL.date}>Fecha</TableHead>
-                    <TableHead>Cliente</TableHead>
+                    <TableHead className={TABLE_COL.customer}>Cliente</TableHead>
                     <TableHead className={TABLE_COL.status}>Estado</TableHead>
                     <TableHead className={TABLE_COL.money}>Pago</TableHead>
                     <TableHead className={`${TABLE_COL.actions} text-right`}>Acciones</TableHead>
@@ -234,11 +234,11 @@ export default async function BookingsPage() {
                           {new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: businessTimezone })}
                         </div>
                       </TableCell>
-                      <TruncatedCell primary={booking.customer?.name || '—'} />
+                      <TruncatedCell className={TABLE_COL.customer} primary={booking.customer?.name || '—'} />
                       <TableCell className={TABLE_COL.status}>
                         <StatusBadge status={booking.status} />
                       </TableCell>
-                      <TableCell className={TABLE_COL.money}>
+                      <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
                         <span className={booking.paymentStatus === 'fully_paid' ? 'font-semibold text-green-700' : 'font-semibold text-primary'}>
                           ${booking.depositPaid.toLocaleString('es-CL')} / ${booking.finalAmount.toLocaleString('es-CL')}
                         </span>
