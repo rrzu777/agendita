@@ -79,4 +79,14 @@ describe('TableActions', () => {
     const html = renderToStaticMarkup(<TableActions primary={<button>Completar</button>} />)
     expect(html).not.toContain('Más acciones')
   })
+
+  it('does not render the kebab when the only child is falsy', () => {
+    const show = false
+    const html = renderToStaticMarkup(
+      <TableActions primary={<button>Completar</button>}>
+        {show && <span>item</span>}
+      </TableActions>,
+    )
+    expect(html).not.toContain('Más acciones')
+  })
 })

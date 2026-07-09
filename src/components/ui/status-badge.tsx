@@ -8,7 +8,7 @@ const BOOKING_STATUS: Record<string, StatusEntry> = {
   confirmed: { label: 'Confirmada', className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
   completed: { label: 'Completada', className: 'bg-secondary text-secondary-foreground' },
   cancelled: { label: 'Cancelada', className: 'bg-muted text-muted-foreground' },
-  no_show: { label: 'No asistió', className: 'bg-destructive/10 text-destructive' },
+  no_show: { label: 'No asistió', className: 'bg-destructive/10 text-destructive dark:bg-destructive/20' },
   expired: { label: 'Expirada', className: 'bg-muted text-muted-foreground' },
 }
 

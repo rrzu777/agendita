@@ -18,7 +18,8 @@ export function TableActions({
   children?: React.ReactNode
   align?: 'start' | 'end'
 }) {
-  const hasMenu = React.Children.count(children) > 0
+  const items = React.Children.toArray(children).filter(Boolean)
+  const hasMenu = items.length > 0
   return (
     <div className="flex items-center justify-end gap-1">
       {primary}
@@ -30,7 +31,7 @@ export function TableActions({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align={align} className="w-auto min-w-44">
-            {children}
+            {items}
           </DropdownMenuContent>
         </DropdownMenu>
       )}
