@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
+import { formatMoney } from '@/lib/money'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 
@@ -151,7 +152,7 @@ export default async function BillingPage() {
                       {payments.map((payment) => (
                         <TableMobileCard
                           key={payment.id}
-                          title={`$${payment.amount.toLocaleString('es-CL')}`}
+                          title={formatMoney(payment.amount)}
                           subtitle={payment.paymentMethod ?? '—'}
                           badge={<StatusBadge map="payment" status={payment.status} />}
                           rows={[
@@ -184,7 +185,7 @@ export default async function BillingPage() {
                                 {(payment.paidAt ?? payment.createdAt).toLocaleDateString('es-CL')}
                               </TableCell>
                               <TableCell className={`${TABLE_COL.money} whitespace-normal font-semibold`}>
-                                ${payment.amount.toLocaleString('es-CL')}
+                                {formatMoney(payment.amount)}
                               </TableCell>
                               <TableCell className={`${TABLE_COL.label} text-muted-foreground`}>
                                 {payment.paymentMethod ?? '—'}

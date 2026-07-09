@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
+import { formatMoney } from '@/lib/money'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { AdminActions } from './admin-actions'
 import { CopyLinkButton } from './copy-link-button'
@@ -114,7 +115,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
                         badge={<StatusBadge map="booking" status={booking.status} />}
                         rows={[
                           { label: 'Fecha', value: booking.startDateTime.toLocaleDateString('es-CL') },
-                          { label: 'Total', value: `$${booking.finalAmount.toLocaleString('es-CL')}` },
+                          { label: 'Total', value: formatMoney(booking.finalAmount, business.currency) },
                         ]}
                       />
                     ))}
@@ -147,7 +148,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
                               <StatusBadge map="booking" status={booking.status} />
                             </TableCell>
                             <TableCell className={`${TABLE_COL.money} whitespace-normal text-primary`}>
-                              ${booking.finalAmount.toLocaleString('es-CL')}
+                              {formatMoney(booking.finalAmount, business.currency)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -173,7 +174,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
                     {business.payments.map((payment) => (
                       <TableMobileCard
                         key={payment.id}
-                        title={`$${payment.amount.toLocaleString('es-CL')}`}
+                        title={formatMoney(payment.amount, payment.currency)}
                         subtitle={payment.paymentType}
                         rows={[
                           { label: 'Fecha', value: payment.createdAt.toLocaleDateString('es-CL') },
@@ -205,7 +206,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
                               {payment.provider}
                             </TableCell>
                             <TableCell className={`${TABLE_COL.money} whitespace-normal text-primary`}>
-                              ${payment.amount.toLocaleString('es-CL')}
+                              {formatMoney(payment.amount, payment.currency)}
                             </TableCell>
                           </TableRow>
                         ))}

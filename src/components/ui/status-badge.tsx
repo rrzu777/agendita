@@ -50,10 +50,12 @@ const DIRECTION_STATUS: Record<string, StatusEntry> = {
   neutral: { label: 'Neutral', className: 'bg-muted text-muted-foreground' },
 }
 
-// Mismos 5 estados que `getSubscriptionStatusLabel` en
-// src/lib/subscriptions/enforcement.ts (labels ahí son la fuente canónica;
-// este mapa solo agrega color). Reemplaza el bucketing de 3 colores de
-// admin/page.tsx y el mapa local de billing/page.tsx.
+// Mismos 5 estados y labels que `getSubscriptionStatusLabel` en
+// src/lib/subscriptions/enforcement.ts (esa función sigue siendo la fuente
+// canónica de las labels; este mapa solo agrega color para celdas de tabla).
+// Reemplaza el bucketing de 3 colores de admin/page.tsx. El badge decorativo
+// de arriba en billing/page.tsx (no es una celda de tabla, fuera de alcance
+// de la iniciativa de tablas) sigue con su propio mapa local sin tocar.
 const SUBSCRIPTION_STATUS: Record<string, StatusEntry> = {
   trialing: { label: 'En prueba', className: 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300' },
   active: { label: 'Activo', className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
