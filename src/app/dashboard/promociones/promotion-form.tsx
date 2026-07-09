@@ -20,7 +20,7 @@ interface ServiceOption {
   name: string
 }
 
-interface EditPromo {
+export interface EditPromo {
   id: string
   name: string
   description: string | null
@@ -36,6 +36,7 @@ interface EditPromo {
   maxRedemptions: number | null
   maxPerCustomer: number | null
   redemptionCount: number
+  isActive: boolean
 }
 
 interface FormState {

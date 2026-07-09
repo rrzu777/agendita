@@ -1,15 +1,17 @@
 import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
-import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { TruncatedCell } from '@/components/ui/truncated-cell'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { TableMobileCard } from '@/components/ui/table-mobile-card'
+import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { Ticket } from 'lucide-react'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { listPromotions } from '@/server/actions/promotions'
 import { getServices } from '@/server/actions/services'
 import { formatMoney } from '@/lib/money'
-import { PromotionForm } from './promotion-form'
-import { RedemptionsButton } from './redemptions-button'
-import { PromotionToggle } from './promotion-toggle'
+import { PromotionForm, type EditPromo } from './promotion-form'
+import { PromotionRowActions } from './promotion-row-actions'
 
 type Promo = Awaited<ReturnType<typeof listPromotions>>[number]
 type PromoStatus = 'Inactiva' | 'Programada' | 'Vencida' | 'Agotada' | 'Activa'
@@ -22,14 +24,6 @@ function derivePromoStatus(promo: Promo, now: Date): PromoStatus {
   if (promo.validUntil && now > promo.validUntil) return 'Vencida'
   if (promo.maxRedemptions != null && promo.redemptionCount >= promo.maxRedemptions) return 'Agotada'
   return 'Activa'
-}
-
-const statusColors: Record<PromoStatus, string> = {
-  Activa: 'bg-green-100 text-green-800',
-  Programada: 'bg-blue-100 text-blue-800',
-  Vencida: 'bg-muted text-muted-foreground',
-  Agotada: 'bg-orange-100 text-orange-800',
-  Inactiva: 'bg-muted text-muted-foreground',
 }
 
 function formatReward(promo: Promo, currency: string): string {
@@ -47,6 +41,33 @@ function formatVigencia(promo: Promo): string {
   const from = promo.validFrom ? formatDate(promo.validFrom) : '…'
   const until = promo.validUntil ? formatDate(promo.validUntil) : '…'
   return `${from} – ${until}`
+}
+
+function scopeLabel(promo: Promo): string {
+  return promo.appliesToAll
+    ? 'Todos los servicios'
+    : `${promo.services.length} servicio${promo.services.length === 1 ? '' : 's'}`
+}
+
+function toEditPromo(promo: Promo): EditPromo {
+  return {
+    id: promo.id,
+    name: promo.name,
+    description: promo.description,
+    code: promo.code,
+    rewardType: promo.rewardType,
+    rewardValue: promo.rewardValue,
+    maxDiscount: promo.maxDiscount,
+    appliesToAll: promo.appliesToAll,
+    serviceIds: promo.services.map((s) => s.id),
+    validFrom: promo.validFrom ? promo.validFrom.toISOString().slice(0, 10) : null,
+    validUntil: promo.validUntil ? promo.validUntil.toISOString().slice(0, 10) : null,
+    minSpend: promo.minSpend,
+    maxRedemptions: promo.maxRedemptions,
+    maxPerCustomer: promo.maxPerCustomer,
+    redemptionCount: promo.redemptionCount,
+    isActive: promo.isActive,
+  }
 }
 
 export default async function PromocionesPage() {
@@ -74,6 +95,12 @@ export default async function PromocionesPage() {
 
   const serviceOptions = services.map((s) => ({ id: s.id, name: s.name }))
   const now = new Date()
+  const rows = promos.map((promo) => ({
+    promo,
+    status: derivePromoStatus(promo, now),
+    scope: scopeLabel(promo),
+    editPromo: toEditPromo(promo),
+  }))
 
   return (
     <div>
@@ -90,52 +117,45 @@ export default async function PromocionesPage() {
           <PromotionForm mode="create" services={serviceOptions} currency={currency} />
         </div>
 
-        <div className="studio-card overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/50">
-                <TableHead>Nombre</TableHead>
-                <TableHead>Código</TableHead>
-                <TableHead>Recompensa</TableHead>
-                <TableHead>Alcance</TableHead>
-                <TableHead>Usos</TableHead>
-                <TableHead>Vigencia</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {promos.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="py-12 text-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <div className="flex size-14 items-center justify-center rounded-full bg-muted">
-                        <Ticket className="size-7 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="mb-1 font-heading text-base font-semibold text-primary">No hay promociones</p>
-                        <p className="text-sm text-muted-foreground">
-                          Crea tu primera promoción para ofrecer descuentos a tus clientes.
-                        </p>
-                      </div>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                promos.map((promo) => {
-                  const status = derivePromoStatus(promo, now)
-                  const scope = promo.appliesToAll
-                    ? 'Todos los servicios'
-                    : `${promo.services.length} servicio${promo.services.length === 1 ? '' : 's'}`
-                  return (
+        {promos.length === 0 ? (
+          <div className="studio-card overflow-hidden py-12 text-center">
+            <div className="flex flex-col items-center gap-3">
+              <div className="flex size-14 items-center justify-center rounded-full bg-muted">
+                <Ticket className="size-7 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="mb-1 font-heading text-base font-semibold text-primary">No hay promociones</p>
+                <p className="text-sm text-muted-foreground">
+                  Crea tu primera promoción para ofrecer descuentos a tus clientes.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="hidden lg:block studio-card overflow-hidden">
+              <Table fixed className={TABLE_MIN_WIDTH}>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead>Nombre</TableHead>
+                    <TableHead className={TABLE_COL.code}>Código</TableHead>
+                    <TableHead className="w-[140px]">Recompensa</TableHead>
+                    <TableHead className="w-[140px]">Alcance</TableHead>
+                    <TableHead className={TABLE_COL.uses}>Usos</TableHead>
+                    <TableHead className="w-[160px]">Vigencia</TableHead>
+                    <TableHead className={TABLE_COL.status}>Estado</TableHead>
+                    <TableHead className={`${TABLE_COL.actions} text-right`}>Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map(({ promo, status, scope, editPromo }) => (
                     <TableRow key={promo.id}>
-                      <TableCell className="font-semibold text-primary">
-                        {promo.name}
-                        {promo.description && (
-                          <div className="text-xs font-normal text-muted-foreground line-clamp-1">{promo.description}</div>
-                        )}
-                      </TableCell>
-                      <TableCell>
+                      <TruncatedCell
+                        className="font-semibold text-primary"
+                        primary={promo.name}
+                        secondary={promo.description}
+                      />
+                      <TableCell className={TABLE_COL.code}>
                         {promo.code ? (
                           <span className="rounded-md bg-muted px-2 py-1 font-mono text-xs font-semibold text-foreground">
                             {promo.code}
@@ -144,54 +164,44 @@ export default async function PromocionesPage() {
                           '—'
                         )}
                       </TableCell>
-                      <TableCell>{formatReward(promo, currency)}</TableCell>
-                      <TableCell>{scope}</TableCell>
-                      <TableCell>
+                      <TableCell className="w-[140px]">{formatReward(promo, currency)}</TableCell>
+                      <TableCell className="w-[140px]">{scope}</TableCell>
+                      <TableCell className={TABLE_COL.uses}>
                         {promo.redemptionCount} / {promo.maxRedemptions ?? '∞'}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-sm">{formatVigencia(promo)}</TableCell>
-                      <TableCell>
-                        <Badge className={statusColors[status]}>{status}</Badge>
+                      <TableCell className="w-[160px] whitespace-nowrap text-sm">{formatVigencia(promo)}</TableCell>
+                      <TableCell className={TABLE_COL.status}>
+                        <StatusBadge map="promo" status={status} />
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <PromotionForm
-                            mode="edit"
-                            services={serviceOptions}
-                            currency={currency}
-                            promo={{
-                              id: promo.id,
-                              name: promo.name,
-                              description: promo.description,
-                              code: promo.code,
-                              rewardType: promo.rewardType,
-                              rewardValue: promo.rewardValue,
-                              maxDiscount: promo.maxDiscount,
-                              appliesToAll: promo.appliesToAll,
-                              serviceIds: promo.services.map((s) => s.id),
-                              validFrom: promo.validFrom ? promo.validFrom.toISOString().slice(0, 10) : null,
-                              validUntil: promo.validUntil ? promo.validUntil.toISOString().slice(0, 10) : null,
-                              minSpend: promo.minSpend,
-                              maxRedemptions: promo.maxRedemptions,
-                              maxPerCustomer: promo.maxPerCustomer,
-                              redemptionCount: promo.redemptionCount,
-                            }}
-                          />
-                          <PromotionToggle id={promo.id} isActive={promo.isActive} />
-                          <RedemptionsButton
-                            promotionId={promo.id}
-                            promotionName={promo.name}
-                            currency={currency}
-                          />
-                        </div>
+                      <TableCell className={`${TABLE_COL.actions} text-right`}>
+                        <PromotionRowActions promo={editPromo} services={serviceOptions} currency={currency} />
                       </TableCell>
                     </TableRow>
-                  )
-                })
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="space-y-3 lg:hidden">
+              {rows.map(({ promo, status, scope, editPromo }) => (
+                <TableMobileCard
+                  key={promo.id}
+                  title={promo.name}
+                  subtitle={promo.description}
+                  badge={<StatusBadge map="promo" status={status} />}
+                  rows={[
+                    { label: 'Código', value: promo.code ?? '—' },
+                    { label: 'Recompensa', value: formatReward(promo, currency) },
+                    { label: 'Alcance', value: scope },
+                    { label: 'Usos', value: `${promo.redemptionCount} / ${promo.maxRedemptions ?? '∞'}` },
+                    { label: 'Vigencia', value: formatVigencia(promo) },
+                  ]}
+                  actions={<PromotionRowActions promo={editPromo} services={serviceOptions} currency={currency} />}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
