@@ -10,6 +10,10 @@ export const TABLE_COL = {
   money: 'w-[172px]',
   contact: 'w-[112px]',
   actions: 'w-[120px]',
+  code: 'w-[120px]',
+  rating: 'w-[104px]',
+  duration: 'w-[104px]',
+  uses: 'w-[92px]',
 } as const
 
 // Piso de ancho de la tabla: bajo esto, el wrapper overflow-x-auto scrollea
