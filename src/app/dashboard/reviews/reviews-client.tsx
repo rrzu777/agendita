@@ -131,6 +131,8 @@ export function ReviewsClient({
     })
   }, [reviews, status, rating, search])
 
+  const rows = filtered.map((review) => ({ review, state: reviewState(review) }))
+
   const hasActiveFilters = status !== 'all' || rating > 0 || search.trim().length > 0
 
   function runAction(action: (id: string) => Promise<unknown>, id: string) {
@@ -220,7 +222,7 @@ export function ReviewsClient({
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead>Servicio</TableHead>
-                  <TableHead className="w-[160px]">Cliente</TableHead>
+                  <TableHead className={TABLE_COL.name}>Cliente</TableHead>
                   <TableHead className={TABLE_COL.date}>Fecha</TableHead>
                   <TableHead className={`${TABLE_COL.actions} text-right`}>Acción</TableHead>
                 </TableRow>
@@ -230,7 +232,7 @@ export function ReviewsClient({
                   <TableRow key={booking.id}>
                     <TruncatedCell className="font-semibold text-primary" primary={booking.service.name} />
                     <TruncatedCell
-                      className="w-[160px]"
+                      className={TABLE_COL.name}
                       primary={
                         <Link href={`/dashboard/customers/${booking.customer.id}`} className="text-primary hover:underline">
                           {booking.customer.name}
@@ -294,18 +296,16 @@ export function ReviewsClient({
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead>Cliente</TableHead>
-                  <TableHead className="w-[160px]">Servicio</TableHead>
+                  <TableHead className={TABLE_COL.name}>Servicio</TableHead>
                   <TableHead className={TABLE_COL.date}>Fecha reserva</TableHead>
                   <TableHead className={TABLE_COL.rating}>Calificación</TableHead>
-                  <TableHead className="w-[220px]">Comentario</TableHead>
+                  <TableHead className={TABLE_COL.comment}>Comentario</TableHead>
                   <TableHead className={TABLE_COL.status}>Estado</TableHead>
                   <TableHead className={`${TABLE_COL.actions} text-right`}>Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((review) => {
-                  const state = reviewState(review)
-                  return (
+                {rows.map(({ review, state }) => (
                     <TableRow key={review.id}>
                       <TruncatedCell
                         className="font-semibold text-primary"
@@ -316,7 +316,7 @@ export function ReviewsClient({
                         }
                         secondary={`#${review.id.slice(0, 8)}`}
                       />
-                      <TruncatedCell className="w-[160px]" primary={review.booking?.service?.name || '—'} />
+                      <TruncatedCell className={TABLE_COL.name} primary={review.booking?.service?.name || '—'} />
                       <TableCell className={TABLE_COL.date}>
                         {review.booking?.startDateTime ? formatDate(review.booking.startDateTime) : '—'}
                       </TableCell>
@@ -326,7 +326,7 @@ export function ReviewsClient({
                           <Star className="size-4 fill-primary text-primary" />
                         </div>
                       </TableCell>
-                      <TruncatedCell className="w-[220px] text-sm text-muted-foreground" primary={review.comment || '—'} />
+                      <TruncatedCell className={`${TABLE_COL.comment} text-sm text-muted-foreground`} primary={review.comment || '—'} />
                       <TableCell className={TABLE_COL.status}>
                         <StatusBadge map="review" status={state} />
                       </TableCell>
@@ -339,16 +339,13 @@ export function ReviewsClient({
                         />
                       </TableCell>
                     </TableRow>
-                  )
-                })}
+                ))}
               </TableBody>
             </Table>
           </div>
 
           <div className={`space-y-3 lg:hidden transition-opacity ${isPending ? 'opacity-60' : ''}`}>
-            {filtered.map((review) => {
-              const state = reviewState(review)
-              return (
+            {rows.map(({ review, state }) => (
                 <TableMobileCard
                   key={review.id}
                   title={review.customer?.name || '—'}
@@ -376,8 +373,7 @@ export function ReviewsClient({
                     />
                   }
                 />
-              )
-            })}
+            ))}
           </div>
         </>
       )}

@@ -46,11 +46,17 @@ export function LedgerTable({ entries }: { entries: any[] }) {
     )
   }
 
+  const rows = entries.map((entry) => ({
+    entry,
+    amountClass: amountClassName(entry.direction),
+    amountLabel: formatAmount(entry),
+  }))
+
   return (
     <>
       {/* Mobile: cards */}
       <div className="space-y-3 lg:hidden">
-        {entries.map((entry) => (
+        {rows.map(({ entry, amountClass, amountLabel }) => (
           <TableMobileCard
             key={entry.id}
             title={typeLabels[entry.type] || entry.type}
@@ -59,7 +65,7 @@ export function LedgerTable({ entries }: { entries: any[] }) {
               { label: 'Fecha', value: new Date(entry.occurredAt).toLocaleDateString('es-CL') },
               {
                 label: 'Monto',
-                value: <span className={`font-semibold ${amountClassName(entry.direction)}`}>{formatAmount(entry)}</span>,
+                value: <span className={`font-semibold ${amountClass}`}>{amountLabel}</span>,
               },
               { label: 'Descripción', value: entry.description || '—' },
             ]}
@@ -73,22 +79,22 @@ export function LedgerTable({ entries }: { entries: any[] }) {
           <TableHeader>
             <TableRow className="bg-muted/50">
               <TableHead className={TABLE_COL.date}>Fecha</TableHead>
-              <TableHead className="w-[160px]">Tipo</TableHead>
+              <TableHead className={TABLE_COL.name}>Tipo</TableHead>
               <TableHead className={TABLE_COL.status}>Dirección</TableHead>
               <TableHead className={TABLE_COL.money}>Monto</TableHead>
               <TableHead>Descripción</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {entries.map((entry) => (
+            {rows.map(({ entry, amountClass, amountLabel }) => (
               <TableRow key={entry.id}>
                 <TableCell className={TABLE_COL.date}>{new Date(entry.occurredAt).toLocaleDateString('es-CL')}</TableCell>
-                <TruncatedCell className="w-[160px]" primary={typeLabels[entry.type] || entry.type} />
+                <TruncatedCell className={TABLE_COL.name} primary={typeLabels[entry.type] || entry.type} />
                 <TableCell className={TABLE_COL.status}>
                   <StatusBadge map="direction" status={entry.direction} />
                 </TableCell>
-                <TableCell className={`${TABLE_COL.money} whitespace-normal font-semibold ${amountClassName(entry.direction)}`}>
-                  {formatAmount(entry)}
+                <TableCell className={`${TABLE_COL.money} whitespace-normal font-semibold ${amountClass}`}>
+                  {amountLabel}
                 </TableCell>
                 <TruncatedCell className="text-muted-foreground" primary={entry.description || '—'} />
               </TableRow>

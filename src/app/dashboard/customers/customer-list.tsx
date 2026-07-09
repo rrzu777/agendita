@@ -278,7 +278,7 @@ export function CustomerList({ customers, error }: CustomerListProps) {
                   <TableHead className={TABLE_COL.date}>Última reserva</TableHead>
                   <TableHead className={TABLE_COL.money}>Pagado</TableHead>
                   <TableHead className={TABLE_COL.money}>Pendiente</TableHead>
-                  <TableHead className="w-[160px]">Notas</TableHead>
+                  <TableHead className={TABLE_COL.name}>Notas</TableHead>
                   <TableHead className={`${TABLE_COL.actions} text-right`}>Acciones</TableHead>
                 </TableRow>
               </TableHeader>
@@ -344,7 +344,7 @@ export function CustomerList({ customers, error }: CustomerListProps) {
                       )}
                     </TableCell>
                     <TruncatedCell
-                      className="w-[160px] text-xs text-muted-foreground"
+                      className={`${TABLE_COL.name} text-xs text-muted-foreground`}
                       primary={customer.notes || '—'}
                     />
                     <TableCell className={`${TABLE_COL.actions} text-right`}>

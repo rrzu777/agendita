@@ -362,7 +362,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                       <TableHeader>
                         <TableRow className="bg-muted/50">
                           <TableHead className={TABLE_COL.money}>Monto</TableHead>
-                          <TableHead className="w-[140px]">Tipo</TableHead>
+                          <TableHead className={TABLE_COL.label}>Tipo</TableHead>
                           <TableHead className={TABLE_COL.status}>Estado</TableHead>
                           <TableHead className={TABLE_COL.date}>Fecha</TableHead>
                           <TableHead>Método</TableHead>
@@ -374,7 +374,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                             <TableCell className={`${TABLE_COL.money} whitespace-normal font-semibold`}>
                               ${formatCLP(payment.amount)}
                             </TableCell>
-                            <TableCell className="w-[140px] text-sm">
+                            <TableCell className={`${TABLE_COL.label} text-sm`}>
                               {paymentTypeLabels[payment.paymentType] || payment.paymentType}
                             </TableCell>
                             <TableCell className={TABLE_COL.status}>

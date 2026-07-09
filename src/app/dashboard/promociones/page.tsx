@@ -139,8 +139,8 @@ export default async function PromocionesPage() {
                   <TableRow className="bg-muted/50">
                     <TableHead>Nombre</TableHead>
                     <TableHead className={TABLE_COL.code}>Código</TableHead>
-                    <TableHead className="w-[140px]">Recompensa</TableHead>
-                    <TableHead className="w-[140px]">Alcance</TableHead>
+                    <TableHead className={TABLE_COL.label}>Recompensa</TableHead>
+                    <TableHead className={TABLE_COL.label}>Alcance</TableHead>
                     <TableHead className={TABLE_COL.uses}>Usos</TableHead>
                     <TableHead className="w-[160px]">Vigencia</TableHead>
                     <TableHead className={TABLE_COL.status}>Estado</TableHead>
@@ -164,8 +164,8 @@ export default async function PromocionesPage() {
                           '—'
                         )}
                       </TableCell>
-                      <TableCell className="w-[140px]">{formatReward(promo, currency)}</TableCell>
-                      <TableCell className="w-[140px]">{scope}</TableCell>
+                      <TableCell className={TABLE_COL.label}>{formatReward(promo, currency)}</TableCell>
+                      <TableCell className={TABLE_COL.label}>{scope}</TableCell>
                       <TableCell className={TABLE_COL.uses}>
                         {promo.redemptionCount} / {promo.maxRedemptions ?? '∞'}
                       </TableCell>
