@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { requireTestDatabase } from './setup'
+import { normalizePhone } from '@/lib/customers/phone'
 
 requireTestDatabase()
 
@@ -144,7 +145,8 @@ describe('customer-account link (vía 3)', () => {
       BIZ,
     )
 
-    const customer = await prisma.customer.findFirst({ where: { businessId: BIZ, phone } })
+    // createBooking guarda el telefono normalizado (normalizePhone quita el "+"), no el crudo.
+    const customer = await prisma.customer.findFirst({ where: { businessId: BIZ, phone: normalizePhone(phone) } })
     expect(customer).not.toBeNull()
     expect(customer!.userId).toBe(LOGGED_USER)
     expect(booking).toBeDefined()
@@ -166,11 +168,15 @@ describe('customer-account link (vía 3)', () => {
     })
 
     const phone = '+56911100002'
+    // Se guarda ya normalizado: es el mismo formato bajo el que createBooking va a
+    // buscar (findFirst por phone normalizado), para que efectivamente encuentre esta
+    // fila y ejercite el guard de "no pisar userId existente" en vez de crear una fila
+    // nueva sin userId que el test nunca miraría.
     await prisma.customer.create({
       data: {
         businessId: BIZ,
         name: 'Bea',
-        phone,
+        phone: normalizePhone(phone),
         // Mismo email que la sesión: si no fuera por el userId existente, vincularía.
         email: 'logged-2@cal.test',
         userId: otherUserId,
@@ -190,7 +196,7 @@ describe('customer-account link (vía 3)', () => {
       BIZ,
     )
 
-    const customer = await prisma.customer.findFirst({ where: { businessId: BIZ, phone } })
+    const customer = await prisma.customer.findFirst({ where: { businessId: BIZ, phone: normalizePhone(phone) } })
     expect(customer).not.toBeNull()
     expect(customer!.userId).toBe(otherUserId)
   })
@@ -215,7 +221,7 @@ describe('customer-account link (vía 3)', () => {
       BIZ,
     )
 
-    const customer = await prisma.customer.findFirst({ where: { businessId: BIZ, phone } })
+    const customer = await prisma.customer.findFirst({ where: { businessId: BIZ, phone: normalizePhone(phone) } })
     expect(customer).not.toBeNull()
     expect(customer!.userId).toBeNull()
   })
@@ -243,7 +249,7 @@ describe('customer-account link (vía 3)', () => {
       BIZ,
     )
 
-    const customer = await prisma.customer.findFirst({ where: { businessId: BIZ, phone } })
+    const customer = await prisma.customer.findFirst({ where: { businessId: BIZ, phone: normalizePhone(phone) } })
     expect(customer).not.toBeNull()
     expect(customer!.userId).toBeNull()
   })
