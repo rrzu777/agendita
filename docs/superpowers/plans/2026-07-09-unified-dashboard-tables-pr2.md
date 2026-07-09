@@ -66,8 +66,8 @@ describe('StatusBadge domain maps', () => {
   it('payment map: approved/rejected', () => {
     expect(renderToStaticMarkup(<StatusBadge map="payment" status="rejected" />)).toContain('Rechazado')
   })
-  it('promo map: scheduled', () => {
-    expect(renderToStaticMarkup(<StatusBadge map="promo" status="scheduled" />)).toContain('Programada')
+  it('promo map: Programada (keys are capitalized, from derivePromoStatus)', () => {
+    expect(renderToStaticMarkup(<StatusBadge map="promo" status="Programada" />)).toContain('Programada')
   })
   it('direction map: expense', () => {
     expect(renderToStaticMarkup(<StatusBadge map="direction" status="expense" />)).toContain('Gasto')
@@ -105,17 +105,21 @@ const PAYMENT_STATUS: Record<string, StatusEntry> = {
   refunded: { label: 'Reembolsado', className: 'bg-muted text-muted-foreground' },
 }
 
+// OJO: las keys de promo son los strings capitalizados que devuelve
+// `derivePromoStatus()` en promociones/page.tsx (tipo PromoStatus), NO lowercase.
+// La tabla pasa `status={derivePromoStatus(promo, now)}` directo.
 const PROMO_STATUS: Record<string, StatusEntry> = {
-  active: { label: 'Activa', className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
-  scheduled: { label: 'Programada', className: 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300' },
-  expired: { label: 'Vencida', className: 'bg-muted text-muted-foreground' },
-  depleted: { label: 'Agotada', className: 'bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300' },
-  inactive: { label: 'Inactiva', className: 'bg-muted text-muted-foreground' },
+  Activa: { label: 'Activa', className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
+  Programada: { label: 'Programada', className: 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300' },
+  Vencida: { label: 'Vencida', className: 'bg-muted text-muted-foreground' },
+  Agotada: { label: 'Agotada', className: 'bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300' },
+  Inactiva: { label: 'Inactiva', className: 'bg-muted text-muted-foreground' },
 }
 
+// OJO: expense conserva el color rojo actual del ledger (red-100/red-800), NO destructive.
 const DIRECTION_STATUS: Record<string, StatusEntry> = {
   income: { label: 'Ingreso', className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
-  expense: { label: 'Gasto', className: 'bg-destructive/10 text-destructive dark:bg-destructive/20' },
+  expense: { label: 'Gasto', className: 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300' },
   neutral: { label: 'Neutral', className: 'bg-muted text-muted-foreground' },
 }
 
@@ -129,7 +133,7 @@ export const STATUS_MAPS = {
 } as const
 ```
 
-**IMPORTANTE:** antes de fijar labels/keys, abrir cada tabla fuente y confirmar los valores reales de `status`/`state`/`direction`/`promo status` y las etiquetas actuales, para no cambiar el texto que ve la dueña ni romper keys. Si una key real difiere (p.ej. la promo usa otro string que `scheduled`), ajustar el mapa a la key real.
+**Keys ya verificadas contra el código (auditoría 2026-07-09):** `service` = `isActive ? 'active' : 'inactive'`; `review` = `reviewState(review)` → `'pending'|'approved'|'hidden'`; `payment` = enum Prisma `PaymentStatus`; `direction` = enum `LedgerDirection` (`income`/`expense`/`neutral`); `promo` = `derivePromoStatus()` → **capitalizado** (`'Activa'`/`'Programada'`/`'Vencida'`/`'Agotada'`/`'Inactiva'`). Los labels de arriba replican el texto actual que ve la dueña — no cambiarlos.
 
 - [ ] **Step 4: Correr y verificar que pasa** — `npx vitest --run tests/unit/status-badge-maps.test.tsx` → PASS.
 - [ ] **Step 5: Commit** — `git add src/components/ui/status-badge.tsx tests/unit/status-badge-maps.test.tsx && git commit -m "Add service/review/payment/promo/direction status maps"`
@@ -287,14 +291,14 @@ Es una función pura (sin `'use client'`) → usable en Server Components. `stud
 
 ### Task 6: Promociones — `src/app/dashboard/promociones/page.tsx` (Server)
 
-- Columnas: **Nombre** (principal flex, `secondary={promo.description}`; borrar el `line-clamp-1`) · Código (`TABLE_COL.code`, mantener el chip `font-mono`) · Recompensa (texto, `w-[140px]`) · Alcance (texto, `w-[140px]`) · Usos (`TABLE_COL.uses`) · Vigencia (`TABLE_COL.date` ×~2 → `w-[160px]`) · Estado (`TABLE_COL.status`, `<StatusBadge map="promo" status={...} />`; confirmar la key real del status computado) · Acciones (`TABLE_COL.actions`).
-- Acciones: primaria `Editar` (`PromotionForm`); kebab: Ver canjes (`RedemptionsButton`), Activar/desactivar (`PromotionToggle`). Estos componentes manejan sus propios diálogos; si alguno usa Dialog con trigger propio dentro del kebab y se cierra solo, izarlo (revisar en verificación visual).
+- Columnas: **Nombre** (principal flex, `secondary={promo.description}`; borrar el `line-clamp-1`) · Código (`TABLE_COL.code`, mantener el chip `font-mono`) · Recompensa (texto, `w-[140px]`) · Alcance (texto, `w-[140px]`) · Usos (`TABLE_COL.uses`) · Vigencia (`TABLE_COL.date` ×~2 → `w-[160px]`) · Estado (`TABLE_COL.status`, `<StatusBadge map="promo" status={derivePromoStatus(promo, now)} />` — las keys del mapa YA son los strings capitalizados que devuelve `derivePromoStatus` (`'Activa'`/`'Programada'`/…), NO lowercase) · Acciones (`TABLE_COL.actions`).
+- Acciones: hoy son 3 componentes sueltos en un flex (`PromotionForm`, `PromotionToggle`, `RedemptionsButton`), cada uno con su propio trigger/diálogo. Refactor: primaria `Editar` (`PromotionForm`) visible; kebab con `PromotionToggle` (activar/desactivar) y `RedemptionsButton` (ver canjes). Si `PromotionForm`/`RedemptionsButton` (que usan Dialog con trigger propio) se cierran solos al ir dentro de un `DropdownMenuItem`, izarlos con el patrón controlado (`open`/`onOpenChange`/`hideTrigger`) como en `booking-row-actions`.
 - Móvil: nueva variante `lg:hidden` con `<TableMobileCard>`.
 - Commit: `"Migrate Promociones table to unified pattern"`.
 
 ### Task 7: Reviews — `src/app/dashboard/reviews/reviews-client.tsx` (Client)
 
-- Tabla principal — Columnas: **Cliente** (principal flex, `secondary={#id.slice(0,8)}` — mantener ese id corto como secondary) · Servicio (`TruncatedCell` `w-[160px]`) · Fecha reserva (`TABLE_COL.date`) · Calificación (`TABLE_COL.rating`, número + estrella) · Comentario (`TruncatedCell` `w-[220px]`; el `line-clamp-2` pasa a truncado de una línea con `title`) · Estado (`TABLE_COL.status`, `<StatusBadge map="review" status={...} />`) · Acciones (`TABLE_COL.actions`, primaria `Aprobar`/`Ocultar` según estado; kebab: Ver en reservas = link).
+- Tabla principal — Columnas: **Cliente** (principal flex, `secondary={#id.slice(0,8)}` — mantener ese id corto como secondary) · Servicio (`TruncatedCell` `w-[160px]`) · Fecha reserva (`TABLE_COL.date`) · Calificación (`TABLE_COL.rating`, número + estrella) · Comentario (`TruncatedCell` `w-[220px]`; el `line-clamp-2` pasa a truncado de una línea con `title`) · Estado (`TABLE_COL.status`, `<StatusBadge map="review" status={reviewState(review)} />` — `reviewState()` ya existe y deriva `'pending'`/`'approved'`/`'hidden'` de `isHidden`/`isApproved`; reusarla y borrar `stateColors`/`stateLabels` locales) · Acciones (`TABLE_COL.actions`, hoy botones inline → refactor: primaria `Aprobar`/`Ocultar` según estado; kebab: Ver en reservas = link).
 - Segunda tabla (bookings elegibles): migrar igual (Servicio principal flex, Cliente `w-[160px]`, Fecha `TABLE_COL.date`, Acción = `ReviewLinkButton` en `TableActions`). Read-mostly.
 - Móvil: nueva variante `lg:hidden` con `<TableMobileCard>` para la principal.
 - Commit: `"Migrate Reviews tables to unified pattern"`.
@@ -308,7 +312,7 @@ Es una función pura (sin `'use client'`) → usable en Server Components. `stud
 
 ### Task 9: Ledger — `src/components/dashboard/ledger-table.tsx` (Server, read-only)
 
-- Columnas: Fecha (`TABLE_COL.date`) · Tipo (`TruncatedCell` `w-[160px]`) · Dirección (`TABLE_COL.status`, `<StatusBadge map="direction" status={entry.direction} />`; borrar `directionColors`/`directionLabels` locales — confirmar que las keys reales son `income`/`expense`/`neutral`, si no ajustar el mapa) · Monto (`TABLE_COL.money`, sin truncar, mantener el color y el prefijo `—` de gasto) · **Descripción** (principal flex, `TruncatedCell`). Read-only → sin acciones.
+- Columnas: Fecha (`TABLE_COL.date`) · Tipo (`TruncatedCell` `w-[160px]`) · Dirección (`TABLE_COL.status`, `<StatusBadge map="direction" status={entry.direction} />`; borrar `directionColors`/`directionLabels` locales — keys confirmadas contra el enum Prisma `LedgerDirection`: `income`/`expense`/`neutral`; `expense` conserva el rojo actual, no destructive) · Monto (`TABLE_COL.money`, sin truncar, mantener el color y el prefijo `—` de gasto) · **Descripción** (principal flex, `TruncatedCell`). Read-only → sin acciones.
 - Móvil: nueva variante `lg:hidden` con `<TableMobileCard title={typeLabels[type]} badge={<StatusBadge map="direction" .../>} rows={[Fecha, Monto, Descripción]} />`.
 - Commit: `"Migrate Ledger table to unified pattern"`.
 
