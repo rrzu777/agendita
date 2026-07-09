@@ -1,18 +1,9 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
+import { TruncatedCell } from '@/components/ui/truncated-cell'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { TableMobileCard } from '@/components/ui/table-mobile-card'
+import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { CreditCard } from 'lucide-react'
-
-const directionLabels: Record<string, string> = {
-  income: 'Ingreso',
-  expense: 'Gasto',
-  neutral: 'Neutral',
-}
-
-const directionColors: Record<string, string> = {
-  income: 'bg-green-100 text-green-800',
-  expense: 'bg-red-100 text-red-800',
-  neutral: 'bg-muted text-muted-foreground',
-}
 
 const typeLabels: Record<string, string> = {
   booking_created: 'Reserva creada',
@@ -27,56 +18,90 @@ const typeLabels: Record<string, string> = {
   adjustment: 'Ajuste',
 }
 
+function amountClassName(direction: string): string {
+  return direction === 'income' ? 'text-green-700' : direction === 'expense' ? 'text-destructive' : 'text-primary'
+}
+
+function formatAmount(entry: { direction: string; amount: number }): string {
+  return `${entry.direction === 'expense' ? '—' : ''}$${entry.amount.toLocaleString('es-CL')}`
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- entries shape depends on server action return type
 export function LedgerTable({ entries }: { entries: any[] }) {
+  if (entries.length === 0) {
+    return (
+      <div className="studio-card overflow-hidden">
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
+          <div className="flex size-14 items-center justify-center rounded-full bg-muted">
+            <CreditCard className="size-7 text-muted-foreground" />
+          </div>
+          <div>
+            <p className="mb-1 text-base font-semibold text-primary">No hay movimientos registrados</p>
+            <p className="text-sm text-muted-foreground">
+              Los pagos aparecerán aquí cuando los clientes abonen o paguen.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const rows = entries.map((entry) => ({
+    entry,
+    amountClass: amountClassName(entry.direction),
+    amountLabel: formatAmount(entry),
+  }))
+
   return (
-    <div className="studio-card overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-muted/50">
-            <TableHead>Fecha</TableHead>
-            <TableHead>Tipo</TableHead>
-            <TableHead>Dirección</TableHead>
-            <TableHead>Monto</TableHead>
-            <TableHead>Descripción</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {entries.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={5} className="py-12 text-center">
-                <div className="flex flex-col items-center gap-3">
-                  <div className="flex size-14 items-center justify-center rounded-full bg-muted">
-                    <CreditCard className="size-7 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <p className="mb-1 text-base font-semibold text-primary">No hay movimientos registrados</p>
-                    <p className="text-sm text-muted-foreground">
-                      Los pagos aparecerán aquí cuando los clientes abonen o paguen.
-                    </p>
-                  </div>
-                </div>
-              </TableCell>
+    <>
+      {/* Mobile: cards */}
+      <div className="space-y-3 lg:hidden">
+        {rows.map(({ entry, amountClass, amountLabel }) => (
+          <TableMobileCard
+            key={entry.id}
+            title={typeLabels[entry.type] || entry.type}
+            badge={<StatusBadge map="direction" status={entry.direction} />}
+            rows={[
+              { label: 'Fecha', value: new Date(entry.occurredAt).toLocaleDateString('es-CL') },
+              {
+                label: 'Monto',
+                value: <span className={`font-semibold ${amountClass}`}>{amountLabel}</span>,
+              },
+              { label: 'Descripción', value: entry.description || '—' },
+            ]}
+          />
+        ))}
+      </div>
+
+      {/* Desktop: table */}
+      <div className="hidden lg:block studio-card overflow-hidden">
+        <Table fixed className={TABLE_MIN_WIDTH}>
+          <TableHeader>
+            <TableRow className="bg-muted/50">
+              <TableHead className={TABLE_COL.date}>Fecha</TableHead>
+              <TableHead className={TABLE_COL.name}>Tipo</TableHead>
+              <TableHead className={TABLE_COL.status}>Dirección</TableHead>
+              <TableHead className={TABLE_COL.money}>Monto</TableHead>
+              <TableHead>Descripción</TableHead>
             </TableRow>
-          ) : (
-            entries.map((entry) => (
+          </TableHeader>
+          <TableBody>
+            {rows.map(({ entry, amountClass, amountLabel }) => (
               <TableRow key={entry.id}>
-                <TableCell>{new Date(entry.occurredAt).toLocaleDateString('es-CL')}</TableCell>
-                <TableCell>{typeLabels[entry.type] || entry.type}</TableCell>
-                <TableCell>
-                  <Badge className={directionColors[entry.direction]}>
-                    {directionLabels[entry.direction]}
-                  </Badge>
+                <TableCell className={TABLE_COL.date}>{new Date(entry.occurredAt).toLocaleDateString('es-CL')}</TableCell>
+                <TruncatedCell className={TABLE_COL.name} primary={typeLabels[entry.type] || entry.type} />
+                <TableCell className={TABLE_COL.status}>
+                  <StatusBadge map="direction" status={entry.direction} />
                 </TableCell>
-                <TableCell className={`font-semibold ${entry.direction === 'income' ? 'text-green-700' : entry.direction === 'expense' ? 'text-destructive' : 'text-primary'}`}>
-                  {entry.direction === 'expense' ? '-' : ''}${entry.amount.toLocaleString('es-CL')}
+                <TableCell className={`${TABLE_COL.money} whitespace-normal font-semibold ${amountClass}`}>
+                  {amountLabel}
                 </TableCell>
-                <TableCell className="text-muted-foreground">{entry.description || '—'}</TableCell>
+                <TruncatedCell className="text-muted-foreground" primary={entry.description || '—'} />
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-    </div>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </>
   )
 }

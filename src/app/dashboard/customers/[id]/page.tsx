@@ -2,8 +2,11 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { TruncatedCell } from '@/components/ui/truncated-cell'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { TableMobileCard } from '@/components/ui/table-mobile-card'
+import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { getCustomerDetail } from '@/server/actions/customers'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { getCustomerLoyalty, getLoyaltyConfig } from '@/server/actions/loyalty'
@@ -23,33 +26,6 @@ import {
 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
-
-const statusLabels: Record<string, string> = {
-  pending_payment: 'Pendiente de pago',
-  confirmed: 'Confirmada',
-  completed: 'Completada',
-  cancelled: 'Cancelada',
-  no_show: 'No asistio',
-  expired: 'Expirada',
-}
-
-const statusBadgeClasses: Record<string, string> = {
-  pending_payment: 'bg-orange-100 text-orange-800',
-  confirmed: 'bg-green-100 text-green-800',
-  completed: 'bg-secondary text-secondary-foreground',
-  cancelled: 'bg-muted text-muted-foreground',
-  no_show: 'bg-destructive/10 text-destructive',
-  expired: 'bg-muted text-muted-foreground',
-}
-
-const paymentStatusBadgeClasses: Record<string, string> = {
-  pending: 'bg-orange-100 text-orange-800',
-  approved: 'bg-green-100 text-green-800',
-  rejected: 'bg-destructive/10 text-destructive',
-  cancelled: 'bg-muted text-muted-foreground',
-  refunded: 'bg-muted text-muted-foreground',
-  failed: 'bg-destructive/10 text-destructive',
-}
 
 const paymentTypeLabels: Record<string, string> = {
   deposit: 'Abono',
@@ -262,83 +238,70 @@ export default async function CustomerDetailPage({ params }: Props) {
               ) : (
                 <>
                   {/* Mobile: cards */}
-                  <div className="space-y-3 md:hidden">
+                  <div className="space-y-3 lg:hidden">
                     {customer.bookings.map((booking) => (
-                      <div
+                      <TableMobileCard
                         key={booking.id}
-                        className="rounded-xl border border-border/60 bg-background p-3"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="font-semibold text-primary">{booking.serviceName}</p>
-                            <p className="text-xs text-muted-foreground">{formatBookingNumber(booking.bookingNumber, booking.id)}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })}{' '}
-                              {new Date(booking.startDateTime).toLocaleTimeString('es-CL', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                timeZone: businessTimezone,
-                              })}
-                            </p>
-                          </div>
-                          <Badge className={statusBadgeClasses[booking.status] || ''}>
-                            {statusLabels[booking.status] || booking.status}
-                          </Badge>
-                        </div>
-                        <div className="mt-2 flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">
-                            ${formatCLP(booking.totalPrice)}
-                          </span>
-                          {booking.remainingBalance > 0 && (
-                            <span className="font-semibold text-destructive">
-                              Saldo: ${formatCLP(booking.remainingBalance)}
-                            </span>
-                          )}
-                          {booking.remainingBalance <= 0 &&
-                            (booking.status === 'completed' || booking.status === 'confirmed') && (
-                              <span className="font-semibold text-green-700">Pagado</span>
-                            )}
-                        </div>
-                      </div>
+                        title={booking.serviceName}
+                        subtitle={formatBookingNumber(booking.bookingNumber, booking.id)}
+                        badge={<StatusBadge map="booking" status={booking.status} />}
+                        rows={[
+                          {
+                            label: 'Fecha',
+                            value: `${new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })} ${new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: businessTimezone })}`,
+                          },
+                          { label: 'Total', value: `$${formatCLP(booking.totalPrice)}` },
+                          {
+                            label: 'Saldo',
+                            value:
+                              booking.remainingBalance > 0
+                                ? `$${formatCLP(booking.remainingBalance)}`
+                                : booking.status === 'cancelled' || booking.status === 'no_show' || booking.status === 'expired'
+                                  ? '—'
+                                  : 'Pagado',
+                          },
+                        ]}
+                      />
                     ))}
                   </div>
 
                   {/* Desktop: table */}
-                  <div className="hidden overflow-hidden rounded-xl border border-border/60 md:block">
-                    <Table>
+                  <div className="hidden lg:block studio-card overflow-hidden">
+                    <Table fixed className={TABLE_MIN_WIDTH}>
                       <TableHeader>
                         <TableRow className="bg-muted/50">
                           <TableHead>Servicio</TableHead>
-                          <TableHead>Fecha</TableHead>
-                          <TableHead>Estado</TableHead>
-                          <TableHead className="text-right">Total</TableHead>
-                          <TableHead className="text-right">Saldo</TableHead>
+                          <TableHead className={TABLE_COL.date}>Fecha</TableHead>
+                          <TableHead className={TABLE_COL.status}>Estado</TableHead>
+                          <TableHead className={TABLE_COL.money}>Total</TableHead>
+                          <TableHead className={TABLE_COL.money}>Saldo</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {customer.bookings.map((booking) => (
                           <TableRow key={booking.id}>
-                            <TableCell className="font-semibold text-primary">
-                              <div>{booking.serviceName}</div>
-                              <div className="text-xs font-normal text-muted-foreground">{formatBookingNumber(booking.bookingNumber, booking.id)}</div>
+                            <TruncatedCell
+                              className="font-semibold text-primary"
+                              primary={booking.serviceName}
+                              secondary={formatBookingNumber(booking.bookingNumber, booking.id)}
+                            />
+                            <TableCell className={TABLE_COL.date}>
+                              <div>{new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {new Date(booking.startDateTime).toLocaleTimeString('es-CL', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  timeZone: businessTimezone,
+                                })}
+                              </div>
                             </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })}{' '}
-                              {new Date(booking.startDateTime).toLocaleTimeString('es-CL', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                timeZone: businessTimezone,
-                              })}
+                            <TableCell className={TABLE_COL.status}>
+                              <StatusBadge map="booking" status={booking.status} />
                             </TableCell>
-                            <TableCell>
-                              <Badge className={statusBadgeClasses[booking.status] || ''}>
-                                {statusLabels[booking.status] || booking.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
                               ${formatCLP(booking.totalPrice)}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
                               {booking.remainingBalance > 0 ? (
                                 <span className="font-semibold text-destructive">
                                   ${formatCLP(booking.remainingBalance)}
@@ -371,73 +334,61 @@ export default async function CustomerDetailPage({ params }: Props) {
               ) : (
                 <>
                   {/* Mobile: cards */}
-                  <div className="space-y-3 md:hidden">
+                  <div className="space-y-3 lg:hidden">
                     {customer.payments.map((payment) => (
-                      <div
+                      <TableMobileCard
                         key={payment.id}
-                        className="rounded-xl border border-border/60 bg-background p-3"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="font-semibold text-primary">
-                              ${formatCLP(payment.amount)}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {paymentTypeLabels[payment.paymentType] || payment.paymentType}
-                              {payment.paymentMethod && ` · ${payment.paymentMethod}`}
-                            </p>
-                          </div>
-                          <Badge
-                            className={paymentStatusBadgeClasses[payment.status] || ''}
-                          >
-                            {payment.status}
-                          </Badge>
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {payment.paidAt
-                            ? new Date(payment.paidAt).toLocaleDateString('es-CL')
-                            : new Date(payment.createdAt).toLocaleDateString('es-CL')}
-                        </p>
-                      </div>
+                        title={`$${formatCLP(payment.amount)}`}
+                        subtitle={
+                          paymentTypeLabels[payment.paymentType] || payment.paymentType
+                        }
+                        badge={<StatusBadge map="payment" status={payment.status} />}
+                        rows={[
+                          {
+                            label: 'Fecha',
+                            value: payment.paidAt
+                              ? new Date(payment.paidAt).toLocaleDateString('es-CL')
+                              : new Date(payment.createdAt).toLocaleDateString('es-CL'),
+                          },
+                          { label: 'Método', value: payment.paymentMethod || '—' },
+                        ]}
+                      />
                     ))}
                   </div>
 
                   {/* Desktop: table */}
-                  <div className="hidden overflow-hidden rounded-xl border border-border/60 md:block">
-                    <Table>
+                  <div className="hidden lg:block studio-card overflow-hidden">
+                    <Table fixed className={TABLE_MIN_WIDTH}>
                       <TableHeader>
                         <TableRow className="bg-muted/50">
-                          <TableHead className="text-right">Monto</TableHead>
-                          <TableHead>Tipo</TableHead>
-                          <TableHead>Estado</TableHead>
-                          <TableHead>Fecha</TableHead>
-                          <TableHead>Metodo</TableHead>
+                          <TableHead className={TABLE_COL.money}>Monto</TableHead>
+                          <TableHead className={TABLE_COL.label}>Tipo</TableHead>
+                          <TableHead className={TABLE_COL.status}>Estado</TableHead>
+                          <TableHead className={TABLE_COL.date}>Fecha</TableHead>
+                          <TableHead>Método</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {customer.payments.map((payment) => (
                           <TableRow key={payment.id}>
-                            <TableCell className="text-right font-semibold">
+                            <TableCell className={`${TABLE_COL.money} whitespace-normal font-semibold`}>
                               ${formatCLP(payment.amount)}
                             </TableCell>
-                            <TableCell className="text-sm">
+                            <TableCell className={`${TABLE_COL.label} text-sm`}>
                               {paymentTypeLabels[payment.paymentType] || payment.paymentType}
                             </TableCell>
-                            <TableCell>
-                              <Badge
-                                className={paymentStatusBadgeClasses[payment.status] || ''}
-                              >
-                                {payment.status}
-                              </Badge>
+                            <TableCell className={TABLE_COL.status}>
+                              <StatusBadge map="payment" status={payment.status} />
                             </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
+                            <TableCell className={`${TABLE_COL.date} text-sm text-muted-foreground`}>
                               {payment.paidAt
                                 ? new Date(payment.paidAt).toLocaleDateString('es-CL')
                                 : new Date(payment.createdAt).toLocaleDateString('es-CL')}
                             </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {payment.paymentMethod || '—'}
-                            </TableCell>
+                            <TruncatedCell
+                              className="text-sm text-muted-foreground"
+                              primary={payment.paymentMethod || '—'}
+                            />
                           </TableRow>
                         ))}
                       </TableBody>

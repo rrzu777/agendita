@@ -54,12 +54,24 @@ export function RedemptionsButton({
   promotionId,
   promotionName,
   currency,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
 }: {
   promotionId: string
   promotionName: string
   currency: string
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const isControlled = controlledOpen !== undefined
+  const open = isControlled ? controlledOpen : internalOpen
+  const setOpen = (next: boolean) => {
+    if (isControlled) onOpenChange?.(next)
+    else setInternalOpen(next)
+  }
   const [isPending, startTransition] = useTransition()
   const [rows, setRows] = useState<Redemption[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -108,12 +120,14 @@ export function RedemptionsButton({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        <Button type="button" size="sm" variant="ghost">
-          <Receipt className="mr-1 size-4" />
-          Ver canjes
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button type="button" size="sm" variant="ghost">
+            <Receipt className="mr-1 size-4" />
+            Ver canjes
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="font-heading text-2xl font-semibold tracking-tight text-primary">
