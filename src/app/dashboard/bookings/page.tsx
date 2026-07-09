@@ -3,7 +3,6 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { getBookings } from '@/server/actions/bookings'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { updateBookingStatus } from '@/server/actions/bookings'
 import { CalendarDays, Clock, User, CreditCard, Phone, Plus, RefreshCw } from 'lucide-react'
@@ -12,22 +11,10 @@ import { CancelBookingButton } from '@/components/dashboard/cancel-booking-butto
 import { ManualPaymentDialog } from '@/components/dashboard/manual-payment-dialog'
 import { isManualPaymentAllowed } from '@/components/dashboard/manual-payment-utils'
 import { formatBookingNumber } from '@/lib/bookings/number'
-
-const statusLabels: Record<string, string> = {
-  pending_payment: 'Pendiente de pago',
-  confirmed: 'Confirmada',
-  completed: 'Completada',
-  cancelled: 'Cancelada',
-  no_show: 'No asistió',
-}
-
-const statusColors: Record<string, string> = {
-  pending_payment: 'bg-orange-100 text-orange-800',
-  confirmed: 'bg-green-100 text-green-800',
-  completed: 'bg-secondary text-secondary-foreground',
-  cancelled: 'bg-muted text-muted-foreground',
-  no_show: 'bg-destructive/10 text-destructive',
-}
+import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
+import { TruncatedCell } from '@/components/ui/truncated-cell'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { BookingRowActions } from '@/components/dashboard/booking-row-actions'
 
 function EmptyState() {
   return (
@@ -71,9 +58,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           <h3 className="text-lg font-semibold text-primary truncate">{booking.service?.name || 'Servicio'}</h3>
           <p className="text-sm text-muted-foreground">{formatBookingNumber(booking.bookingNumber, booking.id)}</p>
         </div>
-        <Badge className={`shrink-0 ${statusColors[booking.status]}`}>
-          {statusLabels[booking.status]}
-        </Badge>
+        <StatusBadge status={booking.status} className="shrink-0" />
       </div>
 
       <div className="mb-4 space-y-2">
@@ -223,39 +208,37 @@ export default async function BookingsPage() {
           <EmptyState />
         ) : (
           <>
-            <div className="hidden md:block studio-card overflow-hidden">
-              <Table>
+            <div className="hidden lg:block studio-card overflow-hidden">
+              <Table fixed className={TABLE_MIN_WIDTH}>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead>Servicio</TableHead>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Pago</TableHead>
-                    <TableHead>Contacto</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
+                    <TableHead className={TABLE_COL.date}>Fecha</TableHead>
+                    <TableHead className={TABLE_COL.customer}>Cliente</TableHead>
+                    <TableHead className={TABLE_COL.status}>Estado</TableHead>
+                    <TableHead className={TABLE_COL.money}>Pago</TableHead>
+                    <TableHead className={`${TABLE_COL.actions} text-right`}>Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {bookings.map((booking) => (
                     <TableRow key={booking.id}>
-                      <TableCell className="font-semibold text-primary">
-                        <div>{booking.service?.name || 'Servicio'}</div>
-                        <div className="text-xs font-normal text-muted-foreground">{formatBookingNumber(booking.bookingNumber, booking.id)}</div>
-                      </TableCell>
-                      <TableCell>
+                      <TruncatedCell
+                        className="font-semibold text-primary"
+                        primary={booking.service?.name || 'Servicio'}
+                        secondary={formatBookingNumber(booking.bookingNumber, booking.id)}
+                      />
+                      <TableCell className={TABLE_COL.date}>
                         <div>{new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })}</div>
                         <div className="text-sm text-muted-foreground">
                           {new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: businessTimezone })}
                         </div>
                       </TableCell>
-                      <TableCell>{booking.customer?.name || '—'}</TableCell>
-                      <TableCell>
-                        <Badge className={statusColors[booking.status]}>
-                          {statusLabels[booking.status]}
-                        </Badge>
+                      <TruncatedCell className={TABLE_COL.customer} primary={booking.customer?.name || '—'} />
+                      <TableCell className={TABLE_COL.status}>
+                        <StatusBadge status={booking.status} />
                       </TableCell>
-                      <TableCell>
+                      <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
                         <span className={booking.paymentStatus === 'fully_paid' ? 'font-semibold text-green-700' : 'font-semibold text-primary'}>
                           ${booking.depositPaid.toLocaleString('es-CL')} / ${booking.finalAmount.toLocaleString('es-CL')}
                         </span>
@@ -265,56 +248,29 @@ export default async function BookingsPage() {
                           </div>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <BookingContactButtons
-                          variant="compact"
-                          booking={{
-                            bookingNumber: booking.bookingNumber,
-                            customerName: booking.customer?.name || '',
-                            customerPhone: booking.customer?.phone || null,
-                            serviceName: booking.service?.name || '',
-                            startDateTime: booking.startDateTime.toISOString(),
-                            businessTimezone,
-                            businessCurrency,
-                            totalPrice: booking.totalPrice,
-                            depositPaid: booking.depositPaid,
-                            remainingBalance: booking.remainingBalance,
-                            businessAddress,
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex gap-2 justify-end">
-                          {booking.status === 'confirmed' && (
-                            <>
-                              <form action={async () => {
-                                'use server'
-                                await updateBookingStatus(booking.id, 'completed')
-                              }}>
-                                <Button type="submit" size="sm" variant="outline">Completar</Button>
-                              </form>
-                              <a href={`/dashboard/bookings/${booking.id}/reschedule`}>
-                                <Button type="button" size="sm" variant="outline">
-                                  <RefreshCw className="mr-1 size-3" />
-                                  Reprogramar
-                                </Button>
-                              </a>
-                              <CancelBookingButton bookingId={booking.id} size="sm" />
-                            </>
-                          )}
-                          {booking.status === 'pending_payment' && (
-                            <CancelBookingButton bookingId={booking.id} size="sm" />
-                          )}
-                          {isManualPaymentAllowed(booking) && (
-                            <ManualPaymentDialog
-                              bookings={[booking]}
-                              businessCurrency={businessCurrency}
-                              defaultBookingId={booking.id}
-                              triggerSize="sm"
-                              triggerVariant="outline"
+                      <TableCell className={`${TABLE_COL.actions} text-right`}>
+                        <BookingRowActions
+                          booking={booking}
+                          businessCurrency={businessCurrency}
+                          contact={
+                            <BookingContactButtons
+                              variant="compact"
+                              booking={{
+                                bookingNumber: booking.bookingNumber,
+                                customerName: booking.customer?.name || '',
+                                customerPhone: booking.customer?.phone || null,
+                                serviceName: booking.service?.name || '',
+                                startDateTime: booking.startDateTime.toISOString(),
+                                businessTimezone,
+                                businessCurrency,
+                                totalPrice: booking.totalPrice,
+                                depositPaid: booking.depositPaid,
+                                remainingBalance: booking.remainingBalance,
+                                businessAddress,
+                              }}
                             />
-                          )}
-                        </div>
+                          }
+                        />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -322,7 +278,7 @@ export default async function BookingsPage() {
               </Table>
             </div>
 
-            <div className="space-y-4 md:hidden">
+            <div className="space-y-4 lg:hidden">
               {bookings.map((booking) => (
                 <BookingCard
                   key={booking.id}

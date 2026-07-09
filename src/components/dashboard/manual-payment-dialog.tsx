@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { CreditCard, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -32,6 +32,9 @@ export function ManualPaymentDialog({
   triggerLabel = 'Registrar pago',
   triggerSize,
   triggerVariant,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
 }: {
   bookings: ManualPaymentBooking[]
   businessCurrency?: string
@@ -40,9 +43,14 @@ export function ManualPaymentDialog({
   triggerLabel?: string
   triggerSize?: React.ComponentProps<typeof Button>['size']
   triggerVariant?: React.ComponentProps<typeof Button>['variant']
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
 }) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  const isControlled = controlledOpen !== undefined
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = isControlled ? controlledOpen : internalOpen
   const [bookingId, setBookingId] = useState(defaultBookingId || '')
   const [mode, setMode] = useState<ManualPaymentMode>('fixed')
   const [fixedAmount, setFixedAmount] = useState('')
@@ -73,11 +81,18 @@ export function ManualPaymentDialog({
   }
 
   function handleOpenChange(nextOpen: boolean) {
-    setOpen(nextOpen)
-    if (nextOpen) {
-      selectBooking(defaultBookingId || payableBookings[0]?.id || '')
-    }
+    if (isControlled) onOpenChange?.(nextOpen)
+    else setInternalOpen(nextOpen)
   }
+
+  // Must re-initialize selection/mode/error on every open transition — including
+  // parent-controlled reopens (hoisted dialogs) — so it deliberately depends only
+  // on `open`. Do not add other deps: they would reset the form mid-edit.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-selecting/prefilling on open is required so parent-controlled opens (hoisted dialogs) prefill correctly
+    if (open) selectBooking(defaultBookingId || payableBookings[0]?.id || '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -105,7 +120,7 @@ export function ManualPaymentDialog({
           currency: businessCurrency,
           paymentMethod,
         })
-        setOpen(false)
+        handleOpenChange(false)
         router.refresh()
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Error al registrar pago')
@@ -115,17 +130,19 @@ export function ManualPaymentDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        <Button
-          type="button"
-          size={triggerSize}
-          variant={triggerVariant}
-          className={triggerClassName || 'h-11 font-semibold'}
-        >
-          <Plus className="mr-2 size-4" />
-          {triggerLabel}
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button
+            type="button"
+            size={triggerSize}
+            variant={triggerVariant}
+            className={triggerClassName || 'h-11 font-semibold'}
+          >
+            <Plus className="mr-2 size-4" />
+            {triggerLabel}
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-2xl font-heading font-semibold tracking-tight text-primary">
