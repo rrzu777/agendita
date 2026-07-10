@@ -111,7 +111,12 @@ async function createCustomerWithOwnerEmail(
     }
 
     lastError = (await errorBox.textContent().catch(() => '')) ?? ''
-    if (/disponible|ocupado/i.test(lastError)) continue // slot tomado: probar otra hora
+    // En build de producción los errores de server action se enmascaran como
+    // "An error occurred in the Server Components render", ocultando el texto real
+    // ("no disponible"). En este flujo el único throw esperado es slot ocupado, así
+    // que reintentamos con otra hora también ante el mensaje enmascarado; si se
+    // agotan las horas, el throw de abajo (fuera del loop) reporta el último error.
+    if (/disponible|ocupado|Server Components render/i.test(lastError)) continue
     throw new Error(`createCustomerWithOwnerEmail falló: ${lastError || '(sin texto de error)'}`)
   }
   throw new Error(`createCustomerWithOwnerEmail: sin slot libre tras reintentos (último: ${lastError})`)
