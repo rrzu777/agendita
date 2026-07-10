@@ -130,7 +130,8 @@ test.describe('dashboard (e2e auth bypass)', () => {
     expect(page.url()).toContain('/dashboard/services')
     await expect(page.getByRole('heading', { name: 'Servicios', exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Catálogo de servicios' })).toBeVisible()
-    await expect(page.getByText('Manicura rusa')).toBeVisible({ timeout: 10000 })
+    // Layout dual (tabla desktop + card móvil): el nombre aparece 2× en el DOM; matchea la visible.
+    await expect(page.getByText('Manicura rusa').filter({ visible: true })).toBeVisible({ timeout: 10000 })
   })
 
   test('dashboard availability page loads', async ({ page }) => {
@@ -256,7 +257,10 @@ test.describe('main beta flows', () => {
     const monday = page.locator('div').filter({ hasText: /^Lunes$/ }).locator('..')
     await monday.getByLabel('Lunes inicio hora').selectOption('10')
     await monday.getByLabel('Lunes inicio minutos').selectOption('00')
-    await page.waitForLoadState('networkidle')
+    // El editor de disponibilidad usa guardado explícito (PR #52): el cambio del
+    // <select> sólo actualiza el borrador; hay que apretar "Guardar" para persistir.
+    await monday.getByRole('button', { name: 'Guardar', exact: true }).click()
+    await expect(monday.getByText(/Guardado/)).toBeVisible({ timeout: 10000 })
     await page.reload()
     await expect(page.getByRole('heading', { name: 'Horario semanal' })).toBeVisible()
     await expect(monday.getByLabel('Lunes inicio hora')).toHaveValue('10')

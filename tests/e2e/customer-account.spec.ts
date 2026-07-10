@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test'
 import { setOwnerAuth, setAdminAuth } from './helpers/auth'
+import { toLocalDateStr } from './helpers/dates'
 
 // ─── Task 14: e2e de /mi (cuenta de clienta) ───────────────────────────────────
 //
@@ -77,7 +78,7 @@ async function createCustomerWithOwnerEmail(
   opts: { name: string; phone: string; email: string; afterDays: number },
 ): Promise<void> {
   const futureDate = nextBookableDate(opts.afterDays)
-  const dateStr = futureDate.toISOString().split('T')[0]
+  const dateStr = toLocalDateStr(futureDate)
 
   const times = [
     '10:00', '10:30', '11:00', '11:30', '12:00',
@@ -110,7 +111,9 @@ async function createCustomerWithOwnerEmail(
     }
 
     lastError = (await errorBox.textContent().catch(() => '')) ?? ''
-    if (/disponible|ocupado/i.test(lastError)) continue // slot tomado: probar otra hora
+    // En prod el throw de "slot ocupado" se enmascara como "Server Components
+    // render"; reintentamos con otra hora también ante ese mensaje.
+    if (/disponible|ocupado|Server Components render/i.test(lastError)) continue
     throw new Error(`createCustomerWithOwnerEmail falló: ${lastError || '(sin texto de error)'}`)
   }
   throw new Error(`createCustomerWithOwnerEmail: sin slot libre tras reintentos (último: ${lastError})`)

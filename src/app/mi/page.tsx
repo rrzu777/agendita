@@ -1,14 +1,16 @@
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/db'
-import { getCurrentUser } from '@/lib/auth/user'
+import { prepareMiUser } from '@/lib/auth/mi-user'
 import { getLoyaltyBalance } from '@/lib/loyalty/balance'
 import { displayBalance } from '@/lib/loyalty/view'
 import { PageMessage } from '@/components/ui/page-message'
 
 export default async function MiHomePage() {
-  const user = await getCurrentUser()
-  if (!user) redirect('/ingresar?next=/mi')
+  // await la preparación (fila User + auto-link) ANTES de leer: el layout corre
+  // en paralelo y no garantiza el link previo. Cacheada → no duplica trabajo.
+  const result = await prepareMiUser()
+  if (result.status !== 'ok') return null // layout maneja anon (redirect) / conflict
+  const user = result.user
 
   const customers = await prisma.customer.findMany({
     where: { userId: user.id },

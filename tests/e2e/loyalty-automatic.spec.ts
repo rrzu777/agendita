@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test'
+import { toLocalDateStr } from './helpers/dates'
 
 // ─── B3: Condiciones automáticas de fidelización ───────────────────────────────
 //
@@ -94,7 +95,7 @@ async function createManualBooking(
   opts: { name: string; phone: string; afterDays: number },
 ): Promise<void> {
   const futureDate = nextBookableDate(opts.afterDays)
-  const dateStr = futureDate.toISOString().split('T')[0]
+  const dateStr = toLocalDateStr(futureDate)
 
   // Horas candidatas dentro de 10:00–14:30 (entran en toda regla de disponibilidad,
   // incl. sábado 10–15, para la duración del servicio — igual que smoke.spec.ts).
@@ -145,7 +146,9 @@ async function createManualBooking(
     }
 
     lastError = (await errorBox.textContent().catch(() => '')) ?? ''
-    if (/disponible|ocupado/i.test(lastError)) continue // slot tomado: probar otra hora
+    // En prod el throw de "slot ocupado" se enmascara como "Server Components
+    // render"; reintentamos con otra hora también ante ese mensaje.
+    if (/disponible|ocupado|Server Components render/i.test(lastError)) continue
     throw new Error(`createManualBooking falló: ${lastError || '(sin texto de error)'}`)
   }
   throw new Error(`createManualBooking: sin slot libre tras reintentos (último: ${lastError})`)

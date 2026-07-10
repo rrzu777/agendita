@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test'
 import { setOwnerAuth } from './helpers/auth'
+import { toLocalDateStr } from './helpers/dates'
 
 // ─── B4a: Paquetes prepagados ──────────────────────────────────────────────────
 // Contra el stack real (bypass de auth, negocio mimosnails).
@@ -209,7 +210,7 @@ test.describe('Paquetes prepagados', () => {
     const dow = d.getDay()
     if (dow === 6) d.setDate(d.getDate() + 2)
     else if (dow === 0) d.setDate(d.getDate() + 1)
-    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const dateStr = toLocalDateStr(d)
     const hour = 9 + Math.floor(Math.random() * 7)
     const minute = [0, 15, 30, 45][Math.floor(Math.random() * 4)]
     await page.locator('input#date').fill(dateStr)

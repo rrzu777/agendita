@@ -36,9 +36,13 @@ export type PublicBusiness = Prisma.BusinessGetPayload<{
 // These cache entries are keyed by slug so cross-tenant leakage is prevented
 // by the cache key itself (slug is part of the function arguments).
 
+// NOTE: NO usar `relationLoadStrategy: 'join'` acá. Con este include anidado
+// (reviews + _count) el query engine de Prisma 5.22 hace PANIC
+// ("called Option::unwrap() on a None value", query_document/mod.rs) al construir
+// el query — 100% reproducible, causaba 500 en /b/[slug] y /book/[slug] cuando la
+// caché ISR se revalidaba. La estrategia default ('query') no tiene el bug.
 export const getPublicBusinessBySlug = unstable_cache(async (slug: string) => {
   const business = await prisma.business.findUnique({
-    relationLoadStrategy: 'join',
     where: { slug },
     include: publicBusinessInclude,
   })
@@ -48,7 +52,6 @@ export const getPublicBusinessBySlug = unstable_cache(async (slug: string) => {
 
 export const getPublicBusinessBySubdomain = unstable_cache(async (subdomain: string) => {
   const business = await prisma.business.findUnique({
-    relationLoadStrategy: 'join',
     where: { subdomain },
     include: publicBusinessInclude,
   })
@@ -58,7 +61,6 @@ export const getPublicBusinessBySubdomain = unstable_cache(async (subdomain: str
 
 export const getBookingBusinessBySlug = unstable_cache(async (slug: string) => {
   const business = await prisma.business.findUnique({
-    relationLoadStrategy: 'join',
     where: { slug },
     include: {
       services: {
@@ -73,7 +75,6 @@ export const getBookingBusinessBySlug = unstable_cache(async (slug: string) => {
 
 export const getBookingBusinessBySubdomain = unstable_cache(async (subdomain: string) => {
   const business = await prisma.business.findUnique({
-    relationLoadStrategy: 'join',
     where: { subdomain },
     include: {
       services: {

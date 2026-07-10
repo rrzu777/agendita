@@ -1,9 +1,6 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { getCurrentUser } from '@/lib/auth/user'
-import { ensureUserRow, AccountConflictError } from '@/lib/auth/ensure-user-row'
-import { isVerifiedEmail, linkCustomersByVerifiedEmail } from '@/lib/customers/link'
-import { prisma } from '@/lib/db'
+import { prepareMiUser } from '@/lib/auth/mi-user'
 import { signOut } from '@/lib/auth/actions'
 import { PageMessage } from '@/components/ui/page-message'
 
@@ -16,21 +13,12 @@ async function salirAction() {
 }
 
 export default async function MiLayout({ children }: { children: React.ReactNode }) {
-  const user = await getCurrentUser()
-  if (!user) redirect('/ingresar?next=/mi')
-
-  try {
-    await ensureUserRow(user)
-  } catch (e) {
-    if (e instanceof AccountConflictError) {
-      return <PageMessage title="No pudimos preparar tu cuenta" message={e.message} />
-    }
-    throw e
-  }
-
-  // Vía 1 de vinculación: solo email verificado; idempotente en cada entrada.
-  if (user.email && isVerifiedEmail(user)) {
-    await linkCustomersByVerifiedEmail(prisma, user.id, user.email)
+  // Asegura fila User + vincula customers por email (una vez por request). Las
+  // pages comparten esta misma llamada cacheada y la await-ean antes de leer.
+  const result = await prepareMiUser()
+  if (result.status === 'anon') redirect('/ingresar?next=/mi')
+  if (result.status === 'conflict') {
+    return <PageMessage title="No pudimos preparar tu cuenta" message={result.message} />
   }
 
   return (
