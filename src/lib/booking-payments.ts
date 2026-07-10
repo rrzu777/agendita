@@ -10,11 +10,19 @@ export class BookingNotPayableError extends Error {
 /**
  * Verifica que una reserva esté en estado pagable y que su hold no haya expirado.
  * Lanza BookingNotPayableError si no es pagable.
+ *
+ * `allowExpiredHold`: salta SOLO el chequeo de hold vencido (no revive estados
+ * terminales). Lo usa el verificador de transferencia, que ya re-validó el cupo
+ * dentro de su propia tx y no debería tener que escribir un holdExpiresAt falso
+ * solo para pasar por acá.
  */
-export function assertBookingPayable(booking: {
-  status: BookingStatus
-  holdExpiresAt: Date | null
-}): void {
+export function assertBookingPayable(
+  booking: {
+    status: BookingStatus
+    holdExpiresAt: Date | null
+  },
+  opts?: { allowExpiredHold?: boolean },
+): void {
   const terminalStatuses: BookingStatus[] = [
     BookingStatus.cancelled,
     BookingStatus.expired,
@@ -26,6 +34,7 @@ export function assertBookingPayable(booking: {
   }
 
   if (
+    !opts?.allowExpiredHold &&
     booking.status === BookingStatus.pending_payment &&
     booking.holdExpiresAt &&
     booking.holdExpiresAt < new Date()

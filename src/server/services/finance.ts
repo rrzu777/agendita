@@ -85,6 +85,12 @@ export interface ApplyApprovedPaymentInput {
   createdByUserId?: string | null
   /** Si se proporciona, se reusará/aprobará este Payment en lugar de buscar/crear uno nuevo. */
   paymentId?: string
+  /**
+   * Salta el chequeo de hold vencido en assertBookingPayable (no revive estados
+   * terminales). Solo lo usa el verificador de transferencia, que ya re-validó
+   * el cupo por su cuenta; evita escribir un holdExpiresAt falso solo para pasar.
+   */
+  skipHoldExpiryCheck?: boolean
 }
 
 export async function applyApprovedPayment({
@@ -100,6 +106,7 @@ export async function applyApprovedPayment({
   rawPayload,
   createdByUserId,
   paymentId: explicitPaymentId,
+  skipHoldExpiryCheck,
 }: ApplyApprovedPaymentInput): Promise<{ booking: Awaited<ReturnType<typeof recalcBookingFromPayments>>['booking']; wasConfirmed: boolean }> {
   if (amount <= 0) {
     throw new Error('El monto debe ser positivo')
@@ -117,7 +124,7 @@ export async function applyApprovedPayment({
     throw new Error('La reserva no pertenece al negocio')
   }
 
-  assertBookingPayable(booking)
+  assertBookingPayable(booking, { allowExpiredHold: skipHoldExpiryCheck })
 
   let payment: { id: string; amount: number; status: string; provider: string; providerPaymentId: string | null; paymentType: PaymentType } | null = null
 
