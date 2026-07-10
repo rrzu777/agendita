@@ -169,24 +169,7 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <BankTransferForm
-              account={
-                bankAccount
-                  ? {
-                      accountHolder: bankAccount.accountHolder,
-                      rut: bankAccount.rut,
-                      bankName: bankAccount.bankName,
-                      accountType: bankAccount.accountType,
-                      accountNumber: bankAccount.accountNumber,
-                      email: bankAccount.email,
-                      instructions: bankAccount.instructions,
-                      isEnabled: bankAccount.isEnabled,
-                      holdHours: bankAccount.holdHours,
-                      verifyHours: bankAccount.verifyHours,
-                    }
-                  : null
-              }
-            />
+            <BankTransferForm account={bankAccount} />
           </CardContent>
         </Card>
       </div>

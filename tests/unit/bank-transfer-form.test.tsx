@@ -10,7 +10,10 @@ vi.mock('@/server/actions/bank-transfer-settings', () => ({
   setBankTransferEnabled: vi.fn(),
 }))
 
+// Satisface el tipo Prisma completo (la prop del form es BankTransferAccount | null).
 const account = {
+  id: 'bta-form-1',
+  businessId: 'bta-form-biz',
   accountHolder: 'María Pérez',
   rut: '12.345.678-9',
   bankName: 'BancoEstado',
@@ -21,6 +24,8 @@ const account = {
   isEnabled: true,
   holdHours: 24,
   verifyHours: 48,
+  createdAt: new Date('2026-07-10T00:00:00Z'),
+  updatedAt: new Date('2026-07-10T00:00:00Z'),
 }
 
 describe('BankTransferForm', () => {

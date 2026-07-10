@@ -8,21 +8,10 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { saveBankTransferAccount, setBankTransferEnabled } from '@/server/actions/bank-transfer-settings'
+import type { BankTransferAccount } from '@prisma/client'
+import { DEFAULT_HOLD_HOURS, DEFAULT_VERIFY_HOURS, HOLD_HOURS_MAX, VERIFY_HOURS_MAX } from '@/lib/bank-transfer/schema'
 
-export interface BankTransferAccountView {
-  accountHolder: string
-  rut: string
-  bankName: string
-  accountType: string
-  accountNumber: string
-  email: string | null
-  instructions: string | null
-  isEnabled: boolean
-  holdHours: number
-  verifyHours: number | null
-}
-
-export function BankTransferForm({ account }: { account: BankTransferAccountView | null }) {
+export function BankTransferForm({ account }: { account: BankTransferAccount | null }) {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
@@ -36,9 +25,9 @@ export function BankTransferForm({ account }: { account: BankTransferAccountView
     accountNumber: account?.accountNumber ?? '',
     email: account?.email ?? '',
     instructions: account?.instructions ?? '',
-    holdHours: String(account?.holdHours ?? 24),
+    holdHours: String(account?.holdHours ?? DEFAULT_HOLD_HOURS),
     // '' representa null = sin límite
-    verifyHours: account && account.verifyHours == null ? '' : String(account?.verifyHours ?? 48),
+    verifyHours: account ? String(account.verifyHours ?? '') : String(DEFAULT_VERIFY_HOURS),
   })
 
   function set<K extends keyof typeof form>(key: K, value: string) {
@@ -52,13 +41,7 @@ export function BankTransferForm({ account }: { account: BankTransferAccountView
     setSuccessMessage(null)
     try {
       await saveBankTransferAccount({
-        accountHolder: form.accountHolder,
-        rut: form.rut,
-        bankName: form.bankName,
-        accountType: form.accountType,
-        accountNumber: form.accountNumber,
-        email: form.email,
-        instructions: form.instructions,
+        ...form,
         holdHours: Number(form.holdHours),
         verifyHours: form.verifyHours.trim() === '' ? null : Number(form.verifyHours),
       })
@@ -132,12 +115,12 @@ export function BankTransferForm({ account }: { account: BankTransferAccountView
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="bt-hold">Plazo para transferir (horas)</Label>
-          <Input id="bt-hold" type="number" min={1} max={168} value={form.holdHours} onChange={e => set('holdHours', e.target.value)} required />
+          <Input id="bt-hold" type="number" min={1} max={HOLD_HOURS_MAX} value={form.holdHours} onChange={e => set('holdHours', e.target.value)} required />
           <p className="text-xs text-muted-foreground">Cuánto tiempo se le reserva el horario a la clienta para que transfiera y te avise.</p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="bt-verify">Plazo para verificar (horas)</Label>
-          <Input id="bt-verify" type="number" min={1} max={720} value={form.verifyHours} onChange={e => set('verifyHours', e.target.value)} placeholder="vacío = sin límite" />
+          <Input id="bt-verify" type="number" min={1} max={VERIFY_HOURS_MAX} value={form.verifyHours} onChange={e => set('verifyHours', e.target.value)} placeholder="vacío = sin límite" />
           {noVerifyLimit ? (
             <p className="text-xs text-orange-600">Vacío = sin límite: el horario queda retenido hasta que verifiques o rechaces la transferencia.</p>
           ) : (
