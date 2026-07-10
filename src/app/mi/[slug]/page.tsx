@@ -1,6 +1,6 @@
-import { notFound, redirect } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/db'
-import { getCurrentUser } from '@/lib/auth/user'
+import { prepareMiUser } from '@/lib/auth/mi-user'
 import { loadLoyaltyCardData } from '@/lib/loyalty/card-data'
 import { LoyaltyCard } from '@/components/loyalty/loyalty-card'
 import { redeemPointsAsMe } from '@/server/actions/loyalty'
@@ -18,8 +18,11 @@ async function redeemAction(customerId: string, formData: FormData) {
 
 export default async function MiBusinessPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const user = await getCurrentUser()
-  if (!user) redirect('/ingresar?next=/mi')
+  // await la preparación (fila User + auto-link) antes de leer Customers, para
+  // que el acceso directo a /mi/[slug] no dé 404 por leer antes del link.
+  const result = await prepareMiUser()
+  if (result.status !== 'ok') return null // layout maneja anon (redirect) / conflict
+  const user = result.user
 
   const business = await prisma.business.findUnique({
     where: { slug },
