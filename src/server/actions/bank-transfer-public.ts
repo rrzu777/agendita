@@ -13,13 +13,10 @@ import { sendMultiNotificationSafely, sendBankTransferDeclaredToBusiness } from 
 // seguridad que payments.ts (identidad = bookingId cuid + rate limit).
 
 export async function getBankTransferInfo(businessId: string): Promise<BankTransferPublicInfo | null> {
-  const account = await prisma.bankTransferAccount.findUnique({
-    where: { businessId },
-    select: { ...BANK_TRANSFER_PUBLIC_SELECT, isEnabled: true },
+  return prisma.bankTransferAccount.findFirst({
+    where: { businessId, isEnabled: true },
+    select: BANK_TRANSFER_PUBLIC_SELECT,
   })
-  if (!account || !account.isEnabled) return null
-  const { isEnabled: _isEnabled, ...publicInfo } = account
-  return publicInfo
 }
 
 /**
