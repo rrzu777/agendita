@@ -104,4 +104,38 @@ describe('deriveConfirmationState', () => {
       }),
     ).toBe('confirmed')
   })
+
+  describe('transferencia bancaria y estados terminales', () => {
+    const bt = (status: string) => ({ status, provider: 'manual', providerPaymentId: 'bt-declared:abc' })
+
+    it('expired corta primero aunque haya payment pendiente', () => {
+      expect(deriveConfirmationState({ status: 'expired', payments: [bt('pending')] })).toBe('expired')
+    })
+
+    it('cancelled corta primero aunque haya payment rejected', () => {
+      expect(deriveConfirmationState({ status: 'cancelled', payments: [bt('rejected')] })).toBe('cancelled')
+    })
+
+    it('bt pending → verifying_transfer', () => {
+      expect(deriveConfirmationState({ status: 'pending_payment', payments: [bt('pending')] })).toBe('verifying_transfer')
+    })
+
+    it('manual de la dueña (sin bt-declared) NO dispara verifying_transfer', () => {
+      expect(
+        deriveConfirmationState({
+          status: 'pending_payment',
+          payments: [{ status: 'pending', provider: 'manual', providerPaymentId: null }],
+        }),
+      ).toBe('pending')
+    })
+
+    it('MP pending sigue siendo verifying (sin regresión)', () => {
+      expect(
+        deriveConfirmationState({
+          status: 'pending_payment',
+          payments: [{ status: 'pending', provider: 'mercado_pago', providerPaymentId: null }],
+        }),
+      ).toBe('verifying')
+    })
+  })
 })
