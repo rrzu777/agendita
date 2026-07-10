@@ -25,6 +25,9 @@ import { creditVisitPoints } from '@/lib/loyalty/credit'
 import { emitAutomaticReward, loadAutomaticRules } from '@/lib/loyalty/automatic'
 import { rewardReferralOnCompletion, captureReferral, notifyReferralReward } from '@/lib/loyalty/referral'
 import { firstVisitKey, conditionKind } from '@/lib/loyalty/automatic-match'
+import { BANK_TRANSFER_PUBLIC_SELECT } from '@/lib/bank-transfer/public-info'
+import { getBusinessPublicUrl } from '@/lib/business/urls'
+import type { BookingEmailData } from '@/lib/notifications/types'
 import {
   sendBookingReceivedToCustomer,
   sendNewBookingNotificationToBusiness,
@@ -84,12 +87,31 @@ async function fireBookingNotifications(
     depositPaid: number
     remainingBalance: number
     startDateTime: Date
+    paymentMethod: string | null
+    holdExpiresAt: Date | null
   } & { id: string; businessId: string; bookingNumber: number | null },
   serviceName: string,
 ) {
   const customerEmail = booking.customer.email
   const businessTimezone = business.timezone || 'America/Santiago'
   const businessCurrency = business.currency || 'CLP'
+
+  // Reserva con transferencia: el email de "reserva recibida" ES la fuente
+  // durable de los datos bancarios (la pestaña del wizard es efímera).
+  let bankTransfer: BookingEmailData['bankTransfer'] | undefined
+  if (booking.paymentMethod === 'bank_transfer') {
+    const account = await prisma.bankTransferAccount.findUnique({
+      where: { businessId: booking.businessId },
+      select: BANK_TRANSFER_PUBLIC_SELECT,
+    })
+    if (account) {
+      bankTransfer = {
+        ...account,
+        deadline: booking.holdExpiresAt,
+        confirmationUrl: `${getBusinessPublicUrl({ slug: business.slug, subdomain: business.subdomain })}/book/confirmation?bookingId=${booking.id}`,
+      }
+    }
+  }
 
   const domain = process.env.NEXT_PUBLIC_APP_DOMAIN || process.env.APP_DOMAIN || 'localhost:3000'
   const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '')
@@ -122,6 +144,7 @@ async function fireBookingNotifications(
           depositRequired: booking.depositRequired,
           depositPaid: booking.depositPaid,
           remainingBalance: booking.remainingBalance,
+          bankTransfer,
         }),
       ),
     )
@@ -142,6 +165,9 @@ async function fireBookingNotifications(
         depositRequired: booking.depositRequired,
         remainingBalance: booking.remainingBalance,
         dashboardLink,
+        paymentNote: booking.paymentMethod === 'bank_transfer'
+          ? 'La clienta eligió pagar el abono por transferencia. Te va a llegar otro aviso cuando declare que transfirió.'
+          : undefined,
       }),
     ),
   )

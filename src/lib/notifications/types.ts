@@ -27,6 +27,19 @@ export interface BookingEmailData {
   remainingBalance: number
   reviewLink?: string
   loyaltyCardLink?: string
+  /** Presente cuando la reserva eligió transferencia bancaria: el email de
+   *  "reserva recibida" incluye los datos, el plazo y el link para declarar. */
+  bankTransfer?: {
+    accountHolder: string
+    rut: string
+    bankName: string
+    accountType: string
+    accountNumber: string
+    email?: string | null
+    instructions?: string | null
+    deadline: Date | null
+    confirmationUrl: string
+  }
 }
 
 export interface CancellationEmailData {
@@ -79,6 +92,19 @@ export interface NewBookingBusinessEmailData {
   depositRequired: number
   remainingBalance: number
   dashboardLink: string
+  /** Nota extra sobre el método de pago (p.ej. "eligió transferencia"). */
+  paymentNote?: string
+}
+
+export interface BankTransferDeclaredEmailData {
+  businessName: string
+  businessTimezone: string
+  customerName: string
+  serviceName: string
+  startDateTime: Date
+  amount: number
+  currency: string
+  bookingNumber?: number | null
 }
 
 export interface LoyaltyRewardEmailData {
