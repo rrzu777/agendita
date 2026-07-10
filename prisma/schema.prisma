@@ -90,6 +90,7 @@ model Business {
   subscriptionPayments SubscriptionPayment[]
   subscriptionLogs     SubscriptionLog[]
   paymentAccounts      PaymentAccount[]
+  bankTransferAccount  BankTransferAccount?
   promotions           Promotion[]
   loyaltyConfig        LoyaltyConfig?
   loyaltyLedger        LoyaltyLedger[]
@@ -130,6 +131,28 @@ model PaymentAccount {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, provider])
+}
+
+// Datos bancarios del negocio para abonos por transferencia (spec 2026-07-10).
+// Texto plano a propósito: son datos que la dueña hoy manda por WhatsApp a
+// desconocidos. NO confundir con PaymentAccount (credenciales OAuth de MP).
+model BankTransferAccount {
+  id            String   @id @default(cuid())
+  businessId    String   @unique
+  accountHolder String
+  rut           String
+  bankName      String
+  accountType   String // "corriente" | "vista" | "ahorro" — texto libre, sin enum
+  accountNumber String
+  email         String?
+  instructions  String?
+  isEnabled     Boolean  @default(true)
+  holdHours     Int      @default(24) // plazo para transferir y declarar
+  verifyHours   Int?     @default(48) // plazo para que la dueña verifique; null = sin límite
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }
 
 model Plan {
@@ -368,6 +391,7 @@ model Booking {
   customerNotes  String?
   internalNotes  String?
   holdExpiresAt  DateTime?
+  paymentMethod  String? // 'bank_transfer' si la clienta eligió transferencia; null = flujo actual/MP
   idempotencyKey String?
   bookingNumber  Int?
   createdAt      DateTime  @default(now())
