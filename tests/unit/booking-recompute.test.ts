@@ -32,6 +32,14 @@ describe('recomputeBookingAmountsAfterDiscount', () => {
     expect(result.holdExpiresAt).toEqual(addMinutes(NOW, 15))
   })
 
+  it('holdMinutes custom (transferencia bancaria): no pisa la ventana larga', () => {
+    const result = recomputeBookingAmountsAfterDiscount({
+      price: 20000, depositAmount: 10000, discountAmount: 5000, now: NOW, holdMinutes: 1440,
+    })
+    expect(result.status).toBe(BookingStatus.pending_payment)
+    expect(result.holdExpiresAt).toEqual(addMinutes(NOW, 1440))
+  })
+
   it('descuento parcial que baja el final por debajo del depósito: depositRequired === finalAmount', () => {
     const result = recomputeBookingAmountsAfterDiscount({
       price: 20000, depositAmount: 10000, discountAmount: 15000, now: NOW,

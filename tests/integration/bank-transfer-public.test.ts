@@ -117,4 +117,56 @@ describe('bank-transfer flujo público', () => {
       expect(info).not.toHaveProperty('verifyHours')
     })
   })
+
+  describe('createBooking con transferencia', () => {
+    beforeEach(async () => {
+      await prisma.bankTransferAccount.deleteMany({ where: { businessId: BIZ } })
+      await prisma.bankTransferAccount.create({
+        data: {
+          businessId: BIZ, accountHolder: 'M', rut: '1-9', bankName: 'BE',
+          accountType: 'vista', accountNumber: '1', isEnabled: true,
+        },
+      })
+    })
+
+    it('setea hold largo y persiste paymentMethod', async () => {
+      const { createBooking } = await import('@/server/actions/bookings')
+
+      const before = Date.now()
+      const booking = await createBooking({
+        serviceId: svc.id, customerName: 'Ana', customerPhone: '+56911200001',
+        startDateTime: futureDate(2, 15), acceptedTerms: true, paymentMethod: 'bank_transfer',
+      }, BIZ)
+
+      const row = await prisma.booking.findUnique({ where: { id: booking.id } })
+      expect(row!.paymentMethod).toBe('bank_transfer')
+      expect(row!.status).toBe('pending_payment')
+      const hours = (row!.holdExpiresAt!.getTime() - before) / 3_600_000
+      expect(hours).toBeGreaterThan(23)
+      expect(hours).toBeLessThan(25)
+    })
+
+    it('rechaza bank_transfer si el negocio no lo tiene habilitado', async () => {
+      const { createBooking } = await import('@/server/actions/bookings')
+      await prisma.bankTransferAccount.update({ where: { businessId: BIZ }, data: { isEnabled: false } })
+      await expect(createBooking({
+        serviceId: svc.id, customerName: 'Bea', customerPhone: '+56911200002',
+        startDateTime: futureDate(3, 15), acceptedTerms: true, paymentMethod: 'bank_transfer',
+      }, BIZ)).rejects.toThrow('transferencia')
+    })
+
+    it('sin paymentMethod el hold sigue siendo ~15min', async () => {
+      const { createBooking } = await import('@/server/actions/bookings')
+      const before = Date.now()
+      const booking = await createBooking({
+        serviceId: svc.id, customerName: 'Cata', customerPhone: '+56911200003',
+        startDateTime: futureDate(4, 15), acceptedTerms: true,
+      }, BIZ)
+      const row = await prisma.booking.findUnique({ where: { id: booking.id } })
+      expect(row!.paymentMethod).toBeNull()
+      const mins = (row!.holdExpiresAt!.getTime() - before) / 60_000
+      expect(mins).toBeGreaterThan(13)
+      expect(mins).toBeLessThan(17)
+    })
+  })
 })

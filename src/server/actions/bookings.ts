@@ -46,6 +46,7 @@ const createBookingSchema = z.object({
   acceptedTerms: z.boolean(),
   promotionCode: z.string().trim().max(40).optional(),
   skipPackage: z.boolean().optional(),
+  paymentMethod: z.enum(['bank_transfer']).optional(),
 })
 
 const confirmPaymentSchema = z.object({
@@ -224,6 +225,20 @@ export async function createBooking(data: {
   const finalAmount = service.price
   const endDateTime = addMinutes(data.startDateTime, service.durationMinutes)
 
+  // Transferencia bancaria: validar server-side que esté habilitada. El hold
+  // largo (holdHours, default 24h) da la ventana para transferir y declarar
+  // (spec transferencia §5.2). Solo aplica si el servicio requiere abono.
+  let bankTransferAccount: { holdHours: number } | null = null
+  if (data.paymentMethod === 'bank_transfer') {
+    bankTransferAccount = await prisma.bankTransferAccount.findFirst({
+      where: { businessId, isEnabled: true },
+      select: { holdHours: true },
+    })
+    if (!bankTransferAccount) {
+      throw new Error('Este negocio no tiene transferencia bancaria habilitada')
+    }
+  }
+
   // Vía 3 de vinculación (leer sesión ANTES de la tx: toca Supabase/cookies).
   const sessionUser = await getCurrentUser()
 
@@ -298,7 +313,8 @@ export async function createBooking(data: {
       const isFreeService = finalAmount <= 0
 
       const status = noDepositRequired ? BookingStatus.confirmed : BookingStatus.pending_payment
-      const holdExpiresAt = status === BookingStatus.pending_payment ? addMinutes(new Date(), 15) : null
+      const holdMinutes = bankTransferAccount && depositRequired > 0 ? bankTransferAccount.holdHours * 60 : 15
+      const holdExpiresAt = status === BookingStatus.pending_payment ? addMinutes(new Date(), holdMinutes) : null
       const bookingPaymentStatus = isFreeService ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid
 
       const bookingNumber = await assignBookingNumber(tx, businessId)
@@ -318,6 +334,7 @@ export async function createBooking(data: {
           finalAmount,
           paymentStatus: bookingPaymentStatus,
           holdExpiresAt,
+          paymentMethod: bankTransferAccount && depositRequired > 0 ? 'bank_transfer' : null,
           idempotencyKey: data.idempotencyKey || null,
           bookingNumber,
         },
@@ -357,6 +374,9 @@ export async function createBooking(data: {
         where: { id: booking.id },
         data: recomputeBookingAmountsAfterDiscount({
           price: service.price, depositAmount: service.depositAmount, discountAmount: discount.discountAmount,
+          // Sin esto, una reserva-transferencia con promo perdería su ventana
+          // de 24h: recompute re-derivaba el hold a +15min incondicionalmente.
+          holdMinutes,
         }),
         include: { service: true, customer: true },
       })
