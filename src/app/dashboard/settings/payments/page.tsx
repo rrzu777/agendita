@@ -8,8 +8,10 @@ import {
   startMercadoPagoConnect,
 } from '@/server/actions/mercado-pago-connect'
 import { resolveOnlinePaymentAvailabilityForBusiness } from '@/lib/payments/factory'
-import { BadgeCheck, CircleAlert, Link2, Link2Off, TestTube } from 'lucide-react'
+import { prisma } from '@/lib/db'
+import { BadgeCheck, CircleAlert, Landmark, Link2, Link2Off, TestTube } from 'lucide-react'
 import { DisconnectButton } from './disconnect-button'
+import { BankTransferForm } from './bank-transfer-form'
 
 interface PaymentsSettingsPageProps {
   params: Promise<Record<string, never>>
@@ -29,9 +31,10 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
   }
 
   const businessId = userData.business.id
-  const [account, availability] = await Promise.all([
+  const [account, availability, bankAccount] = await Promise.all([
     getPaymentAccountStatus(),
     resolveOnlinePaymentAvailabilityForBusiness(businessId),
+    prisma.bankTransferAccount.findUnique({ where: { businessId } }),
   ])
 
   const isConnected = account?.status === 'connected'
@@ -40,7 +43,7 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
 
   return (
     <div>
-      <DashboardHeader title="Pagos online" subtitle="Conecta Mercado Pago para recibir pagos de tus clientes" />
+      <DashboardHeader title="Pagos online" subtitle="Configura cómo tus clientas pagan el abono de sus reservas" />
       <div className="p-5 md:p-10 max-w-2xl">
         {success && (
           <div className="mb-6 rounded-lg border border-green-200 bg-green-50/50 p-4 text-sm text-green-800">
@@ -151,6 +154,39 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
                 <li>La suscripción de Agendita se paga por separado.</li>
               </ul>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Landmark className="size-5" />
+              Transferencia bancaria
+            </CardTitle>
+            <CardDescription>
+              Tus clientas ven estos datos al reservar, transfieren desde su banco y te avisan.
+              Vos confirmás la reserva cuando veas la plata.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <BankTransferForm
+              account={
+                bankAccount
+                  ? {
+                      accountHolder: bankAccount.accountHolder,
+                      rut: bankAccount.rut,
+                      bankName: bankAccount.bankName,
+                      accountType: bankAccount.accountType,
+                      accountNumber: bankAccount.accountNumber,
+                      email: bankAccount.email,
+                      instructions: bankAccount.instructions,
+                      isEnabled: bankAccount.isEnabled,
+                      holdHours: bankAccount.holdHours,
+                      verifyHours: bankAccount.verifyHours,
+                    }
+                  : null
+              }
+            />
           </CardContent>
         </Card>
       </div>
