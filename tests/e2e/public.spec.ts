@@ -130,9 +130,7 @@ test.describe('dashboard (e2e auth bypass)', () => {
     expect(page.url()).toContain('/dashboard/services')
     await expect(page.getByRole('heading', { name: 'Servicios', exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Catálogo de servicios' })).toBeVisible()
-    // La tabla de servicios renderiza layout dual (tabla desktop + card móvil),
-    // así que el nombre aparece 2× en el DOM (una oculta por viewport). Matchear
-    // sólo la visible evita el strict-mode violation y no depende del orden DOM.
+    // Layout dual (tabla desktop + card móvil): el nombre aparece 2× en el DOM; matchea la visible.
     await expect(page.getByText('Manicura rusa').filter({ visible: true })).toBeVisible({ timeout: 10000 })
   })
 

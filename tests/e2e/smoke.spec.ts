@@ -454,9 +454,7 @@ test.describe('admin', () => {
     await page.waitForLoadState('networkidle')
     await expect(page.getByRole('heading', { name: /panel de administración/i })).toBeVisible()
     await expect(page.locator('table')).toBeVisible()
-    // La tabla admin renderiza layout dual (card móvil + tabla desktop): el
-    // nombre aparece 2× en el DOM (una oculta por viewport). Matchear sólo la
-    // visible evita el strict-mode violation y no depende del orden DOM.
+    // Layout dual (card móvil + tabla desktop): el nombre aparece 2× en el DOM; matchea la visible.
     await expect(page.getByText('Mimos Nails').filter({ visible: true })).toBeVisible({ timeout: 10_000 })
   })
 
