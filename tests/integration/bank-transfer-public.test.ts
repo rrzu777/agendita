@@ -169,4 +169,98 @@ describe('bank-transfer flujo público', () => {
       expect(mins).toBeLessThan(17)
     })
   })
+
+  describe('declareBankTransfer', () => {
+    let phoneSeq = 0
+    beforeEach(async () => {
+      await prisma.bankTransferAccount.deleteMany({ where: { businessId: BIZ } })
+      await prisma.bankTransferAccount.create({
+        data: {
+          businessId: BIZ, accountHolder: 'M', rut: '1-9', bankName: 'BE',
+          accountType: 'vista', accountNumber: '1', isEnabled: true,
+        },
+      })
+    })
+
+    async function mkTransferBooking() {
+      const { createBooking } = await import('@/server/actions/bookings')
+      phoneSeq += 1
+      return createBooking({
+        serviceId: svc.id, customerName: `Decl ${phoneSeq}`, customerPhone: `+5691130${String(phoneSeq).padStart(4, '0')}`,
+        startDateTime: futureDate(10 + phoneSeq, 15), acceptedTerms: true, paymentMethod: 'bank_transfer',
+      }, BIZ)
+    }
+
+    it('crea el Payment pendiente con monto server-side y mueve el hold a la ventana de verificación', async () => {
+      const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
+      const booking = await mkTransferBooking()
+
+      const before = Date.now()
+      const res = await declareBankTransfer(booking.id)
+      expect(res.ok).toBe(true)
+
+      const payment = await prisma.payment.findFirst({ where: { bookingId: booking.id } })
+      expect(payment!.provider).toBe('manual')
+      expect(payment!.status).toBe('pending')
+      expect(payment!.paymentType).toBe('deposit')
+      expect(payment!.amount).toBe(5000) // min(depositRequired, remainingBalance), NUNCA del cliente
+      expect(payment!.providerPaymentId).toBe(`bt-declared:${booking.id}`)
+      expect(payment!.paymentMethod).toBe('Transferencia')
+
+      const row = await prisma.booking.findUnique({ where: { id: booking.id } })
+      expect(row!.status).toBe('pending_payment')
+      expect(row!.paymentStatus).toBe('unpaid') // el cron sigue pudiendo expirarla
+      const hours = (row!.holdExpiresAt!.getTime() - before) / 3_600_000
+      expect(hours).toBeGreaterThan(47)
+      expect(hours).toBeLessThan(49)
+    })
+
+    it('es idempotente: doble declare = un solo Payment y ok en ambos', async () => {
+      const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
+      const booking = await mkTransferBooking()
+      await declareBankTransfer(booking.id)
+      const holdAfterFirst = (await prisma.booking.findUnique({ where: { id: booking.id } }))!.holdExpiresAt
+      const res2 = await declareBankTransfer(booking.id)
+      expect(res2.ok).toBe(true)
+      expect(await prisma.payment.count({ where: { bookingId: booking.id } })).toBe(1)
+      // Re-declarar no re-extiende la ventana de verificación:
+      const holdAfterSecond = (await prisma.booking.findUnique({ where: { id: booking.id } }))!.holdExpiresAt
+      expect(holdAfterSecond).toEqual(holdAfterFirst)
+    })
+
+    it('verifyHours null → hold queda NULL (retención indefinida, opt-in)', async () => {
+      const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
+      await prisma.bankTransferAccount.update({ where: { businessId: BIZ }, data: { verifyHours: null } })
+      const booking = await mkTransferBooking()
+      await declareBankTransfer(booking.id)
+      const row = await prisma.booking.findUnique({ where: { id: booking.id } })
+      expect(row!.holdExpiresAt).toBeNull()
+    })
+
+    it('con hold vencido: error legible y CERO payments (carrera vs cron)', async () => {
+      const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
+      const booking = await mkTransferBooking()
+      await prisma.booking.update({ where: { id: booking.id }, data: { holdExpiresAt: new Date(Date.now() - 60_000) } })
+      await expect(declareBankTransfer(booking.id)).rejects.toThrow('expiró')
+      expect(await prisma.payment.count({ where: { bookingId: booking.id } })).toBe(0)
+    })
+
+    it('con booking ya expirada por el cron: error y cero payments', async () => {
+      const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
+      const booking = await mkTransferBooking()
+      await prisma.booking.update({ where: { id: booking.id }, data: { status: 'expired' } })
+      await expect(declareBankTransfer(booking.id)).rejects.toThrow('expiró')
+      expect(await prisma.payment.count({ where: { bookingId: booking.id } })).toBe(0)
+    })
+
+    it('rechaza bookings que no eligieron transferencia', async () => {
+      const { createBooking } = await import('@/server/actions/bookings')
+      const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
+      const booking = await createBooking({
+        serviceId: svc.id, customerName: 'MP', customerPhone: '+56911309999',
+        startDateTime: futureDate(9, 15), acceptedTerms: true,
+      }, BIZ)
+      await expect(declareBankTransfer(booking.id)).rejects.toThrow()
+    })
+  })
 })
