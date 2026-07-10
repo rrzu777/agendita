@@ -5,7 +5,8 @@ import { BookingStatus } from '@prisma/client'
 it('releases redemptions of expired holds', async () => {
   const findMany = vi.fn().mockResolvedValueOnce([{ id: 'b1', businessId: 'biz1' }]) // expired bookings
   const tx = {
-    booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }), findMany: vi.fn().mockResolvedValue([]) },
+    payment: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     promotionRedemption: {
       findMany: vi.fn().mockResolvedValue([{ bookingId: 'b1' }]),
       findUnique: vi.fn().mockResolvedValue({ id: 'r1', promotionId: 'p1', status: 'applied' }),
@@ -47,7 +48,8 @@ it('does NOT release a booking that won the payment race in the tx window', asyn
   const tx = {
     // Only ONE booking actually transitioned to expired; b2 won the payment
     // race (got confirmed/paid) and was re-excluded by the in-tx guard.
-    booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }), findMany: vi.fn().mockResolvedValue([]) },
+    payment: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     promotionRedemption: {
       // The relation filter (booking.status === expired) returns ONLY b1.
       findMany: vi.fn().mockResolvedValue([{ bookingId: 'b1' }]),
