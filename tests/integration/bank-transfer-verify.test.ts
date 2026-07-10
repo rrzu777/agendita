@@ -163,3 +163,13 @@ describe('rejectBankTransfer', () => {
     await expect(rejectBankTransfer(paymentId)).rejects.toThrow()
   })
 })
+
+describe('cancelBooking closes the declared transfer payment', () => {
+  it('marks the bt-declared payment cancelled', async () => {
+    const { paymentId, bookingId } = await seedDeclaredTransfer()
+    const { cancelBooking } = await import('@/server/actions/bookings')
+    await cancelBooking(bookingId)
+    const payment = await prisma.payment.findUnique({ where: { id: paymentId } })
+    expect(payment!.status).toBe('cancelled')
+  })
+})

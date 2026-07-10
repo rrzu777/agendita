@@ -1043,6 +1043,12 @@ export async function cancelBooking(bookingId: string, reason?: string) {
       },
     })
     await releaseRedemptionForBooking(tx, bookingId, 'cancelled')
+    // Cierra el Payment bt-declared pendiente para que no quede huérfano en
+    // "por verificar" tras cancelar la reserva (§6.4). No-op si no hay ninguno.
+    await tx.payment.updateMany({
+      where: { bookingId, ...declaredTransferPaymentWhere },
+      data: { status: 'cancelled' },
+    })
   })
 
   if (booking.customer?.email) {
