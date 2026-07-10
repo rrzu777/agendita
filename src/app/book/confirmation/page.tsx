@@ -6,6 +6,9 @@ import { prisma } from '@/lib/db'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { deriveConfirmationState } from '@/lib/payments/confirmation-state'
 import { formatBookingNumber } from '@/lib/bookings/number'
+import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
+import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
+import { TransferPanel } from './transfer-panel'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
@@ -26,12 +29,13 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           name: true,
           slug: true,
           subdomain: true,
+          timezone: true,
         },
       },
       service: true,
       payments: {
-        where: { provider: 'mercado_pago' },
-        select: { status: true, provider: true },
+        where: { provider: { in: ['mercado_pago', 'manual'] } },
+        select: { status: true, provider: true, providerPaymentId: true },
       },
     },
   })
@@ -50,6 +54,16 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
   const bookHref = tenant ? '/book' : `/book/${booking.business.slug}`
 
   const state = deriveConfirmationState(booking)
+
+  // Superficie activa: la clienta que eligió transferencia y cerró la pestaña
+  // del wizard puede ver los datos y declarar desde acá (mientras el hold viva).
+  const canDeclare =
+    booking.paymentMethod === BANK_TRANSFER_METHOD &&
+    state === 'pending' &&
+    booking.holdExpiresAt != null &&
+    booking.holdExpiresAt > new Date()
+  const bankInfo = canDeclare ? await getBankTransferInfo(booking.businessId) : null
+
   const startDate = new Date(booking.startDateTime)
   const formattedDate = startDate.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
   const formattedTime = startDate.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
@@ -82,7 +96,30 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
       iconColor: 'text-muted-foreground',
       iconBg: 'bg-muted',
       title: 'Reserva pendiente de pago',
-      message: 'Completa el pago del abono para confirmar tu reserva.',
+      message: booking.paymentMethod === BANK_TRANSFER_METHOD
+        ? 'Transferí el abono y avisanos con el botón de abajo para confirmar tu reserva.'
+        : 'Completa el pago del abono para confirmar tu reserva.',
+    },
+    verifying_transfer: {
+      icon: Clock,
+      iconColor: 'text-amber-500',
+      iconBg: 'bg-amber-50',
+      title: 'Verificando tu transferencia',
+      message: `${booking.business.name} va a confirmar tu reserva cuando verifique el pago.`,
+    },
+    expired: {
+      icon: XCircle,
+      iconColor: 'text-muted-foreground',
+      iconBg: 'bg-muted',
+      title: 'Tu reserva expiró',
+      message: 'No se completó el pago a tiempo y el horario se liberó. Podés reservar de nuevo.',
+    },
+    cancelled: {
+      icon: XCircle,
+      iconColor: 'text-muted-foreground',
+      iconBg: 'bg-muted',
+      title: 'Reserva cancelada',
+      message: 'Esta reserva fue cancelada. Si transferiste y no fue reconocido, contactá al negocio.',
     },
   }
 
@@ -164,18 +201,28 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           </div>
         </div>
 
-        {state === 'rejected' && (
+        {canDeclare && bankInfo && (
+          <TransferPanel
+            bank={bankInfo}
+            amount={Math.min(booking.depositRequired, booking.remainingBalance)}
+            deadline={booking.holdExpiresAt}
+            timezone={booking.business.timezone}
+            bookingId={booking.id}
+          />
+        )}
+
+        {(state === 'rejected' || state === 'expired') && (
           <div className="flex flex-col gap-3 sm:flex-row">
             <Button asChild variant="outline" className="h-12 flex-1 font-semibold">
               <Link href={profileHref}>Volver al perfil</Link>
             </Button>
             <Button asChild className="h-12 flex-1 font-semibold">
-              <Link href={bookHref}>Intentar de nuevo</Link>
+              <Link href={bookHref}>{state === 'expired' ? 'Reservar de nuevo' : 'Intentar de nuevo'}</Link>
             </Button>
           </div>
         )}
 
-        {state !== 'rejected' && (
+        {state !== 'rejected' && state !== 'expired' && (
           <div className="space-y-3">
             <Button asChild className="h-12 w-full text-base font-semibold">
               <Link href={profileHref}>Volver al perfil</Link>

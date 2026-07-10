@@ -140,7 +140,7 @@ export function BookingWizard({ businessId, timezone, services, cancellationPoli
           </div>
         )}
         {currentStep === 5 && data.serviceId && data.timeSlot && (
-          <StepPayment data={data} businessId={businessId} timezone={timezone} cancellationPolicy={cancellationPolicy} referralToken={referralToken} onSuccess={(id, mode, promo, number) => {
+          <StepPayment data={data} updateData={updateData} businessId={businessId} timezone={timezone} cancellationPolicy={cancellationPolicy} referralToken={referralToken} onSuccess={(id, mode, promo, number) => {
             setBookingId(id)
             setBookingNumber(number ?? null)
             setConfirmationMode(mode)

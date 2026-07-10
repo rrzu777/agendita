@@ -8,8 +8,12 @@ import { createBooking } from '@/server/actions/bookings'
 import { previewPromotion } from '@/server/actions/promotions'
 import { usePackageAvailability } from '@/lib/packages/use-package-availability'
 import { initiatePayment, verifyAndConfirmPayment, getOnlinePaymentAvailability } from '@/server/actions/payments'
+import { getBankTransferInfo, declareBankTransfer } from '@/server/actions/bank-transfer-public'
+import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
+import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
+import { TransferDetails } from './transfer-details'
 import { formatMoney } from '@/lib/money'
-import { AlertCircle, Loader2 } from 'lucide-react'
+import { AlertCircle, Clock, Loader2 } from 'lucide-react'
 import { formatBookingDateTime } from '@/lib/booking/format-booking-datetime'
 
 function generateIdempotencyKey(): string {
@@ -50,9 +54,13 @@ function BusinessCancellationPolicy({ policy }: { policy?: string | null }) {
   )
 }
 
-export function StepPayment({ data, businessId, timezone, cancellationPolicy, referralToken, onSuccess, onBack }: { data: BookingData; businessId: string; timezone: string; cancellationPolicy?: string | null; referralToken?: string; onSuccess: (id: string, mode: 'paid' | 'pending', promo?: { discountAmount: number; finalAmount: number } | null, bookingNumber?: number | null) => void; onBack: () => void }) {
+export function StepPayment({ data, updateData, businessId, timezone, cancellationPolicy, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; cancellationPolicy?: string | null; referralToken?: string; onSuccess: (id: string, mode: 'paid' | 'pending', promo?: { discountAmount: number; finalAmount: number } | null, bookingNumber?: number | null) => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
-  const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error'>('review')
+  const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error' | 'transfer-details' | 'transfer-declared'>('review')
+  const [bankInfo, setBankInfo] = useState<BankTransferPublicInfo | null>(null)
+  const [method, setMethod] = useState<'online' | 'transfer'>('online')
+  const [transferBooking, setTransferBooking] = useState<{ id: string; bookingNumber: number | null; deadline: Date | null } | null>(null)
+  const [declaring, setDeclaring] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [availabilityError, setAvailabilityError] = useState('')
   const [acceptedTerms, setAcceptedTerms] = useState(false)
@@ -223,8 +231,11 @@ export function StepPayment({ data, businessId, timezone, cancellationPolicy, re
     }
     setAvailability(null)
     setAvailabilityError('')
-    getOnlinePaymentAvailability(businessId)
-      .then(setAvailability)
+    Promise.all([getOnlinePaymentAvailability(businessId), getBankTransferInfo(businessId)])
+      .then(([avail, bank]) => {
+        setAvailability(avail)
+        setBankInfo(bank)
+      })
       .catch(() => {
         const reason = 'No pudimos verificar pago online. Puedes confirmar la reserva y el negocio coordinará el abono.'
         setAvailabilityError(reason)
@@ -234,6 +245,7 @@ export function StepPayment({ data, businessId, timezone, cancellationPolicy, re
           isMock: false,
           reason,
         })
+        setBankInfo(null)
       })
   }, [businessId, noDepositNeeded])
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -243,24 +255,75 @@ export function StepPayment({ data, businessId, timezone, cancellationPolicy, re
   // Si el usuario va "Atrás" y vuelve, el componente se remonta → nueva key.
   const idempotencyKey = useMemo(() => data.idempotencyKey || generateIdempotencyKey(), [data.idempotencyKey])
 
+  // Persistir la key en el estado del wizard: si la clienta vuelve atrás y
+  // re-entra (p.ej. eligió transferencia y se arrepintió a MP), el remount
+  // reusa la MISMA key → createBooking devuelve la booking existente en vez
+  // de chocar contra su propio hold largo.
+  useEffect(() => {
+    if (!data.idempotencyKey) updateData({ idempotencyKey })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- updateData es estable (setState del wizard)
+  }, [data.idempotencyKey, idempotencyKey])
+
+  // Argumentos comunes de createBooking a los tres handlers (online / manual /
+  // transferencia). Cada handler pasa solo lo que difiere (p.ej. paymentMethod).
+  function bookingInput(extra?: { paymentMethod?: typeof BANK_TRANSFER_METHOD }) {
+    return {
+      serviceId: data.serviceId!,
+      customerName: data.customerName,
+      customerPhone: data.customerPhone,
+      customerEmail: data.customerEmail,
+      startDateTime: data.timeSlot!.start,
+      idempotencyKey,
+      acceptedTerms,
+      promotionCode: appliedPromo?.code,
+      referralToken,
+      skipPackage: !usePackage,
+      ...extra,
+    }
+  }
+
+  async function handleTransferBooking() {
+    setLoading(true)
+    setStep('processing')
+    setErrorMessage('')
+    try {
+      const booking = await createBooking(bookingInput({ paymentMethod: BANK_TRANSFER_METHOD }), businessId)
+      setTransferBooking({
+        id: booking.id,
+        bookingNumber: booking.bookingNumber ?? null,
+        deadline: booking.holdExpiresAt ? new Date(booking.holdExpiresAt) : null,
+      })
+      setStep('transfer-details')
+    } catch (err) {
+      console.error('Transfer booking error:', err)
+      setErrorMessage(err instanceof Error ? err.message : 'Error al crear la reserva')
+      setStep('error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleDeclare() {
+    if (!transferBooking) return
+    setDeclaring(true)
+    setErrorMessage('')
+    try {
+      await declareBankTransfer(transferBooking.id)
+      setStep('transfer-declared')
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'No pudimos registrar tu aviso')
+    } finally {
+      setDeclaring(false)
+    }
+  }
+
   async function handleManualBooking() {
     setLoading(true)
     setStep('processing')
     setErrorMessage('')
 
     try {
-      const booking = await createBooking({
-        serviceId: data.serviceId!,
-        customerName: data.customerName,
-        customerPhone: data.customerPhone,
-        customerEmail: data.customerEmail,
-        startDateTime: data.timeSlot!.start,
-        idempotencyKey,
-        acceptedTerms,
-        promotionCode: appliedPromo?.code,
-        referralToken,
-        skipPackage: !usePackage,
-      }, businessId)
+      const booking = await createBooking(bookingInput(), businessId)
 
       setStep('success')
       const mode = noDepositNeeded ? 'paid' as const : 'pending' as const
@@ -285,18 +348,7 @@ export function StepPayment({ data, businessId, timezone, cancellationPolicy, re
     }
 
     try {
-      const booking = await createBooking({
-        serviceId: data.serviceId!,
-        customerName: data.customerName,
-        customerPhone: data.customerPhone,
-        customerEmail: data.customerEmail,
-        startDateTime: data.timeSlot!.start,
-        idempotencyKey,
-        acceptedTerms,
-        promotionCode: appliedPromo?.code,
-        referralToken,
-        skipPackage: !usePackage,
-      }, businessId)
+      const booking = await createBooking(bookingInput(), businessId)
 
       const paymentResult = await initiatePayment({
         bookingId: booking.id,
@@ -436,17 +488,26 @@ export function StepPayment({ data, businessId, timezone, cancellationPolicy, re
         {packageSection}
         {!packageCovers && promoSection}
 
+        {!bankInfo && (
         <div className="mb-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <AlertCircle className="mt-0.5 size-5 shrink-0" />
           <div>
             <p className="font-semibold">
-              {availabilityError || 'Este negocio coordina el abono directamente por WhatsApp o transferencia'}
+              {availabilityError || 'Este negocio coordina el abono directamente contigo'}
             </p>
             {!availabilityError && (
               <p className="mt-1">Tu reserva quedará pendiente hasta que el negocio confirme el abono.</p>
             )}
           </div>
         </div>
+        )}
+
+        {bankInfo && (
+          <div className="mb-6 rounded-xl bg-blue-50 p-4 text-sm text-blue-800">
+            <p className="font-semibold">Abono por transferencia bancaria</p>
+            <p className="mt-1">Te mostramos los datos de la cuenta y nos avisás cuando transfieras. El negocio verifica y confirma tu reserva.</p>
+          </div>
+        )}
 
         <BusinessCancellationPolicy policy={cancellationPolicy} />
 
@@ -465,10 +526,50 @@ export function StepPayment({ data, businessId, timezone, cancellationPolicy, re
 
         <div className="flex gap-3">
           <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack} disabled={loading}>Atrás</Button>
-          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleManualBooking} disabled={loading || !acceptedTerms}>
-            {loading ? 'Creando reserva...' : 'Confirmar reserva'}
-          </Button>
+          {bankInfo ? (
+            <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleTransferBooking} disabled={loading || !acceptedTerms}>
+              {loading ? 'Creando reserva...' : 'Continuar con transferencia'}
+            </Button>
+          ) : (
+            <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleManualBooking} disabled={loading || !acceptedTerms}>
+              {loading ? 'Creando reserva...' : 'Confirmar reserva'}
+            </Button>
+          )}
         </div>
+      </div>
+    )
+  }
+
+  if (step === 'transfer-details' && bankInfo && transferBooking) {
+    return (
+      <div>
+        <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Transferí el abono</h2>
+        <p className="mb-6 text-lg text-muted-foreground">Tu horario queda reservado mientras transferís</p>
+        {errorMessage && <p className="mb-4 text-sm text-destructive">{errorMessage}</p>}
+        <TransferDetails bank={bankInfo} amount={effectiveDeposit} deadline={transferBooking.deadline} timezone={timezone} declaring={declaring} onDeclare={handleDeclare} />
+        <p className="mt-4 text-sm text-muted-foreground">
+          También podés avisar más tarde desde{' '}
+          <a className="font-semibold text-primary underline" href={`/book/confirmation?bookingId=${transferBooking.id}`}>tu página de reserva</a>
+          {' '}(te mandamos los datos por email si dejaste uno).
+        </p>
+      </div>
+    )
+  }
+
+  if (step === 'transfer-declared' && transferBooking) {
+    return (
+      <div className="py-10 text-center">
+        <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-amber-50">
+          <Clock className="size-8 text-amber-500" />
+        </div>
+        <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">Transferencia en verificación</h2>
+        <p className="mb-2 text-muted-foreground">Avisamos al negocio. Te confirmaremos cuando verifique el pago.</p>
+        {transferBooking.bookingNumber != null && (
+          <p className="mb-5 text-sm text-muted-foreground">Tu código de reserva: <span className="font-mono font-semibold text-primary">#{transferBooking.bookingNumber}</span></p>
+        )}
+        <Button asChild className="h-12 rounded-full px-6">
+          <a href={`/book/confirmation?bookingId=${transferBooking.id}`}>Ver el estado de mi reserva</a>
+        </Button>
       </div>
     )
   }
@@ -503,6 +604,28 @@ export function StepPayment({ data, businessId, timezone, cancellationPolicy, re
       {packageSection}
       {!packageCovers && promoSection}
 
+      {bankInfo && (
+        <div className="mb-6">
+          <p className="mb-2 text-sm font-semibold text-primary">¿Cómo querés pagar el abono?</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {([
+              ['online', 'Pagar online', 'Tarjeta, débito o crédito'],
+              ['transfer', 'Transferencia bancaria', 'Te mostramos los datos y nos avisás cuando transfieras'],
+            ] as const).map(([key, title, desc]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setMethod(key)}
+                className={`rounded-xl border p-4 text-left text-sm transition-colors ${method === key ? 'border-primary bg-primary/5' : 'border-border'}`}
+              >
+                <span className="block font-semibold text-primary">{title}</span>
+                <span className="mt-0.5 block text-muted-foreground">{desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {availability.isMock && (
         <div className="mb-4 rounded-xl border border-border/70 bg-secondary/40 px-4 py-3 text-sm text-primary">
           <p>Entorno de prueba: los pagos se procesan de forma simulada.</p>
@@ -526,9 +649,15 @@ export function StepPayment({ data, businessId, timezone, cancellationPolicy, re
 
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
-        <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handlePayment} disabled={loading || !acceptedTerms}>
-          {loading ? 'Procesando...' : `Pagar abono ${formatMoney(effectiveDeposit)}`}
-        </Button>
+        {bankInfo && method === 'transfer' ? (
+          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleTransferBooking} disabled={loading || !acceptedTerms}>
+            {loading ? 'Procesando...' : 'Continuar con transferencia'}
+          </Button>
+        ) : (
+          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handlePayment} disabled={loading || !acceptedTerms}>
+            {loading ? 'Procesando...' : `Pagar abono ${formatMoney(effectiveDeposit)}`}
+          </Button>
+        )}
       </div>
     </div>
   )

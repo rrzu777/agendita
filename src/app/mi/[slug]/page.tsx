@@ -8,8 +8,24 @@ import { getBookingFunnelUrl } from '@/lib/business/urls'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { bookingStatusLabels } from '@/lib/bookings/status-labels'
 import { formatShortDate } from '@/lib/format-date'
+import { declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
+import type { BookingStatus } from '@prisma/client'
 
 const UPCOMING_STATUSES = ['pending_payment', 'confirmed'] as const
+
+// Solo el flag "transferencia declarada pendiente de verificación".
+const BT_DECLARED_SELECT = {
+  where: declaredTransferPaymentWhere,
+  select: { id: true },
+}
+
+// "Pendiente de pago" suena a "no pagaste": si la clienta ya declaró la
+// transferencia, mostrar el estado real.
+function statusLabel(b: { status: BookingStatus; payments: { id: string }[] }) {
+  return b.status === 'pending_payment' && b.payments.length > 0
+    ? 'Transferencia en verificación'
+    : bookingStatusLabels[b.status]
+}
 
 async function redeemAction(customerId: string, formData: FormData) {
   'use server'
@@ -50,13 +66,13 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
     prisma.booking.findMany({
       where: { customerId: { in: customerIds }, startDateTime: { gte: now }, status: { in: [...UPCOMING_STATUSES] } },
       orderBy: { startDateTime: 'asc' },
-      select: { id: true, bookingNumber: true, startDateTime: true, status: true, service: { select: { name: true } } },
+      select: { id: true, bookingNumber: true, startDateTime: true, status: true, service: { select: { name: true } }, payments: BT_DECLARED_SELECT },
     }),
     prisma.booking.findMany({
       where: { customerId: { in: customerIds }, OR: [{ startDateTime: { lt: now } }, { status: { notIn: [...UPCOMING_STATUSES] } }] },
       orderBy: { startDateTime: 'desc' },
       take: 20,
-      select: { id: true, bookingNumber: true, startDateTime: true, status: true, service: { select: { name: true } } },
+      select: { id: true, bookingNumber: true, startDateTime: true, status: true, service: { select: { name: true } }, payments: BT_DECLARED_SELECT },
     }),
   ])
 
@@ -83,7 +99,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
             {upcoming.map((b) => (
               <li key={b.id} className="rounded-lg border border-gray-100 px-3 py-2 text-sm">
                 <div className="font-medium">{b.service?.name}</div>
-                <div className="text-gray-500">{formatShortDate(b.startDateTime)} · {bookingStatusLabels[b.status]} · {formatBookingNumber(b.bookingNumber, b.id)}</div>
+                <div className="text-gray-500">{formatShortDate(b.startDateTime)} · {statusLabel(b)} · {formatBookingNumber(b.bookingNumber, b.id)}</div>
               </li>
             ))}
           </ul>
@@ -105,7 +121,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
             {past.map((b) => (
               <li key={b.id} className="flex items-center justify-between py-2 text-sm">
                 <span>{b.service?.name}</span>
-                <span className="text-gray-400">{formatShortDate(b.startDateTime)} · {bookingStatusLabels[b.status]}</span>
+                <span className="text-gray-400">{formatShortDate(b.startDateTime)} · {statusLabel(b)}</span>
               </li>
             ))}
           </ul>

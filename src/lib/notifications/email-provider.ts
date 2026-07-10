@@ -10,6 +10,7 @@ import type {
   CancellationEmailData,
   ReviewRequestEmailData,
   NewBookingBusinessEmailData,
+  BankTransferDeclaredEmailData,
   ReminderEmailData,
   LoyaltyRewardEmailData,
   RescheduledEmailData,
@@ -21,6 +22,8 @@ import {
   bookingReceivedCustomerText,
   newBookingBusinessHtml,
   newBookingBusinessText,
+  bankTransferDeclaredBusinessHtml,
+  bankTransferDeclaredBusinessText,
   bookingCancelledCustomerHtml,
   bookingCancelledCustomerText,
   bookingRescheduledCustomerHtml,
@@ -173,6 +176,26 @@ export async function sendBookingReceivedToCustomer(data: BookingEmailData): Pro
     html,
     text,
     { replyTo: data.businessReplyToEmail },
+  )
+}
+
+export async function sendBankTransferDeclaredToBusiness(
+  businessId: string,
+  data: BankTransferDeclaredEmailData,
+): Promise<EmailResult[]> {
+  const ownerEmails = await getBusinessOwnerEmails(businessId)
+
+  if (ownerEmails.length === 0) {
+    return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
+  }
+
+  const html = bankTransferDeclaredBusinessHtml(data)
+  const text = bankTransferDeclaredBusinessText(data)
+
+  return Promise.all(
+    ownerEmails.map((owner) =>
+      sendEmail(owner.email, `Transferencia declarada - ${data.customerName}`, html, text, {}),
+    ),
   )
 }
 

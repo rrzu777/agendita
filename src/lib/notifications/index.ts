@@ -2,6 +2,7 @@ export {
   sendBookingConfirmationToCustomer,
   sendBookingReceivedToCustomer,
   sendNewBookingNotificationToBusiness,
+  sendBankTransferDeclaredToBusiness,
   sendBookingCancelledNotification,
   sendBookingRescheduledNotification,
   sendBookingConfirmedNotification,

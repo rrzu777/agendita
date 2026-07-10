@@ -6,6 +6,9 @@ import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
  *  del booking.update. `now` inyectable para test. */
 export function recomputeBookingAmountsAfterDiscount(args: {
   price: number; depositAmount: number; discountAmount: number; now?: Date
+  /** Duración del hold si la reserva queda pending_payment. Default 15min;
+   *  transferencia bancaria pasa su ventana larga (holdHours*60). */
+  holdMinutes?: number
 }): {
   discountAmount: number; finalAmount: number; depositRequired: number; remainingBalance: number
   status: BookingStatus; holdExpiresAt: Date | null; paymentStatus: BookingPaymentStatus
@@ -22,7 +25,7 @@ export function recomputeBookingAmountsAfterDiscount(args: {
     depositRequired: discountedDeposit,
     remainingBalance: discountedFinal,
     status,
-    holdExpiresAt: status === BookingStatus.pending_payment ? addMinutes(now, 15) : null,
+    holdExpiresAt: status === BookingStatus.pending_payment ? addMinutes(now, args.holdMinutes ?? 15) : null,
     paymentStatus: free ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid,
   }
 }

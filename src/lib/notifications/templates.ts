@@ -5,6 +5,7 @@ import type {
   CancellationEmailData,
   ReviewRequestEmailData,
   NewBookingBusinessEmailData,
+  BankTransferDeclaredEmailData,
   ReminderEmailData,
   LoyaltyRewardEmailData,
   RescheduledEmailData,
@@ -141,6 +142,23 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
     ? `<p style="margin-top:16px"><a href="https://wa.me/${data.businessWhatsapp.replace(/\D/g, '')}" style="color:#25D366;text-decoration:none;font-weight:600">Escribir por WhatsApp</a></p>`
     : ''
 
+  const bankSection = data.bankTransfer
+    ? `<div style="margin-top:16px;border:1px solid #e0e0e0;border-radius:8px;padding:16px">
+        <p style="font-weight:600;margin:0 0 8px">Datos para transferir el abono (${deposit})</p>
+        <table style="font-size:14px;border-collapse:collapse">
+          <tr><td style="padding:2px 12px 2px 0;color:#666">Titular</td><td>${escapeHtml(data.bankTransfer.accountHolder)}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666">RUT</td><td>${escapeHtml(data.bankTransfer.rut)}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666">Banco</td><td>${escapeHtml(data.bankTransfer.bankName)}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666">Tipo</td><td>${escapeHtml(data.bankTransfer.accountType)}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666">Cuenta</td><td>${escapeHtml(data.bankTransfer.accountNumber)}</td></tr>
+          ${data.bankTransfer.email ? `<tr><td style="padding:2px 12px 2px 0;color:#666">Email</td><td>${escapeHtml(data.bankTransfer.email)}</td></tr>` : ''}
+        </table>
+        ${data.bankTransfer.instructions ? `<p style="font-size:13px;color:#666;margin:8px 0 0">${escapeHtml(data.bankTransfer.instructions)}</p>` : ''}
+        ${data.bankTransfer.deadline ? `<p style="font-size:13px;margin:8px 0 0"><strong>Plazo:</strong> tenés hasta el ${fmtDate(data.bankTransfer.deadline, data.businessTimezone)} para transferir y avisarnos.</p>` : ''}
+        <p style="margin:12px 0 0"><a href="${escapeHtml(data.bankTransfer.confirmationUrl)}" style="color:#e91e63;text-decoration:none;font-weight:600">Cuando transfieras, avisá con el botón "Ya transferí" acá →</a></p>
+      </div>`
+    : ''
+
   return baseHtml(`
     ${header('Reserva recibida')}
     <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, recibimos tu reserva. Está pendiente de pago para quedar confirmada.</p>
@@ -153,7 +171,8 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
       ${discountSection}
       <tr><td style="padding:8px 0;color:#666">Abono requerido</td><td style="padding:8px 0;font-weight:600">${deposit}</td></tr>
     </table>
-    <p style="font-size:13px;color:#666;margin-top:16px">Recibirás una confirmación cuando el pago sea registrado.</p>
+    ${bankSection}
+    <p style="font-size:13px;color:#666;margin-top:16px">${data.bankTransfer ? 'Tu reserva quedará confirmada cuando el negocio verifique la transferencia.' : 'Recibirás una confirmación cuando el pago sea registrado.'}</p>
     ${policySection}${whatsappSection}
     ${footer(data.businessName)}
   `)
@@ -181,11 +200,28 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
       `Total con descuento: ${fmtCurrency(data.finalAmount ?? (data.totalPrice - data.discountAmount!), data.businessCurrency)}`,
     )
   }
-  lines.push(
-    `Abono requerido: ${deposit}`,
-    ``,
-    `Recibirás una confirmación cuando el pago sea registrado.`,
-  )
+  lines.push(`Abono requerido: ${deposit}`)
+  if (data.bankTransfer) {
+    lines.push(
+      ``,
+      `Datos para transferir el abono (${deposit}):`,
+      `Titular: ${data.bankTransfer.accountHolder}`,
+      `RUT: ${data.bankTransfer.rut}`,
+      `Banco: ${data.bankTransfer.bankName}`,
+      `Tipo: ${data.bankTransfer.accountType}`,
+      `Cuenta: ${data.bankTransfer.accountNumber}`,
+    )
+    if (data.bankTransfer.email) lines.push(`Email: ${data.bankTransfer.email}`)
+    if (data.bankTransfer.instructions) lines.push(data.bankTransfer.instructions)
+    if (data.bankTransfer.deadline) lines.push(`Plazo: hasta ${fmtDate(data.bankTransfer.deadline, data.businessTimezone)}`)
+    lines.push(
+      `Cuando transfieras, avisá con "Ya transferí" acá: ${data.bankTransfer.confirmationUrl}`,
+      ``,
+      `Tu reserva quedará confirmada cuando el negocio verifique la transferencia.`,
+    )
+  } else {
+    lines.push(``, `Recibirás una confirmación cuando el pago sea registrado.`)
+  }
   if (data.businessCancellationPolicy) lines.push(``, `Política de cancelación: ${data.businessCancellationPolicy}`)
   if (data.businessWhatsapp) lines.push(``, `WhatsApp: https://wa.me/${data.businessWhatsapp.replace(/\D/g, '')}`)
   lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)
@@ -211,9 +247,38 @@ export function newBookingBusinessHtml(data: NewBookingBusinessEmailData): strin
       <tr><td style="padding:8px 0;color:#666">Abono</td><td style="padding:8px 0;font-weight:600">${deposit}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Saldo pendiente</td><td style="padding:8px 0;font-weight:600">${remaining}</td></tr>
     </table>
+    ${data.paymentNote ? `<p style="margin-top:12px;font-size:13px;color:#666">${escapeHtml(data.paymentNote)}</p>` : ''}
     <p style="margin-top:16px"><a href="${data.dashboardLink}" style="color:#e91e63;text-decoration:none;font-weight:600">Ver en dashboard</a></p>
     ${footer(data.businessName)}
   `)
+}
+
+export function bankTransferDeclaredBusinessHtml(data: BankTransferDeclaredEmailData): string {
+  return baseHtml(`
+    ${header('Transferencia declarada')}
+    <p style="font-size:15px">${escapeHtml(data.customerName)} avisó que transfirió <strong>${fmtCurrency(data.amount, data.currency)}</strong> por la reserva${data.bookingNumber != null ? ` <strong>#${data.bookingNumber}</strong>` : ''}.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
+    </table>
+    <p style="margin-top:16px;font-size:14px">Verificá en tu cuenta bancaria y confirmá la reserva desde el dashboard.</p>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function bankTransferDeclaredBusinessText(data: BankTransferDeclaredEmailData): string {
+  const lines = [
+    'Transferencia declarada',
+    '',
+    `${data.customerName} avisó que transfirió ${fmtCurrency(data.amount, data.currency)} por la reserva${data.bookingNumber != null ? ` #${data.bookingNumber}` : ''}.`,
+    `Servicio: ${data.serviceName}`,
+    `Fecha y hora: ${fmtDate(data.startDateTime, data.businessTimezone)}`,
+    '',
+    'Verificá en tu cuenta bancaria y confirmá la reserva desde el dashboard.',
+    '',
+    `Enviado por ${data.businessName} a través de Agendita`,
+  ]
+  return lines.join('\n')
 }
 
 export function newBookingBusinessText(data: NewBookingBusinessEmailData): string {
