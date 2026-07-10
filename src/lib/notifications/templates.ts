@@ -6,6 +6,7 @@ import type {
   ReviewRequestEmailData,
   NewBookingBusinessEmailData,
   BankTransferDeclaredEmailData,
+  BankTransferVerifyCustomerEmailData,
   ReminderEmailData,
   LoyaltyRewardEmailData,
   RescheduledEmailData,
@@ -279,6 +280,40 @@ export function bankTransferDeclaredBusinessText(data: BankTransferDeclaredEmail
     `Enviado por ${data.businessName} a través de Agendita`,
   ]
   return lines.join('\n')
+}
+
+export function bankTransferRejectedCustomerHtml(data: BankTransferVerifyCustomerEmailData): string {
+  return baseHtml(`
+    ${header('Tu transferencia no pudo verificarse')}
+    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, ${escapeHtml(data.businessName)} no pudo verificar tu transferencia y tu reserva fue cancelada.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
+    </table>
+    <p style="margin-top:16px;font-size:14px">Si transferiste, contactá directamente al negocio para resolverlo.</p>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function bankTransferRejectedCustomerText(data: BankTransferVerifyCustomerEmailData): string {
+  return `Hola ${data.customerName}, ${data.businessName} no pudo verificar tu transferencia y tu reserva (${data.serviceName}, ${fmtDate(data.startDateTime, data.businessTimezone)}) fue cancelada. Si transferiste, contactá al negocio directamente.`
+}
+
+export function bankTransferExpiredCustomerHtml(data: BankTransferVerifyCustomerEmailData): string {
+  return baseHtml(`
+    ${header('Tu reserva expiró')}
+    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, tu reserva en ${escapeHtml(data.businessName)} expiró porque no se verificó el pago a tiempo.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
+    </table>
+    <p style="margin-top:16px;font-size:14px">Si transferiste, contactá al negocio directamente. Si no, podés reservar de nuevo cuando quieras.</p>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function bankTransferExpiredCustomerText(data: BankTransferVerifyCustomerEmailData): string {
+  return `Hola ${data.customerName}, tu reserva en ${data.businessName} (${data.serviceName}, ${fmtDate(data.startDateTime, data.businessTimezone)}) expiró porque no se verificó el pago a tiempo. Si transferiste, contactá al negocio.`
 }
 
 export function newBookingBusinessText(data: NewBookingBusinessEmailData): string {

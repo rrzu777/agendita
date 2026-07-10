@@ -11,6 +11,7 @@ import type {
   ReviewRequestEmailData,
   NewBookingBusinessEmailData,
   BankTransferDeclaredEmailData,
+  BankTransferVerifyCustomerEmailData,
   ReminderEmailData,
   LoyaltyRewardEmailData,
   RescheduledEmailData,
@@ -24,6 +25,10 @@ import {
   newBookingBusinessText,
   bankTransferDeclaredBusinessHtml,
   bankTransferDeclaredBusinessText,
+  bankTransferRejectedCustomerHtml,
+  bankTransferRejectedCustomerText,
+  bankTransferExpiredCustomerHtml,
+  bankTransferExpiredCustomerText,
   bookingCancelledCustomerHtml,
   bookingCancelledCustomerText,
   bookingRescheduledCustomerHtml,
@@ -196,6 +201,28 @@ export async function sendBankTransferDeclaredToBusiness(
     ownerEmails.map((owner) =>
       sendEmail(owner.email, `Transferencia declarada - ${data.customerName}`, html, text, {}),
     ),
+  )
+}
+
+export async function sendBankTransferRejectedToCustomer(data: BankTransferVerifyCustomerEmailData): Promise<EmailResult> {
+  if (!data.customerEmail) return { success: false, skipped: 'Cliente sin email' }
+  return sendEmail(
+    data.customerEmail,
+    `Tu transferencia no pudo verificarse - ${data.businessName}`,
+    bankTransferRejectedCustomerHtml(data),
+    bankTransferRejectedCustomerText(data),
+    { replyTo: data.businessReplyToEmail },
+  )
+}
+
+export async function sendBankTransferExpiredToCustomer(data: BankTransferVerifyCustomerEmailData): Promise<EmailResult> {
+  if (!data.customerEmail) return { success: false, skipped: 'Cliente sin email' }
+  return sendEmail(
+    data.customerEmail,
+    `Tu reserva expiró - ${data.businessName}`,
+    bankTransferExpiredCustomerHtml(data),
+    bankTransferExpiredCustomerText(data),
+    { replyTo: data.businessReplyToEmail },
   )
 }
 
