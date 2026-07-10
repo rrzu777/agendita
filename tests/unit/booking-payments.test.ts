@@ -28,6 +28,25 @@ describe('assertBookingPayable', () => {
     expect(() => assertBookingPayable(booking)).toThrow('El tiempo para pagar esta reserva ha expirado')
   })
 
+  it('allows expired hold on pending_payment when allowExpiredHold is set', () => {
+    // El verificador de transferencia ya re-validó el cupo por su cuenta; puede
+    // pedir explícitamente saltar el chequeo de hold vencido en vez de escribir
+    // un holdExpiresAt falso solo para esquivarlo.
+    const booking = {
+      status: BookingStatus.pending_payment,
+      holdExpiresAt: new Date(Date.now() - 1000 * 60),
+    }
+    expect(() => assertBookingPayable(booking, { allowExpiredHold: true })).not.toThrow()
+  })
+
+  it('still rejects terminal statuses even with allowExpiredHold', () => {
+    // allowExpiredHold NO revive estados terminales — solo salta el hold vencido.
+    const booking = { status: BookingStatus.expired, holdExpiresAt: null }
+    expect(() => assertBookingPayable(booking, { allowExpiredHold: true })).toThrow(
+      BookingNotPayableError,
+    )
+  })
+
   it('rejects expired status', () => {
     const booking = {
       status: BookingStatus.expired,

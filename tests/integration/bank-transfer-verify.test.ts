@@ -88,6 +88,31 @@ describe('confirmBankTransfer', () => {
     expect(booking!.depositPaid).toBe(8000)
   })
 
+  it('confirms a legit transfer whose hold already expired without writing a fake hold', async () => {
+    // Turno YA pasado (la dueña verifica tarde) + hold vencido: el re-chequeo de
+    // cupo se salta (turno pasado) y applyApprovedPayment recibe skipHoldExpiryCheck
+    // → confirma sin escribir un holdExpiresAt falso. Bloquea la regresión del
+    // refactor que sacó el "bump".
+    const pastStart = new Date(Date.now() - 2 * 3600_000)
+    const pastEnd = new Date(Date.now() - 3600_000)
+    const expiredHold = new Date(Date.now() - 4 * 3600_000)
+    const { paymentId, bookingId } = await seedDeclaredTransfer({
+      depositRequired: 8000,
+      amount: 8000,
+      startDateTime: pastStart,
+      endDateTime: pastEnd,
+      holdExpiresAt: expiredHold,
+    })
+    const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
+    await confirmBankTransfer(paymentId, 8000)
+    const payment = await prisma.payment.findUnique({ where: { id: paymentId } })
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId } })
+    expect(payment!.status).toBe('approved')
+    expect(booking!.status).toBe('confirmed')
+    // El hold NO fue pisado con un valor futuro falso (sigue siendo el vencido).
+    expect(booking!.holdExpiresAt?.getTime()).toBe(expiredHold.getTime())
+  })
+
   it('rejects when the booking already has an approved payment (double pay)', async () => {
     const { paymentId, bookingId, businessId, customerId } = await seedDeclaredTransfer()
     await prisma.payment.create({
@@ -121,8 +146,8 @@ describe('confirmBankTransfer', () => {
     // en la BD — no se puede representar. El re-chequeo (assertSlotIsAvailable)
     // igual protege contra que el horario deje de estar disponible por otra vía
     // (bloqueo/regla) una vez vencido el hold; lo ejercemos con un TimeBlock.
-    // Sin el re-chequeo, el bump del hold dejaría pasar la confirmación → este
-    // test discrimina que el re-chequeo efectivamente corre.
+    // Sin el re-chequeo, skipHoldExpiryCheck dejaría pasar la confirmación → este
+    // test discrimina que el re-chequeo efectivamente corre para turnos futuros.
     const { paymentId, bookingId, businessId, startDateTime, endDateTime } =
       await seedDeclaredTransfer()
     await prisma.booking.update({

@@ -4,7 +4,6 @@
 // sesión (owner/admin). Reusa los helpers de declared.ts y applyApprovedPayment;
 // no exportar consts/tipos desde este módulo (boundary de 'use server').
 
-import { addHours } from 'date-fns'
 import { prisma } from '@/lib/db'
 import { requireBusinessRole } from '@/lib/auth/server'
 import { revalidatePath } from 'next/cache'
@@ -65,30 +64,21 @@ export async function confirmBankTransfer(
 
     const now = new Date()
     const holdExpired = booking.holdExpiresAt != null && booking.holdExpiresAt < now
-    if (holdExpired) {
+    if (holdExpired && booking.startDateTime > now) {
       // Re-validar solape SOLO si el turno es FUTURO: con el hold vencido
       // availability volvió a ofertar ese horario y otra clienta/bloqueo pudo
       // tomarlo (§6.2 paso 2). Un turno ya pasado no tiene conflicto de cupo que
       // prevenir y assertSlotIsAvailable lo rechazaría por lead-time — falso
       // negativo que bloquearía registrar un pago legítimo el mismo día.
-      if (booking.startDateTime > now) {
-        await assertSlotIsAvailable({
-          tx,
-          businessId,
-          serviceId: booking.serviceId,
-          startDateTime: booking.startDateTime,
-          endDateTime: booking.endDateTime,
-          timezone: business.timezone || 'America/Santiago',
-          excludeBookingId: booking.id,
-          leadTimeMinutes: 0,
-        })
-      }
-      // Bump corto SIEMPRE que el hold venció (futuro o pasado): assertBookingPayable
-      // tira con pending_payment + hold vencido sin mirar startDateTime. Sin este
-      // update la confirmación de un pago legítimo revienta. El paso final confirma ya.
-      await tx.booking.updateMany({
-        where: { id: booking.id, status: 'pending_payment' },
-        data: { holdExpiresAt: addHours(now, 1) },
+      await assertSlotIsAvailable({
+        tx,
+        businessId,
+        serviceId: booking.serviceId,
+        startDateTime: booking.startDateTime,
+        endDateTime: booking.endDateTime,
+        timezone: business.timezone || 'America/Santiago',
+        excludeBookingId: booking.id,
+        leadTimeMinutes: 0,
       })
     }
 
@@ -111,6 +101,9 @@ export async function confirmBankTransfer(
       paymentType: derivedType,
       paymentMethod: payment.paymentMethod ?? 'Transferencia',
       paymentId,
+      // Ya re-validamos el cupo arriba (si hacía falta): saltar el chequeo de
+      // hold vencido en vez de escribir un holdExpiresAt falso solo para pasar.
+      skipHoldExpiryCheck: holdExpired,
     })
     return { wasConfirmed, bookingId: booking.id }
   })
