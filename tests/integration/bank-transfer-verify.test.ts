@@ -144,3 +144,22 @@ describe('confirmBankTransfer', () => {
     await expect(confirmBankTransfer(paymentId, 5000)).rejects.toThrow(/horario|disponible/)
   })
 })
+
+describe('rejectBankTransfer', () => {
+  it('rejects the payment, cancels the booking, releases redemption', async () => {
+    const { paymentId, bookingId } = await seedDeclaredTransfer()
+    const { rejectBankTransfer } = await import('@/server/actions/bank-transfer-verify')
+    await rejectBankTransfer(paymentId)
+    const payment = await prisma.payment.findUnique({ where: { id: paymentId } })
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId } })
+    expect(payment!.status).toBe('rejected')
+    expect(booking!.status).toBe('cancelled')
+  })
+
+  it('errors if the payment was already processed', async () => {
+    const { paymentId } = await seedDeclaredTransfer()
+    await prisma.payment.update({ where: { id: paymentId }, data: { status: 'approved' } })
+    const { rejectBankTransfer } = await import('@/server/actions/bank-transfer-verify')
+    await expect(rejectBankTransfer(paymentId)).rejects.toThrow()
+  })
+})

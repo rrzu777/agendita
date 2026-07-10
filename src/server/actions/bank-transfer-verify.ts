@@ -113,3 +113,56 @@ export async function confirmBankTransfer(
   await revalidateBusinessPublicPaths(businessId)
   return { ok: true }
 }
+
+export async function rejectBankTransfer(paymentId: string): Promise<{ ok: true }> {
+  const { business, businessId } = await requireBusinessRole(['owner', 'admin'])
+
+  const rejected = await prisma.$transaction(async (tx) => {
+    const payment = await tx.payment.findUnique({ where: { id: paymentId } })
+    if (!payment || payment.businessId !== businessId) throw new Error('Pago no encontrado')
+    if (!isDeclaredTransferPayment(payment)) {
+      throw new Error('Este pago no es una transferencia por verificar')
+    }
+
+    const { count } = await tx.payment.updateMany({
+      where: { id: paymentId, status: 'pending' },
+      data: { status: 'rejected' },
+    })
+    if (count === 0) throw new Error('Este pago ya fue procesado')
+
+    const bookingUpd = await tx.booking.updateMany({
+      where: { id: payment.bookingId, status: 'pending_payment' },
+      data: { status: 'cancelled' },
+    })
+    if (bookingUpd.count > 0) {
+      await releaseRedemptionForBooking(tx, payment.bookingId, 'cancelled')
+    }
+    return tx.booking.findUnique({
+      where: { id: payment.bookingId },
+      include: { customer: true, service: true },
+    })
+  })
+
+  if (rejected?.customer?.email) {
+    // Hoist el await FUERA del callback: sendNotificationSafely recibe un
+    // `() =>` no-async; un await adentro no compila.
+    const replyTo = await getBusinessReplyToEmail(businessId)
+    await sendNotificationSafely('bank transfer rejected', () =>
+      sendBankTransferRejectedToCustomer({
+        businessName: business.name,
+        businessTimezone: business.timezone || 'America/Santiago',
+        businessReplyToEmail: replyTo,
+        customerName: rejected.customer!.name,
+        customerEmail: rejected.customer!.email!,
+        serviceName: rejected.service?.name ?? 'servicio',
+        startDateTime: rejected.startDateTime,
+        bookingNumber: rejected.bookingNumber,
+      }),
+    )
+  }
+  revalidatePath('/dashboard/bookings')
+  revalidatePath('/dashboard/payments')
+  revalidatePath('/dashboard')
+  await revalidateBusinessPublicPaths(businessId)
+  return { ok: true }
+}
