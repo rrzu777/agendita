@@ -16,6 +16,7 @@ import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { BookingRowActions } from '@/components/dashboard/booking-row-actions'
 import { PendingTransfersSection, type PendingTransferItem } from '@/components/dashboard/pending-transfers-section'
+import { hasPendingDeclaredTransfer } from '@/lib/bank-transfer/declared'
 
 const PENDING_TRANSFER_BADGE_CLASS =
   'inline-flex items-center rounded-md border border-transparent bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800 dark:bg-orange-500/15 dark:text-orange-300'
@@ -55,7 +56,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
   businessAddress: string | null
 }) {
   const canRegisterPayment = isManualPaymentAllowed(booking)
-  const isPendingTransfer = booking.status === 'pending_payment' && booking.payments.length > 0
+  const isPendingTransfer = hasPendingDeclaredTransfer(booking)
 
   return (
     <article className="studio-card p-5">
@@ -187,7 +188,7 @@ export default async function BookingsPage() {
   const pendingCount = bookings.filter(b => b.status === 'pending_payment').length
 
   const pendingTransfers: PendingTransferItem[] = bookings
-    .filter((b) => b.status === 'pending_payment' && b.payments.length > 0)
+    .filter(hasPendingDeclaredTransfer)
     .map((b) => ({
       paymentId: b.payments[0].id,
       bookingId: b.id,
@@ -265,7 +266,7 @@ export default async function BookingsPage() {
                       </TableCell>
                       <TruncatedCell className={TABLE_COL.customer} primary={booking.customer?.name || '—'} />
                       <TableCell className={TABLE_COL.status}>
-                        {booking.status === 'pending_payment' && booking.payments.length > 0 ? (
+                        {hasPendingDeclaredTransfer(booking) ? (
                           <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>
                         ) : (
                           <StatusBadge status={booking.status} />

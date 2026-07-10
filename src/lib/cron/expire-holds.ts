@@ -71,17 +71,17 @@ export async function expireStaleHolds(
       await releaseRedemptionForBooking(tx, r.bookingId, 'hold_expired')
     }
 
-    // Qué candidatos REALMENTE transicionaron a `expired` en esta corrida.
-    const expiredNow = await tx.booking.findMany({
-      where: { id: { in: expiredIds }, status: BookingStatus.expired },
-      select: { id: true },
-    })
-    const expiredNowIds = expiredNow.map((b) => b.id)
-
-    // Cerrar el Payment declarado huérfano (bt-declared) de esas reservas para
-    // que no quede `pending` para siempre. Guardado por declaredTransferPaymentWhere.
+    // Cerrar el Payment declarado huérfano (bt-declared) de las reservas que
+    // REALMENTE transicionaron a `expired` en esta corrida — filtrando por la
+    // relación booking.status en la misma query, sin un findMany intermedio.
+    // (Filtro por relación en `where` es seguro; el landmine es relationLoadStrategy:'join'.)
+    // Sin esto el Payment queda `pending` para siempre.
     const declaredPayments = await tx.payment.findMany({
-      where: { bookingId: { in: expiredNowIds }, ...declaredTransferPaymentWhere },
+      where: {
+        bookingId: { in: expiredIds },
+        booking: { status: BookingStatus.expired },
+        ...declaredTransferPaymentWhere,
+      },
       select: { bookingId: true },
     })
     const declaredBookingIds = declaredPayments.map((p) => p.bookingId)
@@ -95,27 +95,37 @@ export async function expireStaleHolds(
   })
 
   // Emails best-effort para las transferencias declaradas expiradas (post-tx).
+  // Un cron procesa lotes: resolvemos el reply-to una vez por negocio y mandamos
+  // los emails en paralelo (sendNotificationSafely traga sus propios errores).
   if (declaredBookingIds.length > 0) {
     const toNotify = await prisma.booking.findMany({
       where: { id: { in: declaredBookingIds } },
       include: { customer: true, service: true, business: true },
     })
-    for (const b of toNotify) {
-      if (!b.customer?.email) continue
-      const replyTo = await getBusinessReplyToEmail(b.businessId)
-      await sendNotificationSafely('bank transfer expired', () =>
-        deps.sendExpiredEmail({
-          businessName: b.business.name,
-          businessTimezone: b.business.timezone || 'America/Santiago',
-          businessReplyToEmail: replyTo,
-          customerName: b.customer!.name,
-          customerEmail: b.customer!.email!,
-          serviceName: b.service?.name ?? 'servicio',
-          startDateTime: b.startDateTime,
-          bookingNumber: b.bookingNumber,
-        })
-      )
-    }
+    const replyToByBiz = new Map<string, string | null>()
+    await Promise.all(
+      [...new Set(toNotify.map((b) => b.businessId))].map(async (bizId) => {
+        replyToByBiz.set(bizId, await getBusinessReplyToEmail(bizId))
+      })
+    )
+    await Promise.all(
+      toNotify
+        .filter((b) => b.customer?.email)
+        .map((b) =>
+          sendNotificationSafely('bank transfer expired', () =>
+            deps.sendExpiredEmail({
+              businessName: b.business.name,
+              businessTimezone: b.business.timezone || 'America/Santiago',
+              businessReplyToEmail: replyToByBiz.get(b.businessId) ?? null,
+              customerName: b.customer!.name,
+              customerEmail: b.customer!.email!,
+              serviceName: b.service?.name ?? 'servicio',
+              startDateTime: b.startDateTime,
+              bookingNumber: b.bookingNumber,
+            })
+          )
+        )
+    )
   }
 
   // Solo revalidar los negocios cuyas reservas REALMENTE se actualizaron.

@@ -36,3 +36,14 @@ export function isDeclaredTransferPayment(
     !!p.providerPaymentId?.startsWith(BT_DECLARED_PREFIX)
   )
 }
+
+// "Esta reserva tiene una transferencia declarada pendiente de verificar."
+// Fuente única del predicado que el dashboard deriva en varios lugares (tabla,
+// card móvil, aviso home, conteo). Asume que `payments` ya viene filtrado por
+// `declaredTransferPaymentWhere` (como lo trae getBookings): un array no vacío
+// sobre una reserva pending_payment = "por verificar".
+export function hasPendingDeclaredTransfer(
+  booking: { status: string; payments: unknown[] },
+): boolean {
+  return booking.status === 'pending_payment' && booking.payments.length > 0
+}

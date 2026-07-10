@@ -6,6 +6,7 @@ import { Landmark, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { buildWhatsappUrl } from '@/lib/notifications'
 import { rejectBankTransfer } from '@/server/actions/bank-transfer-verify'
+import { formatManualPaymentMoney as formatMoney } from './manual-payment-utils'
 import { VerifyTransferDialog } from './verify-transfer-dialog'
 
 export interface PendingTransferItem {
@@ -17,10 +18,6 @@ export interface PendingTransferItem {
   startDateTime: Date
   amount: number
   declaredAt: Date
-}
-
-function formatMoney(amount: number, currency: string) {
-  return `$${amount.toLocaleString('es-CL')} ${currency}`
 }
 
 function timeAgo(declaredAt: Date): string {

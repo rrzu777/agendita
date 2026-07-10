@@ -8,10 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { confirmBankTransfer, rejectBankTransfer } from '@/server/actions/bank-transfer-verify'
-
-function formatMoney(amount: number, currency: string) {
-  return `$${amount.toLocaleString('es-CL')} ${currency}`
-}
+import { formatManualPaymentMoney as formatMoney } from './manual-payment-utils'
 
 export function VerifyTransferDialog({
   paymentId,

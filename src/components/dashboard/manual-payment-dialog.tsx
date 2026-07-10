@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { createManualPayment } from '@/server/actions/payments'
 import {
   calculateManualPaymentAmount,
+  formatManualPaymentMoney as formatMoney,
   getManualPaymentSuggestion,
   isManualPaymentAllowed,
   type ManualPaymentBooking,
@@ -19,10 +20,6 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 
 const PAYMENT_METHODS = ['Efectivo', 'Transferencia', 'Tarjeta', 'Mercado Pago'] as const
 const OTHER = 'Otro'
-
-function formatMoney(amount: number, currency: string) {
-  return `$${amount.toLocaleString('es-CL')} ${currency}`
-}
 
 export function ManualPaymentDialog({
   bookings,

@@ -10,6 +10,7 @@ import { prisma } from '@/lib/db'
 import { buildSetupChecklist } from '@/lib/dashboard/setup-checklist'
 import { SetupChecklist } from '@/components/dashboard/setup-checklist'
 import { PendingTransfersBanner } from '@/components/dashboard/pending-transfers-banner'
+import { hasPendingDeclaredTransfer } from '@/lib/bank-transfer/declared'
 import { CalendarCheck2, CreditCard, ExternalLink, TrendingUp, Users } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -51,9 +52,7 @@ export default async function DashboardPage() {
   )
   // Deriva de la relación filtrada `payments` (Task 1): no-vacía sólo cuando hay
   // una transferencia declarada pendiente → sin segunda query.
-  const pendingTransfersCount = bookings.filter(
-    b => b.status === 'pending_payment' && b.payments.length > 0,
-  ).length
+  const pendingTransfersCount = bookings.filter(hasPendingDeclaredTransfer).length
 
   const publicUrl = getBusinessPublicUrl(business)
   const bookingUrl = getBusinessPublicUrl(business, '/book')
@@ -178,9 +177,11 @@ export default async function DashboardPage() {
                   <span className="self-start rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground md:self-auto">
                     {booking.status === 'confirmed'
                       ? 'Confirmada'
-                      : booking.status === 'pending_payment'
-                        ? (booking.payments.length > 0 ? 'Por verificar' : 'Pendiente')
-                        : booking.status}
+                      : hasPendingDeclaredTransfer(booking)
+                        ? 'Por verificar'
+                        : booking.status === 'pending_payment'
+                          ? 'Pendiente'
+                          : booking.status}
                   </span>
                 </article>
               ))}

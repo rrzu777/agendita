@@ -9,6 +9,7 @@ import { prisma } from '@/lib/db'
 import { requireBusinessRole } from '@/lib/auth/server'
 import { revalidatePath } from 'next/cache'
 import { revalidateBusinessPublicPaths } from '@/server/actions/revalidate-business'
+import type { Prisma } from '@prisma/client'
 import { isDeclaredTransferPayment } from '@/lib/bank-transfer/declared'
 import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
@@ -20,6 +21,22 @@ import {
   getBusinessReplyToEmail,
 } from '@/lib/notifications'
 
+// Carga y valida que el Payment sea una declaración de transferencia del negocio
+// pendiente de verificar. Guard compartido por confirmar y rechazar (mismos dos
+// errores, misma condición) — no exportado: sigue dentro del boundary 'use server'.
+async function loadDeclaredPayment(
+  tx: Prisma.TransactionClient,
+  paymentId: string,
+  businessId: string,
+) {
+  const payment = await tx.payment.findUnique({ where: { id: paymentId } })
+  if (!payment || payment.businessId !== businessId) throw new Error('Pago no encontrado')
+  if (!isDeclaredTransferPayment(payment)) {
+    throw new Error('Este pago no es una transferencia por verificar')
+  }
+  return payment
+}
+
 export async function confirmBankTransfer(
   paymentId: string,
   amount: number,
@@ -28,11 +45,7 @@ export async function confirmBankTransfer(
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('El monto debe ser positivo')
 
   const result = await prisma.$transaction(async (tx) => {
-    const payment = await tx.payment.findUnique({ where: { id: paymentId } })
-    if (!payment || payment.businessId !== businessId) throw new Error('Pago no encontrado')
-    if (!isDeclaredTransferPayment(payment)) {
-      throw new Error('Este pago no es una transferencia por verificar')
-    }
+    const payment = await loadDeclaredPayment(tx, paymentId, businessId)
 
     const booking = await tx.booking.findUnique({ where: { id: payment.bookingId } })
     if (!booking) throw new Error('Reserva no encontrada')
@@ -118,11 +131,7 @@ export async function rejectBankTransfer(paymentId: string): Promise<{ ok: true 
   const { business, businessId } = await requireBusinessRole(['owner', 'admin'])
 
   const rejected = await prisma.$transaction(async (tx) => {
-    const payment = await tx.payment.findUnique({ where: { id: paymentId } })
-    if (!payment || payment.businessId !== businessId) throw new Error('Pago no encontrado')
-    if (!isDeclaredTransferPayment(payment)) {
-      throw new Error('Este pago no es una transferencia por verificar')
-    }
+    const payment = await loadDeclaredPayment(tx, paymentId, businessId)
 
     const { count } = await tx.payment.updateMany({
       where: { id: paymentId, status: 'pending' },

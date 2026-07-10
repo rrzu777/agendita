@@ -1,5 +1,12 @@
 export type ManualPaymentMode = 'fixed' | 'percentage'
 
+// Formato "$1.000 CLP" de la UI de pagos del dashboard (distinto del Intl de
+// lib/money). Fuente única para las tres superficies: registrar pago manual,
+// verificar transferencia y la sección "por verificar".
+export function formatManualPaymentMoney(amount: number, currency: string) {
+  return `$${amount.toLocaleString('es-CL')} ${currency}`
+}
+
 export type ManualPaymentBooking = {
   id: string
   bookingNumber: number | null
