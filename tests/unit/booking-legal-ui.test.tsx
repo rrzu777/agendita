@@ -19,6 +19,11 @@ vi.mock('@/server/actions/packages', () => ({
   getActivePackagesForCustomer: vi.fn().mockResolvedValue({ remaining: 0 }),
 }))
 
+vi.mock('@/server/actions/bank-transfer-public', () => ({
+  getBankTransferInfo: vi.fn().mockResolvedValue(null),
+  declareBankTransfer: vi.fn(),
+}))
+
 const bookingData = {
   serviceId: 'svc-1',
   serviceName: 'Manicure',
@@ -51,7 +56,7 @@ describe('booking legal UI', () => {
   it('public booking payment step shows terms, privacy and refund links', async () => {
     const { StepPayment } = await import('@/components/booking/step-payment')
     const html = renderToStaticMarkup(
-      <StepPayment data={bookingData} businessId="biz-1" timezone="America/Santiago" onSuccess={vi.fn()} onBack={vi.fn()} />,
+      <StepPayment data={bookingData} updateData={vi.fn()} businessId="biz-1" timezone="America/Santiago" onSuccess={vi.fn()} onBack={vi.fn()} />,
     )
 
     expect(html).toContain('href="/terms"')
@@ -64,6 +69,7 @@ describe('booking legal UI', () => {
     const html = renderToStaticMarkup(
       <StepPayment
         data={bookingData}
+        updateData={vi.fn()}
         businessId="biz-1" timezone="America/Santiago"
         cancellationPolicy="Puedes cancelar hasta 24 horas antes."
         onSuccess={vi.fn()}
@@ -84,6 +90,7 @@ describe('booking legal UI', () => {
       root.render(
         <StepPayment
           data={{ ...bookingData, serviceDeposit: 5000 }}
+          updateData={vi.fn()}
           businessId="biz-1" timezone="America/Santiago"
           onSuccess={vi.fn()}
           onBack={vi.fn()}

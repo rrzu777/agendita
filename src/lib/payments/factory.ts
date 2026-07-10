@@ -327,7 +327,7 @@ export async function resolveOnlinePaymentAvailabilityForBusiness(
     return {
       available: false,
       provider: null,
-      reason: 'Este negocio coordina el abono directamente por WhatsApp o transferencia.',
+      reason: 'Este negocio coordina el abono directamente contigo.',
       isMock: false,
     }
   }
@@ -336,7 +336,7 @@ export async function resolveOnlinePaymentAvailabilityForBusiness(
     return {
       available: false,
       provider: null,
-      reason: 'Este negocio coordina el abono directamente por WhatsApp o transferencia.',
+      reason: 'Este negocio coordina el abono directamente contigo.',
       isMock: false,
     }
   }
