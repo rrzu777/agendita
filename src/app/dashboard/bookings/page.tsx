@@ -15,6 +15,10 @@ import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { BookingRowActions } from '@/components/dashboard/booking-row-actions'
+import { PendingTransfersSection, type PendingTransferItem } from '@/components/dashboard/pending-transfers-section'
+
+const PENDING_TRANSFER_BADGE_CLASS =
+  'inline-flex items-center rounded-md border border-transparent bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800 dark:bg-orange-500/15 dark:text-orange-300'
 
 function EmptyState() {
   return (
@@ -44,12 +48,14 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
     remainingBalance: number
     service: { name: string } | null
     customer: { name: string; phone: string | null } | null
+    payments: { id: string }[]
   }
   businessCurrency: string
   businessTimezone: string
   businessAddress: string | null
 }) {
   const canRegisterPayment = isManualPaymentAllowed(booking)
+  const isPendingTransfer = booking.status === 'pending_payment' && booking.payments.length > 0
 
   return (
     <article className="studio-card p-5">
@@ -58,7 +64,11 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           <h3 className="text-lg font-semibold text-primary truncate">{booking.service?.name || 'Servicio'}</h3>
           <p className="text-sm text-muted-foreground">{formatBookingNumber(booking.bookingNumber, booking.id)}</p>
         </div>
-        <StatusBadge status={booking.status} className="shrink-0" />
+        {isPendingTransfer ? (
+          <span className={`${PENDING_TRANSFER_BADGE_CLASS} shrink-0`}>Transferencia por verificar</span>
+        ) : (
+          <StatusBadge status={booking.status} className="shrink-0" />
+        )}
       </div>
 
       <div className="mb-4 space-y-2">
@@ -176,6 +186,19 @@ export default async function BookingsPage() {
   const confirmedCount = bookings.filter(b => b.status === 'confirmed').length
   const pendingCount = bookings.filter(b => b.status === 'pending_payment').length
 
+  const pendingTransfers: PendingTransferItem[] = bookings
+    .filter((b) => b.status === 'pending_payment' && b.payments.length > 0)
+    .map((b) => ({
+      paymentId: b.payments[0].id,
+      bookingId: b.id,
+      customerName: b.customer?.name || 'Sin cliente',
+      customerPhone: b.customer?.phone ?? null,
+      serviceName: b.service?.name || 'Servicio',
+      startDateTime: b.startDateTime,
+      amount: b.payments[0].amount,
+      declaredAt: b.payments[0].createdAt,
+    }))
+
   return (
     <div>
       <DashboardHeader
@@ -203,6 +226,12 @@ export default async function BookingsPage() {
             <p className="mt-1 text-3xl font-semibold text-primary">{pendingCount}</p>
           </div>
         </div>
+
+        <PendingTransfersSection
+          items={pendingTransfers}
+          businessCurrency={businessCurrency}
+          businessTimezone={businessTimezone}
+        />
 
         {bookings.length === 0 ? (
           <EmptyState />
@@ -236,7 +265,11 @@ export default async function BookingsPage() {
                       </TableCell>
                       <TruncatedCell className={TABLE_COL.customer} primary={booking.customer?.name || '—'} />
                       <TableCell className={TABLE_COL.status}>
-                        <StatusBadge status={booking.status} />
+                        {booking.status === 'pending_payment' && booking.payments.length > 0 ? (
+                          <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>
+                        ) : (
+                          <StatusBadge status={booking.status} />
+                        )}
                       </TableCell>
                       <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
                         <span className={booking.paymentStatus === 'fully_paid' ? 'font-semibold text-green-700' : 'font-semibold text-primary'}>
