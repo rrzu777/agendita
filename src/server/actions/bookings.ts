@@ -198,6 +198,7 @@ export async function createBooking(data: {
   promotionCode?: string
   skipPackage?: boolean
   referralToken?: string
+  paymentMethod?: typeof BANK_TRANSFER_METHOD
 }, businessId: string) {
   const limit = await checkRateLimit('create-booking', 20, 60000)
   if (!limit.success) {
