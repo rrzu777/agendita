@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test'
 import { setOwnerAuth, setAdminAuth } from './helpers/auth'
+import { toLocalDateStr } from './helpers/dates'
 
 // ─── Task 14: e2e de /mi (cuenta de clienta) ───────────────────────────────────
 //
@@ -77,7 +78,7 @@ async function createCustomerWithOwnerEmail(
   opts: { name: string; phone: string; email: string; afterDays: number },
 ): Promise<void> {
   const futureDate = nextBookableDate(opts.afterDays)
-  const dateStr = futureDate.toISOString().split('T')[0]
+  const dateStr = toLocalDateStr(futureDate)
 
   const times = [
     '10:00', '10:30', '11:00', '11:30', '12:00',

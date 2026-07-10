@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test'
+import { toLocalDateStr } from './helpers/dates'
 
 // ─── B3: Condiciones automáticas de fidelización ───────────────────────────────
 //
@@ -94,7 +95,7 @@ async function createManualBooking(
   opts: { name: string; phone: string; afterDays: number },
 ): Promise<void> {
   const futureDate = nextBookableDate(opts.afterDays)
-  const dateStr = futureDate.toISOString().split('T')[0]
+  const dateStr = toLocalDateStr(futureDate)
 
   // Horas candidatas dentro de 10:00–14:30 (entran en toda regla de disponibilidad,
   // incl. sábado 10–15, para la duración del servicio — igual que smoke.spec.ts).

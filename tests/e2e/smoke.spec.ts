@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test'
+import { toLocalDateStr } from './helpers/dates'
 
 // ─── Test data constants ───────────────────────────────────────────────────────
 const E2E_SECRET = process.env.PLAYWRIGHT_E2E_AUTH_SECRET || 'e2e-secret-local'
@@ -348,7 +349,7 @@ test.describe('dashboard bookings', () => {
 
     // Fill date = today + 3 days (next weekday)
     const futureDate = nextBookableDate(3)
-    const dateStr = futureDate.toISOString().split('T')[0]
+    const dateStr = toLocalDateStr(futureDate)
     await page.locator('input#date').fill(dateStr)
     // 10:00 fits every availability rule (incl. Saturday 10:00–15:00) for the
     // selected service duration, regardless of which weekday the date lands on.
@@ -382,7 +383,7 @@ test.describe('dashboard bookings', () => {
 
     // Pick a new date
     const newDate = nextBookableDate(5)
-    const dateStr = newDate.toISOString().split('T')[0]
+    const dateStr = toLocalDateStr(newDate)
     await page.locator('input#date').fill(dateStr)
 
     // Wait for available slots to load, then pick one
@@ -453,7 +454,10 @@ test.describe('admin', () => {
     await page.waitForLoadState('networkidle')
     await expect(page.getByRole('heading', { name: /panel de administración/i })).toBeVisible()
     await expect(page.locator('table')).toBeVisible()
-    await expect(page.getByText('Mimos Nails')).toBeVisible({ timeout: 10_000 })
+    // La tabla admin renderiza layout dual (card móvil + tabla desktop): el
+    // nombre aparece 2× en el DOM (una oculta por viewport). Matchear sólo la
+    // visible evita el strict-mode violation y no depende del orden DOM.
+    await expect(page.getByText('Mimos Nails').filter({ visible: true })).toBeVisible({ timeout: 10_000 })
   })
 
   test('admin detail → shows booking/payment history', async ({ page }) => {
