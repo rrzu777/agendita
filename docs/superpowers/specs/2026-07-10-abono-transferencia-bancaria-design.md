@@ -57,14 +57,25 @@ Verificado contra `prisma/schema.prisma`: `PaymentProvider.manual`, `PaymentStat
 
 > booking `pending_payment` **+** Payment(`provider: manual`, `paymentMethod: 'transferencia'`, `status: pending`, `type: deposit`, `providerPaymentId: "bt-declared:<bookingId>"`)
 
-### 3.3 `providerPaymentId` determinístico (idempotencia + discriminador)
+### 3.3 `Booking.paymentMethod` (columna nueva)
+
+Antes de declarar, una reserva-transferencia es **indistinguible** de un checkout MP abandonado (ambas son `pending_payment`; el Payment `bt-declared` recién existe al declarar). El email de "reserva recibida" y `/book/confirmation` necesitan saber el método elegido:
+
+```prisma
+// en model Booking
+paymentMethod String? // 'bank_transfer' si la clienta eligió transferencia; null = flujo actual/MP
+```
+
+`createBooking` la setea cuando recibe `paymentMethod: 'bank_transfer'` (§5.2). Columna de texto nullable, no enum (consistente con la decisión 5). Va en la misma migración que `BankTransferAccount`.
+
+### 3.4 `providerPaymentId` determinístico (idempotencia + discriminador)
 
 El unique `@@unique([bookingId, provider, providerPaymentId])` **no muerde con NULL** (comentario explícito en el schema): un doble click en "Ya transferí" crearía dos Payments. Fix sin migración: `providerPaymentId = "bt-declared:" + bookingId`. Efectos:
 
 - El unique sí muerde → el create duplicado tira P2002 → la action lo captura y responde éxito (idempotencia real).
 - Sirve de discriminador: distingue "declarada por la clienta" de un pago manual con `paymentMethod: 'Transferencia'` que la dueña registró por su cuenta (hoy ya posible vía `ManualPaymentDialog`). El badge "por verificar" del dashboard solo mira los `bt-declared:`.
 
-### 3.4 Efectos verificados de un Payment `pending` (por qué esto no rompe nada)
+### 3.5 Efectos verificados de un Payment `pending` (por qué esto no rompe nada)
 
 - `Booking.paymentStatus` solo lo escriben la creación y `recalcBookingFromPayments`, que suma **exclusivamente** `status: 'approved'` (`finance.ts:225-247`). Un pending no toca `paymentStatus`, `depositPaid` ni `remainingBalance` → el filtro del cron (`paymentStatus: 'unpaid'`) sigue matcheando y la reserva expira sola si nadie actúa.
 - Ledger, finanzas y totalPaid por clienta solo cuentan approved → inmunes.
@@ -117,7 +128,8 @@ No existe "extender el hold al elegir": la booking se crea recién al click del 
 
 - `createBooking` acepta un parámetro nuevo `paymentMethod?: 'bank_transfer'`. Si viene:
   - valida server-side que el negocio tenga `BankTransferAccount.isEnabled` y `effectiveDeposit > 0` (nunca confiar en el cliente);
-  - setea `holdExpiresAt = now + holdHours` en vez de +15 min.
+  - setea `holdExpiresAt = now + holdHours` en vez de +15 min;
+  - persiste `Booking.paymentMethod = 'bank_transfer'` (§3.3) — lo consumen el email de reserva recibida y `/book/confirmation`.
 - **Trampa verificada**: con promo o paquete, `recomputeBookingAmountsAfterDiscount` (`recompute.ts:25`) pisa `holdExpiresAt` a +15 min incondicionalmente dentro de la misma tx. El recompute recibe la duración del hold como parámetro (o re-setea después del update). Sin este fix, toda transferencia con promo pierde su ventana de 24 h.
 
 ### 5.3 Pantalla de datos bancarios + declarar
@@ -140,13 +152,18 @@ Fix: persistir la `idempotencyKey` en el estado del wizard la primera vez que se
 
 ### 5.5 Página de confirmación (`/book/confirmation`)
 
-Dos cambios verificados como necesarios:
+Tres cambios:
 
 1. La query filtra `payments: { where: { provider: 'mercado_pago' } }` (`page.tsx:33`) → incluir también `manual` (o quitar el filtro y filtrar en derive).
 2. `deriveConfirmationState` (`confirmation-state.ts`):
    - **Primero** corta por `booking.status`: `expired` → estado nuevo "expirada" ("Tu reserva expiró porque no se completó el pago a tiempo"); `cancelled` → "cancelada". Hoy derive no mira ninguno de los dos y mostraría "verificando tu pago" sobre una reserva muerta.
    - Después: Payment `manual` pending con `bt-declared:` → `verifying`, con copy provider-aware ("Estamos verificando tu transferencia. El negocio la confirmará a la brevedad") — la copy actual de `verifying` dice "Mercado Pago está procesando el pago" hardcodeado (`page.tsx:71`).
    - El caso MP-abandonado no se rompe: ya muestra `verifying` hoy (el Payment MP pending se pre-crea antes del redirect).
+3. **Superficie activa, no solo informativa.** Si `booking.paymentMethod === 'bank_transfer'`, la reserva está `pending_payment`, el hold sigue vigente y aún NO existe el Payment `bt-declared` → la página muestra los datos bancarios, el monto del abono, el plazo restante y el botón "Ya transferí" (misma action `declareBankTransfer`). Es el camino de vuelta para la clienta que cerró la pestaña del wizard antes de declarar — típico en móvil al saltar a la app del banco; sin esto la feature tiene un dead end (el botón de declarar solo viviría en un estado de wizard que muere al cerrar la pestaña).
+
+### 5.6 `/mi` (portal de clienta logueada)
+
+`/mi/[slug]` muestra `bookingStatusLabels[b.status]` crudo (`page.tsx:86,108`) → una transferencia declarada se vería como "Pendiente de pago", que para la clienta suena a "no pagaste". La query de esas reservas incluye el flag de declarada (Payment `bt-declared` pending) y esas filas muestran "Transferencia en verificación" en su lugar.
 
 ## 6. Flujo dueña (dashboard)
 
@@ -157,6 +174,11 @@ En la página de Reservas, un bloque arriba de la tabla listando las bookings `p
 Requiere que `getBookings` incluya payments (hoy no los trae, `bookings.ts:153-163`) — select acotado (`id, provider, status, paymentMethod, providerPaymentId, amount, createdAt`), no el objeto entero.
 
 En la tabla de reservas misma, esas filas muestran el badge derivado "Transferencia por verificar" (variante naranja) en lugar del "Pendiente de pago" genérico. Es un label derivado en la página (booking.status no cambia), no una key nueva del enum en `STATUS_MAPS.booking`.
+
+Además:
+
+- **Aviso en el dashboard home**: banner "Tenés N transferencias por verificar" con link a la sección, mismo patrón que los avisos de disponibilidad existentes (`service-fit-warnings.tsx`). La dueña puede no entrar a Reservas en días; sin este aviso, el contrapeso de `verifyHours = null` queda enterrado en una sola página. (El listado de reservas recientes del home, `dashboard/page.tsx:172`, también muestra "Por verificar" en esas filas en vez de "Pendiente".)
+- Cada fila de la sección incluye un link `wa.me` a la clienta (helper `buildWhatsappUrl` existente) — útil justo al rechazar o cuando el slot fue tomado por otra reserva.
 
 ### 6.2 Verificar — `confirmBankTransfer(paymentId, amount)`
 
@@ -180,9 +202,13 @@ Action nueva sin precedente directo (nada pone hoy un Payment manual en `rejecte
 
 El cupo vuelve solo: availability excluye `cancelled`. Nota para derive: con Payment `rejected` + booking `cancelled`, el corte por status de §5.5 (cancelada primero) evita la copy engañosa actual de `rejected` ("tu reserva quedó pendiente").
 
+### 6.4 `cancelBooking` cierra el Payment declarado
+
+La dueña puede cancelar cualquier reserva con el botón normal de cancelar (drawer/tabla) sin pasar por Rechazar. Si cancela una con transferencia declarada, el Payment quedaría `pending` para siempre: la booking deja de ser `pending_payment` y el cron ya no la agarra — pendiente fantasma en la tabla Pagos. `cancelBooking` (`bookings.ts:961`) marca `cancelled` los Payments `manual`/`pending` con `providerPaymentId` `bt-declared:` de la booking, dentro de su misma tx.
+
 ## 7. Cron (`expireStaleHolds`) — cambios acotados
 
-La **query no cambia**: una declarada mantiene `paymentStatus: 'unpaid'` (§3.4), así que si `holdExpiresAt` vence sin verificación, el cron la expira solo. Lo que sí cambia (el "cero cambios al cron" del diseño v2 no se sostenía):
+La **query no cambia**: una declarada mantiene `paymentStatus: 'unpaid'` (§3.5), así que si `holdExpiresAt` vence sin verificación, el cron la expira solo. Lo que sí cambia (el "cero cambios al cron" del diseño v2 no se sostenía):
 
 1. Tras expirar el lote, buscar los Payments `manual`/`pending` con `providerPaymentId LIKE 'bt-declared:%'` de esas bookings y marcarlos `cancelled`. Sin esto quedan huérfanos en pending para siempre y derive mostraría "verificando" sobre reservas muertas.
 2. Para esas mismas bookings (transferencia declarada, no el checkout MP abandonado), enviar email a la clienta: "Tu reserva expiró sin que se verificara el pago. Si transferiste, contactá al negocio." **Best-effort**: `Customer.email` es opcional en el flujo público; si no hay email no llega a nadie y la página de confirmación es la fuente de verdad (mostrará "expirada", §5.5). Usar `sendNotificationSafely` — un fallo de email no debe romper el cron.
@@ -193,6 +219,8 @@ Verificar la cadencia real del cron en la config de Vercel (no hay `vercel.json`
 
 | Evento | A quién | Mecanismo |
 |---|---|---|
+| Reserva recibida (variante transferencia) | Clienta | Extiende el template `bookingReceivedCustomer` existente (`templates.ts:125,162`): cuando `booking.paymentMethod === 'bank_transfer'`, incluye los **datos bancarios completos**, el monto exacto del abono, el plazo ("tenés hasta el martes 15:00") y el link a `/book/confirmation?bookingId=` para declarar. Sin esto, la clienta que cerró la pestaña no tiene los datos para transferir (§5.5.3). |
+| Nueva reserva (variante transferencia) | Dueña (+admins) | Extiende `newBookingBusiness*`: línea "La clienta eligió pagar el abono por transferencia (plazo hasta X)" — para que la dueña sepa que hay que esperar la declaración, no un pago MP. |
 | Declaró transferencia | Dueña (+admins) | Nuevo. Patrón `getBusinessOwnerEmails` + `sendNotificationSafely` (mismo esquema que `sendNewBookingNotificationToBusiness`). Incluye clienta, servicio, fecha, monto y link al dashboard. |
 | Transferencia verificada | Clienta | Existente: `applyApprovedPayment` ya dispara la notificación de pago recibido. |
 | Transferencia rechazada | Clienta | Nuevo, copy propia (§6.3). Best-effort. |
@@ -222,6 +250,6 @@ Server actions: `saveBankTransferAccount` + `setBankTransferEnabled` en un archi
 
 ## 12. Testing
 
-- **Integration (Postgres real, patrón `packages-actions.test.ts`)**: `declareBankTransfer` (feliz, idempotencia por doble click → un solo Payment, guard con hold vencido → error y cero Payments, monto server-side ignora el cliente); `confirmBankTransfer` (feliz con monto editado ≠ declarado, hold vencido + slot re-tomado → error, booking expired → error, doble pago MP-aprobado → error); `rejectBankTransfer` (Payment rejected + booking cancelled + redemption liberada); cron extendido (expira + cancela Payment declarado; no toca declaradas con hold vigente; no manda email si la clienta no dejó email).
-- **Unit**: `deriveConfirmationState` con los casos nuevos (expired/cancelled cortan primero; manual pending → verifying; MP-abandonado sigue igual); disponibilidad de métodos (tabla de §5.1); recompute no pisa el hold parametrizado.
-- **Component (`renderToStaticMarkup` + mock `next/navigation`)**: paso de pago con selector de métodos, pantalla de datos bancarios, sección "por verificar" del dashboard.
+- **Integration (Postgres real, patrón `packages-actions.test.ts`)**: `declareBankTransfer` (feliz, idempotencia por doble click → un solo Payment, guard con hold vencido → error y cero Payments, monto server-side ignora el cliente); `confirmBankTransfer` (feliz con monto editado ≠ declarado, hold vencido + slot re-tomado → error, booking expired → error, doble pago MP-aprobado → error); `rejectBankTransfer` (Payment rejected + booking cancelled + redemption liberada); `cancelBooking` sobre una declarada → Payment `bt-declared` queda `cancelled` (§6.4); cron extendido (expira + cancela Payment declarado; no toca declaradas con hold vigente; no manda email si la clienta no dejó email); `createBooking` con `paymentMethod: 'bank_transfer'` persiste la columna y el hold largo (incluso con promo — recompute parametrizado).
+- **Unit**: `deriveConfirmationState` con los casos nuevos (expired/cancelled cortan primero; manual pending → verifying; MP-abandonado sigue igual); disponibilidad de métodos (tabla de §5.1); templates de email variante transferencia (datos bancarios y plazo presentes; variante dueña con la línea de método).
+- **Component (`renderToStaticMarkup` + mock `next/navigation`)**: paso de pago con selector de métodos, pantalla de datos bancarios, `/book/confirmation` en modo superficie activa (botón "Ya transferí" visible solo con hold vigente y sin declarar), sección "por verificar" del dashboard con link `wa.me`, aviso del dashboard home, label "Transferencia en verificación" en `/mi`.
