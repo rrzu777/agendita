@@ -1,10 +1,21 @@
 import { prisma } from '@/lib/db'
 import { BookingStatus, type PrismaClient } from '@prisma/client'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
+import { declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
+import {
+  sendNotificationSafely,
+  sendBankTransferExpiredToCustomer,
+  getBusinessReplyToEmail,
+} from '@/lib/notifications'
 
 export interface ExpireHoldsResult {
   expired: number
   businessIds: string[]
+  declaredTransferExpired: number
+}
+
+interface ExpireHoldsDeps {
+  sendExpiredEmail: typeof sendBankTransferExpiredToCustomer
 }
 
 /**
@@ -14,7 +25,8 @@ export interface ExpireHoldsResult {
  */
 export async function expireStaleHolds(
   now = new Date(),
-  db: Pick<PrismaClient, 'booking' | '$transaction'> = prisma
+  db: Pick<PrismaClient, 'booking' | 'payment' | '$transaction'> = prisma,
+  deps: ExpireHoldsDeps = { sendExpiredEmail: sendBankTransferExpiredToCustomer }
 ): Promise<ExpireHoldsResult> {
   const expiredBookings = await db.booking.findMany({
     where: {
@@ -26,12 +38,12 @@ export async function expireStaleHolds(
   })
 
   if (expiredBookings.length === 0) {
-    return { expired: 0, businessIds: [] }
+    return { expired: 0, businessIds: [], declaredTransferExpired: 0 }
   }
 
   const expiredIds = expiredBookings.map((b) => b.id)
 
-  const updateResult = await db.$transaction(async (tx) => {
+  const { count, declaredBookingIds } = await db.$transaction(async (tx) => {
     const res = await tx.booking.updateMany({
       where: {
         id: { in: expiredIds },
@@ -58,8 +70,63 @@ export async function expireStaleHolds(
     for (const r of reds) {
       await releaseRedemptionForBooking(tx, r.bookingId, 'hold_expired')
     }
-    return res
+
+    // Cerrar el Payment declarado huérfano (bt-declared) de las reservas que
+    // REALMENTE transicionaron a `expired` en esta corrida — filtrando por la
+    // relación booking.status en la misma query, sin un findMany intermedio.
+    // (Filtro por relación en `where` es seguro; el landmine es relationLoadStrategy:'join'.)
+    // Sin esto el Payment queda `pending` para siempre.
+    const declaredPayments = await tx.payment.findMany({
+      where: {
+        bookingId: { in: expiredIds },
+        booking: { status: BookingStatus.expired },
+        ...declaredTransferPaymentWhere,
+      },
+      select: { bookingId: true },
+    })
+    const declaredBookingIds = declaredPayments.map((p) => p.bookingId)
+    if (declaredBookingIds.length > 0) {
+      await tx.payment.updateMany({
+        where: { bookingId: { in: declaredBookingIds }, ...declaredTransferPaymentWhere },
+        data: { status: 'cancelled' },
+      })
+    }
+    return { count: res.count, declaredBookingIds }
   })
+
+  // Emails best-effort para las transferencias declaradas expiradas (post-tx).
+  // Un cron procesa lotes: resolvemos el reply-to una vez por negocio y mandamos
+  // los emails en paralelo (sendNotificationSafely traga sus propios errores).
+  if (declaredBookingIds.length > 0) {
+    const toNotify = await prisma.booking.findMany({
+      where: { id: { in: declaredBookingIds } },
+      include: { customer: true, service: true, business: true },
+    })
+    const replyToByBiz = new Map<string, string | null>()
+    await Promise.all(
+      [...new Set(toNotify.map((b) => b.businessId))].map(async (bizId) => {
+        replyToByBiz.set(bizId, await getBusinessReplyToEmail(bizId))
+      })
+    )
+    await Promise.all(
+      toNotify
+        .filter((b) => b.customer?.email)
+        .map((b) =>
+          sendNotificationSafely('bank transfer expired', () =>
+            deps.sendExpiredEmail({
+              businessName: b.business.name,
+              businessTimezone: b.business.timezone || 'America/Santiago',
+              businessReplyToEmail: replyToByBiz.get(b.businessId) ?? null,
+              customerName: b.customer!.name,
+              customerEmail: b.customer!.email!,
+              serviceName: b.service?.name ?? 'servicio',
+              startDateTime: b.startDateTime,
+              bookingNumber: b.bookingNumber,
+            })
+          )
+        )
+    )
+  }
 
   // Solo revalidar los negocios cuyas reservas REALMENTE se actualizaron.
   // Como no podemos saber cuáles IDs se actualizaron sin query adicional,
@@ -68,7 +135,8 @@ export async function expireStaleHolds(
   const businessIds = [...new Set(expiredBookings.map((b) => b.businessId))]
 
   return {
-    expired: updateResult.count,
+    expired: count,
     businessIds,
+    declaredTransferExpired: declaredBookingIds.length,
   }
 }

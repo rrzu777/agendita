@@ -9,6 +9,8 @@ import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
 import { buildSetupChecklist } from '@/lib/dashboard/setup-checklist'
 import { SetupChecklist } from '@/components/dashboard/setup-checklist'
+import { PendingTransfersBanner } from '@/components/dashboard/pending-transfers-banner'
+import { hasPendingDeclaredTransfer } from '@/lib/bank-transfer/declared'
 import { CalendarCheck2, CreditCard, ExternalLink, TrendingUp, Users } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -48,6 +50,9 @@ export default async function DashboardPage() {
     b.status !== 'cancelled' &&
     b.status !== 'no_show'
   )
+  // Deriva de la relación filtrada `payments` (Task 1): no-vacía sólo cuando hay
+  // una transferencia declarada pendiente → sin segunda query.
+  const pendingTransfersCount = bookings.filter(hasPendingDeclaredTransfer).length
 
   const publicUrl = getBusinessPublicUrl(business)
   const bookingUrl = getBusinessPublicUrl(business, '/book')
@@ -71,6 +76,7 @@ export default async function DashboardPage() {
     <div>
       <DashboardHeader title={`Resumen de ${business.name}`} subtitle="Aquí tienes el pulso de tu estudio hoy." />
       <div className="p-5 md:p-10">
+        <PendingTransfersBanner count={pendingTransfersCount} />
         <Card className="studio-card mb-8 border-border/60 bg-card">
           <CardContent className="p-6">
             <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
@@ -169,7 +175,13 @@ export default async function DashboardPage() {
                     </div>
                   </div>
                   <span className="self-start rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground md:self-auto">
-                    {booking.status === 'confirmed' ? 'Confirmada' : booking.status === 'pending_payment' ? 'Pendiente' : booking.status}
+                    {booking.status === 'confirmed'
+                      ? 'Confirmada'
+                      : hasPendingDeclaredTransfer(booking)
+                        ? 'Por verificar'
+                        : booking.status === 'pending_payment'
+                          ? 'Pendiente'
+                          : booking.status}
                   </span>
                 </article>
               ))}

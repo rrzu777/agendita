@@ -26,7 +26,7 @@ import { emitAutomaticReward, loadAutomaticRules } from '@/lib/loyalty/automatic
 import { rewardReferralOnCompletion, captureReferral, notifyReferralReward } from '@/lib/loyalty/referral'
 import { firstVisitKey, conditionKind } from '@/lib/loyalty/automatic-match'
 import { BANK_TRANSFER_PUBLIC_SELECT, type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
-import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
+import { BANK_TRANSFER_METHOD, declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import type { BookingEmailData } from '@/lib/notifications/types'
 import {
@@ -183,6 +183,13 @@ export async function getBookings() {
     include: {
       service: true,
       customer: true,
+      // Solo la declaración de transferencia pendiente (bt-declared). El array
+      // queda vacío salvo que haya una por verificar → deriva el badge y la
+      // sección del dashboard sin segunda query.
+      payments: {
+        where: declaredTransferPaymentWhere,
+        select: { id: true, amount: true, createdAt: true, providerPaymentId: true },
+      },
     },
   })
 }
@@ -1036,6 +1043,12 @@ export async function cancelBooking(bookingId: string, reason?: string) {
       },
     })
     await releaseRedemptionForBooking(tx, bookingId, 'cancelled')
+    // Cierra el Payment bt-declared pendiente para que no quede huérfano en
+    // "por verificar" tras cancelar la reserva (§6.4). No-op si no hay ninguno.
+    await tx.payment.updateMany({
+      where: { bookingId, ...declaredTransferPaymentWhere },
+      data: { status: 'cancelled' },
+    })
   })
 
   if (booking.customer?.email) {

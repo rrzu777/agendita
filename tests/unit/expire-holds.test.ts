@@ -8,7 +8,13 @@ describe('expireStaleHolds', () => {
     // tx.booking.updateMany is the one whose result drives `expired`.
     const updateMany = vi.fn().mockResolvedValue(overrides.updateMany ?? { count: 0 })
     const tx = {
-      booking: { updateMany },
+      // booking.findMany (post-updateMany) = qué reservas transicionaron a expired;
+      // [] por defecto = ninguna transferencia declarada que cancelar.
+      booking: { updateMany, findMany: vi.fn().mockResolvedValue(overrides.expiredNow ?? []) },
+      payment: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       promotionRedemption: {
         // No applied redemptions on the expired holds by default.
         findMany: vi.fn().mockResolvedValue([]),

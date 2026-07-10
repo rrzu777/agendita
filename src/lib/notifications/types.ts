@@ -107,6 +107,17 @@ export interface BankTransferDeclaredEmailData {
   bookingNumber?: number | null
 }
 
+export interface BankTransferVerifyCustomerEmailData {
+  businessName: string
+  businessTimezone: string
+  customerName: string
+  serviceName: string
+  startDateTime: Date
+  bookingNumber?: number | null
+  customerEmail?: string
+  businessReplyToEmail?: string | null
+}
+
 export interface LoyaltyRewardEmailData {
   businessName: string
   businessReplyToEmail?: string | null
