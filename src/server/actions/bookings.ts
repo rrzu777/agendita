@@ -25,7 +25,8 @@ import { creditVisitPoints } from '@/lib/loyalty/credit'
 import { emitAutomaticReward, loadAutomaticRules } from '@/lib/loyalty/automatic'
 import { rewardReferralOnCompletion, captureReferral, notifyReferralReward } from '@/lib/loyalty/referral'
 import { firstVisitKey, conditionKind } from '@/lib/loyalty/automatic-match'
-import { BANK_TRANSFER_PUBLIC_SELECT } from '@/lib/bank-transfer/public-info'
+import { BANK_TRANSFER_PUBLIC_SELECT, type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
+import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import type { BookingEmailData } from '@/lib/notifications/types'
 import {
@@ -91,6 +92,9 @@ async function fireBookingNotifications(
     holdExpiresAt: Date | null
   } & { id: string; businessId: string; bookingNumber: number | null },
   serviceName: string,
+  // La cuenta ya la leyó createBooking antes de la tx; se pasa para no
+  // re-consultar la misma fila (solo presente en reservas-transferencia).
+  bankTransferAccount: BankTransferPublicInfo | null,
 ) {
   const customerEmail = booking.customer.email
   const businessTimezone = business.timezone || 'America/Santiago'
@@ -99,17 +103,11 @@ async function fireBookingNotifications(
   // Reserva con transferencia: el email de "reserva recibida" ES la fuente
   // durable de los datos bancarios (la pestaña del wizard es efímera).
   let bankTransfer: BookingEmailData['bankTransfer'] | undefined
-  if (booking.paymentMethod === 'bank_transfer') {
-    const account = await prisma.bankTransferAccount.findUnique({
-      where: { businessId: booking.businessId },
-      select: BANK_TRANSFER_PUBLIC_SELECT,
-    })
-    if (account) {
-      bankTransfer = {
-        ...account,
-        deadline: booking.holdExpiresAt,
-        confirmationUrl: `${getBusinessPublicUrl({ slug: business.slug, subdomain: business.subdomain })}/book/confirmation?bookingId=${booking.id}`,
-      }
+  if (booking.paymentMethod === BANK_TRANSFER_METHOD && bankTransferAccount) {
+    bankTransfer = {
+      ...bankTransferAccount,
+      deadline: booking.holdExpiresAt,
+      confirmationUrl: `${getBusinessPublicUrl({ slug: business.slug, subdomain: business.subdomain })}/book/confirmation?bookingId=${booking.id}`,
     }
   }
 
@@ -165,7 +163,7 @@ async function fireBookingNotifications(
         depositRequired: booking.depositRequired,
         remainingBalance: booking.remainingBalance,
         dashboardLink,
-        paymentNote: booking.paymentMethod === 'bank_transfer'
+        paymentNote: booking.paymentMethod === BANK_TRANSFER_METHOD
           ? 'La clienta eligió pagar el abono por transferencia. Te va a llegar otro aviso cuando declare que transfirió.'
           : undefined,
       }),
@@ -254,11 +252,13 @@ export async function createBooking(data: {
   // Transferencia bancaria: validar server-side que esté habilitada. El hold
   // largo (holdHours, default 24h) da la ventana para transferir y declarar
   // (spec transferencia §5.2). Solo aplica si el servicio requiere abono.
-  let bankTransferAccount: { holdHours: number } | null = null
-  if (data.paymentMethod === 'bank_transfer') {
+  // Se leen los campos públicos completos porque el email de reserva recibida
+  // los reusa (se pasan a fireBookingNotifications sin re-consultar).
+  let bankTransferAccount: BankTransferPublicInfo | null = null
+  if (data.paymentMethod === BANK_TRANSFER_METHOD) {
     bankTransferAccount = await prisma.bankTransferAccount.findFirst({
       where: { businessId, isEnabled: true },
-      select: { holdHours: true },
+      select: BANK_TRANSFER_PUBLIC_SELECT,
     })
     if (!bankTransferAccount) {
       throw new Error('Este negocio no tiene transferencia bancaria habilitada')
@@ -360,7 +360,7 @@ export async function createBooking(data: {
           finalAmount,
           paymentStatus: bookingPaymentStatus,
           holdExpiresAt,
-          paymentMethod: bankTransferAccount && depositRequired > 0 ? 'bank_transfer' : null,
+          paymentMethod: bankTransferAccount && depositRequired > 0 ? BANK_TRANSFER_METHOD : null,
           idempotencyKey: data.idempotencyKey || null,
           bookingNumber,
         },
@@ -417,7 +417,7 @@ export async function createBooking(data: {
       customer: { name: string; phone: string; email: string | null }
     }
 
-    await fireBookingNotifications(business, bookingForNotification, service.name)
+    await fireBookingNotifications(business, bookingForNotification, service.name, bankTransferAccount)
 
     logger.booking.created(booking.id, businessId, booking.customer?.email ?? undefined)
 

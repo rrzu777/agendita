@@ -9,6 +9,7 @@ import { previewPromotion } from '@/server/actions/promotions'
 import { usePackageAvailability } from '@/lib/packages/use-package-availability'
 import { initiatePayment, verifyAndConfirmPayment, getOnlinePaymentAvailability } from '@/server/actions/payments'
 import { getBankTransferInfo, declareBankTransfer } from '@/server/actions/bank-transfer-public'
+import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
 import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { TransferDetails } from './transfer-details'
 import { formatMoney } from '@/lib/money'
@@ -57,7 +58,7 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error' | 'transfer-details' | 'transfer-declared'>('review')
   const [bankInfo, setBankInfo] = useState<BankTransferPublicInfo | null>(null)
-  const [method, setMethod] = useState<'online' | 'transfer' | null>(null)
+  const [method, setMethod] = useState<'online' | 'transfer'>('online')
   const [transferBooking, setTransferBooking] = useState<{ id: string; bookingNumber: number | null; deadline: Date | null } | null>(null)
   const [declaring, setDeclaring] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
@@ -263,24 +264,30 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
     // eslint-disable-next-line react-hooks/exhaustive-deps -- updateData es estable (setState del wizard)
   }, [data.idempotencyKey, idempotencyKey])
 
+  // Argumentos comunes de createBooking a los tres handlers (online / manual /
+  // transferencia). Cada handler pasa solo lo que difiere (p.ej. paymentMethod).
+  function bookingInput(extra?: { paymentMethod?: typeof BANK_TRANSFER_METHOD }) {
+    return {
+      serviceId: data.serviceId!,
+      customerName: data.customerName,
+      customerPhone: data.customerPhone,
+      customerEmail: data.customerEmail,
+      startDateTime: data.timeSlot!.start,
+      idempotencyKey,
+      acceptedTerms,
+      promotionCode: appliedPromo?.code,
+      referralToken,
+      skipPackage: !usePackage,
+      ...extra,
+    }
+  }
+
   async function handleTransferBooking() {
     setLoading(true)
     setStep('processing')
     setErrorMessage('')
     try {
-      const booking = await createBooking({
-        serviceId: data.serviceId!,
-        customerName: data.customerName,
-        customerPhone: data.customerPhone,
-        customerEmail: data.customerEmail,
-        startDateTime: data.timeSlot!.start,
-        idempotencyKey,
-        acceptedTerms,
-        promotionCode: appliedPromo?.code,
-        referralToken,
-        skipPackage: !usePackage,
-        paymentMethod: 'bank_transfer',
-      }, businessId)
+      const booking = await createBooking(bookingInput({ paymentMethod: BANK_TRANSFER_METHOD }), businessId)
       setTransferBooking({
         id: booking.id,
         bookingNumber: booking.bookingNumber ?? null,
@@ -316,18 +323,7 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
     setErrorMessage('')
 
     try {
-      const booking = await createBooking({
-        serviceId: data.serviceId!,
-        customerName: data.customerName,
-        customerPhone: data.customerPhone,
-        customerEmail: data.customerEmail,
-        startDateTime: data.timeSlot!.start,
-        idempotencyKey,
-        acceptedTerms,
-        promotionCode: appliedPromo?.code,
-        referralToken,
-        skipPackage: !usePackage,
-      }, businessId)
+      const booking = await createBooking(bookingInput(), businessId)
 
       setStep('success')
       const mode = noDepositNeeded ? 'paid' as const : 'pending' as const
@@ -352,18 +348,7 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
     }
 
     try {
-      const booking = await createBooking({
-        serviceId: data.serviceId!,
-        customerName: data.customerName,
-        customerPhone: data.customerPhone,
-        customerEmail: data.customerEmail,
-        startDateTime: data.timeSlot!.start,
-        idempotencyKey,
-        acceptedTerms,
-        promotionCode: appliedPromo?.code,
-        referralToken,
-        skipPackage: !usePackage,
-      }, businessId)
+      const booking = await createBooking(bookingInput(), businessId)
 
       const paymentResult = await initiatePayment({
         bookingId: booking.id,
@@ -631,7 +616,7 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
                 key={key}
                 type="button"
                 onClick={() => setMethod(key)}
-                className={`rounded-xl border p-4 text-left text-sm transition-colors ${(method ?? 'online') === key ? 'border-primary bg-primary/5' : 'border-border'}`}
+                className={`rounded-xl border p-4 text-left text-sm transition-colors ${method === key ? 'border-primary bg-primary/5' : 'border-border'}`}
               >
                 <span className="block font-semibold text-primary">{title}</span>
                 <span className="mt-0.5 block text-muted-foreground">{desc}</span>
@@ -664,7 +649,7 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
 
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
-        {bankInfo && (method ?? 'online') === 'transfer' ? (
+        {bankInfo && method === 'transfer' ? (
           <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleTransferBooking} disabled={loading || !acceptedTerms}>
             {loading ? 'Procesando...' : 'Continuar con transferencia'}
           </Button>

@@ -5,7 +5,7 @@ import { Prisma, PaymentProvider, PaymentStatus, PaymentType } from '@prisma/cli
 import { prisma } from '@/lib/db'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { BANK_TRANSFER_PUBLIC_SELECT, type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
-import { btDeclaredId } from '@/lib/bank-transfer/declared'
+import { btDeclaredId, BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
 import { sendMultiNotificationSafely, sendBankTransferDeclaredToBusiness } from '@/lib/notifications'
 
 // NOTE: módulo 'use server' — SOLO funciones async exportadas (schemas/consts
@@ -40,7 +40,7 @@ export async function declareBankTransfer(bookingId: string): Promise<{ ok: true
       },
     })
     if (!booking) throw new Error('Reserva no encontrada')
-    if (booking.paymentMethod !== 'bank_transfer') {
+    if (booking.paymentMethod !== BANK_TRANSFER_METHOD) {
       throw new Error('Esta reserva no eligió pago por transferencia')
     }
     const account = booking.business.bankTransferAccount

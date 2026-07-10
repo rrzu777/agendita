@@ -8,14 +8,14 @@ import { getBookingFunnelUrl } from '@/lib/business/urls'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { bookingStatusLabels } from '@/lib/bookings/status-labels'
 import { formatShortDate } from '@/lib/format-date'
-import { BT_DECLARED_PREFIX } from '@/lib/bank-transfer/declared'
+import { declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 import type { BookingStatus } from '@prisma/client'
 
 const UPCOMING_STATUSES = ['pending_payment', 'confirmed'] as const
 
 // Solo el flag "transferencia declarada pendiente de verificación".
 const BT_DECLARED_SELECT = {
-  where: { provider: 'manual', status: 'pending' as const, providerPaymentId: { startsWith: BT_DECLARED_PREFIX } },
+  where: declaredTransferPaymentWhere,
   select: { id: true },
 }
 

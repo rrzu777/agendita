@@ -1,4 +1,4 @@
-import { BT_DECLARED_PREFIX } from '@/lib/bank-transfer/declared'
+import { isDeclaredTransferPayment } from '@/lib/bank-transfer/declared'
 
 export type ConfirmationState =
   | 'confirmed'
@@ -24,10 +24,7 @@ export function deriveConfirmationState(input: DeriveInput): ConfirmationState {
   if (input.status === 'cancelled') return 'cancelled'
 
   // Transferencia declarada por la clienta (discriminada por bt-declared:).
-  const btDeclared = input.payments.some(
-    p => p.provider === 'manual' && p.status === 'pending' && p.providerPaymentId?.startsWith(BT_DECLARED_PREFIX),
-  )
-  if (btDeclared) return 'verifying_transfer'
+  if (input.payments.some(isDeclaredTransferPayment)) return 'verifying_transfer'
 
   const mpPayments = input.payments.filter(p => p.provider === 'mercado_pago')
 

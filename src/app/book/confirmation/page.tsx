@@ -7,6 +7,7 @@ import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { deriveConfirmationState } from '@/lib/payments/confirmation-state'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
+import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
 import { TransferPanel } from './transfer-panel'
 
 interface BookingConfirmationPageProps {
@@ -57,7 +58,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
   // Superficie activa: la clienta que eligió transferencia y cerró la pestaña
   // del wizard puede ver los datos y declarar desde acá (mientras el hold viva).
   const canDeclare =
-    booking.paymentMethod === 'bank_transfer' &&
+    booking.paymentMethod === BANK_TRANSFER_METHOD &&
     state === 'pending' &&
     booking.holdExpiresAt != null &&
     booking.holdExpiresAt > new Date()
@@ -95,7 +96,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
       iconColor: 'text-muted-foreground',
       iconBg: 'bg-muted',
       title: 'Reserva pendiente de pago',
-      message: booking.paymentMethod === 'bank_transfer'
+      message: booking.paymentMethod === BANK_TRANSFER_METHOD
         ? 'Transferí el abono y avisanos con el botón de abajo para confirmar tu reserva.'
         : 'Completa el pago del abono para confirmar tu reserva.',
     },
