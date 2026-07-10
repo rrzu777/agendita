@@ -72,3 +72,75 @@ describe('getBookings includes declared transfer payment', () => {
     expect(otherRow.payments).toHaveLength(0)
   })
 })
+
+describe('confirmBankTransfer', () => {
+  it('approves with an edited amount, confirms the booking, cancels no slot', async () => {
+    // Declarado 10000, abono requerido 8000: la dueña edita a la baja a 8000
+    // (transfirió menos de lo declarado) y AÚN cubre el abono → confirma.
+    const { paymentId, bookingId } = await seedDeclaredTransfer({ depositRequired: 8000, amount: 10000 })
+    const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
+    await confirmBankTransfer(paymentId, 8000) // editado a la baja desde 10000
+    const payment = await prisma.payment.findUnique({ where: { id: paymentId } })
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId } })
+    expect(payment!.status).toBe('approved')
+    expect(payment!.amount).toBe(8000)
+    expect(booking!.status).toBe('confirmed')
+    expect(booking!.depositPaid).toBe(8000)
+  })
+
+  it('rejects when the booking already has an approved payment (double pay)', async () => {
+    const { paymentId, bookingId, businessId, customerId } = await seedDeclaredTransfer()
+    await prisma.payment.create({
+      data: {
+        businessId,
+        bookingId,
+        customerId,
+        provider: 'mercado_pago',
+        providerPaymentId: `mp-${bookingId}`,
+        amount: 10000,
+        currency: 'CLP',
+        status: 'approved',
+        paymentType: 'deposit',
+      },
+    })
+    const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
+    await expect(confirmBankTransfer(paymentId, 5000)).rejects.toThrow(/ya tiene el abono/)
+  })
+
+  it('errors on an expired booking (terminal)', async () => {
+    const { paymentId, bookingId } = await seedDeclaredTransfer()
+    await prisma.booking.update({ where: { id: bookingId }, data: { status: 'expired' } })
+    const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
+    await expect(confirmBankTransfer(paymentId, 5000)).rejects.toThrow(/expiró|cancel/)
+  })
+
+  it('errors when hold expired and the slot is no longer available', async () => {
+    // DESVIACIÓN vs plan: el plan sembraba una reserva confirmada solapada, pero
+    // la EXCLUDE constraint parcial `Booking_no_overlap` (activa para
+    // pending_payment/confirmed/completed) impide DOS reservas activas solapadas
+    // en la BD — no se puede representar. El re-chequeo (assertSlotIsAvailable)
+    // igual protege contra que el horario deje de estar disponible por otra vía
+    // (bloqueo/regla) una vez vencido el hold; lo ejercemos con un TimeBlock.
+    // Sin el re-chequeo, el bump del hold dejaría pasar la confirmación → este
+    // test discrimina que el re-chequeo efectivamente corre.
+    const { paymentId, bookingId, businessId, startDateTime, endDateTime } =
+      await seedDeclaredTransfer()
+    await prisma.booking.update({
+      where: { id: bookingId },
+      data: { holdExpiresAt: new Date(Date.now() - 3600_000) },
+    })
+    // Reglas de disponibilidad amplias (todos los días) para pasar el chequeo de
+    // regla y que el rechazo lo cause el bloqueo, no la falta de regla.
+    for (let dow = 0; dow < 7; dow++) {
+      await prisma.availabilityRule.create({
+        data: { businessId, dayOfWeek: dow, startTime: '00:00', endTime: '23:59', isActive: true },
+      })
+    }
+    // Bloqueo horario que ocupa el slot (el horario "ya no está disponible").
+    await prisma.timeBlock.create({
+      data: { businessId, startDateTime, endDateTime, reason: 'ocupado' },
+    })
+    const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
+    await expect(confirmBankTransfer(paymentId, 5000)).rejects.toThrow(/horario|disponible/)
+  })
+})
