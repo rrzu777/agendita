@@ -42,7 +42,12 @@ vi.mock('@/lib/notifications', () => ({
   sendBankTransferRejectedToCustomer: async () => ({ success: true }),
   sendBankTransferExpiredToCustomer: async () => ({ success: true }),
   sendTransferReactivatedToCustomer: async () => ({ success: true }),
-  sendNotificationSafely: async () => ({ success: true }),
+  // Ejecuta el callback para que la construcción del payload post-tx corra en
+  // los tests (los senders internos ya están mockeados).
+  sendNotificationSafely: async (_label: string, fn: () => Promise<unknown>) => {
+    await fn()
+    return { success: true }
+  },
   sendMultiNotificationSafely: async () => [],
   buildWhatsappUrl: () => 'https://wa.me/x',
 }))
