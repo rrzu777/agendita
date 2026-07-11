@@ -7,11 +7,13 @@ import { prisma } from '@/lib/db'
 import { requireUser } from '@/lib/auth/server'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { canSelfManage, SELF_MANAGEABLE_STATUSES } from '@/lib/bookings/self-service'
-import { cancelBookingInTx } from '@/lib/bookings/mutate'
+import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
+import { computeRescheduleSlots } from '@/lib/availability/reschedule-slots'
 import {
   sendNotificationSafely,
   sendMultiNotificationSafely,
   sendBookingCancelledNotification,
+  sendBookingRescheduledNotification,
   sendOwnerBookingChangedNotification,
   getBusinessReplyToEmail,
 } from '@/lib/notifications'
@@ -90,4 +92,145 @@ export async function cancelMyBooking(bookingId: string) {
   revalidatePath(`/mi/${booking.business.slug}`)
 
   return { cancelled: true }
+}
+
+export async function rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
+  const user = await requireUser()
+
+  const limit = await checkRateLimit('self-service-booking', 10, 60_000, { userId: user.id })
+  if (!limit.success) {
+    throw new Error('Demasiados intentos. Espera un momento y vuelve a intentar.')
+  }
+
+  // Ownership EN el where (customer.userId === user.id): jamás confiar en ids del cliente.
+  const booking = await prisma.booking.findFirst({
+    where: {
+      id: bookingId,
+      status: { in: [...SELF_MANAGEABLE_STATUSES] },
+      customer: { userId: user.id },
+    },
+    include: {
+      service: { select: { name: true, durationMinutes: true } },
+      customer: { select: { name: true, email: true, phone: true } },
+      business: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          timezone: true,
+          isActive: true,
+          selfServiceCutoffHours: true,
+          bookingWindowDays: true,
+          whatsapp: true,
+          addressText: true,
+        },
+      },
+    },
+  })
+  if (!booking) {
+    throw new Error('Reserva no encontrada')
+  }
+
+  // Guard de negocio suspendido: reprogramar crea un slot nuevo (spec §5).
+  if (!booking.business.isActive) {
+    throw new Error('El negocio no está aceptando reservas en este momento.')
+  }
+
+  const cutoff = booking.business.selfServiceCutoffHours
+  if (!canSelfManage(booking.startDateTime, cutoff)) {
+    throw new Error(
+      cutoff === 0
+        ? 'Esta reserva ya no se puede reprogramar.'
+        : `Las reservas se pueden reprogramar hasta ${cutoff} horas antes. Contacta al negocio para cambios de último minuto.`,
+    )
+  }
+
+  // El slot NUEVO se rige por las reglas del funnel: lead time default (omitimos
+  // leadTimeMinutes) y dentro de bookingWindowDays.
+  const windowDays = booking.business.bookingWindowDays ?? 90
+  if (newStartDateTime.getTime() > Date.now() + windowDays * 24 * 3_600_000) {
+    throw new Error('La nueva fecha está fuera del período de reservas del negocio.')
+  }
+
+  const previousStartDateTime = booking.startDateTime
+
+  await prisma.$transaction(async (tx) => {
+    await rescheduleBookingInTx(tx, {
+      booking,
+      newStartDateTime,
+      durationMinutes: booking.service.durationMinutes,
+      timezone: booking.business.timezone || 'America/Santiago',
+      // sin leadTimeMinutes → default del funnel público
+    })
+  })
+
+  await sendMultiNotificationSafely('self-service reschedule (owner)', () =>
+    sendOwnerBookingChangedNotification({
+      businessId: booking.business.id,
+      businessName: booking.business.name,
+      businessTimezone: booking.business.timezone || 'America/Santiago',
+      customerName: booking.customer.name,
+      serviceName: booking.service.name,
+      bookingNumber: booking.bookingNumber,
+      change: { kind: 'rescheduled', previousStartDateTime, newStartDateTime },
+      startDateTime: previousStartDateTime,
+    }),
+  )
+
+  if (booking.customer.email) {
+    await sendNotificationSafely('self-service reschedule (customer)', async () =>
+      sendBookingRescheduledNotification({
+        businessName: booking.business.name,
+        bookingNumber: booking.bookingNumber,
+        businessReplyToEmail: await getBusinessReplyToEmail(booking.business.id),
+        businessWhatsapp: booking.business.whatsapp,
+        businessAddress: booking.business.addressText,
+        businessTimezone: booking.business.timezone || 'America/Santiago',
+        customerName: booking.customer.name,
+        customerEmail: booking.customer.email!,
+        customerPhone: booking.customer.phone,
+        serviceName: booking.service.name,
+        previousStartDateTime,
+        newStartDateTime,
+      }),
+    )
+  }
+
+  revalidatePath('/dashboard/bookings')
+  revalidatePath('/dashboard/calendar')
+  await revalidateBusinessPublicPaths(booking.business.id) // ALWAYS await — sin esto el proceso muere exit 128
+  revalidatePath(`/mi/${booking.business.slug}`)
+
+  return { rescheduled: true }
+}
+
+export async function getMyRescheduleSlots(bookingId: string, date: Date) {
+  const user = await requireUser()
+
+  // Mismo config que la exploración de fechas en el funnel público: 60/min.
+  const limit = await checkRateLimit('get-availability')
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  }
+
+  // Ownership EN el where (customer.userId === user.id): jamás confiar en ids del cliente.
+  const booking = await prisma.booking.findFirst({
+    where: {
+      id: bookingId,
+      status: { in: [...SELF_MANAGEABLE_STATUSES] },
+      customer: { userId: user.id },
+    },
+    include: {
+      service: { select: { id: true, durationMinutes: true, isActive: true } },
+      business: { select: { timezone: true, bookingWindowDays: true, slotStepMinutes: true } },
+    },
+  })
+  if (!booking) {
+    throw new Error('Reserva no encontrada')
+  }
+  if (!booking.service.isActive) {
+    throw new Error('Servicio no disponible')
+  }
+
+  return computeRescheduleSlots(booking, date)
 }
