@@ -10,6 +10,8 @@ import type {
   ReminderEmailData,
   LoyaltyRewardEmailData,
   RescheduledEmailData,
+  TransferReminderCustomerEmailData,
+  TransferReminderBusinessEmailData,
 } from './types'
 
 function escapeHtml(str: string): string {
@@ -93,6 +95,36 @@ export function bankTransferBlockText(
   if (bt.deadline) lines.push(`Plazo: hasta ${fmtDate(bt.deadline, timezone)}`)
   lines.push(`Cuando transfieras, avisá con "Ya transferí" acá: ${bt.confirmationUrl}`)
   return lines
+}
+
+export function transferReminderCustomerHtml(data: TransferReminderCustomerEmailData): string {
+  return baseHtml(`
+    ${header('Te quedan pocas horas para transferir')}
+    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, tu reserva de <strong>${escapeHtml(data.serviceName)}</strong> sigue pendiente. Transferí el abono y avisanos hoy para no perder tu cupo.</p>
+    ${bankTransferBlockHtml(data.bankTransfer, data.depositLabel, data.businessTimezone)}
+    ${footer(data.businessName)}
+  `)
+}
+
+export function transferReminderCustomerText(data: TransferReminderCustomerEmailData): string {
+  return [
+    `Hola ${data.customerName}, tu reserva de ${data.serviceName} sigue pendiente.`,
+    `Transferí el abono y avisanos hoy para no perder tu cupo.`,
+    ...bankTransferBlockText(data.bankTransfer, data.depositLabel, data.businessTimezone),
+  ].join('\n')
+}
+
+export function transferReminderBusinessHtml(data: TransferReminderBusinessEmailData): string {
+  return baseHtml(`
+    ${header('Tenés una transferencia por verificar')}
+    <p style="font-size:15px">${escapeHtml(data.customerName)} declaró una transferencia por <strong>${escapeHtml(data.serviceName)}</strong>${data.bookingNumber != null ? ` (reserva #${data.bookingNumber})` : ''} que sigue sin verificar. Revisá tu cuenta y confirmá o rechazá la reserva antes de que expire.</p>
+    <p style="margin-top:16px"><a href="${escapeHtml(data.dashboardUrl)}" style="color:#e91e63;text-decoration:none;font-weight:600">Ir a verificar en el dashboard →</a></p>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function transferReminderBusinessText(data: TransferReminderBusinessEmailData): string {
+  return `${data.customerName} declaró una transferencia por ${data.serviceName} en ${data.businessName} que sigue sin verificar. Revisá tu cuenta y confirmá o rechazá la reserva antes de que expire. Ir al dashboard: ${data.dashboardUrl}`
 }
 
 export function bookingConfirmationCustomerHtml(data: BookingEmailData): string {
