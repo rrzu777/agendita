@@ -86,7 +86,7 @@ describe('reviveBooking confirm', () => {
     expect(b.status).toBe('confirmed')
   })
 
-  it('no-expired → error; doble revive → error CAS', async () => {
+  it('no-expired → error; doble revive → error de estado', async () => {
     const seeded = await seedDeclaredTransfer() // pending_payment, no expirada
     await expect(reviveBooking(seeded.bookingId, 'confirm')).rejects.toThrow('Solo se puede revivir')
     const expired = await seedExpired()
@@ -127,5 +127,71 @@ describe('reviveBooking confirm', () => {
     await expect(reviveBooking(seeded.bookingId, 'confirm')).rejects.toThrow('Ese horario ya está ocupado')
     const still = await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })
     expect(still.status).toBe('expired')
+  })
+})
+
+describe('reviveBooking reopen', () => {
+  it('expired transferencia futura → pending_payment, hold=holdHours, flags reset, MP pendings cancelados', async () => {
+    const seeded = await seedExpired()
+    // flags "ya mandados" + un MP pending viejo que debe morir en la tx
+    await prisma.booking.update({
+      where: { id: seeded.bookingId },
+      data: { transferReminderCustomerSentAt: new Date(), transferReminderBusinessSentAt: new Date() },
+    })
+    const mp = await prisma.payment.create({
+      data: {
+        businessId: BT_VERIFY_BIZ, bookingId: seeded.bookingId, customerId: seeded.customerId,
+        provider: 'mercado_pago', providerPaymentId: `mp-stale-${seeded.bookingId}`,
+        amount: 10000, currency: 'CLP', status: 'pending', paymentType: 'deposit',
+      },
+    })
+    const before = Date.now()
+    await reviveBooking(seeded.bookingId, 'reopen')
+    const b = await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })
+    expect(b.status).toBe('pending_payment')
+    expect(b.transferReminderCustomerSentAt).toBeNull()
+    expect(b.transferReminderBusinessSentAt).toBeNull()
+    // holdHours de la cuenta seed — asserta contra el valor real de la cuenta.
+    const account = await prisma.bankTransferAccount.findUniqueOrThrow({ where: { businessId: BT_VERIFY_BIZ } })
+    const expectedMs = account.holdHours * 3_600_000
+    expect(b.holdExpiresAt!.getTime()).toBeGreaterThanOrEqual(before + expectedMs - 5_000)
+    expect(b.holdExpiresAt!.getTime()).toBeLessThanOrEqual(Date.now() + expectedMs + 5_000)
+    const mpAfter = await prisma.payment.findUniqueOrThrow({ where: { id: mp.id } })
+    expect(mpAfter.status).toBe('cancelled')
+  })
+
+  it('turno pasado → error', async () => {
+    // Offset distinto de los usados en el describe 'confirm' (-24h/-48h/-72h) para
+    // no colisionar con el EXCLUDE de solape (ventanas de 1h muy cercanas se pisan).
+    const start = new Date(Date.now() - 100 * 3_600_000)
+    const seeded = await seedExpired({ startDateTime: start, endDateTime: addMinutes(start, 60), holdExpiresAt: new Date(Date.now() - 106 * 3_600_000) })
+    await expect(reviveBooking(seeded.bookingId, 'reopen')).rejects.toThrow('turno ya pasó')
+  })
+
+  it('reserva sin transferencia (paymentMethod null) → error', async () => {
+    const seeded = await seedExpired()
+    await prisma.booking.update({ where: { id: seeded.bookingId }, data: { paymentMethod: null } })
+    await expect(reviveBooking(seeded.bookingId, 'reopen')).rejects.toThrow('transferencia')
+  })
+
+  it('cuenta deshabilitada → error (y se re-habilita para los demás tests)', async () => {
+    const seeded = await seedExpired()
+    await prisma.bankTransferAccount.update({ where: { businessId: BT_VERIFY_BIZ }, data: { isEnabled: false } })
+    try {
+      await expect(reviveBooking(seeded.bookingId, 'reopen')).rejects.toThrow('transferencia')
+    } finally {
+      await prisma.bankTransferAccount.update({ where: { businessId: BT_VERIFY_BIZ }, data: { isEnabled: true } })
+    }
+  })
+
+  it('conflicto de cupo (TimeBlock) → error y sigue expired', async () => {
+    const seeded = await seedExpired()
+    const b = await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })
+    const block = await prisma.timeBlock.create({
+      data: { businessId: BT_VERIFY_BIZ, startDateTime: b.startDateTime, endDateTime: b.endDateTime, reason: 'ocupado' },
+    })
+    await expect(reviveBooking(seeded.bookingId, 'reopen')).rejects.toThrow('ya no está disponible')
+    expect((await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })).status).toBe('expired')
+    await prisma.timeBlock.delete({ where: { id: block.id } })
   })
 })
