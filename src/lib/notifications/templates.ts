@@ -57,6 +57,44 @@ function loyaltyLinkHtml(link: string | undefined): string {
     : ''
 }
 
+export function bankTransferBlockHtml(
+  bt: NonNullable<BookingEmailData['bankTransfer']>, depositLabel: string, timezone: string,
+): string {
+  return `<div style="margin-top:16px;border:1px solid #e0e0e0;border-radius:8px;padding:16px">
+        <p style="font-weight:600;margin:0 0 8px">Datos para transferir el abono (${depositLabel})</p>
+        <table style="font-size:14px;border-collapse:collapse">
+          <tr><td style="padding:2px 12px 2px 0;color:#666">Titular</td><td>${escapeHtml(bt.accountHolder)}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666">RUT</td><td>${escapeHtml(bt.rut)}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666">Banco</td><td>${escapeHtml(bt.bankName)}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666">Tipo</td><td>${escapeHtml(bt.accountType)}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666">Cuenta</td><td>${escapeHtml(bt.accountNumber)}</td></tr>
+          ${bt.email ? `<tr><td style="padding:2px 12px 2px 0;color:#666">Email</td><td>${escapeHtml(bt.email)}</td></tr>` : ''}
+        </table>
+        ${bt.instructions ? `<p style="font-size:13px;color:#666;margin:8px 0 0">${escapeHtml(bt.instructions)}</p>` : ''}
+        ${bt.deadline ? `<p style="font-size:13px;margin:8px 0 0"><strong>Plazo:</strong> tenés hasta el ${fmtDate(bt.deadline, timezone)} para transferir y avisarnos.</p>` : ''}
+        <p style="margin:12px 0 0"><a href="${escapeHtml(bt.confirmationUrl)}" style="color:#e91e63;text-decoration:none;font-weight:600">Cuando transfieras, avisá con el botón "Ya transferí" acá →</a></p>
+      </div>`
+}
+
+export function bankTransferBlockText(
+  bt: NonNullable<BookingEmailData['bankTransfer']>, depositLabel: string, timezone: string,
+): string[] {
+  const lines = [
+    ``,
+    `Datos para transferir el abono (${depositLabel}):`,
+    `Titular: ${bt.accountHolder}`,
+    `RUT: ${bt.rut}`,
+    `Banco: ${bt.bankName}`,
+    `Tipo: ${bt.accountType}`,
+    `Cuenta: ${bt.accountNumber}`,
+  ]
+  if (bt.email) lines.push(`Email: ${bt.email}`)
+  if (bt.instructions) lines.push(bt.instructions)
+  if (bt.deadline) lines.push(`Plazo: hasta ${fmtDate(bt.deadline, timezone)}`)
+  lines.push(`Cuando transfieras, avisá con "Ya transferí" acá: ${bt.confirmationUrl}`)
+  return lines
+}
+
 export function bookingConfirmationCustomerHtml(data: BookingEmailData): string {
   const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
   const total = fmtCurrency(data.totalPrice, data.businessCurrency)
@@ -144,20 +182,7 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
     : ''
 
   const bankSection = data.bankTransfer
-    ? `<div style="margin-top:16px;border:1px solid #e0e0e0;border-radius:8px;padding:16px">
-        <p style="font-weight:600;margin:0 0 8px">Datos para transferir el abono (${deposit})</p>
-        <table style="font-size:14px;border-collapse:collapse">
-          <tr><td style="padding:2px 12px 2px 0;color:#666">Titular</td><td>${escapeHtml(data.bankTransfer.accountHolder)}</td></tr>
-          <tr><td style="padding:2px 12px 2px 0;color:#666">RUT</td><td>${escapeHtml(data.bankTransfer.rut)}</td></tr>
-          <tr><td style="padding:2px 12px 2px 0;color:#666">Banco</td><td>${escapeHtml(data.bankTransfer.bankName)}</td></tr>
-          <tr><td style="padding:2px 12px 2px 0;color:#666">Tipo</td><td>${escapeHtml(data.bankTransfer.accountType)}</td></tr>
-          <tr><td style="padding:2px 12px 2px 0;color:#666">Cuenta</td><td>${escapeHtml(data.bankTransfer.accountNumber)}</td></tr>
-          ${data.bankTransfer.email ? `<tr><td style="padding:2px 12px 2px 0;color:#666">Email</td><td>${escapeHtml(data.bankTransfer.email)}</td></tr>` : ''}
-        </table>
-        ${data.bankTransfer.instructions ? `<p style="font-size:13px;color:#666;margin:8px 0 0">${escapeHtml(data.bankTransfer.instructions)}</p>` : ''}
-        ${data.bankTransfer.deadline ? `<p style="font-size:13px;margin:8px 0 0"><strong>Plazo:</strong> tenés hasta el ${fmtDate(data.bankTransfer.deadline, data.businessTimezone)} para transferir y avisarnos.</p>` : ''}
-        <p style="margin:12px 0 0"><a href="${escapeHtml(data.bankTransfer.confirmationUrl)}" style="color:#e91e63;text-decoration:none;font-weight:600">Cuando transfieras, avisá con el botón "Ya transferí" acá →</a></p>
-      </div>`
+    ? bankTransferBlockHtml(data.bankTransfer, deposit, data.businessTimezone)
     : ''
 
   return baseHtml(`
@@ -204,19 +229,7 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
   lines.push(`Abono requerido: ${deposit}`)
   if (data.bankTransfer) {
     lines.push(
-      ``,
-      `Datos para transferir el abono (${deposit}):`,
-      `Titular: ${data.bankTransfer.accountHolder}`,
-      `RUT: ${data.bankTransfer.rut}`,
-      `Banco: ${data.bankTransfer.bankName}`,
-      `Tipo: ${data.bankTransfer.accountType}`,
-      `Cuenta: ${data.bankTransfer.accountNumber}`,
-    )
-    if (data.bankTransfer.email) lines.push(`Email: ${data.bankTransfer.email}`)
-    if (data.bankTransfer.instructions) lines.push(data.bankTransfer.instructions)
-    if (data.bankTransfer.deadline) lines.push(`Plazo: hasta ${fmtDate(data.bankTransfer.deadline, data.businessTimezone)}`)
-    lines.push(
-      `Cuando transfieras, avisá con "Ya transferí" acá: ${data.bankTransfer.confirmationUrl}`,
+      ...bankTransferBlockText(data.bankTransfer, deposit, data.businessTimezone),
       ``,
       `Tu reserva quedará confirmada cuando el negocio verifique la transferencia.`,
     )
