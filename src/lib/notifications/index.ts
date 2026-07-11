@@ -2,6 +2,7 @@ export {
   sendBookingConfirmationToCustomer,
   sendBookingReceivedToCustomer,
   sendNewBookingNotificationToBusiness,
+  sendOwnerBookingChangedNotification,
   sendBankTransferDeclaredToBusiness,
   sendBookingCancelledNotification,
   sendBookingRescheduledNotification,
@@ -41,6 +42,8 @@ export {
   bookingReceivedCustomerText,
   newBookingBusinessHtml,
   newBookingBusinessText,
+  ownerBookingChangedHtml,
+  ownerBookingChangedText,
   bankTransferRejectedCustomerHtml,
   bankTransferRejectedCustomerText,
   bankTransferExpiredCustomerHtml,
@@ -62,5 +65,5 @@ export {
   loyaltyRewardHtml,
   loyaltyRewardText,
 } from './templates'
-export type { EmailResult, BookingEmailData, CancellationEmailData, RescheduledEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, BankTransferVerifyCustomerEmailData, ReminderEmailData, LoyaltyRewardEmailData, NotificationResult, TransferReminderCustomerEmailData, TransferReminderBusinessEmailData } from './types'
+export type { EmailResult, BookingEmailData, CancellationEmailData, RescheduledEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, BankTransferVerifyCustomerEmailData, ReminderEmailData, LoyaltyRewardEmailData, NotificationResult, TransferReminderCustomerEmailData, TransferReminderBusinessEmailData, OwnerBookingChangedData } from './types'
 export type { BookingWhatsappData, BookingRescheduledWhatsappData, ReviewRequestWhatsappData } from './whatsapp'

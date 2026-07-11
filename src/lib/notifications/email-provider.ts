@@ -17,6 +17,7 @@ import type {
   RescheduledEmailData,
   TransferReminderCustomerEmailData,
   TransferReminderBusinessEmailData,
+  OwnerBookingChangedData,
 } from './types'
 import {
   transferReminderCustomerHtml,
@@ -29,6 +30,8 @@ import {
   bookingReceivedCustomerText,
   newBookingBusinessHtml,
   newBookingBusinessText,
+  ownerBookingChangedHtml,
+  ownerBookingChangedText,
   bankTransferDeclaredBusinessHtml,
   bankTransferDeclaredBusinessText,
   bankTransferRejectedCustomerHtml,
@@ -279,6 +282,29 @@ export async function sendNewBookingNotificationToBusiness(
   )
 
   return results
+}
+
+/**
+ * Notifica a la(s) dueña(s)/admin(s) del negocio cuando una clienta cancela o
+ * reprograma su propia reserva desde /mi (self-service, D1-b).
+ */
+export async function sendOwnerBookingChangedNotification(
+  data: OwnerBookingChangedData,
+): Promise<EmailResult[]> {
+  const ownerEmails = await getBusinessOwnerEmails(data.businessId)
+
+  if (ownerEmails.length === 0) {
+    return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
+  }
+
+  const html = ownerBookingChangedHtml(data)
+  const text = ownerBookingChangedText(data)
+  const verb = data.change.kind === 'cancelled' ? 'canceló' : 'reprogramó'
+  const subject = `${data.customerName} ${verb} su reserva - ${data.businessName}`
+
+  return Promise.all(
+    ownerEmails.map((owner) => sendEmail(owner.email, subject, html, text, {})),
+  )
 }
 
 export async function sendBookingConfirmedNotification(bookingId: string, businessId: string): Promise<EmailResult> {
