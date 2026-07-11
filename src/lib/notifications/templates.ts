@@ -12,6 +12,7 @@ import type {
   RescheduledEmailData,
   TransferReminderCustomerEmailData,
   TransferReminderBusinessEmailData,
+  OwnerBookingChangedData,
 } from './types'
 
 function escapeHtml(str: string): string {
@@ -320,6 +321,71 @@ export function newBookingBusinessHtml(data: NewBookingBusinessEmailData): strin
     <p style="margin-top:16px"><a href="${data.dashboardLink}" style="color:#e91e63;text-decoration:none;font-weight:600">Ver en dashboard</a></p>
     ${footer(data.businessName)}
   `)
+}
+
+function ownerBookingChangedCopy(data: OwnerBookingChangedData): { title: string; intro: string } {
+  if (data.change.kind === 'cancelled') {
+    return {
+      title: 'Reserva cancelada',
+      intro: `${escapeHtml(data.customerName)} canceló su reserva.`,
+    }
+  }
+  return {
+    title: 'Reserva reprogramada',
+    intro: `${escapeHtml(data.customerName)} reprogramó su reserva.`,
+  }
+}
+
+export function ownerBookingChangedHtml(data: OwnerBookingChangedData): string {
+  const { title, intro } = ownerBookingChangedCopy(data)
+
+  const scheduleRows =
+    data.change.kind === 'cancelled'
+      ? `<tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>`
+      : `<tr><td style="padding:8px 0;color:#666">Horario anterior</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.change.previousStartDateTime, data.businessTimezone)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Nuevo horario</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.change.newStartDateTime, data.businessTimezone)}</td></tr>`
+
+  return baseHtml(`
+    ${header(title)}
+    <p style="font-size:15px">${intro}</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      ${bookingNumberRowHtml(data.bookingNumber)}
+      <tr><td style="padding:8px 0;color:#666">Cliente</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
+      ${scheduleRows}
+    </table>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function ownerBookingChangedText(data: OwnerBookingChangedData): string {
+  const { title } = ownerBookingChangedCopy(data)
+  const plainIntro = data.change.kind === 'cancelled'
+    ? `${data.customerName} canceló su reserva.`
+    : `${data.customerName} reprogramó su reserva.`
+
+  const lines = [
+    title,
+    ``,
+    plainIntro,
+    ``,
+    ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
+    `Cliente: ${data.customerName}`,
+    `Servicio: ${data.serviceName}`,
+  ]
+
+  if (data.change.kind === 'cancelled') {
+    lines.push(`Fecha y hora: ${fmtDate(data.startDateTime, data.businessTimezone)}`)
+  } else {
+    lines.push(
+      `Horario anterior: ${fmtDate(data.change.previousStartDateTime, data.businessTimezone)}`,
+      `Nuevo horario: ${fmtDate(data.change.newStartDateTime, data.businessTimezone)}`,
+    )
+  }
+
+  lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)
+
+  return lines.join('\n')
 }
 
 export function bankTransferDeclaredBusinessHtml(data: BankTransferDeclaredEmailData): string {

@@ -178,6 +178,19 @@ export interface LoyaltyRewardEmailData {
   loyaltyCardLink: string | null
 }
 
+export interface OwnerBookingChangedData {
+  businessId: string
+  businessName: string
+  businessTimezone: string
+  customerName: string
+  serviceName: string
+  bookingNumber: number | null
+  change:
+    | { kind: 'cancelled' }
+    | { kind: 'rescheduled'; previousStartDateTime: Date; newStartDateTime: Date }
+  startDateTime: Date // horario (previo) de la reserva
+}
+
 export interface NotificationResult {
   customerEmail?: EmailResult
   businessEmails: EmailResult[]

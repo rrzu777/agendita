@@ -66,6 +66,7 @@ export function SettingsForm({ business }: { business: Business }) {
       city: business.city,
       timezone: business.timezone,
       slotStepMinutes: business.slotStepMinutes == null ? 'service' : String(business.slotStepMinutes) as FormData['slotStepMinutes'],
+      selfServiceCutoffHours: business.selfServiceCutoffHours,
       subdomain: business.subdomain,
       cancellationPolicy: business.cancellationPolicy || '',
       bookingPolicy: business.bookingPolicy || '',
@@ -222,6 +223,21 @@ export function SettingsForm({ business }: { business: Business }) {
             <p className="text-xs text-muted-foreground">
               Cada cuánto se ofrecen horas de inicio en tu página de reservas. &quot;Según la duración del servicio&quot; deja las citas pegadas una tras otra (sin huecos), pero da menos opciones de hora a tus clientas.
             </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="selfServiceCutoffHours">Ventana de autogestión (horas)</Label>
+            <Input
+              id="selfServiceCutoffHours"
+              type="number"
+              min={0}
+              max={720}
+              {...register('selfServiceCutoffHours')}
+              aria-invalid={!!errors.selfServiceCutoffHours}
+            />
+            <p className="text-xs text-muted-foreground">
+              Hasta cuántas horas antes tus clientas pueden cancelar o reprogramar solas desde su cuenta. 0 = sin límite.
+            </p>
+            {errors.selfServiceCutoffHours && <p className="text-sm text-destructive">{errors.selfServiceCutoffHours.message}</p>}
           </div>
           {/* Currency is intentionally read-only.
               Changing currency would break existing payment integrations

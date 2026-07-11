@@ -20,12 +20,13 @@ vi.mock('@/lib/db', () => ({
 }))
 vi.mock('@/lib/loyalty/card-data', () => ({ loadLoyaltyCardData: mockLoadCard }))
 vi.mock('@/server/actions/loyalty', () => ({ redeemPointsAsMe: vi.fn() }))
-vi.mock('next/navigation', () => ({ notFound: mockNotFound }))
+vi.mock('@/server/actions/my-bookings', () => ({ cancelMyBooking: vi.fn() }))
+vi.mock('next/navigation', () => ({ notFound: mockNotFound, useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
 
 import MiBusinessPage from '@/app/mi/[slug]/page'
 
 const business = {
-  id: 'b1', name: 'Mimos Nails', slug: 'mimosnails', subdomain: 'mimosnails', logoUrl: null,
+  id: 'b1', name: 'Mimos Nails', slug: 'mimosnails', subdomain: 'mimosnails', logoUrl: null, selfServiceCutoffHours: 24,
   loyaltyConfig: { isActive: true, programName: 'Club', pointsLabel: 'mimos', cardMessage: null },
 }
 const cardData = {

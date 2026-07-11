@@ -10,6 +10,7 @@ import { getBusinessDayRange } from '@/lib/availability/timezone'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { isValidTimeRange } from '@/lib/availability/time-range'
+import { computeRescheduleSlots } from '@/lib/availability/reschedule-slots'
 
 const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
 
@@ -117,34 +118,7 @@ export async function getAvailableSlotsForReschedule(bookingId: string, date: Da
     throw new Error('Servicio no disponible')
   }
 
-  const timezone = booking.business.timezone || 'America/Santiago'
-  const bookingWindowDays = booking.business.bookingWindowDays ?? 90
-  const { dayStart, dayEnd } = getBusinessDayRange(date, timezone)
-
-  const [availabilityRules, timeBlocks, bookings] = await Promise.all([
-    prisma.availabilityRule.findMany({
-      where: { businessId, isActive: true },
-      orderBy: { dayOfWeek: 'asc' },
-    }),
-    getEffectiveBlocks(businessId, dayStart, dayEnd, timezone),
-    prisma.booking.findMany({
-      where: {
-        businessId,
-        id: { not: bookingId },
-        status: { notIn: ['cancelled', 'no_show', 'expired'] },
-        startDateTime: { lte: dayEnd },
-        endDateTime: { gte: dayStart },
-      },
-      orderBy: { startDateTime: 'asc' },
-    }),
-  ])
-
-  return generateSlots(date, booking.service.durationMinutes, availabilityRules, timeBlocks, bookings, {
-    timezone,
-    now: new Date(),
-    bookingWindowDays,
-    slotStepMinutes: booking.business.slotStepMinutes,
-  })
+  return computeRescheduleSlots(booking, date)
 }
 
 export async function updateAvailabilityRule(

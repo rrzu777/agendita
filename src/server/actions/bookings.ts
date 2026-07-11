@@ -21,6 +21,7 @@ import { applyPromotionInTx } from '@/lib/promotions/apply'
 import { recomputeBookingAmountsAfterDiscount } from '@/lib/booking/recompute'
 import { applyPackageInTx } from '@/lib/packages/consume'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
+import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
 import { creditVisitPoints } from '@/lib/loyalty/credit'
 import { emitAutomaticReward, loadAutomaticRules } from '@/lib/loyalty/automatic'
 import { rewardReferralOnCompletion, captureReferral, notifyReferralReward } from '@/lib/loyalty/referral'
@@ -1035,22 +1036,7 @@ export async function cancelBooking(bookingId: string, reason?: string) {
   }
 
   await prisma.$transaction(async (tx) => {
-    await tx.booking.update({
-      where: { id: bookingId },
-      data: {
-        status: BookingStatus.cancelled,
-        internalNotes: reason
-          ? `${booking.internalNotes || ''}\n[CANCELADA: ${reason}]`.trim()
-          : booking.internalNotes,
-      },
-    })
-    await releaseRedemptionForBooking(tx, bookingId, 'cancelled')
-    // Cierra el Payment bt-declared pendiente para que no quede huérfano en
-    // "por verificar" tras cancelar la reserva (§6.4). No-op si no hay ninguno.
-    await tx.payment.updateMany({
-      where: { bookingId, ...declaredTransferPaymentWhere },
-      data: { status: 'cancelled' },
-    })
+    await cancelBookingInTx(tx, booking, { reason })
   })
 
   if (booking.customer?.email) {
@@ -1095,43 +1081,17 @@ export async function rescheduleBooking(bookingId: string, newStartDateTime: Dat
     throw new Error('Servicio no encontrado')
   }
 
-  const endDateTime = addMinutes(newStartDateTime, service.durationMinutes)
-  const oldDate = booking.startDateTime.toLocaleString('es-CL')
   const previousStartDateTime = booking.startDateTime
 
   await prisma.$transaction(async (tx) => {
-    await assertSlotIsAvailable({
-      tx,
-      businessId,
-      serviceId: booking.serviceId,
-      startDateTime: newStartDateTime,
-      endDateTime,
+    await rescheduleBookingInTx(tx, {
+      booking,
+      newStartDateTime,
+      durationMinutes: service.durationMinutes,
       timezone: business.timezone || 'America/Santiago',
-      excludeBookingId: bookingId,
       // Reagendar desde el dashboard no exige anticipación (la dueña manda)
       leadTimeMinutes: 0,
     })
-
-    const historyNote = `[REPROGRAMADA de ${oldDate}]`
-
-    const updateResult = await tx.booking.updateMany({
-      where: {
-        id: bookingId,
-        businessId,
-        status: { notIn: [BookingStatus.completed, BookingStatus.cancelled, BookingStatus.no_show, BookingStatus.expired] },
-      },
-      data: {
-        startDateTime: newStartDateTime,
-        endDateTime,
-        internalNotes: booking.internalNotes
-          ? `${booking.internalNotes}\n${historyNote}`
-          : historyNote,
-      },
-    })
-
-    if (updateResult.count === 0) {
-      throw new Error('No se puede reprogramar una reserva en este estado')
-    }
   })
 
   if (booking.customer?.email) {
