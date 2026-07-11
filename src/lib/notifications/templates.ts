@@ -129,6 +129,27 @@ export function transferReminderBusinessText(data: TransferReminderBusinessEmail
   return `${data.customerName} declaró una transferencia por ${data.serviceName} en ${data.businessName} que sigue sin verificar. Revisá tu cuenta y confirmá o rechazá la reserva antes de que expire. Ir al dashboard: ${data.dashboardUrl}`
 }
 
+// Reserva expirada que la dueña reabrió (reviveBooking mode 'reopen'): mismos
+// datos que el recordatorio de transferencia — reusa su tipo a propósito.
+export function transferReactivatedCustomerHtml(data: TransferReminderCustomerEmailData): string {
+  const deposit = fmtCurrency(data.depositAmount, data.businessCurrency)
+  return baseHtml(`
+    ${header('Tu reserva fue reactivada')}
+    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, ¡buenas noticias! ${escapeHtml(data.businessName)} reactivó tu reserva de <strong>${escapeHtml(data.serviceName)}</strong>${data.bookingNumber != null ? ` (reserva #${data.bookingNumber})` : ''}. Transferí el abono y avisanos antes del plazo para confirmarla.</p>
+    ${bankTransferBlockHtml(data.bankTransfer, deposit, data.businessTimezone)}
+    ${footer(data.businessName)}
+  `)
+}
+
+export function transferReactivatedCustomerText(data: TransferReminderCustomerEmailData): string {
+  const deposit = fmtCurrency(data.depositAmount, data.businessCurrency)
+  return [
+    `Hola ${data.customerName}, ${data.businessName} reactivó tu reserva de ${data.serviceName}.`,
+    `Transferí el abono y avisanos antes del plazo para confirmarla.`,
+    ...bankTransferBlockText(data.bankTransfer, deposit, data.businessTimezone),
+  ].join('\n')
+}
+
 export function bookingConfirmationCustomerHtml(data: BookingEmailData): string {
   const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
   const total = fmtCurrency(data.totalPrice, data.businessCurrency)
@@ -354,13 +375,13 @@ export function bankTransferExpiredCustomerHtml(data: BankTransferVerifyCustomer
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
     </table>
-    <p style="margin-top:16px;font-size:14px">Si transferiste, contactá al negocio directamente. Si no, podés reservar de nuevo cuando quieras.</p>
+    <p style="margin-top:16px;font-size:14px">Si transferiste, escribile al negocio: también puede reactivar tu reserva. Si no, podés reservar de nuevo cuando quieras.</p>
     ${footer(data.businessName)}
   `)
 }
 
 export function bankTransferExpiredCustomerText(data: BankTransferVerifyCustomerEmailData): string {
-  return `Hola ${data.customerName}, tu reserva en ${data.businessName} (${data.serviceName}, ${fmtDate(data.startDateTime, data.businessTimezone)}) expiró porque no se verificó el pago a tiempo. Si transferiste, contactá al negocio.`
+  return `Hola ${data.customerName}, tu reserva en ${data.businessName} (${data.serviceName}, ${fmtDate(data.startDateTime, data.businessTimezone)}) expiró porque no se verificó el pago a tiempo. Si transferiste, escribile al negocio: también puede reactivar tu reserva.`
 }
 
 export function newBookingBusinessText(data: NewBookingBusinessEmailData): string {
