@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client'
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { requireTestDatabase } from './setup'
+import { prisma as sharedPrisma } from '@/lib/db'
+import { seedDeclaredTransfer, cleanupBankTransferSeed } from './helpers/bank-transfer-seed'
 
 requireTestDatabase()
 
@@ -261,6 +263,72 @@ describe('bank-transfer flujo público', () => {
         startDateTime: futureDate(9, 15), acceptedTerms: true,
       }, BIZ)
       await expect(declareBankTransfer(booking.id)).rejects.toThrow()
+    })
+  })
+
+  describe('declareBankTransfer reactivación post-reopen', () => {
+    afterAll(async () => {
+      await cleanupBankTransferSeed()
+    })
+
+    it('bt-declared cancelled → vuelve a pending con monto y createdAt nuevos', async () => {
+      const seeded = await seedDeclaredTransfer()
+      // Simular ciclo: cron canceló la declaración, dueña reabrió (booking sigue
+      // pending_payment con hold vigente en el seed).
+      await sharedPrisma.payment.update({
+        where: { id: seeded.paymentId },
+        data: { status: 'cancelled', createdAt: new Date(Date.now() - 72 * 3_600_000), amount: 1 },
+      })
+      const before = Date.now()
+      const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
+      await declareBankTransfer(seeded.bookingId)
+      const p = await sharedPrisma.payment.findUniqueOrThrow({ where: { id: seeded.paymentId } })
+      expect(p.status).toBe('pending')
+      expect(p.amount).toBe(10000) // min(depositRequired, remainingBalance) del seed
+      expect(p.createdAt.getTime()).toBeGreaterThanOrEqual(before - 5_000)
+      // Sigue habiendo UN solo payment bt-declared (unique intacto, sin create nuevo)
+      const all = await sharedPrisma.payment.findMany({ where: { bookingId: seeded.bookingId, provider: 'manual' } })
+      expect(all).toHaveLength(1)
+    })
+
+    it('bt-declared approved → éxito idempotente sin tocar el payment', async () => {
+      const seeded = await seedDeclaredTransfer()
+      await sharedPrisma.payment.update({ where: { id: seeded.paymentId }, data: { status: 'approved' } })
+      const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
+      await declareBankTransfer(seeded.bookingId)
+      const p = await sharedPrisma.payment.findUniqueOrThrow({ where: { id: seeded.paymentId } })
+      expect(p.status).toBe('approved')
+    })
+
+    it('reactivación con booking expirada → error con mensaje de expirada', async () => {
+      const seeded = await seedDeclaredTransfer()
+      await sharedPrisma.payment.update({ where: { id: seeded.paymentId }, data: { status: 'cancelled' } })
+      await sharedPrisma.booking.update({ where: { id: seeded.bookingId }, data: { status: 'expired' } })
+      const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
+      await expect(declareBankTransfer(seeded.bookingId)).rejects.toThrow('expiró')
+      expect((await sharedPrisma.payment.findUniqueOrThrow({ where: { id: seeded.paymentId } })).status).toBe('cancelled')
+    })
+
+    it('bt-declared rejected → también reactiva', async () => {
+      const seeded = await seedDeclaredTransfer()
+      await sharedPrisma.payment.update({ where: { id: seeded.paymentId }, data: { status: 'rejected' } })
+      const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
+      await declareBankTransfer(seeded.bookingId)
+      const p = await sharedPrisma.payment.findUniqueOrThrow({ where: { id: seeded.paymentId } })
+      expect(p.status).toBe('pending')
+    })
+
+    it('booking cancelada / confirmada → mensajes específicos', async () => {
+      const cancelled = await seedDeclaredTransfer()
+      await sharedPrisma.payment.update({ where: { id: cancelled.paymentId }, data: { status: 'cancelled' } })
+      await sharedPrisma.booking.update({ where: { id: cancelled.bookingId }, data: { status: 'cancelled' } })
+      const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
+      await expect(declareBankTransfer(cancelled.bookingId)).rejects.toThrow('Tu reserva fue cancelada.')
+
+      const confirmed = await seedDeclaredTransfer()
+      await sharedPrisma.payment.update({ where: { id: confirmed.paymentId }, data: { status: 'cancelled' } })
+      await sharedPrisma.booking.update({ where: { id: confirmed.bookingId }, data: { status: 'confirmed' } })
+      await expect(declareBankTransfer(confirmed.bookingId)).rejects.toThrow('Tu reserva ya está confirmada.')
     })
   })
 })

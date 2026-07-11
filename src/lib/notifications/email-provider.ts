@@ -23,6 +23,8 @@ import {
   transferReminderCustomerText,
   transferReminderBusinessHtml,
   transferReminderBusinessText,
+  transferReactivatedCustomerHtml,
+  transferReactivatedCustomerText,
   bookingConfirmationCustomerHtml,
   bookingConfirmationCustomerText,
   bookingReceivedCustomerHtml,
@@ -217,6 +219,17 @@ export async function sendTransferReminderToCustomer(data: TransferReminderCusto
     `Te quedan pocas horas para transferir - ${data.businessName}`,
     transferReminderCustomerHtml(data),
     transferReminderCustomerText(data),
+    { replyTo: data.businessReplyToEmail },
+  )
+}
+
+export async function sendTransferReactivatedToCustomer(data: TransferReminderCustomerEmailData): Promise<EmailResult> {
+  if (!data.customerEmail) return { success: false, skipped: 'Cliente sin email' }
+  return sendEmail(
+    data.customerEmail,
+    `Tu reserva fue reactivada - ${data.businessName}`,
+    transferReactivatedCustomerHtml(data),
+    transferReactivatedCustomerText(data),
     { replyTo: data.businessReplyToEmail },
   )
 }

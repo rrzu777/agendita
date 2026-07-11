@@ -40,6 +40,7 @@ const statusBadgeClasses: Record<string, string> = {
   completed: 'bg-secondary text-secondary-foreground',
   cancelled: 'bg-muted text-muted-foreground',
   no_show: 'bg-destructive/10 text-destructive',
+  expired: 'bg-muted text-muted-foreground',
 }
 
 interface BookingDrawerProps {

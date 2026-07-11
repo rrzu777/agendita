@@ -10,6 +10,7 @@ import {
   sendTransferReminderToBusiness,
 } from '@/lib/notifications'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
+import { toBankTransferEmailInfo } from '@/lib/notifications/types'
 import { logger } from '@/lib/logger'
 
 // Ventanas del recordatorio (no son 'use server', pueden ser constantes del módulo).
@@ -119,17 +120,7 @@ export async function sendTransferReminders(
             serviceName: b.service?.name ?? 'servicio',
             depositAmount: Math.min(b.depositRequired, b.remainingBalance),
             businessCurrency: b.business.currency || 'CLP',
-            bankTransfer: {
-              accountHolder: acct.accountHolder,
-              rut: acct.rut,
-              bankName: acct.bankName,
-              accountType: acct.accountType,
-              accountNumber: acct.accountNumber,
-              email: acct.email,
-              instructions: acct.instructions,
-              deadline: b.holdExpiresAt!,
-              confirmationUrl: getBookingConfirmationUrl(b.business, b.id),
-            },
+            bankTransfer: toBankTransferEmailInfo(acct, b.holdExpiresAt!, getBookingConfirmationUrl(b.business, b.id)),
             bookingNumber: b.bookingNumber,
             customerEmail: b.customer!.email!,
             businessReplyToEmail: replyToByBiz.get(b.business.id) ?? null,

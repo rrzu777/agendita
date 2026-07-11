@@ -48,15 +48,27 @@ export async function declareBankTransfer(bookingId: string): Promise<{ ok: true
       throw new Error('Este negocio no tiene transferencia bancaria habilitada')
     }
 
-    // Idempotencia: si ya declaró, éxito sin tocar el hold (re-declarar no
-    // debe re-extender la ventana de verificación).
+    // Idempotencia por status del bt-declared existente:
+    // - pending  → ya declaró; éxito sin tocar el hold (re-declarar no re-extiende).
+    // - approved → ya verificado (alcanzable vía confirmación parcial); jamás tocarlo,
+    //              el ledger ya lo contabilizó.
+    // - cancelled/rejected → la declaración murió (cron/expiración) y la dueña
+    //   reabrió la reserva: REACTIVAR el mismo Payment (el unique impide crear otro).
+    // - refunded/failed → hoy inalcanzables para un bt-declared (no hay flujo de
+    //   refund/failed sobre pagos manuales); si algún día aparecen, mejor cortar
+    //   fuerte que pisar el registro.
     const existing = await tx.payment.findFirst({
       where: { bookingId, provider: 'manual', providerPaymentId: btDeclaredId(bookingId) },
     })
-    if (existing) return null
+    if (existing && (existing.status === PaymentStatus.pending || existing.status === PaymentStatus.approved)) {
+      return null
+    }
+    if (existing && existing.status !== PaymentStatus.cancelled && existing.status !== PaymentStatus.rejected) {
+      throw new Error('No se puede volver a declarar esta transferencia. Contactá al negocio.')
+    }
 
-    // Guard de carrera vs cron (spec §4): si el cron ganó (status expired) o
-    // el hold ya venció, count = 0 y no se crea nada.
+    // Guard de carrera vs cron (spec §4): solo una pending_payment con hold
+    // vigente puede declarar (creación Y reactivación pasan por acá).
     const now = new Date()
     const newHold = account.verifyHours == null ? null : addHours(now, account.verifyHours)
     const { count } = await tx.booking.updateMany({
@@ -64,12 +76,26 @@ export async function declareBankTransfer(bookingId: string): Promise<{ ok: true
       data: { holdExpiresAt: newHold },
     })
     if (count === 0) {
+      // Mensaje según el estado real (una revivida-cancelada/confirmada no "expiró").
+      if (booking.status === 'cancelled') throw new Error('Tu reserva fue cancelada.')
+      if (booking.status === 'confirmed') throw new Error('Tu reserva ya está confirmada.')
       throw new Error('Tu reserva expiró. Volvé a reservar para elegir un nuevo horario.')
     }
 
     // Monto server-authoritative, mismo criterio que initiatePayment (payments.ts).
     const amount = Math.min(booking.depositRequired, booking.remainingBalance)
     if (amount <= 0) throw new Error('Esta reserva no requiere abono')
+
+    if (existing) {
+      // Reactivación: mismo Payment, declaración "nueva" — createdAt = now para
+      // que el recordatorio-dueña (rama verifyHours=null, 24h desde createdAt)
+      // no dispare al instante.
+      await tx.payment.update({
+        where: { id: existing.id },
+        data: { status: PaymentStatus.pending, amount, createdAt: now },
+      })
+      return { booking, amount }
+    }
 
     try {
       await tx.payment.create({

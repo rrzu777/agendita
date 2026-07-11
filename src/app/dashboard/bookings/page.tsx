@@ -15,8 +15,11 @@ import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { BookingRowActions } from '@/components/dashboard/booking-row-actions'
+import { ReviveBookingButton } from '@/components/dashboard/revive-booking-dialog'
+import { getReviveReopenState } from '@/components/dashboard/revive-utils'
 import { PendingTransfersSection, type PendingTransferItem } from '@/components/dashboard/pending-transfers-section'
 import { hasPendingDeclaredTransfer } from '@/lib/bank-transfer/declared'
+import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 
 const PENDING_TRANSFER_BADGE_CLASS =
   'inline-flex items-center rounded-md border border-transparent bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800 dark:bg-orange-500/15 dark:text-orange-300'
@@ -35,7 +38,7 @@ function EmptyState() {
   )
 }
 
-export function BookingCard({ booking, businessCurrency, businessTimezone, businessAddress }: {
+export function BookingCard({ booking, businessCurrency, businessTimezone, businessAddress, transferEnabled }: {
   booking: {
     id: string
     bookingNumber: number | null
@@ -47,16 +50,21 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
     paymentStatus: string
     totalPrice: number
     remainingBalance: number
+    paymentMethod?: string | null
     service: { name: string } | null
-    customer: { name: string; phone: string | null } | null
+    customer: { name: string; phone: string | null; email?: string | null } | null
     payments: { id: string }[]
   }
   businessCurrency: string
   businessTimezone: string
   businessAddress: string | null
+  transferEnabled?: boolean
 }) {
   const canRegisterPayment = isManualPaymentAllowed(booking)
   const isPendingTransfer = hasPendingDeclaredTransfer(booking)
+  const reviveState = booking.status === 'expired'
+    ? getReviveReopenState({ startDateTime: booking.startDateTime, paymentMethod: booking.paymentMethod ?? null }, !!transferEnabled)
+    : null
 
   return (
     <article className="studio-card p-5">
@@ -164,6 +172,19 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           )}
         </div>
       )}
+      {reviveState && (
+        <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
+          <ReviveBookingButton
+            bookingId={booking.id}
+            serviceName={booking.service?.name || 'Servicio'}
+            customerName={booking.customer?.name || 'Cliente'}
+            customerHasEmail={!!booking.customer?.email}
+            canReopen={reviveState.canReopen}
+            reopenDisabledReason={reviveState.reason}
+            triggerClassName="flex-1 h-10 text-sm font-semibold"
+          />
+        </div>
+      )}
     </article>
   )
 }
@@ -183,6 +204,10 @@ export default async function BookingsPage() {
   const businessCurrency = userData.business.currency || 'CLP'
   const businessTimezone = userData.business.timezone || 'America/Santiago'
   const businessAddress = userData.business.addressText || null
+  // Solo alimenta el revive-UI de las expiradas: sin expiradas, ni consultamos.
+  const transferEnabled = bookings.some(b => b.status === 'expired')
+    ? !!(await getBankTransferInfo(userData.business.id))
+    : false
 
   const confirmedCount = bookings.filter(b => b.status === 'confirmed').length
   const pendingCount = bookings.filter(b => b.status === 'pending_payment').length
@@ -286,6 +311,7 @@ export default async function BookingsPage() {
                         <BookingRowActions
                           booking={booking}
                           businessCurrency={businessCurrency}
+                          transferEnabled={transferEnabled}
                           contact={
                             <BookingContactButtons
                               variant="compact"
@@ -320,6 +346,7 @@ export default async function BookingsPage() {
                   businessCurrency={businessCurrency}
                   businessTimezone={businessTimezone}
                   businessAddress={businessAddress}
+                  transferEnabled={transferEnabled}
                 />
               ))}
             </div>
