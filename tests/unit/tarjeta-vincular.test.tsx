@@ -33,11 +33,11 @@ describe('/tarjeta/[token]/vincular', () => {
       .rejects.toThrow('REDIRECT:/ingresar?next=/tarjeta/tok1/vincular')
   })
 
-  it('con sesión: vincula y redirige a /mi', async () => {
+  it('con sesión: vincula y redirige al negocio recién vinculado', async () => {
     mockGetCurrentUser.mockResolvedValue({ id: 'u1', email: 'a@b.c' })
     mockEnsure.mockResolvedValue(undefined)
-    mockLinkByToken.mockResolvedValue(undefined)
-    await expect(VincularPage({ params: Promise.resolve({ token: 'tok1' }) })).rejects.toThrow('REDIRECT:/mi')
+    mockLinkByToken.mockResolvedValue('salon-ana')
+    await expect(VincularPage({ params: Promise.resolve({ token: 'tok1' }) })).rejects.toThrow('REDIRECT:/mi/salon-ana')
     expect(mockLinkByToken).toHaveBeenCalledWith(expect.anything(), 'u1', 'tok1')
   })
 

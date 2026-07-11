@@ -82,24 +82,26 @@ describe('linkCustomerByLoyaltyToken', () => {
     db.businessUser.findFirst.mockResolvedValue(null)
   })
 
-  it('vincula un Customer sin dueño (update atómico where userId null)', async () => {
-    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: null, businessId: 'b1' })
+  it('vincula un Customer sin dueño (update atómico where userId null) y devuelve el slug', async () => {
+    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: null, businessId: 'b1', business: { slug: 'salon-ana' } })
     db.customer.updateMany.mockResolvedValue({ count: 1 })
-    await linkCustomerByLoyaltyToken(db as never, 'user-1', 'tok')
+    const slug = await linkCustomerByLoyaltyToken(db as never, 'user-1', 'tok')
+    expect(slug).toBe('salon-ana')
     expect(db.customer.updateMany).toHaveBeenCalledWith({
       where: { id: 'c1', userId: null },
       data: { userId: 'user-1' },
     })
   })
 
-  it('es no-op si ya está vinculado a la misma cuenta', async () => {
-    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: 'user-1', businessId: 'b1' })
-    await linkCustomerByLoyaltyToken(db as never, 'user-1', 'tok')
+  it('es no-op si ya está vinculado a la misma cuenta (igual devuelve el slug)', async () => {
+    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: 'user-1', businessId: 'b1', business: { slug: 'salon-ana' } })
+    const slug = await linkCustomerByLoyaltyToken(db as never, 'user-1', 'tok')
+    expect(slug).toBe('salon-ana')
     expect(db.customer.updateMany).not.toHaveBeenCalled()
   })
 
   it('CardLinkError si está vinculado a otra cuenta', async () => {
-    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: 'user-2', businessId: 'b1' })
+    db.customer.findUnique.mockResolvedValue({ id: 'c1', userId: 'user-2', businessId: 'b1', business: { slug: 'salon-ana' } })
     await expect(linkCustomerByLoyaltyToken(db as never, 'user-1', 'tok')).rejects.toBeInstanceOf(CardLinkError)
   })
 

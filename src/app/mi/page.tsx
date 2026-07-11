@@ -39,9 +39,9 @@ export default async function MiHomePage() {
   )
 
   return (
-    <main className="mx-auto max-w-md px-4 pb-10">
+    <main className="mx-auto max-w-2xl px-4 pb-10">
       <h1 className="text-lg font-semibold">Mis negocios</h1>
-      <ul className="mt-4 space-y-3">
+      <ul className="mt-4 grid gap-3 sm:grid-cols-2">
         {customers.map((c, i) => (
           <li key={c.id}>
             <Link href={`/mi/${c.business.slug}`} className="block rounded-2xl border border-gray-100 bg-pink-50/50 px-4 py-4 hover:bg-pink-50">
