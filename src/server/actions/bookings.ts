@@ -21,6 +21,7 @@ import { applyPromotionInTx } from '@/lib/promotions/apply'
 import { recomputeBookingAmountsAfterDiscount } from '@/lib/booking/recompute'
 import { applyPackageInTx } from '@/lib/packages/consume'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
+import { cancelBookingInTx } from '@/lib/bookings/mutate'
 import { creditVisitPoints } from '@/lib/loyalty/credit'
 import { emitAutomaticReward, loadAutomaticRules } from '@/lib/loyalty/automatic'
 import { rewardReferralOnCompletion, captureReferral, notifyReferralReward } from '@/lib/loyalty/referral'
@@ -1033,22 +1034,7 @@ export async function cancelBooking(bookingId: string, reason?: string) {
   }
 
   await prisma.$transaction(async (tx) => {
-    await tx.booking.update({
-      where: { id: bookingId },
-      data: {
-        status: BookingStatus.cancelled,
-        internalNotes: reason
-          ? `${booking.internalNotes || ''}\n[CANCELADA: ${reason}]`.trim()
-          : booking.internalNotes,
-      },
-    })
-    await releaseRedemptionForBooking(tx, bookingId, 'cancelled')
-    // Cierra el Payment bt-declared pendiente para que no quede huérfano en
-    // "por verificar" tras cancelar la reserva (§6.4). No-op si no hay ninguno.
-    await tx.payment.updateMany({
-      where: { bookingId, ...declaredTransferPaymentWhere },
-      data: { status: 'cancelled' },
-    })
+    await cancelBookingInTx(tx, booking, { reason })
   })
 
   if (booking.customer?.email) {
