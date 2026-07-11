@@ -6,10 +6,10 @@ import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
 // transferencia + cuenta habilitada). El server es la autoridad real — esto
 // solo evita mostrar el botón habilitado cuando ya sabemos que va a fallar.
 export function getReviveReopenState(
-  booking: { startDateTime?: Date | string; paymentMethod?: string | null },
+  booking: { startDateTime: Date | string; paymentMethod: string | null },
   transferEnabled: boolean,
 ): { canReopen: boolean; reason: string | null } {
-  const isFuture = booking.startDateTime != null && new Date(booking.startDateTime) > new Date()
+  const isFuture = new Date(booking.startDateTime) > new Date()
   const isTransfer = booking.paymentMethod === BANK_TRANSFER_METHOD
   const canReopen = isFuture && isTransfer && transferEnabled
   if (canReopen) return { canReopen: true, reason: null }

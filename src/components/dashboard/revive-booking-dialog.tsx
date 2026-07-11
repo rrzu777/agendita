@@ -84,7 +84,7 @@ export function ReviveBookingDialog({
           )}
 
           {!customerHasEmail && (
-            <p className="text-xs font-medium text-amber-700">
+            <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
               Esta clienta no tiene email: avisale por WhatsApp que su reserva revivió.
             </p>
           )}

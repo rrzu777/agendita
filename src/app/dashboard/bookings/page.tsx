@@ -62,7 +62,9 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
 }) {
   const canRegisterPayment = isManualPaymentAllowed(booking)
   const isPendingTransfer = hasPendingDeclaredTransfer(booking)
-  const reviveState = booking.status === 'expired' ? getReviveReopenState(booking, !!transferEnabled) : null
+  const reviveState = booking.status === 'expired'
+    ? getReviveReopenState({ startDateTime: booking.startDateTime, paymentMethod: booking.paymentMethod ?? null }, !!transferEnabled)
+    : null
 
   return (
     <article className="studio-card p-5">

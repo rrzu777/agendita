@@ -13,8 +13,8 @@ import { getReviveReopenState } from './revive-utils'
 import { updateBookingStatus } from '@/server/actions/bookings'
 
 type RowBooking = ManualPaymentBooking & {
-  startDateTime?: Date | string
-  paymentMethod?: string | null
+  startDateTime: Date | string
+  paymentMethod: string | null
   customer: { name: string; email?: string | null } | null
 }
 

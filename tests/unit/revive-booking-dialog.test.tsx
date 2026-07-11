@@ -8,9 +8,8 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 vi.mock('@/server/actions/revive-booking', () => ({ reviveBooking: vi.fn() }))
 // Radix Dialog renderiza su contenido en un Portal que no se monta en SSR
 // (useLayoutEffect nunca corre con renderToStaticMarkup), así que el HTML de
-// DialogContent queda vacío sin importar `open`. Igual que otros tests de
-// diálogos del repo (ver AGENTS notes), se stubea el primitive para poder
-// aserar el contenido directamente cuando `open` es true.
+// DialogContent queda vacío sin importar `open`. Se stubea solo el shell del
+// primitive para poder asertar el contenido real cuando `open` es true.
 vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({ open, children }: { open: boolean; children: ReactNode }) => (open ? <div>{children}</div> : null),
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
