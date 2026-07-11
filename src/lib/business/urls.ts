@@ -39,6 +39,13 @@ export function getBusinessPublicUrl(business: BusinessUrlInput, pathname = '') 
   return `${getProtocol(host)}://${business.subdomain}.${apexHost}${cleanPath === '/' ? '' : cleanPath}`
 }
 
+/** URL de la página de confirmación de una reserva (`/book/confirmation?bookingId=`),
+ *  colgando de la URL pública del negocio. Centraliza el string duplicado en
+ *  bookings/payments. */
+export function getBookingConfirmationUrl(business: BusinessUrlInput, bookingId: string): string {
+  return `${getBusinessPublicUrl(business)}/book/confirmation?bookingId=${bookingId}`
+}
+
 /** URL del funnel público de reserva (/book). Con subdominio vive en el apex del
  *  tenant (`https://sub.apex/book`); sin subdominio usa el path `/book/{slug}`.
  *  `search` (sin '?') agrega la query string (ej. `ref=TOKEN`). */

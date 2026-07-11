@@ -10,7 +10,7 @@ import {
   getOnlinePaymentProviderForBusiness,
   resolveOnlinePaymentAvailabilityForBusiness,
 } from '@/lib/payments/factory'
-import { getBusinessPublicUrl } from '@/lib/business/urls'
+import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -118,7 +118,6 @@ export async function initiatePayment(data: {
   const description = `Abono para ${booking.service?.name || 'servicio'}`
 
   const provider = await getOnlinePaymentProviderForBusiness(booking.businessId)
-  const baseUrl = getBusinessPublicUrl(booking.business)
 
   // Mercado Pago (redirect-based): pre-crear Payment local antes de llamar al provider.
   // El Payment.id se usa como external_reference en la preferencia de MP.
@@ -159,7 +158,7 @@ export async function initiatePayment(data: {
       currency,
       bookingId: data.bookingId,
       description,
-      returnUrl: `${baseUrl}/book/confirmation?bookingId=${data.bookingId}`,
+      returnUrl: getBookingConfirmationUrl(booking.business, data.bookingId),
       webhookUrl: `${getAppUrl()}/api/webhooks/mercado-pago`,
       localPaymentId,
       customerEmail: booking.customer?.email ?? null,
@@ -189,7 +188,7 @@ export async function initiatePayment(data: {
     currency,
     bookingId: data.bookingId,
     description,
-    returnUrl: `${baseUrl}/book/confirmation?bookingId=${data.bookingId}`,
+    returnUrl: getBookingConfirmationUrl(booking.business, data.bookingId),
     webhookUrl: `${getAppUrl()}/api/webhooks/${provider.name}`,
   })
 
