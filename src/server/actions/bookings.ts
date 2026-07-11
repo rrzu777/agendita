@@ -27,7 +27,7 @@ import { rewardReferralOnCompletion, captureReferral, notifyReferralReward } fro
 import { firstVisitKey, conditionKind } from '@/lib/loyalty/automatic-match'
 import { BANK_TRANSFER_PUBLIC_SELECT, type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { BANK_TRANSFER_METHOD, declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
-import { getBusinessPublicUrl } from '@/lib/business/urls'
+import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import type { BookingEmailData } from '@/lib/notifications/types'
 import {
   sendBookingReceivedToCustomer,
@@ -107,7 +107,7 @@ async function fireBookingNotifications(
     bankTransfer = {
       ...bankTransferAccount,
       deadline: booking.holdExpiresAt,
-      confirmationUrl: `${getBusinessPublicUrl({ slug: business.slug, subdomain: business.subdomain })}/book/confirmation?bookingId=${booking.id}`,
+      confirmationUrl: getBookingConfirmationUrl({ slug: business.slug, subdomain: business.subdomain }, booking.id),
     }
   }
 

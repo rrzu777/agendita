@@ -408,6 +408,8 @@ model Booking {
   reviewToken          String?              @unique
   reviewTokenCreatedAt DateTime?
   reminderSentAt       DateTime?
+  transferReminderCustomerSentAt DateTime? // CAS del recordatorio a la clienta (pre-declaración)
+  transferReminderBusinessSentAt DateTime? // CAS del recordatorio a la dueña (declarada sin verificar)
 
   @@unique([businessId, idempotencyKey])
   @@unique([businessId, bookingNumber])

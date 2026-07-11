@@ -15,8 +15,14 @@ import type {
   ReminderEmailData,
   LoyaltyRewardEmailData,
   RescheduledEmailData,
+  TransferReminderCustomerEmailData,
+  TransferReminderBusinessEmailData,
 } from './types'
 import {
+  transferReminderCustomerHtml,
+  transferReminderCustomerText,
+  transferReminderBusinessHtml,
+  transferReminderBusinessText,
   bookingConfirmationCustomerHtml,
   bookingConfirmationCustomerText,
   bookingReceivedCustomerHtml,
@@ -202,6 +208,31 @@ export async function sendBankTransferDeclaredToBusiness(
       sendEmail(owner.email, `Transferencia declarada - ${data.customerName}`, html, text, {}),
     ),
   )
+}
+
+export async function sendTransferReminderToCustomer(data: TransferReminderCustomerEmailData): Promise<EmailResult> {
+  if (!data.customerEmail) return { success: false, skipped: 'Cliente sin email' }
+  return sendEmail(
+    data.customerEmail,
+    `Te quedan pocas horas para transferir - ${data.businessName}`,
+    transferReminderCustomerHtml(data),
+    transferReminderCustomerText(data),
+    { replyTo: data.businessReplyToEmail },
+  )
+}
+
+export async function sendTransferReminderToBusiness(
+  businessId: string,
+  data: Omit<TransferReminderBusinessEmailData, 'dashboardUrl'>,
+): Promise<EmailResult[]> {
+  const owners = await getBusinessOwnerEmails(businessId)
+  if (owners.length === 0) return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
+  const dashboardUrl = buildDashboardLink()
+  const html = transferReminderBusinessHtml({ ...data, dashboardUrl })
+  const text = transferReminderBusinessText({ ...data, dashboardUrl })
+  return Promise.all(owners.map((owner) =>
+    sendEmail(owner.email, `Transferencia por verificar - ${data.businessName}`, html, text, {}),
+  ))
 }
 
 export async function sendBankTransferRejectedToCustomer(data: BankTransferVerifyCustomerEmailData): Promise<EmailResult> {

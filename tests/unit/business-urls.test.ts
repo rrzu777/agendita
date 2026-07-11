@@ -44,6 +44,22 @@ describe('getBusinessPublicUrl', () => {
   })
 })
 
+describe('getBookingConfirmationUrl', () => {
+  it('subdomain business → apex subdomain confirmation path', async () => {
+    process.env.NEXT_PUBLIC_APP_DOMAIN = 'www.agendita.cl'
+    const { getBookingConfirmationUrl } = await load()
+    const url = getBookingConfirmationUrl({ slug: 'bella', subdomain: 'bella' }, 'bk_1')
+    expect(url).toBe('https://bella.agendita.cl/book/confirmation?bookingId=bk_1')
+  })
+
+  it('non-subdomain business → /b/<slug> confirmation path (quirk pre-existente, se preserva)', async () => {
+    process.env.NEXT_PUBLIC_APP_DOMAIN = 'www.agendita.cl'
+    const { getBookingConfirmationUrl } = await load()
+    const url = getBookingConfirmationUrl({ slug: 'bella', subdomain: null }, 'bk_1')
+    expect(url).toBe('https://www.agendita.cl/b/bella/book/confirmation?bookingId=bk_1')
+  })
+})
+
 describe('getBookingFunnelUrl', () => {
   it('points a subdomain tenant at /book on its apex host', async () => {
     process.env.NEXT_PUBLIC_APP_DOMAIN = 'www.agendita.cl'

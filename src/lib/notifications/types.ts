@@ -118,6 +118,27 @@ export interface BankTransferVerifyCustomerEmailData {
   businessReplyToEmail?: string | null
 }
 
+export interface TransferReminderCustomerEmailData {
+  businessName: string
+  businessTimezone: string
+  customerName: string
+  serviceName: string
+  depositAmount: number                       // monto crudo; el template lo formatea (consistente con los otros emails)
+  businessCurrency: string
+  bankTransfer: NonNullable<BookingEmailData['bankTransfer']>
+  bookingNumber?: number | null
+  customerEmail?: string
+  businessReplyToEmail?: string | null
+}
+
+export interface TransferReminderBusinessEmailData {
+  businessName: string
+  customerName: string
+  serviceName: string
+  dashboardUrl: string
+  bookingNumber?: number | null
+}
+
 export interface LoyaltyRewardEmailData {
   businessName: string
   businessReplyToEmail?: string | null
