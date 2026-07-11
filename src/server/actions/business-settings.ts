@@ -64,6 +64,7 @@ export async function updateBusinessSettings(data: UpdateBusinessInput) {
     city: validated.city.trim(),
     timezone: validated.timezone,
     slotStepMinutes: slotStepToMinutes(validated.slotStepMinutes),
+    selfServiceCutoffHours: validated.selfServiceCutoffHours,
     subdomain: validated.subdomain,
     cancellationPolicy: trimToNull(validated.cancellationPolicy),
     bookingPolicy: trimToNull(validated.bookingPolicy),

@@ -141,4 +141,12 @@ describe('updateBusinessSchema', () => {
       expect(result.data.timezone).toBe('America/Santiago')
     }
   })
+
+  it('selfServiceCutoffHours: default 24, rango 0-720, entero', () => {
+    const minimalValid = { name: 'Test', city: 'Santiago', subdomain: 'test' }
+    expect(updateBusinessSchema.parse({ ...minimalValid }).selfServiceCutoffHours).toBe(24)
+    expect(updateBusinessSchema.parse({ ...minimalValid, selfServiceCutoffHours: 0 }).selfServiceCutoffHours).toBe(0)
+    expect(() => updateBusinessSchema.parse({ ...minimalValid, selfServiceCutoffHours: 721 })).toThrow()
+    expect(() => updateBusinessSchema.parse({ ...minimalValid, selfServiceCutoffHours: -1 })).toThrow()
+  })
 })
