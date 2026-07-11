@@ -155,7 +155,7 @@ export function ReprogramarForm({
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {slots.map((slot) => {
-                  const start = new Date(slot.start)
+                  const start = slot.start
                   const selected = selectedSlot?.start.getTime() === start.getTime()
                   return (
                     <button

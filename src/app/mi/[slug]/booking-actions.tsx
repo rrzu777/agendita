@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { cancelMyBooking } from '@/server/actions/my-bookings'
+import { selfServiceBlockedMessage } from '@/lib/bookings/self-service'
 
 export function BookingActions({
   bookingId,
@@ -23,11 +24,7 @@ export function BookingActions({
 
   if (!canManage) {
     return (
-      <p className="mt-1 text-xs text-gray-400">
-        {cutoffHours === 0
-          ? 'Esta reserva ya no se puede modificar.'
-          : `Se puede cancelar o reprogramar hasta ${cutoffHours} horas antes. Para cambios de último minuto, contacta al negocio.`}
-      </p>
+      <p className="mt-1 text-xs text-gray-400">{selfServiceBlockedMessage(cutoffHours)}</p>
     )
   }
 

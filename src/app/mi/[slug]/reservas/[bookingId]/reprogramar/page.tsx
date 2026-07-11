@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth/user'
-import { canSelfManage, SELF_MANAGEABLE_STATUSES } from '@/lib/bookings/self-service'
+import { canSelfManage, ownedManageableBookingWhere, selfServiceBlockedMessage } from '@/lib/bookings/self-service'
 import { PageMessage } from '@/components/ui/page-message'
 import { ReprogramarForm } from './reprogramar-form'
 import { formatInTimeZone } from 'date-fns-tz'
@@ -17,12 +17,7 @@ export default async function ReprogramarPage({
 
   // Ownership EN el where (customer.userId === user.id): jamás confiar en ids del cliente.
   const booking = await prisma.booking.findFirst({
-    where: {
-      id: bookingId,
-      status: { in: [...SELF_MANAGEABLE_STATUSES] },
-      customer: { userId: user.id },
-      business: { slug },
-    },
+    where: { ...ownedManageableBookingWhere(bookingId, user.id), business: { slug } },
     select: {
       id: true,
       startDateTime: true,
@@ -36,14 +31,7 @@ export default async function ReprogramarPage({
   const cutoff = booking.business.selfServiceCutoffHours
   if (!canSelfManage(booking.startDateTime, cutoff)) {
     return (
-      <PageMessage
-        title="Ya no se puede reprogramar"
-        message={
-          cutoff === 0
-            ? 'Esta reserva ya no se puede modificar.'
-            : `Las reservas se pueden reprogramar hasta ${cutoff} horas antes. Contacta al negocio para cambios de último minuto.`
-        }
-      />
+      <PageMessage title="Ya no se puede reprogramar" message={selfServiceBlockedMessage(cutoff, 'reprogramar')} />
     )
   }
 

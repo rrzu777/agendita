@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
 import { requireUser } from '@/lib/auth/server'
 import { checkRateLimit } from '@/lib/rate-limit'
-import { canSelfManage, SELF_MANAGEABLE_STATUSES } from '@/lib/bookings/self-service'
+import { canSelfManage, ownedManageableBookingWhere, selfServiceBlockedMessage } from '@/lib/bookings/self-service'
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
 import { computeRescheduleSlots } from '@/lib/availability/reschedule-slots'
 import {
@@ -29,11 +29,7 @@ export async function cancelMyBooking(bookingId: string) {
 
   // Ownership EN el where (customer.userId === user.id): jamás confiar en ids del cliente.
   const booking = await prisma.booking.findFirst({
-    where: {
-      id: bookingId,
-      status: { in: [...SELF_MANAGEABLE_STATUSES] },
-      customer: { userId: user.id },
-    },
+    where: ownedManageableBookingWhere(bookingId, user.id),
     include: {
       service: { select: { name: true } },
       customer: { select: { name: true, email: true } },
@@ -48,11 +44,7 @@ export async function cancelMyBooking(bookingId: string) {
 
   const cutoff = booking.business.selfServiceCutoffHours
   if (!canSelfManage(booking.startDateTime, cutoff)) {
-    throw new Error(
-      cutoff === 0
-        ? 'Esta reserva ya no se puede cancelar.'
-        : `Las reservas se pueden cancelar hasta ${cutoff} horas antes. Contacta al negocio para cambios de último minuto.`,
-    )
+    throw new Error(selfServiceBlockedMessage(cutoff, 'cancelar'))
   }
 
   await prisma.$transaction(async (tx) => {
@@ -104,11 +96,7 @@ export async function rescheduleMyBooking(bookingId: string, newStartDateTime: D
 
   // Ownership EN el where (customer.userId === user.id): jamás confiar en ids del cliente.
   const booking = await prisma.booking.findFirst({
-    where: {
-      id: bookingId,
-      status: { in: [...SELF_MANAGEABLE_STATUSES] },
-      customer: { userId: user.id },
-    },
+    where: ownedManageableBookingWhere(bookingId, user.id),
     include: {
       service: { select: { name: true, durationMinutes: true } },
       customer: { select: { name: true, email: true, phone: true } },
@@ -120,7 +108,6 @@ export async function rescheduleMyBooking(bookingId: string, newStartDateTime: D
           timezone: true,
           isActive: true,
           selfServiceCutoffHours: true,
-          bookingWindowDays: true,
           whatsapp: true,
           addressText: true,
         },
@@ -138,19 +125,12 @@ export async function rescheduleMyBooking(bookingId: string, newStartDateTime: D
 
   const cutoff = booking.business.selfServiceCutoffHours
   if (!canSelfManage(booking.startDateTime, cutoff)) {
-    throw new Error(
-      cutoff === 0
-        ? 'Esta reserva ya no se puede reprogramar.'
-        : `Las reservas se pueden reprogramar hasta ${cutoff} horas antes. Contacta al negocio para cambios de último minuto.`,
-    )
+    throw new Error(selfServiceBlockedMessage(cutoff, 'reprogramar'))
   }
 
   // El slot NUEVO se rige por las reglas del funnel: lead time default (omitimos
-  // leadTimeMinutes) y dentro de bookingWindowDays.
-  const windowDays = booking.business.bookingWindowDays ?? 90
-  if (newStartDateTime.getTime() > Date.now() + windowDays * 24 * 3_600_000) {
-    throw new Error('La nueva fecha está fuera del período de reservas del negocio.')
-  }
+  // leadTimeMinutes) y bookingWindowDays, ambos validados por assertSlotIsAvailable
+  // dentro de rescheduleBookingInTx — misma mecánica que el path de la dueña.
 
   const previousStartDateTime = booking.startDateTime
 
@@ -215,13 +195,9 @@ export async function getMyRescheduleSlots(bookingId: string, date: Date) {
 
   // Ownership EN el where (customer.userId === user.id): jamás confiar en ids del cliente.
   const booking = await prisma.booking.findFirst({
-    where: {
-      id: bookingId,
-      status: { in: [...SELF_MANAGEABLE_STATUSES] },
-      customer: { userId: user.id },
-    },
+    where: ownedManageableBookingWhere(bookingId, user.id),
     include: {
-      service: { select: { id: true, durationMinutes: true, isActive: true } },
+      service: { select: { durationMinutes: true, isActive: true } },
       business: { select: { timezone: true, bookingWindowDays: true, slotStepMinutes: true } },
     },
   })

@@ -125,15 +125,9 @@ describe('rescheduleMyBooking', () => {
     expect(mockRescheduleBookingInTx).not.toHaveBeenCalled()
   })
 
-  it('nuevo slot fuera de bookingWindowDays: rechaza', async () => {
-    const booking = makeBooking({ business: { ...makeBooking().business, bookingWindowDays: 90 } })
-    mockFindFirstBooking.mockResolvedValue(booking)
-    const newStart = new Date(NOW.getTime() + 120 * 24 * 3_600_000)
-
-    const { rescheduleMyBooking } = await import('@/server/actions/my-bookings')
-    await expect(rescheduleMyBooking('bk-1', newStart)).rejects.toThrow(/fuera del período de reservas/)
-    expect(mockRescheduleBookingInTx).not.toHaveBeenCalled()
-  })
+  // bookingWindowDays y lead time del slot NUEVO los valida assertSlotIsAvailable
+  // dentro de rescheduleBookingInTx (mismo mecanismo que el path de la dueña);
+  // están cubiertos por los tests de validation y el de doble-booking en integración.
 
   it('negocio suspendido: rechaza', async () => {
     const booking = makeBooking({ business: { ...makeBooking().business, isActive: false } })
