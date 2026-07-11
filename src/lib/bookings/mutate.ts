@@ -8,15 +8,21 @@ import { assertSlotIsAvailable } from '@/lib/availability/validation'
 type Tx = Prisma.TransactionClient
 
 /** Core tx-aware de cancelación (SIN auth — el caller valida quién puede).
- *  Réplica exacta de la tx histórica de cancelBooking: flip + release de
- *  promo/paquete + cierre del Payment bt-declared pendiente (§6.4 transferencias). */
+ *  Réplica de la tx histórica de cancelBooking (flip + release de promo/paquete
+ *  + cierre del Payment bt-declared pendiente, §6.4) con el update guardado por
+ *  status: los mismos estados que el guard pre-tx de la dueña (completed y
+ *  cancelled no se cancelan), pero DENTRO de la tx para cerrar la carrera con
+ *  un complete concurrente — importa más ahora que la clienta también cancela. */
 export async function cancelBookingInTx(
   tx: Tx,
   booking: { id: string; internalNotes: string | null },
   opts: { reason?: string },
 ): Promise<void> {
-  await tx.booking.update({
-    where: { id: booking.id },
+  const updateResult = await tx.booking.updateMany({
+    where: {
+      id: booking.id,
+      status: { notIn: [BookingStatus.completed, BookingStatus.cancelled] },
+    },
     data: {
       status: BookingStatus.cancelled,
       internalNotes: opts.reason
@@ -24,6 +30,9 @@ export async function cancelBookingInTx(
         : booking.internalNotes,
     },
   })
+  if (updateResult.count === 0) {
+    throw new Error('No se puede cancelar una reserva en este estado')
+  }
   await releaseRedemptionForBooking(tx, booking.id, 'cancelled')
   await tx.payment.updateMany({
     where: { bookingId: booking.id, ...declaredTransferPaymentWhere },

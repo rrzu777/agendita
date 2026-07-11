@@ -15,7 +15,12 @@ export const updateBusinessSchema = z.object({
   slotStepMinutes: z.enum(['15', '30', '45', '60', 'service']).default('30'),
   // Hasta cuántas horas antes de la cita una clienta puede autogestionar
   // (cancelar/reprogramar) su reserva desde /mi. 0 = sin límite.
-  selfServiceCutoffHours: z.coerce.number().int().min(0).max(720).default(24),
+  // El input vacío ('') vuelve al default 24: Number('') === 0 y 0 significa
+  // "sin límite" — un campo borrado por accidente no debe abrir la ventana.
+  selfServiceCutoffHours: z.preprocess(
+    (v) => (v === '' || v == null ? undefined : v),
+    z.coerce.number().int().min(0).max(720).default(24),
+  ),
   subdomain: z.string()
     .min(3, 'Mínimo 3 caracteres')
     .max(30, 'Máximo 30 caracteres')

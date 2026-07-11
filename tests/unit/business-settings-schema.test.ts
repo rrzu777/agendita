@@ -148,5 +148,7 @@ describe('updateBusinessSchema', () => {
     expect(updateBusinessSchema.parse({ ...minimalValid, selfServiceCutoffHours: 0 }).selfServiceCutoffHours).toBe(0)
     expect(() => updateBusinessSchema.parse({ ...minimalValid, selfServiceCutoffHours: 721 })).toThrow()
     expect(() => updateBusinessSchema.parse({ ...minimalValid, selfServiceCutoffHours: -1 })).toThrow()
+    // Input vacío del form ('') debe volver al default 24, no convertirse en 0 (= sin límite).
+    expect(updateBusinessSchema.parse({ ...minimalValid, selfServiceCutoffHours: '' }).selfServiceCutoffHours).toBe(24)
   })
 })

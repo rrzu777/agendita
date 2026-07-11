@@ -11,7 +11,7 @@ import { declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 
 function makeTx() {
   return {
-    booking: { update: vi.fn().mockResolvedValue({}) },
+    booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     payment: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
   }
 }
@@ -19,11 +19,11 @@ function makeTx() {
 describe('cancelBookingInTx', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('flip a cancelled + release + cierra bt-declared pendiente', async () => {
+  it('flip a cancelled (guardado por status) + release + cierra bt-declared pendiente', async () => {
     const tx = makeTx()
     await cancelBookingInTx(tx as never, { id: 'b1', internalNotes: 'nota' }, { reason: 'me enfermé' })
-    expect(tx.booking.update).toHaveBeenCalledWith({
-      where: { id: 'b1' },
+    expect(tx.booking.updateMany).toHaveBeenCalledWith({
+      where: { id: 'b1', status: { notIn: ['completed', 'cancelled'] } },
       data: { status: 'cancelled', internalNotes: 'nota\n[CANCELADA: me enfermé]' },
     })
     expect(mockRelease).toHaveBeenCalledWith(tx, 'b1', 'cancelled')
@@ -36,10 +36,18 @@ describe('cancelBookingInTx', () => {
   it('sin reason conserva internalNotes tal cual', async () => {
     const tx = makeTx()
     await cancelBookingInTx(tx as never, { id: 'b1', internalNotes: null }, {})
-    expect(tx.booking.update).toHaveBeenCalledWith({
-      where: { id: 'b1' },
+    expect(tx.booking.updateMany).toHaveBeenCalledWith({
+      where: { id: 'b1', status: { notIn: ['completed', 'cancelled'] } },
       data: { status: 'cancelled', internalNotes: null },
     })
+  })
+
+  it('lanza si el updateMany no matchea (carrera: se completó entre el read y la tx) y no libera nada', async () => {
+    const tx = makeTx()
+    tx.booking.updateMany.mockResolvedValue({ count: 0 })
+    await expect(cancelBookingInTx(tx as never, { id: 'b1', internalNotes: null }, {})).rejects.toThrow('No se puede cancelar')
+    expect(mockRelease).not.toHaveBeenCalled()
+    expect(tx.payment.updateMany).not.toHaveBeenCalled()
   })
 })
 
