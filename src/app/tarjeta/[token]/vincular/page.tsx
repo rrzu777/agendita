@@ -19,9 +19,10 @@ export default async function VincularPage({ params }: { params: Promise<{ token
     return <PageMessage title="No pudimos vincular tu tarjeta" message="Demasiados intentos. Espera un momento y vuelve a intentar." />
   }
 
+  let slug: string
   try {
     await ensureUserRow(user)
-    await linkCustomerByLoyaltyToken(prisma, user.id, token)
+    slug = await linkCustomerByLoyaltyToken(prisma, user.id, token)
   } catch (e) {
     if (e instanceof AccountConflictError || e instanceof CardLinkError) {
       return <PageMessage title="No pudimos vincular tu tarjeta" message={e.message} />
@@ -29,5 +30,5 @@ export default async function VincularPage({ params }: { params: Promise<{ token
     throw e
   }
 
-  redirect('/mi')
+  redirect(`/mi/${slug}`)
 }

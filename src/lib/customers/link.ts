@@ -82,14 +82,15 @@ export class CardLinkError extends Error {
 /** Vía 2: link explícito por posesión del token de "Mi tarjeta". El update es
  *  atómico sobre userId null para que dos cuentas no puedan pisarse en carrera.
  *  Los miembros del negocio no pueden reclamar tarjetas de sus clientas (tienen
- *  acceso a todos los tokens desde el dashboard). */
-export async function linkCustomerByLoyaltyToken(db: Db, userId: string, token: string): Promise<void> {
+ *  acceso a todos los tokens desde el dashboard). Devuelve el slug del negocio
+ *  para aterrizar en /mi/[slug] tras vincular. */
+export async function linkCustomerByLoyaltyToken(db: Db, userId: string, token: string): Promise<string> {
   const customer = await db.customer.findUnique({
     where: { loyaltyToken: token },
-    select: { id: true, userId: true, businessId: true },
+    select: { id: true, userId: true, businessId: true, business: { select: { slug: true } } },
   })
   if (!customer) throw new CardLinkError('El enlace de la tarjeta no es válido.')
-  if (customer.userId === userId) return
+  if (customer.userId === userId) return customer.business.slug
   if (customer.userId) throw new CardLinkError('Esta tarjeta ya está vinculada a otra cuenta.')
   const isMember = await db.businessUser.findFirst({
     where: { userId, businessId: customer.businessId },
@@ -101,4 +102,5 @@ export async function linkCustomerByLoyaltyToken(db: Db, userId: string, token: 
     data: { userId },
   })
   if (res.count === 0) throw new CardLinkError('Esta tarjeta ya está vinculada a otra cuenta.')
+  return customer.business.slug
 }

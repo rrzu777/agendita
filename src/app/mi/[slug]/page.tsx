@@ -79,8 +79,9 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
     }),
   ])
 
+  // La tarjeta se lee mejor angosta: ancho propio dentro del contenedor del layout.
   return (
-    <main className="mx-auto max-w-md px-4 pb-10">
+    <main className="mx-auto max-w-md pb-10">
       <h1 className="pt-6 text-center text-xl font-semibold">{business.name}</h1>
       {customers.map((c, i) => (
         <LoyaltyCard
