@@ -54,10 +54,18 @@ export async function declareBankTransfer(bookingId: string): Promise<{ ok: true
     //              el ledger ya lo contabilizó.
     // - cancelled/rejected → la declaración murió (cron/expiración) y la dueña
     //   reabrió la reserva: REACTIVAR el mismo Payment (el unique impide crear otro).
+    // - refunded/failed → hoy inalcanzables para un bt-declared (no hay flujo de
+    //   refund/failed sobre pagos manuales); si algún día aparecen, mejor cortar
+    //   fuerte que pisar el registro.
     const existing = await tx.payment.findFirst({
       where: { bookingId, provider: 'manual', providerPaymentId: btDeclaredId(bookingId) },
     })
-    if (existing && (existing.status === 'pending' || existing.status === 'approved')) return null
+    if (existing && (existing.status === PaymentStatus.pending || existing.status === PaymentStatus.approved)) {
+      return null
+    }
+    if (existing && existing.status !== PaymentStatus.cancelled && existing.status !== PaymentStatus.rejected) {
+      throw new Error('No se puede volver a declarar esta transferencia. Contactá al negocio.')
+    }
 
     // Guard de carrera vs cron (spec §4): solo una pending_payment con hold
     // vigente puede declarar (creación Y reactivación pasan por acá).
