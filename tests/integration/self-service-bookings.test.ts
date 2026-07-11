@@ -154,6 +154,11 @@ describe('self-service bookings (cancelMyBooking / rescheduleMyBooking)', () => 
   beforeEach(async () => {
     mockSessionUser = { id: USER, email: 'user@ss.test', email_confirmed_at: '2026-01-01T00:00:00Z' }
     await setCutoff(24)
+    // La DB tiene la constraint de exclusión Booking_no_overlap (businessId + tsrange):
+    // las reservas activas que deja un caso chocan con las del siguiente (todas usan
+    // hoursFromNow(48)). Cada caso siembra lo suyo → limpiar entre casos.
+    await prisma.payment.deleteMany({ where: { businessId: BIZ } })
+    await prisma.booking.deleteMany({ where: { businessId: BIZ } })
   })
 
   describe('cancelMyBooking', () => {
