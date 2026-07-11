@@ -100,13 +100,16 @@ export function ReviveBookingDialog({
 }
 
 export function ReviveBookingButton(
-  props: Omit<Parameters<typeof ReviveBookingDialog>[0], 'open' | 'onOpenChange'> & { triggerClassName?: string },
+  props: Omit<Parameters<typeof ReviveBookingDialog>[0], 'open' | 'onOpenChange'> & {
+    triggerClassName?: string
+    triggerSize?: React.ComponentProps<typeof Button>['size']
+  },
 ) {
   const [open, setOpen] = useState(false)
-  const { triggerClassName, ...dialogProps } = props
+  const { triggerClassName, triggerSize, ...dialogProps } = props
   return (
     <>
-      <Button type="button" variant="outline" className={triggerClassName} onClick={() => setOpen(true)}>
+      <Button type="button" size={triggerSize} variant="outline" className={triggerClassName} onClick={() => setOpen(true)}>
         Revivir
       </Button>
       <ReviveBookingDialog {...dialogProps} open={open} onOpenChange={setOpen} />

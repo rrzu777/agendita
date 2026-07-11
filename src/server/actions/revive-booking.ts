@@ -15,13 +15,14 @@ import { assertSlotFreeOfConflicts } from '@/lib/availability/validation'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
-import type { BankTransferAccount } from '@prisma/client'
+import { PaymentStatus, type BankTransferAccount } from '@prisma/client'
 import {
   sendNotificationSafely,
   sendBookingConfirmedNotification,
   sendTransferReactivatedToCustomer,
   getBusinessReplyToEmail,
 } from '@/lib/notifications'
+import { toBankTransferEmailInfo } from '@/lib/notifications/types'
 
 // El EXCLUDE parcial Booking_no_overlap puede rechazar el update aun cuando el
 // chequeo de solape pasó (p.ej. pending_payment con hold recién vencido que el
@@ -45,8 +46,8 @@ function isNoOverlapViolation(e: unknown): boolean {
 type ReviveResult =
   | { mode: 'confirm'; isFuture: boolean }
   | {
+      // reopen implica turno futuro (guard en la tx), por eso no carga isFuture.
       mode: 'reopen'
-      isFuture: boolean
       booking: {
         id: string
         bookingNumber: number | null
@@ -70,15 +71,18 @@ export async function reviveBooking(
     throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
+  const timezone = business.timezone || 'America/Santiago'
+
   let result: ReviveResult
   try {
     result = await prisma.$transaction(async (tx) => {
       const booking = await tx.booking.findFirst({
         where: { id: bookingId, businessId }, // guard cross-tenant
         include: {
-          customer: true,
-          service: true,
-          business: { include: { bankTransferAccount: true } },
+          // Solo lo que consume el reopen/email; el confirm usa los escalares.
+          customer: { select: { name: true, email: true } },
+          service: { select: { name: true } },
+          business: { select: { bankTransferAccount: true } },
         },
       })
       if (!booking) throw new Error('Reserva no encontrada')
@@ -88,7 +92,6 @@ export async function reviveBooking(
 
       const now = new Date()
       const isFuture = booking.startDateTime > now
-      const timezone = business.timezone || 'America/Santiago'
 
       if (mode === 'confirm') {
         if (isFuture) {
@@ -148,11 +151,11 @@ export async function reviveBooking(
       // "verifying" sin salida y el recordatorio-clienta quedaría bloqueado
       // (spec §2.3). El webhook MP es idempotente frente al cancelled local.
       await tx.payment.updateMany({
-        where: { bookingId, provider: 'mercado_pago', status: 'pending' },
-        data: { status: 'cancelled' },
+        where: { bookingId, provider: 'mercado_pago', status: PaymentStatus.pending },
+        data: { status: PaymentStatus.cancelled },
       })
 
-      return { mode: 'reopen' as const, isFuture, booking, holdExpiresAt, account }
+      return { mode: 'reopen' as const, booking, holdExpiresAt, account }
     })
   } catch (e) {
     if (isNoOverlapViolation(e)) {
@@ -167,33 +170,28 @@ export async function reviveBooking(
     )
   }
 
-  if (result.mode === 'reopen' && result.booking.customer?.email) {
-    const replyTo = await getBusinessReplyToEmail(businessId)
-    const acct = result.account
-    await sendNotificationSafely('transfer reactivated', () =>
-      sendTransferReactivatedToCustomer({
-        businessName: business.name,
-        businessTimezone: business.timezone || 'America/Santiago',
-        businessReplyToEmail: replyTo,
-        customerName: result.booking.customer!.name,
-        customerEmail: result.booking.customer!.email!,
-        serviceName: result.booking.service?.name ?? 'servicio',
-        bookingNumber: result.booking.bookingNumber,
-        depositAmount: Math.min(result.booking.depositRequired, result.booking.remainingBalance),
-        businessCurrency: business.currency || 'CLP',
-        bankTransfer: {
-          accountHolder: acct.accountHolder,
-          rut: acct.rut,
-          bankName: acct.bankName,
-          accountType: acct.accountType,
-          accountNumber: acct.accountNumber,
-          email: acct.email,
-          instructions: acct.instructions,
-          deadline: result.holdExpiresAt, // el escrito en la tx — NO recalcular
-          confirmationUrl: getBookingConfirmationUrl(business, bookingId),
-        },
-      }),
-    )
+  if (result.mode === 'reopen') {
+    const { booking: revived, account, holdExpiresAt } = result
+    const customer = revived.customer
+    if (customer?.email) {
+      const customerEmail = customer.email
+      const replyTo = await getBusinessReplyToEmail(businessId)
+      await sendNotificationSafely('transfer reactivated', () =>
+        sendTransferReactivatedToCustomer({
+          businessName: business.name,
+          businessTimezone: timezone,
+          businessReplyToEmail: replyTo,
+          customerName: customer.name,
+          customerEmail,
+          serviceName: revived.service?.name ?? 'servicio',
+          bookingNumber: revived.bookingNumber,
+          depositAmount: Math.min(revived.depositRequired, revived.remainingBalance),
+          businessCurrency: business.currency || 'CLP',
+          // deadline = el holdExpiresAt escrito en la tx — NO recalcular.
+          bankTransfer: toBankTransferEmailInfo(account, holdExpiresAt, getBookingConfirmationUrl(business, bookingId)),
+        }),
+      )
+    }
   }
 
   revalidatePath('/dashboard/bookings')

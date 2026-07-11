@@ -42,6 +42,35 @@ export interface BookingEmailData {
   }
 }
 
+/** Mapea cuenta bancaria + plazo + link al bloque `bankTransfer` de los emails.
+ *  Única fuente del shape: lo comparten reviveBooking (reopen) y el cron de
+ *  recordatorios — agregar un campo acá en vez de duplicar el literal. */
+export function toBankTransferEmailInfo(
+  acct: {
+    accountHolder: string
+    rut: string
+    bankName: string
+    accountType: string
+    accountNumber: string
+    email: string | null
+    instructions: string | null
+  },
+  deadline: Date | null,
+  confirmationUrl: string,
+): NonNullable<BookingEmailData['bankTransfer']> {
+  return {
+    accountHolder: acct.accountHolder,
+    rut: acct.rut,
+    bankName: acct.bankName,
+    accountType: acct.accountType,
+    accountNumber: acct.accountNumber,
+    email: acct.email,
+    instructions: acct.instructions,
+    deadline,
+    confirmationUrl,
+  }
+}
+
 export interface CancellationEmailData {
   businessName: string
   businessReplyToEmail?: string | null

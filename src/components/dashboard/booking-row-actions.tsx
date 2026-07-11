@@ -8,7 +8,7 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { CancelBookingButton } from './cancel-booking-button'
 import { ManualPaymentDialog } from './manual-payment-dialog'
 import { isManualPaymentAllowed, type ManualPaymentBooking } from './manual-payment-utils'
-import { ReviveBookingDialog } from './revive-booking-dialog'
+import { ReviveBookingButton } from './revive-booking-dialog'
 import { getReviveReopenState } from './revive-utils'
 import { updateBookingStatus } from '@/server/actions/bookings'
 
@@ -59,7 +59,6 @@ export function BookingRowActions({
 }) {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [payOpen, setPayOpen] = useState(false)
-  const [reviveOpen, setReviveOpen] = useState(false)
 
   const canPay = isManualPaymentAllowed(booking)
   const isConfirmed = booking.status === 'confirmed'
@@ -72,18 +71,14 @@ export function BookingRowActions({
     return (
       <div className="flex items-center justify-end gap-2">
         {contact}
-        <Button type="button" size="sm" variant="outline" onClick={() => setReviveOpen(true)}>
-          Revivir
-        </Button>
-        <ReviveBookingDialog
+        <ReviveBookingButton
           bookingId={booking.id}
           serviceName={booking.service?.name || 'Servicio'}
           customerName={booking.customer?.name || 'Cliente'}
           customerHasEmail={!!booking.customer?.email}
           canReopen={canReopen}
-          reopenDisabledReason={canReopen ? null : reason}
-          open={reviveOpen}
-          onOpenChange={setReviveOpen}
+          reopenDisabledReason={reason}
+          triggerSize="sm"
         />
       </div>
     )

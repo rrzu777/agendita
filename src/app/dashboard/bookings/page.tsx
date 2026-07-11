@@ -172,7 +172,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           )}
         </div>
       )}
-      {booking.status === 'expired' && reviveState && (
+      {reviveState && (
         <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
           <ReviveBookingButton
             bookingId={booking.id}
@@ -180,7 +180,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
             customerName={booking.customer?.name || 'Cliente'}
             customerHasEmail={!!booking.customer?.email}
             canReopen={reviveState.canReopen}
-            reopenDisabledReason={reviveState.canReopen ? null : reviveState.reason}
+            reopenDisabledReason={reviveState.reason}
             triggerClassName="flex-1 h-10 text-sm font-semibold"
           />
         </div>
@@ -204,7 +204,10 @@ export default async function BookingsPage() {
   const businessCurrency = userData.business.currency || 'CLP'
   const businessTimezone = userData.business.timezone || 'America/Santiago'
   const businessAddress = userData.business.addressText || null
-  const transferEnabled = !!(await getBankTransferInfo(userData.business.id))
+  // Solo alimenta el revive-UI de las expiradas: sin expiradas, ni consultamos.
+  const transferEnabled = bookings.some(b => b.status === 'expired')
+    ? !!(await getBankTransferInfo(userData.business.id))
+    : false
 
   const confirmedCount = bookings.filter(b => b.status === 'confirmed').length
   const pendingCount = bookings.filter(b => b.status === 'pending_payment').length

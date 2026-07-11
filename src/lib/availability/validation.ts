@@ -40,6 +40,7 @@ export interface AssertConflictInput {
   startDateTime: Date
   endDateTime: Date
   timezone: string
+  /** Solo afecta el chequeo de solape de RESERVAS (los TimeBlocks no se eximen). */
   excludeBookingId?: string
 }
 
@@ -218,6 +219,5 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
     throw new Error('Ese horario ya no está disponible. Por favor selecciona otro.')
   }
 
-  await assertNoTimeBlockConflict({ tx, businessId, startDateTime, endDateTime, timezone, excludeBookingId: input.excludeBookingId })
-  await assertNoBookingOverlap({ tx, businessId, startDateTime, endDateTime, timezone, excludeBookingId: input.excludeBookingId })
+  await assertSlotFreeOfConflicts({ tx, businessId, startDateTime, endDateTime, timezone, excludeBookingId: input.excludeBookingId })
 }
