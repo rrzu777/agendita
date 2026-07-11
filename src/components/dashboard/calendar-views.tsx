@@ -34,6 +34,7 @@ import {
   type PositionedItem,
 } from '@/lib/calendar/timeline'
 import { bookingAppearance, type StatusIcon } from '@/lib/calendar/booking-appearance'
+import { bookingStatusLabel } from '@/lib/bookings/status-labels'
 
 export type CalendarView = 'day' | 'week' | 'month'
 
@@ -62,15 +63,6 @@ const statusIcons: Record<StatusIcon, typeof Clock> = {
   check: Check,
   x: X,
   dash: Minus,
-}
-
-const statusLabels: Record<string, string> = {
-  pending_payment: 'Pendiente de pago',
-  confirmed: 'Confirmada',
-  completed: 'Completada',
-  cancelled: 'Cancelada',
-  no_show: 'No asistió',
-  expired: 'Expirada',
 }
 
 function hrefFor(view: CalendarView, date: Date): string {
@@ -455,7 +447,7 @@ function BookingBlock({
   const Icon = statusIcons[appearance.icon]
   const start = localTime(b.startDateTime, timezone)
   const strike = appearance.strikeThrough ? 'line-through' : ''
-  const statusLabel = statusLabels[b.status] ?? 'Reserva'
+  const statusLabel = bookingStatusLabel(b.status)
   const ariaLabel = `${statusLabel} — ${b.customer?.name || 'Cliente'} — ${start}`
 
   return (
