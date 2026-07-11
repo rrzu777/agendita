@@ -19,6 +19,7 @@ import { CancelBookingButton } from './cancel-booking-button'
 import { RefreshCw } from 'lucide-react'
 import { ManualPaymentDialog } from './manual-payment-dialog'
 import { isManualPaymentAllowed } from './manual-payment-utils'
+import { bookingStatusLabel } from '@/lib/bookings/status-labels'
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false)
@@ -31,14 +32,6 @@ function useIsMobile() {
     return () => mql.removeEventListener('change', handler)
   }, [])
   return isMobile
-}
-
-const statusLabels: Record<string, string> = {
-  pending_payment: 'Pendiente de pago',
-  confirmed: 'Confirmada',
-  completed: 'Completada',
-  cancelled: 'Cancelada',
-  no_show: 'No asistió',
 }
 
 const statusBadgeClasses: Record<string, string> = {
@@ -77,7 +70,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Estado</span>
             <Badge className={statusBadgeClasses[booking.status] || ''}>
-              {statusLabels[booking.status] || booking.status}
+              {bookingStatusLabel(booking.status)}
             </Badge>
           </div>
 

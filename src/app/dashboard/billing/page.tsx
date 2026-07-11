@@ -3,6 +3,7 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { getCurrentSubscription } from '@/server/actions/subscriptions'
+import { getSubscriptionStatusLabel } from '@/lib/subscriptions/enforcement'
 import { BadgeCheck, CircleAlert, CircleX, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -11,14 +12,6 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { formatMoney } from '@/lib/money'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
-
-const statusLabels: Record<string, string> = {
-  trialing: 'En prueba',
-  active: 'Activo',
-  past_due: 'Pago pendiente',
-  suspended: 'Suspendido',
-  cancelled: 'Cancelado',
-}
 
 const statusIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   trialing: Clock,
@@ -94,7 +87,7 @@ export default async function BillingPage() {
                       <h3 className="text-2xl font-semibold text-primary">{plan?.name ?? 'Plan no asignado'}</h3>
                       <span className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold', statusColors[status])}>
                         <StatusIcon className="size-3.5" />
-                        {statusLabels[status] ?? status}
+                        {getSubscriptionStatusLabel(status)}
                       </span>
                     </div>
                     {plan && (

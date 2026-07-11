@@ -18,6 +18,7 @@ import { getLocalDateStr } from '@/lib/availability/timezone'
 import { formatMoney } from '@/lib/money'
 import { CalendarCheck2, User, Search, X } from 'lucide-react'
 import type { Service } from '@prisma/client'
+import { bookingStatusLabels } from '@/lib/bookings/status-labels'
 
 interface NewBookingFormProps {
   services: Service[]
@@ -176,19 +177,19 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
     let resultStatus: string
     let resultPayment: string
     if (isFree) {
-      resultStatus = 'Confirmada'
+      resultStatus = bookingStatusLabels.confirmed
       resultPayment = 'Pagado'
     } else if (paymentMode === 'full_paid') {
-      resultStatus = 'Confirmada'
+      resultStatus = bookingStatusLabels.confirmed
       resultPayment = 'Pagado'
     } else if (paymentMode === 'deposit_paid' && deposit > 0) {
-      resultStatus = 'Confirmada'
+      resultStatus = bookingStatusLabels.confirmed
       resultPayment = `Abono de $${deposit.toLocaleString('es-CL')} pagado`
     } else if (noDeposit) {
-      resultStatus = 'Confirmada'
+      resultStatus = bookingStatusLabels.confirmed
       resultPayment = 'Sin abono'
     } else {
-      resultStatus = 'Pendiente de pago'
+      resultStatus = bookingStatusLabels.pending_payment
       resultPayment = 'Sin pago registrado'
     }
 
@@ -560,7 +561,7 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
                 )}
                 <div className="flex justify-between border-t border-border/60 pt-2">
                   <span className="text-muted-foreground">Estado</span>
-                  <span className={`font-semibold ${summary.resultStatus === 'Confirmada' ? 'text-green-700' : 'text-orange-700'}`}>
+                  <span className={`font-semibold ${summary.resultStatus === bookingStatusLabels.confirmed ? 'text-green-700' : 'text-orange-700'}`}>
                     {summary.resultStatus}
                   </span>
                 </div>
