@@ -23,7 +23,7 @@
 
 ### Orden y paralelismo (subagent-driven)
 
-- Wave 1: Task 1 (conflictos) y Task 2 (emails/copys) en paralelo — archivos disjuntos, pero **solo Task 1 corre integración**.
+- Wave 1: Task 1 (conflictos) y Task 2 (emails/copys) en paralelo — archivos disjuntos, pero **solo Task 1 corre integración** y NINGUNO corre la unit suite completa (falsos rojos por archivos del otro a medio editar; los `git commit` de la wave los hace cada task solo con SUS archivos, con `git add` explícito).
 - Wave 2: Task 3 (confirm), luego Task 4 (reopen), luego Task 5 (declare fix) — **secuenciales** (mismo archivo de action/test + DB de test única).
 - Wave 3: Task 6 (UI) y Task 7 (home+drawer) en paralelo — archivos disjuntos, sin integración.
 - Task 8 (verificación final) al final, solo.
@@ -43,20 +43,30 @@
 Crear `tests/integration/slot-conflicts.test.ts`:
 
 ```ts
-import { describe, it, expect, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { addMinutes } from 'date-fns'
 import { prisma } from '@/lib/db'
 import { assertSlotFreeOfConflicts } from '@/lib/availability/validation'
 import { requireTestDatabase } from './setup'
 import {
-  seedConfirmedBooking, cleanupBankTransferSeed, BT_VERIFY_BIZ, BT_VERIFY_SVC,
+  seedDeclaredTransfer, seedConfirmedBooking, cleanupBankTransferSeed, BT_VERIFY_BIZ, BT_VERIFY_SVC,
 } from './helpers/bank-transfer-seed'
 
 requireTestDatabase()
 
 const TZ = 'America/Santiago'
 
+// OJO: seedConfirmedBooking NO siembra el negocio (asume que existe); solo
+// seedDeclaredTransfer corre ensureBusiness. Sin este beforeAll, correr el
+// archivo solo revienta con FK violation.
+beforeAll(async () => {
+  await seedDeclaredTransfer()
+})
+
 afterAll(async () => {
+  // cleanupBankTransferSeed no borra TimeBlocks: limpiarlos acá para que una
+  // aserción fallida no deje bloques huérfanos que pisen otros archivos.
+  await prisma.timeBlock.deleteMany({ where: { businessId: BT_VERIFY_BIZ } })
   await cleanupBankTransferSeed()
   await prisma.$disconnect()
 })
@@ -77,8 +87,6 @@ describe('assertSlotFreeOfConflicts', () => {
 
   it('tira si un TimeBlock solapa el slot', async () => {
     const s = slot(2, 15)
-    // ensureBusiness ya corrió vía seedConfirmedBooking en otro test o acá:
-    await seedConfirmedBooking({ businessId: BT_VERIFY_BIZ, serviceId: BT_VERIFY_SVC, ...slot(2, 10) })
     const block = await prisma.timeBlock.create({
       data: {
         businessId: BT_VERIFY_BIZ,
@@ -234,10 +242,10 @@ El comportamiento de `assertSlotIsAvailable` debe quedar byte-idéntico (mismos 
 
 ```bash
 DATABASE_URL=postgresql://postgres:postgres@localhost:5433/agendita_test DIRECT_URL=postgresql://postgres:postgres@localhost:5433/agendita_test npm run test:integration -- -t "assertSlotFreeOfConflicts"
-npm run test:unit
+npm run test:unit -- tests/unit/availability
 npx tsc --noEmit 2>&1 | grep -E '^src/' ; echo "exit=$?"
 ```
-Expected: integración PASS, unit suite completa PASS (la extracción no cambia comportamiento), grep vacío (`exit=1`).
+Expected: integración PASS, unit targeted PASS, grep vacío (`exit=1`). NO correr la unit suite COMPLETA acá: Task 2 corre en paralelo en el mismo worktree y sus archivos a medio editar darían falsos rojos — la suite completa la corre Task 8. Si `tests/unit/availability` no existe como dir, correr los archivos que matcheen `ls tests/unit/*slot* tests/unit/*availability* tests/unit/*validation*`.
 
 - [ ] **Step 5: Commit**
 
@@ -543,6 +551,11 @@ export async function reviveBooking(
             excludeBookingId: booking.id,
           })
         }
+        // Los Payments NO se tocan y la redemption de promo liberada al expirar
+        // NO se re-reclama: la revivida mantiene el precio descontado que la
+        // clienta aceptó, aceptando el posible sobre-uso del cap de la promo
+        // (spec §1.4 — decisión de producto). El abono se registra después con
+        // el flujo manual existente.
         const { count } = await tx.booking.updateMany({
           where: { id: bookingId, businessId, status: 'expired' },
           data: { status: 'confirmed', holdExpiresAt: null },
@@ -747,14 +760,14 @@ En `src/server/actions/revive-booking.ts`, reemplazar el `throw new Error('Modo 
       // "verifying" sin salida y el recordatorio-clienta quedaría bloqueado
       // (spec §2.3). El webhook MP es idempotente frente al cancelled local.
       await tx.payment.updateMany({
-        where: { bookingId, provider: 'mercado_pago', status: { in: ['pending', 'in_process'] } },
+        where: { bookingId, provider: 'mercado_pago', status: 'pending' },
         data: { status: 'cancelled' },
       })
 
       return { mode: 'reopen' as const, isFuture, booking, holdExpiresAt, account }
 ```
 
-OJO: verificar en `prisma/schema.prisma` los valores reales del enum `PaymentStatus` — si `in_process` no existe, dejar solo `['pending']`.
+(Verificado contra `prisma/schema.prisma:472`: el enum `PaymentStatus` NO tiene `in_process` — por eso el filtro es `status: 'pending'` a secas.)
 
 Y después del bloque `if (result.mode === 'confirm' ...)` post-tx, agregar el email de reopen (best-effort, solo si hay email):
 
@@ -816,7 +829,7 @@ git -C /Users/robertozamorautrera/Projects/agendita/.claude/worktrees/keen-wrigh
 
 - [ ] **Step 1: Write the failing tests**
 
-En `tests/integration/bank-transfer-public.test.ts`, agregar un describe (reusar seeds/mocks del archivo — leerlo primero):
+OJO: `tests/integration/bank-transfer-public.test.ts` **NO usa el seed helper** — tiene su propio negocio `btp-biz-1`, un `PrismaClient` local dentro del describe y `declareBankTransfer` vía dynamic import. Para el describe nuevo: agregar los imports `seedDeclaredTransfer, cleanupBankTransferSeed` del helper y `prisma` de `@/lib/db`, adaptar la forma de invocar `declareBankTransfer` a la que ya usa el archivo (dynamic import), y agregar un `afterAll` que llame `cleanupBankTransferSeed()` (si no, la basura de `btv-biz-1` queda sin limpiar). El mock de `@/lib/notifications` del archivo ya cubre lo necesario. Agregar el describe:
 
 ```ts
 describe('declareBankTransfer reactivación post-reopen', () => {
@@ -957,7 +970,7 @@ git -C /Users/robertozamorautrera/Projects/agendita/.claude/worktrees/keen-wrigh
 **Files:**
 - Create: `src/components/dashboard/revive-booking-dialog.tsx`
 - Modify: `src/components/dashboard/booking-row-actions.tsx`, `src/app/dashboard/bookings/page.tsx`
-- Test: `tests/component/revive-booking-dialog.test.tsx` (create — mirar un test existente en `tests/component/` para el patrón exacto de render y mocks)
+- Test: `tests/unit/revive-booking-dialog.test.tsx` (create — los component tests viven en `tests/unit/*.tsx` y corren con `npm run test:unit`; patrón de referencia: `tests/unit/booking-row-actions.test.tsx`)
 
 - [ ] **Step 1: Write the failing component test**
 
@@ -966,6 +979,9 @@ import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
+// El diálogo importa la action ('use server' → prisma/auth): mockearla para
+// que el import del test no arrastre infraestructura de servidor.
+vi.mock('@/server/actions/revive-booking', () => ({ reviveBooking: vi.fn() }))
 
 import { ReviveBookingDialog } from '@/components/dashboard/revive-booking-dialog'
 
@@ -1001,9 +1017,7 @@ describe('ReviveBookingDialog', () => {
 })
 ```
 
-Ubicar el archivo donde viven los component tests existentes (`ls tests/component/ tests/unit/*.tsx 2>/dev/null`) y seguir ese path/config.
-
-- [ ] **Step 2: Run to verify it fails** — comando según la config real (`npm run test:unit -- <path>`); Expected: FAIL, módulo no existe.
+- [ ] **Step 2: Run to verify it fails** — `npm run test:unit -- tests/unit/revive-booking-dialog.test.tsx`; Expected: FAIL, módulo no existe.
 
 - [ ] **Step 3: Implementar el diálogo**
 
@@ -1100,6 +1114,9 @@ export function ReviveBookingDialog({
               Esta clienta no tiene email: avisale por WhatsApp que su reserva revivió.
             </p>
           )}
+          {/* Desviación consciente de la spec §5 ("reusar BookingContactButtons"):
+              el botón de contacto ya está visible en la fila/card al lado del
+              trigger; duplicarlo dentro del diálogo no suma. Solo el aviso. */}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
@@ -1113,13 +1130,17 @@ export function ReviveBookingDialog({
 
 `src/components/dashboard/booking-row-actions.tsx` — hoy las expiradas caen en el early-return `!isActionable`. Extender `RowBooking` y el early-return:
 
+La page pasa `booking={booking}` ENTERO (el objeto de `getBookings()`, que ya incluye `startDateTime`, `paymentMethod` y `customer` completo con `email` — no hay que inyectar nada). Solo hay que ensanchar el tipo:
+
 ```tsx
 type RowBooking = ManualPaymentBooking & {
   startDateTime?: Date | string
   paymentMethod?: string | null
-  customerEmail?: string | null
+  customer: { name: string; email?: string | null } | null
 }
 ```
+
+(usar `booking.customer?.email` directamente, sin campo sintético `customerEmail`).
 
 Agregar props `transferEnabled?: boolean` al componente, y ANTES del early-return actual:
 
@@ -1146,7 +1167,7 @@ Agregar props `transferEnabled?: boolean` al componente, y ANTES del early-retur
           bookingId={booking.id}
           serviceName={booking.service?.name || 'Servicio'}
           customerName={booking.customer?.name || 'Cliente'}
-          customerHasEmail={!!booking.customerEmail}
+          customerHasEmail={!!booking.customer?.email}
           canReopen={canReopen}
           reopenDisabledReason={canReopen ? null : reopenDisabledReason}
           open={reviveOpen}
@@ -1163,8 +1184,8 @@ OJO hooks: `useState(reviveOpen)` debe declararse arriba junto a los otros `useS
 
 En `src/app/dashboard/bookings/page.tsx`:
 1. Calcular una vez: `const transferEnabled = !!(await getBankTransferInfo(<businessId>))` — import de `@/server/actions/bank-transfer-public`; obtener el businessId del mismo lugar del que la page ya saca `userData.business` (leer la page; si expone `userData.business.id` usar eso).
-2. Pasar a `BookingRowActions` (fila desktop): `transferEnabled={transferEnabled}` y en el objeto booking los campos nuevos `startDateTime: booking.startDateTime`, `paymentMethod: booking.paymentMethod`, `customerEmail: booking.customer?.email ?? null` (revisar cómo la page arma hoy el objeto que le pasa — extenderlo, no reemplazarlo).
-3. Card móvil: después del bloque `{booking.status === 'pending_payment' && (...)}` agregar un bloque para expired. La card es server component → el diálogo necesita su propio client wrapper con trigger. Crear DENTRO de `revive-booking-dialog.tsx` un export adicional:
+2. Pasar a `BookingRowActions` (fila desktop, page.tsx ~línea 286): solo agregar la prop `transferEnabled={transferEnabled}` — el `booking={booking}` entero que ya pasa trae `startDateTime`/`paymentMethod`/`customer.email`.
+3. Card móvil: `BookingCard` es una función exportada separada en el MISMO archivo (page.tsx ~líneas 38-57) con el tipo de `booking` inline — hay que (a) ampliar ese tipo inline con `paymentMethod: string | null` y `email?: string | null` dentro de `customer`, (b) agregarle la prop `transferEnabled: boolean`, y (c) pasarla desde el map de la page (~línea 316-323). Después del bloque `{booking.status === 'pending_payment' && (...)}` agregar el bloque expired. La card es server component → el diálogo necesita su propio client wrapper con trigger. Crear DENTRO de `revive-booking-dialog.tsx` un export adicional:
 
 ```tsx
 export function ReviveBookingButton(props: Omit<Parameters<typeof ReviveBookingDialog>[0], 'open' | 'onOpenChange'> & { triggerClassName?: string }) {
@@ -1211,7 +1232,7 @@ Expected: component test PASS, suite verde, grep vacío.
 - [ ] **Step 7: Commit**
 
 ```bash
-git -C /Users/robertozamorautrera/Projects/agendita/.claude/worktrees/keen-wright-cd2fef add src/components/dashboard/revive-booking-dialog.tsx src/components/dashboard/booking-row-actions.tsx src/app/dashboard/bookings/page.tsx tests/component/revive-booking-dialog.test.tsx src/components/dashboard/manual-payment-utils.ts
+git -C /Users/robertozamorautrera/Projects/agendita/.claude/worktrees/keen-wright-cd2fef add src/components/dashboard/revive-booking-dialog.tsx src/components/dashboard/booking-row-actions.tsx src/app/dashboard/bookings/page.tsx tests/unit/revive-booking-dialog.test.tsx src/components/dashboard/manual-payment-utils.ts
 git -C /Users/robertozamorautrera/Projects/agendita/.claude/worktrees/keen-wright-cd2fef commit -m "feat(dashboard): ReviveBookingDialog en tabla y card de reservas"
 ```
 
