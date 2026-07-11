@@ -48,7 +48,9 @@ export default async function DashboardPage() {
   const upcomingBookings = bookings.filter(b =>
     new Date(b.startDateTime) >= today &&
     b.status !== 'cancelled' &&
-    b.status !== 'no_show'
+    b.status !== 'no_show' &&
+    // Una expirada futura no es una "próxima cita": revivila desde Reservas.
+    b.status !== 'expired'
   )
   // Deriva de la relación filtrada `payments` (Task 1): no-vacía sólo cuando hay
   // una transferencia declarada pendiente → sin segunda query.
