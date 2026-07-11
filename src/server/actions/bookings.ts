@@ -65,6 +65,8 @@ const VALID_STATUS_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
   completed: [],
   cancelled: [],
   no_show: [],
+  // expired es terminal PARA ESTE PATH: la única salida es reviveBooking
+  // (revive-booking.ts), que re-valida cupo antes de transicionar.
   expired: [],
 }
 

@@ -48,9 +48,12 @@ export async function confirmBankTransfer(
 
     const booking = await tx.booking.findUnique({ where: { id: payment.bookingId } })
     if (!booking) throw new Error('Reserva no encontrada')
-    if (booking.status === 'expired' || booking.status === 'cancelled') {
+    if (booking.status === 'expired') {
+      throw new Error('Esta reserva expiró. Revivila desde Reservas y después verificá el pago.')
+    }
+    if (booking.status === 'cancelled') {
       throw new Error(
-        'Esta reserva expiró o fue cancelada. Registrá el pago creando la reserva de nuevo desde el calendario.',
+        'Esta reserva fue cancelada. Registrá el pago creando la reserva de nuevo desde el calendario.',
       )
     }
 
