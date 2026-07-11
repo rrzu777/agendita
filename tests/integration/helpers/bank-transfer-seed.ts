@@ -99,11 +99,15 @@ export interface SeedDeclaredTransferOptions {
   /** Override del slot (si no, se asigna uno único por llamada). */
   startDateTime?: Date
   endDateTime?: Date
+  /** `false` → crea la reserva bank_transfer SIN el Payment declarado (clienta que
+   *  aún no avisó). Default `true` (reserva con transferencia declarada). */
+  declared?: boolean
 }
 
 export interface SeededDeclaredTransfer {
   businessId: string
   bookingId: string
+  /** '' cuando `declared:false` (no se creó Payment). */
   paymentId: string
   serviceId: string
   customerId: string
@@ -159,25 +163,28 @@ export async function seedDeclaredTransfer(
     },
   })
 
-  const payment = await prisma.payment.create({
-    data: {
-      businessId: BT_VERIFY_BIZ,
-      bookingId: booking.id,
-      customerId: customer.id,
-      provider: 'manual',
-      providerPaymentId: btDeclaredId(booking.id),
-      amount,
-      currency: 'CLP',
-      status: 'pending',
-      paymentType: 'deposit',
-      paymentMethod: 'Transferencia',
-    },
-  })
+  const declared = opts.declared ?? true
+  const payment = declared
+    ? await prisma.payment.create({
+        data: {
+          businessId: BT_VERIFY_BIZ,
+          bookingId: booking.id,
+          customerId: customer.id,
+          provider: 'manual',
+          providerPaymentId: btDeclaredId(booking.id),
+          amount,
+          currency: 'CLP',
+          status: 'pending',
+          paymentType: 'deposit',
+          paymentMethod: 'Transferencia',
+        },
+      })
+    : null
 
   return {
     businessId: BT_VERIFY_BIZ,
     bookingId: booking.id,
-    paymentId: payment.id,
+    paymentId: payment?.id ?? '',
     serviceId: BT_VERIFY_SVC,
     customerId: customer.id,
     startDateTime: slot.startDateTime,

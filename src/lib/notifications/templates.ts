@@ -27,7 +27,7 @@ function fmtDate(date: Date, timezone: string): string {
   return formatInTimeZone(date, timezone, "EEEE d 'de' MMMM 'de' yyyy, HH:mm", { locale: es })
 }
 
-function fmtCurrency(amount: number, currency: string): string {
+export function fmtCurrency(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat('es-CL', { style: 'currency', currency: currency || 'CLP' }).format(amount)
   } catch {
