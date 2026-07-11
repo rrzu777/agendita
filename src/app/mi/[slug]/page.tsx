@@ -9,6 +9,8 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 import { bookingStatusLabels } from '@/lib/bookings/status-labels'
 import { formatShortDate } from '@/lib/format-date'
 import { declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
+import { canSelfManage } from '@/lib/bookings/self-service'
+import { BookingActions } from './booking-actions'
 import type { BookingStatus } from '@prisma/client'
 
 const UPCOMING_STATUSES = ['pending_payment', 'confirmed'] as const
@@ -43,7 +45,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
   const business = await prisma.business.findUnique({
     where: { slug },
     select: {
-      id: true, name: true, slug: true, subdomain: true, logoUrl: true,
+      id: true, name: true, slug: true, subdomain: true, logoUrl: true, selfServiceCutoffHours: true,
       loyaltyConfig: { select: { isActive: true, programName: true, pointsLabel: true, cardMessage: true } },
     },
   })
@@ -104,6 +106,12 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
               <li key={b.id} className="rounded-lg border border-gray-100 px-3 py-2 text-sm">
                 <div className="font-medium">{b.service?.name}</div>
                 <div className="text-gray-500">{formatShortDate(b.startDateTime)} · {statusLabel(b)} · {formatBookingNumber(b.bookingNumber, b.id)}</div>
+                <BookingActions
+                  bookingId={b.id}
+                  slug={business.slug}
+                  canManage={canSelfManage(b.startDateTime, business.selfServiceCutoffHours)}
+                  cutoffHours={business.selfServiceCutoffHours}
+                />
               </li>
             ))}
           </ul>
