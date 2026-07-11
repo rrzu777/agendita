@@ -123,7 +123,8 @@ export interface TransferReminderCustomerEmailData {
   businessTimezone: string
   customerName: string
   serviceName: string
-  depositLabel: string                        // ya formateado ($X CLP)
+  depositAmount: number                       // monto crudo; el template lo formatea (consistente con los otros emails)
+  businessCurrency: string
   bankTransfer: NonNullable<BookingEmailData['bankTransfer']>
   bookingNumber?: number | null
   customerEmail?: string

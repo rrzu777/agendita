@@ -1,5 +1,5 @@
 import { addHours, subHours } from 'date-fns'
-import { type Prisma, type PrismaClient } from '@prisma/client'
+import { BookingStatus, type Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { BANK_TRANSFER_METHOD, declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 import {
@@ -10,7 +10,6 @@ import {
   sendTransferReminderToBusiness,
 } from '@/lib/notifications'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
-import { fmtCurrency } from '@/lib/notifications/templates'
 import { logger } from '@/lib/logger'
 
 // Ventanas del recordatorio (no son 'use server', pueden ser constantes del módulo).
@@ -30,6 +29,13 @@ interface Deps {
   sendBusiness: typeof sendTransferReminderToBusiness
 }
 
+type ReminderField = 'transferReminderCustomerSentAt' | 'transferReminderBusinessSentAt'
+
+/** Libera el claim (revierte el flag a null) cuando el envío no pudo concretarse. */
+async function releaseReminderClaim(db: Pick<PrismaClient, 'booking'>, id: string, field: ReminderField, now: Date) {
+  await db.booking.updateMany({ where: { id, [field]: now }, data: { [field]: null } })
+}
+
 /**
  * Recordatorios intermedios de transferencia (best-effort, disparados por el cron
  * horario). Dos ramas independientes con compare-and-swap de where COMPLETO:
@@ -39,7 +45,9 @@ interface Deps {
  *      (incluye el caso verifyHours=null → hold NULL + Payment viejo).
  *
  * El claim re-afirma el where entero (no solo el flag) para no mandar "andá a
- * transferir" a quien recién declaró / "verificá" a quien recién verificó.
+ * transferir" a quien recién declaró / "verificá" a quien recién verificó. Cada
+ * rama: reclamar (secuencial, updates por PK baratos) → resolver reply-to una vez
+ * por negocio → enviar en paralelo (Promise.all), liberando el claim si falla.
  */
 export async function sendTransferReminders(
   now = new Date(),
@@ -50,7 +58,7 @@ export async function sendTransferReminders(
 
   // ---- Clienta (pre-declaración) ----
   const customerWhere = {
-    status: 'pending_payment' as const,
+    status: BookingStatus.pending_payment,
     paymentStatus: 'unpaid' as const,
     paymentMethod: BANK_TRANSFER_METHOD,
     transferReminderCustomerSentAt: null,
@@ -71,12 +79,14 @@ export async function sendTransferReminders(
       },
     },
   })
+
+  // Fase 1: reclamar (CAS con where COMPLETO) los que siguen elegibles y con datos completos.
+  const customerClaimed: typeof customerBookings = []
   for (const b of customerBookings) {
     if (!b.customer?.email || !b.business.bankTransferAccount || !b.holdExpiresAt) {
       result.skipped++
       continue
     }
-    // CAS con where COMPLETO (re-afirma sin declarar / sin MP pending / hold vigente / etc.).
     const claim = await db.booking.updateMany({
       where: { id: b.id, ...customerWhere },
       data: { transferReminderCustomerSentAt: now },
@@ -85,47 +95,62 @@ export async function sendTransferReminders(
       result.skipped++
       continue
     }
-    const acct = b.business.bankTransferAccount
-    const depositLabel = fmtCurrency(Math.min(b.depositRequired, b.remainingBalance), b.business.currency || 'CLP')
-    try {
-      const res = await sendNotificationSafely('transfer reminder customer', async () =>
-        deps.sendCustomer({
-          businessName: b.business.name,
-          businessTimezone: b.business.timezone || 'America/Santiago',
-          customerName: b.customer!.name,
-          serviceName: b.service?.name ?? 'servicio',
-          depositLabel,
-          bankTransfer: {
-            accountHolder: acct.accountHolder,
-            rut: acct.rut,
-            bankName: acct.bankName,
-            accountType: acct.accountType,
-            accountNumber: acct.accountNumber,
-            email: acct.email,
-            instructions: acct.instructions,
-            deadline: b.holdExpiresAt,
-            confirmationUrl: getBookingConfirmationUrl(b.business, b.id),
-          },
-          bookingNumber: b.bookingNumber,
-          customerEmail: b.customer!.email!,
-          businessReplyToEmail: await getBusinessReplyToEmail(b.business.id),
-        }),
-      )
-      if (res.success) result.customerSent++
-      else {
-        await releaseCustomer(db, b.id, now)
-        result.skipped++
-      }
-    } catch {
-      await releaseCustomer(db, b.id, now)
-      logger.error('transfer_reminder.customer.failed', b.id)
-      result.errors++
-    }
+    customerClaimed.push(b)
   }
+
+  // Fase 2: reply-to una vez por negocio distinto (evita N+1 sobre businessUser).
+  const replyToByBiz = new Map<string, string | null>()
+  await Promise.all(
+    [...new Set(customerClaimed.map((b) => b.business.id))].map(async (id) => {
+      replyToByBiz.set(id, await getBusinessReplyToEmail(id))
+    }),
+  )
+
+  // Fase 3: enviar en paralelo; liberar el claim si el envío no se concreta.
+  await Promise.all(
+    customerClaimed.map(async (b) => {
+      const acct = b.business.bankTransferAccount!
+      try {
+        const res = await sendNotificationSafely('transfer reminder customer', () =>
+          deps.sendCustomer({
+            businessName: b.business.name,
+            businessTimezone: b.business.timezone || 'America/Santiago',
+            customerName: b.customer!.name,
+            serviceName: b.service?.name ?? 'servicio',
+            depositAmount: Math.min(b.depositRequired, b.remainingBalance),
+            businessCurrency: b.business.currency || 'CLP',
+            bankTransfer: {
+              accountHolder: acct.accountHolder,
+              rut: acct.rut,
+              bankName: acct.bankName,
+              accountType: acct.accountType,
+              accountNumber: acct.accountNumber,
+              email: acct.email,
+              instructions: acct.instructions,
+              deadline: b.holdExpiresAt!,
+              confirmationUrl: getBookingConfirmationUrl(b.business, b.id),
+            },
+            bookingNumber: b.bookingNumber,
+            customerEmail: b.customer!.email!,
+            businessReplyToEmail: replyToByBiz.get(b.business.id) ?? null,
+          }),
+        )
+        if (res.success) result.customerSent++
+        else {
+          await releaseReminderClaim(db, b.id, 'transferReminderCustomerSentAt', now)
+          result.skipped++
+        }
+      } catch {
+        await releaseReminderClaim(db, b.id, 'transferReminderCustomerSentAt', now)
+        logger.error('transfer_reminder.customer.failed', b.id)
+        result.errors++
+      }
+    }),
+  )
 
   // ---- Dueña (declarada sin verificar) ----
   const businessWhere = {
-    status: 'pending_payment' as const,
+    status: BookingStatus.pending_payment,
     transferReminderBusinessSentAt: null,
     OR: [
       {
@@ -146,6 +171,9 @@ export async function sendTransferReminders(
       business: { select: { id: true, name: true } },
     },
   })
+
+  // Fase 1: reclamar.
+  const businessClaimed: typeof businessBookings = []
   for (const b of businessBookings) {
     const claim = await db.booking.updateMany({
       where: { id: b.id, ...businessWhere },
@@ -155,40 +183,33 @@ export async function sendTransferReminders(
       result.skipped++
       continue
     }
-    try {
-      const results = await sendMultiNotificationSafely('transfer reminder business', () =>
-        deps.sendBusiness(b.business.id, {
-          businessName: b.business.name,
-          customerName: b.customer?.name ?? 'la clienta',
-          serviceName: b.service?.name ?? 'servicio',
-          bookingNumber: b.bookingNumber,
-        }),
-      )
-      if (results.some((r) => r.success)) result.businessSent++
-      else {
-        await releaseBusiness(db, b.id, now)
-        result.skipped++
-      }
-    } catch {
-      await releaseBusiness(db, b.id, now)
-      logger.error('transfer_reminder.business.failed', b.id)
-      result.errors++
-    }
+    businessClaimed.push(b)
   }
 
+  // Fase 2: enviar en paralelo (cada email es per-booking; el sender resuelve los owners).
+  await Promise.all(
+    businessClaimed.map(async (b) => {
+      try {
+        const results = await sendMultiNotificationSafely('transfer reminder business', () =>
+          deps.sendBusiness(b.business.id, {
+            businessName: b.business.name,
+            customerName: b.customer?.name ?? 'la clienta',
+            serviceName: b.service?.name ?? 'servicio',
+            bookingNumber: b.bookingNumber,
+          }),
+        )
+        if (results.some((r) => r.success)) result.businessSent++
+        else {
+          await releaseReminderClaim(db, b.id, 'transferReminderBusinessSentAt', now)
+          result.skipped++
+        }
+      } catch {
+        await releaseReminderClaim(db, b.id, 'transferReminderBusinessSentAt', now)
+        logger.error('transfer_reminder.business.failed', b.id)
+        result.errors++
+      }
+    }),
+  )
+
   return result
-}
-
-async function releaseCustomer(db: Pick<PrismaClient, 'booking'>, id: string, now: Date) {
-  await db.booking.updateMany({
-    where: { id, transferReminderCustomerSentAt: now },
-    data: { transferReminderCustomerSentAt: null },
-  })
-}
-
-async function releaseBusiness(db: Pick<PrismaClient, 'booking'>, id: string, now: Date) {
-  await db.booking.updateMany({
-    where: { id, transferReminderBusinessSentAt: now },
-    data: { transferReminderBusinessSentAt: null },
-  })
 }

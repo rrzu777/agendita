@@ -27,7 +27,7 @@ function fmtDate(date: Date, timezone: string): string {
   return formatInTimeZone(date, timezone, "EEEE d 'de' MMMM 'de' yyyy, HH:mm", { locale: es })
 }
 
-export function fmtCurrency(amount: number, currency: string): string {
+function fmtCurrency(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat('es-CL', { style: 'currency', currency: currency || 'CLP' }).format(amount)
   } catch {
@@ -98,19 +98,21 @@ export function bankTransferBlockText(
 }
 
 export function transferReminderCustomerHtml(data: TransferReminderCustomerEmailData): string {
+  const deposit = fmtCurrency(data.depositAmount, data.businessCurrency)
   return baseHtml(`
     ${header('Te quedan pocas horas para transferir')}
     <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, tu reserva de <strong>${escapeHtml(data.serviceName)}</strong> sigue pendiente. Transferí el abono y avisanos hoy para no perder tu cupo.</p>
-    ${bankTransferBlockHtml(data.bankTransfer, data.depositLabel, data.businessTimezone)}
+    ${bankTransferBlockHtml(data.bankTransfer, deposit, data.businessTimezone)}
     ${footer(data.businessName)}
   `)
 }
 
 export function transferReminderCustomerText(data: TransferReminderCustomerEmailData): string {
+  const deposit = fmtCurrency(data.depositAmount, data.businessCurrency)
   return [
     `Hola ${data.customerName}, tu reserva de ${data.serviceName} sigue pendiente.`,
     `Transferí el abono y avisanos hoy para no perder tu cupo.`,
-    ...bankTransferBlockText(data.bankTransfer, data.depositLabel, data.businessTimezone),
+    ...bankTransferBlockText(data.bankTransfer, deposit, data.businessTimezone),
   ].join('\n')
 }
 

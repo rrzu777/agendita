@@ -79,7 +79,8 @@ describe('sendTransferReminders', () => {
     expect(d.sendCustomer).toHaveBeenCalledTimes(1)
     const arg = d.sendCustomer.mock.calls[0][0]
     expect(arg.businessName).toBe('Bella')
-    expect(arg.depositLabel).toContain('10.000')
+    expect(arg.depositAmount).toBe(10000)
+    expect(arg.businessCurrency).toBe('CLP')
     expect(arg.bankTransfer.accountNumber).toBe('123')
     expect(arg.bankTransfer.confirmationUrl).toContain('/book/confirmation?bookingId=bk1')
     expect(arg.bankTransfer.deadline).toEqual(new Date('2026-07-11T14:00:00Z'))
