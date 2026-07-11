@@ -1,15 +1,17 @@
 import { Badge } from './badge'
 import { cn } from '@/lib/utils'
+import { bookingStatusLabels } from '@/lib/bookings/status-labels'
 
 type StatusEntry = { label: string; className: string }
 
+// Labels desde la fuente compartida; acá solo se agregan colores.
 const BOOKING_STATUS: Record<string, StatusEntry> = {
-  pending_payment: { label: 'Pendiente de pago', className: 'bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300' },
-  confirmed: { label: 'Confirmada', className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
-  completed: { label: 'Completada', className: 'bg-secondary text-secondary-foreground' },
-  cancelled: { label: 'Cancelada', className: 'bg-muted text-muted-foreground' },
-  no_show: { label: 'No asistió', className: 'bg-destructive/10 text-destructive dark:bg-destructive/20' },
-  expired: { label: 'Expirada', className: 'bg-muted text-muted-foreground' },
+  pending_payment: { label: bookingStatusLabels.pending_payment, className: 'bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300' },
+  confirmed: { label: bookingStatusLabels.confirmed, className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
+  completed: { label: bookingStatusLabels.completed, className: 'bg-secondary text-secondary-foreground' },
+  cancelled: { label: bookingStatusLabels.cancelled, className: 'bg-muted text-muted-foreground' },
+  no_show: { label: bookingStatusLabels.no_show, className: 'bg-destructive/10 text-destructive dark:bg-destructive/20' },
+  expired: { label: bookingStatusLabels.expired, className: 'bg-muted text-muted-foreground' },
 }
 
 const SERVICE_STATUS: Record<string, StatusEntry> = {
@@ -54,8 +56,8 @@ const DIRECTION_STATUS: Record<string, StatusEntry> = {
 // src/lib/subscriptions/enforcement.ts (esa función sigue siendo la fuente
 // canónica de las labels; este mapa solo agrega color para celdas de tabla).
 // Reemplaza el bucketing de 3 colores de admin/page.tsx. El badge decorativo
-// de arriba en billing/page.tsx (no es una celda de tabla, fuera de alcance
-// de la iniciativa de tablas) sigue con su propio mapa local sin tocar.
+// de arriba en billing/page.tsx ya usa getSubscriptionStatusLabel directo
+// (server component); acá no se puede importar enforcement.ts (server-only).
 const SUBSCRIPTION_STATUS: Record<string, StatusEntry> = {
   trialing: { label: 'En prueba', className: 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300' },
   active: { label: 'Activo', className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
