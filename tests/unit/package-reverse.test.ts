@@ -56,3 +56,44 @@ describe('reversePackagePurchaseInTx voluntary', () => {
     expect(tx.ledgerEntry.create).not.toHaveBeenCalled()
   })
 })
+
+describe('reversePackagePurchaseInTx chargeback', () => {
+  it('setea chargebackAt, revierte grants redeemed de reservas upcoming (descubre reserva) y clawback de puntos de completadas', async () => {
+    const tx = makeTx()
+    // 1 grant redeemed de reserva upcoming, 1 grant redeemed de reserva completada
+    tx.promotionGrant.findMany.mockResolvedValue([
+      { id: 'g-up', redeemedBookingId: 'bk-up', promotionId: 'promo1' },
+      { id: 'g-done', redeemedBookingId: 'bk-done', promotionId: 'promo1' },
+    ])
+    tx.booking.findMany.mockResolvedValue([
+      { id: 'bk-up', status: 'confirmed', serviceId: 's1', finalAmount: 0 },
+      { id: 'bk-done', status: 'completed', serviceId: 's1', finalAmount: 0 },
+    ])
+    tx.loyaltyLedger.findUnique.mockResolvedValue({ id: 'll1', businessId: 'b1', customerId: 'c1', points: 5 })
+
+    await reversePackagePurchaseInTx(tx as never, purchase, {
+      mode: 'chargeback', amount: 50000, currency: 'CLP', paymentId: 'pay1', now: new Date('2026-07-12'),
+    })
+
+    // chargebackAt set
+    expect(tx.packagePurchase.updateMany.mock.calls[0][0].data.chargebackAt).toBeInstanceOf(Date)
+    // grant de reserva upcoming: liberado (redeemedBookingId null, reversed)
+    expect(tx.promotionGrant.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: 'g-up' }),
+      data: expect.objectContaining({ status: 'reversed', redeemedBookingId: null }),
+    }))
+    // redemption de la upcoming liberado
+    expect(tx.promotionRedemption.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ bookingId: 'bk-up' }),
+    }))
+    // reserva upcoming descubierta → pending_payment
+    expect(tx.booking.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: 'bk-up' }),
+      data: expect.objectContaining({ status: 'pending_payment' }),
+    }))
+    // clawback de puntos SOLO de la completada
+    expect(tx.loyaltyLedger.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ bookingId: 'bk-done', reason: 'visit_reversal' }),
+    }))
+  })
+})
