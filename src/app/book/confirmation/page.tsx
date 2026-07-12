@@ -10,6 +10,7 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
 import { TransferPanel } from './transfer-panel'
+import { AccountCta } from '@/components/booking/account-cta'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
@@ -64,12 +65,11 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
     state === 'pending' &&
     booking.holdExpiresAt != null &&
     booking.holdExpiresAt > new Date()
-  const bankInfo = canDeclare ? await getBankTransferInfo(booking.businessId) : null
-
-  // El CTA de cuenta nunca compite con la acción de declarar transferencia.
-  const sessionUser = await getCurrentUser()
+  const [bankInfo, sessionUser] = await Promise.all([
+    canDeclare ? getBankTransferInfo(booking.businessId) : null,
+    getCurrentUser(),
+  ])
   const customerEmail = booking.customer?.email ?? null
-  const showAccountCta = !canDeclare
 
   const startDate = new Date(booking.startDateTime)
   const formattedDate = startDate.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -242,19 +242,9 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           </div>
         )}
 
-        {showAccountCta && sessionUser === null && customerEmail && (
-          <div className="mt-4 rounded-2xl border border-primary/25 bg-secondary/40 p-4 text-sm text-primary">
-            <p className="mb-2">
-              ¿Quieres ver y gestionar esta reserva? Crea tu cuenta ingresando con{' '}
-              <span className="font-semibold">{customerEmail}</span> (el mismo email de la reserva).
-            </p>
-            <Link href="/ingresar?next=/mi" className="font-semibold underline">Crear mi cuenta</Link>
-          </div>
-        )}
-        {showAccountCta && sessionUser !== null && (
-          <p className="mt-4 text-sm">
-            <Link href="/mi" className="font-semibold text-primary underline">Ver mis reservas</Link>
-          </p>
+        {/* El CTA de cuenta nunca compite con la acción de declarar transferencia. */}
+        {!canDeclare && (
+          <AccountCta sessionActive={sessionUser !== null} customerEmail={customerEmail} className="mt-4" />
         )}
       </section>
     </main>

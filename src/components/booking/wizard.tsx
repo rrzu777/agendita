@@ -8,7 +8,22 @@ import { StepCustomer } from './step-customer'
 import { StepPayment } from './step-payment'
 import { StepConfirmation } from './step-confirmation'
 import type { Service } from '@prisma/client'
+import type { FunnelSession } from '@/lib/customers/session-prefill'
 import { restoreWizardState, serializeWizardState, wizardStorageKey } from '@/lib/booking/wizard-storage'
+
+type WizardSession = Pick<FunnelSession, 'email' | 'name' | 'phone'> | null
+
+// Prefill editable: los datos de la sesión pisan los de contacto (con fallback a
+// lo ya tipeado/guardado cuando la sesión no trae nombre o teléfono).
+function applySessionPrefill(data: BookingData, session: WizardSession): BookingData {
+  if (!session) return data
+  return {
+    ...data,
+    customerName: session.name || data.customerName,
+    customerPhone: session.phone || data.customerPhone,
+    customerEmail: session.email,
+  }
+}
 
 export type BookingData = {
   serviceId: string | null
@@ -59,16 +74,12 @@ interface BookingWizardProps {
   services: Service[]
   cancellationPolicy?: string | null
   referralToken?: string
-  session: { email: string; name: string; phone: string } | null
+  session: WizardSession
 }
 
 export function BookingWizard({ businessId, slug, timezone, services, cancellationPolicy, referralToken, session }: BookingWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
-  const [data, setData] = useState<BookingData>(() =>
-    session
-      ? { ...initialData, customerName: session.name, customerPhone: session.phone, customerEmail: session.email }
-      : initialData,
-  )
+  const [data, setData] = useState<BookingData>(() => applySessionPrefill(initialData, session))
   const [bookingId, setBookingId] = useState<string | null>(null)
   const [bookingNumber, setBookingNumber] = useState<number | null>(null)
   const [confirmationMode, setConfirmationMode] = useState<'paid' | 'pending'>('paid')
@@ -85,10 +96,7 @@ export function BookingWizard({ businessId, slug, timezone, services, cancellati
     const restored = restoreWizardState(raw, services)
     if (!restored) return
     /* eslint-disable react-hooks/set-state-in-effect -- one-time restore from sessionStorage on mount, gated by ?continuar=1 */
-    // El prefill de sesión pisa los campos de contacto del snapshot: ahora está logueada.
-    setData(session
-      ? { ...restored, customerName: session.name || restored.customerName, customerPhone: session.phone || restored.customerPhone, customerEmail: session.email }
-      : restored)
+    setData(applySessionPrefill(restored, session))
     setCurrentStep(restored.timeSlot ? 4 : restored.date ? 3 : 2)
     /* eslint-enable react-hooks/set-state-in-effect */
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar

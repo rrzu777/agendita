@@ -3,9 +3,11 @@ import { Metadata } from 'next'
 import { BusinessProfile } from '@/components/public/business-profile'
 import { getPublicBusinessBySlug } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
-import { getFunnelSession } from '@/lib/customers/session-prefill'
+import { getAccountCta, getFunnelSession } from '@/lib/customers/session-prefill'
 
-export const revalidate = 300
+// El CTA de cuenta lee la sesión (cookies) → la page es por-request. La anotación
+// ISR anterior (revalidate = 300) ya no aplicaba (getTenantFromRequest lee headers).
+export const dynamic = 'force-dynamic'
 
 interface ProfilePageProps {
   params: Promise<{ slug: string }>
@@ -42,9 +44,6 @@ export default async function PublicProfilePage({ params }: ProfilePageProps) {
   }
 
   const session = await getFunnelSession(business.id)
-  const accountCta = session
-    ? { label: 'Mi cuenta' as const, href: session.hasCustomer ? `/mi/${business.slug}` : '/mi' }
-    : { label: 'Ingresar' as const, href: `/ingresar?next=${encodeURIComponent(`/ir/${business.slug}`)}` }
 
-  return <BusinessProfile business={business} accountCta={accountCta} />
+  return <BusinessProfile business={business} accountCta={getAccountCta(session, business.slug)} />
 }

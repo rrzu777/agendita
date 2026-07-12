@@ -31,7 +31,7 @@ export default async function BookIndexPage({
           business={business}
           profileHref="/"
           referralToken={referralToken}
-          session={session ? { email: session.email, name: session.name, phone: session.phone } : null}
+          session={session}
         />
       )
     }

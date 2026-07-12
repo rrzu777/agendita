@@ -1,7 +1,7 @@
 import { BusinessProfile } from '@/components/public/business-profile'
 import { getPublicBusinessBySubdomain } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
-import { getFunnelSession } from '@/lib/customers/session-prefill'
+import { getAccountCta, getFunnelSession } from '@/lib/customers/session-prefill'
 import { CalendarCheck, Wallet, Bell } from 'lucide-react'
 
 const features = [
@@ -66,10 +66,7 @@ export default async function HomePage() {
 
     if (business) {
       const session = await getFunnelSession(business.id)
-      const accountCta = session
-        ? { label: 'Mi cuenta' as const, href: session.hasCustomer ? `/mi/${business.slug}` : '/mi' }
-        : { label: 'Ingresar' as const, href: `/ingresar?next=${encodeURIComponent(`/ir/${business.slug}`)}` }
-      return <BusinessProfile business={business} bookingHref="/book" accountCta={accountCta} />
+      return <BusinessProfile business={business} bookingHref="/book" accountCta={getAccountCta(session, business.slug)} />
     }
   }
 

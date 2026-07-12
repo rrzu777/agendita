@@ -2,12 +2,13 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { BookingWizard } from '@/components/booking/wizard'
 import type { BookingBusiness } from '@/lib/business/public'
+import type { FunnelSession } from '@/lib/customers/session-prefill'
 
 interface BookingBusinessPageProps {
   business: BookingBusiness
   profileHref: string
   referralToken?: string
-  session: { email: string; name: string; phone: string } | null
+  session: Pick<FunnelSession, 'email' | 'name' | 'phone'> | null
 }
 
 export function BookingBusinessPage({ business, profileHref, referralToken, session }: BookingBusinessPageProps) {

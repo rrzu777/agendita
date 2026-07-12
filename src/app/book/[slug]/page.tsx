@@ -42,7 +42,7 @@ export default async function BookPage({ params, searchParams }: BookPageProps) 
       business={business}
       profileHref={`/b/${business.slug}`}
       referralToken={referralToken}
-      session={session ? { email: session.email, name: session.name, phone: session.phone } : null}
+      session={session}
     />
   )
 }
