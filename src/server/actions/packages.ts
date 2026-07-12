@@ -141,6 +141,17 @@ export async function refundPackagePurchase(purchaseId: string) {
       where: { id: purchase.id },
       data: { status: 'refunded', refundedAt: new Date(), refundedAmount: refund },
     })
+    // Asiento de reembolso: monto = prorrateo (NO pricePaid). Reusa refund_issued
+    // para que totalRefunded lo capture; packagePurchaseId lo neteará en ventas.
+    if (refund > 0) {
+      await tx.ledgerEntry.create({
+        data: {
+          businessId, packagePurchaseId: purchase.id, customerId: purchase.customerId,
+          type: 'refund_issued', direction: 'expense', amount: refund, currency: 'CLP',
+          description: 'Reembolso de paquete', occurredAt: new Date(),
+        },
+      })
+    }
   })
   await revalidatePath('/dashboard/customers/' + purchase.customerId)
 }
