@@ -87,6 +87,7 @@ export async function getFinancialSummary() {
       where: {
         ...baseWhere,
         direction: 'income',
+        packagePurchaseId: null,
         occurredAt: { gte: today },
       },
       _sum: { amount: true },
@@ -95,6 +96,7 @@ export async function getFinancialSummary() {
       where: {
         ...baseWhere,
         direction: 'income',
+        packagePurchaseId: null,
         occurredAt: { gte: thisMonth },
       },
       _sum: { amount: true },
@@ -118,6 +120,7 @@ export async function getFinancialSummary() {
       where: {
         ...baseWhere,
         type: 'refund_issued',
+        packagePurchaseId: null,
       },
       _sum: { amount: true },
     }),

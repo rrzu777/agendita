@@ -34,6 +34,7 @@ const paymentTypeLabels: Record<string, string> = {
   refund: 'Reembolso',
   cancellation_fee: 'Cargo cancelacion',
   manual_adjustment: 'Ajuste manual',
+  package_purchase: 'Compra de paquete',
 }
 
 function formatCLP(value: number): string {

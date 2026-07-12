@@ -16,6 +16,7 @@ const typeLabels: Record<string, string> = {
   manual_income: 'Ingreso manual',
   manual_expense: 'Gasto manual',
   adjustment: 'Ajuste',
+  package_sale: 'Venta de paquete',
 }
 
 function amountClassName(direction: string): string {
