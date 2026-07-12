@@ -2332,28 +2332,40 @@ Expected: FAIL — `packageIncomeToday` no existe.
 
 - [ ] **Step 3: Implementar en `getFinancialSummary`**
 
-Agregar dos aggregates al `Promise.all` (ingresos por paquete hoy/mes = `package_sale` netos; para B4b-2 basta sumar `type: 'package_sale'` con `packagePurchaseId != null` en la ventana, ya que el refund de paquete es raro y se refina en B4b-3):
+> **Del audit (GAP-6):** netear los refunds de paquete YA en B4b-2. `getPackageSalesTotal` (packages.ts) ya define "ventas de paquete" como `SUM(package_sale) − SUM(refund_issued con packagePurchaseId != null)`; el refund de paquete ya emite ese ledger entry hoy. Usar la MISMA definición (neta) acá evita introducir una tercera definición bruta que habría que reconciliar en B4b-3.
+
+Agregar cuatro aggregates al `Promise.all` (ventas de paquete hoy/mes = `package_sale` menos `refund_issued`, con `packagePurchaseId != null`, en la ventana):
 
 ```ts
+    // Ventas de paquete (income) hoy/mes
     prisma.ledgerEntry.aggregate({
-      where: { ...baseWhere, direction: 'income', packagePurchaseId: { not: null }, occurredAt: { gte: today } },
+      where: { ...baseWhere, type: 'package_sale', packagePurchaseId: { not: null }, occurredAt: { gte: today } },
       _sum: { amount: true },
     }),
     prisma.ledgerEntry.aggregate({
-      where: { ...baseWhere, direction: 'income', packagePurchaseId: { not: null }, occurredAt: { gte: thisMonth } },
+      where: { ...baseWhere, type: 'package_sale', packagePurchaseId: { not: null }, occurredAt: { gte: thisMonth } },
+      _sum: { amount: true },
+    }),
+    // Refunds de paquete hoy/mes (para netear)
+    prisma.ledgerEntry.aggregate({
+      where: { ...baseWhere, type: 'refund_issued', packagePurchaseId: { not: null }, occurredAt: { gte: today } },
+      _sum: { amount: true },
+    }),
+    prisma.ledgerEntry.aggregate({
+      where: { ...baseWhere, type: 'refund_issued', packagePurchaseId: { not: null }, occurredAt: { gte: thisMonth } },
       _sum: { amount: true },
     }),
 ```
 
 Agregar las variables a la desestructuración del `Promise.all` (al final, para no correr los índices existentes):
 ```ts
-  const [incomeToday, incomeMonth, totalDeposited, totalPending, totalRefunded, totalBookings, completedBookings, cancelledBookings, packageIncomeToday, packageIncomeMonth] = await Promise.all([
+  const [incomeToday, incomeMonth, totalDeposited, totalPending, totalRefunded, totalBookings, completedBookings, cancelledBookings, packageSaleToday, packageSaleMonth, packageRefundToday, packageRefundMonth] = await Promise.all([
 ```
 
-Y al objeto de retorno:
+Y al objeto de retorno (netos, floor en 0):
 ```ts
-    packageIncomeToday: packageIncomeToday._sum.amount ?? 0,
-    packageIncomeMonth: packageIncomeMonth._sum.amount ?? 0,
+    packageIncomeToday: Math.max(0, (packageSaleToday._sum.amount ?? 0) - (packageRefundToday._sum.amount ?? 0)),
+    packageIncomeMonth: Math.max(0, (packageSaleMonth._sum.amount ?? 0) - (packageRefundMonth._sum.amount ?? 0)),
 ```
 
 - [ ] **Step 4: Incluir `packagePurchase` en `getLedgerEntries`**
@@ -2373,7 +2385,9 @@ Expected: PASS.
 
 - [ ] **Step 6: Mostrar la línea en el dashboard**
 
-En la página que renderiza el resumen (buscar `getFinancialSummary` con `grep -rn "getFinancialSummary" src/app`), agregar una tarjeta/línea "Ingresos por paquetes (hoy/mes)" usando `summary.packageIncomeToday` / `summary.packageIncomeMonth`, con `formatMoney(value, currency)`. Ubicarla junto a las líneas de `incomeToday`/`incomeMonth` existentes, claramente rotulada como separada (no mezclar con ingresos por reserva).
+En la página que renderiza el resumen (buscar `getFinancialSummary` con `grep -rn "getFinancialSummary" src/app`), agregar una tarjeta/línea usando `summary.packageIncomeToday` / `summary.packageIncomeMonth`, con `formatMoney(value, currency)`. Ubicarla junto a las líneas de `incomeToday`/`incomeMonth` existentes.
+
+> **Del audit (GAP-5) — etiquetado obligatorio:** la página `dashboard/paquetes/page.tsx` ya muestra `getPackageSalesTotal()` como **"Total vendido"** (neto histórico, sin ventana). Para no exhibir el mismo concepto con dos cifras confusas, rotular esta línea del dashboard principal explícitamente con ventana temporal: **"Ventas de paquetes (mes)"** / **"(hoy)"** — NO usar "Ingresos por paquete" a secas ni la palabra "Total". Ambas cifras usan ahora la misma definición neta (Step 3), así que la de paquetes-page = histórico neto y la del dashboard = mismo neto acotado al mes/día: consistentes, solo difieren en la ventana. Documentar en un comentario que `incomeToday`/`incomeMonth` (KPI de reservas) siguen excluyendo paquetes (`packagePurchaseId: null`), por lo que esta línea es aditiva, no solapada.
 
 - [ ] **Step 7: Verificar compilación + lint**
 
