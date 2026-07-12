@@ -147,6 +147,13 @@ export interface BankTransferVerifyCustomerEmailData {
   businessReplyToEmail?: string | null
 }
 
+/** Verificado/rechazado del SALDO: el de abono no trae monto; el email del
+ *  saldo lo necesita ("recibimos tu pago de $X"). */
+export interface BalanceTransferCustomerEmailData extends BankTransferVerifyCustomerEmailData {
+  amount: number
+  currency: string
+}
+
 export interface TransferReminderCustomerEmailData {
   businessName: string
   businessTimezone: string

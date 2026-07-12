@@ -9,6 +9,8 @@ import { rejectBankTransfer } from '@/server/actions/bank-transfer-verify'
 import { formatManualPaymentMoney as formatMoney } from './manual-payment-utils'
 import { VerifyTransferDialog } from './verify-transfer-dialog'
 
+export type PendingTransferKind = 'deposit' | 'balance'
+
 export interface PendingTransferItem {
   paymentId: string
   bookingId: string
@@ -18,6 +20,25 @@ export interface PendingTransferItem {
   startDateTime: Date
   amount: number
   declaredAt: Date
+  kind: PendingTransferKind
+}
+
+const KIND_BADGE_CLASS =
+  'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold shrink-0'
+
+function KindBadge({ kind }: { kind: PendingTransferKind }) {
+  if (kind === 'balance') {
+    return (
+      <span className={`${KIND_BADGE_CLASS} bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300`}>
+        Saldo
+      </span>
+    )
+  }
+  return (
+    <span className={`${KIND_BADGE_CLASS} bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300`}>
+      Abono
+    </span>
+  )
 }
 
 function timeAgo(declaredAt: Date): string {
@@ -58,12 +79,17 @@ function PendingTransferRow({
   const whatsappUrl = item.customerPhone
     ? buildWhatsappUrl(
       item.customerPhone,
-      `Hola ${item.customerName}, recibimos tu comprobante de transferencia por ${item.serviceName}. Estamos verificando el pago.`,
+      item.kind === 'balance'
+        ? `Hola ${item.customerName}, recibimos tu comprobante de transferencia del saldo por ${item.serviceName}. Estamos verificando el pago.`
+        : `Hola ${item.customerName}, recibimos tu comprobante de transferencia por ${item.serviceName}. Estamos verificando el pago.`,
     )
     : null
 
   function handleReject() {
-    if (!window.confirm('¿Rechazar esta transferencia? Se cancelará la reserva.')) return
+    const confirmMessage = item.kind === 'balance'
+      ? '¿Rechazar esta transferencia del saldo? La reserva NO se cancela; la clienta podrá volver a avisar.'
+      : '¿Rechazar esta transferencia? Se cancelará la reserva.'
+    if (!window.confirm(confirmMessage)) return
     startTransition(async () => {
       try {
         await rejectBankTransfer(item.paymentId)
@@ -78,7 +104,10 @@ function PendingTransferRow({
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
-        <p className="font-semibold text-primary truncate">{item.customerName}</p>
+        <div className="flex items-center gap-2">
+          <p className="font-semibold text-primary truncate">{item.customerName}</p>
+          <KindBadge kind={item.kind} />
+        </div>
         <p className="text-sm text-muted-foreground truncate">
           {item.serviceName} · {dateStr}, {timeStr}
         </p>
@@ -122,6 +151,7 @@ function PendingTransferRow({
         paymentId={item.paymentId}
         defaultAmount={item.amount}
         businessCurrency={businessCurrency}
+        kind={item.kind}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
       />

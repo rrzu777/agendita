@@ -7,7 +7,7 @@ const { mockAssertSlot } = vi.hoisted(() => ({ mockAssertSlot: vi.fn() }))
 vi.mock('@/lib/availability/validation', () => ({ assertSlotIsAvailable: mockAssertSlot }))
 
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
-import { declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
+import { anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
 
 function makeTx() {
   return {
@@ -28,7 +28,7 @@ describe('cancelBookingInTx', () => {
     })
     expect(mockRelease).toHaveBeenCalledWith(tx, 'b1', 'cancelled')
     expect(tx.payment.updateMany).toHaveBeenCalledWith({
-      where: { bookingId: 'b1', ...declaredTransferPaymentWhere },
+      where: { bookingId: 'b1', ...anyDeclaredTransferWhere },
       data: { status: 'cancelled' },
     })
   })

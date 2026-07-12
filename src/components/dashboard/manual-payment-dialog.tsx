@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createManualPayment } from '@/server/actions/payments'
+import { hasPendingBalanceTransfer } from '@/lib/bank-transfer/declared'
 import {
   calculateManualPaymentAmount,
   formatManualPaymentMoney as formatMoney,
@@ -60,6 +61,11 @@ export function ManualPaymentDialog({
   const payableBookings = useMemo(() => bookings.filter(isManualPaymentAllowed), [bookings])
   const selectedBooking = payableBookings.find((booking) => booking.id === bookingId) || null
   const suggestion = selectedBooking ? getManualPaymentSuggestion(selectedBooking) : null
+  // Aviso informativo, no bloqueante: si ya hay una transferencia del saldo
+  // declarada y pendiente de verificar para esta reserva, avisamos antes de
+  // registrar OTRO pago manual (spec: dueña puede seguir registrando).
+  const hasPendingBalanceNotice = !!selectedBooking?.payments
+    && hasPendingBalanceTransfer({ status: selectedBooking.status, payments: selectedBooking.payments })
   const parsedValue = mode === 'percentage' ? Number(percentage) : Number(fixedAmount)
   const amount = selectedBooking
     ? calculateManualPaymentAmount({
@@ -169,6 +175,12 @@ export function ManualPaymentDialog({
               ))}
             </select>
           </div>
+
+          {hasPendingBalanceNotice && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+              Hay una transferencia del saldo por verificar — verificala o rechazala antes de registrar otro pago.
+            </p>
+          )}
 
           {selectedBooking && suggestion && (
             <div className="rounded-lg border border-border/70 bg-muted/40 p-3 text-sm">

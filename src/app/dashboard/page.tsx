@@ -10,7 +10,7 @@ import { prisma } from '@/lib/db'
 import { buildSetupChecklist } from '@/lib/dashboard/setup-checklist'
 import { SetupChecklist } from '@/components/dashboard/setup-checklist'
 import { PendingTransfersBanner } from '@/components/dashboard/pending-transfers-banner'
-import { hasPendingDeclaredTransfer } from '@/lib/bank-transfer/declared'
+import { hasPendingBalanceTransfer, hasPendingDeclaredTransfer } from '@/lib/bank-transfer/declared'
 import { CalendarCheck2, CreditCard, ExternalLink, TrendingUp, Users } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -53,8 +53,12 @@ export default async function DashboardPage() {
     b.status !== 'expired'
   )
   // Deriva de la relación filtrada `payments` (Task 1): no-vacía sólo cuando hay
-  // una transferencia declarada pendiente → sin segunda query.
-  const pendingTransfersCount = bookings.filter(hasPendingDeclaredTransfer).length
+  // una transferencia declarada pendiente → sin segunda query. Cuenta abono
+  // (pending_payment) y saldo (confirmed|completed); cancelled/expired quedan
+  // afuera gratis porque ninguno de los dos predicados los admite.
+  const pendingTransfersCount = bookings.filter(
+    (b) => hasPendingDeclaredTransfer(b) || hasPendingBalanceTransfer(b),
+  ).length
 
   const publicUrl = getBusinessPublicUrl(business)
   const bookingUrl = getBusinessPublicUrl(business, '/book')
@@ -176,15 +180,22 @@ export default async function DashboardPage() {
                       <p className="text-sm font-semibold uppercase tracking-[0.1em] text-muted-foreground">{booking.service?.name || 'Servicio'}</p>
                     </div>
                   </div>
-                  <span className="self-start rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground md:self-auto">
-                    {booking.status === 'confirmed'
-                      ? 'Confirmada'
-                      : hasPendingDeclaredTransfer(booking)
-                        ? 'Por verificar'
-                        : booking.status === 'pending_payment'
-                          ? 'Pendiente'
-                          : booking.status}
-                  </span>
+                  <div className="flex flex-col items-start gap-1 md:items-end">
+                    <span className="self-start rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground md:self-auto">
+                      {booking.status === 'confirmed'
+                        ? 'Confirmada'
+                        : hasPendingDeclaredTransfer(booking)
+                          ? 'Por verificar'
+                          : booking.status === 'pending_payment'
+                            ? 'Pendiente'
+                            : booking.status}
+                    </span>
+                    {hasPendingBalanceTransfer(booking) && (
+                      <span className="self-start rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300 md:self-auto">
+                        Saldo por verificar
+                      </span>
+                    )}
+                  </div>
                 </article>
               ))}
             </div>

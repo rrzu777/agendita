@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client'
 import { BookingStatus } from '@prisma/client'
 import { addMinutes } from 'date-fns'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
-import { declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
+import { anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
 
 type Tx = Prisma.TransactionClient
@@ -34,8 +34,9 @@ export async function cancelBookingInTx(
     throw new Error('No se puede cancelar una reserva en este estado')
   }
   await releaseRedemptionForBooking(tx, booking.id, 'cancelled')
+  // abono Y saldo: cancelar una reserva mata cualquier declaración pendiente.
   await tx.payment.updateMany({
-    where: { bookingId: booking.id, ...declaredTransferPaymentWhere },
+    where: { bookingId: booking.id, ...anyDeclaredTransferWhere },
     data: { status: 'cancelled' },
   })
 }

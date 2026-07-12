@@ -18,6 +18,7 @@ const row = {
   startDateTime: new Date('2026-07-15T14:00:00Z'),
   amount: 8000,
   declaredAt: new Date(Date.now() - 3 * 3600_000),
+  kind: 'deposit' as const,
 }
 
 describe('PendingTransfersSection', () => {
