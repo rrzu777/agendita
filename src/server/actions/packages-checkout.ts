@@ -1,7 +1,7 @@
 'use server'
 
 import { z } from 'zod'
-import { addMinutes, addDays } from 'date-fns'
+import { addMinutes, addDays, addHours } from 'date-fns'
 import { PaymentProvider, PaymentStatus, PaymentType } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth/user'
@@ -15,6 +15,8 @@ import {
 import { createMpPreferenceForPayment, getPaymentAppUrl } from '@/lib/payments/create-preference'
 import { getPackageConfirmationUrl } from '@/lib/business/urls'
 import { applyApprovedPackagePayment } from '@/server/services/finance'
+import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
+import { btPkgDeclaredId } from '@/lib/bank-transfer/declared'
 
 const HOLD_MINUTES = 30
 
@@ -23,6 +25,7 @@ const createPurchaseSchema = z.object({
   name: z.string().min(1).max(120),
   phone: z.string().min(6).max(30),
   acceptedTerms: z.literal(true, { error: 'Debes aceptar los términos' }),
+  method: z.enum(['mp', 'transfer']).default('mp'),
 })
 
 /**
@@ -38,6 +41,7 @@ export async function createPackagePurchase(input: {
   name: string
   phone: string
   acceptedTerms: boolean
+  method?: 'mp' | 'transfer'
 }): Promise<{ purchaseId: string }> {
   const user = await getCurrentUser()
   if (!user) throw new Error('Debes iniciar sesión para comprar un paquete.')
@@ -68,13 +72,25 @@ export async function createPackagePurchase(input: {
   })
   if (!product) throw new Error('Paquete no disponible')
 
-  const availability = await resolveOnlinePaymentAvailabilityForBusiness(product.businessId)
-  if (!availability.available) {
-    throw new Error(availability.reason || 'Pago online no disponible para este negocio.')
+  const method = parsed.data.method
+
+  // Gate por método: MP gatea disponibilidad de pago online; transferencia gatea
+  // que el negocio tenga transferencia habilitada.
+  let transferHoldHours: number | null = null
+  if (method === 'transfer') {
+    const transferInfo = await getBankTransferInfo(product.businessId)
+    if (!transferInfo) throw new Error('Transferencia bancaria no disponible para este negocio.')
+    transferHoldHours = transferInfo.holdHours
+  } else {
+    const availability = await resolveOnlinePaymentAvailabilityForBusiness(product.businessId)
+    if (!availability.available) {
+      throw new Error(availability.reason || 'Pago online no disponible para este negocio.')
+    }
   }
 
   const now = new Date()
   const expiresAt = product.expiryDays ? addDays(now, product.expiryDays) : null
+  const holdExpiresAt = transferHoldHours != null ? addHours(now, transferHoldHours) : addMinutes(now, HOLD_MINUTES)
 
   const purchaseId = await prisma.$transaction(async (tx) => {
     const { customer } = await findOrCreateCustomerInTx(tx, {
@@ -95,7 +111,11 @@ export async function createPackagePurchase(input: {
       },
       orderBy: { createdAt: 'desc' },
     })
-    if (existing) return existing.id
+    if (existing) {
+      // Reintento (posible cambio de método): recalcular el hold al método actual.
+      await tx.packagePurchase.update({ where: { id: existing.id }, data: { holdExpiresAt } })
+      return existing.id
+    }
 
     const created = await tx.packagePurchase.create({
       data: {
@@ -109,7 +129,7 @@ export async function createPackagePurchase(input: {
         coveredServiceIds: product.appliesToAll ? [] : product.services.map(s => s.id),
         source: 'online',
         status: 'pending',
-        holdExpiresAt: addMinutes(now, HOLD_MINUTES),
+        holdExpiresAt,
         expiresAt,
         createdByUserId: null,
       },
@@ -282,4 +302,34 @@ export async function verifyAndConfirmPackagePayment(input: { purchaseId: string
   })
 
   return { success: true }
+}
+
+/** Declaración pública "ya transferí" de una compra de paquete por transferencia. */
+export async function declarePackageTransfer(input: { purchaseId: string }): Promise<{ ok: true }> {
+  const user = await getCurrentUser()
+  if (!user) throw new Error('Debes iniciar sesión.')
+  const limit = await checkRateLimit('declare-package-transfer', 20, 60000, { userId: user.id })
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+
+  const purchase = await loadOwnedPurchase(input.purchaseId, user.id)
+  if (purchase.status !== 'pending') throw new Error('Esta compra ya fue procesada.')
+  if (purchase.holdExpiresAt && purchase.holdExpiresAt < new Date()) {
+    throw new Error('El tiempo para transferir venció. Iniciá la compra de nuevo.')
+  }
+
+  const declaredId = btPkgDeclaredId(purchase.id)
+  // Idempotente por @@unique([packagePurchaseId, provider, providerPaymentId]).
+  await prisma.payment.upsert({
+    where: { packagePurchaseId_provider_providerPaymentId: {
+      packagePurchaseId: purchase.id, provider: 'manual', providerPaymentId: declaredId,
+    } },
+    update: {},
+    create: {
+      businessId: purchase.businessId, packagePurchaseId: purchase.id, customerId: purchase.customerId,
+      provider: 'manual', providerPaymentId: declaredId, amount: purchase.pricePaid,
+      currency: purchase.business.currency || 'CLP', status: 'pending',
+      paymentType: 'package_purchase', paymentMethod: 'Transferencia',
+    },
+  })
+  return { ok: true }
 }
