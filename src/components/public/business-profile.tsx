@@ -2,15 +2,16 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import type { PublicBusiness } from '@/lib/business/public'
 import { formatDuration } from '@/lib/format-duration'
-import { BadgeCheck, CalendarDays, Camera, Clock, Clock3, MapPin, MessageCircle, Sparkles, Star } from 'lucide-react'
+import { BadgeCheck, CalendarDays, Camera, Clock, Clock3, MapPin, MessageCircle, Package, Sparkles, Star } from 'lucide-react'
 
 interface BusinessProfileProps {
   business: PublicBusiness
   bookingHref?: string
+  packagesHref?: string
   accountCta?: { label: 'Ingresar' | 'Mi cuenta'; href: string }
 }
 
-export function BusinessProfile({ business, bookingHref = `/book/${business.slug}`, accountCta }: BusinessProfileProps) {
+export function BusinessProfile({ business, bookingHref = `/book/${business.slug}`, packagesHref, accountCta }: BusinessProfileProps) {
   const daysOfWeek = ['Domingos', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábados']
 
   return (
@@ -187,6 +188,14 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
               Reservar ahora
             </Link>
           </Button>
+          {packagesHref && (
+            <Button asChild variant="outline" className="mt-2 h-12 w-full rounded-full text-base font-semibold">
+              <Link href={packagesHref}>
+                <Package className="mr-2 size-5" />
+                Ver paquetes
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
     </main>

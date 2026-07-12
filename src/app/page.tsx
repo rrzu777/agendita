@@ -2,6 +2,7 @@ import { BusinessProfile } from '@/components/public/business-profile'
 import { getPublicBusinessBySubdomain } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { getAccountCta, getFunnelSession } from '@/lib/customers/session-prefill'
+import { prisma } from '@/lib/db'
 import { CalendarCheck, Wallet, Bell } from 'lucide-react'
 
 const features = [
@@ -66,7 +67,15 @@ export default async function HomePage() {
 
     if (business) {
       const session = await getFunnelSession(business.id)
-      return <BusinessProfile business={business} bookingHref="/book" accountCta={getAccountCta(session, business.slug)} />
+      const hasPackages = (await prisma.packageProduct.count({ where: { businessId: business.id, isActive: true } })) > 0
+      return (
+        <BusinessProfile
+          business={business}
+          bookingHref="/book"
+          accountCta={getAccountCta(session, business.slug)}
+          packagesHref={hasPackages ? '/paquetes' : undefined}
+        />
+      )
     }
   }
 
