@@ -18,4 +18,16 @@ describe('derivePackageConfirmationState', () => {
   it('pending si no hay pagos todavía', () => {
     expect(derivePackageConfirmationState({ status: 'pending', payments: [] })).toBe('pending')
   })
+  it('expired si la compra venció (hold sin declarar)', () => {
+    expect(derivePackageConfirmationState({ status: 'expired', payments: [] })).toBe('expired')
+  })
+  it('refunded si la compra fue reembolsada voluntariamente (sin chargebackAt)', () => {
+    expect(derivePackageConfirmationState({ status: 'refunded', chargebackAt: null, payments: [] })).toBe('refunded')
+  })
+  it('disputed si la compra fue revertida por chargeback (chargebackAt set)', () => {
+    expect(derivePackageConfirmationState({ status: 'refunded', chargebackAt: new Date('2026-07-12'), payments: [] })).toBe('disputed')
+  })
+  it('rejected si la compra quedó rejected (transferencia rechazada)', () => {
+    expect(derivePackageConfirmationState({ status: 'rejected', payments: [] })).toBe('rejected')
+  })
 })

@@ -56,6 +56,11 @@ vi.mock('@/lib/notifications', () => ({
   sendMultiNotificationSafely: (_label: string, fn: () => unknown) => fn(),
   sendPackagePurchasedNotification: vi.fn().mockResolvedValue({ success: true }),
   sendPackageSoldNotificationToBusiness: vi.fn().mockResolvedValue([{ success: true }]),
+  sendPackageDisputedToBusiness: vi.fn().mockResolvedValue([{ success: true }]),
+}))
+
+vi.mock('@/lib/packages/reverse', () => ({
+  reversePackagePurchaseInTx: vi.fn().mockResolvedValue({ reversed: true }),
 }))
 
 vi.mock('@/lib/payments/encryption', () => ({
@@ -338,6 +343,74 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
 
       expect(res.status).toBe(400)
       expect(applyApprovedPackagePayment).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('chargeback / refund involuntario de paquete', () => {
+    const chargebackMp = {
+      ...basePackageMpPayment, id: 'mp-pkg-001', status: 'charged_back',
+    }
+    const approvedPkgPayment = {
+      ...basePackagePayment, status: 'approved', providerPaymentId: 'mp-pkg-001',
+    }
+
+    it('charged_back de un paquete active: revierte (modo chargeback), degrada el Payment, notifica, 200', async () => {
+      const { reversePackagePurchaseInTx } = await import('@/lib/packages/reverse')
+      const { sendPackageDisputedToBusiness } = await import('@/lib/notifications')
+      const secret = 'test-webhook-secret'
+      const signature = createMpSignatureHeader('mp-pkg-001', 'req-cb', secret)
+      mockMpFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(chargebackMp) })
+      mockPrisma.payment.findUnique.mockResolvedValue(approvedPkgPayment)
+      mockPrisma.packagePurchase.findUnique.mockResolvedValue({
+        id: 'pp-1', businessId: 'biz-1', customerId: 'cust-1', status: 'active',
+        product: { name: 'Pack 5 sesiones' }, customer: { name: 'Ana' }, business: { name: 'Studio Ana', currency: 'CLP' },
+      })
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({ ...mockPrisma }))
+
+      const res = await POST(makeRequest({ data: { id: 'mp-pkg-001' } }, { 'x-signature': signature, 'x-request-id': 'req-cb' }))
+      expect(res.status).toBe(200)
+      expect(reversePackagePurchaseInTx).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'pp-1' }), expect.objectContaining({ mode: 'chargeback' }))
+      expect(mockPrisma.payment.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'pay-pkg-001' }, data: expect.objectContaining({ status: 'refunded' }),
+      }))
+      expect(sendPackageDisputedToBusiness).toHaveBeenCalledTimes(1)
+    })
+
+    it('charged_back de un paquete YA refunded (eco/redelivery): no revierte, responde 200', async () => {
+      const { reversePackagePurchaseInTx } = await import('@/lib/packages/reverse')
+      const secret = 'test-webhook-secret'
+      const signature = createMpSignatureHeader('mp-pkg-001', 'req-cb2', secret)
+      mockMpFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(chargebackMp) })
+      mockPrisma.payment.findUnique.mockResolvedValue(approvedPkgPayment)
+      mockPrisma.packagePurchase.findUnique.mockResolvedValue({
+        id: 'pp-1', businessId: 'biz-1', customerId: 'cust-1', status: 'refunded',
+        product: { name: 'Pack 5 sesiones' }, customer: { name: 'Ana' }, business: { name: 'Studio Ana', currency: 'CLP' },
+      })
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({ ...mockPrisma }))
+
+      const res = await POST(makeRequest({ data: { id: 'mp-pkg-001' } }, { 'x-signature': signature, 'x-request-id': 'req-cb2' }))
+      expect(res.status).toBe(200)
+      expect(reversePackagePurchaseInTx).not.toHaveBeenCalled()
+    })
+
+    it('refunded (no charged_back) de un paquete active: revierte en modo voluntary, SIN alarma de disputa', async () => {
+      const { reversePackagePurchaseInTx } = await import('@/lib/packages/reverse')
+      const { sendPackageDisputedToBusiness } = await import('@/lib/notifications')
+      const refundedMp = { ...basePackageMpPayment, id: 'mp-pkg-001', status: 'refunded' }
+      const secret = 'test-webhook-secret'
+      const signature = createMpSignatureHeader('mp-pkg-001', 'req-ref', secret)
+      mockMpFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(refundedMp) })
+      mockPrisma.payment.findUnique.mockResolvedValue(approvedPkgPayment)
+      mockPrisma.packagePurchase.findUnique.mockResolvedValue({
+        id: 'pp-1', businessId: 'biz-1', customerId: 'cust-1', status: 'active',
+        product: { name: 'Pack 5 sesiones' }, customer: { name: 'Ana' }, business: { name: 'Studio Ana', currency: 'CLP' },
+      })
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({ ...mockPrisma }))
+
+      const res = await POST(makeRequest({ data: { id: 'mp-pkg-001' } }, { 'x-signature': signature, 'x-request-id': 'req-ref' }))
+      expect(res.status).toBe(200)
+      expect(reversePackagePurchaseInTx).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'pp-1' }), expect.objectContaining({ mode: 'voluntary' }))
+      expect(sendPackageDisputedToBusiness).not.toHaveBeenCalled()
     })
   })
 })

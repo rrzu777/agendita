@@ -13,9 +13,14 @@ it('releases redemptions of expired holds', async () => {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     promotion: { updateMany: vi.fn().mockResolvedValue({ count: 1 }), findUnique: vi.fn().mockResolvedValue({ triggerType: 'code' }) },
+    packagePurchase: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db: any = { booking: { findMany }, $transaction: (fn: any) => fn(tx) }
+  const db: any = {
+    booking: { findMany },
+    packagePurchase: { findMany: vi.fn().mockResolvedValue([]) },
+    $transaction: (fn: any) => fn(tx),
+  }
   const result = await expireStaleHolds(new Date(), db)
 
   expect(result.expired).toBe(1)
@@ -57,9 +62,14 @@ it('does NOT release a booking that won the payment race in the tx window', asyn
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     promotion: { updateMany: vi.fn().mockResolvedValue({ count: 1 }), findUnique: vi.fn().mockResolvedValue({ triggerType: 'code' }) },
+    packagePurchase: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db: any = { booking: { findMany }, $transaction: (fn: any) => fn(tx) }
+  const db: any = {
+    booking: { findMany },
+    packagePurchase: { findMany: vi.fn().mockResolvedValue([]) },
+    $transaction: (fn: any) => fn(tx),
+  }
   await expireStaleHolds(new Date(), db)
 
   // b1 IS released.

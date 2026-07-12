@@ -14,6 +14,7 @@ function fakeProvider(): PaymentProvider {
       status: 'pending', rawResponse: { preferenceId: 'pref1', init_point: 'https://mp/redirect' },
     }),
     verifyPayment: vi.fn(), handleWebhook: vi.fn(),
+    refundPayment: vi.fn().mockResolvedValue({ refundId: null, status: 'refunded', rawResponse: {} }),
   }
 }
 

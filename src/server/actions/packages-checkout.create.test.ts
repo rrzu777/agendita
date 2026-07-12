@@ -20,7 +20,7 @@ vi.mock('@/lib/payments/factory', () => ({
 
 const tx = {
   packageProduct: { findFirst: vi.fn() },
-  packagePurchase: { findFirst: vi.fn(), create: vi.fn() },
+  packagePurchase: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
 }
 vi.mock('@/lib/db', () => ({
   prisma: {
@@ -99,10 +99,15 @@ describe('createPackagePurchase', () => {
     expect(data.holdExpiresAt.getTime()).toBeGreaterThan(Date.now())
   })
 
-  it('reusa una compra pending viva en vez de crear otra', async () => {
+  it('reusa una compra pending viva (recalculando el hold) en vez de crear otra', async () => {
     tx.packagePurchase.findFirst.mockResolvedValue({ id: 'ppExisting', holdExpiresAt: new Date(Date.now() + 60000) })
     const { purchaseId } = await createPackagePurchase(baseInput)
     expect(purchaseId).toBe('ppExisting')
     expect(tx.packagePurchase.create).not.toHaveBeenCalled()
+    // El reuse recalcula holdExpiresAt al método actual (posible cambio mp→transfer).
+    expect(tx.packagePurchase.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'ppExisting' },
+      data: expect.objectContaining({ holdExpiresAt: expect.any(Date) }),
+    }))
   })
 })

@@ -1,9 +1,10 @@
 import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
-import { listPackageProducts, getPackageSalesTotal } from '@/server/actions/packages'
+import { listPackageProducts, getPackageSalesTotal, getPendingPackageTransfers } from '@/server/actions/packages'
 import { getServices } from '@/server/actions/services'
 import { formatMoney } from '@/lib/money'
+import { PendingPackageTransfers, type PendingPackageTransferItem } from '@/components/packages/pending-package-transfers'
 import { PackageCatalog } from './package-catalog'
 
 export default async function PaquetesPage() {
@@ -17,13 +18,21 @@ export default async function PaquetesPage() {
     redirect('/recover-business')
   }
 
-  const [products, services, salesTotal] = await Promise.all([
+  const [products, services, salesTotal, pendingTransfers] = await Promise.all([
     listPackageProducts(),
     getServices(),
     getPackageSalesTotal(),
+    getPendingPackageTransfers(),
   ])
 
   const currency = userData.business.currency
+  const pendingTransferItems: PendingPackageTransferItem[] = pendingTransfers.map((p) => ({
+    paymentId: p.payments[0].id,
+    purchaseId: p.id,
+    customerName: p.customer.name,
+    productName: p.product.name,
+    amount: p.pricePaid,
+  }))
 
   return (
     <div>
@@ -36,6 +45,7 @@ export default async function PaquetesPage() {
           <p className="text-sm text-muted-foreground">
             Total vendido: <span className="font-semibold text-primary">{formatMoney(salesTotal, currency)}</span>
           </p>
+          <PendingPackageTransfers items={pendingTransferItems} currency={currency} />
           <PackageCatalog products={products} services={services} currency={currency} />
         </div>
       </div>

@@ -13,10 +13,10 @@ import { getCustomerPackages } from './packages'
 
 describe('getCustomerPackages', () => {
   beforeEach(() => findMany.mockReset())
-  it('excluye compras pending del panel de la dueña', async () => {
+  it('incluye pending/expired en el panel de la dueña', async () => {
     findMany.mockResolvedValue([])
     await getCustomerPackages('c1')
     const arg = findMany.mock.calls[0][0]
-    expect(arg.where.status).toEqual({ in: ['active', 'refunded'] })
+    expect(arg.where.status).toEqual({ in: ['active', 'refunded', 'pending', 'expired'] })
   })
 })

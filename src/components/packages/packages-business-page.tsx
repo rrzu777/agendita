@@ -3,6 +3,7 @@ import { ArrowLeft } from 'lucide-react'
 import { PackageCatalog } from './package-catalog'
 import type { PackagesBusiness } from '@/lib/business/public'
 import type { PackageCheckoutPrefill } from '@/server/actions/packages-checkout'
+import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 
 interface PackagesBusinessPageProps {
   business: PackagesBusiness
@@ -11,9 +12,10 @@ interface PackagesBusinessPageProps {
   onlineReason: string | null
   prefill: PackageCheckoutPrefill | null
   preselectedProductId?: string
+  transferInfo: BankTransferPublicInfo | null
 }
 
-export function PackagesBusinessPage({ business, profileHref, onlineAvailable, onlineReason, prefill, preselectedProductId }: PackagesBusinessPageProps) {
+export function PackagesBusinessPage({ business, profileHref, onlineAvailable, onlineReason, prefill, preselectedProductId, transferInfo }: PackagesBusinessPageProps) {
   return (
     <main className="studio-shell">
       <header className="sticky top-0 z-40 border-b border-border/50 bg-background/85 backdrop-blur">
@@ -49,6 +51,7 @@ export function PackagesBusinessPage({ business, profileHref, onlineAvailable, o
           isLoggedIn={!!prefill}
           prefill={prefill}
           preselectedProductId={preselectedProductId}
+          transferInfo={transferInfo}
         />
       </div>
     </main>

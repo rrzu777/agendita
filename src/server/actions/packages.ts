@@ -9,6 +9,9 @@ import { requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { packageProductSchema, sellPackageSchema, computePackageRefund } from '@/lib/packages/schema'
 import { normalizePhone } from '@/lib/customers/phone'
 import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
+import { reversePackagePurchaseInTx } from '@/lib/packages/reverse'
+import { pendingPackageTransferWhere, declaredPkgTransferPaymentWhere } from '@/lib/bank-transfer/declared'
+import { getMercadoPagoProviderForBusiness } from '@/lib/payments/factory'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 
 // ── CRUD de productos ─────────────────────────────────────────────────
@@ -135,30 +138,50 @@ export async function refundPackagePurchase(purchaseId: string) {
     pricePaid: purchase.pricePaid, quantity: purchase.quantity,
     bonusQuantity: purchase.bonusQuantity, unusedSessions: unused,
   })
+
+  // Payment que originó la compra (para saber si hay que devolver por MP).
+  const payment = await prisma.payment.findFirst({
+    where: { packagePurchaseId: purchase.id, paymentType: 'package_purchase' },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  // Refund REAL por MP: FUERA de la tx (I/O de red). Sólo si es online, hay id de MP y monto > 0.
+  if (payment && payment.provider === 'mercado_pago' && payment.providerPaymentId && refund > 0) {
+    const provider = await getMercadoPagoProviderForBusiness(businessId)
+    const result = await provider.refundPayment({
+      providerPaymentId: payment.providerPaymentId,
+      amount: refund,
+      currency: payment.currency,
+      idempotencyKey: `refund:pkg:${purchase.id}`,
+    })
+    // Si MP no aceptó el reembolso, NO revertir localmente (evita marcar refunded
+    // sin que el dinero se haya devuelto). 'pending' es aceptable (se acredita async).
+    if (result.status === 'failed') {
+      throw new Error('El reembolso en Mercado Pago no pudo procesarse. Intentá de nuevo o revisá en tu cuenta de Mercado Pago.')
+    }
+  }
+
   await prisma.$transaction(async (tx) => {
-    await tx.promotionGrant.updateMany({
-      where: { packagePurchaseId: purchase.id, status: 'active' },
-      data: { status: 'reversed', reversedAt: new Date() },
+    await reversePackagePurchaseInTx(tx, purchase, {
+      mode: 'voluntary',
+      amount: refund,
+      currency: payment?.currency ?? 'CLP',
+      paymentId: payment?.id ?? null,
+      now,
     })
-    await tx.packagePurchase.update({
-      where: { id: purchase.id },
-      data: { status: 'refunded', refundedAt: new Date(), refundedAmount: refund },
-    })
-    // Asiento de reembolso: monto = prorrateo (NO pricePaid). Reusa refund_issued
-    // con packagePurchaseId, que lo EXCLUYE del totalRefunded de reservas
-    // (getFinancialSummary filtra packagePurchaseId: null) y lo netea en las
-    // ventas de paquete (getPackageSalesTotal resta refund_issued con packagePurchaseId).
-    if (refund > 0) {
-      await tx.ledgerEntry.create({
-        data: {
-          businessId, packagePurchaseId: purchase.id, customerId: purchase.customerId,
-          type: 'refund_issued', direction: 'expense', amount: refund, currency: 'CLP',
-          description: 'Reembolso de paquete', occurredAt: new Date(),
-        },
+    // El Payment de la compra queda 'refunded' (el núcleo sólo toca purchase/grants/ledger).
+    // Sin esto totalPaidApproved sobreestima lo pagado y el pago se ve 'approved'.
+    if (payment) {
+      await tx.payment.updateMany({
+        where: { id: payment.id, status: 'approved' },
+        data: { status: 'refunded' },
       })
     }
   })
-  await revalidatePath('/dashboard/customers/' + purchase.customerId)
+
+  revalidatePath('/dashboard/customers/' + purchase.customerId)
+  revalidatePath('/dashboard/paquetes')
+  await revalidateBusinessPublicPaths(businessId)
 }
 
 // ── queries ─────────────────────────────────────────────────────────────
@@ -188,11 +211,26 @@ export async function getCustomerPackages(customerId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const now = new Date()
   return prisma.packagePurchase.findMany({
-    where: { businessId, customerId, status: { in: ['active', 'refunded'] } },
+    where: { businessId, customerId, status: { in: ['active', 'refunded', 'pending', 'expired'] } },
     orderBy: { createdAt: 'desc' },
     include: {
       product: { select: { name: true } },
       _count: { select: { grants: { where: { status: 'active', OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] } } } },
+    },
+  })
+}
+
+// OWNER (panel de transferencias de paquete pendientes)
+export async function getPendingPackageTransfers() {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const now = new Date()
+  return prisma.packagePurchase.findMany({
+    where: pendingPackageTransferWhere(businessId, now),
+    orderBy: { createdAt: 'desc' },
+    include: {
+      product: { select: { name: true } },
+      customer: { select: { name: true, phone: true } },
+      payments: { where: declaredPkgTransferPaymentWhere, select: { id: true, providerPaymentId: true, createdAt: true } },
     },
   })
 }
@@ -205,5 +243,12 @@ export async function getPackageSalesTotal(): Promise<number> {
     prisma.ledgerEntry.aggregate({ _sum: { amount: true }, where: { businessId, type: 'package_sale' } }),
     prisma.ledgerEntry.aggregate({ _sum: { amount: true }, where: { businessId, type: 'refund_issued', packagePurchaseId: { not: null } } }),
   ])
-  return (sales._sum.amount ?? 0) - (refunds._sum.amount ?? 0)
+  const net = (sales._sum.amount ?? 0) - (refunds._sum.amount ?? 0)
+  // Clamp a 0 para no mostrar un KPI negativo. Un neto negativo señala un reembolso
+  // sin venta que netear (típicamente un paquete legacy de B4a sin asiento package_sale);
+  // lo logueamos para que no quede invisible.
+  if (net < 0) {
+    console.warn(`[getPackageSalesTotal] neto negativo (${net}) para business ${businessId} — reembolso sin package_sale que netear (¿legacy B4a?)`)
+  }
+  return Math.max(0, net)
 }

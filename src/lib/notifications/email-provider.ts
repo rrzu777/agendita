@@ -20,6 +20,8 @@ import type {
   TransferReminderBusinessEmailData,
   OwnerBookingChangedData,
   PackagePurchasedEmailData,
+  PackageDisputedEmailData,
+  PackageTransferDeclaredEmailData,
 } from './types'
 import {
   transferReminderCustomerHtml,
@@ -64,6 +66,10 @@ import {
   packagePurchasedCustomerText,
   packageSoldBusinessHtml,
   packageSoldBusinessText,
+  packageDisputedBusinessHtml,
+  packageDisputedBusinessText,
+  packageTransferDeclaredBusinessHtml,
+  packageTransferDeclaredBusinessText,
   BOOKING_CONFIRMED_TEMPLATE,
   BOOKING_REMINDER_TEMPLATE,
   BOOKING_CANCELLED_TEMPLATE,
@@ -571,6 +577,48 @@ export async function sendPackageSoldNotificationToBusiness(
   return Promise.all(
     ownerEmails.map((owner) =>
       sendEmail(owner.email, `Paquete vendido - ${data.customerName}`, html, text, {}),
+    ),
+  )
+}
+
+/** Email a la(s) dueña(s)/admin(s) del negocio cuando se disputa (chargeback) un paquete online. */
+export async function sendPackageDisputedToBusiness(
+  businessId: string,
+  data: PackageDisputedEmailData,
+): Promise<EmailResult[]> {
+  const ownerEmails = await getBusinessOwnerEmails(businessId)
+
+  if (ownerEmails.length === 0) {
+    return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
+  }
+
+  const html = packageDisputedBusinessHtml(data)
+  const text = packageDisputedBusinessText(data)
+
+  return Promise.all(
+    ownerEmails.map((owner) =>
+      sendEmail(owner.email, `Contracargo de paquete - ${data.customerName}`, html, text, {}),
+    ),
+  )
+}
+
+/** Email a la(s) dueña(s)/admin(s) del negocio cuando una clienta declara una transferencia de paquete. */
+export async function sendPackageTransferDeclaredToBusiness(
+  businessId: string,
+  data: PackageTransferDeclaredEmailData,
+): Promise<EmailResult[]> {
+  const ownerEmails = await getBusinessOwnerEmails(businessId)
+
+  if (ownerEmails.length === 0) {
+    return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
+  }
+
+  const html = packageTransferDeclaredBusinessHtml(data)
+  const text = packageTransferDeclaredBusinessText(data)
+
+  return Promise.all(
+    ownerEmails.map((owner) =>
+      sendEmail(owner.email, `Transferencia de paquete declarada - ${data.customerName}`, html, text, {}),
     ),
   )
 }

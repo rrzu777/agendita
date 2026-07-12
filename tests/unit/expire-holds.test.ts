@@ -22,12 +22,16 @@ describe('expireStaleHolds', () => {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       promotion: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      packagePurchase: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     }
     return {
       booking: {
         findMany: vi.fn().mockResolvedValue(overrides.findMany ?? []),
         // Exposed so assertions can target the booking.updateMany inside the tx.
         updateMany,
+      },
+      packagePurchase: {
+        findMany: vi.fn().mockResolvedValue(overrides.packagesFindMany ?? []),
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       $transaction: (fn: any) => fn(tx),

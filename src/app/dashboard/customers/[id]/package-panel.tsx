@@ -14,12 +14,28 @@ type PackagePurchaseItem = {
   quantity: number
   bonusQuantity: number
   status: string
+  chargebackAt: Date | null
   expiresAt: Date | null
   paymentMethod: string | null
   source: string
   createdAt: Date
   product: { name: string }
   _count: { grants: number }
+}
+
+function packageBadge(p: PackagePurchaseItem): { label: string; className: string } {
+  if (p.status === 'active') return { label: 'Activo', className: 'bg-green-100 text-green-800' }
+  if (p.status === 'refunded' && p.chargebackAt) return { label: 'Disputado', className: 'bg-red-100 text-red-800' }
+  if (p.status === 'refunded') return { label: 'Reembolsado', className: 'bg-muted text-muted-foreground' }
+  if (p.status === 'pending') return { label: 'Por confirmar', className: 'bg-amber-100 text-amber-800' }
+  if (p.status === 'expired') return { label: 'Vencido', className: 'bg-muted text-muted-foreground' }
+  if (p.status === 'rejected') return { label: 'Rechazado', className: 'bg-muted text-muted-foreground' }
+  return { label: p.status, className: 'bg-muted text-muted-foreground' }
+}
+
+function PackageBadge({ p }: { p: PackagePurchaseItem }) {
+  const { label, className } = packageBadge(p)
+  return <Badge className={className}>{label}</Badge>
 }
 
 type PackageProductOption = {
@@ -102,9 +118,7 @@ export function PackagePanel({
                     </p>
                   )}
                 </div>
-                <Badge className={p.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'}>
-                  {p.status === 'active' ? 'Activo' : p.status === 'refunded' ? 'Reembolsado' : p.status}
-                </Badge>
+                <PackageBadge p={p} />
               </div>
               {p.status === 'active' && p._count.grants > 0 && (
                 <div className="mt-2 flex justify-end">

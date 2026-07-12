@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { formatMoney } from '@/lib/money'
 import type { PackageCheckoutPrefill } from '@/server/actions/packages-checkout'
+import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { PackageCheckout } from './package-checkout'
 
 export interface CatalogProduct {
@@ -28,9 +29,10 @@ interface PackageCatalogProps {
   prefill: PackageCheckoutPrefill | null
   /** Producto a preseleccionar (retorno de /ingresar?next=...&comprar=ID tras loguearse). */
   preselectedProductId?: string
+  transferInfo: BankTransferPublicInfo | null
 }
 
-export function PackageCatalog({ slug, currency, products, onlineAvailable, onlineReason, isLoggedIn, prefill, preselectedProductId }: PackageCatalogProps) {
+export function PackageCatalog({ slug, currency, products, onlineAvailable, onlineReason, isLoggedIn, prefill, preselectedProductId, transferInfo }: PackageCatalogProps) {
   const [selected, setSelected] = useState<CatalogProduct | null>(() =>
     preselectedProductId ? products.find((p) => p.id === preselectedProductId) ?? null : null
   )
@@ -49,6 +51,7 @@ export function PackageCatalog({ slug, currency, products, onlineAvailable, onli
         currency={currency}
         prefill={prefill}
         onCancel={() => setSelected(null)}
+        transferInfo={transferInfo}
       />
     )
   }

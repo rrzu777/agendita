@@ -10,7 +10,8 @@ import { prisma } from '@/lib/db'
 import { buildSetupChecklist } from '@/lib/dashboard/setup-checklist'
 import { SetupChecklist } from '@/components/dashboard/setup-checklist'
 import { PendingTransfersBanner } from '@/components/dashboard/pending-transfers-banner'
-import { hasPendingBalanceTransfer, hasPendingDeclaredTransfer } from '@/lib/bank-transfer/declared'
+import { PendingPackageTransfersBanner } from '@/components/dashboard/pending-package-transfers-banner'
+import { hasPendingBalanceTransfer, hasPendingDeclaredTransfer, pendingPackageTransferWhere } from '@/lib/bank-transfer/declared'
 import { CalendarCheck2, CreditCard, ExternalLink, TrendingUp, Users } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -29,12 +30,13 @@ export default async function DashboardPage() {
   }
 
   const business = userData.business
-  const [bookings, summary, servicesCount, availabilityCount, connectedPaymentAccounts] = await Promise.all([
+  const [bookings, summary, servicesCount, availabilityCount, connectedPaymentAccounts, pendingPackageTransfersCount] = await Promise.all([
     getBookings(),
     getFinancialSummary(),
     prisma.service.count({ where: { businessId: business.id, isActive: true } }),
     prisma.availabilityRule.count({ where: { businessId: business.id, isActive: true } }),
     prisma.paymentAccount.count({ where: { businessId: business.id, status: 'connected' } }),
+    prisma.packagePurchase.count({ where: pendingPackageTransferWhere(business.id, new Date()) }),
   ])
 
   // Calcular estadísticas reales
@@ -83,6 +85,7 @@ export default async function DashboardPage() {
       <DashboardHeader title={`Resumen de ${business.name}`} subtitle="Aquí tienes el pulso de tu estudio hoy." />
       <div className="p-5 md:p-10">
         <PendingTransfersBanner count={pendingTransfersCount} />
+        <PendingPackageTransfersBanner count={pendingPackageTransfersCount} />
         <Card className="studio-card mb-8 border-border/60 bg-card">
           <CardContent className="p-6">
             <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">

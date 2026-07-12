@@ -6,6 +6,7 @@ import { getPackagesBusinessBySubdomain } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { resolveOnlinePaymentAvailabilityForBusiness } from '@/lib/payments/factory'
 import { getPackageCheckoutPrefill } from '@/server/actions/packages-checkout'
+import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 
 export default async function PaquetesIndexPage({
   searchParams,
@@ -20,9 +21,10 @@ export default async function PaquetesIndexPage({
     const business = await getPackagesBusinessBySubdomain(tenant.subdomain)
 
     if (business) {
-      const [availability, prefill] = await Promise.all([
+      const [availability, prefill, transferInfo] = await Promise.all([
         resolveOnlinePaymentAvailabilityForBusiness(business.id),
         getPackageCheckoutPrefill(business.id),
+        getBankTransferInfo(business.id),
       ])
       return (
         <PackagesBusinessPage
@@ -32,6 +34,7 @@ export default async function PaquetesIndexPage({
           onlineReason={availability.reason ?? null}
           prefill={prefill}
           preselectedProductId={comprar}
+          transferInfo={transferInfo}
         />
       )
     }

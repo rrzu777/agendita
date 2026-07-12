@@ -13,7 +13,9 @@ import {
   isDeclaredTransferPayment,
   isDeclaredBalancePayment,
   isFirmBooking,
+  isDeclaredPkgTransferPayment,
 } from '@/lib/bank-transfer/declared'
+import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
 import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
@@ -254,6 +256,65 @@ export async function rejectBankTransfer(paymentId: string): Promise<{ ok: true 
   revalidatePath('/dashboard/bookings')
   revalidatePath('/dashboard/payments')
   revalidatePath('/dashboard')
+  await revalidateBusinessPublicPaths(businessId)
+  return { ok: true }
+}
+
+// ── Transferencia de PAQUETE (B4b-3, Task 12) ──
+// No reusa loadDeclaredPayment: ese helper exige bookingId, que un pago de
+// paquete no tiene (tiene packagePurchaseId en su lugar).
+
+export async function confirmPackageTransfer(paymentId: string): Promise<{ ok: true }> {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const result = await prisma.$transaction(async (tx) => {
+    const payment = await tx.payment.findUnique({ where: { id: paymentId } })
+    if (!payment || payment.businessId !== businessId) throw new Error('Pago no encontrado')
+    if (!isDeclaredPkgTransferPayment(payment)) throw new Error('Este pago no es una transferencia de paquete por verificar')
+    if (!payment.packagePurchaseId) throw new Error('El pago no está asociado a una compra')
+
+    // Flip atómico pending→active: gana un solo confirm y serializa contra el sweep
+    // del cron y el doble-click (sin esto, un UPDATE by-id incondicional pisaría una
+    // expiración concurrente o dispararía un P2002 opaco en el 2º confirm).
+    const flip = await tx.packagePurchase.updateMany({
+      where: { id: payment.packagePurchaseId, status: 'pending' },
+      data: { status: 'active' },
+    })
+    if (flip.count === 0) throw new Error('Esta compra ya fue procesada.')
+    const purchase = await tx.packagePurchase.findUnique({ where: { id: payment.packagePurchaseId } })
+    if (!purchase) throw new Error('Compra no encontrada')
+
+    await tx.payment.update({ where: { id: paymentId }, data: { status: 'approved' } })
+    // Cancelar cualquier otro Payment pending de la compra (ej. un intento MP abandonado
+    // antes de declarar la transferencia) — si no, quedaría pending para siempre y podría
+    // aprobarse tarde sin asiento.
+    await tx.payment.updateMany({
+      where: { packagePurchaseId: purchase.id, status: 'pending', id: { not: paymentId } },
+      data: { status: 'cancelled' },
+    })
+    await activatePackagePurchaseInTx(tx, purchase, { requestId: `pkg-transfer:${purchase.id}`, paymentId })
+    return { customerId: purchase.customerId }
+  })
+  revalidatePath(`/dashboard/customers/${result.customerId}`)
+  revalidatePath('/dashboard/paquetes')
+  await revalidateBusinessPublicPaths(businessId)
+  return { ok: true }
+}
+
+export async function rejectPackageTransfer(paymentId: string): Promise<{ ok: true }> {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const result = await prisma.$transaction(async (tx) => {
+    const payment = await tx.payment.findUnique({ where: { id: paymentId } })
+    if (!payment || payment.businessId !== businessId) throw new Error('Pago no encontrado')
+    if (!isDeclaredPkgTransferPayment(payment)) throw new Error('Este pago no es una transferencia de paquete por verificar')
+    const { count } = await tx.payment.updateMany({ where: { id: paymentId, status: 'pending' }, data: { status: 'rejected' } })
+    if (count === 0) throw new Error('Este pago ya fue procesado')
+    if (payment.packagePurchaseId) {
+      await tx.packagePurchase.updateMany({ where: { id: payment.packagePurchaseId, status: 'pending' }, data: { status: 'rejected' } })
+    }
+    return { customerId: payment.customerId }
+  })
+  revalidatePath(`/dashboard/customers/${result.customerId}`)
+  revalidatePath('/dashboard/paquetes')
   await revalidateBusinessPublicPaths(businessId)
   return { ok: true }
 }

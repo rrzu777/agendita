@@ -5,6 +5,8 @@ import {
   VerifyPaymentInput,
   VerifyPaymentResult,
   WebhookPaymentResult,
+  RefundPaymentInput,
+  RefundPaymentResult,
 } from './types'
 
 const MP_API_BASE = 'https://api.mercadopago.com'
@@ -170,6 +172,25 @@ export function createMercadoPagoProvider(accessToken: string): PaymentProvider 
         rawPayload: mpPayment,
       }
     },
+
+    async refundPayment(input: RefundPaymentInput): Promise<RefundPaymentResult> {
+      const refund = await mpRequestWithToken<{ id: number | string; status: string }>(
+        `/v1/payments/${input.providerPaymentId}/refunds`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ amount: input.amount }),
+          headers: { 'X-Idempotency-Key': input.idempotencyKey },
+        },
+      )
+      const statusMap: Record<string, RefundPaymentResult['status']> = {
+        approved: 'refunded', refunded: 'refunded', pending: 'pending', in_process: 'pending',
+      }
+      return {
+        refundId: String(refund.id),
+        status: statusMap[refund.status] ?? 'failed',
+        rawResponse: refund,
+      }
+    },
   }
 }
 
@@ -192,4 +213,5 @@ export const mercadoPagoPaymentProvider: PaymentProvider = {
   createPayment(input: CreatePaymentInput) { return getGlobalProvider().createPayment(input) },
   verifyPayment(input: VerifyPaymentInput) { return getGlobalProvider().verifyPayment(input) },
   handleWebhook(payload: unknown) { return getGlobalProvider().handleWebhook(payload) },
+  refundPayment(input: RefundPaymentInput) { return getGlobalProvider().refundPayment(input) },
 }

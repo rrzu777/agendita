@@ -107,3 +107,45 @@ export function hasPendingBalanceTransfer(
     booking.payments.some((p) => p.providerPaymentId?.startsWith(BT_BALANCE_PREFIX))
   )
 }
+
+// ── Transferencia de PAQUETE (B4b-3) ──
+// Prefijo PROPIO y explícito: 'bt-pkg-declared:' NO satisface startsWith('bt-declared:'),
+// así que ningún sweep/consulta de reservas agarra un pago de paquete por accidente.
+export const BT_PKG_DECLARED_PREFIX = 'bt-pkg-declared:'
+
+export function btPkgDeclaredId(purchaseId: string): string {
+  return `${BT_PKG_DECLARED_PREFIX}${purchaseId}`
+}
+
+export const declaredPkgTransferPaymentWhere = {
+  provider: 'manual',
+  status: 'pending',
+  providerPaymentId: { startsWith: BT_PKG_DECLARED_PREFIX },
+} satisfies Prisma.PaymentWhereInput
+
+export function isDeclaredPkgTransferPayment(
+  p: { provider: string; status: string; providerPaymentId?: string | null },
+): boolean {
+  return (
+    p.provider === 'manual' &&
+    p.status === 'pending' &&
+    !!p.providerPaymentId?.startsWith(BT_PKG_DECLARED_PREFIX)
+  )
+}
+
+/** "Compra de paquete con una transferencia declarada pendiente de verificar."
+ *  Fuente única del predicado que usan la lista de la dueña (getPendingPackageTransfers)
+ *  y el contador del home. Pinnea el prefijo bt-pkg-declared (via declaredPkgTransferPaymentWhere),
+ *  así un pago manual registrado por otra vía no cuenta como transferencia por verificar. */
+export function pendingPackageTransferWhere(
+  businessId: string,
+  now: Date,
+): Prisma.PackagePurchaseWhereInput {
+  return {
+    businessId,
+    status: 'pending',
+    source: 'online',
+    holdExpiresAt: { gte: now },
+    payments: { some: declaredPkgTransferPaymentWhere },
+  }
+}

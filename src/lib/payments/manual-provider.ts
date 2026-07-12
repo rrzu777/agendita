@@ -1,4 +1,4 @@
-import { PaymentProvider, CreatePaymentInput, CreatePaymentResult, VerifyPaymentInput, VerifyPaymentResult, WebhookPaymentResult } from './types'
+import { PaymentProvider, CreatePaymentInput, CreatePaymentResult, VerifyPaymentInput, VerifyPaymentResult, WebhookPaymentResult, RefundPaymentInput, RefundPaymentResult } from './types'
 
 export const manualPaymentProvider: PaymentProvider = {
   name: 'manual',
@@ -31,5 +31,11 @@ export const manualPaymentProvider: PaymentProvider = {
   async handleWebhook(_payload: unknown): Promise<WebhookPaymentResult> {
     // Manual payments don't use webhooks
     throw new Error('Manual payments do not support webhooks')
+  },
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- required by PaymentProvider interface
+  async refundPayment(_input: RefundPaymentInput): Promise<RefundPaymentResult> {
+    // Sin pasarela: el reembolso de transferencia/manual es out-of-band (contable).
+    return { refundId: null, status: 'refunded', rawResponse: { manual: true } }
   },
 }

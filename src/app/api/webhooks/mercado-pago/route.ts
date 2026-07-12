@@ -9,12 +9,14 @@ import {
   sendMultiNotificationSafely,
   sendPackagePurchasedNotification,
   sendPackageSoldNotificationToBusiness,
+  sendPackageDisputedToBusiness,
 } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
 import { decryptSecret } from '@/lib/payments/encryption'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { reverseVisitPoints } from '@/lib/loyalty/credit'
 import { reverseAutoRewardsForBooking } from '@/lib/loyalty/automatic'
+import { reversePackagePurchaseInTx } from '@/lib/packages/reverse'
 import type { Prisma } from '@prisma/client'
 
 function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
@@ -340,6 +342,58 @@ export async function POST(request: NextRequest) {
     if (payment.booking && payment.businessId !== payment.booking.businessId) {
       console.error('[MP Webhook] Business mismatch payment vs booking')
       return NextResponse.json({ error: 'Business mismatch' }, { status: 403 })
+    }
+
+    // B4b-3: chargeback/refund INVOLUNTARIO de un paquete YA ACTIVO. El Payment está
+    // approved, así que hay que actuar ANTES del early-return de abajo. Exclusivo de
+    // paquetes activos: reservas y refunds voluntarios (purchase ya 'refunded') no entran.
+    if (
+      (mpStatus === 'charged_back' || mpStatus === 'refunded') &&
+      payment.packagePurchaseId &&
+      !payment.bookingId
+    ) {
+      const packagePurchaseId = payment.packagePurchaseId
+      // Un solo fetch con includes: sirve al guard de status y a la notif de abajo.
+      const purchase = await prisma.packagePurchase.findUnique({
+        where: { id: packagePurchaseId },
+        include: {
+          product: { select: { name: true } },
+          customer: { select: { name: true } },
+          business: { select: { name: true, currency: true } },
+        },
+      })
+      if (purchase && purchase.status === 'active') {
+        // 'charged_back' = disputa involuntaria → reversión total (clawback + descubrir
+        // reservas) + alarma a la dueña. 'refunded' que llega con la compra AÚN activa
+        // (refund directo en MP, o carrera del refund voluntario cuyo tx local no cerró)
+        // → semántica voluntary conservadora, sin alarma de contracargo.
+        const reverseMode = mpStatus === 'charged_back' ? 'chargeback' : 'voluntary'
+        await prisma.$transaction(async (tx) => {
+          await tx.payment.update({
+            where: { id: payment.id },
+            data: { status: 'refunded', providerPaymentId: mpPayment.id, rawPayload: mpPayment as unknown as Prisma.InputJsonValue },
+          })
+          await reversePackagePurchaseInTx(tx, purchase, {
+            mode: reverseMode,
+            amount: mpPayment.transaction_amount,
+            currency: payment.currency,
+            paymentId: payment.id,
+            now: new Date(),
+          })
+        })
+        if (reverseMode === 'chargeback') {
+          await sendMultiNotificationSafely('package disputed business', async () =>
+            sendPackageDisputedToBusiness(payment.businessId, {
+              businessName: purchase.business.name, customerName: purchase.customer.name, productName: purchase.product.name,
+              amount: mpPayment.transaction_amount, businessCurrency: purchase.business.currency || 'CLP',
+            }),
+          )
+        }
+        revalidatePath(`/dashboard/customers/${purchase.customerId}`)
+        revalidatePath('/dashboard/paquetes')
+        return NextResponse.json({ success: true, message: `Package ${reverseMode} processed`, packagePurchaseId })
+      }
+      // purchase ya no está active (eco del refund voluntario / redelivery) → cae al 200 idempotente.
     }
 
     // Ya está approved → idempotente, 200 sin side effects
