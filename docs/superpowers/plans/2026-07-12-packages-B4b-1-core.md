@@ -21,21 +21,26 @@
 
 **Modificados:**
 - `prisma/schema.prisma` — `Payment` polimórfico, `LedgerEntry.packagePurchaseId`, `PackagePurchase.holdExpiresAt`, enums.
+- **Fallout de `bookingId` nullable (null-guards):** `src/app/api/webhooks/mercado-pago/route.ts`, `src/server/actions/payments.ts`, `src/server/actions/bank-transfer-verify.ts`, `src/lib/cron/expire-holds.ts` — evitan que el build de CI (`tsc`) se rompa por la relación/campo ahora opcional.
 - `src/server/services/finance.ts` — mappers ganan `package_purchase`; se extrae `upsertApprovedPayment` (tronco compartido); nueva `applyApprovedPackagePayment` (rama paquete). `applyApprovedPayment` conserva firma/retorno.
 - `src/server/actions/packages.ts` — `sellPackage` delega en `activatePackagePurchaseInTx`; `refundPackagePurchase` escribe asiento `refund_issued`; `getPackageSalesTotal` deriva del ledger.
 - `src/server/actions/bookings.ts` — `createBooking` y `createBookingFromDashboard` usan `findOrCreateCustomerInTx`.
-- `src/components/dashboard/ledger-table.tsx` — label `package_sale`.
+- `src/server/actions/ledger.ts` — `getFinancialSummary` excluye filas de paquete (`packagePurchaseId: null`) de income/refund → evita doble conteo.
+- `src/components/dashboard/ledger-table.tsx` + `src/app/dashboard/customers/[id]/page.tsx` — labels `package_sale` / `package_purchase`.
 - Tests existentes de finance (`tests/unit/finance-service.test.ts`) ganan casos de mapeo.
 
 ---
 
-## Task 1: Migración aditiva (Payment polimórfico + enums)
+## Task 1: Migración aditiva (Payment polimórfico + enums) + null-guards del fallout
 
 **Files:**
 - Modify: `prisma/schema.prisma:436-463` (Payment), `:490-515` (LedgerEntry), `:481-488` (PaymentType), `:517-528` (LedgerEntryType), `:739-767` (PackagePurchase)
+- Modify (fallout de `bookingId` nullable): `src/app/api/webhooks/mercado-pago/route.ts:336-379`, `src/server/actions/payments.ts:248-276`, `src/server/actions/bank-transfer-verify.ts:26-37`, `src/lib/cron/expire-holds.ts:87`
 - Create: `prisma/migrations/20260712120000_packages_polymorphic_payment/migration.sql`
 
 > **Landmines (memoria del initiative):** (a) NO usar `prisma migrate diff` contra la DB compartida — arrastra DROPs de migraciones de worktrees hermanos; hand-escribir el `.sql`. (b) Aplicar con `db execute` **y luego** `migrate resolve --applied` o el deploy de Vercel (`migrate deploy`) se rompe.
+>
+> **Fallout crítico (gap detectado en auditoría):** volver `Payment.bookingId` nullable hace que la relación `payment.booking` sea `Booking | null` y que `payment.bookingId` sea `string | null`. Cuatro caminos de pago EN VIVO dejan de compilar (`tsc`). Como `vitest`+`eslint` NO corren `tsc` (landmine conocido), esto pasa local y **rompe el build de CI**. Se arreglan en este MISMO task para que la migración y su fallout aterricen atómicos. En B4b-1 ningún `Payment` de paquete se crea todavía, así que los guards solo agregan un rechazo defensivo (nunca se gatilla con datos reales); B4b-2 reemplaza el guard del webhook por el dispatch real a la rama paquete.
 
 - [ ] **Step 1: Editar `prisma/schema.prisma` — Payment polimórfico**
 
@@ -176,9 +181,108 @@ model PackagePurchase {
 - [ ] **Step 4: Regenerar el client y verificar que compila el schema**
 
 Run: `npx prisma generate`
-Expected: `Generated Prisma Client` sin errores (valida que las relaciones inversas Payment↔PackagePurchase↔LedgerEntry cierran).
+Expected: `Generated Prisma Client` sin errores (valida que las relaciones inversas Payment↔PackagePurchase↔LedgerEntry cierran). Tras esto `payment.bookingId` es `string | null` y aparecen los errores de `tsc` que arreglan los steps 5-8.
 
-- [ ] **Step 5: Hand-escribir la migración SQL**
+- [ ] **Step 5: Null-guard del webhook de Mercado Pago (camino de dinero en vivo)**
+
+En `src/app/api/webhooks/mercado-pago/route.ts`, al inicio de la rama `if (mpStatus === 'approved')` (línea 336), narrowar `bookingId` una vez y usar el local en las 3 llamadas que exigen `string`:
+
+```ts
+    if (mpStatus === 'approved') {
+      // B4b-1: en esta rebanada el webhook solo procesa pagos de reserva. Un pago
+      // sin bookingId (compra de paquete) aún no se produce; se rechaza defensivo
+      // hasta que B4b-2 cablee el dispatch a la rama paquete.
+      const bookingId = payment.bookingId
+      if (!bookingId) {
+        return NextResponse.json({ error: 'Pago no asociado a una reserva' }, { status: 400 })
+      }
+      // Pago aprobado: actualizar y confirmar booking
+      const result = await prisma.$transaction(async (tx) => {
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            providerPaymentId: mpPayment.id,
+            rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+          },
+        })
+
+        return applyApprovedPayment({
+          tx,
+          bookingId,
+          businessId: payment.businessId,
+          amount: payment.amount,
+          currency: payment.currency,
+          provider: 'mercado_pago',
+          providerPaymentId: mpPayment.id,
+          paymentType: payment.paymentType,
+          paymentMethod: payment.paymentMethod,
+          rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+          paymentId: payment.id,
+        })
+      })
+
+      if (!result || !result.booking) {
+        throw new Error('Reserva no encontrada')
+      }
+
+      if (result.wasConfirmed) {
+        await sendNotificationSafely('booking confirmed', () =>
+          sendBookingConfirmedNotification(bookingId, payment.businessId),
+        )
+      }
+
+      logger.payment.approved(payment.id, bookingId, payment.businessId)
+```
+
+(Reemplaza los usos de `payment.bookingId` de las líneas 350/369/373 por el local `bookingId`.)
+
+- [ ] **Step 6: Null-guard de `verifyAndConfirmPayment`**
+
+En `src/server/actions/payments.ts`, tras el `if (payment.bookingId !== bookingId)` (línea 257) agregar el guard que narrowa la relación opcional para las líneas 260 y 276:
+
+```ts
+  // El pago debe pertenecer a la reserva indicada
+  if (payment.bookingId !== bookingId) {
+    throw new Error('El pago no corresponde a esta reserva')
+  }
+  if (!payment.booking) {
+    throw new Error('El pago no está asociado a una reserva')
+  }
+
+  // Validar que payment y booking pertenecen al mismo negocio
+  if (payment.businessId !== payment.booking.businessId) {
+```
+
+- [ ] **Step 7: Null-guard de `loadDeclaredPayment` (transferencia bancaria)**
+
+En `src/server/actions/bank-transfer-verify.ts`, en `loadDeclaredPayment` (línea 31-36), agregar el guard y narrowar el tipo de retorno para los 4 usos de `payment.bookingId` (líneas 49/139/143/146):
+
+```ts
+  const payment = await tx.payment.findUnique({ where: { id: paymentId } })
+  if (!payment || payment.businessId !== businessId) throw new Error('Pago no encontrado')
+  if (!isDeclaredTransferPayment(payment)) {
+    throw new Error('Este pago no es una transferencia por verificar')
+  }
+  if (!payment.bookingId) throw new Error('El pago no está asociado a una reserva')
+  return payment as typeof payment & { bookingId: string }
+```
+
+- [ ] **Step 8: Null-filter en el cron de expiración de holds**
+
+En `src/lib/cron/expire-holds.ts` línea 87, filtrar los nulls antes de los `in` (líneas 90 y 102):
+
+```ts
+    const declaredBookingIds = declaredPayments
+      .map((p) => p.bookingId)
+      .filter((id): id is string => id !== null)
+```
+
+- [ ] **Step 9: Verificar que `tsc` vuelve a 0 errores en `src/`**
+
+Run: `npx tsc --noEmit | grep '^src/' || echo "0 src errors"`
+Expected: `0 src errors`. (Confirma que el fallout de la nullability quedó cubierto antes de seguir.)
+
+- [ ] **Step 10: Hand-escribir la migración SQL**
 
 Create `prisma/migrations/20260712120000_packages_polymorphic_payment/migration.sql` con EXACTAMENTE estas sentencias (solo las de esta rama; no correr `migrate diff`):
 
@@ -202,7 +306,7 @@ ALTER TYPE "PaymentType" ADD VALUE IF NOT EXISTS 'package_purchase';
 ALTER TYPE "LedgerEntryType" ADD VALUE IF NOT EXISTS 'package_sale';
 ```
 
-- [ ] **Step 6: Aplicar la migración a la DB compartida y marcarla aplicada**
+- [ ] **Step 11: Aplicar la migración a la DB compartida y marcarla aplicada**
 
 Run:
 ```bash
@@ -211,11 +315,11 @@ npx prisma migrate resolve --applied 20260712120000_packages_polymorphic_payment
 ```
 Expected: `Script executed successfully.` y `Migration ... marked as applied.` (sin este `resolve`, `migrate deploy` en Vercel intentará re-aplicar y romperá el build).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 12: Commit (schema + migración + null-guards, atómico)**
 
 ```bash
-git add prisma/schema.prisma prisma/migrations/20260712120000_packages_polymorphic_payment/migration.sql
-git commit -m "feat(packages): Payment polimórfico + packagePurchaseId en ledger + enums package_sale/package_purchase"
+git add prisma/schema.prisma prisma/migrations/20260712120000_packages_polymorphic_payment/migration.sql src/app/api/webhooks/mercado-pago/route.ts src/server/actions/payments.ts src/server/actions/bank-transfer-verify.ts src/lib/cron/expire-holds.ts
+git commit -m "feat(packages): Payment polimórfico + null-guards del fallout de bookingId nullable"
 ```
 
 ---
@@ -448,6 +552,11 @@ git commit -m "feat(customers): findOrCreateCustomerInTx — matcher único por 
 - Modify: `src/server/actions/bookings.ts:311-347` (createBooking), `:830-856` (createBookingFromDashboard, rama sin customerId)
 
 > Preserva semántica exacta: en `createBooking`, la atribución de referida sigue siendo SOLO para clientas nuevas (`created`), y el link de sesión ahora vive en el helper. En `createBookingFromDashboard`, solo se refactoriza la rama "sin `customerId`" (la rama con `customerId` explícito queda intacta; ese camino no matchea por teléfono).
+>
+> **Guardrails de la auditoría (críticos):**
+> - **NO** apuntar el helper a los `customer.findFirst({ phone, businessId })` de solo-lectura: `getActivePackagesForCustomer` (`packages.ts:192`) y `previewPromotion` (`promotions.ts:188`) son chequeos de existencia públicos con `select:{id:true}` — meterles el helper crearía una Customer (y linking) como efecto colateral de un preview público. El helper es SOLO para los 2 caminos de reserva.
+> - **Preservar la forma del `findFirst`** del helper: `tx.customer.findFirst({ where: { phone, businessId } })` sin `select` (el link necesita `userId`+`email` de la fila completa; y `tests/unit/dashboard-bookings-advanced.test.ts:343` asserta ese shape EXACTO). Si se agrega `select`, ese test rompe.
+> - **Cambio de comportamiento consciente:** hoy `createBooking` NO backfillea email en un match existente; el helper SÍ, y ese backfill puede gatillar el auto-link de cuenta (vía 3) en la misma tx que antes no ocurría (`linkCustomerFromBookingSession` bail-ea con `!customer.email`). Es una mejora alineada con el spec (línea 49), pero se fija con un test (Step 7) para que sea intencional y no un accidente.
 
 - [ ] **Step 1: Correr los tests de reserva existentes como red de seguridad (verde ANTES)**
 
@@ -511,15 +620,33 @@ En `src/server/actions/bookings.ts`, reemplazar el bloque `else { ... }` de las 
 Run: `grep -n "linkCustomerFromBookingSession\|captureReferral" src/server/actions/bookings.ts`
 Expected: `linkCustomerFromBookingSession` ya NO aparece (se movió al helper) → borrar su import si quedó huérfano. `captureReferral` sigue usándose.
 
-- [ ] **Step 6: Correr tests + tsc**
+- [ ] **Step 6: Correr los tests afectados + tsc (incluye la assertion de shape del `findFirst`)**
 
-Run: `npx vitest run tests/unit/create-booking-no-deposit.test.ts tests/unit/customers-search-booking.test.ts && npx tsc --noEmit | grep '^src/' || echo "0 src errors"`
-Expected: PASS y `0 src errors`.
+Run: `npx vitest run tests/unit/create-booking-no-deposit.test.ts tests/unit/customers-search-booking.test.ts tests/unit/dashboard-bookings-advanced.test.ts && npx tsc --noEmit | grep '^src/' || echo "0 src errors"`
+Expected: PASS y `0 src errors`. Si `dashboard-bookings-advanced.test.ts:343` falla por el shape del `findFirst`, es señal de que el helper agregó un `select` — corregir el helper (no el test) para preservar `{ where: { phone, businessId } }`.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Fijar el nuevo comportamiento de backfill+link con un test**
+
+Agregar a `tests/unit/find-or-create-customer.test.ts` el caso que documenta que un match existente con email vacío + sesión backfillea Y linkea en la misma llamada (comportamiento nuevo intencional):
+
+```ts
+  it('backfillea email vacío y LUEGO linkea la sesión en el mismo match', async () => {
+    const tx = makeTx({ id: 'c1', userId: null, email: null, name: 'Ana', phone: '56912345678' })
+    const sessionUser = { id: 'u1', email: 'ana@x.cl', email_confirmed_at: '2026-01-01' }
+    await findOrCreateCustomerInTx(tx, { businessId: 'b1', phone: '56912345678', name: 'Ana', email: 'ana@x.cl', sessionUser })
+    expect(tx.customer.update).toHaveBeenCalledWith({ where: { id: 'c1' }, data: { email: 'ana@x.cl' } })
+    // el link recibe la Customer YA con email backfilleado (email no-null) → habilita vía 3
+    expect(linkMock).toHaveBeenCalledWith(tx, expect.objectContaining({ id: 'c1', email: 'ana@x.cl' }), sessionUser, 'b1')
+  })
+```
+
+Run: `npx vitest run tests/unit/find-or-create-customer.test.ts`
+Expected: PASS.
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add src/server/actions/bookings.ts
+git add src/server/actions/bookings.ts tests/unit/find-or-create-customer.test.ts
 git commit -m "refactor(bookings): usar findOrCreateCustomerInTx en ambos caminos de reserva"
 ```
 
@@ -1260,14 +1387,89 @@ git commit -m "feat(packages): getPackageSalesTotal deriva del ledger (fuente ú
 
 ---
 
-## Task 10: Label `package_sale` en el LedgerTable
+## Task 10: Aislar los totales de reserva del ledger de paquetes + labels
 
 **Files:**
-- Modify: `src/components/dashboard/ledger-table.tsx:8-19`
+- Modify: `src/server/actions/ledger.ts:85-123` (income/refund aggregates)
+- Modify: `src/components/dashboard/ledger-table.tsx:8-19` (label)
+- Modify: `src/app/dashboard/customers/[id]/page.tsx:30-37` (label de paymentType)
+- Test: `tests/unit/ledger-package-isolation.test.ts`
 
-- [ ] **Step 1: Agregar el label**
+> **Gap de doble conteo (auditoría):** `getFinancialSummary` suma `direction:'income'` **sin filtro de tipo** para "Ingresos hoy/mes" (renderizados en la dashboard de pagos Y en la home), y `totalRefunded` suma todos los `refund_issued`. Con las ventas de paquete ahora en el ledger, esa plata aparecería DOS veces: dentro de "Ingresos" y otra vez en "Ventas de paquetes" (`getPackageSalesTotal`). **Decisión de producto (default sensato, reversible):** la plata de paquetes se reporta SOLO vía "Ventas de paquetes"; las tarjetas de finanzas de reserva excluyen filas de paquete con `packagePurchaseId: null` (las filas de reserva y de ingreso/gasto manual tienen ese campo null → siguen contando; solo se excluyen las de paquete). Si se prefiere "Ingresos = todo", es un flip trivial de este filtro.
 
-En `src/components/dashboard/ledger-table.tsx`, dentro de `typeLabels`, agregar la entrada:
+- [ ] **Step 1: Escribir el test que falla**
+
+Create `tests/unit/ledger-package-isolation.test.ts`:
+
+```ts
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+const requireRole = vi.hoisted(() => vi.fn())
+const ledgerAgg = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/auth/server', () => ({ requireBusinessRole: requireRole, ForbiddenError: class extends Error {} }))
+vi.mock('@/lib/db', () => ({
+  prisma: {
+    ledgerEntry: { aggregate: ledgerAgg },
+    payment: { aggregate: vi.fn().mockResolvedValue({ _sum: { amount: 0 } }) },
+    booking: { aggregate: vi.fn().mockResolvedValue({ _sum: { remainingBalance: 0 } }), count: vi.fn().mockResolvedValue(0) },
+  },
+}))
+
+beforeEach(() => { requireRole.mockResolvedValue({ businessId: 'b1' }); ledgerAgg.mockReset().mockResolvedValue({ _sum: { amount: 0 } }) })
+
+const { getFinancialSummary } = await import('@/server/actions/ledger')
+
+describe('getFinancialSummary aísla las filas de paquete', () => {
+  it('income y refund excluyen filas con packagePurchaseId', async () => {
+    await getFinancialSummary()
+    const incomeCalls = ledgerAgg.mock.calls.filter((c: any) => c[0].where.direction === 'income')
+    const refundCalls = ledgerAgg.mock.calls.filter((c: any) => c[0].where.type === 'refund_issued')
+    expect(incomeCalls.length).toBeGreaterThan(0)
+    expect(refundCalls.length).toBeGreaterThan(0)
+    for (const c of [...incomeCalls, ...refundCalls]) {
+      expect(c[0].where.packagePurchaseId).toBe(null)
+    }
+  })
+})
+```
+
+> Verificar el nombre exacto de la función exportada en `src/server/actions/ledger.ts` (asumido `getFinancialSummary`); ajustar el import del test si difiere.
+
+- [ ] **Step 2: Correr el test y verificar que falla**
+
+Run: `npx vitest run tests/unit/ledger-package-isolation.test.ts`
+Expected: FAIL — los aggregates aún no filtran `packagePurchaseId`.
+
+- [ ] **Step 3: Agregar `packagePurchaseId: null` a los aggregates de income y refund**
+
+En `src/server/actions/ledger.ts`, en los dos `ledgerEntry.aggregate` de `direction:'income'` (líneas 86-101) y en el de `type:'refund_issued'` (líneas 117-123), agregar `packagePurchaseId: null` al `where`:
+
+```ts
+    prisma.ledgerEntry.aggregate({
+      where: { ...baseWhere, direction: 'income', packagePurchaseId: null, occurredAt: { gte: today } },
+      _sum: { amount: true },
+    }),
+    prisma.ledgerEntry.aggregate({
+      where: { ...baseWhere, direction: 'income', packagePurchaseId: null, occurredAt: { gte: thisMonth } },
+      _sum: { amount: true },
+    }),
+```
+
+```ts
+    prisma.ledgerEntry.aggregate({
+      where: { ...baseWhere, type: 'refund_issued', packagePurchaseId: null },
+      _sum: { amount: true },
+    }),
+```
+
+- [ ] **Step 4: Correr el test y verificar que pasa**
+
+Run: `npx vitest run tests/unit/ledger-package-isolation.test.ts`
+Expected: PASS.
+
+- [ ] **Step 5: Label `package_sale` en el LedgerTable**
+
+En `src/components/dashboard/ledger-table.tsx`, dentro de `typeLabels`:
 
 ```ts
   manual_income: 'Ingreso manual',
@@ -1277,16 +1479,25 @@ En `src/components/dashboard/ledger-table.tsx`, dentro de `typeLabels`, agregar 
 }
 ```
 
-- [ ] **Step 2: Verificar el render (no rompe tipos)**
+- [ ] **Step 6: Label `package_purchase` en la página de clienta**
+
+En `src/app/dashboard/customers/[id]/page.tsx`, dentro de `paymentTypeLabels` (línea 30-37), agregar la entrada (evita que un futuro Payment de paquete se renderice como el string crudo `package_purchase`):
+
+```ts
+  cancellation_fee: 'Cargo cancelacion',
+  manual_adjustment: 'Ajuste manual',
+  package_purchase: 'Compra de paquete',
+}
+```
+
+- [ ] **Step 7: Verificar tipos y commit**
 
 Run: `npx tsc --noEmit | grep '^src/' || echo "0 src errors"`
 Expected: `0 src errors`.
 
-- [ ] **Step 3: Commit**
-
 ```bash
-git add src/components/dashboard/ledger-table.tsx
-git commit -m "feat(dashboard): label 'Venta de paquete' en el ledger"
+git add src/server/actions/ledger.ts src/components/dashboard/ledger-table.tsx src/app/dashboard/customers/[id]/page.tsx tests/unit/ledger-package-isolation.test.ts
+git commit -m "feat(finance): aislar ingresos/reembolsos de paquete de los totales de reserva + labels"
 ```
 
 ---
@@ -1316,7 +1527,14 @@ Correr `/simplify` (4 agentes: reuse / simplification / efficiency / altitude) s
 
 - [ ] **Step 5: Code review 5-finders con verificación**
 
-Dispatch de 5 agentes de review (correctness / regresiones / seguridad / concurrencia-idempotencia / tests) sobre el diff. Foco crítico: (a) el camino de reserva de `applyApprovedPayment` quedó behaviorally idéntico (upsert extraído sin cambiar semántica); (b) idempotencia de grants y del asiento de ledger; (c) `Payment.bookingId` nullable no rompió ninguna query que asuma no-null; (d) la migración es puramente aditiva. Verificar cada hallazgo antes de reportarlo.
+Dispatch de 5 agentes de review (correctness / regresiones / seguridad / concurrencia-idempotencia / tests) sobre el diff. Foco crítico (surgido de la auditoría de integración):
+- (a) El camino de reserva de `applyApprovedPayment` quedó behaviorally idéntico (upsert extraído sin cambiar semántica); regresión de finance verde.
+- (b) Idempotencia: el `requestId` de grants viene del `d.requestId` del caller, **NO** de `purchase.id` (si viniera de `purchase.id`, un retry generaría venta duplicada); grants + asiento de ledger dentro de la MISMA `$transaction`.
+- (c) `Payment.bookingId` nullable: NINGUNA query o traversal `.booking` quedó sin guard (webhook MP, `verifyAndConfirmPayment`, `bank-transfer-verify`, `expire-holds`) — `tsc` 0 en `src/` lo prueba, pero revisar que los guards rechazan (no crashean) ante un `bookingId` null.
+- (d) Doble conteo: `getFinancialSummary` (income/refund) excluye filas de paquete; `getPackageSalesTotal` es la única fuente de la plata de paquetes.
+- (e) La migración es puramente aditiva y nullable.
+
+Verificar cada hallazgo antes de reportarlo.
 
 - [ ] **Step 6: Re-correr el gate tras los fixes de simplify/review**
 
@@ -1357,6 +1575,18 @@ EOF
 **NO** hacer merge — esperar OK explícito del usuario.
 
 ---
+
+## Forward-compat — no olvidar en B4b-2/3 (de la auditoría)
+
+Estos NO son gaps de B4b-1 (hoy ningún `Payment` de paquete ni compra `pending`/`online` se crea), pero se rompen/quedan feos en cuanto B4b-2/3 los produzcan:
+
+- **Webhook MP:** reemplazar el guard interino "rechazar `bookingId` null" (Task 1 Step 5) por el dispatch real a `applyApprovedPackagePayment` cuando el `metadata` traiga `packagePurchaseId`. En `refunded`, enrutar a `refundPackagePurchase` en vez de las reversiones booking-keyed.
+- **`package-panel.tsx` (badge de estado, `~línea 100`):** hoy `active`/`refunded` tienen label y el resto cae al string crudo. Agregar `pending: 'Pendiente'` / `expired: 'Vencido'` cuando esos estados se produzcan. Mostrar `source` (manual/online) si se decide.
+- **`getCustomerPackages` (sin filtro de estado):** empezará a listar compras `pending`/`expired` en el panel de la dueña — confirmar que es lo deseado, junto con el fix de labels de arriba.
+- **`sellPackage` — catch de `P2002` (`packages.ts:135`):** hoy es amplio y solo puede dispararlo el unique de grants `[customerId, requestId]`. Antes de introducir cualquier unique nuevo en `PackagePurchase`/`LedgerEntry`, angostar el catch a la constraint de grants, o un P2002 no relacionado se traga como "ya vendido".
+- **`customers.ts:54/206` (`paymentType: { not: 'refund' }`):** un futuro `Payment(package_purchase)` entra automáticamente al "total gastado" de la clienta. Probablemente deseado — confirmarlo cuando exista.
+- **`createManualPaymentSchema` (`payments.ts:360`):** su `z.enum` no acepta `package_purchase`; si se quisiera registrar una compra de paquete por el flujo de pago manual, ampliarlo (hoy no aplica: paquetes tienen su propio camino).
+- **`loadLoyaltyCardData` / `/mi`:** hoy oculta compras no-`active` (correcto). Si se quiere mostrar "paquete pendiente de confirmación" a la clienta, ampliar ese filtro — nunca relajar los filtros de `consume.ts`/`getActivePackagesForCustomer` (habilitarían consumir sesiones no pagadas).
 
 ## Notas de seguridad / landmines aplicables
 
