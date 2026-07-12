@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
-import { applyApprovedPayment } from '@/server/services/finance'
+import { applyApprovedPayment, applyApprovedPackagePayment } from '@/server/services/finance'
 import { createHmac, timingSafeEqual } from 'crypto'
-import { sendBookingConfirmedNotification, sendNotificationSafely } from '@/lib/notifications'
+import {
+  sendBookingConfirmedNotification,
+  sendNotificationSafely,
+  sendMultiNotificationSafely,
+  sendPackagePurchasedNotification,
+  sendPackageSoldNotificationToBusiness,
+} from '@/lib/notifications'
 import { logger } from '@/lib/logger'
 import { decryptSecret } from '@/lib/payments/encryption'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
@@ -183,7 +190,7 @@ export async function POST(request: NextRequest) {
 
     const payment = await prisma.payment.findUnique({
       where: { id: localPaymentId },
-      include: { booking: true },
+      include: { booking: true, packagePurchase: { select: { customerId: true } } },
     })
 
     if (!payment) {
@@ -248,7 +255,13 @@ export async function POST(request: NextRequest) {
     const metadata = mpPayment.metadata ?? {}
 
     if (mpStatus === 'approved') {
-      const requiredMetadataFields = ['localPaymentId', 'bookingId', 'businessId', 'paymentType'] as const
+      // Rama paquete (B4b-2): un pago sin bookingId con packagePurchaseId set es
+      // una compra de paquete online; su metadata requerida difiere (packagePurchaseId
+      // en vez de bookingId).
+      const isPackagePayment = !payment.bookingId && !!payment.packagePurchaseId
+      const requiredMetadataFields = isPackagePayment
+        ? (['localPaymentId', 'packagePurchaseId', 'businessId', 'paymentType'] as const)
+        : (['localPaymentId', 'bookingId', 'businessId', 'paymentType'] as const)
       const missingFields = requiredMetadataFields.filter(f => !metadata[f])
       if (missingFields.length > 0) {
         console.error('[MP Webhook] missing required metadata fields for approved payment', {
@@ -268,26 +281,45 @@ export async function POST(request: NextRequest) {
         })
         return NextResponse.json({ error: 'localPaymentId mismatch' }, { status: 400 })
       }
-      if (metadata.bookingId !== payment.bookingId) {
-        console.error('[MP Webhook] bookingId mismatch', {
-          metadata: metadata.bookingId,
-          db: payment.bookingId,
-        })
-        return NextResponse.json({ error: 'bookingId mismatch' }, { status: 400 })
+
+      if (isPackagePayment) {
+        if (metadata.packagePurchaseId !== payment.packagePurchaseId) {
+          console.error('[MP Webhook] packagePurchaseId mismatch', {
+            metadata: metadata.packagePurchaseId,
+            db: payment.packagePurchaseId,
+          })
+          return NextResponse.json({ error: 'packagePurchaseId mismatch' }, { status: 400 })
+        }
+        if (metadata.paymentType !== 'package_purchase') {
+          console.error('[MP Webhook] paymentType mismatch', {
+            metadata: metadata.paymentType,
+            db: 'package_purchase',
+          })
+          return NextResponse.json({ error: 'paymentType mismatch' }, { status: 400 })
+        }
+      } else {
+        if (metadata.bookingId !== payment.bookingId) {
+          console.error('[MP Webhook] bookingId mismatch', {
+            metadata: metadata.bookingId,
+            db: payment.bookingId,
+          })
+          return NextResponse.json({ error: 'bookingId mismatch' }, { status: 400 })
+        }
+        if (metadata.paymentType !== payment.paymentType) {
+          console.error('[MP Webhook] paymentType mismatch', {
+            metadata: metadata.paymentType,
+            db: payment.paymentType,
+          })
+          return NextResponse.json({ error: 'paymentType mismatch' }, { status: 400 })
+        }
       }
+
       if (metadata.businessId !== payment.businessId) {
         console.error('[MP Webhook] businessId mismatch', {
           metadata: metadata.businessId,
           db: payment.businessId,
         })
         return NextResponse.json({ error: 'businessId mismatch' }, { status: 400 })
-      }
-      if (metadata.paymentType !== payment.paymentType) {
-        console.error('[MP Webhook] paymentType mismatch', {
-          metadata: metadata.paymentType,
-          db: payment.paymentType,
-        })
-        return NextResponse.json({ error: 'paymentType mismatch' }, { status: 400 })
       }
     }
 
@@ -334,15 +366,60 @@ export async function POST(request: NextRequest) {
     }
 
     if (mpStatus === 'approved') {
-      // B4b-1: en esta rebanada el webhook solo procesa pagos de reserva. Un pago
-      // sin bookingId (compra de paquete) aún no se produce; se rechaza defensivo
-      // hasta que B4b-2 cablee el dispatch a la rama paquete.
-      const bookingId = payment.bookingId
-      if (!bookingId) {
-        return NextResponse.json({ error: 'Pago no asociado a una reserva' }, { status: 400 })
+      if (payment.bookingId) {
+        const bookingId = payment.bookingId
+        // Pago aprobado: actualizar y confirmar booking
+        const result = await prisma.$transaction(async (tx) => {
+          // Actualizar providerPaymentId y rawPayload
+          await tx.payment.update({
+            where: { id: payment.id },
+            data: {
+              providerPaymentId: mpPayment.id,
+              rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+            },
+          })
+
+          return applyApprovedPayment({
+            tx,
+            bookingId,
+            businessId: payment.businessId,
+            amount: payment.amount,
+            currency: payment.currency,
+            provider: 'mercado_pago',
+            providerPaymentId: mpPayment.id,
+            paymentType: payment.paymentType,
+            paymentMethod: payment.paymentMethod,
+            rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+            paymentId: payment.id,
+          })
+        })
+
+        if (!result || !result.booking) {
+          throw new Error('Reserva no encontrada')
+        }
+
+        if (result.wasConfirmed) {
+          await sendNotificationSafely('booking confirmed', () =>
+            sendBookingConfirmedNotification(bookingId, payment.businessId),
+          )
+        }
+
+        logger.payment.approved(payment.id, bookingId, payment.businessId)
+
+        return NextResponse.json({
+          success: true,
+          message: 'Payment approved',
+          bookingId: result.booking.id,
+        })
       }
-      // Pago aprobado: actualizar y confirmar booking
-      const result = await prisma.$transaction(async (tx) => {
+
+      // Rama paquete (B4b-2): pago sin bookingId asociado a una compra de paquete.
+      const packagePurchaseId = payment.packagePurchaseId
+      if (!packagePurchaseId) {
+        return NextResponse.json({ error: 'Pago no asociado a una reserva ni a un paquete' }, { status: 400 })
+      }
+
+      await prisma.$transaction(async (tx) => {
         // Actualizar providerPaymentId y rawPayload
         await tx.payment.update({
           where: { id: payment.id },
@@ -352,9 +429,9 @@ export async function POST(request: NextRequest) {
           },
         })
 
-        return applyApprovedPayment({
+        await applyApprovedPackagePayment({
           tx,
-          bookingId,
+          packagePurchaseId,
           businessId: payment.businessId,
           amount: payment.amount,
           currency: payment.currency,
@@ -367,22 +444,45 @@ export async function POST(request: NextRequest) {
         })
       })
 
-      if (!result || !result.booking) {
-        throw new Error('Reserva no encontrada')
-      }
+      await sendNotificationSafely('package purchased customer', () =>
+        sendPackagePurchasedNotification(packagePurchaseId, payment.businessId),
+      )
 
-      if (result.wasConfirmed) {
-        await sendNotificationSafely('booking confirmed', () =>
-          sendBookingConfirmedNotification(bookingId, payment.businessId),
-        )
-      }
+      await sendMultiNotificationSafely('package sold business', async () => {
+        const purchase = await prisma.packagePurchase.findUnique({
+          where: { id: packagePurchaseId },
+          include: {
+            product: { select: { name: true } },
+            customer: { select: { name: true } },
+            business: { select: { name: true, currency: true } },
+          },
+        })
+        if (!purchase) {
+          return [{ success: false as const, skipped: 'Compra no encontrada' }]
+        }
+        return sendPackageSoldNotificationToBusiness(payment.businessId, {
+          businessName: purchase.business.name,
+          customerName: purchase.customer.name,
+          productName: purchase.product.name,
+          totalSessions: purchase.quantity + purchase.bonusQuantity,
+          pricePaid: purchase.pricePaid,
+          businessCurrency: purchase.business.currency || 'CLP',
+        })
+      })
 
-      logger.payment.approved(payment.id, bookingId, payment.businessId)
+      const customerId = payment.packagePurchase?.customerId
+      if (customerId) {
+        revalidatePath(`/dashboard/customers/${customerId}`)
+      }
+      revalidatePath('/dashboard/paquetes')
+      revalidatePath('/dashboard/payments')
+
+      logger.payment.approved(payment.id, packagePurchaseId, payment.businessId)
 
       return NextResponse.json({
         success: true,
-        message: 'Payment approved',
-        bookingId: result.booking.id,
+        message: 'Package payment approved',
+        packagePurchaseId,
       })
     }
 
@@ -449,6 +549,9 @@ export async function POST(request: NextRequest) {
             await reverseAutoRewardsForBooking(tx, payment.bookingId, new Date(), payment.businessId)
           }
         }
+        // Paquete: B4b-2 solo degrada el Payment (arriba). No se revierten grants
+        // (política de reversión de paquete activo = B4b-3). El refund real por MP
+        // también es B4b-3; acá solo queda el registro degradado.
       })
 
       return NextResponse.json({
