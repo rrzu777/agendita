@@ -769,6 +769,7 @@ model PackagePurchase {
   expiresAt         DateTime?
   refundedAt        DateTime?
   refundedAmount    Int?
+  chargebackAt      DateTime?
   createdByUserId   String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
