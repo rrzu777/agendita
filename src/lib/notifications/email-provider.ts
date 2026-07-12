@@ -12,6 +12,7 @@ import type {
   NewBookingBusinessEmailData,
   BankTransferDeclaredEmailData,
   BankTransferVerifyCustomerEmailData,
+  BalanceTransferCustomerEmailData,
   ReminderEmailData,
   LoyaltyRewardEmailData,
   RescheduledEmailData,
@@ -40,6 +41,12 @@ import {
   bankTransferRejectedCustomerText,
   bankTransferExpiredCustomerHtml,
   bankTransferExpiredCustomerText,
+  balanceTransferDeclaredBusinessHtml,
+  balanceTransferDeclaredBusinessText,
+  balanceTransferVerifiedCustomerHtml,
+  balanceTransferVerifiedCustomerText,
+  balanceTransferRejectedCustomerHtml,
+  balanceTransferRejectedCustomerText,
   bookingCancelledCustomerHtml,
   bookingCancelledCustomerText,
   bookingRescheduledCustomerHtml,
@@ -215,6 +222,26 @@ export async function sendBankTransferDeclaredToBusiness(
   )
 }
 
+export async function sendBalanceTransferDeclaredToBusiness(
+  businessId: string,
+  data: BankTransferDeclaredEmailData,
+): Promise<EmailResult[]> {
+  const ownerEmails = await getBusinessOwnerEmails(businessId)
+
+  if (ownerEmails.length === 0) {
+    return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
+  }
+
+  const html = balanceTransferDeclaredBusinessHtml(data)
+  const text = balanceTransferDeclaredBusinessText(data)
+
+  return Promise.all(
+    ownerEmails.map((owner) =>
+      sendEmail(owner.email, `Transferencia del saldo por verificar - ${data.businessName}`, html, text, {}),
+    ),
+  )
+}
+
 export async function sendTransferReminderToCustomer(data: TransferReminderCustomerEmailData): Promise<EmailResult> {
   if (!data.customerEmail) return { success: false, skipped: 'Cliente sin email' }
   return sendEmail(
@@ -258,6 +285,28 @@ export async function sendBankTransferRejectedToCustomer(data: BankTransferVerif
     `Tu transferencia no pudo verificarse - ${data.businessName}`,
     bankTransferRejectedCustomerHtml(data),
     bankTransferRejectedCustomerText(data),
+    { replyTo: data.businessReplyToEmail },
+  )
+}
+
+export async function sendBalanceTransferVerifiedToCustomer(data: BalanceTransferCustomerEmailData): Promise<EmailResult> {
+  if (!data.customerEmail) return { success: false, skipped: 'Cliente sin email' }
+  return sendEmail(
+    data.customerEmail,
+    `Recibimos tu pago - ${data.businessName}`,
+    balanceTransferVerifiedCustomerHtml(data),
+    balanceTransferVerifiedCustomerText(data),
+    { replyTo: data.businessReplyToEmail },
+  )
+}
+
+export async function sendBalanceTransferRejectedToCustomer(data: BalanceTransferCustomerEmailData): Promise<EmailResult> {
+  if (!data.customerEmail) return { success: false, skipped: 'Cliente sin email' }
+  return sendEmail(
+    data.customerEmail,
+    `Tu transferencia no pudo verificarse - ${data.businessName}`,
+    balanceTransferRejectedCustomerHtml(data),
+    balanceTransferRejectedCustomerText(data),
     { replyTo: data.businessReplyToEmail },
   )
 }

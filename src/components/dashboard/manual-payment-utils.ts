@@ -17,6 +17,10 @@ export type ManualPaymentBooking = {
   remainingBalance: number
   service: { name: string } | null
   customer: { name: string } | null
+  // Opcional: solo lo traen los llamadores que ya consultan `payments`
+  // (getBookings). Habilita el aviso de "saldo por verificar" en el diálogo
+  // sin forzar a los demás llamadores a agregar la relación.
+  payments?: Array<{ providerPaymentId?: string | null }>
 }
 
 export function isManualPaymentAllowed(booking: Pick<ManualPaymentBooking, 'status' | 'remainingBalance'>) {

@@ -37,13 +37,73 @@ export function isDeclaredTransferPayment(
   )
 }
 
-// "Esta reserva tiene una transferencia declarada pendiente de verificar."
+// "Esta reserva tiene una transferencia del ABONO pendiente de verificar."
 // Fuente única del predicado que el dashboard deriva en varios lugares (tabla,
-// card móvil, aviso home, conteo). Asume que `payments` ya viene filtrado por
-// `declaredTransferPaymentWhere` (como lo trae getBookings): un array no vacío
-// sobre una reserva pending_payment = "por verificar".
+// card móvil, aviso home, conteo). Discrimina por `BT_DECLARED_PREFIX`, así que
+// tolera arrays mixtos (getBookings trae abono Y saldo vía
+// `anyDeclaredTransferWhere`): agarra solo los abonos sobre pending_payment.
 export function hasPendingDeclaredTransfer(
-  booking: { status: string; payments: unknown[] },
+  booking: { status: string; payments: Array<{ providerPaymentId?: string | null }> },
 ): boolean {
-  return booking.status === 'pending_payment' && booking.payments.length > 0
+  return (
+    booking.status === 'pending_payment' &&
+    booking.payments.some((p) => p.providerPaymentId?.startsWith(BT_DECLARED_PREFIX))
+  )
+}
+
+// ── Saldo restante (feature #3, spec 2026-07-11-saldo-por-transferencia) ──
+// Prefijo PROPIO y explícito (no un sufijo de bt-declared:): ninguna query de
+// abono debe matchear un saldo por accidente. Verificado: 'bt-balance:' no
+// satisface startsWith('bt-declared:').
+export const BT_BALANCE_PREFIX = 'bt-balance:'
+
+export function btBalanceId(bookingId: string): string {
+  return `${BT_BALANCE_PREFIX}${bookingId}`
+}
+
+// Estados "firmes" donde el saldo por transferencia aplica: la reserva ya está
+// pagada de abono (o atendida), sin hold ni cupo en juego. Fuente única para
+// no repetir el par confirmed/completed en cada predicado y query del saldo.
+export const FIRM_BOOKING_STATUSES = ['confirmed', 'completed'] as const
+
+export function isFirmBooking(status: string): boolean {
+  return status === 'confirmed' || status === 'completed'
+}
+
+export const declaredBalancePaymentWhere = {
+  provider: 'manual',
+  status: 'pending',
+  providerPaymentId: { startsWith: BT_BALANCE_PREFIX },
+} satisfies Prisma.PaymentWhereInput
+
+export function isDeclaredBalancePayment(
+  p: { provider: string; status: string; providerPaymentId?: string | null },
+): boolean {
+  return (
+    p.provider === 'manual' &&
+    p.status === 'pending' &&
+    !!p.providerPaymentId?.startsWith(BT_BALANCE_PREFIX)
+  )
+}
+
+// Abono O saldo pendientes: para superficies de verificación de la dueña y
+// sweeps de cancelación (cancelBooking / updateBookingStatus).
+export const anyDeclaredTransferWhere = {
+  provider: 'manual',
+  status: 'pending',
+  OR: [
+    { providerPaymentId: { startsWith: BT_DECLARED_PREFIX } },
+    { providerPaymentId: { startsWith: BT_BALANCE_PREFIX } },
+  ],
+} satisfies Prisma.PaymentWhereInput
+
+// "Reserva firme con transferencia del SALDO pendiente de verificar."
+// Badge ADICIONAL en el dashboard (no reemplaza Confirmada/Completada).
+export function hasPendingBalanceTransfer(
+  booking: { status: string; payments: Array<{ providerPaymentId?: string | null }> },
+): boolean {
+  return (
+    isFirmBooking(booking.status) &&
+    booking.payments.some((p) => p.providerPaymentId?.startsWith(BT_BALANCE_PREFIX))
+  )
 }
