@@ -13,12 +13,13 @@ const bank = {
   email: null,
   instructions: 'nombre en el asunto',
   holdHours: 24,
+  requireProof: false,
 }
 
 describe('TransferDetails', () => {
   it('muestra datos, monto y botón declarar', () => {
     const html = renderToStaticMarkup(
-      <TransferDetails bank={bank} amount={5000} deadline={new Date('2026-08-01T15:00:00Z')} timezone="America/Santiago" declaring={false} onDeclare={() => {}} />,
+      <TransferDetails bank={bank} amount={5000} deadline={new Date('2026-08-01T15:00:00Z')} timezone="America/Santiago" declaring={false} onDeclare={() => {}} bookingId="b1" />,
     )
     expect(html).toContain('BancoEstado')
     expect(html).toContain('12345678')
@@ -30,7 +31,7 @@ describe('TransferDetails', () => {
 
   it('sin deadline no muestra plazo y el botón declara ocupado', () => {
     const html = renderToStaticMarkup(
-      <TransferDetails bank={bank} amount={5000} deadline={null} timezone="America/Santiago" declaring={true} onDeclare={() => {}} />,
+      <TransferDetails bank={bank} amount={5000} deadline={null} timezone="America/Santiago" declaring={true} onDeclare={() => {}} bookingId="b1" />,
     )
     expect(html).not.toContain('Tenés hasta')
     expect(html).toContain('Avisando')
