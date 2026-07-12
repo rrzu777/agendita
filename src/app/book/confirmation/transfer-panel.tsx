@@ -21,11 +21,11 @@ export function TransferPanel({ bank, amount, deadline, timezone, bookingId, kin
   const [declaring, setDeclaring] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function handleDeclare() {
+  async function handleDeclare(proof: { proofKey: string; proofContentType: string } | null) {
     setDeclaring(true)
     setError(null)
     try {
-      await (kind === 'balance' ? declareBalanceTransfer(bookingId) : declareBankTransfer(bookingId))
+      await (kind === 'balance' ? declareBalanceTransfer(bookingId, proof ?? {}) : declareBankTransfer(bookingId, proof ?? {}))
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No pudimos registrar tu aviso')
@@ -36,7 +36,7 @@ export function TransferPanel({ bank, amount, deadline, timezone, bookingId, kin
 
   return (
     <div className="mb-8">
-      <TransferDetails bank={bank} amount={amount} deadline={deadline} timezone={timezone} declaring={declaring} onDeclare={handleDeclare} kind={kind} />
+      <TransferDetails bank={bank} amount={amount} deadline={deadline} timezone={timezone} declaring={declaring} onDeclare={handleDeclare} kind={kind} bookingId={bookingId} />
       {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
     </div>
   )
