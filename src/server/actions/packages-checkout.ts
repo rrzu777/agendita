@@ -208,11 +208,15 @@ export async function initiatePackagePayment(input: { purchaseId: string }): Pro
   const currency = purchase.business.currency || 'CLP'
 
   // Evitar múltiples Payment pending por doble click: reusar si ya existe uno.
+  // Scopeado por provider: si la clienta declaró una transferencia (Payment 'manual')
+  // y ahora reintenta por MP, NO reusar ese Payment manual — el webhook lo rechazaría
+  // por provider mismatch. Cada provider usa su propio Payment.
   const existingPending = await prisma.payment.findFirst({
     where: {
       packagePurchaseId: purchase.id,
       paymentType: PaymentType.package_purchase,
       status: PaymentStatus.pending,
+      provider: provider.name as PaymentProvider,
     },
   })
 

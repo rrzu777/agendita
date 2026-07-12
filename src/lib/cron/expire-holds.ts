@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { BookingStatus, type PrismaClient } from '@prisma/client'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
-import { declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
+import { declaredTransferPaymentWhere, declaredPkgTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 import {
   sendNotificationSafely,
   sendBankTransferExpiredToCustomer,
@@ -32,8 +32,16 @@ export async function expireStaleHolds(
   // ── Sweep de compras de paquete pending con hold vencido (B4b-3) ──
   // Corre SIEMPRE, antes del early-return de reservas (el caso común es 0 reservas
   // vencidas; si el sweep fuera después del return, nunca correría).
+  // Sólo barre compras ABANDONADAS (nunca se declaró la transferencia). Si la
+  // clienta ya declaró "ya transferí" (existe un Payment bt-pkg-declared pending),
+  // NO se expira: la plata pudo haberse enviado, así que queda pendiente de que la
+  // dueña confirme/rechace (un paquete no bloquea cupo, no hay urgencia de expirar).
   const expiredPurchases = await db.packagePurchase.findMany({
-    where: { status: 'pending', holdExpiresAt: { lt: now } },
+    where: {
+      status: 'pending',
+      holdExpiresAt: { lt: now },
+      payments: { none: declaredPkgTransferPaymentWhere },
+    },
     select: { id: true, businessId: true },
   })
   let packagesExpired = 0

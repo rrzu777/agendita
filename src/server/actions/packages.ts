@@ -148,12 +148,17 @@ export async function refundPackagePurchase(purchaseId: string) {
   // Refund REAL por MP: FUERA de la tx (I/O de red). Sólo si es online, hay id de MP y monto > 0.
   if (payment && payment.provider === 'mercado_pago' && payment.providerPaymentId && refund > 0) {
     const provider = await getMercadoPagoProviderForBusiness(businessId)
-    await provider.refundPayment({
+    const result = await provider.refundPayment({
       providerPaymentId: payment.providerPaymentId,
       amount: refund,
       currency: payment.currency,
       idempotencyKey: `refund:pkg:${purchase.id}`,
     })
+    // Si MP no aceptó el reembolso, NO revertir localmente (evita marcar refunded
+    // sin que el dinero se haya devuelto). 'pending' es aceptable (se acredita async).
+    if (result.status === 'failed') {
+      throw new Error('El reembolso en Mercado Pago no pudo procesarse. Intentá de nuevo o revisá en tu cuenta de Mercado Pago.')
+    }
   }
 
   await prisma.$transaction(async (tx) => {
@@ -164,6 +169,14 @@ export async function refundPackagePurchase(purchaseId: string) {
       paymentId: payment?.id ?? null,
       now,
     })
+    // El Payment de la compra queda 'refunded' (el núcleo sólo toca purchase/grants/ledger).
+    // Sin esto totalPaidApproved sobreestima lo pagado y el pago se ve 'approved'.
+    if (payment) {
+      await tx.payment.updateMany({
+        where: { id: payment.id, status: 'approved' },
+        data: { status: 'refunded' },
+      })
+    }
   })
 
   revalidatePath('/dashboard/customers/' + purchase.customerId)
@@ -230,5 +243,12 @@ export async function getPackageSalesTotal(): Promise<number> {
     prisma.ledgerEntry.aggregate({ _sum: { amount: true }, where: { businessId, type: 'package_sale' } }),
     prisma.ledgerEntry.aggregate({ _sum: { amount: true }, where: { businessId, type: 'refund_issued', packagePurchaseId: { not: null } } }),
   ])
-  return Math.max(0, (sales._sum.amount ?? 0) - (refunds._sum.amount ?? 0))
+  const net = (sales._sum.amount ?? 0) - (refunds._sum.amount ?? 0)
+  // Clamp a 0 para no mostrar un KPI negativo. Un neto negativo señala un reembolso
+  // sin venta que netear (típicamente un paquete legacy de B4a sin asiento package_sale);
+  // lo logueamos para que no quede invisible.
+  if (net < 0) {
+    console.warn(`[getPackageSalesTotal] neto negativo (${net}) para business ${businessId} — reembolso sin package_sale que netear (¿legacy B4a?)`)
+  }
+  return Math.max(0, net)
 }

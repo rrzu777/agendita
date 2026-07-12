@@ -363,28 +363,35 @@ export async function POST(request: NextRequest) {
         },
       })
       if (purchase && purchase.status === 'active') {
+        // 'charged_back' = disputa involuntaria → reversión total (clawback + descubrir
+        // reservas) + alarma a la dueña. 'refunded' que llega con la compra AÚN activa
+        // (refund directo en MP, o carrera del refund voluntario cuyo tx local no cerró)
+        // → semántica voluntary conservadora, sin alarma de contracargo.
+        const reverseMode = mpStatus === 'charged_back' ? 'chargeback' : 'voluntary'
         await prisma.$transaction(async (tx) => {
           await tx.payment.update({
             where: { id: payment.id },
             data: { status: 'refunded', providerPaymentId: mpPayment.id, rawPayload: mpPayment as unknown as Prisma.InputJsonValue },
           })
           await reversePackagePurchaseInTx(tx, purchase, {
-            mode: 'chargeback',
+            mode: reverseMode,
             amount: mpPayment.transaction_amount,
             currency: payment.currency,
             paymentId: payment.id,
             now: new Date(),
           })
         })
-        await sendMultiNotificationSafely('package disputed business', async () =>
-          sendPackageDisputedToBusiness(payment.businessId, {
-            businessName: purchase.business.name, customerName: purchase.customer.name, productName: purchase.product.name,
-            amount: mpPayment.transaction_amount, businessCurrency: purchase.business.currency || 'CLP',
-          }),
-        )
+        if (reverseMode === 'chargeback') {
+          await sendMultiNotificationSafely('package disputed business', async () =>
+            sendPackageDisputedToBusiness(payment.businessId, {
+              businessName: purchase.business.name, customerName: purchase.customer.name, productName: purchase.product.name,
+              amount: mpPayment.transaction_amount, businessCurrency: purchase.business.currency || 'CLP',
+            }),
+          )
+        }
         revalidatePath(`/dashboard/customers/${purchase.customerId}`)
         revalidatePath('/dashboard/paquetes')
-        return NextResponse.json({ success: true, message: 'Package chargeback processed', packagePurchaseId })
+        return NextResponse.json({ success: true, message: `Package ${reverseMode} processed`, packagePurchaseId })
       }
       // purchase ya no está active (eco del refund voluntario / redelivery) → cae al 200 idempotente.
     }

@@ -115,6 +115,14 @@ async function reverseChargebackExtras(
 
     if (UPCOMING.has(bk.status)) {
       // Reserva futura no completada: liberar la cobertura y descubrir la reserva.
+      // El monto que el paquete cubría (discountAmount) vuelve a ser cobrable —
+      // sin esto la reserva quedaría pending_payment con remainingBalance 0 y el
+      // flujo de cobro la rechazaría como "ya pagada".
+      const redemption = await tx.promotionRedemption.findUnique({
+        where: { bookingId: bk.id },
+        select: { discountAmount: true, status: true },
+      })
+      const covered = redemption?.status === 'applied' ? redemption.discountAmount : 0
       await tx.promotionRedemption.updateMany({
         where: { bookingId: bk.id, status: 'applied' },
         data: { status: 'released', releaseReason: 'refunded', releasedAt: now },
@@ -124,9 +132,15 @@ async function reverseChargebackExtras(
         data: { status: 'reversed', reversedAt: now, redeemedBookingId: null, redeemedAt: null },
       })
       // Descubrir: la reserva vuelve a cobrable (owner-visible, sin auto-cancelar).
+      // CAS por status: no pisar una reserva que cambió de estado concurrentemente.
       await tx.booking.updateMany({
-        where: { id: bk.id },
-        data: { status: 'pending_payment', paymentStatus: 'unpaid' },
+        where: { id: bk.id, status: bk.status },
+        data: {
+          status: 'pending_payment',
+          paymentStatus: 'unpaid',
+          finalAmount: covered,
+          remainingBalance: covered,
+        },
       })
     } else if (bk.status === 'completed') {
       // Sesión ya entregada: no se descubre; clawback de puntos.

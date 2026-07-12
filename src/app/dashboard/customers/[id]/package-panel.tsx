@@ -29,6 +29,7 @@ function packageBadge(p: PackagePurchaseItem): { label: string; className: strin
   if (p.status === 'refunded') return { label: 'Reembolsado', className: 'bg-muted text-muted-foreground' }
   if (p.status === 'pending') return { label: 'Por confirmar', className: 'bg-amber-100 text-amber-800' }
   if (p.status === 'expired') return { label: 'Vencido', className: 'bg-muted text-muted-foreground' }
+  if (p.status === 'rejected') return { label: 'Rechazado', className: 'bg-muted text-muted-foreground' }
   return { label: p.status, className: 'bg-muted text-muted-foreground' }
 }
 

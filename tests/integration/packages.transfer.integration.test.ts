@@ -148,20 +148,27 @@ describe('createPackagePurchase + declarePackageTransfer (transferencia)', () =>
   })
 
   describe('expireStaleHolds — sweep de compras de paquete', () => {
-    it('expira una compra pending con hold vencido y cancela su Payment declarado; deja viva la de hold vigente', async () => {
+    it('expira una compra ABANDONADA (sin declarar); NO toca una declarada ni una de hold vigente', async () => {
       const { expireStaleHolds } = await import('@/lib/cron/expire-holds')
       const now = new Date('2026-07-12T12:00:00Z')
 
       const customer = await prisma.customer.create({ data: { businessId: BIZ, name: 'Cli', phone: '+56900000021' } })
-      // Vencida: hold en el pasado + Payment declarado pending.
-      const stale = await prisma.packagePurchase.create({ data: {
+      // Abandonada: hold vencido, SIN transferencia declarada → se expira.
+      const abandoned = await prisma.packagePurchase.create({ data: {
+        businessId: BIZ, customerId: customer.id, packageProductId: productId,
+        pricePaid: 50000, quantity: 5, bonusQuantity: 0, coversAll: true, coveredServiceIds: [],
+        source: 'online', status: 'pending', holdExpiresAt: new Date('2026-07-11T00:00:00Z'),
+      } })
+      // Declarada: hold vencido PERO con Payment bt-pkg-declared pending → NO se expira
+      // (la plata pudo enviarse; queda para que la dueña confirme/rechace).
+      const declared = await prisma.packagePurchase.create({ data: {
         businessId: BIZ, customerId: customer.id, packageProductId: productId,
         pricePaid: 50000, quantity: 5, bonusQuantity: 0, coversAll: true, coveredServiceIds: [],
         source: 'online', status: 'pending', holdExpiresAt: new Date('2026-07-11T00:00:00Z'),
       } })
       await prisma.payment.create({ data: {
-        businessId: BIZ, packagePurchaseId: stale.id, customerId: customer.id,
-        provider: 'manual', providerPaymentId: `bt-pkg-declared:${stale.id}`, amount: 50000, currency: 'CLP',
+        businessId: BIZ, packagePurchaseId: declared.id, customerId: customer.id,
+        provider: 'manual', providerPaymentId: `bt-pkg-declared:${declared.id}`, amount: 50000, currency: 'CLP',
         status: 'pending', paymentType: 'package_purchase', paymentMethod: 'Transferencia',
       } })
       // Viva: hold en el futuro.
@@ -174,10 +181,13 @@ describe('createPackagePurchase + declarePackageTransfer (transferencia)', () =>
       const result = await expireStaleHolds(now)
 
       expect(result.packagesExpired).toBeGreaterThanOrEqual(1)
-      const staleAfter = await prisma.packagePurchase.findUnique({ where: { id: stale.id } })
-      expect(staleAfter!.status).toBe('expired')
-      const stalePay = await prisma.payment.findFirst({ where: { packagePurchaseId: stale.id } })
-      expect(stalePay!.status).toBe('cancelled')
+      const abandonedAfter = await prisma.packagePurchase.findUnique({ where: { id: abandoned.id } })
+      expect(abandonedAfter!.status).toBe('expired')
+      // La declarada sigue pending y su Payment sigue pending (no barrida).
+      const declaredAfter = await prisma.packagePurchase.findUnique({ where: { id: declared.id } })
+      expect(declaredAfter!.status).toBe('pending')
+      const declaredPay = await prisma.payment.findFirst({ where: { packagePurchaseId: declared.id } })
+      expect(declaredPay!.status).toBe('pending')
       const freshAfter = await prisma.packagePurchase.findUnique({ where: { id: fresh.id } })
       expect(freshAfter!.status).toBe('pending')
     })
