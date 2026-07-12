@@ -6,32 +6,9 @@ import { addDays } from 'date-fns'
 import { Prisma } from '@prisma/client'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
-import { packageProductSchema, sellPackageSchema, computePackageRefund, perGrantRequestId } from '@/lib/packages/schema'
-import { generateGrantCode } from '@/lib/loyalty/redeem'
+import { packageProductSchema, sellPackageSchema, computePackageRefund } from '@/lib/packages/schema'
 import { normalizePhone } from '@/lib/customers/phone'
-
-// ── helpers module-local ──────────────────────────────────────────────
-const PACKAGE_MARKER_NAME = 'package-coverage'
-
-/** Una Promotion marcador por negocio a la que apuntan los grants de paquete.
- *  triggerType 'granted' (para que release reactive el grant), free_service, appliesToAll,
- *  pointsCost null (excluida del catálogo de canje). Creada lazily. */
-async function getOrCreatePackageMarkerPromotion(tx: Prisma.TransactionClient, businessId: string): Promise<string> {
-  const existing = await tx.promotion.findFirst({
-    where: { businessId, triggerType: 'granted', name: PACKAGE_MARKER_NAME, pointsCost: null },
-    select: { id: true },
-  })
-  if (existing) return existing.id
-  const created = await tx.promotion.create({
-    data: {
-      businessId, name: PACKAGE_MARKER_NAME, triggerType: 'granted',
-      rewardType: 'free_service', rewardValue: 0, appliesToAll: true, isActive: true,
-      metadata: { kind: 'package-coverage' } as Prisma.InputJsonValue,
-    },
-    select: { id: true },
-  })
-  return created.id
-}
+import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
 
 // ── CRUD de productos ─────────────────────────────────────────────────
 export async function listPackageProducts() {
@@ -103,11 +80,9 @@ export async function sellPackage(data: unknown) {
 
   const now = new Date()
   const expiresAt = product.expiryDays ? addDays(now, product.expiryDays) : null
-  const total = product.quantity + product.bonusQuantity
 
   try {
     await prisma.$transaction(async (tx) => {
-      const markerId = await getOrCreatePackageMarkerPromotion(tx, businessId)
       const purchase = await tx.packagePurchase.create({
         data: {
           businessId, customerId: customer.id, packageProductId: product.id,
@@ -117,17 +92,7 @@ export async function sellPackage(data: unknown) {
           expiresAt, createdByUserId: user.id,
         },
       })
-      for (let i = 0; i < total; i++) {
-        await tx.promotionGrant.create({
-          data: {
-            businessId, promotionId: markerId, customerId: customer.id,
-            code: await generateGrantCode(tx, businessId), pointsSpent: 0, status: 'active',
-            expiresAt, refundOnExpiry: false, forfeitOnNoShow: false,
-            requestId: perGrantRequestId(d.requestId, i), packagePurchaseId: purchase.id,
-            createdByUserId: user.id,
-          },
-        })
-      }
+      await activatePackagePurchaseInTx(tx, purchase, { requestId: d.requestId, createdByUserId: user.id })
     })
   } catch (e) {
     // Reintento idempotente: si los grants ya existían por este requestId (P2002 en
