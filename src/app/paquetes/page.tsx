@@ -7,7 +7,12 @@ import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { resolveOnlinePaymentAvailabilityForBusiness } from '@/lib/payments/factory'
 import { getPackageCheckoutPrefill } from '@/server/actions/packages-checkout'
 
-export default async function PaquetesIndexPage() {
+export default async function PaquetesIndexPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ comprar?: string }>
+}) {
+  const { comprar } = await searchParams
   const requestHeaders = await headers()
   const tenant = await getTenantFromRequest(requestHeaders)
 
@@ -26,6 +31,7 @@ export default async function PaquetesIndexPage() {
           onlineAvailable={availability.available}
           onlineReason={availability.reason ?? null}
           prefill={prefill}
+          preselectedProductId={comprar}
         />
       )
     }

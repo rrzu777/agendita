@@ -9,10 +9,12 @@ import { getPackageCheckoutPrefill } from '@/server/actions/packages-checkout'
 
 interface PaquetesPageProps {
   params: Promise<{ slug: string }>
+  searchParams: Promise<{ comprar?: string }>
 }
 
-export default async function PaquetesSlugPage({ params }: PaquetesPageProps) {
+export default async function PaquetesSlugPage({ params, searchParams }: PaquetesPageProps) {
   const { slug } = await params
+  const { comprar } = await searchParams
   const tenant = await getTenantFromRequest()
 
   if (tenant) {
@@ -41,6 +43,7 @@ export default async function PaquetesSlugPage({ params }: PaquetesPageProps) {
       onlineAvailable={availability.available}
       onlineReason={availability.reason ?? null}
       prefill={prefill}
+      preselectedProductId={comprar}
     />
   )
 }
