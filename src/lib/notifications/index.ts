@@ -26,6 +26,7 @@ export {
   sendLoyaltyRewardNotification,
   sendPackagePurchasedNotification,
   sendPackageSoldNotificationToBusiness,
+  sendPackageDisputedToBusiness,
 } from './email-provider'
 export {
   buildWhatsappUrl,
@@ -82,6 +83,8 @@ export {
   packagePurchasedCustomerText,
   packageSoldBusinessHtml,
   packageSoldBusinessText,
+  packageDisputedBusinessHtml,
+  packageDisputedBusinessText,
 } from './templates'
-export type { EmailResult, BookingEmailData, CancellationEmailData, RescheduledEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, BankTransferVerifyCustomerEmailData, BalanceTransferCustomerEmailData, ReminderEmailData, LoyaltyRewardEmailData, NotificationResult, TransferReminderCustomerEmailData, TransferReminderBusinessEmailData, OwnerBookingChangedData, PackagePurchasedEmailData } from './types'
+export type { EmailResult, BookingEmailData, CancellationEmailData, RescheduledEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, BankTransferVerifyCustomerEmailData, BalanceTransferCustomerEmailData, ReminderEmailData, LoyaltyRewardEmailData, NotificationResult, TransferReminderCustomerEmailData, TransferReminderBusinessEmailData, OwnerBookingChangedData, PackagePurchasedEmailData, PackageDisputedEmailData } from './types'
 export type { BookingWhatsappData, BookingRescheduledWhatsappData, ReviewRequestWhatsappData } from './whatsapp'
