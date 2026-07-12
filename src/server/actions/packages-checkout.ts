@@ -5,6 +5,7 @@ import { addMinutes, addDays } from 'date-fns'
 import { PaymentProvider, PaymentStatus, PaymentType } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth/user'
+import { ensureUserRow, AccountConflictError } from '@/lib/auth/ensure-user-row'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { findOrCreateCustomerInTx } from '@/lib/customers/find-or-create'
 import {
@@ -40,6 +41,18 @@ export async function createPackagePurchase(input: {
 }): Promise<{ purchaseId: string }> {
   const user = await getCurrentUser()
   if (!user) throw new Error('Debes iniciar sesión para comprar un paquete.')
+
+  // Primera compra de una clienta que nunca pasó por /mi: sin esto, la fila
+  // User de Prisma no existe y linkCustomerFromBookingSession (Vía 3, FK
+  // Customer.userId → User.id) hace no-op silencioso — la compra queda sin
+  // dueña y initiatePackagePayment la rechaza como "no corresponde a tu
+  // cuenta" en todos los reintentos. Mismo patrón que prepareMiUser.
+  try {
+    await ensureUserRow(user)
+  } catch (e) {
+    if (e instanceof AccountConflictError) throw new Error(e.message)
+    throw e
+  }
 
   const limit = await checkRateLimit('create-package-purchase', 20, 60000, { userId: user.id })
   if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')

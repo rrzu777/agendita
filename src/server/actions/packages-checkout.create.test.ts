@@ -4,6 +4,12 @@ const getCurrentUser = vi.fn()
 vi.mock('@/lib/auth/user', () => ({ getCurrentUser: () => getCurrentUser() }))
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: vi.fn().mockResolvedValue({ success: true }) }))
 
+const { ensureUserRow, AccountConflictError } = vi.hoisted(() => {
+  class AccountConflictError extends Error {}
+  return { ensureUserRow: vi.fn(), AccountConflictError }
+})
+vi.mock('@/lib/auth/ensure-user-row', () => ({ ensureUserRow, AccountConflictError }))
+
 const findOrCreateCustomerInTx = vi.fn()
 vi.mock('@/lib/customers/find-or-create', () => ({ findOrCreateCustomerInTx: (...a: unknown[]) => findOrCreateCustomerInTx(...a) }))
 
@@ -35,7 +41,9 @@ describe('createPackagePurchase', () => {
   beforeEach(() => {
     Object.values(tx).forEach(m => Object.values(m).forEach(f => (f as ReturnType<typeof vi.fn>).mockReset()))
     getCurrentUser.mockReset(); findOrCreateCustomerInTx.mockReset(); resolveOnlinePaymentAvailabilityForBusiness.mockReset()
+    ensureUserRow.mockReset()
     getCurrentUser.mockResolvedValue({ id: 'u1', email: 'ana@x.cl' })
+    ensureUserRow.mockResolvedValue(undefined)
     resolveOnlinePaymentAvailabilityForBusiness.mockResolvedValue({ available: true, provider: 'mercado_pago' })
     tx.packageProduct.findFirst.mockResolvedValue(product)
     findOrCreateCustomerInTx.mockResolvedValue({ customer: { id: 'c1', email: 'ana@x.cl' }, created: false })
@@ -46,6 +54,23 @@ describe('createPackagePurchase', () => {
   it('rechaza si no hay sesión', async () => {
     getCurrentUser.mockResolvedValue(null)
     await expect(createPackagePurchase(baseInput)).rejects.toThrow(/iniciar sesión|login|sesión/i)
+  })
+
+  it('asegura la fila User (Vía 3) antes de vincular el Customer — clienta que nunca pasó por /mi', async () => {
+    await createPackagePurchase(baseInput)
+    expect(ensureUserRow).toHaveBeenCalledWith({ id: 'u1', email: 'ana@x.cl' })
+    // ensureUserRow debe correr ANTES de findOrCreateCustomerInTx: si no, el FK
+    // Customer.userId -> User.id hace que linkCustomerFromBookingSession (Vía 3)
+    // sea un no-op silencioso y la compra queda sin dueña.
+    const ensureOrder = ensureUserRow.mock.invocationCallOrder[0]
+    const linkOrder = findOrCreateCustomerInTx.mock.invocationCallOrder[0]
+    expect(ensureOrder).toBeLessThan(linkOrder)
+  })
+
+  it('propaga un mensaje limpio si ensureUserRow encuentra un conflicto de cuenta', async () => {
+    ensureUserRow.mockRejectedValue(new AccountConflictError('Tu email ya está asociado a otra cuenta.'))
+    await expect(createPackagePurchase(baseInput)).rejects.toThrow('Tu email ya está asociado a otra cuenta.')
+    expect(findOrCreateCustomerInTx).not.toHaveBeenCalled()
   })
 
   it('re-gatea disponibilidad online y rechaza si no disponible', async () => {
