@@ -188,7 +188,7 @@ export async function getCustomerPackages(customerId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const now = new Date()
   return prisma.packagePurchase.findMany({
-    where: { businessId, customerId, status: { in: ['active', 'refunded'] } },
+    where: { businessId, customerId, status: { in: ['active', 'refunded', 'pending', 'expired'] } },
     orderBy: { createdAt: 'desc' },
     include: {
       product: { select: { name: true } },
