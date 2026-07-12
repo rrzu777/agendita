@@ -16,6 +16,7 @@ import { decryptSecret } from '@/lib/payments/encryption'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { reverseVisitPoints } from '@/lib/loyalty/credit'
 import { reverseAutoRewardsForBooking } from '@/lib/loyalty/automatic'
+import { reversePackagePurchaseInTx } from '@/lib/packages/reverse'
 import type { Prisma } from '@prisma/client'
 
 function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
@@ -352,14 +353,21 @@ export async function POST(request: NextRequest) {
       !payment.bookingId
     ) {
       const packagePurchaseId = payment.packagePurchaseId
-      const purchase = await prisma.packagePurchase.findUnique({ where: { id: packagePurchaseId } })
+      // Un solo fetch con includes: sirve al guard de status y a la notif de abajo.
+      const purchase = await prisma.packagePurchase.findUnique({
+        where: { id: packagePurchaseId },
+        include: {
+          product: { select: { name: true } },
+          customer: { select: { name: true } },
+          business: { select: { name: true, currency: true } },
+        },
+      })
       if (purchase && purchase.status === 'active') {
         await prisma.$transaction(async (tx) => {
           await tx.payment.update({
             where: { id: payment.id },
             data: { status: 'refunded', providerPaymentId: mpPayment.id, rawPayload: mpPayment as unknown as Prisma.InputJsonValue },
           })
-          const { reversePackagePurchaseInTx } = await import('@/lib/packages/reverse')
           await reversePackagePurchaseInTx(tx, purchase, {
             mode: 'chargeback',
             amount: mpPayment.transaction_amount,
@@ -368,17 +376,12 @@ export async function POST(request: NextRequest) {
             now: new Date(),
           })
         })
-        await sendMultiNotificationSafely('package disputed business', async () => {
-          const p = await prisma.packagePurchase.findUnique({
-            where: { id: packagePurchaseId },
-            include: { product: { select: { name: true } }, customer: { select: { name: true } }, business: { select: { name: true, currency: true } } },
-          })
-          if (!p) return [{ success: false as const, skipped: 'Compra no encontrada' }]
-          return sendPackageDisputedToBusiness(payment.businessId, {
-            businessName: p.business.name, customerName: p.customer.name, productName: p.product.name,
-            amount: mpPayment.transaction_amount, businessCurrency: p.business.currency || 'CLP',
-          })
-        })
+        await sendMultiNotificationSafely('package disputed business', async () =>
+          sendPackageDisputedToBusiness(payment.businessId, {
+            businessName: purchase.business.name, customerName: purchase.customer.name, productName: purchase.product.name,
+            amount: mpPayment.transaction_amount, businessCurrency: purchase.business.currency || 'CLP',
+          }),
+        )
         revalidatePath(`/dashboard/customers/${purchase.customerId}`)
         revalidatePath('/dashboard/paquetes')
         return NextResponse.json({ success: true, message: 'Package chargeback processed', packagePurchaseId })

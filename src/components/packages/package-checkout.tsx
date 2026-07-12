@@ -48,17 +48,21 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
     return true
   }
 
+  function createPurchase(method: 'mp' | 'transfer') {
+    return createPackagePurchase({
+      packageProductId: product.id,
+      name: name.trim(),
+      phone: phone.trim(),
+      acceptedTerms: true,
+      method,
+    })
+  }
+
   async function startMp() {
     setError('')
     setLoading(true)
     try {
-      const { purchaseId } = await createPackagePurchase({
-        packageProductId: product.id,
-        name: name.trim(),
-        phone: phone.trim(),
-        acceptedTerms: true,
-        method: 'mp',
-      })
+      const { purchaseId } = await createPurchase('mp')
       const res = await initiatePackagePayment({ purchaseId })
       if ('redirectUrl' in res) {
         window.location.href = res.redirectUrl
@@ -75,13 +79,7 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
     setError('')
     setLoading(true)
     try {
-      const { purchaseId } = await createPackagePurchase({
-        packageProductId: product.id,
-        name: name.trim(),
-        phone: phone.trim(),
-        acceptedTerms: true,
-        method: 'transfer',
-      })
+      const { purchaseId } = await createPurchase('transfer')
       setPurchaseId(purchaseId)
       setStep('transfer')
     } catch (err) {

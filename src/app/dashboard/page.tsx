@@ -11,7 +11,7 @@ import { buildSetupChecklist } from '@/lib/dashboard/setup-checklist'
 import { SetupChecklist } from '@/components/dashboard/setup-checklist'
 import { PendingTransfersBanner } from '@/components/dashboard/pending-transfers-banner'
 import { PendingPackageTransfersBanner } from '@/components/dashboard/pending-package-transfers-banner'
-import { hasPendingBalanceTransfer, hasPendingDeclaredTransfer } from '@/lib/bank-transfer/declared'
+import { hasPendingBalanceTransfer, hasPendingDeclaredTransfer, pendingPackageTransferWhere } from '@/lib/bank-transfer/declared'
 import { CalendarCheck2, CreditCard, ExternalLink, TrendingUp, Users } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -36,12 +36,7 @@ export default async function DashboardPage() {
     prisma.service.count({ where: { businessId: business.id, isActive: true } }),
     prisma.availabilityRule.count({ where: { businessId: business.id, isActive: true } }),
     prisma.paymentAccount.count({ where: { businessId: business.id, status: 'connected' } }),
-    prisma.packagePurchase.count({
-      where: {
-        businessId: business.id, status: 'pending', source: 'online', holdExpiresAt: { gte: new Date() },
-        payments: { some: { provider: 'manual', status: 'pending' } },
-      },
-    }),
+    prisma.packagePurchase.count({ where: pendingPackageTransferWhere(business.id, new Date()) }),
   ])
 
   // Calcular estadísticas reales

@@ -10,6 +10,7 @@ import { packageProductSchema, sellPackageSchema, computePackageRefund } from '@
 import { normalizePhone } from '@/lib/customers/phone'
 import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
 import { reversePackagePurchaseInTx } from '@/lib/packages/reverse'
+import { pendingPackageTransferWhere, declaredPkgTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 import { getMercadoPagoProviderForBusiness } from '@/lib/payments/factory'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 
@@ -211,15 +212,12 @@ export async function getPendingPackageTransfers() {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const now = new Date()
   return prisma.packagePurchase.findMany({
-    where: {
-      businessId, status: 'pending', source: 'online', holdExpiresAt: { gte: now },
-      payments: { some: { provider: 'manual', status: 'pending' } },
-    },
+    where: pendingPackageTransferWhere(businessId, now),
     orderBy: { createdAt: 'desc' },
     include: {
       product: { select: { name: true } },
       customer: { select: { name: true, phone: true } },
-      payments: { where: { provider: 'manual', status: 'pending' }, select: { id: true, providerPaymentId: true, createdAt: true } },
+      payments: { where: declaredPkgTransferPaymentWhere, select: { id: true, providerPaymentId: true, createdAt: true } },
     },
   })
 }

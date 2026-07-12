@@ -99,10 +99,15 @@ async function reverseChargebackExtras(
   const byId = new Map(bookings.map((b) => [b.id, b]))
   const UPCOMING = new Set(['pending_payment', 'confirmed'])
 
-  const cfg = await tx.loyaltyConfig.findUnique({
-    where: { businessId: purchase.businessId },
-    select: { clawbackAutoRewardOnRefund: true },
-  })
+  // El clawback de auto-recompensas sólo aplica a sesiones completadas; si el
+  // chargeback sólo toca reservas futuras, ni consultamos la config.
+  const hasCompleted = bookings.some((b) => b.status === 'completed')
+  const cfg = hasCompleted
+    ? await tx.loyaltyConfig.findUnique({
+        where: { businessId: purchase.businessId },
+        select: { clawbackAutoRewardOnRefund: true },
+      })
+    : null
 
   for (const g of redeemed) {
     const bk = byId.get(g.redeemedBookingId!)

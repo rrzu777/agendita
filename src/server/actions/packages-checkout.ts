@@ -173,9 +173,9 @@ async function loadOwnedPurchase(purchaseId: string, userId: string) {
   const purchase = await prisma.packagePurchase.findUnique({
     where: { id: purchaseId },
     include: {
-      customer: { select: { userId: true, email: true } },
+      customer: { select: { userId: true, email: true, name: true } },
       product: { select: { name: true } },
-      business: { select: { slug: true, subdomain: true, currency: true } },
+      business: { select: { name: true, slug: true, subdomain: true, currency: true } },
     },
   })
   if (!purchase) throw new Error('Compra no encontrada')
@@ -334,17 +334,13 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
   })
 
   // Notificar a la dueña (best-effort, no bloquea la declaración de la clienta).
-  await sendMultiNotificationSafely('package transfer declared business', async () => {
-    const p = await prisma.packagePurchase.findUnique({
-      where: { id: purchase.id },
-      include: { product: { select: { name: true } }, customer: { select: { name: true } }, business: { select: { name: true, currency: true } } },
-    })
-    if (!p) return [{ success: false as const, skipped: 'Compra no encontrada' }]
-    return sendPackageTransferDeclaredToBusiness(purchase.businessId, {
-      businessName: p.business.name, customerName: p.customer.name, productName: p.product.name,
-      amount: purchase.pricePaid, businessCurrency: p.business.currency || 'CLP',
-    })
-  })
+  // Reusa los datos ya cargados por loadOwnedPurchase — sin segunda query.
+  await sendMultiNotificationSafely('package transfer declared business', async () =>
+    sendPackageTransferDeclaredToBusiness(purchase.businessId, {
+      businessName: purchase.business.name, customerName: purchase.customer.name, productName: purchase.product.name,
+      amount: purchase.pricePaid, businessCurrency: purchase.business.currency || 'CLP',
+    }),
+  )
 
   return { ok: true }
 }

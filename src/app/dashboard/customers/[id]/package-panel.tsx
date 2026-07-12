@@ -32,6 +32,11 @@ function packageBadge(p: PackagePurchaseItem): { label: string; className: strin
   return { label: p.status, className: 'bg-muted text-muted-foreground' }
 }
 
+function PackageBadge({ p }: { p: PackagePurchaseItem }) {
+  const { label, className } = packageBadge(p)
+  return <Badge className={className}>{label}</Badge>
+}
+
 type PackageProductOption = {
   id: string
   name: string
@@ -112,7 +117,7 @@ export function PackagePanel({
                     </p>
                   )}
                 </div>
-                {(() => { const b = packageBadge(p); return <Badge className={b.className}>{b.label}</Badge> })()}
+                <PackageBadge p={p} />
               </div>
               {p.status === 'active' && p._count.grants > 0 && (
                 <div className="mt-2 flex justify-end">
