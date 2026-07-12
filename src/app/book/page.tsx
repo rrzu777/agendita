@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { BookingBusinessPage } from '@/components/booking/booking-business-page'
 import { getBookingBusinessBySubdomain } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
+import { getFunnelSession } from '@/lib/customers/session-prefill'
 
 // Los referralToken son UUID v4 (crypto.randomUUID). Validar la forma reduce la
 // superficie y evita lookups innecesarios con tokens arbitrarios.
@@ -24,7 +25,15 @@ export default async function BookIndexPage({
     const business = await getBookingBusinessBySubdomain(tenant.subdomain)
 
     if (business) {
-      return <BookingBusinessPage business={business} profileHref="/" referralToken={referralToken} session={null} />
+      const session = await getFunnelSession(business.id)
+      return (
+        <BookingBusinessPage
+          business={business}
+          profileHref="/"
+          referralToken={referralToken}
+          session={session ? { email: session.email, name: session.name, phone: session.phone } : null}
+        />
+      )
     }
   }
 
