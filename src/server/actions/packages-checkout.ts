@@ -17,6 +17,7 @@ import { getPackageConfirmationUrl } from '@/lib/business/urls'
 import { applyApprovedPackagePayment } from '@/server/services/finance'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { btPkgDeclaredId } from '@/lib/bank-transfer/declared'
+import { sendMultiNotificationSafely, sendPackageTransferDeclaredToBusiness } from '@/lib/notifications'
 
 const HOLD_MINUTES = 30
 
@@ -331,5 +332,19 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
       paymentType: 'package_purchase', paymentMethod: 'Transferencia',
     },
   })
+
+  // Notificar a la dueña (best-effort, no bloquea la declaración de la clienta).
+  await sendMultiNotificationSafely('package transfer declared business', async () => {
+    const p = await prisma.packagePurchase.findUnique({
+      where: { id: purchase.id },
+      include: { product: { select: { name: true } }, customer: { select: { name: true } }, business: { select: { name: true, currency: true } } },
+    })
+    if (!p) return [{ success: false as const, skipped: 'Compra no encontrada' }]
+    return sendPackageTransferDeclaredToBusiness(purchase.businessId, {
+      businessName: p.business.name, customerName: p.customer.name, productName: p.product.name,
+      amount: purchase.pricePaid, businessCurrency: p.business.currency || 'CLP',
+    })
+  })
+
   return { ok: true }
 }

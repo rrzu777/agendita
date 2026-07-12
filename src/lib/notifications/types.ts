@@ -220,6 +220,14 @@ export interface PackageDisputedEmailData {
   businessCurrency: string
 }
 
+export interface PackageTransferDeclaredEmailData {
+  businessName: string
+  customerName: string
+  productName: string
+  amount: number
+  businessCurrency: string
+}
+
 export interface NotificationResult {
   customerEmail?: EmailResult
   businessEmails: EmailResult[]

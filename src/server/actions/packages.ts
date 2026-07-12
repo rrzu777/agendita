@@ -206,6 +206,24 @@ export async function getCustomerPackages(customerId: string) {
   })
 }
 
+// OWNER (panel de transferencias de paquete pendientes)
+export async function getPendingPackageTransfers() {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const now = new Date()
+  return prisma.packagePurchase.findMany({
+    where: {
+      businessId, status: 'pending', source: 'online', holdExpiresAt: { gte: now },
+      payments: { some: { provider: 'manual', status: 'pending' } },
+    },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      product: { select: { name: true } },
+      customer: { select: { name: true, phone: true } },
+      payments: { where: { provider: 'manual', status: 'pending' }, select: { id: true, providerPaymentId: true, createdAt: true } },
+    },
+  })
+}
+
 export async function getPackageSalesTotal(): Promise<number> {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   // Fuente única: ledger. Ventas (package_sale) netas de reembolsos de paquete

@@ -16,6 +16,7 @@ import type {
   OwnerBookingChangedData,
   PackagePurchasedEmailData,
   PackageDisputedEmailData,
+  PackageTransferDeclaredEmailData,
 } from './types'
 
 function escapeHtml(str: string): string {
@@ -791,6 +792,32 @@ export function packageDisputedBusinessText(data: PackageDisputedEmailData): str
   return [
     'Contracargo de paquete', '',
     `Se registró un contracargo (chargeback) de un paquete de ${data.customerName}. La compra fue revertida automáticamente.`, '',
+    `Clienta: ${data.customerName}`,
+    `Paquete: ${data.productName}`,
+    `Monto: ${amount}`, '',
+    `Enviado por ${data.businessName} a través de Agendita`,
+  ].join('\n')
+}
+
+export function packageTransferDeclaredBusinessHtml(data: PackageTransferDeclaredEmailData): string {
+  const amount = fmtCurrency(data.amount, data.businessCurrency)
+  return baseHtml(`
+    ${header('Transferencia de paquete declarada')}
+    <p style="font-size:15px">${escapeHtml(data.customerName)} declaró una transferencia por un paquete. Verificá el pago y confirmá o rechazá.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Paquete</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.productName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Monto</td><td style="padding:8px 0;font-weight:600">${amount}</td></tr>
+    </table>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function packageTransferDeclaredBusinessText(data: PackageTransferDeclaredEmailData): string {
+  const amount = fmtCurrency(data.amount, data.businessCurrency)
+  return [
+    'Transferencia de paquete declarada', '',
+    `${data.customerName} declaró una transferencia por un paquete. Verificá el pago y confirmá o rechazá.`, '',
     `Clienta: ${data.customerName}`,
     `Paquete: ${data.productName}`,
     `Monto: ${amount}`, '',
