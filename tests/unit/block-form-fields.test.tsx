@@ -17,10 +17,10 @@ describe('BlockFormFields', () => {
       />,
     )
     expect(html).toContain('value="2026-06-01"')
-    expect(html).toContain('aria-label="Hora inicio hora"')
-    expect(html).toContain('value="13" selected=""')
-    expect(html).toContain('aria-label="Hora fin hora"')
-    expect(html).toContain('value="14" selected=""')
+    expect(html).toContain('aria-label="Hora inicio"')
+    expect(html).toContain('13:00')
+    expect(html).toContain('aria-label="Hora fin"')
+    expect(html).toContain('14:00')
     expect(html).toContain('value="Almuerzo"')
     // Sin handler de tolerancia, el campo no aparece
     expect(html).not.toContain('block-overlap-tolerance')

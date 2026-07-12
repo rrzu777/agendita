@@ -26,8 +26,15 @@ function setOwnerAuth(page: Page) {
 
 async function selectDashboardTime(page: Page, time: string): Promise<void> {
   const [hour, minute] = time.split(':')
-  await page.getByLabel('Hora hora').selectOption(hour.padStart(2, '0'))
-  await page.getByLabel('Hora minutos').selectOption(minute.padStart(2, '0'))
+  await selectTime(page, 'Hora', hour, minute)
+}
+
+async function selectTime(page: Page, label: string, hour: string, minute: string): Promise<void> {
+  await page.getByLabel(label, { exact: true }).click()
+  const picker = page.getByRole('dialog').last()
+  await picker.getByRole('button', { name: hour.padStart(2, '0'), exact: true }).first().click()
+  await picker.getByRole('button', { name: minute.padStart(2, '0'), exact: true }).last().click()
+  await picker.getByRole('button', { name: 'Aplicar', exact: true }).click()
 }
 
 function setAdminAuth(page: Page) {

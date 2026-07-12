@@ -51,12 +51,13 @@ async function waitForHydration(page: Page): Promise<void> {
   await page.waitForTimeout(800)
 }
 
-function selectDashboardTime(page: Page, time: string): Promise<void> {
+async function selectDashboardTime(page: Page, time: string): Promise<void> {
   const [hour, minute] = time.split(':')
-  return (async () => {
-    await page.getByLabel('Hora hora').selectOption(hour.padStart(2, '0'))
-    await page.getByLabel('Hora minutos').selectOption(minute.padStart(2, '0'))
-  })()
+  await page.getByLabel('Hora', { exact: true }).click()
+  const picker = page.getByRole('dialog').last()
+  await picker.getByRole('button', { name: hour.padStart(2, '0'), exact: true }).first().click()
+  await picker.getByRole('button', { name: minute.padStart(2, '0'), exact: true }).last().click()
+  await picker.getByRole('button', { name: 'Aplicar', exact: true }).click()
 }
 
 /** Fecha en día de semana, al menos `afterDays` días en el futuro. */
