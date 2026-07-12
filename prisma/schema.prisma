@@ -65,6 +65,7 @@ model Business {
   slotStepMinutes        Int?               @default(30) // cada cuántos min ofrecer inicios de hora; null = duración del servicio
   selfServiceCutoffHours Int                @default(24) // ventana para cancelar/reprogramar self-service; 0 = sin límite (se usa en D1-b)
   bookingNumberSeq       Int                @default(1000)
+  requireTransferProof   Boolean            @default(false)
   isActive               Boolean            @default(true)
   planId                 String?
   subscriptionStatus     SubscriptionStatus @default(trialing)
@@ -446,6 +447,8 @@ model Payment {
   status            PaymentStatus
   paymentType       PaymentType
   paymentMethod     String?
+  proofKey          String?
+  proofContentType  String?
   paidAt            DateTime?
   rawPayload        Json?
   createdAt         DateTime        @default(now())
