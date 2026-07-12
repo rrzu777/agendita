@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { confirmBankTransfer, rejectBankTransfer } from '@/server/actions/bank-transfer-verify'
 import { formatManualPaymentMoney as formatMoney } from './manual-payment-utils'
+import type { PendingTransferKind } from './pending-transfers-section'
 
 export function VerifyTransferDialog({
   paymentId,
@@ -21,7 +22,7 @@ export function VerifyTransferDialog({
   paymentId: string
   defaultAmount: number
   businessCurrency: string
-  kind?: 'deposit' | 'balance'
+  kind?: PendingTransferKind
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {

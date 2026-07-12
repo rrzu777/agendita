@@ -240,11 +240,11 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           />
         )}
 
-        {balance.verifying && (
+        {balance.verifying && balance.payment && (
           <div className="studio-card mb-8 p-5 text-center">
             <p className="text-sm font-medium text-primary">Saldo en verificación</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Avisaste una transferencia de ${balance.payment!.amount!.toLocaleString('es-CL')}. El negocio la va a revisar; si pasan varios días, escribile.
+              Avisaste una transferencia de ${balance.payment.amount.toLocaleString('es-CL')}. El negocio la va a revisar; si pasan varios días, escribile.
             </p>
           </div>
         )}

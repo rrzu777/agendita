@@ -61,6 +61,15 @@ export function btBalanceId(bookingId: string): string {
   return `${BT_BALANCE_PREFIX}${bookingId}`
 }
 
+// Estados "firmes" donde el saldo por transferencia aplica: la reserva ya está
+// pagada de abono (o atendida), sin hold ni cupo en juego. Fuente única para
+// no repetir el par confirmed/completed en cada predicado y query del saldo.
+export const FIRM_BOOKING_STATUSES = ['confirmed', 'completed'] as const
+
+export function isFirmBooking(status: string): boolean {
+  return status === 'confirmed' || status === 'completed'
+}
+
 export const declaredBalancePaymentWhere = {
   provider: 'manual',
   status: 'pending',
@@ -94,7 +103,7 @@ export function hasPendingBalanceTransfer(
   booking: { status: string; payments: Array<{ providerPaymentId?: string | null }> },
 ): boolean {
   return (
-    (booking.status === 'confirmed' || booking.status === 'completed') &&
+    isFirmBooking(booking.status) &&
     booking.payments.some((p) => p.providerPaymentId?.startsWith(BT_BALANCE_PREFIX))
   )
 }

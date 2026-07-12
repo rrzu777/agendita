@@ -6,7 +6,7 @@ import { Prisma, PaymentProvider, PaymentStatus, PaymentType } from '@prisma/cli
 import { prisma } from '@/lib/db'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { BANK_TRANSFER_PUBLIC_SELECT, type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
-import { btDeclaredId, btBalanceId, BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
+import { btDeclaredId, btBalanceId, BANK_TRANSFER_METHOD, FIRM_BOOKING_STATUSES } from '@/lib/bank-transfer/declared'
 import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
 import {
   sendMultiNotificationSafely,
@@ -209,7 +209,7 @@ export async function declareBalanceTransfer(bookingId: string): Promise<{ ok: t
     // cancelBookingInTx/updateBookingStatus. Releer el status no alcanza bajo
     // ReadCommitted. El write es benigno (touch de updatedAt).
     const { count } = await tx.booking.updateMany({
-      where: { id: bookingId, status: { in: ['confirmed', 'completed'] } },
+      where: { id: bookingId, status: { in: [...FIRM_BOOKING_STATUSES] } },
       data: { updatedAt: new Date() },
     })
     if (count === 0) throw new Error('Tu reserva ya no admite este pago. Escribile al negocio.')

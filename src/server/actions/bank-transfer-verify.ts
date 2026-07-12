@@ -12,6 +12,7 @@ import type { Prisma } from '@prisma/client'
 import {
   isDeclaredTransferPayment,
   isDeclaredBalancePayment,
+  isFirmBooking,
 } from '@/lib/bank-transfer/declared'
 import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
@@ -70,7 +71,7 @@ export async function confirmBankTransfer(
       // guards de abono (doble cobro MP, re-validación de hold vencido) no
       // aplican: una reserva confirmed/completed no tiene cupo en disputa y
       // puede conservar un holdExpiresAt vencido de cuando SÍ tenía hold. ──
-      if (booking.status !== 'confirmed' && booking.status !== 'completed') {
+      if (!isFirmBooking(booking.status)) {
         if (booking.status === 'no_show') throw new Error('Esta reserva quedó como no asistida.')
         throw new Error('Esta reserva no admite verificar un saldo todavía.')
       }
@@ -231,35 +232,23 @@ export async function rejectBankTransfer(paymentId: string): Promise<{ ok: true 
     // Hoist el await FUERA del callback: sendNotificationSafely recibe un
     // `() =>` no-async; un await adentro no compila.
     const replyTo = await getBusinessReplyToEmail(businessId)
-    if (isBalance) {
-      await sendNotificationSafely('balance transfer rejected', () =>
-        sendBalanceTransferRejectedToCustomer({
-          businessName: business.name,
-          businessTimezone: business.timezone || 'America/Santiago',
-          businessReplyToEmail: replyTo,
-          customerName: rejected.customer!.name,
-          customerEmail: rejected.customer!.email!,
-          serviceName: rejected.service?.name ?? 'servicio',
-          startDateTime: rejected.startDateTime,
-          bookingNumber: rejected.bookingNumber,
-          amount,
-          currency,
-        }),
-      )
-    } else {
-      await sendNotificationSafely('bank transfer rejected', () =>
-        sendBankTransferRejectedToCustomer({
-          businessName: business.name,
-          businessTimezone: business.timezone || 'America/Santiago',
-          businessReplyToEmail: replyTo,
-          customerName: rejected.customer!.name,
-          customerEmail: rejected.customer!.email!,
-          serviceName: rejected.service?.name ?? 'servicio',
-          startDateTime: rejected.startDateTime,
-          bookingNumber: rejected.bookingNumber,
-        }),
-      )
+    const base = {
+      businessName: business.name,
+      businessTimezone: business.timezone || 'America/Santiago',
+      businessReplyToEmail: replyTo,
+      customerName: rejected.customer!.name,
+      customerEmail: rejected.customer!.email!,
+      serviceName: rejected.service?.name ?? 'servicio',
+      startDateTime: rejected.startDateTime,
+      bookingNumber: rejected.bookingNumber,
     }
+    // El de saldo lleva monto/moneda y NO menciona cancelación; el de abono
+    // (reserva sin confirmar) avisa que la reserva se canceló.
+    await sendNotificationSafely(isBalance ? 'balance transfer rejected' : 'bank transfer rejected', () =>
+      isBalance
+        ? sendBalanceTransferRejectedToCustomer({ ...base, amount, currency })
+        : sendBankTransferRejectedToCustomer(base),
+    )
   }
   revalidatePath('/dashboard/bookings')
   revalidatePath('/dashboard/payments')
