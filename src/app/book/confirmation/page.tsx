@@ -3,12 +3,14 @@ import { notFound } from 'next/navigation'
 import { CheckCircle2, Clock, XCircle, Calendar, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { prisma } from '@/lib/db'
+import { getCurrentUser } from '@/lib/auth/user'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { deriveConfirmationState } from '@/lib/payments/confirmation-state'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
 import { TransferPanel } from './transfer-panel'
+import { AccountCta } from '@/components/booking/account-cta'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
@@ -33,6 +35,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
         },
       },
       service: true,
+      customer: { select: { email: true } },
       payments: {
         where: { provider: { in: ['mercado_pago', 'manual'] } },
         select: { status: true, provider: true, providerPaymentId: true },
@@ -62,7 +65,11 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
     state === 'pending' &&
     booking.holdExpiresAt != null &&
     booking.holdExpiresAt > new Date()
-  const bankInfo = canDeclare ? await getBankTransferInfo(booking.businessId) : null
+  const [bankInfo, sessionUser] = await Promise.all([
+    canDeclare ? getBankTransferInfo(booking.businessId) : null,
+    getCurrentUser(),
+  ])
+  const customerEmail = booking.customer?.email ?? null
 
   const startDate = new Date(booking.startDateTime)
   const formattedDate = startDate.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -233,6 +240,11 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
               </p>
             )}
           </div>
+        )}
+
+        {/* El CTA de cuenta nunca compite con la acción de declarar transferencia. */}
+        {!canDeclare && (
+          <AccountCta sessionActive={sessionUser !== null} customerEmail={customerEmail} className="mt-4" />
         )}
       </section>
     </main>
