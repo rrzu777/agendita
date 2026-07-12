@@ -14,6 +14,7 @@ import type {
   TransferReminderCustomerEmailData,
   TransferReminderBusinessEmailData,
   OwnerBookingChangedData,
+  PackagePurchasedEmailData,
 } from './types'
 
 function escapeHtml(str: string): string {
@@ -708,6 +709,66 @@ export function loyaltyRewardText(data: LoyaltyRewardEmailData): string {
   if (data.loyaltyCardLink) lines.push(``, `Ver mi tarjeta: ${data.loyaltyCardLink}`)
   lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)
   return lines.join('\n')
+}
+
+export function packagePurchasedCustomerHtml(data: PackagePurchasedEmailData): string {
+  const price = fmtCurrency(data.pricePaid, data.businessCurrency)
+  const cardSection = data.cardLink
+    ? `<p style="margin-top:16px"><a href="${escapeHtml(data.cardLink)}" style="color:#e91e63;text-decoration:none;font-weight:600">Ver mis paquetes</a></p>`
+    : ''
+  return baseHtml(`
+    ${header('¡Paquete comprado!')}
+    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, tu compra fue confirmada.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">Paquete</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.productName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Sesiones disponibles</td><td style="padding:8px 0;font-weight:600">${data.totalSessions}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Total pagado</td><td style="padding:8px 0;font-weight:600">${price}</td></tr>
+    </table>
+    ${cardSection}
+    ${footer(data.businessName)}
+  `)
+}
+
+export function packagePurchasedCustomerText(data: PackagePurchasedEmailData): string {
+  const price = fmtCurrency(data.pricePaid, data.businessCurrency)
+  const lines = [
+    '¡Paquete comprado!', '',
+    `Hola ${data.customerName}, tu compra fue confirmada.`, '',
+    `Paquete: ${data.productName}`,
+    `Sesiones disponibles: ${data.totalSessions}`,
+    `Total pagado: ${price}`,
+  ]
+  if (data.cardLink) lines.push('', `Ver mis paquetes: ${data.cardLink}`)
+  lines.push('', `Enviado por ${data.businessName} a través de Agendita`)
+  return lines.join('\n')
+}
+
+export function packageSoldBusinessHtml(data: PackagePurchasedEmailData): string {
+  const price = fmtCurrency(data.pricePaid, data.businessCurrency)
+  return baseHtml(`
+    ${header('Vendiste un paquete')}
+    <p style="font-size:15px">${escapeHtml(data.customerName)} compró un paquete online.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Paquete</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.productName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Sesiones</td><td style="padding:8px 0;font-weight:600">${data.totalSessions}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Total</td><td style="padding:8px 0;font-weight:600">${price}</td></tr>
+    </table>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function packageSoldBusinessText(data: PackagePurchasedEmailData): string {
+  const price = fmtCurrency(data.pricePaid, data.businessCurrency)
+  return [
+    'Vendiste un paquete', '',
+    `${data.customerName} compró un paquete online.`, '',
+    `Clienta: ${data.customerName}`,
+    `Paquete: ${data.productName}`,
+    `Sesiones: ${data.totalSessions}`,
+    `Total: ${price}`, '',
+    `Enviado por ${data.businessName} a través de Agendita`,
+  ].join('\n')
 }
 
 // Template definitions used for preview and rendering

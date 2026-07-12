@@ -201,6 +201,17 @@ export interface OwnerBookingChangedData {
   startDateTime: Date // horario (previo) de la reserva
 }
 
+export interface PackagePurchasedEmailData {
+  businessName: string
+  customerName: string
+  productName: string
+  totalSessions: number
+  pricePaid: number
+  businessCurrency: string
+  cardLink?: string
+  businessReplyToEmail?: string | null
+}
+
 export interface NotificationResult {
   customerEmail?: EmailResult
   businessEmails: EmailResult[]

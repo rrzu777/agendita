@@ -19,6 +19,7 @@ import type {
   TransferReminderCustomerEmailData,
   TransferReminderBusinessEmailData,
   OwnerBookingChangedData,
+  PackagePurchasedEmailData,
 } from './types'
 import {
   transferReminderCustomerHtml,
@@ -59,6 +60,10 @@ import {
   paymentReceivedText,
   loyaltyRewardHtml,
   loyaltyRewardText,
+  packagePurchasedCustomerHtml,
+  packagePurchasedCustomerText,
+  packageSoldBusinessHtml,
+  packageSoldBusinessText,
   BOOKING_CONFIRMED_TEMPLATE,
   BOOKING_REMINDER_TEMPLATE,
   BOOKING_CANCELLED_TEMPLATE,
@@ -500,6 +505,73 @@ export async function sendLoyaltyRewardNotification(data: LoyaltyRewardEmailData
     html,
     text,
     { replyTo: data.businessReplyToEmail },
+  )
+}
+
+async function sendPackagePurchasedToCustomer(
+  data: PackagePurchasedEmailData & { customerEmail: string },
+): Promise<EmailResult> {
+  const html = packagePurchasedCustomerHtml(data)
+  const text = packagePurchasedCustomerText(data)
+  return sendEmail(
+    data.customerEmail,
+    `Paquete comprado - ${data.businessName}`,
+    html,
+    text,
+    { replyTo: data.businessReplyToEmail },
+  )
+}
+
+/** Email a la clienta cuando se aprueba (activa) una compra de paquete online. */
+export async function sendPackagePurchasedNotification(purchaseId: string, businessId: string): Promise<EmailResult> {
+  const purchase = await prisma.packagePurchase.findFirst({
+    where: { id: purchaseId, businessId },
+    include: {
+      product: { select: { name: true } },
+      customer: { select: { name: true, email: true, loyaltyToken: true } },
+      business: { select: { name: true, slug: true, subdomain: true, currency: true } },
+    },
+  })
+
+  if (!purchase || !purchase.customer.email) {
+    return { success: false, skipped: 'Compra no encontrada o clienta sin email' }
+  }
+
+  // /mi/[slug] es siempre path-based en el dominio principal (no hay ruteo por
+  // subdominio para esta página cross-negocio); ver src/lib/customers/session-prefill.ts.
+  const cardLink = getAppUrl(`/mi/${purchase.business.slug}`)
+
+  return sendPackagePurchasedToCustomer({
+    businessName: purchase.business.name,
+    customerName: purchase.customer.name,
+    productName: purchase.product.name,
+    totalSessions: purchase.quantity + purchase.bonusQuantity,
+    pricePaid: purchase.pricePaid,
+    businessCurrency: purchase.business.currency || 'CLP',
+    cardLink,
+    businessReplyToEmail: await getBusinessReplyToEmail(businessId),
+    customerEmail: purchase.customer.email,
+  })
+}
+
+/** Email a la(s) dueña(s)/admin(s) del negocio cuando se vende un paquete online. */
+export async function sendPackageSoldNotificationToBusiness(
+  businessId: string,
+  data: PackagePurchasedEmailData,
+): Promise<EmailResult[]> {
+  const ownerEmails = await getBusinessOwnerEmails(businessId)
+
+  if (ownerEmails.length === 0) {
+    return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
+  }
+
+  const html = packageSoldBusinessHtml(data)
+  const text = packageSoldBusinessText(data)
+
+  return Promise.all(
+    ownerEmails.map((owner) =>
+      sendEmail(owner.email, `Paquete vendido - ${data.customerName}`, html, text, {}),
+    ),
   )
 }
 
