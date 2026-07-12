@@ -128,7 +128,7 @@ export function BookingWizard({ businessId, timezone, services, cancellationPoli
           </div>
         )}
         {currentStep === 4 && data.timeSlot && (
-          <StepCustomer data={data} onSubmit={(customerData) => {
+          <StepCustomer data={data} sessionEmail={null} onLoginCta={() => {}} onSubmit={(customerData) => {
             updateData(customerData)
             nextStep()
           }} onBack={prevStep} />
