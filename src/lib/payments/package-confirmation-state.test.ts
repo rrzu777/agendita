@@ -1,0 +1,21 @@
+import { describe, it, expect } from 'vitest'
+import { derivePackageConfirmationState } from './package-confirmation-state'
+
+describe('derivePackageConfirmationState', () => {
+  it('active si la compra ya está activa', () => {
+    expect(derivePackageConfirmationState({ status: 'active', payments: [] })).toBe('active')
+  })
+  it('active si hay un pago approved aunque la compra siga pending (carrera webhook/redirect)', () => {
+    expect(derivePackageConfirmationState({ status: 'pending', payments: [{ status: 'approved' }] })).toBe('active')
+  })
+  it('pending mientras el pago está pending/in_process', () => {
+    expect(derivePackageConfirmationState({ status: 'pending', payments: [{ status: 'pending' }] })).toBe('pending')
+    expect(derivePackageConfirmationState({ status: 'pending', payments: [{ status: 'in_process' }] })).toBe('pending')
+  })
+  it('rejected si el único pago fue rechazado/cancelado', () => {
+    expect(derivePackageConfirmationState({ status: 'pending', payments: [{ status: 'rejected' }] })).toBe('rejected')
+  })
+  it('pending si no hay pagos todavía', () => {
+    expect(derivePackageConfirmationState({ status: 'pending', payments: [] })).toBe('pending')
+  })
+})
