@@ -2,11 +2,18 @@
 
 import { z } from 'zod'
 import { addMinutes, addDays } from 'date-fns'
+import { PaymentProvider, PaymentStatus, PaymentType } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth/user'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { findOrCreateCustomerInTx } from '@/lib/customers/find-or-create'
-import { resolveOnlinePaymentAvailabilityForBusiness } from '@/lib/payments/factory'
+import {
+  resolveOnlinePaymentAvailabilityForBusiness,
+  getOnlinePaymentProviderForBusiness,
+} from '@/lib/payments/factory'
+import { createMpPreferenceForPayment, getPaymentAppUrl } from '@/lib/payments/create-preference'
+import { getPackageConfirmationUrl } from '@/lib/business/urls'
+import { applyApprovedPackagePayment } from '@/server/services/finance'
 
 const HOLD_MINUTES = 30
 
@@ -124,4 +131,137 @@ export async function getPackageCheckoutPrefill(businessId: string): Promise<{
     phone: customer?.phone || '',
     hasCustomer: !!customer,
   }
+}
+
+/** Carga la compra + valida que pertenece a la cuenta logueada (clienta dueña). */
+async function loadOwnedPurchase(purchaseId: string, userId: string) {
+  const purchase = await prisma.packagePurchase.findUnique({
+    where: { id: purchaseId },
+    include: {
+      customer: { select: { userId: true, email: true } },
+      product: { select: { name: true } },
+      business: { select: { slug: true, subdomain: true, currency: true } },
+    },
+  })
+  if (!purchase) throw new Error('Compra no encontrada')
+  if (purchase.customer.userId !== userId) throw new Error('Esta compra no corresponde a tu cuenta.')
+  return purchase
+}
+
+/**
+ * Inicia el pago online de una compra de paquete (clienta logueada, dueña de
+ * la compra). Pre-crea (o reutiliza, anti doble-click) un Payment local
+ * 'pending' con paymentType 'package_purchase' y arma la preferencia MP vía
+ * el tronco compartido `createMpPreferenceForPayment` (Task 5). Para un
+ * provider sin redirect (mock/test) confirma server-side de inmediato.
+ */
+export async function initiatePackagePayment(input: { purchaseId: string }): Promise<
+  { redirectUrl: string } | { confirmed: true }
+> {
+  const user = await getCurrentUser()
+  if (!user) throw new Error('Debes iniciar sesión para pagar el paquete.')
+
+  const limit = await checkRateLimit('initiate-package-payment', 20, 60000, { userId: user.id })
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+
+  const purchase = await loadOwnedPurchase(input.purchaseId, user.id)
+  if (purchase.status !== 'pending') {
+    throw new Error('Esta compra ya fue procesada.')
+  }
+
+  const provider = await getOnlinePaymentProviderForBusiness(purchase.businessId)
+  const currency = purchase.business.currency || 'CLP'
+
+  // Evitar múltiples Payment pending por doble click: reusar si ya existe uno.
+  const existingPending = await prisma.payment.findFirst({
+    where: {
+      packagePurchaseId: purchase.id,
+      paymentType: PaymentType.package_purchase,
+      status: PaymentStatus.pending,
+    },
+  })
+
+  let localPaymentId: string
+  if (existingPending) {
+    localPaymentId = existingPending.id
+  } else {
+    const payment = await prisma.payment.create({
+      data: {
+        businessId: purchase.businessId,
+        packagePurchaseId: purchase.id,
+        customerId: purchase.customerId,
+        provider: provider.name === 'mercado_pago' ? PaymentProvider.mercado_pago : (provider.name as PaymentProvider),
+        providerPaymentId: null,
+        amount: purchase.pricePaid,
+        currency,
+        status: PaymentStatus.pending,
+        paymentType: PaymentType.package_purchase,
+      },
+    })
+    localPaymentId = payment.id
+  }
+
+  const result = await createMpPreferenceForPayment(provider, {
+    amount: purchase.pricePaid,
+    currency,
+    bookingId: '', // MP ignora bookingId para paquetes; external_reference = localPaymentId
+    description: `Paquete ${purchase.product.name}`,
+    returnUrl: getPackageConfirmationUrl(purchase.business, purchase.id),
+    webhookUrl: `${getPaymentAppUrl()}/api/webhooks/mercado-pago`,
+    localPaymentId,
+    customerEmail: purchase.customer.email,
+    metadata: {
+      packagePurchaseId: purchase.id,
+      businessId: purchase.businessId,
+      paymentType: 'package_purchase',
+      localPaymentId,
+    },
+  })
+
+  if (result.redirectUrl) {
+    return { redirectUrl: result.redirectUrl }
+  }
+
+  // Provider sin redirect (mock/test): confirmar server-side de inmediato.
+  await verifyAndConfirmPackagePayment({ purchaseId: purchase.id })
+  return { confirmed: true }
+}
+
+/**
+ * Confirma el pago mock/no-MP de una compra de paquete, delegando la
+ * activación (grants + ledger) a `applyApprovedPackagePayment`. Para
+ * Mercado Pago corta temprano: la confirmación real llega por webhook.
+ */
+export async function verifyAndConfirmPackagePayment(input: { purchaseId: string }): Promise<{ success: boolean }> {
+  const user = await getCurrentUser()
+  if (!user) throw new Error('Debes iniciar sesión.')
+
+  const purchase = await loadOwnedPurchase(input.purchaseId, user.id)
+
+  const payment = await prisma.payment.findFirst({
+    where: { packagePurchaseId: purchase.id, paymentType: PaymentType.package_purchase },
+    orderBy: { createdAt: 'desc' },
+  })
+  if (!payment) throw new Error('Pago no encontrado')
+
+  if (payment.provider === PaymentProvider.mercado_pago) {
+    return { success: false }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await applyApprovedPackagePayment({
+      tx,
+      packagePurchaseId: purchase.id,
+      businessId: purchase.businessId,
+      amount: payment.amount,
+      currency: payment.currency,
+      provider: payment.provider,
+      providerPaymentId: payment.providerPaymentId,
+      paymentType: payment.paymentType,
+      paymentMethod: payment.paymentMethod,
+      paymentId: payment.id,
+    })
+  })
+
+  return { success: true }
 }
