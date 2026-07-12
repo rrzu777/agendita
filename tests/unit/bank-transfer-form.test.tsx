@@ -8,6 +8,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/server/actions/bank-transfer-settings', () => ({
   saveBankTransferAccount: vi.fn(),
   setBankTransferEnabled: vi.fn(),
+  setRequireTransferProof: vi.fn(),
 }))
 
 // Satisface el tipo Prisma completo (la prop del form es BankTransferAccount | null).
@@ -30,7 +31,7 @@ const account = {
 
 describe('BankTransferForm', () => {
   it('sin cuenta: muestra el form vacío con defaults y sin toggle', () => {
-    const html = renderToStaticMarkup(<BankTransferForm account={null} />)
+    const html = renderToStaticMarkup(<BankTransferForm account={null} requireProof={false} proofUploadAvailable={false} />)
     expect(html).toContain('Titular')
     expect(html).toContain('value="24"')
     expect(html).toContain('value="48"')
@@ -38,14 +39,14 @@ describe('BankTransferForm', () => {
   })
 
   it('con cuenta: pre-carga los valores y muestra el toggle', () => {
-    const html = renderToStaticMarkup(<BankTransferForm account={account} />)
+    const html = renderToStaticMarkup(<BankTransferForm account={account} requireProof={false} proofUploadAvailable={false} />)
     expect(html).toContain('María Pérez')
     expect(html).toContain('BancoEstado')
     expect(html).toContain('Aceptar transferencias')
   })
 
   it('con verifyHours null: el campo queda vacío y aparece la advertencia de sin límite', () => {
-    const html = renderToStaticMarkup(<BankTransferForm account={{ ...account, verifyHours: null }} />)
+    const html = renderToStaticMarkup(<BankTransferForm account={{ ...account, verifyHours: null }} requireProof={false} proofUploadAvailable={false} />)
     expect(html).toContain('sin límite')
   })
 })

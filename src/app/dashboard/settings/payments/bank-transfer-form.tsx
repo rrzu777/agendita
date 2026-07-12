@@ -7,11 +7,19 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
-import { saveBankTransferAccount, setBankTransferEnabled } from '@/server/actions/bank-transfer-settings'
+import { saveBankTransferAccount, setBankTransferEnabled, setRequireTransferProof } from '@/server/actions/bank-transfer-settings'
 import type { BankTransferAccount } from '@prisma/client'
 import { DEFAULT_HOLD_HOURS, DEFAULT_VERIFY_HOURS, HOLD_HOURS_MAX, VERIFY_HOURS_MAX } from '@/lib/bank-transfer/schema'
 
-export function BankTransferForm({ account }: { account: BankTransferAccount | null }) {
+export function BankTransferForm({
+  account,
+  requireProof,
+  proofUploadAvailable,
+}: {
+  account: BankTransferAccount | null
+  requireProof: boolean
+  proofUploadAvailable: boolean
+}) {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
@@ -64,6 +72,16 @@ export function BankTransferForm({ account }: { account: BankTransferAccount | n
     }
   }
 
+  async function handleProofToggle(next: boolean) {
+    setServerError(null)
+    try {
+      await setRequireTransferProof(next)
+      router.refresh()
+    } catch (err) {
+      setServerError(err instanceof Error ? err.message : 'Error al actualizar')
+    }
+  }
+
   const noVerifyLimit = form.verifyHours.trim() === ''
 
   return (
@@ -77,6 +95,18 @@ export function BankTransferForm({ account }: { account: BankTransferAccount | n
             </p>
           </div>
           <Switch checked={account.isEnabled} onCheckedChange={handleToggle} />
+        </div>
+      )}
+
+      {account && proofUploadAvailable && (
+        <div className="flex items-center justify-between rounded-lg border border-border p-4">
+          <div>
+            <p className="font-semibold text-primary">Exigir comprobante al declarar transferencia</p>
+            <p className="text-sm text-muted-foreground">
+              Tus clientas deberán adjuntar el comprobante de la transferencia para poder avisarte.
+            </p>
+          </div>
+          <Switch checked={requireProof} onCheckedChange={handleProofToggle} />
         </div>
       )}
 

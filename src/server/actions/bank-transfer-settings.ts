@@ -50,3 +50,16 @@ export async function setBankTransferEnabled(isEnabled: boolean) {
   }
   revalidatePath('/dashboard/settings/payments')
 }
+
+export async function setRequireTransferProof(value: boolean) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+
+  const limit = await checkRateLimit('set-bank-transfer-enabled', 20, 60000)
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  }
+
+  // requireTransferProof vive en Business (no en bankTransferAccount).
+  await prisma.business.update({ where: { id: businessId }, data: { requireTransferProof: value } })
+  revalidatePath('/dashboard/settings/payments')
+}
