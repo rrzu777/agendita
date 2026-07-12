@@ -46,6 +46,12 @@ export function getBookingConfirmationUrl(business: BusinessUrlInput, bookingId:
   return `${getBusinessPublicUrl(business)}/book/confirmation?bookingId=${bookingId}`
 }
 
+/** URL de la página de confirmación de una compra de paquete
+ *  (`/paquetes/confirmation?purchaseId=`), colgando de la URL pública del negocio. */
+export function getPackageConfirmationUrl(business: BusinessUrlInput, purchaseId: string): string {
+  return `${getBusinessPublicUrl(business)}/paquetes/confirmation?purchaseId=${purchaseId}`
+}
+
 /** URL del funnel público de reserva (/book). Con subdominio vive en el apex del
  *  tenant (`https://sub.apex/book`); sin subdominio usa el path `/book/{slug}`.
  *  `search` (sin '?') agrega la query string (ej. `ref=TOKEN`). */
