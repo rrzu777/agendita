@@ -45,8 +45,11 @@
 - `src/server/actions/ledger.ts` — línea de ingresos por paquete + include `packagePurchase`.
 - `src/app/dashboard/page.tsx` (o `payments/page.tsx`) — mostrar ingresos por paquete.
 - `src/components/public/business-profile.tsx` — CTA "Paquetes".
+- `src/lib/auth/sanitize-next.ts` — `authErrorRedirectPath` reconoce `/paquetes` como flujo de clienta (Task 13b; **NO** se toca `sanitizeNext`).
 
-**Orden de ejecución:** Tasks 1→16 en secuencia (cada una compila y testea sola). Las Tasks 1–10 son server/lógica (TDD estricto). Las 11–13 son UI. La 14–15 son fixes de dashboard. La 16 es el gate.
+**Orden de ejecución:** Tasks 1→16 en secuencia (cada una compila y testea sola). Las Tasks 1–10 son server/lógica (TDD estricto). Las 11–13b son UI/routing. La 14–15 son fixes de dashboard. La 16 es el gate.
+
+**Auditoría de integración plegada (post-plan):** sanitizeNext acepta `/paquetes` con query encodeado (el catálogo ya usa `encodeURIComponent`), no hay allowlist de middleware ni rewrite que interceptar, `/mi` ya filtra `status:'active'` (pending online nunca se muestra), consumo source-agnostic, `PaymentProvider.mock`/`Customer.userId`/`loyaltyToken` existen. Gaps reales resueltos: dashboard neteado + reetiquetado (Task 15), `source` en el tipo del panel (Task 14), error de OAuth para `/paquetes` (Task 13b).
 
 ---
 
@@ -2181,6 +2184,62 @@ Expected: `0 errores` / sin errores de lint.
 ```bash
 git -C . add src/components/public/business-profile.tsx src/app/b
 git commit -m "feat(packages): CTA 'Ver paquetes' en la landing del negocio (solo si hay paquetes activos)"
+```
+
+---
+
+### Task 13b: Error de OAuth en flujo de compra → volver a `/ingresar` (no a `/login` de dueñas)
+
+> **Del audit (GAP-3, decisión del usuario: incluir).** `authErrorRedirectPath` hoy solo reconoce `/mi` y `/tarjeta/` como flujo de clienta; un `next` de `/paquetes/*` que falle el OAuth cae en `/login` (login de dueñas email+password). Fix aditivo de una línea. **NO se toca `sanitizeNext` ni `signOut`** — solo `authErrorRedirectPath`, función distinta en el mismo archivo.
+
+**Files:**
+- Modify: `src/lib/auth/sanitize-next.ts`
+- Test: `src/lib/auth/sanitize-next.test.ts` (extender; buscar el archivo de test existente — el audit lo ubicó en `tests/unit/sanitize-next.test.ts`)
+
+- [ ] **Step 1: Escribir el test**
+
+Agregar al archivo de test existente de `authErrorRedirectPath` (o crear el caso):
+
+```ts
+it('trata /paquetes/* como flujo de clienta y vuelve a /ingresar', () => {
+  const url = authErrorRedirectPath('/paquetes/demo?comprar=abc', 'oauth')
+  expect(url.startsWith('/ingresar')).toBe(true)
+  expect(url).toContain('next=')
+})
+it('sin next de clienta sigue yendo a /login (dueñas)', () => {
+  expect(authErrorRedirectPath('/dashboard', 'oauth').startsWith('/login')).toBe(true)
+})
+```
+
+- [ ] **Step 2: Correr — debe fallar**
+
+Run: `npx vitest run tests/unit/sanitize-next.test.ts`
+Expected: FAIL — `/paquetes/*` hoy devuelve `/login`.
+
+- [ ] **Step 3: Implementar (edición de una línea en `authErrorRedirectPath`)**
+
+En `src/lib/auth/sanitize-next.ts`, en `authErrorRedirectPath`, extender `isCustomerFlow`:
+
+```ts
+  const isCustomerFlow =
+    safeNext === '/mi' ||
+    safeNext.startsWith('/mi/') ||
+    safeNext.startsWith('/tarjeta/') ||
+    safeNext.startsWith('/paquetes')
+```
+
+> No tocar `sanitizeNext` (líneas 10-18) ni ninguna otra función.
+
+- [ ] **Step 4: Correr — debe pasar**
+
+Run: `npx vitest run tests/unit/sanitize-next.test.ts`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git -C . add src/lib/auth/sanitize-next.ts tests/unit/sanitize-next.test.ts
+git commit -m "fix(auth): tratar /paquetes como flujo de clienta en el error de OAuth (vuelve a /ingresar)"
 ```
 
 ---
