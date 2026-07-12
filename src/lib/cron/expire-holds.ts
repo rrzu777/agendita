@@ -12,6 +12,7 @@ export interface ExpireHoldsResult {
   expired: number
   businessIds: string[]
   declaredTransferExpired: number
+  packagesExpired: number
 }
 
 interface ExpireHoldsDeps {
@@ -25,9 +26,36 @@ interface ExpireHoldsDeps {
  */
 export async function expireStaleHolds(
   now = new Date(),
-  db: Pick<PrismaClient, 'booking' | 'payment' | '$transaction'> = prisma,
+  db: Pick<PrismaClient, 'booking' | 'payment' | '$transaction' | 'packagePurchase'> = prisma,
   deps: ExpireHoldsDeps = { sendExpiredEmail: sendBankTransferExpiredToCustomer }
 ): Promise<ExpireHoldsResult> {
+  // ── Sweep de compras de paquete pending con hold vencido (B4b-3) ──
+  // Corre SIEMPRE, antes del early-return de reservas (el caso común es 0 reservas
+  // vencidas; si el sweep fuera después del return, nunca correría).
+  const expiredPurchases = await db.packagePurchase.findMany({
+    where: { status: 'pending', holdExpiresAt: { lt: now } },
+    select: { id: true, businessId: true },
+  })
+  let packagesExpired = 0
+  const packageBusinessIds: string[] = []
+  if (expiredPurchases.length > 0) {
+    const pkgIds = expiredPurchases.map((p) => p.id)
+    await db.$transaction(async (tx) => {
+      const res = await tx.packagePurchase.updateMany({
+        where: { id: { in: pkgIds }, status: 'pending', holdExpiresAt: { lt: now } },
+        data: { status: 'expired' },
+      })
+      packagesExpired = res.count
+      // Cancelar los Payment pending huérfanos de las compras que REALMENTE expiraron
+      // (filtro por la relación en la misma tx — status ya es 'expired' acá).
+      await tx.payment.updateMany({
+        where: { packagePurchaseId: { in: pkgIds }, status: 'pending', packagePurchase: { status: 'expired' } },
+        data: { status: 'cancelled' },
+      })
+    })
+    packageBusinessIds.push(...new Set(expiredPurchases.map((p) => p.businessId)))
+  }
+
   const expiredBookings = await db.booking.findMany({
     where: {
       status: BookingStatus.pending_payment,
@@ -38,7 +66,7 @@ export async function expireStaleHolds(
   })
 
   if (expiredBookings.length === 0) {
-    return { expired: 0, businessIds: [], declaredTransferExpired: 0 }
+    return { expired: 0, businessIds: [...packageBusinessIds], declaredTransferExpired: 0, packagesExpired }
   }
 
   const expiredIds = expiredBookings.map((b) => b.id)
@@ -134,11 +162,14 @@ export async function expireStaleHolds(
   // Como no podemos saber cuáles IDs se actualizaron sin query adicional,
   // usamos el count. Si el count difiere del length, significa que hubo races.
   // En ese caso revalidamos todos los candidatos (conservador pero correcto).
-  const businessIds = [...new Set(expiredBookings.map((b) => b.businessId))]
+  const businessIds = [
+    ...new Set([...expiredBookings.map((b) => b.businessId), ...packageBusinessIds]),
+  ]
 
   return {
     expired: count,
     businessIds,
     declaredTransferExpired: declaredBookingIds.length,
+    packagesExpired,
   }
 }

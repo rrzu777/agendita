@@ -146,4 +146,40 @@ describe('createPackagePurchase + declarePackageTransfer (transferencia)', () =>
       expect(sale).toBeNull()
     })
   })
+
+  describe('expireStaleHolds — sweep de compras de paquete', () => {
+    it('expira una compra pending con hold vencido y cancela su Payment declarado; deja viva la de hold vigente', async () => {
+      const { expireStaleHolds } = await import('@/lib/cron/expire-holds')
+      const now = new Date('2026-07-12T12:00:00Z')
+
+      const customer = await prisma.customer.create({ data: { businessId: BIZ, name: 'Cli', phone: '+56900000021' } })
+      // Vencida: hold en el pasado + Payment declarado pending.
+      const stale = await prisma.packagePurchase.create({ data: {
+        businessId: BIZ, customerId: customer.id, packageProductId: productId,
+        pricePaid: 50000, quantity: 5, bonusQuantity: 0, coversAll: true, coveredServiceIds: [],
+        source: 'online', status: 'pending', holdExpiresAt: new Date('2026-07-11T00:00:00Z'),
+      } })
+      await prisma.payment.create({ data: {
+        businessId: BIZ, packagePurchaseId: stale.id, customerId: customer.id,
+        provider: 'manual', providerPaymentId: `bt-pkg-declared:${stale.id}`, amount: 50000, currency: 'CLP',
+        status: 'pending', paymentType: 'package_purchase', paymentMethod: 'Transferencia',
+      } })
+      // Viva: hold en el futuro.
+      const fresh = await prisma.packagePurchase.create({ data: {
+        businessId: BIZ, customerId: customer.id, packageProductId: productId,
+        pricePaid: 50000, quantity: 5, bonusQuantity: 0, coversAll: true, coveredServiceIds: [],
+        source: 'online', status: 'pending', holdExpiresAt: new Date('2026-07-20T00:00:00Z'),
+      } })
+
+      const result = await expireStaleHolds(now)
+
+      expect(result.packagesExpired).toBeGreaterThanOrEqual(1)
+      const staleAfter = await prisma.packagePurchase.findUnique({ where: { id: stale.id } })
+      expect(staleAfter!.status).toBe('expired')
+      const stalePay = await prisma.payment.findFirst({ where: { packagePurchaseId: stale.id } })
+      expect(stalePay!.status).toBe('cancelled')
+      const freshAfter = await prisma.packagePurchase.findUnique({ where: { id: fresh.id } })
+      expect(freshAfter!.status).toBe('pending')
+    })
+  })
 })
