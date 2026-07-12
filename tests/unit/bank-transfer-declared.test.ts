@@ -30,6 +30,11 @@ describe('bt-balance helpers', () => {
     expect(hasPendingBalanceTransfer(pending)).toBe(false)
     expect(hasPendingDeclaredTransfer({ status: 'pending_payment', payments: [balPending, depPending] })).toBe(true)
   })
+  it('declaredBalancePaymentWhere filtra manual+pending por prefijo de saldo', () => {
+    expect(declaredBalancePaymentWhere.provider).toBe('manual')
+    expect(declaredBalancePaymentWhere.status).toBe('pending')
+    expect(declaredBalancePaymentWhere.providerPaymentId.startsWith).toBe('bt-balance:')
+  })
   it('anyDeclaredTransferWhere cubre ambos prefijos', () => {
     expect(anyDeclaredTransferWhere.provider).toBe('manual')
     expect(anyDeclaredTransferWhere.status).toBe('pending')

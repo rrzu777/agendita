@@ -15,14 +15,19 @@ const verified = { ...declared, customerEmail: 'ana@x.cl', businessReplyToEmail:
 describe('balance transfer templates', () => {
   it('declarado-saldo dueña: menciona saldo y monto, no "abono"', () => {
     const html = balanceTransferDeclaredBusinessHtml(declared)
+    const text = balanceTransferDeclaredBusinessText(declared)
     expect(html.toLowerCase()).toContain('saldo')
     expect(html).toContain('12.000')
-    expect(balanceTransferDeclaredBusinessText(declared).toLowerCase()).toContain('saldo')
+    expect(text.toLowerCase()).toContain('saldo')
+    // el copy de saldo no debe reintroducir "abono" por un copy-paste del hermano
+    expect(html.toLowerCase()).not.toContain('abono')
+    expect(text.toLowerCase()).not.toContain('abono')
   })
   it('verificado-saldo clienta: confirma recepción del pago con monto', () => {
     const html = balanceTransferVerifiedCustomerHtml(verified)
     expect(html.toLowerCase()).toContain('saldo')
     expect(html).toContain('12.000')
+    expect(balanceTransferVerifiedCustomerText(verified).toLowerCase()).toContain('saldo')
   })
   it('rechazado-saldo clienta: NO menciona cancelación de la reserva', () => {
     const html = balanceTransferRejectedCustomerHtml(verified)
