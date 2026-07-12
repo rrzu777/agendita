@@ -9,6 +9,8 @@ const CACHE_TAGS = {
   publicBySubdomain: 'public-business-by-subdomain',
   bookingBySlug: 'booking-business-by-slug',
   bookingBySubdomain: 'booking-business-by-subdomain',
+  packagesBySlug: 'packages-business-by-slug',
+  packagesBySubdomain: 'packages-business-by-subdomain',
 } as const
 
 export async function revalidateBusinessPublicPaths(businessId: string) {
@@ -24,10 +26,14 @@ export async function revalidateBusinessPublicPaths(businessId: string) {
   revalidateTag(CACHE_TAGS.publicBySubdomain, 'max')
   revalidateTag(CACHE_TAGS.bookingBySlug, 'max')
   revalidateTag(CACHE_TAGS.bookingBySubdomain, 'max')
+  revalidateTag(CACHE_TAGS.packagesBySlug, 'max')
+  revalidateTag(CACHE_TAGS.packagesBySubdomain, 'max')
 
   // Invalidate public paths for this specific business
   revalidatePath('/')
   revalidatePath('/book')
   revalidatePath(`/b/${business.slug}`)
   revalidatePath(`/book/${business.slug}`)
+  revalidatePath('/paquetes')
+  revalidatePath(`/paquetes/${business.slug}`)
 }
