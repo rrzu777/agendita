@@ -249,6 +249,11 @@ export async function verifyAndConfirmPackagePayment(input: { purchaseId: string
   const user = await getCurrentUser()
   if (!user) throw new Error('Debes iniciar sesión.')
 
+  // Es un 'use server' export directamente invocable; rate-limit por consistencia
+  // con initiate/create aunque en prod (MP) sea un no-op ownership-gated.
+  const limit = await checkRateLimit('verify-package-payment', 20, 60000, { userId: user.id })
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+
   const purchase = await loadOwnedPurchase(input.purchaseId, user.id)
 
   const payment = await prisma.payment.findFirst({

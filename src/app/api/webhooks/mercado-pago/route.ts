@@ -414,7 +414,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Pago no asociado a una reserva ni a un paquete' }, { status: 400 })
       }
 
-      await prisma.$transaction(async (tx) => {
+      const { wasActivated } = await prisma.$transaction(async (tx) => {
         // Actualizar providerPaymentId y rawPayload
         await tx.payment.update({
           where: { id: payment.id },
@@ -424,7 +424,7 @@ export async function POST(request: NextRequest) {
           },
         })
 
-        await applyApprovedPackagePayment({
+        return applyApprovedPackagePayment({
           tx,
           packagePurchaseId,
           businessId: payment.businessId,
@@ -439,34 +439,39 @@ export async function POST(request: NextRequest) {
         })
       })
 
-      // Ambos envíos son independientes y ya vienen error-aislados por sus
-      // wrappers *Safely; corren en paralelo para no encadenar latencia de email.
-      await Promise.all([
-        sendNotificationSafely('package purchased customer', () =>
-          sendPackagePurchasedNotification(packagePurchaseId, payment.businessId),
-        ),
-        sendMultiNotificationSafely('package sold business', async () => {
-          const purchase = await prisma.packagePurchase.findUnique({
-            where: { id: packagePurchaseId },
-            include: {
-              product: { select: { name: true } },
-              customer: { select: { name: true } },
-              business: { select: { name: true, currency: true } },
-            },
-          })
-          if (!purchase) {
-            return [{ success: false as const, skipped: 'Compra no encontrada' }]
-          }
-          return sendPackageSoldNotificationToBusiness(payment.businessId, {
-            businessName: purchase.business.name,
-            customerName: purchase.customer.name,
-            productName: purchase.product.name,
-            totalSessions: purchase.quantity + purchase.bonusQuantity,
-            pricePaid: purchase.pricePaid,
-            businessCurrency: purchase.business.currency || 'CLP',
-          })
-        }),
-      ])
+      // Notificar SOLO en la primera activación: MP redeliveria el webhook
+      // (at-least-once) y sin este gate cada reintento reenviaría los dos emails.
+      // Espejo del `wasConfirmed` de la rama de reserva.
+      if (wasActivated) {
+        // Ambos envíos son independientes y ya vienen error-aislados por sus
+        // wrappers *Safely; corren en paralelo para no encadenar latencia de email.
+        await Promise.all([
+          sendNotificationSafely('package purchased customer', () =>
+            sendPackagePurchasedNotification(packagePurchaseId, payment.businessId),
+          ),
+          sendMultiNotificationSafely('package sold business', async () => {
+            const purchase = await prisma.packagePurchase.findUnique({
+              where: { id: packagePurchaseId },
+              include: {
+                product: { select: { name: true } },
+                customer: { select: { name: true } },
+                business: { select: { name: true, currency: true } },
+              },
+            })
+            if (!purchase) {
+              return [{ success: false as const, skipped: 'Compra no encontrada' }]
+            }
+            return sendPackageSoldNotificationToBusiness(payment.businessId, {
+              businessName: purchase.business.name,
+              customerName: purchase.customer.name,
+              productName: purchase.product.name,
+              totalSessions: purchase.quantity + purchase.bonusQuantity,
+              pricePaid: purchase.pricePaid,
+              businessCurrency: purchase.business.currency || 'CLP',
+            })
+          }),
+        ])
+      }
 
       const customerId = payment.packagePurchase?.customerId
       if (customerId) {

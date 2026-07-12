@@ -39,7 +39,10 @@ export function PackageCatalog({ slug, currency, products, onlineAvailable, onli
     return <p className="text-center text-muted-foreground">Este negocio todavía no publicó paquetes.</p>
   }
 
-  if (selected && isLoggedIn && prefill) {
+  // `onlineAvailable` también gatea el checkout por deep-link (?comprar=): sin
+  // esto, un link a un negocio sin pago online mostraría el form y moriría en el
+  // re-gate del server. Al caer al catálogo se ve el aviso + botón deshabilitado.
+  if (selected && isLoggedIn && prefill && onlineAvailable) {
     return (
       <PackageCheckout
         product={selected}

@@ -141,8 +141,12 @@ export async function getFinancialSummary() {
     prisma.booking.count({ where: baseWhere }),
     prisma.booking.count({ where: { ...baseWhere, status: 'completed' } }),
     prisma.booking.count({ where: { ...baseWhere, status: 'cancelled' } }),
-    // Ventas de paquete (income) hoy/mes — misma definición NETA que getPackageSalesTotal
-    // (SUM(package_sale) − SUM(refund_issued con packagePurchaseId)), sólo que ventaneada.
+    // Ventas de paquete (income) hoy/mes, netas de refunds — como getPackageSalesTotal
+    // (SUM(package_sale) − SUM(refund_issued con packagePurchaseId)) pero acotado a la
+    // ventana. OJO: sale y refund se ventanean por su propio occurredAt, así que un
+    // refund de una venta de un período anterior no reconcilia dentro de esta ventana
+    // (queda clampeado a 0 por el Math.max de abajo). Es un KPI de "ventas del período",
+    // no un neto histórico; para el histórico exacto usar getPackageSalesTotal.
     prisma.ledgerEntry.aggregate({
       where: { ...baseWhere, type: 'package_sale', packagePurchaseId: { not: null }, occurredAt: { gte: today } },
       _sum: { amount: true },

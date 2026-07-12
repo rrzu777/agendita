@@ -43,7 +43,7 @@ vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 
 vi.mock('@/server/services/finance', () => ({
   applyApprovedPayment: vi.fn(),
-  applyApprovedPackagePayment: vi.fn(),
+  applyApprovedPackagePayment: vi.fn().mockResolvedValue({ wasActivated: true }),
 }))
 
 vi.mock('@/lib/booking-payments', () => ({
@@ -109,6 +109,7 @@ function createRequestInit(overrides: Record<string, string> = {}): Record<strin
 
 const { applyApprovedPayment, applyApprovedPackagePayment } = await import('@/server/services/finance')
 const { revalidatePath } = await import('next/cache')
+const { sendPackagePurchasedNotification } = await import('@/lib/notifications')
 
 describe('Mercado Pago webhook — dispatch de paquete', () => {
   let POST: (req: Request) => Promise<Response>
@@ -160,6 +161,8 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
     })
     vi.clearAllMocks()
     mockMpFetch.mockReset()
+    // clearAllMocks borra el valor de retorno; el webhook desestructura { wasActivated }.
+    ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ wasActivated: true })
 
     mockPrisma.paymentAccount.findFirst.mockReset().mockResolvedValue({
       id: 'pa-1',
@@ -240,6 +243,29 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
 
       expect(revalidatePath).toHaveBeenCalledWith('/dashboard/paquetes')
       expect(revalidatePath).toHaveBeenCalledWith('/dashboard/customers/cust-1')
+      expect(sendPackagePurchasedNotification).toHaveBeenCalledTimes(1)
+    })
+
+    it('no reenvía notificaciones en redelivery (wasActivated false), pero responde 200', async () => {
+      ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ wasActivated: false })
+
+      const secret = 'test-webhook-secret'
+      const body = { data: { id: 'mp-pkg-001' } }
+      const signature = createMpSignatureHeader('mp-pkg-001', 'req-pkg', secret)
+
+      mockMpFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(basePackageMpPayment),
+      })
+      mockPrisma.payment.findUnique.mockResolvedValue(basePackagePayment)
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({ ...mockPrisma }))
+
+      const req = makeRequest(body, { 'x-signature': signature, 'x-request-id': 'req-pkg' })
+      const res = await POST(req)
+
+      expect(res.status).toBe(200)
+      expect(applyApprovedPackagePayment).toHaveBeenCalledTimes(1)
+      expect(sendPackagePurchasedNotification).not.toHaveBeenCalled()
     })
 
     it('rejects approved package payment with missing packagePurchaseId in metadata', async () => {
