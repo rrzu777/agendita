@@ -802,11 +802,35 @@ describe('applyApprovedPackagePayment', () => {
     })
 
     expect(mockPrisma.booking.findUnique).not.toHaveBeenCalled()
+    // El Payment se crea polimórfico: packagePurchaseId seteado, bookingId null.
+    expect(mockPrisma.payment.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        packagePurchaseId: 'p1', bookingId: null, customerId: 'c1',
+        businessId: 'b1', paymentType: 'package_purchase', status: 'approved',
+      }),
+    }))
     expect(activatePkg).toHaveBeenCalledWith(
       mockPrisma,
       expect.objectContaining({ id: 'p1' }),
       expect.objectContaining({ requestId: 'p1', paymentId: 'pay1' }),
     )
+  })
+
+  it('corta por status active aunque el pago aún no esté aprobado (cubre la cláusula || active)', async () => {
+    const { applyApprovedPackagePayment } = await import('@/server/services/finance')
+    // Compra ya active, pero NO hay pago aprobado previo (findFirst → null,
+    // create devuelve un pago recién aprobado) → alreadyApproved es false, así
+    // que el early-return depende ÚNICAMENTE de purchase.status === 'active'.
+    mockPrisma.packagePurchase.findUnique.mockResolvedValue({ id: 'p1', businessId: 'b1', customerId: 'c1', status: 'active', pricePaid: 30000, quantity: 3, bonusQuantity: 0, expiresAt: null, createdByUserId: null })
+    mockPrisma.payment.findFirst.mockResolvedValue(null)
+    mockPrisma.payment.create.mockResolvedValue({ id: 'pay1', status: 'approved', paymentType: 'package_purchase', amount: 30000 })
+
+    await applyApprovedPackagePayment({
+      tx: mockPrisma, packagePurchaseId: 'p1', businessId: 'b1', amount: 30000,
+      currency: 'CLP', provider: PaymentProvider.mercado_pago, providerPaymentId: 'mp-1',
+      paymentType: PaymentType.package_purchase,
+    })
+    expect(activatePkg).not.toHaveBeenCalled()
   })
 
   it('es idempotente: compra ya active no re-activa', async () => {

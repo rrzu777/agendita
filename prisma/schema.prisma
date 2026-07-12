@@ -461,6 +461,10 @@ model Payment {
   // varios pagos manuales (providerPaymentId = null) para el mismo booking
   // siguen permitidos, pero no se duplica un pago online con el mismo providerPaymentId.
   @@unique([bookingId, provider, providerPaymentId])
+  // Backstop simétrico para pagos de paquete (bookingId null): dos webhooks
+  // concurrentes con el mismo providerPaymentId no pueden crear dos Payments.
+  // Los NULLs (venta manual sin providerPaymentId) siguen permitidos.
+  @@unique([packagePurchaseId, provider, providerPaymentId])
   @@index([businessId, status])
   @@index([packagePurchaseId])
 }
