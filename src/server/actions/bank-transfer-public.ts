@@ -7,6 +7,8 @@ import { prisma } from '@/lib/db'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { BANK_TRANSFER_PUBLIC_SELECT, type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { btDeclaredId, btBalanceId, BANK_TRANSFER_METHOD, FIRM_BOOKING_STATUSES } from '@/lib/bank-transfer/declared'
+import { getProofStorage, isProofUploadAvailable, type ProofStorage } from '@/lib/storage/r2'
+import { proofKey, isAllowedProofType, type ProofKind } from '@/lib/storage/proof'
 import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
 import {
   sendMultiNotificationSafely,
@@ -19,10 +21,50 @@ import {
 // seguridad que payments.ts (identidad = bookingId cuid + rate limit).
 
 export async function getBankTransferInfo(businessId: string): Promise<BankTransferPublicInfo | null> {
-  return prisma.bankTransferAccount.findFirst({
+  const row = await prisma.bankTransferAccount.findFirst({
     where: { businessId, isEnabled: true },
-    select: BANK_TRANSFER_PUBLIC_SELECT,
+    select: { ...BANK_TRANSFER_PUBLIC_SELECT, business: { select: { requireTransferProof: true } } },
   })
+  if (!row) return null
+  const { business, ...rest } = row
+  return { ...rest, requireProof: business.requireTransferProof && isProofUploadAvailable() }
+}
+
+type ProofDeps = { storage?: ProofStorage | null }
+
+/** Mina una URL PUT prefirmada para subir el comprobante ANTES de declarar.
+ *  Público: identidad = bookingId (cuid) + rate limit, igual que declare*. */
+export async function createProofUploadUrl(
+  bookingId: string,
+  kind: ProofKind,
+  contentType: string,
+  deps: ProofDeps = {},
+): Promise<{ uploadUrl: string; key: string }> {
+  const limit = await checkRateLimit('proof-upload-url', 20, 60000)
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+
+  if (!isAllowedProofType(contentType)) throw new Error('Tipo de archivo no permitido.')
+
+  const storage = deps.storage !== undefined ? deps.storage : getProofStorage()
+  if (!storage) throw new Error('La subida de comprobantes no está disponible.')
+
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    select: { id: true, businessId: true, status: true, paymentMethod: true, remainingBalance: true },
+  })
+  if (!booking) throw new Error('Reserva no encontrada')
+
+  // Elegibilidad mínima por kind (el declare re-valida en profundidad).
+  if (kind === 'deposit' && booking.paymentMethod !== BANK_TRANSFER_METHOD) {
+    throw new Error('Esta reserva no eligió pago por transferencia')
+  }
+  if (kind === 'balance' && booking.remainingBalance <= 0) {
+    throw new Error('Esta reserva no tiene saldo pendiente.')
+  }
+
+  const key = proofKey(booking.businessId, booking.id, kind)
+  const uploadUrl = await storage.presignUpload(key, contentType)
+  return { uploadUrl, key }
 }
 
 /**

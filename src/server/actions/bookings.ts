@@ -26,7 +26,8 @@ import { creditVisitPoints } from '@/lib/loyalty/credit'
 import { emitAutomaticReward, loadAutomaticRules } from '@/lib/loyalty/automatic'
 import { rewardReferralOnCompletion, captureReferral, notifyReferralReward } from '@/lib/loyalty/referral'
 import { firstVisitKey, conditionKind } from '@/lib/loyalty/automatic-match'
-import { BANK_TRANSFER_PUBLIC_SELECT, type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
+import { type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
+import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD, anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import type { BookingEmailData } from '@/lib/notifications/types'
@@ -269,10 +270,7 @@ export async function createBooking(data: {
   // los reusa (se pasan a fireBookingNotifications sin re-consultar).
   let bankTransferAccount: BankTransferPublicInfo | null = null
   if (data.paymentMethod === BANK_TRANSFER_METHOD) {
-    bankTransferAccount = await prisma.bankTransferAccount.findFirst({
-      where: { businessId, isEnabled: true },
-      select: BANK_TRANSFER_PUBLIC_SELECT,
-    })
+    bankTransferAccount = await getBankTransferInfo(businessId)
     if (!bankTransferAccount) {
       throw new Error('Este negocio no tiene transferencia bancaria habilitada')
     }
