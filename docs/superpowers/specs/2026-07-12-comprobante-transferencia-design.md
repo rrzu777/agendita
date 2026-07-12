@@ -253,9 +253,63 @@ registra el pago por el flujo manual). Modo `reopen` (clienta re-declara) sí pa
   `src/components/dashboard/{pending-transfers-section.tsx,verify-transfer-dialog.tsx}`;
   `src/lib/notifications/{types.ts,templates.ts,email-provider.ts}`.
 
-## Prerrequisitos de infra (usuario)
+## Guía de infra para el usuario (paso a paso)
 
-1. Crear bucket R2 privado.
-2. Configurar CORS del bucket: permitir `PUT` desde el dominio de la app + los orígenes de preview de Vercel.
-3. Regla de lifecycle: borrar objetos bajo `proofs/` con antigüedad > 180 días.
-4. Setear `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` en Vercel (y `.env.local`).
+Todo esto es manual y va **fuera del código**. El código se puede mergear antes: si los envs de R2 no
+están, la feature queda auto-deshabilitada (el gate `isProofUploadAvailable`), así que nada se rompe. Cuando
+completes estos pasos, la feature "se prende" sola.
+
+### Cloudflare (crear el bucket y las llaves)
+
+1. **Cuenta → R2 → Create bucket.** Nombre sugerido: `agendita-comprobantes`. Dejalo **privado** (no
+   actives "Public access" ni dominio público). Anotá el nombre → va en `R2_BUCKET`.
+2. **Account ID.** En la página de R2 (arriba a la derecha, o en Overview) copiá el **Account ID** → va en
+   `R2_ACCOUNT_ID`. El endpoint se arma solo: `https://<account_id>.r2.cloudflarestorage.com`.
+3. **API Token.** R2 → **Manage R2 API Tokens** → **Create API Token**. Permiso **Object Read & Write**,
+   alcance al bucket `agendita-comprobantes`. Al crearlo te muestra **Access Key ID** y **Secret Access Key**
+   (el secreto se ve una sola vez, copialo ya) → van en `R2_ACCESS_KEY_ID` y `R2_SECRET_ACCESS_KEY`.
+4. **CORS del bucket.** Bucket → **Settings** → **CORS Policy** → pegá esto (ajustá los dominios a los
+   tuyos; incluí el de producción y el comodín de previews de Vercel):
+   ```json
+   [
+     {
+       "AllowedOrigins": ["https://TU-DOMINIO.com", "https://*.vercel.app"],
+       "AllowedMethods": ["PUT"],
+       "AllowedHeaders": ["content-type"],
+       "MaxAgeSeconds": 3600
+     }
+   ]
+   ```
+   Sin esto, la subida directa desde el navegador falla con error de CORS.
+5. **Regla de lifecycle (limpieza automática).** Bucket → **Settings** → **Object lifecycle rules** →
+   **Add rule**. Prefijo `proofs/`, acción **Delete objects** a los **180 días** de creados. Esto barre
+   comprobantes viejos, huérfanos y rechazados sin que el código tenga que borrar nada.
+
+### Vercel (dar los envs a la app)
+
+6. Proyecto → **Settings** → **Environment Variables** → agregá las 4, marcando **Production**,
+   **Preview** y **Development**:
+   - `R2_ACCOUNT_ID`
+   - `R2_ACCESS_KEY_ID`
+   - `R2_SECRET_ACCESS_KEY`
+   - `R2_BUCKET`
+7. **Redeploy** (o esperá al próximo deploy) para que tomen las variables.
+
+### Local (`.env.local`)
+
+8. Agregá las mismas 4 variables a `/Users/.../agendita/.env.local` para poder probar la subida en desarrollo.
+
+### GitHub Actions (CI) — **no hay que hacer nada**
+
+9. Los tests mockean el cliente R2 (inyección de `deps`), así que **CI no necesita** las credenciales de R2.
+   No agregues secretos al repo por esta feature.
+
+### Checklist final
+
+- [ ] Bucket privado creado (`R2_BUCKET`).
+- [ ] Account ID copiado (`R2_ACCOUNT_ID`).
+- [ ] API Token con Object Read & Write → Access Key + Secret (`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`).
+- [ ] CORS con `PUT` desde tu dominio + `*.vercel.app`.
+- [ ] Lifecycle rule: borrar `proofs/` a los 180 días.
+- [ ] 4 envs en Vercel (Prod + Preview + Dev) + redeploy.
+- [ ] 4 envs en `.env.local`.
