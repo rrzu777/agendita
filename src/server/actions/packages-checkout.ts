@@ -120,15 +120,17 @@ export async function createPackagePurchase(input: {
   return { purchaseId }
 }
 
-/**
- * Prefill del checkout para una clienta logueada. Email siempre de la sesión.
- */
-export async function getPackageCheckoutPrefill(businessId: string): Promise<{
+/** Prefill del checkout de paquete para una clienta logueada. */
+export type PackageCheckoutPrefill = {
   email: string | null
   name: string
   phone: string
-  hasCustomer: boolean
-} | null> {
+}
+
+/**
+ * Prefill del checkout para una clienta logueada. Email siempre de la sesión.
+ */
+export async function getPackageCheckoutPrefill(businessId: string): Promise<PackageCheckoutPrefill | null> {
   const user = await getCurrentUser()
   if (!user) return null
 
@@ -142,7 +144,6 @@ export async function getPackageCheckoutPrefill(businessId: string): Promise<{
     email: user.email ?? null,
     name: customer?.name || metaName || '',
     phone: customer?.phone || '',
-    hasCustomer: !!customer,
   }
 }
 
@@ -203,7 +204,7 @@ export async function initiatePackagePayment(input: { purchaseId: string }): Pro
         businessId: purchase.businessId,
         packagePurchaseId: purchase.id,
         customerId: purchase.customerId,
-        provider: provider.name === 'mercado_pago' ? PaymentProvider.mercado_pago : (provider.name as PaymentProvider),
+        provider: provider.name as PaymentProvider,
         providerPaymentId: null,
         amount: purchase.pricePaid,
         currency,
@@ -217,7 +218,6 @@ export async function initiatePackagePayment(input: { purchaseId: string }): Pro
   const result = await createMpPreferenceForPayment(provider, {
     amount: purchase.pricePaid,
     currency,
-    bookingId: '', // MP ignora bookingId para paquetes; external_reference = localPaymentId
     description: `Paquete ${purchase.product.name}`,
     returnUrl: getPackageConfirmationUrl(purchase.business, purchase.id),
     webhookUrl: `${getPaymentAppUrl()}/api/webhooks/mercado-pago`,

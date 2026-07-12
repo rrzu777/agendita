@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { formatMoney } from '@/lib/money'
+import type { PackageCheckoutPrefill } from '@/server/actions/packages-checkout'
 import { PackageCheckout } from './package-checkout'
 
 export interface CatalogProduct {
@@ -24,7 +25,7 @@ interface PackageCatalogProps {
   onlineAvailable: boolean
   onlineReason: string | null
   isLoggedIn: boolean
-  prefill: { email: string | null; name: string; phone: string; hasCustomer: boolean } | null
+  prefill: PackageCheckoutPrefill | null
   /** Producto a preseleccionar (retorno de /ingresar?next=...&comprar=ID tras loguearse). */
   preselectedProductId?: string
 }

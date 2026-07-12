@@ -282,6 +282,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'localPaymentId mismatch' }, { status: 400 })
       }
 
+      // Solo el id de referencia difiere por tipo; el resto de checks son comunes.
       if (isPackagePayment) {
         if (metadata.packagePurchaseId !== payment.packagePurchaseId) {
           console.error('[MP Webhook] packagePurchaseId mismatch', {
@@ -289,13 +290,6 @@ export async function POST(request: NextRequest) {
             db: payment.packagePurchaseId,
           })
           return NextResponse.json({ error: 'packagePurchaseId mismatch' }, { status: 400 })
-        }
-        if (metadata.paymentType !== 'package_purchase') {
-          console.error('[MP Webhook] paymentType mismatch', {
-            metadata: metadata.paymentType,
-            db: 'package_purchase',
-          })
-          return NextResponse.json({ error: 'paymentType mismatch' }, { status: 400 })
         }
       } else {
         if (metadata.bookingId !== payment.bookingId) {
@@ -305,13 +299,14 @@ export async function POST(request: NextRequest) {
           })
           return NextResponse.json({ error: 'bookingId mismatch' }, { status: 400 })
         }
-        if (metadata.paymentType !== payment.paymentType) {
-          console.error('[MP Webhook] paymentType mismatch', {
-            metadata: metadata.paymentType,
-            db: payment.paymentType,
-          })
-          return NextResponse.json({ error: 'paymentType mismatch' }, { status: 400 })
-        }
+      }
+
+      if (metadata.paymentType !== payment.paymentType) {
+        console.error('[MP Webhook] paymentType mismatch', {
+          metadata: metadata.paymentType,
+          db: payment.paymentType,
+        })
+        return NextResponse.json({ error: 'paymentType mismatch' }, { status: 400 })
       }
 
       if (metadata.businessId !== payment.businessId) {
@@ -444,31 +439,34 @@ export async function POST(request: NextRequest) {
         })
       })
 
-      await sendNotificationSafely('package purchased customer', () =>
-        sendPackagePurchasedNotification(packagePurchaseId, payment.businessId),
-      )
-
-      await sendMultiNotificationSafely('package sold business', async () => {
-        const purchase = await prisma.packagePurchase.findUnique({
-          where: { id: packagePurchaseId },
-          include: {
-            product: { select: { name: true } },
-            customer: { select: { name: true } },
-            business: { select: { name: true, currency: true } },
-          },
-        })
-        if (!purchase) {
-          return [{ success: false as const, skipped: 'Compra no encontrada' }]
-        }
-        return sendPackageSoldNotificationToBusiness(payment.businessId, {
-          businessName: purchase.business.name,
-          customerName: purchase.customer.name,
-          productName: purchase.product.name,
-          totalSessions: purchase.quantity + purchase.bonusQuantity,
-          pricePaid: purchase.pricePaid,
-          businessCurrency: purchase.business.currency || 'CLP',
-        })
-      })
+      // Ambos envíos son independientes y ya vienen error-aislados por sus
+      // wrappers *Safely; corren en paralelo para no encadenar latencia de email.
+      await Promise.all([
+        sendNotificationSafely('package purchased customer', () =>
+          sendPackagePurchasedNotification(packagePurchaseId, payment.businessId),
+        ),
+        sendMultiNotificationSafely('package sold business', async () => {
+          const purchase = await prisma.packagePurchase.findUnique({
+            where: { id: packagePurchaseId },
+            include: {
+              product: { select: { name: true } },
+              customer: { select: { name: true } },
+              business: { select: { name: true, currency: true } },
+            },
+          })
+          if (!purchase) {
+            return [{ success: false as const, skipped: 'Compra no encontrada' }]
+          }
+          return sendPackageSoldNotificationToBusiness(payment.businessId, {
+            businessName: purchase.business.name,
+            customerName: purchase.customer.name,
+            productName: purchase.product.name,
+            totalSessions: purchase.quantity + purchase.bonusQuantity,
+            pricePaid: purchase.pricePaid,
+            businessCurrency: purchase.business.currency || 'CLP',
+          })
+        }),
+      ])
 
       const customerId = payment.packagePurchase?.customerId
       if (customerId) {

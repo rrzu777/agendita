@@ -6,12 +6,13 @@ import { Input } from '@/components/ui/input'
 import { formatMoney } from '@/lib/money'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { createPackagePurchase, initiatePackagePayment } from '@/server/actions/packages-checkout'
+import type { PackageCheckoutPrefill } from '@/server/actions/packages-checkout'
 import type { CatalogProduct } from './package-catalog'
 
 interface PackageCheckoutProps {
   product: CatalogProduct
   currency: string
-  prefill: { email: string | null; name: string; phone: string; hasCustomer: boolean }
+  prefill: PackageCheckoutPrefill
   onCancel: () => void
 }
 

@@ -1,7 +1,9 @@
 export interface CreatePaymentInput {
   amount: number
   currency: string
-  bookingId: string
+  /** Reserva asociada, si aplica. Ningún provider lo lee hoy (usan
+   *  localPaymentId como external_reference); la compra de paquete lo omite. */
+  bookingId?: string
   description: string
   returnUrl: string
   webhookUrl: string

@@ -2,13 +2,14 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { PackageCatalog } from './package-catalog'
 import type { PackagesBusiness } from '@/lib/business/public'
+import type { PackageCheckoutPrefill } from '@/server/actions/packages-checkout'
 
 interface PackagesBusinessPageProps {
   business: PackagesBusiness
   profileHref: string
   onlineAvailable: boolean
   onlineReason: string | null
-  prefill: { email: string | null; name: string; phone: string; hasCustomer: boolean } | null
+  prefill: PackageCheckoutPrefill | null
   preselectedProductId?: string
 }
 
