@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { StepService } from './step-service'
 import { StepDate } from './step-date'
 import { StepTime } from './step-time'
@@ -8,6 +8,22 @@ import { StepCustomer } from './step-customer'
 import { StepPayment } from './step-payment'
 import { StepConfirmation } from './step-confirmation'
 import type { Service } from '@prisma/client'
+import type { FunnelSession } from '@/lib/customers/session-prefill'
+import { restoreWizardState, serializeWizardState, wizardStorageKey } from '@/lib/booking/wizard-storage'
+
+type WizardSession = Pick<FunnelSession, 'email' | 'name' | 'phone'> | null
+
+// Prefill editable: los datos de la sesión pisan los de contacto (con fallback a
+// lo ya tipeado/guardado cuando la sesión no trae nombre o teléfono).
+function applySessionPrefill(data: BookingData, session: WizardSession): BookingData {
+  if (!session) return data
+  return {
+    ...data,
+    customerName: session.name || data.customerName,
+    customerPhone: session.phone || data.customerPhone,
+    customerEmail: session.email,
+  }
+}
 
 export type BookingData = {
   serviceId: string | null
@@ -53,19 +69,45 @@ const steps = [
 
 interface BookingWizardProps {
   businessId: string
+  slug: string
   timezone: string
   services: Service[]
   cancellationPolicy?: string | null
   referralToken?: string
+  session: WizardSession
 }
 
-export function BookingWizard({ businessId, timezone, services, cancellationPolicy, referralToken }: BookingWizardProps) {
+export function BookingWizard({ businessId, slug, timezone, services, cancellationPolicy, referralToken, session }: BookingWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
-  const [data, setData] = useState<BookingData>(initialData)
+  const [data, setData] = useState<BookingData>(() => applySessionPrefill(initialData, session))
   const [bookingId, setBookingId] = useState<string | null>(null)
   const [bookingNumber, setBookingNumber] = useState<number | null>(null)
   const [confirmationMode, setConfirmationMode] = useState<'paid' | 'pending'>('paid')
   const [confirmationPromo, setConfirmationPromo] = useState<{ discountAmount: number; finalAmount: number } | null>(null)
+
+  // Restaura el estado guardado antes del viaje a /ingresar (solo con ?continuar=1;
+  // el storage se limpia siempre para no restaurar dos veces ni dejar residuo).
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!new URLSearchParams(window.location.search).has('continuar')) return
+    const key = wizardStorageKey(businessId)
+    const raw = sessionStorage.getItem(key)
+    sessionStorage.removeItem(key)
+    const restored = restoreWizardState(raw, services)
+    if (!restored) return
+    /* eslint-disable react-hooks/set-state-in-effect -- one-time restore from sessionStorage on mount, gated by ?continuar=1 */
+    setData(applySessionPrefill(restored, session))
+    setCurrentStep(restored.timeSlot ? 4 : restored.date ? 3 : 2)
+    /* eslint-enable react-hooks/set-state-in-effect */
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar
+  }, [])
+
+  function handleLoginCta(partial: Partial<BookingData>) {
+    const merged = { ...data, ...partial }
+    const raw = serializeWizardState(merged)
+    if (raw) sessionStorage.setItem(wizardStorageKey(businessId), raw)
+    window.location.href = `/ingresar?next=${encodeURIComponent(`/ir/${slug}`)}`
+  }
 
   function updateData(partial: Partial<BookingData>) {
     setData(prev => ({ ...prev, ...partial }))
@@ -128,7 +170,7 @@ export function BookingWizard({ businessId, timezone, services, cancellationPoli
           </div>
         )}
         {currentStep === 4 && data.timeSlot && (
-          <StepCustomer data={data} onSubmit={(customerData) => {
+          <StepCustomer data={data} sessionEmail={session?.email ?? null} onLoginCta={handleLoginCta} onSubmit={(customerData) => {
             updateData(customerData)
             nextStep()
           }} onBack={prevStep} />
@@ -155,7 +197,7 @@ export function BookingWizard({ businessId, timezone, services, cancellationPoli
           </div>
         )}
         {currentStep === 6 && (
-          <StepConfirmation data={data} timezone={timezone} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} />
+          <StepConfirmation data={data} timezone={timezone} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} sessionEmail={session?.email ?? null} />
         )}
       </section>
     </div>

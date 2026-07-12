@@ -7,14 +7,22 @@ import { BadgeCheck, CalendarDays, Camera, Clock, Clock3, MapPin, MessageCircle,
 interface BusinessProfileProps {
   business: PublicBusiness
   bookingHref?: string
+  accountCta?: { label: 'Ingresar' | 'Mi cuenta'; href: string }
 }
 
-export function BusinessProfile({ business, bookingHref = `/book/${business.slug}` }: BusinessProfileProps) {
+export function BusinessProfile({ business, bookingHref = `/book/${business.slug}`, accountCta }: BusinessProfileProps) {
   const daysOfWeek = ['Domingos', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábados']
 
   return (
     <main className="studio-shell pb-28">
       <div className="mx-auto max-w-[420px] px-4 py-12">
+        {accountCta && (
+          <p className="-mt-6 mb-4 text-right">
+            <Link href={accountCta.href} className="text-sm font-semibold text-primary hover:underline">
+              {accountCta.label}
+            </Link>
+          </p>
+        )}
         <section className="mb-10 text-center">
           <div className="relative mx-auto mb-6 size-28">
             {business.profileImageUrl ? (

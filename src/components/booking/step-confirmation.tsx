@@ -7,8 +7,9 @@ import { CheckCircle2, Clock } from 'lucide-react'
 import { formatMoney } from '@/lib/money'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { formatBookingDateTime } from '@/lib/booking/format-booking-datetime'
+import { AccountCta } from './account-cta'
 
-export function StepConfirmation({ data, timezone, bookingId, bookingNumber, mode, promo }: { data: BookingData; timezone: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null }) {
+export function StepConfirmation({ data, timezone, bookingId, bookingNumber, mode, promo, sessionEmail }: { data: BookingData; timezone: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null }) {
   const isPending = mode === 'pending'
   const isFree = data.servicePrice <= 0
   const noDeposit = data.serviceDeposit <= 0
@@ -69,6 +70,8 @@ export function StepConfirmation({ data, timezone, bookingId, bookingNumber, mod
       </div>
 
       <p className="mb-6 text-sm text-muted-foreground">Número de reserva: {formatBookingNumber(bookingNumber, bookingId)}</p>
+
+      <AccountCta sessionActive={sessionEmail !== null} customerEmail={data.customerEmail || null} className="mb-6" />
 
       <Link href="/">
         <Button className="h-12 rounded-full px-7 text-base font-semibold">Volver al inicio</Button>

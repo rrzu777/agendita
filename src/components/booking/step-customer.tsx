@@ -8,13 +8,27 @@ import { Textarea } from '@/components/ui/textarea'
 import { BookingData } from './wizard'
 import { Mail, Phone, User } from 'lucide-react'
 
-export function StepCustomer({ data, onSubmit, onBack }: { data: BookingData; onSubmit: (data: Partial<BookingData>) => void; onBack: () => void }) {
+export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack }: {
+  data: BookingData
+  sessionEmail: string | null
+  onLoginCta: (partial: Partial<BookingData>) => void
+  onSubmit: (data: Partial<BookingData>) => void
+  onBack: () => void
+}) {
   const [formData, setFormData] = useState({
     customerName: data.customerName,
     customerPhone: data.customerPhone,
     customerEmail: data.customerEmail,
     customerNotes: data.customerNotes,
   })
+  // "No soy yo": reserva para otra persona SIN cerrar sesión (signOut perdería el wizard).
+  const [dismissedSession, setDismissedSession] = useState(false)
+  const showSession = sessionEmail !== null && !dismissedSession
+
+  function handleNotMe() {
+    setDismissedSession(true)
+    setFormData({ customerName: '', customerPhone: '', customerEmail: '', customerNotes: formData.customerNotes })
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -25,6 +39,22 @@ export function StepCustomer({ data, onSubmit, onBack }: { data: BookingData; on
     <div>
       <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Tus datos</h2>
       <p className="mb-7 text-base text-muted-foreground">Ingresa tus datos para confirmar la reserva.</p>
+
+      {sessionEmail === null && (
+        <button
+          type="button"
+          onClick={() => onLoginCta(formData)}
+          className="mb-6 w-full rounded-2xl border border-primary/25 bg-secondary/40 px-4 py-3 text-left text-sm text-primary transition hover:bg-secondary/60"
+        >
+          ¿Ya tienes cuenta? <span className="font-semibold underline">Ingresa</span> y completamos tus datos.
+        </button>
+      )}
+      {showSession && (
+        <p className="mb-6 text-sm text-muted-foreground">
+          Reservando como {sessionEmail} ·{' '}
+          <button type="button" onClick={handleNotMe} className="font-semibold text-primary hover:underline">No soy yo</button>
+        </p>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-2">
