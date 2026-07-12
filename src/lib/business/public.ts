@@ -88,3 +88,37 @@ export const getBookingBusinessBySubdomain = unstable_cache(async (subdomain: st
 }, ['booking-business-by-subdomain'], { revalidate: 60, tags: ['booking-business-by-subdomain'] })
 
 export type BookingBusiness = NonNullable<Awaited<ReturnType<typeof getBookingBusinessBySlug>>>
+
+export const packagesBusinessInclude = {
+  packageProducts: {
+    where: { isActive: true },
+    orderBy: { createdAt: 'asc' },
+    include: {
+      services: { select: { id: true, name: true } },
+    },
+  },
+} satisfies Prisma.BusinessInclude
+
+export type PackagesBusiness = Prisma.BusinessGetPayload<{
+  include: typeof packagesBusinessInclude
+}>
+
+// NOTE: NO usar `relationLoadStrategy: 'join'` acá (ver nota arriba sobre el
+// panic de Prisma 5.22 con includes anidados).
+export const getPackagesBusinessBySlug = unstable_cache(async (slug: string) => {
+  const business = await prisma.business.findUnique({
+    where: { slug },
+    include: packagesBusinessInclude,
+  })
+
+  return business?.isActive ? business : null
+}, ['packages-business-by-slug'], { revalidate: 60, tags: ['packages-business-by-slug'] })
+
+export const getPackagesBusinessBySubdomain = unstable_cache(async (subdomain: string) => {
+  const business = await prisma.business.findUnique({
+    where: { subdomain },
+    include: packagesBusinessInclude,
+  })
+
+  return business?.isActive ? business : null
+}, ['packages-business-by-subdomain'], { revalidate: 60, tags: ['packages-business-by-subdomain'] })
