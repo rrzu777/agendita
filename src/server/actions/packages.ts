@@ -142,7 +142,9 @@ export async function refundPackagePurchase(purchaseId: string) {
       data: { status: 'refunded', refundedAt: new Date(), refundedAmount: refund },
     })
     // Asiento de reembolso: monto = prorrateo (NO pricePaid). Reusa refund_issued
-    // para que totalRefunded lo capture; packagePurchaseId lo neteará en ventas.
+    // con packagePurchaseId, que lo EXCLUYE del totalRefunded de reservas
+    // (getFinancialSummary filtra packagePurchaseId: null) y lo netea en las
+    // ventas de paquete (getPackageSalesTotal resta refund_issued con packagePurchaseId).
     if (refund > 0) {
       await tx.ledgerEntry.create({
         data: {

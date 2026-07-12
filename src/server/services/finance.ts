@@ -68,7 +68,7 @@ export function getLedgerDescription(paymentType: PaymentType, bookingId: string
     case 'manual_adjustment':
       return `Ajuste manual para ${suffix}`
     case 'package_purchase':
-      return `Venta de paquete`
+      return 'Venta de paquete'
     default: {
       const _exhaustive: never = paymentType
       return _exhaustive
@@ -114,11 +114,14 @@ interface UpsertApprovedPaymentInput {
   explicitPaymentId?: string
 }
 
+/** Shape mínimo del Payment que devuelve/maneja el tronco compartido. */
+type UpsertedPayment = { id: string; amount: number; status: string; provider: string; providerPaymentId: string | null; paymentType: PaymentType }
+
 /** Upsert idempotente del Payment aprobado (tronco compartido reserva/paquete).
  *  Devuelve el Payment y si ya estaba aprobado (para cortar temprano). */
-async function upsertApprovedPayment(input: UpsertApprovedPaymentInput): Promise<{ payment: { id: string; amount: number; status: string; provider: string; providerPaymentId: string | null; paymentType: PaymentType }; alreadyApproved: boolean }> {
+async function upsertApprovedPayment(input: UpsertApprovedPaymentInput): Promise<{ payment: UpsertedPayment; alreadyApproved: boolean }> {
   const { tx, businessId, bookingId, packagePurchaseId, customerId, amount, currency, provider, providerPaymentId, paymentType, paymentMethod, rawPayload, explicitPaymentId } = input
-  let payment: { id: string; amount: number; status: string; provider: string; providerPaymentId: string | null; paymentType: PaymentType } | null = null
+  let payment: UpsertedPayment | null = null
 
   if (explicitPaymentId) {
     const found = await tx.payment.findUnique({ where: { id: explicitPaymentId } })
