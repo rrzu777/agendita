@@ -107,3 +107,28 @@ export function hasPendingBalanceTransfer(
     booking.payments.some((p) => p.providerPaymentId?.startsWith(BT_BALANCE_PREFIX))
   )
 }
+
+// ── Transferencia de PAQUETE (B4b-3) ──
+// Prefijo PROPIO y explícito: 'bt-pkg-declared:' NO satisface startsWith('bt-declared:'),
+// así que ningún sweep/consulta de reservas agarra un pago de paquete por accidente.
+export const BT_PKG_DECLARED_PREFIX = 'bt-pkg-declared:'
+
+export function btPkgDeclaredId(purchaseId: string): string {
+  return `${BT_PKG_DECLARED_PREFIX}${purchaseId}`
+}
+
+export const declaredPkgTransferPaymentWhere = {
+  provider: 'manual',
+  status: 'pending',
+  providerPaymentId: { startsWith: BT_PKG_DECLARED_PREFIX },
+} satisfies Prisma.PaymentWhereInput
+
+export function isDeclaredPkgTransferPayment(
+  p: { provider: string; status: string; providerPaymentId?: string | null },
+): boolean {
+  return (
+    p.provider === 'manual' &&
+    p.status === 'pending' &&
+    !!p.providerPaymentId?.startsWith(BT_PKG_DECLARED_PREFIX)
+  )
+}
