@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client'
 import { BookingStatus, BookingPaymentStatus, PaymentProvider, PaymentType } from '@prisma/client'
 import { assertBookingPayable } from '@/lib/booking-payments'
 import { formatBookingNumber } from '@/lib/bookings/number'
+import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
 import type { LedgerEntryType, LedgerDirection } from '@prisma/client'
 
 /**
@@ -97,6 +98,67 @@ export interface ApplyApprovedPaymentInput {
   skipHoldExpiryCheck?: boolean
 }
 
+interface UpsertApprovedPaymentInput {
+  tx: Prisma.TransactionClient
+  businessId: string
+  bookingId?: string | null
+  packagePurchaseId?: string | null
+  customerId: string
+  amount: number
+  currency: string
+  provider: PaymentProvider
+  providerPaymentId: string | null
+  paymentType: PaymentType
+  paymentMethod?: string | null
+  rawPayload?: Prisma.InputJsonValue | undefined
+  explicitPaymentId?: string
+}
+
+/** Upsert idempotente del Payment aprobado (tronco compartido reserva/paquete).
+ *  Devuelve el Payment y si ya estaba aprobado (para cortar temprano). */
+async function upsertApprovedPayment(input: UpsertApprovedPaymentInput): Promise<{ payment: { id: string; amount: number; status: string; provider: string; providerPaymentId: string | null; paymentType: PaymentType }; alreadyApproved: boolean }> {
+  const { tx, businessId, bookingId, packagePurchaseId, customerId, amount, currency, provider, providerPaymentId, paymentType, paymentMethod, rawPayload, explicitPaymentId } = input
+  let payment: { id: string; amount: number; status: string; provider: string; providerPaymentId: string | null; paymentType: PaymentType } | null = null
+
+  if (explicitPaymentId) {
+    const found = await tx.payment.findUnique({ where: { id: explicitPaymentId } })
+    if (!found) throw new Error('Pago no encontrado')
+    if (bookingId && found.bookingId !== bookingId) throw new Error('El pago no corresponde a esta reserva')
+    if (packagePurchaseId && found.packagePurchaseId !== packagePurchaseId) throw new Error('El pago no corresponde a esta compra')
+    if (found.businessId !== businessId) throw new Error('El pago no pertenece al negocio')
+    if (found.amount !== amount) throw new Error('El monto no coincide con el pago registrado')
+    if (found.provider !== provider) throw new Error('El proveedor no coincide con el pago registrado')
+    if (found.providerPaymentId !== providerPaymentId) throw new Error('El providerPaymentId no coincide con el pago registrado')
+    if (found.paymentType !== paymentType) throw new Error('El tipo de pago no coincide con el pago registrado')
+    payment = found
+  } else if (providerPaymentId) {
+    payment = await tx.payment.findFirst({
+      where: { ...(bookingId ? { bookingId } : { packagePurchaseId }), provider, providerPaymentId },
+    })
+  }
+
+  if (payment && payment.status === 'approved') {
+    return { payment, alreadyApproved: true }
+  }
+
+  if (payment) {
+    payment = await tx.payment.update({
+      where: { id: payment.id },
+      data: { status: 'approved', paidAt: new Date(), ...(rawPayload !== undefined && { rawPayload }) },
+    })
+  } else {
+    payment = await tx.payment.create({
+      data: {
+        businessId, bookingId: bookingId ?? null, packagePurchaseId: packagePurchaseId ?? null, customerId,
+        provider, providerPaymentId, amount, currency, status: 'approved',
+        paymentType, paymentMethod: paymentMethod ?? null, paidAt: new Date(),
+        ...(rawPayload !== undefined && { rawPayload }),
+      },
+    })
+  }
+  return { payment, alreadyApproved: false }
+}
+
 export async function applyApprovedPayment({
   tx,
   bookingId,
@@ -130,82 +192,18 @@ export async function applyApprovedPayment({
 
   assertBookingPayable(booking, { allowExpiredHold: skipHoldExpiryCheck })
 
-  let payment: { id: string; amount: number; status: string; provider: string; providerPaymentId: string | null; paymentType: PaymentType } | null = null
+  const { payment, alreadyApproved } = await upsertApprovedPayment({
+    tx, businessId, bookingId, customerId: booking.customerId, amount, currency,
+    provider, providerPaymentId, paymentType, paymentMethod, rawPayload,
+    explicitPaymentId,
+  })
 
-  if (explicitPaymentId) {
-    const found = await tx.payment.findUnique({
-      where: { id: explicitPaymentId },
-    })
-    if (!found) {
-      throw new Error('Pago no encontrado')
-    }
-    if (found.bookingId !== bookingId) {
-      throw new Error('El pago no corresponde a esta reserva')
-    }
-    if (found.businessId !== businessId) {
-      throw new Error('El pago no pertenece al negocio')
-    }
-    if (found.amount !== amount) {
-      throw new Error('El monto no coincide con el pago registrado')
-    }
-    if (found.provider !== provider) {
-      throw new Error('El proveedor no coincide con el pago registrado')
-    }
-    if (found.providerPaymentId !== providerPaymentId) {
-      throw new Error('El providerPaymentId no coincide con el pago registrado')
-    }
-    if (found.paymentType !== paymentType) {
-      throw new Error('El tipo de pago no coincide con el pago registrado')
-    }
-    payment = found
-  } else if (providerPaymentId) {
-    payment = await tx.payment.findFirst({
-      where: {
-        bookingId,
-        provider,
-        providerPaymentId,
-      },
-    })
-  }
-  // Si no hay explicitPaymentId ni providerPaymentId, nunca reutilizamos un Payment
-  // existente (evita reutilizar pagos manuales previos del mismo booking).
-
-  if (payment && payment.status === 'approved') {
-    // Idempotencia: ya existe y está aprobado; solo recalcular y retornar
+  if (alreadyApproved) {
+    // Idempotencia: ya aprobado; solo recalcular y retornar.
     return recalcBookingFromPayments(tx, bookingId)
   }
 
-  if (payment) {
-    payment = await tx.payment.update({
-      where: { id: payment.id },
-      data: {
-        status: 'approved',
-        paidAt: new Date(),
-        ...(rawPayload !== undefined && { rawPayload }),
-      },
-    })
-  } else {
-    payment = await tx.payment.create({
-      data: {
-        businessId,
-        bookingId,
-        customerId: booking.customerId,
-        provider,
-        providerPaymentId,
-        amount,
-        currency,
-        status: 'approved',
-        paymentType,
-        paymentMethod: paymentMethod ?? null,
-        paidAt: new Date(),
-        ...(rawPayload !== undefined && { rawPayload }),
-      },
-    })
-  }
-
-  // Exactly one LedgerEntry per payment. upsert on the unique paymentId is
-  // atomic (INSERT ... ON CONFLICT), so concurrent transactions can't both
-  // create a duplicate the way a findFirst-then-create race could.
+  // Exactly one LedgerEntry per payment (upsert atómico sobre @@unique([paymentId])).
   await tx.ledgerEntry.upsert({
     where: { paymentId: payment.id },
     update: {},
@@ -225,6 +223,51 @@ export async function applyApprovedPayment({
   })
 
   return recalcBookingFromPayments(tx, bookingId)
+}
+
+export interface ApplyApprovedPackagePaymentInput {
+  tx: Prisma.TransactionClient
+  packagePurchaseId: string
+  businessId: string
+  amount: number
+  currency: string
+  provider: PaymentProvider
+  providerPaymentId: string | null
+  paymentType: PaymentType
+  paymentMethod?: string | null
+  rawPayload?: Prisma.InputJsonValue | undefined
+  createdByUserId?: string | null
+  paymentId?: string
+}
+
+/**
+ * Rama paquete de la aprobación de pago (polimórfica con applyApprovedPayment).
+ * Carga la PackagePurchase, upserta el Payment (packagePurchaseId, sin booking)
+ * y, si la compra estaba pending, la activa (grants + asiento de ledger). NO
+ * toca recalcBookingFromPayments. Idempotente. Sin caller público en B4b-1 —
+ * la usará el webhook MP en B4b-2.
+ */
+export async function applyApprovedPackagePayment({
+  tx, packagePurchaseId, businessId, amount, currency, provider, providerPaymentId,
+  paymentType, paymentMethod, rawPayload, createdByUserId, paymentId: explicitPaymentId,
+}: ApplyApprovedPackagePaymentInput): Promise<void> {
+  if (amount <= 0) throw new Error('El monto debe ser positivo')
+
+  const purchase = await tx.packagePurchase.findUnique({ where: { id: packagePurchaseId } })
+  if (!purchase) throw new Error('Compra de paquete no encontrada')
+  if (purchase.businessId !== businessId) throw new Error('La compra no pertenece al negocio')
+
+  const { payment, alreadyApproved } = await upsertApprovedPayment({
+    tx, businessId, packagePurchaseId, customerId: purchase.customerId, amount, currency,
+    provider, providerPaymentId, paymentType, paymentMethod, rawPayload, explicitPaymentId,
+  })
+
+  // Idempotencia: si el pago ya estaba aprobado o la compra ya está activa, no
+  // re-emitir grants ni re-asentar (los grants ya son idempotentes, pero cortar
+  // temprano evita trabajo y un asiento manual duplicado).
+  if (alreadyApproved || purchase.status === 'active') return
+
+  await activatePackagePurchaseInTx(tx, purchase, { requestId: purchase.id, paymentId: payment.id, createdByUserId })
 }
 
 async function recalcBookingFromPayments(tx: Prisma.TransactionClient, bookingId: string): Promise<{ booking: { id: string; status: string; businessId: string; customerId: string; totalPrice: number; depositRequired: number; depositPaid: number; remainingBalance: number; finalAmount: number; paymentStatus: string }; wasConfirmed: boolean }> {

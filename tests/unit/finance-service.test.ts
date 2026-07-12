@@ -19,6 +19,10 @@ const mockPrisma = {
     create: vi.fn(),
     upsert: vi.fn(),
   },
+  packagePurchase: {
+    findUnique: vi.fn(),
+    update: vi.fn(),
+  },
   plan: {},
   user: {},
   business: {},
@@ -42,6 +46,9 @@ vi.mock('@/lib/booking-payments', () => ({
   assertBookingPayable: vi.fn(),
   BookingNotPayableError: class extends Error {},
 }))
+
+const activatePkg = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/packages/activate', () => ({ activatePackagePurchaseInTx: activatePkg }))
 
 const { applyApprovedPayment } = await import('@/server/services/finance')
 
@@ -768,5 +775,50 @@ describe('applyApprovedPayment', () => {
         })
       ).rejects.toThrow('El tipo de pago no coincide con el pago registrado')
     })
+  })
+})
+
+describe('applyApprovedPackagePayment', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    activatePkg.mockReset().mockResolvedValue(undefined)
+    Object.values(mockPrisma.payment).forEach((f: any) => f.mockReset?.())
+    mockPrisma.packagePurchase = { findUnique: vi.fn(), update: vi.fn() }
+  })
+
+  it('activa la compra pending y NO toca booking', async () => {
+    const { applyApprovedPackagePayment } = await import('@/server/services/finance')
+    mockPrisma.packagePurchase.findUnique.mockResolvedValue({
+      id: 'p1', businessId: 'b1', customerId: 'c1', status: 'pending',
+      pricePaid: 30000, quantity: 3, bonusQuantity: 0, expiresAt: null, createdByUserId: null,
+    })
+    mockPrisma.payment.findFirst.mockResolvedValue(null)
+    mockPrisma.payment.create.mockResolvedValue({ id: 'pay1', status: 'approved', paymentType: 'package_purchase', amount: 30000 })
+
+    await applyApprovedPackagePayment({
+      tx: mockPrisma, packagePurchaseId: 'p1', businessId: 'b1', amount: 30000,
+      currency: 'CLP', provider: PaymentProvider.mercado_pago, providerPaymentId: 'mp-1',
+      paymentType: PaymentType.package_purchase,
+    })
+
+    expect(mockPrisma.booking.findUnique).not.toHaveBeenCalled()
+    expect(activatePkg).toHaveBeenCalledWith(
+      mockPrisma,
+      expect.objectContaining({ id: 'p1' }),
+      expect.objectContaining({ requestId: 'p1', paymentId: 'pay1' }),
+    )
+  })
+
+  it('es idempotente: compra ya active no re-activa', async () => {
+    const { applyApprovedPackagePayment } = await import('@/server/services/finance')
+    mockPrisma.packagePurchase.findUnique.mockResolvedValue({ id: 'p1', businessId: 'b1', customerId: 'c1', status: 'active', pricePaid: 30000, quantity: 3, bonusQuantity: 0, expiresAt: null, createdByUserId: null })
+    mockPrisma.payment.findFirst.mockResolvedValue({ id: 'pay1', status: 'approved', paymentType: 'package_purchase', amount: 30000 })
+
+    await applyApprovedPackagePayment({
+      tx: mockPrisma, packagePurchaseId: 'p1', businessId: 'b1', amount: 30000,
+      currency: 'CLP', provider: PaymentProvider.mercado_pago, providerPaymentId: 'mp-1',
+      paymentType: PaymentType.package_purchase,
+    })
+    expect(activatePkg).not.toHaveBeenCalled()
   })
 })
