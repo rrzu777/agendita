@@ -53,7 +53,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
     paymentMethod?: string | null
     service: { name: string } | null
     customer: { name: string; phone: string | null; email?: string | null } | null
-    payments: { id: string }[]
+    payments: { id: string; providerPaymentId?: string | null }[]
   }
   businessCurrency: string
   businessTimezone: string
