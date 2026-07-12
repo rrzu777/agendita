@@ -3,6 +3,7 @@ import { Metadata } from 'next'
 import { BusinessProfile } from '@/components/public/business-profile'
 import { getPublicBusinessBySlug } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
+import { getFunnelSession } from '@/lib/customers/session-prefill'
 
 export const revalidate = 300
 
@@ -40,5 +41,10 @@ export default async function PublicProfilePage({ params }: ProfilePageProps) {
     notFound()
   }
 
-  return <BusinessProfile business={business} />
+  const session = await getFunnelSession(business.id)
+  const accountCta = session
+    ? { label: 'Mi cuenta' as const, href: session.hasCustomer ? `/mi/${business.slug}` : '/mi' }
+    : { label: 'Ingresar' as const, href: `/ingresar?next=${encodeURIComponent(`/ir/${business.slug}`)}` }
+
+  return <BusinessProfile business={business} accountCta={accountCta} />
 }
