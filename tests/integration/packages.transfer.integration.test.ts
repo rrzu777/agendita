@@ -20,6 +20,11 @@ vi.mock('@/lib/auth/ensure-user-row', () => ({
 }))
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: async () => ({ success: true, remaining: 20, resetAt: 0 }) }))
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
+vi.mock('@/lib/auth/server', () => ({
+  requireBusinessRole: async () => ({ businessId: BIZ, business: { id: BIZ }, user: { id: USER } }),
+  ForbiddenError: class extends Error {},
+}))
+vi.mock('@/server/actions/revalidate-business', () => ({ revalidateBusinessPublicPaths: async () => {} }))
 
 describe('createPackagePurchase + declarePackageTransfer (transferencia)', () => {
   let prisma: PrismaClient
@@ -46,8 +51,11 @@ describe('createPackagePurchase + declarePackageTransfer (transferencia)', () =>
   })
 
   afterAll(async () => {
+    await prisma.ledgerEntry.deleteMany({ where: { businessId: BIZ } })
     await prisma.payment.deleteMany({ where: { businessId: BIZ } })
+    await prisma.promotionGrant.deleteMany({ where: { businessId: BIZ } })
     await prisma.packagePurchase.deleteMany({ where: { businessId: BIZ } })
+    await prisma.promotion.deleteMany({ where: { businessId: BIZ } })
     await prisma.packageProduct.deleteMany({ where: { businessId: BIZ } })
     await prisma.bankTransferAccount.deleteMany({ where: { businessId: BIZ } })
     await prisma.customer.deleteMany({ where: { businessId: BIZ } })
@@ -57,8 +65,11 @@ describe('createPackagePurchase + declarePackageTransfer (transferencia)', () =>
   })
 
   beforeEach(async () => {
+    await prisma.ledgerEntry.deleteMany({ where: { businessId: BIZ } })
     await prisma.payment.deleteMany({ where: { businessId: BIZ } })
+    await prisma.promotionGrant.deleteMany({ where: { businessId: BIZ } })
     await prisma.packagePurchase.deleteMany({ where: { businessId: BIZ } })
+    await prisma.promotion.deleteMany({ where: { businessId: BIZ } })
     await prisma.customer.deleteMany({ where: { businessId: BIZ } })
   })
 
@@ -92,5 +103,47 @@ describe('createPackagePurchase + declarePackageTransfer (transferencia)', () =>
     expect(pay.providerPaymentId).toBe(`bt-pkg-declared:${purchaseId}`)
     expect(pay.paymentMethod).toBe('Transferencia')
     expect(pay.amount).toBe(50000)
+  })
+
+  describe('confirmar / rechazar transferencia de paquete (dueña)', () => {
+    async function seedDeclared(prisma: PrismaClient) {
+      const { createPackagePurchase, declarePackageTransfer } = await import('@/server/actions/packages-checkout')
+      const { purchaseId } = await createPackagePurchase({
+        packageProductId: productId, name: 'Cli Xfer', phone: '+56900000009', acceptedTerms: true, method: 'transfer',
+      })
+      await declarePackageTransfer({ purchaseId })
+      const payment = await prisma.payment.findFirstOrThrow({ where: { packagePurchaseId: purchaseId, provider: 'manual' } })
+      return { purchaseId, paymentId: payment.id }
+    }
+
+    it('confirmar activa la compra (grants + ledger package_sale), Payment approved', async () => {
+      const { confirmPackageTransfer } = await import('@/server/actions/bank-transfer-verify')
+      const { purchaseId, paymentId } = await seedDeclared(prisma)
+      await confirmPackageTransfer(paymentId)
+
+      const purchase = await prisma.packagePurchase.findUnique({ where: { id: purchaseId } })
+      expect(purchase!.status).toBe('active')
+      const payment = await prisma.payment.findUnique({ where: { id: paymentId } })
+      expect(payment!.status).toBe('approved')
+      const grants = await prisma.promotionGrant.count({ where: { packagePurchaseId: purchaseId, status: 'active' } })
+      expect(grants).toBe(5) // quantity 5 + bonus 0
+      const sale = await prisma.ledgerEntry.findFirst({ where: { packagePurchaseId: purchaseId, type: 'package_sale' } })
+      expect(sale).not.toBeNull()
+    })
+
+    it('rechazar deja Payment rejected y compra rejected, sin grants ni ledger', async () => {
+      const { rejectPackageTransfer } = await import('@/server/actions/bank-transfer-verify')
+      const { purchaseId, paymentId } = await seedDeclared(prisma)
+      await rejectPackageTransfer(paymentId)
+
+      const purchase = await prisma.packagePurchase.findUnique({ where: { id: purchaseId } })
+      expect(purchase!.status).toBe('rejected')
+      const payment = await prisma.payment.findUnique({ where: { id: paymentId } })
+      expect(payment!.status).toBe('rejected')
+      const grants = await prisma.promotionGrant.count({ where: { packagePurchaseId: purchaseId } })
+      expect(grants).toBe(0)
+      const sale = await prisma.ledgerEntry.findFirst({ where: { packagePurchaseId: purchaseId, type: 'package_sale' } })
+      expect(sale).toBeNull()
+    })
   })
 })
