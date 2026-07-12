@@ -27,6 +27,7 @@ export async function getLedgerEntries() {
     include: {
       booking: true,
       payment: true,
+      packagePurchase: { include: { product: { select: { name: true } }, customer: { select: { name: true } } } },
     },
   })
 }
@@ -82,7 +83,20 @@ export async function getFinancialSummary() {
 
   const baseWhere = { businessId }
 
-  const [incomeToday, incomeMonth, totalDeposited, totalPending, totalRefunded, totalBookings, completedBookings, cancelledBookings] = await Promise.all([
+  const [
+    incomeToday,
+    incomeMonth,
+    totalDeposited,
+    totalPending,
+    totalRefunded,
+    totalBookings,
+    completedBookings,
+    cancelledBookings,
+    packageSaleToday,
+    packageSaleMonth,
+    packageRefundToday,
+    packageRefundMonth,
+  ] = await Promise.all([
     prisma.ledgerEntry.aggregate({
       where: {
         ...baseWhere,
@@ -127,9 +141,29 @@ export async function getFinancialSummary() {
     prisma.booking.count({ where: baseWhere }),
     prisma.booking.count({ where: { ...baseWhere, status: 'completed' } }),
     prisma.booking.count({ where: { ...baseWhere, status: 'cancelled' } }),
+    // Ventas de paquete (income) hoy/mes — misma definición NETA que getPackageSalesTotal
+    // (SUM(package_sale) − SUM(refund_issued con packagePurchaseId)), sólo que ventaneada.
+    prisma.ledgerEntry.aggregate({
+      where: { ...baseWhere, type: 'package_sale', packagePurchaseId: { not: null }, occurredAt: { gte: today } },
+      _sum: { amount: true },
+    }),
+    prisma.ledgerEntry.aggregate({
+      where: { ...baseWhere, type: 'package_sale', packagePurchaseId: { not: null }, occurredAt: { gte: thisMonth } },
+      _sum: { amount: true },
+    }),
+    prisma.ledgerEntry.aggregate({
+      where: { ...baseWhere, type: 'refund_issued', packagePurchaseId: { not: null }, occurredAt: { gte: today } },
+      _sum: { amount: true },
+    }),
+    prisma.ledgerEntry.aggregate({
+      where: { ...baseWhere, type: 'refund_issued', packagePurchaseId: { not: null }, occurredAt: { gte: thisMonth } },
+      _sum: { amount: true },
+    }),
   ])
 
   return {
+    // incomeToday/incomeMonth filtran packagePurchaseId: null (ver arriba), así que
+    // packageIncomeToday/Month son ADITIVOS, no se solapan con estas cifras.
     incomeToday: incomeToday._sum.amount ?? 0,
     incomeMonth: incomeMonth._sum.amount ?? 0,
     totalDeposited: totalDeposited._sum.amount ?? 0,
@@ -138,5 +172,7 @@ export async function getFinancialSummary() {
     totalBookings,
     completedBookings,
     cancelledBookings,
+    packageIncomeToday: Math.max(0, (packageSaleToday._sum.amount ?? 0) - (packageRefundToday._sum.amount ?? 0)),
+    packageIncomeMonth: Math.max(0, (packageSaleMonth._sum.amount ?? 0) - (packageRefundMonth._sum.amount ?? 0)),
   }
 }
