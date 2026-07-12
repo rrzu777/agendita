@@ -58,4 +58,13 @@ describe('findOrCreateCustomerInTx', () => {
     await findOrCreateCustomerInTx(tx, { businessId: 'b1', phone: '56912345678', name: 'Ana', email: 'ana@x.cl' })
     expect(linkMock).not.toHaveBeenCalled()
   })
+
+  it('backfillea email vacío y LUEGO linkea la sesión en el mismo match', async () => {
+    const tx = makeTx({ id: 'c1', userId: null, email: null, name: 'Ana', phone: '56912345678' })
+    const sessionUser = { id: 'u1', email: 'ana@x.cl', email_confirmed_at: '2026-01-01' }
+    await findOrCreateCustomerInTx(tx, { businessId: 'b1', phone: '56912345678', name: 'Ana', email: 'ana@x.cl', sessionUser })
+    expect(tx.customer.update).toHaveBeenCalledWith({ where: { id: 'c1' }, data: { email: 'ana@x.cl' } })
+    // el link recibe la Customer YA con email backfilleado (email no-null) → habilita vía 3
+    expect(linkMock).toHaveBeenCalledWith(tx, expect.objectContaining({ id: 'c1', email: 'ana@x.cl' }), sessionUser, 'b1')
+  })
 })
