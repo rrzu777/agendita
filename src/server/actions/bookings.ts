@@ -27,7 +27,7 @@ import { emitAutomaticReward, loadAutomaticRules } from '@/lib/loyalty/automatic
 import { rewardReferralOnCompletion, captureReferral, notifyReferralReward } from '@/lib/loyalty/referral'
 import { firstVisitKey, conditionKind } from '@/lib/loyalty/automatic-match'
 import { BANK_TRANSFER_PUBLIC_SELECT, type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
-import { BANK_TRANSFER_METHOD, declaredTransferPaymentWhere, anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
+import { BANK_TRANSFER_METHOD, anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import type { BookingEmailData } from '@/lib/notifications/types'
 import {
@@ -186,11 +186,13 @@ export async function getBookings() {
     include: {
       service: true,
       customer: true,
-      // Solo la declaración de transferencia pendiente (bt-declared). El array
-      // queda vacío salvo que haya una por verificar → deriva el badge y la
-      // sección del dashboard sin segunda query.
+      // Declaración de transferencia pendiente de verificar, sea abono
+      // (bt-declared) o saldo (bt-balance). El array queda vacío salvo que
+      // haya una por verificar → deriva los badges y la sección del
+      // dashboard sin segunda query (el `kind` se distingue en el llamador
+      // por el prefijo de providerPaymentId, ver BT_BALANCE_PREFIX).
       payments: {
-        where: declaredTransferPaymentWhere,
+        where: anyDeclaredTransferWhere,
         select: { id: true, amount: true, createdAt: true, providerPaymentId: true },
       },
     },

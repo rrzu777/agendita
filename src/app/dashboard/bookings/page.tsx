@@ -18,11 +18,14 @@ import { BookingRowActions } from '@/components/dashboard/booking-row-actions'
 import { ReviveBookingButton } from '@/components/dashboard/revive-booking-dialog'
 import { getReviveReopenState } from '@/components/dashboard/revive-utils'
 import { PendingTransfersSection, type PendingTransferItem } from '@/components/dashboard/pending-transfers-section'
-import { hasPendingDeclaredTransfer } from '@/lib/bank-transfer/declared'
+import { BT_BALANCE_PREFIX, hasPendingBalanceTransfer, hasPendingDeclaredTransfer } from '@/lib/bank-transfer/declared'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 
 const PENDING_TRANSFER_BADGE_CLASS =
   'inline-flex items-center rounded-md border border-transparent bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800 dark:bg-orange-500/15 dark:text-orange-300'
+
+const PENDING_BALANCE_BADGE_CLASS =
+  'inline-flex items-center rounded-md border border-transparent bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'
 
 function EmptyState() {
   return (
@@ -62,6 +65,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
 }) {
   const canRegisterPayment = isManualPaymentAllowed(booking)
   const isPendingTransfer = hasPendingDeclaredTransfer(booking)
+  const isPendingBalanceTransfer = hasPendingBalanceTransfer(booking)
   const reviveState = booking.status === 'expired'
     ? getReviveReopenState({ startDateTime: booking.startDateTime, paymentMethod: booking.paymentMethod ?? null }, !!transferEnabled)
     : null
@@ -73,11 +77,16 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           <h3 className="text-lg font-semibold text-primary truncate">{booking.service?.name || 'Servicio'}</h3>
           <p className="text-sm text-muted-foreground">{formatBookingNumber(booking.bookingNumber, booking.id)}</p>
         </div>
-        {isPendingTransfer ? (
-          <span className={`${PENDING_TRANSFER_BADGE_CLASS} shrink-0`}>Transferencia por verificar</span>
-        ) : (
-          <StatusBadge status={booking.status} className="shrink-0" />
-        )}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {isPendingTransfer ? (
+            <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>
+          ) : (
+            <StatusBadge status={booking.status} />
+          )}
+          {isPendingBalanceTransfer && (
+            <span className={PENDING_BALANCE_BADGE_CLASS}>Saldo por verificar</span>
+          )}
+        </div>
       </div>
 
       <div className="mb-4 space-y-2">
@@ -212,18 +221,25 @@ export default async function BookingsPage() {
   const confirmedCount = bookings.filter(b => b.status === 'confirmed').length
   const pendingCount = bookings.filter(b => b.status === 'pending_payment').length
 
+  // Race orphans (spec §5): una reserva cancelada/expirada puede haber quedado
+  // con un Payment pending sin barrer; no la mostramos como "por verificar".
   const pendingTransfers: PendingTransferItem[] = bookings
-    .filter(hasPendingDeclaredTransfer)
-    .map((b) => ({
-      paymentId: b.payments[0].id,
-      bookingId: b.id,
-      customerName: b.customer?.name || 'Sin cliente',
-      customerPhone: b.customer?.phone ?? null,
-      serviceName: b.service?.name || 'Servicio',
-      startDateTime: b.startDateTime,
-      amount: b.payments[0].amount,
-      declaredAt: b.payments[0].createdAt,
-    }))
+    .filter((b) => !['cancelled', 'expired'].includes(b.status))
+    .flatMap((b) =>
+      b.payments
+        .filter((p) => p.providerPaymentId != null)
+        .map((p) => ({
+          paymentId: p.id,
+          bookingId: b.id,
+          customerName: b.customer?.name || 'Sin cliente',
+          customerPhone: b.customer?.phone ?? null,
+          serviceName: b.service?.name || 'Servicio',
+          startDateTime: b.startDateTime,
+          amount: p.amount,
+          declaredAt: p.createdAt,
+          kind: (p.providerPaymentId!.startsWith(BT_BALANCE_PREFIX) ? 'balance' : 'deposit') as PendingTransferItem['kind'],
+        })),
+    )
 
   return (
     <div>
@@ -291,11 +307,16 @@ export default async function BookingsPage() {
                       </TableCell>
                       <TruncatedCell className={TABLE_COL.customer} primary={booking.customer?.name || '—'} />
                       <TableCell className={TABLE_COL.status}>
-                        {hasPendingDeclaredTransfer(booking) ? (
-                          <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>
-                        ) : (
-                          <StatusBadge status={booking.status} />
-                        )}
+                        <div className="flex flex-col items-start gap-1">
+                          {hasPendingDeclaredTransfer(booking) ? (
+                            <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>
+                          ) : (
+                            <StatusBadge status={booking.status} />
+                          )}
+                          {hasPendingBalanceTransfer(booking) && (
+                            <span className={PENDING_BALANCE_BADGE_CLASS}>Saldo por verificar</span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
                         <span className={booking.paymentStatus === 'fully_paid' ? 'font-semibold text-green-700' : 'font-semibold text-primary'}>

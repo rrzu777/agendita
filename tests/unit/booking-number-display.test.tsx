@@ -21,6 +21,7 @@ function makeBooking(bookingNumber: number | null) {
     remainingBalance: 10000,
     service: { name: 'Corte' },
     customer: { name: 'Ana', phone: '+56911111111' },
+    payments: [],
   }
 }
 

@@ -14,12 +14,14 @@ export function VerifyTransferDialog({
   paymentId,
   defaultAmount,
   businessCurrency,
+  kind = 'deposit',
   open,
   onOpenChange,
 }: {
   paymentId: string
   defaultAmount: number
   businessCurrency: string
+  kind?: 'deposit' | 'balance'
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -64,7 +66,10 @@ export function VerifyTransferDialog({
 
   function handleReject() {
     setError(null)
-    if (!window.confirm('¿Rechazar esta transferencia? Se cancelará la reserva.')) return
+    const confirmMessage = kind === 'balance'
+      ? '¿Rechazar esta transferencia del saldo? La reserva NO se cancela; la clienta podrá volver a avisar.'
+      : '¿Rechazar esta transferencia? Se cancelará la reserva.'
+    if (!window.confirm(confirmMessage)) return
     startTransition(async () => {
       try {
         await rejectBankTransfer(paymentId)
@@ -81,7 +86,7 @@ export function VerifyTransferDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-2xl font-heading font-semibold tracking-tight text-primary">
-            Verificar transferencia
+            {kind === 'balance' ? 'Verificar transferencia del saldo' : 'Verificar transferencia'}
           </DialogTitle>
           <DialogDescription>
             Confirma el monto que recibiste. Podés ajustarlo si el cliente transfirió una cantidad distinta.
