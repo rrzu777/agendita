@@ -1,4 +1,4 @@
-import { PaymentProvider, CreatePaymentInput, CreatePaymentResult, VerifyPaymentInput, VerifyPaymentResult, WebhookPaymentResult } from './types'
+import { PaymentProvider, CreatePaymentInput, CreatePaymentResult, VerifyPaymentInput, VerifyPaymentResult, WebhookPaymentResult, RefundPaymentInput, RefundPaymentResult } from './types'
 
 export const mockPaymentProvider: PaymentProvider = {
   name: 'mock',
@@ -43,5 +43,10 @@ export const mockPaymentProvider: PaymentProvider = {
       paidAt: new Date(),
       rawPayload: payload,
     }
+  },
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- required by PaymentProvider interface
+  async refundPayment(_input: RefundPaymentInput): Promise<RefundPaymentResult> {
+    return { refundId: null, status: 'refunded', rawResponse: { mock: true } }
   },
 }

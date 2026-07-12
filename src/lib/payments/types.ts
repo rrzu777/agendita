@@ -44,9 +44,29 @@ export interface WebhookPaymentResult {
   rawPayload: unknown
 }
 
+export interface RefundPaymentInput {
+  /** id del pago en el provider (MP payment id). */
+  providerPaymentId: string
+  /** monto a reembolsar (parcial permitido). */
+  amount: number
+  currency: string
+  /** clave determinística para dedupe del refund en el provider. */
+  idempotencyKey: string
+  /** token OAuth del negocio (MP per-tenant); ignorado por manual/mock. */
+  accessToken?: string
+}
+
+export interface RefundPaymentResult {
+  /** id del refund en el provider; null para manual/mock. */
+  refundId: string | null
+  status: 'refunded' | 'pending' | 'failed'
+  rawResponse: unknown
+}
+
 export interface PaymentProvider {
   name: string
   createPayment(input: CreatePaymentInput): Promise<CreatePaymentResult>
   verifyPayment(input: VerifyPaymentInput): Promise<VerifyPaymentResult>
   handleWebhook(payload: unknown): Promise<WebhookPaymentResult>
+  refundPayment(input: RefundPaymentInput): Promise<RefundPaymentResult>
 }

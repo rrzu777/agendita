@@ -98,6 +98,7 @@ describe('initiatePayment - amount guards', () => {
       createPayment: vi.fn().mockResolvedValue({ paymentId: 'p-1' }),
       verifyPayment: vi.fn(),
       handleWebhook: vi.fn(),
+      refundPayment: vi.fn(),
     })
 
     await expect(
