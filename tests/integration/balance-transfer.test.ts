@@ -242,7 +242,7 @@ describe('confirmBankTransfer saldo', () => {
     expect(b.remainingBalance).toBe(0)
     expect(b.status).toBe('confirmed')
     const ledger = await prisma.ledgerEntry.findFirst({ where: { paymentId: s.balancePaymentId } })
-    expect(ledger).toBeTruthy()
+    expect(ledger?.type).toBe('final_payment_paid')
     expect(notif.sendBalanceTransferVerifiedToCustomer).toHaveBeenCalledTimes(1)
   })
 
