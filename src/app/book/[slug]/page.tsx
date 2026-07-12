@@ -34,5 +34,5 @@ export default async function BookPage({ params, searchParams }: BookPageProps) 
     notFound()
   }
 
-  return <BookingBusinessPage business={business} profileHref={`/b/${business.slug}`} referralToken={referralToken} />
+  return <BookingBusinessPage business={business} profileHref={`/b/${business.slug}`} referralToken={referralToken} session={null} />
 }

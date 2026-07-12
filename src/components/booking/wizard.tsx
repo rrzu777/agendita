@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { StepService } from './step-service'
 import { StepDate } from './step-date'
 import { StepTime } from './step-time'
@@ -8,6 +8,7 @@ import { StepCustomer } from './step-customer'
 import { StepPayment } from './step-payment'
 import { StepConfirmation } from './step-confirmation'
 import type { Service } from '@prisma/client'
+import { restoreWizardState, serializeWizardState, wizardStorageKey } from '@/lib/booking/wizard-storage'
 
 export type BookingData = {
   serviceId: string | null
@@ -53,19 +54,52 @@ const steps = [
 
 interface BookingWizardProps {
   businessId: string
+  slug: string
   timezone: string
   services: Service[]
   cancellationPolicy?: string | null
   referralToken?: string
+  session: { email: string; name: string; phone: string } | null
 }
 
-export function BookingWizard({ businessId, timezone, services, cancellationPolicy, referralToken }: BookingWizardProps) {
+export function BookingWizard({ businessId, slug, timezone, services, cancellationPolicy, referralToken, session }: BookingWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
-  const [data, setData] = useState<BookingData>(initialData)
+  const [data, setData] = useState<BookingData>(() =>
+    session
+      ? { ...initialData, customerName: session.name, customerPhone: session.phone, customerEmail: session.email }
+      : initialData,
+  )
   const [bookingId, setBookingId] = useState<string | null>(null)
   const [bookingNumber, setBookingNumber] = useState<number | null>(null)
   const [confirmationMode, setConfirmationMode] = useState<'paid' | 'pending'>('paid')
   const [confirmationPromo, setConfirmationPromo] = useState<{ discountAmount: number; finalAmount: number } | null>(null)
+
+  // Restaura el estado guardado antes del viaje a /ingresar (solo con ?continuar=1;
+  // el storage se limpia siempre para no restaurar dos veces ni dejar residuo).
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!new URLSearchParams(window.location.search).has('continuar')) return
+    const key = wizardStorageKey(businessId)
+    const raw = sessionStorage.getItem(key)
+    sessionStorage.removeItem(key)
+    const restored = restoreWizardState(raw, services)
+    if (!restored) return
+    /* eslint-disable react-hooks/set-state-in-effect -- one-time restore from sessionStorage on mount, gated by ?continuar=1 */
+    // El prefill de sesión pisa los campos de contacto del snapshot: ahora está logueada.
+    setData(session
+      ? { ...restored, customerName: session.name || restored.customerName, customerPhone: session.phone || restored.customerPhone, customerEmail: session.email }
+      : restored)
+    setCurrentStep(restored.timeSlot ? 4 : restored.date ? 3 : 2)
+    /* eslint-enable react-hooks/set-state-in-effect */
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar
+  }, [])
+
+  function handleLoginCta(partial: Partial<BookingData>) {
+    const merged = { ...data, ...partial }
+    const raw = serializeWizardState(merged)
+    if (raw) sessionStorage.setItem(wizardStorageKey(businessId), raw)
+    window.location.href = `/ingresar?next=${encodeURIComponent(`/ir/${slug}`)}`
+  }
 
   function updateData(partial: Partial<BookingData>) {
     setData(prev => ({ ...prev, ...partial }))
@@ -128,7 +162,7 @@ export function BookingWizard({ businessId, timezone, services, cancellationPoli
           </div>
         )}
         {currentStep === 4 && data.timeSlot && (
-          <StepCustomer data={data} sessionEmail={null} onLoginCta={() => {}} onSubmit={(customerData) => {
+          <StepCustomer data={data} sessionEmail={session?.email ?? null} onLoginCta={handleLoginCta} onSubmit={(customerData) => {
             updateData(customerData)
             nextStep()
           }} onBack={prevStep} />

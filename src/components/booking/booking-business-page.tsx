@@ -7,9 +7,10 @@ interface BookingBusinessPageProps {
   business: BookingBusiness
   profileHref: string
   referralToken?: string
+  session: { email: string; name: string; phone: string } | null
 }
 
-export function BookingBusinessPage({ business, profileHref, referralToken }: BookingBusinessPageProps) {
+export function BookingBusinessPage({ business, profileHref, referralToken, session }: BookingBusinessPageProps) {
   return (
     <main className="studio-shell">
       <header className="sticky top-0 z-40 border-b border-border/50 bg-background/85 backdrop-blur">
@@ -29,10 +30,12 @@ export function BookingBusinessPage({ business, profileHref, referralToken }: Bo
       <div className="mx-auto max-w-2xl px-4 py-8">
         <BookingWizard
           businessId={business.id}
+          slug={business.slug}
           timezone={business.timezone || 'America/Santiago'}
           services={business.services}
           cancellationPolicy={business.cancellationPolicy}
           referralToken={referralToken}
+          session={session}
         />
       </div>
     </main>

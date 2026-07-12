@@ -24,7 +24,7 @@ export default async function BookIndexPage({
     const business = await getBookingBusinessBySubdomain(tenant.subdomain)
 
     if (business) {
-      return <BookingBusinessPage business={business} profileHref="/" referralToken={referralToken} />
+      return <BookingBusinessPage business={business} profileHref="/" referralToken={referralToken} session={null} />
     }
   }
 
