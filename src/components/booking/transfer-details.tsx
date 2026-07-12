@@ -14,6 +14,7 @@ export function TransferDetails({
   timezone,
   declaring,
   onDeclare,
+  kind = 'deposit',
 }: {
   bank: BankTransferPublicInfo
   amount: number
@@ -21,6 +22,8 @@ export function TransferDetails({
   timezone: string
   declaring: boolean
   onDeclare: () => void
+  /** 'balance' = saldo restante: cambia el label del monto (sin plazo — deadline ya es null en ese caso). */
+  kind?: 'deposit' | 'balance'
 }) {
   const rows: Array<[string, string]> = [
     ['Titular', bank.accountHolder],
@@ -35,7 +38,7 @@ export function TransferDetails({
     <div className="space-y-4">
       <div className="rounded-2xl bg-muted/55 p-5">
         <p className="mb-3 text-sm text-muted-foreground">
-          Transferí el abono de <span className="font-semibold text-primary">{formatMoney(amount)}</span> a esta cuenta:
+          Transferí el {kind === 'balance' ? 'saldo' : 'abono'} de <span className="font-semibold text-primary">{formatMoney(amount)}</span> a esta cuenta:
         </p>
         <div className="space-y-2 text-sm">
           {rows.map(([label, value]) => (

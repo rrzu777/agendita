@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { prisma } from '@/lib/db'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { deriveConfirmationState } from '@/lib/payments/confirmation-state'
+import { deriveBalanceState } from '@/lib/payments/balance-confirmation-state'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
@@ -35,7 +36,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
       service: true,
       payments: {
         where: { provider: { in: ['mercado_pago', 'manual'] } },
-        select: { status: true, provider: true, providerPaymentId: true },
+        select: { status: true, provider: true, providerPaymentId: true, amount: true },
       },
     },
   })
@@ -62,7 +63,8 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
     state === 'pending' &&
     booking.holdExpiresAt != null &&
     booking.holdExpiresAt > new Date()
-  const bankInfo = canDeclare ? await getBankTransferInfo(booking.businessId) : null
+  const balance = deriveBalanceState(booking)
+  const bankInfo = canDeclare || balance.canDeclare ? await getBankTransferInfo(booking.businessId) : null
 
   const startDate = new Date(booking.startDateTime)
   const formattedDate = startDate.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -123,7 +125,17 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
     },
   }
 
-  const config = stateConfig[state]
+  // Reserva completed (spec §6): copy propio, no depende de deriveConfirmationState
+  // (que ya la trata como 'confirmed' para el icono/estilo).
+  const config = booking.status === 'completed'
+    ? {
+        ...stateConfig.confirmed,
+        title: 'Gracias por tu visita',
+        message: booking.remainingBalance > 0
+          ? `Quedó un saldo pendiente de $${booking.remainingBalance.toLocaleString('es-CL')}. Podés pagarlo por transferencia acá abajo.`
+          : '¡Te esperamos la próxima!',
+      }
+    : stateConfig[state]
   const Icon = config.icon
 
   return (
@@ -209,6 +221,38 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
             timezone={booking.business.timezone}
             bookingId={booking.id}
           />
+        )}
+
+        {balance.rejected && balance.canDeclare && (
+          <p className="mb-4 text-center text-sm text-muted-foreground">
+            Tu último aviso no pudo verificarse. Podés volver a avisar cuando quieras.
+          </p>
+        )}
+
+        {balance.canDeclare && bankInfo && (
+          <TransferPanel
+            bank={bankInfo}
+            amount={booking.remainingBalance}
+            deadline={null}
+            timezone={booking.business.timezone}
+            bookingId={booking.id}
+            kind="balance"
+          />
+        )}
+
+        {balance.verifying && (
+          <div className="studio-card mb-8 p-5 text-center">
+            <p className="text-sm font-medium text-primary">Saldo en verificación</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Avisaste una transferencia de ${balance.payment!.amount!.toLocaleString('es-CL')}. El negocio la va a revisar; si pasan varios días, escribile.
+            </p>
+          </div>
+        )}
+
+        {balance.partial && (
+          <p className="mb-8 text-center text-sm text-muted-foreground">
+            Tu transferencia fue registrada parcialmente. Escribile al negocio para coordinar el resto.
+          </p>
         )}
 
         {(state === 'rejected' || state === 'expired') && (
