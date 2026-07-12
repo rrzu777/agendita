@@ -1,11 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Banknote, CalendarCheck2, CreditCard, RotateCcw } from 'lucide-react'
+import { Banknote, CalendarCheck2, CreditCard, Package, RotateCcw } from 'lucide-react'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- summary shape depends on server action return type
 export function FinanceStats({ summary }: { summary: any }) {
   const stats = [
     { label: 'Ingresos hoy', value: `$${summary.incomeToday.toLocaleString('es-CL')}`, icon: Banknote },
     { label: 'Ingresos mes', value: `$${summary.incomeMonth.toLocaleString('es-CL')}`, icon: CreditCard },
+    // Aditivo a "Ingresos hoy/mes" (que excluyen paquetes): venta de paquete NETA de reembolsos,
+    // ventaneada a hoy/mes. Ver getFinancialSummary en src/server/actions/ledger.ts.
+    { label: 'Venta de paquetes (hoy)', value: `$${summary.packageIncomeToday.toLocaleString('es-CL')}`, icon: Package },
+    { label: 'Venta de paquetes (mes)', value: `$${summary.packageIncomeMonth.toLocaleString('es-CL')}`, icon: Package },
     { label: 'Total abonado', value: `$${summary.totalDeposited.toLocaleString('es-CL')}`, icon: CalendarCheck2 },
     { label: 'Pendiente por cobrar', value: `$${summary.totalPending.toLocaleString('es-CL')}`, icon: Banknote },
     { label: 'Reservas', value: summary.totalBookings, icon: CalendarCheck2 },

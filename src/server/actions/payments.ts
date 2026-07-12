@@ -3,7 +3,6 @@
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { PaymentProvider, PaymentStatus, PaymentType } from '@prisma/client'
-import type { Prisma } from '@prisma/client'
 import {
   getDefaultProvider,
   resolveOnlinePaymentAvailability,
@@ -12,6 +11,7 @@ import {
 } from '@/lib/payments/factory'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
+import { createMpPreferenceForPayment, getPaymentAppUrl } from '@/lib/payments/create-preference'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
@@ -19,18 +19,7 @@ import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth
 import { sendBookingConfirmedNotification, sendNotificationSafely } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
 
-
-function getAppUrl(): string {
-  const raw = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_DOMAIN || ''
-  const clean = raw.replace(/\/$/, '')
-  if (clean.startsWith('localhost') || clean.startsWith('127.0.0.1')) {
-    return `http://${clean}`
-  }
-  if (clean.startsWith('http')) {
-    return clean
-  }
-  return `https://${clean}`
-}const initiatePaymentSchema = z.object({
+const initiatePaymentSchema = z.object({
   bookingId: z.string().min(1),
   amount: z.number().positive().optional(),
   currency: z.string().min(2).max(3).optional(),
@@ -153,13 +142,13 @@ export async function initiatePayment(data: {
       localPaymentId = payment.id
     }
 
-    const result = await provider.createPayment({
+    const result = await createMpPreferenceForPayment(provider, {
       amount,
       currency,
       bookingId: data.bookingId,
       description,
       returnUrl: getBookingConfirmationUrl(booking.business, data.bookingId),
-      webhookUrl: `${getAppUrl()}/api/webhooks/mercado-pago`,
+      webhookUrl: `${getPaymentAppUrl()}/api/webhooks/mercado-pago`,
       localPaymentId,
       customerEmail: booking.customer?.email ?? null,
       metadata: {
@@ -168,12 +157,6 @@ export async function initiatePayment(data: {
         paymentType: 'deposit',
         localPaymentId,
       },
-    })
-
-    // Guardar rawPayload con datos de la preferencia (preferenceId, init_point)
-    await prisma.payment.update({
-      where: { id: localPaymentId },
-      data: { rawPayload: result.rawResponse as Prisma.InputJsonValue },
     })
 
     logger.payment.initiated(localPaymentId, data.bookingId, booking.businessId)
@@ -189,7 +172,7 @@ export async function initiatePayment(data: {
     bookingId: data.bookingId,
     description,
     returnUrl: getBookingConfirmationUrl(booking.business, data.bookingId),
-    webhookUrl: `${getAppUrl()}/api/webhooks/${provider.name}`,
+    webhookUrl: `${getPaymentAppUrl()}/api/webhooks/${provider.name}`,
   })
 
   await prisma.payment.create({

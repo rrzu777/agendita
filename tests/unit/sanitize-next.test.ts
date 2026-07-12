@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeNext } from '@/lib/auth/sanitize-next'
+import { authErrorRedirectPath, sanitizeNext } from '@/lib/auth/sanitize-next'
 
 describe('sanitizeNext', () => {
   it('returns /dashboard when null', () => {
@@ -28,5 +28,17 @@ describe('sanitizeNext', () => {
 
   it('returns path with query params intact', () => {
     expect(sanitizeNext('/dashboard?foo=bar')).toBe('/dashboard?foo=bar')
+  })
+})
+
+describe('authErrorRedirectPath', () => {
+  it('trata /paquetes/* como flujo de clienta y vuelve a /ingresar', () => {
+    const url = authErrorRedirectPath('/paquetes/demo?comprar=abc', 'oauth')
+    expect(url.startsWith('/ingresar')).toBe(true)
+    expect(url).toContain('next=')
+  })
+
+  it('sin next de clienta sigue yendo a /login (dueñas)', () => {
+    expect(authErrorRedirectPath('/dashboard', 'oauth').startsWith('/login')).toBe(true)
   })
 })

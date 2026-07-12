@@ -27,7 +27,11 @@ export function sanitizeNext(next: string | null, fallback = '/dashboard'): stri
  */
 export function authErrorRedirectPath(next: string | null, error: string): string {
   const safeNext = sanitizeNext(next)
-  const isCustomerFlow = safeNext === '/mi' || safeNext.startsWith('/mi/') || safeNext.startsWith('/tarjeta/')
+  const isCustomerFlow =
+    safeNext === '/mi' ||
+    safeNext.startsWith('/mi/') ||
+    safeNext.startsWith('/tarjeta/') ||
+    safeNext.startsWith('/paquetes')
   if (isCustomerFlow) {
     return `/ingresar?error=${encodeURIComponent(error)}&next=${encodeURIComponent(safeNext)}`
   }

@@ -4,6 +4,7 @@ import { BusinessProfile } from '@/components/public/business-profile'
 import { getPublicBusinessBySlug } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { getAccountCta, getFunnelSession } from '@/lib/customers/session-prefill'
+import { prisma } from '@/lib/db'
 
 // El CTA de cuenta lee la sesión (cookies) → la page es por-request. La anotación
 // ISR anterior (revalidate = 300) ya no aplicaba (getTenantFromRequest lee headers).
@@ -44,6 +45,13 @@ export default async function PublicProfilePage({ params }: ProfilePageProps) {
   }
 
   const session = await getFunnelSession(business.id)
+  const hasPackages = (await prisma.packageProduct.count({ where: { businessId: business.id, isActive: true } })) > 0
 
-  return <BusinessProfile business={business} accountCta={getAccountCta(session, business.slug)} />
+  return (
+    <BusinessProfile
+      business={business}
+      accountCta={getAccountCta(session, business.slug)}
+      packagesHref={hasPackages ? `/paquetes/${business.slug}` : undefined}
+    />
+  )
 }

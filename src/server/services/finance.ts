@@ -261,7 +261,7 @@ export interface ApplyApprovedPackagePaymentInput {
 export async function applyApprovedPackagePayment({
   tx, packagePurchaseId, businessId, amount, currency, provider, providerPaymentId,
   paymentType, paymentMethod, rawPayload, createdByUserId, paymentId: explicitPaymentId,
-}: ApplyApprovedPackagePaymentInput): Promise<void> {
+}: ApplyApprovedPackagePaymentInput): Promise<{ wasActivated: boolean }> {
   if (amount <= 0) throw new Error('El monto debe ser positivo')
 
   const purchase = await tx.packagePurchase.findUnique({ where: { id: packagePurchaseId } })
@@ -275,10 +275,13 @@ export async function applyApprovedPackagePayment({
 
   // Idempotencia: si el pago ya estaba aprobado o la compra ya está activa, no
   // re-emitir grants ni re-asentar (los grants ya son idempotentes, pero cortar
-  // temprano evita trabajo y un asiento manual duplicado).
-  if (alreadyApproved || purchase.status === 'active') return
+  // temprano evita trabajo y un asiento manual duplicado). Devolvemos
+  // `wasActivated: false` para que el caller (webhook) NO re-envíe notificaciones
+  // en cada redelivery de MP — espejo del `wasConfirmed` de la rama de reserva.
+  if (alreadyApproved || purchase.status === 'active') return { wasActivated: false }
 
   await activatePackagePurchaseInTx(tx, purchase, { requestId: purchase.id, paymentId: payment.id, createdByUserId })
+  return { wasActivated: true }
 }
 
 async function recalcBookingFromPayments(tx: Prisma.TransactionClient, bookingId: string): Promise<{ booking: { id: string; status: string; businessId: string; customerId: string; totalPrice: number; depositRequired: number; depositPaid: number; remainingBalance: number; finalAmount: number; paymentStatus: string }; wasConfirmed: boolean }> {
