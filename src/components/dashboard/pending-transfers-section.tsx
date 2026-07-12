@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Landmark, MessageCircle } from 'lucide-react'
+import { FileText, Landmark, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { buildWhatsappUrl } from '@/lib/notifications'
 import { rejectBankTransfer } from '@/server/actions/bank-transfer-verify'
@@ -21,6 +21,8 @@ export interface PendingTransferItem {
   amount: number
   declaredAt: Date
   kind: PendingTransferKind
+  proofKey: string | null
+  proofContentType: string | null
 }
 
 const KIND_BADGE_CLASS =
@@ -118,6 +120,18 @@ function PendingTransferRow({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        {item.proofKey && (
+          <a
+            href={`/dashboard/transfers/proof/${item.paymentId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Button type="button" variant="outline" size="sm" className="h-9 font-semibold">
+              <FileText className="mr-1 size-4" />
+              Ver comprobante
+            </Button>
+          </a>
+        )}
         {whatsappUrl && (
           <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
             <Button type="button" variant="outline" size="sm" className="h-9 font-semibold">
@@ -152,6 +166,8 @@ function PendingTransferRow({
         defaultAmount={item.amount}
         businessCurrency={businessCurrency}
         kind={item.kind}
+        proofKey={item.proofKey}
+        proofContentType={item.proofContentType}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
       />

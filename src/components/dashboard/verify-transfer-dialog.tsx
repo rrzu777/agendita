@@ -16,6 +16,8 @@ export function VerifyTransferDialog({
   defaultAmount,
   businessCurrency,
   kind = 'deposit',
+  proofKey,
+  proofContentType,
   open,
   onOpenChange,
 }: {
@@ -23,9 +25,12 @@ export function VerifyTransferDialog({
   defaultAmount: number
   businessCurrency: string
   kind?: PendingTransferKind
+  proofKey?: string | null
+  proofContentType?: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const proofUrl = proofKey ? `/dashboard/transfers/proof/${paymentId}` : null
   const router = useRouter()
   const [amount, setAmount] = useState(String(defaultAmount))
   const [error, setError] = useState<string | null>(null)
@@ -93,6 +98,26 @@ export function VerifyTransferDialog({
             Confirma el monto que recibiste. Podés ajustarlo si el cliente transfirió una cantidad distinta.
           </DialogDescription>
         </DialogHeader>
+
+        {proofUrl && (
+          <div className="mb-4">
+            {proofContentType?.startsWith('image/') ? (
+              // eslint-disable-next-line @next/next/no-img-element -- URL efímera presignada (60s) desde bucket R2 privado; next/image no aplica
+              <img
+                src={proofUrl}
+                alt="Comprobante"
+                className="rounded-lg border border-border/60"
+                style={{ maxWidth: '100%' }}
+              />
+            ) : (
+              <a href={proofUrl} target="_blank" rel="noopener noreferrer">
+                <Button type="button" variant="outline" className="h-10 font-semibold">
+                  Ver comprobante (PDF)
+                </Button>
+              </a>
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleConfirm} className="space-y-5">
           <div className="space-y-2">

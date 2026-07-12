@@ -194,7 +194,7 @@ export async function getBookings() {
       // por el prefijo de providerPaymentId, ver BT_BALANCE_PREFIX).
       payments: {
         where: anyDeclaredTransferWhere,
-        select: { id: true, amount: true, createdAt: true, providerPaymentId: true },
+        select: { id: true, amount: true, createdAt: true, providerPaymentId: true, proofKey: true, proofContentType: true },
       },
     },
   })

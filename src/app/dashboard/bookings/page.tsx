@@ -237,6 +237,8 @@ export default async function BookingsPage() {
           startDateTime: b.startDateTime,
           amount: p.amount,
           declaredAt: p.createdAt,
+          proofKey: p.proofKey,
+          proofContentType: p.proofContentType,
           kind: (p.providerPaymentId!.startsWith(BT_BALANCE_PREFIX) ? 'balance' : 'deposit') as PendingTransferItem['kind'],
         })),
     )

@@ -19,6 +19,8 @@ const row = {
   amount: 8000,
   declaredAt: new Date(Date.now() - 3 * 3600_000),
   kind: 'deposit' as const,
+  proofKey: null,
+  proofContentType: null,
 }
 
 describe('PendingTransfersSection', () => {

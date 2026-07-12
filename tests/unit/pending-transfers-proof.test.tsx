@@ -1,16 +1,14 @@
 import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
 vi.mock('@/server/actions/bank-transfer-verify', () => ({ confirmBankTransfer: vi.fn(), rejectBankTransfer: vi.fn() }))
-// El componente importa buildWhatsappUrl del index de notifications: mockear
-// el módulo para no arrastrar email-provider al entorno unit.
 vi.mock('@/lib/notifications', () => ({ buildWhatsappUrl: () => 'https://wa.me/x' }))
 
 import { PendingTransfersSection } from '@/components/dashboard/pending-transfers-section'
 
 const base = {
-  paymentId: 'p1',
+  paymentId: 'pay-123',
   bookingId: 'b1',
   customerName: 'Ana',
   customerPhone: null,
@@ -18,38 +16,33 @@ const base = {
   startDateTime: new Date('2026-08-01T12:00:00Z'),
   amount: 10000,
   declaredAt: new Date('2026-08-01T10:00:00Z'),
+  kind: 'deposit' as const,
   proofKey: null,
   proofContentType: null,
 }
 
-describe('PendingTransfersSection con kinds', () => {
-  it('item de abono muestra badge Abono; item de saldo muestra badge Saldo', () => {
+describe('PendingTransfersSection · Ver comprobante', () => {
+  it('renderiza el enlace al comprobante cuando hay proofKey', () => {
     const html = renderToStaticMarkup(
       <PendingTransfersSection
-        items={[
-          { ...base, kind: 'deposit' },
-          { ...base, paymentId: 'p2', kind: 'balance' },
-        ]}
+        items={[{ ...base, proofKey: 'proofs/b/pay-123/deposit', proofContentType: 'image/png' }]}
         businessCurrency="CLP"
         businessTimezone="America/Santiago"
       />,
     )
-    expect(html).toContain('Abono')
-    expect(html).toContain('Saldo')
+    expect(html).toContain('Ver comprobante')
+    expect(html).toContain('/dashboard/transfers/proof/pay-123')
   })
 
-  it('renderiza el botón Rechazar para items de saldo sin fallar', () => {
-    // El copy de rechazo vive en window.confirm (no en el HTML estático), así
-    // que acá solo se verifica que el componente renderiza items de tipo
-    // 'balance' sin fallar y sigue exponiendo el botón Rechazar.
+  it('NO renderiza el enlace cuando falta proofKey', () => {
     const html = renderToStaticMarkup(
       <PendingTransfersSection
-        items={[{ ...base, kind: 'balance' }]}
+        items={[{ ...base, proofKey: null, proofContentType: null }]}
         businessCurrency="CLP"
         businessTimezone="America/Santiago"
       />,
     )
-    expect(html).toContain('Rechazar')
-    expect(html).toContain('Saldo')
+    expect(html).not.toContain('Ver comprobante')
+    expect(html).not.toContain('/dashboard/transfers/proof/')
   })
 })
