@@ -20,6 +20,7 @@
 6. **Git**: `git -C /Users/robertozamorautrera/Projects/agendita/.claude/worktrees/keen-wright-cd2fef` + `git add <archivos explícitos>`, nunca `-A`. Rama: `claude/balance-transfer`.
 7. **Sin migración de schema en este PR.**
 8. **`sendNotificationSafely` recibe un callback NO-async** — hoistear todo `await` (p.ej. `getBusinessReplyToEmail`) fuera del callback.
+9. **Waves paralelas comparten el worktree**: `npx tsc --noEmit` es global — si el grep muestra errores SOLO en archivos del otro task de la wave, ignorarlos/reintentar; bloquean únicamente los errores en archivos propios (Task 9 corre el tsc autoritativo). Ante `index.lock` de git (commits concurrentes), reintentar tras unos segundos.
 
 ### Orden y paralelismo (subagent-driven)
 
@@ -158,7 +159,7 @@ export function hasPendingDeclaredTransfer(
 }
 ```
 
-OJO: este cambio de firma (de `payments: unknown[]` a array con `providerPaymentId`) puede romper tsc en call sites que pasan payments sin ese campo. Correr `npx tsc --noEmit 2>&1 | grep -E '^src/'` y arreglar los call sites SOLO si es agregar el campo al select/tipo (los cambios de datos reales los hace Task 7; si un call site necesita datos que aún no fluyen, el campo es opcional así que compila — verificar).
+VERIFICADO por auditoría: `getBookings` YA selecciona `providerPaymentId` (bookings.ts:192-195), así que los 5 call sites del dashboard (`dashboard/page.tsx:57,182`, `bookings/page.tsx:64,216,294`) reciben el campo en runtime — este endurecimiento compila Y es semánticamente correcto de inmediato; ningún estado intermedio de la rama rompe. Igual correr `npx tsc --noEmit 2>&1 | grep -E '^src/'` para confirmar.
 
 - [ ] **Step 4: Run** — unit test PASS + tsc grep `^src/` vacío. NO correr suites completas (Task 2 corre en paralelo).
 
@@ -276,7 +277,9 @@ git -C /Users/robertozamorautrera/Projects/agendita/.claude/worktrees/keen-wrigh
 - [ ] **Step 1: Write the failing tests**
 
 Crear `tests/integration/balance-transfer.test.ts`. Copiar el bloque de `vi.mock(...)` de `tests/integration/revive-booking.test.ts` (auth btv-biz, rate-limit, next/cache, revalidate-business, notifications con callback-que-ejecuta) y AGREGAR al mock de `@/lib/notifications` las keys:
-`sendBalanceTransferDeclaredToBusiness: async () => [], sendBalanceTransferVerifiedToCustomer: async () => ({ success: true }), sendBalanceTransferRejectedToCustomer: async () => ({ success: true }), sendBankTransferDeclaredToBusiness: async () => [],`
+`sendBalanceTransferDeclaredToBusiness: vi.fn(async () => []), sendBalanceTransferVerifiedToCustomer: vi.fn(async () => ({ success: true })), sendBalanceTransferRejectedToCustomer: vi.fn(async () => ({ success: true })), sendBankTransferDeclaredToBusiness: async () => [],`
+
+(Las 3 keys nuevas son `vi.fn` a propósito: Task 5 asserta cuál send se eligió. Si al cargar `bookings.ts` vitest pide un export no mockeado — p.ej. `sendLoyaltyRewardNotification` — agregarlo como `async () => ({ success: true })`.)
 
 ```ts
 import { describe, it, expect, afterAll, vi } from 'vitest'
@@ -496,19 +499,49 @@ describe('declareBalanceTransfer', () => {
     await expect(declareBalanceTransfer(seeded.bookingId)).rejects.toThrow('parcialmente')
   })
 
-  it('reactivación: rejected → vuelve a pending con monto fresco', async () => {
+  it('idempotencia: approved con saldo 0 → éxito silencioso sin tocar nada', async () => {
     const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
     const seeded = await seedConfirmedWithBalance()
     await declareBalanceTransfer(seeded.bookingId)
     const p = await prisma.payment.findFirstOrThrow({ where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) } })
-    await prisma.payment.update({ where: { id: p.id }, data: { status: 'rejected', amount: 1 } })
-    await declareBalanceTransfer(seeded.bookingId)
-    const again = await prisma.payment.findUniqueOrThrow({ where: { id: p.id } })
-    expect(again.status).toBe('pending')
-    expect(again.amount).toBe(seeded.remainingBalance)
+    await prisma.payment.update({ where: { id: p.id }, data: { status: 'approved' } })
+    await prisma.booking.update({ where: { id: seeded.bookingId }, data: { remainingBalance: 0, paymentStatus: 'fully_paid' } })
+    await declareBalanceTransfer(seeded.bookingId) // no lanza
+    expect((await prisma.payment.findUniqueOrThrow({ where: { id: p.id } })).status).toBe('approved')
+  })
+
+  it('guard expired → mensaje propio', async () => {
+    const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
+    const seeded = await seedConfirmedWithBalance()
+    await prisma.booking.update({ where: { id: seeded.bookingId }, data: { status: 'expired' } })
+    await expect(declareBalanceTransfer(seeded.bookingId)).rejects.toThrow('expiró')
+  })
+
+  it('reactivación: rejected Y cancelled → vuelven a pending con monto fresco', async () => {
+    const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
+    for (const dead of ['rejected', 'cancelled'] as const) {
+      const seeded = await seedConfirmedWithBalance()
+      await declareBalanceTransfer(seeded.bookingId)
+      const p = await prisma.payment.findFirstOrThrow({ where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) } })
+      await prisma.payment.update({ where: { id: p.id }, data: { status: dead, amount: 1 } })
+      await declareBalanceTransfer(seeded.bookingId)
+      const again = await prisma.payment.findUniqueOrThrow({ where: { id: p.id } })
+      expect(again.status).toBe('pending')
+      expect(again.amount).toBe(seeded.remainingBalance)
+    }
+  })
+
+  it('doble declare concurrente → 1 solo payment, sin errores (invariante P2002)', async () => {
+    const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
+    const seeded = await seedConfirmedWithBalance()
+    await Promise.all([declareBalanceTransfer(seeded.bookingId), declareBalanceTransfer(seeded.bookingId)])
+    const all = await prisma.payment.findMany({ where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) } })
+    expect(all).toHaveLength(1)
   })
 })
 ```
+
+NOTA sobre el guard de carrera `count === 0` (spec §9): en single-thread los guards previos lo hacen prácticamente inalcanzable; queda cubierto por la invariante del test concurrente de arriba + el review del `updateMany` (decisión consciente, NO marcarlo como faltante en Task 9).
 
 - [ ] **Step 2: Run to verify it fails** — filtro `"declareBalanceTransfer"`. Expected: FAIL (action no existe).
 
@@ -633,12 +666,17 @@ export async function declareBalanceTransfer(bookingId: string): Promise<{ ok: t
         bookingNumber: declared.booking.bookingNumber,
       }),
     )
+    // Spec §3: revalidar las superficies del dashboard (la sección "por
+    // verificar" debe reflejar la declaración sin esperar navegación).
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/bookings')
+    revalidatePath('/dashboard/payments')
   }
   return { ok: true }
 }
 ```
 
-Verificar la firma real de `deriveManualPaymentType(booking, amount)` (`src/lib/payments/derive-payment-type.ts`) y qué campos de booking usa (depositPaid/remainingBalance) — el include ya los trae (escalares).
+(`revalidatePath` de `next/cache` — import nuevo en este archivo; el mock del test ya lo cubre.) Verificar la firma real de `deriveManualPaymentType(booking, amount)` (`src/lib/payments/derive-payment-type.ts`) y qué campos de booking usa (depositPaid/remainingBalance) — el include ya los trae (escalares).
 
 - [ ] **Step 4: Run** — filtro `"declareBalanceTransfer"` PASS + regresión `-t "declareBankTransfer"` PASS (el archivo `bank-transfer-public.test.ts` completo); tsc grep vacío.
 
@@ -679,8 +717,8 @@ describe('confirmBankTransfer saldo', () => {
     expect(b.paymentStatus).toBe('fully_paid')
     expect(b.remainingBalance).toBe(0)
     expect(b.status).toBe('confirmed')
-    const ledger = await prisma.ledgerEntry.findFirst({ where: { payment: { id: s.balancePaymentId } } })
-    expect(ledger).toBeTruthy()
+    const ledger = await prisma.ledgerEntry.findFirst({ where: { paymentId: s.balancePaymentId } })
+    expect(ledger).toBeTruthy() // paymentId es el unique del upsert de finance.ts; asertar también type/categoría si el schema los expone legibles
   })
 
   it('sobre completed → también verifica (allowCompleted)', async () => {
@@ -719,23 +757,29 @@ describe('confirmBankTransfer saldo', () => {
 })
 
 describe('rejectBankTransfer saldo', () => {
-  it('rechaza el payment, NO cancela la reserva, y se puede re-declarar', async () => {
+  it('rechaza el payment, NO cancela la reserva, manda el email de SALDO, y se puede re-declarar', async () => {
     const seeded = await seedConfirmedWithBalance()
     const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
     await declareBalanceTransfer(seeded.bookingId)
     const p = await prisma.payment.findFirstOrThrow({
       where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) },
     })
+    const notif = await import('@/lib/notifications')
+    vi.mocked(notif.sendBalanceTransferRejectedToCustomer).mockClear()
     const { rejectBankTransfer } = await import('@/server/actions/bank-transfer-verify')
     await rejectBankTransfer(p.id)
     const b = await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })
     expect(b.status).toBe('confirmed') // NO cancelada
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: p.id } })).status).toBe('rejected')
+    // Se eligió el send de SALDO (el de abono diría "reserva cancelada": falso acá).
+    expect(notif.sendBalanceTransferRejectedToCustomer).toHaveBeenCalledTimes(1)
     await declareBalanceTransfer(seeded.bookingId) // reactiva
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: p.id } })).status).toBe('pending')
   })
 })
 ```
+
+Y en el test "sobre confirmed → fully_paid..." de arriba, agregar el assert simétrico: `expect(notif.sendBalanceTransferVerifiedToCustomer).toHaveBeenCalledTimes(1)` (con el `mockClear()` previo correspondiente). Requiere que el seed tenga `customerEmail` — verificar que `seedDeclaredTransfer` siembre un customer con email (leer el helper; si el email es opcional/null por default, pasar `customerEmail` en los opts del seed del fixture).
 
 - [ ] **Step 2: Run to verify it fails** — filtro `"confirmBankTransfer saldo"`. Expected: FAIL — `loadDeclaredPayment` rechaza el bt-balance ("Este pago no es una transferencia por verificar").
 
@@ -820,9 +864,25 @@ NOTA include: el `findUnique` de booking actual no incluye customer/service — 
 
 (Import `sendBalanceTransferVerifiedToCustomer`; ajustar los campos EXACTOS a `BalanceTransferCustomerEmailData` de Task 2.)
 
-4. En `rejectBankTransfer`: el tx ya es seguro (el cancel de booking está scoped a pending_payment). Cambios: capturar `const isBalance = isDeclaredBalancePayment(payment)` dentro de la tx y retornarlo; post-tx, elegir el email:
+4. En `rejectBankTransfer`: el tx ya es seguro (el cancel de booking está scoped a pending_payment). OJO shape real (auditoría): hoy la tx retorna la booking DIRECTA (`return tx.booking.findUnique({... include: { customer: true, service: true } })`, verify.ts:145-148) — hay que reestructurar el retorno para acarrear el tipo y el monto declarado (capturados de `payment`, que se cargó ANTES del updateMany, o sea con los valores declarados):
 
 ```ts
+    // dentro de la tx, reemplazar el return final por:
+    return {
+      booking: await tx.booking.findUnique({
+        where: { id: payment.bookingId },
+        include: { customer: true, service: true },
+      }),
+      isBalance: isDeclaredBalancePayment(payment),
+      amount: payment.amount,
+      currency: payment.currency,
+    }
+```
+
+y post-tx:
+
+```ts
+  const { booking: rejected, isBalance, amount, currency } = result
   if (rejected?.customer?.email) {
     const replyTo = await getBusinessReplyToEmail(businessId)
     if (isBalance) {
@@ -836,8 +896,8 @@ NOTA include: el `findUnique` de booking actual no incluye customer/service — 
           serviceName: rejected.service?.name ?? 'servicio',
           startDateTime: rejected.startDateTime,
           bookingNumber: rejected.bookingNumber,
-          amount: rejectedPaymentAmount,   // capturar payment.amount en la tx
-          currency: rejectedPaymentCurrency,
+          amount,
+          currency,
         }),
       )
     } else {
@@ -867,11 +927,13 @@ git -C /Users/robertozamorautrera/Projects/agendita/.claude/worktrees/keen-wrigh
 
 ```ts
 describe('sweeps de bt-balance en cambios de estado', () => {
-  it('updateBookingStatus → no_show cancela el bt-balance pendiente', async () => {
+  // OJO: updateBookingStatus NO pasa por cancelBookingInTx (tx propia) — por
+  // eso se testean AMBOS destinos acá, además del cancelBooking de más abajo.
+  it.each(['no_show', 'cancelled'] as const)('updateBookingStatus → %s cancela el bt-balance pendiente', async (dest) => {
     const seeded = await seedConfirmedWithBalance()
     await seedPendingBalance(seeded.bookingId, seeded.customerId, seeded.remainingBalance)
     const { updateBookingStatus } = await import('@/server/actions/bookings')
-    await updateBookingStatus(seeded.bookingId, 'no_show')
+    await updateBookingStatus(seeded.bookingId, dest)
     const p = await prisma.payment.findFirstOrThrow({
       where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) },
     })
@@ -949,14 +1011,23 @@ import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 vi.mock('@/server/actions/bank-transfer-verify', () => ({ confirmBankTransfer: vi.fn(), rejectBankTransfer: vi.fn() }))
+// El componente importa buildWhatsappUrl del index de notifications: mockear
+// el módulo para no arrastrar email-provider al entorno unit.
+vi.mock('@/lib/notifications', () => ({ buildWhatsappUrl: () => 'https://wa.me/x' }))
 import { PendingTransfersSection } from '@/components/dashboard/pending-transfers-section'
 
-const base = { id: 'p1', bookingId: 'b1', customerName: 'Ana', customerPhone: null, serviceName: 'Corte', startDateTime: new Date(), amount: 10000, declaredAt: new Date(), bookingNumber: 1, businessCurrency: 'CLP' }
+// Shape real del item (auditoría, pending-transfers-section.tsx:12-21):
+// paymentId (no `id`), sin bookingNumber ni businessCurrency por item.
+const base = { paymentId: 'p1', bookingId: 'b1', customerName: 'Ana', customerPhone: null, serviceName: 'Corte', startDateTime: new Date(), amount: 10000, declaredAt: new Date() }
 
 describe('PendingTransfersSection con kinds', () => {
   it('item de abono muestra badge Abono; item de saldo muestra badge Saldo', () => {
     const html = renderToStaticMarkup(
-      <PendingTransfersSection items={[{ ...base, kind: 'deposit' }, { ...base, id: 'p2', kind: 'balance' }]} />,
+      <PendingTransfersSection
+        items={[{ ...base, kind: 'deposit' }, { ...base, paymentId: 'p2', kind: 'balance' }]}
+        businessCurrency="CLP"
+        businessTimezone="America/Santiago"
+      />,
     )
     expect(html).toContain('Abono')
     expect(html).toContain('Saldo')
@@ -970,7 +1041,7 @@ describe('PendingTransfersSection con kinds', () => {
 
 - [ ] **Step 3: Implement — datos**
 
-1. `getBookings` (bookings.ts ~191): el include de payments pasa a `where: anyDeclaredTransferWhere` y el select agrega `providerPaymentId` (mantener los campos ya seleccionados — leer el select actual: usa id/amount/createdAt para el builder).
+1. `getBookings` (bookings.ts ~191-195): el ÚNICO cambio es `where: declaredTransferPaymentWhere` → `where: anyDeclaredTransferWhere` — el select YA incluye `id/amount/createdAt/providerPaymentId` (verificado por auditoría; no buscar un campo que ya existe).
 2. Builder `pendingTransfers` (`bookings/page.tsx` ~212-226): en vez de `payments[0]` ciego, derivar por prefijo:
 
 ```ts
@@ -990,7 +1061,15 @@ Usar `BT_BALANCE_PREFIX` importado, no el literal. Mantener el orden actual del 
 
 - [ ] **Step 4: Implement — badges (dos predicados)**
 
-En los 3 call sites que hoy usan `hasPendingDeclaredTransfer` para REEMPLAZAR el badge de estado (tabla `bookings/page.tsx` ~294, `BookingCard` ~64-80, fila del home `dashboard/page.tsx` ~182): dejarlos INTACTOS (siguen siendo de abono). AGREGAR al lado, cuando `hasPendingBalanceTransfer(booking)`, un badge secundario "Saldo por verificar" (estilo `bg-amber-100 text-amber-800` o el que use el badge de abono) que NO reemplaza "Confirmada"/"Completada". El contador/banner del home (`dashboard/page.tsx` ~64) pasa a contar `pendingTransfers.length` con ambos kinds (si hoy cuenta bookings con hasPendingDeclaredTransfer, sumar los de saldo).
+En los 3 call sites que hoy usan `hasPendingDeclaredTransfer` para REEMPLAZAR el badge de estado (tabla `bookings/page.tsx` ~294, `BookingCard` ~64-80, fila del home `dashboard/page.tsx` ~182): dejarlos INTACTOS (siguen siendo de abono). AGREGAR al lado, cuando `hasPendingBalanceTransfer(booking)`, un badge secundario "Saldo por verificar" (estilo `bg-amber-100 text-amber-800` o el que use el badge de abono) que NO reemplaza "Confirmada"/"Completada". Al llamar `hasPendingBalanceTransfer(booking)` en `BookingCard`, ampliar su prop `payments: { id: string }[]` a `payments: { id: string; providerPaymentId: string | null }[]` (el dato ya fluye; el tipo debe garantizarlo, no depender del campo opcional). El contador del home es `dashboard/page.tsx:57`; reemplazarlo textualmente por:
+
+```ts
+const pendingTransfersCount = bookings.filter(
+  (b) => hasPendingDeclaredTransfer(b) || hasPendingBalanceTransfer(b),
+).length
+```
+
+(cancelled/expired quedan excluidos gratis: los predicados exigen pending_payment o confirmed/completed).
 
 - [ ] **Step 5: Implement — dialog y aviso**
 
@@ -1013,8 +1092,11 @@ git -C /Users/robertozamorautrera/Projects/agendita/.claude/worktrees/keen-wrigh
 ### Task 8: superficie clienta — /book/confirmation
 
 **Files:**
+- Create: `src/lib/payments/balance-confirmation-state.ts`
 - Modify: `src/app/book/confirmation/page.tsx`, `src/app/book/confirmation/transfer-panel.tsx`, `src/components/booking/transfer-details.tsx`
-- Test: `tests/unit/transfer-details-balance.test.tsx` (crear)
+- Test: `tests/unit/transfer-details-balance.test.tsx`, `tests/unit/confirmation-balance-state.test.ts` (crear ambos)
+
+(En el render del Step 5, los flags `canDeclareBalance`/`balanceVerifying`/`balancePartial`/`balanceRejected` corresponden a `balance.canDeclare`/`balance.verifying`/`balance.partial`/`balance.rejected` del helper — usar los del helper.)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1077,22 +1159,35 @@ export function TransferPanel({ bank, amount, deadline, timezone, bookingId, kin
 En `src/app/book/confirmation/page.tsx`:
 
 1. El select de payments agrega `amount: true` (para mostrar lo declarado).
-2. Derivación local del sub-estado del saldo (después de `state`):
+2. Derivación del sub-estado del saldo: EXTRAER a un helper puro testeable en `src/lib/payments/balance-confirmation-state.ts` (la spec §9 exige test unit de estos 4 sub-estados y la page es un server component intesteable con renderToStaticMarkup):
 
 ```ts
-  const balancePayment = booking.payments.find((p) => p.providerPaymentId?.startsWith(BT_BALANCE_PREFIX)) ?? null
+import { BT_BALANCE_PREFIX } from '@/lib/bank-transfer/declared'
+
+/** Sub-estado del saldo en /book/confirmation (spec §6). Independiente de
+ *  deriveConfirmationState: solo aplica a reservas firmes. */
+export function deriveBalanceState(booking: {
+  status: string
+  remainingBalance: number
+  payments: Array<{ status: string; providerPaymentId?: string | null }>
+}): { canDeclare: boolean; verifying: boolean; partial: boolean; rejected: boolean; payment: { status: string } | null } {
+  const payment = booking.payments.find((p) => p.providerPaymentId?.startsWith(BT_BALANCE_PREFIX)) ?? null
   const isFirm = booking.status === 'confirmed' || booking.status === 'completed'
-  const canDeclareBalance =
-    isFirm &&
-    booking.remainingBalance > 0 &&
-    balancePayment?.status !== 'pending' &&
-    balancePayment?.status !== 'approved'   // approved con saldo residual NO reabre el CTA (spec §6)
-  const balancePartial = isFirm && balancePayment?.status === 'approved' && booking.remainingBalance > 0
-  const balanceVerifying = isFirm && balancePayment?.status === 'pending'
-  const balanceRejected = isFirm && balancePayment?.status === 'rejected'
+  if (!isFirm) return { canDeclare: false, verifying: false, partial: false, rejected: false, payment: null }
+  const verifying = payment?.status === 'pending'
+  const partial = payment?.status === 'approved' && booking.remainingBalance > 0
+  return {
+    // approved con saldo residual NO reabre el CTA (spec §6 — dead-end de verificación parcial)
+    canDeclare: booking.remainingBalance > 0 && !verifying && payment?.status !== 'approved',
+    verifying,
+    partial,
+    rejected: payment?.status === 'rejected',
+    payment,
+  }
+}
 ```
 
-(Import `BT_BALANCE_PREFIX` de declared.ts. Usar `booking.remainingBalance` del modelo, no el `remainingBalance` recomputado de la página — verificar cuál usa el resumen y ser consistente.)
+Test `tests/unit/confirmation-balance-state.test.ts`: los 4 sub-estados + no-firme → todo false + partial excluye canDeclare (approved+saldo>0 → `{canDeclare:false, partial:true}`) + rejected convive con canDeclare. En la page: `const balance = deriveBalanceState(booking)` y usar `balance.canDeclare` etc. (el `payment` retornado expone `amount` si se tipa el array con él — incluirlo en el tipo del helper para el bloque "verificando"). Usar `booking.remainingBalance` del modelo, no el `remainingBalance` recomputado local de la página.
 3. El fetch de bankInfo: `const bankInfo = (canDeclare || canDeclareBalance) ? await getBankTransferInfo(booking.businessId) : null`.
 4. Título para `completed` (spec §6): donde se elige `config`, si `booking.status === 'completed'` sobreescribir título/mensaje del caso confirmed: título `'Gracias por tu visita'`, mensaje: con saldo → `'Quedó un saldo pendiente de $X. Podés pagarlo por transferencia acá abajo.'`; sin saldo → `'¡Te esperamos la próxima!'`. (Branch local, `deriveConfirmationState` intacto.)
 5. Render, después del `TransferPanel` de abono existente:
@@ -1130,12 +1225,17 @@ En `src/app/book/confirmation/page.tsx`:
 
 (Ubicar el bloque rejected ANTES del panel para que se lea como nota; ordenar visualmente: nota rejected → panel declarar → card verificando. El JSX exacto puede adaptarse al estilo de la página; el CONTENIDO y las condiciones son estos.)
 
-- [ ] **Step 6: Run** — test nuevo PASS + `npm run test:unit -- tests/unit/*transfer*` PASS; tsc grep vacío. NO correr suite completa (Task 7 en paralelo).
+- [ ] **Step 6: Run** — archivos EXACTOS (no glob: `tests/unit/*transfer*` matchearía `pending-transfers-section.test.tsx`, que Task 7 está escribiendo EN PARALELO → falso rojo):
+
+```bash
+npm run test:unit -- tests/unit/transfer-details-balance.test.tsx tests/unit/confirmation-balance-state.test.ts tests/unit/transfer-reactivated-email.test.ts tests/unit/transfer-reminder-emails.test.ts tests/unit/balance-transfer-emails.test.ts
+```
+PASS + tsc grep vacío (regla 9: ignorar errores de archivos de Task 7). NO correr suite completa.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git -C /Users/robertozamorautrera/Projects/agendita/.claude/worktrees/keen-wright-cd2fef add src/app/book/confirmation/page.tsx src/app/book/confirmation/transfer-panel.tsx src/components/booking/transfer-details.tsx tests/unit/transfer-details-balance.test.tsx
+git -C /Users/robertozamorautrera/Projects/agendita/.claude/worktrees/keen-wright-cd2fef add src/lib/payments/balance-confirmation-state.ts src/app/book/confirmation/page.tsx src/app/book/confirmation/transfer-panel.tsx src/components/booking/transfer-details.tsx tests/unit/transfer-details-balance.test.tsx tests/unit/confirmation-balance-state.test.ts
 git -C /Users/robertozamorautrera/Projects/agendita/.claude/worktrees/keen-wright-cd2fef commit -m "feat(book): pagar el saldo por transferencia desde la confirmación — declarar, verificando, parcial y copy de completed"
 ```
 
