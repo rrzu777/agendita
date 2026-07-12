@@ -33,8 +33,8 @@ export function TransferDetails({
 }) {
   const [selectedError, setSelectedError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
-  const [uploadedKey, setUploadedKey] = useState<string | null>(null)
-  const [uploadedType, setUploadedType] = useState<string | null>(null)
+  // key + tipo se setean/limpian siempre juntos → un solo estado los mantiene en sync.
+  const [uploaded, setUploaded] = useState<{ key: string; type: string } | null>(null)
 
   const rows: Array<[string, string]> = [
     ['Titular', bank.accountHolder],
@@ -48,8 +48,7 @@ export function TransferDetails({
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     setSelectedError(null)
-    setUploadedKey(null)
-    setUploadedType(null)
+    setUploaded(null)
     if (!file) return
 
     if (!isAllowedProofType(file.type)) {
@@ -70,8 +69,7 @@ export function TransferDetails({
         headers: { 'Content-Type': file.type },
       })
       if (res.ok) {
-        setUploadedKey(key)
-        setUploadedType(file.type)
+        setUploaded({ key, type: file.type })
       } else {
         setSelectedError('No pudimos subir el comprobante. Intentá de nuevo.')
       }
@@ -124,14 +122,14 @@ export function TransferDetails({
           className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-full file:border-0 file:bg-muted file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary"
         />
         {uploading && <p className="text-sm text-muted-foreground">Subiendo comprobante…</p>}
-        {uploadedKey && !selectedError && <p className="text-sm text-primary">Comprobante cargado ✓</p>}
+        {uploaded && <p className="text-sm text-primary">Comprobante cargado ✓</p>}
         {selectedError && <p className="text-sm text-destructive">{selectedError}</p>}
       </div>
 
       <Button
         className="h-12 w-full rounded-full text-base font-semibold"
-        onClick={() => onDeclare(uploadedKey && uploadedType ? { proofKey: uploadedKey, proofContentType: uploadedType } : null)}
-        disabled={declaring || uploading || (bank.requireProof && !uploadedKey)}
+        onClick={() => onDeclare(uploaded ? { proofKey: uploaded.key, proofContentType: uploaded.type } : null)}
+        disabled={declaring || uploading || (bank.requireProof && !uploaded)}
       >
         {declaring ? 'Avisando…' : 'Ya transferí'}
       </Button>
