@@ -9,6 +9,7 @@ import {
   sendMultiNotificationSafely,
   sendPackagePurchasedNotification,
   sendPackageSoldNotificationToBusiness,
+  sendPackageDisputedToBusiness,
 } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
 import { decryptSecret } from '@/lib/payments/encryption'
@@ -340,6 +341,49 @@ export async function POST(request: NextRequest) {
     if (payment.booking && payment.businessId !== payment.booking.businessId) {
       console.error('[MP Webhook] Business mismatch payment vs booking')
       return NextResponse.json({ error: 'Business mismatch' }, { status: 403 })
+    }
+
+    // B4b-3: chargeback/refund INVOLUNTARIO de un paquete YA ACTIVO. El Payment está
+    // approved, así que hay que actuar ANTES del early-return de abajo. Exclusivo de
+    // paquetes activos: reservas y refunds voluntarios (purchase ya 'refunded') no entran.
+    if (
+      (mpStatus === 'charged_back' || mpStatus === 'refunded') &&
+      payment.packagePurchaseId &&
+      !payment.bookingId
+    ) {
+      const packagePurchaseId = payment.packagePurchaseId
+      const purchase = await prisma.packagePurchase.findUnique({ where: { id: packagePurchaseId } })
+      if (purchase && purchase.status === 'active') {
+        await prisma.$transaction(async (tx) => {
+          await tx.payment.update({
+            where: { id: payment.id },
+            data: { status: 'refunded', providerPaymentId: mpPayment.id, rawPayload: mpPayment as unknown as Prisma.InputJsonValue },
+          })
+          const { reversePackagePurchaseInTx } = await import('@/lib/packages/reverse')
+          await reversePackagePurchaseInTx(tx, purchase, {
+            mode: 'chargeback',
+            amount: mpPayment.transaction_amount,
+            currency: payment.currency,
+            paymentId: payment.id,
+            now: new Date(),
+          })
+        })
+        await sendMultiNotificationSafely('package disputed business', async () => {
+          const p = await prisma.packagePurchase.findUnique({
+            where: { id: packagePurchaseId },
+            include: { product: { select: { name: true } }, customer: { select: { name: true } }, business: { select: { name: true, currency: true } } },
+          })
+          if (!p) return [{ success: false as const, skipped: 'Compra no encontrada' }]
+          return sendPackageDisputedToBusiness(payment.businessId, {
+            businessName: p.business.name, customerName: p.customer.name, productName: p.product.name,
+            amount: mpPayment.transaction_amount, businessCurrency: p.business.currency || 'CLP',
+          })
+        })
+        revalidatePath(`/dashboard/customers/${purchase.customerId}`)
+        revalidatePath('/dashboard/paquetes')
+        return NextResponse.json({ success: true, message: 'Package chargeback processed', packagePurchaseId })
+      }
+      // purchase ya no está active (eco del refund voluntario / redelivery) → cae al 200 idempotente.
     }
 
     // Ya está approved → idempotente, 200 sin side effects
