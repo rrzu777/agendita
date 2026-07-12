@@ -299,3 +299,40 @@ describe('rejectBankTransfer saldo', () => {
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: p.id } })).status).toBe('pending')
   })
 })
+
+describe('sweeps de bt-balance en cambios de estado', () => {
+  // updateBookingStatus NO pasa por cancelBookingInTx (tx propia) — por eso se
+  // testean AMBOS destinos acá, además del cancelBooking de más abajo.
+  it.each(['no_show', 'cancelled'] as const)('updateBookingStatus → %s cancela el bt-balance pendiente', async (dest) => {
+    const seeded = await seedConfirmedWithBalance()
+    await seedPendingBalance(seeded.bookingId, seeded.customerId, seeded.remainingBalance)
+    const { updateBookingStatus } = await import('@/server/actions/bookings')
+    await updateBookingStatus(seeded.bookingId, dest)
+    const p = await prisma.payment.findFirstOrThrow({
+      where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) },
+    })
+    expect(p.status).toBe('cancelled')
+  })
+
+  it('updateBookingStatus → completed NO cancela el bt-balance (pagar post-cita es el punto)', async () => {
+    const seeded = await seedConfirmedWithBalance()
+    await seedPendingBalance(seeded.bookingId, seeded.customerId, seeded.remainingBalance)
+    const { updateBookingStatus } = await import('@/server/actions/bookings')
+    await updateBookingStatus(seeded.bookingId, 'completed')
+    const p = await prisma.payment.findFirstOrThrow({
+      where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) },
+    })
+    expect(p.status).toBe('pending')
+  })
+
+  it('cancelBooking cancela el bt-balance pendiente', async () => {
+    const seeded = await seedConfirmedWithBalance()
+    await seedPendingBalance(seeded.bookingId, seeded.customerId, seeded.remainingBalance)
+    const { cancelBooking } = await import('@/server/actions/bookings')
+    await cancelBooking(seeded.bookingId)
+    const p = await prisma.payment.findFirstOrThrow({
+      where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) },
+    })
+    expect(p.status).toBe('cancelled')
+  })
+})

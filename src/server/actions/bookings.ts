@@ -27,7 +27,7 @@ import { emitAutomaticReward, loadAutomaticRules } from '@/lib/loyalty/automatic
 import { rewardReferralOnCompletion, captureReferral, notifyReferralReward } from '@/lib/loyalty/referral'
 import { firstVisitKey, conditionKind } from '@/lib/loyalty/automatic-match'
 import { BANK_TRANSFER_PUBLIC_SELECT, type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
-import { BANK_TRANSFER_METHOD, declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
+import { BANK_TRANSFER_METHOD, declaredTransferPaymentWhere, anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import type { BookingEmailData } from '@/lib/notifications/types'
 import {
@@ -520,6 +520,13 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
         id,
         status === BookingStatus.cancelled ? 'cancelled' : 'no_show',
       )
+      // Una reserva que muere (cancelled/no_show) no puede quedar con una
+      // transferencia declarada "por verificar" eterna (spec §5-ter).
+      // completed NO barre: pagar el saldo después de atendida es el caso de uso.
+      await tx.payment.updateMany({
+        where: { bookingId: id, ...anyDeclaredTransferWhere },
+        data: { status: 'cancelled' },
+      })
     }
     if (res.count > 0 && status === BookingStatus.completed && existing.customerId) {
       // Marca de primera/última completación (sirve a aniversario y win-back del cron).
