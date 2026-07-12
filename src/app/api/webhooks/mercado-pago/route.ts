@@ -334,6 +334,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (mpStatus === 'approved') {
+      // B4b-1: en esta rebanada el webhook solo procesa pagos de reserva. Un pago
+      // sin bookingId (compra de paquete) aún no se produce; se rechaza defensivo
+      // hasta que B4b-2 cablee el dispatch a la rama paquete.
+      const bookingId = payment.bookingId
+      if (!bookingId) {
+        return NextResponse.json({ error: 'Pago no asociado a una reserva' }, { status: 400 })
+      }
       // Pago aprobado: actualizar y confirmar booking
       const result = await prisma.$transaction(async (tx) => {
         // Actualizar providerPaymentId y rawPayload
@@ -347,7 +354,7 @@ export async function POST(request: NextRequest) {
 
         return applyApprovedPayment({
           tx,
-          bookingId: payment.bookingId,
+          bookingId,
           businessId: payment.businessId,
           amount: payment.amount,
           currency: payment.currency,
@@ -366,11 +373,11 @@ export async function POST(request: NextRequest) {
 
       if (result.wasConfirmed) {
         await sendNotificationSafely('booking confirmed', () =>
-          sendBookingConfirmedNotification(payment.bookingId, payment.businessId),
+          sendBookingConfirmedNotification(bookingId, payment.businessId),
         )
       }
 
-      logger.payment.approved(payment.id, payment.bookingId, payment.businessId)
+      logger.payment.approved(payment.id, bookingId, payment.businessId)
 
       return NextResponse.json({
         success: true,

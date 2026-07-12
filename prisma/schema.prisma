@@ -436,7 +436,8 @@ enum BookingPaymentStatus {
 model Payment {
   id                String          @id @default(cuid())
   businessId        String
-  bookingId         String
+  bookingId         String?
+  packagePurchaseId String?
   customerId        String
   provider          PaymentProvider
   providerPaymentId String?
@@ -449,10 +450,11 @@ model Payment {
   rawPayload        Json?
   createdAt         DateTime        @default(now())
 
-  business      Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  booking       Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  ledgerEntries LedgerEntry[]
+  business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  booking         Booking?         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  packagePurchase PackagePurchase? @relation(fields: [packagePurchaseId], references: [id], onDelete: Cascade)
+  customer        Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  ledgerEntries   LedgerEntry[]
 
   // Evita duplicar exactamente el mismo pago para la misma reserva.
   // En PostgreSQL, múltiples NULLs no se consideran iguales, por lo que
@@ -460,6 +462,7 @@ model Payment {
   // siguen permitidos, pero no se duplica un pago online con el mismo providerPaymentId.
   @@unique([bookingId, provider, providerPaymentId])
   @@index([businessId, status])
+  @@index([packagePurchaseId])
 }
 
 enum PaymentProvider {
@@ -485,26 +488,29 @@ enum PaymentType {
   refund
   cancellation_fee
   manual_adjustment
+  package_purchase
 }
 
 model LedgerEntry {
-  id              String          @id @default(cuid())
-  businessId      String
-  bookingId       String?
-  paymentId       String?
-  customerId      String?
-  type            LedgerEntryType
-  direction       LedgerDirection
-  amount          Int
-  currency        String          @default("CLP")
-  description     String?
-  occurredAt      DateTime
-  createdAt       DateTime        @default(now())
-  createdByUserId String?
+  id                String          @id @default(cuid())
+  businessId        String
+  bookingId         String?
+  packagePurchaseId String?
+  paymentId         String?
+  customerId        String?
+  type              LedgerEntryType
+  direction         LedgerDirection
+  amount            Int
+  currency          String          @default("CLP")
+  description       String?
+  occurredAt        DateTime
+  createdAt         DateTime        @default(now())
+  createdByUserId   String?
 
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  booking  Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  payment  Payment? @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  booking         Booking?         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  packagePurchase PackagePurchase? @relation(fields: [packagePurchaseId], references: [id], onDelete: Cascade)
+  payment         Payment?         @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
   // Garantiza exactamente un LedgerEntry por Payment aprobado.
   // En PostgreSQL, múltiples NULLs son permitidos, así que se permite
@@ -512,6 +518,7 @@ model LedgerEntry {
   @@unique([paymentId])
   @@index([businessId, occurredAt])
   @@index([bookingId])
+  @@index([packagePurchaseId])
 }
 
 enum LedgerEntryType {
@@ -525,6 +532,7 @@ enum LedgerEntryType {
   manual_income
   manual_expense
   adjustment
+  package_sale
 }
 
 enum LedgerDirection {
@@ -750,6 +758,7 @@ model PackagePurchase {
   paymentMethod     String?
   paidAt            DateTime  @default(now())
   status            String    @default("active")
+  holdExpiresAt     DateTime?
   expiresAt         DateTime?
   refundedAt        DateTime?
   refundedAmount    Int?
@@ -757,10 +766,12 @@ model PackagePurchase {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  business Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  product  PackageProduct   @relation(fields: [packageProductId], references: [id])
-  grants   PromotionGrant[]
+  business      Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer      Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product       PackageProduct   @relation(fields: [packageProductId], references: [id])
+  grants        PromotionGrant[]
+  payments      Payment[]
+  ledgerEntries LedgerEntry[]
 
   @@index([businessId, status])
   @@index([customerId, status])

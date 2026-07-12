@@ -255,6 +255,9 @@ export async function verifyAndConfirmPayment(paymentId: string, bookingId: stri
   if (payment.bookingId !== bookingId) {
     throw new Error('El pago no corresponde a esta reserva')
   }
+  if (!payment.booking) {
+    throw new Error('El pago no está asociado a una reserva')
+  }
 
   // Validar que payment y booking pertenecen al mismo negocio
   if (payment.businessId !== payment.booking.businessId) {

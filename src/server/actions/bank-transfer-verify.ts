@@ -33,7 +33,8 @@ async function loadDeclaredPayment(
   if (!isDeclaredTransferPayment(payment)) {
     throw new Error('Este pago no es una transferencia por verificar')
   }
-  return payment
+  if (!payment.bookingId) throw new Error('El pago no está asociado a una reserva')
+  return payment as typeof payment & { bookingId: string }
 }
 
 export async function confirmBankTransfer(
