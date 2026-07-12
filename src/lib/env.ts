@@ -235,6 +235,19 @@ export function validateEnv(): EnvValidationResult {
     }
   }
 
+  // --- R2 (comprobantes de transferencia) ---
+  // Opcional: la feature se auto-deshabilita si falta config (getProofStorage
+  // devuelve null). Warning pareado sólo si hay config parcial (probable error
+  // de config), mirror del bloque Resend/FROM_EMAIL de arriba.
+  const r2Keys = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET']
+  const r2Present = r2Keys.filter((k) => !!process.env[k])
+  if (r2Present.length > 0 && r2Present.length < r2Keys.length) {
+    warnings.push({
+      key: 'R2_BUCKET',
+      message: `Config de R2 incompleta (${r2Present.length}/${r2Keys.length}). La subida de comprobantes queda deshabilitada hasta setear: ${r2Keys.join(', ')}.`,
+    })
+  }
+
   // --- Upstash Redis — REQUIRED in production ---
   // The in-memory limiter is per-isolate and provides no real protection on
   // serverless. In production we fail closed without a distributed store, so a
