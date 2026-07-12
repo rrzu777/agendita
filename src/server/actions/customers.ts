@@ -185,7 +185,11 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
       },
     }),
     prisma.payment.findMany({
-      where: { customerId, businessId },
+      where: {
+        customerId,
+        businessId,
+        NOT: { paymentType: 'package_purchase', status: 'pending' },
+      },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,

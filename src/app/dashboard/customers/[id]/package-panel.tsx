@@ -16,6 +16,7 @@ type PackagePurchaseItem = {
   status: string
   expiresAt: Date | null
   paymentMethod: string | null
+  source: string
   createdAt: Date
   product: { name: string }
   _count: { grants: number }
@@ -65,12 +66,16 @@ export function PackagePanel({
     })
   }
 
-  function onRefund(id: string) {
+  function onRefund(p: PackagePurchaseItem) {
     setError(null)
-    if (!confirm('¿Reembolsar este paquete? Se cancelarán las sesiones restantes.')) return
+    const online = p.source === 'online'
+    const msg = online
+      ? 'Esta compra fue online (tarjeta). Al reembolsar acá se cancelan las sesiones y se revierte el ledger, pero DEBES devolver el cargo manualmente en Mercado Pago. ¿Continuar?'
+      : '¿Reembolsar este paquete? Se cancelarán las sesiones restantes.'
+    if (!confirm(msg)) return
     startTransition(async () => {
       try {
-        await refundPackagePurchase(id)
+        await refundPackagePurchase(p.id)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Error')
       }
@@ -107,7 +112,7 @@ export function PackagePanel({
                     size="sm"
                     variant="outline"
                     disabled={isPending}
-                    onClick={() => onRefund(p.id)}
+                    onClick={() => onRefund(p)}
                   >
                     Reembolsar
                   </Button>
