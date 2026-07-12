@@ -9,7 +9,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { getCurrentUser } from '@/lib/auth/user'
-import { linkCustomerFromBookingSession } from '@/lib/customers/link'
+import { findOrCreateCustomerInTx } from '@/lib/customers/find-or-create'
 import { logger } from '@/lib/logger'
 
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
@@ -310,42 +310,24 @@ export async function createBooking(data: {
         timezone: business.timezone || 'America/Santiago',
       })
 
-      // Buscar o crear cliente dentro de la transacción.
-      // Se identifica al cliente por (businessId, phone) — NO por nombre — para
-      // no crear duplicados cuando la misma persona escribe su nombre distinto
-      // entre reservas. Coincide con el flujo de createBookingFromDashboard.
-      const normalizedPhone = normalizePhone(data.customerPhone)
-      let customer = await tx.customer.findFirst({
-        where: {
-          phone: normalizedPhone,
-          businessId,
-        },
+      // Buscar o crear cliente dentro de la transacción (matcher único por
+      // teléfono; el link de sesión — vía 3 — vive en el helper).
+      const { customer, created } = await findOrCreateCustomerInTx(tx, {
+        businessId,
+        phone: data.customerPhone,
+        name: data.customerName,
+        email: data.customerEmail || null,
+        sessionUser,
       })
 
-      if (!customer) {
-        customer = await tx.customer.create({
-          data: {
-            businessId,
-            name: data.customerName,
-            phone: normalizedPhone,
-            email: data.customerEmail || null,
-          },
+      // Atribución de referida: SOLO clientas nuevas (recién creadas).
+      if (created && data.referralToken) {
+        await captureReferral(tx, {
+          businessId,
+          referredCustomerId: customer.id,
+          referrerToken: data.referralToken,
+          referredPhone: normalizePhone(data.customerPhone),
         })
-        // Atribución de referida: SOLO clientas nuevas (recién creadas).
-        if (data.referralToken) {
-          await captureReferral(tx, {
-            businessId,
-            referredCustomerId: customer.id,
-            referrerToken: data.referralToken,
-            referredPhone: normalizedPhone,
-          })
-        }
-      }
-
-      // Vía 3 de vinculación: reserva hecha con sesión activa (los guards
-      // viven en el helper, junto a las otras dos vías).
-      if (sessionUser) {
-        await linkCustomerFromBookingSession(tx, customer, sessionUser, businessId)
       }
 
       const noDepositRequired = depositRequired <= 0
@@ -837,31 +819,13 @@ export async function createBookingFromDashboard(data: {
       }
       customer = existing
     } else {
-      const normalized = normalizePhone(data.customerPhone)
-
-      const existingByPhone = await tx.customer.findFirst({
-        where: { phone: normalized, businessId },
+      const result = await findOrCreateCustomerInTx(tx, {
+        businessId,
+        phone: data.customerPhone,
+        name: data.customerName,
+        email: data.customerEmail || null,
       })
-
-      if (existingByPhone) {
-        customer = existingByPhone
-        if (data.customerEmail && !customer.email) {
-          await tx.customer.update({
-            where: { id: customer.id },
-            data: { email: data.customerEmail },
-          })
-          customer.email = data.customerEmail
-        }
-      } else {
-        customer = await tx.customer.create({
-          data: {
-            businessId,
-            name: data.customerName,
-            phone: normalized,
-            email: data.customerEmail || null,
-          },
-        })
-      }
+      customer = result.customer
     }
 
     const bookingNumber = await assignBookingNumber(tx, businessId)

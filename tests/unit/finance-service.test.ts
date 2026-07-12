@@ -20,6 +20,10 @@ const mockPrisma = {
     create: vi.fn(),
     upsert: vi.fn(),
   },
+  packagePurchase: {
+    findUnique: vi.fn(),
+    update: vi.fn(),
+  },
   plan: {},
   user: {},
   business: {},
@@ -43,6 +47,9 @@ vi.mock('@/lib/booking-payments', () => ({
   assertBookingPayable: vi.fn(),
   BookingNotPayableError: class extends Error {},
 }))
+
+const activatePkg = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/packages/activate', () => ({ activatePackagePurchaseInTx: activatePkg }))
 
 const { applyApprovedPayment } = await import('@/server/services/finance')
 
@@ -76,6 +83,11 @@ describe('mapPaymentTypeToLedgerEntryType', () => {
     const { mapPaymentTypeToLedgerEntryType } = await import('@/server/services/finance')
     expect(mapPaymentTypeToLedgerEntryType(PaymentType.manual_adjustment)).toBe('adjustment')
   })
+
+  it('package_purchase → package_sale', async () => {
+    const { mapPaymentTypeToLedgerEntryType } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerEntryType(PaymentType.package_purchase)).toBe('package_sale')
+  })
 })
 
 describe('mapPaymentTypeToLedgerDirection', () => {
@@ -108,6 +120,11 @@ describe('mapPaymentTypeToLedgerDirection', () => {
     const { mapPaymentTypeToLedgerDirection } = await import('@/server/services/finance')
     expect(mapPaymentTypeToLedgerDirection(PaymentType.manual_adjustment)).toBe('income')
   })
+
+  it('package_purchase → income', async () => {
+    const { mapPaymentTypeToLedgerDirection } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerDirection(PaymentType.package_purchase)).toBe('income')
+  })
 })
 
 describe('getLedgerDescription', () => {
@@ -139,6 +156,11 @@ describe('getLedgerDescription', () => {
   it('manual_adjustment → Ajuste manual para reserva #<n>', async () => {
     const { getLedgerDescription } = await import('@/server/services/finance')
     expect(getLedgerDescription(PaymentType.manual_adjustment, 'booking-abc123', 4738)).toBe('Ajuste manual para reserva #4738')
+  })
+
+  it('package_purchase → Venta de paquete', async () => {
+    const { getLedgerDescription } = await import('@/server/services/finance')
+    expect(getLedgerDescription(PaymentType.package_purchase, 'booking-abc123', 4738)).toBe('Venta de paquete')
   })
 
   it('falls back to the cuid slice when bookingNumber is null', async () => {
@@ -754,5 +776,74 @@ describe('applyApprovedPayment', () => {
         })
       ).rejects.toThrow('El tipo de pago no coincide con el pago registrado')
     })
+  })
+})
+
+describe('applyApprovedPackagePayment', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    activatePkg.mockReset().mockResolvedValue(undefined)
+    Object.values(mockPrisma.payment).forEach((f: any) => f.mockReset?.())
+    mockPrisma.packagePurchase = { findUnique: vi.fn(), update: vi.fn() }
+  })
+
+  it('activa la compra pending y NO toca booking', async () => {
+    const { applyApprovedPackagePayment } = await import('@/server/services/finance')
+    mockPrisma.packagePurchase.findUnique.mockResolvedValue({
+      id: 'p1', businessId: 'b1', customerId: 'c1', status: 'pending',
+      pricePaid: 30000, quantity: 3, bonusQuantity: 0, expiresAt: null, createdByUserId: null,
+    })
+    mockPrisma.payment.findFirst.mockResolvedValue(null)
+    mockPrisma.payment.create.mockResolvedValue({ id: 'pay1', status: 'approved', paymentType: 'package_purchase', amount: 30000 })
+
+    await applyApprovedPackagePayment({
+      tx: mockPrisma, packagePurchaseId: 'p1', businessId: 'b1', amount: 30000,
+      currency: 'CLP', provider: PaymentProvider.mercado_pago, providerPaymentId: 'mp-1',
+      paymentType: PaymentType.package_purchase,
+    })
+
+    expect(mockPrisma.booking.findUnique).not.toHaveBeenCalled()
+    // El Payment se crea polimórfico: packagePurchaseId seteado, bookingId null.
+    expect(mockPrisma.payment.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        packagePurchaseId: 'p1', bookingId: null, customerId: 'c1',
+        businessId: 'b1', paymentType: 'package_purchase', status: 'approved',
+      }),
+    }))
+    expect(activatePkg).toHaveBeenCalledWith(
+      mockPrisma,
+      expect.objectContaining({ id: 'p1' }),
+      expect.objectContaining({ requestId: 'p1', paymentId: 'pay1' }),
+    )
+  })
+
+  it('corta por status active aunque el pago aún no esté aprobado (cubre la cláusula || active)', async () => {
+    const { applyApprovedPackagePayment } = await import('@/server/services/finance')
+    // Compra ya active, pero NO hay pago aprobado previo (findFirst → null,
+    // create devuelve un pago recién aprobado) → alreadyApproved es false, así
+    // que el early-return depende ÚNICAMENTE de purchase.status === 'active'.
+    mockPrisma.packagePurchase.findUnique.mockResolvedValue({ id: 'p1', businessId: 'b1', customerId: 'c1', status: 'active', pricePaid: 30000, quantity: 3, bonusQuantity: 0, expiresAt: null, createdByUserId: null })
+    mockPrisma.payment.findFirst.mockResolvedValue(null)
+    mockPrisma.payment.create.mockResolvedValue({ id: 'pay1', status: 'approved', paymentType: 'package_purchase', amount: 30000 })
+
+    await applyApprovedPackagePayment({
+      tx: mockPrisma, packagePurchaseId: 'p1', businessId: 'b1', amount: 30000,
+      currency: 'CLP', provider: PaymentProvider.mercado_pago, providerPaymentId: 'mp-1',
+      paymentType: PaymentType.package_purchase,
+    })
+    expect(activatePkg).not.toHaveBeenCalled()
+  })
+
+  it('es idempotente: compra ya active no re-activa', async () => {
+    const { applyApprovedPackagePayment } = await import('@/server/services/finance')
+    mockPrisma.packagePurchase.findUnique.mockResolvedValue({ id: 'p1', businessId: 'b1', customerId: 'c1', status: 'active', pricePaid: 30000, quantity: 3, bonusQuantity: 0, expiresAt: null, createdByUserId: null })
+    mockPrisma.payment.findFirst.mockResolvedValue({ id: 'pay1', status: 'approved', paymentType: 'package_purchase', amount: 30000 })
+
+    await applyApprovedPackagePayment({
+      tx: mockPrisma, packagePurchaseId: 'p1', businessId: 'b1', amount: 30000,
+      currency: 'CLP', provider: PaymentProvider.mercado_pago, providerPaymentId: 'mp-1',
+      paymentType: PaymentType.package_purchase,
+    })
+    expect(activatePkg).not.toHaveBeenCalled()
   })
 })

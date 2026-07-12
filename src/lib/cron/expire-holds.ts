@@ -84,7 +84,9 @@ export async function expireStaleHolds(
       },
       select: { bookingId: true },
     })
-    const declaredBookingIds = declaredPayments.map((p) => p.bookingId)
+    const declaredBookingIds = declaredPayments
+      .map((p) => p.bookingId)
+      .filter((id): id is string => id !== null)
     if (declaredBookingIds.length > 0) {
       await tx.payment.updateMany({
         where: { bookingId: { in: declaredBookingIds }, ...declaredTransferPaymentWhere },
