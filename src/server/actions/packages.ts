@@ -9,6 +9,8 @@ import { requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { packageProductSchema, sellPackageSchema, computePackageRefund } from '@/lib/packages/schema'
 import { normalizePhone } from '@/lib/customers/phone'
 import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
+import { reversePackagePurchaseInTx } from '@/lib/packages/reverse'
+import { getMercadoPagoProviderForBusiness } from '@/lib/payments/factory'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 
 // ── CRUD de productos ─────────────────────────────────────────────────
@@ -135,30 +137,37 @@ export async function refundPackagePurchase(purchaseId: string) {
     pricePaid: purchase.pricePaid, quantity: purchase.quantity,
     bonusQuantity: purchase.bonusQuantity, unusedSessions: unused,
   })
-  await prisma.$transaction(async (tx) => {
-    await tx.promotionGrant.updateMany({
-      where: { packagePurchaseId: purchase.id, status: 'active' },
-      data: { status: 'reversed', reversedAt: new Date() },
-    })
-    await tx.packagePurchase.update({
-      where: { id: purchase.id },
-      data: { status: 'refunded', refundedAt: new Date(), refundedAmount: refund },
-    })
-    // Asiento de reembolso: monto = prorrateo (NO pricePaid). Reusa refund_issued
-    // con packagePurchaseId, que lo EXCLUYE del totalRefunded de reservas
-    // (getFinancialSummary filtra packagePurchaseId: null) y lo netea en las
-    // ventas de paquete (getPackageSalesTotal resta refund_issued con packagePurchaseId).
-    if (refund > 0) {
-      await tx.ledgerEntry.create({
-        data: {
-          businessId, packagePurchaseId: purchase.id, customerId: purchase.customerId,
-          type: 'refund_issued', direction: 'expense', amount: refund, currency: 'CLP',
-          description: 'Reembolso de paquete', occurredAt: new Date(),
-        },
-      })
-    }
+
+  // Payment que originó la compra (para saber si hay que devolver por MP).
+  const payment = await prisma.payment.findFirst({
+    where: { packagePurchaseId: purchase.id, paymentType: 'package_purchase' },
+    orderBy: { createdAt: 'desc' },
   })
-  await revalidatePath('/dashboard/customers/' + purchase.customerId)
+
+  // Refund REAL por MP: FUERA de la tx (I/O de red). Sólo si es online, hay id de MP y monto > 0.
+  if (payment && payment.provider === 'mercado_pago' && payment.providerPaymentId && refund > 0) {
+    const provider = await getMercadoPagoProviderForBusiness(businessId)
+    await provider.refundPayment({
+      providerPaymentId: payment.providerPaymentId,
+      amount: refund,
+      currency: payment.currency,
+      idempotencyKey: `refund:pkg:${purchase.id}`,
+    })
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await reversePackagePurchaseInTx(tx, purchase, {
+      mode: 'voluntary',
+      amount: refund,
+      currency: payment?.currency ?? 'CLP',
+      paymentId: payment?.id ?? null,
+      now,
+    })
+  })
+
+  revalidatePath('/dashboard/customers/' + purchase.customerId)
+  revalidatePath('/dashboard/paquetes')
+  await revalidateBusinessPublicPaths(businessId)
 }
 
 // ── queries ─────────────────────────────────────────────────────────────
@@ -205,5 +214,5 @@ export async function getPackageSalesTotal(): Promise<number> {
     prisma.ledgerEntry.aggregate({ _sum: { amount: true }, where: { businessId, type: 'package_sale' } }),
     prisma.ledgerEntry.aggregate({ _sum: { amount: true }, where: { businessId, type: 'refund_issued', packagePurchaseId: { not: null } } }),
   ])
-  return (sales._sum.amount ?? 0) - (refunds._sum.amount ?? 0)
+  return Math.max(0, (sales._sum.amount ?? 0) - (refunds._sum.amount ?? 0))
 }

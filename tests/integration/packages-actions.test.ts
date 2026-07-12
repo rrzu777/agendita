@@ -19,6 +19,7 @@ vi.mock('@/lib/auth/server', () => ({
 }))
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: async () => ({ success: true, remaining: 30, resetAt: 0 }) }))
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
+vi.mock('@/server/actions/revalidate-business', () => ({ revalidateBusinessPublicPaths: async () => {} }))
 
 describe('packages server actions', () => {
   let prisma: PrismaClient
