@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { CheckCircle2, Clock, XCircle, Calendar, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { prisma } from '@/lib/db'
+import { getCurrentUser } from '@/lib/auth/user'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { deriveConfirmationState } from '@/lib/payments/confirmation-state'
 import { formatBookingNumber } from '@/lib/bookings/number'
@@ -33,6 +34,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
         },
       },
       service: true,
+      customer: { select: { email: true } },
       payments: {
         where: { provider: { in: ['mercado_pago', 'manual'] } },
         select: { status: true, provider: true, providerPaymentId: true },
@@ -63,6 +65,11 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
     booking.holdExpiresAt != null &&
     booking.holdExpiresAt > new Date()
   const bankInfo = canDeclare ? await getBankTransferInfo(booking.businessId) : null
+
+  // El CTA de cuenta nunca compite con la acción de declarar transferencia.
+  const sessionUser = await getCurrentUser()
+  const customerEmail = booking.customer?.email ?? null
+  const showAccountCta = !canDeclare
 
   const startDate = new Date(booking.startDateTime)
   const formattedDate = startDate.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -233,6 +240,21 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
               </p>
             )}
           </div>
+        )}
+
+        {showAccountCta && sessionUser === null && customerEmail && (
+          <div className="mt-4 rounded-2xl border border-primary/25 bg-secondary/40 p-4 text-sm text-primary">
+            <p className="mb-2">
+              ¿Quieres ver y gestionar esta reserva? Crea tu cuenta ingresando con{' '}
+              <span className="font-semibold">{customerEmail}</span> (el mismo email de la reserva).
+            </p>
+            <Link href="/ingresar?next=/mi" className="font-semibold underline">Crear mi cuenta</Link>
+          </div>
+        )}
+        {showAccountCta && sessionUser !== null && (
+          <p className="mt-4 text-sm">
+            <Link href="/mi" className="font-semibold text-primary underline">Ver mis reservas</Link>
+          </p>
         )}
       </section>
     </main>
