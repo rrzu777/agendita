@@ -9,7 +9,7 @@ import { deriveConfirmationState } from '@/lib/payments/confirmation-state'
 import { deriveBalanceState } from '@/lib/payments/balance-confirmation-state'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
-import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
+import { BANK_TRANSFER_METHOD, BT_DECLARED_PREFIX } from '@/lib/bank-transfer/declared'
 import { TransferPanel } from './transfer-panel'
 import { AccountCta } from '@/components/booking/account-cta'
 
@@ -39,7 +39,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
       customer: { select: { email: true } },
       payments: {
         where: { provider: { in: ['mercado_pago', 'manual'] } },
-        select: { status: true, provider: true, providerPaymentId: true, amount: true },
+        select: { status: true, provider: true, providerPaymentId: true, amount: true, proofKey: true },
       },
     },
   })
@@ -67,6 +67,11 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
     booking.holdExpiresAt != null &&
     booking.holdExpiresAt > new Date()
   const balance = deriveBalanceState(booking)
+  // La clienta ya adjuntó el comprobante del ABONO (proofKey en R2): cerramos el
+  // loop en la pantalla de verificación para que no vuelva a subirlo ni dude.
+  const depositProofAttached = booking.payments.some(
+    (p) => p.providerPaymentId?.startsWith(BT_DECLARED_PREFIX) && p.status === 'pending' && p.proofKey != null,
+  )
   const [bankInfo, sessionUser] = await Promise.all([
     canDeclare || balance.canDeclare ? getBankTransferInfo(booking.businessId) : null,
     getCurrentUser(),
@@ -154,6 +159,9 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           </div>
           <h1 className="mb-3 text-3xl font-semibold tracking-normal text-primary">{config.title}</h1>
           <p className="text-base leading-relaxed text-muted-foreground">{config.message}</p>
+          {state === 'verifying_transfer' && depositProofAttached && (
+            <p className="mt-3 text-sm font-medium text-green-700">Comprobante adjuntado ✓</p>
+          )}
         </div>
 
         <div className="studio-card mb-8 overflow-hidden">
@@ -253,6 +261,9 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
             <p className="mt-1 text-sm text-muted-foreground">
               Avisaste una transferencia de ${balance.payment.amount.toLocaleString('es-CL')}. El negocio la va a revisar; si pasan varios días, escribile.
             </p>
+            {balance.payment.hasProof && (
+              <p className="mt-2 text-sm font-medium text-green-700">Comprobante adjuntado ✓</p>
+            )}
           </div>
         )}
 
