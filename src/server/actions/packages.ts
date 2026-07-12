@@ -194,9 +194,11 @@ export async function getCustomerPackages(customerId: string) {
 
 export async function getPackageSalesTotal(): Promise<number> {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
-  const agg = await prisma.packagePurchase.aggregate({
-    _sum: { pricePaid: true },
-    where: { businessId, status: 'active' },
-  })
-  return agg._sum.pricePaid ?? 0
+  // Fuente única: ledger. Ventas (package_sale) netas de reembolsos de paquete
+  // (refund_issued con packagePurchaseId). Sin backfill del histórico de B4a.
+  const [sales, refunds] = await Promise.all([
+    prisma.ledgerEntry.aggregate({ _sum: { amount: true }, where: { businessId, type: 'package_sale' } }),
+    prisma.ledgerEntry.aggregate({ _sum: { amount: true }, where: { businessId, type: 'refund_issued', packagePurchaseId: { not: null } } }),
+  ])
+  return (sales._sum.amount ?? 0) - (refunds._sum.amount ?? 0)
 }
