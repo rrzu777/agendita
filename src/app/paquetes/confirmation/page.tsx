@@ -66,7 +66,7 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
       iconColor: 'text-amber-500',
       iconBg: 'bg-amber-50',
       title: 'Procesando tu pago',
-      message: 'Mercado Pago está procesando el pago. Te confirmaremos cuando se apruebe; podés refrescar esta página.',
+      message: 'Estamos procesando tu pago. Te confirmaremos cuando se acredite; podés refrescar esta página.',
     },
     rejected: {
       icon: XCircle,
@@ -74,6 +74,27 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
       iconBg: 'bg-destructive/10',
       title: 'Pago no aprobado',
       message: 'El pago no pudo procesarse. Podés intentar comprar de nuevo.',
+    },
+    expired: {
+      icon: Clock,
+      iconColor: 'text-muted-foreground',
+      iconBg: 'bg-muted',
+      title: 'Tu compra expiró',
+      message: 'Se venció el tiempo para completar el pago. Podés iniciar la compra de nuevo.',
+    },
+    refunded: {
+      icon: XCircle,
+      iconColor: 'text-muted-foreground',
+      iconBg: 'bg-muted',
+      title: 'Compra reembolsada',
+      message: 'Este pago fue reembolsado. Si tenés dudas, escribile al negocio.',
+    },
+    disputed: {
+      icon: XCircle,
+      iconColor: 'text-destructive',
+      iconBg: 'bg-destructive/10',
+      title: 'Compra revertida',
+      message: 'Este pago fue reembolsado tras una disputa. Si tenés dudas, escribile al negocio.',
     },
   }[state]
   const Icon = config.icon
