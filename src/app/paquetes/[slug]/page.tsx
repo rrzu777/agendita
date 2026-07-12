@@ -6,6 +6,7 @@ import { getPackagesBusinessBySlug } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { resolveOnlinePaymentAvailabilityForBusiness } from '@/lib/payments/factory'
 import { getPackageCheckoutPrefill } from '@/server/actions/packages-checkout'
+import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 
 interface PaquetesPageProps {
   params: Promise<{ slug: string }>
@@ -31,9 +32,10 @@ export default async function PaquetesSlugPage({ params, searchParams }: Paquete
     notFound()
   }
 
-  const [availability, prefill] = await Promise.all([
+  const [availability, prefill, transferInfo] = await Promise.all([
     resolveOnlinePaymentAvailabilityForBusiness(business.id),
     getPackageCheckoutPrefill(business.id),
+    getBankTransferInfo(business.id),
   ])
 
   return (
@@ -44,6 +46,7 @@ export default async function PaquetesSlugPage({ params, searchParams }: Paquete
       onlineReason={availability.reason ?? null}
       prefill={prefill}
       preselectedProductId={comprar}
+      transferInfo={transferInfo}
     />
   )
 }
