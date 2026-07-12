@@ -36,10 +36,10 @@ describe('PendingTransfersSection con kinds', () => {
     expect(html).toContain('Saldo')
   })
 
-  it('el copy de rechazo de un item de saldo aclara que la reserva no se cancela', () => {
-    // El copy vive en window.confirm (no en el HTML estático), así que se
-    // verifica indirectamente: el componente no debe fallar al renderizar
-    // items de tipo 'balance' y debe seguir exponiendo el botón Rechazar.
+  it('renderiza el botón Rechazar para items de saldo sin fallar', () => {
+    // El copy de rechazo vive en window.confirm (no en el HTML estático), así
+    // que acá solo se verifica que el componente renderiza items de tipo
+    // 'balance' sin fallar y sigue exponiendo el botón Rechazar.
     const html = renderToStaticMarkup(
       <PendingTransfersSection
         items={[{ ...base, kind: 'balance' }]}

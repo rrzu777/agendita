@@ -37,11 +37,11 @@ export function isDeclaredTransferPayment(
   )
 }
 
-// "Esta reserva tiene una transferencia declarada pendiente de verificar."
+// "Esta reserva tiene una transferencia del ABONO pendiente de verificar."
 // Fuente única del predicado que el dashboard deriva en varios lugares (tabla,
-// card móvil, aviso home, conteo). Asume que `payments` ya viene filtrado por
-// `declaredTransferPaymentWhere` (como lo trae getBookings): un array no vacío
-// sobre una reserva pending_payment = "por verificar".
+// card móvil, aviso home, conteo). Discrimina por `BT_DECLARED_PREFIX`, así que
+// tolera arrays mixtos (getBookings trae abono Y saldo vía
+// `anyDeclaredTransferWhere`): agarra solo los abonos sobre pending_payment.
 export function hasPendingDeclaredTransfer(
   booking: { status: string; payments: Array<{ providerPaymentId?: string | null }> },
 ): boolean {
