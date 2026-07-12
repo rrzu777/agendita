@@ -16,4 +16,4 @@ export const BANK_TRANSFER_PUBLIC_SELECT = {
 
 export type BankTransferPublicInfo = Prisma.BankTransferAccountGetPayload<{
   select: typeof BANK_TRANSFER_PUBLIC_SELECT
-}>
+}> & { requireProof: boolean }

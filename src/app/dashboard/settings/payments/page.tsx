@@ -8,6 +8,7 @@ import {
   startMercadoPagoConnect,
 } from '@/server/actions/mercado-pago-connect'
 import { resolveOnlinePaymentAvailabilityForBusiness } from '@/lib/payments/factory'
+import { isProofUploadAvailable } from '@/lib/storage/r2'
 import { prisma } from '@/lib/db'
 import { BadgeCheck, CircleAlert, Landmark, Link2, Link2Off, TestTube } from 'lucide-react'
 import { DisconnectButton } from './disconnect-button'
@@ -31,11 +32,13 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
   }
 
   const businessId = userData.business.id
-  const [account, availability, bankAccount] = await Promise.all([
+  const [account, availability, bankAccount, businessFlags] = await Promise.all([
     getPaymentAccountStatus(),
     resolveOnlinePaymentAvailabilityForBusiness(businessId),
     prisma.bankTransferAccount.findUnique({ where: { businessId } }),
+    prisma.business.findUnique({ where: { id: businessId }, select: { requireTransferProof: true } }),
   ])
+  const proofUploadAvailable = isProofUploadAvailable()
 
   const isConnected = account?.status === 'connected'
   const isDisconnected = account?.status === 'disconnected'
@@ -169,7 +172,11 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <BankTransferForm account={bankAccount} />
+            <BankTransferForm
+              account={bankAccount}
+              requireProof={businessFlags?.requireTransferProof ?? false}
+              proofUploadAvailable={proofUploadAvailable}
+            />
           </CardContent>
         </Card>
       </div>

@@ -303,12 +303,12 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
     }
   }
 
-  async function handleDeclare() {
+  async function handleDeclare(proof: { proofKey: string; proofContentType: string } | null) {
     if (!transferBooking) return
     setDeclaring(true)
     setErrorMessage('')
     try {
-      await declareBankTransfer(transferBooking.id)
+      await declareBankTransfer(transferBooking.id, proof ?? {})
       setStep('transfer-declared')
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'No pudimos registrar tu aviso')
@@ -546,7 +546,7 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
         <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Transferí el abono</h2>
         <p className="mb-6 text-lg text-muted-foreground">Tu horario queda reservado mientras transferís</p>
         {errorMessage && <p className="mb-4 text-sm text-destructive">{errorMessage}</p>}
-        <TransferDetails bank={bankInfo} amount={effectiveDeposit} deadline={transferBooking.deadline} timezone={timezone} declaring={declaring} onDeclare={handleDeclare} />
+        <TransferDetails bank={bankInfo} amount={effectiveDeposit} deadline={transferBooking.deadline} timezone={timezone} declaring={declaring} onDeclare={handleDeclare} bookingId={transferBooking.id} />
         <p className="mt-4 text-sm text-muted-foreground">
           También podés avisar más tarde desde{' '}
           <a className="font-semibold text-primary underline" href={`/book/confirmation?bookingId=${transferBooking.id}`}>tu página de reserva</a>

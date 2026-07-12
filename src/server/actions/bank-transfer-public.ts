@@ -7,6 +7,8 @@ import { prisma } from '@/lib/db'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { BANK_TRANSFER_PUBLIC_SELECT, type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { btDeclaredId, btBalanceId, BANK_TRANSFER_METHOD, FIRM_BOOKING_STATUSES } from '@/lib/bank-transfer/declared'
+import { getProofStorage, isProofUploadAvailable, type ProofStorage } from '@/lib/storage/r2'
+import { proofKey, isAllowedProofType, PROOF_MAX_BYTES, type ProofKind } from '@/lib/storage/proof'
 import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
 import {
   sendMultiNotificationSafely,
@@ -18,11 +20,106 @@ import {
 // en src/lib/bank-transfer/). Flujo PÚBLICO: sin sesión, mismo modelo de
 // seguridad que payments.ts (identidad = bookingId cuid + rate limit).
 
+/** Resuelve el ProofStorage: usa el inyectado por tests si viene (incluido
+ *  `null` explícito), si no el real. */
+function resolveStorage(injected?: ProofStorage | null): ProofStorage | null {
+  return injected !== undefined ? injected : getProofStorage()
+}
+
 export async function getBankTransferInfo(businessId: string): Promise<BankTransferPublicInfo | null> {
-  return prisma.bankTransferAccount.findFirst({
+  const row = await prisma.bankTransferAccount.findFirst({
     where: { businessId, isEnabled: true },
-    select: BANK_TRANSFER_PUBLIC_SELECT,
+    select: { ...BANK_TRANSFER_PUBLIC_SELECT, business: { select: { requireTransferProof: true } } },
   })
+  if (!row) return null
+  const { business, ...rest } = row
+  // requireProof se apaga si R2 no está disponible (aunque la dueña lo active).
+  return { ...rest, requireProof: business.requireTransferProof && isProofUploadAvailable() }
+}
+
+type ProofDeps = { storage?: ProofStorage | null }
+
+/** Mina una URL PUT prefirmada para subir el comprobante ANTES de declarar.
+ *  Público: identidad = bookingId (cuid) + rate limit, igual que declare*. */
+export async function createProofUploadUrl(
+  bookingId: string,
+  kind: ProofKind,
+  contentType: string,
+  deps: ProofDeps = {},
+): Promise<{ uploadUrl: string; key: string }> {
+  const limit = await checkRateLimit('proof-upload-url')
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+
+  if (!isAllowedProofType(contentType)) throw new Error('Tipo de archivo no permitido.')
+
+  const storage = resolveStorage(deps.storage)
+  if (!storage) throw new Error('La subida de comprobantes no está disponible.')
+
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    select: { id: true, businessId: true, status: true, paymentMethod: true, remainingBalance: true },
+  })
+  if (!booking) throw new Error('Reserva no encontrada')
+
+  // Elegibilidad mínima por kind (el declare re-valida en profundidad).
+  if (kind === 'deposit' && booking.paymentMethod !== BANK_TRANSFER_METHOD) {
+    throw new Error('Esta reserva no eligió pago por transferencia')
+  }
+  if (kind === 'balance' && booking.remainingBalance <= 0) {
+    throw new Error('Esta reserva no tiene saldo pendiente.')
+  }
+
+  const key = proofKey(booking.businessId, booking.id, kind)
+  const uploadUrl = await storage.presignUpload(key, contentType)
+  return { uploadUrl, key }
+}
+
+// Opciones de comprobante para los declare* y attachProof. TS-only (erased):
+// un módulo 'use server' solo puede EXPORTAR funciones async, pero declarar
+// tipos a nivel de módulo es válido (no genera un export en runtime).
+type DeclareProofOpts = { proofKey?: string; proofContentType?: string; storage?: ProofStorage | null }
+
+/** Valida por HEAD que el objeto existe, pesa ≤ límite y es de tipo permitido.
+ *  Devuelve { proofKey, proofContentType } para persistir, o null si no hubo proof.
+ *  Hace I/O de red (HEAD) — llamar SIEMPRE ANTES de abrir la $transaction. */
+async function validateProof(
+  kind: ProofKind,
+  businessId: string,
+  bookingId: string,
+  opts: DeclareProofOpts,
+): Promise<{ proofKey: string; proofContentType: string } | null> {
+  if (!opts.proofKey) return null
+  const expected = proofKey(businessId, bookingId, kind)
+  if (opts.proofKey !== expected) throw new Error('Comprobante inválido.')
+  if (!opts.proofContentType || !isAllowedProofType(opts.proofContentType)) {
+    throw new Error('Tipo de comprobante no permitido.')
+  }
+  const storage = resolveStorage(opts.storage)
+  if (!storage) throw new Error('La subida de comprobantes no está disponible.')
+  const meta = await storage.head(opts.proofKey)
+  if (!meta) throw new Error('No encontramos el comprobante subido. Reintentá.')
+  if (meta.contentLength > PROOF_MAX_BYTES) throw new Error('El comprobante supera el tamaño máximo (5 MB).')
+  if (meta.contentType && !isAllowedProofType(meta.contentType)) {
+    throw new Error('Tipo de comprobante no permitido.')
+  }
+  return { proofKey: opts.proofKey, proofContentType: opts.proofContentType }
+}
+
+/** Pre-lectura + validación del comprobante compartida por ambos declare*.
+ *  Corre FUERA de la $transaction (el HEAD es I/O de red). Aplica el gate
+ *  EFECTIVO: si el negocio exige comprobante (con R2 disponible) y no hay uno
+ *  válido, corta antes de tocar la reserva. */
+async function resolveProofForDeclare(kind: ProofKind, bookingId: string, opts: DeclareProofOpts) {
+  const pre = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    select: { businessId: true, business: { select: { requireTransferProof: true } } },
+  })
+  if (!pre) throw new Error('Reserva no encontrada')
+  const proof = await validateProof(kind, pre.businessId, bookingId, opts)
+  if (pre.business.requireTransferProof && !proof) {
+    throw new Error('Este negocio exige adjuntar el comprobante para declarar la transferencia.')
+  }
+  return proof
 }
 
 /**
@@ -30,11 +127,16 @@ export async function getBankTransferInfo(businessId: string): Promise<BankTrans
  * determinístico) y con guard de carrera contra el cron expire-holds:
  * solo transiciona una pending_payment con hold vigente.
  */
-export async function declareBankTransfer(bookingId: string): Promise<{ ok: true }> {
+export async function declareBankTransfer(
+  bookingId: string,
+  opts: DeclareProofOpts = {},
+): Promise<{ ok: true }> {
   const limit = await checkRateLimit('declare-bank-transfer', 10, 60000)
   if (!limit.success) {
     throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
+
+  const proof = await resolveProofForDeclare('deposit', bookingId, opts)
 
   const declared = await prisma.$transaction(async (tx) => {
     const booking = await tx.booking.findUnique({
@@ -98,7 +200,13 @@ export async function declareBankTransfer(bookingId: string): Promise<{ ok: true
       // no dispare al instante.
       await tx.payment.update({
         where: { id: existing.id },
-        data: { status: PaymentStatus.pending, amount, createdAt: now },
+        data: {
+          status: PaymentStatus.pending,
+          amount,
+          createdAt: now,
+          proofKey: proof?.proofKey ?? null,
+          proofContentType: proof?.proofContentType ?? null,
+        },
       })
       return { booking, amount }
     }
@@ -116,6 +224,8 @@ export async function declareBankTransfer(bookingId: string): Promise<{ ok: true
           status: PaymentStatus.pending,
           paymentType: PaymentType.deposit,
           paymentMethod: 'Transferencia',
+          proofKey: proof?.proofKey ?? null,
+          proofContentType: proof?.proofContentType ?? null,
         },
       })
     } catch (e) {
@@ -138,6 +248,7 @@ export async function declareBankTransfer(bookingId: string): Promise<{ ok: true
         amount: declared.amount,
         currency: declared.booking.business.currency || 'CLP',
         bookingNumber: declared.booking.bookingNumber,
+        hasProof: !!proof,
       }),
     )
   }
@@ -149,11 +260,16 @@ export async function declareBankTransfer(bookingId: string): Promise<{ ok: true
  * La clienta declara "ya transferí el SALDO" (feature #3). Reserva firme
  * (confirmed|completed), sin hold ni plazo. Idempotente por btBalanceId.
  */
-export async function declareBalanceTransfer(bookingId: string): Promise<{ ok: true }> {
+export async function declareBalanceTransfer(
+  bookingId: string,
+  opts: DeclareProofOpts = {},
+): Promise<{ ok: true }> {
   const limit = await checkRateLimit('declare-balance-transfer', 10, 60000)
   if (!limit.success) {
     throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
+
+  const proof = await resolveProofForDeclare('balance', bookingId, opts)
 
   const declared = await prisma.$transaction(async (tx) => {
     const booking = await tx.booking.findUnique({
@@ -220,7 +336,14 @@ export async function declareBalanceTransfer(bookingId: string): Promise<{ ok: t
     if (existing) {
       await tx.payment.update({
         where: { id: existing.id },
-        data: { status: PaymentStatus.pending, amount, paymentType, createdAt: new Date() },
+        data: {
+          status: PaymentStatus.pending,
+          amount,
+          paymentType,
+          createdAt: new Date(),
+          proofKey: proof?.proofKey ?? null,
+          proofContentType: proof?.proofContentType ?? null,
+        },
       })
       return { booking, amount }
     }
@@ -238,6 +361,8 @@ export async function declareBalanceTransfer(bookingId: string): Promise<{ ok: t
           status: PaymentStatus.pending,
           paymentType,
           paymentMethod: 'Transferencia',
+          proofKey: proof?.proofKey ?? null,
+          proofContentType: proof?.proofContentType ?? null,
         },
       })
     } catch (e) {
@@ -258,11 +383,43 @@ export async function declareBalanceTransfer(bookingId: string): Promise<{ ok: t
         amount: declared.amount,
         currency: declared.booking.business.currency || 'CLP',
         bookingNumber: declared.booking.bookingNumber,
+        hasProof: !!proof,
       }),
     )
     revalidatePath('/dashboard')
     revalidatePath('/dashboard/bookings')
     revalidatePath('/dashboard/payments')
+  }
+  return { ok: true }
+}
+
+/** Adjunta/reemplaza el comprobante de un Payment declarado (pending), sin
+ *  re-declarar. Público: identidad = bookingId (cuid) + rate limit. El HEAD
+ *  vuelve a validar existencia + tamaño + tipo (server-authoritative). */
+export async function attachProof(
+  bookingId: string,
+  kind: ProofKind,
+  opts: DeclareProofOpts,
+): Promise<{ ok: true }> {
+  const limit = await checkRateLimit('proof-upload-url')
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    select: { businessId: true },
+  })
+  if (!booking) throw new Error('Reserva no encontrada')
+
+  const proof = await validateProof(kind, booking.businessId, bookingId, opts)
+  if (!proof) throw new Error('Falta el comprobante.')
+
+  const providerPaymentId = kind === 'balance' ? btBalanceId(bookingId) : btDeclaredId(bookingId)
+  const { count } = await prisma.payment.updateMany({
+    where: { bookingId, provider: 'manual', providerPaymentId, status: 'pending' },
+    data: { proofKey: proof.proofKey, proofContentType: proof.proofContentType },
+  })
+  if (count === 0) {
+    throw new Error('No hay una transferencia declarada pendiente para adjuntar el comprobante.')
   }
   return { ok: true }
 }

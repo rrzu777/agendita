@@ -397,6 +397,7 @@ export function bankTransferDeclaredBusinessHtml(data: BankTransferDeclaredEmail
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
     </table>
+    ${data.hasProof ? `<p style="margin-top:16px;font-size:14px">Adjuntó comprobante de transferencia. Podés verlo en el dashboard.</p>` : ''}
     <p style="margin-top:16px;font-size:14px">Verificá en tu cuenta bancaria y confirmá la reserva desde el dashboard.</p>
     ${footer(data.businessName)}
   `)
@@ -409,6 +410,7 @@ export function bankTransferDeclaredBusinessText(data: BankTransferDeclaredEmail
     `${data.customerName} avisó que transfirió ${fmtCurrency(data.amount, data.currency)} por la reserva${data.bookingNumber != null ? ` #${data.bookingNumber}` : ''}.`,
     `Servicio: ${data.serviceName}`,
     `Fecha y hora: ${fmtDate(data.startDateTime, data.businessTimezone)}`,
+    ...(data.hasProof ? ['', 'Adjuntó comprobante de transferencia. Podés verlo en el dashboard.'] : []),
     '',
     'Verificá en tu cuenta bancaria y confirmá la reserva desde el dashboard.',
     '',
@@ -442,6 +444,7 @@ export function balanceTransferDeclaredBusinessHtml(data: BankTransferDeclaredEm
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
     </table>
+    ${data.hasProof ? `<p style="margin-top:16px;font-size:14px">Adjuntó comprobante de transferencia. Podés verlo en el dashboard.</p>` : ''}
     <p style="margin-top:16px;font-size:14px">Verificá en tu cuenta bancaria y confirmá el saldo desde el dashboard.</p>
     ${footer(data.businessName)}
   `)
@@ -454,6 +457,7 @@ export function balanceTransferDeclaredBusinessText(data: BankTransferDeclaredEm
     `${data.customerName} avisó que transfirió el saldo de ${fmtCurrency(data.amount, data.currency)} por ${data.serviceName}${data.bookingNumber != null ? ` (reserva #${data.bookingNumber})` : ''}.`,
     `Servicio: ${data.serviceName}`,
     `Fecha y hora: ${fmtDate(data.startDateTime, data.businessTimezone)}`,
+    ...(data.hasProof ? ['', 'Adjuntó comprobante de transferencia. Podés verlo en el dashboard.'] : []),
     '',
     'Verificá en tu cuenta bancaria y confirmá el saldo desde el dashboard.',
     '',

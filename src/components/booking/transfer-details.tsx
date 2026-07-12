@@ -1,12 +1,16 @@
 'use client'
 
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatMoney } from '@/lib/money'
 import { formatBookingDateTime } from '@/lib/booking/format-booking-datetime'
 import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
+import { isAllowedProofType, PROOF_MAX_BYTES } from '@/lib/storage/proof'
+import { createProofUploadUrl } from '@/server/actions/bank-transfer-public'
 
-/** Datos bancarios + botón "Ya transferí". Presentacional puro: lo usan el
- *  paso de pago del wizard y el panel de /book/confirmation. */
+/** Datos bancarios + adjuntar comprobante + botón "Ya transferí". Cliente: sube
+ *  el archivo directo a R2 (presign PUT) y pasa la key al handler de declarar.
+ *  Lo usan el paso de pago del wizard y el panel de /book/confirmation. */
 export function TransferDetails({
   bank,
   amount,
@@ -14,6 +18,7 @@ export function TransferDetails({
   timezone,
   declaring,
   onDeclare,
+  bookingId,
   kind = 'deposit',
 }: {
   bank: BankTransferPublicInfo
@@ -21,10 +26,16 @@ export function TransferDetails({
   deadline: Date | null
   timezone: string
   declaring: boolean
-  onDeclare: () => void
+  onDeclare: (proof: { proofKey: string; proofContentType: string } | null) => void
+  bookingId: string
   /** 'balance' = saldo restante: cambia el label del monto (sin plazo — deadline ya es null en ese caso). */
   kind?: 'deposit' | 'balance'
 }) {
+  const [selectedError, setSelectedError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  // key + tipo se setean/limpian siempre juntos → un solo estado los mantiene en sync.
+  const [uploaded, setUploaded] = useState<{ key: string; type: string } | null>(null)
+
   const rows: Array<[string, string]> = [
     ['Titular', bank.accountHolder],
     ['RUT', bank.rut],
@@ -33,6 +44,41 @@ export function TransferDetails({
     ['Número de cuenta', bank.accountNumber],
   ]
   if (bank.email) rows.push(['Email', bank.email])
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    setSelectedError(null)
+    setUploaded(null)
+    if (!file) return
+
+    if (!isAllowedProofType(file.type)) {
+      setSelectedError('Tipo de archivo no permitido')
+      return
+    }
+    if (file.size > PROOF_MAX_BYTES) {
+      setSelectedError('El archivo supera 5 MB')
+      return
+    }
+
+    setUploading(true)
+    try {
+      const { uploadUrl, key } = await createProofUploadUrl(bookingId, kind, file.type)
+      const res = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type },
+      })
+      if (res.ok) {
+        setUploaded({ key, type: file.type })
+      } else {
+        setSelectedError('No pudimos subir el comprobante. Intentá de nuevo.')
+      }
+    } catch {
+      setSelectedError('No pudimos subir el comprobante. Intentá de nuevo.')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -60,7 +106,31 @@ export function TransferDetails({
         </p>
       )}
 
-      <Button className="h-12 w-full rounded-full text-base font-semibold" onClick={onDeclare} disabled={declaring}>
+      <div className="space-y-2">
+        <label htmlFor="transfer-proof" className="block text-sm font-semibold text-primary">
+          Comprobante{bank.requireProof ? ' (obligatorio)' : ''}
+        </label>
+        {!bank.requireProof && (
+          <p className="text-sm text-muted-foreground">Adjuntar comprobante (opcional)</p>
+        )}
+        <input
+          id="transfer-proof"
+          type="file"
+          accept="image/jpeg,image/png,image/webp,application/pdf"
+          onChange={handleFileChange}
+          disabled={uploading || declaring}
+          className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-full file:border-0 file:bg-muted file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary"
+        />
+        {uploading && <p className="text-sm text-muted-foreground">Subiendo comprobante…</p>}
+        {uploaded && <p className="text-sm text-primary">Comprobante cargado ✓</p>}
+        {selectedError && <p className="text-sm text-destructive">{selectedError}</p>}
+      </div>
+
+      <Button
+        className="h-12 w-full rounded-full text-base font-semibold"
+        onClick={() => onDeclare(uploaded ? { proofKey: uploaded.key, proofContentType: uploaded.type } : null)}
+        disabled={declaring || uploading || (bank.requireProof && !uploaded)}
+      >
         {declaring ? 'Avisando…' : 'Ya transferí'}
       </Button>
     </div>
