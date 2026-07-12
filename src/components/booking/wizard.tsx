@@ -189,7 +189,7 @@ export function BookingWizard({ businessId, slug, timezone, services, cancellati
           </div>
         )}
         {currentStep === 6 && (
-          <StepConfirmation data={data} timezone={timezone} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} />
+          <StepConfirmation data={data} timezone={timezone} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} sessionEmail={session?.email ?? null} />
         )}
       </section>
     </div>

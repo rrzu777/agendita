@@ -8,7 +8,7 @@ import { formatMoney } from '@/lib/money'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { formatBookingDateTime } from '@/lib/booking/format-booking-datetime'
 
-export function StepConfirmation({ data, timezone, bookingId, bookingNumber, mode, promo }: { data: BookingData; timezone: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null }) {
+export function StepConfirmation({ data, timezone, bookingId, bookingNumber, mode, promo, sessionEmail }: { data: BookingData; timezone: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null }) {
   const isPending = mode === 'pending'
   const isFree = data.servicePrice <= 0
   const noDeposit = data.serviceDeposit <= 0
@@ -69,6 +69,21 @@ export function StepConfirmation({ data, timezone, bookingId, bookingNumber, mod
       </div>
 
       <p className="mb-6 text-sm text-muted-foreground">Número de reserva: {formatBookingNumber(bookingNumber, bookingId)}</p>
+
+      {sessionEmail === null && data.customerEmail && (
+        <div className="mb-6 rounded-2xl border border-primary/25 bg-secondary/40 p-4 text-sm text-primary">
+          <p className="mb-2">
+            ¿Quieres ver y gestionar esta reserva? Crea tu cuenta ingresando con{' '}
+            <span className="font-semibold">{data.customerEmail}</span> (el mismo email de la reserva).
+          </p>
+          <Link href="/ingresar?next=/mi" className="font-semibold underline">Crear mi cuenta</Link>
+        </div>
+      )}
+      {sessionEmail !== null && (
+        <p className="mb-6 text-sm">
+          <Link href="/mi" className="font-semibold text-primary underline">Ver mis reservas</Link>
+        </p>
+      )}
 
       <Link href="/">
         <Button className="h-12 rounded-full px-7 text-base font-semibold">Volver al inicio</Button>
