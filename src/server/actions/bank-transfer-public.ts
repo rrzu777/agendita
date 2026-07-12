@@ -234,6 +234,7 @@ export async function declareBankTransfer(
         amount: declared.amount,
         currency: declared.booking.business.currency || 'CLP',
         bookingNumber: declared.booking.bookingNumber,
+        hasProof: !!proof,
       }),
     )
   }
@@ -377,6 +378,7 @@ export async function declareBalanceTransfer(
         amount: declared.amount,
         currency: declared.booking.business.currency || 'CLP',
         bookingNumber: declared.booking.bookingNumber,
+        hasProof: !!proof,
       }),
     )
     revalidatePath('/dashboard')

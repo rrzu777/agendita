@@ -134,6 +134,9 @@ export interface BankTransferDeclaredEmailData {
   amount: number
   currency: string
   bookingNumber?: number | null
+  /** La clienta adjuntó un comprobante al declarar: el email lo menciona para
+   *  que la dueña sepa que hay un comprobante esperando en el dashboard. */
+  hasProof?: boolean
 }
 
 export interface BankTransferVerifyCustomerEmailData {
