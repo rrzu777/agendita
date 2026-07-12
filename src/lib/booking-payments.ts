@@ -15,20 +15,25 @@ export class BookingNotPayableError extends Error {
  * terminales). Lo usa el verificador de transferencia, que ya re-validó el cupo
  * dentro de su propia tx y no debería tener que escribir un holdExpiresAt falso
  * solo para pasar por acá.
+ *
+ * `allowCompleted`: `completed` es terminal para pagos SALVO el saldo por
+ * transferencia (spec #3 §4: la clienta puede pagar después de atendida).
+ * Solo la rama bt-balance de confirmBankTransfer pasa `allowCompleted` —
+ * nunca el webhook MP ni confirmPayment.
  */
 export function assertBookingPayable(
   booking: {
     status: BookingStatus
     holdExpiresAt: Date | null
   },
-  opts?: { allowExpiredHold?: boolean },
+  opts?: { allowExpiredHold?: boolean; allowCompleted?: boolean },
 ): void {
   const terminalStatuses: BookingStatus[] = [
     BookingStatus.cancelled,
     BookingStatus.expired,
     BookingStatus.no_show,
-    BookingStatus.completed,
   ]
+  if (!opts?.allowCompleted) terminalStatuses.push(BookingStatus.completed)
   if (terminalStatuses.includes(booking.status)) {
     throw new BookingNotPayableError('No se puede procesar pago para esta reserva')
   }

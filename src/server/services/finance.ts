@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client'
 import { BookingStatus, BookingPaymentStatus, PaymentProvider, PaymentType } from '@prisma/client'
 import { assertBookingPayable } from '@/lib/booking-payments'
 import { formatBookingNumber } from '@/lib/bookings/number'
+import { declaredBalancePaymentWhere } from '@/lib/bank-transfer/declared'
 import type { LedgerEntryType, LedgerDirection } from '@prisma/client'
 
 /**
@@ -91,6 +92,12 @@ export interface ApplyApprovedPaymentInput {
    * el cupo por su cuenta; evita escribir un holdExpiresAt falso solo para pasar.
    */
   skipHoldExpiryCheck?: boolean
+  /**
+   * Permite procesar pagos sobre una reserva `completed` (spec #3 §4: saldo por
+   * transferencia declarado/pagado después de que la clienta fue atendida).
+   * Ver `assertBookingPayable` en `@/lib/booking-payments`.
+   */
+  allowCompleted?: boolean
 }
 
 export async function applyApprovedPayment({
@@ -107,6 +114,7 @@ export async function applyApprovedPayment({
   createdByUserId,
   paymentId: explicitPaymentId,
   skipHoldExpiryCheck,
+  allowCompleted,
 }: ApplyApprovedPaymentInput): Promise<{ booking: Awaited<ReturnType<typeof recalcBookingFromPayments>>['booking']; wasConfirmed: boolean }> {
   if (amount <= 0) {
     throw new Error('El monto debe ser positivo')
@@ -124,7 +132,7 @@ export async function applyApprovedPayment({
     throw new Error('La reserva no pertenece al negocio')
   }
 
-  assertBookingPayable(booking, { allowExpiredHold: skipHoldExpiryCheck })
+  assertBookingPayable(booking, { allowExpiredHold: skipHoldExpiryCheck, allowCompleted })
 
   let payment: { id: string; amount: number; status: string; provider: string; providerPaymentId: string | null; paymentType: PaymentType } | null = null
 
@@ -243,6 +251,17 @@ async function recalcBookingFromPayments(tx: Prisma.TransactionClient, bookingId
   }, 0)
   const newDepositPaid = Math.max(0, totalApproved)
   const newRemainingBalance = Math.max(0, booking.finalAmount - newDepositPaid)
+
+  // Autolimpieza (spec §5-bis): si el saldo quedó en 0 por CUALQUIER camino
+  // (pago manual, MP, verificación del propio saldo), una declaración de saldo
+  // pendiente ya no tiene sentido — cancelarla evita un chip "por verificar"
+  // eterno cuyo único destino sería un rechazo con email confuso.
+  if (newRemainingBalance === 0) {
+    await tx.payment.updateMany({
+      where: { bookingId, ...declaredBalancePaymentWhere },
+      data: { status: 'cancelled' },
+    })
+  }
 
   let newPaymentStatus: BookingPaymentStatus
   if (totalApproved >= booking.finalAmount) {
