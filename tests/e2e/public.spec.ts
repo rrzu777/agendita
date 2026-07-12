@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
 const E2E_EMAIL = 'e2e@test.agendita.cl'
 const E2E_OWNER_EMAIL = 'owner@mimosnails.com'
@@ -255,15 +255,19 @@ test.describe('main beta flows', () => {
     await page.getByRole('link', { name: 'Horarios' }).click()
     await page.waitForURL('**/dashboard/availability')
     const monday = page.locator('div').filter({ hasText: /^Lunes$/ }).locator('..')
-    await monday.getByLabel('Lunes inicio hora').selectOption('10')
-    await monday.getByLabel('Lunes inicio minutos').selectOption('00')
-    // El editor de disponibilidad usa guardado explícito (PR #52): el cambio del
-    // <select> sólo actualiza el borrador; hay que apretar "Guardar" para persistir.
+    await selectTime(page, 'Lunes inicio', '10', '00')
     await monday.getByRole('button', { name: 'Guardar', exact: true }).click()
     await expect(monday.getByText(/Guardado/)).toBeVisible({ timeout: 10000 })
     await page.reload()
     await expect(page.getByRole('heading', { name: 'Horario semanal' })).toBeVisible()
-    await expect(monday.getByLabel('Lunes inicio hora')).toHaveValue('10')
-    await expect(monday.getByLabel('Lunes inicio minutos')).toHaveValue('00')
+    await expect(monday.getByLabel('Lunes inicio')).toContainText('10:00')
   })
 })
+
+async function selectTime(page: Page, label: string, hour: string, minute: string): Promise<void> {
+  await page.getByLabel(label, { exact: true }).click()
+  const picker = page.getByRole('dialog').last()
+  await picker.getByRole('button', { name: hour.padStart(2, '0'), exact: true }).first().click()
+  await picker.getByRole('button', { name: minute.padStart(2, '0'), exact: true }).last().click()
+  await picker.getByRole('button', { name: 'Aplicar', exact: true }).click()
+}
