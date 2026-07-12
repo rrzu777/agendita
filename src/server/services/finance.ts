@@ -28,6 +28,8 @@ export function mapPaymentTypeToLedgerEntryType(
       return 'cancellation_fee_charged'
     case 'manual_adjustment':
       return 'adjustment'
+    case 'package_purchase':
+      return 'package_sale'
     default: {
       // Exhaustive check: si alguien agrega un nuevo PaymentType sin manejarlo,
       // TypeScript falla aquí.
@@ -64,6 +66,8 @@ export function getLedgerDescription(paymentType: PaymentType, bookingId: string
       return `Cargo por cancelación para ${suffix}`
     case 'manual_adjustment':
       return `Ajuste manual para ${suffix}`
+    case 'package_purchase':
+      return `Venta de paquete`
     default: {
       const _exhaustive: never = paymentType
       return _exhaustive

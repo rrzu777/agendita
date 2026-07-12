@@ -75,6 +75,11 @@ describe('mapPaymentTypeToLedgerEntryType', () => {
     const { mapPaymentTypeToLedgerEntryType } = await import('@/server/services/finance')
     expect(mapPaymentTypeToLedgerEntryType(PaymentType.manual_adjustment)).toBe('adjustment')
   })
+
+  it('package_purchase → package_sale', async () => {
+    const { mapPaymentTypeToLedgerEntryType } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerEntryType(PaymentType.package_purchase)).toBe('package_sale')
+  })
 })
 
 describe('mapPaymentTypeToLedgerDirection', () => {
@@ -107,6 +112,11 @@ describe('mapPaymentTypeToLedgerDirection', () => {
     const { mapPaymentTypeToLedgerDirection } = await import('@/server/services/finance')
     expect(mapPaymentTypeToLedgerDirection(PaymentType.manual_adjustment)).toBe('income')
   })
+
+  it('package_purchase → income', async () => {
+    const { mapPaymentTypeToLedgerDirection } = await import('@/server/services/finance')
+    expect(mapPaymentTypeToLedgerDirection(PaymentType.package_purchase)).toBe('income')
+  })
 })
 
 describe('getLedgerDescription', () => {
@@ -138,6 +148,11 @@ describe('getLedgerDescription', () => {
   it('manual_adjustment → Ajuste manual para reserva #<n>', async () => {
     const { getLedgerDescription } = await import('@/server/services/finance')
     expect(getLedgerDescription(PaymentType.manual_adjustment, 'booking-abc123', 4738)).toBe('Ajuste manual para reserva #4738')
+  })
+
+  it('package_purchase → Venta de paquete', async () => {
+    const { getLedgerDescription } = await import('@/server/services/finance')
+    expect(getLedgerDescription(PaymentType.package_purchase, 'booking-abc123', 4738)).toBe('Venta de paquete')
   })
 
   it('falls back to the cuid slice when bookingNumber is null', async () => {
