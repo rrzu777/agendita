@@ -7,6 +7,7 @@ import type {
   NewBookingBusinessEmailData,
   BankTransferDeclaredEmailData,
   BankTransferVerifyCustomerEmailData,
+  BalanceTransferCustomerEmailData,
   ReminderEmailData,
   LoyaltyRewardEmailData,
   RescheduledEmailData,
@@ -431,6 +432,67 @@ export function bankTransferRejectedCustomerHtml(data: BankTransferVerifyCustome
 
 export function bankTransferRejectedCustomerText(data: BankTransferVerifyCustomerEmailData): string {
   return `Hola ${data.customerName}, ${data.businessName} no pudo verificar tu transferencia y tu reserva (${data.serviceName}, ${fmtDate(data.startDateTime, data.businessTimezone)}) fue cancelada. Si transferiste, contactá al negocio directamente.`
+}
+
+export function balanceTransferDeclaredBusinessHtml(data: BankTransferDeclaredEmailData): string {
+  return baseHtml(`
+    ${header('Transferencia del saldo por verificar')}
+    <p style="font-size:15px">${escapeHtml(data.customerName)} avisó que transfirió el saldo de <strong>${fmtCurrency(data.amount, data.currency)}</strong> por <strong>${escapeHtml(data.serviceName)}</strong>${data.bookingNumber != null ? ` (reserva #${data.bookingNumber})` : ''}.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
+    </table>
+    <p style="margin-top:16px;font-size:14px">Verificá en tu cuenta bancaria y confirmá el saldo desde el dashboard.</p>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function balanceTransferDeclaredBusinessText(data: BankTransferDeclaredEmailData): string {
+  const lines = [
+    'Transferencia del saldo por verificar',
+    '',
+    `${data.customerName} avisó que transfirió el saldo de ${fmtCurrency(data.amount, data.currency)} por ${data.serviceName}${data.bookingNumber != null ? ` (reserva #${data.bookingNumber})` : ''}.`,
+    `Servicio: ${data.serviceName}`,
+    `Fecha y hora: ${fmtDate(data.startDateTime, data.businessTimezone)}`,
+    '',
+    'Verificá en tu cuenta bancaria y confirmá el saldo desde el dashboard.',
+    '',
+    `Enviado por ${data.businessName} a través de Agendita`,
+  ]
+  return lines.join('\n')
+}
+
+export function balanceTransferVerifiedCustomerHtml(data: BalanceTransferCustomerEmailData): string {
+  return baseHtml(`
+    ${header('Recibimos tu pago')}
+    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, ${escapeHtml(data.businessName)} verificó tu transferencia del saldo de <strong>${fmtCurrency(data.amount, data.currency)}</strong> por <strong>${escapeHtml(data.serviceName)}</strong>. ¡Gracias!</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
+    </table>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function balanceTransferVerifiedCustomerText(data: BalanceTransferCustomerEmailData): string {
+  return `Hola ${data.customerName}, ${data.businessName} verificó tu transferencia del saldo de ${fmtCurrency(data.amount, data.currency)} por ${data.serviceName} (${fmtDate(data.startDateTime, data.businessTimezone)}). ¡Gracias!`
+}
+
+export function balanceTransferRejectedCustomerHtml(data: BalanceTransferCustomerEmailData): string {
+  return baseHtml(`
+    ${header('No pudimos verificar tu transferencia')}
+    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, ${escapeHtml(data.businessName)} no pudo verificar tu transferencia del saldo de <strong>${fmtCurrency(data.amount, data.currency)}</strong> por <strong>${escapeHtml(data.serviceName)}</strong>. Tu reserva sigue igual.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
+    </table>
+    <p style="margin-top:16px;font-size:14px">Escribile al negocio o volvé a avisar desde tu página de reserva.</p>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function balanceTransferRejectedCustomerText(data: BalanceTransferCustomerEmailData): string {
+  return `Hola ${data.customerName}, ${data.businessName} no pudo verificar tu transferencia del saldo de ${fmtCurrency(data.amount, data.currency)} por ${data.serviceName} (${fmtDate(data.startDateTime, data.businessTimezone)}). Tu reserva sigue igual. Escribile al negocio o volvé a avisar desde tu página de reserva.`
 }
 
 export function bankTransferExpiredCustomerHtml(data: BankTransferVerifyCustomerEmailData): string {
