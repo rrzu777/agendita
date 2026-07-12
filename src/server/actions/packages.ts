@@ -9,6 +9,7 @@ import { requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { packageProductSchema, sellPackageSchema, computePackageRefund } from '@/lib/packages/schema'
 import { normalizePhone } from '@/lib/customers/phone'
 import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
+import { revalidateBusinessPublicPaths } from './revalidate-business'
 
 // ── CRUD de productos ─────────────────────────────────────────────────
 export async function listPackageProducts() {
@@ -49,6 +50,7 @@ export async function upsertPackageProduct(data: unknown, id?: string) {
     })
   }
   await revalidatePath('/dashboard/paquetes')
+  await revalidateBusinessPublicPaths(businessId)
 }
 
 export async function archivePackageProduct(id: string) {
@@ -57,6 +59,7 @@ export async function archivePackageProduct(id: string) {
   if (!existing) throw new ForbiddenError('Paquete no encontrado')
   await prisma.packageProduct.update({ where: { id }, data: { isActive: false } })
   await revalidatePath('/dashboard/paquetes')
+  await revalidateBusinessPublicPaths(businessId)
 }
 
 // ── vender ────────────────────────────────────────────────────────────
@@ -185,7 +188,7 @@ export async function getCustomerPackages(customerId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const now = new Date()
   return prisma.packagePurchase.findMany({
-    where: { businessId, customerId },
+    where: { businessId, customerId, status: { in: ['active', 'refunded'] } },
     orderBy: { createdAt: 'desc' },
     include: {
       product: { select: { name: true } },
