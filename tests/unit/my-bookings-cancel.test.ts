@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockRequireUser, mockCheckRateLimit, mockFindFirstBooking, mockTx,
@@ -63,12 +63,21 @@ function makeBooking(overrides: Record<string, unknown> = {}) {
 describe('cancelMyBooking', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Congelar SOLO Date (no los timers, para no colgar los await) al mismo
+    // instante que usa makeBooking; si no, canSelfManage usa el reloj real y el
+    // test de "dentro de ventana" falla por date-drift al correr días después.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-07-11T12:00:00Z'))
     mockRequireUser.mockResolvedValue({ id: 'u1' })
     mockCheckRateLimit.mockResolvedValue({ success: true })
     mockTx.mockImplementation(async (fn: (tx: unknown) => Promise<void>) => fn({}))
     mockGetBusinessReplyToEmail.mockResolvedValue(null)
     mockSendBookingCancelledNotification.mockResolvedValue({ success: true })
     mockSendOwnerBookingChangedNotification.mockResolvedValue([{ success: true }])
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('feliz: cancela una reserva propia dentro de la ventana', async () => {
