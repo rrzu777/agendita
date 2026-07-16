@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
-import type { CampaignSegmentType } from '@/lib/campaigns/schema'
+import { segmentLabel } from '@/lib/campaigns/labels'
 
 export interface CampaignListItem {
   id: string
@@ -15,17 +15,6 @@ export interface CampaignListItem {
   createdAt: Date
   promotion: { name: string }
   _count: { recipients: number }
-}
-
-const SEGMENT_LABELS: Record<CampaignSegmentType, string> = {
-  birthday_month: 'Cumpleañeras del mes',
-  inactive: 'Inactivas',
-  frequent: 'Frecuentes',
-  pending_balance: 'Con saldo pendiente',
-}
-
-export function segmentLabel(segment: string): string {
-  return SEGMENT_LABELS[segment as CampaignSegmentType] ?? segment
 }
 
 function formatDate(value: Date) {

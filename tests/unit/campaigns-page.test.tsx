@@ -69,6 +69,7 @@ describe('CampanasPage', () => {
     expect(html).toContain('Campaña invierno')
     expect(html).toContain('Frecuentes')
     expect(html).toContain('Promo 20%')
-    expect(html).toContain('5')
+    // Conteo de destinatarias como contenido de celda (no matchear clases tipo p-5).
+    expect(html).toContain('>5<')
   })
 })

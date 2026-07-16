@@ -17,7 +17,7 @@ import {
   type CampaignSegmentType,
 } from '@/lib/campaigns/schema'
 import { defaultMessageForSegment } from '@/lib/campaigns/message'
-import { segmentLabel } from './campaign-list'
+import { segmentLabel } from '@/lib/campaigns/labels'
 
 export interface PromotionOption {
   id: string
