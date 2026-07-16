@@ -25,7 +25,7 @@ describe('findOrCreateCustomerInTx', () => {
     })
     expect(created).toBe(true)
     expect(tx.customer.create).toHaveBeenCalledWith({
-      data: { businessId: 'b1', name: 'Ana', phone: '56912345678', email: 'ana@x.cl' },
+      data: { businessId: 'b1', name: 'Ana', phone: '56912345678', email: 'ana@x.cl', birthDate: null },
     })
     expect(customer.id).toBe('new')
   })

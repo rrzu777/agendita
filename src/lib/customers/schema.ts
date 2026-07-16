@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { normalizePhone } from './phone'
+import { isValidBirthDateString } from '@/lib/dates'
 
 export const updateCustomerSchema = z.object({
   name: z
@@ -36,17 +37,7 @@ export const updateCustomerSchema = z.object({
       (v) => v === null || /^\d{4}-\d{2}-\d{2}$/.test(v),
       'Fecha de nacimiento invalida',
     )
-    .refine((v) => {
-      if (v === null) return true
-      const d = new Date(`${v}T00:00:00Z`)
-      if (isNaN(d.getTime())) return false
-      // Rechaza fechas inválidas que JS "rueda" al mes siguiente (ej. 1990-02-30
-      // -> 1990-03-02): el round-trip debe coincidir con el input.
-      if (d.toISOString().slice(0, 10) !== v) return false
-      const year = d.getUTCFullYear()
-      // Rango razonable: entre 1900 y hoy (sin fechas futuras).
-      return year >= 1900 && d.getTime() <= Date.now()
-    }, 'La fecha de nacimiento no es valida'),
+    .refine((v) => v === null || isValidBirthDateString(v), 'La fecha de nacimiento no es valida'),
 }).strip()
 
 export const updateCustomerNotesSchema = z.object({
