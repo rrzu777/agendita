@@ -36,7 +36,7 @@ export default async function DashboardPage() {
     prisma.service.count({ where: { businessId: business.id, isActive: true } }),
     prisma.availabilityRule.count({ where: { businessId: business.id, isActive: true } }),
     prisma.paymentAccount.count({ where: { businessId: business.id, status: 'connected' } }),
-    prisma.packagePurchase.count({ where: pendingPackageTransferWhere(business.id, new Date()) }),
+    prisma.packagePurchase.count({ where: pendingPackageTransferWhere(business.id) }),
   ])
 
   // Calcular estadísticas reales

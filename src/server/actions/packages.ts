@@ -223,9 +223,8 @@ export async function getCustomerPackages(customerId: string) {
 // OWNER (panel de transferencias de paquete pendientes)
 export async function getPendingPackageTransfers() {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
-  const now = new Date()
   return prisma.packagePurchase.findMany({
-    where: pendingPackageTransferWhere(businessId, now),
+    where: pendingPackageTransferWhere(businessId),
     orderBy: { createdAt: 'desc' },
     include: {
       product: { select: { name: true } },

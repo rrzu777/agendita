@@ -318,9 +318,10 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
 
   const purchase = await loadOwnedPurchase(input.purchaseId, user.id)
   if (purchase.status !== 'pending') throw new Error('Esta compra ya fue procesada.')
-  if (purchase.holdExpiresAt && purchase.holdExpiresAt < new Date()) {
-    throw new Error('El tiempo para transferir venció. Iniciá la compra de nuevo.')
-  }
+  // SIN check de hold a propósito (fix zombie, spec §5): la plata pudo enviarse
+  // aunque el hold venciera y acá no hay cupo en juego. La ventana la cierra el
+  // sweep: cuando expira la compra no-declarada, el guard de status de arriba
+  // rechaza. Una vez declarada, el sweep la exime y la dueña decide.
 
   const declaredId = btPkgDeclaredId(purchase.id)
   // Idempotente por @@unique([packagePurchaseId, provider, providerPaymentId]).

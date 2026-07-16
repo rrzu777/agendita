@@ -105,6 +105,30 @@ describe('createPackagePurchase + declarePackageTransfer (transferencia)', () =>
     expect(pay.amount).toBe(50000)
   })
 
+  it('declarePackageTransfer acepta declarar con hold VENCIDO mientras siga pending (fix zombie lado clienta)', async () => {
+    const { createPackagePurchase, declarePackageTransfer } = await import('@/server/actions/packages-checkout')
+    const { purchaseId } = await createPackagePurchase({
+      packageProductId: productId, name: 'Cli Xfer', phone: '+56900000009', acceptedTerms: true, method: 'transfer',
+    })
+    // Vencer el hold a mano (el sweep todavía no corrió).
+    await prisma.packagePurchase.update({ where: { id: purchaseId }, data: { holdExpiresAt: new Date('2026-01-01T00:00:00Z') } })
+    await declarePackageTransfer({ purchaseId }) // NO debe tirar
+    const pay = await prisma.payment.findFirst({ where: { packagePurchaseId: purchaseId } })
+    expect(pay!.status).toBe('pending')
+  })
+
+  it('getPendingPackageTransfers muestra una declarada con hold VENCIDO (fix zombie lado dueña)', async () => {
+    const { createPackagePurchase, declarePackageTransfer } = await import('@/server/actions/packages-checkout')
+    const { getPendingPackageTransfers } = await import('@/server/actions/packages')
+    const { purchaseId } = await createPackagePurchase({
+      packageProductId: productId, name: 'Cli Xfer', phone: '+56900000009', acceptedTerms: true, method: 'transfer',
+    })
+    await declarePackageTransfer({ purchaseId })
+    await prisma.packagePurchase.update({ where: { id: purchaseId }, data: { holdExpiresAt: new Date('2026-01-01T00:00:00Z') } })
+    const list = await getPendingPackageTransfers()
+    expect(list.map((p: { id: string }) => p.id)).toContain(purchaseId)
+  })
+
   describe('confirmar / rechazar transferencia de paquete (dueña)', () => {
     async function seedDeclared(prisma: PrismaClient) {
       const { createPackagePurchase, declarePackageTransfer } = await import('@/server/actions/packages-checkout')
