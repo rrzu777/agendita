@@ -10,9 +10,15 @@ requireTestDatabase()
 // tests para que la factory del mock corra DESPUÉS de inicializar las consts.
 const BIZ = 'cact-biz-1'
 const USER = 'cact-owner-1'
+const authCtx = () => ({
+  businessId: BIZ,
+  user: { id: USER },
+  business: { id: BIZ, name: 'CAct Biz', timezone: 'America/Santiago' },
+  role: 'owner',
+})
 vi.mock('@/lib/auth/server', () => ({
-  requireBusiness: async () => ({ businessId: BIZ, user: { id: USER }, role: 'owner' }),
-  requireBusinessRole: async () => ({ businessId: BIZ, user: { id: USER }, role: 'owner' }),
+  requireBusiness: async () => authCtx(),
+  requireBusinessRole: async () => authCtx(),
   AuthError: class extends Error {},
   ForbiddenError: class extends Error {},
 }))
@@ -109,7 +115,7 @@ describe('campaigns actions', () => {
       messageTemplate: 'Hola {nombre} {codigo}', promotionId: PROMO,
     })
     const d = await getCampaignDetail(campaignId)
-    expect(d.recipients.length).toBeGreaterThanOrEqual(2)
+    expect(d.recipients.length).toBe(2)
   })
 
   it('createCampaign con newPromotion crea granted pointsCost null', async () => {
@@ -156,6 +162,6 @@ describe('campaigns actions', () => {
     const { getCampaigns } = await importActions()
     const list = await getCampaigns()
     expect(list.length).toBeGreaterThanOrEqual(1)
-    expect(list[0]._count.recipients).toBeGreaterThanOrEqual(0)
+    expect(list[0]._count.recipients).toBe(2)
   })
 })
