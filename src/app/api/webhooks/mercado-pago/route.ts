@@ -638,15 +638,19 @@ export async function POST(request: NextRequest) {
       mpStatus === 'refunded' ||
       mpStatus === 'charged_back'
     ) {
-      // No degradar un Payment ya approved
-      // (validado arriba, pero por seguridad repetimos el check)
+      // Degradar es SOLO para pagos que nunca se aprobaron (pending, el único
+      // estado no-terminal local: in_process de MP se guarda como pending).
+      // Un redelivery de refunded/charged_back sobre un Payment que la rama de
+      // reversión ya dejó 'refunded' caería acá y re-liberaría la redención que
+      // esa rama deliberadamente conserva (spec §2, corrupción de promo) — por
+      // eso el guard es por 'pending', no por 'approved'.
       const currentPayment = await prisma.payment.findUnique({
         where: { id: payment.id },
       })
-      if (currentPayment?.status === 'approved') {
+      if (currentPayment?.status !== 'pending') {
         return NextResponse.json({
           success: true,
-          message: 'Payment already approved, not downgrading',
+          message: 'Payment not pending, not downgrading',
         })
       }
 

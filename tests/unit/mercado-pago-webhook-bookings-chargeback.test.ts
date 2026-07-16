@@ -257,6 +257,34 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
     expect(reverseBookingPaymentInTx).not.toHaveBeenCalled()
   })
 
+  it('redelivery REAL end-to-end: Payment local ya refunded → 200 sin re-liberar redención ni re-revertir puntos', async () => {
+    const { releaseRedemptionForBooking } = await import('@/lib/promotions/release')
+    const { reverseVisitPoints } = await import('@/lib/loyalty/credit')
+    mockMpFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ...baseMpPayment, status: 'refunded' }) })
+    const refundedPayment = { ...approvedBookingPayment, status: 'refunded' }
+    mockPrisma.payment.findUnique.mockResolvedValue(refundedPayment)
+
+    const res = await POST(makeRequest('mp-bk-001', 'req-rd2'))
+    expect(res.status).toBe(200)
+    expect(reverseBookingPaymentInTx).not.toHaveBeenCalled()
+    expect(releaseRedemptionForBooking).not.toHaveBeenCalled()
+    expect(reverseVisitPoints).not.toHaveBeenCalled()
+    expect(mockPrisma.payment.update).not.toHaveBeenCalled()
+  })
+
+  it('la rama vieja SIGUE degradando un Payment pending con mpStatus rejected', async () => {
+    mockMpFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ...baseMpPayment, status: 'rejected' }) })
+    const pendingPayment = { ...approvedBookingPayment, status: 'pending' }
+    mockPrisma.payment.findUnique.mockResolvedValue(pendingPayment)
+
+    const res = await POST(makeRequest('mp-bk-001', 'req-rej'))
+    expect(res.status).toBe(200)
+    expect(mockPrisma.payment.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'pay-bk-001' },
+      data: expect.objectContaining({ status: 'rejected' }),
+    }))
+  })
+
   it('payment de PAQUETE con charged_back: va a reversePackagePurchaseInTx, nunca al núcleo de reservas', async () => {
     mockMpFetch.mockResolvedValue({
       ok: true,
