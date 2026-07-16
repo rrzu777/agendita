@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
-import { segmentLabel } from '@/lib/campaigns/labels'
+import { formatCampaignDate, segmentLabel } from '@/lib/campaigns/labels'
 
 export interface CampaignListItem {
   id: string
@@ -15,10 +15,6 @@ export interface CampaignListItem {
   createdAt: Date
   promotion: { name: string }
   _count: { recipients: number }
-}
-
-function formatDate(value: Date) {
-  return new Date(value).toLocaleDateString('es-CL', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 export function CampaignList({ campaigns }: { campaigns: CampaignListItem[] }) {
@@ -71,7 +67,7 @@ export function CampaignList({ campaigns }: { campaigns: CampaignListItem[] }) {
                 <TruncatedCell primary={c.promotion.name} />
                 <TableCell className={TABLE_COL.uses}>{c._count.recipients}</TableCell>
                 <TableCell className={`${TABLE_COL.date} whitespace-nowrap text-sm`}>
-                  {formatDate(c.createdAt)}
+                  {formatCampaignDate(c.createdAt)}
                 </TableCell>
               </TableRow>
             ))}
@@ -92,7 +88,7 @@ export function CampaignList({ campaigns }: { campaigns: CampaignListItem[] }) {
             rows={[
               { label: 'Promo', value: c.promotion.name },
               { label: 'Destinatarias', value: c._count.recipients },
-              { label: 'Fecha', value: formatDate(c.createdAt) },
+              { label: 'Fecha', value: formatCampaignDate(c.createdAt) },
             ]}
           />
         ))}

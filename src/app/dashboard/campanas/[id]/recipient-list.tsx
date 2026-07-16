@@ -39,11 +39,11 @@ export function RecipientList({
   metrics: RecipientMetrics
 }) {
   const router = useRouter()
-  const [sending, setSending] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [sending, setSending] = useState<Set<string>>(new Set())
+  const [error, setError] = useState<{ recipientId: string; message: string } | null>(null)
 
   async function handleSend(recipientId: string) {
-    setSending(recipientId)
+    setSending((prev) => new Set(prev).add(recipientId))
     setError(null)
 
     // Abrimos la ventana de inmediato (gesto del usuario) y luego fijamos la URL,
@@ -57,32 +57,41 @@ export function RecipientList({
         else window.open(waUrl, '_blank')
       } else {
         win?.close()
-        setError('La clienta no tiene un teléfono válido.')
+        setError({ recipientId, message: 'La clienta no tiene un teléfono válido.' })
       }
       router.refresh()
     } catch (e) {
       win?.close()
-      setError(e instanceof Error ? e.message : 'No se pudo enviar')
+      setError({ recipientId, message: e instanceof Error ? e.message : 'No se pudo enviar' })
     } finally {
-      setSending(null)
+      setSending((prev) => {
+        const next = new Set(prev)
+        next.delete(recipientId)
+        return next
+      })
     }
   }
 
   function sendButton(r: RecipientItem) {
     return (
-      <Button
-        size="sm"
-        className="bg-[#25D366] text-white hover:bg-[#1ebe5b]"
-        onClick={() => handleSend(r.id)}
-        disabled={sending === r.id}
-      >
-        {sending === r.id ? (
-          <Loader2 className="mr-1 size-4 animate-spin" />
-        ) : (
-          <MessageCircle className="mr-1 size-4" />
+      <div className="flex flex-col items-end gap-1">
+        <Button
+          size="sm"
+          className="bg-[#25D366] text-white hover:bg-[#1ebe5b]"
+          onClick={() => handleSend(r.id)}
+          disabled={sending.has(r.id)}
+        >
+          {sending.has(r.id) ? (
+            <Loader2 className="mr-1 size-4 animate-spin" />
+          ) : (
+            <MessageCircle className="mr-1 size-4" />
+          )}
+          {r.sentAt ? 'Reenviar' : 'Enviar por WhatsApp'}
+        </Button>
+        {error?.recipientId === r.id && (
+          <span className="text-xs text-destructive">{error.message}</span>
         )}
-        {r.sentAt ? 'Reenviar' : 'Enviar por WhatsApp'}
-      </Button>
+      </div>
     )
   }
 
@@ -107,8 +116,6 @@ export function RecipientList({
           <p className="mt-1 text-2xl font-semibold text-primary">{metrics.vigentes}</p>
         </div>
       </div>
-
-      {error && <p className="text-sm text-destructive">{error}</p>}
 
       {recipients.length === 0 ? (
         <div className="studio-card overflow-hidden py-12 text-center">

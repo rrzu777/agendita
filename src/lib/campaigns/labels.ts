@@ -10,3 +10,7 @@ const SEGMENT_LABELS: Record<CampaignSegmentType, string> = {
 export function segmentLabel(segment: string): string {
   return SEGMENT_LABELS[segment as CampaignSegmentType] ?? segment
 }
+
+export function formatCampaignDate(value: Date): string {
+  return new Date(value).toLocaleDateString('es-CL', { year: 'numeric', month: 'short', day: 'numeric' })
+}
