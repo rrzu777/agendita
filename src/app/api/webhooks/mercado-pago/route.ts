@@ -15,8 +15,7 @@ import {
 import { logger } from '@/lib/logger'
 import { decryptSecret } from '@/lib/payments/encryption'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
-import { reverseVisitPoints } from '@/lib/loyalty/credit'
-import { reverseAutoRewardsForBooking } from '@/lib/loyalty/automatic'
+import { clawbackLoyaltyForBooking } from '@/lib/loyalty/clawback'
 import { reversePackagePurchaseInTx } from '@/lib/packages/reverse'
 import { reverseBookingPaymentInTx } from '@/lib/bookings/reverse-payment'
 import { formatBookingNumber } from '@/lib/bookings/number'
@@ -671,14 +670,11 @@ export async function POST(request: NextRequest) {
         })
         if (finalStatus === 'refunded' && payment.bookingId) {
           await releaseRedemptionForBooking(tx, payment.bookingId, 'refunded')
-          await reverseVisitPoints(tx, payment.bookingId)
-          const cfg = await tx.loyaltyConfig.findUnique({
-            where: { businessId: payment.businessId },
-            select: { clawbackAutoRewardOnRefund: true },
+          await clawbackLoyaltyForBooking(tx, {
+            bookingId: payment.bookingId,
+            businessId: payment.businessId,
+            now: new Date(),
           })
-          if (cfg?.clawbackAutoRewardOnRefund) {
-            await reverseAutoRewardsForBooking(tx, payment.bookingId, new Date(), payment.businessId)
-          }
         }
         // Paquete: B4b-2 solo degrada el Payment (arriba). No se revierten grants
         // (política de reversión de paquete activo = B4b-3). El refund real por MP

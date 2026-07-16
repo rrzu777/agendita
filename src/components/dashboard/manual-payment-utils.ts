@@ -1,3 +1,5 @@
+import { isManuallyPayableStatus } from '@/lib/bookings/payable-statuses'
+
 export type ManualPaymentMode = 'fixed' | 'percentage'
 
 // Formato "$1.000 CLP" de la UI de pagos del dashboard (distinto del Intl de
@@ -24,13 +26,9 @@ export type ManualPaymentBooking = {
 }
 
 export function isManualPaymentAllowed(booking: Pick<ManualPaymentBooking, 'status' | 'remainingBalance'>) {
-  return (
-    booking.remainingBalance > 0 &&
-    // completed entra SOLO con saldo: recobro post-chargeback (spec FU-B4b-3 §6)
-    // y saldo pendiente después de atender — mismo criterio que el saldo por
-    // transferencia (allowCompleted).
-    (booking.status === 'pending_payment' || booking.status === 'confirmed' || booking.status === 'completed')
-  )
+  // Estados desde la fuente única compartida con assertBookingPayable (server);
+  // el gate de monto (saldo > 0) es propio de esta superficie.
+  return booking.remainingBalance > 0 && isManuallyPayableStatus(booking.status)
 }
 
 export function calculateManualPaymentAmount({
