@@ -10,6 +10,7 @@ import {
   sendPackagePurchasedNotification,
   sendPackageSoldNotificationToBusiness,
   sendPackageDisputedToBusiness,
+  sendBookingDisputedToBusiness,
 } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
 import { decryptSecret } from '@/lib/payments/encryption'
@@ -17,6 +18,8 @@ import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { reverseVisitPoints } from '@/lib/loyalty/credit'
 import { reverseAutoRewardsForBooking } from '@/lib/loyalty/automatic'
 import { reversePackagePurchaseInTx } from '@/lib/packages/reverse'
+import { reverseBookingPaymentInTx } from '@/lib/bookings/reverse-payment'
+import { formatBookingNumber } from '@/lib/bookings/number'
 import type { Prisma } from '@prisma/client'
 
 function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
@@ -394,6 +397,74 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, message: `Package ${reverseMode} processed`, packagePurchaseId })
       }
       // purchase ya no está active (eco del refund voluntario / redelivery) → cae al 200 idempotente.
+    }
+
+    // FU-B4b-3: chargeback/refund del pago YA APROBADO de una RESERVA. Igual que
+    // la rama de paquete de arriba, hay que actuar ANTES del early-return approved.
+    // Política (spec §1-2): la reserva NO cambia de status (la dueña decide); los
+    // montos cobrables se restauran vía recalc y paymentStatus queda 'refunded'
+    // como marcador. 'charged_back' = disputa → alarma; 'refunded' = devolución
+    // voluntaria desde el panel de MP → silencioso.
+    // Garantía de reconciliación por eco: si una reversión local falla a mitad,
+    // MP re-entrega este evento y el flip CAS lo reintenta idempotente.
+    if (
+      (mpStatus === 'charged_back' || mpStatus === 'refunded') &&
+      payment.bookingId &&
+      payment.booking &&
+      payment.status === 'approved'
+    ) {
+      const bookingId = payment.bookingId
+      const mode = mpStatus === 'charged_back' ? 'chargeback' : 'voluntary'
+      let reversed = false
+      await prisma.$transaction(async (tx) => {
+        const result = await reverseBookingPaymentInTx(tx, {
+          paymentId: payment.id,
+          bookingId,
+          businessId: payment.businessId,
+          customerId: payment.booking!.customerId,
+          amount: mpPayment.transaction_amount,
+          currency: payment.currency,
+          mode,
+          now: new Date(),
+          flipData: { providerPaymentId: mpPayment.id, rawPayload: mpPayment as unknown as Prisma.InputJsonValue },
+        })
+        reversed = result.reversed
+      })
+      if (reversed && mode === 'chargeback') {
+        // Datos para la alarma: un fetch fuera de la tx (best-effort como todas las notifs).
+        const bk = await prisma.booking.findUnique({
+          where: { id: bookingId },
+          select: {
+            bookingNumber: true, startDateTime: true,
+            customer: { select: { name: true } },
+            service: { select: { name: true } },
+            business: { select: { name: true, currency: true, timezone: true } },
+          },
+        })
+        if (bk) {
+          await sendMultiNotificationSafely('booking disputed business', async () =>
+            sendBookingDisputedToBusiness(payment.businessId, {
+              businessName: bk.business.name,
+              customerName: bk.customer?.name ?? 'Clienta',
+              serviceName: bk.service?.name ?? 'servicio',
+              bookingLabel: formatBookingNumber(bk.bookingNumber, bookingId),
+              startDateTime: bk.startDateTime,
+              businessTimezone: bk.business.timezone || 'America/Santiago',
+              amount: mpPayment.transaction_amount,
+              businessCurrency: bk.business.currency || 'CLP',
+            }),
+          )
+        }
+      }
+      if (reversed) {
+        revalidatePath('/dashboard/bookings')
+        if (payment.booking.customerId) revalidatePath(`/dashboard/customers/${payment.booking.customerId}`)
+      }
+      return NextResponse.json({
+        success: true,
+        message: mode === 'chargeback' ? 'Booking chargeback processed' : 'Booking refund processed',
+        bookingId,
+      })
     }
 
     // Ya está approved → idempotente, 200 sin side effects
