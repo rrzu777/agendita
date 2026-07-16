@@ -183,6 +183,19 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           )}
         </div>
       )}
+      {booking.status === 'completed' && canRegisterPayment && (
+        // Recobro (spec FU-B4b-3 §6): completed con saldo (post-chargeback o
+        // saldo tras atender) — solo registrar pago, sin cancelar/reprogramar.
+        <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
+          <ManualPaymentDialog
+            bookings={[booking]}
+            businessCurrency={businessCurrency}
+            defaultBookingId={booking.id}
+            triggerVariant="outline"
+            triggerClassName="flex-1 h-10 text-sm font-semibold"
+          />
+        </div>
+      )}
       {reviveState && (
         <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
           <ReviveBookingButton

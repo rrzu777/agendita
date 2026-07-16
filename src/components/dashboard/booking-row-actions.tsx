@@ -65,6 +65,10 @@ export function BookingRowActions({
   const isPending = booking.status === 'pending_payment'
   const isActionable = isConfirmed || isPending
   const isExpired = booking.status === 'expired'
+  // Recobro (spec FU-B4b-3 §6): una completed con saldo (post-chargeback o saldo
+  // tras atender) debe poder cobrarse desde la tabla — solo "Cobrar", sin
+  // cancelar/reprogramar.
+  const isCompletedWithBalance = booking.status === 'completed' && canPay
 
   if (isExpired) {
     const { canReopen, reason } = getReviveReopenState(booking, !!transferEnabled)
@@ -84,7 +88,7 @@ export function BookingRowActions({
     )
   }
 
-  if (!isActionable) {
+  if (!isActionable && !isCompletedWithBalance) {
     return contact ? <div className="flex justify-end">{contact}</div> : null
   }
 
@@ -111,12 +115,14 @@ export function BookingRowActions({
             Registrar pago
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem
-          variant="destructive"
-          onSelect={(e) => { e.preventDefault(); setCancelOpen(true) }}
-        >
-          Cancelar
-        </DropdownMenuItem>
+        {isActionable && (
+          <DropdownMenuItem
+            variant="destructive"
+            onSelect={(e) => { e.preventDefault(); setCancelOpen(true) }}
+          >
+            Cancelar
+          </DropdownMenuItem>
+        )}
       </TableActions>
 
       <CancelBookingButton
