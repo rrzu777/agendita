@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { ForbiddenError } from '@/lib/auth/server'
 import { getCampaignDetail } from '@/server/actions/campaigns'
-import { formatCampaignDate, segmentLabel } from '@/lib/campaigns/labels'
+import { segmentLabel } from '@/lib/campaigns/labels'
+import { formatMediumDate } from '@/lib/format-date'
 import { RecipientList } from './recipient-list'
 
 export const dynamic = 'force-dynamic'
@@ -81,7 +82,7 @@ export default async function CampaignDetailPage({ params }: Props) {
     <div>
       <DashboardHeader
         title={campaign.name}
-        subtitle={`${segmentLabel(campaign.segmentType)} · ${campaign.promotion.name} · ${formatCampaignDate(campaign.createdAt)}`}
+        subtitle={`${segmentLabel(campaign.segmentType)} · ${campaign.promotion.name} · ${formatMediumDate(campaign.createdAt)}`}
       />
       <div className="p-5 md:p-10">
         {/* Back link (patrón customers/[id]) */}
@@ -96,7 +97,7 @@ export default async function CampaignDetailPage({ params }: Props) {
 
         <RecipientList
           recipients={recipients}
-          metrics={{ total: campaign.recipients.length, enviadas, canjearon, vigentes }}
+          metrics={{ enviadas, canjearon, vigentes }}
         />
       </div>
     </div>

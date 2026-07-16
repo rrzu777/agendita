@@ -16,7 +16,7 @@ import {
   DEFAULT_FREQUENT_MIN,
   type CampaignSegmentType,
 } from '@/lib/campaigns/schema'
-import { defaultMessageForSegment } from '@/lib/campaigns/message'
+import { CAMPAIGN_PLACEHOLDERS, defaultMessageForSegment } from '@/lib/campaigns/message'
 import { segmentLabel } from '@/lib/campaigns/labels'
 
 export interface PromotionOption {
@@ -93,10 +93,10 @@ export function NewCampaignDialog({
             newPromotion: {
               name: newPromoName,
               rewardType: reward.rewardType,
-              rewardValue: reward.rewardType === 'free_service' ? 0 : toIntOrNull(reward.rewardValue) ?? 0,
+              rewardValue: toIntOrNull(reward.rewardValue) ?? 0,
               maxDiscount: reward.rewardType === 'percentage' ? toIntOrNull(reward.maxDiscount) : null,
               appliesToAll: reward.appliesToAll,
-              serviceIds: reward.appliesToAll ? [] : reward.serviceIds,
+              serviceIds: reward.serviceIds,
               grantExpiryDays: toIntOrNull(grantExpiryDays),
             },
           }),
@@ -292,7 +292,7 @@ export function NewCampaignDialog({
               required
             />
             <p className="text-xs text-muted-foreground">
-              Podés usar {'{nombre}'} {'{codigo}'} {'{vencimiento}'} {'{negocio}'} y se reemplazan al enviar.
+              Podés usar {CAMPAIGN_PLACEHOLDERS.map((p) => `{${p}}`).join(' ')} y se reemplazan al enviar.
             </p>
           </div>
 

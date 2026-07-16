@@ -19,7 +19,6 @@ export interface RecipientItem {
 }
 
 export interface RecipientMetrics {
-  total: number
   enviadas: number
   canjearon: number
   vigentes: number
@@ -101,7 +100,7 @@ export function RecipientList({
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div className="studio-card p-4">
           <p className="studio-eyebrow">Destinatarias</p>
-          <p className="mt-1 text-2xl font-semibold text-primary">{metrics.total}</p>
+          <p className="mt-1 text-2xl font-semibold text-primary">{recipients.length}</p>
         </div>
         <div className="studio-card p-4">
           <p className="studio-eyebrow">Enviadas</p>
@@ -152,13 +151,13 @@ export function RecipientList({
                     <TruncatedCell className="font-semibold text-primary" primary={r.name} />
                     <TableCell className={`${TABLE_COL.contact} whitespace-nowrap text-sm`}>{r.phone}</TableCell>
                     <TableCell className={`${TABLE_COL.status} text-sm`}>
-                      {r.grantStatus === 'redeemed' ? (
-                        <span className="font-semibold text-green-700">{statusLabel(r)}</span>
-                      ) : r.sentAt ? (
-                        <span className="text-muted-foreground">{statusLabel(r)}</span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+                      <span
+                        className={
+                          r.grantStatus === 'redeemed' ? 'font-semibold text-green-700' : 'text-muted-foreground'
+                        }
+                      >
+                        {statusLabel(r)}
+                      </span>
                     </TableCell>
                     <TableCell className="w-[210px] text-right">{sendButton(r)}</TableCell>
                   </TableRow>

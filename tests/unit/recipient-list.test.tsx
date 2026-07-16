@@ -40,7 +40,7 @@ describe('RecipientList', () => {
             grantStatus: null,
           },
         ]}
-        metrics={{ total: 7, enviadas: 3, canjearon: 2, vigentes: 1 }}
+        metrics={{ enviadas: 3, canjearon: 2, vigentes: 1 }}
       />,
     )
 
@@ -58,7 +58,8 @@ describe('RecipientList', () => {
     expect(html).toContain('Enviadas')
     expect(html).toContain('Canjearon')
     expect(html).toContain('Vigentes')
-    expect(html).toContain('>7<')
+    // "Destinatarias" ahora se deriva de recipients.length (2 en este render).
+    expect(html).toContain('>2<')
     expect(html).toContain('>3<')
     expect(html).toContain('>2<')
     expect(html).toContain('>1<')
@@ -78,7 +79,7 @@ describe('RecipientList', () => {
             grantStatus: 'redeemed',
           },
         ]}
-        metrics={{ total: 1, enviadas: 1, canjearon: 1, vigentes: 0 }}
+        metrics={{ enviadas: 1, canjearon: 1, vigentes: 0 }}
       />,
     )
 
@@ -91,7 +92,7 @@ describe('RecipientList', () => {
     const html = renderToStaticMarkup(
       <RecipientList
         recipients={[]}
-        metrics={{ total: 0, enviadas: 0, canjearon: 0, vigentes: 0 }}
+        metrics={{ enviadas: 0, canjearon: 0, vigentes: 0 }}
       />,
     )
 

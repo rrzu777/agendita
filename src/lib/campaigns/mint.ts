@@ -1,5 +1,6 @@
 import { Prisma, PromotionGrant } from '@prisma/client'
 import { generateGrantCode } from '@/lib/loyalty/redeem'
+import { DAY_MS } from '@/lib/dates'
 
 type Tx = Prisma.TransactionClient
 
@@ -26,7 +27,7 @@ export async function mintCampaignGrant(tx: Tx, args: MintCampaignGrantArgs): Pr
 
   const now = args.now ?? new Date()
   const expiryDays = args.promotion.grantExpiryDays ?? args.config.grantExpiryDays
-  const expiresAt = expiryDays != null ? new Date(now.getTime() + expiryDays * 86_400_000) : null
+  const expiresAt = expiryDays != null ? new Date(now.getTime() + expiryDays * DAY_MS) : null
   const code = await generateGrantCode(tx, args.businessId)
 
   return tx.promotionGrant.create({

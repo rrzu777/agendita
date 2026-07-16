@@ -12,6 +12,7 @@ import { renderCampaignMessage } from '@/lib/campaigns/message'
 import { mintCampaignGrant } from '@/lib/campaigns/mint'
 import { isP2002 } from '@/lib/loyalty/credit'
 import { buildWhatsappUrl } from '@/lib/notifications/whatsapp'
+import { isWhatsappablePhone } from '@/lib/customers/phone'
 
 // NOTE: 'use server' — SOLO funciones async exportadas. Schemas/consts/tipos
 // viven en src/lib/campaigns/.
@@ -23,7 +24,7 @@ export async function listCampaignPromotions() {
   return prisma.promotion.findMany({
     where: { businessId, triggerType: 'granted', isActive: true },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, name: true, rewardType: true, rewardValue: true, pointsCost: true, grantExpiryDays: true },
+    select: { id: true, name: true },
   })
 }
 
@@ -81,7 +82,7 @@ export async function createCampaign(data: unknown): Promise<{ campaignId: strin
       data: {
         businessId, name: d.name, segmentType: d.segmentType, segmentParams: d.segmentParams ?? undefined,
         promotionId, messageTemplate: d.messageTemplate, createdByUserId: user.id,
-        recipients: { create: segment.map((c) => ({ customerId: c.id })) },
+        recipients: { createMany: { data: segment.map((c) => ({ customerId: c.id })) } },
       },
       select: { id: true },
     })
@@ -107,7 +108,7 @@ export async function getCampaignDetail(campaignId: string) {
   const campaign = await prisma.campaign.findFirst({
     where: { id: campaignId, businessId },
     select: {
-      id: true, name: true, segmentType: true, messageTemplate: true, promotionId: true, createdAt: true,
+      id: true, name: true, segmentType: true, promotionId: true, createdAt: true,
       promotion: { select: { name: true, rewardType: true, rewardValue: true } },
       recipients: {
         orderBy: { customer: { name: 'asc' } },
@@ -186,7 +187,6 @@ export async function sendCampaignMessage(recipientId: string): Promise<{ waUrl:
     nombre: firstName, codigo: grant.code, vencimiento, negocio: recipient.campaign.business.name,
   })
 
-  const digits = recipient.customer.phone.replace(/\D/g, '')
-  const waUrl = digits.length >= 8 ? buildWhatsappUrl(recipient.customer.phone, message) : null
+  const waUrl = isWhatsappablePhone(recipient.customer.phone) ? buildWhatsappUrl(recipient.customer.phone, message) : null
   return { waUrl }
 }

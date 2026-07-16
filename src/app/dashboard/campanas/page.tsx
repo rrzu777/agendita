@@ -27,14 +27,15 @@ export default async function CampanasPage() {
   let services: Awaited<ReturnType<typeof getServices>> = []
 
   try {
-    campaigns = await getCampaigns()
-    promotions = await listCampaignPromotions()
-    services = await getServices()
+    ;[campaigns, promotions, services] = await Promise.all([
+      getCampaigns(),
+      listCampaignPromotions(),
+      getServices(),
+    ])
   } catch {
     // Auth error fallback
   }
 
-  const promotionOptions = promotions.map((p) => ({ id: p.id, name: p.name }))
   const serviceOptions = services.map((s) => ({ id: s.id, name: s.name }))
 
   return (
@@ -49,7 +50,7 @@ export default async function CampanasPage() {
             <h2 className="font-heading text-2xl font-semibold tracking-tight text-primary">Tus campañas</h2>
             <p className="text-sm text-muted-foreground">Segmentá clientas y regalales un beneficio.</p>
           </div>
-          <NewCampaignDialog promotions={promotionOptions} services={serviceOptions} currency={currency} />
+          <NewCampaignDialog promotions={promotions} services={serviceOptions} currency={currency} />
         </div>
 
         <CampaignList campaigns={campaigns} />

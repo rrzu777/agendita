@@ -1,16 +1,16 @@
 import type { CampaignSegmentType } from './schema'
 
-export interface CampaignMessageVars {
-  nombre: string
-  codigo: string
-  vencimiento: string
-  negocio: string
-}
+export const CAMPAIGN_PLACEHOLDERS = ['nombre', 'codigo', 'vencimiento', 'negocio'] as const
+
+export type CampaignMessageVars = Record<(typeof CAMPAIGN_PLACEHOLDERS)[number], string>
+
+// Regex con flag g y estado interno: seguro porque .replace lo resetea en cada uso.
+const PLACEHOLDER_RE = new RegExp(`\\{(${CAMPAIGN_PLACEHOLDERS.join('|')})\\}`, 'g')
 
 /** Sustituye {nombre} {codigo} {vencimiento} {negocio}. Placeholders desconocidos
  *  quedan literales (no rompen). */
 export function renderCampaignMessage(template: string, vars: CampaignMessageVars): string {
-  return template.replace(/\{(nombre|codigo|vencimiento|negocio)\}/g, (_, key: keyof CampaignMessageVars) => vars[key])
+  return template.replace(PLACEHOLDER_RE, (_, key: keyof CampaignMessageVars) => vars[key])
 }
 
 const DEFAULTS: Record<CampaignSegmentType, string> = {
