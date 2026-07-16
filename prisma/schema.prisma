@@ -102,6 +102,7 @@ model Business {
   depositPolicy        String?
   packageProducts      PackageProduct[]
   packagePurchases     PackagePurchase[]
+  campaigns            Campaign[]
 }
 
 enum PaymentAccountStatus {
@@ -287,14 +288,14 @@ model AvailabilityRule {
 }
 
 model TimeBlock {
-  id            String   @id @default(cuid())
-  businessId    String
-  startDateTime DateTime
-  endDateTime   DateTime
-  reason        String?
+  id                      String   @id @default(cuid())
+  businessId              String
+  startDateTime           DateTime
+  endDateTime             DateTime
+  reason                  String?
   // Minutos que una cita puede invadir por cada borde del bloqueo (0 = estricto)
-  overlapToleranceMinutes Int @default(0)
-  createdAt     DateTime @default(now())
+  overlapToleranceMinutes Int      @default(0)
+  createdAt               DateTime @default(now())
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -302,18 +303,18 @@ model TimeBlock {
 }
 
 model TimeBlockSeries {
-  id         String    @id @default(cuid())
-  businessId String
-  daysOfWeek Int[]
-  startTime  String
-  endTime    String
-  reason     String?
+  id                      String    @id @default(cuid())
+  businessId              String
+  daysOfWeek              Int[]
+  startTime               String
+  endTime                 String
+  reason                  String?
   // Minutos que una cita puede invadir por cada borde de cada ocurrencia (0 = estricto)
-  overlapToleranceMinutes Int @default(0)
-  anchorDate DateTime
-  until      DateTime?
-  isActive   Boolean   @default(true)
-  createdAt  DateTime  @default(now())
+  overlapToleranceMinutes Int       @default(0)
+  anchorDate              DateTime
+  until                   DateTime?
+  isActive                Boolean   @default(true)
+  createdAt               DateTime  @default(now())
 
   business   Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
   exceptions TimeBlockException[]
@@ -363,9 +364,10 @@ model Customer {
   loyaltyLedger LoyaltyLedger[]
   loyaltyGrants PromotionGrant[]
 
-  referralsMade    Referral[]        @relation("ReferralReferrer")
-  referralReceived Referral?         @relation("ReferralReferred")
-  packagePurchases PackagePurchase[]
+  referralsMade      Referral[]          @relation("ReferralReferrer")
+  referralReceived   Referral?           @relation("ReferralReferred")
+  packagePurchases   PackagePurchase[]
+  campaignRecipients CampaignRecipient[]
 
   @@index([businessId])
   @@index([businessId, phone])
@@ -398,17 +400,17 @@ model Booking {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  business             Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  service              Service              @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  customer             Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  payments             Payment[]
-  ledgerEntries        LedgerEntry[]
-  redemption           PromotionRedemption?
-  review               Review?
-  loyaltyLedger        LoyaltyLedger[]
-  reviewToken          String?              @unique
-  reviewTokenCreatedAt DateTime?
-  reminderSentAt       DateTime?
+  business                       Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  service                        Service              @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  customer                       Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  payments                       Payment[]
+  ledgerEntries                  LedgerEntry[]
+  redemption                     PromotionRedemption?
+  review                         Review?
+  loyaltyLedger                  LoyaltyLedger[]
+  reviewToken                    String?              @unique
+  reviewTokenCreatedAt           DateTime?
+  reminderSentAt                 DateTime?
   transferReminderCustomerSentAt DateTime? // CAS del recordatorio a la clienta (pre-declaración)
   transferReminderBusinessSentAt DateTime? // CAS del recordatorio a la dueña (declarada sin verificar)
 
@@ -632,6 +634,13 @@ enum RedemptionRelease {
   refunded
 }
 
+enum CampaignSegment {
+  birthday_month
+  inactive
+  frequent
+  pending_balance
+}
+
 model Promotion {
   id              String           @id @default(cuid())
   businessId      String
@@ -665,6 +674,7 @@ model Promotion {
   services    Service[]             @relation("PromotionServices")
   redemptions PromotionRedemption[]
   grants      PromotionGrant[]
+  campaigns   Campaign[]
 
   @@unique([businessId, code])
   @@index([businessId, isActive])
@@ -720,6 +730,8 @@ model PromotionGrant {
   promotion       Promotion        @relation(fields: [promotionId], references: [id])
   customer        Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   packagePurchase PackagePurchase? @relation(fields: [packagePurchaseId], references: [id])
+
+  campaignRecipients CampaignRecipient[]
 
   @@unique([businessId, code])
   @@unique([customerId, requestId])
@@ -850,4 +862,35 @@ model Referral {
 
   @@index([businessId, status])
   @@index([referrerCustomerId])
+}
+
+model Campaign {
+  id              String              @id @default(cuid())
+  businessId      String
+  business        Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name            String
+  segmentType     CampaignSegment
+  segmentParams   Json?
+  promotionId     String
+  promotion       Promotion           @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  messageTemplate String
+  createdByUserId String?
+  createdAt       DateTime            @default(now())
+  recipients      CampaignRecipient[]
+
+  @@index([businessId, createdAt])
+}
+
+model CampaignRecipient {
+  id         String          @id @default(cuid())
+  campaignId String
+  campaign   Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  grantId    String?
+  grant      PromotionGrant? @relation(fields: [grantId], references: [id], onDelete: SetNull)
+  sentAt     DateTime?
+
+  @@unique([campaignId, customerId])
+  @@index([campaignId])
 }
