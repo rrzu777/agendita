@@ -14,6 +14,7 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
+import { PaymentRevertedBadge } from '@/components/dashboard/payment-reverted-badge'
 import { BookingRowActions } from '@/components/dashboard/booking-row-actions'
 import { ReviveBookingButton } from '@/components/dashboard/revive-booking-dialog'
 import { getReviveReopenState } from '@/components/dashboard/revive-utils'
@@ -107,6 +108,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           <span className={booking.paymentStatus === 'fully_paid' ? 'text-green-700' : 'text-primary'}>
             ${booking.depositPaid.toLocaleString('es-CL')} de ${booking.finalAmount.toLocaleString('es-CL')}
           </span>
+          <PaymentRevertedBadge paymentStatus={booking.paymentStatus} />
         </div>
         {booking.customer?.phone && (
           <div className="flex items-center gap-3 text-sm">
@@ -179,6 +181,19 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           {booking.status === 'pending_payment' && (
             <CancelBookingButton bookingId={booking.id} size="default" />
           )}
+        </div>
+      )}
+      {booking.status === 'completed' && canRegisterPayment && (
+        // Recobro (spec FU-B4b-3 §6): completed con saldo (post-chargeback o
+        // saldo tras atender) — solo registrar pago, sin cancelar/reprogramar.
+        <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
+          <ManualPaymentDialog
+            bookings={[booking]}
+            businessCurrency={businessCurrency}
+            defaultBookingId={booking.id}
+            triggerVariant="outline"
+            triggerClassName="flex-1 h-10 text-sm font-semibold"
+          />
         </div>
       )}
       {reviveState && (
@@ -329,6 +344,7 @@ export default async function BookingsPage() {
                             Saldo: ${booking.remainingBalance.toLocaleString('es-CL')}
                           </div>
                         )}
+                        <PaymentRevertedBadge paymentStatus={booking.paymentStatus} />
                       </TableCell>
                       <TableCell className={`${TABLE_COL.actions} text-right`}>
                         <BookingRowActions

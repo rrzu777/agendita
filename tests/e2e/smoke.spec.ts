@@ -58,11 +58,15 @@ function nextBookableDate(afterDays = 5): Date {
   return date
 }
 
-/** Navigate to future month on the date picker so `targetDate` is visible. */
+/** Navigate to future month on the date picker so `targetDate` is visible.
+ *  Navega EXACTAMENTE monthDiff meses (0 = mes actual, sin navegación) — igual
+ *  que el helper de public.spec.ts. El viejo piso `monthDiff >= 1` forzaba el
+ *  mes siguiente y clickeaba el mismo número de día en el mes equivocado: la
+ *  fecha reservada rotaba de día de semana cada semana y fallaba cuando caía
+ *  domingo (sin disponibilidad), p.ej. 23-ago-2026 corriendo un 16-jul. */
 async function selectBookingDate(page: Page, targetDate: Date) {
   const now = new Date()
-  let monthDiff = (targetDate.getFullYear() - now.getFullYear()) * 12 + targetDate.getMonth() - now.getMonth()
-  if (monthDiff < 1) monthDiff = 1
+  const monthDiff = (targetDate.getFullYear() - now.getFullYear()) * 12 + targetDate.getMonth() - now.getMonth()
   for (let i = 0; i < monthDiff; i++) {
     const nextBtn = page.getByRole('button', { name: /mes siguiente|siguiente/i }).first()
     if (await nextBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
@@ -339,39 +343,80 @@ test.describe('public booking', () => {
 test.describe('dashboard bookings', () => {
   test('create manual booking → fill form → submit → appears in list', async ({ page }) => {
     setOwnerAuth(page)
-    await page.goto('/dashboard/bookings/new')
-    await page.waitForLoadState('networkidle')
 
-    // Select service
-    await page.locator('select#serviceId').selectOption({ index: 1 }).catch(async () => {
-      const options = page.locator('select#serviceId option')
-      const count = await options.count()
-      if (count > 1) await page.locator('select#serviceId').selectOption({ index: 1 })
-    })
-
-    // Fill customer info
     const uniqueName = `Manual Cliente ${Date.now()}`
-    await page.getByLabel('Nombre').fill(uniqueName)
-    await page.getByLabel('Teléfono').fill('+56955555555')
-
-    // Fill date = today + 3 days (next weekday)
+    // Teléfono único por corrida: la ficha de cliente se matchea por TELÉFONO
+    // (findOrCreateCustomerInTx) y conserva su nombre original — con un número
+    // fijo, un retry de Playwright reusa la Customer del intento anterior y la
+    // lista muestra el nombre viejo, rompiendo el assert de abajo.
+    const uniquePhone = `+569${String(Date.now()).slice(-8)}`
+    // Fecha = hoy + 3 días (siguiente día hábil). OJO: el salto de fin de semana
+    // hace que desde jue/vie/sáb varias afterDays distintas colapsen al MISMO
+    // lunes, así que una hora fija puede estar tomada por reservas de otros
+    // specs. Mismo remedio que sus helpers: banda 10:00–14:30 (entra en toda
+    // regla incluso con servicios de 120 min) + reintento con otra hora si el
+    // slot ya está ocupado.
     const futureDate = nextBookableDate(3)
     const dateStr = toLocalDateStr(futureDate)
-    await page.locator('input#date').fill(dateStr)
-    // 10:00 fits every availability rule (incl. Saturday 10:00–15:00) for the
-    // selected service duration, regardless of which weekday the date lands on.
-    await selectDashboardTime(page, '10:00')
+    const times = [
+      '10:00', '10:30', '11:00', '11:30', '12:00',
+      '12:30', '13:00', '13:30', '14:00', '14:30',
+    ]
+    let lastError = ''
+    let created = false
 
-    // Submit
-    await page.getByRole('button', { name: /crear reserva/i }).click()
+    for (const time of times) {
+      await page.goto('/dashboard/bookings/new')
+      await page.waitForLoadState('networkidle')
 
-    // Should see success message or redirect
-    await expect(
-      page.getByText(/reserva creada|redirigiendo/i)
-    ).toBeVisible({ timeout: 10_000 }).catch(async () => {
-      await page.waitForURL('/dashboard/bookings', { timeout: 5_000 })
-      await expect(page.getByText(uniqueName).first()).toBeVisible({ timeout: 10_000 })
-    })
+      // Select service
+      await page.locator('select#serviceId').selectOption({ index: 1 }).catch(async () => {
+        const options = page.locator('select#serviceId option')
+        const count = await options.count()
+        if (count > 1) await page.locator('select#serviceId').selectOption({ index: 1 })
+      })
+
+      // Fill customer info
+      await page.getByLabel('Nombre').fill(uniqueName)
+      await page.getByLabel('Teléfono').fill(uniquePhone)
+
+      await page.locator('input#date').fill(dateStr)
+      await selectDashboardTime(page, time)
+
+      // Submit
+      await page.getByRole('button', { name: /crear reserva/i }).click()
+
+      const successHeading = page.getByRole('heading', { name: /reserva creada/i })
+      const errorBox = page.locator('div.text-destructive').filter({ hasText: /\S/ }).first()
+      await Promise.race([
+        successHeading.waitFor({ timeout: 20_000 }).catch(() => {}),
+        errorBox.waitFor({ timeout: 20_000 }).catch(() => {}),
+      ])
+
+      // Éxito = pantalla "Reserva creada", o su auto-redirect (1.5s) a la lista.
+      if (await successHeading.isVisible().catch(() => false)) { created = true; break }
+      if (!(await errorBox.isVisible().catch(() => false))) {
+        // Sin error visible: la pantalla de éxito pudo redirigir antes del
+        // isVisible de arriba — esperar el redirect antes de tratarlo como fallo
+        // (sin esto, un éxito no detectado repite el intento y crea DOS reservas).
+        const redirected = await page
+          .waitForURL('**/dashboard/bookings', { timeout: 5_000 })
+          .then(() => true)
+          .catch(() => false)
+        if (redirected) { created = true; break }
+      }
+
+      lastError = (await errorBox.textContent().catch(() => '')) ?? ''
+      if (/disponible|ocupado/i.test(lastError)) continue // slot tomado → probar otra hora
+      throw new Error(`create manual booking falló: ${lastError || '(sin texto de error)'}`)
+    }
+    if (!created) {
+      throw new Error(`create manual booking: sin slot libre tras reintentos (último: ${lastError})`)
+    }
+
+    // Aparece en la lista
+    await page.goto('/dashboard/bookings')
+    await expect(page.getByText(uniqueName).first()).toBeVisible({ timeout: 10_000 })
   })
 
   test('reschedule booking → pick new date → pick new slot → submit → time updated', async ({ page }) => {

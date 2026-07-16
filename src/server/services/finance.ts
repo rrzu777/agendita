@@ -284,7 +284,11 @@ export async function applyApprovedPackagePayment({
   return { wasActivated: true }
 }
 
-async function recalcBookingFromPayments(tx: Prisma.TransactionClient, bookingId: string): Promise<{ booking: { id: string; status: string; businessId: string; customerId: string; totalPrice: number; depositRequired: number; depositPaid: number; remainingBalance: number; finalAmount: number; paymentStatus: string }; wasConfirmed: boolean }> {
+export async function recalcBookingFromPayments(
+  tx: Prisma.TransactionClient,
+  bookingId: string,
+  opts?: { paymentStatusOverride?: BookingPaymentStatus },
+): Promise<{ booking: { id: string; status: string; businessId: string; customerId: string; totalPrice: number; depositRequired: number; depositPaid: number; remainingBalance: number; finalAmount: number; paymentStatus: string }; wasConfirmed: boolean }> {
   const booking = await tx.booking.findUnique({
     where: { id: bookingId },
   })
@@ -324,6 +328,10 @@ async function recalcBookingFromPayments(tx: Prisma.TransactionClient, bookingId
   } else {
     newPaymentStatus = BookingPaymentStatus.unpaid
   }
+
+  // Reversión de pago (chargeback/refund MP): el caller quiere los montos
+  // verdaderos pero con el marcador 'refunded' en vez del estado derivado.
+  if (opts?.paymentStatusOverride) newPaymentStatus = opts.paymentStatusOverride
 
   const shouldConfirm =
     booking.status === BookingStatus.pending_payment &&

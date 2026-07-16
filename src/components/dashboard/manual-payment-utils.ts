@@ -26,7 +26,10 @@ export type ManualPaymentBooking = {
 export function isManualPaymentAllowed(booking: Pick<ManualPaymentBooking, 'status' | 'remainingBalance'>) {
   return (
     booking.remainingBalance > 0 &&
-    (booking.status === 'pending_payment' || booking.status === 'confirmed')
+    // completed entra SOLO con saldo: recobro post-chargeback (spec FU-B4b-3 §6)
+    // y saldo pendiente después de atender — mismo criterio que el saldo por
+    // transferencia (allowCompleted).
+    (booking.status === 'pending_payment' || booking.status === 'confirmed' || booking.status === 'completed')
   )
 }
 

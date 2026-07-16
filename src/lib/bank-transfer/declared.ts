@@ -136,16 +136,16 @@ export function isDeclaredPkgTransferPayment(
 /** "Compra de paquete con una transferencia declarada pendiente de verificar."
  *  Fuente única del predicado que usan la lista de la dueña (getPendingPackageTransfers)
  *  y el contador del home. Pinnea el prefijo bt-pkg-declared (via declaredPkgTransferPaymentWhere),
- *  así un pago manual registrado por otra vía no cuenta como transferencia por verificar. */
-export function pendingPackageTransferWhere(
-  businessId: string,
-  now: Date,
-): Prisma.PackagePurchaseWhereInput {
+ *  así un pago manual registrado por otra vía no cuenta como transferencia por verificar.
+ *  SIN filtro de hold a propósito (fix zombie): el sweep exime a las declaradas de
+ *  expirar (la plata pudo enviarse), así que una declarada con hold vencido debe
+ *  seguir visible hasta que la dueña confirme o rechace — filtrarla la dejaba
+ *  pending invisible para siempre. */
+export function pendingPackageTransferWhere(businessId: string): Prisma.PackagePurchaseWhereInput {
   return {
     businessId,
     status: 'pending',
     source: 'online',
-    holdExpiresAt: { gte: now },
     payments: { some: declaredPkgTransferPaymentWhere },
   }
 }

@@ -50,7 +50,16 @@ export async function expireStaleHolds(
     const pkgIds = expiredPurchases.map((p) => p.id)
     await db.$transaction(async (tx) => {
       const res = await tx.packagePurchase.updateMany({
-        where: { id: { in: pkgIds }, status: 'pending', holdExpiresAt: { lt: now } },
+        where: {
+          id: { in: pkgIds },
+          status: 'pending',
+          holdExpiresAt: { lt: now },
+          // Repetir TAMBIÉN el filtro de declaradas (como hace el sweep de reservas
+          // con sus condiciones): una declaración que entra entre el findMany y este
+          // update no debe expirarse — sin esto, el update la barría y el cancel de
+          // abajo mataba su Payment recién creado (carrera declare↔sweep).
+          payments: { none: declaredPkgTransferPaymentWhere },
+        },
         data: { status: 'expired' },
       })
       packagesExpired = res.count

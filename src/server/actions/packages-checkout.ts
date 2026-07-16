@@ -318,23 +318,35 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
 
   const purchase = await loadOwnedPurchase(input.purchaseId, user.id)
   if (purchase.status !== 'pending') throw new Error('Esta compra ya fue procesada.')
-  if (purchase.holdExpiresAt && purchase.holdExpiresAt < new Date()) {
-    throw new Error('El tiempo para transferir venció. Iniciá la compra de nuevo.')
-  }
+  // SIN check de hold a propósito (fix zombie, spec §5): la plata pudo enviarse
+  // aunque el hold venciera y acá no hay cupo en juego. La ventana la cierra el
+  // sweep: cuando expira la compra no-declarada, el guard de status de arriba
+  // rechaza. Una vez declarada, el sweep la exime y la dueña decide.
 
   const declaredId = btPkgDeclaredId(purchase.id)
-  // Idempotente por @@unique([packagePurchaseId, provider, providerPaymentId]).
-  await prisma.payment.upsert({
-    where: { packagePurchaseId_provider_providerPaymentId: {
-      packagePurchaseId: purchase.id, provider: 'manual', providerPaymentId: declaredId,
-    } },
-    update: {},
-    create: {
-      businessId: purchase.businessId, packagePurchaseId: purchase.id, customerId: purchase.customerId,
-      provider: 'manual', providerPaymentId: declaredId, amount: purchase.pricePaid,
-      currency: purchase.business.currency || 'CLP', status: 'pending',
-      paymentType: 'package_purchase', paymentMethod: 'Transferencia',
-    },
+  await prisma.$transaction(async (tx) => {
+    // CAS sobre la fila de la compra DENTRO de la misma tx que crea el Payment:
+    // toma el lock y re-valida pending, serializando contra el sweep (que también
+    // hace updateMany sobre esta fila). Si el sweep ganó y la expiró entre el read
+    // de arriba y acá, esto corta antes de crear un Payment huérfano invisible.
+    const guard = await tx.packagePurchase.updateMany({
+      where: { id: purchase.id, status: 'pending' },
+      data: { status: 'pending' },
+    })
+    if (guard.count === 0) throw new Error('Esta compra ya fue procesada.')
+    // Idempotente por @@unique([packagePurchaseId, provider, providerPaymentId]).
+    await tx.payment.upsert({
+      where: { packagePurchaseId_provider_providerPaymentId: {
+        packagePurchaseId: purchase.id, provider: 'manual', providerPaymentId: declaredId,
+      } },
+      update: {},
+      create: {
+        businessId: purchase.businessId, packagePurchaseId: purchase.id, customerId: purchase.customerId,
+        provider: 'manual', providerPaymentId: declaredId, amount: purchase.pricePaid,
+        currency: purchase.business.currency || 'CLP', status: 'pending',
+        paymentType: 'package_purchase', paymentMethod: 'Transferencia',
+      },
+    })
   })
 
   // Notificar a la dueña (best-effort, no bloquea la declaración de la clienta).

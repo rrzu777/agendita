@@ -16,6 +16,7 @@ import type {
   OwnerBookingChangedData,
   PackagePurchasedEmailData,
   PackageDisputedEmailData,
+  BookingDisputedEmailData,
   PackageTransferDeclaredEmailData,
 } from './types'
 
@@ -794,6 +795,34 @@ export function packageDisputedBusinessText(data: PackageDisputedEmailData): str
     `Se registró un contracargo (chargeback) de un paquete de ${data.customerName}. La compra fue revertida automáticamente.`, '',
     `Clienta: ${data.customerName}`,
     `Paquete: ${data.productName}`,
+    `Monto: ${amount}`, '',
+    `Enviado por ${data.businessName} a través de Agendita`,
+  ].join('\n')
+}
+
+export function bookingDisputedBusinessHtml(data: BookingDisputedEmailData): string {
+  const amount = fmtCurrency(data.amount, data.businessCurrency)
+  return baseHtml(`
+    ${header('Contracargo de reserva')}
+    <p style="font-size:15px">Se registró un contracargo (chargeback) del pago de una reserva de ${escapeHtml(data.customerName)}. El pago fue revertido y la reserva quedó marcada — revisá si querés cancelarla, recobrar o atender igual.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Reserva</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.bookingLabel)} — ${escapeHtml(data.serviceName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Fecha</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Monto</td><td style="padding:8px 0;font-weight:600">${amount}</td></tr>
+    </table>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function bookingDisputedBusinessText(data: BookingDisputedEmailData): string {
+  const amount = fmtCurrency(data.amount, data.businessCurrency)
+  return [
+    'Contracargo de reserva', '',
+    `Se registró un contracargo (chargeback) del pago de una reserva de ${data.customerName}. El pago fue revertido y la reserva quedó marcada.`, '',
+    `Clienta: ${data.customerName}`,
+    `Reserva: ${data.bookingLabel} — ${data.serviceName}`,
+    `Fecha: ${fmtDate(data.startDateTime, data.businessTimezone)}`,
     `Monto: ${amount}`, '',
     `Enviado por ${data.businessName} a través de Agendita`,
   ].join('\n')

@@ -19,6 +19,7 @@ import { CancelBookingButton } from './cancel-booking-button'
 import { RefreshCw } from 'lucide-react'
 import { ManualPaymentDialog } from './manual-payment-dialog'
 import { isManualPaymentAllowed } from './manual-payment-utils'
+import { PaymentRevertedBadge } from './payment-reverted-badge'
 import { bookingStatusLabel } from '@/lib/bookings/status-labels'
 
 function useIsMobile() {
@@ -82,7 +83,8 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
 
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Pagado</span>
-            <span className="text-sm font-medium">
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <PaymentRevertedBadge paymentStatus={booking.paymentStatus} />
               ${booking.depositPaid.toLocaleString('es-CL')} {businessCurrency}
             </span>
           </div>

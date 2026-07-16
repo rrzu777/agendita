@@ -10,6 +10,7 @@ import {
   sendPackagePurchasedNotification,
   sendPackageSoldNotificationToBusiness,
   sendPackageDisputedToBusiness,
+  sendBookingDisputedToBusiness,
 } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
 import { decryptSecret } from '@/lib/payments/encryption'
@@ -17,6 +18,8 @@ import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { reverseVisitPoints } from '@/lib/loyalty/credit'
 import { reverseAutoRewardsForBooking } from '@/lib/loyalty/automatic'
 import { reversePackagePurchaseInTx } from '@/lib/packages/reverse'
+import { reverseBookingPaymentInTx } from '@/lib/bookings/reverse-payment'
+import { formatBookingNumber } from '@/lib/bookings/number'
 import type { Prisma } from '@prisma/client'
 
 function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
@@ -396,6 +399,73 @@ export async function POST(request: NextRequest) {
       // purchase ya no está active (eco del refund voluntario / redelivery) → cae al 200 idempotente.
     }
 
+    // FU-B4b-3: chargeback/refund del pago YA APROBADO de una RESERVA. Igual que
+    // la rama de paquete de arriba, hay que actuar ANTES del early-return approved.
+    // Política (spec §1-2): la reserva NO cambia de status (la dueña decide); los
+    // montos cobrables se restauran vía recalc y paymentStatus queda 'refunded'
+    // como marcador. 'charged_back' = disputa → alarma; 'refunded' = devolución
+    // voluntaria desde el panel de MP → silencioso.
+    // Garantía de reconciliación por eco: si una reversión local falla a mitad,
+    // MP re-entrega este evento y el flip CAS lo reintenta idempotente.
+    if (
+      (mpStatus === 'charged_back' || mpStatus === 'refunded') &&
+      payment.bookingId &&
+      payment.booking &&
+      payment.status === 'approved'
+    ) {
+      const booking = payment.booking
+      const bookingId = payment.bookingId
+      const mode = mpStatus === 'charged_back' ? 'chargeback' : 'voluntary'
+      const { reversed } = await prisma.$transaction((tx) =>
+        reverseBookingPaymentInTx(tx, {
+          paymentId: payment.id,
+          bookingId,
+          businessId: payment.businessId,
+          customerId: booking.customerId,
+          amount: mpPayment.transaction_amount,
+          currency: payment.currency,
+          mode,
+          now: new Date(),
+          flipData: { providerPaymentId: mpPayment.id, rawPayload: mpPayment as unknown as Prisma.InputJsonValue },
+        }),
+      )
+      if (reversed && mode === 'chargeback') {
+        // Nombres para la alarma: un fetch fuera de la tx (best-effort como todas
+        // las notifs). Los scalars de la reserva ya vienen en payment.booking.
+        const bk = await prisma.booking.findUnique({
+          where: { id: bookingId },
+          select: {
+            customer: { select: { name: true } },
+            service: { select: { name: true } },
+            business: { select: { name: true, currency: true, timezone: true } },
+          },
+        })
+        if (bk) {
+          await sendMultiNotificationSafely('booking disputed business', async () =>
+            sendBookingDisputedToBusiness(payment.businessId, {
+              businessName: bk.business.name,
+              customerName: bk.customer?.name ?? 'Clienta',
+              serviceName: bk.service?.name ?? 'servicio',
+              bookingLabel: formatBookingNumber(booking.bookingNumber, bookingId),
+              startDateTime: booking.startDateTime,
+              businessTimezone: bk.business.timezone || 'America/Santiago',
+              amount: mpPayment.transaction_amount,
+              businessCurrency: bk.business.currency || 'CLP',
+            }),
+          )
+        }
+      }
+      if (reversed) {
+        revalidatePath('/dashboard/bookings')
+        if (booking.customerId) revalidatePath(`/dashboard/customers/${booking.customerId}`)
+      }
+      return NextResponse.json({
+        success: true,
+        message: mode === 'chargeback' ? 'Booking chargeback processed' : 'Booking refund processed',
+        bookingId,
+      })
+    }
+
     // Ya está approved → idempotente, 200 sin side effects
     if (payment.status === 'approved') {
       return NextResponse.json({
@@ -567,15 +637,19 @@ export async function POST(request: NextRequest) {
       mpStatus === 'refunded' ||
       mpStatus === 'charged_back'
     ) {
-      // No degradar un Payment ya approved
-      // (validado arriba, pero por seguridad repetimos el check)
+      // Degradar es SOLO para pagos que nunca se aprobaron (pending, el único
+      // estado no-terminal local: in_process de MP se guarda como pending).
+      // Un redelivery de refunded/charged_back sobre un Payment que la rama de
+      // reversión ya dejó 'refunded' caería acá y re-liberaría la redención que
+      // esa rama deliberadamente conserva (spec §2, corrupción de promo) — por
+      // eso el guard es por 'pending', no por 'approved'.
       const currentPayment = await prisma.payment.findUnique({
         where: { id: payment.id },
       })
-      if (currentPayment?.status === 'approved') {
+      if (currentPayment?.status !== 'pending') {
         return NextResponse.json({
           success: true,
-          message: 'Payment already approved, not downgrading',
+          message: 'Payment not pending, not downgrading',
         })
       }
 
