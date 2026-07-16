@@ -384,7 +384,10 @@ export async function createManualPayment(data: {
 
   const { assertBookingPayable } = await import('@/lib/booking-payments')
   try {
-    assertBookingPayable(booking)
+    // allowCompleted: recobro post-chargeback y cobro de saldo tras atender
+    // (spec FU-B4b-3 §6) — el guard de monto de abajo (remainingBalance) sigue
+    // siendo el gate real: completed sin saldo rechaza igual.
+    assertBookingPayable(booking, { allowCompleted: true })
   } catch (e) {
     throw new Error(e instanceof Error ? e.message : 'No se puede registrar pago para esta reserva')
   }
@@ -439,6 +442,7 @@ export async function createManualPayment(data: {
       paymentType: derivedType as PaymentType,
       paymentMethod: data.paymentMethod,
       paymentId: payment.id,
+      allowCompleted: true,
     })
 
     // Volver a leer el Payment actualizado para retornar datos frescos (status approved, paidAt, etc.)

@@ -14,6 +14,7 @@ const mockPrisma = {
     findFirst: vi.fn(),
     findMany: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   ledgerEntry: {
     findFirst: vi.fn(),
@@ -153,6 +154,66 @@ describe('createManualPayment', () => {
     // solo se crea 1 Payment.
     expect(mockPrisma.payment.create).toHaveBeenCalledTimes(1)
     expect(mockPrisma.ledgerEntry.upsert).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('createManualPayment en reservas completed con saldo (recobro post-chargeback)', () => {
+  const completedBooking = {
+    id: 'booking-1',
+    businessId: 'biz-1',
+    customerId: 'cust-1',
+    finalAmount: 20000,
+    depositRequired: 10000,
+    depositPaid: 0,
+    remainingBalance: 20000,
+    status: BookingStatus.completed,
+    currency: 'CLP',
+    holdExpiresAt: null,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('pasa allowCompleted a assertBookingPayable y a applyApprovedPayment', async () => {
+    const { assertBookingPayable } = await import('@/lib/booking-payments')
+    mockPrisma.booking.findFirst.mockResolvedValue(completedBooking)
+    mockPrisma.booking.findUnique.mockResolvedValue(completedBooking)
+
+    const createdPayment = { id: 'pay-recover-1', amount: 20000, status: 'pending', provider: 'manual', providerPaymentId: null, bookingId: 'booking-1', businessId: 'biz-1', paymentType: PaymentType.full_payment }
+    const approvedPayment = { ...createdPayment, status: 'approved', paidAt: new Date() }
+    mockPrisma.payment.create.mockResolvedValue(createdPayment)
+    mockPrisma.payment.findUnique
+      .mockResolvedValueOnce(createdPayment)
+      .mockResolvedValueOnce(approvedPayment)
+    mockPrisma.payment.findFirst.mockResolvedValue(createdPayment)
+    mockPrisma.payment.update.mockResolvedValue(approvedPayment)
+    mockPrisma.payment.findMany.mockResolvedValue([approvedPayment])
+    mockPrisma.ledgerEntry.findFirst.mockResolvedValue(null)
+    const updatedBooking = { ...completedBooking, depositPaid: 20000, remainingBalance: 0, paymentStatus: BookingPaymentStatus.fully_paid }
+    mockPrisma.booking.update.mockResolvedValue(updatedBooking)
+    mockPrisma.booking.updateMany.mockResolvedValue({ count: 1 })
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(mockPrisma))
+
+    const result = await createManualPayment({
+      bookingId: 'booking-1',
+      amount: 20000,
+      currency: 'CLP',
+      paymentType: 'full_payment',
+      paymentMethod: 'Efectivo',
+    })
+
+    expect(result.status).toBe('approved')
+    // createManualPayment relaja el guard de completed…
+    expect(assertBookingPayable).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'booking-1' }),
+      expect.objectContaining({ allowCompleted: true }),
+    )
+    // …y applyApprovedPayment (real, corre contra el mock de prisma) recibió
+    // allowCompleted: su assert interno también fue llamado con el flag.
+    const callsWithAllowCompleted = (assertBookingPayable as unknown as ReturnType<typeof vi.fn>).mock.calls
+      .filter((c) => (c[1] as { allowCompleted?: boolean } | undefined)?.allowCompleted === true)
+    expect(callsWithAllowCompleted.length).toBeGreaterThanOrEqual(2)
   })
 })
 
