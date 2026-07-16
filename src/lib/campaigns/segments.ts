@@ -7,7 +7,7 @@ type Db = PrismaClient | Prisma.TransactionClient
 export interface SegmentCustomer { id: string; name: string; phone: string; birthDate: Date | null }
 
 const DAY_MS = 86_400_000
-// Reservas "vivas" (no muertas) para saldo/actividad.
+// Reservas "vivas" para el segmento de saldo pendiente.
 const DEAD = ['cancelled', 'no_show', 'expired'] as const
 
 function hasValidPhone(phone: string): boolean {

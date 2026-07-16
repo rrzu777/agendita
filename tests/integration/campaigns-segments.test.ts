@@ -15,6 +15,8 @@ const INACTIVE_CUST = 'cseg-cust-inactive'
 const FREQUENT_CUST = 'cseg-cust-frequent'
 const BALANCE_CUST = 'cseg-cust-balance'
 const NOPHONE_CUST = 'cseg-cust-nophone'
+const OTHER_MONTH_CUST = 'cseg-cust-othermonth'
+const CANCELLED_BAL_CUST = 'cseg-cust-cancelledbal'
 
 const TZ = 'America/Santiago'
 const NOW = new Date()
@@ -79,6 +81,14 @@ describe('campaigns queryCampaignSegment', () => {
     await prisma.customer.create({
       data: { id: NOPHONE_CUST, businessId: BIZ, name: 'Sin Teléfono', phone: '123', birthDate: birthDateThisMonth },
     })
+    // Cumple en OTRO mes (nowMonthInTz es 1-12; (m+1)%12 es 0-based → +2 meses con wrap, nunca el actual).
+    const birthDateOtherMonth = new Date(Date.UTC(1990, (nowMonthInTz + 1) % 12, 10))
+    await prisma.customer.create({
+      data: { id: OTHER_MONTH_CUST, businessId: BIZ, name: 'Otro Mes', phone: '+56911220005', birthDate: birthDateOtherMonth },
+    })
+    await prisma.customer.create({
+      data: { id: CANCELLED_BAL_CUST, businessId: BIZ, name: 'Saldo Cancelado', phone: '+56911220006' },
+    })
 
     // 3 completadas para FREQUENT_CUST + 1 confirmada con saldo para BALANCE_CUST,
     // todas en días distintos (constraint EXCLUDE de solapamiento).
@@ -104,6 +114,17 @@ describe('campaigns queryCampaignSegment', () => {
         paymentStatus: 'deposit_paid',
       },
     })
+    // Cancelada con saldo > 0: estado muerto → NO cuenta para pending_balance.
+    await prisma.booking.create({
+      data: {
+        businessId: BIZ, serviceId: SVC, customerId: CANCELLED_BAL_CUST,
+        ...slot(4),
+        status: 'cancelled',
+        totalPrice: 20000, depositRequired: 5000, depositPaid: 5000,
+        remainingBalance: 15000, discountAmount: 0, finalAmount: 20000,
+        paymentStatus: 'deposit_paid',
+      },
+    })
   })
 
   afterAll(async () => {
@@ -115,6 +136,7 @@ describe('campaigns queryCampaignSegment', () => {
     const r = await queryCampaignSegment(prisma, BIZ, 'birthday_month', {}, NOW, TZ)
     expect(r.map((c) => c.id)).toContain(BDAY_CUST)
     expect(r.map((c) => c.id)).not.toContain(NOPHONE_CUST)
+    expect(r.map((c) => c.id)).not.toContain(OTHER_MONTH_CUST) // cumple en otro mes
     expect(r.every((c) => c.phone.replace(/\D/g, '').length >= 8)).toBe(true)
   })
 
@@ -146,5 +168,6 @@ describe('campaigns queryCampaignSegment', () => {
     const r = await queryCampaignSegment(prisma, BIZ, 'pending_balance', {}, NOW, TZ)
     expect(r.map((c) => c.id)).toContain(BALANCE_CUST)
     expect(r.map((c) => c.id)).not.toContain(FREQUENT_CUST) // saldo 0
+    expect(r.map((c) => c.id)).not.toContain(CANCELLED_BAL_CUST) // saldo sólo en booking cancelada
   })
 })
