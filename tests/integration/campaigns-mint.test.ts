@@ -55,12 +55,13 @@ describe('campaigns mintCampaignGrant', () => {
 
   it('mintea un grant gratis con expiresAt y es idempotente', async () => {
     const requestId = `campaign:camp1#${CUST}`
+    const now = new Date()
     const g1 = await prisma.$transaction((tx) => mintCampaignGrant(tx, {
       businessId: BIZ, promotion: { id: PROMO, grantExpiryDays: 30 }, customerId: CUST,
-      requestId, config: { grantExpiryDays: null }, createdByUserId: OWNER_USER, now: new Date(),
+      requestId, config: { grantExpiryDays: null }, createdByUserId: OWNER_USER, now,
     }))
     expect(g1.pointsSpent).toBe(0)
-    expect(g1.expiresAt).not.toBeNull()
+    expect(g1.expiresAt!.getTime()).toBe(now.getTime() + 30 * DAY_MS)
     expect(g1.status).toBe('active')
     expect(g1.refundOnExpiry).toBe(false)
     expect(g1.forfeitOnNoShow).toBe(false)
