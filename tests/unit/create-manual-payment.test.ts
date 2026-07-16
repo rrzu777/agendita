@@ -210,10 +210,11 @@ describe('createManualPayment en reservas completed con saldo (recobro post-char
       expect.objectContaining({ allowCompleted: true }),
     )
     // …y applyApprovedPayment (real, corre contra el mock de prisma) recibió
-    // allowCompleted: su assert interno también fue llamado con el flag.
-    const callsWithAllowCompleted = (assertBookingPayable as unknown as ReturnType<typeof vi.fn>).mock.calls
-      .filter((c) => (c[1] as { allowCompleted?: boolean } | undefined)?.allowCompleted === true)
-    expect(callsWithAllowCompleted.length).toBeGreaterThanOrEqual(2)
+    // allowCompleted: su assert interno es la segunda llamada, con el mismo flag.
+    expect(assertBookingPayable).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(assertBookingPayable).mock.calls.every(
+      (c) => (c[1] as { allowCompleted?: boolean } | undefined)?.allowCompleted === true,
+    )).toBe(true)
   })
 })
 

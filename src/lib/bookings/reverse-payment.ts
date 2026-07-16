@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client'
-import { BookingPaymentStatus } from '@prisma/client'
+import { BookingPaymentStatus, PaymentStatus } from '@prisma/client'
 import { reverseVisitPoints } from '@/lib/loyalty/credit'
 import { reverseAutoRewardsForBooking } from '@/lib/loyalty/automatic'
 import { recalcBookingFromPayments } from '@/server/services/finance'
@@ -41,12 +41,10 @@ export async function reverseBookingPaymentInTx(
   opts: ReverseBookingPaymentOptions,
 ): Promise<ReverseBookingPaymentResult> {
   const flip = await tx.payment.updateMany({
-    where: { id: opts.paymentId, status: 'approved' },
-    data: {
-      status: 'refunded',
-      ...(opts.flipData?.providerPaymentId ? { providerPaymentId: opts.flipData.providerPaymentId } : {}),
-      ...(opts.flipData?.rawPayload !== undefined ? { rawPayload: opts.flipData.rawPayload } : {}),
-    },
+    where: { id: opts.paymentId, status: PaymentStatus.approved },
+    // Prisma ignora campos undefined, así que el spread de flipData es seguro
+    // cuando falta (reversión sin datos del webhook).
+    data: { status: PaymentStatus.refunded, ...opts.flipData },
   })
   if (flip.count === 0) return { reversed: false } // eco / redelivery / carrera
 

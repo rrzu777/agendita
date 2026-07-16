@@ -4,39 +4,21 @@ import { createHmac } from 'crypto'
 const mockMpFetch = vi.fn()
 vi.stubGlobal('fetch', mockMpFetch)
 
+// Solo los modelos que las ramas testeadas tocan de verdad: el núcleo de
+// reversión y las notifs están mockeados por módulo, así que ledger/loyalty/
+// grants nunca se alcanzan desde acá.
 const mockPrisma = {
   payment: {
     findUnique: vi.fn(),
-    findFirst: vi.fn(),
     update: vi.fn(),
-    create: vi.fn(),
-    findMany: vi.fn(),
   },
   booking: {
     findUnique: vi.fn(),
-    update: vi.fn(),
-    updateMany: vi.fn(),
-  },
-  ledgerEntry: {
-    findFirst: vi.fn(),
-    create: vi.fn(),
   },
   packagePurchase: {
     findUnique: vi.fn(),
   },
   $transaction: vi.fn(),
-  paymentAccount: {
-    findFirst: vi.fn(),
-  },
-  loyaltyConfig: {
-    findUnique: vi.fn().mockResolvedValue(null),
-  },
-  loyaltyLedger: {
-    findMany: vi.fn().mockResolvedValue([]),
-  },
-  promotionGrant: {
-    findMany: vi.fn().mockResolvedValue([]),
-  },
 }
 
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
@@ -147,7 +129,10 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
     status: 'approved',
     paymentType: 'deposit',
     paymentMethod: null,
-    booking: { id: 'bk-1', businessId: 'biz-1', customerId: 'cust-1', status: 'confirmed' },
+    booking: {
+      id: 'bk-1', businessId: 'biz-1', customerId: 'cust-1', status: 'confirmed',
+      bookingNumber: 4738, startDateTime: new Date('2026-07-20T15:00:00Z'),
+    },
     packagePurchase: null,
   }
 
@@ -162,15 +147,13 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
     ;(reverseBookingPaymentInTx as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ reversed: true })
     ;(reversePackagePurchaseInTx as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ reversed: true })
 
-    // Fetch de datos para la alarma (fuera de la tx)
+    // Fetch de nombres para la alarma (fuera de la tx)
     mockPrisma.booking.findUnique.mockReset().mockResolvedValue({
-      bookingNumber: 4738,
-      startDateTime: new Date('2026-07-20T15:00:00Z'),
       customer: { name: 'Caro P' },
       service: { name: 'Manicure' },
       business: { name: 'Estudio Mimo', currency: 'CLP', timezone: 'America/Santiago' },
     })
-    mockPrisma.$transaction.mockReset().mockImplementation(async (fn: (tx: unknown) => unknown) => fn({ ...mockPrisma }))
+    mockPrisma.$transaction.mockReset().mockImplementation(async (fn: (tx: unknown) => unknown) => fn(mockPrisma))
 
     vi.resetModules()
     const mod = await import('@/app/api/webhooks/mercado-pago/route')

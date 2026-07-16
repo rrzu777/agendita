@@ -331,7 +331,7 @@ export async function recalcBookingFromPayments(
 
   // Reversión de pago (chargeback/refund MP): el caller quiere los montos
   // verdaderos pero con el marcador 'refunded' en vez del estado derivado.
-  const effectivePaymentStatus = opts?.paymentStatusOverride ?? newPaymentStatus
+  if (opts?.paymentStatusOverride) newPaymentStatus = opts.paymentStatusOverride
 
   const shouldConfirm =
     booking.status === BookingStatus.pending_payment &&
@@ -345,7 +345,7 @@ export async function recalcBookingFromPayments(
       data: {
         depositPaid: newDepositPaid,
         remainingBalance: newRemainingBalance,
-        paymentStatus: effectivePaymentStatus,
+        paymentStatus: newPaymentStatus,
         status: BookingStatus.confirmed,
       },
     })
@@ -362,7 +362,7 @@ export async function recalcBookingFromPayments(
           depositPaid: newDepositPaid,
           remainingBalance: newRemainingBalance,
           finalAmount: booking.finalAmount,
-          paymentStatus: effectivePaymentStatus,
+          paymentStatus: newPaymentStatus,
         },
         wasConfirmed: true,
       }
@@ -377,7 +377,7 @@ export async function recalcBookingFromPayments(
       data: {
         depositPaid: newDepositPaid,
         remainingBalance: newRemainingBalance,
-        paymentStatus: effectivePaymentStatus,
+        paymentStatus: newPaymentStatus,
       },
     })
 
@@ -390,7 +390,7 @@ export async function recalcBookingFromPayments(
     data: {
       depositPaid: newDepositPaid,
       remainingBalance: newRemainingBalance,
-      paymentStatus: effectivePaymentStatus,
+      paymentStatus: newPaymentStatus,
     },
   })
 

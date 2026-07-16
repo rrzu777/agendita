@@ -17,9 +17,10 @@ export class BookingNotPayableError extends Error {
  * solo para pasar por acá.
  *
  * `allowCompleted`: `completed` es terminal para pagos SALVO el saldo por
- * transferencia (spec #3 §4: la clienta puede pagar después de atendida).
- * Solo la rama bt-balance de confirmBankTransfer pasa `allowCompleted` —
- * nunca el webhook MP ni confirmPayment.
+ * transferencia (spec #3 §4: la clienta puede pagar después de atendida) y el
+ * pago manual de la dueña (spec FU-B4b-3 §6: recobro post-chargeback / saldo
+ * tras atender). Lo pasan la rama bt-balance de confirmBankTransfer y
+ * createManualPayment — nunca el webhook MP ni confirmPayment.
  */
 export function assertBookingPayable(
   booking: {

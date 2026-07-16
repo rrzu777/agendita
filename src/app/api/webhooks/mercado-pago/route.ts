@@ -413,29 +413,28 @@ export async function POST(request: NextRequest) {
       payment.booking &&
       payment.status === 'approved'
     ) {
+      const booking = payment.booking
       const bookingId = payment.bookingId
       const mode = mpStatus === 'charged_back' ? 'chargeback' : 'voluntary'
-      let reversed = false
-      await prisma.$transaction(async (tx) => {
-        const result = await reverseBookingPaymentInTx(tx, {
+      const { reversed } = await prisma.$transaction((tx) =>
+        reverseBookingPaymentInTx(tx, {
           paymentId: payment.id,
           bookingId,
           businessId: payment.businessId,
-          customerId: payment.booking!.customerId,
+          customerId: booking.customerId,
           amount: mpPayment.transaction_amount,
           currency: payment.currency,
           mode,
           now: new Date(),
           flipData: { providerPaymentId: mpPayment.id, rawPayload: mpPayment as unknown as Prisma.InputJsonValue },
-        })
-        reversed = result.reversed
-      })
+        }),
+      )
       if (reversed && mode === 'chargeback') {
-        // Datos para la alarma: un fetch fuera de la tx (best-effort como todas las notifs).
+        // Nombres para la alarma: un fetch fuera de la tx (best-effort como todas
+        // las notifs). Los scalars de la reserva ya vienen en payment.booking.
         const bk = await prisma.booking.findUnique({
           where: { id: bookingId },
           select: {
-            bookingNumber: true, startDateTime: true,
             customer: { select: { name: true } },
             service: { select: { name: true } },
             business: { select: { name: true, currency: true, timezone: true } },
@@ -447,8 +446,8 @@ export async function POST(request: NextRequest) {
               businessName: bk.business.name,
               customerName: bk.customer?.name ?? 'Clienta',
               serviceName: bk.service?.name ?? 'servicio',
-              bookingLabel: formatBookingNumber(bk.bookingNumber, bookingId),
-              startDateTime: bk.startDateTime,
+              bookingLabel: formatBookingNumber(booking.bookingNumber, bookingId),
+              startDateTime: booking.startDateTime,
               businessTimezone: bk.business.timezone || 'America/Santiago',
               amount: mpPayment.transaction_amount,
               businessCurrency: bk.business.currency || 'CLP',
@@ -458,7 +457,7 @@ export async function POST(request: NextRequest) {
       }
       if (reversed) {
         revalidatePath('/dashboard/bookings')
-        if (payment.booking.customerId) revalidatePath(`/dashboard/customers/${payment.booking.customerId}`)
+        if (booking.customerId) revalidatePath(`/dashboard/customers/${booking.customerId}`)
       }
       return NextResponse.json({
         success: true,
