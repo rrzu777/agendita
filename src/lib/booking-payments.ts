@@ -1,4 +1,5 @@
 import { BookingStatus } from '@prisma/client'
+import { isManuallyPayableStatus } from '@/lib/bookings/payable-statuses'
 
 export class BookingNotPayableError extends Error {
   constructor(message: string) {
@@ -29,13 +30,14 @@ export function assertBookingPayable(
   },
   opts?: { allowExpiredHold?: boolean; allowCompleted?: boolean },
 ): void {
-  const terminalStatuses: BookingStatus[] = [
-    BookingStatus.cancelled,
-    BookingStatus.expired,
-    BookingStatus.no_show,
-  ]
-  if (!opts?.allowCompleted) terminalStatuses.push(BookingStatus.completed)
-  if (terminalStatuses.includes(booking.status)) {
+  // Deriva de la fuente única MANUAL_PAYMENT_STATUSES (payable-statuses.ts) —
+  // la misma que gatea el botón en la UI. Fail-closed: un status nuevo del
+  // enum queda NO pagable hasta sumarlo explícitamente a la lista.
+  const payable =
+    booking.status === BookingStatus.completed
+      ? !!opts?.allowCompleted
+      : isManuallyPayableStatus(booking.status)
+  if (!payable) {
     throw new BookingNotPayableError('No se puede procesar pago para esta reserva')
   }
 

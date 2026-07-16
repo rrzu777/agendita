@@ -1,7 +1,6 @@
 import type { Prisma } from '@prisma/client'
 import { BookingPaymentStatus, PaymentStatus } from '@prisma/client'
-import { reverseVisitPoints } from '@/lib/loyalty/credit'
-import { reverseAutoRewardsForBooking } from '@/lib/loyalty/automatic'
+import { clawbackLoyaltyForBooking } from '@/lib/loyalty/clawback'
 import { recalcBookingFromPayments } from '@/server/services/finance'
 
 export interface ReverseBookingPaymentOptions {
@@ -70,15 +69,12 @@ export async function reverseBookingPaymentInTx(
     paymentStatusOverride: BookingPaymentStatus.refunded,
   })
 
-  // Clawback de loyalty — ambos idempotentes; visit es no-op si nunca se completó.
-  await reverseVisitPoints(tx, opts.bookingId)
-  const cfg = await tx.loyaltyConfig.findUnique({
-    where: { businessId: opts.businessId },
-    select: { clawbackAutoRewardOnRefund: true },
+  // Clawback de loyalty — idempotente; visit es no-op si nunca se completó.
+  await clawbackLoyaltyForBooking(tx, {
+    bookingId: opts.bookingId,
+    businessId: opts.businessId,
+    now: opts.now,
   })
-  if (cfg?.clawbackAutoRewardOnRefund) {
-    await reverseAutoRewardsForBooking(tx, opts.bookingId, opts.now, opts.businessId)
-  }
 
   return { reversed: true }
 }
