@@ -46,6 +46,8 @@ export const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number
   'manage-promotion': { maxRequests: 60, windowMs: 60_000 },
   'preview-promotion': { maxRequests: 30, windowMs: 60_000 },
   'proof-upload-url': { maxRequests: 20, windowMs: 60_000 },
+  'create-campaign': { maxRequests: 20, windowMs: 60_000 },
+  'send-campaign': { maxRequests: 120, windowMs: 60_000 },
   'default': { maxRequests: 60, windowMs: 60_000 },
 }
 
