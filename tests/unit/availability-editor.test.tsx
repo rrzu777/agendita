@@ -145,6 +145,13 @@ describe('AvailabilityEditor', () => {
     if (value.hour) await clickButton(document.body, value.hour)
     if (value.minute) await clickLastButton(document.body, value.minute)
     await clickButton(document.body, 'Aplicar')
+    // Al cerrar, el FocusScope de Radix devuelve el foco al trigger dentro de un
+    // setTimeout(0). Si ese timer dispara con el SIGUIENTE popover ya abierto, el
+    // focusin cae "fuera" de ese popover y lo descarta (onInteractOutside -> onDismiss),
+    // haciendo flaky la segunda apertura. Drenamos el timer acá, dentro de act.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
   }
 
   function findButtons(rootNode: ParentNode, name: string) {

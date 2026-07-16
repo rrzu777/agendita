@@ -19,6 +19,7 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
     customerName: data.customerName,
     customerPhone: data.customerPhone,
     customerEmail: data.customerEmail,
+    customerBirthDate: data.customerBirthDate ?? '',
     customerNotes: data.customerNotes,
   })
   // "No soy yo": reserva para otra persona SIN cerrar sesión (signOut perdería el wizard).
@@ -27,7 +28,7 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
 
   function handleNotMe() {
     setDismissedSession(true)
-    setFormData({ customerName: '', customerPhone: '', customerEmail: '', customerNotes: formData.customerNotes })
+    setFormData({ customerName: '', customerPhone: '', customerEmail: '', customerBirthDate: '', customerNotes: formData.customerNotes })
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -83,6 +84,12 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
               onChange={e => setFormData({ ...formData, customerEmail: e.target.value })}
               placeholder="tu@email.com" />
           </div>
+        </div>
+        <div className="space-y-2">
+          <Label className="studio-eyebrow">Cumpleaños (opcional)</Label>
+          <Input className="studio-input" type="date" max={new Date().toISOString().slice(0, 10)}
+            value={formData.customerBirthDate}
+            onChange={e => setFormData({ ...formData, customerBirthDate: e.target.value })} />
         </div>
         <div className="space-y-2">
           <Label className="studio-eyebrow">Notas (opcional)</Label>

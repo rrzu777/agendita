@@ -6,14 +6,9 @@ import { requireBusinessRole, AuthError, ForbiddenError } from '@/lib/auth/serve
 import { checkRateLimit } from '@/lib/rate-limit'
 import { buildLedgerCSV } from '@/lib/finance/csv-export'
 import type { LedgerCSVEntry } from '@/lib/finance/csv-export'
+import { isValidCalendarDate } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
-
-function isValidCalendarDate(dateStr: string): boolean {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  const date = new Date(y, m - 1, d)
-  return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d
-}
 
 const exportQuerySchema = z
   .object({

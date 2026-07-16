@@ -30,3 +30,8 @@ export function normalizePhone(phone: string): string {
 
   return digits
 }
+
+/** Teléfono utilizable para WhatsApp: al menos 8 dígitos reales. */
+export function isWhatsappablePhone(phone: string): boolean {
+  return phone.replace(/\D/g, '').length >= 8
+}

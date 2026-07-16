@@ -51,6 +51,7 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
+  const [customerBirthDate, setCustomerBirthDate] = useState('')
   const [date, setDate] = useState('')
   const [time, setTime] = useState('')
   const [internalNotes, setInternalNotes] = useState('')
@@ -248,6 +249,7 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
         customerName,
         customerPhone,
         customerEmail: customerEmail || undefined,
+        customerBirthDate: customerBirthDate || undefined,
         startDateTime,
         internalNotes: internalNotes || undefined,
         paymentMode: paymentMode === 'none' ? undefined : paymentMode,
@@ -381,6 +383,10 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
               <div className="space-y-2">
                 <Label htmlFor="customerEmail">Email (opcional)</Label>
                 <Input id="customerEmail" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} type="email" placeholder="cliente@email.com" className="h-10" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="customerBirthDate">Cumpleaños (opcional)</Label>
+                <Input id="customerBirthDate" type="date" max={new Date().toISOString().slice(0, 10)} value={customerBirthDate} onChange={(e) => setCustomerBirthDate(e.target.value)} className="h-10" />
               </div>
             </div>
           </div>
