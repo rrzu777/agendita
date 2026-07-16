@@ -16,6 +16,7 @@ import { assertSlotIsAvailable } from '@/lib/availability/validation'
 import { assignBookingNumber } from '@/lib/bookings/number'
 import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcement'
 import { normalizePhone } from '@/lib/customers/phone'
+import { isValidCalendarDate } from '@/lib/dates'
 import { addMinutes } from 'date-fns'
 import { applyPromotionInTx } from '@/lib/promotions/apply'
 import { recomputeBookingAmountsAfterDiscount } from '@/lib/booking/recompute'
@@ -47,7 +48,11 @@ const createBookingSchema = z.object({
   customerName: z.string().min(1).max(100),
   customerPhone: z.string().min(8).max(20),
   customerEmail: z.string().email().optional().or(z.literal('')),
-  customerBirthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
+  customerBirthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal(''))
+    .refine(
+      (v) => !v || (isValidCalendarDate(v) && v <= new Date().toISOString().slice(0, 10)),
+      'Fecha de cumpleaños inválida',
+    ),
   startDateTime: z.date(),
   idempotencyKey: z.string().min(1).max(64).optional(),
   acceptedTerms: z.boolean(),
@@ -712,7 +717,11 @@ const createBookingFromDashboardSchema = z.object({
   customerName: z.string().min(1).max(100),
   customerPhone: z.string().min(8).max(20),
   customerEmail: z.string().email().optional().or(z.literal('')),
-  customerBirthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
+  customerBirthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal(''))
+    .refine(
+      (v) => !v || (isValidCalendarDate(v) && v <= new Date().toISOString().slice(0, 10)),
+      'Fecha de cumpleaños inválida',
+    ),
   startDateTime: z.date(),
   internalNotes: z.string().max(500).optional(),
   markDepositPaid: z.boolean().optional().default(false),
