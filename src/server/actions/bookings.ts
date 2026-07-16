@@ -521,7 +521,11 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
         where: { id: existing.customerId },
         data: { lastCompletedAt: now, ...(isFirstVisit ? { firstCompletedAt: now } : {}) },
       })
-      if (loyaltyConfig?.isActive) {
+      // Pago revertido (chargeback/refund MP, spec FU-B4b-3 §7): completar está
+      // permitido ("atender igual"), pero NO se acreditan puntos por una visita
+      // cuya plata se fue. Si la clienta re-paga antes, el recalc ya limpió el
+      // marcador y esto no gatea.
+      if (loyaltyConfig?.isActive && existing.paymentStatus !== 'refunded') {
         await creditVisitPoints(tx, {
           businessId,
           customerId: existing.customerId,
@@ -538,7 +542,12 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
   }
 
   // R-EMIT: emisiones automáticas FUERA de la tx del evento (cada una en su propia tx, post-commit).
-  if (status === BookingStatus.completed && existing.customerId && loyaltyConfig?.isActive) {
+  if (
+    status === BookingStatus.completed &&
+    existing.customerId &&
+    loyaltyConfig?.isActive &&
+    existing.paymentStatus !== 'refunded' // spec FU-B4b-3 §7: sin emisiones sobre visita contracargada
+  ) {
     const customerId = existing.customerId
     const emitCfg = {
       grantExpiryDays: loyaltyConfig.grantExpiryDays,
