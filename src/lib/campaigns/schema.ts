@@ -42,7 +42,7 @@ export const createCampaignSchema = z
     newPromotion: campaignRewardSchema.optional(),
   })
   .refine((d) => !!d.promotionId || !!d.newPromotion, {
-    message: 'Elegí una promo del catálogo o creá una nueva', path: ['promotionId'],
+    message: 'Elige una promo del catálogo o crea una nueva', path: ['promotionId'],
   })
 
 export type CreateCampaignInput = z.infer<typeof createCampaignSchema>
