@@ -21,6 +21,7 @@ import type {
   OwnerBookingChangedData,
   PackagePurchasedEmailData,
   PackageDisputedEmailData,
+  BookingDisputedEmailData,
   PackageTransferDeclaredEmailData,
 } from './types'
 import {
@@ -68,6 +69,8 @@ import {
   packageSoldBusinessText,
   packageDisputedBusinessHtml,
   packageDisputedBusinessText,
+  bookingDisputedBusinessHtml,
+  bookingDisputedBusinessText,
   packageTransferDeclaredBusinessHtml,
   packageTransferDeclaredBusinessText,
   BOOKING_CONFIRMED_TEMPLATE,
@@ -598,6 +601,27 @@ export async function sendPackageDisputedToBusiness(
   return Promise.all(
     ownerEmails.map((owner) =>
       sendEmail(owner.email, `Contracargo de paquete - ${data.customerName}`, html, text, {}),
+    ),
+  )
+}
+
+/** Email a la(s) dueña(s)/admin(s) cuando llega un chargeback del pago de una reserva. */
+export async function sendBookingDisputedToBusiness(
+  businessId: string,
+  data: BookingDisputedEmailData,
+): Promise<EmailResult[]> {
+  const ownerEmails = await getBusinessOwnerEmails(businessId)
+
+  if (ownerEmails.length === 0) {
+    return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
+  }
+
+  const html = bookingDisputedBusinessHtml(data)
+  const text = bookingDisputedBusinessText(data)
+
+  return Promise.all(
+    ownerEmails.map((owner) =>
+      sendEmail(owner.email, `Contracargo de reserva - ${data.customerName}`, html, text, {}),
     ),
   )
 }

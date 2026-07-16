@@ -220,6 +220,18 @@ export interface PackageDisputedEmailData {
   businessCurrency: string
 }
 
+export interface BookingDisputedEmailData {
+  businessName: string
+  customerName: string
+  serviceName: string
+  /** formatBookingNumber(bookingNumber, id) — p.ej. "#4738". */
+  bookingLabel: string
+  startDateTime: Date
+  businessTimezone: string
+  amount: number
+  businessCurrency: string
+}
+
 export interface PackageTransferDeclaredEmailData {
   businessName: string
   customerName: string
