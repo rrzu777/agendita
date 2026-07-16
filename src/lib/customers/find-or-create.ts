@@ -7,6 +7,8 @@ export interface FindOrCreateCustomerInput {
   phone: string
   name: string
   email?: string | null
+  /** Cumpleaños (medianoche UTC). Se setea al crear y backfillea sin pisar. */
+  birthDate?: Date | null
   /** Sesión activa (vía 3 de vinculación). Sin sesión, no se linkea. */
   sessionUser?: { id: string; email?: string | null; email_confirmed_at?: string | null } | null
 }
@@ -34,9 +36,19 @@ export async function findOrCreateCustomerInTx(
       await tx.customer.update({ where: { id: customer.id }, data: { email: input.email } })
       customer = { ...customer, email: input.email }
     }
+    if (input.birthDate && !customer.birthDate) {
+      await tx.customer.update({ where: { id: customer.id }, data: { birthDate: input.birthDate } })
+      customer = { ...customer, birthDate: input.birthDate }
+    }
   } else {
     customer = await tx.customer.create({
-      data: { businessId: input.businessId, name: input.name, phone, email: input.email || null },
+      data: {
+        businessId: input.businessId,
+        name: input.name,
+        phone,
+        email: input.email || null,
+        birthDate: input.birthDate ?? null,
+      },
     })
     created = true
   }

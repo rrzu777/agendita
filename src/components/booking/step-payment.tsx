@@ -272,6 +272,7 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
       customerName: data.customerName,
       customerPhone: data.customerPhone,
       customerEmail: data.customerEmail,
+      customerBirthDate: data.customerBirthDate || undefined,
       startDateTime: data.timeSlot!.start,
       idempotencyKey,
       acceptedTerms,

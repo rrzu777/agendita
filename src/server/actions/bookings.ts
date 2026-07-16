@@ -47,6 +47,7 @@ const createBookingSchema = z.object({
   customerName: z.string().min(1).max(100),
   customerPhone: z.string().min(8).max(20),
   customerEmail: z.string().email().optional().or(z.literal('')),
+  customerBirthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
   startDateTime: z.date(),
   idempotencyKey: z.string().min(1).max(64).optional(),
   acceptedTerms: z.boolean(),
@@ -205,6 +206,7 @@ export async function createBooking(data: {
   customerName: string
   customerPhone: string
   customerEmail?: string
+  customerBirthDate?: string
   startDateTime: Date
   idempotencyKey?: string
   acceptedTerms: boolean
@@ -315,6 +317,7 @@ export async function createBooking(data: {
         phone: data.customerPhone,
         name: data.customerName,
         email: data.customerEmail || null,
+        birthDate: data.customerBirthDate ? new Date(`${data.customerBirthDate}T00:00:00Z`) : null,
         sessionUser,
       })
 
@@ -709,6 +712,7 @@ const createBookingFromDashboardSchema = z.object({
   customerName: z.string().min(1).max(100),
   customerPhone: z.string().min(8).max(20),
   customerEmail: z.string().email().optional().or(z.literal('')),
+  customerBirthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
   startDateTime: z.date(),
   internalNotes: z.string().max(500).optional(),
   markDepositPaid: z.boolean().optional().default(false),
@@ -731,6 +735,7 @@ export async function createBookingFromDashboard(data: {
   customerName: string
   customerPhone: string
   customerEmail?: string
+  customerBirthDate?: string
   startDateTime: Date
   internalNotes?: string
   markDepositPaid?: boolean
@@ -822,6 +827,7 @@ export async function createBookingFromDashboard(data: {
         phone: data.customerPhone,
         name: data.customerName,
         email: data.customerEmail || null,
+        birthDate: data.customerBirthDate ? new Date(`${data.customerBirthDate}T00:00:00Z`) : null,
       })
       customer = result.customer
     }

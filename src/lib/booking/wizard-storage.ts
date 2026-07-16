@@ -19,6 +19,7 @@ interface SavedState {
   customerName: string
   customerPhone: string
   customerEmail: string
+  customerBirthDate?: string
   customerNotes: string
   idempotencyKey: string | null
   promotionCode?: string
@@ -35,6 +36,7 @@ export function serializeWizardState(data: BookingData, now: number = Date.now()
     customerName: data.customerName,
     customerPhone: data.customerPhone,
     customerEmail: data.customerEmail,
+    customerBirthDate: data.customerBirthDate ?? '',
     customerNotes: data.customerNotes,
     idempotencyKey: data.idempotencyKey,
     ...(data.promotionCode ? { promotionCode: data.promotionCode } : {}),
@@ -73,6 +75,7 @@ export function restoreWizardState(raw: string | null, services: Service[], now:
     customerName: saved.customerName ?? '',
     customerPhone: saved.customerPhone ?? '',
     customerEmail: saved.customerEmail ?? '',
+    customerBirthDate: saved.customerBirthDate ?? '',
     customerNotes: saved.customerNotes ?? '',
     idempotencyKey: saved.idempotencyKey ?? null,
     ...(saved.promotionCode ? { promotionCode: saved.promotionCode } : {}),
