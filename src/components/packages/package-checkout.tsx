@@ -12,8 +12,6 @@ import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { PackageTransferInstructions } from '@/components/packages/package-transfer-instructions'
 import type { CatalogProduct } from './package-catalog'
 
-export { PackageTransferInstructions }
-
 interface PackageCheckoutProps {
   product: CatalogProduct
   currency: string

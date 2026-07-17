@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { PackageCheckout, PackageTransferInstructions } from '@/components/packages/package-checkout'
+import { PackageCheckout } from '@/components/packages/package-checkout'
+import { PackageTransferInstructions } from '@/components/packages/package-transfer-instructions'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
 vi.mock('@/server/actions/packages-checkout', () => ({
