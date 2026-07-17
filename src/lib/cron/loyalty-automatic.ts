@@ -39,7 +39,10 @@ export function selectTimedRuleForCustomer(rules: TimedRule[], c: Candidate, now
 /** ¿Corresponde email promocional de recompensa? Sólo birthday/winback (anniversary
  *  queda mudo) y sólo si la clienta no hizo opt-out de marketing. El GRANT se emite
  *  igual en ambos casos — el opt-out silencia la comunicación, no el beneficio. */
-export function wantsRewardEmail(kind: string | null, customer: { marketingOptOutAt: Date | null }): boolean {
+export function wantsRewardEmail(
+  kind: string | null,
+  customer: { marketingOptOutAt: Date | null },
+): kind is 'birthday' | 'winback' {
   return (kind === 'birthday' || kind === 'winback') && !customer.marketingOptOutAt
 }
 
