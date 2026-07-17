@@ -25,6 +25,7 @@ vi.mock('@/server/actions/packages', () => ({
 vi.mock('next/navigation', () => ({
   redirect: vi.fn(),
   notFound: vi.fn(),
+  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
 }))
 
 vi.mock('@/app/dashboard/customers/[id]/edit-form', () => ({
@@ -57,6 +58,7 @@ describe('CustomerDetailPage', () => {
       email: 'maria@test.com',
       notes: null,
       birthDate: null,
+      marketingOptOutAt: null,
       bookingCount: 2,
       lastBookingAt: new Date('2026-06-01T14:00:00Z'),
       totalPaidApproved: 30000,
