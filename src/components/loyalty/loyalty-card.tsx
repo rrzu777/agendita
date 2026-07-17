@@ -14,7 +14,7 @@ interface LoyaltyCardProps {
 }
 
 export function LoyaltyCard({ customerName, business, data, redeemAction, titleAs: TitleTag = 'h1' }: LoyaltyCardProps) {
-  const { config, balance, history, catalog, grants, packages, referralUrl } = data
+  const { config, balance, history, catalog, grants, packages, pendingPackages, referralUrl } = data
   const label = config?.pointsLabel ?? 'puntos'
   const firstName = customerName.split(' ')[0]
 
@@ -72,6 +72,23 @@ export function LoyaltyCard({ customerName, business, data, redeemAction, titleA
                 <div className="font-medium text-pink-700">{g.promotion.name}</div>
                 <div>Código: <code className="font-mono text-base">{g.code}</code></div>
                 {g.expiresAt && <div className="text-xs text-pink-700/70">Válido hasta {formatShortDate(g.expiresAt)}</div>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {pendingPackages.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-2 text-sm font-semibold text-gray-700">Paquetes por confirmar</h2>
+          <ul className="space-y-2">
+            {pendingPackages.map(p => (
+              <li key={p.id} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+                <div className="font-medium text-amber-800">{p.productName}</div>
+                <div className="text-amber-700">{p.declared ? 'En verificación' : 'Te falta transferir'}</div>
+                <a href={p.resumeUrl} className="font-semibold text-amber-800 underline">
+                  {p.declared ? 'Ver estado' : 'Retomar compra'}
+                </a>
               </li>
             ))}
           </ul>
