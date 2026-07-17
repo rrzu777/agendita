@@ -16,10 +16,20 @@ import { createMpPreferenceForPayment, getPaymentAppUrl } from '@/lib/payments/c
 import { getPackageConfirmationUrl } from '@/lib/business/urls'
 import { applyApprovedPackagePayment } from '@/server/services/finance'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
-import { btPkgDeclaredId } from '@/lib/bank-transfer/declared'
+import { btPkgDeclaredId, PKG_TRANSFER_PAYMENT_METHOD } from '@/lib/bank-transfer/declared'
+import { isPackageOfferUnchanged } from '@/lib/payments/package-confirmation-state'
 import { sendMultiNotificationSafely, sendPackageTransferDeclaredToBusiness } from '@/lib/notifications'
 
 const HOLD_MINUTES = 30
+
+// Gate de transferencia compartido por la compra y el revive: cuenta habilitada
+// o error uniforme. (Helper local: este módulo es 'use server', sólo exporta
+// funciones async invocables.)
+async function requireTransferInfo(businessId: string) {
+  const transferInfo = await getBankTransferInfo(businessId)
+  if (!transferInfo) throw new Error('Transferencia bancaria no disponible para este negocio.')
+  return transferInfo
+}
 
 const createPurchaseSchema = z.object({
   packageProductId: z.string().min(1),
@@ -79,9 +89,7 @@ export async function createPackagePurchase(input: {
   // que el negocio tenga transferencia habilitada.
   let transferHoldHours: number | null = null
   if (method === 'transfer') {
-    const transferInfo = await getBankTransferInfo(product.businessId)
-    if (!transferInfo) throw new Error('Transferencia bancaria no disponible para este negocio.')
-    transferHoldHours = transferInfo.holdHours
+    transferHoldHours = (await requireTransferInfo(product.businessId)).holdHours
   } else {
     const availability = await resolveOnlinePaymentAvailabilityForBusiness(product.businessId)
     if (!availability.available) {
@@ -105,7 +113,7 @@ export async function createPackagePurchase(input: {
     // Marcar el método elegido en la compra: una pending sin Payments era ambigua
     // (¿transferencia abandonada o MP nunca iniciado?). 'Transferencia' habilita la
     // confirmation activa, los recordatorios y /mi; MP queda null (como siempre).
-    const purchasePaymentMethod = method === 'transfer' ? 'Transferencia' : null
+    const purchasePaymentMethod = method === 'transfer' ? PKG_TRANSFER_PAYMENT_METHOD : null
 
     const existing = await tx.packagePurchase.findFirst({
       where: {
@@ -332,7 +340,7 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
   const purchase = await loadOwnedPurchase(input.purchaseId, user.id)
   // Sólo una expirada QUE ERA de transferencia es retomable; MP expirado se recompra
   // y rejected es terminal (la dueña ya miró y dijo no).
-  const isRevive = purchase.status === 'expired' && purchase.paymentMethod === 'Transferencia'
+  const isRevive = purchase.status === 'expired' && purchase.paymentMethod === PKG_TRANSFER_PAYMENT_METHOD
   if (purchase.status !== 'pending' && !isRevive) throw new Error('Esta compra ya fue procesada.')
   // SIN check de hold a propósito (fix zombie, spec §5): la plata pudo enviarse
   // aunque el hold venciera y acá no hay cupo en juego. La ventana la cierra el
@@ -342,16 +350,16 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
   let reviveHoldHours: number | null = null
   if (isRevive) {
     const [transferInfo, product] = await Promise.all([
-      getBankTransferInfo(purchase.businessId),
+      requireTransferInfo(purchase.businessId),
       prisma.packageProduct.findUnique({
         where: { id: purchase.packageProductId },
         select: { isActive: true, price: true },
       }),
     ])
-    if (!transferInfo) throw new Error('Transferencia bancaria no disponible para este negocio.')
     // Guard de producto: revivir mantiene el precio snapshot; si el catálogo cambió,
-    // la compra vieja ya no representa la oferta actual.
-    if (!product?.isActive || product.price !== purchase.pricePaid) {
+    // la compra vieja ya no representa la oferta actual. (Misma regla que gatea el
+    // panel en la confirmation — fuente única en isPackageOfferUnchanged.)
+    if (!product || !isPackageOfferUnchanged(product, purchase)) {
       throw new Error('Este paquete cambió. Iniciá la compra de nuevo.')
     }
     reviveHoldHours = transferInfo.holdHours
@@ -399,7 +407,7 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
         businessId: purchase.businessId, packagePurchaseId: purchase.id, customerId: purchase.customerId,
         provider: 'manual', providerPaymentId: declaredId, amount: purchase.pricePaid,
         currency: purchase.business.currency || 'CLP', status: 'pending',
-        paymentType: 'package_purchase', paymentMethod: 'Transferencia',
+        paymentType: 'package_purchase', paymentMethod: PKG_TRANSFER_PAYMENT_METHOD,
       },
     })
   })

@@ -1,4 +1,15 @@
-import { isDeclaredPkgTransferPayment } from '@/lib/bank-transfer/declared'
+import { isDeclaredPkgTransferPayment, PKG_TRANSFER_PAYMENT_METHOD } from '@/lib/bank-transfer/declared'
+
+/** "La oferta del producto sigue siendo la que la clienta compró": fuente única
+ *  de la regla de revive. La usan la confirmation page (mostrar el panel de
+ *  retomar, sobre su propio read) y declarePackageTransfer (guard real, sobre un
+ *  read fresco pre-tx) — cambiarla acá mantiene UI y server en sincronía. */
+export function isPackageOfferUnchanged(
+  product: { isActive: boolean; price: number },
+  purchase: { pricePaid: number },
+): boolean {
+  return product.isActive && product.price === purchase.pricePaid
+}
 
 export type PackageConfirmationState =
   | 'active'
@@ -30,7 +41,7 @@ export function derivePackageConfirmationState(input: DeriveInput): PackageConfi
   if (input.status === 'rejected') return 'rejected'
   if (input.payments.some(p => p.status === 'approved')) return 'active'
   if (
-    input.paymentMethod === 'Transferencia' &&
+    input.paymentMethod === PKG_TRANSFER_PAYMENT_METHOD &&
     !input.payments.some(isDeclaredPkgTransferPayment) &&
     !input.payments.some(p => p.provider === 'mercado_pago' && (p.status === 'pending' || p.status === 'in_process'))
   ) {

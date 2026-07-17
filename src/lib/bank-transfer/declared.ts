@@ -5,6 +5,12 @@ import type { Prisma } from '@prisma/client'
 // const TS para no repetir el magic string ni arriesgar typos silenciosos.
 export const BANK_TRANSFER_METHOD = 'bank_transfer'
 
+// Valor de PackagePurchase.paymentMethod cuando la clienta eligió transferencia
+// (espejo de BANK_TRANSFER_METHOD para reservas): const TS, no enum, para no
+// repetir el magic string ni arriesgar typos silenciosos en los 5 predicados
+// que discriminan por método (derive, revive, /mi, cron, checkout).
+export const PKG_TRANSFER_PAYMENT_METHOD = 'Transferencia'
+
 // providerPaymentId determinístico del Payment "declarado por la clienta".
 // Doble propósito (spec §3.4): hace morder el unique [bookingId, provider,
 // providerPaymentId] (idempotencia real vía P2002) y discrimina la declaración

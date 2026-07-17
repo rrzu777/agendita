@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { derivePackageConfirmationState } from './package-confirmation-state'
+import { derivePackageConfirmationState, isPackageOfferUnchanged } from './package-confirmation-state'
 
 describe('derivePackageConfirmationState', () => {
   it('active si la compra ya está activa', () => {
@@ -66,5 +66,21 @@ describe('derivePackageConfirmationState — awaiting_transfer', () => {
 
   it('terminales mandan: expired con Transferencia sigue siendo expired', () => {
     expect(derivePackageConfirmationState({ ...base, status: 'expired', paymentMethod: 'Transferencia' })).toBe('expired')
+  })
+})
+
+describe('isPackageOfferUnchanged (regla de revive)', () => {
+  const purchase = { pricePaid: 50000 }
+
+  it('retomable: producto activo al mismo precio', () => {
+    expect(isPackageOfferUnchanged({ isActive: true, price: 50000 }, purchase)).toBe(true)
+  })
+
+  it('NO retomable si el precio cambió', () => {
+    expect(isPackageOfferUnchanged({ isActive: true, price: 60000 }, purchase)).toBe(false)
+  })
+
+  it('NO retomable si el producto fue desactivado', () => {
+    expect(isPackageOfferUnchanged({ isActive: false, price: 50000 }, purchase)).toBe(false)
   })
 })

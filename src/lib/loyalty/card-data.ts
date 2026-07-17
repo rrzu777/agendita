@@ -4,7 +4,7 @@ import { getLoyaltyBalance, getLoyaltyHistory } from '@/lib/loyalty/balance'
 import { reconcileExpiredGrants } from '@/lib/loyalty/grant'
 import { conditionKind } from '@/lib/loyalty/automatic-match'
 import { ensureReferralToken } from '@/lib/loyalty/token'
-import { declaredPkgTransferPaymentWhere } from '@/lib/bank-transfer/declared'
+import { declaredPkgTransferPaymentWhere, PKG_TRANSFER_PAYMENT_METHOD } from '@/lib/bank-transfer/declared'
 import { getBookingFunnelUrl, getPackageConfirmationUrl } from '@/lib/business/urls'
 
 export interface CardCustomer {
@@ -74,7 +74,7 @@ export async function loadLoyaltyCardData(customer: CardCustomer) {
     // Compras por transferencia aún no confirmadas: la clienta necesita una vía de
     // re-entrada (retomar/declarar) — las pending de MP (hold 30 min) son ruido.
     prisma.packagePurchase.findMany({
-      where: { customerId: customer.id, status: 'pending', paymentMethod: 'Transferencia' },
+      where: { customerId: customer.id, status: 'pending', paymentMethod: PKG_TRANSFER_PAYMENT_METHOD },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,

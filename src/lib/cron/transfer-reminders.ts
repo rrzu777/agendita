@@ -1,7 +1,7 @@
 import { addHours, subHours } from 'date-fns'
 import { BookingStatus, type Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { BANK_TRANSFER_METHOD, declaredTransferPaymentWhere, declaredPkgTransferPaymentWhere } from '@/lib/bank-transfer/declared'
+import { BANK_TRANSFER_METHOD, PKG_TRANSFER_PAYMENT_METHOD, declaredTransferPaymentWhere, declaredPkgTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 import {
   getBusinessReplyToEmail,
   sendNotificationSafely,
@@ -226,7 +226,7 @@ export async function sendTransferReminders(
   const pkgCustomerWhere = {
     status: 'pending',
     source: 'online',
-    paymentMethod: 'Transferencia',
+    paymentMethod: PKG_TRANSFER_PAYMENT_METHOD,
     transferReminderCustomerSentAt: null,
     holdExpiresAt: { gt: now, lte: addHours(now, CUSTOMER_REMINDER_HOURS_BEFORE_HOLD) },
     // Espejo del where de reservas: ni declarada ni con un MP en vuelo.

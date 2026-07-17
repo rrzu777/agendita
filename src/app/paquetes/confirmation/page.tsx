@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { prisma } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth/user'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
-import { derivePackageConfirmationState } from '@/lib/payments/package-confirmation-state'
+import { derivePackageConfirmationState, isPackageOfferUnchanged } from '@/lib/payments/package-confirmation-state'
+import { PKG_TRANSFER_PAYMENT_METHOD } from '@/lib/bank-transfer/declared'
 import { formatMoney } from '@/lib/money'
 import { PackageTransferPanel } from './transfer-panel'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
@@ -62,9 +63,8 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
   const wantsTransferPanel =
     state === 'awaiting_transfer' ||
     (state === 'expired' &&
-      purchase.paymentMethod === 'Transferencia' &&
-      purchase.product.isActive &&
-      purchase.product.price === purchase.pricePaid)
+      purchase.paymentMethod === PKG_TRANSFER_PAYMENT_METHOD &&
+      isPackageOfferUnchanged(purchase.product, purchase))
   const transferInfo = wantsTransferPanel ? await getBankTransferInfo(purchase.businessId) : null
   const showTransferPanel = wantsTransferPanel && transferInfo != null
 
@@ -97,21 +97,15 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
       title: 'Pago no aprobado',
       message: 'El pago no pudo procesarse. Podés intentar comprar de nuevo.',
     },
-    expired: showTransferPanel
-      ? {
-          icon: Clock,
-          iconColor: 'text-muted-foreground',
-          iconBg: 'bg-muted',
-          title: 'Tu compra expiró',
-          message: 'Se venció el plazo, pero todavía podés retomarla: transferí y avisanos con "Ya transferí".',
-        }
-      : {
-          icon: Clock,
-          iconColor: 'text-muted-foreground',
-          iconBg: 'bg-muted',
-          title: 'Tu compra expiró',
-          message: 'Se venció el tiempo para completar el pago. Podés iniciar la compra de nuevo.',
-        },
+    expired: {
+      icon: Clock,
+      iconColor: 'text-muted-foreground',
+      iconBg: 'bg-muted',
+      title: 'Tu compra expiró',
+      message: showTransferPanel
+        ? 'Se venció el plazo, pero todavía podés retomarla: transferí y avisanos con "Ya transferí".'
+        : 'Se venció el tiempo para completar el pago. Podés iniciar la compra de nuevo.',
+    },
     refunded: {
       icon: XCircle,
       iconColor: 'text-muted-foreground',
