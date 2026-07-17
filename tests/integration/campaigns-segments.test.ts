@@ -17,6 +17,7 @@ const BALANCE_CUST = 'cseg-cust-balance'
 const NOPHONE_CUST = 'cseg-cust-nophone'
 const OTHER_MONTH_CUST = 'cseg-cust-othermonth'
 const CANCELLED_BAL_CUST = 'cseg-cust-cancelledbal'
+const OPTOUT_CUST = 'cseg-cust-optout'
 
 const TZ = 'America/Santiago'
 const NOW = new Date()
@@ -89,6 +90,16 @@ describe('campaigns queryCampaignSegment', () => {
     await prisma.customer.create({
       data: { id: CANCELLED_BAL_CUST, businessId: BIZ, name: 'Saldo Cancelado', phone: '+56911220006' },
     })
+    // Matchea los 4 segmentos (cumple este mes, inactiva 100 días, frecuente y con
+    // saldo vía bookings de abajo) pero está opt-out → no debe aparecer en ninguno.
+    await prisma.customer.create({
+      data: {
+        id: OPTOUT_CUST, businessId: BIZ, name: 'Opt Out', phone: '+56911220007',
+        birthDate: birthDateThisMonth,
+        lastCompletedAt: new Date(NOW.getTime() - 100 * DAY_MS),
+        marketingOptOutAt: new Date(),
+      },
+    })
 
     // 3 completadas para FREQUENT_CUST + 1 confirmada con saldo para BALANCE_CUST,
     // todas en días distintos (constraint EXCLUDE de solapamiento).
@@ -108,6 +119,30 @@ describe('campaigns queryCampaignSegment', () => {
       data: {
         businessId: BIZ, serviceId: SVC, customerId: BALANCE_CUST,
         ...slot(3),
+        status: 'confirmed',
+        totalPrice: 20000, depositRequired: 5000, depositPaid: 5000,
+        remainingBalance: 15000, discountAmount: 0, finalAmount: 20000,
+        paymentStatus: 'deposit_paid',
+      },
+    })
+    // OPTOUT_CUST también es "frecuente" (3 completadas) y tiene saldo pendiente,
+    // para probar la exclusión en los 4 segmentos con una sola clienta.
+    for (let i = 10; i < 13; i++) {
+      await prisma.booking.create({
+        data: {
+          businessId: BIZ, serviceId: SVC, customerId: OPTOUT_CUST,
+          ...slot(i),
+          status: 'completed',
+          totalPrice: 20000, depositRequired: 5000, depositPaid: 5000,
+          remainingBalance: 0, discountAmount: 0, finalAmount: 20000,
+          paymentStatus: 'fully_paid',
+        },
+      })
+    }
+    await prisma.booking.create({
+      data: {
+        businessId: BIZ, serviceId: SVC, customerId: OPTOUT_CUST,
+        ...slot(13),
         status: 'confirmed',
         totalPrice: 20000, depositRequired: 5000, depositPaid: 5000,
         remainingBalance: 15000, discountAmount: 0, finalAmount: 20000,
@@ -169,5 +204,14 @@ describe('campaigns queryCampaignSegment', () => {
     expect(r.map((c) => c.id)).toContain(BALANCE_CUST)
     expect(r.map((c) => c.id)).not.toContain(FREQUENT_CUST) // saldo 0
     expect(r.map((c) => c.id)).not.toContain(CANCELLED_BAL_CUST) // saldo sólo en booking cancelada
+  })
+
+  it('excluye a las clientas con marketingOptOutAt en los 4 segmentos', async () => {
+    for (const segment of ['birthday_month', 'inactive', 'frequent', 'pending_balance'] as const) {
+      const result = await queryCampaignSegment(
+        prisma, BIZ, segment, { inactiveDays: 60, frequentMin: 3 }, NOW, TZ,
+      )
+      expect(result.map((c) => c.id)).not.toContain(OPTOUT_CUST)
+    }
   })
 })

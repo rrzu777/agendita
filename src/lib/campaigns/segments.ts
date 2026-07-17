@@ -41,7 +41,7 @@ async function fetchSegmentRows(
 ): Promise<SegmentCustomer[]> {
   if (segment === 'birthday_month') {
     // birthDate se guarda a 00:00Z (@db.Date) → su mes se lee en UTC; "ahora" en tz del negocio.
-    const rows = await db.customer.findMany({ where: { businessId, birthDate: { not: null } }, select })
+    const rows = await db.customer.findMany({ where: { businessId, birthDate: { not: null }, marketingOptOutAt: null }, select })
     const nowMonth = monthInTz(now, timeZone)
     return rows.filter((c) => c.birthDate && monthInTz(c.birthDate, 'UTC') === nowMonth)
   }
@@ -50,7 +50,7 @@ async function fetchSegmentRows(
     const days = params.inactiveDays ?? DEFAULT_INACTIVE_DAYS
     const cutoff = new Date(now.getTime() - days * DAY_MS)
     return db.customer.findMany({
-      where: { businessId, lastCompletedAt: { not: null, lte: cutoff } },
+      where: { businessId, lastCompletedAt: { not: null, lte: cutoff }, marketingOptOutAt: null },
       select,
     })
   }
@@ -75,5 +75,5 @@ async function fetchSegmentRows(
 
 function customersByIds(db: Db, businessId: string, ids: string[]): Promise<SegmentCustomer[]> {
   if (ids.length === 0) return Promise.resolve([])
-  return db.customer.findMany({ where: { id: { in: ids }, businessId }, select })
+  return db.customer.findMany({ where: { id: { in: ids }, businessId, marketingOptOutAt: null }, select })
 }
