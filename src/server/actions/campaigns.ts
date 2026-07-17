@@ -114,7 +114,7 @@ export async function getCampaignDetail(campaignId: string) {
         orderBy: { customer: { name: 'asc' } },
         select: {
           id: true, customerId: true, sentAt: true,
-          customer: { select: { name: true, phone: true } },
+          customer: { select: { name: true, phone: true, marketingOptOutAt: true } },
           grant: { select: { status: true, expiresAt: true } },
         },
       },
@@ -135,7 +135,7 @@ export async function sendCampaignMessage(recipientId: string): Promise<{ waUrl:
       where: { id: recipientId, campaign: { businessId } },
       select: {
         id: true, sentAt: true,
-        customer: { select: { id: true, name: true, phone: true } },
+        customer: { select: { id: true, name: true, phone: true, marketingOptOutAt: true } },
         campaign: {
           select: {
             id: true, messageTemplate: true,
@@ -148,6 +148,11 @@ export async function sendCampaignMessage(recipientId: string): Promise<{ waUrl:
     prisma.loyaltyConfig.findUnique({ where: { businessId }, select: { grantExpiryDays: true } }),
   ])
   if (!recipient) throw new ForbiddenError('Destinataria no encontrada')
+  // Puerta 2 (retroactiva): la clienta pudo hacer opt-out DESPUÉS de que la
+  // campaña materializó su lista. Bloquear antes de mintear: sin grant, sin sentAt.
+  if (recipient.customer.marketingOptOutAt) {
+    throw new Error('La clienta pidió no recibir campañas')
+  }
   const tz = recipient.campaign.business.timezone || 'America/Santiago'
   const requestId = `campaign:${recipient.campaign.id}#${recipient.customer.id}`
 

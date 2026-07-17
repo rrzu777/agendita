@@ -353,6 +353,9 @@ model Customer {
   lastCompletedAt  DateTime?
   referralToken    String?   @unique
 
+  // null = acepta campañas de marketing; timestamp = cuándo se dio de baja.
+  marketingOptOutAt DateTime?
+
   userId String?
 
   business      Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)

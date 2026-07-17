@@ -16,6 +16,7 @@ export interface RecipientItem {
   phone: string
   sentAt: Date | null
   grantStatus: string | null
+  optedOut: boolean
 }
 
 export interface RecipientMetrics {
@@ -38,6 +39,8 @@ export function RecipientList({
   metrics: RecipientMetrics
 }) {
   const router = useRouter()
+  // Derivado de recipients (igual que "Destinatarias"): no viaja como métrica.
+  const noContactar = recipients.filter((r) => r.optedOut).length
   const [sending, setSending] = useState<Set<string>>(new Set())
   const [error, setError] = useState<{ recipientId: string; message: string } | null>(null)
 
@@ -72,6 +75,9 @@ export function RecipientList({
   }
 
   function sendButton(r: RecipientItem) {
+    if (r.optedOut) {
+      return <span className="text-sm text-muted-foreground">No contactar</span>
+    }
     return (
       <div className="flex flex-col items-end gap-1">
         <Button
@@ -97,7 +103,7 @@ export function RecipientList({
   return (
     <div className="space-y-6">
       {/* Métricas (patrón stat-cards de customers/[id]) */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <div className="studio-card p-4">
           <p className="studio-eyebrow">Destinatarias</p>
           <p className="mt-1 text-2xl font-semibold text-primary">{recipients.length}</p>
@@ -113,6 +119,10 @@ export function RecipientList({
         <div className="studio-card p-4">
           <p className="studio-eyebrow">Vigentes</p>
           <p className="mt-1 text-2xl font-semibold text-primary">{metrics.vigentes}</p>
+        </div>
+        <div className="studio-card p-4">
+          <p className="studio-eyebrow">No contactar</p>
+          <p className="mt-1 text-2xl font-semibold text-muted-foreground">{noContactar}</p>
         </div>
       </div>
 

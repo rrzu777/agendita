@@ -31,6 +31,7 @@ describe('RecipientList', () => {
             phone: '+56911111111',
             sentAt: new Date('2026-07-10T12:00:00Z'),
             grantStatus: 'active',
+            optedOut: false,
           },
           {
             id: 'r2',
@@ -38,6 +39,7 @@ describe('RecipientList', () => {
             phone: '+56922222222',
             sentAt: null,
             grantStatus: null,
+            optedOut: false,
           },
         ]}
         metrics={{ enviadas: 3, canjearon: 2, vigentes: 1 }}
@@ -77,6 +79,7 @@ describe('RecipientList', () => {
             phone: '+56933333333',
             sentAt: new Date('2026-07-10T12:00:00Z'),
             grantStatus: 'redeemed',
+            optedOut: false,
           },
         ]}
         metrics={{ enviadas: 1, canjearon: 1, vigentes: 0 }}
@@ -97,5 +100,23 @@ describe('RecipientList', () => {
     )
 
     expect(html).toContain('Sin destinatarias')
+  })
+
+  it('opt-out: fila "No contactar" sin botón de envío + métrica derivada con su conteo', async () => {
+    const { RecipientList } = await import('@/app/dashboard/campanas/[id]/recipient-list')
+
+    const html = renderToStaticMarkup(
+      <RecipientList
+        recipients={[
+          { id: 'r1', name: 'Ana', phone: '+56911110001', sentAt: null, grantStatus: null, optedOut: true },
+        ]}
+        metrics={{ enviadas: 0, canjearon: 0, vigentes: 0 }}
+      />,
+    )
+
+    expect(html).toContain('No contactar')
+    expect(html).not.toContain('Enviar por WhatsApp')
+    // La métrica se deriva de recipients (1 opt-out en este render).
+    expect(html).toContain('>1<')
   })
 })

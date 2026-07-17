@@ -13,7 +13,7 @@ export interface RunAutomaticLoyaltyResult { businesses: number; emitted: number
 type TimedRule = AutomaticRule & { priority: number }
 type Candidate = {
   id: string; birthDate: Date | null; firstCompletedAt: Date | null; lastCompletedAt: Date | null
-  name: string; email: string | null; loyaltyToken: string | null
+  name: string; email: string | null; loyaltyToken: string | null; marketingOptOutAt: Date | null
 }
 
 const TIMED_KINDS = ['birthday', 'anniversary', 'winback'] as const
@@ -34,6 +34,16 @@ export function selectTimedRuleForCustomer(rules: TimedRule[], c: Candidate, now
     if (ruleMatches(rule, c, now, tz)) return rule
   }
   return null
+}
+
+/** ¿Corresponde email promocional de recompensa? Sólo birthday/winback (anniversary
+ *  queda mudo) y sólo si la clienta no hizo opt-out de marketing. El GRANT se emite
+ *  igual en ambos casos — el opt-out silencia la comunicación, no el beneficio. */
+export function wantsRewardEmail(
+  kind: string | null,
+  customer: { marketingOptOutAt: Date | null },
+): kind is 'birthday' | 'winback' {
+  return (kind === 'birthday' || kind === 'winback') && !customer.marketingOptOutAt
 }
 
 /** Barrido diario (corre cada hora, idempotente por dedupeKey de ocasión). Emite a lo sumo
@@ -88,7 +98,7 @@ export async function runAutomaticLoyalty(now: Date = new Date()): Promise<RunAu
       where: { businessId: biz.id,
         OR: [{ birthDate: { not: null } }, { firstCompletedAt: { not: null } }] },
       select: { id: true, birthDate: true, firstCompletedAt: true, lastCompletedAt: true,
-        name: true, email: true, loyaltyToken: true },
+        name: true, email: true, loyaltyToken: true, marketingOptOutAt: true },
     })
 
     for (const c of customers) {
@@ -111,7 +121,7 @@ export async function runAutomaticLoyalty(now: Date = new Date()): Promise<RunAu
           // Email transaccional de recompensa — SOLO birthday/winback (anniversary queda mudo).
           // Best-effort: nunca rompe ni bloquea la emisión (sendRewardEmail traga errores).
           const kind = conditionKind(rule.conditions)
-          if (kind === 'birthday' || kind === 'winback') {
+          if (wantsRewardEmail(kind, c)) {
             const rewardLabel = describeReward(
               out, rule, biz.loyaltyConfig?.pointsLabel ?? 'puntos', biz.currency || 'CLP',
             )

@@ -76,6 +76,7 @@ export default async function CampaignDetailPage({ params }: Props) {
     phone: r.customer.phone,
     sentAt: r.sentAt,
     grantStatus: r.grant?.status ?? null,
+    optedOut: r.customer.marketingOptOutAt != null,
   }))
 
   return (

@@ -164,4 +164,32 @@ describe('campaigns actions', () => {
     expect(list.length).toBeGreaterThanOrEqual(1)
     expect(list[0]._count.recipients).toBe(2)
   })
+
+  it('sendCampaignMessage rechaza clientas opt-out sin mintear grant ni marcar sentAt', async () => {
+    const { createCampaign, getCampaignDetail, sendCampaignMessage } = await importActions()
+    // Campaña con las 2 clientas (aún sin opt-out, así CUST_B entra al segmento).
+    const { campaignId } = await createCampaign({
+      name: 'Optout Guard', segmentType: 'frequent', segmentParams: { frequentMin: 1 },
+      messageTemplate: 'Hola {nombre} {codigo}', promotionId: PROMO,
+    })
+    // Opt-out DESPUÉS de materializar (caso retroactivo).
+    await prisma.customer.update({ where: { id: CUST_B }, data: { marketingOptOutAt: new Date() } })
+
+    const detail = await getCampaignDetail(campaignId)
+    const recipientB = detail.recipients.find((r) => r.customerId === CUST_B)!
+
+    await expect(sendCampaignMessage(recipientB.id)).rejects.toThrow(/no recibir campañas/)
+
+    // No minteó grant ni marcó sentAt.
+    const after = await prisma.campaignRecipient.findUnique({ where: { id: recipientB.id } })
+    expect(after?.grantId).toBeNull()
+    expect(after?.sentAt).toBeNull()
+    const grants = await prisma.promotionGrant.count({
+      where: { customerId: CUST_B, requestId: `campaign:${campaignId}#${CUST_B}` },
+    })
+    expect(grants).toBe(0)
+
+    // Cleanup del flag para no contaminar otros tests del archivo.
+    await prisma.customer.update({ where: { id: CUST_B }, data: { marketingOptOutAt: null } })
+  })
 })

@@ -6,7 +6,9 @@ import { isWhatsappablePhone } from '@/lib/customers/phone'
 import { DAY_MS } from '@/lib/dates'
 
 type Db = PrismaClient | Prisma.TransactionClient
-export interface SegmentCustomer { id: string; name: string; phone: string; birthDate: Date | null }
+export interface SegmentCustomer {
+  id: string; name: string; phone: string; birthDate: Date | null; marketingOptOutAt: Date | null
+}
 
 // Reservas "vivas" para el segmento de saldo pendiente.
 const DEAD = ['cancelled', 'no_show', 'expired'] as const
@@ -17,7 +19,7 @@ function monthInTz(date: Date, tz: string): number {
 
 export interface SegmentParams { inactiveDays?: number; frequentMin?: number }
 
-const select = { id: true, name: true, phone: true, birthDate: true } as const
+const select = { id: true, name: true, phone: true, birthDate: true, marketingOptOutAt: true } as const
 
 export async function queryCampaignSegment(
   db: Db,
@@ -28,7 +30,9 @@ export async function queryCampaignSegment(
   timeZone: string,
 ): Promise<SegmentCustomer[]> {
   const rows = await fetchSegmentRows(db, businessId, segment, params, now, timeZone)
-  return rows.filter((c) => isWhatsappablePhone(c.phone))
+  // Choke point de contactabilidad para TODO segmento (presente y futuro):
+  // teléfono whatsappeable Y sin opt-out de marketing.
+  return rows.filter((c) => isWhatsappablePhone(c.phone) && !c.marketingOptOutAt)
 }
 
 async function fetchSegmentRows(
