@@ -8,6 +8,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { PaymentStatus, BookingStatus } from '@prisma/client'
 import { updateCustomerSchema, updateCustomerNotesSchema } from '@/lib/customers/schema'
 import { normalizePhone } from '@/lib/customers/phone'
+import { setMarketingOptOut } from '@/lib/campaigns/optout'
 
 export type CustomerListItem = {
   id: string
@@ -337,6 +338,29 @@ export async function updateCustomerNotes(customerId: string, data: unknown) {
   revalidatePath('/dashboard/customers')
   revalidatePath(`/dashboard/customers/${customerId}`)
   return updated
+}
+
+export async function setCustomerMarketingOptOut(customerId: string, optedOut: boolean) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+
+  const limit = await checkRateLimit('update-customer', 20, 60000)
+  if (!limit.success) {
+    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  }
+  if (typeof optedOut !== 'boolean') throw new Error('Datos invalidos')
+
+  const existing = await prisma.customer.findFirst({
+    where: { id: customerId, businessId },
+    select: { id: true },
+  })
+  if (!existing) {
+    throw new ForbiddenError('Cliente no encontrado')
+  }
+
+  await setMarketingOptOut(prisma, customerId, optedOut)
+
+  revalidatePath('/dashboard/customers')
+  revalidatePath(`/dashboard/customers/${customerId}`)
 }
 
 const searchCustomersForBookingSchema = z.object({
