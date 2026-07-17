@@ -319,7 +319,10 @@ export async function verifyAndConfirmPackagePayment(input: { purchaseId: string
   return { success: true }
 }
 
-/** Declaración pública "ya transferí" de una compra de paquete por transferencia. */
+/** Declaración pública "ya transferí" de una compra de paquete por transferencia.
+ *  También REVIVE una compra expirada (self-service, decisión del spec §5): un
+ *  paquete no bloquea cupo, así que si el producto sigue vigente al mismo precio,
+ *  expired→pending con hold nuevo en el mismo acto de declarar. */
 export async function declarePackageTransfer(input: { purchaseId: string }): Promise<{ ok: true }> {
   const user = await getCurrentUser()
   if (!user) throw new Error('Debes iniciar sesión.')
@@ -327,23 +330,65 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
   if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
 
   const purchase = await loadOwnedPurchase(input.purchaseId, user.id)
-  if (purchase.status !== 'pending') throw new Error('Esta compra ya fue procesada.')
+  // Sólo una expirada QUE ERA de transferencia es retomable; MP expirado se recompra
+  // y rejected es terminal (la dueña ya miró y dijo no).
+  const isRevive = purchase.status === 'expired' && purchase.paymentMethod === 'Transferencia'
+  if (purchase.status !== 'pending' && !isRevive) throw new Error('Esta compra ya fue procesada.')
   // SIN check de hold a propósito (fix zombie, spec §5): la plata pudo enviarse
   // aunque el hold venciera y acá no hay cupo en juego. La ventana la cierra el
-  // sweep: cuando expira la compra no-declarada, el guard de status de arriba
-  // rechaza. Una vez declarada, el sweep la exime y la dueña decide.
+  // sweep: cuando expira la compra no-declarada, cae en la rama revive de arriba.
+  // Una vez declarada, el sweep la exime y la dueña decide.
+
+  let reviveHoldHours: number | null = null
+  if (isRevive) {
+    const [transferInfo, product] = await Promise.all([
+      getBankTransferInfo(purchase.businessId),
+      prisma.packageProduct.findUnique({
+        where: { id: purchase.packageProductId },
+        select: { isActive: true, price: true },
+      }),
+    ])
+    if (!transferInfo) throw new Error('Transferencia bancaria no disponible para este negocio.')
+    // Guard de producto: revivir mantiene el precio snapshot; si el catálogo cambió,
+    // la compra vieja ya no representa la oferta actual.
+    if (!product?.isActive || product.price !== purchase.pricePaid) {
+      throw new Error('Este paquete cambió. Iniciá la compra de nuevo.')
+    }
+    reviveHoldHours = transferInfo.holdHours
+  }
 
   const declaredId = btPkgDeclaredId(purchase.id)
   await prisma.$transaction(async (tx) => {
     // CAS sobre la fila de la compra DENTRO de la misma tx que crea el Payment:
-    // toma el lock y re-valida pending, serializando contra el sweep (que también
-    // hace updateMany sobre esta fila). Si el sweep ganó y la expiró entre el read
-    // de arriba y acá, esto corta antes de crear un Payment huérfano invisible.
-    const guard = await tx.packagePurchase.updateMany({
-      where: { id: purchase.id, status: 'pending' },
-      data: { status: 'pending' },
-    })
+    // toma el lock y re-valida el status leído, serializando contra el sweep (que
+    // también hace updateMany sobre esta fila) y contra otra pestaña. count 0 ⇒
+    // alguien la movió entre el read de arriba y acá; cortar antes de crear un
+    // Payment huérfano invisible.
+    const guard = isRevive
+      ? await tx.packagePurchase.updateMany({
+          where: { id: purchase.id, status: 'expired' },
+          data: {
+            status: 'pending',
+            holdExpiresAt: addHours(new Date(), reviveHoldHours!),
+            // Compra revivida = ciclo nuevo: los recordatorios vuelven a armarse.
+            transferReminderCustomerSentAt: null,
+            transferReminderBusinessSentAt: null,
+          },
+        })
+      : await tx.packagePurchase.updateMany({
+          where: { id: purchase.id, status: 'pending' },
+          data: { status: 'pending' },
+        })
     if (guard.count === 0) throw new Error('Esta compra ya fue procesada.')
+
+    // Robustez del revive: si quedó un declarado 'cancelled' de un ciclo anterior
+    // (hoy inalcanzable: el sweep exime declaradas), reactivarlo con createdAt=now
+    // ("declaró de nuevo") para que el recordatorio de la dueña no dispare al instante.
+    // Sólo toca 'cancelled': un 'approved' jamás se pisa (espejo del fix A2 de reservas).
+    await tx.payment.updateMany({
+      where: { packagePurchaseId: purchase.id, provider: 'manual', providerPaymentId: declaredId, status: 'cancelled' },
+      data: { status: 'pending', createdAt: new Date() },
+    })
     // Idempotente por @@unique([packagePurchaseId, provider, providerPaymentId]).
     await tx.payment.upsert({
       where: { packagePurchaseId_provider_providerPaymentId: {
