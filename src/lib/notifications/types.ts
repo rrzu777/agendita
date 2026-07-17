@@ -261,3 +261,22 @@ export interface ReminderEmailData {
   remainingBalance: number
   depositPaid: number
 }
+
+export interface PackageTransferReminderCustomerEmailData {
+  businessName: string
+  businessTimezone: string
+  customerName: string
+  productName: string
+  amount: number
+  businessCurrency: string
+  bankTransfer: NonNullable<BookingEmailData['bankTransfer']>
+  customerEmail?: string
+  businessReplyToEmail?: string | null
+}
+
+export interface PackageTransferUnverifiedBusinessEmailData {
+  businessName: string
+  customerName: string
+  productName: string
+  dashboardUrl: string
+}
