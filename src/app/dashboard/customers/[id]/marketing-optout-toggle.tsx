@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Switch } from '@/components/ui/switch'
 import { setCustomerMarketingOptOut } from '@/server/actions/customers'
+import { formatMediumDate } from '@/lib/format-date'
 
 /** Toggle "Acepta campañas" de la ficha. checked = acepta (flag null);
  *  apagarlo = opt-out. La fecha de baja se muestra como mini-auditoría. */
@@ -49,7 +50,7 @@ export function MarketingOptOutToggle({
       </div>
       {marketingOptOutAt && (
         <p className="mt-2 text-xs text-muted-foreground">
-          Se dio de baja el {new Date(marketingOptOutAt).toLocaleDateString('es-CL')}
+          Se dio de baja el {formatMediumDate(marketingOptOutAt)}
         </p>
       )}
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}

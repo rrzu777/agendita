@@ -23,7 +23,6 @@ export interface RecipientMetrics {
   enviadas: number
   canjearon: number
   vigentes: number
-  noContactar: number
 }
 
 function statusLabel(r: RecipientItem): string {
@@ -40,6 +39,8 @@ export function RecipientList({
   metrics: RecipientMetrics
 }) {
   const router = useRouter()
+  // Derivado de recipients (igual que "Destinatarias"): no viaja como métrica.
+  const noContactar = recipients.filter((r) => r.optedOut).length
   const [sending, setSending] = useState<Set<string>>(new Set())
   const [error, setError] = useState<{ recipientId: string; message: string } | null>(null)
 
@@ -121,7 +122,7 @@ export function RecipientList({
         </div>
         <div className="studio-card p-4">
           <p className="studio-eyebrow">No contactar</p>
-          <p className="mt-1 text-2xl font-semibold text-muted-foreground">{metrics.noContactar}</p>
+          <p className="mt-1 text-2xl font-semibold text-muted-foreground">{noContactar}</p>
         </div>
       </div>
 

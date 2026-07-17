@@ -42,7 +42,7 @@ describe('RecipientList', () => {
             optedOut: false,
           },
         ]}
-        metrics={{ enviadas: 3, canjearon: 2, vigentes: 1, noContactar: 0 }}
+        metrics={{ enviadas: 3, canjearon: 2, vigentes: 1 }}
       />,
     )
 
@@ -82,7 +82,7 @@ describe('RecipientList', () => {
             optedOut: false,
           },
         ]}
-        metrics={{ enviadas: 1, canjearon: 1, vigentes: 0, noContactar: 0 }}
+        metrics={{ enviadas: 1, canjearon: 1, vigentes: 0 }}
       />,
     )
 
@@ -95,14 +95,14 @@ describe('RecipientList', () => {
     const html = renderToStaticMarkup(
       <RecipientList
         recipients={[]}
-        metrics={{ enviadas: 0, canjearon: 0, vigentes: 0, noContactar: 0 }}
+        metrics={{ enviadas: 0, canjearon: 0, vigentes: 0 }}
       />,
     )
 
     expect(html).toContain('Sin destinatarias')
   })
 
-  it('muestra "No contactar" sin botón de envío para clientas opt-out', async () => {
+  it('opt-out: fila "No contactar" sin botón de envío + métrica derivada con su conteo', async () => {
     const { RecipientList } = await import('@/app/dashboard/campanas/[id]/recipient-list')
 
     const html = renderToStaticMarkup(
@@ -110,27 +110,13 @@ describe('RecipientList', () => {
         recipients={[
           { id: 'r1', name: 'Ana', phone: '+56911110001', sentAt: null, grantStatus: null, optedOut: true },
         ]}
-        metrics={{ enviadas: 0, canjearon: 0, vigentes: 0, noContactar: 1 }}
+        metrics={{ enviadas: 0, canjearon: 0, vigentes: 0 }}
       />,
     )
 
     expect(html).toContain('No contactar')
     expect(html).not.toContain('Enviar por WhatsApp')
-  })
-
-  it('métrica "No contactar" visible con su conteo', async () => {
-    const { RecipientList } = await import('@/app/dashboard/campanas/[id]/recipient-list')
-
-    const html = renderToStaticMarkup(
-      <RecipientList
-        recipients={[
-          { id: 'r1', name: 'Ana', phone: '+56911110001', sentAt: null, grantStatus: null, optedOut: true },
-        ]}
-        metrics={{ enviadas: 0, canjearon: 0, vigentes: 0, noContactar: 1 }}
-      />,
-    )
-
-    expect(html).toContain('No contactar')
+    // La métrica se deriva de recipients (1 opt-out en este render).
     expect(html).toContain('>1<')
   })
 })
