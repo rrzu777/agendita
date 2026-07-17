@@ -254,6 +254,9 @@ export function CustomerList({ customers, error }: CustomerListProps) {
                   ...(customer.notes
                     ? [{ label: 'Notas', value: <span className="italic text-muted-foreground/70">{customer.notes}</span> }]
                     : []),
+                  ...(customer.marketingOptOut
+                    ? [{ label: 'Campañas', value: <span className="text-muted-foreground">No contactar</span> }]
+                    : []),
                 ]}
                 actions={
                   <Link href={`/dashboard/customers/${customer.id}`}>
@@ -285,7 +288,17 @@ export function CustomerList({ customers, error }: CustomerListProps) {
               <TableBody>
                 {filtered.map((customer) => (
                   <TableRow key={customer.id}>
-                    <TruncatedCell className="font-semibold text-primary" primary={customer.name} />
+                    <TruncatedCell
+                      className="font-semibold text-primary"
+                      primary={customer.name}
+                      secondary={
+                        customer.marketingOptOut ? (
+                          <Badge variant="outline" className="text-xs text-muted-foreground">
+                            No campañas
+                          </Badge>
+                        ) : undefined
+                      }
+                    />
                     <TruncatedCell
                       className="w-[180px] text-xs text-muted-foreground"
                       primary={

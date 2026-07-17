@@ -14,6 +14,7 @@ import { getCustomerPackages, listPackageProducts } from '@/server/actions/packa
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { normalizePhone } from '@/lib/customers/phone'
 import { CustomerEditForm } from './edit-form'
+import { MarketingOptOutToggle } from './marketing-optout-toggle'
 import { CustomerNotesForm } from './notes-form'
 import { LoyaltyPanel } from './loyalty-panel'
 import { PackagePanel } from './package-panel'
@@ -193,6 +194,10 @@ export default async function CustomerDetailPage({ params }: Props) {
             <div className="studio-card p-4">
               <h3 className="mb-4 text-lg font-semibold text-primary">Datos de contacto</h3>
               <CustomerEditForm customer={customer} />
+              <MarketingOptOutToggle
+                customerId={customer.id}
+                marketingOptOutAt={customer.marketingOptOutAt}
+              />
             </div>
 
             {/* Notes */}

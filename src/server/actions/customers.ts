@@ -17,6 +17,7 @@ export type CustomerListItem = {
   email: string | null
   notes: string | null
   birthDate: Date | null
+  marketingOptOut: boolean
   bookingCount: number
   lastBookingAt: Date | null
   totalPaidApproved: number
@@ -36,6 +37,7 @@ export async function getCustomers(): Promise<CustomerListItem[]> {
       email: true,
       notes: true,
       birthDate: true,
+      marketingOptOutAt: true,
       createdAt: true,
     },
     take: 500,
@@ -104,6 +106,7 @@ export async function getCustomers(): Promise<CustomerListItem[]> {
       email: c.email,
       notes: c.notes,
       birthDate: c.birthDate,
+      marketingOptOut: c.marketingOptOutAt != null,
       bookingCount,
       lastBookingAt,
       totalPaidApproved,
@@ -131,6 +134,7 @@ export type CustomerDetail = {
   email: string | null
   notes: string | null
   birthDate: Date | null
+  marketingOptOutAt: Date | null
   bookingCount: number
   lastBookingAt: Date | null
   totalPaidApproved: number
@@ -239,6 +243,7 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
     email: customer.email,
     notes: customer.notes,
     birthDate: customer.birthDate,
+    marketingOptOutAt: customer.marketingOptOutAt,
     bookingCount: bookingStats._count.id,
     lastBookingAt: bookingStats._max.startDateTime,
     totalPaidApproved: paymentSum._sum.amount ?? 0,
