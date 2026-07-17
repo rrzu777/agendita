@@ -114,7 +114,7 @@ export async function getCampaignDetail(campaignId: string) {
         orderBy: { customer: { name: 'asc' } },
         select: {
           id: true, customerId: true, sentAt: true,
-          customer: { select: { name: true, phone: true } },
+          customer: { select: { name: true, phone: true, marketingOptOutAt: true } },
           grant: { select: { status: true, expiresAt: true } },
         },
       },

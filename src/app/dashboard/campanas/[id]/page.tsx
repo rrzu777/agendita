@@ -68,6 +68,7 @@ export default async function CampaignDetailPage({ params }: Props) {
   const vigentes = campaign.recipients.filter(
     (r) => r.grant?.status === 'active' && (!r.grant.expiresAt || r.grant.expiresAt >= now),
   ).length
+  const noContactar = campaign.recipients.filter((r) => r.customer.marketingOptOutAt != null).length
 
   // Serializamos lo justo para el client component.
   const recipients = campaign.recipients.map((r) => ({
@@ -76,6 +77,7 @@ export default async function CampaignDetailPage({ params }: Props) {
     phone: r.customer.phone,
     sentAt: r.sentAt,
     grantStatus: r.grant?.status ?? null,
+    optedOut: r.customer.marketingOptOutAt != null,
   }))
 
   return (
@@ -97,7 +99,7 @@ export default async function CampaignDetailPage({ params }: Props) {
 
         <RecipientList
           recipients={recipients}
-          metrics={{ enviadas, canjearon, vigentes }}
+          metrics={{ enviadas, canjearon, vigentes, noContactar }}
         />
       </div>
     </div>
