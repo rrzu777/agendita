@@ -31,7 +31,7 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
       product: { select: { name: true } },
       customer: { select: { userId: true } },
       business: { select: { name: true, slug: true, subdomain: true, currency: true } },
-      payments: { select: { status: true } },
+      payments: { select: { status: true, provider: true, providerPaymentId: true } },
     },
   })
 
@@ -67,6 +67,13 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
       iconBg: 'bg-amber-50',
       title: 'Procesando tu pago',
       message: 'Estamos procesando tu pago. Te confirmaremos cuando se acredite; podés refrescar esta página.',
+    },
+    awaiting_transfer: {
+      icon: Clock,
+      iconColor: 'text-amber-500',
+      iconBg: 'bg-amber-50',
+      title: 'Te falta transferir',
+      message: 'Reservamos tu paquete. Transferí y avisanos con "Ya transferí" para que el negocio confirme tu compra.',
     },
     rejected: {
       icon: XCircle,
