@@ -102,6 +102,11 @@ export async function createPackagePurchase(input: {
       sessionUser: user,
     })
 
+    // Marcar el método elegido en la compra: una pending sin Payments era ambigua
+    // (¿transferencia abandonada o MP nunca iniciado?). 'Transferencia' habilita la
+    // confirmation activa, los recordatorios y /mi; MP queda null (como siempre).
+    const purchasePaymentMethod = method === 'transfer' ? 'Transferencia' : null
+
     const existing = await tx.packagePurchase.findFirst({
       where: {
         businessId: product.businessId,
@@ -113,8 +118,12 @@ export async function createPackagePurchase(input: {
       orderBy: { createdAt: 'desc' },
     })
     if (existing) {
-      // Reintento (posible cambio de método): recalcular el hold al método actual.
-      await tx.packagePurchase.update({ where: { id: existing.id }, data: { holdExpiresAt } })
+      // Reintento (posible cambio de método): recalcular el hold al método actual, y re-armar
+      // el recordatorio de la clienta (hold nuevo ⇒ aviso nuevo).
+      await tx.packagePurchase.update({
+        where: { id: existing.id },
+        data: { holdExpiresAt, paymentMethod: purchasePaymentMethod, transferReminderCustomerSentAt: null },
+      })
       return existing.id
     }
 
@@ -130,6 +139,7 @@ export async function createPackagePurchase(input: {
         coveredServiceIds: product.appliesToAll ? [] : product.services.map(s => s.id),
         source: 'online',
         status: 'pending',
+        paymentMethod: purchasePaymentMethod,
         holdExpiresAt,
         expiresAt,
         createdByUserId: null,

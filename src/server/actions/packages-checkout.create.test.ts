@@ -18,6 +18,11 @@ vi.mock('@/lib/payments/factory', () => ({
   resolveOnlinePaymentAvailabilityForBusiness: (...a: unknown[]) => resolveOnlinePaymentAvailabilityForBusiness(...a),
 }))
 
+const getBankTransferInfo = vi.fn()
+vi.mock('@/server/actions/bank-transfer-public', () => ({
+  getBankTransferInfo: (...a: unknown[]) => getBankTransferInfo(...a),
+}))
+
 const tx = {
   packageProduct: { findFirst: vi.fn() },
   packagePurchase: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
@@ -42,9 +47,11 @@ describe('createPackagePurchase', () => {
     Object.values(tx).forEach(m => Object.values(m).forEach(f => (f as ReturnType<typeof vi.fn>).mockReset()))
     getCurrentUser.mockReset(); findOrCreateCustomerInTx.mockReset(); resolveOnlinePaymentAvailabilityForBusiness.mockReset()
     ensureUserRow.mockReset()
+    getBankTransferInfo.mockReset()
     getCurrentUser.mockResolvedValue({ id: 'u1', email: 'ana@x.cl' })
     ensureUserRow.mockResolvedValue(undefined)
     resolveOnlinePaymentAvailabilityForBusiness.mockResolvedValue({ available: true, provider: 'mercado_pago' })
+    getBankTransferInfo.mockResolvedValue({ holdHours: 48, accountHolder: 'X', rut: '1-9', bankName: 'B', accountType: 'c', accountNumber: '1' })
     tx.packageProduct.findFirst.mockResolvedValue(product)
     findOrCreateCustomerInTx.mockResolvedValue({ customer: { id: 'c1', email: 'ana@x.cl' }, created: false })
     tx.packagePurchase.findFirst.mockResolvedValue(null)
@@ -109,5 +116,37 @@ describe('createPackagePurchase', () => {
       where: { id: 'ppExisting' },
       data: expect.objectContaining({ holdExpiresAt: expect.any(Date) }),
     }))
+  })
+
+  it('marca paymentMethod Transferencia al crear con method transfer', async () => {
+    await createPackagePurchase({ ...baseInput, method: 'transfer' })
+    const data = tx.packagePurchase.create.mock.calls[0][0].data
+    expect(data.paymentMethod).toBe('Transferencia')
+  })
+
+  it('deja paymentMethod null al crear con MP', async () => {
+    await createPackagePurchase(baseInput)
+    const data = tx.packagePurchase.create.mock.calls[0][0].data
+    expect(data.paymentMethod).toBeNull()
+  })
+
+  it('el reuse actualiza paymentMethod y re-arma el recordatorio de la clienta', async () => {
+    tx.packagePurchase.findFirst.mockResolvedValue({ id: 'ppExisting', holdExpiresAt: new Date(Date.now() + 60000) })
+    await createPackagePurchase({ ...baseInput, method: 'transfer' })
+    expect(tx.packagePurchase.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'ppExisting' },
+      data: expect.objectContaining({
+        paymentMethod: 'Transferencia',
+        transferReminderCustomerSentAt: null,
+        holdExpiresAt: expect.any(Date),
+      }),
+    }))
+  })
+
+  it('el reuse cambiando a MP limpia paymentMethod', async () => {
+    tx.packagePurchase.findFirst.mockResolvedValue({ id: 'ppExisting', holdExpiresAt: new Date(Date.now() + 60000) })
+    await createPackagePurchase(baseInput)
+    const data = tx.packagePurchase.update.mock.calls[0][0].data
+    expect(data.paymentMethod).toBeNull()
   })
 })
