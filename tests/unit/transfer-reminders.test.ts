@@ -47,7 +47,13 @@ function makeDb(opts: Record<string, any> = {}): any {
     if ('paymentMethod' in where) return opts.customerBookings ?? []
     return opts.businessBookings ?? []
   })
-  return { booking: { findMany, updateMany } }
+  return {
+    booking: { findMany, updateMany },
+    packagePurchase: {
+      findMany: vi.fn().mockResolvedValue([]),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
+  }
 }
 
 function deps(overrides: Record<string, unknown> = {}) {
@@ -65,7 +71,7 @@ describe('sendTransferReminders', () => {
     const db = makeDb()
     const d = deps()
     const res = await sendTransferReminders(now, db, d)
-    expect(res).toEqual({ customerSent: 0, businessSent: 0, skipped: 0, errors: 0 })
+    expect(res).toEqual({ customerSent: 0, businessSent: 0, packageCustomerSent: 0, packageBusinessSent: 0, skipped: 0, errors: 0 })
     expect(d.sendCustomer).not.toHaveBeenCalled()
     expect(d.sendBusiness).not.toHaveBeenCalled()
   })

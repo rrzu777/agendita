@@ -16,7 +16,9 @@ requireTestDatabase()
 function makeDeps() {
   const sendCustomer = vi.fn().mockResolvedValue({ success: true })
   const sendBusiness = vi.fn().mockResolvedValue([{ success: true }])
-  return { sendCustomer, sendBusiness }
+  const sendPkgCustomer = vi.fn().mockResolvedValue({ success: true })
+  const sendPkgBusiness = vi.fn().mockResolvedValue([{ success: true }])
+  return { sendCustomer, sendBusiness, sendPkgCustomer, sendPkgBusiness }
 }
 
 // Aislamiento por test: el cron procesa estado GLOBAL, así que limpiamos las
