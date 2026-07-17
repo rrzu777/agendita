@@ -7,6 +7,8 @@ import { getCurrentUser } from '@/lib/auth/user'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { derivePackageConfirmationState } from '@/lib/payments/package-confirmation-state'
 import { formatMoney } from '@/lib/money'
+import { PackageTransferPanel } from './transfer-panel'
+import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 
 interface ConfirmationPageProps {
   searchParams: Promise<{ purchaseId?: string }>
@@ -28,7 +30,7 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
   const purchase = await prisma.packagePurchase.findUnique({
     where: { id: purchaseId },
     include: {
-      product: { select: { name: true } },
+      product: { select: { name: true, isActive: true, price: true } },
       customer: { select: { userId: true } },
       business: { select: { name: true, slug: true, subdomain: true, currency: true } },
       payments: { select: { status: true, provider: true, providerPaymentId: true } },
@@ -52,6 +54,19 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
   const state = derivePackageConfirmationState(purchase)
   const cardHref = tenant ? '/mi' : `/mi/${purchase.business.slug}`
   const totalSessions = purchase.quantity + purchase.bonusQuantity
+
+  // Superficie activa: en awaiting_transfer siempre; en expired sólo si la compra
+  // sigue retomable (era transferencia + producto vigente al mismo precio + el
+  // negocio mantiene transferencia habilitada). El guard server-side real vive en
+  // declarePackageTransfer; esto sólo decide si mostrar el panel.
+  const wantsTransferPanel =
+    state === 'awaiting_transfer' ||
+    (state === 'expired' &&
+      purchase.paymentMethod === 'Transferencia' &&
+      purchase.product.isActive &&
+      purchase.product.price === purchase.pricePaid)
+  const transferInfo = wantsTransferPanel ? await getBankTransferInfo(purchase.businessId) : null
+  const showTransferPanel = wantsTransferPanel && transferInfo != null
 
   const config = {
     active: {
@@ -82,13 +97,21 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
       title: 'Pago no aprobado',
       message: 'El pago no pudo procesarse. Podés intentar comprar de nuevo.',
     },
-    expired: {
-      icon: Clock,
-      iconColor: 'text-muted-foreground',
-      iconBg: 'bg-muted',
-      title: 'Tu compra expiró',
-      message: 'Se venció el tiempo para completar el pago. Podés iniciar la compra de nuevo.',
-    },
+    expired: showTransferPanel
+      ? {
+          icon: Clock,
+          iconColor: 'text-muted-foreground',
+          iconBg: 'bg-muted',
+          title: 'Tu compra expiró',
+          message: 'Se venció el plazo, pero todavía podés retomarla: transferí y avisanos con "Ya transferí".',
+        }
+      : {
+          icon: Clock,
+          iconColor: 'text-muted-foreground',
+          iconBg: 'bg-muted',
+          title: 'Tu compra expiró',
+          message: 'Se venció el tiempo para completar el pago. Podés iniciar la compra de nuevo.',
+        },
     refunded: {
       icon: XCircle,
       iconColor: 'text-muted-foreground',
@@ -129,6 +152,15 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
             <span className="font-semibold">{formatMoney(purchase.pricePaid, purchase.business.currency || 'CLP')}</span>
           </div>
         </div>
+
+        {showTransferPanel && (
+          <PackageTransferPanel
+            transferInfo={transferInfo}
+            amount={purchase.pricePaid}
+            currency={purchase.business.currency || 'CLP'}
+            purchaseId={purchase.id}
+          />
+        )}
 
         <div className="mt-6">
           <Button asChild className="h-12 w-full rounded-full">
