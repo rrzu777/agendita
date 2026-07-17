@@ -4,6 +4,8 @@ import { resolveLoyaltyCustomer } from '@/lib/loyalty/token'
 import { loadLoyaltyCardData } from '@/lib/loyalty/card-data'
 import { LoyaltyCard } from '@/components/loyalty/loyalty-card'
 import { redeemPointsAsCustomer } from '@/server/actions/loyalty'
+import { setMarketingOptOutByToken } from '@/server/actions/marketing-optout'
+import { MarketingOptOutSection } from '@/components/loyalty/marketing-optout-section'
 import { PageMessage } from '@/components/ui/page-message'
 
 export const metadata: Metadata = { robots: { index: false, follow: false } }
@@ -17,6 +19,12 @@ async function redeemAction(token: string, formData: FormData) {
     String(formData.get('optionId')),
     String(formData.get('requestId')),
   )
+}
+
+// Mismo criterio de bind server-side que redeemAction: el token es la credencial.
+async function optOutAction(token: string, optedOut: boolean) {
+  'use server'
+  await setMarketingOptOutByToken(token, optedOut)
 }
 
 export default async function LoyaltyCardPage({ params }: { params: Promise<{ token: string }> }) {
@@ -44,6 +52,11 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
           </a>
         </p>
       )}
+      <MarketingOptOutSection
+        businessName={customer.business.name}
+        optedOut={customer.marketingOptOutAt != null}
+        action={optOutAction.bind(null, token)}
+      />
     </main>
   )
 }

@@ -4,6 +4,8 @@ import { prepareMiUser } from '@/lib/auth/mi-user'
 import { loadLoyaltyCardData } from '@/lib/loyalty/card-data'
 import { LoyaltyCard } from '@/components/loyalty/loyalty-card'
 import { redeemPointsAsMe } from '@/server/actions/loyalty'
+import { setMarketingOptOutAsMe } from '@/server/actions/marketing-optout'
+import { MarketingOptOutSection } from '@/components/loyalty/marketing-optout-section'
 import { getBookingFunnelUrl } from '@/lib/business/urls'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { bookingStatusLabels } from '@/lib/bookings/status-labels'
@@ -34,6 +36,13 @@ async function redeemAction(customerId: string, formData: FormData) {
   await redeemPointsAsMe(customerId, String(formData.get('optionId')), String(formData.get('requestId')))
 }
 
+// Mismo criterio de bind server-side que redeemAction: el customerId no viaja
+// en el body del form (la action re-verifica ownership por sesión igualmente).
+async function optOutAsMeAction(customerId: string, optedOut: boolean) {
+  'use server'
+  await setMarketingOptOutAsMe(customerId, optedOut)
+}
+
 export default async function MiBusinessPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   // await la preparación (fila User + auto-link) antes de leer Customers, para
@@ -54,7 +63,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
   // Sin Customer vinculado en este negocio -> 404 (no revela negocios ajenos).
   const customers = await prisma.customer.findMany({
     where: { userId: user.id, businessId: business.id },
-    select: { id: true, name: true, businessId: true, referralToken: true },
+    select: { id: true, name: true, businessId: true, referralToken: true, marketingOptOutAt: true },
     orderBy: { createdAt: 'asc' },
   })
   if (customers.length === 0) notFound()
@@ -139,6 +148,15 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
           </ul>
         )}
       </section>
+
+      {customers.map((c) => (
+        <MarketingOptOutSection
+          key={c.id}
+          businessName={business.name}
+          optedOut={c.marketingOptOutAt != null}
+          action={optOutAsMeAction.bind(null, c.id)}
+        />
+      ))}
     </main>
   )
 }
