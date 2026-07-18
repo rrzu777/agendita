@@ -19,6 +19,7 @@ const mockPrisma = {
     ]),
   },
   promotionGrant: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
+  $executeRaw: vi.fn().mockResolvedValue(0),
   $transaction: vi.fn(),
 }
 

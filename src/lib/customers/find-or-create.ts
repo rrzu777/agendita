@@ -1,6 +1,7 @@
 import type { Customer, Prisma } from '@prisma/client'
 import { normalizePhone } from '@/lib/customers/phone'
 import { linkCustomerFromBookingSession } from '@/lib/customers/link'
+import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
 
 export interface FindOrCreateCustomerInput {
   businessId: string
@@ -28,6 +29,11 @@ export async function findOrCreateCustomerInTx(
   input: FindOrCreateCustomerInput,
 ): Promise<{ customer: Customer; created: boolean }> {
   const phone = normalizePhone(input.phone)
+  // Cierra la carrera check-then-act: sin lock, dos requests concurrentes con el
+  // mismo teléfono nuevo pasan ambas el findFirst (null) y crean dos Customers
+  // (ficha duplicada → parte loyalty/paquetes/historial). El lock serializa
+  // find-or-create por (businessId, phone). Se libera al commit de la tx.
+  await acquireAdvisoryXactLock(tx, `customer:${input.businessId}:${phone}`)
   let customer = await tx.customer.findFirst({ where: { phone, businessId: input.businessId } })
   let created = false
 
