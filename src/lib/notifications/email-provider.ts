@@ -4,6 +4,7 @@ import { BookingStatus } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
 import { getAppUrl } from '@/lib/business/urls'
+import { unsubscribeHeaders, unsubscribeFooterHtml, unsubscribeFooterText } from './marketing-email'
 import type {
   EmailResult,
   BookingEmailData,
@@ -63,6 +64,8 @@ import {
   paymentReceivedText,
   loyaltyRewardHtml,
   loyaltyRewardText,
+  campaignPromoHtml,
+  campaignPromoText,
   packagePurchasedCustomerHtml,
   packagePurchasedCustomerText,
   packageSoldBusinessHtml,
@@ -517,6 +520,28 @@ export async function sendLoyaltyRewardNotification(data: LoyaltyRewardEmailData
     text,
     { replyTo: data.businessReplyToEmail },
   )
+}
+
+/** Email de campaña de marketing (blast por email, canal alternativo a WhatsApp).
+ *  Best-effort: degrada suave si falta provider/FROM. Lleva footer + headers de baja. */
+export async function sendCampaignPromoEmail(args: {
+  to: string
+  businessName: string
+  businessReplyToEmail: string | null
+  message: string
+  unsubscribeToken: string
+}): Promise<EmailResult> {
+  const subject = `${args.businessName} te dejó un beneficio 🎁`
+  const html = campaignPromoHtml({
+    businessName: args.businessName,
+    message: args.message,
+    unsubscribeFooterHtml: unsubscribeFooterHtml(args.unsubscribeToken),
+  })
+  const text = campaignPromoText(args.message, unsubscribeFooterText(args.unsubscribeToken))
+  return sendEmail(args.to, subject, html, text, {
+    replyTo: args.businessReplyToEmail,
+    headers: unsubscribeHeaders(args.unsubscribeToken),
+  })
 }
 
 async function sendPackagePurchasedToCustomer(

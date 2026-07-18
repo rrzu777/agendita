@@ -714,6 +714,26 @@ export function loyaltyRewardText(data: LoyaltyRewardEmailData): string {
   return lines.join('\n')
 }
 
+/** Cuerpo de email de campaña: el mensaje de la campaña (mismo texto que WhatsApp,
+ *  placeholders ya sustituidos) envuelto en el layout estándar, con footer transaccional
+ *  y el footer de baja de marketing (pasado ya renderizado por el caller). */
+export function campaignPromoHtml(data: {
+  businessName: string
+  message: string
+  unsubscribeFooterHtml: string
+}): string {
+  const body = escapeHtml(data.message).replace(/\n/g, '<br>')
+  return baseHtml(`
+    <p style="font-size:15px">${body}</p>
+    ${footer(data.businessName)}
+    ${data.unsubscribeFooterHtml}
+  `)
+}
+
+export function campaignPromoText(message: string, unsubscribeFooterText: string): string {
+  return `${message}\n\n${unsubscribeFooterText}`
+}
+
 export function packagePurchasedCustomerHtml(data: PackagePurchasedEmailData): string {
   const price = fmtCurrency(data.pricePaid, data.businessCurrency)
   const cardSection = data.cardLink
