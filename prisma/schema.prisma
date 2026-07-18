@@ -244,6 +244,9 @@ model BusinessUser {
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, userId])
+  // getUser corre `findFirst({ where: { userId } })` en CADA navegación
+  // autenticada; el unique de arriba arranca por businessId y no sirve.
+  @@index([userId])
 }
 
 enum BusinessRole {
@@ -420,6 +423,16 @@ model Booking {
   @@unique([businessId, idempotencyKey])
   @@unique([businessId, bookingNumber])
   @@index([businessId, status, startDateTime, endDateTime])
+  // Agenda por rango de fechas sin filtro de status (getBookingsInRange):
+  // el índice de arriba arranca por status, así que no sirve para esta query.
+  @@index([businessId, startDateTime])
+  // Historial de la clienta (getCustomerDetail) + performance del cascade delete.
+  @@index([customerId])
+  // Sweep cross-business de holds vencidos (cron expire-holds + transfer-reminders):
+  // filtran por status + holdExpiresAt sin businessId, ningún índice actual sirve.
+  @@index([status, holdExpiresAt])
+  // Sweep cross-business de recordatorios (cron send-reminders): status + rango.
+  @@index([status, startDateTime])
 }
 
 enum BookingStatus {
@@ -475,6 +488,8 @@ model Payment {
   @@unique([packagePurchaseId, provider, providerPaymentId])
   @@index([businessId, status])
   @@index([packagePurchaseId])
+  // Pagos de la clienta (getCustomerDetail) + performance del cascade delete.
+  @@index([customerId])
 }
 
 enum PaymentProvider {
@@ -800,6 +815,9 @@ model PackagePurchase {
 
   @@index([businessId, status])
   @@index([customerId, status])
+  // Sweep cross-business de compras pending con hold vencido (cron expire-holds):
+  // filtra por status + holdExpiresAt sin businessId.
+  @@index([status, holdExpiresAt])
 }
 
 model LoyaltyConfig {
