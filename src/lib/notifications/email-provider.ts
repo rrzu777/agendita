@@ -96,6 +96,7 @@ function getAppDomain(): string {
 
 type SendEmailOptions = {
   replyTo?: string | null
+  headers?: Record<string, string>
 }
 
 async function sendEmail(
@@ -130,6 +131,7 @@ async function sendEmail(
       html,
       text,
       ...(options?.replyTo ? { replyTo: options.replyTo } : {}),
+      ...(options?.headers ? { headers: options.headers } : {}),
     })
 
     if (error) {
