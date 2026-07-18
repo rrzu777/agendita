@@ -3,9 +3,10 @@ import type { Prisma } from '@prisma/client'
 /**
  * Hash estable de string → int32 (no-negativo) para claves de
  * pg_advisory_xact_lock. Colisiones sólo causan sobre-serialización ocasional
- * entre claves distintas, nunca pérdida de correctitud.
+ * entre claves distintas, nunca pérdida de correctitud. Detalle interno: los
+ * callers usan `acquireAdvisoryXactLock` y no deben depender del hash directo.
  */
-export function hashStringToInt(str: string): number {
+function hashStringToInt(str: string): number {
   let hash = 0
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i)
