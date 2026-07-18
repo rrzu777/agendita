@@ -18,6 +18,8 @@ const NOPHONE_CUST = 'cseg-cust-nophone'
 const OTHER_MONTH_CUST = 'cseg-cust-othermonth'
 const CANCELLED_BAL_CUST = 'cseg-cust-cancelledbal'
 const OPTOUT_CUST = 'cseg-cust-optout'
+const EMAIL_ONLY_CUST = 'cseg-cust-emailonly'
+const NOCHANNEL_CUST = 'cseg-cust-nochannel'
 
 const TZ = 'America/Santiago'
 const NOW = new Date()
@@ -149,6 +151,22 @@ describe('campaigns queryCampaignSegment', () => {
         paymentStatus: 'deposit_paid',
       },
     })
+    // Email-only: teléfono no-whatsappeable ('1') pero email válido → contactable por email.
+    // Sin-canal: teléfono no-whatsappeable y sin email → excluida de todo segmento.
+    // Ambas inactivas (>60 días) para probar el choke point vía segmento 'inactive'.
+    await prisma.customer.create({
+      data: {
+        id: EMAIL_ONLY_CUST, businessId: BIZ, name: 'Email Only', phone: '1',
+        email: 'emailonly@cseg.test', lastCompletedAt: new Date(NOW.getTime() - 100 * DAY_MS),
+      },
+    })
+    await prisma.customer.create({
+      data: {
+        id: NOCHANNEL_CUST, businessId: BIZ, name: 'No Channel', phone: '1', email: null,
+        lastCompletedAt: new Date(NOW.getTime() - 100 * DAY_MS),
+      },
+    })
+
     // Cancelada con saldo > 0: estado muerto → NO cuenta para pending_balance.
     await prisma.booking.create({
       data: {
@@ -204,6 +222,13 @@ describe('campaigns queryCampaignSegment', () => {
     expect(r.map((c) => c.id)).toContain(BALANCE_CUST)
     expect(r.map((c) => c.id)).not.toContain(FREQUENT_CUST) // saldo 0
     expect(r.map((c) => c.id)).not.toContain(CANCELLED_BAL_CUST) // saldo sólo en booking cancelada
+  })
+
+  it('incluye clienta email-only y excluye a la que no tiene ningún canal', async () => {
+    const r = await queryCampaignSegment(prisma, BIZ, 'inactive', { inactiveDays: 60 }, NOW, TZ)
+    const ids = r.map((c) => c.id)
+    expect(ids).toContain(EMAIL_ONLY_CUST) // teléfono no-whatsappeable pero email válido
+    expect(ids).not.toContain(NOCHANNEL_CUST) // sin teléfono útil ni email
   })
 
   it('excluye a las clientas con marketingOptOutAt en los 4 segmentos', async () => {
