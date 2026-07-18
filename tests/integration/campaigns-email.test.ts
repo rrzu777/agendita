@@ -34,7 +34,7 @@ import { sendCampaignEmail } from '@/server/actions/campaigns'
 
 let seq = 0
 // Helpers de seed: crea negocio + promo granted + campaña + recipient con email.
-async function seed(opts: { optedOut?: boolean; email?: string | null }) {
+async function seed(opts: { optedOut?: boolean; email?: string | null; promoActive?: boolean }) {
   seq += 1
   const uniq = `${Date.now()}-${seq}`
   const user = await prisma.user.create({ data: { email: `u-${uniq}@x.com`, name: 'Owner' } })
@@ -49,6 +49,7 @@ async function seed(opts: { optedOut?: boolean; email?: string | null }) {
     data: {
       businessId: business.id, triggerType: 'granted', pointsCost: null, name: 'Promo',
       rewardType: 'percentage', rewardValue: 20, appliesToAll: true, grantExpiryDays: 30,
+      isActive: opts.promoActive === false ? false : true,
     },
   })
   const customer = await prisma.customer.create({
@@ -127,6 +128,13 @@ describe('sendCampaignEmail', () => {
     created.push(business.id)
     const res = await sendCampaignEmail(recipientId)
     expect(res.sent).toBe(false)
+    expect(promoEmail).not.toHaveBeenCalled()
+  })
+
+  it('promo pausada: lanza y no envía', async () => {
+    const { business, recipientId } = await seed({ promoActive: false })
+    created.push(business.id)
+    await expect(sendCampaignEmail(recipientId)).rejects.toThrow('pausada')
     expect(promoEmail).not.toHaveBeenCalled()
   })
 })

@@ -48,7 +48,7 @@ export async function prepareCampaignSend(
         campaign: {
           select: {
             id: true, name: true, messageTemplate: true,
-            promotion: { select: { id: true, grantExpiryDays: true } },
+            promotion: { select: { id: true, grantExpiryDays: true, isActive: true } },
             business: { select: { name: true, timezone: true } },
           },
         },
@@ -60,6 +60,12 @@ export async function prepareCampaignSend(
   // Puerta 2 (retroactiva): la clienta pudo hacer opt-out DESPUÉS de materializar la lista.
   if (recipient.customer.marketingOptOutAt) {
     throw new Error('La clienta pidió no recibir campañas')
+  }
+  // Gate de promo activa: si la promo se archivó entre crear la campaña y enviar,
+  // cortar (fail-fast) en vez de emitir beneficios contra una promo apagada.
+  // Vive en el core → aplica también al single-send.
+  if (!recipient.campaign.promotion.isActive) {
+    throw new Error('La promoción de esta campaña está pausada')
   }
 
   const tz = recipient.campaign.business.timezone || 'America/Santiago'
