@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { BusinessProfile } from '@/components/public/business-profile'
 import { getPublicBusinessBySubdomain } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
@@ -31,12 +32,12 @@ function LandingPage() {
             sin perseguir mensajes por WhatsApp.
           </p>
           <div className="flex flex-col justify-center gap-3 sm:flex-row">
-            <a href="/register" className="inline-block rounded-full bg-primary px-8 py-3.5 font-semibold text-primary-foreground shadow-[0_14px_32px_rgba(51,41,32,0.18)] transition hover:bg-primary/90">
+            <Link href="/register" className="inline-block rounded-full bg-primary px-8 py-3.5 font-semibold text-primary-foreground shadow-[0_14px_32px_rgba(51,41,32,0.18)] transition hover:bg-primary/90">
               Crear cuenta gratis
-            </a>
-            <a href="/login" className="inline-block rounded-full border border-border bg-card px-8 py-3.5 font-semibold text-primary transition hover:bg-muted">
+            </Link>
+            <Link href="/login" className="inline-block rounded-full border border-border bg-card px-8 py-3.5 font-semibold text-primary transition hover:bg-muted">
               Iniciar sesión
-            </a>
+            </Link>
           </div>
         </div>
 

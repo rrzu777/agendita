@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TableActions } from '@/components/ui/table-actions'
@@ -105,9 +106,9 @@ export function BookingRowActions({
       <TableActions primary={<>{contact}{primary}</>}>
         {isConfirmed && (
           <DropdownMenuItem asChild>
-            <a href={`/dashboard/bookings/${booking.id}/reschedule`}>
+            <Link href={`/dashboard/bookings/${booking.id}/reschedule`}>
               <RefreshCw className="size-4" /> Reprogramar
-            </a>
+            </Link>
           </DropdownMenuItem>
         )}
         {isConfirmed && canPay && (

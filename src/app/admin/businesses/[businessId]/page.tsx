@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { notFound } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth/user'
@@ -71,7 +72,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
   return (
     <div>
       <div className="mb-6 flex items-center gap-3">
-        <a href="/admin" className="text-sm text-muted-foreground hover:text-primary">← Volver</a>
+        <Link href="/admin" className="text-sm text-muted-foreground hover:text-primary">← Volver</Link>
       </div>
 
       <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">

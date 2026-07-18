@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { prisma } from '@/lib/db'
 import { resolveLoyaltyCustomer } from '@/lib/loyalty/token'
 import { loadLoyaltyCardData } from '@/lib/loyalty/card-data'
@@ -47,9 +48,9 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
       />
       {!customer.userId && (
         <p className="mt-8 text-center text-sm">
-          <a href={`/ingresar?next=/tarjeta/${token}/vincular`} className="font-semibold text-pink-700 hover:underline">
+          <Link href={`/ingresar?next=/tarjeta/${token}/vincular`} className="font-semibold text-pink-700 hover:underline">
             Guardar mi tarjeta en mi cuenta
-          </a>
+          </Link>
         </p>
       )}
       <MarketingOptOutSection

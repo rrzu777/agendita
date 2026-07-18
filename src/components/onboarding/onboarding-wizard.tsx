@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -241,9 +242,9 @@ function StepServices({ servicesCount }: { servicesCount: number }) {
       {servicesCount === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 text-sm text-amber-800">
           <p className="font-semibold mb-1">Agrega al menos un servicio</p>
-          <a href="/dashboard/services">
+          <Link href="/dashboard/services">
             <Button variant="outline" className="mt-2">Ir a Servicios</Button>
-          </a>
+          </Link>
         </div>
       ) : (
         <div className="rounded-lg border border-green-200 bg-green-50/50 p-4 text-sm text-green-800">
@@ -270,9 +271,9 @@ function StepSchedule({ availabilityCount }: { availabilityCount: number }) {
       {availabilityCount === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 text-sm text-amber-800">
           <p className="font-semibold mb-1">Configura tus horarios</p>
-          <a href="/dashboard/availability">
+          <Link href="/dashboard/availability">
             <Button variant="outline" className="mt-2">Ir a Horarios</Button>
-          </a>
+          </Link>
         </div>
       ) : (
         <div className="rounded-lg border border-green-200 bg-green-50/50 p-4 text-sm text-green-800">
@@ -306,9 +307,9 @@ function StepPolicies() {
         </div>
       </div>
 
-      <a href="/dashboard/settings">
+      <Link href="/dashboard/settings">
         <Button variant="outline">Ir a Configuración</Button>
-      </a>
+      </Link>
     </div>
   )
 }

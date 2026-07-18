@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { BookingData } from './wizard'
@@ -569,7 +570,7 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
           <p className="mb-5 text-sm text-muted-foreground">Tu código de reserva: <span className="font-mono font-semibold text-primary">#{transferBooking.bookingNumber}</span></p>
         )}
         <Button asChild className="h-12 rounded-full px-6">
-          <a href={`/book/confirmation?bookingId=${transferBooking.id}`}>Ver el estado de mi reserva</a>
+          <Link href={`/book/confirmation?bookingId=${transferBooking.id}`}>Ver el estado de mi reserva</Link>
         </Button>
       </div>
     )
