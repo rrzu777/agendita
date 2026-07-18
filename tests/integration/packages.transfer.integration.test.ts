@@ -294,5 +294,86 @@ describe('createPackagePurchase + declarePackageTransfer (transferencia)', () =>
       expect(p!.status).toBe('active')
       expect(p!.grants.length).toBe(5)
     })
+
+    it('revive RECALCULA expiresAt desde ahora (grants no nacen vencidos) — hallazgo review', async () => {
+      const { createPackagePurchase, declarePackageTransfer } = await import('@/server/actions/packages-checkout')
+      const { confirmPackageTransfer } = await import('@/server/actions/bank-transfer-verify')
+      // Producto CON vigencia (el seed base no tiene expiryDays).
+      const prod = await prisma.packageProduct.create({ data: {
+        businessId: BIZ, name: 'Pack vigencia', quantity: 5, bonusQuantity: 0, price: 50000,
+        appliesToAll: true, isActive: true, expiryDays: 30,
+      } })
+      const { purchaseId } = await createPackagePurchase({
+        packageProductId: prod.id, name: 'Cli Xfer', phone: '+56900000009', acceptedTerms: true, method: 'transfer',
+      })
+      // Simular una compra vieja: expirada con expiresAt YA vencido (creada hace meses).
+      await prisma.packagePurchase.update({
+        where: { id: purchaseId },
+        data: { status: 'expired', expiresAt: new Date(Date.now() - 60 * 24 * 3600_000) },
+      })
+      await declarePackageTransfer({ purchaseId })
+      const p = await prisma.packagePurchase.findUnique({ where: { id: purchaseId } })
+      // expiresAt recomputado a ~now + 30d, en el futuro.
+      expect(p!.expiresAt!.getTime()).toBeGreaterThan(Date.now() + 29 * 24 * 3600_000)
+      // Y los grants heredan la vigencia fresca al confirmar.
+      const declared = await prisma.payment.findFirst({ where: { packagePurchaseId: purchaseId, provider: 'manual' } })
+      await confirmPackageTransfer(declared!.id)
+      const grants = await prisma.promotionGrant.findMany({ where: { packagePurchaseId: purchaseId } })
+      expect(grants).toHaveLength(5)
+      for (const g of grants) expect(g.expiresAt!.getTime()).toBeGreaterThan(Date.now())
+    })
+
+    it('NO revive si ya existe otra compra pending del mismo producto (evita doble declarada) — hallazgo review', async () => {
+      const { createPackagePurchase, declarePackageTransfer } = await import('@/server/actions/packages-checkout')
+      // P1: creada, luego expirada (retomable).
+      const p1 = await createPackagePurchase({
+        packageProductId: productId, name: 'Cli Xfer', phone: '+56900000009', acceptedTerms: true, method: 'transfer',
+      })
+      await prisma.packagePurchase.update({ where: { id: p1.purchaseId }, data: { status: 'expired' } })
+      // P2: nueva compra pending del mismo producto/clienta (la P1 expirada no se reusa).
+      const p2 = await createPackagePurchase({
+        packageProductId: productId, name: 'Cli Xfer', phone: '+56900000009', acceptedTerms: true, method: 'transfer',
+      })
+      expect(p2.purchaseId).not.toBe(p1.purchaseId)
+      // Revivir P1 debe rechazarse: ya hay una compra viva canalizando la transferencia.
+      await expect(declarePackageTransfer({ purchaseId: p1.purchaseId })).rejects.toThrow(/en proceso/i)
+      const p1After = await prisma.packagePurchase.findUnique({ where: { id: p1.purchaseId } })
+      expect(p1After!.status).toBe('expired')
+    })
+
+    it('verifyAndConfirmPackagePayment NO auto-aprueba una transferencia declarada (manual) — hallazgo review crítico', async () => {
+      const { createPackagePurchase, declarePackageTransfer, verifyAndConfirmPackagePayment } =
+        await import('@/server/actions/packages-checkout')
+      const { purchaseId } = await createPackagePurchase({
+        packageProductId: productId, name: 'Cli Xfer', phone: '+56900000009', acceptedTerms: true, method: 'transfer',
+      })
+      await declarePackageTransfer({ purchaseId })
+      // La clienta intenta auto-confirmar su propio pago manual: debe ser no-op.
+      const res = await verifyAndConfirmPackagePayment({ purchaseId })
+      expect(res.success).toBe(false)
+      const p = await prisma.packagePurchase.findUnique({ where: { id: purchaseId }, include: { grants: true } })
+      expect(p!.status).toBe('pending') // NO activada
+      expect(p!.grants).toHaveLength(0) // sin grants gratis
+      const pay = await prisma.payment.findFirst({ where: { packagePurchaseId: purchaseId, provider: 'manual' } })
+      expect(pay!.status).toBe('pending') // sin approve
+    })
+
+    it('el reuse del checkout NO pisa una compra ya declarada (crea una nueva) — hallazgo review', async () => {
+      const { createPackagePurchase, declarePackageTransfer } = await import('@/server/actions/packages-checkout')
+      const first = await createPackagePurchase({
+        packageProductId: productId, name: 'Cli Xfer', phone: '+56900000009', acceptedTerms: true, method: 'transfer',
+      })
+      await declarePackageTransfer({ purchaseId: first.purchaseId })
+      // Re-checkout del mismo producto: la declarada NO se reusa → compra nueva.
+      const second = await createPackagePurchase({
+        packageProductId: productId, name: 'Cli Xfer', phone: '+56900000009', acceptedTerms: true, method: 'transfer',
+      })
+      expect(second.purchaseId).not.toBe(first.purchaseId)
+      // La declarada conserva su método y su Payment (sigue visible/en verificación).
+      const declaredPurchase = await prisma.packagePurchase.findUnique({ where: { id: first.purchaseId } })
+      expect(declaredPurchase!.paymentMethod).toBe('Transferencia')
+      const pay = await prisma.payment.findFirst({ where: { packagePurchaseId: first.purchaseId, provider: 'manual' } })
+      expect(pay!.status).toBe('pending')
+    })
   })
 })

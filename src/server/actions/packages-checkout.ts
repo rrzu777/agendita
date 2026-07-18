@@ -16,7 +16,7 @@ import { createMpPreferenceForPayment, getPaymentAppUrl } from '@/lib/payments/c
 import { getPackageConfirmationUrl } from '@/lib/business/urls'
 import { applyApprovedPackagePayment } from '@/server/services/finance'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
-import { btPkgDeclaredId, PKG_TRANSFER_PAYMENT_METHOD } from '@/lib/bank-transfer/declared'
+import { btPkgDeclaredId, PKG_TRANSFER_PAYMENT_METHOD, declaredPkgTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 import { isPackageOfferUnchanged } from '@/lib/payments/package-confirmation-state'
 import { sendMultiNotificationSafely, sendPackageTransferDeclaredToBusiness } from '@/lib/notifications'
 
@@ -122,6 +122,13 @@ export async function createPackagePurchase(input: {
         packageProductId: product.id,
         status: 'pending',
         holdExpiresAt: { gte: now },
+        // NO reusar una compra con transferencia YA declarada: es un compromiso a la
+        // espera de verificación de la dueña, no un checkout abandonado. Pisarle
+        // paymentMethod (p.ej. al reintentar por MP) la borraría de /mi y volvería la
+        // confirmation a copy de MP mientras la transferencia sigue en verificación
+        // (hallazgo review). Un reintento así crea una compra nueva; la vieja declarada
+        // sigue visible hasta que la dueña resuelva.
+        payments: { none: declaredPkgTransferPaymentWhere },
       },
       orderBy: { createdAt: 'desc' },
     })
@@ -309,6 +316,15 @@ export async function verifyAndConfirmPackagePayment(input: { purchaseId: string
     return { success: false }
   }
 
+  // Defensa en profundidad (hallazgo de review): esta vía self-service sólo confirma
+  // el pago online sin redirect (provider mock/test). Un Payment 'manual' —incluida la
+  // transferencia declarada por la clienta (bt-pkg-declared), que el revive re-fabrica—
+  // lo verifica SÓLO la dueña vía confirmPackageTransfer. Sin este corte, la clienta
+  // podría auto-activar su paquete declarando y llamando acá, sin transferir un peso.
+  if (payment.provider === PaymentProvider.manual) {
+    return { success: false }
+  }
+
   await prisma.$transaction(async (tx) => {
     await applyApprovedPackagePayment({
       tx,
@@ -348,12 +364,28 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
   // Una vez declarada, el sweep la exime y la dueña decide.
 
   let reviveHoldHours: number | null = null
+  let reviveExpiresAt: Date | null = null
   if (isRevive) {
+    // Una compra que quedó pending/viva del mismo producto ya canaliza la
+    // transferencia: revivir la expirada ADEMÁS crearía dos declaradas idénticas
+    // que la dueña podría confirmar por separado (doble activación + doble asiento).
+    // Guardamos el invariante "a lo sumo una compra viva por producto" (hallazgo review).
+    const otherLive = await prisma.packagePurchase.findFirst({
+      where: {
+        id: { not: purchase.id },
+        customerId: purchase.customerId,
+        packageProductId: purchase.packageProductId,
+        status: 'pending',
+      },
+      select: { id: true },
+    })
+    if (otherLive) throw new Error('Ya tenés una compra de este paquete en proceso.')
+
     const [transferInfo, product] = await Promise.all([
       requireTransferInfo(purchase.businessId),
       prisma.packageProduct.findUnique({
         where: { id: purchase.packageProductId },
-        select: { isActive: true, price: true },
+        select: { isActive: true, price: true, expiryDays: true },
       }),
     ])
     // Guard de producto: revivir mantiene el precio snapshot; si el catálogo cambió,
@@ -363,6 +395,11 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
       throw new Error('Este paquete cambió. Iniciá la compra de nuevo.')
     }
     reviveHoldHours = transferInfo.holdHours
+    // Recalcular la vigencia desde el momento del revive: expiresAt se fijó al crear
+    // (createdAt + expiryDays) y activatePackagePurchaseInTx lo copia tal cual a cada
+    // grant. Sin esto, una compra revivida meses después nacería con grants ya
+    // vencidos — la clienta pagaría por 0 sesiones (hallazgo review crítico).
+    reviveExpiresAt = product.expiryDays ? addDays(new Date(), product.expiryDays) : null
   }
 
   const declaredId = btPkgDeclaredId(purchase.id)
@@ -378,6 +415,7 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
           data: {
             status: 'pending',
             holdExpiresAt: addHours(new Date(), reviveHoldHours!),
+            expiresAt: reviveExpiresAt,
             // Compra revivida = ciclo nuevo: los recordatorios vuelven a armarse.
             transferReminderCustomerSentAt: null,
             transferReminderBusinessSentAt: null,

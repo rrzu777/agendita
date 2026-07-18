@@ -88,7 +88,11 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
       iconColor: 'text-amber-500',
       iconBg: 'bg-amber-50',
       title: 'Te falta transferir',
-      message: 'Reservamos tu paquete. Transferí y avisanos con "Ya transferí" para que el negocio confirme tu compra.',
+      // Sin panel (el negocio pausó las transferencias entremedio) el copy no puede
+      // referenciar datos bancarios ni el botón "Ya transferí" que no se renderizan.
+      message: showTransferPanel
+        ? 'Reservamos tu paquete. Transferí y avisanos con "Ya transferí" para que el negocio confirme tu compra.'
+        : 'Reservamos tu paquete, pero el negocio pausó los pagos por transferencia. Escribile para coordinar el pago.',
     },
     rejected: {
       icon: XCircle,
