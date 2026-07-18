@@ -114,14 +114,17 @@ export async function notifyReferralReward(
 
   const customers = await prisma.customer.findMany({
     where: { id: { in: ids }, businessId },
-    select: { id: true, name: true, email: true, loyaltyToken: true },
+    select: { id: true, name: true, email: true, loyaltyToken: true, marketingOptOutAt: true },
   })
 
   for (const c of customers) {
     if (!c.email) continue
     await sendRewardEmail({
       businessId,
-      customer: { id: c.id, name: c.name, email: c.email, loyaltyToken: c.loyaltyToken },
+      customer: {
+        id: c.id, name: c.name, email: c.email,
+        loyaltyToken: c.loyaltyToken, marketingOptOutAt: c.marketingOptOutAt,
+      },
       businessName: biz.name,
       config: biz.loyaltyConfig,
       rewardLabel: label,
