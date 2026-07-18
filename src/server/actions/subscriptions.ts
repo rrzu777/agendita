@@ -2,14 +2,15 @@
 
 import { prisma } from '@/lib/db'
 import { requireBusinessRole } from '@/lib/auth/server'
-import type { SubscriptionStatus } from '@prisma/client'
 
+// businessId SIEMPRE sale de la sesión autenticada, nunca de un parámetro del
+// caller: cada export de un módulo 'use server' es un endpoint POST público, así
+// que aceptar un businessId arbitrario acá filtraría el historial de pagos de
+// otro tenant. El estado de suscripción por businessId vive en
+// '@/lib/subscriptions/enforcement' (no expuesto como acción).
 export async function getCurrentSubscription() {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
-  return getSubscriptionByBusinessId(businessId)
-}
 
-export async function getSubscriptionByBusinessId(businessId: string) {
   const [subscription, payments] = await Promise.all([
     prisma.businessSubscription.findFirst({
       where: { businessId },
@@ -24,29 +25,4 @@ export async function getSubscriptionByBusinessId(businessId: string) {
   ])
 
   return { subscription, payments }
-}
-
-export async function getBusinessSubscriptionStatus(businessId: string): Promise<{
-  canReceiveBookings: boolean
-  isSuspended: boolean
-  isPastDue: boolean
-  status: SubscriptionStatus | null
-}> {
-  const business = await prisma.business.findUnique({
-    where: { id: businessId },
-    select: { subscriptionStatus: true },
-  })
-
-  if (!business) {
-    return { canReceiveBookings: false, isSuspended: false, isPastDue: false, status: null }
-  }
-
-  const status = business.subscriptionStatus
-
-  return {
-    canReceiveBookings: status !== 'suspended' && status !== 'cancelled',
-    isSuspended: status === 'suspended',
-    isPastDue: status === 'past_due',
-    status,
-  }
 }

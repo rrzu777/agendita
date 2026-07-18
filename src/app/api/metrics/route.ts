@@ -4,11 +4,9 @@ import { BookingStatus, PaymentStatus, PaymentProvider } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
 
-// Metrics secret — if set, /api/metrics requires Bearer <METRICS_SECRET>
-const METRICS_SECRET = process.env.METRICS_SECRET
-
 // Prometheus-compatible text metrics endpoint.
-// Requires Bearer Authorization with METRICS_SECRET when env var METRICS_SECRET is set.
+// Requires Bearer Authorization with METRICS_SECRET. Fails closed: if the env
+// var is unset, every request is rejected (see the guard in GET).
 // Grafana Cloud: add auth via "Add auth header" → "Authorization: Bearer <token>"
 // or use a Grafana Cloud Data Source with "Basic auth" and a service account token.
 //
@@ -79,12 +77,14 @@ async function gatherMetrics(): Promise<string> {
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  // Auth guard
-  if (METRICS_SECRET) {
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader || !authHeader.startsWith('Bearer ') || authHeader.slice(7) !== METRICS_SECRET) {
-      return new NextResponse('Unauthorized', { status: 401 })
-    }
+  // Auth guard — fail closed like the cron routes: if METRICS_SECRET is unset
+  // (new env, typo, preview deploy without the secret) nobody can authenticate,
+  // so per-tenant metrics are never exposed to anonymous callers. 401 (not 500)
+  // avoids leaking whether the secret is configured.
+  const expectedSecret = process.env.METRICS_SECRET
+  const authHeader = request.headers.get('authorization')
+  if (!expectedSecret || authHeader !== `Bearer ${expectedSecret}`) {
+    return new NextResponse('Unauthorized', { status: 401 })
   }
 
   const now = Date.now()
