@@ -167,6 +167,8 @@ export async function sendCampaignEmail(recipientId: string): Promise<{ sent: bo
   return { sent: false, error: outcome.error }
 }
 
+type BulkEmailResult = { recipientId: string; status: 'sent' | 'skipped' | 'failed'; error?: string }
+
 /** Envío masivo de email por tandas. El cliente maneja la cola (desde los props del
  *  detalle) y pasa hasta BULK_EMAIL_MAX_PER_CALL ids por llamada. El server revalida
  *  ownership de la campaña y, por cada id, delega en sendOneCampaignEmail (claim +
@@ -176,7 +178,7 @@ export async function sendCampaignEmail(recipientId: string): Promise<{ sent: bo
 export async function sendCampaignEmailBatch(
   campaignId: string,
   recipientIds: string[],
-): Promise<{ results: { recipientId: string; status: 'sent' | 'skipped' | 'failed'; error?: string }[] }> {
+): Promise<{ results: BulkEmailResult[] }> {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   if (recipientIds.length === 0) return { results: [] }
   if (recipientIds.length > BULK_EMAIL_MAX_PER_CALL) {
@@ -190,7 +192,7 @@ export async function sendCampaignEmailBatch(
 
   const replyTo = await getBusinessReplyToEmail(businessId)
 
-  const results: { recipientId: string; status: 'sent' | 'skipped' | 'failed'; error?: string }[] = []
+  const results: BulkEmailResult[] = []
   for (const recipientId of recipientIds) {
     try {
       const outcome = await sendOneCampaignEmail(prisma, businessId, recipientId, user.id, replyTo)

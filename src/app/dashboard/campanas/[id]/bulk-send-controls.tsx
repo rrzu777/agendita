@@ -36,7 +36,6 @@ export function BulkSendControls({
     setEmailDone(0)
     setEmailFailed([])
     const ids = email.map((r) => r.id)
-    const failed: string[] = []
     let done = 0
     try {
       for (let i = 0; i < ids.length; i += EMAIL_CHUNK) {
@@ -44,11 +43,10 @@ export function BulkSendControls({
         const { results } = await sendCampaignEmailBatch(campaignId, chunk)
         for (const r of results) {
           done += 1
-          if (r.status === 'failed') failed.push(r.recipientId)
+          if (r.status === 'failed') setEmailFailed((f) => [...f, r.recipientId])
         }
         setEmailDone(done)
       }
-      setEmailFailed(failed)
     } finally {
       setEmailRunning(false)
       router.refresh() // un solo refresh al final (la página es force-dynamic).
@@ -56,42 +54,41 @@ export function BulkSendControls({
   }
 
   // ── WhatsApp guiado (un toque por clienta) ───────────────────────────────
-  const [guiding, setGuiding] = useState(false)
-  const [waIndex, setWaIndex] = useState(0)
+  // waIndex === null ⇒ no estamos en modo guiado; un número ⇒ posición actual.
+  const [waIndex, setWaIndex] = useState<number | null>(null)
   const [waSending, setWaSending] = useState(false)
   const [waError, setWaError] = useState<string | null>(null)
-  const current = whatsapp[waIndex]
+  const guiding = waIndex !== null
+  const current = waIndex !== null ? whatsapp[waIndex] : undefined
 
-  function openNext() {
+  async function openNext() {
     if (!current) return
     // Abrimos la ventana YA (gesto del usuario) para no toparnos con el bloqueador
-    // de pop-ups tras el await (patrón review-link-button).
+    // de pop-ups tras el await (patrón review-link-button). Como openNext es async,
+    // el window.open corre síncrono hasta el primer await → mismo tick del gesto.
     const win = window.open('', '_blank')
     setWaSending(true)
     setWaError(null)
-    ;(async () => {
-      try {
-        const { waUrl } = await sendCampaignMessage(current.id)
-        if (waUrl) {
-          if (win) win.location.href = waUrl
-          else window.open(waUrl, '_blank')
-        } else {
-          win?.close()
-          setWaError('La clienta no tiene un teléfono válido.')
-        }
-      } catch (e) {
+    try {
+      const { waUrl } = await sendCampaignMessage(current.id)
+      if (waUrl) {
+        if (win) win.location.href = waUrl
+        else window.open(waUrl, '_blank')
+      } else {
         win?.close()
-        setWaError(e instanceof Error ? e.message : 'No se pudo enviar')
-      } finally {
-        setWaSending(false)
-        setWaIndex((i) => i + 1) // avanza aunque falle (optimista, un toque por clienta)
+        setWaError('La clienta no tiene un teléfono válido.')
       }
-    })()
+    } catch (e) {
+      win?.close()
+      setWaError(e instanceof Error ? e.message : 'No se pudo enviar')
+    } finally {
+      setWaSending(false)
+      setWaIndex((i) => (i ?? 0) + 1) // avanza aunque falle (optimista, un toque por clienta)
+    }
   }
 
   function finishGuiding() {
-    setGuiding(false)
-    setWaIndex(0)
+    setWaIndex(null)
     router.refresh()
   }
 
@@ -116,10 +113,7 @@ export function BulkSendControls({
 
       {whatsapp.length > 0 && !guiding && (
         <Button
-          onClick={() => {
-            setGuiding(true)
-            setWaIndex(0)
-          }}
+          onClick={() => setWaIndex(0)}
           className="w-fit bg-[#25D366] text-white hover:bg-[#1ebe5b]"
         >
           <MessageCircle className="mr-2 size-4" />
@@ -132,7 +126,7 @@ export function BulkSendControls({
           {current ? (
             <div className="flex flex-col gap-2">
               <p className="text-sm text-muted-foreground">
-                {waIndex + 1} / {whatsapp.length}
+                {(waIndex ?? 0) + 1} / {whatsapp.length}
               </p>
               <p className="font-semibold text-primary">{current.name}</p>
               <div className="flex gap-2">
