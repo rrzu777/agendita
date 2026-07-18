@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getLocalDateStr, getLocalDayOfWeek, getLocalTimeStr, getBusinessDayRange } from '@/lib/availability/timezone'
+import { getLocalDateStr, getLocalDayOfWeek, getLocalTimeStr, getBusinessDayRange, startOfLocalMonth } from '@/lib/availability/timezone'
 
 describe('timezone helpers', () => {
   it('getLocalDateStr returns correct local date in America/Santiago', () => {
@@ -48,5 +48,26 @@ describe('timezone helpers', () => {
 
     const lateBooking = new Date('2026-05-21T01:00:00Z')
     expect(lateBooking >= dayStart && lateBooking <= dayEnd).toBe(true)
+  })
+
+  describe('startOfLocalMonth', () => {
+    it('returns the UTC instant of the 1st at 00:00 local (Santiago)', () => {
+      // Mediados de mayo local → inicio de mayo local = 2026-05-01T00:00 Santiago = 04:00Z
+      const utc = new Date('2026-05-15T12:00:00Z')
+      expect(startOfLocalMonth(utc, 'America/Santiago').toISOString()).toBe('2026-05-01T04:00:00.000Z')
+    })
+
+    it('uses the LOCAL month, not the UTC month, near midnight of the 1st', () => {
+      // 2026-06-01T02:00:00Z todavía es 2026-05-31 22:00 en Santiago → mes local = mayo
+      const utc = new Date('2026-06-01T02:00:00Z')
+      expect(startOfLocalMonth(utc, 'America/Santiago').toISOString()).toBe('2026-05-01T04:00:00.000Z')
+    })
+
+    it('an income instant just after local month start is inside the window', () => {
+      const now = new Date('2026-06-01T02:00:00Z') // 31 mayo 22:00 local
+      const monthStart = startOfLocalMonth(now, 'America/Santiago') // inicio de mayo local
+      const earlyMay = new Date('2026-05-01T05:00:00Z') // 1 mayo 01:00 local
+      expect(earlyMay >= monthStart).toBe(true)
+    })
   })
 })

@@ -43,6 +43,16 @@ export function endOfLocalDay(localDateStr: string, timezone: string): Date {
 }
 
 /**
+ * Construye el instante UTC del inicio del mes local (día 1, 00:00:00.000) que
+ * contiene a `date`, en el timezone del negocio. Usa el mes LOCAL, no el UTC:
+ * cerca de medianoche del día 1 el mes local puede diferir del mes UTC.
+ */
+export function startOfLocalMonth(date: Date, timezone: string): Date {
+  const localFirstOfMonth = formatInTimeZone(date, timezone, 'yyyy-MM-01')
+  return startOfLocalDay(localFirstOfMonth, timezone)
+}
+
+/**
  * Devuelve los instantes UTC reales que delimitan un día local del negocio.
  *
  * Ejemplo: para timezone America/Santiago y fecha 2026-05-20T04:00:00Z

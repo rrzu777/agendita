@@ -180,7 +180,7 @@ export default async function CustomerDetailPage({ params }: Props) {
             <p className="studio-eyebrow">Ultima reserva</p>
             <p className="mt-1 text-lg font-semibold text-primary">
               {customer.lastBookingAt
-                ? new Date(customer.lastBookingAt).toLocaleDateString('es-CL')
+                ? new Date(customer.lastBookingAt).toLocaleDateString('es-CL', { timeZone: businessTimezone })
                 : '—'}
             </p>
           </div>
@@ -352,9 +352,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                         rows={[
                           {
                             label: 'Fecha',
-                            value: payment.paidAt
-                              ? new Date(payment.paidAt).toLocaleDateString('es-CL')
-                              : new Date(payment.createdAt).toLocaleDateString('es-CL'),
+                            value: new Date(payment.paidAt ?? payment.createdAt).toLocaleDateString('es-CL', { timeZone: businessTimezone }),
                           },
                           { label: 'Método', value: payment.paymentMethod || '—' },
                         ]}
@@ -387,9 +385,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                               <StatusBadge map="payment" status={payment.status} />
                             </TableCell>
                             <TableCell className={`${TABLE_COL.date} text-sm text-muted-foreground`}>
-                              {payment.paidAt
-                                ? new Date(payment.paidAt).toLocaleDateString('es-CL')
-                                : new Date(payment.createdAt).toLocaleDateString('es-CL')}
+                              {new Date(payment.paidAt ?? payment.createdAt).toLocaleDateString('es-CL', { timeZone: businessTimezone })}
                             </TableCell>
                             <TruncatedCell
                               className="text-sm text-muted-foreground"

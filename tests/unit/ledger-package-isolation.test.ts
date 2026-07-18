@@ -11,7 +11,7 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
-beforeEach(() => { requireRole.mockResolvedValue({ businessId: 'b1' }); ledgerAgg.mockReset().mockResolvedValue({ _sum: { amount: 0 } }) })
+beforeEach(() => { requireRole.mockResolvedValue({ businessId: 'b1', business: { timezone: 'America/Santiago' } }); ledgerAgg.mockReset().mockResolvedValue({ _sum: { amount: 0 } }) })
 
 const { getFinancialSummary } = await import('@/server/actions/ledger')
 
