@@ -18,6 +18,8 @@ import type {
   PackageDisputedEmailData,
   BookingDisputedEmailData,
   PackageTransferDeclaredEmailData,
+  PackageTransferReminderCustomerEmailData,
+  PackageTransferUnverifiedBusinessEmailData,
 } from './types'
 
 function escapeHtml(str: string): string {
@@ -66,10 +68,10 @@ function loyaltyLinkHtml(link: string | undefined): string {
 }
 
 export function bankTransferBlockHtml(
-  bt: NonNullable<BookingEmailData['bankTransfer']>, depositLabel: string, timezone: string,
+  bt: NonNullable<BookingEmailData['bankTransfer']>, depositLabel: string, timezone: string, kind: string = 'abono',
 ): string {
   return `<div style="margin-top:16px;border:1px solid #e0e0e0;border-radius:8px;padding:16px">
-        <p style="font-weight:600;margin:0 0 8px">Datos para transferir el abono (${depositLabel})</p>
+        <p style="font-weight:600;margin:0 0 8px">Datos para transferir el ${kind} (${depositLabel})</p>
         <table style="font-size:14px;border-collapse:collapse">
           <tr><td style="padding:2px 12px 2px 0;color:#666">Titular</td><td>${escapeHtml(bt.accountHolder)}</td></tr>
           <tr><td style="padding:2px 12px 2px 0;color:#666">RUT</td><td>${escapeHtml(bt.rut)}</td></tr>
@@ -85,11 +87,11 @@ export function bankTransferBlockHtml(
 }
 
 export function bankTransferBlockText(
-  bt: NonNullable<BookingEmailData['bankTransfer']>, depositLabel: string, timezone: string,
+  bt: NonNullable<BookingEmailData['bankTransfer']>, depositLabel: string, timezone: string, kind: string = 'abono',
 ): string[] {
   const lines = [
     ``,
-    `Datos para transferir el abono (${depositLabel}):`,
+    `Datos para transferir el ${kind} (${depositLabel}):`,
     `Titular: ${bt.accountHolder}`,
     `RUT: ${bt.rut}`,
     `Banco: ${bt.bankName}`,
@@ -980,4 +982,36 @@ export function bookingReminderText(data: ReminderEmailData): string {
     ``,
     `Enviado por ${data.businessName} a través de Agendita`,
   ].filter(Boolean).join('\n')
+}
+
+export function packageTransferReminderCustomerHtml(data: PackageTransferReminderCustomerEmailData): string {
+  const total = fmtCurrency(data.amount, data.businessCurrency)
+  return baseHtml(`
+    ${header('Te quedan pocas horas para transferir')}
+    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, tu compra del paquete <strong>${escapeHtml(data.productName)}</strong> sigue pendiente. Transferí y avisanos hoy para que el negocio la confirme.</p>
+    ${bankTransferBlockHtml(data.bankTransfer, total, data.businessTimezone, 'pago')}
+    ${footer(data.businessName)}
+  `)
+}
+
+export function packageTransferReminderCustomerText(data: PackageTransferReminderCustomerEmailData): string {
+  const total = fmtCurrency(data.amount, data.businessCurrency)
+  return [
+    `Hola ${data.customerName}, tu compra del paquete ${data.productName} sigue pendiente.`,
+    `Transferí y avisanos hoy para que el negocio la confirme.`,
+    ...bankTransferBlockText(data.bankTransfer, total, data.businessTimezone, 'pago'),
+  ].join('\n')
+}
+
+export function packageTransferUnverifiedBusinessHtml(data: PackageTransferUnverifiedBusinessEmailData): string {
+  return baseHtml(`
+    ${header('Tenés una transferencia de paquete por verificar')}
+    <p style="font-size:15px">${escapeHtml(data.customerName)} declaró una transferencia por el paquete <strong>${escapeHtml(data.productName)}</strong> hace más de un día y sigue sin verificar. Revisá tu cuenta y confirmá o rechazá la compra.</p>
+    <p style="margin-top:16px"><a href="${escapeHtml(data.dashboardUrl)}" style="color:#e91e63;text-decoration:none;font-weight:600">Ir a verificar en el dashboard →</a></p>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function packageTransferUnverifiedBusinessText(data: PackageTransferUnverifiedBusinessEmailData): string {
+  return `${data.customerName} declaró una transferencia por el paquete ${data.productName} en ${data.businessName} hace más de un día y sigue sin verificar. Revisá tu cuenta y confirmá o rechazá la compra. Ir al dashboard: ${data.dashboardUrl}`
 }

@@ -23,6 +23,8 @@ import type {
   PackageDisputedEmailData,
   BookingDisputedEmailData,
   PackageTransferDeclaredEmailData,
+  PackageTransferReminderCustomerEmailData,
+  PackageTransferUnverifiedBusinessEmailData,
 } from './types'
 import {
   transferReminderCustomerHtml,
@@ -73,6 +75,10 @@ import {
   bookingDisputedBusinessText,
   packageTransferDeclaredBusinessHtml,
   packageTransferDeclaredBusinessText,
+  packageTransferReminderCustomerHtml,
+  packageTransferReminderCustomerText,
+  packageTransferUnverifiedBusinessHtml,
+  packageTransferUnverifiedBusinessText,
   BOOKING_CONFIRMED_TEMPLATE,
   BOOKING_REMINDER_TEMPLATE,
   BOOKING_CANCELLED_TEMPLATE,
@@ -867,4 +873,29 @@ export async function sendReminderEmail(data: ReminderEmailData): Promise<EmailR
   return sendEmail(data.customerEmail, 'Recordatorio de tu cita - Agendita', html, text, {
     replyTo: data.businessReplyToEmail,
   })
+}
+
+export async function sendPackageTransferReminderToCustomer(data: PackageTransferReminderCustomerEmailData): Promise<EmailResult> {
+  if (!data.customerEmail) return { success: false, skipped: 'Cliente sin email' }
+  return sendEmail(
+    data.customerEmail,
+    `Te quedan pocas horas para transferir - ${data.businessName}`,
+    packageTransferReminderCustomerHtml(data),
+    packageTransferReminderCustomerText(data),
+    { replyTo: data.businessReplyToEmail },
+  )
+}
+
+export async function sendPackageTransferUnverifiedToBusiness(
+  businessId: string,
+  data: Omit<PackageTransferUnverifiedBusinessEmailData, 'dashboardUrl'>,
+): Promise<EmailResult[]> {
+  const owners = await getBusinessOwnerEmails(businessId)
+  if (owners.length === 0) return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
+  const dashboardUrl = buildDashboardLink()
+  const html = packageTransferUnverifiedBusinessHtml({ ...data, dashboardUrl })
+  const text = packageTransferUnverifiedBusinessText({ ...data, dashboardUrl })
+  return Promise.all(owners.map((owner) =>
+    sendEmail(owner.email, `Transferencia de paquete por verificar - ${data.businessName}`, html, text, {}),
+  ))
 }

@@ -5,8 +5,11 @@ import { Button } from '@/components/ui/button'
 import { prisma } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth/user'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
-import { derivePackageConfirmationState } from '@/lib/payments/package-confirmation-state'
+import { derivePackageConfirmationState, isPackageOfferUnchanged } from '@/lib/payments/package-confirmation-state'
+import { PKG_TRANSFER_PAYMENT_METHOD } from '@/lib/bank-transfer/declared'
 import { formatMoney } from '@/lib/money'
+import { PackageTransferPanel } from './transfer-panel'
+import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 
 interface ConfirmationPageProps {
   searchParams: Promise<{ purchaseId?: string }>
@@ -28,10 +31,10 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
   const purchase = await prisma.packagePurchase.findUnique({
     where: { id: purchaseId },
     include: {
-      product: { select: { name: true } },
+      product: { select: { name: true, isActive: true, price: true } },
       customer: { select: { userId: true } },
       business: { select: { name: true, slug: true, subdomain: true, currency: true } },
-      payments: { select: { status: true } },
+      payments: { select: { status: true, provider: true, providerPaymentId: true } },
     },
   })
 
@@ -53,6 +56,18 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
   const cardHref = tenant ? '/mi' : `/mi/${purchase.business.slug}`
   const totalSessions = purchase.quantity + purchase.bonusQuantity
 
+  // Superficie activa: en awaiting_transfer siempre; en expired sólo si la compra
+  // sigue retomable (era transferencia + producto vigente al mismo precio + el
+  // negocio mantiene transferencia habilitada). El guard server-side real vive en
+  // declarePackageTransfer; esto sólo decide si mostrar el panel.
+  const wantsTransferPanel =
+    state === 'awaiting_transfer' ||
+    (state === 'expired' &&
+      purchase.paymentMethod === PKG_TRANSFER_PAYMENT_METHOD &&
+      isPackageOfferUnchanged(purchase.product, purchase))
+  const transferInfo = wantsTransferPanel ? await getBankTransferInfo(purchase.businessId) : null
+  const showTransferPanel = wantsTransferPanel && transferInfo != null
+
   const config = {
     active: {
       icon: CheckCircle2,
@@ -68,6 +83,17 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
       title: 'Procesando tu pago',
       message: 'Estamos procesando tu pago. Te confirmaremos cuando se acredite; podés refrescar esta página.',
     },
+    awaiting_transfer: {
+      icon: Clock,
+      iconColor: 'text-amber-500',
+      iconBg: 'bg-amber-50',
+      title: 'Te falta transferir',
+      // Sin panel (el negocio pausó las transferencias entremedio) el copy no puede
+      // referenciar datos bancarios ni el botón "Ya transferí" que no se renderizan.
+      message: showTransferPanel
+        ? 'Reservamos tu paquete. Transferí y avisanos con "Ya transferí" para que el negocio confirme tu compra.'
+        : 'Reservamos tu paquete, pero el negocio pausó los pagos por transferencia. Escribile para coordinar el pago.',
+    },
     rejected: {
       icon: XCircle,
       iconColor: 'text-destructive',
@@ -80,7 +106,9 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
       iconColor: 'text-muted-foreground',
       iconBg: 'bg-muted',
       title: 'Tu compra expiró',
-      message: 'Se venció el tiempo para completar el pago. Podés iniciar la compra de nuevo.',
+      message: showTransferPanel
+        ? 'Se venció el plazo, pero todavía podés retomarla: transferí y avisanos con "Ya transferí".'
+        : 'Se venció el tiempo para completar el pago. Podés iniciar la compra de nuevo.',
     },
     refunded: {
       icon: XCircle,
@@ -122,6 +150,15 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
             <span className="font-semibold">{formatMoney(purchase.pricePaid, purchase.business.currency || 'CLP')}</span>
           </div>
         </div>
+
+        {showTransferPanel && (
+          <PackageTransferPanel
+            transferInfo={transferInfo}
+            amount={purchase.pricePaid}
+            currency={purchase.business.currency || 'CLP'}
+            purchaseId={purchase.id}
+          />
+        )}
 
         <div className="mt-6">
           <Button asChild className="h-12 w-full rounded-full">

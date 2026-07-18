@@ -9,6 +9,7 @@ const baseData = {
   catalog: [{ id: 'p1', name: 'Descuento 10%', pointsCost: 100 }],
   grants: [],
   packages: [],
+  pendingPackages: [],
   referralUrl: null,
 }
 

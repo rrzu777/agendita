@@ -30,7 +30,7 @@ const business = {
   loyaltyConfig: { isActive: true, programName: 'Club', pointsLabel: 'mimos', cardMessage: null },
 }
 const cardData = {
-  config: business.loyaltyConfig, balance: 50, history: [], catalog: [], grants: [], packages: [], referralUrl: null,
+  config: business.loyaltyConfig, balance: 50, history: [], catalog: [], grants: [], packages: [], pendingPackages: [], referralUrl: null,
 }
 
 describe('/mi/[slug]', () => {

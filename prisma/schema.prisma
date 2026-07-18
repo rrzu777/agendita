@@ -785,6 +785,8 @@ model PackagePurchase {
   refundedAt        DateTime?
   refundedAmount    Int?
   chargebackAt      DateTime?
+  transferReminderCustomerSentAt DateTime?
+  transferReminderBusinessSentAt DateTime?
   createdByUserId   String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt

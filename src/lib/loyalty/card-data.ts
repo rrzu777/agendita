@@ -4,7 +4,8 @@ import { getLoyaltyBalance, getLoyaltyHistory } from '@/lib/loyalty/balance'
 import { reconcileExpiredGrants } from '@/lib/loyalty/grant'
 import { conditionKind } from '@/lib/loyalty/automatic-match'
 import { ensureReferralToken } from '@/lib/loyalty/token'
-import { getBookingFunnelUrl } from '@/lib/business/urls'
+import { declaredPkgTransferPaymentWhere, PKG_TRANSFER_PAYMENT_METHOD } from '@/lib/bank-transfer/declared'
+import { getBookingFunnelUrl, getPackageConfirmationUrl } from '@/lib/business/urls'
 
 export interface CardCustomer {
   id: string
@@ -31,7 +32,7 @@ export async function loadLoyaltyCardData(customer: CardCustomer) {
 
   const config = customer.business.loyaltyConfig
   // La reconciliación ya corrió; las 4 lecturas son independientes => en paralelo.
-  const [balance, history, catalog, grants, referralRules, packages] = await Promise.all([
+  const [balance, history, catalog, grants, referralRules, packages, pendingPurchases] = await Promise.all([
     getLoyaltyBalance(prisma, customer.id, customer.businessId),
     getLoyaltyHistory(prisma, customer.id, customer.businessId, 50),
     config?.isActive
@@ -70,6 +71,17 @@ export async function loadLoyaltyCardData(customer: CardCustomer) {
         },
       },
     }),
+    // Compras por transferencia aún no confirmadas: la clienta necesita una vía de
+    // re-entrada (retomar/declarar) — las pending de MP (hold 30 min) son ruido.
+    prisma.packagePurchase.findMany({
+      where: { customerId: customer.id, status: 'pending', paymentMethod: PKG_TRANSFER_PAYMENT_METHOD },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        product: { select: { name: true } },
+        payments: { where: declaredPkgTransferPaymentWhere, select: { id: true } },
+      },
+    }),
   ])
 
   // Bloque "Referí a una amiga": solo si la fidelización está activa y existe una
@@ -81,5 +93,12 @@ export async function loadLoyaltyCardData(customer: CardCustomer) {
     ? getBookingFunnelUrl(customer.business, `ref=${await ensureReferralToken(prisma, customer)}`)
     : null
 
-  return { config, balance, history, catalog, grants, packages, referralUrl }
+  const pendingPackages = pendingPurchases.map((p) => ({
+    id: p.id,
+    productName: p.product.name,
+    declared: p.payments.length > 0,
+    resumeUrl: getPackageConfirmationUrl(customer.business, p.id),
+  }))
+
+  return { config, balance, history, catalog, grants, packages, pendingPackages, referralUrl }
 }
