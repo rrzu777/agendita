@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client'
-import { generateGrantCode } from '@/lib/loyalty/redeem'
+import { createGrantInTx } from '@/lib/loyalty/grant'
 import { perGrantRequestId } from '@/lib/packages/schema'
 
 const PACKAGE_MARKER_NAME = 'package-coverage'
@@ -61,14 +61,11 @@ export async function activatePackagePurchaseInTx(
   const author = opts.createdByUserId ?? purchase.createdByUserId
 
   for (let i = 0; i < total; i++) {
-    await tx.promotionGrant.create({
-      data: {
-        businessId: purchase.businessId, promotionId: markerId, customerId: purchase.customerId,
-        code: await generateGrantCode(tx, purchase.businessId), pointsSpent: 0, status: 'active',
-        expiresAt: purchase.expiresAt, refundOnExpiry: false, forfeitOnNoShow: false,
-        requestId: perGrantRequestId(opts.requestId, i), packagePurchaseId: purchase.id,
-        createdByUserId: author,
-      },
+    await createGrantInTx(tx, {
+      businessId: purchase.businessId, promotionId: markerId, customerId: purchase.customerId,
+      requestId: perGrantRequestId(opts.requestId, i),
+      expiresAt: purchase.expiresAt, packagePurchaseId: purchase.id,
+      createdByUserId: author,
     })
   }
 

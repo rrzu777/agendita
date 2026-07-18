@@ -1,32 +1,8 @@
-import { randomInt } from 'node:crypto'
 import type { Prisma } from '@prisma/client'
-import { reconcileExpiredGrants } from './grant'
+import { createGrantInTx, reconcileExpiredGrants } from './grant'
 import { getLoyaltyBalance } from './balance'
 
 type Tx = Prisma.TransactionClient
-
-// Crockford base32 sin caracteres ambiguos (sin I, L, O, U).
-const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
-
-function randomCode(len = 10): string {
-  let s = ''
-  for (let i = 0; i < len; i++) s += ALPHABET[randomInt(ALPHABET.length)]
-  return s
-}
-
-/** Genera un código de grant único en el negocio, sin colisionar con promo-códigos
- *  ni con otros grants. Ya viene normalizado (uppercase base32). */
-export async function generateGrantCode(tx: Tx, businessId: string): Promise<string> {
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const code = randomCode()
-    const [promo, grant] = await Promise.all([
-      tx.promotion.findFirst({ where: { businessId, code }, select: { id: true } }),
-      tx.promotionGrant.findFirst({ where: { businessId, code }, select: { id: true } }),
-    ])
-    if (!promo && !grant) return code
-  }
-  throw new Error('No se pudo generar un código de canje')
-}
 
 export interface RedeemConfig {
   isActive: boolean
@@ -108,14 +84,12 @@ export async function redeemForGrant(tx: Tx, args: {
   const expiryDays = promotion.grantExpiryDays ?? config.grantExpiryDays
   const expiresAt = expiryDays != null ? new Date(now.getTime() + expiryDays * DAY_MS) : null
 
-  const code = await generateGrantCode(tx, businessId)
-  const grant = await tx.promotionGrant.create({
-    data: {
-      businessId, promotionId: promotion.id, customerId, code, pointsSpent: pointsCost,
-      status: 'active', expiresAt, refundOnExpiry: config.refundPointsOnExpiry,
-      forfeitOnNoShow: config.forfeitGrantOnNoShow, requestId,
-      createdByUserId: args.createdByUserId ?? null,
-    },
+  const grant = await createGrantInTx(tx, {
+    businessId, promotionId: promotion.id, customerId, requestId,
+    pointsSpent: pointsCost, expiresAt,
+    refundOnExpiry: config.refundPointsOnExpiry,
+    forfeitOnNoShow: config.forfeitGrantOnNoShow,
+    createdByUserId: args.createdByUserId ?? null,
   })
 
   await tx.loyaltyLedger.create({

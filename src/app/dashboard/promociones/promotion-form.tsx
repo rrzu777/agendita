@@ -6,14 +6,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Plus, Pencil } from 'lucide-react'
+import { RewardFields } from '@/components/dashboard/reward-fields'
 import { createPromotion, updatePromotion } from '@/server/actions/promotions'
 import { computeDiscount } from '@/lib/promotions/evaluate'
 import { formatMoney } from '@/lib/money'
-
-type RewardType = 'percentage' | 'fixed_amount' | 'free_service'
+import type { RewardType } from '@/lib/rewards/schema'
 
 interface ServiceOption {
   id: string
@@ -54,12 +53,6 @@ interface FormState {
   maxRedemptions: string
   maxPerCustomer: string
 }
-
-const rewardOptions: { value: RewardType; label: string }[] = [
-  { value: 'percentage', label: '% descuento' },
-  { value: 'fixed_amount', label: 'Monto fijo' },
-  { value: 'free_service', label: 'Servicio gratis' },
-]
 
 function emptyState(): FormState {
   return {
@@ -127,15 +120,6 @@ export function PromotionForm({
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
-  }
-
-  function toggleService(id: string) {
-    setForm((prev) => ({
-      ...prev,
-      serviceIds: prev.serviceIds.includes(id)
-        ? prev.serviceIds.filter((s) => s !== id)
-        : [...prev.serviceIds, id],
-    }))
   }
 
   // Vista previa en vivo: usa el mismo computeDiscount que aplica el server.
@@ -247,102 +231,18 @@ export function PromotionForm({
             />
           </div>
 
-          <div className="space-y-2">
-            <Label className="studio-eyebrow">Tipo de recompensa</Label>
-            <div className="flex gap-1 rounded-2xl border border-border bg-card p-1">
-              {rewardOptions.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => update('rewardType', opt.value)}
-                  className={`flex-1 rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${
-                    form.rewardType === opt.value
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:bg-muted'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {form.rewardType !== 'free_service' && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label className="studio-eyebrow">
-                  {form.rewardType === 'percentage' ? 'Porcentaje (1–100)' : `Monto (${currency})`}
-                </Label>
-                <Input
-                  className="studio-input"
-                  type="number"
-                  min={form.rewardType === 'percentage' ? 1 : 0}
-                  max={form.rewardType === 'percentage' ? 100 : undefined}
-                  value={form.rewardValue}
-                  onChange={(e) => update('rewardValue', e.target.value)}
-                  required
-                />
-              </div>
-              {form.rewardType === 'percentage' && (
-                <div className="space-y-2">
-                  <Label className="studio-eyebrow">Descuento máximo</Label>
-                  <Input
-                    className="studio-input"
-                    type="number"
-                    min={1}
-                    value={form.maxDiscount}
-                    onChange={(e) => update('maxDiscount', e.target.value)}
-                    placeholder="Opcional"
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="studio-eyebrow">Aplica a todos los servicios</Label>
-                <p className="text-xs text-muted-foreground">Desactiva para elegir servicios específicos.</p>
-              </div>
-              <Switch
-                checked={form.appliesToAll}
-                onCheckedChange={(v) => update('appliesToAll', v)}
-              />
-            </div>
-
-            {form.rewardType === 'free_service' && form.appliesToAll && (
-              <p className="rounded-lg bg-orange-100 px-3 py-2 text-xs font-medium text-orange-800">
-                Aplica servicio gratis a TODOS los servicios.
-              </p>
-            )}
-
-            {!form.appliesToAll && (
-              <div className="flex flex-wrap gap-2">
-                {services.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No hay servicios activos.</p>
-                ) : (
-                  services.map((s) => {
-                    const selected = form.serviceIds.includes(s.id)
-                    return (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => toggleService(s.id)}
-                        className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors ${
-                          selected
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-border text-muted-foreground hover:bg-muted'
-                        }`}
-                      >
-                        {s.name}
-                      </button>
-                    )
-                  })
-                )}
-              </div>
-            )}
-          </div>
+          <RewardFields
+            value={{
+              rewardType: form.rewardType,
+              rewardValue: form.rewardValue,
+              maxDiscount: form.maxDiscount,
+              appliesToAll: form.appliesToAll,
+              serviceIds: form.serviceIds,
+            }}
+            onChange={(next) => setForm((prev) => ({ ...prev, ...next }))}
+            services={services}
+            currency={currency}
+          />
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
