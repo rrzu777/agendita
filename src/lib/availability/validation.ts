@@ -4,6 +4,7 @@ import { getLocalDayOfWeek, getLocalDateStr, startOfLocalDay } from './timezone'
 import { LEAD_TIME_MINUTES } from './constants'
 import { shrinkBlock } from './shrink-block'
 import { expandSeries } from '@/lib/calendar/expand-series'
+import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
 import type { PrismaClient, Prisma } from '@prisma/client'
 
 export interface AssertSlotInput {
@@ -16,16 +17,6 @@ export interface AssertSlotInput {
   excludeBookingId?: string
   /** Anticipación mínima en minutos; los flujos de la dueña pasan 0 (walk-ins). Default: LEAD_TIME_MINUTES. */
   leadTimeMinutes?: number
-}
-
-function hashStringToInt(str: string): number {
-  let hash = 0
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash = hash & hash
-  }
-  return Math.abs(hash)
 }
 
 function logEvent(event: string, meta: Record<string, unknown>) {
@@ -97,9 +88,7 @@ async function assertNoBookingOverlap(input: AssertConflictInput): Promise<void>
   // Esto serializa todas las creaciones de reserva para un negocio en un día,
   // evitando doble-booking concurrente incluso entre slots con distinto startDateTime.
   const localStartStr = formatInTimeZone(startDateTime, timezone, 'yyyy-MM-dd')
-  const lockKey = `${businessId}:${localStartStr}`
-  const hash = hashStringToInt(lockKey)
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(${hash})`
+  await acquireAdvisoryXactLock(tx, `${businessId}:${localStartStr}`)
 
   // A pending_payment booking only blocks the slot while its hold is still live.
   // Once holdExpiresAt is in the past the slot is free again, even if the cron

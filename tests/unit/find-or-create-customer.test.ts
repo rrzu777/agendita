@@ -7,6 +7,7 @@ const { findOrCreateCustomerInTx } = await import('@/lib/customers/find-or-creat
 
 function makeTx(existing: any) {
   return {
+    $executeRaw: vi.fn().mockResolvedValue(0),
     customer: {
       findFirst: vi.fn().mockResolvedValue(existing),
       create: vi.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'new', userId: null, ...data })),
@@ -17,6 +18,18 @@ function makeTx(existing: any) {
 
 describe('findOrCreateCustomerInTx', () => {
   beforeEach(() => linkMock.mockReset().mockResolvedValue(false))
+
+  it('toma un advisory lock (keyed por businessId+phone) ANTES del findFirst para cerrar la carrera de creación', async () => {
+    // Sin el lock, dos requests concurrentes con el mismo teléfono nuevo pasan
+    // ambas el findFirst (null) y crean dos Customers → ficha duplicada.
+    const tx = makeTx(null)
+    await findOrCreateCustomerInTx(tx, { businessId: 'b1', phone: '9 1234 5678', name: 'Ana' })
+
+    expect(tx.$executeRaw).toHaveBeenCalled()
+    const lockOrder = tx.$executeRaw.mock.invocationCallOrder[0]
+    const findOrder = tx.customer.findFirst.mock.invocationCallOrder[0]
+    expect(lockOrder).toBeLessThan(findOrder)
+  })
 
   it('crea la Customer cuando no hay match por teléfono', async () => {
     const tx = makeTx(null)

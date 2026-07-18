@@ -13,6 +13,7 @@ const mockPrisma = {
   promotionGrant: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
   promotionRedemption: { count: vi.fn(), create: vi.fn() },
   business: { update: vi.fn().mockResolvedValue({ bookingNumberSeq: 4242 }) },
+  $executeRaw: vi.fn().mockResolvedValue(0),
   $transaction: vi.fn(),
 }
 
@@ -68,6 +69,7 @@ const baseInput = {
 
 function setupTx() {
   mockPrisma.$transaction.mockImplementation(async (fn) => fn({
+    $executeRaw: mockPrisma.$executeRaw,
     customer: mockPrisma.customer,
     booking: mockPrisma.booking,
     payment: mockPrisma.payment,
