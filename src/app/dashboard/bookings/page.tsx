@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { getBookings } from '@/server/actions/bookings'
@@ -147,12 +148,16 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
               Completar
             </Button>
           </form>
-          <a href={`/dashboard/bookings/${booking.id}/reschedule`} className="flex-1">
+          {/* prefetch={false}: esta card se renderiza por CADA reserva confirmada
+              y getBookings() no está paginado; sin esto, cada fila visible haría
+              un prefetch de su ruta de reprogramar (O(reservas)). Reprogramar es
+              acción poco frecuente: fetch on-click alcanza. */}
+          <Link href={`/dashboard/bookings/${booking.id}/reschedule`} prefetch={false} className="flex-1">
             <Button type="button" variant="outline" className="w-full h-10 text-sm font-semibold">
               <RefreshCw className="mr-1 size-3" />
               Reprogramar
             </Button>
-          </a>
+          </Link>
           <div className="flex-1">
             <CancelBookingButton bookingId={booking.id} size="default" />
           </div>
@@ -265,12 +270,12 @@ export default async function BookingsPage() {
         subtitle="Administra tus citas y el estado de tus reservas."
       />
       <div className="space-y-6 p-5 md:p-10">
-        <a href="/dashboard/bookings/new">
+        <Link href="/dashboard/bookings/new">
           <Button className="h-11 rounded-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]">
             <Plus className="mr-2 size-4" />
             Nueva reserva
           </Button>
-        </a>
+        </Link>
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="studio-card p-4">
             <p className="studio-eyebrow">Total</p>

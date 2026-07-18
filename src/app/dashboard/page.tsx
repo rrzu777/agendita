@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -151,9 +152,9 @@ export default async function DashboardPage() {
         <section className="mt-10">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-2xl font-heading font-semibold tracking-tight text-primary">Próximas citas</h2>
-            <a href="/dashboard/calendar" className="text-sm font-semibold text-muted-foreground hover:text-primary">
+            <Link href="/dashboard/calendar" className="text-sm font-semibold text-muted-foreground hover:text-primary">
               Ver calendario completo
-            </a>
+            </Link>
           </div>
           {upcomingBookings.length === 0 ? (
             <div className="studio-card p-8 text-center">

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { formatInTimeZone } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
 import {
@@ -151,12 +152,12 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
             <div className="space-y-2 rounded-xl border border-border/60 p-3">
               <h4 className="text-sm font-semibold">Acciones</h4>
               <div className="flex gap-2">
-                <a href={`/dashboard/bookings/${booking.id}/reschedule`} className="flex-1">
+                <Link href={`/dashboard/bookings/${booking.id}/reschedule`} className="flex-1">
                   <Button type="button" variant="outline" size="sm" className="w-full">
                     <RefreshCw className="mr-1 size-3" />
                     Reprogramar
                   </Button>
-                </a>
+                </Link>
                 <div className="flex-1">
                   <CancelBookingButton bookingId={booking.id} size="sm" />
                 </div>
