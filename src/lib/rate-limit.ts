@@ -49,6 +49,9 @@ export const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number
   'create-campaign': { maxRequests: 20, windowMs: 60_000 },
   'send-campaign': { maxRequests: 120, windowMs: 60_000 },
   'send-campaign-email': { maxRequests: 30, windowMs: 60_000 },
+  // Envío masivo de email: el cliente drena en tandas; presupuesto holgado porque
+  // el throttle real es la latencia de Resend (~2/s), no este bucket.
+  'send-campaign-bulk-email': { maxRequests: 60, windowMs: 60_000 },
   'optout-public': { maxRequests: 10, windowMs: 60_000 },
   'default': { maxRequests: 60, windowMs: 60_000 },
 }

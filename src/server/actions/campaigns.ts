@@ -7,15 +7,18 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { createCampaignSchema, type CampaignRewardInput } from '@/lib/campaigns/schema'
 import { queryCampaignSegment } from '@/lib/campaigns/segments'
-import { prepareCampaignSend } from '@/lib/campaigns/send'
+import { prepareCampaignSend, sendOneCampaignEmail } from '@/lib/campaigns/send'
 import { buildWhatsappUrl } from '@/lib/notifications/whatsapp'
 import { isWhatsappablePhone } from '@/lib/customers/phone'
-import { isEmailable } from '@/lib/customers/email'
-import { ensureLoyaltyToken } from '@/lib/loyalty/token'
-import { getBusinessReplyToEmail, sendNotificationSafely, sendCampaignPromoEmail } from '@/lib/notifications'
+import { getBusinessReplyToEmail } from '@/lib/notifications'
 
 // NOTE: 'use server' — SOLO funciones async exportadas. Schemas/consts/tipos
 // viven en src/lib/campaigns/.
+
+/** Máximo de destinatarias por llamada de bulk: acota el trabajo por request para
+ *  no pasar el timeout serverless por defecto (~10-15s) — la latencia de Resend
+ *  (~2/s) hace que ~15 envíos secuenciales ronden los 5-7s. El cliente pagina. */
+const BULK_EMAIL_MAX_PER_CALL = 15
 
 /** Promos elegibles para campaña: todas las granted activas del negocio
  *  (catálogo de canje + creadas por campañas). */
@@ -151,32 +154,55 @@ export async function sendCampaignEmail(recipientId: string): Promise<{ sent: bo
   const limit = await checkRateLimit('send-campaign-email', 30, 60000, { userId: user.id, businessId })
   if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
 
-  const { recipient, grant, message } = await prepareCampaignSend(prisma, businessId, recipientId, user.id)
+  const replyTo = await getBusinessReplyToEmail(businessId)
+  const outcome = await sendOneCampaignEmail(prisma, businessId, recipientId, user.id, replyTo)
 
-  const email = recipient.customer.email
-  if (!isEmailable(email)) return { sent: false, error: 'La clienta no tiene un email válido.' }
-
-  // Independientes (token keyea por customer, replyTo por businessId): en paralelo.
-  const [token, replyTo] = await Promise.all([
-    ensureLoyaltyToken(prisma, recipient.customer),
-    getBusinessReplyToEmail(businessId),
-  ])
-  const result = await sendNotificationSafely('campaign_email', () =>
-    sendCampaignPromoEmail({
-      to: email!,
-      businessName: recipient.campaign.business.name,
-      businessReplyToEmail: replyTo,
-      message,
-      unsubscribeToken: token,
-    }))
-
-  if (!result.success) {
-    return { sent: false, error: result.error ?? result.skipped ?? 'No se pudo enviar el email' }
+  if (outcome.status === 'sent') return { sent: true }
+  if (outcome.status === 'skipped') {
+    return {
+      sent: false,
+      error: outcome.reason === 'no_email' ? 'La clienta no tiene un email válido.' : 'Ya se había enviado.',
+    }
   }
+  return { sent: false, error: outcome.error }
+}
 
-  await prisma.campaignRecipient.update({
-    where: { id: recipient.id },
-    data: { grantId: grant.id, sentAt: recipient.sentAt ?? new Date() },
-  })
-  return { sent: true }
+type BulkEmailResult = { recipientId: string; status: 'sent' | 'skipped' | 'failed'; error?: string }
+
+/** Envío masivo de email por tandas. El cliente maneja la cola (desde los props del
+ *  detalle) y pasa hasta BULK_EMAIL_MAX_PER_CALL ids por llamada. El server revalida
+ *  ownership de la campaña y, por cada id, delega en sendOneCampaignEmail (claim +
+ *  puertas). Itera SECUENCIAL (no Promise.all): cada envío abre una tx interactiva
+ *  para mintear, y en paralelo bajo connection_limit=1 (pgbouncer) explota con P2028.
+ *  Un ítem que falla (opt-out, promo pausada, borrada, Resend) NO aborta la tanda. */
+export async function sendCampaignEmailBatch(
+  campaignId: string,
+  recipientIds: string[],
+): Promise<{ results: BulkEmailResult[] }> {
+  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
+  if (recipientIds.length === 0) return { results: [] }
+  if (recipientIds.length > BULK_EMAIL_MAX_PER_CALL) {
+    throw new Error(`Máximo ${BULK_EMAIL_MAX_PER_CALL} destinatarias por tanda`)
+  }
+  const limit = await checkRateLimit('send-campaign-bulk-email', 60, 60000, { userId: user.id, businessId })
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+
+  const campaign = await prisma.campaign.findFirst({ where: { id: campaignId, businessId }, select: { id: true } })
+  if (!campaign) throw new ForbiddenError('Campaña no encontrada')
+
+  const replyTo = await getBusinessReplyToEmail(businessId)
+
+  const results: BulkEmailResult[] = []
+  for (const recipientId of recipientIds) {
+    try {
+      const outcome = await sendOneCampaignEmail(prisma, businessId, recipientId, user.id, replyTo)
+      if (outcome.status === 'sent') results.push({ recipientId, status: 'sent' })
+      else if (outcome.status === 'skipped') results.push({ recipientId, status: 'skipped', error: outcome.reason })
+      else results.push({ recipientId, status: 'failed', error: outcome.error })
+    } catch (e) {
+      // Puerta 2 (opt-out), promo pausada, destinataria borrada → saltar, no abortar.
+      results.push({ recipientId, status: 'skipped', error: e instanceof Error ? e.message : 'error' })
+    }
+  }
+  return { results }
 }

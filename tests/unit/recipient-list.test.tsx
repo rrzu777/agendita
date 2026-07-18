@@ -26,6 +26,7 @@ describe('RecipientList', () => {
 
     const html = renderToStaticMarkup(
       <RecipientList
+        campaignId="c1"
         recipients={[
           {
             id: 'r1',
@@ -78,6 +79,7 @@ describe('RecipientList', () => {
 
     const html = renderToStaticMarkup(
       <RecipientList
+        campaignId="c1"
         recipients={[
           {
             id: 'r1',
@@ -102,6 +104,7 @@ describe('RecipientList', () => {
 
     const html = renderToStaticMarkup(
       <RecipientList
+        campaignId="c1"
         recipients={[]}
         metrics={{ enviadas: 0, canjearon: 0, vigentes: 0 }}
       />,
@@ -115,6 +118,7 @@ describe('RecipientList', () => {
 
     const html = renderToStaticMarkup(
       <RecipientList
+        campaignId="c1"
         recipients={[
           { id: 'r1', name: 'Ana', phone: '+56911110001', email: null, sentAt: null, grantStatus: null, optedOut: true, channel: 'whatsapp' },
         ]}
@@ -133,6 +137,7 @@ describe('RecipientList', () => {
 
     const html = renderToStaticMarkup(
       <RecipientList
+        campaignId="c1"
         recipients={[
           { id: 'r1', name: 'Mai Mail', phone: '1', email: 'mai@example.com', sentAt: null, grantStatus: null, optedOut: false, channel: 'email' },
         ]}

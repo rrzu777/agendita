@@ -10,6 +10,7 @@ import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { sendCampaignMessage, sendCampaignEmail } from '@/server/actions/campaigns'
+import { BulkSendControls } from './bulk-send-controls'
 
 export interface RecipientItem {
   id: string
@@ -35,9 +36,11 @@ function recipientStatus(r: RecipientItem): 'redeemed' | 'sent' | 'pending' {
 }
 
 export function RecipientList({
+  campaignId,
   recipients,
   metrics,
 }: {
+  campaignId: string
   recipients: RecipientItem[]
   metrics: RecipientMetrics
 }) {
@@ -157,6 +160,8 @@ export function RecipientList({
           <p className="mt-1 text-2xl font-semibold text-muted-foreground">{noContactar}</p>
         </div>
       </div>
+
+      {recipients.length > 0 && <BulkSendControls campaignId={campaignId} recipients={recipients} />}
 
       {recipients.length === 0 ? (
         <div className="studio-card overflow-hidden py-12 text-center">
