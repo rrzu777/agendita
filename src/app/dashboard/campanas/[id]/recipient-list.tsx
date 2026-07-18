@@ -2,21 +2,23 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, MessageCircle, Users } from 'lucide-react'
+import { Loader2, Mail, MessageCircle, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
-import { sendCampaignMessage } from '@/server/actions/campaigns'
+import { sendCampaignMessage, sendCampaignEmail } from '@/server/actions/campaigns'
 
 export interface RecipientItem {
   id: string
   name: string
   phone: string
+  email: string | null
   sentAt: Date | null
   grantStatus: string | null
   optedOut: boolean
+  channel: 'whatsapp' | 'email' | 'none'
 }
 
 export interface RecipientMetrics {
@@ -74,9 +76,49 @@ export function RecipientList({
     }
   }
 
+  async function handleSendEmail(recipientId: string) {
+    setSending((prev) => new Set(prev).add(recipientId))
+    setError(null)
+    try {
+      const { sent, error: err } = await sendCampaignEmail(recipientId)
+      if (!sent) setError({ recipientId, message: err ?? 'No se pudo enviar el email' })
+      router.refresh()
+    } catch (e) {
+      setError({ recipientId, message: e instanceof Error ? e.message : 'No se pudo enviar' })
+    } finally {
+      setSending((prev) => {
+        const next = new Set(prev)
+        next.delete(recipientId)
+        return next
+      })
+    }
+  }
+
   function sendButton(r: RecipientItem) {
-    if (r.optedOut) {
+    if (r.optedOut || r.channel === 'none') {
       return <span className="text-sm text-muted-foreground">No contactar</span>
+    }
+    if (r.channel === 'email') {
+      return (
+        <div className="flex flex-col items-end gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => handleSendEmail(r.id)}
+            disabled={sending.has(r.id)}
+          >
+            {sending.has(r.id) ? (
+              <Loader2 className="mr-1 size-4 animate-spin" />
+            ) : (
+              <Mail className="mr-1 size-4" />
+            )}
+            {r.sentAt ? 'Reenviar email' : 'Enviar email'}
+          </Button>
+          {error?.recipientId === r.id && (
+            <span className="text-xs text-destructive">{error.message}</span>
+          )}
+        </div>
+      )
     }
     return (
       <div className="flex flex-col items-end gap-1">
