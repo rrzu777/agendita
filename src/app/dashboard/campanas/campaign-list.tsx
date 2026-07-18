@@ -31,7 +31,7 @@ export function CampaignList({ campaigns }: { campaigns: CampaignListItem[] }) {
               Todavía no creaste ninguna campaña
             </p>
             <p className="text-sm text-muted-foreground">
-              Creá tu primera campaña para enviar promos por WhatsApp a un grupo de clientas.
+              Creá tu primera campaña para enviar promos por WhatsApp o email a un grupo de clientas.
             </p>
           </div>
         </div>
