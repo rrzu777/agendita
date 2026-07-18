@@ -117,3 +117,34 @@ describe('updateBookingStatus — completar con pago revertido (spec FU-B4b-3 §
     expect(loadAutomaticRules).toHaveBeenCalled()
   })
 })
+
+describe('updateBookingStatus — guard de carrera (status esperado en el updateMany)', () => {
+  it('el updateMany filtra por el status leído para cerrar la carrera con una transición concurrente', async () => {
+    // Sin este guard, un confirmed→completed lento puede pisar una reserva que
+    // otra request ya movió a cancelled → produce el inválido cancelled→completed.
+    const booking = makeBooking('deposit_paid')
+    mockPrisma.booking.findFirst.mockResolvedValue(booking)
+
+    await updateBookingStatus('bk-1', BookingStatus.completed)
+
+    expect(mockPrisma.booking.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: 'bk-1',
+        businessId: 'biz-1',
+        status: BookingStatus.confirmed,
+      }),
+    }))
+  })
+
+  it('si otra request ya transicionó la reserva (updateMany count 0), NO corre efectos de loyalty', async () => {
+    const booking = makeBooking('deposit_paid')
+    mockPrisma.booking.findFirst.mockResolvedValue(booking)
+    mockPrisma.booking.updateMany.mockResolvedValue({ count: 0 })
+
+    await expect(updateBookingStatus('bk-1', BookingStatus.completed)).rejects.toThrow()
+
+    expect(creditVisitPoints).not.toHaveBeenCalled()
+    expect(loadAutomaticRules).not.toHaveBeenCalled()
+    expect(mockPrisma.customer.update).not.toHaveBeenCalled()
+  })
+})

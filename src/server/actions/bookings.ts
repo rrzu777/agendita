@@ -500,8 +500,14 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
 
   let isFirstVisit = false
   const updateResult = await prisma.$transaction(async (tx) => {
+    // Guard por status esperado DENTRO de la tx (mismo patrón que
+    // cancelBookingInTx/rescheduleBookingInTx en lib/bookings/mutate.ts): la
+    // transición se validó recién sobre `existing.status`, pero entre ese read y
+    // este write otra request pudo mover la reserva. Sin el `status` en el where,
+    // un confirmed→completed lento pisaría una reserva ya cancelled y produciría
+    // el inválido cancelled→completed. Con el guard, count===0 == carrera perdida.
     const res = await tx.booking.updateMany({
-      where: { id, businessId },
+      where: { id, businessId, status: existing.status },
       data: { status, ...reviewTokenData },
     })
     if (
@@ -545,7 +551,9 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
     return res
   })
   if (updateResult.count === 0) {
-    throw new ForbiddenError('Reserva no encontrada')
+    // La reserva existía (findFirst pasó); count 0 == el guard por status no
+    // matcheó, i.e. otra request ya la transicionó entre el read y el write.
+    throw new ForbiddenError('El estado de la reserva cambió. Recargá e intentá de nuevo.')
   }
 
   // R-EMIT: emisiones automáticas FUERA de la tx del evento (cada una en su propia tx, post-commit).
