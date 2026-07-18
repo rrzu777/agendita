@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import { BookingStatus } from '@prisma/client'
 import { addMinutes } from 'date-fns'
+import { formatBookingDateTime } from '@/lib/booking/format-booking-datetime'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
@@ -69,7 +70,9 @@ export async function rescheduleBookingInTx(
     ...(leadTimeMinutes !== undefined ? { leadTimeMinutes } : {}),
   })
 
-  const historyNote = `[REPROGRAMADA de ${booking.startDateTime.toLocaleString('es-CL')}]`
+  // Fecha en la TZ del negocio (no la del server): con UTC en Vercel una hora local
+  // nocturna quedaba anotada con el día equivocado.
+  const historyNote = `[REPROGRAMADA de ${formatBookingDateTime(booking.startDateTime, timezone)}]`
   const updateResult = await tx.booking.updateMany({
     where: {
       id: booking.id,

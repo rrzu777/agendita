@@ -86,4 +86,18 @@ describe('rescheduleBookingInTx', () => {
     const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) } }
     await expect(rescheduleBookingInTx(tx as never, baseInput)).rejects.toThrow('No se puede reprogramar')
   })
+
+  it('la nota REPROGRAMADA usa la fecha local del negocio, no la del server', async () => {
+    // 2026-07-21T02:00:00Z = 2026-07-20 22:00 en Santiago (UTC-4). Con la TZ del
+    // server (UTC) saldría "21-07"; con la del negocio, "20-07 22:00".
+    const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
+    await rescheduleBookingInTx(tx as never, {
+      ...baseInput,
+      booking: { ...baseInput.booking, startDateTime: new Date('2026-07-21T02:00:00Z'), internalNotes: null },
+      leadTimeMinutes: 0,
+    })
+    expect(tx.booking.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ internalNotes: '[REPROGRAMADA de 20-07-2026 22:00]' }),
+    }))
+  })
 })

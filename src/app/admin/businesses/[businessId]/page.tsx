@@ -61,6 +61,8 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
   }
 
   const status = business.subscriptionStatus
+  // Fechas del negocio renderizadas en SU zona horaria, no la del server (UTC en Vercel).
+  const tz = business.timezone
   const publicUrl = getBusinessPublicUrl({ slug: business.slug, subdomain: business.subdomain })
   const bookingUrl = `${publicUrl}/book`
 
@@ -79,7 +81,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
         <div>
           <h1 className="text-3xl font-semibold text-primary">{business.name}</h1>
           <p className="mt-1 text-muted-foreground">
-            Creado {business.createdAt.toLocaleDateString('es-CL')}
+            Creado {business.createdAt.toLocaleDateString('es-CL', { timeZone: tz })}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
@@ -115,7 +117,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
                         subtitle={booking.service?.name ?? '—'}
                         badge={<StatusBadge map="booking" status={booking.status} />}
                         rows={[
-                          { label: 'Fecha', value: booking.startDateTime.toLocaleDateString('es-CL') },
+                          { label: 'Fecha', value: booking.startDateTime.toLocaleDateString('es-CL', { timeZone: tz }) },
                           { label: 'Total', value: formatMoney(booking.finalAmount, business.currency) },
                         ]}
                       />
@@ -143,7 +145,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
                               primary={booking.service?.name ?? '—'}
                             />
                             <TableCell className={`${TABLE_COL.date} text-muted-foreground`}>
-                              {booking.startDateTime.toLocaleDateString('es-CL')}
+                              {booking.startDateTime.toLocaleDateString('es-CL', { timeZone: tz })}
                             </TableCell>
                             <TableCell className={TABLE_COL.status}>
                               <StatusBadge map="booking" status={booking.status} />
@@ -178,7 +180,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
                         title={formatMoney(payment.amount, payment.currency)}
                         subtitle={payment.paymentType}
                         rows={[
-                          { label: 'Fecha', value: payment.createdAt.toLocaleDateString('es-CL') },
+                          { label: 'Fecha', value: payment.createdAt.toLocaleDateString('es-CL', { timeZone: tz }) },
                           { label: 'Proveedor', value: payment.provider },
                         ]}
                       />
@@ -200,7 +202,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
                         {business.payments.map((payment) => (
                           <TableRow key={payment.id}>
                             <TableCell className={`${TABLE_COL.date} text-muted-foreground`}>
-                              {payment.createdAt.toLocaleDateString('es-CL')}
+                              {payment.createdAt.toLocaleDateString('es-CL', { timeZone: tz })}
                             </TableCell>
                             <TruncatedCell className="text-primary" primary={payment.paymentType} />
                             <TableCell className={`${TABLE_COL.label} text-muted-foreground`}>
@@ -233,7 +235,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold text-primary">{log.action}</span>
                         <span className="text-xs text-muted-foreground">
-                          {log.createdAt.toLocaleString('es-CL')}
+                          {log.createdAt.toLocaleString('es-CL', { timeZone: tz })}
                         </span>
                       </div>
                       {log.notes && (
@@ -299,7 +301,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
               {business.trialEndsAt && (
                 <div>
                   <p className="font-semibold text-muted-foreground">Fin de prueba</p>
-                  <p className="text-primary">{business.trialEndsAt.toLocaleDateString('es-CL')}</p>
+                  <p className="text-primary">{business.trialEndsAt.toLocaleDateString('es-CL', { timeZone: tz })}</p>
                 </div>
               )}
             </CardContent>

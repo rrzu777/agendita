@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-vi.mock('@/lib/auth/server', () => ({ requireBusiness: vi.fn().mockResolvedValue({ businessId: 'b1' }) }))
+vi.mock('@/lib/auth/server', () => ({ requireBusiness: vi.fn().mockResolvedValue({ businessId: 'b1', business: { timezone: 'America/Santiago' } }) }))
 const aggregate = vi.fn()
 const count = vi.fn().mockResolvedValue(0)
 vi.mock('@/lib/db', () => ({
