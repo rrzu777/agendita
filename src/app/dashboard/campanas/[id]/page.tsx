@@ -8,6 +8,7 @@ import { ForbiddenError } from '@/lib/auth/server'
 import { getCampaignDetail } from '@/server/actions/campaigns'
 import { segmentLabel } from '@/lib/campaigns/labels'
 import { formatMediumDate } from '@/lib/format-date'
+import { campaignChannel } from '@/lib/customers/channel'
 import { RecipientList } from './recipient-list'
 
 export const dynamic = 'force-dynamic'
@@ -74,9 +75,11 @@ export default async function CampaignDetailPage({ params }: Props) {
     id: r.id,
     name: r.customer.name,
     phone: r.customer.phone,
+    email: r.customer.email,
     sentAt: r.sentAt,
     grantStatus: r.grant?.status ?? null,
     optedOut: r.customer.marketingOptOutAt != null,
+    channel: campaignChannel(r.customer),
   }))
 
   return (

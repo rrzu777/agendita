@@ -42,7 +42,7 @@ export default async function CampanasPage() {
     <div>
       <DashboardHeader
         title="Campañas"
-        subtitle="Enviá promos por WhatsApp a un grupo de clientas."
+        subtitle="Enviá promos por WhatsApp o email a un grupo de clientas."
       />
       <div className="p-5 md:p-10">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

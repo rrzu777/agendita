@@ -36,16 +36,6 @@ export function selectTimedRuleForCustomer(rules: TimedRule[], c: Candidate, now
   return null
 }
 
-/** ¿Corresponde email promocional de recompensa? Sólo birthday/winback (anniversary
- *  queda mudo) y sólo si la clienta no hizo opt-out de marketing. El GRANT se emite
- *  igual en ambos casos — el opt-out silencia la comunicación, no el beneficio. */
-export function wantsRewardEmail(
-  kind: string | null,
-  customer: { marketingOptOutAt: Date | null },
-): kind is 'birthday' | 'winback' {
-  return (kind === 'birthday' || kind === 'winback') && !customer.marketingOptOutAt
-}
-
 /** Barrido diario (corre cada hora, idempotente por dedupeKey de ocasión). Emite a lo sumo
  *  una recompensa temporal por (clienta, día) — la de mayor prioridad. */
 export async function runAutomaticLoyalty(now: Date = new Date()): Promise<RunAutomaticLoyaltyResult> {
@@ -120,15 +110,20 @@ export async function runAutomaticLoyalty(now: Date = new Date()): Promise<RunAu
           emitted++
           // Email transaccional de recompensa — SOLO birthday/winback (anniversary queda mudo).
           // Best-effort: nunca rompe ni bloquea la emisión (sendRewardEmail traga errores).
+          // Email de recompensa — sólo birthday/winback (anniversary queda mudo). La puerta
+          // de opt-out vive ahora en sendRewardEmail; el grant se emitió igual (arriba).
           const kind = conditionKind(rule.conditions)
-          if (wantsRewardEmail(kind, c)) {
+          if ((kind === 'birthday' || kind === 'winback') && c.email) {
             const rewardLabel = describeReward(
               out, rule, biz.loyaltyConfig?.pointsLabel ?? 'puntos', biz.currency || 'CLP',
             )
-            if (rewardLabel && c.email) {
+            if (rewardLabel) {
               await sendRewardEmail({
                 businessId: biz.id,
-                customer: { id: c.id, name: c.name, email: c.email, loyaltyToken: c.loyaltyToken },
+                customer: {
+                  id: c.id, name: c.name, email: c.email,
+                  loyaltyToken: c.loyaltyToken, marketingOptOutAt: c.marketingOptOutAt,
+                },
                 businessName: biz.name,
                 config: biz.loyaltyConfig,
                 rewardLabel,

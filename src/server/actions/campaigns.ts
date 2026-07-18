@@ -1,18 +1,18 @@
 'use server'
 
-import type { Prisma, PromotionGrant } from '@prisma/client'
+import type { Prisma } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
-import { formatInTimeZone } from 'date-fns-tz'
 import { prisma } from '@/lib/db'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { createCampaignSchema, type CampaignRewardInput } from '@/lib/campaigns/schema'
 import { queryCampaignSegment } from '@/lib/campaigns/segments'
-import { renderCampaignMessage } from '@/lib/campaigns/message'
-import { mintCampaignGrant } from '@/lib/campaigns/mint'
-import { isP2002 } from '@/lib/loyalty/credit'
+import { prepareCampaignSend } from '@/lib/campaigns/send'
 import { buildWhatsappUrl } from '@/lib/notifications/whatsapp'
 import { isWhatsappablePhone } from '@/lib/customers/phone'
+import { isEmailable } from '@/lib/customers/email'
+import { ensureLoyaltyToken } from '@/lib/loyalty/token'
+import { getBusinessReplyToEmail, sendNotificationSafely, sendCampaignPromoEmail } from '@/lib/notifications'
 
 // NOTE: 'use server' — SOLO funciones async exportadas. Schemas/consts/tipos
 // viven en src/lib/campaigns/.
@@ -114,7 +114,7 @@ export async function getCampaignDetail(campaignId: string) {
         orderBy: { customer: { name: 'asc' } },
         select: {
           id: true, customerId: true, sentAt: true,
-          customer: { select: { name: true, phone: true, marketingOptOutAt: true } },
+          customer: { select: { name: true, phone: true, email: true, marketingOptOutAt: true } },
           grant: { select: { status: true, expiresAt: true } },
         },
       },
@@ -129,69 +129,54 @@ export async function sendCampaignMessage(recipientId: string): Promise<{ waUrl:
   const limit = await checkRateLimit('send-campaign', 120, 60000, { userId: user.id, businessId })
   if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
 
-  // Lecturas independientes en paralelo (recipient + config), patrón runRedemption.
-  const [recipient, config] = await Promise.all([
-    prisma.campaignRecipient.findFirst({
-      where: { id: recipientId, campaign: { businessId } },
-      select: {
-        id: true, sentAt: true,
-        customer: { select: { id: true, name: true, phone: true, marketingOptOutAt: true } },
-        campaign: {
-          select: {
-            id: true, messageTemplate: true,
-            promotion: { select: { id: true, grantExpiryDays: true } },
-            business: { select: { name: true, timezone: true } },
-          },
-        },
-      },
-    }),
-    prisma.loyaltyConfig.findUnique({ where: { businessId }, select: { grantExpiryDays: true } }),
-  ])
-  if (!recipient) throw new ForbiddenError('Destinataria no encontrada')
-  // Puerta 2 (retroactiva): la clienta pudo hacer opt-out DESPUÉS de que la
-  // campaña materializó su lista. Bloquear antes de mintear: sin grant, sin sentAt.
-  if (recipient.customer.marketingOptOutAt) {
-    throw new Error('La clienta pidió no recibir campañas')
-  }
-  const tz = recipient.campaign.business.timezone || 'America/Santiago'
-  const requestId = `campaign:${recipient.campaign.id}#${recipient.customer.id}`
-
-  // Mint perezoso en tx chica, idempotente por (customerId, requestId). El P2002
-  // de la carrera se captura FUERA de la tx y se re-lee el grant existente
-  // (mismo patrón que runRedemption en actions/loyalty.ts).
-  let grant: PromotionGrant | null = null
-  try {
-    grant = await prisma.$transaction((tx) =>
-      mintCampaignGrant(tx, {
-        businessId,
-        promotion: { id: recipient.campaign.promotion.id, grantExpiryDays: recipient.campaign.promotion.grantExpiryDays },
-        customerId: recipient.customer.id,
-        requestId,
-        config: { grantExpiryDays: config?.grantExpiryDays ?? null },
-        createdByUserId: user.id,
-      }),
-    )
-  } catch (e) {
-    if (isP2002(e)) {
-      grant = await prisma.promotionGrant.findUnique({
-        where: { customerId_requestId: { customerId: recipient.customer.id, requestId } },
-      })
-    }
-    if (!grant) throw e
-  }
-  if (!grant) throw new Error('No se pudo generar el beneficio')
+  const { recipient, grant, message } = await prepareCampaignSend(prisma, businessId, recipientId, user.id)
 
   await prisma.campaignRecipient.update({
     where: { id: recipient.id },
     data: { grantId: grant.id, sentAt: recipient.sentAt ?? new Date() },
   })
 
-  const firstName = recipient.customer.name?.split(' ')[0] || ''
-  const vencimiento = grant.expiresAt ? formatInTimeZone(grant.expiresAt, tz, 'dd/MM/yyyy') : 'sin vencimiento'
-  const message = renderCampaignMessage(recipient.campaign.messageTemplate, {
-    nombre: firstName, codigo: grant.code, vencimiento, negocio: recipient.campaign.business.name,
-  })
-
-  const waUrl = isWhatsappablePhone(recipient.customer.phone) ? buildWhatsappUrl(recipient.customer.phone, message) : null
+  const waUrl = isWhatsappablePhone(recipient.customer.phone)
+    ? buildWhatsappUrl(recipient.customer.phone, message)
+    : null
   return { waUrl }
+}
+
+/** Envío de campaña por email (canal alternativo a WhatsApp). Mintea el grant vía
+ *  el mismo core idempotente, envía server-side vía Resend, y marca sentAt SÓLO si el
+ *  envío fue exitoso (a diferencia de WhatsApp, acá conocemos el resultado). El grant
+ *  minteado persiste aunque el email falle; reintentar es idempotente. */
+export async function sendCampaignEmail(recipientId: string): Promise<{ sent: boolean; error?: string }> {
+  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('send-campaign-email', 30, 60000, { userId: user.id, businessId })
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+
+  const { recipient, grant, message } = await prepareCampaignSend(prisma, businessId, recipientId, user.id)
+
+  const email = recipient.customer.email
+  if (!isEmailable(email)) return { sent: false, error: 'La clienta no tiene un email válido.' }
+
+  // Independientes (token keyea por customer, replyTo por businessId): en paralelo.
+  const [token, replyTo] = await Promise.all([
+    ensureLoyaltyToken(prisma, recipient.customer),
+    getBusinessReplyToEmail(businessId),
+  ])
+  const result = await sendNotificationSafely('campaign_email', () =>
+    sendCampaignPromoEmail({
+      to: email!,
+      businessName: recipient.campaign.business.name,
+      businessReplyToEmail: replyTo,
+      message,
+      unsubscribeToken: token,
+    }))
+
+  if (!result.success) {
+    return { sent: false, error: result.error ?? result.skipped ?? 'No se pudo enviar el email' }
+  }
+
+  await prisma.campaignRecipient.update({
+    where: { id: recipient.id },
+    data: { grantId: grant.id, sentAt: recipient.sentAt ?? new Date() },
+  })
+  return { sent: true }
 }
