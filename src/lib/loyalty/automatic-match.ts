@@ -42,8 +42,44 @@ export function isWinbackInactive(lastCompletedAt: Date | null, now: Date, inact
   return now.getTime() - lastCompletedAt.getTime() >= inactivityDays * DAY_MS
 }
 
-export function occasionKey(customerId: string, now: Date, timeZone: string): string {
-  return `${customerId}:${formatInTimeZone(now, timeZone, 'yyyy-MM-dd')}:auto-timed`
+/** Año de la instancia de (mes,día) más cercana a `now` en la TZ dada. Estable dentro de una
+ *  ventana ±windowDays (con windowDays < ~180): todos los días de la ventana caen en el mismo
+ *  año → misma occasionKey → una sola emisión por ocasión anual. Ignora bisiestos, mismo
+ *  criterio pragmático que monthDayDistance (el borde con windowDays chico es irrelevante). */
+function nearestOccurrenceYear(md: { m: number; d: number }, now: Date, timeZone: string): number {
+  const [ny, nm, nd] = formatInTimeZone(now, timeZone, 'yyyy-MM-dd').split('-').map(Number)
+  const nowRef = Date.UTC(ny, nm - 1, nd)
+  let best = ny
+  let bestDist = Infinity
+  for (const y of [ny - 1, ny, ny + 1]) {
+    const dist = Math.abs(Date.UTC(y, md.m - 1, md.d) - nowRef)
+    if (dist < bestDist) { bestDist = dist; best = y }
+  }
+  return best
+}
+
+/** dedupeKey de la ocasión temporal que gatilla la regla ganadora.
+ *  - cumpleaños/aniversario: por OCASIÓN-AÑO (`${id}:birthday:2026`). Con windowDays>0 todos los
+ *    días de la ventana comparten la key ⇒ una sola emisión por año (antes se emitía cada día).
+ *  - winback (y fallback): por (clienta, día local). La re-elegibilidad real de winback la controla
+ *    R-WINBACK en el cron (excluye si ya emitió tras la última visita); esta key sólo da idempotencia
+ *    intra-día entre las corridas horarias. */
+export function occasionKey(
+  rule: { conditions: Prisma.JsonValue },
+  c: { id: string; birthDate: Date | null; firstCompletedAt: Date | null },
+  now: Date,
+  timeZone: string,
+): string {
+  const kind = conditionKind(rule.conditions)
+  if (kind === 'birthday' && c.birthDate) {
+    // birthDate se compara en UTC (igual que matchesBirthday).
+    return `${c.id}:birthday:${nearestOccurrenceYear(monthDay(c.birthDate, 'UTC'), now, timeZone)}`
+  }
+  if (kind === 'anniversary' && c.firstCompletedAt) {
+    // firstCompletedAt se compara en la TZ del negocio (igual que matchesAnniversary).
+    return `${c.id}:anniversary:${nearestOccurrenceYear(monthDay(c.firstCompletedAt, timeZone), now, timeZone)}`
+  }
+  return `${c.id}:${formatInTimeZone(now, timeZone, 'yyyy-MM-dd')}:auto-timed`
 }
 export function firstVisitKey(customerId: string): string { return `${customerId}:first_visit` }
 export function reviewKey(customerId: string, bookingId: string): string { return `${customerId}:review:${bookingId}` }
