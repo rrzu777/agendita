@@ -148,7 +148,11 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
               Completar
             </Button>
           </form>
-          <Link href={`/dashboard/bookings/${booking.id}/reschedule`} className="flex-1">
+          {/* prefetch={false}: esta card se renderiza por CADA reserva confirmada
+              y getBookings() no está paginado; sin esto, cada fila visible haría
+              un prefetch de su ruta de reprogramar (O(reservas)). Reprogramar es
+              acción poco frecuente: fetch on-click alcanza. */}
+          <Link href={`/dashboard/bookings/${booking.id}/reschedule`} prefetch={false} className="flex-1">
             <Button type="button" variant="outline" className="w-full h-10 text-sm font-semibold">
               <RefreshCw className="mr-1 size-3" />
               Reprogramar
