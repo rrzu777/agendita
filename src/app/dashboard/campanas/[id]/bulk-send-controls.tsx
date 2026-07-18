@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, Mail, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { openDeferredPopup } from '@/lib/popup'
 import { sendCampaignEmailBatch, sendCampaignMessage } from '@/server/actions/campaigns'
 import type { RecipientItem } from './recipient-list'
 
@@ -63,23 +64,21 @@ export function BulkSendControls({
 
   async function openNext() {
     if (!current) return
-    // Abrimos la ventana YA (gesto del usuario) para no toparnos con el bloqueador
-    // de pop-ups tras el await (patrón review-link-button). Como openNext es async,
-    // el window.open corre síncrono hasta el primer await → mismo tick del gesto.
-    const win = window.open('', '_blank')
+    // openDeferredPopup corre síncrono hasta el primer await → el window.open cae en
+    // el mismo tick del gesto del usuario y esquiva el bloqueador de pop-ups.
+    const popup = openDeferredPopup()
     setWaSending(true)
     setWaError(null)
     try {
       const { waUrl } = await sendCampaignMessage(current.id)
       if (waUrl) {
-        if (win) win.location.href = waUrl
-        else window.open(waUrl, '_blank')
+        popup.navigate(waUrl)
       } else {
-        win?.close()
+        popup.close()
         setWaError('La clienta no tiene un teléfono válido.')
       }
     } catch (e) {
-      win?.close()
+      popup.close()
       setWaError(e instanceof Error ? e.message : 'No se pudo enviar')
     } finally {
       setWaSending(false)
