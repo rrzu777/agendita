@@ -11,37 +11,47 @@ export const BANK_TRANSFER_METHOD = 'bank_transfer'
 // que discriminan por método (derive, revive, /mi, cron, checkout).
 export const PKG_TRANSFER_PAYMENT_METHOD = 'Transferencia'
 
-// providerPaymentId determinístico del Payment "declarado por la clienta".
-// Doble propósito (spec §3.4): hace morder el unique [bookingId, provider,
-// providerPaymentId] (idempotencia real vía P2002) y discrimina la declaración
-// de la clienta de un pago manual que registró la dueña.
+// ── Factory de "transferencia declarada por la clienta" ──
+// Las 3 familias (abono de reserva, saldo de reserva, compra de paquete) comparten
+// la MISMA forma: un providerPaymentId con prefijo determinístico sobre un Payment
+// manual+pending. Esta fábrica deriva las 3 piezas (id builder, where de Prisma,
+// predicado en memoria) desde el prefijo, para no repetir el fragmento
+// { provider:'manual', status:'pending', startsWith } — antes copiado a mano en
+// cada familia, con el riesgo de olvidar una condición (p.ej. `status:'pending'`)
+// en alguna copia y agarrar pagos ya procesados.
+type DeclaredPaymentLike = { provider: string; status: string; providerPaymentId?: string | null }
+
+function makeDeclaredTransferKind(prefix: string) {
+  // `satisfies` (no anotación) preserva el tipo literal { startsWith: string },
+  // así los consumidores y tests que leen `.providerPaymentId.startsWith` siguen tipando.
+  const where = {
+    provider: 'manual',
+    status: 'pending',
+    providerPaymentId: { startsWith: prefix },
+  } satisfies Prisma.PaymentWhereInput
+  return {
+    /** providerPaymentId determinístico `${prefix}${entityId}`: hace morder el unique
+     *  (idempotencia real vía P2002) y discrimina la declaración de la clienta de un
+     *  pago manual registrado por la dueña. */
+    id: (entityId: string) => `${prefix}${entityId}`,
+    /** where-fragment reusable "declaración pendiente de verificar" (fuente única de
+     *  las 3 condiciones). Spreadeable para añadir filtros (createdAt, bookingId…). */
+    where,
+    /** Misma condición sobre un Payment ya cargado en memoria. */
+    is: (p: DeclaredPaymentLike): boolean =>
+      p.provider === 'manual' &&
+      p.status === 'pending' &&
+      !!p.providerPaymentId?.startsWith(prefix),
+  }
+}
+
+// ── Abono de reserva (feature original) ──
 export const BT_DECLARED_PREFIX = 'bt-declared:'
-
-export function btDeclaredId(bookingId: string): string {
-  return `${BT_DECLARED_PREFIX}${bookingId}`
-}
-
-// where-fragment reusable: "declaración de la clienta pendiente de verificar".
-// Fuente única de las 3 condiciones (provider + status + prefijo); lo usan /mi,
-// y lo van a usar el aviso home, cancelBooking y el cron (PR C). Escribirlo a
-// mano en cada lugar arriesga olvidar `status: 'pending'` y agarrar pagos ya
-// procesados.
-export const declaredTransferPaymentWhere = {
-  provider: 'manual',
-  status: 'pending',
-  providerPaymentId: { startsWith: BT_DECLARED_PREFIX },
-} satisfies Prisma.PaymentWhereInput
-
-// Misma condición sobre un Payment ya cargado en memoria (deriveConfirmationState).
-export function isDeclaredTransferPayment(
-  p: { provider: string; status: string; providerPaymentId?: string | null },
-): boolean {
-  return (
-    p.provider === 'manual' &&
-    p.status === 'pending' &&
-    !!p.providerPaymentId?.startsWith(BT_DECLARED_PREFIX)
-  )
-}
+export const {
+  id: btDeclaredId,
+  where: declaredTransferPaymentWhere,
+  is: isDeclaredTransferPayment,
+} = makeDeclaredTransferKind(BT_DECLARED_PREFIX)
 
 // "Esta reserva tiene una transferencia del ABONO pendiente de verificar."
 // Fuente única del predicado que el dashboard deriva en varios lugares (tabla,
@@ -62,10 +72,11 @@ export function hasPendingDeclaredTransfer(
 // abono debe matchear un saldo por accidente. Verificado: 'bt-balance:' no
 // satisface startsWith('bt-declared:').
 export const BT_BALANCE_PREFIX = 'bt-balance:'
-
-export function btBalanceId(bookingId: string): string {
-  return `${BT_BALANCE_PREFIX}${bookingId}`
-}
+export const {
+  id: btBalanceId,
+  where: declaredBalancePaymentWhere,
+  is: isDeclaredBalancePayment,
+} = makeDeclaredTransferKind(BT_BALANCE_PREFIX)
 
 // Estados "firmes" donde el saldo por transferencia aplica: la reserva ya está
 // pagada de abono (o atendida), sin hold ni cupo en juego. Fuente única para
@@ -74,22 +85,6 @@ export const FIRM_BOOKING_STATUSES = ['confirmed', 'completed'] as const
 
 export function isFirmBooking(status: string): boolean {
   return status === 'confirmed' || status === 'completed'
-}
-
-export const declaredBalancePaymentWhere = {
-  provider: 'manual',
-  status: 'pending',
-  providerPaymentId: { startsWith: BT_BALANCE_PREFIX },
-} satisfies Prisma.PaymentWhereInput
-
-export function isDeclaredBalancePayment(
-  p: { provider: string; status: string; providerPaymentId?: string | null },
-): boolean {
-  return (
-    p.provider === 'manual' &&
-    p.status === 'pending' &&
-    !!p.providerPaymentId?.startsWith(BT_BALANCE_PREFIX)
-  )
 }
 
 // Abono O saldo pendientes: para superficies de verificación de la dueña y
@@ -118,26 +113,11 @@ export function hasPendingBalanceTransfer(
 // Prefijo PROPIO y explícito: 'bt-pkg-declared:' NO satisface startsWith('bt-declared:'),
 // así que ningún sweep/consulta de reservas agarra un pago de paquete por accidente.
 export const BT_PKG_DECLARED_PREFIX = 'bt-pkg-declared:'
-
-export function btPkgDeclaredId(purchaseId: string): string {
-  return `${BT_PKG_DECLARED_PREFIX}${purchaseId}`
-}
-
-export const declaredPkgTransferPaymentWhere = {
-  provider: 'manual',
-  status: 'pending',
-  providerPaymentId: { startsWith: BT_PKG_DECLARED_PREFIX },
-} satisfies Prisma.PaymentWhereInput
-
-export function isDeclaredPkgTransferPayment(
-  p: { provider: string; status: string; providerPaymentId?: string | null },
-): boolean {
-  return (
-    p.provider === 'manual' &&
-    p.status === 'pending' &&
-    !!p.providerPaymentId?.startsWith(BT_PKG_DECLARED_PREFIX)
-  )
-}
+export const {
+  id: btPkgDeclaredId,
+  where: declaredPkgTransferPaymentWhere,
+  is: isDeclaredPkgTransferPayment,
+} = makeDeclaredTransferKind(BT_PKG_DECLARED_PREFIX)
 
 /** "Compra de paquete con una transferencia declarada pendiente de verificar."
  *  Fuente única del predicado que usan la lista de la dueña (getPendingPackageTransfers)
