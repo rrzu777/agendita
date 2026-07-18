@@ -102,7 +102,7 @@ export async function runAutomaticLoyalty(now: Date = new Date()): Promise<RunAu
       })
       const rule = selectTimedRuleForCustomer(applicable, c, now, tz)
       if (!rule) continue
-      const dedupeKey = occasionKey(c.id, now, tz)
+      const dedupeKey = occasionKey(rule, c, now, tz)
       try {
         const out = await prisma.$transaction((tx) =>
           emitAutomaticReward(tx, { rule, businessId: biz.id, customerId: c.id, dedupeKey, config, now }))

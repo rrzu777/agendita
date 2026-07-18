@@ -81,9 +81,11 @@ const BIRTHDAY: LoyaltyPreset = {
   id: 'birthday', kind: 'addon', name: 'Cumpleaños', recommended: true,
   describe: ['En su mes de cumpleaños, 20% de descuento.', 'Válido 30 días.'],
   rules: [{
+    // Sin maxPerCustomer: la occasionKey por-ocasión-año ya emite 1 vez por cumpleaños.
+    // Un cap de por-vida acá lo volvía "una sola vez en la vida" (bug auditoría 2026-07-18).
     kind: 'birthday', isActive: true, priority: 10, rewardKind: 'grant',
     rewardType: 'percentage', rewardValue: 20, appliesToAll: true, serviceIds: [],
-    grantExpiryDays: 30, maxPerCustomer: 1, windowDays: 30,
+    grantExpiryDays: 30, windowDays: 30,
   }],
 }
 
