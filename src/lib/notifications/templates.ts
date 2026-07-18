@@ -1,5 +1,6 @@
 import { formatInTimeZone } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
+import { unsubscribeFooterHtml, unsubscribeFooterText } from './marketing-email'
 import type {
   BookingEmailData,
   CancellationEmailData,
@@ -691,12 +692,14 @@ export function loyaltyRewardHtml(data: LoyaltyRewardEmailData): string {
     ? `<p style="margin-top:24px"><a href="${escapeHtml(data.loyaltyCardLink)}" style="background:#e91e63;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block">Ver mi tarjeta</a></p>`
     : ''
 
+  const unsub = data.unsubscribeToken ? unsubscribeFooterHtml(data.unsubscribeToken) : ''
   return baseHtml(`
     ${header(title)}
     <p style="font-size:15px">${escapeHtml(intro)}</p>
     <p style="font-size:16px;margin-top:16px">Te regalamos <strong>${escapeHtml(data.rewardLabel)}</strong>.</p>
     ${cta}
     ${footer(data.businessName)}
+    ${unsub}
   `)
 }
 
@@ -711,7 +714,8 @@ export function loyaltyRewardText(data: LoyaltyRewardEmailData): string {
   ]
   if (data.loyaltyCardLink) lines.push(``, `Ver mi tarjeta: ${data.loyaltyCardLink}`)
   lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)
-  return lines.join('\n')
+  const unsub = data.unsubscribeToken ? `\n\n${unsubscribeFooterText(data.unsubscribeToken)}` : ''
+  return lines.join('\n') + unsub
 }
 
 /** Cuerpo de email de campaña: el mensaje de la campaña (mismo texto que WhatsApp,

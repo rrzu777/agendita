@@ -186,6 +186,8 @@ export interface LoyaltyRewardEmailData {
   rewardLabel: string
   reason: 'birthday' | 'winback' | 'referral'
   loyaltyCardLink: string | null
+  /** Token de baja: presente sólo para emails de marketing (birthday/winback). null = sin footer/headers de baja. */
+  unsubscribeToken?: string | null
 }
 
 export interface OwnerBookingChangedData {

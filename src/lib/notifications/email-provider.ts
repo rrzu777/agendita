@@ -518,7 +518,10 @@ export async function sendLoyaltyRewardNotification(data: LoyaltyRewardEmailData
     `${LOYALTY_REWARD_SUBJECTS[data.reason]} — ${data.businessName}`,
     html,
     text,
-    { replyTo: data.businessReplyToEmail },
+    {
+      replyTo: data.businessReplyToEmail,
+      ...(data.unsubscribeToken ? { headers: unsubscribeHeaders(data.unsubscribeToken) } : {}),
+    },
   )
 }
 
