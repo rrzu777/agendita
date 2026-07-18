@@ -15,6 +15,11 @@ import { getBusinessReplyToEmail } from '@/lib/notifications'
 // NOTE: 'use server' — SOLO funciones async exportadas. Schemas/consts/tipos
 // viven en src/lib/campaigns/.
 
+/** Máximo de destinatarias por llamada de bulk: acota el trabajo por request para
+ *  no pasar el timeout serverless por defecto (~10-15s) — la latencia de Resend
+ *  (~2/s) hace que ~15 envíos secuenciales ronden los 5-7s. El cliente pagina. */
+const BULK_EMAIL_MAX_PER_CALL = 15
+
 /** Promos elegibles para campaña: todas las granted activas del negocio
  *  (catálogo de canje + creadas por campañas). */
 export async function listCampaignPromotions() {
@@ -160,4 +165,42 @@ export async function sendCampaignEmail(recipientId: string): Promise<{ sent: bo
     }
   }
   return { sent: false, error: outcome.error }
+}
+
+/** Envío masivo de email por tandas. El cliente maneja la cola (desde los props del
+ *  detalle) y pasa hasta BULK_EMAIL_MAX_PER_CALL ids por llamada. El server revalida
+ *  ownership de la campaña y, por cada id, delega en sendOneCampaignEmail (claim +
+ *  puertas). Itera SECUENCIAL (no Promise.all): cada envío abre una tx interactiva
+ *  para mintear, y en paralelo bajo connection_limit=1 (pgbouncer) explota con P2028.
+ *  Un ítem que falla (opt-out, promo pausada, borrada, Resend) NO aborta la tanda. */
+export async function sendCampaignEmailBatch(
+  campaignId: string,
+  recipientIds: string[],
+): Promise<{ results: { recipientId: string; status: 'sent' | 'skipped' | 'failed'; error?: string }[] }> {
+  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
+  if (recipientIds.length === 0) return { results: [] }
+  if (recipientIds.length > BULK_EMAIL_MAX_PER_CALL) {
+    throw new Error(`Máximo ${BULK_EMAIL_MAX_PER_CALL} destinatarias por tanda`)
+  }
+  const limit = await checkRateLimit('send-campaign-bulk-email', 60, 60000, { userId: user.id, businessId })
+  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+
+  const campaign = await prisma.campaign.findFirst({ where: { id: campaignId, businessId }, select: { id: true } })
+  if (!campaign) throw new ForbiddenError('Campaña no encontrada')
+
+  const replyTo = await getBusinessReplyToEmail(businessId)
+
+  const results: { recipientId: string; status: 'sent' | 'skipped' | 'failed'; error?: string }[] = []
+  for (const recipientId of recipientIds) {
+    try {
+      const outcome = await sendOneCampaignEmail(prisma, businessId, recipientId, user.id, replyTo)
+      if (outcome.status === 'sent') results.push({ recipientId, status: 'sent' })
+      else if (outcome.status === 'skipped') results.push({ recipientId, status: 'skipped', error: outcome.reason })
+      else results.push({ recipientId, status: 'failed', error: outcome.error })
+    } catch (e) {
+      // Puerta 2 (opt-out), promo pausada, destinataria borrada → saltar, no abortar.
+      results.push({ recipientId, status: 'skipped', error: e instanceof Error ? e.message : 'error' })
+    }
+  }
+  return { results }
 }
