@@ -100,6 +100,7 @@ export default async function CampaignDetailPage({ params }: Props) {
         </div>
 
         <RecipientList
+          campaignId={campaign.id}
           recipients={recipients}
           metrics={{ enviadas, canjearon, vigentes }}
         />
