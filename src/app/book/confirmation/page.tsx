@@ -12,6 +12,7 @@ import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD, BT_DECLARED_PREFIX } from '@/lib/bank-transfer/declared'
 import { TransferPanel } from './transfer-panel'
 import { AccountCta } from '@/components/booking/account-cta'
+import { formatConfirmationDateTime } from './format-datetime'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
@@ -78,9 +79,12 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
   ])
   const customerEmail = booking.customer?.email ?? null
 
-  const startDate = new Date(booking.startDateTime)
-  const formattedDate = startDate.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
-  const formattedTime = startDate.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
+  // Formatear en la TZ del negocio (no la del server UTC en Vercel): sin esto,
+  // las reservas ≥20:00 hora local mostraban el día/hora equivocados.
+  const { date: formattedDate, time: formattedTime } = formatConfirmationDateTime(
+    new Date(booking.startDateTime),
+    booking.business.timezone,
+  )
   const remainingBalance = booking.finalAmount - booking.depositPaid
 
   const stateConfig = {
