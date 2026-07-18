@@ -1,5 +1,5 @@
 import type { Prisma, PromotionReward, PrismaClient } from '@prisma/client'
-import { generateGrantCode } from './redeem'
+import { createGrantInTx } from './grant'
 import { isP2002 } from './credit'
 import { conditionKind } from './automatic-match'
 
@@ -101,11 +101,10 @@ export async function emitAutomaticReward(tx: Tx, args: {
   const expiryDays = rule.grantExpiryDays ?? config.grantExpiryDays
   const expiresAt = expiryDays != null ? new Date(now.getTime() + expiryDays * DAY_MS) : null
   try {
-    const code = await generateGrantCode(tx, businessId)
-    const grant = await tx.promotionGrant.create({
-      data: { businessId, promotionId: rule.id, customerId, code, pointsSpent: 0,
-        status: 'active', expiresAt, refundOnExpiry: false, triggeringBookingId,
-        forfeitOnNoShow: config.forfeitGrantOnNoShow, requestId: dedupeKey, metadata: meta },
+    const grant = await createGrantInTx(tx, {
+      businessId, promotionId: rule.id, customerId, requestId: dedupeKey,
+      expiresAt, triggeringBookingId,
+      forfeitOnNoShow: config.forfeitGrantOnNoShow, metadata: meta,
     })
     return { kind: 'grant', grantId: grant.id, code: grant.code }
   } catch (e) {

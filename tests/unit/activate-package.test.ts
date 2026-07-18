@@ -1,16 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/loyalty/redeem', () => ({ generateGrantCode: vi.fn().mockResolvedValue('CODE') }))
-
 const { activatePackagePurchaseInTx } = await import('@/lib/packages/activate')
 
 function makeTx() {
   return {
     promotion: {
-      findFirst: vi.fn().mockResolvedValue({ id: 'marker' }),
+      // El marker se busca sin `code`; generateGrantCode busca por `code` (sin colisión).
+      findFirst: vi.fn().mockImplementation((args: any) =>
+        Promise.resolve(args?.where?.code ? null : { id: 'marker' })),
       create: vi.fn().mockResolvedValue({ id: 'marker' }),
     },
-    promotionGrant: { create: vi.fn().mockResolvedValue({}) },
+    promotionGrant: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({}),
+    },
     packagePurchase: { update: vi.fn().mockResolvedValue({}) },
     ledgerEntry: { create: vi.fn().mockResolvedValue({}), upsert: vi.fn().mockResolvedValue({}) },
   } as any
