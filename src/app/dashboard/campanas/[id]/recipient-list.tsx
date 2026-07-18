@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { sendCampaignMessage, sendCampaignEmail } from '@/server/actions/campaigns'
 
 export interface RecipientItem {
@@ -27,10 +28,10 @@ export interface RecipientMetrics {
   vigentes: number
 }
 
-function statusLabel(r: RecipientItem): string {
-  if (r.grantStatus === 'redeemed') return 'Canjeado ✓'
-  if (r.sentAt) return 'Enviado ✓'
-  return '—'
+function recipientStatus(r: RecipientItem): 'redeemed' | 'sent' | 'pending' {
+  if (r.grantStatus === 'redeemed') return 'redeemed'
+  if (r.sentAt) return 'sent'
+  return 'pending'
 }
 
 export function RecipientList({
@@ -192,13 +193,7 @@ export function RecipientList({
                     <TruncatedCell className="font-semibold text-primary" primary={r.name} />
                     <TableCell className={`${TABLE_COL.contact} whitespace-nowrap text-sm`}>{r.phone}</TableCell>
                     <TableCell className={`${TABLE_COL.status} text-sm`}>
-                      <span
-                        className={
-                          r.grantStatus === 'redeemed' ? 'font-semibold text-green-700' : 'text-muted-foreground'
-                        }
-                      >
-                        {statusLabel(r)}
-                      </span>
+                      <StatusBadge status={recipientStatus(r)} map="campaignRecipient" />
                     </TableCell>
                     <TableCell className="w-[210px] text-right">{sendButton(r)}</TableCell>
                   </TableRow>
@@ -214,7 +209,7 @@ export function RecipientList({
                 key={r.id}
                 title={r.name}
                 subtitle={r.phone}
-                rows={[{ label: 'Estado', value: statusLabel(r) }]}
+                rows={[{ label: 'Estado', value: <StatusBadge status={recipientStatus(r)} map="campaignRecipient" /> }]}
                 actions={sendButton(r)}
               />
             ))}

@@ -71,6 +71,14 @@ const REDEMPTION_STATUS: Record<string, StatusEntry> = {
   released: { label: 'Liberado', className: 'bg-muted text-muted-foreground' },
 }
 
+// Estado de una destinataria de campaña: derivado de (grantStatus, sentAt) en
+// campanas/[id]/recipient-list.tsx. 'pending' = aún no enviado.
+const CAMPAIGN_RECIPIENT_STATUS: Record<string, StatusEntry> = {
+  redeemed: { label: 'Canjeado ✓', className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
+  sent: { label: 'Enviado ✓', className: 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300' },
+  pending: { label: '—', className: 'bg-muted text-muted-foreground' },
+}
+
 export const STATUS_MAPS = {
   booking: BOOKING_STATUS,
   service: SERVICE_STATUS,
@@ -80,6 +88,7 @@ export const STATUS_MAPS = {
   direction: DIRECTION_STATUS,
   subscription: SUBSCRIPTION_STATUS,
   redemption: REDEMPTION_STATUS,
+  campaignRecipient: CAMPAIGN_RECIPIENT_STATUS,
 } as const
 
 export function StatusBadge({
