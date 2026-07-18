@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { REWARD_TYPES, withRewardRules } from '@/lib/rewards/schema'
 
 export function normalizeCode(code: string | null | undefined): string | null {
   if (!code) return null
@@ -19,28 +20,25 @@ const dateStr = z.string().trim().optional().nullable().or(z.literal(''))
     return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v
   }, 'Fecha inválida')
 
-export const createPromotionSchema = z.object({
-  name: z.string().trim().min(1, 'El nombre es requerido').max(100),
-  description: z.string().trim().max(500).optional().nullable().transform((v) => (v ? v : null)),
-  code: z.string().trim().max(40).optional().nullable().or(z.literal(''))
-    .transform((v) => normalizeCode(v))
-    .refine((v) => v === null || /^[A-Z0-9_-]{2,40}$/.test(v), 'Código inválido (2–40, A–Z 0–9 _ -)'),
-  rewardType: z.enum(['percentage', 'fixed_amount', 'free_service']),
-  rewardValue: z.number().int().nonnegative(),
-  maxDiscount: z.number().int().positive().optional().nullable(),
-  appliesToAll: z.boolean(),
-  serviceIds: z.array(z.string().min(1)).optional().default([]),
-  validFrom: dateStr,
-  validUntil: dateStr,
-  minSpend: z.number().int().nonnegative().optional().nullable(),
-  maxRedemptions: z.number().int().positive().optional().nullable(),
-  maxPerCustomer: z.number().int().positive().optional().nullable(),
-}).strip()
-  .transform((d) => (d.rewardType === 'free_service' ? { ...d, rewardValue: 0 } : d))
-  .refine((d) => d.rewardType !== 'percentage' || (d.rewardValue >= 1 && d.rewardValue <= 100),
-    { message: 'El porcentaje debe estar entre 1 y 100', path: ['rewardValue'] })
-  .refine((d) => d.appliesToAll || d.serviceIds.length > 0,
-    { message: 'Elige al menos un servicio o aplica a todos', path: ['serviceIds'] })
+export const createPromotionSchema = withRewardRules(
+  z.object({
+    name: z.string().trim().min(1, 'El nombre es requerido').max(100),
+    description: z.string().trim().max(500).optional().nullable().transform((v) => (v ? v : null)),
+    code: z.string().trim().max(40).optional().nullable().or(z.literal(''))
+      .transform((v) => normalizeCode(v))
+      .refine((v) => v === null || /^[A-Z0-9_-]{2,40}$/.test(v), 'Código inválido (2–40, A–Z 0–9 _ -)'),
+    rewardType: z.enum(REWARD_TYPES),
+    rewardValue: z.number().int().nonnegative(),
+    maxDiscount: z.number().int().positive().optional().nullable(),
+    appliesToAll: z.boolean(),
+    serviceIds: z.array(z.string().min(1)).optional().default([]),
+    validFrom: dateStr,
+    validUntil: dateStr,
+    minSpend: z.number().int().nonnegative().optional().nullable(),
+    maxRedemptions: z.number().int().positive().optional().nullable(),
+    maxPerCustomer: z.number().int().positive().optional().nullable(),
+  }).strip(),
+)
   .refine((d) => !d.validFrom || !d.validUntil || new Date(d.validUntil) > new Date(d.validFrom),
     { message: 'La fecha de fin debe ser posterior a la de inicio', path: ['validUntil'] })
 

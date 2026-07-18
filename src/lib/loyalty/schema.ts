@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { REWARD_TYPES, withRewardRules } from '@/lib/rewards/schema'
 
 // Entero opcional positivo; '' / 0 / negativo / null => null (off).
 const optPositiveInt = z.coerce.number().int().optional().nullable()
@@ -30,24 +31,21 @@ export type LoyaltyConfigInput = z.infer<typeof loyaltyConfigSchema>
 export type LoyaltyConfigFormInput = z.input<typeof loyaltyConfigSchema>
 export type AdjustPointsInput = z.infer<typeof adjustPointsSchema>
 
-export const redemptionOptionSchema = z.object({
-  name: z.string().trim().min(1, 'El nombre es requerido').max(60),
-  rewardType: z.enum(['percentage', 'fixed_amount', 'free_service']),
-  rewardValue: z.coerce.number().int().nonnegative(),
-  maxDiscount: optPositiveInt,
-  pointsCost: z.coerce.number().int().positive('El costo en puntos debe ser mayor a 0'),
-  appliesToAll: z.boolean(),
-  serviceIds: z.array(z.string().min(1)).optional().default([]),
-  grantExpiryDays: optPositiveInt,
-  maxRedemptions: optPositiveInt,
-  maxPerCustomer: optPositiveInt,
-  isActive: z.boolean().optional().default(true),
-}).strip()
-  .transform((d) => (d.rewardType === 'free_service' ? { ...d, rewardValue: 0 } : d))
-  .refine((d) => d.rewardType !== 'percentage' || (d.rewardValue >= 1 && d.rewardValue <= 100),
-    { message: 'El porcentaje debe estar entre 1 y 100', path: ['rewardValue'] })
-  .refine((d) => d.appliesToAll || d.serviceIds.length > 0,
-    { message: 'Elige al menos un servicio o aplica a todos', path: ['serviceIds'] })
+export const redemptionOptionSchema = withRewardRules(
+  z.object({
+    name: z.string().trim().min(1, 'El nombre es requerido').max(60),
+    rewardType: z.enum(REWARD_TYPES),
+    rewardValue: z.coerce.number().int().nonnegative(),
+    maxDiscount: optPositiveInt,
+    pointsCost: z.coerce.number().int().positive('El costo en puntos debe ser mayor a 0'),
+    appliesToAll: z.boolean(),
+    serviceIds: z.array(z.string().min(1)).optional().default([]),
+    grantExpiryDays: optPositiveInt,
+    maxRedemptions: optPositiveInt,
+    maxPerCustomer: optPositiveInt,
+    isActive: z.boolean().optional().default(true),
+  }).strip(),
+)
 
 export const redeemSchema = z.object({
   optionId: z.string().min(1),
@@ -68,7 +66,7 @@ export const automaticRuleSchema = z.object({
   priority: z.coerce.number().int().min(0).max(1000).default(0),
   rewardKind: z.enum(['points', 'grant']),
   rewardPoints: z.coerce.number().int().optional().nullable(),
-  rewardType: z.enum(['percentage', 'fixed_amount', 'free_service']).optional().nullable(),
+  rewardType: z.enum(REWARD_TYPES).optional().nullable(),
   rewardValue: z.coerce.number().int().nonnegative().optional().default(0),
   maxDiscount: optPositiveInt,
   appliesToAll: z.boolean().default(true),
