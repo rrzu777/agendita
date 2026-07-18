@@ -12,8 +12,7 @@ import { RewardFields } from '@/components/dashboard/reward-fields'
 import { createPromotion, updatePromotion } from '@/server/actions/promotions'
 import { computeDiscount } from '@/lib/promotions/evaluate'
 import { formatMoney } from '@/lib/money'
-
-type RewardType = 'percentage' | 'fixed_amount' | 'free_service'
+import type { RewardType } from '@/lib/rewards/schema'
 
 interface ServiceOption {
   id: string
