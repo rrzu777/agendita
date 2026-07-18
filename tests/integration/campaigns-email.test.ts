@@ -137,4 +137,14 @@ describe('sendCampaignEmail', () => {
     await expect(sendCampaignEmail(recipientId)).rejects.toThrow('pausada')
     expect(promoEmail).not.toHaveBeenCalled()
   })
+
+  it('claim: dos envíos sobre la misma destinataria → un solo email', async () => {
+    const { business, recipientId } = await seed({})
+    created.push(business.id)
+    const r1 = await sendCampaignEmail(recipientId)
+    const r2 = await sendCampaignEmail(recipientId)
+    expect(r1.sent).toBe(true)
+    expect(r2.sent).toBe(false) // segundo: ya enviado, no reenvía
+    expect(promoEmail).toHaveBeenCalledTimes(1)
+  })
 })

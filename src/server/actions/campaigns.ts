@@ -7,12 +7,10 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { createCampaignSchema, type CampaignRewardInput } from '@/lib/campaigns/schema'
 import { queryCampaignSegment } from '@/lib/campaigns/segments'
-import { prepareCampaignSend } from '@/lib/campaigns/send'
+import { prepareCampaignSend, sendOneCampaignEmail } from '@/lib/campaigns/send'
 import { buildWhatsappUrl } from '@/lib/notifications/whatsapp'
 import { isWhatsappablePhone } from '@/lib/customers/phone'
-import { isEmailable } from '@/lib/customers/email'
-import { ensureLoyaltyToken } from '@/lib/loyalty/token'
-import { getBusinessReplyToEmail, sendNotificationSafely, sendCampaignPromoEmail } from '@/lib/notifications'
+import { getBusinessReplyToEmail } from '@/lib/notifications'
 
 // NOTE: 'use server' — SOLO funciones async exportadas. Schemas/consts/tipos
 // viven en src/lib/campaigns/.
@@ -151,32 +149,15 @@ export async function sendCampaignEmail(recipientId: string): Promise<{ sent: bo
   const limit = await checkRateLimit('send-campaign-email', 30, 60000, { userId: user.id, businessId })
   if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
 
-  const { recipient, grant, message } = await prepareCampaignSend(prisma, businessId, recipientId, user.id)
+  const replyTo = await getBusinessReplyToEmail(businessId)
+  const outcome = await sendOneCampaignEmail(prisma, businessId, recipientId, user.id, replyTo)
 
-  const email = recipient.customer.email
-  if (!isEmailable(email)) return { sent: false, error: 'La clienta no tiene un email válido.' }
-
-  // Independientes (token keyea por customer, replyTo por businessId): en paralelo.
-  const [token, replyTo] = await Promise.all([
-    ensureLoyaltyToken(prisma, recipient.customer),
-    getBusinessReplyToEmail(businessId),
-  ])
-  const result = await sendNotificationSafely('campaign_email', () =>
-    sendCampaignPromoEmail({
-      to: email!,
-      businessName: recipient.campaign.business.name,
-      businessReplyToEmail: replyTo,
-      message,
-      unsubscribeToken: token,
-    }))
-
-  if (!result.success) {
-    return { sent: false, error: result.error ?? result.skipped ?? 'No se pudo enviar el email' }
+  if (outcome.status === 'sent') return { sent: true }
+  if (outcome.status === 'skipped') {
+    return {
+      sent: false,
+      error: outcome.reason === 'no_email' ? 'La clienta no tiene un email válido.' : 'Ya se había enviado.',
+    }
   }
-
-  await prisma.campaignRecipient.update({
-    where: { id: recipient.id },
-    data: { grantId: grant.id, sentAt: recipient.sentAt ?? new Date() },
-  })
-  return { sent: true }
+  return { sent: false, error: outcome.error }
 }
