@@ -2,8 +2,7 @@ import { Prisma, PrismaClient } from '@prisma/client'
 import { formatInTimeZone } from 'date-fns-tz'
 import type { CampaignSegmentType } from './schema'
 import { DEFAULT_INACTIVE_DAYS, DEFAULT_FREQUENT_MIN } from './schema'
-import { isWhatsappablePhone } from '@/lib/customers/phone'
-import { isEmailable } from '@/lib/customers/email'
+import { campaignChannel } from '@/lib/customers/channel'
 import { DAY_MS } from '@/lib/dates'
 
 type Db = PrismaClient | Prisma.TransactionClient
@@ -32,8 +31,8 @@ export async function queryCampaignSegment(
 ): Promise<SegmentCustomer[]> {
   const rows = await fetchSegmentRows(db, businessId, segment, params, now, timeZone)
   // Choke point de contactabilidad para TODO segmento (presente y futuro):
-  // teléfono whatsappeable O email válido, y sin opt-out de marketing.
-  return rows.filter((c) => (isWhatsappablePhone(c.phone) || isEmailable(c.email)) && !c.marketingOptOutAt)
+  // algún canal (whatsapp o email) y sin opt-out de marketing.
+  return rows.filter((c) => campaignChannel(c) !== 'none' && !c.marketingOptOutAt)
 }
 
 async function fetchSegmentRows(

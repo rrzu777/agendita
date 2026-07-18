@@ -8,8 +8,7 @@ import { ForbiddenError } from '@/lib/auth/server'
 import { getCampaignDetail } from '@/server/actions/campaigns'
 import { segmentLabel } from '@/lib/campaigns/labels'
 import { formatMediumDate } from '@/lib/format-date'
-import { isWhatsappablePhone } from '@/lib/customers/phone'
-import { isEmailable } from '@/lib/customers/email'
+import { campaignChannel } from '@/lib/customers/channel'
 import { RecipientList } from './recipient-list'
 
 export const dynamic = 'force-dynamic'
@@ -72,23 +71,16 @@ export default async function CampaignDetailPage({ params }: Props) {
   ).length
 
   // Serializamos lo justo para el client component.
-  const recipients = campaign.recipients.map((r) => {
-    const channel: 'whatsapp' | 'email' | 'none' = isWhatsappablePhone(r.customer.phone)
-      ? 'whatsapp'
-      : isEmailable(r.customer.email)
-        ? 'email'
-        : 'none'
-    return {
-      id: r.id,
-      name: r.customer.name,
-      phone: r.customer.phone,
-      email: r.customer.email,
-      sentAt: r.sentAt,
-      grantStatus: r.grant?.status ?? null,
-      optedOut: r.customer.marketingOptOutAt != null,
-      channel,
-    }
-  })
+  const recipients = campaign.recipients.map((r) => ({
+    id: r.id,
+    name: r.customer.name,
+    phone: r.customer.phone,
+    email: r.customer.email,
+    sentAt: r.sentAt,
+    grantStatus: r.grant?.status ?? null,
+    optedOut: r.customer.marketingOptOutAt != null,
+    channel: campaignChannel(r.customer),
+  }))
 
   return (
     <div>

@@ -156,8 +156,11 @@ export async function sendCampaignEmail(recipientId: string): Promise<{ sent: bo
   const email = recipient.customer.email
   if (!isEmailable(email)) return { sent: false, error: 'La clienta no tiene un email válido.' }
 
-  const token = await ensureLoyaltyToken(prisma, recipient.customer)
-  const replyTo = await getBusinessReplyToEmail(businessId)
+  // Independientes (token keyea por customer, replyTo por businessId): en paralelo.
+  const [token, replyTo] = await Promise.all([
+    ensureLoyaltyToken(prisma, recipient.customer),
+    getBusinessReplyToEmail(businessId),
+  ])
   const result = await sendNotificationSafely('campaign_email', () =>
     sendCampaignPromoEmail({
       to: email!,
