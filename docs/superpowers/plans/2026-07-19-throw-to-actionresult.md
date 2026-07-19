@@ -108,11 +108,19 @@ if ('requiresConfirmation' in res.data) { setError(res.data.message); return }
 ```
 Keep any surrounding `try/catch` only if the component also awaits *non-action* code that can throw. The action itself no longer throws user errors.
 
-**Per-domain verification (every task):**
+**Per-domain verification (every task — ALL THREE, not just tsc):**
 ```bash
+# 1. Source type-safety (this is the CI `build` gate — next build only typechecks the app graph, i.e. src/)
 npx tsc --noEmit 2>&1 | grep '^src/' || echo "tsc clean"
+# 2. Unit tests — find them in tests/unit/ (NOT beside the source), then run the whole unit suite
+grep -rl "<domain>\|<wrappedFn>" tests/unit                 # locate the domain's unit + component tests
+npm run test:unit 2>&1 | tail -5                             # must stay green (244+ files)
+# 3. Integration tests — these run in CI via `npm run test:integration` and are NOT in the default vitest run.
+grep -rln "<wrappedFn1>\|<wrappedFn2>" tests/integration     # any integration test that calls a wrapped fn is now broken
+#    For each hit, migrate it to the ActionResult shape and run:
+npx vitest --run --config vitest.integration.config.ts tests/integration/<file> 2>&1 | tail -10
 ```
-`tsc` is the checklist: every unmigrated consumer of a wrapped function becomes a type error on the `ActionResult` union. The task is not done until `tsc` is clean.
+Why all three: `tsc | grep ^src/` alone MISSES broken test files (tsc errors under `tests/` are filtered out, and integration tests are excluded from the default vitest run) — Task 2 shipped a "green" migration that had 15 tsc errors and a runtime failure in `tests/integration/time-block-series.test.ts`. `next build` does NOT typecheck test files (only the app graph), so integration breakage only surfaces by RUNNING `test:integration`. The task is not done until source `tsc` is clean AND every unit/integration test that touches the domain's wrapped functions is migrated and green.
 
 ---
 
