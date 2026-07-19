@@ -8,7 +8,9 @@ const { mockGetCurrentUser, mockEnsureUserRow, mockLink, mockRedirect } = vi.hoi
   mockRedirect: vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`) }),
 }))
 
-vi.mock('@/lib/auth/user', () => ({ getCurrentUser: mockGetCurrentUser }))
+// prepareMiUser usa getConfirmedSessionUser (getUser remoto) para el gate de
+// email verificado; el mismo mock lo alimenta.
+vi.mock('@/lib/auth/user', () => ({ getCurrentUser: mockGetCurrentUser, getConfirmedSessionUser: mockGetCurrentUser }))
 vi.mock('@/lib/auth/ensure-user-row', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/lib/auth/ensure-user-row')>()
   return { ...mod, ensureUserRow: mockEnsureUserRow }

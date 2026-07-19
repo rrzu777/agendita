@@ -31,6 +31,7 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/auth/middleware', () => ({
   createClient: vi.fn(() => ({
     auth: {
+      getClaims: vi.fn().mockResolvedValue({ data: null, error: null }),
       getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
       getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
     },

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { addMinutes, addDays, addHours } from 'date-fns'
 import { PaymentProvider, PaymentStatus, PaymentType } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { getCurrentUser } from '@/lib/auth/user'
+import { getCurrentUser, getConfirmedSessionUser } from '@/lib/auth/user'
 import { ensureUserRow, AccountConflictError } from '@/lib/auth/ensure-user-row'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { findOrCreateCustomerInTx } from '@/lib/customers/find-or-create'
@@ -54,7 +54,9 @@ export async function createPackagePurchase(input: {
   acceptedTerms: boolean
   method?: 'mp' | 'transfer'
 }): Promise<{ purchaseId: string }> {
-  const user = await getCurrentUser()
+  // Remoto (getUser): el email de sesión y sessionUser (Vía 3, abajo) exigen el
+  // email_confirmed_at confiable que getCurrentUser (local) no expone.
+  const user = await getConfirmedSessionUser()
   if (!user) throw new Error('Debes iniciar sesión para comprar un paquete.')
 
   // Primera compra de una clienta que nunca pasó por /mi: sin esto, la fila

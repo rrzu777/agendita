@@ -1,7 +1,31 @@
 import { cache } from 'react'
+import type { User } from '@supabase/supabase-js'
 import { createClient } from './middleware'
 import { prisma } from '@/lib/db'
 import { validateE2EHeaders } from './e2e-bypass'
+
+// Claims que leemos del access token de Supabase (JWT). `sub` es el user id.
+type SupabaseJwtClaims = {
+  sub: string
+  email?: string
+  user_metadata?: Record<string, unknown>
+}
+
+// Reconstruye el User de Supabase desde los claims del JWT verificado localmente.
+// A propósito NO emite `email_confirmed_at`: el JWT no lo trae y su único
+// pariente local, `user_metadata.email_verified`, es escribible por el usuario
+// (updateUser) — laundearlo al campo confiable rompería el gate de vinculación
+// de link.ts. Los flujos que necesitan la confirmación real usan
+// getConfirmedSessionUser (getUser remoto). Los consumidores de getCurrentUser
+// sólo leen id/email/user_metadata.
+function claimsToUser(claims: SupabaseJwtClaims): User {
+  return {
+    id: claims.sub,
+    email: claims.email,
+    user_metadata: claims.user_metadata ?? {},
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- claims → User shape
+  } as any
+}
 
 // Wrapped in React cache() so a single request (layout + page + server actions
 // via requireBusiness) shares ONE Supabase auth.getUser() network call + DB
@@ -34,6 +58,35 @@ function makeSyntheticUser(dbUser: NonNullable<Awaited<ReturnType<typeof getE2ET
 }
 
 export const getCurrentUser = cache(async () => {
+  const e2eUser = await getE2ETestUser()
+  if (e2eUser) {
+    return makeSyntheticUser(e2eUser)
+  }
+
+  // getClaims valida la FIRMA del JWT localmente (llaves asimétricas ECC vía
+  // jose, JWKS cacheado) en vez de un round-trip a Supabase por navegación.
+  // getSession (que getClaims usa internamente) sigue refrescando el token vía
+  // refresh token, así que el usuario no se re-loguea. Trade-off: una sesión
+  // revocada sigue válida hasta que expira el access token (~1h) o el próximo
+  // refresh. Los flujos sensibles infrecuentes (callback MP, recover-business)
+  // se quedan con getUser remoto a propósito.
+  const supabase = await createClient()
+  const { data, error } = await supabase.auth.getClaims()
+
+  if (error || !data?.claims) {
+    return null
+  }
+
+  return claimsToUser(data.claims as SupabaseJwtClaims)
+})
+
+// Igual que getCurrentUser pero con validación REMOTA (getUser): trae el
+// `email_confirmed_at` confiable que Supabase setea server-side. getClaims/local
+// NO sirve para esto (user_metadata.email_verified es escribible por el usuario,
+// ver link.ts). Úsese SOLO donde importa la confirmación real de email —los
+// gates de vinculación de /mi y de reserva— que son de baja frecuencia, así que
+// el round-trip remoto es aceptable.
+export const getConfirmedSessionUser = cache(async () => {
   const e2eUser = await getE2ETestUser()
   if (e2eUser) {
     return makeSyntheticUser(e2eUser)

@@ -1,10 +1,10 @@
 import { cache } from 'react'
-import { getCurrentUser } from './user'
+import { getConfirmedSessionUser } from './user'
 import { ensureUserRow, AccountConflictError } from './ensure-user-row'
 import { isVerifiedEmail, linkCustomersByVerifiedEmail } from '@/lib/customers/link'
 import { prisma } from '@/lib/db'
 
-type SessionUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>
+type SessionUser = NonNullable<Awaited<ReturnType<typeof getConfirmedSessionUser>>>
 
 export type MiUserResult =
   | { status: 'ok'; user: SessionUser }
@@ -26,7 +26,10 @@ export type MiUserResult =
  * cuenta; lo devolvemos como estado para que layout y pages lo manejen sin crashear.
  */
 export const prepareMiUser = cache(async (): Promise<MiUserResult> => {
-  const user = await getCurrentUser()
+  // Remoto (getUser): la vinculación por email verificado (abajo) exige el
+  // email_confirmed_at confiable, que getCurrentUser (local) no expone. /mi es
+  // de baja frecuencia y ya hace escrituras, así que el round-trip es aceptable.
+  const user = await getConfirmedSessionUser()
   if (!user) return { status: 'anon' }
 
   try {
