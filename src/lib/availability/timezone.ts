@@ -26,20 +26,38 @@ export function getLocalTimeStr(date: Date, timezone: string): string {
   return formatInTimeZone(date, timezone, 'HH:mm')
 }
 
-/**
- * Construye el instante UTC del inicio del día local (00:00:00.000) para una
- * fecha local `yyyy-MM-dd` en el timezone del negocio.
- */
-export function startOfLocalDay(localDateStr: string, timezone: string): Date {
-  return fromZonedTime(`${localDateStr}T00:00:00.000`, timezone)
+/** Suma `n` días a una fecha local `yyyy-MM-dd` (aritmética de calendario pura, sin TZ). */
+function addLocalDays(localDateStr: string, n: number): string {
+  const [y, m, d] = localDateStr.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d + n)) // Date.UTC normaliza el desborde de mes/año
+  return formatInTimeZone(dt, 'UTC', 'yyyy-MM-dd')
 }
 
 /**
- * Construye el instante UTC del fin del día local (23:59:59.999) para una
+ * Construye el instante UTC del inicio del día local (00:00:00.000) para una
  * fecha local `yyyy-MM-dd` en el timezone del negocio.
+ *
+ * En el "gap" del cambio de hora de primavera (ej. Santiago: la medianoche del
+ * 1er domingo de sep no existe, el reloj salta de 00:00 a 01:00) `fromZonedTime`
+ * resuelve el 00:00 inexistente cayendo al día anterior (23:00). En ese caso el
+ * inicio real del día es el primer instante que sí existe: reintentamos con 01:00.
+ */
+export function startOfLocalDay(localDateStr: string, timezone: string): Date {
+  const midnight = fromZonedTime(`${localDateStr}T00:00:00.000`, timezone)
+  if (getLocalDateStr(midnight, timezone) === localDateStr) return midnight
+  return fromZonedTime(`${localDateStr}T01:00:00.000`, timezone)
+}
+
+/**
+ * Construye el instante UTC del fin del día local para una fecha local
+ * `yyyy-MM-dd` en el timezone del negocio: el último milisegundo antes del
+ * inicio del día siguiente. Definirlo así (y no como un `23:59:59.999` literal)
+ * hace que los días sean una partición exacta de la línea de tiempo incluso en
+ * el cambio de hora de otoño, donde la hora 23:xx ocurre dos veces y un
+ * `23:59:59.999` literal dejaría fuera la segunda ocurrencia.
  */
 export function endOfLocalDay(localDateStr: string, timezone: string): Date {
-  return fromZonedTime(`${localDateStr}T23:59:59.999`, timezone)
+  return new Date(startOfLocalDay(addLocalDays(localDateStr, 1), timezone).getTime() - 1)
 }
 
 /**
