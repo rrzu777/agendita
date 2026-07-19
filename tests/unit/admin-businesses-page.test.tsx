@@ -9,10 +9,6 @@ vi.mock('@/lib/auth/user', () => ({
   getPlatformAdminUser: vi.fn().mockResolvedValue({ id: 'admin-1', email: 'admin@example.com' }),
 }))
 
-vi.mock('@/lib/auth/platform-admin', () => ({
-  isPlatformAdmin: vi.fn().mockReturnValue(true),
-}))
-
 vi.mock('next/navigation', () => ({
   redirect: vi.fn(),
 }))
