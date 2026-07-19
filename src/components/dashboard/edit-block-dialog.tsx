@@ -70,8 +70,9 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
           overlapToleranceMinutes: Number(overlapTolerance) || 0,
           confirmOverlap,
         })
-        if (result && 'requiresConfirmation' in result) {
-          setError(result.message)
+        if (!result.ok) { setError(result.error); return }
+        if ('requiresConfirmation' in result.data) {
+          setError(result.data.message)
           return
         }
         router.refresh()
@@ -84,13 +85,10 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
 
   function handleDelete() {
     startTransition(async () => {
-      try {
-        await deleteTimeBlock(block.id)
-        router.refresh()
-        handleOpenChange(false)
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Error al eliminar el bloqueo')
-      }
+      const res = await deleteTimeBlock(block.id)
+      if (!res.ok) { setError(res.error); return }
+      router.refresh()
+      handleOpenChange(false)
     })
   }
 

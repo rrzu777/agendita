@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { action, UserError } from '@/lib/actions/result'
 import { differenceInMilliseconds, addDays } from 'date-fns'
 import { getEffectiveBlocks, type EffectiveBlock } from '@/lib/availability/effective-blocks'
 import { computeServiceFit, SERVICE_FIT_WINDOW_DAYS } from '@/lib/availability/service-fit'
@@ -147,7 +148,7 @@ const createTimeBlockSchema = z.object({
 
 async function rateLimitOrThrow(key: string) {
   const limit = await checkRateLimit(key, 20, 60000)
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
 }
 
 function revalidateTimeBlocks(businessId: string) {
@@ -164,22 +165,22 @@ export async function getTimeBlocks() {
   })
 }
 
-export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean }) {
+async function _createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean }) {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('create-timeblock', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const parsed = createTimeBlockSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
   const { startDateTime, endDateTime, reason, overlapToleranceMinutes, confirmOverlap } = parsed.data
 
   const durationMs = differenceInMilliseconds(endDateTime, startDateTime)
   if (durationMs > MAX_BLOCK_DURATION_MS) {
-    throw new Error('La duración máxima de un bloqueo es de 32 días')
+    throw new UserError('La duración máxima de un bloqueo es de 32 días')
   }
 
   const now = new Date()
@@ -214,23 +215,25 @@ export async function createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' |
   return newBlock
 }
 
+export const createTimeBlock = action(_createTimeBlock)
+
 export async function getTimeBlocksByRange(start: Date, end: Date) {
   const { businessId, business } = await requireBusiness()
   if (!(start instanceof Date) || isNaN(start.getTime()) || !(end instanceof Date) || isNaN(end.getTime())) {
-    throw new Error('Rango de fechas inválido')
+    throw new UserError('Rango de fechas inválido')
   }
   if (start > end) {
-    throw new Error('La fecha de inicio debe ser anterior a la fecha de término')
+    throw new UserError('La fecha de inicio debe ser anterior a la fecha de término')
   }
   const timezone = business.timezone || 'America/Santiago'
   return getEffectiveBlocks(businessId, start, end, timezone)
 }
 
-export async function deleteTimeBlock(id: string) {
+async function _deleteTimeBlock(id: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('delete-timeblock', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const deleteResult = await prisma.timeBlock.deleteMany({
@@ -245,25 +248,27 @@ export async function deleteTimeBlock(id: string) {
   await revalidateBusinessPublicPaths(businessId)
 }
 
-export async function updateTimeBlock(
+export const deleteTimeBlock = action(_deleteTimeBlock)
+
+async function _updateTimeBlock(
   id: string,
   data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean },
 ): Promise<TimeBlock | { requiresConfirmation: true; message: string }> {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('update-timeblock', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const parsed = createTimeBlockSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
   const { startDateTime, endDateTime, reason, overlapToleranceMinutes, confirmOverlap } = parsed.data
 
   const durationMs = differenceInMilliseconds(endDateTime, startDateTime)
   if (durationMs > MAX_BLOCK_DURATION_MS) {
-    throw new Error('La duración máxima de un bloqueo es de 32 días')
+    throw new UserError('La duración máxima de un bloqueo es de 32 días')
   }
 
   const existing = await prisma.timeBlock.findFirst({
@@ -322,6 +327,8 @@ export async function updateTimeBlock(
   return { ...existing, startDateTime, endDateTime, reason }
 }
 
+export const updateTimeBlock = action(_updateTimeBlock)
+
 const createSeriesSchema = z.object({
   daysOfWeek: z.array(z.number().int().min(0).max(6)).min(1, 'Selecciona al menos un día'),
   startTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
@@ -336,7 +343,7 @@ const createSeriesSchema = z.object({
     message: TOLERANCE_TOO_BIG_MESSAGE,
   })
 
-export async function createTimeBlockSeries(data: {
+async function _createTimeBlockSeries(data: {
   daysOfWeek: number[]
   startTime: string
   endTime: string
@@ -355,7 +362,7 @@ export async function createTimeBlockSeries(data: {
 
   const parsed = createSeriesSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
   }
 
   const timezone = business.timezone || 'America/Santiago'
@@ -405,13 +412,15 @@ export async function createTimeBlockSeries(data: {
   return { series, overlappingDates }
 }
 
+export const createTimeBlockSeries = action(_createTimeBlockSeries)
+
 async function assertSeriesOwned(seriesId: string, businessId: string) {
   const series = await prisma.timeBlockSeries.findFirst({ where: { id: seriesId, businessId } })
   if (!series) throw new ForbiddenError('Serie no encontrada')
   return series
 }
 
-export async function skipSeriesOccurrence(seriesId: string, occurrenceDate: Date) {
+async function _skipSeriesOccurrence(seriesId: string, occurrenceDate: Date) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   await rateLimitOrThrow('update-timeblock')
   await assertSeriesOwned(seriesId, businessId)
@@ -425,7 +434,9 @@ export async function skipSeriesOccurrence(seriesId: string, occurrenceDate: Dat
   await revalidateTimeBlocks(businessId)
 }
 
-export async function updateTimeBlockSeries(
+export const skipSeriesOccurrence = action(_skipSeriesOccurrence)
+
+async function _updateTimeBlockSeries(
   seriesId: string,
   changes: { startTime: string; endTime: string; reason?: string | null; confirmed?: boolean },
 ): Promise<{ requiresConfirmation: true; message: string } | { series: TimeBlockSeries }> {
@@ -434,7 +445,7 @@ export async function updateTimeBlockSeries(
 
   const timeRe = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
   if (!timeRe.test(changes.startTime) || !timeRe.test(changes.endTime) || changes.endTime <= changes.startTime) {
-    throw new Error('Datos inválidos: la hora de fin debe ser posterior a la de inicio')
+    throw new UserError('Datos inválidos: la hora de fin debe ser posterior a la de inicio')
   }
 
   const existing = await assertSeriesOwned(seriesId, businessId)
@@ -521,7 +532,9 @@ export async function updateTimeBlockSeries(
   return { series: newSeries }
 }
 
-export async function deleteTimeBlockSeries(seriesId: string) {
+export const updateTimeBlockSeries = action(_updateTimeBlockSeries)
+
+async function _deleteTimeBlockSeries(seriesId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   await rateLimitOrThrow('delete-timeblock')
   await assertSeriesOwned(seriesId, businessId)
@@ -532,6 +545,8 @@ export async function deleteTimeBlockSeries(seriesId: string) {
   await revalidateTimeBlocks(businessId)
 }
 
+export const deleteTimeBlockSeries = action(_deleteTimeBlockSeries)
+
 export async function getTimeBlockSeries() {
   const { businessId } = await requireBusiness()
   return prisma.timeBlockSeries.findMany({
@@ -540,14 +555,14 @@ export async function getTimeBlockSeries() {
   })
 }
 
-export async function overrideSeriesOccurrence(
+async function _overrideSeriesOccurrence(
   seriesId: string,
   occurrenceDate: Date,
   data: { startDateTime: Date; endDateTime: Date; reason?: string | null; confirmed?: boolean },
 ): Promise<{ requiresConfirmation: true; message: string } | undefined> {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   await rateLimitOrThrow('update-timeblock')
-  if (data.endDateTime <= data.startDateTime) throw new Error('La hora de fin debe ser posterior a la de inicio')
+  if (data.endDateTime <= data.startDateTime) throw new UserError('La hora de fin debe ser posterior a la de inicio')
   await assertSeriesOwned(seriesId, businessId)
 
   // Mismo patrón requiresConfirmation que los bloqueos sueltos: el nuevo rango
@@ -589,3 +604,5 @@ export async function overrideSeriesOccurrence(
 
   await revalidateTimeBlocks(businessId)
 }
+
+export const overrideSeriesOccurrence = action(_overrideSeriesOccurrence)
