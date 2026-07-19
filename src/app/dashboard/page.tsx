@@ -4,7 +4,7 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
-import { getBookings } from '@/server/actions/bookings'
+import { getBookingsSummary } from '@/server/actions/bookings'
 import { getFinancialSummary } from '@/server/actions/ledger'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
@@ -32,7 +32,7 @@ export default async function DashboardPage() {
 
   const business = userData.business
   const [bookings, summary, servicesCount, availabilityCount, connectedPaymentAccounts, pendingPackageTransfersCount] = await Promise.all([
-    getBookings(),
+    getBookingsSummary(),
     getFinancialSummary(),
     prisma.service.count({ where: { businessId: business.id, isActive: true } }),
     prisma.availabilityRule.count({ where: { businessId: business.id, isActive: true } }),
