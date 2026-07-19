@@ -1,4 +1,3 @@
-import 'server-only'
 import { unstable_rethrow } from 'next/navigation'
 
 /**

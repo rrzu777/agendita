@@ -1,13 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { redirect, notFound } from 'next/navigation'
 
-// El paquete `server-only` resuelve a un módulo que siempre throwea salvo
-// bajo la condición de export "react-server" (que sólo el bundler de Next
-// activa). Bajo Vitest (Node/jsdom) esa condición no existe, así que se
-// mockea igual que cualquier otro módulo de infraestructura de Next
-// (ver el patrón de `vi.mock('next/cache', ...)` en revalidate-business.test.ts).
-vi.mock('server-only', () => ({}))
-
 import { action, UserError } from './result'
 
 describe('action() wrapper', () => {
