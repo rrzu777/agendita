@@ -79,11 +79,8 @@ export async function getFinancialSummary() {
   const { businessId, business } = await requireBusiness()
   // Bordes "hoy"/"este mes" en la TZ del negocio, no la del server (UTC en Vercel):
   // si no, cerca de medianoche local un ingreso caía en el día/mes equivocado.
-  // Limitación conocida (heredada de startOfLocalDay): en el domingo de cambio de
-  // hora de primavera de Chile (1er domingo de sep, la medianoche local no existe)
-  // el borde de "hoy" queda 1h antes de la medianoche real, así que la última hora
-  // del sábado se cuenta en "Ingresos hoy". Es 1 vez al año y un KPI de display; un
-  // fix robusto vive en el helper compartido (afecta también a disponibilidad).
+  // Los bordes en el cambio de hora (primavera/otoño) los resuelve el helper
+  // compartido startOfLocalDay/getBusinessDayRange.
   const now = new Date()
   const tz = business.timezone
   const today = getBusinessDayRange(now, tz).dayStart
