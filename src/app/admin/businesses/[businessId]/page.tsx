@@ -1,8 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { notFound } from 'next/navigation'
-import { getCurrentUser } from '@/lib/auth/user'
-import { isPlatformAdmin } from '@/lib/auth/platform-admin'
+import { getPlatformAdminUser } from '@/lib/auth/user'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,10 +20,10 @@ interface BusinessDetailPageProps {
 }
 
 export default async function BusinessDetailPage({ params }: BusinessDetailPageProps) {
-  const user = await getCurrentUser()
+  const user = await getPlatformAdminUser()
   const { businessId } = await params
 
-  if (!user?.email || !isPlatformAdmin(user.email)) {
+  if (!user) {
     redirect('/login')
   }
 

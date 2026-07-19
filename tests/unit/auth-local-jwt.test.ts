@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // Hybrid de auth:
 //  - getCurrentUser valida el JWT LOCALMENTE (getClaims, firma ECC vía jose) —
@@ -104,5 +104,68 @@ describe('getConfirmedSessionUser — confirmación de email CONFIABLE (getUser 
     getUser.mockResolvedValue({ data: { user: null }, error: new Error('revoked') })
     const { getConfirmedSessionUser } = await load()
     expect(await getConfirmedSessionUser()).toBeNull()
+  })
+})
+
+// Autorización de admin de plataforma: la superficie de mayor privilegio NO puede
+// depender del JWT local (una sesión revocada seguiría válida ~1h). Estos helpers
+// validan REMOTO (getUser) vía getConfirmedSessionUser + isPlatformAdmin.
+describe('admin de plataforma — validación REMOTA (getUser), no JWT local', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    getClaims.mockReset()
+    getUser.mockReset()
+    getSession.mockReset()
+    vi.stubEnv('PLATFORM_ADMIN_EMAILS', 'jefa@agendita.cl')
+  })
+  afterEach(() => vi.unstubAllEnvs())
+
+  function mockSessionEmail(email: string | null) {
+    getUser.mockResolvedValue(
+      email
+        ? { data: { user: { id: 'u-adm', email, user_metadata: {} } }, error: null }
+        : { data: { user: null }, error: new Error('sin sesión') },
+    )
+  }
+
+  it('getPlatformAdminUser devuelve el user si el email es admin — vía getUser remoto, sin getClaims', async () => {
+    mockSessionEmail('jefa@agendita.cl')
+    const { getPlatformAdminUser } = await load()
+    const user = await getPlatformAdminUser()
+    expect(user!.id).toBe('u-adm')
+    expect(getUser).toHaveBeenCalled()
+    expect(getClaims).not.toHaveBeenCalled()
+  })
+
+  it('getPlatformAdminUser devuelve null si el email NO es admin', async () => {
+    mockSessionEmail('cualquiera@negocio.cl')
+    const { getPlatformAdminUser } = await load()
+    expect(await getPlatformAdminUser()).toBeNull()
+  })
+
+  it('getPlatformAdminUser devuelve null sin sesión', async () => {
+    mockSessionEmail(null)
+    const { getPlatformAdminUser } = await load()
+    expect(await getPlatformAdminUser()).toBeNull()
+  })
+
+  it('requirePlatformAdminUser devuelve el user si es admin', async () => {
+    mockSessionEmail('jefa@agendita.cl')
+    const { requirePlatformAdminUser } = await load()
+    const user = await requirePlatformAdminUser()
+    expect(user.email).toBe('jefa@agendita.cl')
+    expect(getUser).toHaveBeenCalled()
+  })
+
+  it('requirePlatformAdminUser lanza si NO es admin', async () => {
+    mockSessionEmail('cualquiera@negocio.cl')
+    const { requirePlatformAdminUser } = await load()
+    await expect(requirePlatformAdminUser()).rejects.toThrow(/permisos/i)
+  })
+
+  it('requirePlatformAdminUser lanza sin sesión', async () => {
+    mockSessionEmail(null)
+    const { requirePlatformAdminUser } = await load()
+    await expect(requirePlatformAdminUser()).rejects.toThrow(/permisos/i)
   })
 })

@@ -1,16 +1,14 @@
 'use server'
 
 import { prisma } from '@/lib/db'
-import { getCurrentUser } from '@/lib/auth/user'
-import { requirePlatformAdmin } from '@/lib/auth/platform-admin'
+import { requirePlatformAdminUser } from '@/lib/auth/user'
 
 export async function adminRecordSubscriptionPayment(
   businessId: string,
   amount: number,
   notes?: string
 ) {
-  const user = await getCurrentUser()
-  requirePlatformAdmin(user?.email)
+  const user = await requirePlatformAdminUser()
 
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error('El monto debe ser un número positivo')
@@ -54,8 +52,8 @@ export async function adminRecordSubscriptionPayment(
         action: 'payment_recorded_by_admin',
         beforeStatus: currentStatus,
         afterStatus: 'active',
-        adminUserId: user?.id,
-        adminEmail: user?.email,
+        adminUserId: user.id,
+        adminEmail: user.email,
         notes: `Pago manual registrado por admin: $${amount.toLocaleString('es-CL')}${notes ? ` — ${notes}` : ''}`,
       },
     }),
@@ -63,8 +61,7 @@ export async function adminRecordSubscriptionPayment(
 }
 
 export async function adminExtendTrial(businessId: string, days: number) {
-  const user = await getCurrentUser()
-  requirePlatformAdmin(user?.email)
+  const user = await requirePlatformAdminUser()
 
   if (!Number.isFinite(days) || days < 1 || days > 365) {
     throw new Error('Los días de extensión deben ser un número entre 1 y 365')
@@ -110,8 +107,8 @@ export async function adminExtendTrial(businessId: string, days: number) {
         action: 'trial_extended_by_admin',
         beforeStatus,
         afterStatus: 'trialing',
-        adminUserId: user?.id,
-        adminEmail: user?.email,
+        adminUserId: user.id,
+        adminEmail: user.email,
         notes: `Admin extendió trial ${days} días hasta ${newEndDate.toISOString()}`,
       },
     }),
@@ -119,8 +116,7 @@ export async function adminExtendTrial(businessId: string, days: number) {
 }
 
 export async function adminSuspendBusiness(businessId: string, reason?: string) {
-  const user = await getCurrentUser()
-  requirePlatformAdmin(user?.email)
+  const user = await requirePlatformAdminUser()
 
   const subscription = await prisma.businessSubscription.findFirst({
     where: { businessId },
@@ -152,8 +148,8 @@ export async function adminSuspendBusiness(businessId: string, reason?: string) 
         action: 'business_suspended_by_admin',
         beforeStatus,
         afterStatus: 'suspended',
-        adminUserId: user?.id,
-        adminEmail: user?.email,
+        adminUserId: user.id,
+        adminEmail: user.email,
         notes: reason ?? 'Suspendido por admin',
       },
     }),
@@ -161,8 +157,7 @@ export async function adminSuspendBusiness(businessId: string, reason?: string) 
 }
 
 export async function adminActivateBusiness(businessId: string) {
-  const user = await getCurrentUser()
-  requirePlatformAdmin(user?.email)
+  const user = await requirePlatformAdminUser()
 
   const subscription = await prisma.businessSubscription.findFirst({
     where: { businessId },
@@ -194,8 +189,8 @@ export async function adminActivateBusiness(businessId: string) {
         action: 'business_activated_by_admin',
         beforeStatus,
         afterStatus: 'active',
-        adminUserId: user?.id,
-        adminEmail: user?.email,
+        adminUserId: user.id,
+        adminEmail: user.email,
         notes: 'Reactivado por admin',
       },
     }),
@@ -203,8 +198,7 @@ export async function adminActivateBusiness(businessId: string) {
 }
 
 export async function adminChangePlan(businessId: string, planId: string) {
-  const user = await getCurrentUser()
-  requirePlatformAdmin(user?.email)
+  const user = await requirePlatformAdminUser()
 
   if (!planId || typeof planId !== 'string') {
     throw new Error('planId es requerido')
@@ -244,8 +238,8 @@ export async function adminChangePlan(businessId: string, planId: string) {
         afterStatus: beforeStatus,
         beforePlanId,
         afterPlanId: planId,
-        adminUserId: user?.id,
-        adminEmail: user?.email,
+        adminUserId: user.id,
+        adminEmail: user.email,
         notes: `Plan cambiado a "${plan.name}" por admin`,
       },
     }),
@@ -253,8 +247,7 @@ export async function adminChangePlan(businessId: string, planId: string) {
 }
 
 export async function adminMarkPastDue(businessId: string) {
-  const user = await getCurrentUser()
-  requirePlatformAdmin(user?.email)
+  const user = await requirePlatformAdminUser()
 
   const subscription = await prisma.businessSubscription.findFirst({
     where: { businessId },
@@ -282,8 +275,8 @@ export async function adminMarkPastDue(businessId: string) {
         action: 'marked_past_due_by_admin',
         beforeStatus,
         afterStatus: 'past_due',
-        adminUserId: user?.id,
-        adminEmail: user?.email,
+        adminUserId: user.id,
+        adminEmail: user.email,
         notes: 'Marcado como pago pendiente por admin',
       },
     }),
@@ -291,8 +284,7 @@ export async function adminMarkPastDue(businessId: string) {
 }
 
 export async function adminCancelSubscription(businessId: string, reason?: string) {
-  const user = await getCurrentUser()
-  requirePlatformAdmin(user?.email)
+  const user = await requirePlatformAdminUser()
 
   const subscription = await prisma.businessSubscription.findFirst({
     where: { businessId },
@@ -323,8 +315,8 @@ export async function adminCancelSubscription(businessId: string, reason?: strin
         action: 'subscription_cancelled_by_admin',
         beforeStatus,
         afterStatus: 'cancelled',
-        adminUserId: user?.id,
-        adminEmail: user?.email,
+        adminUserId: user.id,
+        adminEmail: user.email,
         notes: reason ?? 'Suscripción cancelada por admin',
       },
     }),

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-const { requirePlatformAdmin, mockBusinessSubscription } = vi.hoisted(() => ({
-  requirePlatformAdmin: vi.fn(),
+const { requirePlatformAdminUser, mockBusinessSubscription } = vi.hoisted(() => ({
+  requirePlatformAdminUser: vi.fn(),
   mockBusinessSubscription: {
     findFirst: vi.fn(),
     update: vi.fn(),
@@ -20,14 +20,8 @@ const mockPrisma = {
 
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 
-vi.mock('@/lib/auth/user', () => ({
-  getCurrentUser: vi.fn().mockResolvedValue({ id: 'admin-1', email: 'admin@example.com' }),
-}))
-
-vi.mock('@/lib/auth/platform-admin', () => ({
-  requirePlatformAdmin,
-  isPlatformAdmin: vi.fn().mockReturnValue(true),
-}))
+// admin.ts autoriza vía requirePlatformAdminUser (getUser remoto + isPlatformAdmin).
+vi.mock('@/lib/auth/user', () => ({ requirePlatformAdminUser }))
 
 function setupTxMock() {
   vi.mocked(mockPrisma.$transaction).mockImplementation(async (operations) => {
@@ -50,7 +44,7 @@ function setupTxMock() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  requirePlatformAdmin.mockImplementation(() => {})
+  requirePlatformAdminUser.mockResolvedValue({ id: 'admin-1', email: 'admin@example.com' })
 })
 
 describe('adminRecordSubscriptionPayment', () => {

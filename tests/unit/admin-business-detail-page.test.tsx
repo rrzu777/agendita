@@ -9,11 +9,7 @@ const mockPrisma = {
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 
 vi.mock('@/lib/auth/user', () => ({
-  getCurrentUser: vi.fn().mockResolvedValue({ id: 'admin-1', email: 'admin@example.com' }),
-}))
-
-vi.mock('@/lib/auth/platform-admin', () => ({
-  isPlatformAdmin: vi.fn().mockReturnValue(true),
+  getPlatformAdminUser: vi.fn().mockResolvedValue({ id: 'admin-1', email: 'admin@example.com' }),
 }))
 
 vi.mock('next/navigation', () => ({

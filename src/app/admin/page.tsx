@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { getCurrentUser } from '@/lib/auth/user'
-import { isPlatformAdmin } from '@/lib/auth/platform-admin'
+import { getPlatformAdminUser } from '@/lib/auth/user'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,9 +11,9 @@ import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 
 export default async function AdminPage() {
-  const user = await getCurrentUser()
+  const user = await getPlatformAdminUser()
 
-  if (!user?.email || !isPlatformAdmin(user.email)) {
+  if (!user) {
     redirect('/login')
   }
 
