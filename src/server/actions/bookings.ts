@@ -182,17 +182,6 @@ async function fireBookingNotifications(
 
 // sendBookingConfirmedNotification is now centralized in @/lib/notifications
 
-// Fragmento reusado por getBookings y getBookingsSummary: la declaración de
-// transferencia pendiente de verificar, sea abono (bt-declared) o saldo
-// (bt-balance). El array queda vacío salvo que haya una por verificar → deriva
-// los badges y la sección del dashboard sin segunda query (el `kind` se
-// distingue en el llamador por el prefijo de providerPaymentId, ver
-// BT_BALANCE_PREFIX).
-const declaredTransferPaymentsInclude = {
-  where: anyDeclaredTransferWhere,
-  select: { id: true, amount: true, createdAt: true, providerPaymentId: true, proofKey: true, proofContentType: true },
-} as const
-
 // Lista completa del historial con SOLO las columnas que consumen la página de
 // Reservas (set pesado) y el diálogo de pago manual de Pagos (subset de
 // ManualPaymentBooking). `select` explícito en vez de `include: { service:
@@ -218,7 +207,15 @@ export async function getBookings() {
       paymentMethod: true,
       service: { select: { name: true } },
       customer: { select: { name: true, phone: true, email: true } },
-      payments: declaredTransferPaymentsInclude,
+      // Declaración de transferencia pendiente de verificar, sea abono
+      // (bt-declared) o saldo (bt-balance). El array queda vacío salvo que
+      // haya una por verificar → deriva los badges y la sección de la página
+      // de Reservas sin segunda query (el `kind` se distingue en el llamador
+      // por el prefijo de providerPaymentId, ver BT_BALANCE_PREFIX).
+      payments: {
+        where: anyDeclaredTransferWhere,
+        select: { id: true, amount: true, createdAt: true, providerPaymentId: true, proofKey: true, proofContentType: true },
+      },
     },
   })
 }
