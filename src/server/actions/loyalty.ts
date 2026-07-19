@@ -2,6 +2,7 @@
 
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusiness, requireBusinessRole, requireUser, ForbiddenError } from '@/lib/auth/server'
@@ -182,9 +183,8 @@ export async function adjustCustomerPoints(customerId: string, delta: unknown, n
     // Advisory lock por-clienta: bajo READ COMMITTED el aggregate NO toma lock, así
     // que sin esto dos ajustes concurrentes podrían ambos pasar el chequeo de
     // saldo>=0 y sobregirar. El lock serializa solo los ajustes de esta misma clienta.
-    // $executeRaw (no $queryRaw): pg_advisory_xact_lock devuelve void y $queryRaw
-    // falla al deserializar esa columna.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${customerId}))`
+    // Misma clave (customerId) que redeemForGrant → se excluyen mutuamente.
+    await acquireAdvisoryXactLock(tx, customerId)
     const agg = await tx.loyaltyLedger.aggregate({ where: { customerId, businessId }, _sum: { points: true } })
     const balance = agg._sum.points ?? 0
     if (balance + parsed.data.delta < 0) {
@@ -374,8 +374,8 @@ export async function applyLoyaltyPreset(presetId: unknown): Promise<ApplyPreset
   const summary = await prisma.$transaction(async (tx) => {
     // Advisory lock: serializa los applies de este negocio. Sin unique de DB para
     // "una regla por kind" (kind vive en JSON) ni para la firma de canje, dos applies
-    // concurrentes (o doble-clic) crearían duplicados. $executeRaw (no $queryRaw).
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${businessId}))`
+    // concurrentes (o doble-clic) crearían duplicados.
+    await acquireAdvisoryXactLock(tx, businessId)
 
     const { state, configRow } = await loadLoyaltyState(tx, businessId)
     const plan = planPresetApply(payload, state)
