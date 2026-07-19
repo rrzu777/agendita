@@ -1,16 +1,15 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { getCurrentUser } from '@/lib/auth/user'
-import { isPlatformAdmin } from '@/lib/auth/platform-admin'
+import { getPlatformAdminUser } from '@/lib/auth/user'
 
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const user = await getCurrentUser()
+  const user = await getPlatformAdminUser()
 
-  if (!user?.email || !isPlatformAdmin(user.email)) {
+  if (!user) {
     redirect('/login')
   }
 

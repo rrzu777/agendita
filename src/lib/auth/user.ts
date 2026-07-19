@@ -3,6 +3,7 @@ import type { User } from '@supabase/supabase-js'
 import { createClient } from './middleware'
 import { prisma } from '@/lib/db'
 import { validateE2EHeaders } from './e2e-bypass'
+import { isPlatformAdmin, requirePlatformAdmin } from './platform-admin'
 
 // Claims que leemos del access token de Supabase (JWT). `sub` es el user id.
 type SupabaseJwtClaims = {
@@ -100,6 +101,26 @@ export const getConfirmedSessionUser = cache(async () => {
   }
 
   return user
+})
+
+// Autorización de admin de plataforma con validación REMOTA. Es la superficie de
+// mayor privilegio (registrar pagos, extender trials, tocar suscripciones), así
+// que NO puede confiar en el JWT local de getCurrentUser: una sesión revocada
+// seguiría válida hasta ~1h. Reusa getConfirmedSessionUser (getUser remoto) como
+// primitiva; el email es un claim no escribible por el usuario, seguro para el
+// check. Devuelve el user si es admin, o null (para pages que redirigen).
+export const getPlatformAdminUser = cache(async () => {
+  const user = await getConfirmedSessionUser()
+  if (!user?.email || !isPlatformAdmin(user.email)) return null
+  return user
+})
+
+// Igual que getPlatformAdminUser pero LANZA si no es admin (para server actions,
+// que ya propagan el throw). Devuelve el user para el registro de auditoría.
+export const requirePlatformAdminUser = cache(async () => {
+  const user = await getConfirmedSessionUser()
+  requirePlatformAdmin(user?.email)
+  return user as NonNullable<typeof user>
 })
 
 export const getCurrentSession = cache(async () => {
