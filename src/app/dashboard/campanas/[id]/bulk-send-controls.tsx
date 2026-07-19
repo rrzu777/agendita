@@ -64,8 +64,8 @@ export function BulkSendControls({
 
   async function openNext() {
     if (!current) return
-    // openDeferredPopup corre síncrono hasta el primer await → el window.open cae en
-    // el mismo tick del gesto del usuario y esquiva el bloqueador de pop-ups.
+    // openNext es async, pero corre síncrono hasta el primer await → abrir el popup
+    // acá cae en el mismo tick del gesto del usuario (ver openDeferredPopup).
     const popup = openDeferredPopup()
     setWaSending(true)
     setWaError(null)
