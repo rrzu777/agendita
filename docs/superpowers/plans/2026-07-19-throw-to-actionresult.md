@@ -19,6 +19,15 @@
 - **`error.tsx`** (`src/app/error.tsx`) already shows a generic Spanish message; queries that throw continue to render it. Unchanged by this work.
 - **Scope:** 21 action modules have client consumers. `admin.ts`, `ledger.ts`, `subscriptions.ts`, `marketing-optout.ts`, `revalidate-business.ts` have **no client consumers** → excluded.
 
+## Cross-cutting decisions LOCKED during execution (apply to every remaining domain)
+
+1. **Tests live in `tests/unit/`, NOT beside the source.** Each domain's action tests are `tests/unit/<domain>.test.ts` and its component tests are `tests/unit/<component>.test.tsx`. `npx vitest run src/server/actions/<domain>` finds NOTHING — that path is empty. Every domain task MUST: (a) find its tests with `grep -rl "<domain>\|<functionName>" tests/unit` and (b) run the FULL suite `npx vitest run` (or at least the matched files) before claiming done. Task 2 initially passed a fake "no tests found" because of this — do not repeat it.
+2. **Migrated actions no longer throw for expected errors** → any existing test using `await expect(fn()).rejects.toThrow('X')` becomes `const r = await fn(); expect(r.ok).toBe(false); expect(r.error).toContain('X')`. Success `X` → `{ok:true,data:X}`. `requiresConfirmation` → `{ok:true,data:{requiresConfirmation,message}}`. Component-test mocks must resolve the wrapped shape `{ok:true,data:...}`.
+3. **`AuthError` / `ForbiddenError` already extend `UserError`** (done in the infra commit `8d1a159`, in `src/lib/auth/server.ts`). So `throw new ForbiddenError(...)` / `throw new AuthError(...)` from a wrapped action already resolve to `{ok:false, error:<message>}` and their Spanish messages survive. DO NOT convert them per-domain; DO NOT re-wrap them. The `sed` codemod only touches `throw new Error(` and leaves these untouched — correct.
+4. **`result.ts` is NOT `server-only`.** `UserError`/`ActionResult` are client-safe values (shared error base). Do not add `import 'server-only'` back — it breaks every test that transitively imports the real `@/lib/auth/server`.
+5. **Domain error classes** (`BookingNotPayableError`, `CardLinkError`, `AccountConflictError`, etc.): case-by-case. In a domain where one is thrown AND its message should reach the user, either convert it to `throw new UserError(...)` or make the class `extends UserError`. If its message is internal, leave it (falls to generic). Decide per occurrence, note the choice in the task report.
+6. **Silent-swallow guard:** because actions no longer throw, any consumer that previously relied on a throw to halt (e.g. a delete handler with no `.ok` check that then optimistically updates the UI) will now proceed as if successful. When migrating a consumer, add an `if (!res.ok) { ...surface error, do not mutate UI... }` guard even where the old code had no `catch`. Task 2 found three such handlers.
+
 ## Domain → functions → client consumers map
 
 Only functions **called from a client file** get wrapped. Each domain task lists candidates; the executor confirms the exact called set via the import + `tsc`.
