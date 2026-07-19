@@ -8,7 +8,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
-import { getCurrentUser } from '@/lib/auth/user'
+import { getConfirmedSessionUser } from '@/lib/auth/user'
 import { findOrCreateCustomerInTx } from '@/lib/customers/find-or-create'
 import { logger } from '@/lib/logger'
 
@@ -281,7 +281,8 @@ export async function createBooking(data: {
   }
 
   // Vía 3 de vinculación (leer sesión ANTES de la tx: toca Supabase/cookies).
-  const sessionUser = await getCurrentUser()
+  // Remoto (getUser) porque el link exige el email_confirmed_at confiable.
+  const sessionUser = await getConfirmedSessionUser()
 
   // Idempotencia: si llega key, buscar booking existente fuera de tx (fast path).
   // El race final se maneja con el unique constraint de DB dentro de la tx.

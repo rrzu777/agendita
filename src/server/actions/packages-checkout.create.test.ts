@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const getCurrentUser = vi.fn()
-vi.mock('@/lib/auth/user', () => ({ getCurrentUser: () => getCurrentUser() }))
+// createPackagePurchase usa getConfirmedSessionUser (getUser remoto) para el
+// email verificado + sessionUser; el mismo spy lo alimenta.
+vi.mock('@/lib/auth/user', () => ({ getCurrentUser: () => getCurrentUser(), getConfirmedSessionUser: () => getCurrentUser() }))
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: vi.fn().mockResolvedValue({ success: true }) }))
 
 const { ensureUserRow, AccountConflictError } = vi.hoisted(() => {

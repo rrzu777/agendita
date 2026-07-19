@@ -39,6 +39,7 @@ vi.mock('@/lib/auth/server', () => ({
 
 vi.mock('@/lib/auth/user', () => ({
   getCurrentUser: vi.fn().mockResolvedValue(null),
+  getConfirmedSessionUser: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock('next/cache', () => ({
