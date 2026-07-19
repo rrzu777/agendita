@@ -7,14 +7,18 @@ requireTestDatabase()
 const BIZ = 'pkgrem-biz-1'
 const USER = 'pkgrem-user-1'
 
-vi.mock('@/lib/auth/user', () => ({
-  getCurrentUser: async () => ({
+vi.mock('@/lib/auth/user', () => {
+  // getConfirmedSessionUser (validación remota) comparte el mismo usuario de
+  // sesión que getCurrentUser en los tests; el flujo de reserva lo usa como
+  // gate de vinculación desde #96.
+  const sessionUser = async () => ({
     id: USER,
     email: 'pkgrem@t.test',
     email_confirmed_at: '2026-01-01T00:00:00Z',
     user_metadata: { name: 'Cli Rem' },
-  }),
-}))
+  })
+  return { getCurrentUser: sessionUser, getConfirmedSessionUser: sessionUser }
+})
 vi.mock('@/lib/auth/ensure-user-row', () => ({
   ensureUserRow: async () => {}, AccountConflictError: class extends Error {},
 }))
