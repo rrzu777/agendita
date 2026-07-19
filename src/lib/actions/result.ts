@@ -1,3 +1,9 @@
+// NOTA: este módulo NO es `server-only` a propósito. `UserError` es la clase
+// base de los errores user-facing (AuthError/ForbiddenError la extienden en
+// src/lib/auth/server.ts, importado como VALOR por código server + tests). Un
+// `import 'server-only'` acá rompe por transitividad todo test que carga el
+// auth real. Además no hay secretos aquí y `unstable_rethrow` es isomórfico, así
+// que la barrera aportaba poco.
 import { unstable_rethrow } from 'next/navigation'
 
 /**
