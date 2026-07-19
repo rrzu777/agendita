@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client'
+import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
 import { createGrantInTx, reconcileExpiredGrants } from './grant'
 import { getLoyaltyBalance } from './balance'
 
@@ -41,7 +42,7 @@ export async function redeemForGrant(tx: Tx, args: {
   const now = args.now ?? new Date()
   const { businessId, customerId, promotion, config, requestId } = args
 
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${customerId}))`
+  await acquireAdvisoryXactLock(tx, customerId)
 
   // Idempotencia (antes de tocar stock/saldo).
   const existing = await tx.promotionGrant.findUnique({
