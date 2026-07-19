@@ -34,6 +34,7 @@ vi.mock('@/lib/notifications', () => ({
 }))
 vi.mock('@/lib/auth/user', () => ({
   getCurrentUser: async () => mockSessionUser,
+  getConfirmedSessionUser: async () => mockSessionUser,
 }))
 
 describe('customer-account link (vía 3)', () => {

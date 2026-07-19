@@ -31,6 +31,7 @@ vi.mock('@/lib/notifications', () => ({
 }))
 vi.mock('@/lib/auth/user', () => ({
   getCurrentUser: async () => mockSessionUser,
+  getConfirmedSessionUser: async () => mockSessionUser,
 }))
 
 describe('self-service bookings (cancelMyBooking / rescheduleMyBooking)', () => {

@@ -29,6 +29,7 @@ vi.mock('@/lib/notifications', () => ({
 }))
 vi.mock('@/lib/auth/user', () => ({
   getCurrentUser: async () => null,
+  getConfirmedSessionUser: async () => null,
 }))
 
 describe('bank-transfer flujo público', () => {
