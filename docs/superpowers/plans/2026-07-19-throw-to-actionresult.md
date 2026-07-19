@@ -26,6 +26,7 @@
 3. **`AuthError` / `ForbiddenError` already extend `UserError`** (done in the infra commit `8d1a159`, in `src/lib/auth/server.ts`). So `throw new ForbiddenError(...)` / `throw new AuthError(...)` from a wrapped action already resolve to `{ok:false, error:<message>}` and their Spanish messages survive. DO NOT convert them per-domain; DO NOT re-wrap them. The `sed` codemod only touches `throw new Error(` and leaves these untouched — correct.
 4. **`result.ts` is NOT `server-only`.** `UserError`/`ActionResult` are client-safe values (shared error base). Do not add `import 'server-only'` back — it breaks every test that transitively imports the real `@/lib/auth/server`.
 5. **Domain error classes** (`BookingNotPayableError`, `CardLinkError`, `AccountConflictError`, etc.): case-by-case. In a domain where one is thrown AND its message should reach the user, either convert it to `throw new UserError(...)` or make the class `extends UserError`. If its message is internal, leave it (falls to generic). Decide per occurrence, note the choice in the task report.
+7. **`export const foo = action(_foo)` is VALID in a `'use server'` module — BUILD-VERIFIED.** Confirmed three ways against this repo's actual Next 16.2.6: (a) runtime validator `ensureServerEntryExports` (`node_modules/next/dist/build/webpack/loaders/next-flight-loader/action-validate.js`) only checks `typeof export === 'function'` — a function-valued const passes; (b) the TS server-boundary rule (`server-boundary.js`) explicitly allows a `CallExpression` initializer returning a function-that-returns-Promise; (c) a full `next build` compiled + typechecked the migrated time-blocks and exited 0. The memory landmine "non-function exports from 'use server' crash at runtime" is about exporting VALUES (objects/constants/types), NOT function-valued consts — `action(_foo)` returns a function, so it's safe. Do not panic about this per-domain.
 6. **Silent-swallow guard:** because actions no longer throw, any consumer that previously relied on a throw to halt (e.g. a delete handler with no `.ok` check that then optimistically updates the UI) will now proceed as if successful. When migrating a consumer, add an `if (!res.ok) { ...surface error, do not mutate UI... }` guard even where the old code had no `catch`. Task 2 found three such handlers.
 
 ## Domain → functions → client consumers map
@@ -363,10 +364,19 @@ Expected: `tsc clean`
 Run: `npx vitest run 2>&1 | tail -15`
 Expected: all green. Fix any integration mock that referenced an old return shape (memory landmine: integration mocks must export the functions actions import).
 
-- [ ] **Step 3: Production build**
+- [ ] **Step 3: Production build (the ONLY gate that validates `'use server'` exports)**
 
-Run: `npx next build 2>&1 | tail -20`
-Expected: build succeeds (tsc + lint run here; this is the CI `build` gate — memory: vitest+eslint alone miss type errors).
+The build compiles the flight loader (validates every `'use server'` export is a function) and runs Next's TS server-boundary rule — neither is caught by vitest or `tsc | grep ^src/`. Run with placeholder (non-secret) env so it compiles without real credentials:
+```bash
+DATABASE_URL="postgresql://u:p@localhost:5432/db?schema=public" \
+DIRECT_URL="postgresql://u:p@localhost:5432/db?schema=public" \
+NEXT_PUBLIC_SUPABASE_URL="https://placeholder.supabase.co" \
+NEXT_PUBLIC_SUPABASE_ANON_KEY="placeholder-anon-key" \
+APP_DOMAIN="example.com" NEXT_PUBLIC_APP_DOMAIN="example.com" \
+PAYMENT_PROVIDER="manual" NEXT_TELEMETRY_DISABLED=1 \
+npx prisma generate && npx next build 2>&1 | tail -25
+```
+Expected: `✓ Compiled successfully`, TypeScript passes, exit 0, and NO `E352` / "use server file can only export async functions". (Pages are all dynamic `ƒ`, so the placeholder DB URL is never queried at build.) This was already run once mid-execution and passed — run it again after the last domain.
 
 - [ ] **Step 4: Grep for stragglers**
 
