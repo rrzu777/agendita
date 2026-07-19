@@ -182,22 +182,63 @@ async function fireBookingNotifications(
 
 // sendBookingConfirmedNotification is now centralized in @/lib/notifications
 
+// Lista completa del historial con SOLO las columnas que consumen la página de
+// Reservas (set pesado) y el diálogo de pago manual de Pagos (subset de
+// ManualPaymentBooking). `select` explícito en vez de `include: { service:
+// true, customer: true }`: antes traía todas las columnas de Booking/Service/
+// Customer (internalNotes, reviewToken, timestamps…) para todo el historial.
+// El resumen del dashboard usa getBookingsSummary (aún más angosto).
 export async function getBookings() {
   const { businessId } = await requireBusiness()
   return prisma.booking.findMany({
     where: { businessId },
     orderBy: { startDateTime: 'desc' },
-    include: {
-      service: true,
-      customer: true,
+    select: {
+      id: true,
+      bookingNumber: true,
+      startDateTime: true,
+      status: true,
+      depositPaid: true,
+      depositRequired: true,
+      finalAmount: true,
+      paymentStatus: true,
+      totalPrice: true,
+      remainingBalance: true,
+      paymentMethod: true,
+      service: { select: { name: true } },
+      customer: { select: { name: true, phone: true, email: true } },
       // Declaración de transferencia pendiente de verificar, sea abono
       // (bt-declared) o saldo (bt-balance). El array queda vacío salvo que
-      // haya una por verificar → deriva los badges y la sección del
-      // dashboard sin segunda query (el `kind` se distingue en el llamador
+      // haya una por verificar → deriva los badges y la sección de la página
+      // de Reservas sin segunda query (el `kind` se distingue en el llamador
       // por el prefijo de providerPaymentId, ver BT_BALANCE_PREFIX).
       payments: {
         where: anyDeclaredTransferWhere,
         select: { id: true, amount: true, createdAt: true, providerPaymentId: true, proofKey: true, proofContentType: true },
+      },
+    },
+  })
+}
+
+// Versión liviana para el home del dashboard: solo lo que necesitan los conteos
+// (hoy/próximas/total via .length y .filter), las 5 próximas citas y los
+// predicados hasPendingDeclaredTransfer/hasPendingBalanceTransfer. Evita
+// arrastrar las columnas de plata y las relaciones completas en la landing más
+// caliente. Mismo where/orderBy que getBookings → mismo orden y conjunto.
+export async function getBookingsSummary() {
+  const { businessId } = await requireBusiness()
+  return prisma.booking.findMany({
+    where: { businessId },
+    orderBy: { startDateTime: 'desc' },
+    select: {
+      id: true,
+      startDateTime: true,
+      status: true,
+      service: { select: { name: true } },
+      customer: { select: { name: true } },
+      payments: {
+        where: anyDeclaredTransferWhere,
+        select: { providerPaymentId: true },
       },
     },
   })
