@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Copy, Link, Loader2, MessageCircle } from 'lucide-react'
+import { openDeferredPopup } from '@/lib/popup'
 import {
   ensureReviewTokenForBooking,
   getReviewLink,
@@ -49,29 +50,26 @@ export function ReviewLinkButton({ bookingId, hasToken }: ReviewLinkButtonProps)
     setLoading('whatsapp')
     setError(null)
 
-    // Abrimos la ventana de inmediato (gesto del usuario) y luego fijamos la URL,
-    // para no toparnos con el bloqueador de pop-ups tras el await.
-    const win = window.open('', '_blank')
+    const popup = openDeferredPopup()
 
     try {
       const result = await getReviewWhatsappLink(bookingId)
       if (!result) {
-        win?.close()
+        popup.close()
         setError('No se pudo preparar el mensaje')
         return
       }
 
       if (result.waUrl) {
-        if (win) win.location.href = result.waUrl
-        else window.open(result.waUrl, '_blank')
+        popup.navigate(result.waUrl)
       } else {
         // Sin teléfono: caemos a copiar el link.
-        win?.close()
+        popup.close()
         await navigator.clipboard.writeText(result.reviewLink)
         setError('La clienta no tiene teléfono. Copiamos el link al portapapeles.')
       }
     } catch (err) {
-      win?.close()
+      popup.close()
       setError(err instanceof Error ? err.message : 'Error al preparar WhatsApp')
     } finally {
       setLoading(null)

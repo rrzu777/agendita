@@ -9,6 +9,7 @@ import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { StatusBadge } from '@/components/ui/status-badge'
+import { openDeferredPopup } from '@/lib/popup'
 import { sendCampaignMessage, sendCampaignEmail } from '@/server/actions/campaigns'
 import { BulkSendControls } from './bulk-send-controls'
 
@@ -67,22 +68,19 @@ export function RecipientList({
   }
 
   function handleSend(recipientId: string) {
-    // Abrimos la ventana de inmediato (gesto del usuario) y luego fijamos la URL,
-    // para no toparnos con el bloqueador de pop-ups tras el await (patrón review-link-button).
-    const win = window.open('', '_blank')
+    const popup = openDeferredPopup()
     return withSending(recipientId, async () => {
       try {
         const { waUrl } = await sendCampaignMessage(recipientId)
         if (waUrl) {
-          if (win) win.location.href = waUrl
-          else window.open(waUrl, '_blank')
+          popup.navigate(waUrl)
         } else {
-          win?.close()
+          popup.close()
           setError({ recipientId, message: 'La clienta no tiene un teléfono válido.' })
         }
         router.refresh()
       } catch (e) {
-        win?.close()
+        popup.close()
         setError({ recipientId, message: e instanceof Error ? e.message : 'No se pudo enviar' })
       }
     })
