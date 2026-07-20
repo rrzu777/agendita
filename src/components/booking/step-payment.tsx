@@ -320,14 +320,18 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
     if (!transferBooking) return
     setDeclaring(true)
     setErrorMessage('')
-    const res = await declareBankTransfer(transferBooking.id, proof ?? {})
-    if (!res.ok) {
-      setErrorMessage(res.error)
+    try {
+      const res = await declareBankTransfer(transferBooking.id, proof ?? {})
+      if (!res.ok) {
+        setErrorMessage(res.error)
+        return
+      }
+      setStep('transfer-declared')
+    } catch {
+      setErrorMessage('No se pudo procesar. Intenta nuevamente.')
+    } finally {
       setDeclaring(false)
-      return
     }
-    setStep('transfer-declared')
-    setDeclaring(false)
   }
 
   async function handleManualBooking() {
