@@ -59,8 +59,8 @@ export function CancelBookingButton({
       }
       setOpen(false)
       router.refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cancelar')
+    } catch {
+      setError('Error al cancelar')
     } finally {
       setLoading(false)
     }

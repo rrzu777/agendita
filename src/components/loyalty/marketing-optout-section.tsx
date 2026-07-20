@@ -22,8 +22,8 @@ export function MarketingOptOutSection({
     startTransition(async () => {
       try {
         await action(next)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'No se pudo guardar')
+      } catch {
+        setError('No se pudo guardar')
       }
     })
   }

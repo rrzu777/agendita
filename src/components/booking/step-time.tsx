@@ -45,10 +45,10 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
         }
         setSlots(res.data)
       })
-      .catch((err) => {
+      .catch(() => {
         if (ignoreRef.current) return
         setSlots([])
-        setError(err instanceof Error ? err.message : 'No se pudieron cargar los horarios')
+        setError('No se pudieron cargar los horarios')
       })
       .finally(() => {
         if (!ignoreRef.current) setLoading(false)

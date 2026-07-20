@@ -309,7 +309,7 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
       setStep('transfer-details')
     } catch (err) {
       console.error('Transfer booking error:', err)
-      setErrorMessage(err instanceof Error ? err.message : 'Error al crear la reserva')
+      setErrorMessage('Error al crear la reserva')
       setStep('error')
     } finally {
       setLoading(false)
@@ -353,7 +353,7 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
       onSuccess(booking.id, mode, appliedPromo ? { discountAmount: appliedPromo.discount, finalAmount: appliedPromo.finalAmount } : null, booking.bookingNumber)
     } catch (err) {
       console.error('Booking error:', err)
-      setErrorMessage(err instanceof Error ? err.message : 'Error al crear la reserva')
+      setErrorMessage('Error al crear la reserva')
       setStep('error')
     } finally {
       setLoading(false)
@@ -420,7 +420,7 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
       onSuccess(booking.id, 'paid', appliedPromo ? { discountAmount: appliedPromo.discount, finalAmount: appliedPromo.finalAmount } : null, booking.bookingNumber)
     } catch (err) {
       console.error('Payment error:', err)
-      setErrorMessage(err instanceof Error ? err.message : 'Error al procesar el pago')
+      setErrorMessage('Error al procesar el pago')
       setStep('error')
     } finally {
       setLoading(false)

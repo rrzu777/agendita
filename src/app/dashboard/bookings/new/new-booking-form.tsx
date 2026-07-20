@@ -276,8 +276,8 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
         router.push('/dashboard/bookings')
         router.refresh()
       }, 1500)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al crear la reserva')
+    } catch {
+      setError('Error al crear la reserva')
     } finally {
       setLoading(false)
     }

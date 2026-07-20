@@ -84,11 +84,13 @@ export function BulkSendControls({
         popup.close()
         setWaError('La clienta no tiene un teléfono válido.')
       }
-    } catch (e) {
+    } catch {
       // action() no lanza salvo fallo de transporte (RPC de la server action en sí);
-      // conservamos el catch para ese caso, igual que antes de ActionResult.
+      // conservamos el catch para ese caso, igual que antes de ActionResult. El
+      // mensaje siempre es el genérico estático: post-migración err.message solo
+      // trae ruido de transporte/digest, nunca texto real para la usuaria.
       popup.close()
-      setWaError(e instanceof Error ? e.message : 'No se pudo enviar')
+      setWaError('No se pudo enviar')
     } finally {
       setWaSending(false)
       setWaIndex((i) => (i ?? 0) + 1) // avanza aunque falle (optimista, un toque por clienta)

@@ -35,8 +35,8 @@ function CompleteBookingButton({ bookingId }: { bookingId: string }) {
             try {
               const res = await updateBookingStatus(bookingId, 'completed')
               if (!res.ok) setError(res.error)
-            } catch (e) {
-              setError(e instanceof Error ? e.message : 'Error al completar')
+            } catch {
+              setError('Error al completar')
             }
           })
         }}

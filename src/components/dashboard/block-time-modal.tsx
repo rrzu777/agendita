@@ -155,8 +155,11 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
         router.refresh()
         setFeedback('Bloqueo creado')
         setOpen(false)
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Error al crear bloqueo')
+      } catch {
+        // parseTimeUTC (date-fns-tz) solo lanza en formatos internos rotos
+        // (TypeError de aridad / RangeError de opciones), nunca mensaje
+        // relevante para la usuaria; las acciones ya devuelven ActionResult.
+        setError('Error al crear bloqueo')
       } finally {
         submittingRef.current = false
         setIsSubmitting(false)
