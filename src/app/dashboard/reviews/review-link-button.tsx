@@ -85,7 +85,7 @@ export function ReviewLinkButton({ bookingId, hasToken }: ReviewLinkButtonProps)
       }
     } catch {
       popup.close()
-      setError('No se pudo copiar el link')
+      setError('No se pudo preparar el mensaje')
     } finally {
       setLoading(null)
     }

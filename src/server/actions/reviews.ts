@@ -70,6 +70,7 @@ export async function getReviewRequest(bookingId: string, token: string) {
   }
 
   if (booking.status !== BookingStatus.completed) {
+    // SSR-only (page.tsx la llama en servidor): el throw llega al error boundary; no migrar a UserError
     throw new Error('Esta reserva aún no ha sido completada')
   }
 
@@ -419,6 +420,7 @@ async function _getReviewWhatsappLink(
     return null
   }
 
+  // llamada interna: usar la versión _raw — la wrapped devuelve ActionResult, no el token
   const token = booking.reviewToken ?? (await _ensureReviewTokenForBooking(bookingId))
 
   const headersList = await headers()
