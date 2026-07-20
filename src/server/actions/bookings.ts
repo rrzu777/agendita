@@ -749,6 +749,8 @@ async function _confirmPayment(bookingId: string, paymentId: string, amount: num
 
 export const confirmPayment = action(_confirmPayment)
 
+// read raw a propósito (server page); el UserError acá NO sobrevive a prod —
+// solo error boundary server-side.
 export async function getBookingsByRange(start: Date, end: Date) {
   const { businessId } = await requireBusiness()
 
