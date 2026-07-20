@@ -7,6 +7,7 @@ import {
   cleanupBankTransferSeed,
   BT_VERIFY_BIZ,
 } from './helpers/bank-transfer-seed'
+import { expectActionError } from './helpers/action-result'
 
 requireTestDatabase()
 
@@ -68,14 +69,6 @@ async function seedExpired(opts: Parameters<typeof seedDeclaredTransfer>[0] = {}
     await prisma.payment.update({ where: { id: seeded.paymentId }, data: { status: 'cancelled' } })
   }
   return seeded
-}
-
-// reviveBooking ahora devuelve ActionResult en vez de tirar: helper para
-// asertar el caso de error sin repetir el narrowing en cada test.
-async function expectActionError(promise: ReturnType<typeof reviveBooking>, substring: string) {
-  const res = await promise
-  expect(res.ok).toBe(false)
-  expect(!res.ok && res.error).toContain(substring)
 }
 
 describe('reviveBooking confirm', () => {

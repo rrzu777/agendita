@@ -6,6 +6,8 @@ import { shrinkBlock } from './shrink-block'
 import { expandSeries } from '@/lib/calendar/expand-series'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
 import type { PrismaClient, Prisma } from '@prisma/client'
+// UserError: estos mensajes son user-facing y deben sobrevivir al wrapper
+// action(); para callers sin wrapper es un Error normal (extends Error).
 import { UserError } from '@/lib/actions/result'
 
 export interface AssertSlotInput {
