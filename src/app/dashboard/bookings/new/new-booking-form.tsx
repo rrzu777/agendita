@@ -138,11 +138,16 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
         serviceId,
         phone: customerPhone || undefined,
       })
-      if (res.ok) {
-        setAppliedPromo({ code, discount: res.discount, finalAmount: res.finalAmount, serviceId })
+      if (!res.ok) {
+        setPromoError(res.error)
+        setAppliedPromo(null)
+        return
+      }
+      if (res.data.ok) {
+        setAppliedPromo({ code, discount: res.data.discount, finalAmount: res.data.finalAmount, serviceId })
         setPromoError(null)
       } else {
-        setPromoError(res.message)
+        setPromoError(res.data.message)
         setAppliedPromo(null)
       }
     } catch {

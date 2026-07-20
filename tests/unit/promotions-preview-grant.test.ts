@@ -23,14 +23,16 @@ describe('previewPromotion — grant', () => {
     ;(prisma.promotionGrant.findFirst as any).mockResolvedValue({ id: 'g1', expiresAt: null,
       promotion: { appliesToAll: true, services: [], minSpend: null, rewardType: 'percentage', rewardValue: 50, maxDiscount: null } })
     ;(prisma.service.findFirst as any).mockResolvedValue({ id: 's1', price: 1000 })
-    const r = await previewPromotion({ businessId: 'b1', code: 'ABC123', serviceId: 's1' })
-    expect(r).toMatchObject({ ok: true, discount: 500, finalAmount: 500 })
+    const res = await previewPromotion({ businessId: 'b1', code: 'ABC123', serviceId: 's1' })
+    expect(res.ok).toBe(true)
+    expect(res.ok && res.data).toMatchObject({ ok: true, discount: 500, finalAmount: 500 })
   })
   it('un grant vencido devuelve inválido genérico', async () => {
     ;(prisma.promotionGrant.findFirst as any).mockResolvedValue({ id: 'g1', expiresAt: new Date('2000-01-01'),
       promotion: { appliesToAll: true, services: [], minSpend: null, rewardType: 'percentage', rewardValue: 50, maxDiscount: null } })
     ;(prisma.service.findFirst as any).mockResolvedValue({ id: 's1', price: 1000 })
-    const r = await previewPromotion({ businessId: 'b1', code: 'ABC123', serviceId: 's1' })
-    expect(r.ok).toBe(false)
+    const res = await previewPromotion({ businessId: 'b1', code: 'ABC123', serviceId: 's1' })
+    expect(res.ok).toBe(true)
+    expect(res.ok && res.data.ok).toBe(false)
   })
 })
