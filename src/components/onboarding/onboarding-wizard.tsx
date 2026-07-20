@@ -68,7 +68,8 @@ export function OnboardingWizard({
 
   async function handleNext() {
     try {
-      await saveOnboardingStep(business.id, currentStep + 1)
+      const res = await saveOnboardingStep(business.id, currentStep + 1)
+      if (!res.ok) { setError(res.error); return }
       setCurrentStep((s) => Math.min(s + 1, totalSteps - 1))
       setError('')
     } catch {
@@ -79,7 +80,8 @@ export function OnboardingWizard({
   async function handleBack() {
     const prev = Math.max(0, currentStep - 1)
     try {
-      await saveOnboardingStep(business.id, prev)
+      const res = await saveOnboardingStep(business.id, prev)
+      if (!res.ok) { setCurrentStep(prev); return }
       setCurrentStep(prev)
       setError('')
     } catch {
@@ -91,11 +93,13 @@ export function OnboardingWizard({
     setLoading(true)
     setError('')
     try {
-      await completeOnboarding(business.id)
+      const res = await completeOnboarding(business.id)
+      if (!res.ok) { setError(res.error); return }
       router.push('/dashboard')
       router.refresh()
     } catch {
       setError('Error al finalizar. Intenta de nuevo.')
+    } finally {
       setLoading(false)
     }
   }
