@@ -1,4 +1,5 @@
 import type { AutomaticRuleFormInput, RedemptionOptionFormInput } from './schema'
+import { UserError } from '@/lib/actions/result'
 
 export type PresetKind = 'base' | 'addon' | 'combo'
 
@@ -166,15 +167,17 @@ function dedupeRulesByKind(rules: AutomaticRuleFormInput[]): AutomaticRuleFormIn
 /** Aplana un preset a su payload sembrable. Combo: un único base + add-ons, kinds únicos. */
 export function buildPresetPayload(presetId: string): PresetPayload {
   const p = byId.get(presetId)
-  if (!p) throw new Error(`Preset desconocido: ${presetId}`)
+  // UserError: presetId llega tal cual desde applyLoyaltyPreset (input del cliente);
+  // "desconocido" es un mensaje legítimo para un id inválido/viejo, no un detalle interno.
+  if (!p) throw new UserError(`Preset desconocido: ${presetId}`)
   if (p.kind === 'combo') {
     const components = (p.componentIds ?? []).map((id) => {
       const c = byId.get(id)
-      if (!c) throw new Error(`Componente de combo desconocido: ${id}`)
+      if (!c) throw new UserError(`Componente de combo desconocido: ${id}`)
       return c
     })
     const bases = components.filter((c) => c.kind === 'base')
-    if (bases.length !== 1) throw new Error(`El combo ${presetId} debe componer exactamente un base`)
+    if (bases.length !== 1) throw new UserError(`El combo ${presetId} debe componer exactamente un base`)
     return {
       config: bases[0].config ?? null,
       redemptionOptions: components.flatMap((c) => c.redemptionOptions ?? []),

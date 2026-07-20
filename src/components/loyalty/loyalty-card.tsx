@@ -2,13 +2,15 @@ import { formatShortDate } from '@/lib/format-date'
 import { loyaltyReasonLabel, displayBalance, canAfford } from '@/lib/loyalty/view'
 import type { LoyaltyCardData } from '@/lib/loyalty/card-data'
 import { ReferralShare } from '@/components/loyalty/referral-share'
+import { RedeemButton } from '@/components/loyalty/redeem-button'
+import type { ActionResult } from '@/lib/actions/result'
 
 interface LoyaltyCardProps {
   customerName: string
   business: { name: string; logoUrl: string | null }
   data: LoyaltyCardData
   /** Server action ya bindeada con la credencial (token o customerId). */
-  redeemAction: (formData: FormData) => Promise<void>
+  redeemAction: (optionId: string, requestId: string) => Promise<ActionResult<void>>
   /** 'h2' cuando la página ya tiene su propio h1 (ej. /mi/[slug]). */
   titleAs?: 'h1' | 'h2'
 }
@@ -46,19 +48,17 @@ export function LoyaltyCard({ customerName, business, data, redeemAction, titleA
         <section className="mt-8">
           <h2 className="mb-2 text-sm font-semibold text-gray-700">Canjear puntos</h2>
           <ul className="space-y-2">
-            {catalog.map(o => {
-              const afford = canAfford(balance, o.pointsCost ?? 0)
-              return (
-                <li key={o.id} className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm">
-                  <span className={afford ? '' : 'text-gray-400'}>{o.name} · {o.pointsCost} {label}</span>
-                  <form action={redeemAction}>
-                    <input type="hidden" name="optionId" value={o.id} />
-                    <input type="hidden" name="requestId" value={crypto.randomUUID()} />
-                    <button type="submit" disabled={!afford} className="rounded-md bg-pink-600 px-3 py-1 text-white disabled:opacity-40">Canjear</button>
-                  </form>
-                </li>
-              )
-            })}
+            {catalog.map(o => (
+              <RedeemButton
+                key={o.id}
+                optionId={o.id}
+                name={o.name}
+                pointsCost={o.pointsCost}
+                label={label}
+                disabled={!canAfford(balance, o.pointsCost ?? 0)}
+                redeemAction={redeemAction}
+              />
+            ))}
           </ul>
         </section>
       )}

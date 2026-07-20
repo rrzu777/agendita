@@ -15,6 +15,8 @@ const {
 
 vi.mock('@/lib/auth/server', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/lib/auth/server')>()
+  // ForbiddenError real (importOriginal) ya extiende UserError — action() la
+  // reconoce (instanceof) y devuelve su mensaje en vez del genérico.
   return { ...mod, requireUser: mockRequireUser }
 })
 vi.mock('@/lib/db', () => ({
@@ -44,7 +46,8 @@ describe('redeemPointsAsMe', () => {
     mockTx.mockImplementation(async (fn: (tx: unknown) => Promise<void>) => fn({}))
 
     const { redeemPointsAsMe } = await import('@/server/actions/loyalty')
-    await redeemPointsAsMe('c1', 'p1', 'req-1')
+    const result = await redeemPointsAsMe('c1', 'p1', 'req-1')
+    expect(result).toEqual({ ok: true, data: undefined })
     expect(mockRedeem).toHaveBeenCalled()
     expect(mockFindFirstCustomer).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ id: 'c1', userId: 'u1' }),
@@ -57,7 +60,8 @@ describe('redeemPointsAsMe', () => {
     mockRequireUser.mockResolvedValue({ id: 'u1' })
     mockFindFirstCustomer.mockResolvedValue(null)
     const { redeemPointsAsMe } = await import('@/server/actions/loyalty')
-    await expect(redeemPointsAsMe('c-ajeno', 'p1', 'req-1')).rejects.toThrow()
+    const result = await redeemPointsAsMe('c-ajeno', 'p1', 'req-1')
+    expect(result).toEqual({ ok: false, error: 'Tarjeta no disponible' })
     expect(mockRedeem).not.toHaveBeenCalled()
   })
 

@@ -70,11 +70,12 @@ export function RedemptionCatalog({
     }
     start(async () => {
       try {
-        await upsertRedemptionOption(data, editing?.id)
+        const res = await upsertRedemptionOption(data, editing?.id)
+        if (!res.ok) { setError(res.error); return }
         form.reset()
         setEditing(null)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error')
+      } catch {
+        setError('Error')
       }
     })
   }
@@ -82,9 +83,10 @@ export function RedemptionCatalog({
   function onArchive(id: string) {
     start(async () => {
       try {
-        await archiveRedemptionOption(id)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error')
+        const res = await archiveRedemptionOption(id)
+        if (!res.ok) { setError(res.error); return }
+      } catch {
+        setError('Error')
       }
     })
   }

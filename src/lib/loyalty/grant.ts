@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto'
 import type { Prisma, PrismaClient, PromotionGrant } from '@prisma/client'
+import { UserError } from '@/lib/actions/result'
 
 type TxLike = Prisma.TransactionClient | PrismaClient
 type Tx = Prisma.TransactionClient
@@ -24,7 +25,11 @@ export async function generateGrantCode(tx: Tx, businessId: string): Promise<str
     ])
     if (!promo && !grant) return code
   }
-  throw new Error('No se pudo generar un código de canje')
+  // Colisión tras 8 intentos (prácticamente imposible): UserError porque createGrantInTx
+  // (y por tanto esto) puede correr dentro de un canje user-facing (redeemForGrant).
+  // En los demás callers (automatic.ts, campaigns/mint.ts, packages/activate.ts, no
+  // envueltos en action()) se comporta igual que un Error normal.
+  throw new UserError('No se pudo generar un código de canje')
 }
 
 export interface CreateGrantArgs {

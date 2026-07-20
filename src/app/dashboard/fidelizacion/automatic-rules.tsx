@@ -152,10 +152,11 @@ function RuleCard({
     }
     start(async () => {
       try {
-        await upsertAutomaticRule(data, rule?.id)
+        const res = await upsertAutomaticRule(data, rule?.id)
+        if (!res.ok) { setError(res.error); return }
         setSaved(true)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error')
+      } catch {
+        setError('Error')
       }
     })
   }
@@ -164,10 +165,11 @@ function RuleCard({
     if (!rule) return
     start(async () => {
       try {
-        await archiveAutomaticRule(rule.id)
+        const res = await archiveAutomaticRule(rule.id)
+        if (!res.ok) { setError(res.error); return }
         setSaved(false)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error')
+      } catch {
+        setError('Error')
       }
     })
   }

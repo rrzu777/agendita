@@ -32,10 +32,11 @@ export function LoyaltyConfigForm({ config }: { config: LoyaltyConfig | null }) 
     }
     startTransition(async () => {
       try {
-        await upsertLoyaltyConfig(data)
+        const res = await upsertLoyaltyConfig(data)
+        if (!res.ok) { setError(res.error); return }
         setSaved(true)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error al guardar')
+      } catch {
+        setError('Error al guardar')
       }
     })
   }
