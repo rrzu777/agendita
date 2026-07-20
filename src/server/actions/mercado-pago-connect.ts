@@ -10,6 +10,9 @@ import { action, UserError } from '@/lib/actions/result'
 
 const MP_AUTH_URL = 'https://auth.mercadopago.cl/authorization'
 
+// OJO: iniciadores OAuth deliberadamente SIN action(): sus throws son invariantes
+// de misconfig (inglés, server-only) y el caller <form action> no lee retorno.
+// No migrar a UserError/ActionResult.
 export async function startMercadoPagoConnect() {
   const { redirectUrl } = await initiateMercadoPagoOAuth()
   redirect(redirectUrl)
@@ -76,9 +79,10 @@ async function _disconnectMercadoPagoConnection() {
 
 export const disconnectMercadoPagoConnection = action(_disconnectMercadoPagoConnection)
 
-// Backward-compatible alias. Must be a real `export async function` (not an
-// `export const`) — a 'use server' module should only export async functions so
-// the directive transform never has to register a non-function as a server ref.
+// Backward-compatible alias. Every export of a 'use server' module must EVALUATE
+// to an async function — `action(...)` above returns one, so that `export const`
+// is fine. This alias stays a declared `export async function` (not a re-exported
+// const) purely for a stable name/back-compat.
 export async function disconnectMercadoPago() {
   return disconnectMercadoPagoConnection()
 }
