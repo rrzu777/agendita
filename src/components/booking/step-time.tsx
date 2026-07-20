@@ -36,9 +36,14 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     setSelectedSlot(null)
 
     getAvailableTimeSlots(businessId, data.serviceId, data.date)
-      .then((availableSlots) => {
+      .then((res) => {
         if (ignoreRef.current) return
-        setSlots(availableSlots)
+        if (!res.ok) {
+          setSlots([])
+          setError(res.error)
+          return
+        }
+        setSlots(res.data)
       })
       .catch((err) => {
         if (ignoreRef.current) return

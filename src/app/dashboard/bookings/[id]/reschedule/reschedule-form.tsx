@@ -58,9 +58,14 @@ export function RescheduleForm({
     setSelectedSlot(null)
 
     getAvailableSlotsForReschedule(bookingId, fromZonedTime(`${date} 00:00`, timezone))
-      .then((availableSlots) => {
+      .then((res) => {
         if (ignoreRef.current || requestIdRef.current !== requestId) return
-        setSlots(availableSlots.map((slot) => ({
+        if (!res.ok) {
+          setSlots([])
+          setError(res.error)
+          return
+        }
+        setSlots(res.data.map((slot) => ({
           start: new Date(slot.start),
           end: new Date(slot.end),
         })))

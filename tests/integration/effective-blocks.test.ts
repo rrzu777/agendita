@@ -53,8 +53,9 @@ describe('getEffectiveBlocks', () => {
     await prisma.availabilityRule.deleteMany({ where: { businessId } })
     await prisma.availabilityRule.create({ data: { businessId, dayOfWeek: 1, startTime: '09:00', endTime: '18:00', isActive: true } })
     const svc = await prisma.service.create({ data: { businessId, name: 'Corte', durationMinutes: 60, price: 10000, depositAmount: 0, pastelColor: '#FFD700', isActive: true } })
-    const slots = await getAvailableTimeSlots(businessId, svc.id, new Date('2026-06-01T15:00:00Z'))
-    expect(slots.some((s) => s.start.toISOString() === '2026-06-01T17:00:00.000Z')).toBe(false)
+    const result = await getAvailableTimeSlots(businessId, svc.id, new Date('2026-06-01T15:00:00Z'))
+    if (!result.ok) throw new Error(`expected ok, got: ${result.error}`)
+    expect(result.data.some((s) => s.start.toISOString() === '2026-06-01T17:00:00.000Z')).toBe(false)
   })
 
   it('assertSlotIsAvailable rechaza un slot dentro de una ocurrencia recurrente y lo libera al saltarla', async () => {

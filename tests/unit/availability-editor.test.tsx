@@ -31,7 +31,7 @@ describe('AvailabilityEditor', () => {
   })
 
   it('does not persist time changes until the save button is clicked', async () => {
-    mockUpdateAvailabilityRule.mockResolvedValue(undefined)
+    mockUpdateAvailabilityRule.mockResolvedValue({ ok: true, data: null })
     const container = renderEditor()
 
     await changeTime(container, 'Lunes inicio', { minute: '45' })
@@ -77,7 +77,7 @@ describe('AvailabilityEditor', () => {
   })
 
   it('clears the error and saves once the range becomes valid', async () => {
-    mockUpdateAvailabilityRule.mockResolvedValue(undefined)
+    mockUpdateAvailabilityRule.mockResolvedValue({ ok: true, data: null })
     const container = renderEditor()
 
     await changeTime(container, 'Lunes inicio', { hour: '19' })
@@ -96,7 +96,23 @@ describe('AvailabilityEditor', () => {
     })
   })
 
-  it('keeps the pending changes and shows an error when the server fails', async () => {
+  it('shows the ActionResult error verbatim and keeps the pending changes', async () => {
+    mockUpdateAvailabilityRule.mockResolvedValue({ ok: false, error: 'Regla no encontrada' })
+    const container = renderEditor()
+
+    await changeTime(container, 'Lunes inicio', { minute: '45' })
+    const saveButton = findSaveButton(container)
+    await act(async () => {
+      saveButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Regla no encontrada')
+    // El botón sigue disponible para reintentar y el borrador no se pierde
+    expect(findSaveButton(container)).toBeTruthy()
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Lunes inicio"]')?.textContent).toContain('09:45')
+  })
+
+  it('keeps the pending changes and shows a generic error on a transport failure', async () => {
     mockUpdateAvailabilityRule.mockRejectedValue(new Error('boom'))
     const container = renderEditor()
 
@@ -113,7 +129,7 @@ describe('AvailabilityEditor', () => {
   })
 
   it('persists the toggle immediately using the saved times, discarding drafts', async () => {
-    mockUpdateAvailabilityRule.mockResolvedValue(undefined)
+    mockUpdateAvailabilityRule.mockResolvedValue({ ok: true, data: null })
     const container = renderEditor()
 
     await changeTime(container, 'Lunes inicio', { minute: '45' })

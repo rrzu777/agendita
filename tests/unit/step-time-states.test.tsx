@@ -42,7 +42,7 @@ describe('StepTime states', () => {
   }
 
   it('shows a retryable error state, not "No hay horarios", when the fetch fails', async () => {
-    vi.mocked(getAvailableTimeSlots).mockRejectedValue(new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.'))
+    vi.mocked(getAvailableTimeSlots).mockResolvedValue({ ok: false, error: 'Demasiadas solicitudes. Intenta de nuevo en unos minutos.' })
     await render()
     expect(container.textContent).toContain('No pudimos cargar los horarios')
     expect(container.textContent).toContain('Demasiadas solicitudes')
@@ -51,10 +51,18 @@ describe('StepTime states', () => {
     expect(retry).toBeTruthy()
   })
 
+  it('shows a retryable error state on a transport failure (rejected promise)', async () => {
+    vi.mocked(getAvailableTimeSlots).mockRejectedValue(new Error('boom'))
+    await render()
+    expect(container.textContent).toContain('No pudimos cargar los horarios')
+    const retry = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Reintentar'))
+    expect(retry).toBeTruthy()
+  })
+
   it('retry button re-fetches and can recover', async () => {
     vi.mocked(getAvailableTimeSlots)
-      .mockRejectedValueOnce(new Error('boom'))
-      .mockResolvedValueOnce([{ start: new Date('2026-07-09T13:00:00Z'), end: new Date('2026-07-09T14:30:00Z') }])
+      .mockResolvedValueOnce({ ok: false, error: 'boom' })
+      .mockResolvedValueOnce({ ok: true, data: [{ start: new Date('2026-07-09T13:00:00Z'), end: new Date('2026-07-09T14:30:00Z') }] })
     await render()
     const retry = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Reintentar'))!
     await act(async () => {
@@ -65,25 +73,27 @@ describe('StepTime states', () => {
   })
 
   it('empty state explains the minimum lead time', async () => {
-    vi.mocked(getAvailableTimeSlots).mockResolvedValue([])
+    vi.mocked(getAvailableTimeSlots).mockResolvedValue({ ok: true, data: [] })
     await render()
     expect(container.textContent).toContain('No hay horarios disponibles')
     expect(container.textContent).toContain('2 horas de anticipación')
   })
 
   it('renders slot times in the business timezone', async () => {
-    vi.mocked(getAvailableTimeSlots).mockResolvedValue([
-      { start: new Date('2026-07-09T13:00:00Z'), end: new Date('2026-07-09T14:30:00Z') },
-    ])
+    vi.mocked(getAvailableTimeSlots).mockResolvedValue({
+      ok: true,
+      data: [{ start: new Date('2026-07-09T13:00:00Z'), end: new Date('2026-07-09T14:30:00Z') }],
+    })
     await render()
     // 13:00Z = 22:00 en Tokio; con el código viejo se renderizaba la hora de la máquina
     expect(container.textContent).toContain('22:00')
   })
 
   it('slot grid shows the lead time hint', async () => {
-    vi.mocked(getAvailableTimeSlots).mockResolvedValue([
-      { start: new Date('2026-07-09T13:00:00Z'), end: new Date('2026-07-09T14:30:00Z') },
-    ])
+    vi.mocked(getAvailableTimeSlots).mockResolvedValue({
+      ok: true,
+      data: [{ start: new Date('2026-07-09T13:00:00Z'), end: new Date('2026-07-09T14:30:00Z') }],
+    })
     await render()
     expect(container.textContent).toContain('Elige una hora')
     expect(container.textContent).toContain('2 horas de anticipación')
