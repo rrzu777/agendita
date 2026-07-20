@@ -23,6 +23,7 @@ import {
   getBusinessReplyToEmail,
 } from '@/lib/notifications'
 import { toBankTransferEmailInfo } from '@/lib/notifications/types'
+import { action, UserError } from '@/lib/actions/result'
 
 // El EXCLUDE parcial Booking_no_overlap puede rechazar el update aun cuando el
 // chequeo de solape pasó (p.ej. pending_payment con hold recién vencido que el
@@ -60,15 +61,12 @@ type ReviveResult =
       account: BankTransferAccount
     }
 
-export async function reviveBooking(
-  bookingId: string,
-  mode: 'confirm' | 'reopen',
-): Promise<{ ok: true }> {
+async function _reviveBooking(bookingId: string, mode: 'confirm' | 'reopen'): Promise<void> {
   const { business, businessId } = await requireBusinessRole(['owner', 'admin'])
 
   const limit = await checkRateLimit('revive-booking', 30, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const timezone = business.timezone || 'America/Santiago'
@@ -85,9 +83,9 @@ export async function reviveBooking(
           business: { select: { bankTransferAccount: true } },
         },
       })
-      if (!booking) throw new Error('Reserva no encontrada')
+      if (!booking) throw new UserError('Reserva no encontrada')
       if (booking.status !== 'expired') {
-        throw new Error('Solo se puede revivir una reserva expirada')
+        throw new UserError('Solo se puede revivir una reserva expirada')
       }
 
       const now = new Date()
@@ -113,16 +111,16 @@ export async function reviveBooking(
           where: { id: bookingId, businessId, status: 'expired' }, // guard cross-tenant + CAS
           data: { status: 'confirmed', holdExpiresAt: null },
         })
-        if (count === 0) throw new Error('Solo se puede revivir una reserva expirada')
+        if (count === 0) throw new UserError('Solo se puede revivir una reserva expirada')
         return { mode: 'confirm' as const, isFuture }
       }
 
       // mode === 'reopen': solo turno futuro + transferencia habilitada (v1 no
       // reabre MP: /book/confirmation no tiene CTA de pago MP — spec §5).
-      if (!isFuture) throw new Error('El turno ya pasó: solo se puede confirmar.')
+      if (!isFuture) throw new UserError('El turno ya pasó: solo se puede confirmar.')
       const account = booking.business.bankTransferAccount
       if (booking.paymentMethod !== BANK_TRANSFER_METHOD || !account || !account.isEnabled) {
-        throw new Error('Solo se puede dar nuevo plazo a reservas con transferencia bancaria habilitada.')
+        throw new UserError('Solo se puede dar nuevo plazo a reservas con transferencia bancaria habilitada.')
       }
 
       await assertSlotFreeOfConflicts({
@@ -145,7 +143,7 @@ export async function reviveBooking(
           transferReminderBusinessSentAt: null,
         },
       })
-      if (count === 0) throw new Error('Solo se puede revivir una reserva expirada')
+      if (count === 0) throw new UserError('Solo se puede revivir una reserva expirada')
 
       // Matar los Payments MP viejos: sin esto deriveConfirmationState mostraría
       // "verifying" sin salida y el recordatorio-clienta quedaría bloqueado
@@ -159,7 +157,7 @@ export async function reviveBooking(
     })
   } catch (e) {
     if (isNoOverlapViolation(e)) {
-      throw new Error('Ese horario ya está ocupado por otra reserva.')
+      throw new UserError('Ese horario ya está ocupado por otra reserva.')
     }
     throw e
   }
@@ -198,5 +196,6 @@ export async function reviveBooking(
   revalidatePath('/dashboard/payments')
   revalidatePath('/dashboard')
   await revalidateBusinessPublicPaths(businessId)
-  return { ok: true }
 }
+
+export const reviveBooking = action(_reviveBooking)

@@ -35,11 +35,15 @@ export function ReviveBookingDialog({
     setError(null)
     startTransition(async () => {
       try {
-        await reviveBooking(bookingId, mode)
+        const res = await reviveBooking(bookingId, mode)
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
         onOpenChange(false)
         router.refresh()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error al revivir la reserva')
+      } catch {
+        setError('Error al revivir la reserva')
       }
     })
   }
