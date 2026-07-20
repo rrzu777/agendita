@@ -22,13 +22,13 @@ export function PackageTransferPanel({ transferInfo, amount, currency, purchaseI
   async function handleDeclare() {
     setDeclaring(true)
     setError(null)
-    try {
-      await declarePackageTransfer({ purchaseId })
-      router.refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No pudimos registrar tu aviso')
+    const res = await declarePackageTransfer({ purchaseId })
+    if (!res.ok) {
+      setError(res.error)
       setDeclaring(false)
+      return
     }
+    router.refresh()
   }
 
   return (

@@ -56,7 +56,9 @@ describe('initiatePackagePayment', () => {
 
   it('rechaza si la compra no es del usuario logueado', async () => {
     prismaMock.packagePurchase.findUnique.mockResolvedValue({ ...purchase, customer: { userId: 'otro' } })
-    await expect(initiatePackagePayment({ purchaseId: 'pp1' })).rejects.toThrow(/no.*(corresponde|pertenece|autoriz)/i)
+    const res = await initiatePackagePayment({ purchaseId: 'pp1' })
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.error).toMatch(/no.*(corresponde|pertenece|autoriz)/i)
   })
 
   it('pre-crea Payment package_purchase pending y devuelve redirectUrl', async () => {
@@ -66,7 +68,9 @@ describe('initiatePackagePayment', () => {
     expect(data.packagePurchaseId).toBe('pp1')
     expect(data.status).toBe('pending')
     expect(data.amount).toBe(50000)
-    expect(res).toEqual({ redirectUrl: 'https://mp/redirect' })
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error('expected ok')
+    expect(res.data).toEqual({ redirectUrl: 'https://mp/redirect' })
     const prefArgs = createMpPreferenceForPayment.mock.calls[0][1]
     expect(prefArgs.metadata).toMatchObject({ packagePurchaseId: 'pp1', businessId: 'b1', paymentType: 'package_purchase', localPaymentId: 'pay1' })
   })
@@ -81,15 +85,17 @@ describe('initiatePackagePayment', () => {
   it('provider mock (sin redirect) confirma vía applyApprovedPackagePayment', async () => {
     getOnlinePaymentProviderForBusiness.mockResolvedValue({ name: 'mock' })
     createMpPreferenceForPayment.mockResolvedValue({ redirectUrl: null, paymentId: 'pay1' })
-    // verifyAndConfirmPackagePayment (llamada internamente por la rama mock)
-    // re-consulta payment.findFirst para localizar el Payment a confirmar.
-    // Ajuste mínimo vs. el snippet del plan: dejamos que devuelva el Payment
-    // recién creado (mock provider, sin providerPaymentId/paymentMethod) para
-    // ejercer la rama real de confirmación en vez de que explote con
-    // 'Pago no encontrado'.
+    // verifyAndConfirmPackagePayment (llamada internamente por la rama mock, vía
+    // la versión _raw sin ActionResult) re-consulta payment.findFirst para
+    // localizar el Payment a confirmar. Ajuste mínimo vs. el snippet del plan:
+    // dejamos que devuelva el Payment recién creado (mock provider, sin
+    // providerPaymentId/paymentMethod) para ejercer la rama real de
+    // confirmación en vez de que explote con 'Pago no encontrado'.
     prismaMock.payment.findFirst.mockResolvedValue({ id: 'pay1', provider: 'mock', providerPaymentId: null, paymentMethod: null })
     const res = await initiatePackagePayment({ purchaseId: 'pp1' })
-    expect(res).toEqual({ confirmed: true })
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error('expected ok')
+    expect(res.data).toEqual({ confirmed: true })
     expect(applyApprovedPackagePayment).toHaveBeenCalled()
   })
 })
