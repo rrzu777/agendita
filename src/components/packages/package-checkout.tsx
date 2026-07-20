@@ -75,6 +75,8 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
       setLoading(false)
       return
     }
+    // loading queda en true a propósito: la página está navegando (comportamiento
+    // original), no hace falta (ni corresponde) resetearlo acá.
     if ('redirectUrl' in res.data) {
       window.location.href = res.data.redirectUrl
       return
@@ -106,6 +108,8 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
       setLoading(false)
       return
     }
+    // loading queda en true a propósito (comportamiento original): la navegación
+    // desmonta este componente, así que no hay un setLoading(false) que hacer.
     router.push(`/paquetes/confirmation?purchaseId=${purchaseId}`)
   }
 

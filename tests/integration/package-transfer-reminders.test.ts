@@ -1,18 +1,9 @@
 import { PrismaClient } from '@prisma/client'
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { requireTestDatabase } from './setup'
-import type { ActionResult } from '@/lib/actions/result'
+import { unwrap } from './helpers/action-result'
 
 requireTestDatabase()
-
-/** Desenvuelve un ActionResult: falla con un mensaje legible si la action
- *  wrappeada (action()) devolvió { ok: false } en un punto del test que
- *  espera éxito. */
-async function unwrap<T>(promise: Promise<ActionResult<T>>): Promise<T> {
-  const res = await promise
-  if (!res.ok) throw new Error(res.error)
-  return res.data
-}
 
 const BIZ = 'pkgrem-biz-1'
 const USER = 'pkgrem-user-1'

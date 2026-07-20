@@ -1,8 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { requireTestDatabase } from './setup'
-import { expectActionError } from './helpers/action-result'
-import type { ActionResult } from '@/lib/actions/result'
+import { expectActionError, unwrap } from './helpers/action-result'
 
 requireTestDatabase()
 
@@ -31,15 +30,6 @@ vi.mock('@/lib/auth/server', () => ({
   ForbiddenError: class extends Error {},
 }))
 vi.mock('@/server/actions/revalidate-business', () => ({ revalidateBusinessPublicPaths: async () => {} }))
-
-/** Desenvuelve un ActionResult: falla con un mensaje legible si la action
- *  wrappeada (action()) devolvió { ok: false } en un punto donde el test
- *  espera éxito (setup), en vez de un TypeError críptico sobre `.data`. */
-async function unwrap<T>(promise: Promise<ActionResult<T>>): Promise<T> {
-  const res = await promise
-  if (!res.ok) throw new Error(res.error)
-  return res.data
-}
 
 describe('createPackagePurchase + declarePackageTransfer (transferencia)', () => {
   let prisma: PrismaClient
