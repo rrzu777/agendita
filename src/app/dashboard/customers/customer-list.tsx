@@ -21,12 +21,9 @@ import {
   Filter,
   X,
 } from 'lucide-react'
+import { formatMoney } from '@/lib/money'
 
 const RECENT_DAYS = 30
-
-function formatCLP(value: number): string {
-  return value.toLocaleString('es-CL')
-}
 
 interface CustomerListProps {
   customers: CustomerListItem[]
@@ -246,10 +243,10 @@ export function CustomerList({ customers, error }: CustomerListProps) {
                     ),
                   },
                   ...(customer.totalPaidApproved > 0
-                    ? [{ label: 'Pagado', value: <span className="font-semibold text-green-700">${formatCLP(customer.totalPaidApproved)}</span> }]
+                    ? [{ label: 'Pagado', value: <span className="font-semibold text-green-700">{formatMoney(customer.totalPaidApproved)}</span> }]
                     : []),
                   ...(customer.pendingBalance > 0
-                    ? [{ label: 'Pendiente', value: <span className="font-semibold text-destructive">${formatCLP(customer.pendingBalance)}</span> }]
+                    ? [{ label: 'Pendiente', value: <span className="font-semibold text-destructive">{formatMoney(customer.pendingBalance)}</span> }]
                     : []),
                   ...(customer.notes
                     ? [{ label: 'Notas', value: <span className="italic text-muted-foreground/70">{customer.notes}</span> }]
@@ -341,19 +338,19 @@ export function CustomerList({ customers, error }: CustomerListProps) {
                     <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
                       {customer.totalPaidApproved > 0 ? (
                         <span className="font-semibold text-green-700">
-                          ${formatCLP(customer.totalPaidApproved)}
+                          {formatMoney(customer.totalPaidApproved)}
                         </span>
                       ) : (
-                        <span className="text-muted-foreground">$0</span>
+                        <span className="text-muted-foreground">{formatMoney(0)}</span>
                       )}
                     </TableCell>
                     <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
                       {customer.pendingBalance > 0 ? (
                         <span className="font-semibold text-destructive">
-                          ${formatCLP(customer.pendingBalance)}
+                          {formatMoney(customer.pendingBalance)}
                         </span>
                       ) : (
-                        <span className="text-muted-foreground">$0</span>
+                        <span className="text-muted-foreground">{formatMoney(0)}</span>
                       )}
                     </TableCell>
                     <TruncatedCell

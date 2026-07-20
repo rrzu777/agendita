@@ -12,6 +12,7 @@ import { CancelBookingButton } from '@/components/dashboard/cancel-booking-butto
 import { ManualPaymentDialog } from '@/components/dashboard/manual-payment-dialog'
 import { isManualPaymentAllowed } from '@/components/dashboard/manual-payment-utils'
 import { formatBookingNumber } from '@/lib/bookings/number'
+import { formatMoney } from '@/lib/money'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -107,7 +108,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
         <div className="flex items-center gap-3 text-sm">
           <CreditCard className="size-4 text-muted-foreground" />
           <span className={booking.paymentStatus === 'fully_paid' ? 'text-green-700' : 'text-primary'}>
-            ${booking.depositPaid.toLocaleString('es-CL')} de ${booking.finalAmount.toLocaleString('es-CL')}
+            {formatMoney(booking.depositPaid)} de {formatMoney(booking.finalAmount)}
           </span>
           <PaymentRevertedBadge paymentStatus={booking.paymentStatus} />
         </div>
@@ -342,11 +343,11 @@ export default async function BookingsPage() {
                       </TableCell>
                       <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
                         <span className={booking.paymentStatus === 'fully_paid' ? 'font-semibold text-green-700' : 'font-semibold text-primary'}>
-                          ${booking.depositPaid.toLocaleString('es-CL')} / ${booking.finalAmount.toLocaleString('es-CL')}
+                          {formatMoney(booking.depositPaid)} / {formatMoney(booking.finalAmount)}
                         </span>
                         {booking.remainingBalance > 0 && (
                           <div className="text-xs text-muted-foreground">
-                            Saldo: ${booking.remainingBalance.toLocaleString('es-CL')}
+                            Saldo: {formatMoney(booking.remainingBalance)}
                           </div>
                         )}
                         <PaymentRevertedBadge paymentStatus={booking.paymentStatus} />

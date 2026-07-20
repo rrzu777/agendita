@@ -19,7 +19,7 @@ import { BookingContactButtons } from './booking-contact-buttons'
 import { CancelBookingButton } from './cancel-booking-button'
 import { RefreshCw } from 'lucide-react'
 import { ManualPaymentDialog } from './manual-payment-dialog'
-import { isManualPaymentAllowed } from './manual-payment-utils'
+import { formatManualPaymentMoney, isManualPaymentAllowed } from './manual-payment-utils'
 import { PaymentRevertedBadge } from './payment-reverted-badge'
 import { bookingStatusLabel } from '@/lib/bookings/status-labels'
 
@@ -86,14 +86,14 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
             <span className="text-sm text-muted-foreground">Pagado</span>
             <span className="flex items-center gap-2 text-sm font-medium">
               <PaymentRevertedBadge paymentStatus={booking.paymentStatus} />
-              ${booking.depositPaid.toLocaleString('es-CL')} {businessCurrency}
+              {formatManualPaymentMoney(booking.depositPaid, businessCurrency)}
             </span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Total</span>
             <span className="text-sm font-medium">
-              ${booking.finalAmount.toLocaleString('es-CL')} {businessCurrency}
+              {formatManualPaymentMoney(booking.finalAmount, businessCurrency)}
             </span>
           </div>
 
@@ -101,7 +101,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Saldo pendiente</span>
               <span className="text-sm font-semibold text-destructive">
-                ${booking.remainingBalance.toLocaleString('es-CL')} {businessCurrency}
+                {formatManualPaymentMoney(booking.remainingBalance, businessCurrency)}
               </span>
             </div>
           )}

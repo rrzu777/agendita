@@ -1,6 +1,7 @@
 import { formatInTimeZone } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
 import { unsubscribeFooterHtml, unsubscribeFooterText } from './marketing-email'
+import { formatMoney } from '@/lib/money'
 import type {
   BookingEmailData,
   CancellationEmailData,
@@ -37,11 +38,7 @@ function fmtDate(date: Date, timezone: string): string {
 }
 
 function fmtCurrency(amount: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat('es-CL', { style: 'currency', currency: currency || 'CLP' }).format(amount)
-  } catch {
-    return `${currency} ${amount}`
-  }
+  return formatMoney(amount, currency || 'CLP')
 }
 
 function baseHtml(body: string): string {
