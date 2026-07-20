@@ -16,7 +16,7 @@ vi.mock('@/server/actions/payments', () => ({
 }))
 
 vi.mock('@/server/actions/packages', () => ({
-  getActivePackagesForCustomer: vi.fn().mockResolvedValue({ remaining: 0 }),
+  getActivePackagesForCustomer: vi.fn().mockResolvedValue({ ok: true, data: { remaining: 0 } }),
 }))
 
 vi.mock('@/server/actions/bank-transfer-public', () => ({

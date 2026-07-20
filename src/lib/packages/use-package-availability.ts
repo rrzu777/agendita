@@ -29,7 +29,7 @@ export function usePackageAvailability(
     }
     let cancelled = false
     getActivePackagesForCustomer({ businessId, phone, serviceId })
-      .then((res) => { if (!cancelled) setRemaining(res.remaining) })
+      .then((res) => { if (!cancelled) setRemaining(res.ok ? res.data.remaining : 0) })
       .catch(() => { if (!cancelled) setRemaining(0) })
     return () => { cancelled = true }
   }, [businessId, phone, serviceId])

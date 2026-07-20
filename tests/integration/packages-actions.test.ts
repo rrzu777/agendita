@@ -12,11 +12,22 @@ requireTestDatabase()
 // la promo marcador y la compra se crean/consultan con Prisma de verdad).
 const BIZ = 'pkg-biz-1'
 const USER = 'pkg-user-1'
-vi.mock('@/lib/auth/server', () => ({
-  requireBusiness: async () => ({ businessId: BIZ, user: { id: USER } }),
-  requireBusinessRole: async () => ({ businessId: BIZ, user: { id: USER } }),
-  ForbiddenError: class extends Error {},
-}))
+vi.mock('@/lib/auth/server', async () => {
+  // ForbiddenError debe extender el UserError REAL: así el wrapper action()
+  // lo reconoce (instanceof UserError) y devuelve su mensaje en { ok:false },
+  // en vez de redactarlo al genérico. Mismo contrato que producción.
+  const { UserError } = await import('@/lib/actions/result')
+  return {
+    requireBusiness: async () => ({ businessId: BIZ, user: { id: USER } }),
+    requireBusinessRole: async () => ({ businessId: BIZ, user: { id: USER } }),
+    ForbiddenError: class ForbiddenError extends UserError {
+      constructor(message = 'No tienes permisos') {
+        super(message)
+        this.name = 'ForbiddenError'
+      }
+    },
+  }
+})
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: async () => ({ success: true, remaining: 30, resetAt: 0 }) }))
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
 vi.mock('@/server/actions/revalidate-business', () => ({ revalidateBusinessPublicPaths: async () => {} }))
@@ -73,7 +84,8 @@ describe('packages server actions', () => {
     const customer = await prisma.customer.create({ data: { businessId: BIZ, name: 'Ana', phone: '56911111111' } })
 
     const requestId = 'req-sell-1'
-    await sellPackage({ packageProductId: product.id, customerId: customer.id, paymentMethod: 'cash', requestId })
+    const result = await sellPackage({ packageProductId: product.id, customerId: customer.id, paymentMethod: 'cash', requestId })
+    expect(result.ok).toBe(true)
 
     const purchases = await prisma.packagePurchase.findMany({ where: { businessId: BIZ } })
     expect(purchases).toHaveLength(1)
@@ -94,7 +106,8 @@ describe('packages server actions', () => {
     expect(codes.size).toBe(6) // códigos únicos
 
     // Reintento con el MISMO requestId → no duplica (idempotente).
-    await sellPackage({ packageProductId: product.id, customerId: customer.id, paymentMethod: 'cash', requestId })
+    const retryResult = await sellPackage({ packageProductId: product.id, customerId: customer.id, paymentMethod: 'cash', requestId })
+    expect(retryResult.ok).toBe(true)
     const purchasesAfter = await prisma.packagePurchase.findMany({ where: { businessId: BIZ } })
     expect(purchasesAfter).toHaveLength(1)
     const grantsAfter = await prisma.promotionGrant.count({ where: { packagePurchaseId: p.id } })
@@ -107,12 +120,14 @@ describe('packages server actions', () => {
       data: { businessId: BIZ, name: 'Pack all', quantity: 4, bonusQuantity: 0, price: 40000, appliesToAll: true, isActive: true },
     })
     const customer = await prisma.customer.create({ data: { businessId: BIZ, name: 'Bea', phone: '56922222222' } })
-    await sellPackage({ packageProductId: product.id, customerId: customer.id, paymentMethod: null, requestId: 'req-refund-1' })
+    const sellResult = await sellPackage({ packageProductId: product.id, customerId: customer.id, paymentMethod: null, requestId: 'req-refund-1' })
+    expect(sellResult.ok).toBe(true)
     const purchase = await prisma.packagePurchase.findFirstOrThrow({ where: { businessId: BIZ, customerId: customer.id } })
 
     const expectedRefund = computePackageRefund({ pricePaid: 40000, quantity: 4, bonusQuantity: 0, unusedSessions: 4 })
 
-    await refundPackagePurchase(purchase.id)
+    const refundResult = await refundPackagePurchase(purchase.id)
+    expect(refundResult.ok).toBe(true)
     const refunded = await prisma.packagePurchase.findUniqueOrThrow({ where: { id: purchase.id } })
     expect(refunded.status).toBe('refunded')
     expect(refunded.refundedAt).not.toBeNull()
@@ -123,7 +138,8 @@ describe('packages server actions', () => {
     expect(reversed).toBe(4)
 
     // Idempotente: segunda llamada no cambia nada.
-    await refundPackagePurchase(purchase.id)
+    const refundResult2 = await refundPackagePurchase(purchase.id)
+    expect(refundResult2.ok).toBe(true)
     const refunded2 = await prisma.packagePurchase.findUniqueOrThrow({ where: { id: purchase.id } })
     expect(refunded2.refundedAmount).toBe(expectedRefund)
     const reversed2 = await prisma.promotionGrant.count({ where: { packagePurchaseId: purchase.id, status: 'reversed' } })
@@ -143,15 +159,16 @@ describe('packages server actions', () => {
       data: { businessId: BIZ, name: 'Pack A', quantity: 3, bonusQuantity: 0, price: 30000, appliesToAll: false, isActive: true, services: { connect: { id: svcA.id } } },
     })
     const customer = await prisma.customer.create({ data: { businessId: BIZ, name: 'Cata', phone: '56933333333' } })
-    await sellPackage({ packageProductId: productA.id, customerId: customer.id, paymentMethod: null, requestId: 'req-count-A' })
+    const sellResult = await sellPackage({ packageProductId: productA.id, customerId: customer.id, paymentMethod: null, requestId: 'req-count-A' })
+    expect(sellResult.ok).toBe(true)
 
     // Cubre svcA (3 activos, no vencidos).
     const forA = await getActivePackagesForCustomer({ businessId: BIZ, phone: '56933333333', serviceId: svcA.id })
-    expect(forA.remaining).toBe(3)
+    expect(forA.ok && forA.data.remaining).toBe(3)
 
     // No cubre svcB (cobertura distinta).
     const forB = await getActivePackagesForCustomer({ businessId: BIZ, phone: '56933333333', serviceId: svcB.id })
-    expect(forB.remaining).toBe(0)
+    expect(forB.ok && forB.data.remaining).toBe(0)
 
     // Vencidos: bajamos expiresAt de la compra + grants al pasado → no cuentan.
     const purchaseA = await prisma.packagePurchase.findFirstOrThrow({ where: { businessId: BIZ, customerId: customer.id } })
@@ -159,10 +176,10 @@ describe('packages server actions', () => {
     await prisma.packagePurchase.update({ where: { id: purchaseA.id }, data: { expiresAt: past } })
     await prisma.promotionGrant.updateMany({ where: { packagePurchaseId: purchaseA.id }, data: { expiresAt: past } })
     const forAExpired = await getActivePackagesForCustomer({ businessId: BIZ, phone: '56933333333', serviceId: svcA.id })
-    expect(forAExpired.remaining).toBe(0)
+    expect(forAExpired.ok && forAExpired.data.remaining).toBe(0)
 
     // Cliente inexistente / teléfono desconocido → 0.
     const unknown = await getActivePackagesForCustomer({ businessId: BIZ, phone: '56999999999', serviceId: svcA.id })
-    expect(unknown.remaining).toBe(0)
+    expect(unknown.ok && unknown.data.remaining).toBe(0)
   })
 })

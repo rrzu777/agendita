@@ -6,10 +6,21 @@ const txClient = vi.hoisted(() => ({
   packagePurchase: { create: vi.fn().mockResolvedValue({ id: 'p1', businessId: 'b1', customerId: 'c1', pricePaid: 30000, quantity: 3, bonusQuantity: 0, expiresAt: null, createdByUserId: 'u1' }) },
 }))
 
-vi.mock('@/lib/auth/server', () => ({
-  requireBusinessRole: requireRole,
-  ForbiddenError: class extends Error {},
-}))
+vi.mock('@/lib/auth/server', async () => {
+  // ForbiddenError debe extender el UserError REAL: así el wrapper action()
+  // lo reconoce (instanceof UserError) y devuelve su mensaje en { ok:false },
+  // en vez de redactarlo al genérico. Mismo contrato que producción.
+  const { UserError } = await import('@/lib/actions/result')
+  return {
+    requireBusinessRole: requireRole,
+    ForbiddenError: class ForbiddenError extends UserError {
+      constructor(message = 'No tienes permisos') {
+        super(message)
+        this.name = 'ForbiddenError'
+      }
+    },
+  }
+})
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: vi.fn().mockResolvedValue({ success: true }) }))
 vi.mock('@/lib/packages/activate', () => ({ activatePackagePurchaseInTx: activateMock, getOrCreatePackageMarkerPromotion: vi.fn() }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
@@ -30,7 +41,8 @@ const { sellPackage } = await import('@/server/actions/packages')
 
 describe('sellPackage', () => {
   it('crea la compra y delega la activación (grants + ledger) al activador', async () => {
-    await sellPackage({ packageProductId: 'prod1', customerId: 'c1', paymentMethod: 'efectivo', requestId: 'req-1' })
+    const result = await sellPackage({ packageProductId: 'prod1', customerId: 'c1', paymentMethod: 'efectivo', requestId: 'req-1' })
+    expect(result.ok).toBe(true)
     expect(txClient.packagePurchase.create).toHaveBeenCalled()
     expect(activateMock).toHaveBeenCalledWith(
       txClient,

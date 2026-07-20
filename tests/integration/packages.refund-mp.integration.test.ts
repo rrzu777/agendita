@@ -7,11 +7,22 @@ requireTestDatabase()
 const BIZ = 'pkgrefund-biz-1'
 const USER = 'pkgrefund-user-1'
 
-vi.mock('@/lib/auth/server', () => ({
-  requireBusiness: async () => ({ businessId: BIZ, user: { id: USER } }),
-  requireBusinessRole: async () => ({ businessId: BIZ, user: { id: USER } }),
-  ForbiddenError: class extends Error {},
-}))
+vi.mock('@/lib/auth/server', async () => {
+  // ForbiddenError debe extender el UserError REAL: así el wrapper action()
+  // lo reconoce (instanceof UserError) y devuelve su mensaje en { ok:false },
+  // en vez de redactarlo al genérico. Mismo contrato que producción.
+  const { UserError } = await import('@/lib/actions/result')
+  return {
+    requireBusiness: async () => ({ businessId: BIZ, user: { id: USER } }),
+    requireBusinessRole: async () => ({ businessId: BIZ, user: { id: USER } }),
+    ForbiddenError: class ForbiddenError extends UserError {
+      constructor(message = 'No tienes permisos') {
+        super(message)
+        this.name = 'ForbiddenError'
+      }
+    },
+  }
+})
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: async () => ({ success: true, remaining: 30, resetAt: 0 }) }))
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
 vi.mock('@/server/actions/revalidate-business', () => ({ revalidateBusinessPublicPaths: async () => {} }))
@@ -113,7 +124,8 @@ describe('refundPackagePurchase — refund real MP', () => {
       status: 'approved', paymentType: 'package_purchase',
     } })
 
-    await refundPackagePurchase(purchase.id)
+    const result = await refundPackagePurchase(purchase.id)
+    expect(result.ok).toBe(true)
 
     // 5 sesiones no usadas de 5 → refund = pricePaid completo = 50000
     expect(refundSpy).toHaveBeenCalledWith(expect.objectContaining({

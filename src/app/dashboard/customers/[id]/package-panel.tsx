@@ -68,16 +68,20 @@ export function PackagePanel({
     const metodo = method.trim()
     startTransition(async () => {
       try {
-        await sellPackage({
+        const res = await sellPackage({
           packageProductId: productId,
           customerId,
           paymentMethod: metodo || undefined,
           requestId,
         })
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
         setProductId('')
         setMethod('')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error')
+      } catch {
+        setError('Error')
       }
     })
   }
@@ -91,9 +95,12 @@ export function PackagePanel({
     if (!confirm(msg)) return
     startTransition(async () => {
       try {
-        await refundPackagePurchase(p.id)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error')
+        const res = await refundPackagePurchase(p.id)
+        if (!res.ok) {
+          setError(res.error)
+        }
+      } catch {
+        setError('Error')
       }
     })
   }
