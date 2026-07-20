@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { action, UserError } from '@/lib/actions/result'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { PaymentStatus, BookingStatus } from '@prisma/client'
 import { updateCustomerSchema, updateCustomerNotesSchema } from '@/lib/customers/schema'
@@ -273,17 +274,17 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
   }
 }
 
-export async function updateCustomer(customerId: string, data: unknown) {
+async function _updateCustomer(customerId: string, data: unknown) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
 
   const limit = await checkRateLimit('update-customer', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const parsed = updateCustomerSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos invalidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
+    throw new UserError('Datos invalidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
   }
 
   const existing = await prisma.customer.findFirst({
@@ -313,17 +314,19 @@ export async function updateCustomer(customerId: string, data: unknown) {
   return updated
 }
 
-export async function updateCustomerNotes(customerId: string, data: unknown) {
+export const updateCustomer = action(_updateCustomer)
+
+async function _updateCustomerNotes(customerId: string, data: unknown) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
 
   const limit = await checkRateLimit('update-customer-notes', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const parsed = updateCustomerNotesSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos invalidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
+    throw new UserError('Datos invalidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
   }
 
   const existing = await prisma.customer.findFirst({
@@ -345,14 +348,16 @@ export async function updateCustomerNotes(customerId: string, data: unknown) {
   return updated
 }
 
-export async function setCustomerMarketingOptOut(customerId: string, optedOut: boolean) {
+export const updateCustomerNotes = action(_updateCustomerNotes)
+
+async function _setCustomerMarketingOptOut(customerId: string, optedOut: boolean) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
 
   const limit = await checkRateLimit('update-customer', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
-  if (typeof optedOut !== 'boolean') throw new Error('Datos invalidos')
+  if (typeof optedOut !== 'boolean') throw new UserError('Datos invalidos')
 
   const existing = await prisma.customer.findFirst({
     where: { id: customerId, businessId },
@@ -368,6 +373,8 @@ export async function setCustomerMarketingOptOut(customerId: string, optedOut: b
   revalidatePath(`/dashboard/customers/${customerId}`)
 }
 
+export const setCustomerMarketingOptOut = action(_setCustomerMarketingOptOut)
+
 const searchCustomersForBookingSchema = z.object({
   query: z.string().min(1).max(100),
 })
@@ -379,7 +386,7 @@ export type CustomerSearchResult = {
   email: string | null
 }
 
-export async function searchCustomersForBooking(query: string): Promise<CustomerSearchResult[]> {
+async function _searchCustomersForBooking(query: string): Promise<CustomerSearchResult[]> {
   const { businessId } = await requireBusiness()
 
   const parsed = searchCustomersForBookingSchema.safeParse({ query })
@@ -410,3 +417,5 @@ export async function searchCustomersForBooking(query: string): Promise<Customer
 
   return customers
 }
+
+export const searchCustomersForBooking = action(_searchCustomersForBooking)

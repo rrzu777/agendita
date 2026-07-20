@@ -39,7 +39,8 @@ describe('searchCustomersForBooking', () => {
   it('searches customers scoped to current business', async () => {
     const result = await searchCustomersForBooking('Maria')
 
-    expect(result).toHaveLength(1)
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data).toHaveLength(1)
     expect(mockFindMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ businessId: 'biz-1' }),
       take: 10,
@@ -57,7 +58,7 @@ describe('searchCustomersForBooking', () => {
   it('does not query for empty query', async () => {
     const result = await searchCustomersForBooking('')
 
-    expect(result).toEqual([])
+    expect(result).toEqual({ ok: true, data: [] })
     expect(mockFindMany).not.toHaveBeenCalled()
   })
 

@@ -32,16 +32,22 @@ vi.mock('@/lib/rate-limit', () => ({
   checkRateLimit: mockCheckRateLimit,
 }))
 
-vi.mock('@/lib/auth/server', () => ({
-  requireBusiness: mockRequireBusiness,
-  requireBusinessRole: mockRequireBusinessRole,
-  ForbiddenError: class ForbiddenError extends Error {
-    constructor(message = 'No tienes permisos') {
-      super(message)
-      this.name = 'ForbiddenError'
-    }
-  },
-}))
+vi.mock('@/lib/auth/server', async () => {
+  // ForbiddenError debe extender el UserError REAL: así el wrapper action()
+  // lo reconoce (instanceof UserError) y devuelve su mensaje en { ok:false },
+  // en vez de redactarlo al genérico. Mismo contrato que la clase de producción.
+  const { UserError } = await import('@/lib/actions/result')
+  return {
+    requireBusiness: mockRequireBusiness,
+    requireBusinessRole: mockRequireBusinessRole,
+    ForbiddenError: class ForbiddenError extends UserError {
+      constructor(message = 'No tienes permisos') {
+        super(message)
+        this.name = 'ForbiddenError'
+      }
+    },
+  }
+})
 
 vi.mock('next/cache', () => ({
   revalidatePath: mockRevalidatePath,
@@ -433,7 +439,9 @@ describe('customers actions', () => {
         new (await import('@/lib/auth/server')).ForbiddenError()
       )
 
-      await expect(updateCustomer('cust-1', validUpdate)).rejects.toThrow('No tienes permisos')
+      const result = await updateCustomer('cust-1', validUpdate)
+
+      expect(result).toEqual({ ok: false, error: 'No tienes permisos' })
     })
 
     it('updates customer that belongs to business', async () => {
@@ -446,7 +454,8 @@ describe('customers actions', () => {
 
       const result = await updateCustomer('cust-1', validUpdate)
 
-      expect(result.name).toBe('Maria Actualizada')
+      expect(result.ok).toBe(true)
+      expect(result.ok && result.data.name).toBe('Maria Actualizada')
       expect(mockPrisma.customer.update).toHaveBeenCalledWith({
         where: { id: 'cust-1' },
         data: expect.objectContaining({
@@ -477,16 +486,19 @@ describe('customers actions', () => {
     it('rejects customer from another business', async () => {
       mockPrisma.customer.findFirst.mockResolvedValue(null)
 
-      await expect(updateCustomer('cust-1', validUpdate)).rejects.toThrow(
-        'Cliente no encontrado'
-      )
+      const result = await updateCustomer('cust-1', validUpdate)
+
+      expect(result).toEqual({ ok: false, error: 'Cliente no encontrado' })
       expect(mockPrisma.customer.update).not.toHaveBeenCalled()
     })
 
     it('rejects invalid data', async () => {
       mockPrisma.customer.findFirst.mockResolvedValue(mockCustomers[0])
 
-      await expect(updateCustomer('cust-1', { name: '' })).rejects.toThrow('Datos invalidos')
+      const result = await updateCustomer('cust-1', { name: '' })
+
+      expect(result.ok).toBe(false)
+      expect(!result.ok && result.error).toContain('Datos invalidos')
       expect(mockPrisma.customer.update).not.toHaveBeenCalled()
     })
 
@@ -545,8 +557,9 @@ describe('customers actions', () => {
       mockRequireBusinessRole.mockResolvedValue({ businessId: 'real-biz' })
       mockPrisma.customer.findFirst.mockResolvedValue(null)
 
-      await expect(updateCustomer('cust-1', validUpdate)).rejects.toThrow('Cliente no encontrado')
+      const result = await updateCustomer('cust-1', validUpdate)
 
+      expect(result).toEqual({ ok: false, error: 'Cliente no encontrado' })
       expect(mockPrisma.customer.findFirst).toHaveBeenCalledWith({
         where: { id: 'cust-1', businessId: 'real-biz' },
       })
@@ -555,9 +568,10 @@ describe('customers actions', () => {
     it('rejects when rate limited', async () => {
       mockCheckRateLimit.mockResolvedValue({ success: false })
 
-      await expect(updateCustomer('cust-1', validUpdate)).rejects.toThrow(
-        'Demasiadas solicitudes'
-      )
+      const result = await updateCustomer('cust-1', validUpdate)
+
+      expect(result.ok).toBe(false)
+      expect(!result.ok && result.error).toContain('Demasiadas solicitudes')
       expect(mockPrisma.customer.findFirst).not.toHaveBeenCalled()
       expect(mockPrisma.customer.update).not.toHaveBeenCalled()
     })
@@ -582,9 +596,9 @@ describe('customers actions', () => {
         new (await import('@/lib/auth/server')).ForbiddenError()
       )
 
-      await expect(updateCustomerNotes('cust-1', { notes: 'Test' })).rejects.toThrow(
-        'No tienes permisos'
-      )
+      const result = await updateCustomerNotes('cust-1', { notes: 'Test' })
+
+      expect(result).toEqual({ ok: false, error: 'No tienes permisos' })
     })
 
     it('updates notes for customer that belongs to business', async () => {
@@ -597,7 +611,8 @@ describe('customers actions', () => {
 
       const result = await updateCustomerNotes('cust-1', { notes: 'Nuevas notas' })
 
-      expect(result.notes).toBe('Nuevas notas')
+      expect(result.ok).toBe(true)
+      expect(result.ok && result.data.notes).toBe('Nuevas notas')
       expect(mockPrisma.customer.update).toHaveBeenCalledWith({
         where: { id: 'cust-1' },
         data: { notes: 'Nuevas notas' },
@@ -607,18 +622,19 @@ describe('customers actions', () => {
     it('rejects customer from another business', async () => {
       mockPrisma.customer.findFirst.mockResolvedValue(null)
 
-      await expect(updateCustomerNotes('cust-1', { notes: 'Test' })).rejects.toThrow(
-        'Cliente no encontrado'
-      )
+      const result = await updateCustomerNotes('cust-1', { notes: 'Test' })
+
+      expect(result).toEqual({ ok: false, error: 'Cliente no encontrado' })
       expect(mockPrisma.customer.update).not.toHaveBeenCalled()
     })
 
     it('rejects notes > 2000 chars', async () => {
       mockPrisma.customer.findFirst.mockResolvedValue(mockCustomers[0])
 
-      await expect(
-        updateCustomerNotes('cust-1', { notes: 'a'.repeat(2001) })
-      ).rejects.toThrow('Datos invalidos')
+      const result = await updateCustomerNotes('cust-1', { notes: 'a'.repeat(2001) })
+
+      expect(result.ok).toBe(false)
+      expect(!result.ok && result.error).toContain('Datos invalidos')
       expect(mockPrisma.customer.update).not.toHaveBeenCalled()
     })
 
@@ -674,9 +690,10 @@ describe('customers actions', () => {
     it('rejects when rate limited', async () => {
       mockCheckRateLimit.mockResolvedValue({ success: false })
 
-      await expect(updateCustomerNotes('cust-1', { notes: 'Test' })).rejects.toThrow(
-        'Demasiadas solicitudes'
-      )
+      const result = await updateCustomerNotes('cust-1', { notes: 'Test' })
+
+      expect(result.ok).toBe(false)
+      expect(!result.ok && result.error).toContain('Demasiadas solicitudes')
       expect(mockPrisma.customer.findFirst).not.toHaveBeenCalled()
     })
   })

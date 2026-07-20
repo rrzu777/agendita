@@ -94,9 +94,13 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
     debounceRef.current = setTimeout(async () => {
       setSearching(true)
       try {
-        const results = await searchCustomersForBooking(value)
-        setSuggestions(results)
-        setShowSuggestions(results.length > 0)
+        const res = await searchCustomersForBooking(value)
+        if (!res.ok) {
+          // ignore search errors — mismo comportamiento previo (silencioso)
+          return
+        }
+        setSuggestions(res.data)
+        setShowSuggestions(res.data.length > 0)
       } catch {
         // ignore search errors
       } finally {

@@ -55,16 +55,20 @@ export function CustomerEditForm({ customer }: CustomerEditFormProps) {
 
     startTransition(async () => {
       try {
-        await updateCustomer(customer.id, {
+        const res = await updateCustomer(customer.id, {
           name,
           phone,
           email: email || null,
           birthDate: birthDate || null,
         })
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
         router.refresh()
         setIsEditing(false)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error al actualizar')
+      } catch {
+        setError('Error al actualizar')
       }
     })
   }
