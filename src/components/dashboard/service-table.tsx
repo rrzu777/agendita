@@ -35,10 +35,11 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
     setLoadingRow(serviceId)
     setError(null)
     try {
-      const updated = await toggleService(serviceId)
-      setServices(services.map(s => s.id === serviceId ? { ...s, isActive: updated.isActive } : s))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cambiar el estado del servicio')
+      const res = await toggleService(serviceId)
+      if (!res.ok) { setError(res.error); return }
+      setServices(services.map(s => s.id === serviceId ? { ...s, isActive: res.data.isActive } : s))
+    } catch {
+      setError('Error al cambiar el estado del servicio')
     } finally {
       setLoadingRow(null)
     }
@@ -48,10 +49,11 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
     setLoadingRow(serviceId)
     setError(null)
     try {
-      await toggleService(serviceId)
+      const res = await toggleService(serviceId)
+      if (!res.ok) { setError(res.error); return }
       setServices(services.map(s => s.id === serviceId ? { ...s, isActive: false } : s))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al desactivar el servicio')
+    } catch {
+      setError('Error al desactivar el servicio')
     } finally {
       setLoadingRow(null)
     }
@@ -82,9 +84,10 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
     )
 
     try {
-      await reorderServices(items)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al reordenar servicios')
+      const res = await reorderServices(items)
+      if (!res.ok) { setError(res.error); refresh(); return }
+    } catch {
+      setError('Error al reordenar servicios')
       refresh()
     }
   }
