@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { requireTestDatabase } from './setup'
 import { seedDeclaredTransfer, cleanupBankTransferSeed, BT_VERIFY_BIZ } from './helpers/bank-transfer-seed'
 import { btBalanceId } from '@/lib/bank-transfer/declared'
+import { expectActionError, unwrap } from './helpers/action-result'
 
 requireTestDatabase()
 
@@ -236,7 +237,7 @@ describe('confirmBankTransfer saldo', () => {
     const notif = await import('@/lib/notifications')
     vi.mocked(notif.sendBalanceTransferVerifiedToCustomer).mockClear()
     const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
-    await confirmBankTransfer(s.balancePaymentId, s.remainingBalance)
+    await unwrap(confirmBankTransfer(s.balancePaymentId, s.remainingBalance))
     const b = await prisma.booking.findUniqueOrThrow({ where: { id: s.bookingId } })
     expect(b.paymentStatus).toBe('fully_paid')
     expect(b.remainingBalance).toBe(0)
@@ -250,7 +251,7 @@ describe('confirmBankTransfer saldo', () => {
     const s = await declaredBalance()
     await prisma.booking.update({ where: { id: s.bookingId }, data: { status: 'completed' } })
     const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
-    await confirmBankTransfer(s.balancePaymentId, s.remainingBalance)
+    await unwrap(confirmBankTransfer(s.balancePaymentId, s.remainingBalance))
     const b = await prisma.booking.findUniqueOrThrow({ where: { id: s.bookingId } })
     expect(b.paymentStatus).toBe('fully_paid')
     expect(b.status).toBe('completed')
@@ -265,7 +266,7 @@ describe('confirmBankTransfer saldo', () => {
     })
     try {
       const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
-      await confirmBankTransfer(s.balancePaymentId, s.remainingBalance)
+      await unwrap(confirmBankTransfer(s.balancePaymentId, s.remainingBalance))
       expect((await prisma.booking.findUniqueOrThrow({ where: { id: s.bookingId } })).paymentStatus).toBe('fully_paid')
     } finally {
       await prisma.timeBlock.delete({ where: { id: block.id } })
@@ -275,7 +276,7 @@ describe('confirmBankTransfer saldo', () => {
   it('amount > saldo → error; el guard de abono aprobado NO bloquea saldos', async () => {
     const s = await declaredBalance() // esta booking YA tiene el deposit approved
     const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
-    await expect(confirmBankTransfer(s.balancePaymentId, s.remainingBalance + 1)).rejects.toThrow('excede')
+    await expectActionError(confirmBankTransfer(s.balancePaymentId, s.remainingBalance + 1), 'excede')
   })
 })
 
@@ -290,7 +291,7 @@ describe('rejectBankTransfer saldo', () => {
     const notif = await import('@/lib/notifications')
     vi.mocked(notif.sendBalanceTransferRejectedToCustomer).mockClear()
     const { rejectBankTransfer } = await import('@/server/actions/bank-transfer-verify')
-    await rejectBankTransfer(p.id)
+    await unwrap(rejectBankTransfer(p.id))
     const b = await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })
     expect(b.status).toBe('confirmed') // NO cancelada
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: p.id } })).status).toBe('rejected')

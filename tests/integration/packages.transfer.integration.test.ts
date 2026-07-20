@@ -148,7 +148,7 @@ describe('createPackagePurchase + declarePackageTransfer (transferencia)', () =>
     it('confirmar activa la compra (grants + ledger package_sale), Payment approved', async () => {
       const { confirmPackageTransfer } = await import('@/server/actions/bank-transfer-verify')
       const { purchaseId, paymentId } = await seedDeclared(prisma)
-      await confirmPackageTransfer(paymentId)
+      await unwrap(confirmPackageTransfer(paymentId))
 
       const purchase = await prisma.packagePurchase.findUnique({ where: { id: purchaseId } })
       expect(purchase!.status).toBe('active')
@@ -163,7 +163,7 @@ describe('createPackagePurchase + declarePackageTransfer (transferencia)', () =>
     it('rechazar deja Payment rejected y compra rejected, sin grants ni ledger', async () => {
       const { rejectPackageTransfer } = await import('@/server/actions/bank-transfer-verify')
       const { purchaseId, paymentId } = await seedDeclared(prisma)
-      await rejectPackageTransfer(paymentId)
+      await unwrap(rejectPackageTransfer(paymentId))
 
       const purchase = await prisma.packagePurchase.findUnique({ where: { id: purchaseId } })
       expect(purchase!.status).toBe('rejected')
@@ -294,7 +294,7 @@ describe('createPackagePurchase + declarePackageTransfer (transferencia)', () =>
       await prisma.packagePurchase.update({ where: { id: purchaseId }, data: { status: 'expired' } })
       await unwrap(declarePackageTransfer({ purchaseId }))
       const declared = await prisma.payment.findFirst({ where: { packagePurchaseId: purchaseId, provider: 'manual' } })
-      await confirmPackageTransfer(declared!.id)
+      await unwrap(confirmPackageTransfer(declared!.id))
       const p = await prisma.packagePurchase.findUnique({ where: { id: purchaseId }, include: { grants: true } })
       expect(p!.status).toBe('active')
       expect(p!.grants.length).toBe(5)
@@ -322,7 +322,7 @@ describe('createPackagePurchase + declarePackageTransfer (transferencia)', () =>
       expect(p!.expiresAt!.getTime()).toBeGreaterThan(Date.now() + 29 * 24 * 3600_000)
       // Y los grants heredan la vigencia fresca al confirmar.
       const declared = await prisma.payment.findFirst({ where: { packagePurchaseId: purchaseId, provider: 'manual' } })
-      await confirmPackageTransfer(declared!.id)
+      await unwrap(confirmPackageTransfer(declared!.id))
       const grants = await prisma.promotionGrant.findMany({ where: { packagePurchaseId: purchaseId } })
       expect(grants).toHaveLength(5)
       for (const g of grants) expect(g.expiresAt!.getTime()).toBeGreaterThan(Date.now())

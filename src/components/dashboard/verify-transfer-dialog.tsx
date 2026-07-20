@@ -60,13 +60,13 @@ export function VerifyTransferDialog({
       return
     }
     startTransition(async () => {
-      try {
-        await confirmBankTransfer(paymentId, parsed)
-        onOpenChange(false)
-        router.refresh()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error al verificar el pago')
+      const res = await confirmBankTransfer(paymentId, parsed)
+      if (!res.ok) {
+        setError(res.error)
+        return
       }
+      onOpenChange(false)
+      router.refresh()
     })
   }
 
@@ -77,13 +77,13 @@ export function VerifyTransferDialog({
       : '¿Rechazar esta transferencia? Se cancelará la reserva.'
     if (!window.confirm(confirmMessage)) return
     startTransition(async () => {
-      try {
-        await rejectBankTransfer(paymentId)
-        onOpenChange(false)
-        router.refresh()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error al rechazar el pago')
+      const res = await rejectBankTransfer(paymentId)
+      if (!res.ok) {
+        setError(res.error)
+        return
       }
+      onOpenChange(false)
+      router.refresh()
     })
   }
 
