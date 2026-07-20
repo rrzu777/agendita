@@ -42,11 +42,13 @@ describe('setRequireTransferProof action', () => {
   it('persiste requireTransferProof=true y luego false', async () => {
     const { setRequireTransferProof } = await import('@/server/actions/bank-transfer-settings')
 
-    await setRequireTransferProof(true)
+    const res1 = await setRequireTransferProof(true)
+    expect(res1.ok).toBe(true)
     let row = await prisma.business.findUnique({ where: { id: BIZ } })
     expect(row!.requireTransferProof).toBe(true)
 
-    await setRequireTransferProof(false)
+    const res2 = await setRequireTransferProof(false)
+    expect(res2.ok).toBe(true)
     row = await prisma.business.findUnique({ where: { id: BIZ } })
     expect(row!.requireTransferProof).toBe(false)
   })
