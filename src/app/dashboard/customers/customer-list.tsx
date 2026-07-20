@@ -28,9 +28,10 @@ const RECENT_DAYS = 30
 interface CustomerListProps {
   customers: CustomerListItem[]
   error: string | null
+  currency: string
 }
 
-export function CustomerList({ customers, error }: CustomerListProps) {
+export function CustomerList({ customers, error, currency }: CustomerListProps) {
   const [search, setSearch] = useState('')
   const [showPendingOnly, setShowPendingOnly] = useState(false)
   const [showFrequentOnly, setShowFrequentOnly] = useState(false)
@@ -243,10 +244,10 @@ export function CustomerList({ customers, error }: CustomerListProps) {
                     ),
                   },
                   ...(customer.totalPaidApproved > 0
-                    ? [{ label: 'Pagado', value: <span className="font-semibold text-green-700">{formatMoney(customer.totalPaidApproved)}</span> }]
+                    ? [{ label: 'Pagado', value: <span className="font-semibold text-green-700">{formatMoney(customer.totalPaidApproved, currency)}</span> }]
                     : []),
                   ...(customer.pendingBalance > 0
-                    ? [{ label: 'Pendiente', value: <span className="font-semibold text-destructive">{formatMoney(customer.pendingBalance)}</span> }]
+                    ? [{ label: 'Pendiente', value: <span className="font-semibold text-destructive">{formatMoney(customer.pendingBalance, currency)}</span> }]
                     : []),
                   ...(customer.notes
                     ? [{ label: 'Notas', value: <span className="italic text-muted-foreground/70">{customer.notes}</span> }]
@@ -338,19 +339,19 @@ export function CustomerList({ customers, error }: CustomerListProps) {
                     <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
                       {customer.totalPaidApproved > 0 ? (
                         <span className="font-semibold text-green-700">
-                          {formatMoney(customer.totalPaidApproved)}
+                          {formatMoney(customer.totalPaidApproved, currency)}
                         </span>
                       ) : (
-                        <span className="text-muted-foreground">{formatMoney(0)}</span>
+                        <span className="text-muted-foreground">{formatMoney(0, currency)}</span>
                       )}
                     </TableCell>
                     <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
                       {customer.pendingBalance > 0 ? (
                         <span className="font-semibold text-destructive">
-                          {formatMoney(customer.pendingBalance)}
+                          {formatMoney(customer.pendingBalance, currency)}
                         </span>
                       ) : (
-                        <span className="text-muted-foreground">{formatMoney(0)}</span>
+                        <span className="text-muted-foreground">{formatMoney(0, currency)}</span>
                       )}
                     </TableCell>
                     <TruncatedCell

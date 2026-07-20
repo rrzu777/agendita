@@ -19,6 +19,8 @@ export default async function PaymentsPage() {
     redirect('/recover-business')
   }
 
+  const currency = userData.business.currency || 'CLP'
+
   const summary = await getFinancialSummary()
   const entries = await getLedgerEntries()
   const bookings = await getBookings()
@@ -30,7 +32,7 @@ export default async function PaymentsPage() {
         subtitle="Controla abonos, pagos finales y movimientos."
       />
       <div className="space-y-8 p-5 md:p-10">
-        <FinanceStats summary={summary} />
+        <FinanceStats summary={summary} currency={currency} />
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -43,7 +45,7 @@ export default async function PaymentsPage() {
           </div>
         </div>
 
-        <LedgerTable entries={entries} />
+        <LedgerTable entries={entries} currency={currency} />
       </div>
     </div>
   )

@@ -32,7 +32,7 @@ export default async function CustomersPage() {
         subtitle="Historial y datos de contacto de quienes reservan contigo."
       />
       <div className="p-5 md:p-10">
-        <CustomerList customers={customers ?? []} error={error} />
+        <CustomerList customers={customers ?? []} error={error} currency={userData.business.currency || 'CLP'} />
       </div>
     </div>
   )

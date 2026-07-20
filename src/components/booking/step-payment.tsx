@@ -55,7 +55,7 @@ function BusinessCancellationPolicy({ policy }: { policy?: string | null }) {
   )
 }
 
-export function StepPayment({ data, updateData, businessId, timezone, cancellationPolicy, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; cancellationPolicy?: string | null; referralToken?: string; onSuccess: (id: string, mode: 'paid' | 'pending', promo?: { discountAmount: number; finalAmount: number } | null, bookingNumber?: number | null) => void; onBack: () => void }) {
+export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; referralToken?: string; onSuccess: (id: string, mode: 'paid' | 'pending', promo?: { discountAmount: number; finalAmount: number } | null, bookingNumber?: number | null) => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error' | 'transfer-details' | 'transfer-declared'>('review')
   const [bankInfo, setBankInfo] = useState<BankTransferPublicInfo | null>(null)
@@ -160,11 +160,11 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Descuento</span>
-              <span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount)}</span>
+              <span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount, currency)}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Precio final</span>
-              <span className="font-semibold text-primary">{formatMoney(appliedPromo.finalAmount)}</span>
+              <span className="font-semibold text-primary">{formatMoney(appliedPromo.finalAmount, currency)}</span>
             </div>
             <button
               type="button"
@@ -419,11 +419,11 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
         <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5">
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.timeSlot ? formatBookingDateTime(data.timeSlot.start, timezone) : ''}</span></div>
-          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice)}</span></div>
+          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice, currency)}</span></div>
           {appliedPromo && (
             <>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount)}</span></div>
-              <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinalPrice)}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount, currency)}</span></div>
+              <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinalPrice, currency)}</span></div>
             </>
           )}
         </div>
@@ -477,14 +477,14 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
         <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5">
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
           <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.timeSlot ? formatBookingDateTime(data.timeSlot.start, timezone) : ''}</span></div>
-          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice)}</span></div>
+          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice, currency)}</span></div>
           {appliedPromo && (
             <>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount)}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinalPrice)}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount, currency)}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinalPrice, currency)}</span></div>
             </>
           )}
-          <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono requerido</span><span className="font-semibold text-primary">{formatMoney(effectiveDeposit)}</span></div>
+          <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono requerido</span><span className="font-semibold text-primary">{formatMoney(effectiveDeposit, currency)}</span></div>
         </div>
 
         {packageSection}
@@ -548,7 +548,7 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
         <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Transferí el abono</h2>
         <p className="mb-6 text-lg text-muted-foreground">Tu horario queda reservado mientras transferís</p>
         {errorMessage && <p className="mb-4 text-sm text-destructive">{errorMessage}</p>}
-        <TransferDetails bank={bankInfo} amount={effectiveDeposit} deadline={transferBooking.deadline} timezone={timezone} declaring={declaring} onDeclare={handleDeclare} bookingId={transferBooking.id} />
+        <TransferDetails bank={bankInfo} amount={effectiveDeposit} currency={currency} deadline={transferBooking.deadline} timezone={timezone} declaring={declaring} onDeclare={handleDeclare} bookingId={transferBooking.id} />
         <p className="mt-4 text-sm text-muted-foreground">
           También podés avisar más tarde desde{' '}
           <a className="font-semibold text-primary underline" href={`/book/confirmation?bookingId=${transferBooking.id}`}>tu página de reserva</a>
@@ -593,14 +593,14 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
       <div className="mb-6 space-y-3 rounded-xl bg-muted/55 p-5">
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.timeSlot ? formatBookingDateTime(data.timeSlot.start, timezone) : ''}</span></div>
-        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice)}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice, currency)}</span></div>
         {appliedPromo && (
           <>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount)}</span></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinalPrice)}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount, currency)}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinalPrice, currency)}</span></div>
           </>
         )}
-        <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono a pagar</span><span className="font-semibold text-primary">{formatMoney(effectiveDeposit)}</span></div>
+        <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono a pagar</span><span className="font-semibold text-primary">{formatMoney(effectiveDeposit, currency)}</span></div>
       </div>
 
       {packageSection}
@@ -657,7 +657,7 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
           </Button>
         ) : (
           <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handlePayment} disabled={loading || !acceptedTerms}>
-            {loading ? 'Procesando...' : `Pagar abono ${formatMoney(effectiveDeposit)}`}
+            {loading ? 'Procesando...' : `Pagar abono ${formatMoney(effectiveDeposit, currency)}`}
           </Button>
         )}
       </div>

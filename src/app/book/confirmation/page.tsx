@@ -35,6 +35,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           slug: true,
           subdomain: true,
           timezone: true,
+          currency: true,
         },
       },
       service: true,
@@ -87,6 +88,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
     booking.business.timezone,
   )
   const remainingBalance = booking.finalAmount - booking.depositPaid
+  const currency = booking.business.currency || 'CLP'
 
   const stateConfig = {
     confirmed: {
@@ -149,7 +151,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
         ...stateConfig.confirmed,
         title: 'Gracias por tu visita',
         message: booking.remainingBalance > 0
-          ? `Quedó un saldo pendiente de ${formatMoney(booking.remainingBalance)}. Podés pagarlo por transferencia acá abajo.`
+          ? `Quedó un saldo pendiente de ${formatMoney(booking.remainingBalance, currency)}. Podés pagarlo por transferencia acá abajo.`
           : '¡Te esperamos la próxima!',
       }
     : stateConfig[state]
@@ -209,18 +211,18 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
             <div className="mt-6 border-t border-border/50 pt-5">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Precio total</span>
-                <span className="font-semibold text-primary">{formatMoney(booking.finalAmount)}</span>
+                <span className="font-semibold text-primary">{formatMoney(booking.finalAmount, currency)}</span>
               </div>
               {booking.depositPaid > 0 && (
                 <div className="mt-2 flex justify-between text-sm">
                   <span className="text-muted-foreground">Abono pagado</span>
-                  <span className="font-semibold text-green-700">{formatMoney(booking.depositPaid)}</span>
+                  <span className="font-semibold text-green-700">{formatMoney(booking.depositPaid, currency)}</span>
                 </div>
               )}
               {remainingBalance > 0 && (
                 <div className="mt-2 flex justify-between text-sm">
                   <span className="text-muted-foreground">Saldo pendiente</span>
-                  <span className="font-semibold text-primary">{formatMoney(remainingBalance)}</span>
+                  <span className="font-semibold text-primary">{formatMoney(remainingBalance, currency)}</span>
                 </div>
               )}
             </div>
@@ -237,6 +239,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           <TransferPanel
             bank={bankInfo}
             amount={Math.min(booking.depositRequired, booking.remainingBalance)}
+            currency={currency}
             deadline={booking.holdExpiresAt}
             timezone={booking.business.timezone}
             bookingId={booking.id}
@@ -253,6 +256,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           <TransferPanel
             bank={bankInfo}
             amount={booking.remainingBalance}
+            currency={currency}
             deadline={null}
             timezone={booking.business.timezone}
             bookingId={booking.id}
@@ -264,7 +268,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           <div className="studio-card mb-8 p-5 text-center">
             <p className="text-sm font-medium text-primary">Saldo en verificación</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Avisaste una transferencia de {formatMoney(balance.payment.amount)}. El negocio la va a revisar; si pasan varios días, escribile.
+              Avisaste una transferencia de {formatMoney(balance.payment.amount, currency)}. El negocio la va a revisar; si pasan varios días, escribile.
             </p>
             {balance.payment.hasProof && (
               <p className="mt-2 text-sm font-medium text-green-700">Comprobante adjuntado ✓</p>

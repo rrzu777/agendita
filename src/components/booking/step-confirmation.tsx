@@ -9,7 +9,7 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 import { formatBookingDateTime } from '@/lib/booking/format-booking-datetime'
 import { AccountCta } from './account-cta'
 
-export function StepConfirmation({ data, timezone, bookingId, bookingNumber, mode, promo, sessionEmail }: { data: BookingData; timezone: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null }) {
+export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null }) {
   const isPending = mode === 'pending'
   const isFree = data.servicePrice <= 0
   const noDeposit = data.serviceDeposit <= 0
@@ -43,27 +43,27 @@ export function StepConfirmation({ data, timezone, bookingId, bookingNumber, mod
       <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5 text-left">
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.timeSlot ? formatBookingDateTime(data.timeSlot.start, timezone) : ''}</span></div>
-        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice)}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice, currency)}</span></div>
         {hasDiscount && (
           <>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(promo!.discountAmount)}</span></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinal)}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(promo!.discountAmount, currency)}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinal, currency)}</span></div>
           </>
         )}
         {noDeposit && !isFree ? (
           <div className="flex justify-between gap-4 border-t border-border/60 pt-3">
             <span className="text-muted-foreground">Saldo pendiente</span>
-            <span className="font-semibold text-primary">{formatMoney(effectiveFinal)}</span>
+            <span className="font-semibold text-primary">{formatMoney(effectiveFinal, currency)}</span>
           </div>
         ) : !noDeposit ? (
           <>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">{isPending ? 'Abono requerido' : 'Abono pagado'}</span>
-              <span className="font-semibold text-primary">{formatMoney(data.serviceDeposit)}</span>
+              <span className="font-semibold text-primary">{formatMoney(data.serviceDeposit, currency)}</span>
             </div>
             <div className="flex justify-between gap-4 border-t border-border/60 pt-3">
               <span className="text-muted-foreground">{isPending ? 'Total por pagar' : 'Saldo pendiente'}</span>
-              <span className="font-semibold text-primary">{formatMoney(isPending ? effectiveFinal : effectiveFinal - data.serviceDeposit)}</span>
+              <span className="font-semibold text-primary">{formatMoney(isPending ? effectiveFinal : effectiveFinal - data.serviceDeposit, currency)}</span>
             </div>
           </>
         ) : null}
