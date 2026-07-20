@@ -81,7 +81,8 @@ async function expectActionError(promise: ReturnType<typeof reviveBooking>, subs
 describe('reviveBooking confirm', () => {
   it('expired futura → confirmed, holdExpiresAt null', async () => {
     const seeded = await seedExpired()
-    await reviveBooking(seeded.bookingId, 'confirm')
+    const res = await reviveBooking(seeded.bookingId, 'confirm')
+    expect(res.ok).toBe(true)
     const b = await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })
     expect(b.status).toBe('confirmed')
     expect(b.holdExpiresAt).toBeNull()
@@ -94,7 +95,8 @@ describe('reviveBooking confirm', () => {
       endDateTime: addMinutes(start, 60),
       holdExpiresAt: new Date(Date.now() - 72 * 3_600_000),
     })
-    await reviveBooking(seeded.bookingId, 'confirm')
+    const res = await reviveBooking(seeded.bookingId, 'confirm')
+    expect(res.ok).toBe(true)
     const b = await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })
     expect(b.status).toBe('confirmed')
   })
@@ -103,7 +105,8 @@ describe('reviveBooking confirm', () => {
     const seeded = await seedDeclaredTransfer() // pending_payment, no expirada
     await expectActionError(reviveBooking(seeded.bookingId, 'confirm'), 'Solo se puede revivir')
     const expired = await seedExpired()
-    await reviveBooking(expired.bookingId, 'confirm')
+    const res = await reviveBooking(expired.bookingId, 'confirm')
+    expect(res.ok).toBe(true)
     await expectActionError(reviveBooking(expired.bookingId, 'confirm'), 'Solo se puede revivir')
   })
 
@@ -159,7 +162,8 @@ describe('reviveBooking reopen', () => {
       },
     })
     const before = Date.now()
-    await reviveBooking(seeded.bookingId, 'reopen')
+    const res = await reviveBooking(seeded.bookingId, 'reopen')
+    expect(res.ok).toBe(true)
     const b = await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })
     expect(b.status).toBe('pending_payment')
     expect(b.transferReminderCustomerSentAt).toBeNull()
