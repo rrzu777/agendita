@@ -126,8 +126,9 @@ describe('updateBusinessSettings', () => {
     it('allows keeping current subdomain (excluded from uniqueness check)', async () => {
       mockPrisma.business.findFirst.mockResolvedValue(null)
 
-      await updateBusinessSettings(baseData)
+      const result = await updateBusinessSettings(baseData)
 
+      expect(result).toMatchObject({ ok: true })
       expect(mockPrisma.business.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
@@ -142,12 +143,13 @@ describe('updateBusinessSettings', () => {
 
   describe('data normalization', () => {
     it('normalizes whatsapp and instagram before saving', async () => {
-      await updateBusinessSettings({
+      const result = await updateBusinessSettings({
         ...baseData,
         whatsapp: '9 1234 5678',
         instagram: '@miestudio',
       })
 
+      expect(result).toMatchObject({ ok: true })
       expect(mockPrisma.business.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
