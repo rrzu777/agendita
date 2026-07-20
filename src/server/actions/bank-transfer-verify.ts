@@ -1,8 +1,9 @@
 'use server'
 
-// NOTE: 'use server' — SOLO funciones async exportadas. Flujo DUEÑA: requiere
-// sesión (owner/admin). Reusa los helpers de declared.ts y applyApprovedPayment;
-// no exportar consts/tipos desde este módulo (boundary de 'use server').
+// NOTE: 'use server' — solo exports que EVALÚEN a funciones async (incluye
+// consts que envuelven con action()). Flujo DUEÑA: requiere sesión
+// (owner/admin). Reusa los helpers de declared.ts y applyApprovedPayment;
+// no exportar tipos desde este módulo (boundary de 'use server').
 
 import { prisma } from '@/lib/db'
 import { requireBusinessRole } from '@/lib/auth/server'

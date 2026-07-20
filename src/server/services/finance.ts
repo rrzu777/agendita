@@ -5,8 +5,8 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
 import { declaredBalancePaymentWhere } from '@/lib/bank-transfer/declared'
 import type { LedgerEntryType, LedgerDirection } from '@prisma/client'
-// UserError acá es seguro para los callers NO migrados (webhook MP,
-// bank-transfer-verify.ts): UserError extends Error, así que todo `instanceof
+// UserError acá es seguro para el caller NO migrado (webhook MP):
+// UserError extends Error, así que todo `instanceof
 // Error`/try-catch existente sigue funcionando idéntico. Todos los throws de
 // este módulo son mensajes user-facing en español (invariantes de
 // consistencia del pago/reserva) — no hay invariantes internas en inglés acá.
