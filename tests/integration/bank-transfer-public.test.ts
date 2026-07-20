@@ -136,10 +136,12 @@ describe('bank-transfer flujo público', () => {
       const { createBooking } = await import('@/server/actions/bookings')
 
       const before = Date.now()
-      const booking = await createBooking({
+      const res = await createBooking({
         serviceId: svc.id, customerName: 'Ana', customerPhone: '+56911200001',
         startDateTime: futureDate(2, 15), acceptedTerms: true, paymentMethod: 'bank_transfer',
       }, BIZ)
+      if (!res.ok) throw new Error(res.error)
+      const booking = res.data
 
       const row = await prisma.booking.findUnique({ where: { id: booking.id } })
       expect(row!.paymentMethod).toBe('bank_transfer')
@@ -152,19 +154,23 @@ describe('bank-transfer flujo público', () => {
     it('rechaza bank_transfer si el negocio no lo tiene habilitado', async () => {
       const { createBooking } = await import('@/server/actions/bookings')
       await prisma.bankTransferAccount.update({ where: { businessId: BIZ }, data: { isEnabled: false } })
-      await expect(createBooking({
+      const res = await createBooking({
         serviceId: svc.id, customerName: 'Bea', customerPhone: '+56911200002',
         startDateTime: futureDate(3, 15), acceptedTerms: true, paymentMethod: 'bank_transfer',
-      }, BIZ)).rejects.toThrow('transferencia')
+      }, BIZ)
+      expect(res.ok).toBe(false)
+      expect(!res.ok && res.error).toContain('transferencia')
     })
 
     it('sin paymentMethod el hold sigue siendo ~15min', async () => {
       const { createBooking } = await import('@/server/actions/bookings')
       const before = Date.now()
-      const booking = await createBooking({
+      const res = await createBooking({
         serviceId: svc.id, customerName: 'Cata', customerPhone: '+56911200003',
         startDateTime: futureDate(4, 15), acceptedTerms: true,
       }, BIZ)
+      if (!res.ok) throw new Error(res.error)
+      const booking = res.data
       const row = await prisma.booking.findUnique({ where: { id: booking.id } })
       expect(row!.paymentMethod).toBeNull()
       const mins = (row!.holdExpiresAt!.getTime() - before) / 60_000
@@ -188,10 +194,12 @@ describe('bank-transfer flujo público', () => {
     async function mkTransferBooking() {
       const { createBooking } = await import('@/server/actions/bookings')
       phoneSeq += 1
-      return createBooking({
+      const res = await createBooking({
         serviceId: svc.id, customerName: `Decl ${phoneSeq}`, customerPhone: `+5691130${String(phoneSeq).padStart(4, '0')}`,
         startDateTime: futureDate(10 + phoneSeq, 15), acceptedTerms: true, paymentMethod: 'bank_transfer',
       }, BIZ)
+      if (!res.ok) throw new Error(res.error)
+      return res.data
     }
 
     it('crea el Payment pendiente con monto server-side y mueve el hold a la ventana de verificación', async () => {
@@ -259,10 +267,12 @@ describe('bank-transfer flujo público', () => {
     it('rechaza bookings que no eligieron transferencia', async () => {
       const { createBooking } = await import('@/server/actions/bookings')
       const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
-      const booking = await createBooking({
+      const res = await createBooking({
         serviceId: svc.id, customerName: 'MP', customerPhone: '+56911309999',
         startDateTime: futureDate(9, 15), acceptedTerms: true,
       }, BIZ)
+      if (!res.ok) throw new Error(res.error)
+      const booking = res.data
       await expect(declareBankTransfer(booking.id)).rejects.toThrow()
     })
   })

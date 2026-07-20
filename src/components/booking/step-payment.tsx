@@ -294,7 +294,13 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
     setStep('processing')
     setErrorMessage('')
     try {
-      const booking = await createBooking(bookingInput({ paymentMethod: BANK_TRANSFER_METHOD }), businessId)
+      const res = await createBooking(bookingInput({ paymentMethod: BANK_TRANSFER_METHOD }), businessId)
+      if (!res.ok) {
+        setErrorMessage(res.error)
+        setStep('error')
+        return
+      }
+      const booking = res.data
       setTransferBooking({
         id: booking.id,
         bookingNumber: booking.bookingNumber ?? null,
@@ -330,7 +336,13 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
     setErrorMessage('')
 
     try {
-      const booking = await createBooking(bookingInput(), businessId)
+      const res = await createBooking(bookingInput(), businessId)
+      if (!res.ok) {
+        setErrorMessage(res.error)
+        setStep('error')
+        return
+      }
+      const booking = res.data
 
       setStep('success')
       const mode = noDepositNeeded ? 'paid' as const : 'pending' as const
@@ -355,7 +367,13 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
     }
 
     try {
-      const booking = await createBooking(bookingInput(), businessId)
+      const res = await createBooking(bookingInput(), businessId)
+      if (!res.ok) {
+        setErrorMessage(res.error)
+        setStep('error')
+        return
+      }
+      const booking = res.data
 
       const paymentResult = await initiatePayment({
         bookingId: booking.id,

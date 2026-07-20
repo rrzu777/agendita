@@ -307,7 +307,8 @@ describe('sweeps de bt-balance en cambios de estado', () => {
     const seeded = await seedConfirmedWithBalance()
     await seedPendingBalance(seeded.bookingId, seeded.customerId, seeded.remainingBalance)
     const { updateBookingStatus } = await import('@/server/actions/bookings')
-    await updateBookingStatus(seeded.bookingId, dest)
+    const res = await updateBookingStatus(seeded.bookingId, dest)
+    expect(res.ok).toBe(true)
     const p = await prisma.payment.findFirstOrThrow({
       where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) },
     })
@@ -318,7 +319,8 @@ describe('sweeps de bt-balance en cambios de estado', () => {
     const seeded = await seedConfirmedWithBalance()
     await seedPendingBalance(seeded.bookingId, seeded.customerId, seeded.remainingBalance)
     const { updateBookingStatus } = await import('@/server/actions/bookings')
-    await updateBookingStatus(seeded.bookingId, 'completed')
+    const res = await updateBookingStatus(seeded.bookingId, 'completed')
+    expect(res.ok).toBe(true)
     const p = await prisma.payment.findFirstOrThrow({
       where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) },
     })
@@ -329,7 +331,8 @@ describe('sweeps de bt-balance en cambios de estado', () => {
     const seeded = await seedConfirmedWithBalance()
     await seedPendingBalance(seeded.bookingId, seeded.customerId, seeded.remainingBalance)
     const { cancelBooking } = await import('@/server/actions/bookings')
-    await cancelBooking(seeded.bookingId)
+    const res = await cancelBooking(seeded.bookingId)
+    expect(res.ok).toBe(true)
     const p = await prisma.payment.findFirstOrThrow({
       where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) },
     })

@@ -253,7 +253,7 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
     const startDateTime = fromZonedTime(`${date} ${time}`, timezone)
 
     try {
-      await createBookingFromDashboard({
+      const res = await createBookingFromDashboard({
         serviceId,
         customerName,
         customerPhone,
@@ -267,6 +267,10 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
         promotionCode: appliedPromo?.code,
         skipPackage: !usePackage,
       })
+      if (!res.ok) {
+        setError(res.error)
+        return
+      }
       setSuccess(true)
       setTimeout(() => {
         router.push('/dashboard/bookings')

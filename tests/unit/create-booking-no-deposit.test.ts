@@ -178,9 +178,9 @@ describe('createBooking - no deposit / free service', () => {
   it('rejects when acceptedTerms is false', async () => {
     setupMocks(0, 20000)
 
-    await expect(
-      createBooking({ ...baseInput, acceptedTerms: false }, 'biz-1'),
-    ).rejects.toThrow(/aceptar los términos/)
+    const result = await createBooking({ ...baseInput, acceptedTerms: false }, 'biz-1')
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/aceptar los términos/)
   })
 
   it('rejects when service is not found', async () => {
@@ -198,7 +198,9 @@ describe('createBooking - no deposit / free service', () => {
     })
     mockPrisma.service.findFirst.mockResolvedValue(null)
 
-    await expect(createBooking(baseInput, 'biz-1')).rejects.toThrow(/Servicio no disponible/)
+    const result = await createBooking(baseInput, 'biz-1')
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/Servicio no disponible/)
   })
 
   it('honors idempotencyKey and returns existing booking', async () => {
@@ -208,7 +210,7 @@ describe('createBooking - no deposit / free service', () => {
 
     const result = await createBooking({ ...baseInput, idempotencyKey: 'key-1' }, 'biz-1')
 
-    expect(result).toBe(existingBooking)
+    expect(result).toEqual({ ok: true, data: existingBooking })
     expect(mockPrisma.booking.create).not.toHaveBeenCalled()
   })
 })

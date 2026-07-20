@@ -142,7 +142,12 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
         <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
           <form action={async () => {
             'use server'
-            await updateBookingStatus(booking.id, 'completed')
+            // Sin UI de error en esta card (vista móvil): si falla, la reserva
+            // simplemente no se completa (misma semántica silenciosa que
+            // TimeBlockList.handleDelete). El fallback con feedback vive en
+            // BookingRowActions (tabla de escritorio).
+            const res = await updateBookingStatus(booking.id, 'completed')
+            if (!res.ok) return
           }} className="flex-1">
             <Button type="submit" variant="outline" className="w-full h-10 text-sm font-semibold">
               Completar

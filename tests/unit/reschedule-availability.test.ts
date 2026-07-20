@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { UserError } from '@/lib/actions/result'
 
 const mockRequireBusinessRole = vi.fn()
 const mockGenerateSlots = vi.fn()
@@ -220,24 +221,29 @@ describe('rescheduleBooking terminal states and availability', () => {
   })
 
   it('fails when target slot is occupied at confirmation time', async () => {
-    mockAssertSlotIsAvailable.mockRejectedValue(new Error('Ese horario ya no está disponible. Por favor selecciona otro.'))
+    // UserError: refleja el throw real de assertSlotIsAvailable (validation.ts,
+    // ya migrado) — un Error plano acá se volvería el mensaje genérico del wrapper.
+    mockAssertSlotIsAvailable.mockRejectedValue(new UserError('Ese horario ya no está disponible. Por favor selecciona otro.'))
 
-    await expect(rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z')))
-      .rejects.toThrow(/horario ya no está disponible/)
+    const result = await rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z'))
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/horario ya no está disponible/)
   })
 
   it('does not update if booking became terminal during the transaction', async () => {
     mockPrisma.booking.updateMany.mockResolvedValue({ count: 0 })
 
-    await expect(rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z')))
-      .rejects.toThrow(/No se puede reprogramar/)
+    const result = await rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z'))
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/No se puede reprogramar/)
   })
 
   it('does not allow completed, cancelled, no_show or expired bookings', async () => {
     for (const status of ['completed', 'cancelled', 'no_show', 'expired']) {
       mockPrisma.booking.findFirst.mockResolvedValueOnce({ ...booking, status })
-      await expect(rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z')))
-        .rejects.toThrow(/No se puede reprogramar/)
+      const result = await rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z'))
+      expect(result.ok).toBe(false)
+      expect(!result.ok && result.error).toMatch(/No se puede reprogramar/)
     }
   })
 })

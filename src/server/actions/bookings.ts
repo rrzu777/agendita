@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { action, UserError } from '@/lib/actions/result'
 import { getConfirmedSessionUser } from '@/lib/auth/user'
 import { findOrCreateCustomerInTx } from '@/lib/customers/find-or-create'
 import { logger } from '@/lib/logger'
@@ -244,7 +245,7 @@ export async function getBookingsSummary() {
   })
 }
 
-export async function createBooking(data: {
+async function _createBooking(data: {
   serviceId: string
   customerName: string
   customerPhone: string
@@ -260,16 +261,16 @@ export async function createBooking(data: {
 }, businessId: string) {
   const limit = await checkRateLimit('create-booking', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const parsed = createBookingSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos de reserva inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos de reserva inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
   if (parsed.data.acceptedTerms !== true) {
-    throw new Error('Debes aceptar los términos y condiciones y la política de cancelación')
+    throw new UserError('Debes aceptar los términos y condiciones y la política de cancelación')
   }
 
   // Validar que el negocio exista, esté activo y pueda recibir reservas
@@ -289,7 +290,7 @@ export async function createBooking(data: {
     },
   })
   if (!business) {
-    throw new Error('Negocio no válido')
+    throw new UserError('Negocio no válido')
   }
 
   assertBusinessCanReceiveBookings(business.subscriptionStatus)
@@ -299,7 +300,7 @@ export async function createBooking(data: {
     where: { id: data.serviceId, businessId, isActive: true },
   })
   if (!service) {
-    throw new Error('Servicio no disponible')
+    throw new UserError('Servicio no disponible')
   }
 
   // Recalcular precios y horario server-side
@@ -317,7 +318,7 @@ export async function createBooking(data: {
   if (data.paymentMethod === BANK_TRANSFER_METHOD) {
     bankTransferAccount = await getBankTransferInfo(businessId)
     if (!bankTransferAccount) {
-      throw new Error('Este negocio no tiene transferencia bancaria habilitada')
+      throw new UserError('Este negocio no tiene transferencia bancaria habilitada')
     }
   }
 
@@ -492,17 +493,19 @@ export async function createBooking(data: {
         businessId,
         metadata: { error: msg },
       })
-      throw new Error('Error de base de datos. Por favor intenta nuevamente.')
+      throw new UserError('Error de base de datos. Por favor intenta nuevamente.')
     }
     throw e
   }
 }
 
-export async function updateBookingStatus(id: string, status: BookingStatus) {
+export const createBooking = action(_createBooking)
+
+async function _updateBookingStatus(id: string, status: BookingStatus) {
   const { businessId } = await requireBusiness()
   const limit = await checkRateLimit('update-booking-status', 30, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const existing = await prisma.booking.findFirst({
@@ -672,21 +675,23 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
   return updated
 }
 
+export const updateBookingStatus = action(_updateBookingStatus)
+
 /**
  * Flujo privado (dashboard): confirma/aplica un pago ya existente a una reserva.
  * Requiere sesión y rol owner/admin. Delega toda la lógica financiera a
  * applyApprovedPayment para garantizar consistencia e idempotencia.
  */
-export async function confirmPayment(bookingId: string, paymentId: string, amount: number) {
+async function _confirmPayment(bookingId: string, paymentId: string, amount: number) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('confirm-payment', 30, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const parsed = confirmPaymentSchema.safeParse({ bookingId, paymentId, amount })
   if (!parsed.success) {
-    throw new Error('Datos de pago inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos de pago inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
   const booking = await prisma.booking.findFirst({
@@ -698,7 +703,7 @@ export async function confirmPayment(bookingId: string, paymentId: string, amoun
   try {
     assertBookingPayable(booking)
   } catch (e) {
-    throw new Error(e instanceof Error ? e.message : 'No se puede confirmar pago para esta reserva')
+    throw new UserError(e instanceof Error ? e.message : 'No se puede confirmar pago para esta reserva')
   }
 
   const payment = await prisma.payment.findFirst({
@@ -742,14 +747,16 @@ export async function confirmPayment(bookingId: string, paymentId: string, amoun
   return updated
 }
 
+export const confirmPayment = action(_confirmPayment)
+
 export async function getBookingsByRange(start: Date, end: Date) {
   const { businessId } = await requireBusiness()
 
   if (!(start instanceof Date) || isNaN(start.getTime()) || !(end instanceof Date) || isNaN(end.getTime())) {
-    throw new Error('Rango de fechas inválido')
+    throw new UserError('Rango de fechas inválido')
   }
   if (start > end) {
-    throw new Error('La fecha de inicio debe ser anterior a la fecha de término')
+    throw new UserError('La fecha de inicio debe ser anterior a la fecha de término')
   }
 
   return prisma.booking.findMany({
@@ -789,7 +796,7 @@ const PAYMENT_METHOD_MAP: Record<string, string> = {
   other: 'Otro',
 }
 
-export async function createBookingFromDashboard(data: {
+async function _createBookingFromDashboard(data: {
   serviceId: string
   customerName: string
   customerPhone: string
@@ -812,14 +819,14 @@ export async function createBookingFromDashboard(data: {
 
   const parsed = createBookingFromDashboardSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
   const service = await prisma.service.findFirst({
     where: { id: data.serviceId, businessId, isActive: true },
   })
   if (!service) {
-    throw new Error('Servicio no disponible')
+    throw new UserError('Servicio no disponible')
   }
 
   const totalPrice = service.price
@@ -838,12 +845,12 @@ export async function createBookingFromDashboard(data: {
 
   // Validate paymentMethod when creating a payment
   if ((paymentMode === 'deposit_paid' || paymentMode === 'full_paid') && !data.paymentMethod) {
-    throw new Error('Método de pago requerido')
+    throw new UserError('Método de pago requerido')
   }
 
   // Reject deposit_paid when service has no required deposit
   if (paymentMode === 'deposit_paid' && depositRequired <= 0) {
-    throw new Error('No se requiere abono para este servicio. Usa modo "Sin pago" o "Pago total".')
+    throw new UserError('No se requiere abono para este servicio. Usa modo "Sin pago" o "Pago total".')
   }
 
   const noDepositNeeded = depositRequired <= 0
@@ -877,7 +884,7 @@ export async function createBookingFromDashboard(data: {
         where: { id: data.customerId, businessId },
       })
       if (!existing) {
-        throw new Error('Cliente no encontrado')
+        throw new UserError('Cliente no encontrado')
       }
       customer = existing
     } else {
@@ -1051,7 +1058,9 @@ export async function createBookingFromDashboard(data: {
   return booking
 }
 
-export async function cancelBooking(bookingId: string, reason?: string) {
+export const createBookingFromDashboard = action(_createBookingFromDashboard)
+
+async function _cancelBooking(bookingId: string, reason?: string) {
   const { business, businessId } = await requireBusinessRole(['owner', 'admin'])
 
   const booking = await prisma.booking.findFirst({
@@ -1060,15 +1069,15 @@ export async function cancelBooking(bookingId: string, reason?: string) {
   })
 
   if (!booking) {
-    throw new Error('Reserva no encontrada')
+    throw new UserError('Reserva no encontrada')
   }
 
   if (booking.status === 'completed') {
-    throw new Error('No se puede cancelar una reserva ya completada')
+    throw new UserError('No se puede cancelar una reserva ya completada')
   }
 
   if (booking.status === 'cancelled') {
-    throw new Error('Esta reserva ya está cancelada')
+    throw new UserError('Esta reserva ya está cancelada')
   }
 
   await prisma.$transaction(async (tx) => {
@@ -1096,7 +1105,9 @@ export async function cancelBooking(bookingId: string, reason?: string) {
   return { cancelled: true }
 }
 
-export async function rescheduleBooking(bookingId: string, newStartDateTime: Date) {
+export const cancelBooking = action(_cancelBooking)
+
+async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
 
   const booking = await prisma.booking.findFirst({
@@ -1105,16 +1116,16 @@ export async function rescheduleBooking(bookingId: string, newStartDateTime: Dat
   })
 
   if (!booking) {
-    throw new Error('Reserva no encontrada')
+    throw new UserError('Reserva no encontrada')
   }
 
   if (['completed', 'cancelled', 'no_show', 'expired'].includes(booking.status)) {
-    throw new Error('No se puede reprogramar una reserva en este estado')
+    throw new UserError('No se puede reprogramar una reserva en este estado')
   }
 
   const service = booking.service
   if (!service) {
-    throw new Error('Servicio no encontrado')
+    throw new UserError('Servicio no encontrado')
   }
 
   const previousStartDateTime = booking.startDateTime
@@ -1155,3 +1166,5 @@ export async function rescheduleBooking(bookingId: string, newStartDateTime: Dat
 
   return { rescheduled: true }
 }
+
+export const rescheduleBooking = action(_rescheduleBooking)

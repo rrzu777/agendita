@@ -1,5 +1,9 @@
 import { prisma } from '@/lib/db'
 import type { SubscriptionStatus } from '@prisma/client'
+// UserError: este mensaje es user-facing (bloquea la creación de reserva) y
+// debe sobrevivir al wrapper action() de src/server/actions/bookings.ts, su
+// único llamador.
+import { UserError } from '@/lib/actions/result'
 
 export async function getBusinessSubscriptionStatus(businessId: string): Promise<{
   canReceiveBookings: boolean
@@ -28,7 +32,7 @@ export async function getBusinessSubscriptionStatus(businessId: string): Promise
 
 export function assertBusinessCanReceiveBookings(subscriptionStatus: SubscriptionStatus): void {
   if (subscriptionStatus === 'suspended' || subscriptionStatus === 'cancelled') {
-    throw new Error(
+    throw new UserError(
       subscriptionStatus === 'suspended'
         ? 'Este negocio está temporalmente suspendido y no recibe nuevas reservas.'
         : 'Este negocio ya no acepta reservas.'

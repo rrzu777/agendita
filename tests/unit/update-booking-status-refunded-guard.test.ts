@@ -141,7 +141,8 @@ describe('updateBookingStatus — guard de carrera (status esperado en el update
     mockPrisma.booking.findFirst.mockResolvedValue(booking)
     mockPrisma.booking.updateMany.mockResolvedValue({ count: 0 })
 
-    await expect(updateBookingStatus('bk-1', BookingStatus.completed)).rejects.toThrow()
+    const result = await updateBookingStatus('bk-1', BookingStatus.completed)
+    expect(result.ok).toBe(false)
 
     expect(creditVisitPoints).not.toHaveBeenCalled()
     expect(loadAutomaticRules).not.toHaveBeenCalled()

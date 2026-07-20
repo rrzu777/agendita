@@ -97,7 +97,11 @@ export function RescheduleForm({
     }
 
     try {
-      await rescheduleBooking(bookingId, selectedSlot.start)
+      const res = await rescheduleBooking(bookingId, selectedSlot.start)
+      if (!res.ok) {
+        setError(res.error)
+        return
+      }
       const canSendWhatsapp = customerPhone.replace(/\D/g, '').length > 0
       setWhatsappUrl(canSendWhatsapp
         ? buildBookingRescheduledWhatsappUrl(customerPhone, {

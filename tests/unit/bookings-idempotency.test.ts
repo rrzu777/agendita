@@ -124,7 +124,7 @@ describe('createBooking idempotency', () => {
 
     const result = await createBooking(baseInput, 'biz-1')
 
-    expect(result).toEqual(existingBooking)
+    expect(result).toEqual({ ok: true, data: existingBooking })
     expect(mockPrisma.$transaction).not.toHaveBeenCalled()
     expect(mockPrisma.booking.create).not.toHaveBeenCalled()
   })
@@ -158,7 +158,7 @@ describe('createBooking idempotency', () => {
 
     const result = await createBooking(baseInput, 'biz-1')
 
-    expect(result).toEqual(createdBooking)
+    expect(result).toEqual({ ok: true, data: createdBooking })
     expect(mockPrisma.booking.findUnique).toHaveBeenCalledWith({
       where: {
         businessId_idempotencyKey: {
@@ -187,7 +187,7 @@ describe('createBooking idempotency', () => {
 
     const result = await createBooking(baseInput, 'biz-1')
 
-    expect(result).toEqual(existingBooking)
+    expect(result).toEqual({ ok: true, data: existingBooking })
   })
 
   it('re-throws non-idempotency errors as safe generic message', async () => {
@@ -196,8 +196,11 @@ describe('createBooking idempotency', () => {
     genericError.code = 'P1001'
     mockPrisma.$transaction.mockRejectedValue(genericError)
 
-    // Prisma errors are caught and replaced with safe generic message
-    await expect(createBooking(baseInput, 'biz-1')).rejects.toThrow('Error de base de datos')
+    // Prisma errors are caught and re-thrown as a UserError with a safe
+    // custom message (still specific, not the wrapper's generic fallback).
+    const result = await createBooking(baseInput, 'biz-1')
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Error de base de datos')
   })
 
   it('works without idempotencyKey (backward compatible)', async () => {
@@ -230,7 +233,7 @@ describe('createBooking idempotency', () => {
 
     const result = await createBooking(inputWithoutKey, 'biz-1')
 
-    expect(result).toEqual(createdBooking)
+    expect(result).toEqual({ ok: true, data: createdBooking })
     expect(mockPrisma.booking.findUnique).not.toHaveBeenCalled()
   })
 })
@@ -270,15 +273,15 @@ describe('createBooking acceptedTerms enforcement', () => {
   }
 
   it('rejects when acceptedTerms is false', async () => {
-    await expect(
-      createBooking({ ...baseInput, acceptedTerms: false }, 'biz-1')
-    ).rejects.toThrow('Debes aceptar los términos')
+    const result = await createBooking({ ...baseInput, acceptedTerms: false }, 'biz-1')
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Debes aceptar los términos')
   })
 
   it('rejects when acceptedTerms is omitted', async () => {
-    await expect(
-      createBooking(baseInput as any, 'biz-1')
-    ).rejects.toThrow('Datos de reserva inválidos')
+    const result = await createBooking(baseInput as any, 'biz-1')
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Datos de reserva inválidos')
   })
 
   it('allows booking when acceptedTerms is true', async () => {
@@ -313,6 +316,6 @@ describe('createBooking acceptedTerms enforcement', () => {
 
     const result = await createBooking({ ...baseInput, acceptedTerms: true }, 'biz-1')
 
-    expect(result).toEqual(createdBooking)
+    expect(result).toEqual({ ok: true, data: createdBooking })
   })
 })
