@@ -71,8 +71,10 @@ describe('bank-transfer settings actions', () => {
 
   it('actualiza (upsert) sin duplicar y persiste verifyHours null', async () => {
     const { saveBankTransferAccount } = await import('@/server/actions/bank-transfer-settings')
-    await saveBankTransferAccount(validInput)
-    await saveBankTransferAccount({ ...validInput, bankName: 'Banco de Chile', verifyHours: null })
+    const setupRes = await saveBankTransferAccount(validInput)
+    expect(setupRes.ok).toBe(true)
+    const setupRes2 = await saveBankTransferAccount({ ...validInput, bankName: 'Banco de Chile', verifyHours: null })
+    expect(setupRes2.ok).toBe(true)
 
     const rows = await prisma.bankTransferAccount.findMany({ where: { businessId: BIZ } })
     expect(rows).toHaveLength(1)
@@ -82,7 +84,8 @@ describe('bank-transfer settings actions', () => {
 
   it('guarda email vacío como null', async () => {
     const { saveBankTransferAccount } = await import('@/server/actions/bank-transfer-settings')
-    await saveBankTransferAccount({ ...validInput, email: '' })
+    const setupRes = await saveBankTransferAccount({ ...validInput, email: '' })
+    expect(setupRes.ok).toBe(true)
     const row = await prisma.bankTransferAccount.findUnique({ where: { businessId: BIZ } })
     expect(row!.email).toBeNull()
   })
@@ -96,7 +99,8 @@ describe('bank-transfer settings actions', () => {
 
   it('setBankTransferEnabled togglea sin tocar el resto', async () => {
     const { saveBankTransferAccount, setBankTransferEnabled } = await import('@/server/actions/bank-transfer-settings')
-    await saveBankTransferAccount(validInput)
+    const setupRes = await saveBankTransferAccount(validInput)
+    expect(setupRes.ok).toBe(true)
     const res = await setBankTransferEnabled(false)
     expect(res.ok).toBe(true)
 
