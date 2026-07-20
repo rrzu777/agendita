@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusinessRole } from '@/lib/auth/server'
+import { action, UserError } from '@/lib/actions/result'
 import { updateBusinessSchema, slotStepToMinutes, type UpdateBusinessInput } from '@/lib/business/schema'
 import { normalizeWhatsapp, normalizeInstagram } from '@/lib/business/normalize'
 
@@ -24,23 +25,23 @@ function trimToNull(value: string | undefined): string | null {
   return value.trim()
 }
 
-export async function updateBusinessSettings(data: UpdateBusinessInput) {
+async function _updateBusinessSettings(data: UpdateBusinessInput) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
 
   const limit = await checkRateLimit('update-business-settings', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const parsed = updateBusinessSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
   const validated = parsed.data
 
   if (RESERVED_SUBDOMAINS.includes(validated.subdomain)) {
-    throw new Error('Este subdominio está reservado')
+    throw new UserError('Este subdominio está reservado')
   }
 
   const existing = await prisma.business.findFirst({
@@ -50,7 +51,7 @@ export async function updateBusinessSettings(data: UpdateBusinessInput) {
     },
   })
   if (existing) {
-    throw new Error('Este subdominio ya está en uso')
+    throw new UserError('Este subdominio ya está en uso')
   }
 
   const updateData = {
@@ -81,3 +82,5 @@ export async function updateBusinessSettings(data: UpdateBusinessInput) {
 
   return updated
 }
+
+export const updateBusinessSettings = action(_updateBusinessSettings)

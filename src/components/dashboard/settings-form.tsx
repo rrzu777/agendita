@@ -86,16 +86,16 @@ export function SettingsForm({ business }: { business: Business }) {
     setServerError(null)
     setSuccessMessage(null)
 
-    try {
-      await updateBusinessSettings(data)
-      setSuccessMessage('Cambios guardados exitosamente')
-      setTimeout(() => setSuccessMessage(null), 4000)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error al guardar los cambios'
-      setServerError(message)
-    } finally {
+    const res = await updateBusinessSettings(data)
+    if (!res.ok) {
+      setServerError(res.error)
       setIsSubmitting(false)
+      return
     }
+
+    setSuccessMessage('Cambios guardados exitosamente')
+    setTimeout(() => setSuccessMessage(null), 4000)
+    setIsSubmitting(false)
   }
 
   return (
