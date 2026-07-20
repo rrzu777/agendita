@@ -63,4 +63,11 @@ describe('saveOnboardingStep', () => {
       data: { onboardingStep: 2 },
     })
   })
+
+  it('rejects a business the session does not own', async () => {
+    const result = await saveOnboardingStep('biz-other', 2)
+
+    expect(result).toEqual({ ok: false, error: 'No autorizado' })
+    expect(mockPrisma.business.update).not.toHaveBeenCalled()
+  })
 })

@@ -81,6 +81,7 @@ export function OnboardingWizard({
     const prev = Math.max(0, currentStep - 1)
     try {
       const res = await saveOnboardingStep(business.id, prev)
+      // navegar igual aunque falle el guardado — comportamiento original
       if (!res.ok) { setCurrentStep(prev); return }
       setCurrentStep(prev)
       setError('')
