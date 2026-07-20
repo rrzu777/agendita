@@ -86,7 +86,7 @@ describe('cancelMyBooking', () => {
 
     const result = await cancelMyBooking('bk-1')
 
-    expect(result).toEqual({ cancelled: true })
+    expect(result).toEqual({ ok: true, data: { cancelled: true } })
     expect(mockCancelBookingInTx).toHaveBeenCalledWith(
       {},
       expect.objectContaining({ id: 'bk-1' }),
@@ -110,7 +110,9 @@ describe('cancelMyBooking', () => {
     mockFindFirstBooking.mockResolvedValue(null)
     const { cancelMyBooking } = await import('@/server/actions/my-bookings')
 
-    await expect(cancelMyBooking('bk-ajena')).rejects.toThrow('Reserva no encontrada')
+    const result = await cancelMyBooking('bk-ajena')
+
+    expect(result).toEqual({ ok: false, error: 'Reserva no encontrada' })
     expect(mockTx).not.toHaveBeenCalled()
     expect(mockCancelBookingInTx).not.toHaveBeenCalled()
   })
@@ -122,7 +124,10 @@ describe('cancelMyBooking', () => {
     )
     const { cancelMyBooking } = await import('@/server/actions/my-bookings')
 
-    await expect(cancelMyBooking('bk-1')).rejects.toThrow(/hasta 24 horas/)
+    const result = await cancelMyBooking('bk-1')
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/hasta 24 horas/)
     expect(mockCancelBookingInTx).not.toHaveBeenCalled()
   })
 
@@ -130,7 +135,9 @@ describe('cancelMyBooking', () => {
     mockFindFirstBooking.mockResolvedValue(null)
     const { cancelMyBooking } = await import('@/server/actions/my-bookings')
 
-    await expect(cancelMyBooking('bk-completed')).rejects.toThrow('Reserva no encontrada')
+    const result = await cancelMyBooking('bk-completed')
+
+    expect(result).toEqual({ ok: false, error: 'Reserva no encontrada' })
     expect(mockFindFirstBooking).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -144,7 +151,9 @@ describe('cancelMyBooking', () => {
     mockCheckRateLimit.mockResolvedValue({ success: false })
     const { cancelMyBooking } = await import('@/server/actions/my-bookings')
 
-    await expect(cancelMyBooking('bk-1')).rejects.toThrow()
+    const result = await cancelMyBooking('bk-1')
+
+    expect(result.ok).toBe(false)
     expect(mockFindFirstBooking).not.toHaveBeenCalled()
   })
 })

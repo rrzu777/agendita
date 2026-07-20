@@ -84,7 +84,7 @@ describe('rescheduleMyBooking', () => {
     const { rescheduleMyBooking } = await import('@/server/actions/my-bookings')
     const result = await rescheduleMyBooking('bk-1', newStart)
 
-    expect(result).toEqual({ rescheduled: true })
+    expect(result).toEqual({ ok: true, data: { rescheduled: true } })
     expect(mockRescheduleBookingInTx).toHaveBeenCalledTimes(1)
     const [, arg] = mockRescheduleBookingInTx.mock.calls[0]
     expect(arg).not.toHaveProperty('leadTimeMinutes')
@@ -121,7 +121,9 @@ describe('rescheduleMyBooking', () => {
     const newStart = new Date(NOW.getTime() + 200 * 3_600_000)
 
     const { rescheduleMyBooking } = await import('@/server/actions/my-bookings')
-    await expect(rescheduleMyBooking('bk-1', newStart)).rejects.toThrow(/reprogramar/)
+    const result = await rescheduleMyBooking('bk-1', newStart)
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/reprogramar/)
     expect(mockRescheduleBookingInTx).not.toHaveBeenCalled()
   })
 
@@ -135,7 +137,9 @@ describe('rescheduleMyBooking', () => {
     const newStart = new Date(NOW.getTime() + 72 * 3_600_000)
 
     const { rescheduleMyBooking } = await import('@/server/actions/my-bookings')
-    await expect(rescheduleMyBooking('bk-1', newStart)).rejects.toThrow(/no está aceptando reservas/)
+    const result = await rescheduleMyBooking('bk-1', newStart)
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/no está aceptando reservas/)
     expect(mockRescheduleBookingInTx).not.toHaveBeenCalled()
   })
 
@@ -143,7 +147,8 @@ describe('rescheduleMyBooking', () => {
     mockFindFirstBooking.mockResolvedValue(null)
 
     const { rescheduleMyBooking } = await import('@/server/actions/my-bookings')
-    await expect(rescheduleMyBooking('bk-1', new Date())).rejects.toThrow('Reserva no encontrada')
+    const result = await rescheduleMyBooking('bk-1', new Date())
+    expect(result).toEqual({ ok: false, error: 'Reserva no encontrada' })
     expect(mockRescheduleBookingInTx).not.toHaveBeenCalled()
   })
 })
@@ -171,14 +176,15 @@ describe('getMyRescheduleSlots', () => {
     const date = new Date('2026-07-15T00:00:00Z')
     const result = await getMyRescheduleSlots('bk-1', date)
 
-    expect(result).toBe(slots)
+    expect(result).toEqual({ ok: true, data: slots })
     expect(mockComputeRescheduleSlots).toHaveBeenCalledWith(booking, date)
   })
 
   it('ownership ajeno: booking no encontrado', async () => {
     mockFindFirstBooking.mockResolvedValue(null)
     const { getMyRescheduleSlots } = await import('@/server/actions/my-bookings')
-    await expect(getMyRescheduleSlots('bk-1', new Date())).rejects.toThrow('Reserva no encontrada')
+    const result = await getMyRescheduleSlots('bk-1', new Date())
+    expect(result).toEqual({ ok: false, error: 'Reserva no encontrada' })
   })
 
   it('servicio inactivo: rechaza', async () => {
@@ -188,7 +194,8 @@ describe('getMyRescheduleSlots', () => {
       business: { timezone: 'America/Santiago', bookingWindowDays: 90, slotStepMinutes: 30 },
     })
     const { getMyRescheduleSlots } = await import('@/server/actions/my-bookings')
-    await expect(getMyRescheduleSlots('bk-1', new Date())).rejects.toThrow('Servicio no disponible')
+    const result = await getMyRescheduleSlots('bk-1', new Date())
+    expect(result).toEqual({ ok: false, error: 'Servicio no disponible' })
     expect(mockComputeRescheduleSlots).not.toHaveBeenCalled()
   })
 })

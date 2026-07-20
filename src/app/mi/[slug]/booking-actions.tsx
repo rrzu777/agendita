@@ -32,11 +32,15 @@ export function BookingActions({
     setError('')
     startTransition(async () => {
       try {
-        await cancelMyBooking(bookingId)
+        const res = await cancelMyBooking(bookingId)
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
         setConfirming(false)
         router.refresh()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'No se pudo cancelar')
+      } catch {
+        setError('No se pudo cancelar')
       }
     })
   }

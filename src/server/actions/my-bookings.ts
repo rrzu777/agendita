@@ -18,13 +18,14 @@ import {
   getBusinessReplyToEmail,
 } from '@/lib/notifications'
 import { revalidateBusinessPublicPaths } from '@/server/actions/revalidate-business'
+import { action, UserError } from '@/lib/actions/result'
 
-export async function cancelMyBooking(bookingId: string) {
+async function _cancelMyBooking(bookingId: string) {
   const user = await requireUser()
 
   const limit = await checkRateLimit('self-service-booking', 10, 60_000, { userId: user.id })
   if (!limit.success) {
-    throw new Error('Demasiados intentos. Espera un momento y vuelve a intentar.')
+    throw new UserError('Demasiados intentos. Espera un momento y vuelve a intentar.')
   }
 
   // Ownership EN el where (customer.userId === user.id): jamás confiar en ids del cliente.
@@ -39,12 +40,12 @@ export async function cancelMyBooking(bookingId: string) {
     },
   })
   if (!booking) {
-    throw new Error('Reserva no encontrada')
+    throw new UserError('Reserva no encontrada')
   }
 
   const cutoff = booking.business.selfServiceCutoffHours
   if (!canSelfManage(booking.startDateTime, cutoff)) {
-    throw new Error(selfServiceBlockedMessage(cutoff, 'cancelar'))
+    throw new UserError(selfServiceBlockedMessage(cutoff, 'cancelar'))
   }
 
   await prisma.$transaction(async (tx) => {
@@ -86,12 +87,14 @@ export async function cancelMyBooking(bookingId: string) {
   return { cancelled: true }
 }
 
-export async function rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
+export const cancelMyBooking = action(_cancelMyBooking)
+
+async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
   const user = await requireUser()
 
   const limit = await checkRateLimit('self-service-booking', 10, 60_000, { userId: user.id })
   if (!limit.success) {
-    throw new Error('Demasiados intentos. Espera un momento y vuelve a intentar.')
+    throw new UserError('Demasiados intentos. Espera un momento y vuelve a intentar.')
   }
 
   // Ownership EN el where (customer.userId === user.id): jamás confiar en ids del cliente.
@@ -115,17 +118,17 @@ export async function rescheduleMyBooking(bookingId: string, newStartDateTime: D
     },
   })
   if (!booking) {
-    throw new Error('Reserva no encontrada')
+    throw new UserError('Reserva no encontrada')
   }
 
   // Guard de negocio suspendido: reprogramar crea un slot nuevo (spec §5).
   if (!booking.business.isActive) {
-    throw new Error('El negocio no está aceptando reservas en este momento.')
+    throw new UserError('El negocio no está aceptando reservas en este momento.')
   }
 
   const cutoff = booking.business.selfServiceCutoffHours
   if (!canSelfManage(booking.startDateTime, cutoff)) {
-    throw new Error(selfServiceBlockedMessage(cutoff, 'reprogramar'))
+    throw new UserError(selfServiceBlockedMessage(cutoff, 'reprogramar'))
   }
 
   // El slot NUEVO se rige por las reglas del funnel: lead time default (omitimos
@@ -184,13 +187,15 @@ export async function rescheduleMyBooking(bookingId: string, newStartDateTime: D
   return { rescheduled: true }
 }
 
-export async function getMyRescheduleSlots(bookingId: string, date: Date) {
+export const rescheduleMyBooking = action(_rescheduleMyBooking)
+
+async function _getMyRescheduleSlots(bookingId: string, date: Date) {
   const user = await requireUser()
 
   // Mismo config que la exploración de fechas en el funnel público: 60/min.
   const limit = await checkRateLimit('get-availability')
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   // Ownership EN el where (customer.userId === user.id): jamás confiar en ids del cliente.
@@ -202,11 +207,13 @@ export async function getMyRescheduleSlots(bookingId: string, date: Date) {
     },
   })
   if (!booking) {
-    throw new Error('Reserva no encontrada')
+    throw new UserError('Reserva no encontrada')
   }
   if (!booking.service.isActive) {
-    throw new Error('Servicio no disponible')
+    throw new UserError('Servicio no disponible')
   }
 
   return computeRescheduleSlots(booking, date)
 }
+
+export const getMyRescheduleSlots = action(_getMyRescheduleSlots)

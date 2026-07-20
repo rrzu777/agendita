@@ -51,17 +51,22 @@ export function ReprogramarForm({
     setSelectedSlot(null)
 
     getMyRescheduleSlots(bookingId, fromZonedTime(`${date} 00:00`, timezone))
-      .then((availableSlots) => {
+      .then((res) => {
         if (ignoreRef.current || requestIdRef.current !== requestId) return
-        setSlots(availableSlots.map((slot) => ({
+        if (!res.ok) {
+          setSlots([])
+          setError(res.error)
+          return
+        }
+        setSlots(res.data.map((slot) => ({
           start: new Date(slot.start),
           end: new Date(slot.end),
         })))
       })
-      .catch((err) => {
+      .catch(() => {
         if (ignoreRef.current || requestIdRef.current !== requestId) return
         setSlots([])
-        setError(err instanceof Error ? err.message : 'No se pudieron cargar los horarios')
+        setError('No se pudieron cargar los horarios')
       })
       .finally(() => {
         if (!ignoreRef.current && requestIdRef.current === requestId) setLoadingSlots(false)
@@ -85,10 +90,14 @@ export function ReprogramarForm({
     }
 
     try {
-      await rescheduleMyBooking(bookingId, selectedSlot.start)
+      const res = await rescheduleMyBooking(bookingId, selectedSlot.start)
+      if (!res.ok) {
+        setError(res.error)
+        return
+      }
       setSuccess(true)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al reprogramar')
+    } catch {
+      setError('Error al reprogramar')
     } finally {
       setLoading(false)
     }

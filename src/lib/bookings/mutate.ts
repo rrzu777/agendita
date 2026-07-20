@@ -5,6 +5,10 @@ import { formatBookingDateTime } from '@/lib/booking/format-booking-datetime'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
+// UserError: estos mensajes son user-facing y deben sobrevivir al wrapper
+// action(); para callers sin wrapper (bookings.ts dueña) es un Error normal
+// (extends Error).
+import { UserError } from '@/lib/actions/result'
 
 type Tx = Prisma.TransactionClient
 
@@ -32,7 +36,7 @@ export async function cancelBookingInTx(
     },
   })
   if (updateResult.count === 0) {
-    throw new Error('No se puede cancelar una reserva en este estado')
+    throw new UserError('No se puede cancelar una reserva en este estado')
   }
   await releaseRedemptionForBooking(tx, booking.id, 'cancelled')
   // abono Y saldo: cancelar una reserva mata cualquier declaración pendiente.
@@ -86,7 +90,7 @@ export async function rescheduleBookingInTx(
     },
   })
   if (updateResult.count === 0) {
-    throw new Error('No se puede reprogramar una reserva en este estado')
+    throw new UserError('No se puede reprogramar una reserva en este estado')
   }
   return { endDateTime }
 }
