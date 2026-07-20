@@ -92,8 +92,8 @@ export default async function BillingPage() {
                     </div>
                     {plan && (
                       <p className="text-sm text-muted-foreground">
-                        {formatMoney(plan.priceMonthly)} CLP / mes
-                        {plan.priceYearly > 0 && ` · ${formatMoney(plan.priceYearly)} CLP / año`}
+                        {formatMoney(plan.priceMonthly, 'CLP')} CLP / mes
+                        {plan.priceYearly > 0 && ` · ${formatMoney(plan.priceYearly, 'CLP')} CLP / año`}
                       </p>
                     )}
                   </div>
@@ -145,7 +145,7 @@ export default async function BillingPage() {
                       {payments.map((payment) => (
                         <TableMobileCard
                           key={payment.id}
-                          title={formatMoney(payment.amount)}
+                          title={formatMoney(payment.amount, 'CLP')}
                           subtitle={payment.paymentMethod ?? '—'}
                           badge={<StatusBadge map="payment" status={payment.status} />}
                           rows={[
@@ -178,7 +178,7 @@ export default async function BillingPage() {
                                 {(payment.paidAt ?? payment.createdAt).toLocaleDateString('es-CL')}
                               </TableCell>
                               <TableCell className={`${TABLE_COL.money} whitespace-normal font-semibold`}>
-                                {formatMoney(payment.amount)}
+                                {formatMoney(payment.amount, 'CLP')}
                               </TableCell>
                               <TableCell className={`${TABLE_COL.label} text-muted-foreground`}>
                                 {payment.paymentMethod ?? '—'}

@@ -49,6 +49,7 @@ describe('ServiceRowActions', () => {
         onToggle={() => {}}
         onDeactivate={() => {}}
         onSuccess={() => {}}
+        currency="CLP"
       />,
     )
     expect(html).toContain('Editar')
@@ -63,6 +64,7 @@ describe('ServiceRowActions', () => {
         onToggle={() => {}}
         onDeactivate={() => {}}
         onSuccess={() => {}}
+        currency="CLP"
       />,
     )
     expect(html).toContain('Editar')

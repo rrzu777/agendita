@@ -23,7 +23,7 @@ const bank = {
 describe('TransferDetails con comprobante', () => {
   it('requireProof=true deshabilita "Ya transferí" hasta subir', () => {
     const html = renderToStaticMarkup(
-      <TransferDetails bank={bank as never} amount={1000} deadline={null} timezone="America/Santiago" declaring={false} onDeclare={() => {}} bookingId="b1" kind="deposit" />,
+      <TransferDetails bank={bank as never} amount={1000} currency="CLP" deadline={null} timezone="America/Santiago" declaring={false} onDeclare={() => {}} bookingId="b1" kind="deposit" />,
     )
     expect(html).toContain('Comprobante')
     expect(html).toMatch(/disabled/)
@@ -31,7 +31,7 @@ describe('TransferDetails con comprobante', () => {
 
   it('requireProof=false: el botón no está bloqueado por falta de comprobante', () => {
     const html = renderToStaticMarkup(
-      <TransferDetails bank={{ ...bank, requireProof: false } as never} amount={1000} deadline={null} timezone="America/Santiago" declaring={false} onDeclare={() => {}} bookingId="b1" kind="deposit" />,
+      <TransferDetails bank={{ ...bank, requireProof: false } as never} amount={1000} currency="CLP" deadline={null} timezone="America/Santiago" declaring={false} onDeclare={() => {}} bookingId="b1" kind="deposit" />,
     )
     // el botón no debe estar deshabilitado sólo por falta de proof
     expect(html).toContain('Comprobante')

@@ -56,7 +56,7 @@ describe('booking legal UI', () => {
   it('public booking payment step shows terms, privacy and refund links', async () => {
     const { StepPayment } = await import('@/components/booking/step-payment')
     const html = renderToStaticMarkup(
-      <StepPayment data={bookingData} updateData={vi.fn()} businessId="biz-1" timezone="America/Santiago" onSuccess={vi.fn()} onBack={vi.fn()} />,
+      <StepPayment data={bookingData} updateData={vi.fn()} businessId="biz-1" timezone="America/Santiago" currency="CLP" onSuccess={vi.fn()} onBack={vi.fn()} />,
     )
 
     expect(html).toContain('href="/terms"')
@@ -70,7 +70,7 @@ describe('booking legal UI', () => {
       <StepPayment
         data={bookingData}
         updateData={vi.fn()}
-        businessId="biz-1" timezone="America/Santiago"
+        businessId="biz-1" timezone="America/Santiago" currency="CLP"
         cancellationPolicy="Puedes cancelar hasta 24 horas antes."
         onSuccess={vi.fn()}
         onBack={vi.fn()}
@@ -91,7 +91,7 @@ describe('booking legal UI', () => {
         <StepPayment
           data={{ ...bookingData, serviceDeposit: 5000 }}
           updateData={vi.fn()}
-          businessId="biz-1" timezone="America/Santiago"
+          businessId="biz-1" timezone="America/Santiago" currency="CLP"
           onSuccess={vi.fn()}
           onBack={vi.fn()}
         />,

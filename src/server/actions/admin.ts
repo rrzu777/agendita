@@ -55,7 +55,7 @@ export async function adminRecordSubscriptionPayment(
         afterStatus: 'active',
         adminUserId: user.id,
         adminEmail: user.email,
-        notes: `Pago manual registrado por admin: ${formatMoney(amount)}${notes ? ` — ${notes}` : ''}`,
+        notes: `Pago manual registrado por admin: ${formatMoney(amount, 'CLP')}${notes ? ` — ${notes}` : ''}`,
       },
     }),
   ])
