@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { requireTestDatabase } from './setup'
+import { expectActionError } from './helpers/action-result'
 
 requireTestDatabase()
 
@@ -110,22 +111,24 @@ describe('campaigns actions', () => {
 
   it('createCampaign materializa recipients del segmento', async () => {
     const { createCampaign, getCampaignDetail } = await importActions()
-    const { campaignId } = await createCampaign({
+    const res = await createCampaign({
       name: 'Frecuentes', segmentType: 'frequent', segmentParams: { frequentMin: 1 },
       messageTemplate: 'Hola {nombre} {codigo}', promotionId: PROMO,
     })
-    const d = await getCampaignDetail(campaignId)
+    if (!res.ok) throw new Error(res.error)
+    const d = await getCampaignDetail(res.data.campaignId)
     expect(d.recipients.length).toBe(2)
   })
 
   it('createCampaign con newPromotion crea granted pointsCost null', async () => {
     const { createCampaign, getCampaignDetail } = await importActions()
-    const { campaignId } = await createCampaign({
+    const res = await createCampaign({
       name: 'Inline', segmentType: 'frequent', segmentParams: { frequentMin: 1 },
       messageTemplate: 'Hola {nombre}',
       newPromotion: { name: '15%', rewardType: 'percentage', rewardValue: 15, appliesToAll: true, serviceIds: [] },
     })
-    const d = await getCampaignDetail(campaignId)
+    if (!res.ok) throw new Error(res.error)
+    const d = await getCampaignDetail(res.data.campaignId)
     const promo = await prisma.promotion.findUnique({ where: { id: d.promotionId } })
     expect(promo?.triggerType).toBe('granted')
     expect(promo?.pointsCost).toBeNull()
@@ -133,16 +136,20 @@ describe('campaigns actions', () => {
 
   it('sendCampaignMessage mintea grant idempotente + setea sentAt + devuelve waUrl', async () => {
     const { createCampaign, getCampaignDetail, sendCampaignMessage } = await importActions()
-    const { campaignId } = await createCampaign({
+    const created = await createCampaign({
       name: 'X', segmentType: 'frequent', segmentParams: { frequentMin: 1 },
       messageTemplate: 'Hola {nombre} {codigo}', promotionId: PROMO,
     })
+    if (!created.ok) throw new Error(created.error)
+    const campaignId = created.data.campaignId
     const d = await getCampaignDetail(campaignId)
     const rid = d.recipients[0].id
     const r1 = await sendCampaignMessage(rid)
-    expect(r1.waUrl).toMatch(/wa\.me/)
+    if (!r1.ok) throw new Error(r1.error)
+    expect(r1.data.waUrl).toMatch(/wa\.me/)
     const r2 = await sendCampaignMessage(rid)
-    expect(r2.waUrl).toMatch(/wa\.me/)
+    if (!r2.ok) throw new Error(r2.error)
+    expect(r2.data.waUrl).toMatch(/wa\.me/)
     const d2 = await getCampaignDetail(campaignId)
     const rec = d2.recipients.find((x) => x.id === rid)!
     expect(rec.sentAt).not.toBeNull()
@@ -168,17 +175,19 @@ describe('campaigns actions', () => {
   it('sendCampaignMessage rechaza clientas opt-out sin mintear grant ni marcar sentAt', async () => {
     const { createCampaign, getCampaignDetail, sendCampaignMessage } = await importActions()
     // Campaña con las 2 clientas (aún sin opt-out, así CUST_B entra al segmento).
-    const { campaignId } = await createCampaign({
+    const created = await createCampaign({
       name: 'Optout Guard', segmentType: 'frequent', segmentParams: { frequentMin: 1 },
       messageTemplate: 'Hola {nombre} {codigo}', promotionId: PROMO,
     })
+    if (!created.ok) throw new Error(created.error)
+    const campaignId = created.data.campaignId
     // Opt-out DESPUÉS de materializar (caso retroactivo).
     await prisma.customer.update({ where: { id: CUST_B }, data: { marketingOptOutAt: new Date() } })
 
     const detail = await getCampaignDetail(campaignId)
     const recipientB = detail.recipients.find((r) => r.customerId === CUST_B)!
 
-    await expect(sendCampaignMessage(recipientB.id)).rejects.toThrow(/no recibir campañas/)
+    await expectActionError(sendCampaignMessage(recipientB.id), 'no recibir campañas')
 
     // No minteó grant ni marcó sentAt.
     const after = await prisma.campaignRecipient.findUnique({ where: { id: recipientB.id } })

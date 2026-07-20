@@ -41,8 +41,12 @@ export function BulkSendControls({
     try {
       for (let i = 0; i < ids.length; i += EMAIL_CHUNK) {
         const chunk = ids.slice(i, i + EMAIL_CHUNK)
-        const { results } = await sendCampaignEmailBatch(campaignId, chunk)
-        for (const r of results) {
+        const res = await sendCampaignEmailBatch(campaignId, chunk)
+        // Falla a nivel de tanda (rate limit, campaña no encontrada): igual que el
+        // throw original, corta el loop en silencio — spinner y refresh corren igual
+        // en el finally. Las fallas per-item ya vienen contabilizadas en res.data.
+        if (!res.ok) break
+        for (const r of res.data.results) {
           done += 1
           if (r.status === 'failed') setEmailFailed((f) => [...f, r.recipientId])
         }
@@ -69,21 +73,18 @@ export function BulkSendControls({
     const popup = openDeferredPopup()
     setWaSending(true)
     setWaError(null)
-    try {
-      const { waUrl } = await sendCampaignMessage(current.id)
-      if (waUrl) {
-        popup.navigate(waUrl)
-      } else {
-        popup.close()
-        setWaError('La clienta no tiene un teléfono válido.')
-      }
-    } catch (e) {
+    const res = await sendCampaignMessage(current.id)
+    if (!res.ok) {
       popup.close()
-      setWaError(e instanceof Error ? e.message : 'No se pudo enviar')
-    } finally {
-      setWaSending(false)
-      setWaIndex((i) => (i ?? 0) + 1) // avanza aunque falle (optimista, un toque por clienta)
+      setWaError(res.error)
+    } else if (res.data.waUrl) {
+      popup.navigate(res.data.waUrl)
+    } else {
+      popup.close()
+      setWaError('La clienta no tiene un teléfono válido.')
     }
+    setWaSending(false)
+    setWaIndex((i) => (i ?? 0) + 1) // avanza aunque falle (optimista, un toque por clienta)
   }
 
   function finishGuiding() {

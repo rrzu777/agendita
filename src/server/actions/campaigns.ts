@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { action, UserError } from '@/lib/actions/result'
 import { createCampaignSchema, type CampaignRewardInput } from '@/lib/campaigns/schema'
 import { queryCampaignSegment } from '@/lib/campaigns/segments'
 import { prepareCampaignSend, sendOneCampaignEmail } from '@/lib/campaigns/send'
@@ -39,7 +40,7 @@ async function createInlineGrantedPromotion(
 ): Promise<string> {
   if (r.serviceIds.length) {
     const count = await tx.service.count({ where: { id: { in: r.serviceIds }, businessId } })
-    if (count !== r.serviceIds.length) throw new Error('Servicio inválido')
+    if (count !== r.serviceIds.length) throw new UserError('Servicio inválido')
   }
   const promo = await tx.promotion.create({
     data: {
@@ -53,13 +54,13 @@ async function createInlineGrantedPromotion(
   return promo.id
 }
 
-export async function createCampaign(data: unknown): Promise<{ campaignId: string }> {
+async function _createCampaign(data: unknown): Promise<{ campaignId: string }> {
   const { businessId, user, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('create-campaign', 20, 60000, { userId: user.id, businessId })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
 
   const parsed = createCampaignSchema.safeParse(data)
-  if (!parsed.success) throw new Error('Datos inválidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
+  if (!parsed.success) throw new UserError('Datos inválidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
   const d = parsed.data
 
   // Promo de catálogo: verificación (read) fuera de la tx. Ownership + que sea granted.
@@ -94,6 +95,8 @@ export async function createCampaign(data: unknown): Promise<{ campaignId: strin
   return { campaignId: campaign.id }
 }
 
+export const createCampaign = action(_createCampaign)
+
 export async function getCampaigns() {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   return prisma.campaign.findMany({
@@ -127,10 +130,10 @@ export async function getCampaignDetail(campaignId: string) {
   return campaign
 }
 
-export async function sendCampaignMessage(recipientId: string): Promise<{ waUrl: string | null }> {
+async function _sendCampaignMessage(recipientId: string): Promise<{ waUrl: string | null }> {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('send-campaign', 120, 60000, { userId: user.id, businessId })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
 
   const { recipient, grant, message } = await prepareCampaignSend(prisma, businessId, recipientId, user.id)
 
@@ -145,14 +148,16 @@ export async function sendCampaignMessage(recipientId: string): Promise<{ waUrl:
   return { waUrl }
 }
 
+export const sendCampaignMessage = action(_sendCampaignMessage)
+
 /** Envío de campaña por email (canal alternativo a WhatsApp). Mintea el grant vía
  *  el mismo core idempotente, envía server-side vía Resend, y marca sentAt SÓLO si el
  *  envío fue exitoso (a diferencia de WhatsApp, acá conocemos el resultado). El grant
  *  minteado persiste aunque el email falle; reintentar es idempotente. */
-export async function sendCampaignEmail(recipientId: string): Promise<{ sent: boolean; error?: string }> {
+async function _sendCampaignEmail(recipientId: string): Promise<{ sent: boolean; error?: string }> {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('send-campaign-email', 30, 60000, { userId: user.id, businessId })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
 
   const replyTo = await getBusinessReplyToEmail(businessId)
   const outcome = await sendOneCampaignEmail(prisma, businessId, recipientId, user.id, replyTo)
@@ -167,6 +172,8 @@ export async function sendCampaignEmail(recipientId: string): Promise<{ sent: bo
   return { sent: false, error: outcome.error }
 }
 
+export const sendCampaignEmail = action(_sendCampaignEmail)
+
 type BulkEmailResult = { recipientId: string; status: 'sent' | 'skipped' | 'failed'; error?: string }
 
 /** Envío masivo de email por tandas. El cliente maneja la cola (desde los props del
@@ -175,17 +182,17 @@ type BulkEmailResult = { recipientId: string; status: 'sent' | 'skipped' | 'fail
  *  puertas). Itera SECUENCIAL (no Promise.all): cada envío abre una tx interactiva
  *  para mintear, y en paralelo bajo connection_limit=1 (pgbouncer) explota con P2028.
  *  Un ítem que falla (opt-out, promo pausada, borrada, Resend) NO aborta la tanda. */
-export async function sendCampaignEmailBatch(
+async function _sendCampaignEmailBatch(
   campaignId: string,
   recipientIds: string[],
 ): Promise<{ results: BulkEmailResult[] }> {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   if (recipientIds.length === 0) return { results: [] }
   if (recipientIds.length > BULK_EMAIL_MAX_PER_CALL) {
-    throw new Error(`Máximo ${BULK_EMAIL_MAX_PER_CALL} destinatarias por tanda`)
+    throw new UserError(`Máximo ${BULK_EMAIL_MAX_PER_CALL} destinatarias por tanda`)
   }
   const limit = await checkRateLimit('send-campaign-bulk-email', 60, 60000, { userId: user.id, businessId })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
 
   const campaign = await prisma.campaign.findFirst({ where: { id: campaignId, businessId }, select: { id: true } })
   if (!campaign) throw new ForbiddenError('Campaña no encontrada')
@@ -206,3 +213,5 @@ export async function sendCampaignEmailBatch(
   }
   return { results }
 }
+
+export const sendCampaignEmailBatch = action(_sendCampaignEmailBatch)

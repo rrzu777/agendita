@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterAll } from 'vitest'
 import { requireTestDatabase } from './setup'
+import { expectActionError } from './helpers/action-result'
 
 requireTestDatabase()
 
@@ -104,16 +105,18 @@ describe('sendCampaignEmailBatch', () => {
     const { business, campaignId, recipientIds } = await seedCampaign()
     created.push(business.id)
 
-    const { results } = await sendCampaignEmailBatch(campaignId, recipientIds)
-    const sent = results.filter((r) => r.status === 'sent').length
-    const skipped = results.filter((r) => r.status === 'skipped').length
+    const res = await sendCampaignEmailBatch(campaignId, recipientIds)
+    if (!res.ok) throw new Error(res.error)
+    const sent = res.data.results.filter((r) => r.status === 'sent').length
+    const skipped = res.data.results.filter((r) => r.status === 'skipped').length
     expect(sent).toBe(3)
     expect(skipped).toBe(2) // opt-out + sin-email
     expect(promoEmail).toHaveBeenCalledTimes(3)
 
     vi.clearAllMocks()
     const again = await sendCampaignEmailBatch(campaignId, recipientIds)
-    expect(again.results.filter((r) => r.status === 'sent').length).toBe(0)
+    if (!again.ok) throw new Error(again.error)
+    expect(again.data.results.filter((r) => r.status === 'sent').length).toBe(0)
     expect(promoEmail).not.toHaveBeenCalled()
   })
 
@@ -121,6 +124,6 @@ describe('sendCampaignEmailBatch', () => {
     const { business, campaignId } = await seedCampaign()
     created.push(business.id)
     const tooMany = Array.from({ length: 26 }, (_, i) => `x${i}`)
-    await expect(sendCampaignEmailBatch(campaignId, tooMany)).rejects.toThrow('tanda')
+    await expectActionError(sendCampaignEmailBatch(campaignId, tooMany), 'tanda')
   })
 })
