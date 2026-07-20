@@ -186,7 +186,9 @@ describe('rejectBankTransfer', () => {
     const { paymentId } = await seedDeclaredTransfer()
     await prisma.payment.update({ where: { id: paymentId }, data: { status: 'approved' } })
     const { rejectBankTransfer } = await import('@/server/actions/bank-transfer-verify')
-    await expectActionError(rejectBankTransfer(paymentId), 'ya fue procesado')
+    // Un pago ya procesado deja de matchear el filtro de declaradas-pending de
+    // loadDeclaredPayment, así que el mensaje real es el de "no verificable".
+    await expectActionError(rejectBankTransfer(paymentId), 'no es una transferencia por verificar')
   })
 })
 
