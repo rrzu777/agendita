@@ -1,6 +1,7 @@
 'use server'
 
 import { prisma } from '@/lib/db'
+import { formatMoney } from '@/lib/money'
 import { requirePlatformAdminUser } from '@/lib/auth/user'
 
 export async function adminRecordSubscriptionPayment(
@@ -54,7 +55,7 @@ export async function adminRecordSubscriptionPayment(
         afterStatus: 'active',
         adminUserId: user.id,
         adminEmail: user.email,
-        notes: `Pago manual registrado por admin: $${amount.toLocaleString('es-CL')}${notes ? ` — ${notes}` : ''}`,
+        notes: `Pago manual registrado por admin: ${formatMoney(amount)}${notes ? ` — ${notes}` : ''}`,
       },
     }),
   ])

@@ -9,6 +9,7 @@ import { getFinancialSummary } from '@/server/actions/ledger'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
 import { buildSetupChecklist } from '@/lib/dashboard/setup-checklist'
+import { formatMoney } from '@/lib/money'
 import { SetupChecklist } from '@/components/dashboard/setup-checklist'
 import { PendingTransfersBanner } from '@/components/dashboard/pending-transfers-banner'
 import { PendingPackageTransfersBanner } from '@/components/dashboard/pending-package-transfers-banner'
@@ -76,7 +77,7 @@ export default async function DashboardPage() {
   })
   const stats = [
     { label: 'Reservas hoy', value: bookingsToday.length.toString(), hint: '+ hoy', icon: CalendarCheck2 },
-    { label: 'Ingresos mes', value: `$${summary.incomeMonth.toLocaleString('es-CL')}`, hint: 'Este mes', icon: CreditCard },
+    { label: 'Ingresos mes', value: formatMoney(summary.incomeMonth), hint: 'Este mes', icon: CreditCard },
     { label: 'Próximas reservas', value: upcomingBookings.length.toString(), hint: 'Agenda', icon: TrendingUp },
     { label: 'Total reservas', value: bookings.length.toString(), hint: 'Histórico', icon: Users },
   ]

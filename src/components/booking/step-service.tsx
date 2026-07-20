@@ -3,6 +3,7 @@
 import { BookingData } from './wizard'
 import type { Service } from '@prisma/client'
 import { formatDuration } from '@/lib/format-duration'
+import { formatMoney } from '@/lib/money'
 import { Clock, Plus, Sparkles } from 'lucide-react'
 
 interface StepServiceProps {
@@ -66,11 +67,11 @@ export function StepService({ data, services, onSelect }: StepServiceProps) {
                       {formatDuration(service.durationMinutes)}
                     </span>
                     <span aria-hidden="true">·</span>
-                    <span className="font-medium text-primary">${service.price.toLocaleString('es-CL')}</span>
+                    <span className="font-medium text-primary">{formatMoney(service.price)}</span>
                     {service.depositAmount > 0 && (
                       <>
                         <span aria-hidden="true">·</span>
-                        <span>abono ${service.depositAmount.toLocaleString('es-CL')}</span>
+                        <span>abono {formatMoney(service.depositAmount)}</span>
                       </>
                     )}
                   </p>

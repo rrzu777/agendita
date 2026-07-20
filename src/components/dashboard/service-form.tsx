@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { createService, updateService } from '@/server/actions/services'
 import { formatDuration } from '@/lib/format-duration'
+import { formatMoney } from '@/lib/money'
 import { Pencil, AlertCircle } from 'lucide-react'
 import type { ReactNode } from 'react'
 
@@ -50,10 +51,10 @@ function ServicePreview({ name, description, price, durationMinutes, depositAmou
         </div>
       </div>
       <div className="flex gap-4 text-xs text-muted-foreground">
-        {price && <span>${parseInt(price).toLocaleString('es-CL')}</span>}
+        {price && <span>{formatMoney(parseInt(price))}</span>}
         {durationMinutes > 0 && <span>{formatDuration(durationMinutes)}</span>}
         {depositAmount && parseInt(depositAmount) > 0 && (
-          <span>Abono requerido: ${parseInt(depositAmount).toLocaleString('es-CL')}</span>
+          <span>Abono requerido: {formatMoney(parseInt(depositAmount))}</span>
         )}
       </div>
     </div>

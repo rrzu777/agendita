@@ -1,5 +1,6 @@
 import { formatInTimeZone } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
+import { formatMoney } from '@/lib/money'
 
 export interface BookingWhatsappData {
   bookingNumber?: number | null
@@ -39,11 +40,7 @@ function fmtDate(date: Date, timezone: string): string {
 }
 
 function fmtCurrency(amount: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat('es-CL', { style: 'currency', currency: currency || 'CLP' }).format(amount)
-  } catch {
-    return `${currency} ${amount}`
-  }
+  return formatMoney(amount, currency || 'CLP')
 }
 
 function normalizePhone(phone: string): string {

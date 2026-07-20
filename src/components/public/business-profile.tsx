@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import type { PublicBusiness } from '@/lib/business/public'
 import { formatDuration } from '@/lib/format-duration'
+import { formatMoney } from '@/lib/money'
 import { BadgeCheck, CalendarDays, Camera, Clock, Clock3, MapPin, MessageCircle, Package, Sparkles, Star } from 'lucide-react'
 
 interface BusinessProfileProps {
@@ -104,11 +105,11 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
                         {formatDuration(service.durationMinutes)}
                       </span>
                       <span aria-hidden="true">·</span>
-                      <span className="font-semibold text-primary">${service.price.toLocaleString('es-CL')}</span>
+                      <span className="font-semibold text-primary">{formatMoney(service.price, business.currency)}</span>
                       {service.depositAmount > 0 && (
                         <>
                           <span aria-hidden="true">·</span>
-                          <span>abono ${service.depositAmount.toLocaleString('es-CL')}</span>
+                          <span>abono {formatMoney(service.depositAmount, business.currency)}</span>
                         </>
                       )}
                     </p>

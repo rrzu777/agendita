@@ -3,6 +3,7 @@ import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
+import { formatMoney } from '@/lib/money'
 import { CreditCard } from 'lucide-react'
 
 const typeLabels: Record<string, string> = {
@@ -24,7 +25,7 @@ function amountClassName(direction: string): string {
 }
 
 function formatAmount(entry: { direction: string; amount: number }): string {
-  return `${entry.direction === 'expense' ? '—' : ''}$${entry.amount.toLocaleString('es-CL')}`
+  return `${entry.direction === 'expense' ? '—' : ''}${formatMoney(entry.amount)}`
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- entries shape depends on server action return type

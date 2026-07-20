@@ -8,6 +8,7 @@ import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { deriveConfirmationState } from '@/lib/payments/confirmation-state'
 import { deriveBalanceState } from '@/lib/payments/balance-confirmation-state'
 import { formatBookingNumber } from '@/lib/bookings/number'
+import { formatMoney } from '@/lib/money'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD, BT_DECLARED_PREFIX } from '@/lib/bank-transfer/declared'
 import { TransferPanel } from './transfer-panel'
@@ -148,7 +149,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
         ...stateConfig.confirmed,
         title: 'Gracias por tu visita',
         message: booking.remainingBalance > 0
-          ? `Quedó un saldo pendiente de $${booking.remainingBalance.toLocaleString('es-CL')}. Podés pagarlo por transferencia acá abajo.`
+          ? `Quedó un saldo pendiente de ${formatMoney(booking.remainingBalance)}. Podés pagarlo por transferencia acá abajo.`
           : '¡Te esperamos la próxima!',
       }
     : stateConfig[state]
@@ -208,18 +209,18 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
             <div className="mt-6 border-t border-border/50 pt-5">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Precio total</span>
-                <span className="font-semibold text-primary">${booking.finalAmount.toLocaleString('es-CL')}</span>
+                <span className="font-semibold text-primary">{formatMoney(booking.finalAmount)}</span>
               </div>
               {booking.depositPaid > 0 && (
                 <div className="mt-2 flex justify-between text-sm">
                   <span className="text-muted-foreground">Abono pagado</span>
-                  <span className="font-semibold text-green-700">${booking.depositPaid.toLocaleString('es-CL')}</span>
+                  <span className="font-semibold text-green-700">{formatMoney(booking.depositPaid)}</span>
                 </div>
               )}
               {remainingBalance > 0 && (
                 <div className="mt-2 flex justify-between text-sm">
                   <span className="text-muted-foreground">Saldo pendiente</span>
-                  <span className="font-semibold text-primary">${remainingBalance.toLocaleString('es-CL')}</span>
+                  <span className="font-semibold text-primary">{formatMoney(remainingBalance)}</span>
                 </div>
               )}
             </div>
@@ -263,7 +264,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           <div className="studio-card mb-8 p-5 text-center">
             <p className="text-sm font-medium text-primary">Saldo en verificación</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Avisaste una transferencia de ${balance.payment.amount.toLocaleString('es-CL')}. El negocio la va a revisar; si pasan varios días, escribile.
+              Avisaste una transferencia de {formatMoney(balance.payment.amount)}. El negocio la va a revisar; si pasan varios días, escribile.
             </p>
             {balance.payment.hasProof && (
               <p className="mt-2 text-sm font-medium text-green-700">Comprobante adjuntado ✓</p>

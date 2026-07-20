@@ -9,6 +9,7 @@ import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { getCustomerDetail } from '@/server/actions/customers'
 import { formatBookingNumber } from '@/lib/bookings/number'
+import { formatMoney } from '@/lib/money'
 import { getCustomerLoyalty, getLoyaltyConfig } from '@/server/actions/loyalty'
 import { getCustomerPackages, listPackageProducts } from '@/server/actions/packages'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
@@ -36,10 +37,6 @@ const paymentTypeLabels: Record<string, string> = {
   cancellation_fee: 'Cargo cancelacion',
   manual_adjustment: 'Ajuste manual',
   package_purchase: 'Compra de paquete',
-}
-
-function formatCLP(value: number): string {
-  return value.toLocaleString('es-CL')
 }
 
 interface Props {
@@ -157,13 +154,13 @@ export default async function CustomerDetailPage({ params }: Props) {
           <div className="studio-card p-4">
             <p className="studio-eyebrow">Total</p>
             <p className="mt-1 text-2xl font-semibold text-primary">
-              ${formatCLP(customerTotalValue)}
+              {formatMoney(customerTotalValue)}
             </p>
           </div>
           <div className="studio-card p-4">
             <p className="studio-eyebrow">Total pagado</p>
             <p className="mt-1 text-2xl font-semibold text-green-700">
-              ${formatCLP(customer.totalPaidApproved)}
+              {formatMoney(customer.totalPaidApproved)}
             </p>
           </div>
           <div className="studio-card p-4">
@@ -173,7 +170,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                 customer.pendingBalance > 0 ? 'text-destructive' : 'text-primary'
               }`}
             >
-              ${formatCLP(customer.pendingBalance)}
+              {formatMoney(customer.pendingBalance)}
             </p>
           </div>
           <div className="studio-card p-4">
@@ -256,12 +253,12 @@ export default async function CustomerDetailPage({ params }: Props) {
                             label: 'Fecha',
                             value: `${new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })} ${new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: businessTimezone })}`,
                           },
-                          { label: 'Total', value: `$${formatCLP(booking.totalPrice)}` },
+                          { label: 'Total', value: formatMoney(booking.totalPrice) },
                           {
                             label: 'Saldo',
                             value:
                               booking.remainingBalance > 0
-                                ? `$${formatCLP(booking.remainingBalance)}`
+                                ? formatMoney(booking.remainingBalance)
                                 : booking.status === 'cancelled' || booking.status === 'no_show' || booking.status === 'expired'
                                   ? '—'
                                   : 'Pagado',
@@ -305,12 +302,12 @@ export default async function CustomerDetailPage({ params }: Props) {
                               <StatusBadge map="booking" status={booking.status} />
                             </TableCell>
                             <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
-                              ${formatCLP(booking.totalPrice)}
+                              {formatMoney(booking.totalPrice)}
                             </TableCell>
                             <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
                               {booking.remainingBalance > 0 ? (
                                 <span className="font-semibold text-destructive">
-                                  ${formatCLP(booking.remainingBalance)}
+                                  {formatMoney(booking.remainingBalance)}
                                 </span>
                               ) : booking.status === 'cancelled' ||
                                 booking.status === 'no_show' ||
@@ -344,7 +341,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                     {customer.payments.map((payment) => (
                       <TableMobileCard
                         key={payment.id}
-                        title={`$${formatCLP(payment.amount)}`}
+                        title={formatMoney(payment.amount)}
                         subtitle={
                           paymentTypeLabels[payment.paymentType] || payment.paymentType
                         }
@@ -376,7 +373,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                         {customer.payments.map((payment) => (
                           <TableRow key={payment.id}>
                             <TableCell className={`${TABLE_COL.money} whitespace-normal font-semibold`}>
-                              ${formatCLP(payment.amount)}
+                              {formatMoney(payment.amount)}
                             </TableCell>
                             <TableCell className={`${TABLE_COL.label} text-sm`}>
                               {paymentTypeLabels[payment.paymentType] || payment.paymentType}

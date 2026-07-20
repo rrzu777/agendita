@@ -12,6 +12,7 @@ import { ServiceForm } from './service-form'
 import { ServiceRowActions } from './service-row-actions'
 import { toggleService, reorderServices } from '@/server/actions/services'
 import { formatDuration } from '@/lib/format-duration'
+import { formatMoney } from '@/lib/money'
 import { Plus, ChevronUp, ChevronDown, X } from 'lucide-react'
 
 export function ServiceTable({ services: initialServices }: { services: { id: string; name: string; description: string | null; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; isActive: boolean; sortOrder: number }[] }) {
@@ -204,11 +205,11 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
                         secondary={service.description}
                       />
                       <TableCell className={`${TABLE_COL.money} whitespace-normal font-semibold`}>
-                        ${service.price.toLocaleString('es-CL')}
+                        {formatMoney(service.price)}
                       </TableCell>
                       <TableCell className={TABLE_COL.duration}>{formatDuration(service.durationMinutes)}</TableCell>
                       <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
-                        ${service.depositAmount.toLocaleString('es-CL')}
+                        {formatMoney(service.depositAmount)}
                       </TableCell>
                       <TableCell className="w-[64px]">
                         <div className="size-7 rounded-full border border-border" style={{ backgroundColor: service.pastelColor }} />
@@ -240,9 +241,9 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
                 subtitle={service.description}
                 badge={<StatusBadge map="service" status={service.isActive ? 'active' : 'inactive'} />}
                 rows={[
-                  { label: 'Precio', value: `$${service.price.toLocaleString('es-CL')}` },
+                  { label: 'Precio', value: formatMoney(service.price) },
                   { label: 'Duración', value: formatDuration(service.durationMinutes) },
-                  { label: 'Abono', value: `$${service.depositAmount.toLocaleString('es-CL')}` },
+                  { label: 'Abono', value: formatMoney(service.depositAmount) },
                 ]}
                 actions={
                   <ServiceRowActions

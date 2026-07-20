@@ -92,8 +92,8 @@ export default async function BillingPage() {
                     </div>
                     {plan && (
                       <p className="text-sm text-muted-foreground">
-                        ${plan.priceMonthly.toLocaleString('es-CL')} CLP / mes
-                        {plan.priceYearly > 0 && ` · $${plan.priceYearly.toLocaleString('es-CL')} CLP / año`}
+                        {formatMoney(plan.priceMonthly)} CLP / mes
+                        {plan.priceYearly > 0 && ` · ${formatMoney(plan.priceYearly)} CLP / año`}
                       </p>
                     )}
                   </div>
