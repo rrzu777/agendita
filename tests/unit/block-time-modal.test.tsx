@@ -42,7 +42,7 @@ describe('BlockTimeModal', () => {
   })
 
   it('cierra el modal y muestra feedback cuando crea un bloqueo simple', async () => {
-    mockCreateTimeBlock.mockResolvedValue({ id: 'block-1' })
+    mockCreateTimeBlock.mockResolvedValue({ ok: true, data: { id: 'block-1' } })
     const { container, unmount } = await renderBlockTimeModal()
 
     await clickButton(container, 'Bloquear horario')
@@ -61,8 +61,11 @@ describe('BlockTimeModal', () => {
 
   it('NO cierra el modal y muestra el mensaje cuando la serie requiere confirmación', async () => {
     mockCreateTimeBlockSeries.mockResolvedValue({
-      requiresConfirmation: true,
-      message: 'El bloqueo recurrente se solapa con reservas existentes en 1 día(s): 2026-06-01. Además, con este bloqueo "MANICURA" no cabría en ningún día.',
+      ok: true,
+      data: {
+        requiresConfirmation: true,
+        message: 'El bloqueo recurrente se solapa con reservas existentes en 1 día(s): 2026-06-01. Además, con este bloqueo "MANICURA" no cabría en ningún día.',
+      },
     })
     const { unmount } = await renderBlockTimeModal()
 
@@ -83,7 +86,7 @@ describe('BlockTimeModal', () => {
   })
 
   it('envía confirmed=true cuando la casilla de confirmación está marcada', async () => {
-    mockCreateTimeBlockSeries.mockResolvedValue({ series: { id: 'series-1' }, overlappingDates: [] })
+    mockCreateTimeBlockSeries.mockResolvedValue({ ok: true, data: { series: { id: 'series-1' }, overlappingDates: [] } })
     const { unmount } = await renderBlockTimeModal()
 
     await clickButton(document.body, 'Bloquear horario')
@@ -101,8 +104,11 @@ describe('BlockTimeModal', () => {
 
   it('cierra el modal y muestra snack-bar cuando crea una serie con solapes', async () => {
     mockCreateTimeBlockSeries.mockResolvedValue({
-      series: { id: 'series-1' },
-      overlappingDates: ['2026-06-01'],
+      ok: true,
+      data: {
+        series: { id: 'series-1' },
+        overlappingDates: ['2026-06-01'],
+      },
     })
     const { container, unmount } = await renderBlockTimeModal()
 

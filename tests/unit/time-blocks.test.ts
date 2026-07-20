@@ -39,19 +39,25 @@ vi.mock('@/lib/rate-limit', () => ({
   checkRateLimit: vi.fn().mockResolvedValue({ success: true }),
 }))
 
-vi.mock('@/lib/auth/server', () => ({
-  requireBusiness: vi.fn().mockResolvedValue({ businessId: 'biz-1' }),
-  requireBusinessRole: vi.fn().mockResolvedValue({
-    business: { id: 'biz-1', timezone: 'America/Santiago' },
-    businessId: 'biz-1',
-  }),
-  ForbiddenError: class extends Error {
-    constructor(msg: string) {
-      super(msg)
-      this.name = 'ForbiddenError'
-    }
-  },
-}))
+vi.mock('@/lib/auth/server', async () => {
+  // ForbiddenError debe extender el UserError REAL: así el wrapper action()
+  // lo reconoce (instanceof UserError) y devuelve su mensaje en { ok:false },
+  // en vez de redactarlo al genérico. Mismo contrato que la clase de producción.
+  const { UserError } = await import('@/lib/actions/result')
+  return {
+    requireBusiness: vi.fn().mockResolvedValue({ businessId: 'biz-1' }),
+    requireBusinessRole: vi.fn().mockResolvedValue({
+      business: { id: 'biz-1', timezone: 'America/Santiago' },
+      businessId: 'biz-1',
+    }),
+    ForbiddenError: class extends UserError {
+      constructor(msg: string) {
+        super(msg)
+        this.name = 'ForbiddenError'
+      }
+    },
+  }
+})
 
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
@@ -96,7 +102,7 @@ describe('createTimeBlock', () => {
   it('creates a time block when no overlap', async () => {
     const result = await createTimeBlock(baseInput)
 
-    expect(result.id).toBe('block-1')
+    expect(result).toEqual({ ok: true, data: expect.objectContaining({ id: 'block-1' }) })
     expect(mockPrisma.timeBlock.create).toHaveBeenCalledTimes(1)
   })
 
@@ -106,8 +112,11 @@ describe('createTimeBlock', () => {
     const result = await createTimeBlock({ ...baseInput, confirmOverlap: false })
 
     expect(result).toEqual({
-      requiresConfirmation: true,
-      message: expect.stringMatching(/solapa con reservas/),
+      ok: true,
+      data: {
+        requiresConfirmation: true,
+        message: expect.stringMatching(/solapa con reservas/),
+      },
     })
     expect(mockPrisma.timeBlock.create).not.toHaveBeenCalled()
   })
@@ -117,28 +126,28 @@ describe('createTimeBlock', () => {
 
     const result = await createTimeBlock({ ...baseInput, confirmOverlap: true })
 
-    expect(result.id).toBe('block-1')
+    expect(result).toEqual({ ok: true, data: expect.objectContaining({ id: 'block-1' }) })
     expect(mockPrisma.timeBlock.create).toHaveBeenCalledTimes(1)
   })
 
   it('rejects when end is before start', async () => {
-    await expect(
-      createTimeBlock({
-        ...baseInput,
-        startDateTime: new Date('2026-06-01T10:00:00Z'),
-        endDateTime: new Date('2026-06-01T09:00:00Z'),
-      }),
-    ).rejects.toThrow(/fecha de fin debe ser posterior/)
+    const result = await createTimeBlock({
+      ...baseInput,
+      startDateTime: new Date('2026-06-01T10:00:00Z'),
+      endDateTime: new Date('2026-06-01T09:00:00Z'),
+    })
+
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/fecha de fin debe ser posterior/) })
   })
 
   it('rejects when duration exceeds 32 days', async () => {
-    await expect(
-      createTimeBlock({
-        ...baseInput,
-        startDateTime: new Date('2026-06-01T00:00:00Z'),
-        endDateTime: new Date('2026-07-05T00:00:00Z'),
-      }),
-    ).rejects.toThrow(/duración máxima/)
+    const result = await createTimeBlock({
+      ...baseInput,
+      startDateTime: new Date('2026-06-01T00:00:00Z'),
+      endDateTime: new Date('2026-07-05T00:00:00Z'),
+    })
+
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/duración máxima/) })
   })
 
   it('does not affect other businesses', async () => {
@@ -210,8 +219,11 @@ describe('createTimeBlock', () => {
     })
 
     expect(result).toEqual({
-      requiresConfirmation: true,
-      message: expect.stringMatching(/Además, con este bloqueo "CORTE" no cabría en ningún día\./),
+      ok: true,
+      data: {
+        requiresConfirmation: true,
+        message: expect.stringMatching(/Además, con este bloqueo "CORTE" no cabría en ningún día\./),
+      },
     })
     expect(mockPrisma.timeBlock.create).not.toHaveBeenCalled()
   })
@@ -237,8 +249,10 @@ describe('createTimeBlockSeries', () => {
   it('creates the series when no bookings overlap', async () => {
     const result = await createTimeBlockSeries(seriesInput)
 
-    expect('series' in result && result.series.id).toBe('series-1')
-    expect('overlappingDates' in result && result.overlappingDates).toEqual([])
+    expect(result).toEqual({
+      ok: true,
+      data: { series: { id: 'series-1', businessId: 'biz-1' }, overlappingDates: [] },
+    })
     expect(mockPrisma.timeBlockSeries.create).toHaveBeenCalledTimes(1)
   })
 
@@ -254,8 +268,11 @@ describe('createTimeBlockSeries', () => {
     const result = await createTimeBlockSeries(seriesInput)
 
     expect(result).toEqual({
-      requiresConfirmation: true,
-      message: expect.stringMatching(new RegExp(`se solapa con reservas existentes.*${tomorrowStr}`)),
+      ok: true,
+      data: {
+        requiresConfirmation: true,
+        message: expect.stringMatching(new RegExp(`se solapa con reservas existentes.*${tomorrowStr}`)),
+      },
     })
     expect(mockPrisma.timeBlockSeries.create).not.toHaveBeenCalled()
   })
@@ -271,8 +288,13 @@ describe('createTimeBlockSeries', () => {
 
     const result = await createTimeBlockSeries({ ...seriesInput, confirmed: true })
 
-    expect('series' in result && result.series.id).toBe('series-1')
-    expect('overlappingDates' in result && result.overlappingDates).toContain(tomorrowStr)
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        series: { id: 'series-1', businessId: 'biz-1' },
+        overlappingDates: expect.arrayContaining([tomorrowStr]),
+      },
+    })
     expect(mockPrisma.timeBlockSeries.create).toHaveBeenCalledTimes(1)
   })
 
@@ -314,7 +336,7 @@ describe('updateTimeBlockSeries', () => {
   it('splits the series when no bookings overlap the new schedule', async () => {
     const result = await updateTimeBlockSeries('series-1', { startTime: '13:00', endTime: '15:00' })
 
-    expect('series' in result && result.series.id).toBe('series-2')
+    expect(result).toEqual({ ok: true, data: { series: expect.objectContaining({ id: 'series-2' }) } })
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
   })
 
@@ -330,8 +352,11 @@ describe('updateTimeBlockSeries', () => {
     const result = await updateTimeBlockSeries('series-1', { startTime: '13:00', endTime: '15:00' })
 
     expect(result).toEqual({
-      requiresConfirmation: true,
-      message: expect.stringMatching(/se solapa con reservas existentes/),
+      ok: true,
+      data: {
+        requiresConfirmation: true,
+        message: expect.stringMatching(/se solapa con reservas existentes/),
+      },
     })
     expect(mockPrisma.$transaction).not.toHaveBeenCalled()
   })
@@ -351,7 +376,7 @@ describe('updateTimeBlockSeries', () => {
       confirmed: true,
     })
 
-    expect('series' in result && result.series.id).toBe('series-2')
+    expect(result).toEqual({ ok: true, data: { series: expect.objectContaining({ id: 'series-2' }) } })
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
   })
 })
@@ -374,7 +399,7 @@ describe('overrideSeriesOccurrence', () => {
   it('saves the override when no bookings overlap the new range', async () => {
     const result = await overrideSeriesOccurrence('series-1', occurrenceDate, overrideData)
 
-    expect(result).toBeUndefined()
+    expect(result).toEqual({ ok: true, data: undefined })
     expect(mockPrisma.timeBlockException.upsert).toHaveBeenCalledTimes(1)
   })
 
@@ -384,8 +409,11 @@ describe('overrideSeriesOccurrence', () => {
     const result = await overrideSeriesOccurrence('series-1', occurrenceDate, overrideData)
 
     expect(result).toEqual({
-      requiresConfirmation: true,
-      message: expect.stringMatching(/se solapa con reservas existentes/),
+      ok: true,
+      data: {
+        requiresConfirmation: true,
+        message: expect.stringMatching(/se solapa con reservas existentes/),
+      },
     })
     expect(mockPrisma.timeBlockException.upsert).not.toHaveBeenCalled()
   })
@@ -398,7 +426,7 @@ describe('overrideSeriesOccurrence', () => {
       confirmed: true,
     })
 
-    expect(result).toBeUndefined()
+    expect(result).toEqual({ ok: true, data: undefined })
     expect(mockPrisma.timeBlockException.upsert).toHaveBeenCalledTimes(1)
   })
 })
@@ -412,10 +440,12 @@ describe('deleteTimeBlock', () => {
     })
   })
 
-  it('throws ForbiddenError when block not found', async () => {
+  it('returns { ok: false } with the ForbiddenError message when block not found', async () => {
     mockPrisma.timeBlock.deleteMany.mockResolvedValue({ count: 0 })
 
-    await expect(deleteTimeBlock('nonexistent')).rejects.toThrow('Bloque no encontrado')
+    const result = await deleteTimeBlock('nonexistent')
+
+    expect(result).toEqual({ ok: false, error: 'Bloque no encontrado' })
   })
 
   it('revalidates paths after creation', async () => {
@@ -452,7 +482,7 @@ describe('updateTimeBlock', () => {
       confirmOverlap: false,
     })
 
-    expect('id' in result && result.id).toBe('block-1')
+    expect(result.ok && 'id' in result.data && result.data.id).toBe('block-1')
     expect(mockPrisma.timeBlock.updateMany).toHaveBeenCalledWith({
       where: { id: 'block-1', businessId: 'biz-1' },
       data: {
@@ -475,8 +505,11 @@ describe('updateTimeBlock', () => {
     })
 
     expect(result).toEqual({
-      requiresConfirmation: true,
-      message: expect.stringMatching(/solapa con reservas/),
+      ok: true,
+      data: {
+        requiresConfirmation: true,
+        message: expect.stringMatching(/solapa con reservas/),
+      },
     })
     expect(mockPrisma.timeBlock.updateMany).not.toHaveBeenCalled()
   })
@@ -492,7 +525,7 @@ describe('updateTimeBlock', () => {
     })
 
     expect(mockPrisma.booking.findMany).not.toHaveBeenCalled()
-    expect('id' in result && result.id).toBe('block-1')
+    expect(result.ok && 'id' in result.data && result.data.id).toBe('block-1')
     expect(mockPrisma.timeBlock.updateMany).toHaveBeenCalledTimes(1)
   })
 
@@ -506,43 +539,43 @@ describe('updateTimeBlock', () => {
       confirmOverlap: true,
     })
 
-    expect('id' in result && result.id).toBe('block-1')
+    expect(result.ok && 'id' in result.data && result.data.id).toBe('block-1')
     expect(mockPrisma.timeBlock.updateMany).toHaveBeenCalledTimes(1)
   })
 
   it('rejects when end is before start', async () => {
-    await expect(
-      updateTimeBlock('block-1', {
-        startDateTime: new Date('2026-06-01T10:00:00Z'),
-        endDateTime: new Date('2026-06-01T09:00:00Z'),
-        reason: null,
-        confirmOverlap: false,
-      }),
-    ).rejects.toThrow(/fecha de fin debe ser posterior/)
+    const result = await updateTimeBlock('block-1', {
+      startDateTime: new Date('2026-06-01T10:00:00Z'),
+      endDateTime: new Date('2026-06-01T09:00:00Z'),
+      reason: null,
+      confirmOverlap: false,
+    })
+
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/fecha de fin debe ser posterior/) })
   })
 
   it('rejects when duration exceeds 32 days', async () => {
-    await expect(
-      updateTimeBlock('block-1', {
-        startDateTime: new Date('2026-06-01T00:00:00Z'),
-        endDateTime: new Date('2026-07-05T00:00:00Z'),
-        reason: null,
-        confirmOverlap: false,
-      }),
-    ).rejects.toThrow(/duración máxima/)
+    const result = await updateTimeBlock('block-1', {
+      startDateTime: new Date('2026-06-01T00:00:00Z'),
+      endDateTime: new Date('2026-07-05T00:00:00Z'),
+      reason: null,
+      confirmOverlap: false,
+    })
+
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/duración máxima/) })
   })
 
-  it('throws ForbiddenError when the block does not exist for this business', async () => {
+  it('returns { ok: false } with the ForbiddenError message when the block does not exist for this business', async () => {
     mockPrisma.timeBlock.findFirst.mockResolvedValue(null)
 
-    await expect(
-      updateTimeBlock('nonexistent', {
-        startDateTime: baseInput.startDateTime,
-        endDateTime: baseInput.endDateTime,
-        reason: null,
-        confirmOverlap: false,
-      }),
-    ).rejects.toThrow('Bloque no encontrado')
+    const result = await updateTimeBlock('nonexistent', {
+      startDateTime: baseInput.startDateTime,
+      endDateTime: baseInput.endDateTime,
+      reason: null,
+      confirmOverlap: false,
+    })
+
+    expect(result).toEqual({ ok: false, error: 'Bloque no encontrado' })
   })
 
   it('scopes the existence check to businessId', async () => {
@@ -558,17 +591,17 @@ describe('updateTimeBlock', () => {
     })
   })
 
-  it('throws ForbiddenError if the block was deleted concurrently before the update lands', async () => {
+  it('returns { ok: false } if the block was deleted concurrently before the update lands', async () => {
     mockPrisma.timeBlock.updateMany.mockResolvedValue({ count: 0 })
 
-    await expect(
-      updateTimeBlock('block-1', {
-        startDateTime: new Date('2026-06-01T11:00:00Z'),
-        endDateTime: new Date('2026-06-01T12:00:00Z'),
-        reason: baseInput.reason,
-        confirmOverlap: false,
-      }),
-    ).rejects.toThrow('Bloque no encontrado')
+    const result = await updateTimeBlock('block-1', {
+      startDateTime: new Date('2026-06-01T11:00:00Z'),
+      endDateTime: new Date('2026-06-01T12:00:00Z'),
+      reason: baseInput.reason,
+      confirmOverlap: false,
+    })
+
+    expect(result).toEqual({ ok: false, error: 'Bloque no encontrado' })
   })
 })
 
@@ -598,8 +631,8 @@ describe('overlapToleranceMinutes', () => {
 
   it('rejects tolerance beyond half the block duration', async () => {
     // baseInput dura 60 min → máximo 30
-    await expect(createTimeBlock({ ...baseInput, overlapToleranceMinutes: 31 }))
-      .rejects.toThrow('Datos inválidos')
+    const res = await createTimeBlock({ ...baseInput, overlapToleranceMinutes: 31 })
+    expect(res).toEqual({ ok: false, error: expect.stringContaining('Datos inválidos') })
     expect(mockPrisma.timeBlock.create).not.toHaveBeenCalled()
   })
 
@@ -614,14 +647,14 @@ describe('overlapToleranceMinutes', () => {
       weeks: null,
       overlapToleranceMinutes: 45,
     })
-    expect('series' in res).toBe(true)
+    expect(res.ok && 'series' in res.data).toBe(true)
     expect(mockPrisma.timeBlockSeries.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ overlapToleranceMinutes: 45 }) }),
     )
   })
 
   it('rejects series tolerance beyond half the occurrence duration', async () => {
-    await expect(createTimeBlockSeries({
+    const res = await createTimeBlockSeries({
       daysOfWeek: [1],
       startTime: '12:00',
       endTime: '13:00',
@@ -630,7 +663,8 @@ describe('overlapToleranceMinutes', () => {
       endMode: 'forever',
       weeks: null,
       overlapToleranceMinutes: 31,
-    })).rejects.toThrow('Datos inválidos')
+    })
+    expect(res).toEqual({ ok: false, error: expect.stringContaining('Datos inválidos') })
     expect(mockPrisma.timeBlockSeries.create).not.toHaveBeenCalled()
   })
 

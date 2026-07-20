@@ -26,7 +26,7 @@ function DeleteSeriesButton({ seriesId }: { seriesId: string }) {
       variant="ghost"
       className="text-destructive hover:text-destructive/80"
       disabled={isPending}
-      onClick={() => startTransition(async () => { try { await deleteTimeBlockSeries(seriesId); router.refresh() } catch { /* noop */ } })}
+      onClick={() => startTransition(async () => { const res = await deleteTimeBlockSeries(seriesId); if (res.ok) router.refresh() })}
     >
       <Trash2 className="size-3" />
     </Button>

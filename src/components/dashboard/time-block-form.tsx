@@ -10,7 +10,8 @@ export function TimeBlockList({ blocks: initialBlocks }: { blocks: { id: string;
   const blocks = initialBlocks.filter((block) => !deletedIds.has(block.id))
 
   async function handleDelete(id: string) {
-    await deleteTimeBlock(id)
+    const res = await deleteTimeBlock(id)
+    if (!res.ok) return
     setDeletedIds((current) => new Set(current).add(id))
   }
 

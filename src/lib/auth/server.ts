@@ -1,14 +1,18 @@
 import { getCurrentUser, getCurrentUserWithBusiness } from './user'
+import { UserError } from '@/lib/actions/result'
 import type { BusinessRole } from '@prisma/client'
 
-export class AuthError extends Error {
+// AuthError/ForbiddenError llevan mensajes escritos para el usuario final, así
+// que extienden UserError: el wrapper `action()` los muestra tal cual en vez de
+// reemplazarlos por el genérico (ver src/lib/actions/result.ts).
+export class AuthError extends UserError {
   constructor(message: string = 'No autorizado') {
     super(message)
     this.name = 'AuthError'
   }
 }
 
-export class ForbiddenError extends Error {
+export class ForbiddenError extends UserError {
   constructor(message: string = 'No tienes permisos para realizar esta acción') {
     super(message)
     this.name = 'ForbiddenError'

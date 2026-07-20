@@ -51,10 +51,13 @@ describe('EditSeriesOccurrenceDialog', () => {
   it('muestra el aviso de conflicto y reintenta con confirmed=true al confirmar (solo este día)', async () => {
     mockOverrideSeriesOccurrence
       .mockResolvedValueOnce({
-        requiresConfirmation: true,
-        message: 'El bloqueo se solapa con reservas existentes. Confirma si deseas guardarlo de todas formas (no se cancelarán las reservas existentes).',
+        ok: true,
+        data: {
+          requiresConfirmation: true,
+          message: 'El bloqueo se solapa con reservas existentes. Confirma si deseas guardarlo de todas formas (no se cancelarán las reservas existentes).',
+        },
       })
-      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ ok: true, data: undefined })
     const { unmount } = await renderDialog()
 
     await clickButton(document.body, 'Guardar cambios')
@@ -79,10 +82,13 @@ describe('EditSeriesOccurrenceDialog', () => {
   it('muestra el aviso de conflicto y reintenta con confirmed=true al confirmar (toda la serie)', async () => {
     mockUpdateTimeBlockSeries
       .mockResolvedValueOnce({
-        requiresConfirmation: true,
-        message: 'El nuevo horario de la serie se solapa con reservas existentes en 2 día(s): 2026-06-01, 2026-06-02. Confirma si deseas guardarlo de todas formas (no se cancelarán las reservas existentes).',
+        ok: true,
+        data: {
+          requiresConfirmation: true,
+          message: 'El nuevo horario de la serie se solapa con reservas existentes en 2 día(s): 2026-06-01, 2026-06-02. Confirma si deseas guardarlo de todas formas (no se cancelarán las reservas existentes).',
+        },
       })
-      .mockResolvedValueOnce({ series: { id: 's2' } })
+      .mockResolvedValueOnce({ ok: true, data: { series: { id: 's2' } } })
     const { unmount } = await renderDialog()
 
     await clickButton(document.body, 'Guardar cambios')
@@ -104,7 +110,7 @@ describe('EditSeriesOccurrenceDialog', () => {
   })
 
   it('guarda directo y refresca cuando no hay conflicto', async () => {
-    mockOverrideSeriesOccurrence.mockResolvedValue(undefined)
+    mockOverrideSeriesOccurrence.mockResolvedValue({ ok: true, data: undefined })
     const { unmount } = await renderDialog()
 
     await clickButton(document.body, 'Guardar cambios')

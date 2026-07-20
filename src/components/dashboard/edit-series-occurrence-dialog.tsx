@@ -9,6 +9,7 @@ import {
 import {
   skipSeriesOccurrence, overrideSeriesOccurrence, updateTimeBlockSeries, deleteTimeBlockSeries,
 } from '@/server/actions/time-blocks'
+import type { ActionResult } from '@/lib/actions/result'
 import { deriveBlockFormValues, parseTimeUTC } from '@/lib/calendar/block-form-values'
 import { BlockFormFields } from './block-form-fields'
 import type { CalendarTimeBlock } from './time-block-card'
@@ -48,16 +49,17 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
   }
 
   function run(
-    fn: () => Promise<{ requiresConfirmation: true; message: string } | object | undefined | void>,
+    fn: () => Promise<ActionResult<{ requiresConfirmation: true; message: string } | object | undefined | void>>,
     onRequiresConfirmation?: (message: string) => void,
   ) {
     startTransition(async () => {
       try {
         const res = await fn()
+        if (!res.ok) { setError(res.error); return }
         // Mismo guard que los otros diálogos de bloqueos: el union tipado hace
         // innecesaria la inspección estructural campo a campo.
-        if (res && 'requiresConfirmation' in res && onRequiresConfirmation) {
-          onRequiresConfirmation(res.message)
+        if (res.data && 'requiresConfirmation' in res.data && onRequiresConfirmation) {
+          onRequiresConfirmation(res.data.message)
           return
         }
         router.refresh()

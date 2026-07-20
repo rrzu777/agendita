@@ -37,10 +37,10 @@ describe('createTimeBlockSeries', () => {
       daysOfWeek: [1, 2, 3, 4], startTime: '13:00', endTime: '14:00', reason: 'Almuerzo',
       anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'weeks', weeks: 3,
     })
-    expect('series' in res).toBe(true)
-    if ('series' in res) {
-      expect(res.series.until).not.toBeNull()
-      expect(res.overlappingDates).toEqual([])
+    expect(res.ok && 'series' in res.data).toBe(true)
+    if (res.ok && 'series' in res.data) {
+      expect(res.data.series.until).not.toBeNull()
+      expect(res.data.overlappingDates).toEqual([])
     }
     const count = await prisma.timeBlockSeries.count({ where: { businessId } })
     expect(count).toBe(1)
@@ -48,7 +48,9 @@ describe('createTimeBlockSeries', () => {
 
   it('skipSeriesOccurrence crea una excepción isSkipped', async () => {
     const { createTimeBlockSeries, skipSeriesOccurrence } = await import('@/server/actions/time-blocks')
-    const { series } = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever' }) as { series: { id: string } }
+    const created = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever' })
+    if (!created.ok || !('series' in created.data)) throw new Error(created.ok ? 'esperaba serie creada' : created.error)
+    const series = created.data.series
     await skipSeriesOccurrence(series.id, new Date('2026-06-08T04:00:00Z'))
     const exc = await prisma.timeBlockException.findFirst({ where: { seriesId: series.id } })
     expect(exc?.isSkipped).toBe(true)
@@ -56,7 +58,9 @@ describe('createTimeBlockSeries', () => {
 
   it('overrideSeriesOccurrence hace upsert de un override', async () => {
     const { createTimeBlockSeries, overrideSeriesOccurrence } = await import('@/server/actions/time-blocks')
-    const { series } = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever' }) as { series: { id: string } }
+    const created = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever' })
+    if (!created.ok || !('series' in created.data)) throw new Error(created.ok ? 'esperaba serie creada' : created.error)
+    const series = created.data.series
     const occDate = new Date('2026-06-15T04:00:00Z')
     await overrideSeriesOccurrence(series.id, occDate, { startDateTime: new Date('2026-06-15T18:00:00Z'), endDateTime: new Date('2026-06-15T19:00:00Z'), reason: 'Movido' })
     await overrideSeriesOccurrence(series.id, occDate, { startDateTime: new Date('2026-06-15T19:00:00Z'), endDateTime: new Date('2026-06-15T20:00:00Z'), reason: 'Movido otra vez' })
@@ -67,35 +71,41 @@ describe('createTimeBlockSeries', () => {
 
   it('updateTimeBlockSeries hace split conservando los días y cambiando la hora', async () => {
     const { createTimeBlockSeries, updateTimeBlockSeries } = await import('@/server/actions/time-blocks')
-    const { series } = await createTimeBlockSeries({ daysOfWeek: [1, 2, 3, 4], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2020-01-06T04:00:00Z'), endMode: 'forever' }) as { series: { id: string } }
+    const created = await createTimeBlockSeries({ daysOfWeek: [1, 2, 3, 4], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2020-01-06T04:00:00Z'), endMode: 'forever' })
+    if (!created.ok || !('series' in created.data)) throw new Error(created.ok ? 'esperaba serie creada' : created.error)
+    const series = created.data.series
     const res = await updateTimeBlockSeries(series.id, { startTime: '12:30', endTime: '13:30', reason: 'A2' })
     const old = await prisma.timeBlockSeries.findUniqueOrThrow({ where: { id: series.id } })
     expect(old.until).not.toBeNull() // vieja cerrada
-    if (!('series' in res)) throw new Error('esperaba split, no requiresConfirmation')
-    expect(res.series.id).not.toBe(series.id) // serie nueva
-    expect(res.series.daysOfWeek).toEqual([1, 2, 3, 4]) // días PRESERVADOS
-    expect(res.series.startTime).toBe('12:30') // hora cambiada
+    if (!res.ok || !('series' in res.data)) throw new Error(res.ok ? 'esperaba split, no requiresConfirmation' : res.error)
+    expect(res.data.series.id).not.toBe(series.id) // serie nueva
+    expect(res.data.series.daysOfWeek).toEqual([1, 2, 3, 4]) // días PRESERVADOS
+    expect(res.data.series.startTime).toBe('12:30') // hora cambiada
   })
 
   it('updateTimeBlockSeries edita en el lugar una serie solo-futura (sin split, misma id)', async () => {
     const { createTimeBlockSeries, updateTimeBlockSeries } = await import('@/server/actions/time-blocks')
     // Ancla muy en el futuro: no hay ocurrencias pasadas que preservar.
-    const { series } = await createTimeBlockSeries({ daysOfWeek: [1, 2, 3], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2099-01-05T04:00:00Z'), endMode: 'forever' }) as { series: { id: string } }
+    const created = await createTimeBlockSeries({ daysOfWeek: [1, 2, 3], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2099-01-05T04:00:00Z'), endMode: 'forever' })
+    if (!created.ok || !('series' in created.data)) throw new Error(created.ok ? 'esperaba serie creada' : created.error)
+    const series = created.data.series
     const before = await prisma.timeBlockSeries.count({ where: { businessId } })
     const res = await updateTimeBlockSeries(series.id, { startTime: '12:30', endTime: '13:30', reason: 'A2' })
-    if (!('series' in res)) throw new Error('esperaba edición en el lugar, no requiresConfirmation')
-    expect(res.series.id).toBe(series.id) // MISMA serie, no una nueva
-    expect(res.series.startTime).toBe('12:30')
+    if (!res.ok || !('series' in res.data)) throw new Error(res.ok ? 'esperaba edición en el lugar, no requiresConfirmation' : res.error)
+    expect(res.data.series.id).toBe(series.id) // MISMA serie, no una nueva
+    expect(res.data.series.startTime).toBe('12:30')
     expect(await prisma.timeBlockSeries.count({ where: { businessId } })).toBe(before) // no proliferan filas
   })
 
   it('updateTimeBlockSeries NO crea una serie fantasma al editar una serie ya terminada', async () => {
     const { createTimeBlockSeries, updateTimeBlockSeries } = await import('@/server/actions/time-blocks')
     // Serie totalmente en el pasado (anchor 2020, 1 semana): until << hoy.
-    const { series } = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2020-01-06T04:00:00Z'), endMode: 'weeks', weeks: 1 }) as { series: { id: string } }
+    const created = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2020-01-06T04:00:00Z'), endMode: 'weeks', weeks: 1 })
+    if (!created.ok || !('series' in created.data)) throw new Error(created.ok ? 'esperaba serie creada' : created.error)
+    const series = created.data.series
     const res = await updateTimeBlockSeries(series.id, { startTime: '12:30', endTime: '13:30', reason: 'A2' })
-    if (!('series' in res)) throw new Error('esperaba edición en el lugar')
-    expect(res.series.id).toBe(series.id)
+    if (!res.ok || !('series' in res.data)) throw new Error(res.ok ? 'esperaba edición en el lugar' : res.error)
+    expect(res.data.series.id).toBe(series.id)
     // Ninguna serie del negocio debe quedar con until anterior al anchor (fantasma).
     const all = await prisma.timeBlockSeries.findMany({ where: { businessId } })
     for (const s of all) {
@@ -125,7 +135,9 @@ describe('createTimeBlockSeries', () => {
 
   it('deleteTimeBlockSeries borra la serie y sus excepciones', async () => {
     const { createTimeBlockSeries, skipSeriesOccurrence, deleteTimeBlockSeries } = await import('@/server/actions/time-blocks')
-    const { series } = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever' }) as { series: { id: string } }
+    const created = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever' })
+    if (!created.ok || !('series' in created.data)) throw new Error(created.ok ? 'esperaba serie creada' : created.error)
+    const series = created.data.series
     await skipSeriesOccurrence(series.id, new Date('2026-06-08T04:00:00Z'))
     await deleteTimeBlockSeries(series.id)
     expect(await prisma.timeBlockSeries.findUnique({ where: { id: series.id } })).toBeNull()

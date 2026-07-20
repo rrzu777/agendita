@@ -134,12 +134,13 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
         if (recurring) {
           const anchorDate = fromZonedTime(`${date} 00:00:00`, timezone)
           const res = await createTimeBlockSeries({ daysOfWeek, startTime, endTime, reason: reason || null, anchorDate, endMode, weeks: endMode === 'weeks' ? weeks : null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmed: confirmOverlap })
+          if (!res.ok) { setError(res.error); return }
           // Mismo patrón que los bloqueos sueltos: si hay reservas que chocan,
           // la serie NO se crea hasta que la dueña marque la confirmación.
-          if ('requiresConfirmation' in res) { setError(res.message); return }
+          if ('requiresConfirmation' in res.data) { setError(res.data.message); return }
           router.refresh()
-          if (res.overlappingDates.length > 0) {
-            setFeedback(`Serie creada. Estos días se solapan con reservas existentes (no se cancelaron): ${res.overlappingDates.join(', ')}`)
+          if (res.data.overlappingDates.length > 0) {
+            setFeedback(`Serie creada. Estos días se solapan con reservas existentes (no se cancelaron): ${res.data.overlappingDates.join(', ')}`)
           } else {
             setFeedback('Bloqueo recurrente creado')
           }
@@ -149,7 +150,8 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
         const start = parseTimeUTC(date, startTime, timezone)
         const end = parseTimeUTC(date, endTime, timezone)
         const result = await createTimeBlock({ startDateTime: start, endDateTime: end, reason: reason || null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmOverlap })
-        if (result && 'requiresConfirmation' in result) { setError(result.message); return }
+        if (!result.ok) { setError(result.error); return }
+        if ('requiresConfirmation' in result.data) { setError(result.data.message); return }
         router.refresh()
         setFeedback('Bloqueo creado')
         setOpen(false)
@@ -286,12 +288,9 @@ export function DeleteBlockButton({ blockId }: { blockId: string }) {
 
   function handleDelete() {
     startTransition(async () => {
-      try {
-        await deleteTimeBlock(blockId)
-        router.refresh()
-      } catch {
-        // ignore deletion errors
-      }
+      const res = await deleteTimeBlock(blockId)
+      if (res.ok) router.refresh()
+      // errores de eliminación se ignoran (mismo comportamiento previo)
     })
   }
 
