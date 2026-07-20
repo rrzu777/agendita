@@ -27,13 +27,14 @@ function clampDurationPart(value: string, min: number, max: number): number {
   return Math.min(Math.max(parsed, min), max)
 }
 
-function ServicePreview({ name, description, price, durationMinutes, depositAmount, color }: {
+function ServicePreview({ name, description, price, durationMinutes, depositAmount, color, currency }: {
   name: string
   description: string
   price: string
   durationMinutes: number
   depositAmount: string
   color: string
+  currency: string
 }) {
   const validColor = HEX_COLOR_REGEX.test(color) ? color : '#E5E7EB'
   return (
@@ -51,10 +52,10 @@ function ServicePreview({ name, description, price, durationMinutes, depositAmou
         </div>
       </div>
       <div className="flex gap-4 text-xs text-muted-foreground">
-        {price && <span>{formatMoney(parseInt(price))}</span>}
+        {price && <span>{formatMoney(parseInt(price), currency)}</span>}
         {durationMinutes > 0 && <span>{formatDuration(durationMinutes)}</span>}
         {depositAmount && parseInt(depositAmount) > 0 && (
-          <span>Abono requerido: {formatMoney(parseInt(depositAmount))}</span>
+          <span>Abono requerido: {formatMoney(parseInt(depositAmount), currency)}</span>
         )}
       </div>
     </div>
@@ -66,11 +67,13 @@ export function ServiceForm({
   onSuccess,
   triggerLabel,
   triggerIcon,
+  currency,
 }: {
   service?: { id: string; name: string; description: string | null; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; isActive: boolean; sortOrder: number } | null
   onSuccess?: () => void
   triggerLabel?: string
   triggerIcon?: ReactNode
+  currency: string
 }) {
   const durationHoursId = useId()
   const durationMinutesId = useId()
@@ -341,6 +344,7 @@ export function ServiceForm({
               durationMinutes={duration}
               depositAmount={previewDeposit}
               color={selectedColor}
+              currency={currency}
             />
           </div>
 

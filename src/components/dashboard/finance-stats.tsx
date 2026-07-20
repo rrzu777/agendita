@@ -3,20 +3,20 @@ import { formatMoney } from '@/lib/money'
 import { Banknote, CalendarCheck2, CreditCard, Package, RotateCcw } from 'lucide-react'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- summary shape depends on server action return type
-export function FinanceStats({ summary }: { summary: any }) {
+export function FinanceStats({ summary, currency }: { summary: any; currency: string }) {
   const stats = [
-    { label: 'Ingresos hoy', value: formatMoney(summary.incomeToday), icon: Banknote },
-    { label: 'Ingresos mes', value: formatMoney(summary.incomeMonth), icon: CreditCard },
+    { label: 'Ingresos hoy', value: formatMoney(summary.incomeToday, currency), icon: Banknote },
+    { label: 'Ingresos mes', value: formatMoney(summary.incomeMonth, currency), icon: CreditCard },
     // Aditivo a "Ingresos hoy/mes" (que excluyen paquetes): venta de paquete NETA de reembolsos,
     // ventaneada a hoy/mes. Ver getFinancialSummary en src/server/actions/ledger.ts.
-    { label: 'Venta de paquetes (hoy)', value: formatMoney(summary.packageIncomeToday), icon: Package },
-    { label: 'Venta de paquetes (mes)', value: formatMoney(summary.packageIncomeMonth), icon: Package },
-    { label: 'Total abonado', value: formatMoney(summary.totalDeposited), icon: CalendarCheck2 },
-    { label: 'Pendiente por cobrar', value: formatMoney(summary.totalPending), icon: Banknote },
+    { label: 'Venta de paquetes (hoy)', value: formatMoney(summary.packageIncomeToday, currency), icon: Package },
+    { label: 'Venta de paquetes (mes)', value: formatMoney(summary.packageIncomeMonth, currency), icon: Package },
+    { label: 'Total abonado', value: formatMoney(summary.totalDeposited, currency), icon: CalendarCheck2 },
+    { label: 'Pendiente por cobrar', value: formatMoney(summary.totalPending, currency), icon: Banknote },
     { label: 'Reservas', value: summary.totalBookings, icon: CalendarCheck2 },
     { label: 'Completadas', value: summary.completedBookings, icon: CalendarCheck2 },
     { label: 'Canceladas', value: summary.cancelledBookings, icon: RotateCcw },
-    { label: 'Reembolsos', value: formatMoney(summary.totalRefunded), icon: RotateCcw },
+    { label: 'Reembolsos', value: formatMoney(summary.totalRefunded, currency), icon: RotateCcw },
   ]
 
   return (

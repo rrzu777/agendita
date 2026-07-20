@@ -17,14 +17,14 @@ const bank = {
 describe('TransferDetails variante saldo', () => {
   it('default sigue diciendo abono', () => {
     const html = renderToStaticMarkup(
-      <TransferDetails bank={bank} amount={8000} deadline={null} timezone="America/Santiago" declaring={false} onDeclare={() => {}} bookingId="b1" />,
+      <TransferDetails bank={bank} amount={8000} currency="CLP" deadline={null} timezone="America/Santiago" declaring={false} onDeclare={() => {}} bookingId="b1" />,
     )
     expect(html).toContain('abono')
   })
 
   it('variante saldo dice saldo y no muestra plazo', () => {
     const html = renderToStaticMarkup(
-      <TransferDetails bank={bank} amount={8000} deadline={null} timezone="America/Santiago" declaring={false} onDeclare={() => {}} bookingId="b1" kind="balance" />,
+      <TransferDetails bank={bank} amount={8000} currency="CLP" deadline={null} timezone="America/Santiago" declaring={false} onDeclare={() => {}} bookingId="b1" kind="balance" />,
     )
     expect(html).toContain('saldo')
     expect(html).not.toContain('abono')

@@ -9,10 +9,11 @@ import { Clock, Plus, Sparkles } from 'lucide-react'
 interface StepServiceProps {
   data: BookingData
   services: Service[]
+  currency: string
   onSelect: (data: Partial<BookingData>) => void
 }
 
-export function StepService({ data, services, onSelect }: StepServiceProps) {
+export function StepService({ data, services, currency, onSelect }: StepServiceProps) {
   if (services.length === 0) {
     return (
       <div className="py-12 text-center">
@@ -67,11 +68,11 @@ export function StepService({ data, services, onSelect }: StepServiceProps) {
                       {formatDuration(service.durationMinutes)}
                     </span>
                     <span aria-hidden="true">·</span>
-                    <span className="font-medium text-primary">{formatMoney(service.price)}</span>
+                    <span className="font-medium text-primary">{formatMoney(service.price, currency)}</span>
                     {service.depositAmount > 0 && (
                       <>
                         <span aria-hidden="true">·</span>
-                        <span>abono {formatMoney(service.depositAmount)}</span>
+                        <span>abono {formatMoney(service.depositAmount, currency)}</span>
                       </>
                     )}
                   </p>

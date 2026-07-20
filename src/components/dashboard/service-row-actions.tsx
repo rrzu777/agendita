@@ -72,18 +72,20 @@ export function ServiceRowActions({
   onToggle,
   onDeactivate,
   onSuccess,
+  currency,
 }: {
   service: RowService
   loading: boolean
   onToggle: (serviceId: string) => void
   onDeactivate: (serviceId: string) => void
   onSuccess: () => void
+  currency: string
 }) {
   const [deactivateOpen, setDeactivateOpen] = useState(false)
 
   return (
     <>
-      <TableActions primary={<ServiceForm service={service} onSuccess={onSuccess} />}>
+      <TableActions primary={<ServiceForm service={service} onSuccess={onSuccess} currency={currency} />}>
         {service.isActive ? (
           <DropdownMenuItem
             onSelect={(e) => { e.preventDefault(); setDeactivateOpen(true) }}

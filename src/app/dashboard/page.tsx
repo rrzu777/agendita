@@ -77,7 +77,7 @@ export default async function DashboardPage() {
   })
   const stats = [
     { label: 'Reservas hoy', value: bookingsToday.length.toString(), hint: '+ hoy', icon: CalendarCheck2 },
-    { label: 'Ingresos mes', value: formatMoney(summary.incomeMonth), hint: 'Este mes', icon: CreditCard },
+    { label: 'Ingresos mes', value: formatMoney(summary.incomeMonth, business.currency || 'CLP'), hint: 'Este mes', icon: CreditCard },
     { label: 'Próximas reservas', value: upcomingBookings.length.toString(), hint: 'Agenda', icon: TrendingUp },
     { label: 'Total reservas', value: bookings.length.toString(), hint: 'Histórico', icon: Users },
   ]

@@ -73,13 +73,14 @@ interface BookingWizardProps {
   businessId: string
   slug: string
   timezone: string
+  currency: string
   services: Service[]
   cancellationPolicy?: string | null
   referralToken?: string
   session: WizardSession
 }
 
-export function BookingWizard({ businessId, slug, timezone, services, cancellationPolicy, referralToken, session }: BookingWizardProps) {
+export function BookingWizard({ businessId, slug, timezone, currency, services, cancellationPolicy, referralToken, session }: BookingWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const [data, setData] = useState<BookingData>(() => applySessionPrefill(initialData, session))
   const [bookingId, setBookingId] = useState<string | null>(null)
@@ -144,7 +145,7 @@ export function BookingWizard({ businessId, slug, timezone, services, cancellati
 
       <section className="rounded-[2rem] border border-border/50 bg-card p-5 shadow-[var(--cream-shadow)] sm:p-8">
         {currentStep === 1 && (
-          <StepService data={data} services={services} onSelect={(service) => {
+          <StepService data={data} services={services} currency={currency} onSelect={(service) => {
             updateData(service)
             nextStep()
           }} />
@@ -184,7 +185,7 @@ export function BookingWizard({ businessId, slug, timezone, services, cancellati
           </div>
         )}
         {currentStep === 5 && data.serviceId && data.timeSlot && (
-          <StepPayment data={data} updateData={updateData} businessId={businessId} timezone={timezone} cancellationPolicy={cancellationPolicy} referralToken={referralToken} onSuccess={(id, mode, promo, number) => {
+          <StepPayment data={data} updateData={updateData} businessId={businessId} timezone={timezone} currency={currency} cancellationPolicy={cancellationPolicy} referralToken={referralToken} onSuccess={(id, mode, promo, number) => {
             setBookingId(id)
             setBookingNumber(number ?? null)
             setConfirmationMode(mode)
@@ -199,7 +200,7 @@ export function BookingWizard({ businessId, slug, timezone, services, cancellati
           </div>
         )}
         {currentStep === 6 && (
-          <StepConfirmation data={data} timezone={timezone} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} sessionEmail={session?.email ?? null} />
+          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} sessionEmail={session?.email ?? null} />
         )}
       </section>
     </div>

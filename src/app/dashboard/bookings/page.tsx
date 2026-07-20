@@ -108,7 +108,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
         <div className="flex items-center gap-3 text-sm">
           <CreditCard className="size-4 text-muted-foreground" />
           <span className={booking.paymentStatus === 'fully_paid' ? 'text-green-700' : 'text-primary'}>
-            {formatMoney(booking.depositPaid)} de {formatMoney(booking.finalAmount)}
+            {formatMoney(booking.depositPaid, businessCurrency)} de {formatMoney(booking.finalAmount, businessCurrency)}
           </span>
           <PaymentRevertedBadge paymentStatus={booking.paymentStatus} />
         </div>
@@ -343,11 +343,11 @@ export default async function BookingsPage() {
                       </TableCell>
                       <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
                         <span className={booking.paymentStatus === 'fully_paid' ? 'font-semibold text-green-700' : 'font-semibold text-primary'}>
-                          {formatMoney(booking.depositPaid)} / {formatMoney(booking.finalAmount)}
+                          {formatMoney(booking.depositPaid, businessCurrency)} / {formatMoney(booking.finalAmount, businessCurrency)}
                         </span>
                         {booking.remainingBalance > 0 && (
                           <div className="text-xs text-muted-foreground">
-                            Saldo: {formatMoney(booking.remainingBalance)}
+                            Saldo: {formatMoney(booking.remainingBalance, businessCurrency)}
                           </div>
                         )}
                         <PaymentRevertedBadge paymentStatus={booking.paymentStatus} />

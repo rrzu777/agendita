@@ -15,7 +15,7 @@ import { formatDuration } from '@/lib/format-duration'
 import { formatMoney } from '@/lib/money'
 import { Plus, ChevronUp, ChevronDown, X } from 'lucide-react'
 
-export function ServiceTable({ services: initialServices }: { services: { id: string; name: string; description: string | null; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; isActive: boolean; sortOrder: number }[] }) {
+export function ServiceTable({ services: initialServices, currency }: { currency: string; services: { id: string; name: string; description: string | null; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; isActive: boolean; sortOrder: number }[] }) {
   const [services, setServices] = useState(initialServices)
   const [showInactive, setShowInactive] = useState(true)
   const [loadingRow, setLoadingRow] = useState<string | null>(null)
@@ -122,7 +122,7 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
               </Label>
             </div>
           )}
-          <ServiceForm onSuccess={refresh} triggerLabel="Nuevo servicio" triggerIcon={<Plus className="mr-2 size-4" />} />
+          <ServiceForm onSuccess={refresh} currency={currency} triggerLabel="Nuevo servicio" triggerIcon={<Plus className="mr-2 size-4" />} />
         </div>
       </div>
 
@@ -150,6 +150,7 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
             </div>
             <ServiceForm
               onSuccess={refresh}
+              currency={currency}
               triggerLabel="Crear mi primer servicio"
               triggerIcon={<Plus className="mr-2 size-4" />}
             />
@@ -205,11 +206,11 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
                         secondary={service.description}
                       />
                       <TableCell className={`${TABLE_COL.money} whitespace-normal font-semibold`}>
-                        {formatMoney(service.price)}
+                        {formatMoney(service.price, currency)}
                       </TableCell>
                       <TableCell className={TABLE_COL.duration}>{formatDuration(service.durationMinutes)}</TableCell>
                       <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
-                        {formatMoney(service.depositAmount)}
+                        {formatMoney(service.depositAmount, currency)}
                       </TableCell>
                       <TableCell className="w-[64px]">
                         <div className="size-7 rounded-full border border-border" style={{ backgroundColor: service.pastelColor }} />
@@ -224,6 +225,7 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
                           onToggle={handleToggle}
                           onDeactivate={handleDeactivate}
                           onSuccess={refresh}
+                          currency={currency}
                         />
                       </TableCell>
                     </TableRow>
@@ -241,9 +243,9 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
                 subtitle={service.description}
                 badge={<StatusBadge map="service" status={service.isActive ? 'active' : 'inactive'} />}
                 rows={[
-                  { label: 'Precio', value: formatMoney(service.price) },
+                  { label: 'Precio', value: formatMoney(service.price, currency) },
                   { label: 'Duración', value: formatDuration(service.durationMinutes) },
-                  { label: 'Abono', value: formatMoney(service.depositAmount) },
+                  { label: 'Abono', value: formatMoney(service.depositAmount, currency) },
                 ]}
                 actions={
                   <ServiceRowActions
@@ -252,6 +254,7 @@ export function ServiceTable({ services: initialServices }: { services: { id: st
                     onToggle={handleToggle}
                     onDeactivate={handleDeactivate}
                     onSuccess={refresh}
+                    currency={currency}
                   />
                 }
                 className={!service.isActive ? 'opacity-60' : ''}

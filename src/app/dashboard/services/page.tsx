@@ -24,7 +24,7 @@ export default async function ServicesPage() {
         subtitle="Gestiona tus servicios y precios."
       />
       <div className="p-5 md:p-10">
-        <ServiceTable services={services} />
+        <ServiceTable services={services} currency={userData.business.currency || 'CLP'} />
       </div>
     </div>
   )

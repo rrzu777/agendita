@@ -154,13 +154,13 @@ export default async function CustomerDetailPage({ params }: Props) {
           <div className="studio-card p-4">
             <p className="studio-eyebrow">Total</p>
             <p className="mt-1 text-2xl font-semibold text-primary">
-              {formatMoney(customerTotalValue)}
+              {formatMoney(customerTotalValue, currency)}
             </p>
           </div>
           <div className="studio-card p-4">
             <p className="studio-eyebrow">Total pagado</p>
             <p className="mt-1 text-2xl font-semibold text-green-700">
-              {formatMoney(customer.totalPaidApproved)}
+              {formatMoney(customer.totalPaidApproved, currency)}
             </p>
           </div>
           <div className="studio-card p-4">
@@ -170,7 +170,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                 customer.pendingBalance > 0 ? 'text-destructive' : 'text-primary'
               }`}
             >
-              {formatMoney(customer.pendingBalance)}
+              {formatMoney(customer.pendingBalance, currency)}
             </p>
           </div>
           <div className="studio-card p-4">
@@ -253,12 +253,12 @@ export default async function CustomerDetailPage({ params }: Props) {
                             label: 'Fecha',
                             value: `${new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })} ${new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: businessTimezone })}`,
                           },
-                          { label: 'Total', value: formatMoney(booking.totalPrice) },
+                          { label: 'Total', value: formatMoney(booking.totalPrice, currency) },
                           {
                             label: 'Saldo',
                             value:
                               booking.remainingBalance > 0
-                                ? formatMoney(booking.remainingBalance)
+                                ? formatMoney(booking.remainingBalance, currency)
                                 : booking.status === 'cancelled' || booking.status === 'no_show' || booking.status === 'expired'
                                   ? '—'
                                   : 'Pagado',
@@ -302,12 +302,12 @@ export default async function CustomerDetailPage({ params }: Props) {
                               <StatusBadge map="booking" status={booking.status} />
                             </TableCell>
                             <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
-                              {formatMoney(booking.totalPrice)}
+                              {formatMoney(booking.totalPrice, currency)}
                             </TableCell>
                             <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
                               {booking.remainingBalance > 0 ? (
                                 <span className="font-semibold text-destructive">
-                                  {formatMoney(booking.remainingBalance)}
+                                  {formatMoney(booking.remainingBalance, currency)}
                                 </span>
                               ) : booking.status === 'cancelled' ||
                                 booking.status === 'no_show' ||
@@ -341,7 +341,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                     {customer.payments.map((payment) => (
                       <TableMobileCard
                         key={payment.id}
-                        title={formatMoney(payment.amount)}
+                        title={formatMoney(payment.amount, currency)}
                         subtitle={
                           paymentTypeLabels[payment.paymentType] || payment.paymentType
                         }
@@ -373,7 +373,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                         {customer.payments.map((payment) => (
                           <TableRow key={payment.id}>
                             <TableCell className={`${TABLE_COL.money} whitespace-normal font-semibold`}>
-                              {formatMoney(payment.amount)}
+                              {formatMoney(payment.amount, currency)}
                             </TableCell>
                             <TableCell className={`${TABLE_COL.label} text-sm`}>
                               {paymentTypeLabels[payment.paymentType] || payment.paymentType}

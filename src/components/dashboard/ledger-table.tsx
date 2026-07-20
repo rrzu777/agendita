@@ -24,12 +24,12 @@ function amountClassName(direction: string): string {
   return direction === 'income' ? 'text-green-700' : direction === 'expense' ? 'text-destructive' : 'text-primary'
 }
 
-function formatAmount(entry: { direction: string; amount: number }): string {
-  return `${entry.direction === 'expense' ? '—' : ''}${formatMoney(entry.amount)}`
+function formatAmount(entry: { direction: string; amount: number }, currency: string): string {
+  return `${entry.direction === 'expense' ? '—' : ''}${formatMoney(entry.amount, currency)}`
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- entries shape depends on server action return type
-export function LedgerTable({ entries }: { entries: any[] }) {
+export function LedgerTable({ entries, currency }: { entries: any[]; currency: string }) {
   if (entries.length === 0) {
     return (
       <div className="studio-card overflow-hidden">
@@ -51,7 +51,7 @@ export function LedgerTable({ entries }: { entries: any[] }) {
   const rows = entries.map((entry) => ({
     entry,
     amountClass: amountClassName(entry.direction),
-    amountLabel: formatAmount(entry),
+    amountLabel: formatAmount(entry, currency),
   }))
 
   return (

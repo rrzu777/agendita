@@ -33,6 +33,7 @@ export function BookingBusinessPage({ business, profileHref, referralToken, sess
           businessId={business.id}
           slug={business.slug}
           timezone={business.timezone || 'America/Santiago'}
+          currency={business.currency || 'CLP'}
           services={business.services}
           cancellationPolicy={business.cancellationPolicy}
           referralToken={referralToken}

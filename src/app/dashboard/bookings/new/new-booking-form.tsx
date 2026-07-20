@@ -24,6 +24,7 @@ interface NewBookingFormProps {
   services: Service[]
   businessId: string
   timezone: string
+  currency: string
 }
 
 type PaymentMode = 'none' | 'deposit_paid' | 'full_paid'
@@ -36,7 +37,7 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   other: 'Otro',
 }
 
-export function NewBookingForm({ services, businessId, timezone }: NewBookingFormProps) {
+export function NewBookingForm({ services, businessId, timezone, currency }: NewBookingFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -185,7 +186,7 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
       resultPayment = 'Pagado'
     } else if (paymentMode === 'deposit_paid' && deposit > 0) {
       resultStatus = bookingStatusLabels.confirmed
-      resultPayment = `Abono de ${formatMoney(deposit)} pagado`
+      resultPayment = `Abono de ${formatMoney(deposit, currency)} pagado`
     } else if (noDeposit) {
       resultStatus = bookingStatusLabels.confirmed
       resultPayment = 'Sin abono'
@@ -209,7 +210,7 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
       noDeposit,
       isFree,
     }
-  }, [selectedService, paymentMode])
+  }, [selectedService, paymentMode, currency])
 
   // Adjust during render (React-supported pattern, not an effect): a service
   // with no deposit can't be in 'deposit_paid' mode. The setState is conditional
@@ -309,7 +310,7 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
                   <option value="">Selecciona un servicio</option>
                   {services.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name} — {formatMoney(s.price)} ({formatDuration(s.durationMinutes)})
+                      {s.name} — {formatMoney(s.price, currency)} ({formatDuration(s.durationMinutes)})
                     </option>
                   ))}
                 </select>
@@ -489,11 +490,11 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Descuento</span>
-                  <span className="font-medium text-green-700">−{formatMoney(appliedPromo.discount)}</span>
+                  <span className="font-medium text-green-700">−{formatMoney(appliedPromo.discount, currency)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Precio final</span>
-                  <span className="font-medium">{formatMoney(appliedPromo.finalAmount)}</span>
+                  <span className="font-medium">{formatMoney(appliedPromo.finalAmount, currency)}</span>
                 </div>
                 <Button
                   type="button"
@@ -539,30 +540,30 @@ export function NewBookingForm({ services, businessId, timezone }: NewBookingFor
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Precio</span>
-                  <span className="font-medium">{formatMoney(summary.price)}</span>
+                  <span className="font-medium">{formatMoney(summary.price, currency)}</span>
                 </div>
                 {appliedPromo && (
                   <>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Descuento</span>
-                      <span className="font-medium text-green-700">−{formatMoney(appliedPromo.discount)}</span>
+                      <span className="font-medium text-green-700">−{formatMoney(appliedPromo.discount, currency)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Precio final</span>
-                      <span className="font-medium">{formatMoney(appliedPromo.finalAmount)}</span>
+                      <span className="font-medium">{formatMoney(appliedPromo.finalAmount, currency)}</span>
                     </div>
                   </>
                 )}
                 {!summary.noDeposit && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Abono requerido</span>
-                    <span className="font-medium">{formatMoney(summary.deposit)}</span>
+                    <span className="font-medium">{formatMoney(summary.deposit, currency)}</span>
                   </div>
                 )}
                 {summary.remainingBalance > 0 && (
                   <div className="flex justify-between border-t border-border/60 pt-2">
                     <span className="text-muted-foreground">Saldo pendiente</span>
-                    <span className="font-medium">{formatMoney(summary.remainingBalance)}</span>
+                    <span className="font-medium">{formatMoney(summary.remainingBalance, currency)}</span>
                   </div>
                 )}
                 <div className="flex justify-between border-t border-border/60 pt-2">
