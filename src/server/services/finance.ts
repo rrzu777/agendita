@@ -10,6 +10,7 @@ import type { LedgerEntryType, LedgerDirection } from '@prisma/client'
 // Error`/try-catch existente sigue funcionando idéntico. Todos los throws de
 // este módulo son mensajes user-facing en español (invariantes de
 // consistencia del pago/reserva) — no hay invariantes internas en inglés acá.
+// Nuevos throws en este módulo deben mantener esto (español, user-facing).
 import { UserError } from '@/lib/actions/result'
 
 /**

@@ -88,10 +88,12 @@ async function _initiatePayment(data: {
   }
 
   // No iniciar pago si la reserva no está en estado pagable o hold expirado.
-  // Catch acotado a assertBookingPayable: solo lanza BookingNotPayableError con
-  // mensaje seguro (Spanish, user-facing) — no arrastra errores internos.
+  // Import fuera del try: si el import fallara, su mensaje interno NO debe
+  // colarse como UserError. Catch acotado a la llamada de assertBookingPayable
+  // en sí, que solo lanza BookingNotPayableError con mensaje seguro
+  // (Spanish, user-facing).
+  const { assertBookingPayable } = await import('@/lib/booking-payments')
   try {
-    const { assertBookingPayable } = await import('@/lib/booking-payments')
     assertBookingPayable(booking)
   } catch (e) {
     throw new UserError(e instanceof Error ? e.message : 'No se puede iniciar pago para esta reserva')
@@ -267,9 +269,11 @@ async function _verifyAndConfirmPayment(paymentId: string, bookingId: string) {
     }
   }
 
-  // No confirmar si la reserva no es pagable (expired, cancelled, etc. o hold vencido)
+  // No confirmar si la reserva no es pagable (expired, cancelled, etc. o hold vencido).
+  // Import fuera del try, mismo motivo que en _initiatePayment: el catch queda
+  // acotado solo a la llamada de assertBookingPayable.
+  const { assertBookingPayable } = await import('@/lib/booking-payments')
   try {
-    const { assertBookingPayable } = await import('@/lib/booking-payments')
     assertBookingPayable(payment.booking)
   } catch (e) {
     return { success: false, message: e instanceof Error ? e.message : 'No se puede confirmar pago para esta reserva' }
