@@ -50,7 +50,7 @@ export function RedeemButton({
         >
           {isPending ? 'Canjeando…' : 'Canjear'}
         </button>
-        {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+        {error && <p role="alert" className="mt-1 text-xs text-destructive">{error}</p>}
       </div>
     </li>
   )
