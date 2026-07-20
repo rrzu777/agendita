@@ -60,13 +60,17 @@ export function VerifyTransferDialog({
       return
     }
     startTransition(async () => {
-      const res = await confirmBankTransfer(paymentId, parsed)
-      if (!res.ok) {
-        setError(res.error)
-        return
+      try {
+        const res = await confirmBankTransfer(paymentId, parsed)
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
+        onOpenChange(false)
+        router.refresh()
+      } catch {
+        setError('No se pudo procesar. Intenta nuevamente.')
       }
-      onOpenChange(false)
-      router.refresh()
     })
   }
 
@@ -77,13 +81,17 @@ export function VerifyTransferDialog({
       : '¿Rechazar esta transferencia? Se cancelará la reserva.'
     if (!window.confirm(confirmMessage)) return
     startTransition(async () => {
-      const res = await rejectBankTransfer(paymentId)
-      if (!res.ok) {
-        setError(res.error)
-        return
+      try {
+        const res = await rejectBankTransfer(paymentId)
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
+        onOpenChange(false)
+        router.refresh()
+      } catch {
+        setError('No se pudo procesar. Intenta nuevamente.')
       }
-      onOpenChange(false)
-      router.refresh()
     })
   }
 
