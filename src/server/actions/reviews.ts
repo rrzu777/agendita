@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { action, UserError } from '@/lib/actions/result'
 import { BookingStatus, Prisma } from '@prisma/client'
 import { submitReviewSchema } from '@/lib/reviews/schema'
 import { headers } from 'next/headers'
@@ -91,7 +92,7 @@ export async function getReviewRequest(bookingId: string, token: string) {
   } satisfies ReviewRequestInfo
 }
 
-export async function submitReview(data: {
+async function _submitReview(data: {
   bookingId: string
   token: string
   rating: number
@@ -99,12 +100,12 @@ export async function submitReview(data: {
 }) {
   const limit = await checkRateLimit('submit-review', 10, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const parsed = submitReviewSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
   const { bookingId, token, rating, comment } = parsed.data
@@ -119,11 +120,11 @@ export async function submitReview(data: {
   }
 
   if (booking.status !== BookingStatus.completed) {
-    throw new Error('Solo puedes dejar reseña para reservas completadas')
+    throw new UserError('Solo puedes dejar reseña para reservas completadas')
   }
 
   if (booking.review) {
-    throw new Error('Ya enviaste una reseña para esta reserva')
+    throw new UserError('Ya enviaste una reseña para esta reserva')
   }
 
   let review
@@ -142,7 +143,7 @@ export async function submitReview(data: {
   } catch (e: unknown) {
     const prismaError = e as { code?: string }
     if (prismaError.code === 'P2002') {
-      throw new Error('Ya enviaste una reseña para esta reserva')
+      throw new UserError('Ya enviaste una reseña para esta reserva')
     }
     throw e
   }
@@ -172,6 +173,8 @@ export async function submitReview(data: {
   revalidatePath('/dashboard/reviews')
   return review
 }
+
+export const submitReview = action(_submitReview)
 
 export async function getDashboardReviews(filters?: ReviewFilters): Promise<ReviewListItem[]> {
   const { businessId } = await requireBusiness()
@@ -252,11 +255,11 @@ export async function getCompletedBookingsWithoutReview(): Promise<BookingForRev
   })
 }
 
-export async function approveReview(reviewId: string) {
+async function _approveReview(reviewId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('approve-review', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const review = await prisma.review.findUnique({
@@ -278,11 +281,13 @@ export async function approveReview(reviewId: string) {
   return updated
 }
 
-export async function hideReview(reviewId: string) {
+export const approveReview = action(_approveReview)
+
+async function _hideReview(reviewId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('hide-review', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const review = await prisma.review.findUnique({
@@ -304,11 +309,13 @@ export async function hideReview(reviewId: string) {
   return updated
 }
 
-export async function ensureReviewTokenForBooking(bookingId: string) {
+export const hideReview = action(_hideReview)
+
+async function _ensureReviewTokenForBooking(bookingId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('ensure-review-token', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const booking = await prisma.booking.findFirst({
@@ -320,7 +327,7 @@ export async function ensureReviewTokenForBooking(bookingId: string) {
   }
 
   if (booking.status !== BookingStatus.completed) {
-    throw new Error('Solo puedes generar link de reseña para reservas completadas')
+    throw new UserError('Solo puedes generar link de reseña para reservas completadas')
   }
 
   if (booking.reviewToken) {
@@ -347,7 +354,9 @@ export async function ensureReviewTokenForBooking(bookingId: string) {
   return token
 }
 
-export async function getReviewLink(bookingId: string): Promise<string | null> {
+export const ensureReviewTokenForBooking = action(_ensureReviewTokenForBooking)
+
+async function _getReviewLink(bookingId: string): Promise<string | null> {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
 
   const booking = await prisma.booking.findFirst({
@@ -369,6 +378,8 @@ export async function getReviewLink(bookingId: string): Promise<string | null> {
   return `${proto}://${host}/review/${booking.id}?token=${token}`
 }
 
+export const getReviewLink = action(_getReviewLink)
+
 /**
  * Normaliza un teléfono chileno a formato wa.me (solo dígitos, con código país).
  * Devuelve null si no hay teléfono utilizable.
@@ -388,7 +399,7 @@ function toWhatsappPhone(phone: string | null | undefined): string | null {
  * arma el link de reseña y un mensaje pre-redactado para wa.me.
  * `waUrl` es null si la clienta no tiene teléfono (se cae a copiar el link).
  */
-export async function getReviewWhatsappLink(
+async function _getReviewWhatsappLink(
   bookingId: string,
 ): Promise<{ waUrl: string | null; reviewLink: string } | null> {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
@@ -408,7 +419,7 @@ export async function getReviewWhatsappLink(
     return null
   }
 
-  const token = booking.reviewToken ?? (await ensureReviewTokenForBooking(bookingId))
+  const token = booking.reviewToken ?? (await _ensureReviewTokenForBooking(bookingId))
 
   const headersList = await headers()
   const host = headersList.get('x-forwarded-host') || headersList.get('host') || 'localhost:3000'
@@ -426,11 +437,13 @@ export async function getReviewWhatsappLink(
   return { waUrl, reviewLink }
 }
 
-export async function sendReviewRequestEmail(bookingId: string) {
+export const getReviewWhatsappLink = action(_getReviewWhatsappLink)
+
+async function _sendReviewRequestEmail(bookingId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('send-review-email', 10, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const booking = await prisma.booking.findFirst({
@@ -448,7 +461,7 @@ export async function sendReviewRequestEmail(bookingId: string) {
   }
 
   if (booking.status !== BookingStatus.completed) {
-    throw new Error('Solo puedes enviar solicitud de reseña para reservas completadas')
+    throw new UserError('Solo puedes enviar solicitud de reseña para reservas completadas')
   }
 
   if (booking.review) {
@@ -457,7 +470,7 @@ export async function sendReviewRequestEmail(bookingId: string) {
 
   const token = booking.reviewToken
   if (!token) {
-    throw new Error('Primero debes generar el link de reseña')
+    throw new UserError('Primero debes generar el link de reseña')
   }
 
   if (!booking.customer.email) {
@@ -492,3 +505,5 @@ export async function sendReviewRequestEmail(bookingId: string) {
     loyaltyCardLink,
   })
 }
+
+export const sendReviewRequestEmail = action(_sendReviewRequestEmail)

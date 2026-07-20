@@ -25,25 +25,31 @@ export function ReviewLinkButton({ bookingId, hasToken }: ReviewLinkButtonProps)
     setError(null)
     setCopied(false)
 
-    try {
-      if (!hasToken) {
-        await ensureReviewTokenForBooking(bookingId)
-      }
-
-      const link = await getReviewLink(bookingId)
-      if (!link) {
-        setError('No se pudo generar el link')
+    if (!hasToken) {
+      const tokenRes = await ensureReviewTokenForBooking(bookingId)
+      if (!tokenRes.ok) {
+        setError(tokenRes.error)
+        setLoading(null)
         return
       }
-
-      await navigator.clipboard.writeText(link)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2500)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al generar link')
-    } finally {
-      setLoading(null)
     }
+
+    const linkRes = await getReviewLink(bookingId)
+    if (!linkRes.ok) {
+      setError(linkRes.error)
+      setLoading(null)
+      return
+    }
+    if (!linkRes.data) {
+      setError('No se pudo generar el link')
+      setLoading(null)
+      return
+    }
+
+    await navigator.clipboard.writeText(linkRes.data)
+    setCopied(true)
+    setLoading(null)
+    setTimeout(() => setCopied(false), 2500)
   }
 
   async function handleWhatsapp() {
@@ -52,28 +58,29 @@ export function ReviewLinkButton({ bookingId, hasToken }: ReviewLinkButtonProps)
 
     const popup = openDeferredPopup()
 
-    try {
-      const result = await getReviewWhatsappLink(bookingId)
-      if (!result) {
-        popup.close()
-        setError('No se pudo preparar el mensaje')
-        return
-      }
-
-      if (result.waUrl) {
-        popup.navigate(result.waUrl)
-      } else {
-        // Sin teléfono: caemos a copiar el link.
-        popup.close()
-        await navigator.clipboard.writeText(result.reviewLink)
-        setError('La clienta no tiene teléfono. Copiamos el link al portapapeles.')
-      }
-    } catch (err) {
+    const res = await getReviewWhatsappLink(bookingId)
+    if (!res.ok) {
       popup.close()
-      setError(err instanceof Error ? err.message : 'Error al preparar WhatsApp')
-    } finally {
+      setError(res.error)
       setLoading(null)
+      return
     }
+    if (!res.data) {
+      popup.close()
+      setError('No se pudo preparar el mensaje')
+      setLoading(null)
+      return
+    }
+
+    if (res.data.waUrl) {
+      popup.navigate(res.data.waUrl)
+    } else {
+      // Sin teléfono: caemos a copiar el link.
+      popup.close()
+      await navigator.clipboard.writeText(res.data.reviewLink)
+      setError('La clienta no tiene teléfono. Copiamos el link al portapapeles.')
+    }
+    setLoading(null)
   }
 
   return (
