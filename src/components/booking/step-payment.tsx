@@ -320,14 +320,14 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
     if (!transferBooking) return
     setDeclaring(true)
     setErrorMessage('')
-    try {
-      await declareBankTransfer(transferBooking.id, proof ?? {})
-      setStep('transfer-declared')
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'No pudimos registrar tu aviso')
-    } finally {
+    const res = await declareBankTransfer(transferBooking.id, proof ?? {})
+    if (!res.ok) {
+      setErrorMessage(res.error)
       setDeclaring(false)
+      return
     }
+    setStep('transfer-declared')
+    setDeclaring(false)
   }
 
   async function handleManualBooking() {

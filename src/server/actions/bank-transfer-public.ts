@@ -15,6 +15,7 @@ import {
   sendBankTransferDeclaredToBusiness,
   sendBalanceTransferDeclaredToBusiness,
 } from '@/lib/notifications'
+import { action, UserError } from '@/lib/actions/result'
 
 // NOTE: módulo 'use server' — SOLO funciones async exportadas (schemas/consts
 // en src/lib/bank-transfer/). Flujo PÚBLICO: sin sesión, mismo modelo de
@@ -26,6 +27,15 @@ function resolveStorage(injected?: ProofStorage | null): ProofStorage | null {
   return injected !== undefined ? injected : getProofStorage()
 }
 
+/**
+ * Deliberadamente SIN action(): nunca lanza (solo lee vía prisma.findFirst y
+ * devuelve null si no hay cuenta habilitada) — no hay throw que sanear.
+ * Dual-use: la llaman páginas server (dashboard/bookings, book/confirmation,
+ * paquetes/*) Y directo desde el cliente en step-payment.tsx (mismo
+ * Promise.all que getOnlinePaymentAvailability — ver payments.ts, mismo
+ * patrón documentado ahí). Envolverla en ActionResult rompería ambos
+ * callers sin ganar nada: no hay mensaje user-facing que proteger.
+ */
 export async function getBankTransferInfo(businessId: string): Promise<BankTransferPublicInfo | null> {
   const row = await prisma.bankTransferAccount.findFirst({
     where: { businessId, isEnabled: true },
@@ -41,38 +51,40 @@ type ProofDeps = { storage?: ProofStorage | null }
 
 /** Mina una URL PUT prefirmada para subir el comprobante ANTES de declarar.
  *  Público: identidad = bookingId (cuid) + rate limit, igual que declare*. */
-export async function createProofUploadUrl(
+async function _createProofUploadUrl(
   bookingId: string,
   kind: ProofKind,
   contentType: string,
   deps: ProofDeps = {},
 ): Promise<{ uploadUrl: string; key: string }> {
   const limit = await checkRateLimit('proof-upload-url')
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
 
-  if (!isAllowedProofType(contentType)) throw new Error('Tipo de archivo no permitido.')
+  if (!isAllowedProofType(contentType)) throw new UserError('Tipo de archivo no permitido.')
 
   const storage = resolveStorage(deps.storage)
-  if (!storage) throw new Error('La subida de comprobantes no está disponible.')
+  if (!storage) throw new UserError('La subida de comprobantes no está disponible.')
 
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
     select: { id: true, businessId: true, status: true, paymentMethod: true, remainingBalance: true },
   })
-  if (!booking) throw new Error('Reserva no encontrada')
+  if (!booking) throw new UserError('Reserva no encontrada')
 
   // Elegibilidad mínima por kind (el declare re-valida en profundidad).
   if (kind === 'deposit' && booking.paymentMethod !== BANK_TRANSFER_METHOD) {
-    throw new Error('Esta reserva no eligió pago por transferencia')
+    throw new UserError('Esta reserva no eligió pago por transferencia')
   }
   if (kind === 'balance' && booking.remainingBalance <= 0) {
-    throw new Error('Esta reserva no tiene saldo pendiente.')
+    throw new UserError('Esta reserva no tiene saldo pendiente.')
   }
 
   const key = proofKey(booking.businessId, booking.id, kind)
   const uploadUrl = await storage.presignUpload(key, contentType)
   return { uploadUrl, key }
 }
+
+export const createProofUploadUrl = action(_createProofUploadUrl)
 
 // Opciones de comprobante para los declare* y attachProof. TS-only (erased):
 // un módulo 'use server' solo puede EXPORTAR funciones async, pero declarar
@@ -90,17 +102,17 @@ async function validateProof(
 ): Promise<{ proofKey: string; proofContentType: string } | null> {
   if (!opts.proofKey) return null
   const expected = proofKey(businessId, bookingId, kind)
-  if (opts.proofKey !== expected) throw new Error('Comprobante inválido.')
+  if (opts.proofKey !== expected) throw new UserError('Comprobante inválido.')
   if (!opts.proofContentType || !isAllowedProofType(opts.proofContentType)) {
-    throw new Error('Tipo de comprobante no permitido.')
+    throw new UserError('Tipo de comprobante no permitido.')
   }
   const storage = resolveStorage(opts.storage)
-  if (!storage) throw new Error('La subida de comprobantes no está disponible.')
+  if (!storage) throw new UserError('La subida de comprobantes no está disponible.')
   const meta = await storage.head(opts.proofKey)
-  if (!meta) throw new Error('No encontramos el comprobante subido. Reintentá.')
-  if (meta.contentLength > PROOF_MAX_BYTES) throw new Error('El comprobante supera el tamaño máximo (5 MB).')
+  if (!meta) throw new UserError('No encontramos el comprobante subido. Reintentá.')
+  if (meta.contentLength > PROOF_MAX_BYTES) throw new UserError('El comprobante supera el tamaño máximo (5 MB).')
   if (meta.contentType && !isAllowedProofType(meta.contentType)) {
-    throw new Error('Tipo de comprobante no permitido.')
+    throw new UserError('Tipo de comprobante no permitido.')
   }
   return { proofKey: opts.proofKey, proofContentType: opts.proofContentType }
 }
@@ -114,10 +126,10 @@ async function resolveProofForDeclare(kind: ProofKind, bookingId: string, opts: 
     where: { id: bookingId },
     select: { businessId: true, business: { select: { requireTransferProof: true } } },
   })
-  if (!pre) throw new Error('Reserva no encontrada')
+  if (!pre) throw new UserError('Reserva no encontrada')
   const proof = await validateProof(kind, pre.businessId, bookingId, opts)
   if (pre.business.requireTransferProof && !proof) {
-    throw new Error('Este negocio exige adjuntar el comprobante para declarar la transferencia.')
+    throw new UserError('Este negocio exige adjuntar el comprobante para declarar la transferencia.')
   }
   return proof
 }
@@ -127,13 +139,13 @@ async function resolveProofForDeclare(kind: ProofKind, bookingId: string, opts: 
  * determinístico) y con guard de carrera contra el cron expire-holds:
  * solo transiciona una pending_payment con hold vigente.
  */
-export async function declareBankTransfer(
+async function _declareBankTransfer(
   bookingId: string,
   opts: DeclareProofOpts = {},
 ): Promise<{ ok: true }> {
   const limit = await checkRateLimit('declare-bank-transfer', 10, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const proof = await resolveProofForDeclare('deposit', bookingId, opts)
@@ -147,13 +159,13 @@ export async function declareBankTransfer(
         customer: true,
       },
     })
-    if (!booking) throw new Error('Reserva no encontrada')
+    if (!booking) throw new UserError('Reserva no encontrada')
     if (booking.paymentMethod !== BANK_TRANSFER_METHOD) {
-      throw new Error('Esta reserva no eligió pago por transferencia')
+      throw new UserError('Esta reserva no eligió pago por transferencia')
     }
     const account = booking.business.bankTransferAccount
     if (!account || !account.isEnabled) {
-      throw new Error('Este negocio no tiene transferencia bancaria habilitada')
+      throw new UserError('Este negocio no tiene transferencia bancaria habilitada')
     }
 
     // Idempotencia por status del bt-declared existente:
@@ -172,7 +184,7 @@ export async function declareBankTransfer(
       return null
     }
     if (existing && existing.status !== PaymentStatus.cancelled && existing.status !== PaymentStatus.rejected) {
-      throw new Error('No se puede volver a declarar esta transferencia. Contactá al negocio.')
+      throw new UserError('No se puede volver a declarar esta transferencia. Contactá al negocio.')
     }
 
     // Guard de carrera vs cron (spec §4): solo una pending_payment con hold
@@ -185,14 +197,14 @@ export async function declareBankTransfer(
     })
     if (count === 0) {
       // Mensaje según el estado real (una revivida-cancelada/confirmada no "expiró").
-      if (booking.status === 'cancelled') throw new Error('Tu reserva fue cancelada.')
-      if (booking.status === 'confirmed') throw new Error('Tu reserva ya está confirmada.')
-      throw new Error('Tu reserva expiró. Volvé a reservar para elegir un nuevo horario.')
+      if (booking.status === 'cancelled') throw new UserError('Tu reserva fue cancelada.')
+      if (booking.status === 'confirmed') throw new UserError('Tu reserva ya está confirmada.')
+      throw new UserError('Tu reserva expiró. Volvé a reservar para elegir un nuevo horario.')
     }
 
     // Monto server-authoritative, mismo criterio que initiatePayment (payments.ts).
     const amount = Math.min(booking.depositRequired, booking.remainingBalance)
-    if (amount <= 0) throw new Error('Esta reserva no requiere abono')
+    if (amount <= 0) throw new UserError('Esta reserva no requiere abono')
 
     if (existing) {
       // Reactivación: mismo Payment, declaración "nueva" — createdAt = now para
@@ -256,17 +268,19 @@ export async function declareBankTransfer(
   return { ok: true }
 }
 
+export const declareBankTransfer = action(_declareBankTransfer)
+
 /**
  * La clienta declara "ya transferí el SALDO" (feature #3). Reserva firme
  * (confirmed|completed), sin hold ni plazo. Idempotente por btBalanceId.
  */
-export async function declareBalanceTransfer(
+async function _declareBalanceTransfer(
   bookingId: string,
   opts: DeclareProofOpts = {},
 ): Promise<{ ok: true }> {
   const limit = await checkRateLimit('declare-balance-transfer', 10, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const proof = await resolveProofForDeclare('balance', bookingId, opts)
@@ -280,20 +294,20 @@ export async function declareBalanceTransfer(
         customer: true,
       },
     })
-    if (!booking) throw new Error('Reserva no encontrada')
+    if (!booking) throw new UserError('Reserva no encontrada')
     const account = booking.business.bankTransferAccount
     if (!account || !account.isEnabled) {
-      throw new Error('Este negocio no tiene transferencia bancaria habilitada')
+      throw new UserError('Este negocio no tiene transferencia bancaria habilitada')
     }
     if (booking.status === 'pending_payment') {
-      throw new Error('Primero confirmá tu reserva pagando el abono.')
+      throw new UserError('Primero confirmá tu reserva pagando el abono.')
     }
     if (booking.status === 'expired') {
-      throw new Error('Tu reserva expiró. Volvé a reservar para elegir un nuevo horario.')
+      throw new UserError('Tu reserva expiró. Volvé a reservar para elegir un nuevo horario.')
     }
-    if (booking.status === 'cancelled') throw new Error('Tu reserva fue cancelada.')
+    if (booking.status === 'cancelled') throw new UserError('Tu reserva fue cancelada.')
     if (booking.status === 'no_show') {
-      throw new Error('Esta reserva quedó como no asistida: escribile al negocio.')
+      throw new UserError('Esta reserva quedó como no asistida: escribile al negocio.')
     }
 
     // Idempotencia por status del bt-balance existente (spec §3.5):
@@ -310,15 +324,15 @@ export async function declareBalanceTransfer(
     if (existing?.status === PaymentStatus.pending) return null
     if (existing?.status === PaymentStatus.approved) {
       if (booking.remainingBalance <= 0) return null
-      throw new Error(
+      throw new UserError(
         'Tu transferencia anterior fue registrada parcialmente. Escribile al negocio para coordinar el resto.',
       )
     }
     if (existing && existing.status !== PaymentStatus.cancelled && existing.status !== PaymentStatus.rejected) {
-      throw new Error('No se puede volver a declarar esta transferencia. Contactá al negocio.')
+      throw new UserError('No se puede volver a declarar esta transferencia. Contactá al negocio.')
     }
 
-    if (booking.remainingBalance <= 0) throw new Error('Esta reserva no tiene saldo pendiente.')
+    if (booking.remainingBalance <= 0) throw new UserError('Esta reserva no tiene saldo pendiente.')
 
     // Guard de carrera REAL vs cancel/no_show concurrente (spec §3.6): el
     // updateMany toma el row lock de la booking y serializa contra
@@ -328,7 +342,7 @@ export async function declareBalanceTransfer(
       where: { id: bookingId, status: { in: [...FIRM_BOOKING_STATUSES] } },
       data: { updatedAt: new Date() },
     })
-    if (count === 0) throw new Error('Tu reserva ya no admite este pago. Escribile al negocio.')
+    if (count === 0) throw new UserError('Tu reserva ya no admite este pago. Escribile al negocio.')
 
     const amount = booking.remainingBalance
     const paymentType = deriveManualPaymentType(booking, amount)
@@ -393,25 +407,27 @@ export async function declareBalanceTransfer(
   return { ok: true }
 }
 
+export const declareBalanceTransfer = action(_declareBalanceTransfer)
+
 /** Adjunta/reemplaza el comprobante de un Payment declarado (pending), sin
  *  re-declarar. Público: identidad = bookingId (cuid) + rate limit. El HEAD
  *  vuelve a validar existencia + tamaño + tipo (server-authoritative). */
-export async function attachProof(
+async function _attachProof(
   bookingId: string,
   kind: ProofKind,
   opts: DeclareProofOpts,
 ): Promise<{ ok: true }> {
   const limit = await checkRateLimit('proof-upload-url')
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
 
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
     select: { businessId: true },
   })
-  if (!booking) throw new Error('Reserva no encontrada')
+  if (!booking) throw new UserError('Reserva no encontrada')
 
   const proof = await validateProof(kind, booking.businessId, bookingId, opts)
-  if (!proof) throw new Error('Falta el comprobante.')
+  if (!proof) throw new UserError('Falta el comprobante.')
 
   const providerPaymentId = kind === 'balance' ? btBalanceId(bookingId) : btDeclaredId(bookingId)
   const { count } = await prisma.payment.updateMany({
@@ -419,7 +435,9 @@ export async function attachProof(
     data: { proofKey: proof.proofKey, proofContentType: proof.proofContentType },
   })
   if (count === 0) {
-    throw new Error('No hay una transferencia declarada pendiente para adjuntar el comprobante.')
+    throw new UserError('No hay una transferencia declarada pendiente para adjuntar el comprobante.')
   }
   return { ok: true }
 }
+
+export const attachProof = action(_attachProof)

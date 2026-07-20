@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll, vi } from 'vitest'
 import { requireTestDatabase } from './setup'
 import { createProofUploadUrl } from '@/server/actions/bank-transfer-public'
 import { seedDeclaredTransfer, cleanupBankTransferSeed } from './helpers/bank-transfer-seed'
+import { unwrap, expectActionError } from './helpers/action-result'
 
 requireTestDatabase()
 
@@ -30,7 +31,7 @@ describe('createProofUploadUrl', () => {
 
   it('devuelve uploadUrl + key para una reserva-transferencia elegible', async () => {
     const { bookingId, businessId } = await seedTransferBooking()
-    const res = await createProofUploadUrl(bookingId, 'deposit', 'image/png', { storage: fakeStorage })
+    const res = await unwrap(createProofUploadUrl(bookingId, 'deposit', 'image/png', { storage: fakeStorage }))
     expect(res.key).toBe(`proofs/${businessId}/${bookingId}/deposit`)
     expect(res.uploadUrl).toBe('https://signed/put')
     expect(fakeStorage.presignUpload).toHaveBeenCalledWith(`proofs/${businessId}/${bookingId}/deposit`, 'image/png')
@@ -38,15 +39,17 @@ describe('createProofUploadUrl', () => {
 
   it('rechaza content-type no permitido', async () => {
     const { bookingId } = await seedTransferBooking()
-    await expect(
+    await expectActionError(
       createProofUploadUrl(bookingId, 'deposit', 'image/gif', { storage: fakeStorage }),
-    ).rejects.toThrow()
+      'Tipo de archivo no permitido',
+    )
   })
 
   it('rechaza si R2 no está disponible (deps.storage=null)', async () => {
     const { bookingId } = await seedTransferBooking()
-    await expect(
+    await expectActionError(
       createProofUploadUrl(bookingId, 'deposit', 'image/png', { storage: null }),
-    ).rejects.toThrow()
+      'no está disponible',
+    )
   })
 })

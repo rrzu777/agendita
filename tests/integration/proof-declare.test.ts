@@ -8,6 +8,7 @@ import {
   cleanupBankTransferSeed,
   BT_VERIFY_BIZ,
 } from './helpers/bank-transfer-seed'
+import { unwrap, expectActionError } from './helpers/action-result'
 
 requireTestDatabase()
 
@@ -56,7 +57,7 @@ describe('declare con proofKey', () => {
   it('guarda proofKey/proofContentType tras HEAD ok', async () => {
     const { bookingId, businessId } = await seedTransferBooking()
     const key = `proofs/${businessId}/${bookingId}/deposit`
-    await declareBankTransfer(bookingId, { proofKey: key, proofContentType: 'image/png', storage: okHead })
+    await unwrap(declareBankTransfer(bookingId, { proofKey: key, proofContentType: 'image/png', storage: okHead }))
     const p = await prisma.payment.findFirst({
       where: { bookingId, providerPaymentId: btDeclaredId(bookingId) },
     })
@@ -67,20 +68,22 @@ describe('declare con proofKey', () => {
   it('rechaza si el HEAD reporta tamaño > 5MB', async () => {
     const { bookingId, businessId } = await seedTransferBooking()
     const key = `proofs/${businessId}/${bookingId}/deposit`
-    await expect(
+    await expectActionError(
       declareBankTransfer(bookingId, { proofKey: key, proofContentType: 'image/png', storage: bigHead }),
-    ).rejects.toThrow()
+      'tamaño máximo',
+    )
   })
 
   it('rechaza un proofKey que no corresponde a la reserva', async () => {
     const { bookingId } = await seedTransferBooking()
-    await expect(
+    await expectActionError(
       declareBankTransfer(bookingId, {
         proofKey: 'proofs/otro/otro/deposit',
         proofContentType: 'image/png',
         storage: okHead,
       }),
-    ).rejects.toThrow()
+      'Comprobante inválido',
+    )
   })
 
   it('gate requireTransferProof: rechaza declare sin proofKey', async () => {
@@ -89,7 +92,7 @@ describe('declare con proofKey', () => {
       where: { id: BT_VERIFY_BIZ },
       data: { requireTransferProof: true },
     })
-    await expect(declareBankTransfer(bookingId, {})).rejects.toThrow()
+    await expectActionError(declareBankTransfer(bookingId, {}), 'exige adjuntar el comprobante')
   })
 
   it('gate requireTransferProof: acepta declare con proof válido', async () => {
@@ -99,7 +102,7 @@ describe('declare con proofKey', () => {
       data: { requireTransferProof: true },
     })
     const key = `proofs/${businessId}/${bookingId}/deposit`
-    await declareBankTransfer(bookingId, { proofKey: key, proofContentType: 'image/png', storage: okHead })
+    await unwrap(declareBankTransfer(bookingId, { proofKey: key, proofContentType: 'image/png', storage: okHead }))
     const p = await prisma.payment.findFirst({
       where: { bookingId, providerPaymentId: btDeclaredId(bookingId) },
     })
@@ -108,7 +111,7 @@ describe('declare con proofKey', () => {
 
   it('declare sin proof (gate off) no guarda proofKey', async () => {
     const { bookingId } = await seedTransferBooking()
-    await declareBankTransfer(bookingId, {})
+    await unwrap(declareBankTransfer(bookingId, {}))
     const p = await prisma.payment.findFirst({
       where: { bookingId, providerPaymentId: btDeclaredId(bookingId) },
     })
@@ -123,9 +126,9 @@ describe('attachProof', () => {
 
   it('adjunta a un Payment ya declarado (pending)', async () => {
     const { bookingId, businessId } = await seedTransferBooking()
-    await declareBankTransfer(bookingId, {})
+    await unwrap(declareBankTransfer(bookingId, {}))
     const key = `proofs/${businessId}/${bookingId}/deposit`
-    await attachProof(bookingId, 'deposit', { proofKey: key, proofContentType: 'image/png', storage: okHead })
+    await unwrap(attachProof(bookingId, 'deposit', { proofKey: key, proofContentType: 'image/png', storage: okHead }))
     const p = await prisma.payment.findFirst({
       where: { bookingId, providerPaymentId: btDeclaredId(bookingId) },
     })
@@ -136,8 +139,9 @@ describe('attachProof', () => {
   it('rechaza si no hay transferencia declarada pendiente', async () => {
     const { bookingId, businessId } = await seedTransferBooking()
     const key = `proofs/${businessId}/${bookingId}/deposit`
-    await expect(
+    await expectActionError(
       attachProof(bookingId, 'deposit', { proofKey: key, proofContentType: 'image/png', storage: okHead }),
-    ).rejects.toThrow()
+      'No hay una transferencia declarada pendiente',
+    )
   })
 })

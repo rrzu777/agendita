@@ -130,7 +130,7 @@ describe('declareBalanceTransfer', () => {
   it('happy path: crea bt-balance pending con monto=saldo y paymentType derivado', async () => {
     const seeded = await seedConfirmedWithBalance()
     const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
-    await declareBalanceTransfer(seeded.bookingId)
+    await unwrap(declareBalanceTransfer(seeded.bookingId))
     const p = await prisma.payment.findFirstOrThrow({
       where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) },
     })
@@ -145,24 +145,24 @@ describe('declareBalanceTransfer', () => {
   it('guards por estado: pending_payment, cancelled, no_show', async () => {
     const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
     const pending = await seedDeclaredTransfer()
-    await expect(declareBalanceTransfer(pending.bookingId)).rejects.toThrow('Primero confirmá')
+    await expectActionError(declareBalanceTransfer(pending.bookingId), 'Primero confirmá')
     const cancelled = await seedConfirmedWithBalance()
     await prisma.booking.update({ where: { id: cancelled.bookingId }, data: { status: 'cancelled' } })
-    await expect(declareBalanceTransfer(cancelled.bookingId)).rejects.toThrow('cancelada')
+    await expectActionError(declareBalanceTransfer(cancelled.bookingId), 'cancelada')
     const noShow = await seedConfirmedWithBalance()
     await prisma.booking.update({ where: { id: noShow.bookingId }, data: { status: 'no_show' } })
-    await expect(declareBalanceTransfer(noShow.bookingId)).rejects.toThrow('no asistida')
+    await expectActionError(declareBalanceTransfer(noShow.bookingId), 'no asistida')
   })
 
   it('sin saldo → error; cuenta deshabilitada → error', async () => {
     const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
     const paid = await seedConfirmedWithBalance()
     await prisma.booking.update({ where: { id: paid.bookingId }, data: { remainingBalance: 0, paymentStatus: 'fully_paid' } })
-    await expect(declareBalanceTransfer(paid.bookingId)).rejects.toThrow('no tiene saldo')
+    await expectActionError(declareBalanceTransfer(paid.bookingId), 'no tiene saldo')
     const seeded = await seedConfirmedWithBalance()
     await prisma.bankTransferAccount.update({ where: { businessId: BT_VERIFY_BIZ }, data: { isEnabled: false } })
     try {
-      await expect(declareBalanceTransfer(seeded.bookingId)).rejects.toThrow('transferencia bancaria habilitada')
+      await expectActionError(declareBalanceTransfer(seeded.bookingId), 'transferencia bancaria habilitada')
     } finally {
       await prisma.bankTransferAccount.update({ where: { businessId: BT_VERIFY_BIZ }, data: { isEnabled: true } })
     }
@@ -171,23 +171,23 @@ describe('declareBalanceTransfer', () => {
   it('idempotencia: pending → éxito silencioso; approved+saldo residual → ERROR (no silencio)', async () => {
     const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
     const seeded = await seedConfirmedWithBalance()
-    await declareBalanceTransfer(seeded.bookingId)
-    await declareBalanceTransfer(seeded.bookingId) // pending → ok silencioso
+    await unwrap(declareBalanceTransfer(seeded.bookingId))
+    await unwrap(declareBalanceTransfer(seeded.bookingId)) // pending → ok silencioso
     const all = await prisma.payment.findMany({ where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) } })
     expect(all).toHaveLength(1)
     await prisma.payment.update({ where: { id: all[0].id }, data: { status: 'approved' } })
     await prisma.booking.update({ where: { id: seeded.bookingId }, data: { remainingBalance: 5000 } })
-    await expect(declareBalanceTransfer(seeded.bookingId)).rejects.toThrow('parcialmente')
+    await expectActionError(declareBalanceTransfer(seeded.bookingId), 'parcialmente')
   })
 
   it('idempotencia: approved con saldo 0 → éxito silencioso sin tocar nada', async () => {
     const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
     const seeded = await seedConfirmedWithBalance()
-    await declareBalanceTransfer(seeded.bookingId)
+    await unwrap(declareBalanceTransfer(seeded.bookingId))
     const p = await prisma.payment.findFirstOrThrow({ where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) } })
     await prisma.payment.update({ where: { id: p.id }, data: { status: 'approved' } })
     await prisma.booking.update({ where: { id: seeded.bookingId }, data: { remainingBalance: 0, paymentStatus: 'fully_paid' } })
-    await declareBalanceTransfer(seeded.bookingId) // no lanza
+    await unwrap(declareBalanceTransfer(seeded.bookingId)) // no lanza
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: p.id } })).status).toBe('approved')
   })
 
@@ -195,17 +195,17 @@ describe('declareBalanceTransfer', () => {
     const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
     const seeded = await seedConfirmedWithBalance()
     await prisma.booking.update({ where: { id: seeded.bookingId }, data: { status: 'expired' } })
-    await expect(declareBalanceTransfer(seeded.bookingId)).rejects.toThrow('expiró')
+    await expectActionError(declareBalanceTransfer(seeded.bookingId), 'expiró')
   })
 
   it('reactivación: rejected Y cancelled → vuelven a pending con monto fresco', async () => {
     const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
     for (const dead of ['rejected', 'cancelled'] as const) {
       const seeded = await seedConfirmedWithBalance()
-      await declareBalanceTransfer(seeded.bookingId)
+      await unwrap(declareBalanceTransfer(seeded.bookingId))
       const p = await prisma.payment.findFirstOrThrow({ where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) } })
       await prisma.payment.update({ where: { id: p.id }, data: { status: dead, amount: 1 } })
-      await declareBalanceTransfer(seeded.bookingId)
+      await unwrap(declareBalanceTransfer(seeded.bookingId))
       const again = await prisma.payment.findUniqueOrThrow({ where: { id: p.id } })
       expect(again.status).toBe('pending')
       expect(again.amount).toBe(seeded.remainingBalance)
@@ -215,7 +215,7 @@ describe('declareBalanceTransfer', () => {
   it('doble declare concurrente → 1 solo payment, sin errores (invariante P2002)', async () => {
     const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
     const seeded = await seedConfirmedWithBalance()
-    await Promise.all([declareBalanceTransfer(seeded.bookingId), declareBalanceTransfer(seeded.bookingId)])
+    await Promise.all([unwrap(declareBalanceTransfer(seeded.bookingId)), unwrap(declareBalanceTransfer(seeded.bookingId))])
     const all = await prisma.payment.findMany({ where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) } })
     expect(all).toHaveLength(1)
   })
@@ -225,7 +225,7 @@ describe('confirmBankTransfer saldo', () => {
   async function declaredBalance() {
     const seeded = await seedConfirmedWithBalance()
     const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
-    await declareBalanceTransfer(seeded.bookingId)
+    await unwrap(declareBalanceTransfer(seeded.bookingId))
     const p = await prisma.payment.findFirstOrThrow({
       where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) },
     })
@@ -284,7 +284,7 @@ describe('rejectBankTransfer saldo', () => {
   it('rechaza el payment, NO cancela la reserva, manda el email de SALDO, y se puede re-declarar', async () => {
     const seeded = await seedConfirmedWithBalance()
     const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
-    await declareBalanceTransfer(seeded.bookingId)
+    await unwrap(declareBalanceTransfer(seeded.bookingId))
     const p = await prisma.payment.findFirstOrThrow({
       where: { bookingId: seeded.bookingId, providerPaymentId: btBalanceId(seeded.bookingId) },
     })
@@ -296,7 +296,7 @@ describe('rejectBankTransfer saldo', () => {
     expect(b.status).toBe('confirmed') // NO cancelada
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: p.id } })).status).toBe('rejected')
     expect(notif.sendBalanceTransferRejectedToCustomer).toHaveBeenCalledTimes(1)
-    await declareBalanceTransfer(seeded.bookingId) // reactiva
+    await unwrap(declareBalanceTransfer(seeded.bookingId)) // reactiva
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: p.id } })).status).toBe('pending')
   })
 })

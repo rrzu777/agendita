@@ -24,14 +24,14 @@ export function TransferPanel({ bank, amount, deadline, timezone, bookingId, kin
   async function handleDeclare(proof: { proofKey: string; proofContentType: string } | null) {
     setDeclaring(true)
     setError(null)
-    try {
-      await (kind === 'balance' ? declareBalanceTransfer(bookingId, proof ?? {}) : declareBankTransfer(bookingId, proof ?? {}))
-      router.refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No pudimos registrar tu aviso')
-    } finally {
+    const res = await (kind === 'balance' ? declareBalanceTransfer(bookingId, proof ?? {}) : declareBankTransfer(bookingId, proof ?? {}))
+    if (!res.ok) {
+      setError(res.error)
       setDeclaring(false)
+      return
     }
+    router.refresh()
+    setDeclaring(false)
   }
 
   return (
