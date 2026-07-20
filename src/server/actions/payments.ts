@@ -16,6 +16,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { action, UserError } from '@/lib/actions/result'
 import { sendBookingConfirmedNotification, sendNotificationSafely } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
 
@@ -44,7 +45,7 @@ const verifyPaymentSchema = z.object({
  * local para usarlo como external_reference y evita duplicados
  * por doble click.
  */
-export async function initiatePayment(data: {
+async function _initiatePayment(data: {
   bookingId: string
   amount?: number
   currency?: string
@@ -52,12 +53,12 @@ export async function initiatePayment(data: {
 }) {
   const limit = await checkRateLimit('initiate-payment', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const parsed = initiatePaymentSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos de pago inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos de pago inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
   const booking = await prisma.booking.findUnique({
@@ -74,34 +75,36 @@ export async function initiatePayment(data: {
   })
 
   if (!booking) {
-    throw new Error('Reserva no encontrada')
+    throw new UserError('Reserva no encontrada')
   }
 
   // Per-business availability: verificar si este negocio tiene pago online
   const businessAvailability = await resolveOnlinePaymentAvailabilityForBusiness(booking.businessId)
   if (!businessAvailability.available) {
-    throw new Error(
+    throw new UserError(
       businessAvailability.reason ||
       'Este negocio aun no tiene pago online habilitado. Coordina el pago directamente con el negocio.',
     )
   }
 
-  // No iniciar pago si la reserva no está en estado pagable o hold expirado
+  // No iniciar pago si la reserva no está en estado pagable o hold expirado.
+  // Catch acotado a assertBookingPayable: solo lanza BookingNotPayableError con
+  // mensaje seguro (Spanish, user-facing) — no arrastra errores internos.
   try {
     const { assertBookingPayable } = await import('@/lib/booking-payments')
     assertBookingPayable(booking)
   } catch (e) {
-    throw new Error(e instanceof Error ? e.message : 'No se puede iniciar pago para esta reserva')
+    throw new UserError(e instanceof Error ? e.message : 'No se puede iniciar pago para esta reserva')
   }
 
   if (booking.remainingBalance <= 0 || booking.paymentStatus === 'fully_paid') {
-    throw new Error('La reserva ya está pagada')
+    throw new UserError('La reserva ya está pagada')
   }
 
   // Monto autoritativo desde la base de datos (no confiamos en el frontend)
   const amount = Math.min(booking.depositRequired, booking.remainingBalance)
   if (amount <= 0) {
-    throw new Error('No se requiere pago para esta reserva')
+    throw new UserError('No se requiere pago para esta reserva')
   }
   const currency = booking.business.currency || 'CLP'
   const description = `Abono para ${booking.service?.name || 'servicio'}`
@@ -196,11 +199,19 @@ export async function initiatePayment(data: {
   return result
 }
 
+export const initiatePayment = action(_initiatePayment)
+
 /**
  * Server action para que el frontend público consulte la disponibilidad de pago online.
  * Si recibe businessId, resuelve por negocio (multi-tenant).
  * Si no, usa la configuración global (modo legacy/deprecado).
  * Nunca lanza: siempre retorna un objeto con { available, provider, reason?, isMock }.
+ *
+ * Deliberadamente SIN action(): no hay throw que sanear (nunca lanza, por
+ * diseño) y ya devuelve un shape estructurado propio — envolverla en
+ * ActionResult solo agregaría un nivel de anidación sin beneficio. Mismo
+ * patrón que getBankTransferInfo (bank-transfer-public.ts), con quien
+ * comparte el Promise.all en step-payment.tsx.
  */
 export async function getOnlinePaymentAvailability(businessId?: string) {
   if (businessId) {
@@ -217,34 +228,34 @@ export async function getOnlinePaymentAvailability(businessId?: string) {
  * Para proveedores con redirect (mercado_pago), la confirmación ocurre
  * via webhook. Esta función no debe confirmar pagos por redirect.
  */
-export async function verifyAndConfirmPayment(paymentId: string, bookingId: string) {
+async function _verifyAndConfirmPayment(paymentId: string, bookingId: string) {
   const limit = await checkRateLimit('verify-payment', 30, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const parsed = verifyPaymentSchema.safeParse({ paymentId, bookingId })
   if (!parsed.success) {
-    throw new Error('Datos de verificación inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos de verificación inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
   const payment = await prisma.payment.findUnique({
     where: { id: paymentId },
     include: { booking: true },
   })
-  if (!payment) throw new Error('Pago no encontrado')
+  if (!payment) throw new UserError('Pago no encontrado')
 
   // El pago debe pertenecer a la reserva indicada
   if (payment.bookingId !== bookingId) {
-    throw new Error('El pago no corresponde a esta reserva')
+    throw new UserError('El pago no corresponde a esta reserva')
   }
   if (!payment.booking) {
-    throw new Error('El pago no está asociado a una reserva')
+    throw new UserError('El pago no está asociado a una reserva')
   }
 
   // Validar que payment y booking pertenecen al mismo negocio
   if (payment.businessId !== payment.booking.businessId) {
-    throw new Error('Inconsistencia de negocio en el pago')
+    throw new UserError('Inconsistencia de negocio en el pago')
   }
 
   // Proveedores con redirect (mercado_pago): la confirmación ocurre via webhook.
@@ -304,7 +315,7 @@ export async function verifyAndConfirmPayment(paymentId: string, bookingId: stri
     })
   })
 
-  if (!result || !result.booking) throw new Error('Reserva no encontrada')
+  if (!result || !result.booking) throw new UserError('Reserva no encontrada')
 
   if (result.wasConfirmed) {
     logger.payment.approved(payment.id, bookingId, payment.businessId)
@@ -318,6 +329,10 @@ export async function verifyAndConfirmPayment(paymentId: string, bookingId: stri
   return { success: true }
 }
 
+export const verifyAndConfirmPayment = action(_verifyAndConfirmPayment)
+
+// read raw a propósito (sin callers hoy — helpers server-side para futura
+// página de detalle de pagos; ForbiddenError ya extiende UserError).
 export async function getPayments() {
   const { businessId } = await requireBusiness()
   return prisma.payment.findMany({
@@ -357,7 +372,7 @@ const createManualPaymentSchema = z.object({
  * El cliente puede enviarlo para debug UI, pero se ignora si no coincide
  * con la derivación, para evitar clasificaciones incorrectas del ledger.
  */
-export async function createManualPayment(data: {
+async function _createManualPayment(data: {
   bookingId: string
   amount: number
   currency: string
@@ -367,12 +382,12 @@ export async function createManualPayment(data: {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('create-manual-payment', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const parsed = createManualPaymentSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
   const booking = await prisma.booking.findFirst({
@@ -382,6 +397,8 @@ export async function createManualPayment(data: {
     throw new ForbiddenError('Reserva no encontrada')
   }
 
+  // Catch acotado a assertBookingPayable: solo lanza BookingNotPayableError con
+  // mensaje seguro (Spanish, user-facing) — no arrastra errores internos.
   const { assertBookingPayable } = await import('@/lib/booking-payments')
   try {
     // allowCompleted: recobro post-chargeback y cobro de saldo tras atender
@@ -389,11 +406,11 @@ export async function createManualPayment(data: {
     // siendo el gate real: completed sin saldo rechaza igual.
     assertBookingPayable(booking, { allowCompleted: true })
   } catch (e) {
-    throw new Error(e instanceof Error ? e.message : 'No se puede registrar pago para esta reserva')
+    throw new UserError(e instanceof Error ? e.message : 'No se puede registrar pago para esta reserva')
   }
 
   if (data.amount > booking.remainingBalance) {
-    throw new Error('El monto excede el saldo pendiente')
+    throw new UserError('El monto excede el saldo pendiente')
   }
 
   // Derivar paymentType en servidor — el cliente NO es fuente de verdad.
@@ -402,14 +419,14 @@ export async function createManualPayment(data: {
   // Si el cliente envió un paymentType diferente al derivado, rechazar
   // para evitar clasificación incorrecta del ledger.
   if (data.paymentType && data.paymentType !== derivedType) {
-    throw new Error(
+    throw new UserError(
       `Tipo de pago incompatible: el sistema derivó '${derivedType}' pero recibió '${data.paymentType}'. ` +
       'El tipo se calcula automáticamente según el monto y estado de la reserva.',
     )
   }
 
   if (derivedType === 'full_payment' && data.amount < booking.remainingBalance) {
-    throw new Error('Un pago total debe cubrir el saldo completo')
+    throw new UserError('Un pago total debe cubrir el saldo completo')
   }
 
   const result = await prisma.$transaction(async (tx) => {
@@ -462,3 +479,5 @@ export async function createManualPayment(data: {
   await revalidateBusinessPublicPaths(businessId)
   return result.payment
 }
+
+export const createManualPayment = action(_createManualPayment)

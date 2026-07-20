@@ -375,12 +375,18 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
       }
       const booking = res.data
 
-      const paymentResult = await initiatePayment({
+      const paymentRes = await initiatePayment({
         bookingId: booking.id,
         amount: effectiveDeposit,
         currency: 'CLP',
         description: `Abono para ${data.serviceName}`,
       })
+      if (!paymentRes.ok) {
+        setErrorMessage(paymentRes.error)
+        setStep('error')
+        return
+      }
+      const paymentResult = paymentRes.data
 
       // Redirect-based providers (Mercado Pago): redirigir al usuario al checkout externo.
       // No llamar verifyAndConfirmPayment: la confirmación ocurre via webhook.
@@ -396,7 +402,15 @@ export function StepPayment({ data, updateData, businessId, timezone, cancellati
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Timeout al verificar el pago')), 10000)
       )
-      await Promise.race([verifyPromise, timeoutPromise])
+      const verifyRes = await Promise.race([verifyPromise, timeoutPromise])
+      // verifyAndConfirmPayment puede devolver { ok:true, data:{success:false,...} }
+      // (ej. mercado_pago pendiente por webhook, "Pago no aprobado"): preexistente,
+      // este flujo mock/dev nunca terminaba de disparar esas ramas — no se toca acá.
+      if (!verifyRes.ok) {
+        setErrorMessage(verifyRes.error)
+        setStep('error')
+        return
+      }
 
       setStep('success')
       onSuccess(booking.id, 'paid', appliedPromo ? { discountAmount: appliedPromo.discount, finalAmount: appliedPromo.finalAmount } : null, booking.bookingNumber)

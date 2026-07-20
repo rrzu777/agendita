@@ -99,13 +99,16 @@ describe('createManualPayment', () => {
       return fn(mockPrisma)
     })
 
-    const result = await createManualPayment({
+    const res = await createManualPayment({
       bookingId: 'booking-1',
       amount: 10000,
       currency: 'CLP',
       paymentType: 'deposit',
       paymentMethod: 'Efectivo',
     })
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.error)
+    const result = res.data
 
     // Verificar que solo se creó 1 Payment dentro de la transacción
     expect(mockPrisma.payment.create).toHaveBeenCalledTimes(1)
@@ -140,13 +143,14 @@ describe('createManualPayment', () => {
       return fn(mockPrisma)
     })
 
-    await createManualPayment({
+    const res = await createManualPayment({
       bookingId: 'booking-1',
       amount: 5000,
       currency: 'CLP',
       paymentType: 'deposit',
       paymentMethod: 'Transferencia',
     })
+    expect(res.ok).toBe(true)
 
     // Segunda llamada: el payment ya existe, pero como no hay DB real,
     // el mock no detecta duplicados a menos que simulemos el unique constraint.
@@ -195,13 +199,16 @@ describe('createManualPayment en reservas completed con saldo (recobro post-char
     mockPrisma.booking.updateMany.mockResolvedValue({ count: 1 })
     mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(mockPrisma))
 
-    const result = await createManualPayment({
+    const res = await createManualPayment({
       bookingId: 'booking-1',
       amount: 20000,
       currency: 'CLP',
       paymentType: 'full_payment',
       paymentMethod: 'Efectivo',
     })
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.error)
+    const result = res.data
 
     expect(result.status).toBe('approved')
     // createManualPayment relaja el guard de completed…
@@ -283,38 +290,45 @@ describe('createManualPayment server-side paymentType derivation', () => {
   it('rejects mismatched paymentType from client with clear error', async () => {
     setupTxWithNewPayment()
     // Client sends 'deposit' but system would derive 'full_payment' for this amount
-    await expect(createManualPayment({
+    const res = await createManualPayment({
       bookingId: 'booking-1',
       amount: 20000, // covers full remaining balance
       currency: 'CLP',
       paymentType: 'deposit', // wrong - server will derive full_payment
       paymentMethod: 'Efectivo',
-    })).rejects.toThrow(/Tipo de pago incompatible/)
+    })
+    expect(res.ok).toBe(false)
+    if (res.ok) throw new Error('expected error result')
+    expect(res.error).toMatch(/Tipo de pago incompatible/)
   })
 
   it('amount > remainingBalance still fails even with correct paymentType', async () => {
     mockPrisma.booking.findFirst.mockResolvedValue({ ...baseBooking, remainingBalance: 5000 })
 
-    await expect(createManualPayment({
+    const res = await createManualPayment({
       bookingId: 'booking-1',
       amount: 10000, // exceeds remainingBalance of 5000
       currency: 'CLP',
       paymentType: 'deposit',
       paymentMethod: 'Efectivo',
-    })).rejects.toThrow('El monto excede el saldo pendiente')
+    })
+    expect(res.ok).toBe(false)
+    if (res.ok) throw new Error('expected error result')
+    expect(res.error).toBe('El monto excede el saldo pendiente')
   })
 
   it('derives deposit when amount < remainingBalance and no prior deposit', async () => {
     setupTxWithNewPayment()
     // amount=10000 < remainingBalance=20000 and depositPaid=0 → derives 'deposit'
     // client sends deposit which matches derived
-    await createManualPayment({
+    const res = await createManualPayment({
       bookingId: 'booking-1',
       amount: 10000,
       currency: 'CLP',
       paymentType: 'deposit',
       paymentMethod: 'Efectivo',
     })
+    expect(res.ok).toBe(true)
     expect(mockPrisma.payment.create).toHaveBeenCalledTimes(1)
     const paymentData = mockPrisma.payment.create.mock.calls[0][0].data
     expect(paymentData.paymentType).toBe('deposit')
@@ -353,13 +367,14 @@ describe('createManualPayment server-side paymentType derivation', () => {
     mockPrisma.booking.updateMany.mockResolvedValue({ count: 1 })
     mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(mockPrisma))
 
-    await createManualPayment({
+    const res = await createManualPayment({
       bookingId: 'booking-1',
       amount: 10000,
       currency: 'CLP',
       paymentType: 'full_payment',
       paymentMethod: 'Efectivo',
     })
+    expect(res.ok).toBe(true)
     expect(mockPrisma.payment.create).toHaveBeenCalledTimes(1)
     const paymentData = mockPrisma.payment.create.mock.calls[0][0].data
     expect(paymentData.paymentType).toBe('full_payment')
@@ -397,13 +412,14 @@ describe('createManualPayment server-side paymentType derivation', () => {
     mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(mockPrisma))
 
     // depositPaid=5000, remainingBalance=15000, amount=15000 → derives final_payment
-    await createManualPayment({
+    const res = await createManualPayment({
       bookingId: 'booking-1',
       amount: 15000,
       currency: 'CLP',
       // No paymentType sent - server derives it
       paymentMethod: 'Efectivo',
     })
+    expect(res.ok).toBe(true)
     expect(mockPrisma.payment.create).toHaveBeenCalledTimes(1)
     const paymentData = mockPrisma.payment.create.mock.calls[0][0].data
     expect(paymentData.paymentType).toBe('final_payment')
@@ -412,13 +428,16 @@ describe('createManualPayment server-side paymentType derivation', () => {
   it('rejects mismatched paymentType from client with clear error', async () => {
     setupTxWithNewPayment()
     // Client sends 'deposit' but system would derive 'full_payment' for this amount
-    await expect(createManualPayment({
+    const res = await createManualPayment({
       bookingId: 'booking-1',
       amount: 20000, // covers full remaining balance
       currency: 'CLP',
       paymentType: 'deposit', // wrong - server will derive full_payment
       paymentMethod: 'Efectivo',
-    })).rejects.toThrow(/Tipo de pago incompatible/)
+    })
+    expect(res.ok).toBe(false)
+    if (res.ok) throw new Error('expected error result')
+    expect(res.error).toMatch(/Tipo de pago incompatible/)
     expect(mockPrisma.payment.create).not.toHaveBeenCalled()
   })
 })

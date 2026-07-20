@@ -101,9 +101,10 @@ describe('initiatePayment - amount guards', () => {
       refundPayment: vi.fn(),
     })
 
-    await expect(
-      initiatePayment({ bookingId: 'booking-1', amount: 15000, currency: 'CLP' }),
-    ).rejects.toThrow('No se requiere pago para esta reserva')
+    const res = await initiatePayment({ bookingId: 'booking-1', amount: 15000, currency: 'CLP' })
+    expect(res.ok).toBe(false)
+    if (res.ok) throw new Error('expected error result')
+    expect(res.error).toBe('No se requiere pago para esta reserva')
   })
 
   it('rejects when depositRequired is positive but booking is fully_paid', async () => {
@@ -126,8 +127,9 @@ describe('initiatePayment - amount guards', () => {
       customer: { email: null },
     })
 
-    await expect(
-      initiatePayment({ bookingId: 'booking-2' }),
-    ).rejects.toThrow('La reserva ya está pagada')
+    const res = await initiatePayment({ bookingId: 'booking-2' })
+    expect(res.ok).toBe(false)
+    if (res.ok) throw new Error('expected error result')
+    expect(res.error).toBe('La reserva ya está pagada')
   })
 })
