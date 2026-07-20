@@ -73,18 +73,26 @@ export function BulkSendControls({
     const popup = openDeferredPopup()
     setWaSending(true)
     setWaError(null)
-    const res = await sendCampaignMessage(current.id)
-    if (!res.ok) {
+    try {
+      const res = await sendCampaignMessage(current.id)
+      if (!res.ok) {
+        popup.close()
+        setWaError(res.error)
+      } else if (res.data.waUrl) {
+        popup.navigate(res.data.waUrl)
+      } else {
+        popup.close()
+        setWaError('La clienta no tiene un teléfono válido.')
+      }
+    } catch (e) {
+      // action() no lanza salvo fallo de transporte (RPC de la server action en sí);
+      // conservamos el catch para ese caso, igual que antes de ActionResult.
       popup.close()
-      setWaError(res.error)
-    } else if (res.data.waUrl) {
-      popup.navigate(res.data.waUrl)
-    } else {
-      popup.close()
-      setWaError('La clienta no tiene un teléfono válido.')
+      setWaError(e instanceof Error ? e.message : 'No se pudo enviar')
+    } finally {
+      setWaSending(false)
+      setWaIndex((i) => (i ?? 0) + 1) // avanza aunque falle (optimista, un toque por clienta)
     }
-    setWaSending(false)
-    setWaIndex((i) => (i ?? 0) + 1) // avanza aunque falle (optimista, un toque por clienta)
   }
 
   function finishGuiding() {

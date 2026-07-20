@@ -208,7 +208,9 @@ async function _sendCampaignEmailBatch(
       else results.push({ recipientId, status: 'failed', error: outcome.error })
     } catch (e) {
       // Puerta 2 (opt-out), promo pausada, destinataria borrada → saltar, no abortar.
-      results.push({ recipientId, status: 'skipped', error: e instanceof Error ? e.message : 'error' })
+      // Sólo UserError es user-facing; cualquier otro throw (DB, etc.) se redacta —
+      // este results[] cruza al cliente, mismo borde de seguridad que action().
+      results.push({ recipientId, status: 'skipped', error: e instanceof UserError ? e.message : 'error' })
     }
   }
   return { results }
