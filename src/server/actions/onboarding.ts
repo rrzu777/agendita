@@ -2,11 +2,12 @@
 
 import { prisma } from '@/lib/db'
 import { requireBusiness } from '@/lib/auth/server'
+import { action, UserError } from '@/lib/actions/result'
 
-export async function saveOnboardingStep(businessId: string, step: number) {
+async function _saveOnboardingStep(businessId: string, step: number) {
   const { businessId: sessionBusinessId } = await requireBusiness()
   if (sessionBusinessId !== businessId) {
-    throw new Error('No autorizado')
+    throw new UserError('No autorizado')
   }
   await prisma.business.update({
     where: { id: businessId },
@@ -14,10 +15,12 @@ export async function saveOnboardingStep(businessId: string, step: number) {
   })
 }
 
-export async function completeOnboarding(businessId: string) {
+export const saveOnboardingStep = action(_saveOnboardingStep)
+
+async function _completeOnboarding(businessId: string) {
   const { businessId: sessionBusinessId } = await requireBusiness()
   if (sessionBusinessId !== businessId) {
-    throw new Error('No autorizado')
+    throw new UserError('No autorizado')
   }
 
   const [servicesCount, availabilityCount] = await Promise.all([
@@ -26,11 +29,11 @@ export async function completeOnboarding(businessId: string) {
   ])
 
   if (servicesCount === 0) {
-    throw new Error('Debes agregar al menos un servicio antes de finalizar')
+    throw new UserError('Debes agregar al menos un servicio antes de finalizar')
   }
 
   if (availabilityCount === 0) {
-    throw new Error('Debes configurar al menos un día de atención antes de finalizar')
+    throw new UserError('Debes configurar al menos un día de atención antes de finalizar')
   }
 
   await prisma.business.update({
@@ -41,3 +44,5 @@ export async function completeOnboarding(businessId: string) {
     },
   })
 }
+
+export const completeOnboarding = action(_completeOnboarding)

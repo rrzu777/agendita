@@ -13,13 +13,9 @@ export const metadata: Metadata = { robots: { index: false, follow: false } }
 
 // El token va bindeado server-side (no como hidden input): es la credencial del
 // carnet y no debe confiarse desde el body del form.
-async function redeemAction(token: string, formData: FormData) {
+async function redeemAction(token: string, optionId: string, requestId: string) {
   'use server'
-  await redeemPointsAsCustomer(
-    token,
-    String(formData.get('optionId')),
-    String(formData.get('requestId')),
-  )
+  return redeemPointsAsCustomer(token, optionId, requestId)
 }
 
 // Mismo criterio de bind server-side que redeemAction: el token es la credencial.

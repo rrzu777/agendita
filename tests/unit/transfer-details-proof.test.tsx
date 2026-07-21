@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 vi.mock('@/server/actions/bank-transfer-public', () => ({
-  createProofUploadUrl: vi.fn(async () => ({ uploadUrl: 'https://r2/put', key: 'proofs/b/x/deposit' })),
+  createProofUploadUrl: vi.fn(async () => ({ ok: true, data: { uploadUrl: 'https://r2/put', key: 'proofs/b/x/deposit' } })),
 }))
 
 import { TransferDetails } from '@/components/booking/transfer-details'

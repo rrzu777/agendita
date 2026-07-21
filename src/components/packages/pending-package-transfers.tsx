@@ -35,10 +35,12 @@ function PendingRow({ item, currency }: { item: PendingPackageTransferItem; curr
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   function onConfirm() {
+    // best-effort silencioso (ok o no): sin UI de error en esta fila, siempre refresca.
     startTransition(async () => { try { await confirmPackageTransfer(item.paymentId) } finally { router.refresh() } })
   }
   function onReject() {
     if (!window.confirm('¿Rechazar esta transferencia de paquete? La compra quedará rechazada.')) return
+    // best-effort silencioso (ok o no): sin UI de error en esta fila, siempre refresca.
     startTransition(async () => { try { await rejectPackageTransfer(item.paymentId) } finally { router.refresh() } })
   }
   return (

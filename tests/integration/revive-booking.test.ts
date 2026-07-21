@@ -7,6 +7,7 @@ import {
   cleanupBankTransferSeed,
   BT_VERIFY_BIZ,
 } from './helpers/bank-transfer-seed'
+import { expectActionError } from './helpers/action-result'
 
 requireTestDatabase()
 
@@ -73,7 +74,8 @@ async function seedExpired(opts: Parameters<typeof seedDeclaredTransfer>[0] = {}
 describe('reviveBooking confirm', () => {
   it('expired futura → confirmed, holdExpiresAt null', async () => {
     const seeded = await seedExpired()
-    await reviveBooking(seeded.bookingId, 'confirm')
+    const res = await reviveBooking(seeded.bookingId, 'confirm')
+    expect(res.ok).toBe(true)
     const b = await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })
     expect(b.status).toBe('confirmed')
     expect(b.holdExpiresAt).toBeNull()
@@ -86,17 +88,19 @@ describe('reviveBooking confirm', () => {
       endDateTime: addMinutes(start, 60),
       holdExpiresAt: new Date(Date.now() - 72 * 3_600_000),
     })
-    await reviveBooking(seeded.bookingId, 'confirm')
+    const res = await reviveBooking(seeded.bookingId, 'confirm')
+    expect(res.ok).toBe(true)
     const b = await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })
     expect(b.status).toBe('confirmed')
   })
 
   it('no-expired → error; doble revive → error de estado', async () => {
     const seeded = await seedDeclaredTransfer() // pending_payment, no expirada
-    await expect(reviveBooking(seeded.bookingId, 'confirm')).rejects.toThrow('Solo se puede revivir')
+    await expectActionError(reviveBooking(seeded.bookingId, 'confirm'), 'Solo se puede revivir')
     const expired = await seedExpired()
-    await reviveBooking(expired.bookingId, 'confirm')
-    await expect(reviveBooking(expired.bookingId, 'confirm')).rejects.toThrow('Solo se puede revivir')
+    const res = await reviveBooking(expired.bookingId, 'confirm')
+    expect(res.ok).toBe(true)
+    await expectActionError(reviveBooking(expired.bookingId, 'confirm'), 'Solo se puede revivir')
   })
 
   it('conflicto de cupo (TimeBlock) en turno futuro → error traducido', async () => {
@@ -110,7 +114,7 @@ describe('reviveBooking confirm', () => {
         reason: 'ocupa el slot',
       },
     })
-    await expect(reviveBooking(seeded.bookingId, 'confirm')).rejects.toThrow('ya no está disponible')
+    await expectActionError(reviveBooking(seeded.bookingId, 'confirm'), 'ya no está disponible')
     const still = await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })
     expect(still.status).toBe('expired')
     await prisma.timeBlock.delete({ where: { id: block.id } })
@@ -129,7 +133,7 @@ describe('reviveBooking confirm', () => {
     const { seedConfirmedBooking } = await import('./helpers/bank-transfer-seed')
     const other = await seedConfirmedBooking({ businessId: BT_VERIFY_BIZ, serviceId: 'btv-svc-1', ...slotOpts })
     await prisma.booking.update({ where: { id: other.bookingId }, data: { status: 'completed' } })
-    await expect(reviveBooking(seeded.bookingId, 'confirm')).rejects.toThrow('Ese horario ya está ocupado')
+    await expectActionError(reviveBooking(seeded.bookingId, 'confirm'), 'Ese horario ya está ocupado')
     const still = await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })
     expect(still.status).toBe('expired')
   })
@@ -151,7 +155,8 @@ describe('reviveBooking reopen', () => {
       },
     })
     const before = Date.now()
-    await reviveBooking(seeded.bookingId, 'reopen')
+    const res = await reviveBooking(seeded.bookingId, 'reopen')
+    expect(res.ok).toBe(true)
     const b = await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })
     expect(b.status).toBe('pending_payment')
     expect(b.transferReminderCustomerSentAt).toBeNull()
@@ -170,20 +175,20 @@ describe('reviveBooking reopen', () => {
     // no colisionar con el EXCLUDE de solape (ventanas de 1h muy cercanas se pisan).
     const start = new Date(Date.now() - 100 * 3_600_000)
     const seeded = await seedExpired({ startDateTime: start, endDateTime: addMinutes(start, 60), holdExpiresAt: new Date(Date.now() - 106 * 3_600_000) })
-    await expect(reviveBooking(seeded.bookingId, 'reopen')).rejects.toThrow('turno ya pasó')
+    await expectActionError(reviveBooking(seeded.bookingId, 'reopen'), 'turno ya pasó')
   })
 
   it('reserva sin transferencia (paymentMethod null) → error', async () => {
     const seeded = await seedExpired()
     await prisma.booking.update({ where: { id: seeded.bookingId }, data: { paymentMethod: null } })
-    await expect(reviveBooking(seeded.bookingId, 'reopen')).rejects.toThrow('transferencia')
+    await expectActionError(reviveBooking(seeded.bookingId, 'reopen'), 'transferencia')
   })
 
   it('cuenta deshabilitada → error (y se re-habilita para los demás tests)', async () => {
     const seeded = await seedExpired()
     await prisma.bankTransferAccount.update({ where: { businessId: BT_VERIFY_BIZ }, data: { isEnabled: false } })
     try {
-      await expect(reviveBooking(seeded.bookingId, 'reopen')).rejects.toThrow('transferencia')
+      await expectActionError(reviveBooking(seeded.bookingId, 'reopen'), 'transferencia')
     } finally {
       await prisma.bankTransferAccount.update({ where: { businessId: BT_VERIFY_BIZ }, data: { isEnabled: true } })
     }
@@ -195,7 +200,7 @@ describe('reviveBooking reopen', () => {
     const block = await prisma.timeBlock.create({
       data: { businessId: BT_VERIFY_BIZ, startDateTime: b.startDateTime, endDateTime: b.endDateTime, reason: 'ocupado' },
     })
-    await expect(reviveBooking(seeded.bookingId, 'reopen')).rejects.toThrow('ya no está disponible')
+    await expectActionError(reviveBooking(seeded.bookingId, 'reopen'), 'ya no está disponible')
     expect((await prisma.booking.findUniqueOrThrow({ where: { id: seeded.bookingId } })).status).toBe('expired')
     await prisma.timeBlock.delete({ where: { id: block.id } })
   })

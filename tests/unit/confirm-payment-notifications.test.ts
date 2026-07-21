@@ -145,7 +145,8 @@ describe('confirmPayment notification behavior', () => {
   it('sends booking confirmed email when wasConfirmed is true (pending_payment -> confirmed)', async () => {
     stubTx(true)
 
-    await confirmPayment('booking-1', 'pay-1', 10000)
+    const res = await confirmPayment('booking-1', 'pay-1', 10000)
+    expect(res.ok).toBe(true)
 
     expect(mockSendBookingConfirmedNotification).toHaveBeenCalledWith('booking-1', 'biz-1')
   })
@@ -153,7 +154,8 @@ describe('confirmPayment notification behavior', () => {
   it('does NOT send confirmation when booking was already confirmed (wasConfirmed false)', async () => {
     stubTx(false)
 
-    await confirmPayment('booking-1', 'pay-1', 10000)
+    const res = await confirmPayment('booking-1', 'pay-1', 10000)
+    expect(res.ok).toBe(true)
 
     expect(mockSendBookingConfirmedNotification).not.toHaveBeenCalled()
   })
@@ -161,7 +163,8 @@ describe('confirmPayment notification behavior', () => {
   it('does NOT send confirmation when applyApprovedPayment was idempotent (wasConfirmed false)', async () => {
     stubTx(false)
 
-    await confirmPayment('booking-1', 'pay-1', 10000)
+    const res = await confirmPayment('booking-1', 'pay-1', 10000)
+    expect(res.ok).toBe(true)
 
     expect(mockSendBookingConfirmedNotification).not.toHaveBeenCalled()
   })

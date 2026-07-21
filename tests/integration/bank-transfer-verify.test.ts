@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { btDeclaredId } from '@/lib/bank-transfer/declared'
 import { requireTestDatabase } from './setup'
 import { seedDeclaredTransfer, cleanupBankTransferSeed } from './helpers/bank-transfer-seed'
+import { expectActionError, unwrap } from './helpers/action-result'
 
 requireTestDatabase()
 
@@ -79,7 +80,7 @@ describe('confirmBankTransfer', () => {
     // (transfirió menos de lo declarado) y AÚN cubre el abono → confirma.
     const { paymentId, bookingId } = await seedDeclaredTransfer({ depositRequired: 8000, amount: 10000 })
     const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
-    await confirmBankTransfer(paymentId, 8000) // editado a la baja desde 10000
+    await unwrap(confirmBankTransfer(paymentId, 8000)) // editado a la baja desde 10000
     const payment = await prisma.payment.findUnique({ where: { id: paymentId } })
     const booking = await prisma.booking.findUnique({ where: { id: bookingId } })
     expect(payment!.status).toBe('approved')
@@ -104,7 +105,7 @@ describe('confirmBankTransfer', () => {
       holdExpiresAt: expiredHold,
     })
     const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
-    await confirmBankTransfer(paymentId, 8000)
+    await unwrap(confirmBankTransfer(paymentId, 8000))
     const payment = await prisma.payment.findUnique({ where: { id: paymentId } })
     const booking = await prisma.booking.findUnique({ where: { id: bookingId } })
     expect(payment!.status).toBe('approved')
@@ -129,14 +130,14 @@ describe('confirmBankTransfer', () => {
       },
     })
     const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
-    await expect(confirmBankTransfer(paymentId, 5000)).rejects.toThrow(/ya tiene el abono/)
+    await expectActionError(confirmBankTransfer(paymentId, 5000), 'ya tiene el abono')
   })
 
   it('errors on an expired booking (terminal)', async () => {
     const { paymentId, bookingId } = await seedDeclaredTransfer()
     await prisma.booking.update({ where: { id: bookingId }, data: { status: 'expired' } })
     const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
-    await expect(confirmBankTransfer(paymentId, 5000)).rejects.toThrow(/expiró|cancel/)
+    await expectActionError(confirmBankTransfer(paymentId, 5000), 'expiró')
   })
 
   it('errors when hold expired and the slot is no longer available', async () => {
@@ -166,7 +167,7 @@ describe('confirmBankTransfer', () => {
       data: { businessId, startDateTime, endDateTime, reason: 'ocupado' },
     })
     const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
-    await expect(confirmBankTransfer(paymentId, 5000)).rejects.toThrow(/horario|disponible/)
+    await expectActionError(confirmBankTransfer(paymentId, 5000), 'disponible')
   })
 })
 
@@ -174,7 +175,7 @@ describe('rejectBankTransfer', () => {
   it('rejects the payment, cancels the booking, releases redemption', async () => {
     const { paymentId, bookingId } = await seedDeclaredTransfer()
     const { rejectBankTransfer } = await import('@/server/actions/bank-transfer-verify')
-    await rejectBankTransfer(paymentId)
+    await unwrap(rejectBankTransfer(paymentId))
     const payment = await prisma.payment.findUnique({ where: { id: paymentId } })
     const booking = await prisma.booking.findUnique({ where: { id: bookingId } })
     expect(payment!.status).toBe('rejected')
@@ -185,7 +186,9 @@ describe('rejectBankTransfer', () => {
     const { paymentId } = await seedDeclaredTransfer()
     await prisma.payment.update({ where: { id: paymentId }, data: { status: 'approved' } })
     const { rejectBankTransfer } = await import('@/server/actions/bank-transfer-verify')
-    await expect(rejectBankTransfer(paymentId)).rejects.toThrow()
+    // Un pago ya procesado deja de matchear el filtro de declaradas-pending de
+    // loadDeclaredPayment, así que el mensaje real es el de "no verificable".
+    await expectActionError(rejectBankTransfer(paymentId), 'no es una transferencia por verificar')
   })
 })
 
@@ -193,7 +196,8 @@ describe('cancelBooking closes the declared transfer payment', () => {
   it('marks the bt-declared payment cancelled', async () => {
     const { paymentId, bookingId } = await seedDeclaredTransfer()
     const { cancelBooking } = await import('@/server/actions/bookings')
-    await cancelBooking(bookingId)
+    const res = await cancelBooking(bookingId)
+    expect(res.ok).toBe(true)
     const payment = await prisma.payment.findUnique({ where: { id: paymentId } })
     expect(payment!.status).toBe('cancelled')
   })

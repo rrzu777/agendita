@@ -166,16 +166,15 @@ export function PromotionForm({
 
     startTransition(async () => {
       try {
-        if (mode === 'edit' && promo) {
-          await updatePromotion(promo.id, payload)
-        } else {
-          await createPromotion(payload)
-        }
+        const res = mode === 'edit' && promo
+          ? await updatePromotion(promo.id, payload)
+          : await createPromotion(payload)
+        if (!res.ok) { setError(res.error); return }
         setOpen(false)
         if (mode === 'create') setForm(emptyState())
         router.refresh()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'No se pudo guardar la promoción')
+      } catch {
+        setError('No se pudo guardar la promoción')
       }
     })
   }

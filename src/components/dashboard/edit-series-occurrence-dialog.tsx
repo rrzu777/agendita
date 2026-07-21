@@ -64,8 +64,11 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
         }
         router.refresh()
         handleOpenChange(false)
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Error al guardar')
+      } catch {
+        // parseTimeUTC (date-fns-tz) solo lanza en formatos internos rotos
+        // (TypeError de aridad / RangeError de opciones), nunca mensaje
+        // relevante para la usuaria; fn() ya devuelve ActionResult.
+        setError('Error al guardar')
       }
     })
   }

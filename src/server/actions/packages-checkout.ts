@@ -19,6 +19,7 @@ import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { btPkgDeclaredId, PKG_TRANSFER_PAYMENT_METHOD, declaredPkgTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 import { isPackageOfferUnchanged } from '@/lib/payments/package-confirmation-state'
 import { sendMultiNotificationSafely, sendPackageTransferDeclaredToBusiness } from '@/lib/notifications'
+import { action, UserError } from '@/lib/actions/result'
 
 const HOLD_MINUTES = 30
 
@@ -27,7 +28,7 @@ const HOLD_MINUTES = 30
 // funciones async invocables.)
 async function requireTransferInfo(businessId: string) {
   const transferInfo = await getBankTransferInfo(businessId)
-  if (!transferInfo) throw new Error('Transferencia bancaria no disponible para este negocio.')
+  if (!transferInfo) throw new UserError('Transferencia bancaria no disponible para este negocio.')
   return transferInfo
 }
 
@@ -47,7 +48,7 @@ const createPurchaseSchema = z.object({
  * hold de 30 min. Reutiliza una compra pending viva del mismo producto en
  * vez de duplicar (reintentos del checkout).
  */
-export async function createPackagePurchase(input: {
+async function _createPackagePurchase(input: {
   packageProductId: string
   name: string
   phone: string
@@ -57,7 +58,7 @@ export async function createPackagePurchase(input: {
   // Remoto (getUser): el email de sesión y sessionUser (Vía 3, abajo) exigen el
   // email_confirmed_at confiable que getCurrentUser (local) no expone.
   const user = await getConfirmedSessionUser()
-  if (!user) throw new Error('Debes iniciar sesión para comprar un paquete.')
+  if (!user) throw new UserError('Debes iniciar sesión para comprar un paquete.')
 
   // Primera compra de una clienta que nunca pasó por /mi: sin esto, la fila
   // User de Prisma no existe y linkCustomerFromBookingSession (Vía 3, FK
@@ -67,23 +68,23 @@ export async function createPackagePurchase(input: {
   try {
     await ensureUserRow(user)
   } catch (e) {
-    if (e instanceof AccountConflictError) throw new Error(e.message)
+    if (e instanceof AccountConflictError) throw new UserError(e.message)
     throw e
   }
 
   const limit = await checkRateLimit('create-package-purchase', 20, 60000, { userId: user.id })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
 
   const parsed = createPurchaseSchema.safeParse(input)
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
   const product = await prisma.packageProduct.findFirst({
     where: { id: input.packageProductId, isActive: true },
     include: { services: { select: { id: true } } },
   })
-  if (!product) throw new Error('Paquete no disponible')
+  if (!product) throw new UserError('Paquete no disponible')
 
   const method = parsed.data.method
 
@@ -95,7 +96,7 @@ export async function createPackagePurchase(input: {
   } else {
     const availability = await resolveOnlinePaymentAvailabilityForBusiness(product.businessId)
     if (!availability.available) {
-      throw new Error(availability.reason || 'Pago online no disponible para este negocio.')
+      throw new UserError(availability.reason || 'Pago online no disponible para este negocio.')
     }
   }
 
@@ -168,6 +169,8 @@ export async function createPackagePurchase(input: {
   return { purchaseId }
 }
 
+export const createPackagePurchase = action(_createPackagePurchase)
+
 /** Prefill del checkout de paquete para una clienta logueada. */
 export type PackageCheckoutPrefill = {
   email: string | null
@@ -177,6 +180,12 @@ export type PackageCheckoutPrefill = {
 
 /**
  * Prefill del checkout para una clienta logueada. Email siempre de la sesión.
+ *
+ * Deliberadamente SIN action(): sólo la invocan Server Components (páginas
+ * /paquetes, /paquetes/[slug]) vía import directo, nunca un Client Component
+ * cross-boundary — no hay redacción de Next que sanear. Tampoco lanza (retorna
+ * null sin sesión). Mismo criterio que getOnlinePaymentAvailability en
+ * payments.ts.
  */
 export async function getPackageCheckoutPrefill(businessId: string): Promise<PackageCheckoutPrefill | null> {
   const user = await getCurrentUser()
@@ -205,8 +214,8 @@ async function loadOwnedPurchase(purchaseId: string, userId: string) {
       business: { select: { name: true, slug: true, subdomain: true, currency: true } },
     },
   })
-  if (!purchase) throw new Error('Compra no encontrada')
-  if (purchase.customer.userId !== userId) throw new Error('Esta compra no corresponde a tu cuenta.')
+  if (!purchase) throw new UserError('Compra no encontrada')
+  if (purchase.customer.userId !== userId) throw new UserError('Esta compra no corresponde a tu cuenta.')
   return purchase
 }
 
@@ -217,18 +226,18 @@ async function loadOwnedPurchase(purchaseId: string, userId: string) {
  * el tronco compartido `createMpPreferenceForPayment` (Task 5). Para un
  * provider sin redirect (mock/test) confirma server-side de inmediato.
  */
-export async function initiatePackagePayment(input: { purchaseId: string }): Promise<
+async function _initiatePackagePayment(input: { purchaseId: string }): Promise<
   { redirectUrl: string } | { confirmed: true }
 > {
   const user = await getCurrentUser()
-  if (!user) throw new Error('Debes iniciar sesión para pagar el paquete.')
+  if (!user) throw new UserError('Debes iniciar sesión para pagar el paquete.')
 
   const limit = await checkRateLimit('initiate-package-payment', 20, 60000, { userId: user.id })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
 
   const purchase = await loadOwnedPurchase(input.purchaseId, user.id)
   if (purchase.status !== 'pending') {
-    throw new Error('Esta compra ya fue procesada.')
+    throw new UserError('Esta compra ya fue procesada.')
   }
 
   const provider = await getOnlinePaymentProviderForBusiness(purchase.businessId)
@@ -288,23 +297,29 @@ export async function initiatePackagePayment(input: { purchaseId: string }): Pro
   }
 
   // Provider sin redirect (mock/test): confirmar server-side de inmediato.
-  await verifyAndConfirmPackagePayment({ purchaseId: purchase.id })
+  // Llamada interna: usar la versión _raw — la wrapped devuelve ActionResult, y
+  // el valor de retorno se ignora acá; un UserError debe propagarse como throw
+  // para que el action() de initiatePackagePayment lo capture, no quedar
+  // silenciado dentro de un { ok: false } que nadie lee.
+  await _verifyAndConfirmPackagePayment({ purchaseId: purchase.id })
   return { confirmed: true }
 }
+
+export const initiatePackagePayment = action(_initiatePackagePayment)
 
 /**
  * Confirma el pago mock/no-MP de una compra de paquete, delegando la
  * activación (grants + ledger) a `applyApprovedPackagePayment`. Para
  * Mercado Pago corta temprano: la confirmación real llega por webhook.
  */
-export async function verifyAndConfirmPackagePayment(input: { purchaseId: string }): Promise<{ success: boolean }> {
+async function _verifyAndConfirmPackagePayment(input: { purchaseId: string }): Promise<{ success: boolean }> {
   const user = await getCurrentUser()
-  if (!user) throw new Error('Debes iniciar sesión.')
+  if (!user) throw new UserError('Debes iniciar sesión.')
 
   // Es un 'use server' export directamente invocable; rate-limit por consistencia
   // con initiate/create aunque en prod (MP) sea un no-op ownership-gated.
   const limit = await checkRateLimit('verify-package-payment', 20, 60000, { userId: user.id })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
 
   const purchase = await loadOwnedPurchase(input.purchaseId, user.id)
 
@@ -312,7 +327,7 @@ export async function verifyAndConfirmPackagePayment(input: { purchaseId: string
     where: { packagePurchaseId: purchase.id, paymentType: PaymentType.package_purchase },
     orderBy: { createdAt: 'desc' },
   })
-  if (!payment) throw new Error('Pago no encontrado')
+  if (!payment) throw new UserError('Pago no encontrado')
 
   if (payment.provider === PaymentProvider.mercado_pago) {
     return { success: false }
@@ -345,21 +360,23 @@ export async function verifyAndConfirmPackagePayment(input: { purchaseId: string
   return { success: true }
 }
 
+export const verifyAndConfirmPackagePayment = action(_verifyAndConfirmPackagePayment)
+
 /** Declaración pública "ya transferí" de una compra de paquete por transferencia.
  *  También REVIVE una compra expirada (self-service, decisión del spec §5): un
  *  paquete no bloquea cupo, así que si el producto sigue vigente al mismo precio,
  *  expired→pending con hold nuevo en el mismo acto de declarar. */
-export async function declarePackageTransfer(input: { purchaseId: string }): Promise<{ ok: true }> {
+async function _declarePackageTransfer(input: { purchaseId: string }): Promise<{ ok: true }> {
   const user = await getCurrentUser()
-  if (!user) throw new Error('Debes iniciar sesión.')
+  if (!user) throw new UserError('Debes iniciar sesión.')
   const limit = await checkRateLimit('declare-package-transfer', 20, 60000, { userId: user.id })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
 
   const purchase = await loadOwnedPurchase(input.purchaseId, user.id)
   // Sólo una expirada QUE ERA de transferencia es retomable; MP expirado se recompra
   // y rejected es terminal (la dueña ya miró y dijo no).
   const isRevive = purchase.status === 'expired' && purchase.paymentMethod === PKG_TRANSFER_PAYMENT_METHOD
-  if (purchase.status !== 'pending' && !isRevive) throw new Error('Esta compra ya fue procesada.')
+  if (purchase.status !== 'pending' && !isRevive) throw new UserError('Esta compra ya fue procesada.')
   // SIN check de hold a propósito (fix zombie, spec §5): la plata pudo enviarse
   // aunque el hold venciera y acá no hay cupo en juego. La ventana la cierra el
   // sweep: cuando expira la compra no-declarada, cae en la rama revive de arriba.
@@ -381,7 +398,7 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
       },
       select: { id: true },
     })
-    if (otherLive) throw new Error('Ya tenés una compra de este paquete en proceso.')
+    if (otherLive) throw new UserError('Ya tenés una compra de este paquete en proceso.')
 
     const [transferInfo, product] = await Promise.all([
       requireTransferInfo(purchase.businessId),
@@ -394,7 +411,7 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
     // la compra vieja ya no representa la oferta actual. (Misma regla que gatea el
     // panel en la confirmation — fuente única en isPackageOfferUnchanged.)
     if (!product || !isPackageOfferUnchanged(product, purchase)) {
-      throw new Error('Este paquete cambió. Iniciá la compra de nuevo.')
+      throw new UserError('Este paquete cambió. Iniciá la compra de nuevo.')
     }
     reviveHoldHours = transferInfo.holdHours
     // Recalcular la vigencia desde el momento del revive: expiresAt se fijó al crear
@@ -427,7 +444,7 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
           where: { id: purchase.id, status: 'pending' },
           data: { status: 'pending' },
         })
-    if (guard.count === 0) throw new Error('Esta compra ya fue procesada.')
+    if (guard.count === 0) throw new UserError('Esta compra ya fue procesada.')
 
     // Robustez del revive: si quedó un declarado 'cancelled' de un ciclo anterior
     // (hoy inalcanzable: el sweep exime declaradas), reactivarlo con createdAt=now
@@ -463,3 +480,5 @@ export async function declarePackageTransfer(input: { purchaseId: string }): Pro
 
   return { ok: true }
 }
+
+export const declarePackageTransfer = action(_declarePackageTransfer)

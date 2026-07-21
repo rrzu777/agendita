@@ -57,10 +57,11 @@ function Card({ preset, hasActiveProgram }: { preset: PresetCard; hasActiveProgr
     start(async () => {
       try {
         const res = await applyLoyaltyPreset(preset.id)
-        setSummary(res)
+        if (!res.ok) { setError(res.error); return }
+        setSummary(res.data)
         setConfirming(false)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Error al aplicar')
+      } catch {
+        setError('Error al aplicar')
       }
     })
   }

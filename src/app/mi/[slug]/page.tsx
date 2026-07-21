@@ -31,9 +31,9 @@ function statusLabel(b: { status: BookingStatus; payments: { id: string }[] }) {
     : bookingStatusLabels[b.status]
 }
 
-async function redeemAction(customerId: string, formData: FormData) {
+async function redeemAction(customerId: string, optionId: string, requestId: string) {
   'use server'
-  await redeemPointsAsMe(customerId, String(formData.get('optionId')), String(formData.get('requestId')))
+  return redeemPointsAsMe(customerId, optionId, requestId)
 }
 
 // Mismo criterio de bind server-side que redeemAction: el customerId no viaja

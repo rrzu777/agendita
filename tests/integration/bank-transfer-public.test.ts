@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import { requireTestDatabase } from './setup'
 import { prisma as sharedPrisma } from '@/lib/db'
 import { seedDeclaredTransfer, cleanupBankTransferSeed } from './helpers/bank-transfer-seed'
+import { unwrap, expectActionError } from './helpers/action-result'
 
 requireTestDatabase()
 
@@ -136,10 +137,12 @@ describe('bank-transfer flujo público', () => {
       const { createBooking } = await import('@/server/actions/bookings')
 
       const before = Date.now()
-      const booking = await createBooking({
+      const res = await createBooking({
         serviceId: svc.id, customerName: 'Ana', customerPhone: '+56911200001',
         startDateTime: futureDate(2, 15), acceptedTerms: true, paymentMethod: 'bank_transfer',
       }, BIZ)
+      if (!res.ok) throw new Error(res.error)
+      const booking = res.data
 
       const row = await prisma.booking.findUnique({ where: { id: booking.id } })
       expect(row!.paymentMethod).toBe('bank_transfer')
@@ -152,19 +155,23 @@ describe('bank-transfer flujo público', () => {
     it('rechaza bank_transfer si el negocio no lo tiene habilitado', async () => {
       const { createBooking } = await import('@/server/actions/bookings')
       await prisma.bankTransferAccount.update({ where: { businessId: BIZ }, data: { isEnabled: false } })
-      await expect(createBooking({
+      const res = await createBooking({
         serviceId: svc.id, customerName: 'Bea', customerPhone: '+56911200002',
         startDateTime: futureDate(3, 15), acceptedTerms: true, paymentMethod: 'bank_transfer',
-      }, BIZ)).rejects.toThrow('transferencia')
+      }, BIZ)
+      expect(res.ok).toBe(false)
+      expect(!res.ok && res.error).toContain('transferencia')
     })
 
     it('sin paymentMethod el hold sigue siendo ~15min', async () => {
       const { createBooking } = await import('@/server/actions/bookings')
       const before = Date.now()
-      const booking = await createBooking({
+      const res = await createBooking({
         serviceId: svc.id, customerName: 'Cata', customerPhone: '+56911200003',
         startDateTime: futureDate(4, 15), acceptedTerms: true,
       }, BIZ)
+      if (!res.ok) throw new Error(res.error)
+      const booking = res.data
       const row = await prisma.booking.findUnique({ where: { id: booking.id } })
       expect(row!.paymentMethod).toBeNull()
       const mins = (row!.holdExpiresAt!.getTime() - before) / 60_000
@@ -188,10 +195,12 @@ describe('bank-transfer flujo público', () => {
     async function mkTransferBooking() {
       const { createBooking } = await import('@/server/actions/bookings')
       phoneSeq += 1
-      return createBooking({
+      const res = await createBooking({
         serviceId: svc.id, customerName: `Decl ${phoneSeq}`, customerPhone: `+5691130${String(phoneSeq).padStart(4, '0')}`,
         startDateTime: futureDate(10 + phoneSeq, 15), acceptedTerms: true, paymentMethod: 'bank_transfer',
       }, BIZ)
+      if (!res.ok) throw new Error(res.error)
+      return res.data
     }
 
     it('crea el Payment pendiente con monto server-side y mueve el hold a la ventana de verificación', async () => {
@@ -221,7 +230,7 @@ describe('bank-transfer flujo público', () => {
     it('es idempotente: doble declare = un solo Payment y ok en ambos', async () => {
       const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
       const booking = await mkTransferBooking()
-      await declareBankTransfer(booking.id)
+      await unwrap(declareBankTransfer(booking.id))
       const holdAfterFirst = (await prisma.booking.findUnique({ where: { id: booking.id } }))!.holdExpiresAt
       const res2 = await declareBankTransfer(booking.id)
       expect(res2.ok).toBe(true)
@@ -235,7 +244,7 @@ describe('bank-transfer flujo público', () => {
       const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
       await prisma.bankTransferAccount.update({ where: { businessId: BIZ }, data: { verifyHours: null } })
       const booking = await mkTransferBooking()
-      await declareBankTransfer(booking.id)
+      await unwrap(declareBankTransfer(booking.id))
       const row = await prisma.booking.findUnique({ where: { id: booking.id } })
       expect(row!.holdExpiresAt).toBeNull()
     })
@@ -244,7 +253,7 @@ describe('bank-transfer flujo público', () => {
       const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
       const booking = await mkTransferBooking()
       await prisma.booking.update({ where: { id: booking.id }, data: { holdExpiresAt: new Date(Date.now() - 60_000) } })
-      await expect(declareBankTransfer(booking.id)).rejects.toThrow('expiró')
+      await expectActionError(declareBankTransfer(booking.id), 'expiró')
       expect(await prisma.payment.count({ where: { bookingId: booking.id } })).toBe(0)
     })
 
@@ -252,18 +261,20 @@ describe('bank-transfer flujo público', () => {
       const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
       const booking = await mkTransferBooking()
       await prisma.booking.update({ where: { id: booking.id }, data: { status: 'expired' } })
-      await expect(declareBankTransfer(booking.id)).rejects.toThrow('expiró')
+      await expectActionError(declareBankTransfer(booking.id), 'expiró')
       expect(await prisma.payment.count({ where: { bookingId: booking.id } })).toBe(0)
     })
 
     it('rechaza bookings que no eligieron transferencia', async () => {
       const { createBooking } = await import('@/server/actions/bookings')
       const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
-      const booking = await createBooking({
+      const res = await createBooking({
         serviceId: svc.id, customerName: 'MP', customerPhone: '+56911309999',
         startDateTime: futureDate(9, 15), acceptedTerms: true,
       }, BIZ)
-      await expect(declareBankTransfer(booking.id)).rejects.toThrow()
+      if (!res.ok) throw new Error(res.error)
+      const booking = res.data
+      await expectActionError(declareBankTransfer(booking.id), 'no eligió pago por transferencia')
     })
   })
 
@@ -282,7 +293,7 @@ describe('bank-transfer flujo público', () => {
       })
       const before = Date.now()
       const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
-      await declareBankTransfer(seeded.bookingId)
+      await unwrap(declareBankTransfer(seeded.bookingId))
       const p = await sharedPrisma.payment.findUniqueOrThrow({ where: { id: seeded.paymentId } })
       expect(p.status).toBe('pending')
       expect(p.amount).toBe(10000) // min(depositRequired, remainingBalance) del seed
@@ -296,7 +307,7 @@ describe('bank-transfer flujo público', () => {
       const seeded = await seedDeclaredTransfer()
       await sharedPrisma.payment.update({ where: { id: seeded.paymentId }, data: { status: 'approved' } })
       const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
-      await declareBankTransfer(seeded.bookingId)
+      await unwrap(declareBankTransfer(seeded.bookingId))
       const p = await sharedPrisma.payment.findUniqueOrThrow({ where: { id: seeded.paymentId } })
       expect(p.status).toBe('approved')
     })
@@ -306,7 +317,7 @@ describe('bank-transfer flujo público', () => {
       await sharedPrisma.payment.update({ where: { id: seeded.paymentId }, data: { status: 'cancelled' } })
       await sharedPrisma.booking.update({ where: { id: seeded.bookingId }, data: { status: 'expired' } })
       const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
-      await expect(declareBankTransfer(seeded.bookingId)).rejects.toThrow('expiró')
+      await expectActionError(declareBankTransfer(seeded.bookingId), 'expiró')
       expect((await sharedPrisma.payment.findUniqueOrThrow({ where: { id: seeded.paymentId } })).status).toBe('cancelled')
     })
 
@@ -314,7 +325,7 @@ describe('bank-transfer flujo público', () => {
       const seeded = await seedDeclaredTransfer()
       await sharedPrisma.payment.update({ where: { id: seeded.paymentId }, data: { status: 'rejected' } })
       const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
-      await declareBankTransfer(seeded.bookingId)
+      await unwrap(declareBankTransfer(seeded.bookingId))
       const p = await sharedPrisma.payment.findUniqueOrThrow({ where: { id: seeded.paymentId } })
       expect(p.status).toBe('pending')
     })
@@ -324,12 +335,12 @@ describe('bank-transfer flujo público', () => {
       await sharedPrisma.payment.update({ where: { id: cancelled.paymentId }, data: { status: 'cancelled' } })
       await sharedPrisma.booking.update({ where: { id: cancelled.bookingId }, data: { status: 'cancelled' } })
       const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
-      await expect(declareBankTransfer(cancelled.bookingId)).rejects.toThrow('Tu reserva fue cancelada.')
+      await expectActionError(declareBankTransfer(cancelled.bookingId), 'Tu reserva fue cancelada.')
 
       const confirmed = await seedDeclaredTransfer()
       await sharedPrisma.payment.update({ where: { id: confirmed.paymentId }, data: { status: 'cancelled' } })
       await sharedPrisma.booking.update({ where: { id: confirmed.bookingId }, data: { status: 'confirmed' } })
-      await expect(declareBankTransfer(confirmed.bookingId)).rejects.toThrow('Tu reserva ya está confirmada.')
+      await expectActionError(declareBankTransfer(confirmed.bookingId), 'Tu reserva ya está confirmada.')
     })
   })
 })

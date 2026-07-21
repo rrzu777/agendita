@@ -61,11 +61,15 @@ export function VerifyTransferDialog({
     }
     startTransition(async () => {
       try {
-        await confirmBankTransfer(paymentId, parsed)
+        const res = await confirmBankTransfer(paymentId, parsed)
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
         onOpenChange(false)
         router.refresh()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error al verificar el pago')
+      } catch {
+        setError('No se pudo procesar. Intenta nuevamente.')
       }
     })
   }
@@ -78,11 +82,15 @@ export function VerifyTransferDialog({
     if (!window.confirm(confirmMessage)) return
     startTransition(async () => {
       try {
-        await rejectBankTransfer(paymentId)
+        const res = await rejectBankTransfer(paymentId)
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
         onOpenChange(false)
         router.refresh()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error al rechazar el pago')
+      } catch {
+        setError('No se pudo procesar. Intenta nuevamente.')
       }
     })
   }

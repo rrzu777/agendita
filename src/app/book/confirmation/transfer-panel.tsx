@@ -26,10 +26,14 @@ export function TransferPanel({ bank, amount, currency, deadline, timezone, book
     setDeclaring(true)
     setError(null)
     try {
-      await (kind === 'balance' ? declareBalanceTransfer(bookingId, proof ?? {}) : declareBankTransfer(bookingId, proof ?? {}))
+      const res = await (kind === 'balance' ? declareBalanceTransfer(bookingId, proof ?? {}) : declareBankTransfer(bookingId, proof ?? {}))
+      if (!res.ok) {
+        setError(res.error)
+        return
+      }
       router.refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No pudimos registrar tu aviso')
+    } catch {
+      setError('No se pudo procesar. Intenta nuevamente.')
     } finally {
       setDeclaring(false)
     }

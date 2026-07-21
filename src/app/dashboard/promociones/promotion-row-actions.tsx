@@ -32,10 +32,11 @@ export function PromotionRowActions({
     setError(null)
     startTransition(async () => {
       try {
-        await setPromotionActive(promo.id, !promo.isActive)
+        const res = await setPromotionActive(promo.id, !promo.isActive)
+        if (!res.ok) { setError(res.error); return }
         router.refresh()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'No se pudo actualizar')
+      } catch {
+        setError('No se pudo actualizar')
       }
     })
   }

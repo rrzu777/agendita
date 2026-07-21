@@ -23,10 +23,14 @@ export function MarketingOptOutToggle({
     setPending(true)
     setError(null)
     try {
-      await setCustomerMarketingOptOut(customerId, !accepts)
+      const res = await setCustomerMarketingOptOut(customerId, !accepts)
+      if (!res.ok) {
+        setError(res.error)
+        return
+      }
       router.refresh()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo guardar')
+    } catch {
+      setError('No se pudo guardar')
     } finally {
       setPending(false)
     }

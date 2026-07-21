@@ -52,11 +52,15 @@ export function CancelBookingButton({
     setLoading(true)
 
     try {
-      await cancelBooking(bookingId, reason || undefined)
+      const res = await cancelBooking(bookingId, reason || undefined)
+      if (!res.ok) {
+        setError(res.error)
+        return
+      }
       setOpen(false)
       router.refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cancelar')
+    } catch {
+      setError('Error al cancelar')
     } finally {
       setLoading(false)
     }

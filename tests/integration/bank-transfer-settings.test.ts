@@ -58,7 +58,8 @@ describe('bank-transfer settings actions', () => {
 
   it('crea la cuenta con los datos normalizados', async () => {
     const { saveBankTransferAccount } = await import('@/server/actions/bank-transfer-settings')
-    await saveBankTransferAccount(validInput)
+    const res = await saveBankTransferAccount(validInput)
+    expect(res.ok).toBe(true)
 
     const row = await prisma.bankTransferAccount.findUnique({ where: { businessId: BIZ } })
     expect(row).not.toBeNull()
@@ -70,8 +71,10 @@ describe('bank-transfer settings actions', () => {
 
   it('actualiza (upsert) sin duplicar y persiste verifyHours null', async () => {
     const { saveBankTransferAccount } = await import('@/server/actions/bank-transfer-settings')
-    await saveBankTransferAccount(validInput)
-    await saveBankTransferAccount({ ...validInput, bankName: 'Banco de Chile', verifyHours: null })
+    const setupRes = await saveBankTransferAccount(validInput)
+    expect(setupRes.ok).toBe(true)
+    const setupRes2 = await saveBankTransferAccount({ ...validInput, bankName: 'Banco de Chile', verifyHours: null })
+    expect(setupRes2.ok).toBe(true)
 
     const rows = await prisma.bankTransferAccount.findMany({ where: { businessId: BIZ } })
     expect(rows).toHaveLength(1)
@@ -81,21 +84,25 @@ describe('bank-transfer settings actions', () => {
 
   it('guarda email vacío como null', async () => {
     const { saveBankTransferAccount } = await import('@/server/actions/bank-transfer-settings')
-    await saveBankTransferAccount({ ...validInput, email: '' })
+    const setupRes = await saveBankTransferAccount({ ...validInput, email: '' })
+    expect(setupRes.ok).toBe(true)
     const row = await prisma.bankTransferAccount.findUnique({ where: { businessId: BIZ } })
     expect(row!.email).toBeNull()
   })
 
   it('rechaza input inválido sin escribir nada', async () => {
     const { saveBankTransferAccount } = await import('@/server/actions/bank-transfer-settings')
-    await expect(saveBankTransferAccount({ ...validInput, holdHours: 0 })).rejects.toThrow('Datos inválidos')
+    const res = await saveBankTransferAccount({ ...validInput, holdHours: 0 })
+    expect(res).toEqual({ ok: false, error: expect.stringMatching(/Datos inválidos/) })
     expect(await prisma.bankTransferAccount.count({ where: { businessId: BIZ } })).toBe(0)
   })
 
   it('setBankTransferEnabled togglea sin tocar el resto', async () => {
     const { saveBankTransferAccount, setBankTransferEnabled } = await import('@/server/actions/bank-transfer-settings')
-    await saveBankTransferAccount(validInput)
-    await setBankTransferEnabled(false)
+    const setupRes = await saveBankTransferAccount(validInput)
+    expect(setupRes.ok).toBe(true)
+    const res = await setBankTransferEnabled(false)
+    expect(res.ok).toBe(true)
 
     const row = await prisma.bankTransferAccount.findUnique({ where: { businessId: BIZ } })
     expect(row!.isEnabled).toBe(false)
@@ -104,6 +111,7 @@ describe('bank-transfer settings actions', () => {
 
   it('setBankTransferEnabled sin cuenta creada tira error legible', async () => {
     const { setBankTransferEnabled } = await import('@/server/actions/bank-transfer-settings')
-    await expect(setBankTransferEnabled(true)).rejects.toThrow('Primero guardá los datos de la cuenta')
+    const res = await setBankTransferEnabled(true)
+    expect(res).toEqual({ ok: false, error: expect.stringMatching(/Primero guardá los datos de la cuenta/) })
   })
 })

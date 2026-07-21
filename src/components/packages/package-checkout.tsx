@@ -62,45 +62,55 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
   async function startMp() {
     setError('')
     setLoading(true)
-    try {
-      const { purchaseId } = await createPurchase('mp')
-      const res = await initiatePackagePayment({ purchaseId })
-      if ('redirectUrl' in res) {
-        window.location.href = res.redirectUrl
-        return
-      }
-      window.location.href = `/paquetes/confirmation?purchaseId=${purchaseId}`
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al iniciar la compra')
+    const createRes = await createPurchase('mp')
+    if (!createRes.ok) {
+      setError(createRes.error)
       setLoading(false)
+      return
     }
+    const { purchaseId } = createRes.data
+    const res = await initiatePackagePayment({ purchaseId })
+    if (!res.ok) {
+      setError(res.error)
+      setLoading(false)
+      return
+    }
+    // loading queda en true a propósito: la página está navegando (comportamiento
+    // original), no hace falta (ni corresponde) resetearlo acá.
+    if ('redirectUrl' in res.data) {
+      window.location.href = res.data.redirectUrl
+      return
+    }
+    window.location.href = `/paquetes/confirmation?purchaseId=${purchaseId}`
   }
 
   async function startTransfer() {
     setError('')
     setLoading(true)
-    try {
-      const { purchaseId } = await createPurchase('transfer')
-      setPurchaseId(purchaseId)
-      setStep('transfer')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al iniciar la compra')
-    } finally {
+    const res = await createPurchase('transfer')
+    if (!res.ok) {
+      setError(res.error)
       setLoading(false)
+      return
     }
+    setPurchaseId(res.data.purchaseId)
+    setStep('transfer')
+    setLoading(false)
   }
 
   async function handleDeclare() {
     if (!purchaseId) return
     setError('')
     setLoading(true)
-    try {
-      await declarePackageTransfer({ purchaseId })
-      router.push(`/paquetes/confirmation?purchaseId=${purchaseId}`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al declarar la transferencia')
+    const res = await declarePackageTransfer({ purchaseId })
+    if (!res.ok) {
+      setError(res.error)
       setLoading(false)
+      return
     }
+    // loading queda en true a propósito (comportamiento original): la navegación
+    // desmonta este componente, así que no hay un setLoading(false) que hacer.
+    router.push(`/paquetes/confirmation?purchaseId=${purchaseId}`)
   }
 
   function handleFormSubmit() {

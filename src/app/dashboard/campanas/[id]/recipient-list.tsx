@@ -70,31 +70,31 @@ export function RecipientList({
   function handleSend(recipientId: string) {
     const popup = openDeferredPopup()
     return withSending(recipientId, async () => {
-      try {
-        const { waUrl } = await sendCampaignMessage(recipientId)
-        if (waUrl) {
-          popup.navigate(waUrl)
-        } else {
-          popup.close()
-          setError({ recipientId, message: 'La clienta no tiene un teléfono válido.' })
-        }
-        router.refresh()
-      } catch (e) {
+      const res = await sendCampaignMessage(recipientId)
+      if (!res.ok) {
         popup.close()
-        setError({ recipientId, message: e instanceof Error ? e.message : 'No se pudo enviar' })
+        setError({ recipientId, message: res.error })
+        return
       }
+      if (res.data.waUrl) {
+        popup.navigate(res.data.waUrl)
+      } else {
+        popup.close()
+        setError({ recipientId, message: 'La clienta no tiene un teléfono válido.' })
+      }
+      router.refresh()
     })
   }
 
   function handleSendEmail(recipientId: string) {
     return withSending(recipientId, async () => {
-      try {
-        const { sent, error: err } = await sendCampaignEmail(recipientId)
-        if (!sent) setError({ recipientId, message: err ?? 'No se pudo enviar el email' })
-        router.refresh()
-      } catch (e) {
-        setError({ recipientId, message: e instanceof Error ? e.message : 'No se pudo enviar' })
+      const res = await sendCampaignEmail(recipientId)
+      if (!res.ok) {
+        setError({ recipientId, message: res.error })
+        return
       }
+      if (!res.data.sent) setError({ recipientId, message: res.data.error ?? 'No se pudo enviar el email' })
+      router.refresh()
     })
   }
 

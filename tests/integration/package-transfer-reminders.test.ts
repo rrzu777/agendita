@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { requireTestDatabase } from './setup'
+import { unwrap } from './helpers/action-result'
 
 requireTestDatabase()
 
@@ -80,9 +81,9 @@ describe('sendTransferReminders — paquetes (integration)', () => {
   it('recordatorio clienta: claim + envío una sola vez, y no toca declaradas', async () => {
     const { createPackagePurchase, declarePackageTransfer } = await import('@/server/actions/packages-checkout')
     const { sendTransferReminders } = await import('@/lib/cron/transfer-reminders')
-    const { purchaseId } = await createPackagePurchase({
+    const { purchaseId } = await unwrap(createPackagePurchase({
       packageProductId: productId, name: 'Cli Rem', phone: '+56900000010', acceptedTerms: true, method: 'transfer',
-    })
+    }))
     await prisma.packagePurchase.update({ where: { id: purchaseId }, data: { holdExpiresAt: new Date(Date.now() + 2 * 3600_000) } })
 
     const deps = {
@@ -98,7 +99,7 @@ describe('sendTransferReminders — paquetes (integration)', () => {
     expect(deps.sendPkgCustomer).toHaveBeenCalledTimes(1)
 
     // Declarada: no cae en la rama clienta aunque el hold esté por vencer.
-    await declarePackageTransfer({ purchaseId })
+    await unwrap(declarePackageTransfer({ purchaseId }))
     await prisma.packagePurchase.update({ where: { id: purchaseId }, data: { transferReminderCustomerSentAt: null } })
     const r3 = await sendTransferReminders(new Date(), prisma, deps as never)
     expect(r3.packageCustomerSent).toBe(0)
@@ -107,10 +108,10 @@ describe('sendTransferReminders — paquetes (integration)', () => {
   it('recordatorio dueña: declarada hace >=24h dispara una sola vez', async () => {
     const { createPackagePurchase, declarePackageTransfer } = await import('@/server/actions/packages-checkout')
     const { sendTransferReminders } = await import('@/lib/cron/transfer-reminders')
-    const { purchaseId } = await createPackagePurchase({
+    const { purchaseId } = await unwrap(createPackagePurchase({
       packageProductId: productId, name: 'Cli Rem', phone: '+56900000010', acceptedTerms: true, method: 'transfer',
-    })
-    await declarePackageTransfer({ purchaseId })
+    }))
+    await unwrap(declarePackageTransfer({ purchaseId }))
     await prisma.payment.updateMany({
       where: { packagePurchaseId: purchaseId, provider: 'manual' },
       data: { createdAt: new Date(Date.now() - 25 * 3600_000) },

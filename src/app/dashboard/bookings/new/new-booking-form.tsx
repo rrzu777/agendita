@@ -95,9 +95,13 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
     debounceRef.current = setTimeout(async () => {
       setSearching(true)
       try {
-        const results = await searchCustomersForBooking(value)
-        setSuggestions(results)
-        setShowSuggestions(results.length > 0)
+        const res = await searchCustomersForBooking(value)
+        if (!res.ok) {
+          // ignore search errors — mismo comportamiento previo (silencioso)
+          return
+        }
+        setSuggestions(res.data)
+        setShowSuggestions(res.data.length > 0)
       } catch {
         // ignore search errors
       } finally {
@@ -135,11 +139,16 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
         serviceId,
         phone: customerPhone || undefined,
       })
-      if (res.ok) {
-        setAppliedPromo({ code, discount: res.discount, finalAmount: res.finalAmount, serviceId })
+      if (!res.ok) {
+        setPromoError(res.error)
+        setAppliedPromo(null)
+        return
+      }
+      if (res.data.ok) {
+        setAppliedPromo({ code, discount: res.data.discount, finalAmount: res.data.finalAmount, serviceId })
         setPromoError(null)
       } else {
-        setPromoError(res.message)
+        setPromoError(res.data.message)
         setAppliedPromo(null)
       }
     } catch {
@@ -245,7 +254,7 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
     const startDateTime = fromZonedTime(`${date} ${time}`, timezone)
 
     try {
-      await createBookingFromDashboard({
+      const res = await createBookingFromDashboard({
         serviceId,
         customerName,
         customerPhone,
@@ -259,13 +268,17 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
         promotionCode: appliedPromo?.code,
         skipPackage: !usePackage,
       })
+      if (!res.ok) {
+        setError(res.error)
+        return
+      }
       setSuccess(true)
       setTimeout(() => {
         router.push('/dashboard/bookings')
         router.refresh()
       }, 1500)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al crear la reserva')
+    } catch {
+      setError('Error al crear la reserva')
     } finally {
       setLoading(false)
     }

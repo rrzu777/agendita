@@ -48,15 +48,16 @@ export function BankTransferForm({
     setServerError(null)
     setSuccessMessage(null)
     try {
-      await saveBankTransferAccount({
+      const res = await saveBankTransferAccount({
         ...form,
         holdHours: Number(form.holdHours),
         verifyHours: form.verifyHours.trim() === '' ? null : Number(form.verifyHours),
       })
+      if (!res.ok) { setServerError(res.error); return }
       setSuccessMessage('Datos guardados.')
       router.refresh()
-    } catch (err) {
-      setServerError(err instanceof Error ? err.message : 'Error al guardar')
+    } catch {
+      setServerError('Error al guardar')
     } finally {
       setIsSubmitting(false)
     }
@@ -65,20 +66,22 @@ export function BankTransferForm({
   async function handleToggle(next: boolean) {
     setServerError(null)
     try {
-      await setBankTransferEnabled(next)
+      const res = await setBankTransferEnabled(next)
+      if (!res.ok) { setServerError(res.error); return }
       router.refresh()
-    } catch (err) {
-      setServerError(err instanceof Error ? err.message : 'Error al actualizar')
+    } catch {
+      setServerError('Error al actualizar')
     }
   }
 
   async function handleProofToggle(next: boolean) {
     setServerError(null)
     try {
-      await setRequireTransferProof(next)
+      const res = await setRequireTransferProof(next)
+      if (!res.ok) { setServerError(res.error); return }
       router.refresh()
-    } catch (err) {
-      setServerError(err instanceof Error ? err.message : 'Error al actualizar')
+    } catch {
+      setServerError('Error al actualizar')
     }
   }
 

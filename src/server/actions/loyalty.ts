@@ -14,6 +14,7 @@ import { isP2002 } from '@/lib/loyalty/credit'
 import { resolveLoyaltyCustomer } from '@/lib/loyalty/token'
 import { conditionKind } from '@/lib/loyalty/automatic-match'
 import { buildPresetPayload, planPresetApply, summarizeApply, redemptionSignature, type CurrentLoyaltyState, type ApplyPresetSummary } from '@/lib/loyalty/presets'
+import { action, UserError } from '@/lib/actions/result'
 
 // Module-local helpers — NOT exported (use server modules may only export async functions)
 
@@ -42,7 +43,8 @@ async function runRedemption(args: {
     }),
     prisma.loyaltyConfig.findUnique({ where: { businessId } }),
   ])
-  if (!promotion) throw new Error('La recompensa no está disponible')
+  // Mensaje user-facing: llega al cliente vía redeemPointsAsOwner/AsCustomer/AsMe.
+  if (!promotion) throw new UserError('La recompensa no está disponible')
   const config = {
     isActive: cfg?.isActive ?? false,
     grantExpiryDays: cfg?.grantExpiryDays ?? null,
@@ -124,14 +126,14 @@ export async function getLoyaltyConfig() {
   return prisma.loyaltyConfig.findUnique({ where: { businessId } })
 }
 
-export async function upsertLoyaltyConfig(data: unknown) {
+async function _upsertLoyaltyConfig(data: unknown) {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('loyalty-config', 30, 60000, { userId: user.id, businessId })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
 
   const parsed = loyaltyConfigSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
   }
   const d = parsed.data
   const saved = await prisma.loyaltyConfig.upsert({
@@ -142,6 +144,8 @@ export async function upsertLoyaltyConfig(data: unknown) {
   await revalidatePath('/dashboard/fidelizacion')
   return saved
 }
+
+export const upsertLoyaltyConfig = action(_upsertLoyaltyConfig)
 
 export async function getCustomerLoyalty(customerId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
@@ -167,14 +171,14 @@ export async function getCustomerLoyalty(customerId: string) {
   return { balance, history, grants, catalog }
 }
 
-export async function adjustCustomerPoints(customerId: string, delta: unknown, note: unknown) {
+async function _adjustCustomerPoints(customerId: string, delta: unknown, note: unknown) {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('loyalty-adjust', 30, 60000, { userId: user.id, businessId })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
 
   const parsed = adjustPointsSchema.safeParse({ delta, note })
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
   }
   const customer = await prisma.customer.findFirst({ where: { id: customerId, businessId }, select: { id: true } })
   if (!customer) throw new ForbiddenError('Clienta no encontrada')
@@ -188,7 +192,7 @@ export async function adjustCustomerPoints(customerId: string, delta: unknown, n
     const agg = await tx.loyaltyLedger.aggregate({ where: { customerId, businessId }, _sum: { points: true } })
     const balance = agg._sum.points ?? 0
     if (balance + parsed.data.delta < 0) {
-      throw new Error('El ajuste dejaría el saldo en negativo')
+      throw new UserError('El ajuste dejaría el saldo en negativo')
     }
     await tx.loyaltyLedger.create({
       data: {
@@ -201,6 +205,8 @@ export async function adjustCustomerPoints(customerId: string, delta: unknown, n
   await revalidatePath(`/dashboard/customers/${customerId}`)
 }
 
+export const adjustCustomerPoints = action(_adjustCustomerPoints)
+
 export async function listRedemptionOptions() {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   return prisma.promotion.findMany({
@@ -210,17 +216,17 @@ export async function listRedemptionOptions() {
   })
 }
 
-export async function upsertRedemptionOption(data: unknown, id?: string) {
+async function _upsertRedemptionOption(data: unknown, id?: string) {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('redemption-option', 30, 60000, { userId: user.id, businessId })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
 
   const parsed = redemptionOptionSchema.safeParse(data)
-  if (!parsed.success) throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  if (!parsed.success) throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   const d = parsed.data
   if (d.serviceIds.length) {
     const count = await prisma.service.count({ where: { id: { in: d.serviceIds }, businessId } })
-    if (count !== d.serviceIds.length) throw new Error('Servicio inválido')
+    if (count !== d.serviceIds.length) throw new UserError('Servicio inválido')
   }
   const scalars = {
     name: d.name, rewardType: d.rewardType, rewardValue: d.rewardValue, maxDiscount: d.maxDiscount,
@@ -244,7 +250,9 @@ export async function upsertRedemptionOption(data: unknown, id?: string) {
   await revalidatePath('/dashboard/fidelizacion')
 }
 
-export async function archiveRedemptionOption(id: string) {
+export const upsertRedemptionOption = action(_upsertRedemptionOption)
+
+async function _archiveRedemptionOption(id: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const existing = await prisma.promotion.findFirst({ where: { id, businessId, triggerType: 'granted' }, select: { id: true } })
   if (!existing) throw new ForbiddenError('Recompensa no encontrada')
@@ -252,35 +260,41 @@ export async function archiveRedemptionOption(id: string) {
   await revalidatePath('/dashboard/fidelizacion')
 }
 
-export async function redeemPointsAsOwner(customerId: string, optionId: unknown, requestId: unknown) {
+export const archiveRedemptionOption = action(_archiveRedemptionOption)
+
+async function _redeemPointsAsOwner(customerId: string, optionId: unknown, requestId: unknown) {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('loyalty-redeem', 30, 60000, { userId: user.id, businessId })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
   const parsed = redeemSchema.safeParse({ optionId, requestId })
-  if (!parsed.success) throw new Error('Datos inválidos')
+  if (!parsed.success) throw new UserError('Datos inválidos')
   const customer = await prisma.customer.findFirst({ where: { id: customerId, businessId }, select: { id: true } })
   if (!customer) throw new ForbiddenError('Clienta no encontrada')
   await runRedemption({ businessId, customerId, optionId: parsed.data.optionId, requestId: parsed.data.requestId, createdByUserId: user.id })
   await revalidatePath(`/dashboard/customers/${customerId}`)
 }
 
-export async function redeemPointsAsCustomer(loyaltyToken: string, optionId: unknown, requestId: unknown) {
+export const redeemPointsAsOwner = action(_redeemPointsAsOwner)
+
+async function _redeemPointsAsCustomer(loyaltyToken: string, optionId: unknown, requestId: unknown) {
   const parsed = redeemSchema.safeParse({ optionId, requestId })
-  if (!parsed.success) throw new Error('Datos inválidos')
+  if (!parsed.success) throw new UserError('Datos inválidos')
   const customer = await resolveLoyaltyCustomer(prisma, loyaltyToken)
   if (!customer) throw new ForbiddenError('Tarjeta no disponible')
   const config = customer.business.loyaltyConfig
-  if (!config || !config.isActive) throw new Error('El programa no está disponible')
+  if (!config || !config.isActive) throw new UserError('El programa no está disponible')
   const limit = await checkRateLimit('loyalty-redeem-public', 10, 60000, { businessId: customer.businessId, userId: customer.id })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
   await runRedemption({ businessId: customer.businessId, customerId: customer.id, optionId: parsed.data.optionId, requestId: parsed.data.requestId, createdByUserId: null })
   await revalidatePath(`/tarjeta/${loyaltyToken}`)
 }
 
-export async function redeemPointsAsMe(customerId: string, optionId: unknown, requestId: unknown) {
+export const redeemPointsAsCustomer = action(_redeemPointsAsCustomer)
+
+async function _redeemPointsAsMe(customerId: string, optionId: unknown, requestId: unknown) {
   const user = await requireUser()
   const parsed = redeemSchema.safeParse({ optionId, requestId })
-  if (!parsed.success) throw new Error('Datos inválidos')
+  if (!parsed.success) throw new UserError('Datos inválidos')
   // Ownership por sesión: el Customer debe estar vinculado a esta cuenta.
   const customer = await prisma.customer.findFirst({
     where: { id: customerId, userId: user.id },
@@ -288,11 +302,11 @@ export async function redeemPointsAsMe(customerId: string, optionId: unknown, re
   })
   if (!customer) throw new ForbiddenError('Tarjeta no disponible')
   const config = customer.business.loyaltyConfig
-  if (!config || !config.isActive) throw new Error('El programa no está disponible')
+  if (!config || !config.isActive) throw new UserError('El programa no está disponible')
   // Mismo bucket que redeemPointsAsCustomer (keyed por customer.id): alternar
   // tarjeta pública y /mi no debe duplicar el cupo de intentos sobre una tarjeta.
   const limit = await checkRateLimit('loyalty-redeem-public', 10, 60000, { businessId: customer.businessId, userId: customer.id })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
   await runRedemption({ businessId: customer.businessId, customerId: customer.id, optionId: parsed.data.optionId, requestId: parsed.data.requestId, createdByUserId: null })
   await revalidatePath(`/mi/${customer.business.slug}`)
   // La tarjeta pública del mismo Customer se cachea (redeemPointsAsCustomer ya
@@ -301,6 +315,8 @@ export async function redeemPointsAsMe(customerId: string, optionId: unknown, re
     await revalidatePath(`/tarjeta/${customer.loyaltyToken}`)
   }
 }
+
+export const redeemPointsAsMe = action(_redeemPointsAsMe)
 
 export async function listAutomaticRules() {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
@@ -311,24 +327,24 @@ export async function listAutomaticRules() {
   })
 }
 
-export async function upsertAutomaticRule(data: unknown, id?: string) {
+async function _upsertAutomaticRule(data: unknown, id?: string) {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('automatic-rule', 30, 60000, { userId: user.id, businessId })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
 
   const parsed = automaticRuleSchema.safeParse(data)
-  if (!parsed.success) throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  if (!parsed.success) throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   const d = parsed.data
   if (d.rewardKind === 'grant' && d.serviceIds.length) {
     const count = await prisma.service.count({ where: { id: { in: d.serviceIds }, businessId } })
-    if (count !== d.serviceIds.length) throw new Error('Servicio inválido')
+    if (count !== d.serviceIds.length) throw new UserError('Servicio inválido')
   }
   // Una regla por (negocio, kind): si ya existe OTRA del mismo kind, rechazar.
   const sameKind = (await prisma.promotion.findMany({
     where: { ...automaticRuleWhere(businessId), ...(id ? { id: { not: id } } : {}) },
     select: { id: true, conditions: true },
   })).find((p) => conditionKind(p.conditions) === d.kind)
-  if (sameKind) throw new Error('Ya existe una regla para esta condición')
+  if (sameKind) throw new UserError('Ya existe una regla para esta condición')
 
   const scalars = {
     name: `auto:${d.kind}`, rewardType: d.rewardType ?? 'percentage', rewardValue: d.rewardValue,
@@ -354,22 +370,26 @@ export async function upsertAutomaticRule(data: unknown, id?: string) {
   await revalidatePath('/dashboard/fidelizacion')
 }
 
-export async function archiveAutomaticRule(id: string) {
+export const upsertAutomaticRule = action(_upsertAutomaticRule)
+
+async function _archiveAutomaticRule(id: string) {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('automatic-rule', 30, 60000, { userId: user.id, businessId })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
   const existing = await prisma.promotion.findFirst({ where: { id, ...automaticRuleWhere(businessId) }, select: { id: true } })
   if (!existing) throw new ForbiddenError('Regla no encontrada')
   await prisma.promotion.update({ where: { id }, data: { isActive: false } })
   await revalidatePath('/dashboard/fidelizacion')
 }
 
-export async function applyLoyaltyPreset(presetId: unknown): Promise<ApplyPresetSummary> {
+export const archiveAutomaticRule = action(_archiveAutomaticRule)
+
+async function _applyLoyaltyPreset(presetId: unknown): Promise<ApplyPresetSummary> {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('loyalty-preset', 30, 60000, { userId: user.id, businessId })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
-  if (typeof presetId !== 'string') throw new Error('Preset inválido')
-  const payload = buildPresetPayload(presetId) // lanza si el id no existe
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
+  if (typeof presetId !== 'string') throw new UserError('Preset inválido')
+  const payload = buildPresetPayload(presetId) // lanza UserError si el id no existe
 
   const summary = await prisma.$transaction(async (tx) => {
     // Advisory lock: serializa los applies de este negocio. Sin unique de DB para
@@ -387,7 +407,7 @@ export async function applyLoyaltyPreset(presetId: unknown): Promise<ApplyPreset
       // (id, businessId, createdAt, updatedAt, updatedByUserId) antes del upsert.
       const merged = { ...configRow, ...plan.configToWrite }
       const parsed = loyaltyConfigSchema.safeParse(merged)
-      if (!parsed.success) throw new Error('Config de fidelización inválida')
+      if (!parsed.success) throw new UserError('Config de fidelización inválida')
       await tx.loyaltyConfig.upsert({
         where: { businessId },
         create: { businessId, ...parsed.data, updatedByUserId: user.id },
@@ -397,13 +417,13 @@ export async function applyLoyaltyPreset(presetId: unknown): Promise<ApplyPreset
 
     for (const r of plan.rulesToCreate) {
       const parsed = automaticRuleSchema.safeParse(r)
-      if (!parsed.success) throw new Error('Regla de preset inválida')
+      if (!parsed.success) throw new UserError('Regla de preset inválida')
       await createAutomaticRuleFromInput(tx, businessId, user.id, parsed.data)
     }
 
     for (const o of plan.redemptionsToCreate) {
       const parsed = redemptionOptionSchema.safeParse(o)
-      if (!parsed.success) throw new Error('Recompensa de preset inválida')
+      if (!parsed.success) throw new UserError('Recompensa de preset inválida')
       const d = parsed.data
       await tx.promotion.create({
         data: {
@@ -422,3 +442,5 @@ export async function applyLoyaltyPreset(presetId: unknown): Promise<ApplyPreset
   await revalidatePath('/dashboard/fidelizacion')
   return summary
 }
+
+export const applyLoyaltyPreset = action(_applyLoyaltyPreset)

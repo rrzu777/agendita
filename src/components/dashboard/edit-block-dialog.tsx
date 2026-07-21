@@ -77,8 +77,10 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
         }
         router.refresh()
         handleOpenChange(false)
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Error al guardar el bloqueo')
+      } catch {
+        // parseTimeUTC (date-fns-tz) solo lanza en formatos internos rotos,
+        // nunca mensaje relevante para la usuaria; la acción ya devuelve ActionResult.
+        setError('Error al guardar el bloqueo')
       }
     })
   }

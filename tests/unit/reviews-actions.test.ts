@@ -35,11 +35,22 @@ vi.mock('@/lib/rate-limit', () => ({
 
 const mockRequireBusiness = vi.fn().mockResolvedValue({ businessId: 'biz-1', business: { id: 'biz-1' }, role: 'owner', user: {} })
 const mockRequireBusinessRole = vi.fn().mockResolvedValue({ businessId: 'biz-1', business: { id: 'biz-1' }, role: 'owner', user: {} })
-vi.mock('@/lib/auth/server', () => ({
-  requireBusiness: mockRequireBusiness,
-  requireBusinessRole: mockRequireBusinessRole,
-  ForbiddenError: class ForbiddenError extends Error { constructor(msg?: string) { super(msg || 'Forbidden') } },
-}))
+vi.mock('@/lib/auth/server', async () => {
+  // ForbiddenError debe extender el UserError REAL: así el wrapper action()
+  // lo reconoce (instanceof UserError) y devuelve su mensaje en { ok:false },
+  // en vez de redactarlo al genérico. Mismo contrato que la clase de producción.
+  const { UserError } = await import('@/lib/actions/result')
+  return {
+    requireBusiness: mockRequireBusiness,
+    requireBusinessRole: mockRequireBusinessRole,
+    ForbiddenError: class ForbiddenError extends UserError {
+      constructor(message = 'Forbidden') {
+        super(message)
+        this.name = 'ForbiddenError'
+      }
+    },
+  }
+})
 
 const mockRevalidatePath = vi.fn()
 vi.mock('next/cache', () => ({
@@ -166,9 +177,9 @@ describe('submitReview', () => {
       review: null,
     })
 
-    await expect(
-      submitReview({ bookingId: 'booking-1', token: 'wrong-token', rating: 4 })
-    ).rejects.toThrow('Link de reseña inválido')
+    const result = await submitReview({ bookingId: 'booking-1', token: 'wrong-token', rating: 4 })
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Link de reseña inválido')
   })
 
   it('rejects non-completed booking', async () => {
@@ -178,9 +189,9 @@ describe('submitReview', () => {
       review: null,
     })
 
-    await expect(
-      submitReview({ bookingId: 'booking-1', token: 'token-abc-123', rating: 4 })
-    ).rejects.toThrow('Solo puedes dejar reseña para reservas completadas')
+    const result = await submitReview({ bookingId: 'booking-1', token: 'token-abc-123', rating: 4 })
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Solo puedes dejar reseña para reservas completadas')
   })
 
   it('rejects duplicate review', async () => {
@@ -189,9 +200,9 @@ describe('submitReview', () => {
       review: { id: 'review-1' },
     })
 
-    await expect(
-      submitReview({ bookingId: 'booking-1', token: 'token-abc-123', rating: 4 })
-    ).rejects.toThrow('Ya enviaste una reseña')
+    const result = await submitReview({ bookingId: 'booking-1', token: 'token-abc-123', rating: 4 })
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Ya enviaste una reseña')
   })
 
   it('handles concurrent P2002 duplicate gracefully', async () => {
@@ -204,12 +215,12 @@ describe('submitReview', () => {
     p2002Error.code = 'P2002'
     mockPrisma.review.create.mockRejectedValue(p2002Error)
 
-    await expect(
-      submitReview({ bookingId: 'booking-1', token: 'token-abc-123', rating: 4 })
-    ).rejects.toThrow('Ya enviaste una reseña para esta reserva')
+    const result = await submitReview({ bookingId: 'booking-1', token: 'token-abc-123', rating: 4 })
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Ya enviaste una reseña para esta reserva')
   })
 
-  it('re-throws non-P2002 errors', async () => {
+  it('re-throws non-P2002 errors as the generic message (internal, not user-facing)', async () => {
     mockPrisma.booking.findUnique.mockResolvedValue({
       ...completedBooking,
       review: null,
@@ -217,9 +228,12 @@ describe('submitReview', () => {
 
     mockPrisma.review.create.mockRejectedValue(new Error('DB connection error'))
 
-    await expect(
-      submitReview({ bookingId: 'booking-1', token: 'token-abc-123', rating: 4 })
-    ).rejects.toThrow('DB connection error')
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const result = await submitReview({ bookingId: 'booking-1', token: 'token-abc-123', rating: 4 })
+    consoleSpy.mockRestore()
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toBe('Ocurrió un error inesperado. Intenta nuevamente.')
   })
 
   it('creates review with correct businessId/customerId from booking', async () => {
@@ -255,10 +269,11 @@ describe('submitReview', () => {
       })
     )
 
-    expect(result.businessId).toBe('biz-1')
-    expect(result.customerId).toBe('cust-1')
-    expect(result.isApproved).toBe(false)
-    expect(result.isHidden).toBe(false)
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data.businessId).toBe('biz-1')
+    expect(result.ok && result.data.customerId).toBe('cust-1')
+    expect(result.ok && result.data.isApproved).toBe(false)
+    expect(result.ok && result.data.isHidden).toBe(false)
   })
 
   it('creates review with comment', async () => {
@@ -286,7 +301,7 @@ describe('submitReview', () => {
       comment: 'Muy buen servicio',
     })
 
-    expect(result.comment).toBe('Muy buen servicio')
+    expect(result.ok && result.data.comment).toBe('Muy buen servicio')
   })
 
   it('does not accept businessId/customerId from client input', async () => {
@@ -324,9 +339,9 @@ describe('submitReview', () => {
   })
 
   it('rejects invalid rating', async () => {
-    await expect(
-      submitReview({ bookingId: 'booking-1', token: 'token-abc-123', rating: 0 })
-    ).rejects.toThrow('Datos inválidos')
+    const result = await submitReview({ bookingId: 'booking-1', token: 'token-abc-123', rating: 0 })
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Datos inválidos')
   })
 })
 
@@ -604,8 +619,9 @@ describe('approveReview', () => {
 
     const result = await approveReview('review-1')
 
-    expect(result.isApproved).toBe(true)
-    expect(result.isHidden).toBe(false)
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data.isApproved).toBe(true)
+    expect(result.ok && result.data.isHidden).toBe(false)
     expect(mockPrisma.review.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'review-1' },
@@ -624,14 +640,18 @@ describe('approveReview', () => {
       isHidden: false,
     })
 
-    await expect(approveReview('review-1')).rejects.toThrow('Reseña no encontrada')
+    const result = await approveReview('review-1')
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Reseña no encontrada')
   })
 
   it('rejects review that does not exist', async () => {
     mockRequireBusinessRole.mockResolvedValue({ businessId: 'biz-1', business: { id: 'biz-1' }, role: 'owner', user: {} })
     mockPrisma.review.findUnique.mockResolvedValue(null)
 
-    await expect(approveReview('review-1')).rejects.toThrow('Reseña no encontrada')
+    const result = await approveReview('review-1')
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Reseña no encontrada')
   })
 })
 
@@ -664,8 +684,9 @@ describe('hideReview', () => {
 
     const result = await hideReview('review-1')
 
-    expect(result.isHidden).toBe(true)
-    expect(result.isApproved).toBe(false)
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data.isHidden).toBe(true)
+    expect(result.ok && result.data.isApproved).toBe(false)
     expect(mockPrisma.review.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'review-1' },
@@ -684,7 +705,9 @@ describe('hideReview', () => {
       isHidden: false,
     })
 
-    await expect(hideReview('review-1')).rejects.toThrow('Reseña no encontrada')
+    const result = await hideReview('review-1')
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Reseña no encontrada')
   })
 })
 
@@ -710,7 +733,9 @@ describe('ensureReviewTokenForBooking', () => {
     mockRequireBusinessRole.mockResolvedValue({ businessId: 'biz-1', business: { id: 'biz-1' }, role: 'owner', user: {} })
     mockPrisma.booking.findFirst.mockResolvedValue(null)
 
-    await expect(ensureReviewTokenForBooking('booking-other')).rejects.toThrow('Reserva no encontrada')
+    const result = await ensureReviewTokenForBooking('booking-other')
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Reserva no encontrada')
   })
 
   it('rejects non-completed booking', async () => {
@@ -722,9 +747,9 @@ describe('ensureReviewTokenForBooking', () => {
       reviewToken: null,
     })
 
-    await expect(ensureReviewTokenForBooking('booking-1')).rejects.toThrow(
-      'Solo puedes generar link de reseña para reservas completadas'
-    )
+    const result = await ensureReviewTokenForBooking('booking-1')
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('Solo puedes generar link de reseña para reservas completadas')
   })
 
   it('returns existing token if already exists', async () => {
@@ -737,7 +762,8 @@ describe('ensureReviewTokenForBooking', () => {
 
     const result = await ensureReviewTokenForBooking('booking-1')
 
-    expect(result).toBe('existing-token')
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data).toBe('existing-token')
     expect(mockPrisma.booking.update).not.toHaveBeenCalled()
   })
 
@@ -756,7 +782,8 @@ describe('ensureReviewTokenForBooking', () => {
 
     const result = await ensureReviewTokenForBooking('booking-1')
 
-    expect(result).toBe('new-generated-token')
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data).toBe('new-generated-token')
     expect(mockPrisma.booking.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'booking-1', businessId: 'biz-1', reviewToken: null },
@@ -783,7 +810,8 @@ describe('getReviewLink', () => {
     })
 
     const result = await getReviewLink('booking-1')
-    expect(result).toBeNull()
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data).toBeNull()
   })
 
   it('returns null when no token exists', async () => {
@@ -796,7 +824,8 @@ describe('getReviewLink', () => {
     })
 
     const result = await getReviewLink('booking-1')
-    expect(result).toBeNull()
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data).toBeNull()
   })
 
   it('returns review URL with token', async () => {
@@ -809,7 +838,7 @@ describe('getReviewLink', () => {
     })
 
     const result = await getReviewLink('booking-1')
-    expect(result).toBe('https://agendita.app/review/booking-1?token=token-abc-123')
+    expect(result.ok && result.data).toBe('https://agendita.app/review/booking-1?token=token-abc-123')
   })
 
   it('requires owner/admin role', async () => {
@@ -843,11 +872,13 @@ describe('getReviewWhatsappLink', () => {
 
     const result = await getReviewWhatsappLink('booking-1')
 
-    expect(result).not.toBeNull()
-    expect(result!.reviewLink).toBe('https://agendita.app/review/booking-1?token=tok-1')
-    expect(result!.waUrl).toContain('https://wa.me/56912345678?text=')
-    expect(decodeURIComponent(result!.waUrl!)).toContain('https://agendita.app/review/booking-1?token=tok-1')
-    expect(decodeURIComponent(result!.waUrl!)).toContain('Ana') // saludo con primer nombre
+    expect(result.ok).toBe(true)
+    const data = result.ok ? result.data : null
+    expect(data).not.toBeNull()
+    expect(data!.reviewLink).toBe('https://agendita.app/review/booking-1?token=tok-1')
+    expect(data!.waUrl).toContain('https://wa.me/56912345678?text=')
+    expect(decodeURIComponent(data!.waUrl!)).toContain('https://agendita.app/review/booking-1?token=tok-1')
+    expect(decodeURIComponent(data!.waUrl!)).toContain('Ana') // saludo con primer nombre
   })
 
   it('prepends country code for a 9-digit local number', async () => {
@@ -860,7 +891,7 @@ describe('getReviewWhatsappLink', () => {
     })
 
     const result = await getReviewWhatsappLink('booking-1')
-    expect(result!.waUrl).toContain('https://wa.me/56912345678?text=')
+    expect(result.ok && result.data?.waUrl).toContain('https://wa.me/56912345678?text=')
   })
 
   it('returns waUrl null (link only) when the customer has no phone', async () => {
@@ -873,8 +904,8 @@ describe('getReviewWhatsappLink', () => {
     })
 
     const result = await getReviewWhatsappLink('booking-1')
-    expect(result!.waUrl).toBeNull()
-    expect(result!.reviewLink).toBe('https://agendita.app/review/booking-1?token=tok-1')
+    expect(result.ok && result.data?.waUrl).toBeNull()
+    expect(result.ok && result.data?.reviewLink).toBe('https://agendita.app/review/booking-1?token=tok-1')
   })
 
   it('returns null for a booking that is not completed', async () => {
@@ -887,6 +918,7 @@ describe('getReviewWhatsappLink', () => {
     })
 
     const result = await getReviewWhatsappLink('booking-1')
-    expect(result).toBeNull()
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data).toBeNull()
   })
 })

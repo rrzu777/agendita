@@ -93,11 +93,11 @@ function PendingTransferRow({
       : '¿Rechazar esta transferencia? Se cancelará la reserva.'
     if (!window.confirm(confirmMessage)) return
     startTransition(async () => {
+      // best-effort silencioso (ok, error de la action, o rechazo de transporte):
+      // sin UI de error en esta fila, siempre refresca.
       try {
         await rejectBankTransfer(item.paymentId)
-        router.refresh()
-      } catch {
-        // best-effort; el estado se refresca en el próximo render
+      } finally {
         router.refresh()
       }
     })

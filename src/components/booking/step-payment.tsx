@@ -126,11 +126,16 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         serviceId: data.serviceId,
         phone: data.customerPhone || undefined,
       })
-      if (res.ok) {
-        setAppliedPromo({ code, discount: res.discount, finalAmount: res.finalAmount })
+      if (!res.ok) {
+        setPromoError(res.error)
+        setAppliedPromo(null)
+        return
+      }
+      if (res.data.ok) {
+        setAppliedPromo({ code, discount: res.data.discount, finalAmount: res.data.finalAmount })
         setPromoError(null)
       } else {
-        setPromoError(res.message)
+        setPromoError(res.data.message)
         setAppliedPromo(null)
       }
     } catch {
@@ -289,7 +294,13 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     setStep('processing')
     setErrorMessage('')
     try {
-      const booking = await createBooking(bookingInput({ paymentMethod: BANK_TRANSFER_METHOD }), businessId)
+      const res = await createBooking(bookingInput({ paymentMethod: BANK_TRANSFER_METHOD }), businessId)
+      if (!res.ok) {
+        setErrorMessage(res.error)
+        setStep('error')
+        return
+      }
+      const booking = res.data
       setTransferBooking({
         id: booking.id,
         bookingNumber: booking.bookingNumber ?? null,
@@ -298,7 +309,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       setStep('transfer-details')
     } catch (err) {
       console.error('Transfer booking error:', err)
-      setErrorMessage(err instanceof Error ? err.message : 'Error al crear la reserva')
+      setErrorMessage('Error al crear la reserva')
       setStep('error')
     } finally {
       setLoading(false)
@@ -310,10 +321,14 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     setDeclaring(true)
     setErrorMessage('')
     try {
-      await declareBankTransfer(transferBooking.id, proof ?? {})
+      const res = await declareBankTransfer(transferBooking.id, proof ?? {})
+      if (!res.ok) {
+        setErrorMessage(res.error)
+        return
+      }
       setStep('transfer-declared')
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'No pudimos registrar tu aviso')
+    } catch {
+      setErrorMessage('No se pudo procesar. Intenta nuevamente.')
     } finally {
       setDeclaring(false)
     }
@@ -325,14 +340,20 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     setErrorMessage('')
 
     try {
-      const booking = await createBooking(bookingInput(), businessId)
+      const res = await createBooking(bookingInput(), businessId)
+      if (!res.ok) {
+        setErrorMessage(res.error)
+        setStep('error')
+        return
+      }
+      const booking = res.data
 
       setStep('success')
       const mode = noDepositNeeded ? 'paid' as const : 'pending' as const
       onSuccess(booking.id, mode, appliedPromo ? { discountAmount: appliedPromo.discount, finalAmount: appliedPromo.finalAmount } : null, booking.bookingNumber)
     } catch (err) {
       console.error('Booking error:', err)
-      setErrorMessage(err instanceof Error ? err.message : 'Error al crear la reserva')
+      setErrorMessage('Error al crear la reserva')
       setStep('error')
     } finally {
       setLoading(false)
@@ -350,14 +371,26 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     }
 
     try {
-      const booking = await createBooking(bookingInput(), businessId)
+      const res = await createBooking(bookingInput(), businessId)
+      if (!res.ok) {
+        setErrorMessage(res.error)
+        setStep('error')
+        return
+      }
+      const booking = res.data
 
-      const paymentResult = await initiatePayment({
+      const paymentRes = await initiatePayment({
         bookingId: booking.id,
         amount: effectiveDeposit,
         currency: 'CLP',
         description: `Abono para ${data.serviceName}`,
       })
+      if (!paymentRes.ok) {
+        setErrorMessage(paymentRes.error)
+        setStep('error')
+        return
+      }
+      const paymentResult = paymentRes.data
 
       // Redirect-based providers (Mercado Pago): redirigir al usuario al checkout externo.
       // No llamar verifyAndConfirmPayment: la confirmación ocurre via webhook.
@@ -373,13 +406,21 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Timeout al verificar el pago')), 10000)
       )
-      await Promise.race([verifyPromise, timeoutPromise])
+      const verifyRes = await Promise.race([verifyPromise, timeoutPromise])
+      // verifyAndConfirmPayment puede devolver { ok:true, data:{success:false,...} }
+      // (ej. mercado_pago pendiente por webhook, "Pago no aprobado"): preexistente,
+      // este flujo mock/dev nunca terminaba de disparar esas ramas — no se toca acá.
+      if (!verifyRes.ok) {
+        setErrorMessage(verifyRes.error)
+        setStep('error')
+        return
+      }
 
       setStep('success')
       onSuccess(booking.id, 'paid', appliedPromo ? { discountAmount: appliedPromo.discount, finalAmount: appliedPromo.finalAmount } : null, booking.bookingNumber)
     } catch (err) {
       console.error('Payment error:', err)
-      setErrorMessage(err instanceof Error ? err.message : 'Error al procesar el pago')
+      setErrorMessage('Error al procesar el pago')
       setStep('error')
     } finally {
       setLoading(false)

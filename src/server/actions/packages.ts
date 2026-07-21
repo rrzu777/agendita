@@ -6,6 +6,7 @@ import { addDays } from 'date-fns'
 import { Prisma } from '@prisma/client'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { action, UserError } from '@/lib/actions/result'
 import { packageProductSchema, sellPackageSchema, computePackageRefund } from '@/lib/packages/schema'
 import { normalizePhone } from '@/lib/customers/phone'
 import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
@@ -23,16 +24,16 @@ export async function listPackageProducts() {
   })
 }
 
-export async function upsertPackageProduct(data: unknown, id?: string) {
+async function _upsertPackageProduct(data: unknown, id?: string) {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('package-product', 30, 60000, { userId: user.id, businessId })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
   const parsed = packageProductSchema.safeParse(data)
-  if (!parsed.success) throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  if (!parsed.success) throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   const d = parsed.data
   if (!d.appliesToAll && d.serviceIds.length) {
     const count = await prisma.service.count({ where: { id: { in: d.serviceIds }, businessId } })
-    if (count !== d.serviceIds.length) throw new Error('Servicio inválido')
+    if (count !== d.serviceIds.length) throw new UserError('Servicio inválido')
   }
   const scalars = {
     name: d.name, quantity: d.quantity, bonusQuantity: d.bonusQuantity, price: d.price,
@@ -55,8 +56,9 @@ export async function upsertPackageProduct(data: unknown, id?: string) {
   await revalidatePath('/dashboard/paquetes')
   await revalidateBusinessPublicPaths(businessId)
 }
+export const upsertPackageProduct = action(_upsertPackageProduct)
 
-export async function archivePackageProduct(id: string) {
+async function _archivePackageProduct(id: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const existing = await prisma.packageProduct.findFirst({ where: { id, businessId }, select: { id: true } })
   if (!existing) throw new ForbiddenError('Paquete no encontrado')
@@ -64,14 +66,15 @@ export async function archivePackageProduct(id: string) {
   await revalidatePath('/dashboard/paquetes')
   await revalidateBusinessPublicPaths(businessId)
 }
+export const archivePackageProduct = action(_archivePackageProduct)
 
 // ── vender ────────────────────────────────────────────────────────────
-export async function sellPackage(data: unknown) {
+async function _sellPackage(data: unknown) {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('package-sell', 30, 60000, { userId: user.id, businessId })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
   const parsed = sellPackageSchema.safeParse(data)
-  if (!parsed.success) throw new Error('Datos inválidos')
+  if (!parsed.success) throw new UserError('Datos inválidos')
   const d = parsed.data
 
   const [product, customer] = await Promise.all([
@@ -81,7 +84,7 @@ export async function sellPackage(data: unknown) {
     }),
     prisma.customer.findFirst({ where: { id: d.customerId, businessId }, select: { id: true } }),
   ])
-  if (!product) throw new Error('Paquete no disponible')
+  if (!product) throw new UserError('Paquete no disponible')
   if (!customer) throw new ForbiddenError('Clienta no encontrada')
 
   const now = new Date()
@@ -111,12 +114,13 @@ export async function sellPackage(data: unknown) {
   }
   await revalidatePath('/dashboard/customers/' + customer.id)
 }
+export const sellPackage = action(_sellPackage)
 
 // ── reembolsar ──────────────────────────────────────────────────────────
-export async function refundPackagePurchase(purchaseId: string) {
+async function _refundPackagePurchase(purchaseId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('package-refund', 30, 60000, { businessId })
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
   // Sesiones no usadas = grants activos NO vencidos (consistente con getCustomerPackages
   // y getActivePackagesForCustomer). Los grants vencidos siguen en status 'active' (la
   // expiración es lazy), pero no tienen valor redimible, así que no se reembolsan.
@@ -157,7 +161,7 @@ export async function refundPackagePurchase(purchaseId: string) {
     // Si MP no aceptó el reembolso, NO revertir localmente (evita marcar refunded
     // sin que el dinero se haya devuelto). 'pending' es aceptable (se acredita async).
     if (result.status === 'failed') {
-      throw new Error('El reembolso en Mercado Pago no pudo procesarse. Intentá de nuevo o revisá en tu cuenta de Mercado Pago.')
+      throw new UserError('El reembolso en Mercado Pago no pudo procesarse. Intentá de nuevo o revisá en tu cuenta de Mercado Pago.')
     }
   }
 
@@ -183,10 +187,13 @@ export async function refundPackagePurchase(purchaseId: string) {
   revalidatePath('/dashboard/paquetes')
   await revalidateBusinessPublicPaths(businessId)
 }
+export const refundPackagePurchase = action(_refundPackagePurchase)
 
 // ── queries ─────────────────────────────────────────────────────────────
-// PÚBLICA (funnel): sin auth, patrón previewPromotion, defensiva.
-export async function getActivePackagesForCustomer(input: { businessId: string; phone: string; serviceId: string }): Promise<{ remaining: number }> {
+// PÚBLICA (funnel): sin auth, patrón previewPromotion, defensiva. No lanza
+// throws propios (degrada a { remaining: 0 }); se envuelve con action() solo
+// como red de seguridad ante un throw inesperado (p. ej. checkRateLimit/Prisma).
+async function _getActivePackagesForCustomer(input: { businessId: string; phone: string; serviceId: string }): Promise<{ remaining: number }> {
   // Balde de rate-limit propio (no compartir con previewPromotion) para que el uso
   // intensivo de una feature no agote la otra por IP.
   const limit = await checkRateLimit('preview-package', 30, 60000)
@@ -205,6 +212,7 @@ export async function getActivePackagesForCustomer(input: { businessId: string; 
   })
   return { remaining }
 }
+export const getActivePackagesForCustomer = action(_getActivePackagesForCustomer)
 
 // OWNER (panel de clienta)
 export async function getCustomerPackages(customerId: string) {

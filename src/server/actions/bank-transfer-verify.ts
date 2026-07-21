@@ -1,8 +1,9 @@
 'use server'
 
-// NOTE: 'use server' — SOLO funciones async exportadas. Flujo DUEÑA: requiere
-// sesión (owner/admin). Reusa los helpers de declared.ts y applyApprovedPayment;
-// no exportar consts/tipos desde este módulo (boundary de 'use server').
+// NOTE: 'use server' — solo exports que EVALÚEN a funciones async (incluye
+// consts que envuelven con action()). Flujo DUEÑA: requiere sesión
+// (owner/admin). Reusa los helpers de declared.ts y applyApprovedPayment;
+// no exportar tipos desde este módulo (boundary de 'use server').
 
 import { prisma } from '@/lib/db'
 import { requireBusinessRole } from '@/lib/auth/server'
@@ -27,6 +28,7 @@ import {
   sendBalanceTransferRejectedToCustomer,
   getBusinessReplyToEmail,
 } from '@/lib/notifications'
+import { action, UserError } from '@/lib/actions/result'
 
 // Carga y valida que el Payment sea una declaración de transferencia del negocio
 // pendiente de verificar. Guard compartido por confirmar y rechazar (mismos dos
@@ -37,20 +39,20 @@ async function loadDeclaredPayment(
   businessId: string,
 ) {
   const payment = await tx.payment.findUnique({ where: { id: paymentId } })
-  if (!payment || payment.businessId !== businessId) throw new Error('Pago no encontrado')
+  if (!payment || payment.businessId !== businessId) throw new UserError('Pago no encontrado')
   if (!isDeclaredTransferPayment(payment) && !isDeclaredBalancePayment(payment)) {
-    throw new Error('Este pago no es una transferencia por verificar')
+    throw new UserError('Este pago no es una transferencia por verificar')
   }
-  if (!payment.bookingId) throw new Error('El pago no está asociado a una reserva')
+  if (!payment.bookingId) throw new UserError('El pago no está asociado a una reserva')
   return payment as typeof payment & { bookingId: string }
 }
 
-export async function confirmBankTransfer(
+async function _confirmBankTransfer(
   paymentId: string,
   amount: number,
 ): Promise<{ ok: true }> {
   const { business, businessId } = await requireBusinessRole(['owner', 'admin'])
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error('El monto debe ser positivo')
+  if (!Number.isFinite(amount) || amount <= 0) throw new UserError('El monto debe ser positivo')
 
   const result = await prisma.$transaction(async (tx) => {
     const payment = await loadDeclaredPayment(tx, paymentId, businessId)
@@ -59,12 +61,12 @@ export async function confirmBankTransfer(
       where: { id: payment.bookingId },
       include: { customer: true, service: true },
     })
-    if (!booking) throw new Error('Reserva no encontrada')
+    if (!booking) throw new UserError('Reserva no encontrada')
     if (booking.status === 'expired') {
-      throw new Error('Esta reserva expiró. Revivila desde Reservas y después verificá el pago.')
+      throw new UserError('Esta reserva expiró. Revivila desde Reservas y después verificá el pago.')
     }
     if (booking.status === 'cancelled') {
-      throw new Error(
+      throw new UserError(
         'Esta reserva fue cancelada. Registrá el pago creando la reserva de nuevo desde el calendario.',
       )
     }
@@ -75,10 +77,10 @@ export async function confirmBankTransfer(
       // aplican: una reserva confirmed/completed no tiene cupo en disputa y
       // puede conservar un holdExpiresAt vencido de cuando SÍ tenía hold. ──
       if (!isFirmBooking(booking.status)) {
-        if (booking.status === 'no_show') throw new Error('Esta reserva quedó como no asistida.')
-        throw new Error('Esta reserva no admite verificar un saldo todavía.')
+        if (booking.status === 'no_show') throw new UserError('Esta reserva quedó como no asistida.')
+        throw new UserError('Esta reserva no admite verificar un saldo todavía.')
       }
-      if (amount > booking.remainingBalance) throw new Error('El monto excede el saldo pendiente')
+      if (amount > booking.remainingBalance) throw new UserError('El monto excede el saldo pendiente')
 
       const derivedType = deriveManualPaymentType(booking, amount)
       await tx.payment.update({ where: { id: paymentId }, data: { amount, paymentType: derivedType } })
@@ -118,9 +120,9 @@ export async function confirmBankTransfer(
     const approved = await tx.payment.findFirst({
       where: { bookingId: booking.id, status: 'approved' },
     })
-    if (approved) throw new Error('Esta reserva ya tiene el abono pagado.')
+    if (approved) throw new UserError('Esta reserva ya tiene el abono pagado.')
 
-    if (amount > booking.remainingBalance) throw new Error('El monto excede el saldo pendiente')
+    if (amount > booking.remainingBalance) throw new UserError('El monto excede el saldo pendiente')
 
     const now = new Date()
     const holdExpired = booking.holdExpiresAt != null && booking.holdExpiresAt < now
@@ -200,7 +202,9 @@ export async function confirmBankTransfer(
   return { ok: true }
 }
 
-export async function rejectBankTransfer(paymentId: string): Promise<{ ok: true }> {
+export const confirmBankTransfer = action(_confirmBankTransfer)
+
+async function _rejectBankTransfer(paymentId: string): Promise<{ ok: true }> {
   const { business, businessId } = await requireBusinessRole(['owner', 'admin'])
 
   const result = await prisma.$transaction(async (tx) => {
@@ -214,7 +218,7 @@ export async function rejectBankTransfer(paymentId: string): Promise<{ ok: true 
       where: { id: paymentId, status: 'pending' },
       data: { status: 'rejected' },
     })
-    if (count === 0) throw new Error('Este pago ya fue procesado')
+    if (count === 0) throw new UserError('Este pago ya fue procesado')
 
     const bookingUpd = await tx.booking.updateMany({
       where: { id: payment.bookingId, status: 'pending_payment' },
@@ -260,17 +264,19 @@ export async function rejectBankTransfer(paymentId: string): Promise<{ ok: true 
   return { ok: true }
 }
 
+export const rejectBankTransfer = action(_rejectBankTransfer)
+
 // ── Transferencia de PAQUETE (B4b-3, Task 12) ──
 // No reusa loadDeclaredPayment: ese helper exige bookingId, que un pago de
 // paquete no tiene (tiene packagePurchaseId en su lugar).
 
-export async function confirmPackageTransfer(paymentId: string): Promise<{ ok: true }> {
+async function _confirmPackageTransfer(paymentId: string): Promise<{ ok: true }> {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const result = await prisma.$transaction(async (tx) => {
     const payment = await tx.payment.findUnique({ where: { id: paymentId } })
-    if (!payment || payment.businessId !== businessId) throw new Error('Pago no encontrado')
-    if (!isDeclaredPkgTransferPayment(payment)) throw new Error('Este pago no es una transferencia de paquete por verificar')
-    if (!payment.packagePurchaseId) throw new Error('El pago no está asociado a una compra')
+    if (!payment || payment.businessId !== businessId) throw new UserError('Pago no encontrado')
+    if (!isDeclaredPkgTransferPayment(payment)) throw new UserError('Este pago no es una transferencia de paquete por verificar')
+    if (!payment.packagePurchaseId) throw new UserError('El pago no está asociado a una compra')
 
     // Flip atómico pending→active: gana un solo confirm y serializa contra el sweep
     // del cron y el doble-click (sin esto, un UPDATE by-id incondicional pisaría una
@@ -279,9 +285,9 @@ export async function confirmPackageTransfer(paymentId: string): Promise<{ ok: t
       where: { id: payment.packagePurchaseId, status: 'pending' },
       data: { status: 'active' },
     })
-    if (flip.count === 0) throw new Error('Esta compra ya fue procesada.')
+    if (flip.count === 0) throw new UserError('Esta compra ya fue procesada.')
     const purchase = await tx.packagePurchase.findUnique({ where: { id: payment.packagePurchaseId } })
-    if (!purchase) throw new Error('Compra no encontrada')
+    if (!purchase) throw new UserError('Compra no encontrada')
 
     await tx.payment.update({ where: { id: paymentId }, data: { status: 'approved' } })
     // Cancelar cualquier otro Payment pending de la compra (ej. un intento MP abandonado
@@ -300,14 +306,16 @@ export async function confirmPackageTransfer(paymentId: string): Promise<{ ok: t
   return { ok: true }
 }
 
-export async function rejectPackageTransfer(paymentId: string): Promise<{ ok: true }> {
+export const confirmPackageTransfer = action(_confirmPackageTransfer)
+
+async function _rejectPackageTransfer(paymentId: string): Promise<{ ok: true }> {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const result = await prisma.$transaction(async (tx) => {
     const payment = await tx.payment.findUnique({ where: { id: paymentId } })
-    if (!payment || payment.businessId !== businessId) throw new Error('Pago no encontrado')
-    if (!isDeclaredPkgTransferPayment(payment)) throw new Error('Este pago no es una transferencia de paquete por verificar')
+    if (!payment || payment.businessId !== businessId) throw new UserError('Pago no encontrado')
+    if (!isDeclaredPkgTransferPayment(payment)) throw new UserError('Este pago no es una transferencia de paquete por verificar')
     const { count } = await tx.payment.updateMany({ where: { id: paymentId, status: 'pending' }, data: { status: 'rejected' } })
-    if (count === 0) throw new Error('Este pago ya fue procesado')
+    if (count === 0) throw new UserError('Este pago ya fue procesado')
     if (payment.packagePurchaseId) {
       await tx.packagePurchase.updateMany({ where: { id: payment.packagePurchaseId, status: 'pending' }, data: { status: 'rejected' } })
     }
@@ -318,3 +326,5 @@ export async function rejectPackageTransfer(paymentId: string): Promise<{ ok: tr
   await revalidateBusinessPublicPaths(businessId)
   return { ok: true }
 }
+
+export const rejectPackageTransfer = action(_rejectPackageTransfer)

@@ -240,7 +240,9 @@ describe('Mercado Pago OAuth', () => {
       })
       const { disconnectMercadoPagoConnection } = await import('@/server/actions/mercado-pago-connect')
       const result = await disconnectMercadoPagoConnection()
-      expect(result.disconnected).toBe(true)
+      expect(result.ok).toBe(true)
+      if (!result.ok) throw new Error('expected ok result')
+      expect(result.data.disconnected).toBe(true)
       expect(mockPrisma.paymentAccount.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'pa-1' },
@@ -252,10 +254,13 @@ describe('Mercado Pago OAuth', () => {
       )
     })
 
-    it('throws when no PaymentAccount is connected', async () => {
+    it('returns a user-facing error when no PaymentAccount is connected', async () => {
       mockPrisma.paymentAccount.findFirst.mockResolvedValue(null)
       const { disconnectMercadoPagoConnection } = await import('@/server/actions/mercado-pago-connect')
-      await expect(disconnectMercadoPagoConnection()).rejects.toThrow('No hay cuenta')
+      const result = await disconnectMercadoPagoConnection()
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('expected error result')
+      expect(result.error).toContain('No hay cuenta')
     })
   })
 

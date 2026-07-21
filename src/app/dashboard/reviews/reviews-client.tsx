@@ -135,9 +135,12 @@ export function ReviewsClient({
 
   const hasActiveFilters = status !== 'all' || rating > 0 || search.trim().length > 0
 
-  function runAction(action: (id: string) => Promise<unknown>, id: string) {
+  function runAction(action: (id: string) => Promise<{ ok: boolean }>, id: string) {
     startTransition(async () => {
-      await action(id)
+      // Sin UI de error en esta fila (comportamiento pre-existente): si falla,
+      // simplemente no refrescamos y la fila se queda como estaba.
+      const res = await action(id)
+      if (!res.ok) return
       router.refresh()
     })
   }

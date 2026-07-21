@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client'
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { requireTestDatabase } from './setup'
 import { declaredTransferPaymentWhere, btDeclaredId } from '@/lib/bank-transfer/declared'
+import { expectActionError } from './helpers/action-result'
 
 requireTestDatabase()
 
@@ -184,7 +185,7 @@ describe('self-service bookings (cancelMyBooking / rescheduleMyBooking)', () => 
       })
 
       const result = await cancelMyBooking(booking.id)
-      expect(result).toEqual({ cancelled: true })
+      expect(result).toEqual({ ok: true, data: { cancelled: true } })
 
       const after = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })
       expect(after.status).toBe('cancelled')
@@ -205,7 +206,7 @@ describe('self-service bookings (cancelMyBooking / rescheduleMyBooking)', () => 
       const otherCustomer = await createCustomer('cancel-ajeno', OTHER_USER)
       const booking = await createBooking({ customerId: otherCustomer.id, startDateTime: hoursFromNow(48), status: 'confirmed' })
 
-      await expect(cancelMyBooking(booking.id)).rejects.toThrow('Reserva no encontrada')
+      await expectActionError(cancelMyBooking(booking.id), 'Reserva no encontrada')
 
       const after = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })
       expect(after.status).toBe('confirmed')
@@ -217,7 +218,7 @@ describe('self-service bookings (cancelMyBooking / rescheduleMyBooking)', () => 
       const customer = await createCustomer('cancel-cutoff', USER)
       const booking = await createBooking({ customerId: customer.id, startDateTime: hoursFromNow(2), status: 'confirmed' })
 
-      await expect(cancelMyBooking(booking.id)).rejects.toThrow('hasta 24 horas')
+      await expectActionError(cancelMyBooking(booking.id), 'hasta 24 horas')
 
       const after = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })
       expect(after.status).toBe('confirmed')
@@ -229,7 +230,7 @@ describe('self-service bookings (cancelMyBooking / rescheduleMyBooking)', () => 
       const customer = await createCustomer('cancel-completed', USER)
       const booking = await createBooking({ customerId: customer.id, startDateTime: hoursFromNow(48), status: 'completed' })
 
-      await expect(cancelMyBooking(booking.id)).rejects.toThrow('Reserva no encontrada')
+      await expectActionError(cancelMyBooking(booking.id), 'Reserva no encontrada')
 
       const after = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })
       expect(after.status).toBe('completed')
@@ -243,7 +244,7 @@ describe('self-service bookings (cancelMyBooking / rescheduleMyBooking)', () => 
       const booking = await createBooking({ customerId: customer.id, startDateTime: hoursFromNow(1), status: 'confirmed' })
 
       const result = await cancelMyBooking(booking.id)
-      expect(result).toEqual({ cancelled: true })
+      expect(result).toEqual({ ok: true, data: { cancelled: true } })
 
       const after = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })
       expect(after.status).toBe('cancelled')
@@ -260,7 +261,7 @@ describe('self-service bookings (cancelMyBooking / rescheduleMyBooking)', () => 
 
       const newStart = hoursFromNow(72)
       const result = await rescheduleMyBooking(booking.id, newStart)
-      expect(result).toEqual({ rescheduled: true })
+      expect(result).toEqual({ ok: true, data: { rescheduled: true } })
 
       const after = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })
       expect(after.startDateTime.getTime()).toBe(newStart.getTime())
@@ -279,7 +280,7 @@ describe('self-service bookings (cancelMyBooking / rescheduleMyBooking)', () => 
       const otherCustomer = await createCustomer('resch-double-b', OTHER_USER)
       await createBooking({ customerId: otherCustomer.id, startDateTime: targetStart, status: 'confirmed' })
 
-      await expect(rescheduleMyBooking(booking.id, targetStart)).rejects.toThrow()
+      await expectActionError(rescheduleMyBooking(booking.id, targetStart), 'ya no está disponible')
 
       const after = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })
       expect(after.startDateTime.getTime()).toBe(originalStart.getTime())

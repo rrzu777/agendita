@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
 import { createGrantInTx, reconcileExpiredGrants } from './grant'
 import { getLoyaltyBalance } from './balance'
+import { UserError } from '@/lib/actions/result'
 
 type Tx = Prisma.TransactionClient
 
@@ -53,11 +54,12 @@ export async function redeemForGrant(tx: Tx, args: {
   await reconcileExpiredGrants(tx, customerId, businessId, now)
 
   // Pausa global del programa: bloquea el canje en AMBAS superficies (owner y clienta),
-  // no sólo en redeemPointsAsCustomer (decisión #9 del spec).
-  if (!config.isActive) throw new Error('El programa de fidelización está pausado')
+  // no sólo en redeemPointsAsCustomer (decisión #9 del spec). Mensajes user-facing:
+  // esta función corre dentro de runRedemption, llamada por las tres actions de canje.
+  if (!config.isActive) throw new UserError('El programa de fidelización está pausado')
 
   if (promotion.triggerType !== 'granted' || !promotion.isActive || promotion.pointsCost == null) {
-    throw new Error('La recompensa no está disponible')
+    throw new UserError('La recompensa no está disponible')
   }
   const pointsCost = promotion.pointsCost
 
@@ -65,11 +67,11 @@ export async function redeemForGrant(tx: Tx, args: {
     const claimed = await tx.promotionGrant.count({
       where: { promotionId: promotion.id, customerId, status: { in: ['active', 'redeemed'] } },
     })
-    if (claimed >= promotion.maxPerCustomer) throw new Error('Ya alcanzaste el límite de esta recompensa')
+    if (claimed >= promotion.maxPerCustomer) throw new UserError('Ya alcanzaste el límite de esta recompensa')
   }
 
   const balance = await getLoyaltyBalance(tx, customerId, businessId)
-  if (balance < pointsCost) throw new Error('No tienes puntos suficientes')
+  if (balance < pointsCost) throw new UserError('No tienes puntos suficientes')
 
   // Stock atómico (el lock per-customer NO cubre el stock compartido entre clientas).
   if (promotion.maxRedemptions == null) {
@@ -79,7 +81,7 @@ export async function redeemForGrant(tx: Tx, args: {
       where: { id: promotion.id, redemptionCount: { lt: promotion.maxRedemptions } },
       data: { redemptionCount: { increment: 1 } },
     })
-    if (inc.count === 0) throw new Error('La recompensa se agotó')
+    if (inc.count === 0) throw new UserError('La recompensa se agotó')
   }
 
   const expiryDays = promotion.grantExpiryDays ?? config.grantExpiryDays

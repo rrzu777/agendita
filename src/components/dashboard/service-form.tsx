@@ -165,15 +165,14 @@ export function ServiceForm({
     }
 
     try {
-      if (service) {
-        await updateService(service.id, data)
-      } else {
-        await createService(data)
-      }
+      const res = service
+        ? await updateService(service.id, data)
+        : await createService(data)
+      if (!res.ok) { setError(res.error); return }
       setOpen(false)
       onSuccess?.()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al guardar el servicio')
+    } catch {
+      setError('Error al guardar el servicio')
     } finally {
       setLoading(false)
     }

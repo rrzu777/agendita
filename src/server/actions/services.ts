@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { action, UserError } from '@/lib/actions/result'
 import {
   createServiceSchema,
   updateServiceSchema,
@@ -22,18 +23,18 @@ export async function getServices(includeInactive = false) {
   })
 }
 
-export async function createService(
+async function _createService(
   data: Record<string, unknown>
 ) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('create-service', 30, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const parsed = createServiceSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
   const newService = await prisma.service.create({
@@ -45,19 +46,21 @@ export async function createService(
   return newService
 }
 
-export async function updateService(
+export const createService = action(_createService)
+
+async function _updateService(
   serviceId: string,
   data: Record<string, unknown>
 ) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('update-service', 30, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const parsed = updateServiceSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
   const existing = await prisma.service.findUnique({
@@ -72,13 +75,13 @@ export async function updateService(
   }
 
   if (Object.keys(parsed.data).length === 0) {
-    throw new Error('No hay campos para actualizar')
+    throw new UserError('No hay campos para actualizar')
   }
 
   const finalPrice = parsed.data.price !== undefined ? parsed.data.price : existing.price
   const finalDeposit = parsed.data.depositAmount !== undefined ? parsed.data.depositAmount : existing.depositAmount
   if (finalDeposit > finalPrice) {
-    throw new Error('El abono no puede superar el precio')
+    throw new UserError('El abono no puede superar el precio')
   }
 
   const updated = await prisma.service.update({
@@ -91,11 +94,13 @@ export async function updateService(
   return updated
 }
 
-export async function toggleService(serviceId: string) {
+export const updateService = action(_updateService)
+
+async function _toggleService(serviceId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('toggle-service', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const existing = await prisma.service.findUnique({
@@ -119,11 +124,13 @@ export async function toggleService(serviceId: string) {
   return updated
 }
 
-export async function deleteService(serviceId: string) {
+export const toggleService = action(_toggleService)
+
+async function _deleteService(serviceId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('delete-service', 20, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const existing = await prisma.service.findUnique({
@@ -147,16 +154,18 @@ export async function deleteService(serviceId: string) {
   return updated
 }
 
-export async function reorderServices(items: { id: string; sortOrder: number }[]) {
+export const deleteService = action(_deleteService)
+
+async function _reorderServices(items: { id: string; sortOrder: number }[]) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('reorder-services', 10, 60000)
   if (!limit.success) {
-    throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
   const parsed = reorderSchema.safeParse({ items })
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
   const ids = parsed.data.items.map(i => i.id)
@@ -183,3 +192,5 @@ export async function reorderServices(items: { id: string; sortOrder: number }[]
   revalidatePath('/dashboard/services')
   await revalidateBusinessPublicPaths(businessId)
 }
+
+export const reorderServices = action(_reorderServices)

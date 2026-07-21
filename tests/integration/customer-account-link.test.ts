@@ -133,7 +133,7 @@ describe('customer-account link (vía 3)', () => {
     mockSessionUser = { id: LOGGED_USER, email: 'logged-1@cal.test', email_confirmed_at: CONFIRMED }
 
     const phone = '+56911100001'
-    const booking = await createBooking(
+    const res = await createBooking(
       {
         serviceId: svc.id,
         customerName: 'Ana',
@@ -145,6 +145,8 @@ describe('customer-account link (vía 3)', () => {
       },
       BIZ,
     )
+    if (!res.ok) throw new Error(res.error)
+    const booking = res.data
 
     // createBooking guarda el telefono normalizado (normalizePhone quita el "+"), no el crudo.
     const customer = await prisma.customer.findFirst({ where: { businessId: BIZ, phone: normalizePhone(phone) } })
@@ -186,7 +188,7 @@ describe('customer-account link (vía 3)', () => {
 
     mockSessionUser = { id: LOGGED_USER, email: 'logged-2@cal.test', email_confirmed_at: CONFIRMED }
 
-    await createBooking(
+    const res = await createBooking(
       {
         serviceId: svc.id,
         customerName: 'Bea',
@@ -196,6 +198,7 @@ describe('customer-account link (vía 3)', () => {
       },
       BIZ,
     )
+    expect(res.ok).toBe(true)
 
     const customer = await prisma.customer.findFirst({ where: { businessId: BIZ, phone: normalizePhone(phone) } })
     expect(customer).not.toBeNull()
@@ -210,7 +213,7 @@ describe('customer-account link (vía 3)', () => {
     mockSessionUser = { id: OWNER_USER, email: 'owner@cal.test', email_confirmed_at: CONFIRMED }
 
     const phone = '+56911100003'
-    await createBooking(
+    const res = await createBooking(
       {
         serviceId: svc.id,
         customerName: 'Cata',
@@ -221,6 +224,7 @@ describe('customer-account link (vía 3)', () => {
       },
       BIZ,
     )
+    expect(res.ok).toBe(true)
 
     const customer = await prisma.customer.findFirst({ where: { businessId: BIZ, phone: normalizePhone(phone) } })
     expect(customer).not.toBeNull()
@@ -238,7 +242,7 @@ describe('customer-account link (vía 3)', () => {
     mockSessionUser = { id: LOGGED_USER, email: 'logged-3@cal.test', email_confirmed_at: CONFIRMED }
 
     const phone = '+56911100006'
-    await createBooking(
+    const res = await createBooking(
       {
         serviceId: svc.id,
         customerName: 'Amiga',
@@ -249,6 +253,7 @@ describe('customer-account link (vía 3)', () => {
       },
       BIZ,
     )
+    expect(res.ok).toBe(true)
 
     const customer = await prisma.customer.findFirst({ where: { businessId: BIZ, phone: normalizePhone(phone) } })
     expect(customer).not.toBeNull()

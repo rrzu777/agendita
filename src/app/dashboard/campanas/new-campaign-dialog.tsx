@@ -103,13 +103,13 @@ export function NewCampaignDialog({
     }
 
     startTransition(async () => {
-      try {
-        const { campaignId } = await createCampaign(payload)
-        setOpen(false)
-        router.push('/dashboard/campanas/' + campaignId)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'No se pudo crear la campaña')
+      const res = await createCampaign(payload)
+      if (!res.ok) {
+        setError(res.error)
+        return
       }
+      setOpen(false)
+      router.push('/dashboard/campanas/' + res.data.campaignId)
     })
   }
 

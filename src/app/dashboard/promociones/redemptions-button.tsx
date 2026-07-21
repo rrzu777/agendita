@@ -12,7 +12,7 @@ import { Receipt, Download } from 'lucide-react'
 import { getPromotionRedemptions } from '@/server/actions/promotions'
 import { formatMoney } from '@/lib/money'
 
-type Redemption = Awaited<ReturnType<typeof getPromotionRedemptions>>[number]
+type Redemption = Extract<Awaited<ReturnType<typeof getPromotionRedemptions>>, { ok: true }>['data'][number]
 
 const sourceLabels: Record<string, string> = {
   public_booking: 'Reserva online',
@@ -75,10 +75,11 @@ export function RedemptionsButton({
       setError(null)
       startTransition(async () => {
         try {
-          const data = await getPromotionRedemptions(promotionId)
-          setRows(data)
-        } catch (e) {
-          setError(e instanceof Error ? e.message : 'No se pudieron cargar los canjes')
+          const res = await getPromotionRedemptions(promotionId)
+          if (!res.ok) { setError(res.error); return }
+          setRows(res.data)
+        } catch {
+          setError('No se pudieron cargar los canjes')
         }
       })
     }

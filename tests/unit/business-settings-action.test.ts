@@ -21,15 +21,21 @@ vi.mock('@/lib/rate-limit', () => ({
   checkRateLimit: mockCheckRateLimit,
 }))
 
-vi.mock('@/lib/auth/server', () => ({
-  requireBusinessRole: mockRequireBusinessRole,
-  ForbiddenError: class ForbiddenError extends Error {
-    constructor(message = 'No tienes permisos') {
-      super(message)
-      this.name = 'ForbiddenError'
-    }
-  },
-}))
+vi.mock('@/lib/auth/server', async () => {
+  // ForbiddenError debe extender el UserError REAL: así el wrapper action()
+  // lo reconoce (instanceof UserError) y devuelve su mensaje en { ok:false },
+  // en vez de redactarlo al genérico. Mismo contrato que la clase de producción.
+  const { UserError } = await import('@/lib/actions/result')
+  return {
+    requireBusinessRole: mockRequireBusinessRole,
+    ForbiddenError: class extends UserError {
+      constructor(message = 'No tienes permisos') {
+        super(message)
+        this.name = 'ForbiddenError'
+      }
+    },
+  }
+})
 
 vi.mock('next/cache', () => ({
   revalidatePath: mockRevalidatePath,
@@ -41,6 +47,7 @@ vi.mock('@/server/actions/revalidate-business', () => ({
 }))
 
 const { updateBusinessSettings } = await import('@/server/actions/business-settings')
+const { ForbiddenError } = await import('@/lib/auth/server')
 
 describe('updateBusinessSettings', () => {
   const baseData = {
@@ -61,10 +68,12 @@ describe('updateBusinessSettings', () => {
   describe('auth & session', () => {
     it('rejects non-owner/non-admin users', async () => {
       mockRequireBusinessRole.mockRejectedValue(
-        new Error('No tienes permisos')
+        new ForbiddenError('No tienes permisos')
       )
 
-      await expect(updateBusinessSettings(baseData)).rejects.toThrow('No tienes permisos')
+      const result = await updateBusinessSettings(baseData)
+
+      expect(result).toEqual({ ok: false, error: 'No tienes permisos' })
       expect(mockPrisma.business.update).not.toHaveBeenCalled()
     })
 
@@ -96,9 +105,9 @@ describe('updateBusinessSettings', () => {
       ['register'],
       ['support'],
     ])('rejects reserved subdomain: %s', async (subdomain) => {
-      await expect(
-        updateBusinessSettings({ ...baseData, subdomain })
-      ).rejects.toThrow('Este subdominio está reservado')
+      const result = await updateBusinessSettings({ ...baseData, subdomain })
+
+      expect(result).toEqual({ ok: false, error: 'Este subdominio está reservado' })
       expect(mockPrisma.business.update).not.toHaveBeenCalled()
     })
 
@@ -108,17 +117,18 @@ describe('updateBusinessSettings', () => {
         subdomain: 'miestudio',
       })
 
-      await expect(updateBusinessSettings(baseData)).rejects.toThrow(
-        'Este subdominio ya está en uso'
-      )
+      const result = await updateBusinessSettings(baseData)
+
+      expect(result).toEqual({ ok: false, error: 'Este subdominio ya está en uso' })
       expect(mockPrisma.business.update).not.toHaveBeenCalled()
     })
 
     it('allows keeping current subdomain (excluded from uniqueness check)', async () => {
       mockPrisma.business.findFirst.mockResolvedValue(null)
 
-      await updateBusinessSettings(baseData)
+      const result = await updateBusinessSettings(baseData)
 
+      expect(result).toMatchObject({ ok: true })
       expect(mockPrisma.business.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
@@ -133,12 +143,13 @@ describe('updateBusinessSettings', () => {
 
   describe('data normalization', () => {
     it('normalizes whatsapp and instagram before saving', async () => {
-      await updateBusinessSettings({
+      const result = await updateBusinessSettings({
         ...baseData,
         whatsapp: '9 1234 5678',
         instagram: '@miestudio',
       })
 
+      expect(result).toMatchObject({ ok: true })
       expect(mockPrisma.business.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -202,9 +213,12 @@ describe('updateBusinessSettings', () => {
     it('rejects when rate limit is exceeded', async () => {
       mockCheckRateLimit.mockResolvedValue({ success: false })
 
-      await expect(updateBusinessSettings(baseData)).rejects.toThrow(
-        'Demasiadas solicitudes'
-      )
+      const result = await updateBusinessSettings(baseData)
+
+      expect(result).toEqual({
+        ok: false,
+        error: expect.stringMatching(/Demasiadas solicitudes/),
+      })
       expect(mockPrisma.business.update).not.toHaveBeenCalled()
     })
   })

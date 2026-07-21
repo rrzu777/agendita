@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { UserError } from '@/lib/actions/result'
 
 const mockRequireBusinessRole = vi.fn()
 const mockGenerateSlots = vi.fn()
@@ -21,11 +22,22 @@ const mockPrisma = {
 
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 
-vi.mock('@/lib/auth/server', () => ({
-  requireBusinessRole: (...args: unknown[]) => mockRequireBusinessRole(...args),
-  requireBusiness: vi.fn(),
-  ForbiddenError: class extends Error {},
-}))
+vi.mock('@/lib/auth/server', async () => {
+  // ForbiddenError debe extender el UserError REAL: así el wrapper action()
+  // lo reconoce (instanceof UserError) y devuelve su mensaje en { ok:false },
+  // en vez de redactarlo al genérico. Mismo contrato que la clase de producción.
+  const { UserError } = await import('@/lib/actions/result')
+  return {
+    requireBusinessRole: (...args: unknown[]) => mockRequireBusinessRole(...args),
+    requireBusiness: vi.fn(),
+    ForbiddenError: class ForbiddenError extends UserError {
+      constructor(message = 'No tienes permisos') {
+        super(message)
+        this.name = 'ForbiddenError'
+      }
+    },
+  }
+})
 
 vi.mock('@/lib/rate-limit', () => ({
   checkRateLimit: vi.fn().mockResolvedValue({ success: true }),
@@ -93,9 +105,10 @@ describe('getAvailableSlotsForReschedule', () => {
   })
 
   it('excludes the current booking so the current slot can appear', async () => {
-    const slots = await getAvailableSlotsForReschedule('booking-1', new Date('2026-06-15T00:00:00Z'))
+    const result = await getAvailableSlotsForReschedule('booking-1', new Date('2026-06-15T00:00:00Z'))
 
-    expect(slots[0].start).toEqual(new Date('2026-06-15T14:00:00Z'))
+    if (!result.ok) throw new Error(`expected ok, got: ${result.error}`)
+    expect(result.data[0].start).toEqual(new Date('2026-06-15T14:00:00Z'))
     expect(mockPrisma.booking.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ id: { not: 'booking-1' } }),
     }))
@@ -122,22 +135,22 @@ describe('getAvailableSlotsForReschedule', () => {
   it('rejects cross-tenant bookingId', async () => {
     mockPrisma.booking.findFirst.mockResolvedValue(null)
 
-    await expect(getAvailableSlotsForReschedule('booking-other', new Date('2026-06-15T00:00:00Z')))
-      .rejects.toThrow(/Reserva no encontrada/)
+    const result = await getAvailableSlotsForReschedule('booking-other', new Date('2026-06-15T00:00:00Z'))
+    expect(result).toEqual({ ok: false, error: 'Reserva no encontrada' })
   })
 
   it('rejects terminal statuses', async () => {
     mockPrisma.booking.findFirst.mockResolvedValue({ ...booking, status: 'completed' })
 
-    await expect(getAvailableSlotsForReschedule('booking-1', new Date('2026-06-15T00:00:00Z')))
-      .rejects.toThrow(/No se puede reprogramar/)
+    const result = await getAvailableSlotsForReschedule('booking-1', new Date('2026-06-15T00:00:00Z'))
+    expect(result).toEqual({ ok: false, error: 'No se puede reprogramar una reserva en este estado' })
   })
 
   it('rejects inactive services to match final availability validation', async () => {
     mockPrisma.booking.findFirst.mockResolvedValue({ ...booking, service: { ...booking.service, isActive: false } })
 
-    await expect(getAvailableSlotsForReschedule('booking-1', new Date('2026-06-15T00:00:00Z')))
-      .rejects.toThrow(/Servicio no disponible/)
+    const result = await getAvailableSlotsForReschedule('booking-1', new Date('2026-06-15T00:00:00Z'))
+    expect(result).toEqual({ ok: false, error: 'Servicio no disponible' })
   })
 
   it('respects TimeBlocks by passing them into slot generation', async () => {
@@ -208,24 +221,29 @@ describe('rescheduleBooking terminal states and availability', () => {
   })
 
   it('fails when target slot is occupied at confirmation time', async () => {
-    mockAssertSlotIsAvailable.mockRejectedValue(new Error('Ese horario ya no está disponible. Por favor selecciona otro.'))
+    // UserError: refleja el throw real de assertSlotIsAvailable (validation.ts,
+    // ya migrado) — un Error plano acá se volvería el mensaje genérico del wrapper.
+    mockAssertSlotIsAvailable.mockRejectedValue(new UserError('Ese horario ya no está disponible. Por favor selecciona otro.'))
 
-    await expect(rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z')))
-      .rejects.toThrow(/horario ya no está disponible/)
+    const result = await rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z'))
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/horario ya no está disponible/)
   })
 
   it('does not update if booking became terminal during the transaction', async () => {
     mockPrisma.booking.updateMany.mockResolvedValue({ count: 0 })
 
-    await expect(rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z')))
-      .rejects.toThrow(/No se puede reprogramar/)
+    const result = await rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z'))
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/No se puede reprogramar/)
   })
 
   it('does not allow completed, cancelled, no_show or expired bookings', async () => {
     for (const status of ['completed', 'cancelled', 'no_show', 'expired']) {
       mockPrisma.booking.findFirst.mockResolvedValueOnce({ ...booking, status })
-      await expect(rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z')))
-        .rejects.toThrow(/No se puede reprogramar/)
+      const result = await rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z'))
+      expect(result.ok).toBe(false)
+      expect(!result.ok && result.error).toMatch(/No se puede reprogramar/)
     }
   })
 })

@@ -1,10 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/auth/server', () => ({
-  requireBusiness: vi.fn().mockResolvedValue({ businessId: 'b1' }),
-  requireBusinessRole: vi.fn().mockResolvedValue({ businessId: 'b1', user: { id: 'u1' } }),
-  ForbiddenError: class extends Error {},
-}))
+vi.mock('@/lib/auth/server', async () => {
+  // ForbiddenError debe extender el UserError REAL: así action() lo reconoce
+  // (instanceof UserError) y devuelve su mensaje en vez del genérico.
+  const { UserError } = await import('@/lib/actions/result')
+  return {
+    requireBusiness: vi.fn().mockResolvedValue({ businessId: 'b1' }),
+    requireBusinessRole: vi.fn().mockResolvedValue({ businessId: 'b1', user: { id: 'u1' } }),
+    ForbiddenError: class extends UserError {
+      constructor(msg: string) {
+        super(msg)
+        this.name = 'ForbiddenError'
+      }
+    },
+  }
+})
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: vi.fn().mockResolvedValue({ success: true }) }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/db', () => ({ prisma: {
@@ -31,11 +41,13 @@ describe('adjustCustomerPoints', () => {
         create: vi.fn(),
       },
     }))
-    await expect(adjustCustomerPoints('c1', -50, 'x')).rejects.toThrow()
+    const result = await adjustCustomerPoints('c1', -50, 'x')
+    expect(result).toEqual({ ok: false, error: 'El ajuste dejaría el saldo en negativo' })
   })
   it('rechaza clienta de otro negocio', async () => {
     ;(prisma.customer.findFirst as any).mockResolvedValue(null)
-    await expect(adjustCustomerPoints('c1', 10, 'x')).rejects.toThrow()
+    const result = await adjustCustomerPoints('c1', 10, 'x')
+    expect(result).toEqual({ ok: false, error: 'Clienta no encontrada' })
   })
   it('inserta el ajuste cuando el saldo queda >= 0', async () => {
     ;(prisma.customer.findFirst as any).mockResolvedValue({ id: 'c1', businessId: 'b1' })
@@ -44,7 +56,8 @@ describe('adjustCustomerPoints', () => {
       $executeRaw: vi.fn().mockResolvedValue(1),
       loyaltyLedger: { aggregate: vi.fn().mockResolvedValue({ _sum: { points: 100 } }), create },
     }))
-    await adjustCustomerPoints('c1', -50, 'cortesía')
+    const result = await adjustCustomerPoints('c1', -50, 'cortesía')
+    expect(result).toEqual({ ok: true, data: undefined })
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ customerId: 'c1', points: -50, reason: 'adjustment', note: 'cortesía', createdByUserId: 'u1' }),
     }))
@@ -54,7 +67,8 @@ describe('adjustCustomerPoints', () => {
 describe('redeemPointsAsOwner', () => {
   it('rechaza clienta de otro negocio', async () => {
     ;(prisma.customer.findFirst as any).mockResolvedValue(null)
-    await expect(redeemPointsAsOwner('c1', 'opt1', 'r1')).rejects.toThrow()
+    const result = await redeemPointsAsOwner('c1', 'opt1', 'r1')
+    expect(result).toEqual({ ok: false, error: 'Clienta no encontrada' })
   })
   it('canjea: corre redeemForGrant dentro de la transacción', async () => {
     ;(prisma.customer.findFirst as any).mockResolvedValue({ id: 'c1' })
@@ -72,7 +86,8 @@ describe('redeemPointsAsOwner', () => {
       promotion: { findFirst: vi.fn().mockResolvedValue(null), update: vi.fn(), updateMany: vi.fn() },
       loyaltyLedger: { aggregate: vi.fn().mockResolvedValue({ _sum: { points: 100 } }), create: vi.fn() },
     }))
-    await redeemPointsAsOwner('c1', 'opt1', 'r1')
+    const result = await redeemPointsAsOwner('c1', 'opt1', 'r1')
+    expect(result).toEqual({ ok: true, data: undefined })
     expect(create).toHaveBeenCalled()
   })
 })

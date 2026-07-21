@@ -42,7 +42,16 @@ export function AvailabilityEditor({ rules: initialRules }: { rules: Rule[] }) {
     clearError(id)
     setStatus(prev => ({ ...prev, [id]: 'saving' }))
     try {
-      await updateAvailabilityRule(id, { startTime: rule.startTime, endTime: rule.endTime, isActive })
+      const res = await updateAvailabilityRule(id, { startTime: rule.startTime, endTime: rule.endTime, isActive })
+      if (!res.ok) {
+        setErrors(prev => ({ ...prev, [id]: res.error }))
+        setStatus(prev => {
+          const next = { ...prev }
+          delete next[id]
+          return next
+        })
+        return
+      }
     } catch {
       setErrors(prev => ({ ...prev, [id]: SAVE_ERROR_MESSAGE }))
       setStatus(prev => {
@@ -79,7 +88,16 @@ export function AvailabilityEditor({ rules: initialRules }: { rules: Rule[] }) {
     if (!draft || !isValidTimeRange(draft.startTime, draft.endTime)) return
     setStatus(prev => ({ ...prev, [id]: 'saving' }))
     try {
-      await updateAvailabilityRule(id, { startTime: draft.startTime, endTime: draft.endTime, isActive: draft.isActive })
+      const res = await updateAvailabilityRule(id, { startTime: draft.startTime, endTime: draft.endTime, isActive: draft.isActive })
+      if (!res.ok) {
+        setErrors(prev => ({ ...prev, [id]: res.error }))
+        setStatus(prev => {
+          const next = { ...prev }
+          delete next[id]
+          return next
+        })
+        return
+      }
     } catch {
       setErrors(prev => ({ ...prev, [id]: SAVE_ERROR_MESSAGE }))
       setStatus(prev => {

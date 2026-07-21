@@ -27,19 +27,19 @@ export function ReviewForm({ bookingId, token }: ReviewFormProps) {
     setLoading(true)
     setError(null)
 
-    try {
-      await submitReview({
-        bookingId,
-        token,
-        rating,
-        comment: comment.trim() || null,
-      })
-      setSuccess(true)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ocurrió un error inesperado.')
-    } finally {
+    const res = await submitReview({
+      bookingId,
+      token,
+      rating,
+      comment: comment.trim() || null,
+    })
+    if (!res.ok) {
+      setError(res.error)
       setLoading(false)
+      return
     }
+    setSuccess(true)
+    setLoading(false)
   }
 
   if (success) {

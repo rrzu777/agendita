@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterAll } from 'vitest'
 import { requireTestDatabase } from './setup'
+import { expectActionError } from './helpers/action-result'
 
 requireTestDatabase()
 
@@ -96,7 +97,8 @@ describe('sendCampaignEmail', () => {
     const { business, recipientId } = await seed({})
     created.push(business.id)
     const res = await sendCampaignEmail(recipientId)
-    expect(res.sent).toBe(true)
+    if (!res.ok) throw new Error(res.error)
+    expect(res.data.sent).toBe(true)
     expect(promoEmail).toHaveBeenCalledTimes(1)
     const r = await prisma.campaignRecipient.findUnique({ where: { id: recipientId } })
     expect(r?.sentAt).not.toBeNull()
@@ -108,7 +110,8 @@ describe('sendCampaignEmail', () => {
     const { business, recipientId } = await seed({})
     created.push(business.id)
     const res = await sendCampaignEmail(recipientId)
-    expect(res.sent).toBe(false)
+    if (!res.ok) throw new Error(res.error)
+    expect(res.data.sent).toBe(false)
     const r = await prisma.campaignRecipient.findUnique({ where: { id: recipientId } })
     expect(r?.sentAt).toBeNull()
     // el grant sí se minteó
@@ -119,7 +122,7 @@ describe('sendCampaignEmail', () => {
   it('opt-out retroactivo: lanza y no envía', async () => {
     const { business, recipientId } = await seed({ optedOut: true })
     created.push(business.id)
-    await expect(sendCampaignEmail(recipientId)).rejects.toThrow('no recibir campañas')
+    await expectActionError(sendCampaignEmail(recipientId), 'no recibir campañas')
     expect(promoEmail).not.toHaveBeenCalled()
   })
 
@@ -127,14 +130,15 @@ describe('sendCampaignEmail', () => {
     const { business, recipientId } = await seed({ email: null })
     created.push(business.id)
     const res = await sendCampaignEmail(recipientId)
-    expect(res.sent).toBe(false)
+    if (!res.ok) throw new Error(res.error)
+    expect(res.data.sent).toBe(false)
     expect(promoEmail).not.toHaveBeenCalled()
   })
 
   it('promo pausada: lanza y no envía', async () => {
     const { business, recipientId } = await seed({ promoActive: false })
     created.push(business.id)
-    await expect(sendCampaignEmail(recipientId)).rejects.toThrow('pausada')
+    await expectActionError(sendCampaignEmail(recipientId), 'pausada')
     expect(promoEmail).not.toHaveBeenCalled()
   })
 
@@ -143,8 +147,10 @@ describe('sendCampaignEmail', () => {
     created.push(business.id)
     const r1 = await sendCampaignEmail(recipientId)
     const r2 = await sendCampaignEmail(recipientId)
-    expect(r1.sent).toBe(true)
-    expect(r2.sent).toBe(false) // segundo: ya enviado, no reenvía
+    if (!r1.ok) throw new Error(r1.error)
+    if (!r2.ok) throw new Error(r2.error)
+    expect(r1.data.sent).toBe(true)
+    expect(r2.data.sent).toBe(false) // segundo: ya enviado, no reenvía
     expect(promoEmail).toHaveBeenCalledTimes(1)
   })
 })

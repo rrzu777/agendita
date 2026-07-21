@@ -64,7 +64,12 @@ export function TransferDetails({
 
     setUploading(true)
     try {
-      const { uploadUrl, key } = await createProofUploadUrl(bookingId, kind, file.type)
+      const urlRes = await createProofUploadUrl(bookingId, kind, file.type)
+      if (!urlRes.ok) {
+        setSelectedError(urlRes.error)
+        return
+      }
+      const { uploadUrl, key } = urlRes.data
       const res = await fetch(uploadUrl, {
         method: 'PUT',
         body: file,

@@ -18,7 +18,7 @@ describe('LoyaltyCard — paquetes por confirmar', () => {
       pendingPackages: [{ id: 'pp1', productName: 'Pack 5', declared: false, resumeUrl: 'https://biz.agendita.cl/paquetes/confirmation?purchaseId=pp1' }],
     } as unknown as LoyaltyCardData
     const html = renderToStaticMarkup(
-      <LoyaltyCard customerName="Ana" business={{ name: 'Biz', logoUrl: null }} data={data} redeemAction={async () => {}} />,
+      <LoyaltyCard customerName="Ana" business={{ name: 'Biz', logoUrl: null }} data={data} redeemAction={async () => ({ ok: true, data: undefined })} />,
     )
     expect(html).toContain('Pack 5')
     expect(html).toContain('Te falta transferir')
@@ -31,14 +31,14 @@ describe('LoyaltyCard — paquetes por confirmar', () => {
       pendingPackages: [{ id: 'pp1', productName: 'Pack 5', declared: true, resumeUrl: 'https://x/paquetes/confirmation?purchaseId=pp1' }],
     } as unknown as LoyaltyCardData
     const html = renderToStaticMarkup(
-      <LoyaltyCard customerName="Ana" business={{ name: 'Biz', logoUrl: null }} data={data} redeemAction={async () => {}} />,
+      <LoyaltyCard customerName="Ana" business={{ name: 'Biz', logoUrl: null }} data={data} redeemAction={async () => ({ ok: true, data: undefined })} />,
     )
     expect(html).toContain('En verificación')
   })
 
   it('sin pendientes no renderiza la sección', () => {
     const html = renderToStaticMarkup(
-      <LoyaltyCard customerName="Ana" business={{ name: 'Biz', logoUrl: null }} data={baseData} redeemAction={async () => {}} />,
+      <LoyaltyCard customerName="Ana" business={{ name: 'Biz', logoUrl: null }} data={baseData} redeemAction={async () => ({ ok: true, data: undefined })} />,
     )
     expect(html).not.toContain('Paquetes por confirmar')
   })

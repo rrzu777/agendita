@@ -35,10 +35,11 @@ export function LoyaltyPanel({
     const note = String(fd.get('note') ?? '')
     startTransition(async () => {
       try {
-        await adjustCustomerPoints(customerId, delta, note)
+        const res = await adjustCustomerPoints(customerId, delta, note)
+        if (!res.ok) { setError(res.error); return }
         form.reset()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error')
+      } catch {
+        setError('Error')
       }
     })
   }
@@ -48,9 +49,10 @@ export function LoyaltyPanel({
     const requestId = crypto.randomUUID()
     startTransition(async () => {
       try {
-        await redeemPointsAsOwner(customerId, optionId, requestId)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error')
+        const res = await redeemPointsAsOwner(customerId, optionId, requestId)
+        if (!res.ok) { setError(res.error); return }
+      } catch {
+        setError('Error')
       }
     })
   }

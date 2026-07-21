@@ -7,7 +7,21 @@ const tx = vi.hoisted(() => ({
   ledgerEntry: { create: vi.fn().mockResolvedValue({}) },
 }))
 
-vi.mock('@/lib/auth/server', () => ({ requireBusinessRole: requireRole, ForbiddenError: class extends Error {} }))
+vi.mock('@/lib/auth/server', async () => {
+  // ForbiddenError debe extender el UserError REAL: así el wrapper action()
+  // lo reconoce (instanceof UserError) y devuelve su mensaje en { ok:false },
+  // en vez de redactarlo al genérico. Mismo contrato que producción.
+  const { UserError } = await import('@/lib/actions/result')
+  return {
+    requireBusinessRole: requireRole,
+    ForbiddenError: class ForbiddenError extends UserError {
+      constructor(message = 'No tienes permisos') {
+        super(message)
+        this.name = 'ForbiddenError'
+      }
+    },
+  }
+})
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: vi.fn().mockResolvedValue({ success: true }) }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/server/actions/revalidate-business', () => ({ revalidateBusinessPublicPaths: vi.fn() }))
@@ -27,7 +41,8 @@ const { refundPackagePurchase } = await import('@/server/actions/packages')
 
 describe('refundPackagePurchase', () => {
   it('escribe un asiento refund_issued prorrateado con packagePurchaseId', async () => {
-    await refundPackagePurchase('p1')
+    const result = await refundPackagePurchase('p1')
+    expect(result.ok).toBe(true)
     // 3 sesiones sin usar de 3 → reembolso completo = 30000
     expect(tx.ledgerEntry.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({

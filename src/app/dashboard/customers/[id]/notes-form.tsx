@@ -31,13 +31,17 @@ export function CustomerNotesForm({ customerId, initialNotes }: CustomerNotesFor
 
     startTransition(async () => {
       try {
-        await updateCustomerNotes(customerId, {
+        const res = await updateCustomerNotes(customerId, {
           notes: notes || null,
         })
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
         router.refresh()
         setIsEditing(false)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error al guardar notas')
+      } catch {
+        setError('Error al guardar notas')
       }
     })
   }

@@ -5,6 +5,13 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
 import { declaredBalancePaymentWhere } from '@/lib/bank-transfer/declared'
 import type { LedgerEntryType, LedgerDirection } from '@prisma/client'
+// UserError acá es seguro para el caller NO migrado (webhook MP):
+// UserError extends Error, así que todo `instanceof
+// Error`/try-catch existente sigue funcionando idéntico. Todos los throws de
+// este módulo son mensajes user-facing en español (invariantes de
+// consistencia del pago/reserva) — no hay invariantes internas en inglés acá.
+// Nuevos throws en este módulo deben mantener esto (español, user-facing).
+import { UserError } from '@/lib/actions/result'
 
 /**
  * Mapea Payment.paymentType al LedgerEntry.type correspondiente.
@@ -132,14 +139,14 @@ async function upsertApprovedPayment(input: UpsertApprovedPaymentInput): Promise
 
   if (explicitPaymentId) {
     const found = await tx.payment.findUnique({ where: { id: explicitPaymentId } })
-    if (!found) throw new Error('Pago no encontrado')
-    if (bookingId && found.bookingId !== bookingId) throw new Error('El pago no corresponde a esta reserva')
-    if (packagePurchaseId && found.packagePurchaseId !== packagePurchaseId) throw new Error('El pago no corresponde a esta compra')
-    if (found.businessId !== businessId) throw new Error('El pago no pertenece al negocio')
-    if (found.amount !== amount) throw new Error('El monto no coincide con el pago registrado')
-    if (found.provider !== provider) throw new Error('El proveedor no coincide con el pago registrado')
-    if (found.providerPaymentId !== providerPaymentId) throw new Error('El providerPaymentId no coincide con el pago registrado')
-    if (found.paymentType !== paymentType) throw new Error('El tipo de pago no coincide con el pago registrado')
+    if (!found) throw new UserError('Pago no encontrado')
+    if (bookingId && found.bookingId !== bookingId) throw new UserError('El pago no corresponde a esta reserva')
+    if (packagePurchaseId && found.packagePurchaseId !== packagePurchaseId) throw new UserError('El pago no corresponde a esta compra')
+    if (found.businessId !== businessId) throw new UserError('El pago no pertenece al negocio')
+    if (found.amount !== amount) throw new UserError('El monto no coincide con el pago registrado')
+    if (found.provider !== provider) throw new UserError('El proveedor no coincide con el pago registrado')
+    if (found.providerPaymentId !== providerPaymentId) throw new UserError('El providerPaymentId no coincide con el pago registrado')
+    if (found.paymentType !== paymentType) throw new UserError('El tipo de pago no coincide con el pago registrado')
     payment = found
   } else if (providerPaymentId) {
     payment = await tx.payment.findFirst({
@@ -186,7 +193,7 @@ export async function applyApprovedPayment({
   allowCompleted,
 }: ApplyApprovedPaymentInput): Promise<{ booking: Awaited<ReturnType<typeof recalcBookingFromPayments>>['booking']; wasConfirmed: boolean }> {
   if (amount <= 0) {
-    throw new Error('El monto debe ser positivo')
+    throw new UserError('El monto debe ser positivo')
   }
 
   const booking = await tx.booking.findUnique({
@@ -194,11 +201,11 @@ export async function applyApprovedPayment({
   })
 
   if (!booking) {
-    throw new Error('Reserva no encontrada')
+    throw new UserError('Reserva no encontrada')
   }
 
   if (booking.businessId !== businessId) {
-    throw new Error('La reserva no pertenece al negocio')
+    throw new UserError('La reserva no pertenece al negocio')
   }
 
   assertBookingPayable(booking, { allowExpiredHold: skipHoldExpiryCheck, allowCompleted })
@@ -262,11 +269,11 @@ export async function applyApprovedPackagePayment({
   tx, packagePurchaseId, businessId, amount, currency, provider, providerPaymentId,
   paymentType, paymentMethod, rawPayload, createdByUserId, paymentId: explicitPaymentId,
 }: ApplyApprovedPackagePaymentInput): Promise<{ wasActivated: boolean }> {
-  if (amount <= 0) throw new Error('El monto debe ser positivo')
+  if (amount <= 0) throw new UserError('El monto debe ser positivo')
 
   const purchase = await tx.packagePurchase.findUnique({ where: { id: packagePurchaseId } })
-  if (!purchase) throw new Error('Compra de paquete no encontrada')
-  if (purchase.businessId !== businessId) throw new Error('La compra no pertenece al negocio')
+  if (!purchase) throw new UserError('Compra de paquete no encontrada')
+  if (purchase.businessId !== businessId) throw new UserError('La compra no pertenece al negocio')
 
   const { payment, alreadyApproved } = await upsertApprovedPayment({
     tx, businessId, packagePurchaseId, customerId: purchase.customerId, amount, currency,
@@ -292,7 +299,7 @@ export async function recalcBookingFromPayments(
   const booking = await tx.booking.findUnique({
     where: { id: bookingId },
   })
-  if (!booking) throw new Error('Reserva no encontrada')
+  if (!booking) throw new UserError('Reserva no encontrada')
 
   const approvedPayments = await tx.payment.findMany({
     where: { bookingId, status: 'approved' },
@@ -370,7 +377,7 @@ export async function recalcBookingFromPayments(
 
     // Another tx already confirmed this booking. Refetch and recalc without status change.
     const refetched = await tx.booking.findUnique({ where: { id: bookingId } })
-    if (!refetched) throw new Error('Reserva no encontrada')
+    if (!refetched) throw new UserError('Reserva no encontrada')
 
     const updated = await tx.booking.update({
       where: { id: bookingId },

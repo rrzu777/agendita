@@ -78,17 +78,20 @@ describe('marketing opt-out actions', () => {
 
   it('setCustomerMarketingOptOut marca y desmarca (dueña)', async () => {
     const { setCustomerMarketingOptOut } = await import('@/server/actions/customers')
-    await setCustomerMarketingOptOut(CUST, true)
+    let res = await setCustomerMarketingOptOut(CUST, true)
+    expect(res.ok).toBe(true)
     let c = await prisma.customer.findUnique({ where: { id: CUST } })
     expect(c?.marketingOptOutAt).toBeInstanceOf(Date)
-    await setCustomerMarketingOptOut(CUST, false)
+    res = await setCustomerMarketingOptOut(CUST, false)
+    expect(res.ok).toBe(true)
     c = await prisma.customer.findUnique({ where: { id: CUST } })
     expect(c?.marketingOptOutAt).toBeNull()
   })
 
   it('setCustomerMarketingOptOut rechaza clientas de otro negocio', async () => {
     const { setCustomerMarketingOptOut } = await import('@/server/actions/customers')
-    await expect(setCustomerMarketingOptOut(CUST_AJENA, true)).rejects.toThrow()
+    const res = await setCustomerMarketingOptOut(CUST_AJENA, true)
+    expect(res.ok).toBe(false)
     const c = await prisma.customer.findUnique({ where: { id: CUST_AJENA } })
     expect(c?.marketingOptOutAt).toBeNull()
   })

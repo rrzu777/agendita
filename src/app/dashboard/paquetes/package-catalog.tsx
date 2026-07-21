@@ -63,12 +63,16 @@ export function PackageCatalog({
     }
     start(async () => {
       try {
-        await upsertPackageProduct(data, editing?.id)
+        const res = await upsertPackageProduct(data, editing?.id)
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
         form.reset()
         setEditing(null)
         router.refresh()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error')
+      } catch {
+        setError('Error')
       }
     })
   }
@@ -77,10 +81,14 @@ export function PackageCatalog({
     if (!window.confirm('¿Desactivar este paquete?')) return
     start(async () => {
       try {
-        await archivePackageProduct(id)
+        const res = await archivePackageProduct(id)
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
         router.refresh()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error')
+      } catch {
+        setError('Error')
       }
     })
   }

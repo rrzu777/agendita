@@ -4,6 +4,7 @@ import { mintCampaignGrant } from './mint'
 import { renderCampaignMessage } from './message'
 import { isP2002 } from '@/lib/loyalty/credit'
 import { ForbiddenError } from '@/lib/auth/server'
+import { UserError } from '@/lib/actions/result'
 import { isEmailable } from '@/lib/customers/email'
 import { ensureLoyaltyToken } from '@/lib/loyalty/token'
 import { sendNotificationSafely, sendCampaignPromoEmail } from '@/lib/notifications'
@@ -61,14 +62,17 @@ export async function prepareCampaignSend(
   ])
   if (!recipient) throw new ForbiddenError('Destinataria no encontrada')
   // Puerta 2 (retroactiva): la clienta pudo hacer opt-out DESPUÉS de materializar la lista.
+  // UserError: mensaje user-facing — sendCampaignEmailBatch lo captura per-item (no
+  // le importa el tipo), pero sendCampaignMessage/sendCampaignEmail lo propagan tal
+  // cual hasta el action() wrapper, que sólo preserva el texto de UserError.
   if (recipient.customer.marketingOptOutAt) {
-    throw new Error('La clienta pidió no recibir campañas')
+    throw new UserError('La clienta pidió no recibir campañas')
   }
   // Gate de promo activa: si la promo se archivó entre crear la campaña y enviar,
   // cortar (fail-fast) en vez de emitir beneficios contra una promo apagada.
   // Vive en el core → aplica también al single-send.
   if (!recipient.campaign.promotion.isActive) {
-    throw new Error('La promoción de esta campaña está pausada')
+    throw new UserError('La promoción de esta campaña está pausada')
   }
 
   const tz = recipient.campaign.business.timezone || 'America/Santiago'
@@ -97,7 +101,7 @@ export async function prepareCampaignSend(
     }
     if (!grant) throw e
   }
-  if (!grant) throw new Error('No se pudo generar el beneficio')
+  if (!grant) throw new UserError('No se pudo generar el beneficio')
 
   const firstName = recipient.customer.name?.split(' ')[0] || ''
   const vencimiento = grant.expiresAt ? formatInTimeZone(grant.expiresAt, tz, 'dd/MM/yyyy') : 'sin vencimiento'

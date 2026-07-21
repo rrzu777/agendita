@@ -116,18 +116,18 @@ export function ManualPaymentDialog({
     }
 
     startTransition(async () => {
-      try {
-        await createManualPayment({
-          bookingId: selectedBooking.id,
-          amount,
-          currency: businessCurrency,
-          paymentMethod,
-        })
-        handleOpenChange(false)
-        router.refresh()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error al registrar pago')
+      const res = await createManualPayment({
+        bookingId: selectedBooking.id,
+        amount,
+        currency: businessCurrency,
+        paymentMethod,
+      })
+      if (!res.ok) {
+        setError(res.error)
+        return
       }
+      handleOpenChange(false)
+      router.refresh()
     })
   }
 

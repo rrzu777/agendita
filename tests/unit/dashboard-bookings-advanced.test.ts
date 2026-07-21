@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { BookingPaymentStatus, BookingStatus, PaymentType } from '@prisma/client'
+import { UserError } from '@/lib/actions/result'
 
 const mockApplyApprovedPayment = vi.fn()
 const mockAssertSlotIsAvailable = vi.fn()
@@ -227,27 +228,33 @@ describe('createBookingFromDashboard advanced payment modes', () => {
   it('rejects deposit_paid when service has no deposit', async () => {
     setupService(20000, 0)
 
-    await expect(createBookingFromDashboard({ ...baseInput, paymentMode: 'deposit_paid', paymentMethod: 'cash' }))
-      .rejects.toThrow(/No se requiere abono/)
+    const result = await createBookingFromDashboard({ ...baseInput, paymentMode: 'deposit_paid', paymentMethod: 'cash' })
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/No se requiere abono/)
   })
 
   it('rejects paid modes without paymentMethod', async () => {
-    await expect(createBookingFromDashboard({ ...baseInput, paymentMode: 'deposit_paid' }))
-      .rejects.toThrow(/Método de pago requerido/)
+    const result = await createBookingFromDashboard({ ...baseInput, paymentMode: 'deposit_paid' })
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/Método de pago requerido/)
   })
 
   it('fails when slot is occupied', async () => {
-    mockAssertSlotIsAvailable.mockRejectedValue(new Error('Ese horario ya no está disponible'))
+    // UserError: refleja el throw real de assertSlotIsAvailable (validation.ts,
+    // ya migrado) — un Error plano acá se volvería el mensaje genérico del wrapper.
+    mockAssertSlotIsAvailable.mockRejectedValue(new UserError('Ese horario ya no está disponible'))
 
-    await expect(createBookingFromDashboard({ ...baseInput, paymentMode: 'none' }))
-      .rejects.toThrow(/horario ya no está disponible/)
+    const result = await createBookingFromDashboard({ ...baseInput, paymentMode: 'none' })
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/horario ya no está disponible/)
   })
 
   it('validates customerId belongs to business', async () => {
     mockPrisma.customer.findFirst.mockResolvedValue(null)
 
-    await expect(createBookingFromDashboard({ ...baseInput, customerId: 'other-customer', paymentMode: 'none' }))
-      .rejects.toThrow(/Cliente no encontrado/)
+    const result = await createBookingFromDashboard({ ...baseInput, customerId: 'other-customer', paymentMode: 'none' })
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/Cliente no encontrado/)
   })
 })
 

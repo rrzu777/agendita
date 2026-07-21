@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
+import { action, UserError } from '@/lib/actions/result'
 import { createPromotionSchema, updatePromotionSchema, normalizeCode, type CreatePromotionInput } from '@/lib/promotions/schema'
 import { startOfLocalDay, endOfLocalDay } from '@/lib/availability/timezone'
 import { isRedeemable, computeDiscount } from '@/lib/promotions/evaluate'
@@ -12,7 +13,7 @@ import { normalizePhone } from '@/lib/customers/phone'
 async function assertServicesBelong(businessId: string, serviceIds: string[]) {
   if (serviceIds.length === 0) return
   const count = await prisma.service.count({ where: { id: { in: serviceIds }, businessId } })
-  if (count !== serviceIds.length) throw new Error('Servicio inválido')
+  if (count !== serviceIds.length) throw new UserError('Servicio inválido')
 }
 
 // Campos escalares compartidos por create y update. Los que difieren entre
@@ -36,14 +37,14 @@ function promotionScalars(d: CreatePromotionInput, timezone: string) {
   }
 }
 
-export async function createPromotion(data: unknown) {
+async function _createPromotion(data: unknown) {
   const { businessId, business, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('create-promotion', 30, 60000)
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
 
   const parsed = createPromotionSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
   const d = parsed.data
   await assertServicesBelong(businessId, d.serviceIds)
@@ -60,7 +61,7 @@ export async function createPromotion(data: unknown) {
       },
     })
     .catch((e: { code?: string }) => {
-      if (e.code === 'P2002') throw new Error('Ya existe una promoción con ese código')
+      if (e.code === 'P2002') throw new UserError('Ya existe una promoción con ese código')
       throw e
     })
 
@@ -68,17 +69,19 @@ export async function createPromotion(data: unknown) {
   return created
 }
 
-export async function updatePromotion(id: string, data: unknown) {
+export const createPromotion = action(_createPromotion)
+
+async function _updatePromotion(id: string, data: unknown) {
   const { businessId, business, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('manage-promotion', 60, 60000)
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
 
   const existing = await prisma.promotion.findFirst({ where: { id, businessId } })
   if (!existing) throw new ForbiddenError('Promoción no encontrada')
 
   const parsed = updatePromotionSchema.safeParse(data)
   if (!parsed.success) {
-    throw new Error('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
   const d = parsed.data
   await assertServicesBelong(businessId, d.serviceIds)
@@ -99,7 +102,7 @@ export async function updatePromotion(id: string, data: unknown) {
       },
     })
     .catch((e: { code?: string }) => {
-      if (e.code === 'P2002') throw new Error('Ya existe una promoción con ese código')
+      if (e.code === 'P2002') throw new UserError('Ya existe una promoción con ese código')
       throw e
     })
 
@@ -107,16 +110,20 @@ export async function updatePromotion(id: string, data: unknown) {
   return updated
 }
 
-export async function setPromotionActive(id: string, isActive: boolean) {
+export const updatePromotion = action(_updatePromotion)
+
+async function _setPromotionActive(id: string, isActive: boolean) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('manage-promotion', 60, 60000)
-  if (!limit.success) throw new Error('Demasiadas solicitudes. Intenta más tarde.')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
 
   const existing = await prisma.promotion.findFirst({ where: { id, businessId } })
   if (!existing) throw new ForbiddenError('Promoción no encontrada')
   await prisma.promotion.update({ where: { id }, data: { isActive } })
   revalidatePath('/dashboard/promociones')
 }
+
+export const setPromotionActive = action(_setPromotionActive)
 
 export async function listPromotions() {
   const { businessId } = await requireBusiness()
@@ -127,7 +134,7 @@ export async function listPromotions() {
   })
 }
 
-export async function getPromotionRedemptions(promotionId: string) {
+async function _getPromotionRedemptions(promotionId: string) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   return prisma.promotionRedemption.findMany({
     where: { promotionId, businessId },
@@ -139,11 +146,16 @@ export async function getPromotionRedemptions(promotionId: string) {
   })
 }
 
+export const getPromotionRedemptions = action(_getPromotionRedemptions)
+
 const GENERIC_INVALID = { ok: false as const, message: 'Código inválido o no aplicable' }
 
 /** Preview público: NO crea canje. Tenant-scoped + rate-limited + respuesta genérica
- *  (no revela si el código existe). */
-export async function previewPromotion(input: { businessId: string; code: string; serviceId: string; phone?: string }) {
+ *  (no revela si el código existe). Se envuelve con action() solo por la red de
+ *  seguridad ante un throw inesperado (p. ej. checkRateLimit); el resultado
+ *  {ok,discount|message} de acá adentro es un contrato propio, no ActionResult,
+ *  y viaja como `data` — no lo confundas con el ok/error del wrapper. */
+async function _previewPromotion(input: { businessId: string; code: string; serviceId: string; phone?: string }) {
   const limit = await checkRateLimit('preview-promotion', 30, 60000)
   if (!limit.success) return GENERIC_INVALID
 
@@ -203,3 +215,5 @@ export async function previewPromotion(input: { businessId: string; code: string
     return GENERIC_INVALID
   }
 }
+
+export const previewPromotion = action(_previewPromotion)
