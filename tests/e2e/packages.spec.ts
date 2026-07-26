@@ -136,7 +136,7 @@ test.describe('Paquetes prepagados', () => {
     const packName = await createPackageProduct(page)
 
     // ── Paso 2: vender el paquete a una clienta ───────────────────────────────
-    await openFirstCustomerDetail(page)
+    const { href: customerHref } = await openFirstCustomerDetail(page)
 
     const panel = packagePanel(page)
     await expect(panel).toBeVisible({ timeout: 15_000 })
@@ -150,17 +150,27 @@ test.describe('Paquetes prepagados', () => {
     const productOptionValue = await productOption.getAttribute('value')
     expect(productOptionValue).toBeTruthy()
     await sellForm.locator('select').selectOption(productOptionValue!)
+    // Armamos la espera ANTES del click: la venta es un server action (POST a la ruta del
+    // detalle) y el test no la awaitea de otra forma; sin esto podríamos recargar antes de
+    // que la transacción commitee.
+    const saleResponse = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().includes(customerHref),
+      { timeout: 30_000 },
+    )
     await sellForm.getByRole('button', { name: 'Vender' }).click()
+    await saleResponse
 
-    // La venta corre por server action + revalidatePath del detalle; en el pool chico esa
-    // revalidación es lenta (la page re-corre getCustomerLoyalty serial). Polleamos la fila
-    // de la compra hasta que muestre las 3 sesiones restantes (más resiliente que una única
-    // espera de visibilidad ante la latencia variable del pool de una sola conexión).
-    const purchaseRow = panel.locator('li', { hasText: packName })
-    await expect(async () => {
-      await expect(purchaseRow).toBeVisible()
-      await expect(purchaseRow).toContainText('3 sesiones restantes')
-    }).toPass({ timeout: 45_000 })
+    // NO afirmar sondeando el DOM vivo. El server action revalida y manda el árbol nuevo,
+    // pero React lo aplica en prioridad de transición y el sondeo continuo de Playwright
+    // compite con ese commit: en esta página (pesada) la fila puede no pintarse NUNCA
+    // mientras se sondea, aunque el servidor ya la mandó. Verificado: 45s de toPass no la
+    // ven; al detener el sondeo aparece en segundos. Por eso recargamos y afirmamos sobre
+    // el HTML del servidor — determinista y sin carrera.
+    await gotoStable(page, customerHref)
+    await waitForHydration(page)
+    const purchaseRow = packagePanel(page).locator('li', { hasText: packName })
+    await expect(purchaseRow).toBeVisible({ timeout: 30_000 })
+    await expect(purchaseRow).toContainText('3 sesiones restantes')
   })
 
   // ── Consumo en reserva (pasos 3-4) — fixme, ver nota de cabecera ─────────────
