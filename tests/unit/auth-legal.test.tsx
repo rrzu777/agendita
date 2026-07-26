@@ -9,21 +9,27 @@ vi.mock('@/lib/db', () => ({
   prisma: {},
 }))
 
+// `unstable_rethrow` lo usa el wrapper `action()`: acá es no-op porque ningún
+// error de estos tests es control-flow de Next.
 vi.mock('next/navigation', () => ({
   redirect: vi.fn(),
+  unstable_rethrow: vi.fn(),
 }))
 
 describe('registration legal acceptance', () => {
-  it('signUp rejects when acceptedTerms is missing', async () => {
+  it('signUp returns the legal-acceptance error instead of throwing it', async () => {
     vi.resetModules()
-    const { RegistrationError } = await import('@/lib/auth/registration-error')
     const { signUp } = await import('@/lib/auth/actions')
     const formData = new FormData()
     formData.set('email', 'owner@test.com')
     formData.set('password', 'secret123')
     formData.set('name', 'Owner')
 
-    await expect(signUp(formData)).rejects.toThrow(RegistrationError)
+    // El mensaje viaja en el resultado (sobrevive a la redacción de prod), no
+    // como throw: RegistrationError extiende UserError.
+    const res = await signUp(formData)
+    expect(res.ok).toBe(false)
+    expect(res.ok === false && res.error).toContain('términos y condiciones')
   })
 
   it('register page shows terms, privacy and refund links', async () => {

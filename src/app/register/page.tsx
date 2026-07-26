@@ -41,11 +41,17 @@ export default function RegisterPage() {
 
     try {
       const formData = new FormData(event.currentTarget)
-      await signUp(formData)
+      const res = await signUp(formData)
+      if (!res.ok) {
+        setError(res.error)
+        return
+      }
       setSuccess(true)
     } catch (err) {
+      // Net de transporte: la action ya no lanza errores de negocio, pero un
+      // fallo de red sí. `err.message` acá es ruido interno → genérico.
       unstable_rethrow(err)
-      setError(err instanceof Error ? err.message : 'Error al crear cuenta')
+      setError('Error al crear cuenta')
     } finally {
       setLoading(false)
     }

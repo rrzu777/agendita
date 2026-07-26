@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { validateSubdomain, generateDefaultSubdomain } from '@/lib/business/subdomain'
 import { randomBookingNumberBase } from '@/lib/bookings/number'
 import { RegistrationError } from './registration-error'
+import { action } from '@/lib/actions/result'
 import { Prisma } from '@prisma/client'
 import { getAppUrl } from '@/lib/business/urls'
 import { sanitizeNext } from './sanitize-next'
@@ -113,7 +114,7 @@ export async function checkSubdomainAvailability(subdomain: string) {
   return { available: !existing, error: existing ? 'Este subdominio ya está en uso' : undefined }
 }
 
-export async function signUp(formData: FormData) {
+async function _signUp(formData: FormData) {
   const email = formData.get('email') as string
   const password = formData.get('password') as string
   const name = formData.get('name') as string
@@ -218,6 +219,10 @@ export async function signUp(formData: FormData) {
   redirect('/dashboard')
 }
 
+/** El `redirect('/dashboard')` del final atraviesa el wrapper intacto:
+ *  `action()` llama `unstable_rethrow` antes de clasificar el error. */
+export const signUp = action(_signUp)
+
 interface CreateBusinessInput {
   userId: string
   email: string
@@ -227,6 +232,9 @@ interface CreateBusinessInput {
   useServiceTemplate?: boolean
 }
 
+/** OJO: a propósito SIN envolver en `action()` — sólo la llama `_signUp` (que
+ *  sí traduce sus RegistrationError) y los tests. Si algún día la invoca un
+ *  componente cliente, hay que envolverla: sus mensajes se redactan en prod. */
 export async function createBusinessForUser({ userId, email, name, subdomain, category = 'other', useServiceTemplate = false }: CreateBusinessInput) {
   const slug = subdomain || generateDefaultSubdomain(email)
   const finalSubdomain = subdomain || generateDefaultSubdomain(email)
