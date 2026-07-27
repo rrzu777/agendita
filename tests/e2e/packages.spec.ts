@@ -91,10 +91,21 @@ async function createPackageProduct(page: Page): Promise<string> {
   await createForm.locator('input[name="expiryDays"]').fill('30')
   // "Aplica a todos los servicios" viene marcado por default; lo dejamos así.
   await expect(createForm.locator('input[name="appliesToAll"]')).toBeChecked()
+  // Espera armada ANTES del click (ver nota de la venta): sin esto podríamos recargar
+  // antes de que el server action commitee.
+  const created = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && r.url().includes('/dashboard/paquetes'),
+    { timeout: 30_000 },
+  )
   await createForm.getByRole('button', { name: 'Crear paquete' }).click()
+  await created
 
-  // El producto recién creado aparece en la lista del catálogo (fila por nombre único).
-  const productRow = catalog.locator('li', { hasText: packName })
+  // Recargamos y afirmamos sobre el HTML del servidor en vez de sondear el DOM vivo —
+  // mismo motivo que en el paso de venta (el sondeo compite con el commit de React).
+  await gotoStable(page, '/dashboard/paquetes')
+  await waitForHydration(page)
+  const productRow = page.locator('section', { hasText: 'Catálogo de paquetes' })
+    .locator('li', { hasText: packName })
   await expect(productRow).toBeVisible({ timeout: 15_000 })
   await expect(productRow).toContainText('3')
   await expect(productRow).toContainText('Todos los servicios')
