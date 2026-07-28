@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { uniqueCustomerPhone } from './helpers/customer'
 
 const E2E_EMAIL = 'e2e@test.agendita.cl'
 const E2E_OWNER_EMAIL = 'owner@mimosnails.com'
@@ -196,6 +197,7 @@ test.describe('main beta flows', () => {
 
     const customerName = `Cliente E2E ${Date.now()}`
     const customerEmail = `cliente-${Date.now()}@example.com`
+    const customerPhone = uniqueCustomerPhone()
     const date = nextBookableDate()
 
     await page.goto('/book/mimosnails')
@@ -211,7 +213,7 @@ test.describe('main beta flows', () => {
     await page.getByRole('button', { name: 'Continuar' }).click()
 
     await page.getByPlaceholder('Tu nombre').fill(customerName)
-    await page.getByPlaceholder('+569...').fill('+56912345678')
+    await page.getByPlaceholder('+569...').fill(customerPhone)
     await page.getByPlaceholder('tu@email.com').fill(customerEmail)
     await page.getByRole('button', { name: 'Continuar al pago' }).click()
 
