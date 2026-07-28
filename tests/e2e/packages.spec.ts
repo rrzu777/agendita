@@ -91,10 +91,21 @@ async function createPackageProduct(page: Page): Promise<string> {
   await createForm.locator('input[name="expiryDays"]').fill('30')
   // "Aplica a todos los servicios" viene marcado por default; lo dejamos así.
   await expect(createForm.locator('input[name="appliesToAll"]')).toBeChecked()
+  // Espera armada ANTES del click (ver nota de la venta): sin esto podríamos recargar
+  // antes de que el server action commitee.
+  const created = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && r.url().includes('/dashboard/paquetes'),
+    { timeout: 30_000 },
+  )
   await createForm.getByRole('button', { name: 'Crear paquete' }).click()
+  await created
 
-  // El producto recién creado aparece en la lista del catálogo (fila por nombre único).
-  const productRow = catalog.locator('li', { hasText: packName })
+  // Recargamos y afirmamos sobre el HTML del servidor en vez de sondear el DOM vivo —
+  // mismo motivo que en el paso de venta (el sondeo compite con el commit de React).
+  await gotoStable(page, '/dashboard/paquetes')
+  await waitForHydration(page)
+  const productRow = page.locator('section', { hasText: 'Catálogo de paquetes' })
+    .locator('li', { hasText: packName })
   await expect(productRow).toBeVisible({ timeout: 15_000 })
   await expect(productRow).toContainText('3')
   await expect(productRow).toContainText('Todos los servicios')
@@ -136,7 +147,7 @@ test.describe('Paquetes prepagados', () => {
     const packName = await createPackageProduct(page)
 
     // ── Paso 2: vender el paquete a una clienta ───────────────────────────────
-    await openFirstCustomerDetail(page)
+    const { href: customerHref } = await openFirstCustomerDetail(page)
 
     const panel = packagePanel(page)
     await expect(panel).toBeVisible({ timeout: 15_000 })
@@ -150,17 +161,27 @@ test.describe('Paquetes prepagados', () => {
     const productOptionValue = await productOption.getAttribute('value')
     expect(productOptionValue).toBeTruthy()
     await sellForm.locator('select').selectOption(productOptionValue!)
+    // Armamos la espera ANTES del click: la venta es un server action (POST a la ruta del
+    // detalle) y el test no la awaitea de otra forma; sin esto podríamos recargar antes de
+    // que la transacción commitee.
+    const saleResponse = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().includes(customerHref),
+      { timeout: 30_000 },
+    )
     await sellForm.getByRole('button', { name: 'Vender' }).click()
+    await saleResponse
 
-    // La venta corre por server action + revalidatePath del detalle; en el pool chico esa
-    // revalidación es lenta (la page re-corre getCustomerLoyalty serial). Polleamos la fila
-    // de la compra hasta que muestre las 3 sesiones restantes (más resiliente que una única
-    // espera de visibilidad ante la latencia variable del pool de una sola conexión).
-    const purchaseRow = panel.locator('li', { hasText: packName })
-    await expect(async () => {
-      await expect(purchaseRow).toBeVisible()
-      await expect(purchaseRow).toContainText('3 sesiones restantes')
-    }).toPass({ timeout: 45_000 })
+    // NO afirmar sondeando el DOM vivo. El server action revalida y manda el árbol nuevo,
+    // pero React lo aplica en prioridad de transición y el sondeo continuo de Playwright
+    // compite con ese commit: en esta página (pesada) la fila puede no pintarse NUNCA
+    // mientras se sondea, aunque el servidor ya la mandó. Verificado: 45s de toPass no la
+    // ven; al detener el sondeo aparece en segundos. Por eso recargamos y afirmamos sobre
+    // el HTML del servidor — determinista y sin carrera.
+    await gotoStable(page, customerHref)
+    await waitForHydration(page)
+    const purchaseRow = packagePanel(page).locator('li', { hasText: packName })
+    await expect(purchaseRow).toBeVisible({ timeout: 30_000 })
+    await expect(purchaseRow).toContainText('3 sesiones restantes')
   })
 
   // ── Consumo en reserva (pasos 3-4) — fixme, ver nota de cabecera ─────────────
