@@ -222,6 +222,15 @@ export interface PackageDisputedEmailData {
   businessCurrency: string
 }
 
+/** Aviso a la dueña de que entró un pago de más sobre un paquete ya pagado. */
+export interface PackageDuplicatePaymentEmailData {
+  businessName: string
+  customerName: string
+  productName: string
+  amount: number
+  businessCurrency: string
+}
+
 export interface BookingDisputedEmailData {
   businessName: string
   customerName: string

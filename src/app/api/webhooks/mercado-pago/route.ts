@@ -10,6 +10,7 @@ import {
   sendPackagePurchasedNotification,
   sendPackageSoldNotificationToBusiness,
   sendPackageDisputedToBusiness,
+  sendPackageDuplicatePaymentToBusiness,
   sendBookingDisputedToBusiness,
 } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
@@ -33,6 +34,18 @@ function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
       throw new Error(`Mercado Pago API error ${res.status} for ${path}: ${body}`)
     }
     return res.json() as Promise<T>
+  })
+}
+
+/** Compra de paquete con lo que necesitan los emails a la dueña (negocio, clienta, producto). */
+function findPurchaseForBusinessEmail(packagePurchaseId: string) {
+  return prisma.packagePurchase.findUnique({
+    where: { id: packagePurchaseId },
+    include: {
+      product: { select: { name: true } },
+      customer: { select: { name: true } },
+      business: { select: { name: true, currency: true } },
+    },
   })
 }
 
@@ -356,14 +369,7 @@ export async function POST(request: NextRequest) {
     ) {
       const packagePurchaseId = payment.packagePurchaseId
       // Un solo fetch con includes: sirve al guard de status y a la notif de abajo.
-      const purchase = await prisma.packagePurchase.findUnique({
-        where: { id: packagePurchaseId },
-        include: {
-          product: { select: { name: true } },
-          customer: { select: { name: true } },
-          business: { select: { name: true, currency: true } },
-        },
-      })
+      const purchase = await findPurchaseForBusinessEmail(packagePurchaseId)
       if (purchase && purchase.status === 'active') {
         // 'charged_back' = disputa involuntaria → reversión total (clawback + descubrir
         // reservas) + alarma a la dueña. 'refunded' que llega con la compra AÚN activa
@@ -537,7 +543,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Pago no asociado a una reserva ni a un paquete' }, { status: 400 })
       }
 
-      const { wasActivated } = await prisma.$transaction(async (tx) => {
+      const { wasActivated, wasDuplicate } = await prisma.$transaction(async (tx) => {
         // Actualizar providerPaymentId y rawPayload
         await tx.payment.update({
           where: { id: payment.id },
@@ -573,14 +579,7 @@ export async function POST(request: NextRequest) {
             sendPackagePurchasedNotification(packagePurchaseId, payment.businessId),
           ),
           sendMultiNotificationSafely('package sold business', async () => {
-            const purchase = await prisma.packagePurchase.findUnique({
-              where: { id: packagePurchaseId },
-              include: {
-                product: { select: { name: true } },
-                customer: { select: { name: true } },
-                business: { select: { name: true, currency: true } },
-              },
-            })
+            const purchase = await findPurchaseForBusinessEmail(packagePurchaseId)
             if (!purchase) {
               return [{ success: false as const, skipped: 'Compra no encontrada' }]
             }
@@ -594,6 +593,26 @@ export async function POST(request: NextRequest) {
             })
           }),
         ])
+      }
+
+      // Cobro doble: entró plata nueva sobre una compra ya activa (p.ej. la clienta
+      // pagó por transferencia, la dueña confirmó y MP aprobó tarde). El servicio
+      // ya lo asentó en el ledger; acá sólo avisamos para que la dueña decida el
+      // reembolso. Gateado por wasDuplicate, que es false en cada redelivery.
+      if (wasDuplicate) {
+        await sendMultiNotificationSafely('package duplicate payment business', async () => {
+          const purchase = await findPurchaseForBusinessEmail(packagePurchaseId)
+          if (!purchase) {
+            return [{ success: false as const, skipped: 'Compra no encontrada' }]
+          }
+          return sendPackageDuplicatePaymentToBusiness(payment.businessId, {
+            businessName: purchase.business.name,
+            customerName: purchase.customer.name,
+            productName: purchase.product.name,
+            amount: payment.amount,
+            businessCurrency: purchase.business.currency || 'CLP',
+          })
+        })
       }
 
       const customerId = payment.packagePurchase?.customerId

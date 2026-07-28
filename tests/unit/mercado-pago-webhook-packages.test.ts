@@ -43,7 +43,7 @@ vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 
 vi.mock('@/server/services/finance', () => ({
   applyApprovedPayment: vi.fn(),
-  applyApprovedPackagePayment: vi.fn().mockResolvedValue({ wasActivated: true }),
+  applyApprovedPackagePayment: vi.fn().mockResolvedValue({ wasActivated: true, wasDuplicate: false }),
 }))
 
 vi.mock('@/lib/booking-payments', () => ({
@@ -57,6 +57,7 @@ vi.mock('@/lib/notifications', () => ({
   sendPackagePurchasedNotification: vi.fn().mockResolvedValue({ success: true }),
   sendPackageSoldNotificationToBusiness: vi.fn().mockResolvedValue([{ success: true }]),
   sendPackageDisputedToBusiness: vi.fn().mockResolvedValue([{ success: true }]),
+  sendPackageDuplicatePaymentToBusiness: vi.fn().mockResolvedValue([{ success: true }]),
 }))
 
 vi.mock('@/lib/packages/reverse', () => ({
@@ -114,7 +115,7 @@ function createRequestInit(overrides: Record<string, string> = {}): Record<strin
 
 const { applyApprovedPayment, applyApprovedPackagePayment } = await import('@/server/services/finance')
 const { revalidatePath } = await import('next/cache')
-const { sendPackagePurchasedNotification } = await import('@/lib/notifications')
+const { sendPackagePurchasedNotification, sendPackageDuplicatePaymentToBusiness } = await import('@/lib/notifications')
 
 describe('Mercado Pago webhook — dispatch de paquete', () => {
   let POST: (req: Request) => Promise<Response>
@@ -166,8 +167,8 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
     })
     vi.clearAllMocks()
     mockMpFetch.mockReset()
-    // clearAllMocks borra el valor de retorno; el webhook desestructura { wasActivated }.
-    ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ wasActivated: true })
+    // clearAllMocks borra el valor de retorno; el webhook desestructura { wasActivated, wasDuplicate }.
+    ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ wasActivated: true, wasDuplicate: false })
 
     mockPrisma.paymentAccount.findFirst.mockReset().mockResolvedValue({
       id: 'pa-1',
@@ -252,7 +253,7 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
     })
 
     it('no reenvía notificaciones en redelivery (wasActivated false), pero responde 200', async () => {
-      ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ wasActivated: false })
+      ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ wasActivated: false, wasDuplicate: false })
 
       const secret = 'test-webhook-secret'
       const body = { data: { id: 'mp-pkg-001' } }
@@ -271,6 +272,39 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
       expect(res.status).toBe(200)
       expect(applyApprovedPackagePayment).toHaveBeenCalledTimes(1)
       expect(sendPackagePurchasedNotification).not.toHaveBeenCalled()
+      expect(sendPackageDuplicatePaymentToBusiness).not.toHaveBeenCalled()
+    })
+
+    it('cobro doble (wasDuplicate): avisa a la dueña y NO manda los emails de venta', async () => {
+      ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ wasActivated: false, wasDuplicate: true })
+
+      const secret = 'test-webhook-secret'
+      const body = { data: { id: 'mp-pkg-001' } }
+      const signature = createMpSignatureHeader('mp-pkg-001', 'req-pkg', secret)
+
+      mockMpFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(basePackageMpPayment),
+      })
+      mockPrisma.payment.findUnique.mockResolvedValue(basePackagePayment)
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({ ...mockPrisma }))
+
+      const req = makeRequest(body, { 'x-signature': signature, 'x-request-id': 'req-pkg' })
+      const res = await POST(req)
+
+      expect(res.status).toBe(200)
+      // El paquete NO se vendió de nuevo: nada de "compra confirmada" a la clienta.
+      expect(sendPackagePurchasedNotification).not.toHaveBeenCalled()
+      expect(sendPackageDuplicatePaymentToBusiness).toHaveBeenCalledWith(
+        'biz-1',
+        expect.objectContaining({
+          businessName: 'Studio Ana',
+          customerName: 'Ana',
+          productName: 'Pack 5 sesiones',
+          amount: 50000,
+          businessCurrency: 'CLP',
+        }),
+      )
     })
 
     it('rejects approved package payment with missing packagePurchaseId in metadata', async () => {

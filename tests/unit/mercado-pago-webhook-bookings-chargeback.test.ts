@@ -25,7 +25,7 @@ vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 
 vi.mock('@/server/services/finance', () => ({
   applyApprovedPayment: vi.fn(),
-  applyApprovedPackagePayment: vi.fn().mockResolvedValue({ wasActivated: true }),
+  applyApprovedPackagePayment: vi.fn().mockResolvedValue({ wasActivated: true, wasDuplicate: false }),
 }))
 
 vi.mock('@/lib/booking-payments', () => ({

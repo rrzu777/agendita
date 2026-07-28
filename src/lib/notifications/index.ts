@@ -28,6 +28,7 @@ export {
   sendPackagePurchasedNotification,
   sendPackageSoldNotificationToBusiness,
   sendPackageDisputedToBusiness,
+  sendPackageDuplicatePaymentToBusiness,
   sendPackageTransferDeclaredToBusiness,
   sendBookingDisputedToBusiness,
   sendPackageTransferReminderToCustomer,
@@ -92,6 +93,8 @@ export {
   packageSoldBusinessText,
   packageDisputedBusinessHtml,
   packageDisputedBusinessText,
+  packageDuplicatePaymentBusinessHtml,
+  packageDuplicatePaymentBusinessText,
   bookingDisputedBusinessHtml,
   bookingDisputedBusinessText,
   packageTransferDeclaredBusinessHtml,
@@ -101,5 +104,5 @@ export {
   packageTransferUnverifiedBusinessHtml,
   packageTransferUnverifiedBusinessText,
 } from './templates'
-export type { EmailResult, BookingEmailData, CancellationEmailData, RescheduledEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, BankTransferVerifyCustomerEmailData, BalanceTransferCustomerEmailData, ReminderEmailData, LoyaltyRewardEmailData, NotificationResult, TransferReminderCustomerEmailData, TransferReminderBusinessEmailData, OwnerBookingChangedData, PackagePurchasedEmailData, PackageDisputedEmailData, BookingDisputedEmailData, PackageTransferDeclaredEmailData, PackageTransferReminderCustomerEmailData, PackageTransferUnverifiedBusinessEmailData } from './types'
+export type { EmailResult, BookingEmailData, CancellationEmailData, RescheduledEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, BankTransferVerifyCustomerEmailData, BalanceTransferCustomerEmailData, ReminderEmailData, LoyaltyRewardEmailData, NotificationResult, TransferReminderCustomerEmailData, TransferReminderBusinessEmailData, OwnerBookingChangedData, PackagePurchasedEmailData, PackageDisputedEmailData, PackageDuplicatePaymentEmailData, BookingDisputedEmailData, PackageTransferDeclaredEmailData, PackageTransferReminderCustomerEmailData, PackageTransferUnverifiedBusinessEmailData } from './types'
 export type { BookingWhatsappData, BookingRescheduledWhatsappData, ReviewRequestWhatsappData } from './whatsapp'

@@ -262,13 +262,16 @@ export interface ApplyApprovedPackagePaymentInput {
  * Rama paquete de la aprobación de pago (polimórfica con applyApprovedPayment).
  * Carga la PackagePurchase, upserta el Payment (packagePurchaseId, sin booking)
  * y, si la compra estaba pending, la activa (grants + asiento de ledger). NO
- * toca recalcBookingFromPayments. Idempotente. Sin caller público en B4b-1 —
- * la usará el webhook MP en B4b-2.
+ * toca recalcBookingFromPayments. Idempotente.
+ *
+ * Devuelve `wasDuplicate: true` cuando llega un pago NUEVO sobre una compra ya
+ * activa (cobro doble): ahí no re-activa, sólo asienta el movimiento, y el
+ * caller debe avisarle a la dueña para que decida el reembolso.
  */
 export async function applyApprovedPackagePayment({
   tx, packagePurchaseId, businessId, amount, currency, provider, providerPaymentId,
   paymentType, paymentMethod, rawPayload, createdByUserId, paymentId: explicitPaymentId,
-}: ApplyApprovedPackagePaymentInput): Promise<{ wasActivated: boolean }> {
+}: ApplyApprovedPackagePaymentInput): Promise<{ wasActivated: boolean; wasDuplicate: boolean }> {
   if (amount <= 0) throw new UserError('El monto debe ser positivo')
 
   const purchase = await tx.packagePurchase.findUnique({ where: { id: packagePurchaseId } })
@@ -280,15 +283,45 @@ export async function applyApprovedPackagePayment({
     provider, providerPaymentId, paymentType, paymentMethod, rawPayload, explicitPaymentId,
   })
 
-  // Idempotencia: si el pago ya estaba aprobado o la compra ya está activa, no
-  // re-emitir grants ni re-asentar (los grants ya son idempotentes, pero cortar
-  // temprano evita trabajo y un asiento manual duplicado). Devolvemos
-  // `wasActivated: false` para que el caller (webhook) NO re-envíe notificaciones
-  // en cada redelivery de MP — espejo del `wasConfirmed` de la rama de reserva.
-  if (alreadyApproved || purchase.status === 'active') return { wasActivated: false }
+  // Idempotencia real: el MISMO pago ya estaba aprobado (redelivery de MP) → no
+  // hay plata nueva, no hay nada que hacer. `wasActivated: false` evita que el
+  // caller (webhook) re-envíe notificaciones en cada reintento — espejo del
+  // `wasConfirmed` de la rama de reserva.
+  if (alreadyApproved) return { wasActivated: false, wasDuplicate: false }
+
+  // Pago NUEVO sobre una compra YA activa = cobro doble. Caso real: la clienta
+  // arranca el checkout de MP, después paga por transferencia, la dueña confirma
+  // (compra activa) y MP aprueba tarde. Re-activar duplicaría los grants, pero
+  // callar deja plata cobrada invisible en los libros. Asentamos y avisamos: la
+  // dueña decide si devuelve (mismo reparto que un contracargo).
+  if (purchase.status === 'active') {
+    await tx.ledgerEntry.upsert({
+      where: { paymentId: payment.id },
+      update: {},
+      create: {
+        businessId,
+        packagePurchaseId: purchase.id,
+        paymentId: payment.id,
+        customerId: purchase.customerId,
+        // `manual_income` + packagePurchaseId seteado lo deja visible y trazable
+        // en el ledger pero FUERA de todos los KPI de ingreso (los de reserva
+        // filtran packagePurchaseId: null; los de paquete, type 'package_sale').
+        // Deliberado: un cargo duplicado que se va a devolver no es facturación,
+        // y sumarlo inflaría plata que después se revierte.
+        type: 'manual_income',
+        direction: 'income',
+        amount: payment.amount,
+        currency,
+        description: 'Pago duplicado de paquete (revisar reembolso)',
+        occurredAt: new Date(),
+        createdByUserId: createdByUserId ?? null,
+      },
+    })
+    return { wasActivated: false, wasDuplicate: true }
+  }
 
   await activatePackagePurchaseInTx(tx, purchase, { requestId: purchase.id, paymentId: payment.id, createdByUserId })
-  return { wasActivated: true }
+  return { wasActivated: true, wasDuplicate: false }
 }
 
 export async function recalcBookingFromPayments(

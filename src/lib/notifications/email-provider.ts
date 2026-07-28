@@ -22,6 +22,7 @@ import type {
   OwnerBookingChangedData,
   PackagePurchasedEmailData,
   PackageDisputedEmailData,
+  PackageDuplicatePaymentEmailData,
   BookingDisputedEmailData,
   PackageTransferDeclaredEmailData,
   PackageTransferReminderCustomerEmailData,
@@ -74,6 +75,8 @@ import {
   packageSoldBusinessText,
   packageDisputedBusinessHtml,
   packageDisputedBusinessText,
+  packageDuplicatePaymentBusinessHtml,
+  packageDuplicatePaymentBusinessText,
   bookingDisputedBusinessHtml,
   bookingDisputedBusinessText,
   packageTransferDeclaredBusinessHtml,
@@ -637,6 +640,27 @@ export async function sendPackageDisputedToBusiness(
   return Promise.all(
     ownerEmails.map((owner) =>
       sendEmail(owner.email, `Contracargo de paquete - ${data.customerName}`, html, text, {}),
+    ),
+  )
+}
+
+/** Email a la(s) dueña(s)/admin(s) cuando entra un pago de más sobre un paquete ya activo. */
+export async function sendPackageDuplicatePaymentToBusiness(
+  businessId: string,
+  data: PackageDuplicatePaymentEmailData,
+): Promise<EmailResult[]> {
+  const ownerEmails = await getBusinessOwnerEmails(businessId)
+
+  if (ownerEmails.length === 0) {
+    return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
+  }
+
+  const html = packageDuplicatePaymentBusinessHtml(data)
+  const text = packageDuplicatePaymentBusinessText(data)
+
+  return Promise.all(
+    ownerEmails.map((owner) =>
+      sendEmail(owner.email, `Pago duplicado de paquete - ${data.customerName}`, html, text, {}),
     ),
   )
 }
