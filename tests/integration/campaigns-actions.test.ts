@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import { AuthError, ForbiddenError } from '../helpers/auth-errors'
 import { requireTestDatabase } from './setup'
 import { expectActionError } from './helpers/action-result'
 
@@ -20,8 +21,8 @@ const authCtx = () => ({
 vi.mock('@/lib/auth/server', () => ({
   requireBusiness: async () => authCtx(),
   requireBusinessRole: async () => authCtx(),
-  AuthError: class extends Error {},
-  ForbiddenError: class extends Error {},
+  AuthError,
+  ForbiddenError,
 }))
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
 

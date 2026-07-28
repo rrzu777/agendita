@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ForbiddenError } from '../helpers/auth-errors'
 import { PaymentStatus, BookingStatus } from '@prisma/client'
 
 const mockPrisma = {
@@ -32,22 +33,11 @@ vi.mock('@/lib/rate-limit', () => ({
   checkRateLimit: mockCheckRateLimit,
 }))
 
-vi.mock('@/lib/auth/server', async () => {
-  // ForbiddenError debe extender el UserError REAL: así el wrapper action()
-  // lo reconoce (instanceof UserError) y devuelve su mensaje en { ok:false },
-  // en vez de redactarlo al genérico. Mismo contrato que la clase de producción.
-  const { UserError } = await import('@/lib/actions/result')
-  return {
-    requireBusiness: mockRequireBusiness,
-    requireBusinessRole: mockRequireBusinessRole,
-    ForbiddenError: class ForbiddenError extends UserError {
-      constructor(message = 'No tienes permisos') {
-        super(message)
-        this.name = 'ForbiddenError'
-      }
-    },
-  }
-})
+vi.mock('@/lib/auth/server', () => ({
+  requireBusiness: mockRequireBusiness,
+  requireBusinessRole: mockRequireBusinessRole,
+  ForbiddenError,
+}))
 
 vi.mock('next/cache', () => ({
   revalidatePath: mockRevalidatePath,
@@ -441,7 +431,7 @@ describe('customers actions', () => {
 
       const result = await updateCustomer('cust-1', validUpdate)
 
-      expect(result).toEqual({ ok: false, error: 'No tienes permisos' })
+      expect(result).toEqual({ ok: false, error: 'No tienes permisos para realizar esta acción' })
     })
 
     it('updates customer that belongs to business', async () => {
@@ -598,7 +588,7 @@ describe('customers actions', () => {
 
       const result = await updateCustomerNotes('cust-1', { notes: 'Test' })
 
-      expect(result).toEqual({ ok: false, error: 'No tienes permisos' })
+      expect(result).toEqual({ ok: false, error: 'No tienes permisos para realizar esta acción' })
     })
 
     it('updates notes for customer that belongs to business', async () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ForbiddenError } from '../helpers/auth-errors'
 import { addDays } from 'date-fns'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 
@@ -39,25 +40,14 @@ vi.mock('@/lib/rate-limit', () => ({
   checkRateLimit: vi.fn().mockResolvedValue({ success: true }),
 }))
 
-vi.mock('@/lib/auth/server', async () => {
-  // ForbiddenError debe extender el UserError REAL: así el wrapper action()
-  // lo reconoce (instanceof UserError) y devuelve su mensaje en { ok:false },
-  // en vez de redactarlo al genérico. Mismo contrato que la clase de producción.
-  const { UserError } = await import('@/lib/actions/result')
-  return {
-    requireBusiness: vi.fn().mockResolvedValue({ businessId: 'biz-1' }),
-    requireBusinessRole: vi.fn().mockResolvedValue({
-      business: { id: 'biz-1', timezone: 'America/Santiago' },
-      businessId: 'biz-1',
-    }),
-    ForbiddenError: class extends UserError {
-      constructor(msg: string) {
-        super(msg)
-        this.name = 'ForbiddenError'
-      }
-    },
-  }
-})
+vi.mock('@/lib/auth/server', () => ({
+  requireBusiness: vi.fn().mockResolvedValue({ businessId: 'biz-1' }),
+  requireBusinessRole: vi.fn().mockResolvedValue({
+    business: { id: 'biz-1', timezone: 'America/Santiago' },
+    businessId: 'biz-1',
+  }),
+  ForbiddenError,
+}))
 
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),

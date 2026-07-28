@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
+import { ForbiddenError } from '../helpers/auth-errors'
 import { requireTestDatabase } from './setup'
 import { computePackageRefund } from '@/lib/packages/schema'
 
@@ -12,22 +13,11 @@ requireTestDatabase()
 // la promo marcador y la compra se crean/consultan con Prisma de verdad).
 const BIZ = 'pkg-biz-1'
 const USER = 'pkg-user-1'
-vi.mock('@/lib/auth/server', async () => {
-  // ForbiddenError debe extender el UserError REAL: así el wrapper action()
-  // lo reconoce (instanceof UserError) y devuelve su mensaje en { ok:false },
-  // en vez de redactarlo al genérico. Mismo contrato que producción.
-  const { UserError } = await import('@/lib/actions/result')
-  return {
-    requireBusiness: async () => ({ businessId: BIZ, user: { id: USER } }),
-    requireBusinessRole: async () => ({ businessId: BIZ, user: { id: USER } }),
-    ForbiddenError: class ForbiddenError extends UserError {
-      constructor(message = 'No tienes permisos') {
-        super(message)
-        this.name = 'ForbiddenError'
-      }
-    },
-  }
-})
+vi.mock('@/lib/auth/server', () => ({
+  requireBusiness: async () => ({ businessId: BIZ, user: { id: USER } }),
+  requireBusinessRole: async () => ({ businessId: BIZ, user: { id: USER } }),
+  ForbiddenError,
+}))
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: async () => ({ success: true, remaining: 30, resetAt: 0 }) }))
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
 vi.mock('@/server/actions/revalidate-business', () => ({ revalidateBusinessPublicPaths: async () => {} }))

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ForbiddenError } from '../helpers/auth-errors'
 const mockPrisma: any = {
   promotionGrant: { findFirst: vi.fn().mockResolvedValue(null) },
   promotion: { findFirst: vi.fn() }, service: { findFirst: vi.fn() },
@@ -7,7 +8,7 @@ const mockPrisma: any = {
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: vi.fn().mockResolvedValue({ success: true }) }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
-vi.mock('@/lib/auth/server', () => ({ requireBusiness: vi.fn(), requireBusinessRole: vi.fn(), ForbiddenError: class extends Error {} }))
+vi.mock('@/lib/auth/server', () => ({ requireBusiness: vi.fn(), requireBusinessRole: vi.fn(), ForbiddenError }))
 const { previewPromotion } = await import('@/server/actions/promotions')
 
 describe('previewPromotion', () => {

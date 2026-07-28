@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll, vi } from 'vitest'
+import { ForbiddenError } from '../helpers/auth-errors'
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireTestDatabase } from './setup'
@@ -17,7 +18,7 @@ vi.mock('@/lib/auth/server', () => ({
     const business = await prisma.business.findFirstOrThrow({ where: { slug: 'btv-biz' } })
     return { user: { id: business.ownerUserId }, business, role: 'owner', businessId: business.id }
   },
-  ForbiddenError: class extends Error {},
+  ForbiddenError,
 }))
 
 const presignDownload = vi.fn().mockResolvedValue('https://signed/get')

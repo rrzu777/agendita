@@ -1,5 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
+import { addDays, format } from 'date-fns'
+import { fromZonedTime } from 'date-fns-tz'
 import { requireTestDatabase } from './setup'
 import { declaredTransferPaymentWhere, btDeclaredId } from '@/lib/bank-transfer/declared'
 import { expectActionError } from './helpers/action-result'
@@ -13,6 +15,7 @@ requireTestDatabase()
 // LÓGICA REAL de cancelación/reprogramación (ownership vía where, ventana de cutoff,
 // anti-doble-booking) contra un Postgres real.
 const BIZ = 'ss-biz-1'
+const TZ = 'America/Santiago'
 const OWNER_USER = 'ss-owner-1'
 const USER = 'ss-user-1'
 const OTHER_USER = 'ss-other-user-1'
@@ -41,6 +44,25 @@ describe('self-service bookings (cancelMyBooking / rescheduleMyBooking)', () => 
 
   function hoursFromNow(h: number): Date {
     return new Date(Date.now() + h * 3_600_000)
+  }
+
+  /**
+   * Mediodía en la zona del negocio, N días adelante. Para los slots DESTINO de
+   * `rescheduleMyBooking`, que sí pasan por la validación de disponibilidad.
+   *
+   * POR QUÉ no `hoursFromNow(72)`: la ventana sembrada es 00:00–23:59 y el
+   * servicio dura 60 min, así que un slot que arranca después de las 22:59
+   * locales termina pasado el cierre y la validación lo rechaza con "Ese
+   * horario ya no está disponible". El test pasaba o fallaba según la hora a la
+   * que corriera CI — reventó a las 23:20 de Santiago. Mediodía lo saca del
+   * reloj. El día exacto no importa: cualquier fecha a ≥2 días cumple el cutoff
+   * de 24h y entra en los 90 de bookingWindowDays.
+   *
+   * Los `hoursFromNow(48)` de las reservas ORIGINALES se quedan como están: se
+   * insertan derecho por prisma, sin pasar por disponibilidad.
+   */
+  function daysFromNowAtNoon(days: number): Date {
+    return fromZonedTime(`${format(addDays(new Date(), days), 'yyyy-MM-dd')} 12:00:00`, TZ)
   }
 
   async function setCutoff(hours: number) {
@@ -259,7 +281,7 @@ describe('self-service bookings (cancelMyBooking / rescheduleMyBooking)', () => 
       const originalStart = hoursFromNow(48)
       const booking = await createBooking({ customerId: customer.id, startDateTime: originalStart, status: 'confirmed' })
 
-      const newStart = hoursFromNow(72)
+      const newStart = daysFromNowAtNoon(3)
       const result = await rescheduleMyBooking(booking.id, newStart)
       expect(result).toEqual({ ok: true, data: { rescheduled: true } })
 
@@ -276,7 +298,7 @@ describe('self-service bookings (cancelMyBooking / rescheduleMyBooking)', () => 
       const originalStart = hoursFromNow(48)
       const booking = await createBooking({ customerId: customer.id, startDateTime: originalStart, status: 'confirmed' })
 
-      const targetStart = hoursFromNow(96)
+      const targetStart = daysFromNowAtNoon(4)
       const otherCustomer = await createCustomer('resch-double-b', OTHER_USER)
       await createBooking({ customerId: otherCustomer.id, startDateTime: targetStart, status: 'confirmed' })
 

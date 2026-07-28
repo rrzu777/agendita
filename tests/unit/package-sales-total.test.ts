@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ForbiddenError } from '../helpers/auth-errors'
 
 const requireRole = vi.hoisted(() => vi.fn())
 const aggregate = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/auth/server', () => ({ requireBusinessRole: requireRole, ForbiddenError: class extends Error {} }))
+vi.mock('@/lib/auth/server', () => ({ requireBusinessRole: requireRole, ForbiddenError }))
 vi.mock('@/lib/db', () => ({ prisma: { ledgerEntry: { aggregate } } }))
 
 beforeEach(() => { requireRole.mockResolvedValue({ businessId: 'b1' }); aggregate.mockReset() })
