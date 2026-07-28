@@ -376,7 +376,14 @@ model Customer {
   campaignRecipients CampaignRecipient[]
 
   @@index([businessId])
-  @@index([businessId, phone])
+  // Una ficha por (negocio, teléfono). Es la misma clave con la que
+  // findOrCreateCustomerInTx resuelve la Customer, y reemplaza al índice no-único
+  // que había acá (mismas columnas, mismo orden). Defensa en profundidad detrás
+  // del advisory lock: el lock serializa el find-or-create, esto ataja cualquier
+  // camino que se saltee esa función. El teléfono se guarda YA normalizado
+  // (normalizePhone) en los tres sitios que escriben, así que comparar la columna
+  // cruda alcanza.
+  @@unique([businessId, phone])
   @@index([userId])
 }
 
