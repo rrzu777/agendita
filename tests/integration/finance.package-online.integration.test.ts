@@ -81,6 +81,9 @@ describe('compra online de paquete (integración)', () => {
     await prisma.promotionGrant.deleteMany({ where: { businessId: BIZ } })
     await prisma.packagePurchase.deleteMany({ where: { businessId: BIZ } })
     await prisma.packageProduct.deleteMany({ where: { businessId: BIZ } })
+    // La clienta también: desde #109 hay @@unique([businessId, phone]), así que
+    // re-crearla con el mismo teléfono en el 2º caso viola la constraint.
+    await prisma.customer.deleteMany({ where: { businessId: BIZ } })
 
     const customer = await prisma.customer.create({
       data: {
@@ -222,7 +225,7 @@ describe('compra online de paquete (integración)', () => {
       }),
     )
 
-    expect(res).toEqual({ wasActivated: false, wasDuplicate: true })
+    expect(res).toEqual({ outcome: 'duplicate' })
 
     // El paquete NO se duplicó: siguen siendo 6 sesiones y una sola venta.
     const grants = await prisma.promotionGrant.count({ where: { packagePurchaseId: purchase.id } })
@@ -253,7 +256,7 @@ describe('compra online de paquete (integración)', () => {
         paymentType: 'package_purchase', paymentMethod: null, paymentId: second.id,
       }),
     )
-    expect(again).toEqual({ wasActivated: false, wasDuplicate: false })
+    expect(again).toEqual({ outcome: 'noop' })
     const entries = await prisma.ledgerEntry.count({ where: { packagePurchaseId: purchase.id } })
     expect(entries).toBe(2)
   })

@@ -259,19 +259,27 @@ export interface ApplyApprovedPackagePaymentInput {
 }
 
 /**
+ * Desenlaces EXCLUYENTES de `applyApprovedPackagePayment`. Un solo campo en vez
+ * de banderas sueltas: un `{ wasActivated: true, wasDuplicate: true }` no debería
+ * ni poder escribirse.
+ * - `activated`: primera aprobación, compra activada.
+ * - `duplicate`: pago NUEVO sobre una compra ya activa (cobro doble). No
+ *   re-activa; sólo asienta el movimiento, y el caller debe avisarle a la dueña
+ *   para que decida el reembolso.
+ * - `noop`: redelivery del mismo pago ya aprobado. Nada que hacer.
+ */
+export type ApprovedPackagePaymentOutcome = 'activated' | 'duplicate' | 'noop'
+
+/**
  * Rama paquete de la aprobación de pago (polimórfica con applyApprovedPayment).
  * Carga la PackagePurchase, upserta el Payment (packagePurchaseId, sin booking)
  * y, si la compra estaba pending, la activa (grants + asiento de ledger). NO
  * toca recalcBookingFromPayments. Idempotente.
- *
- * Devuelve `wasDuplicate: true` cuando llega un pago NUEVO sobre una compra ya
- * activa (cobro doble): ahí no re-activa, sólo asienta el movimiento, y el
- * caller debe avisarle a la dueña para que decida el reembolso.
  */
 export async function applyApprovedPackagePayment({
   tx, packagePurchaseId, businessId, amount, currency, provider, providerPaymentId,
   paymentType, paymentMethod, rawPayload, createdByUserId, paymentId: explicitPaymentId,
-}: ApplyApprovedPackagePaymentInput): Promise<{ wasActivated: boolean; wasDuplicate: boolean }> {
+}: ApplyApprovedPackagePaymentInput): Promise<{ outcome: ApprovedPackagePaymentOutcome }> {
   if (amount <= 0) throw new UserError('El monto debe ser positivo')
 
   const purchase = await tx.packagePurchase.findUnique({ where: { id: packagePurchaseId } })
@@ -284,10 +292,10 @@ export async function applyApprovedPackagePayment({
   })
 
   // Idempotencia real: el MISMO pago ya estaba aprobado (redelivery de MP) → no
-  // hay plata nueva, no hay nada que hacer. `wasActivated: false` evita que el
-  // caller (webhook) re-envíe notificaciones en cada reintento — espejo del
+  // hay plata nueva, no hay nada que hacer. El `noop` evita que el caller
+  // (webhook) re-envíe notificaciones en cada reintento — espejo del
   // `wasConfirmed` de la rama de reserva.
-  if (alreadyApproved) return { wasActivated: false, wasDuplicate: false }
+  if (alreadyApproved) return { outcome: 'noop' }
 
   // Pago NUEVO sobre una compra YA activa = cobro doble. Caso real: la clienta
   // arranca el checkout de MP, después paga por transferencia, la dueña confirma
@@ -317,11 +325,11 @@ export async function applyApprovedPackagePayment({
         createdByUserId: createdByUserId ?? null,
       },
     })
-    return { wasActivated: false, wasDuplicate: true }
+    return { outcome: 'duplicate' }
   }
 
   await activatePackagePurchaseInTx(tx, purchase, { requestId: purchase.id, paymentId: payment.id, createdByUserId })
-  return { wasActivated: true, wasDuplicate: false }
+  return { outcome: 'activated' }
 }
 
 export async function recalcBookingFromPayments(

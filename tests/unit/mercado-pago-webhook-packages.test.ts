@@ -43,7 +43,7 @@ vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 
 vi.mock('@/server/services/finance', () => ({
   applyApprovedPayment: vi.fn(),
-  applyApprovedPackagePayment: vi.fn().mockResolvedValue({ wasActivated: true, wasDuplicate: false }),
+  applyApprovedPackagePayment: vi.fn().mockResolvedValue({ outcome: 'activated' }),
 }))
 
 vi.mock('@/lib/booking-payments', () => ({
@@ -167,8 +167,8 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
     })
     vi.clearAllMocks()
     mockMpFetch.mockReset()
-    // clearAllMocks borra el valor de retorno; el webhook desestructura { wasActivated, wasDuplicate }.
-    ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ wasActivated: true, wasDuplicate: false })
+    // clearAllMocks borra el valor de retorno; el webhook desestructura { outcome }.
+    ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ outcome: 'activated' })
 
     mockPrisma.paymentAccount.findFirst.mockReset().mockResolvedValue({
       id: 'pa-1',
@@ -252,8 +252,8 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
       expect(sendPackagePurchasedNotification).toHaveBeenCalledTimes(1)
     })
 
-    it('no reenvía notificaciones en redelivery (wasActivated false), pero responde 200', async () => {
-      ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ wasActivated: false, wasDuplicate: false })
+    it('no reenvía notificaciones en redelivery (outcome noop), pero responde 200', async () => {
+      ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ outcome: 'noop' })
 
       const secret = 'test-webhook-secret'
       const body = { data: { id: 'mp-pkg-001' } }
@@ -275,8 +275,8 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
       expect(sendPackageDuplicatePaymentToBusiness).not.toHaveBeenCalled()
     })
 
-    it('cobro doble (wasDuplicate): avisa a la dueña y NO manda los emails de venta', async () => {
-      ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ wasActivated: false, wasDuplicate: true })
+    it('cobro doble (outcome duplicate): avisa a la dueña y NO manda los emails de venta', async () => {
+      ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ outcome: 'duplicate' })
 
       const secret = 'test-webhook-secret'
       const body = { data: { id: 'mp-pkg-001' } }

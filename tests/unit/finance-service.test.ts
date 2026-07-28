@@ -833,7 +833,7 @@ describe('applyApprovedPackagePayment', () => {
     })
 
     expect(activatePkg).not.toHaveBeenCalled()
-    expect(res).toEqual({ wasActivated: false, wasDuplicate: true })
+    expect(res).toEqual({ outcome: 'duplicate' })
     // Asiento por el paymentId nuevo (upsert = idempotente ante redelivery).
     expect(mockPrisma.ledgerEntry.upsert).toHaveBeenCalledTimes(1)
     const call = mockPrisma.ledgerEntry.upsert.mock.calls[0][0]
@@ -860,6 +860,6 @@ describe('applyApprovedPackagePayment', () => {
 
     expect(activatePkg).not.toHaveBeenCalled()
     expect(mockPrisma.ledgerEntry.upsert).not.toHaveBeenCalled()
-    expect(res).toEqual({ wasActivated: false, wasDuplicate: false })
+    expect(res).toEqual({ outcome: 'noop' })
   })
 })
