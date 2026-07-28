@@ -154,6 +154,9 @@ describe('campaigns queryCampaignSegment', () => {
     // Email-only: teléfono no-whatsappeable ('1') pero email válido → contactable por email.
     // Sin-canal: teléfono no-whatsappeable y sin email → excluida de todo segmento.
     // Ambas inactivas (>60 días) para probar el choke point vía segmento 'inactive'.
+    // Los teléfonos difieren ('1' vs '2') porque Customer tiene unique en
+    // (businessId, phone); los dos siguen siendo no-whatsappeable, que es lo único
+    // que este test necesita de ellos.
     await prisma.customer.create({
       data: {
         id: EMAIL_ONLY_CUST, businessId: BIZ, name: 'Email Only', phone: '1',
@@ -162,7 +165,7 @@ describe('campaigns queryCampaignSegment', () => {
     })
     await prisma.customer.create({
       data: {
-        id: NOCHANNEL_CUST, businessId: BIZ, name: 'No Channel', phone: '1', email: null,
+        id: NOCHANNEL_CUST, businessId: BIZ, name: 'No Channel', phone: '2', email: null,
         lastCompletedAt: new Date(NOW.getTime() - 100 * DAY_MS),
       },
     })

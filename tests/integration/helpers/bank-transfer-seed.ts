@@ -18,6 +18,21 @@ export const BT_VERIFY_SVC = 'btv-svc-1'
 
 let slotCounter = 0
 
+/**
+ * Contador propio para los teléfonos de las Customers sembradas. Separado de
+ * `slotCounter` a propósito: `Customer` tiene unique en (businessId, phone), y
+ * `slotCounter` sólo avanza cuando el caller NO pasa su propio slot — dos
+ * seedeos con horario explícito reusaban el mismo número y chocaban. Tampoco
+ * sirve `Date.now()`: dos llamadas en el mismo milisegundo dan el mismo
+ * teléfono. Un contador siempre avanza y además es determinístico.
+ */
+let customerCounter = 0
+
+function nextCustomerPhone(prefix: string): string {
+  customerCounter += 1
+  return `${prefix}${String(customerCounter).padStart(4, '0')}`
+}
+
 function nextSlot(): { startDateTime: Date; endDateTime: Date } {
   slotCounter += 1
   // Base futura (para no chocar con lead-time), separando cada llamada por días
@@ -138,7 +153,7 @@ export async function seedDeclaredTransfer(
     data: {
       businessId: BT_VERIFY_BIZ,
       name: 'Ana Cliente',
-      phone: `+5691100${String(slotCounter).padStart(4, '0')}`,
+      phone: nextCustomerPhone('+5691100'),
       email: customerEmail ?? null,
     },
   })
@@ -207,7 +222,7 @@ export async function seedConfirmedBooking({
     data: {
       businessId,
       name: 'Otra Cliente',
-      phone: `+5691199${String(Date.now()).slice(-6)}`,
+      phone: nextCustomerPhone('+5691199'),
     },
   })
   const booking = await prisma.booking.create({

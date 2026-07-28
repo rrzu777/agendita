@@ -65,10 +65,13 @@ async function seedCampaign() {
     },
     select: { id: true },
   })
-  for (const s of specs) {
+  for (const [i, s] of specs.entries()) {
     const customer = await prisma.customer.create({
       data: {
-        businessId: business.id, name: s.name, phone: '1', email: s.email,
+        // Teléfono distinto por clienta: Customer tiene unique en (businessId,
+        // phone). Sigue siendo no-whatsappeable (menos de 8 dígitos), que es lo
+        // único que le importa a este test — acá el canal es el email.
+        businessId: business.id, name: s.name, phone: `${i + 1}`, email: s.email,
         marketingOptOutAt: s.optedOut ? new Date() : null,
       },
     })
