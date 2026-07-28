@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ForbiddenError } from '../helpers/auth-errors'
 
 const mockPrisma = {
   service: {
@@ -26,22 +27,11 @@ vi.mock('@/lib/rate-limit', () => ({
   checkRateLimit: mockCheckRateLimit,
 }))
 
-vi.mock('@/lib/auth/server', async () => {
-  // ForbiddenError debe extender el UserError REAL: así el wrapper action()
-  // lo reconoce (instanceof UserError) y devuelve su mensaje en { ok:false },
-  // en vez de redactarlo al genérico. Mismo contrato que la clase de producción.
-  const { UserError } = await import('@/lib/actions/result')
-  return {
-    requireBusiness: mockRequireBusiness,
-    requireBusinessRole: mockRequireBusinessRole,
-    ForbiddenError: class ForbiddenError extends UserError {
-      constructor(message = 'No tienes permisos') {
-        super(message)
-        this.name = 'ForbiddenError'
-      }
-    },
-  }
-})
+vi.mock('@/lib/auth/server', () => ({
+  requireBusiness: mockRequireBusiness,
+  requireBusinessRole: mockRequireBusinessRole,
+  ForbiddenError,
+}))
 
 vi.mock('next/cache', () => ({
   revalidatePath: mockRevalidatePath,

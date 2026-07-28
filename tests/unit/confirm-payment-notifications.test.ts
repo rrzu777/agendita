@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ForbiddenError } from '../helpers/auth-errors'
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 
 const mockApplyApprovedPayment = vi.fn()
@@ -29,7 +30,7 @@ vi.mock('@/lib/rate-limit', () => ({
 vi.mock('@/lib/auth/server', () => ({
   requireBusiness: vi.fn().mockResolvedValue({ businessId: 'biz-1' }),
   requireBusinessRole: vi.fn().mockResolvedValue({ businessId: 'biz-1', business: { currency: 'CLP', timezone: 'America/Santiago' } }),
-  ForbiddenError: class extends Error {},
+  ForbiddenError,
 }))
 
 vi.mock('next/cache', () => ({

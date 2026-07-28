@@ -1,19 +1,6 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
+import { AuthError, ForbiddenError } from '../helpers/auth-errors'
 import { NextRequest } from 'next/server'
-
-const mockAuthError = class extends Error {
-  constructor(message = 'No autorizado') {
-    super(message)
-    this.name = 'AuthError'
-  }
-}
-
-const mockForbiddenError = class extends Error {
-  constructor(message = 'No tienes permisos') {
-    super(message)
-    this.name = 'ForbiddenError'
-  }
-}
 
 const mockRequireBusinessRole = vi.fn()
 const mockCheckRateLimit = vi.fn()
@@ -21,8 +8,8 @@ const mockCheckRateLimit = vi.fn()
 vi.mock('@/lib/auth/server', () => ({
   requireBusinessRole: mockRequireBusinessRole,
   requireBusiness: vi.fn(),
-  AuthError: mockAuthError,
-  ForbiddenError: mockForbiddenError,
+  AuthError,
+  ForbiddenError,
   assertResourceBelongsToBusiness: vi.fn(),
 }))
 
@@ -65,7 +52,7 @@ describe('GET /api/dashboard/ledger/export', () => {
   })
 
   it('rejects when requireBusinessRole throws ForbiddenError (staff)', async () => {
-    mockRequireBusinessRole.mockRejectedValue(new mockForbiddenError('No tienes permisos'))
+    mockRequireBusinessRole.mockRejectedValue(new ForbiddenError('No tienes permisos'))
 
     const response = await GET(createRequest('2026-05-01', '2026-05-31'))
 
@@ -75,7 +62,7 @@ describe('GET /api/dashboard/ledger/export', () => {
   })
 
   it('rejects when requireBusinessRole throws AuthError (no auth)', async () => {
-    mockRequireBusinessRole.mockRejectedValue(new mockAuthError('No autorizado'))
+    mockRequireBusinessRole.mockRejectedValue(new AuthError('No autorizado'))
 
     const response = await GET(createRequest('2026-05-01', '2026-05-31'))
 

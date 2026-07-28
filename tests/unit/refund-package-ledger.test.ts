@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ForbiddenError } from '../helpers/auth-errors'
 
 const requireRole = vi.hoisted(() => vi.fn())
 const tx = vi.hoisted(() => ({
@@ -7,21 +8,10 @@ const tx = vi.hoisted(() => ({
   ledgerEntry: { create: vi.fn().mockResolvedValue({}) },
 }))
 
-vi.mock('@/lib/auth/server', async () => {
-  // ForbiddenError debe extender el UserError REAL: así el wrapper action()
-  // lo reconoce (instanceof UserError) y devuelve su mensaje en { ok:false },
-  // en vez de redactarlo al genérico. Mismo contrato que producción.
-  const { UserError } = await import('@/lib/actions/result')
-  return {
-    requireBusinessRole: requireRole,
-    ForbiddenError: class ForbiddenError extends UserError {
-      constructor(message = 'No tienes permisos') {
-        super(message)
-        this.name = 'ForbiddenError'
-      }
-    },
-  }
-})
+vi.mock('@/lib/auth/server', () => ({
+  requireBusinessRole: requireRole,
+  ForbiddenError,
+}))
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: vi.fn().mockResolvedValue({ success: true }) }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/server/actions/revalidate-business', () => ({ revalidateBusinessPublicPaths: vi.fn() }))

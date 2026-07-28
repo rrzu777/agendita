@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ForbiddenError } from '../helpers/auth-errors'
 import { BookingPaymentStatus, BookingStatus, PaymentType } from '@prisma/client'
 import { UserError } from '@/lib/actions/result'
 
@@ -31,7 +32,7 @@ vi.mock('@/lib/auth/server', () => ({
     user: { id: 'user-1' },
     business: { timezone: 'America/Santiago', currency: 'CLP' },
   }),
-  ForbiddenError: class extends Error {},
+  ForbiddenError,
 }))
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))

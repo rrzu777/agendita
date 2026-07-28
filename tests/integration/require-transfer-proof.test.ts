@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import { ForbiddenError } from '../helpers/auth-errors'
 import { requireTestDatabase } from './setup'
 
 requireTestDatabase()
@@ -12,7 +13,7 @@ const USER = 'rtp-user-1'
 vi.mock('@/lib/auth/server', () => ({
   requireBusiness: async () => ({ businessId: BIZ, user: { id: USER } }),
   requireBusinessRole: async () => ({ businessId: BIZ, user: { id: USER } }),
-  ForbiddenError: class extends Error {},
+  ForbiddenError,
 }))
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: async () => ({ success: true, remaining: 30, resetAt: 0 }) }))
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))

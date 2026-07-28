@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ForbiddenError } from '../helpers/auth-errors'
 
 const mockFindMany = vi.fn()
 const mockRequireBusiness = vi.fn()
@@ -14,7 +15,7 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/auth/server', () => ({
   requireBusiness: (...args: unknown[]) => mockRequireBusiness(...args),
   requireBusinessRole: vi.fn(),
-  ForbiddenError: class extends Error {},
+  ForbiddenError,
 }))
 
 vi.mock('@/lib/rate-limit', () => ({

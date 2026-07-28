@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ForbiddenError } from '../helpers/auth-errors'
 
 vi.mock('@/lib/auth/server', () => ({
   requireBusiness: vi.fn().mockResolvedValue({ businessId: 'b1' }),
-  requireBusinessRole: vi.fn(), ForbiddenError: class extends Error {},
+  requireBusinessRole: vi.fn(), ForbiddenError,
 }))
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: vi.fn().mockResolvedValue({ success: true }) }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))

@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll, vi } from 'vitest'
+import { ForbiddenError } from '../helpers/auth-errors'
 import { prisma } from '@/lib/db'
 import { requireTestDatabase } from './setup'
 import { seedDeclaredTransfer, cleanupBankTransferSeed, BT_VERIFY_BIZ } from './helpers/bank-transfer-seed'
@@ -23,7 +24,7 @@ vi.mock('@/lib/auth/server', () => ({
     const business = await prisma.business.findFirstOrThrow({ where: { slug: 'btv-biz' } })
     return { user: { id: business.ownerUserId }, business, role: 'owner', businessId: business.id }
   },
-  ForbiddenError: class extends Error {},
+  ForbiddenError,
 }))
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: async () => ({ success: true, remaining: 30, resetAt: 0 }) }))
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
