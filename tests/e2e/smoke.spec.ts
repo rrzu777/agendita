@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test'
 import { toLocalDateStr } from './helpers/dates'
+import { uniqueCustomerPhone } from './helpers/customer'
 
 // ─── Test data constants ───────────────────────────────────────────────────────
 const E2E_SECRET = process.env.PLAYWRIGHT_E2E_AUTH_SECRET || 'e2e-secret-local'
@@ -194,6 +195,7 @@ test.describe('public booking', () => {
   test('public booking link → select service → select time → fill contact form → submit → booking created', async ({ page }) => {
     const customerName = `Cliente E2E ${Date.now()}`
     const customerEmail = `cliente-${Date.now()}@example.com`
+    const customerPhone = uniqueCustomerPhone()
     const date = nextBookableDate(7)
 
     await page.goto(`/book/${BUSINESS_SLUG}`)
@@ -217,7 +219,7 @@ test.describe('public booking', () => {
     // Step 4: Fill contact form
     await expect(page.getByRole('heading', { name: /tus datos/i })).toBeVisible()
     await page.getByPlaceholder(/tu nombre/i).fill(customerName)
-    await page.getByPlaceholder(/\+569/i).fill('+56912345678')
+    await page.getByPlaceholder(/\+569/i).fill(customerPhone)
     await page.getByPlaceholder(/tu@email/i).fill(customerEmail)
     await page.getByRole('button', { name: /continuar al pago/i }).click()
 
@@ -345,11 +347,10 @@ test.describe('dashboard bookings', () => {
     setOwnerAuth(page)
 
     const uniqueName = `Manual Cliente ${Date.now()}`
-    // Teléfono único por corrida: la ficha de cliente se matchea por TELÉFONO
-    // (findOrCreateCustomerInTx) y conserva su nombre original — con un número
-    // fijo, un retry de Playwright reusa la Customer del intento anterior y la
-    // lista muestra el nombre viejo, rompiendo el assert de abajo.
-    const uniquePhone = `+569${String(Date.now()).slice(-8)}`
+    // Teléfono único por corrida (ver el porqué en el helper): con un número
+    // fijo, un retry de Playwright reusa la Customer del intento anterior —que
+    // conserva su nombre original— y rompe el assert de abajo.
+    const uniquePhone = uniqueCustomerPhone()
     // Fecha = hoy + 3 días (siguiente día hábil). OJO: el salto de fin de semana
     // hace que desde jue/vie/sáb varias afterDays distintas colapsen al MISMO
     // lunes, así que una hora fija puede estar tomada por reservas de otros
