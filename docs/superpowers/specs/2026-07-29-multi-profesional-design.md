@@ -398,12 +398,90 @@ reapuntar la base después no dispara nada — hay que cerrar y reabrir el PR.
 |---|---|---|
 | **0** | Léxico: sustantivo de oficio por rubro en `lib/vocabulary` + overrides por categoría | Nulo |
 | **A** | Modelo `Professional`, relación con servicios, `professionalId` nullable en las 4 tablas, pantalla de equipo, modalidades, baja sin borrado | Nulo — nadie ve nada distinto |
-| **B** | Horario y bloqueos por persona, `scope.ts`, `getEffectiveBlocks` con persona (incluida la proyección), `computeServiceFit` por persona, selector en Disponibilidad | Bajo |
+| **B** | Horario y bloqueos por persona, `scope.ts`, `getEffectiveBlocks` con persona (incluida la proyección), `computeServiceFit` por persona, **el CRUD entero de bloqueos** (12 sitios, incluido el split de series), contadores de onboarding, selector en Disponibilidad | Medio — creció con el barrido de queries |
 | **C** | Los tres lectores, `assertSlotIsAvailable`, el SQL crudo del solape, revivir | **El más alto** |
-| **D** | Funnel: paso de profesional, "cualquiera disponible" resuelto en la tx, emails con el nombre, wizard storage | Medio |
+| **D** | Funnel: paso de profesional, "cualquiera disponible" resuelto en la tx, emails con el nombre, wizard storage, **los 5 e2e que caminan el funnel** | Medio |
 | **E** | Panel: calendario filtrable, columna en tablas, reserva manual, **reasignar**, profesional habitual en la ficha | Bajo |
 
 ---
+
+## Superficie completa de queries
+
+Son **22 sitios** los que preguntan por horario o bloqueos, y hoy todos significan "del
+negocio". No alcanza con los tres lectores de slots.
+
+### El split de series es el peligroso
+
+`time-blocks.ts:516` copia la serie **campo por campo** a mano (`daysOfWeek`,
+`anchorDate`, `until`, `overlapToleranceMinutes`) al partirla en "hoy". Si
+`professionalId` no entra en esa copia, **partir el almuerzo recurrente de una persona
+cierra el local para todos, todas las semanas.**
+
+Es el olvido más caro posible y la culpa es de la semántica elegida: `null = todos` es lo
+que hace que la migración sea gratis, y es lo que convierte una omisión en un cierre
+total en vez de en un bloqueo huérfano. El código ya razona sobre qué se conserva
+("La tolerancia es de la serie y el diálogo no la edita: se conserva"), así que la
+omisión se vería natural. **Test de regresión obligatorio**: partir una serie de una
+persona y afirmar que la nueva sigue siendo de esa persona.
+
+### Contadores que empiezan a mentir
+
+`availabilityRule.count({ businessId, isActive: true })` en tres lugares —
+`dashboard/page.tsx:40`, `dashboard/onboarding/page.tsx:26`, `onboarding.ts:28` — es
+progreso de onboarding ("¿ya configuró su horario?"). Un salón de 4 personas tiene **28**
+reglas activas, no 7. Como booleano sobrevive; como número mostrado, miente. Van con
+`professionalId: null`.
+
+### Siembra del horario
+
+`create-for-user.ts:154` y `recover-business.ts:155` hacen el `createMany` de las 7
+reglas al crear o recuperar un negocio. Quedan en `professionalId: null` — el default lo
+da, pero se explicita. **Recuperar un negocio no recupera su equipo**: fuera de alcance,
+dicho a propósito.
+
+### CRUD de bloqueos
+
+Doce sitios en `time-blocks.ts` (crear, borrar, editar, partir serie, listar). Cada uno
+tiene que contestar "¿esto es del salón o de una persona?". Es más superficie de UI que
+"un selector en Disponibilidad" — el PR B carga con esto.
+
+### Caché pública
+
+El funnel se sirve por `getPublicBusinessBySlug` (`lib/business/public.ts`) con
+`unstable_cache` y tags estáticos. El equipo entra en ese payload, y el CRUD de equipo
+**tiene que llamar `revalidateBusinessPublicPaths`** o la clienta ve un equipo viejo
+hasta que algo más invalide. Ojo con la landmine del repo: `revalidate*` sin `await`
+mata el proceso.
+
+### e2e
+
+Cinco specs caminan el funnel con la secuencia servicio → fecha → hora (`smoke`,
+`public`, `packages`, `loyalty-automatic`, `customer-account`, `self-service`). El paso
+nuevo **los rompe a todos a la vez**. No bloquean el merge (e2e no es check requerido)
+pero se arreglan en el PR D, no después.
+
+### Rate limit
+
+No hay entrada para gestionar equipo. Se agrega una, como hizo el track 4 con
+`photo-upload-url`.
+
+### Confirmado sin cambios
+
+`expireStaleHolds` (`lib/cron/expire-holds.ts`) sólo flipea estados y manda emails, sin
+ninguna lógica de slots: **no necesita saber de personas.**
+
+`BusinessRole.staff` no tiene **ni un permiso**: los 70 `requireBusinessRole` del
+proyecto son todos `['owner', 'admin']`. El rol está muerto de verdad, y eso refuerza no
+llamar `StaffMember` al modelo nuevo.
+
+### Fuera de alcance, confirmado mirando el código
+
+- **KPIs por persona.** `dashboard/page.tsx` calcula ingresos y resumen del negocio
+  entero. Abrirlo por persona es, literalmente, comisiones. Es lo primero que va a pedir
+  un dueño de salón.
+- **Segmentos de campaña por persona.** `CampaignSegment` es `birthday_month`,
+  `inactive`, `frequent`, `pending_balance`. "Las clientas de Juan" es marketing natural
+  y no entra.
 
 ## Dependencias de otra sesión
 
