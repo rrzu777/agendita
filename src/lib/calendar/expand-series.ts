@@ -1,6 +1,6 @@
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { addDays, addMonths, addWeeks, parseISO } from 'date-fns'
-import { getLocalDateStr } from '@/lib/availability/timezone'
+import { getLocalDateStr, startOfLocalDay } from '@/lib/availability/timezone'
 
 export interface SeriesLike {
   id: string
@@ -90,7 +90,10 @@ export function expandSeries(
           endDateTime: end,
           reason,
           seriesId: series.id,
-          occurrenceDate: fromZonedTime(`${cursor} 00:00:00`, timezone),
+          // `startOfLocalDay` y no `fromZonedTime` a mano: en el gap de DST la
+          // medianoche local no existe y caería al día anterior, con lo que la clave
+          // de búsqueda de excepciones (línea de arriba) dejaría de matchear.
+          occurrenceDate: startOfLocalDay(cursor, timezone),
           // Los override de excepción cambian hora/motivo; la tolerancia es de la serie
           overlapToleranceMinutes: series.overlapToleranceMinutes ?? 0,
         })
@@ -119,5 +122,7 @@ export function computeSeriesUntil(
   const anchorNoon = parseISO(`${anchorStr}T12:00:00Z`)
   const lastNoon = mode === 'month' ? addMonths(anchorNoon, 1) : addWeeks(anchorNoon, Math.max(1, weeks ?? 1))
   const lastStr = formatInTimeZone(lastNoon, 'UTC', 'yyyy-MM-dd')
-  return fromZonedTime(`${lastStr} 00:00:00`, timezone)
+  // Mismo motivo que en expandSeries: si el último día cae en el gap de DST, armar
+  // la medianoche a mano acorta la serie un día.
+  return startOfLocalDay(lastStr, timezone)
 }
