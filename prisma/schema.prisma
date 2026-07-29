@@ -33,6 +33,15 @@ enum BillingInterval {
   yearly
 }
 
+/// Dónde se atiende. Es un atributo DEL SERVICIO, no del rubro ni del negocio:
+/// una masajista puede tener "masaje en el local" y "masaje a domicilio", y quien
+/// hace constelaciones puede atender online sin necesitar un rubro propio.
+enum ServiceModality {
+  on_site
+  at_home
+  online
+}
+
 enum BusinessCategory {
   nails
   barber
@@ -70,6 +79,9 @@ model Business {
   // esperando el visto bueno del negocio. Sólo afecta a las que no piden abono;
   // cuando hay abono, el pago ya es el filtro (ver lib/bookings/approval.ts).
   requireBookingApproval Boolean            @default(false)
+  // Sala fija de videollamada (Zoom/Meet). Se copia a cada reserva online al
+  // crearla, para que la clienta reciba el link en el email de una vez.
+  defaultMeetingUrl      String?
   isActive               Boolean            @default(true)
   planId                 String?
   subscriptionStatus     SubscriptionStatus @default(trialing)
@@ -270,6 +282,9 @@ model Service {
   pastelColor     String
   isActive        Boolean  @default(true)
   sortOrder       Int      @default(0)
+  /// Dónde se puede pedir este servicio. Puede tener varias; el funnel sólo
+  /// pregunta cuando hay más de una. Nunca vacío (el schema de Zod lo exige).
+  modalities      ServiceModality[] @default([on_site])
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -407,6 +422,17 @@ model Booking {
   discountAmount   Int                  @default(0)
   finalAmount      Int
   paymentStatus    BookingPaymentStatus
+
+  /// Dónde se atiende ESTA reserva. NOT NULL con default: las reservas viejas son
+  /// todas en el local, así que el backfill es correcto y el resto del código no
+  /// tiene que manejar un null que nunca significó nada.
+  modality       ServiceModality @default(on_site)
+  /// Dirección de la clienta. Obligatoria (server-side) cuando modality=at_home.
+  serviceAddress String?
+  /// Link de la videollamada, copiado de Business.defaultMeetingUrl al crear una
+  /// reserva online. Vive en la reserva y no se lee del negocio en cada lectura:
+  /// si el negocio cambia de sala, las citas ya avisadas conservan la que se mandó.
+  meetingUrl     String?
 
   customerNotes  String?
   internalNotes  String?

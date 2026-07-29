@@ -7,12 +7,14 @@ import { getVocabulary } from '@/lib/vocabulary'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { updateBookingStatus } from '@/server/actions/bookings'
-import { CalendarDays, Clock, User, CreditCard, Phone, Plus, RefreshCw } from 'lucide-react'
+import { CalendarDays, Clock, User, CreditCard, MapPin, Phone, Plus, RefreshCw } from 'lucide-react'
 import { BookingContactButtons } from '@/components/dashboard/booking-contact-buttons'
 import { CancelBookingButton } from '@/components/dashboard/cancel-booking-button'
 import { ManualPaymentDialog } from '@/components/dashboard/manual-payment-dialog'
 import { isManualPaymentAllowed } from '@/components/dashboard/manual-payment-utils'
 import { formatBookingNumber } from '@/lib/bookings/number'
+import { bookingWhere, isNotableModality } from '@/lib/services/modality'
+import type { ServiceModality } from '@prisma/client'
 import { formatMoney } from '@/lib/money'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
@@ -58,6 +60,9 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
     totalPrice: number
     remainingBalance: number
     paymentMethod?: string | null
+    modality: ServiceModality
+    serviceAddress?: string | null
+    meetingUrl?: string | null
     service: { name: string } | null
     customer: { name: string; phone: string | null; email?: string | null } | null
     payments: { id: string; providerPaymentId?: string | null }[]
@@ -113,6 +118,17 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           </span>
           <PaymentRevertedBadge paymentStatus={booking.paymentStatus} />
         </div>
+        {isNotableModality(booking.modality) && (
+          <div className="flex items-start gap-3 text-sm">
+            <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 text-primary">
+              {bookingWhere(booking).label}
+              {bookingWhere(booking).detail && (
+                <span className="block break-words text-xs text-muted-foreground">{bookingWhere(booking).detail}</span>
+              )}
+            </span>
+          </div>
+        )}
         {booking.customer?.phone && (
           <div className="flex items-center gap-3 text-sm">
             <Phone className="size-4 text-muted-foreground" />
@@ -354,7 +370,11 @@ export default async function BookingsPage() {
                       <TruncatedCell
                         className="font-semibold text-primary"
                         primary={booking.service?.name || 'Servicio'}
-                        secondary={formatBookingNumber(booking.bookingNumber, booking.id)}
+                        secondary={
+                          isNotableModality(booking.modality)
+                            ? `${formatBookingNumber(booking.bookingNumber, booking.id)} · ${bookingWhere(booking).label}`
+                            : formatBookingNumber(booking.bookingNumber, booking.id)
+                        }
                       />
                       <TableCell className={TABLE_COL.date}>
                         <div>{new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })}</div>

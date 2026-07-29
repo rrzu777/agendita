@@ -1,4 +1,5 @@
-import type { Service } from '@prisma/client'
+import type { Service, ServiceModality } from '@prisma/client'
+import { sortModalities, requiresServiceAddress } from '@/lib/services/modality'
 import type { BookingData } from '@/components/booking/wizard'
 
 /** Persistencia del wizard para el viaje a /ingresar y de vuelta (spec CTA funnel).
@@ -21,6 +22,8 @@ interface SavedState {
   customerEmail: string
   customerBirthDate?: string
   customerNotes: string
+  serviceModality: ServiceModality | null
+  serviceAddress: string
   idempotencyKey: string | null
   promotionCode?: string
 }
@@ -38,6 +41,8 @@ export function serializeWizardState(data: BookingData, now: number = Date.now()
     customerEmail: data.customerEmail,
     customerBirthDate: data.customerBirthDate ?? '',
     customerNotes: data.customerNotes,
+    serviceModality: data.serviceModality,
+    serviceAddress: data.serviceAddress,
     idempotencyKey: data.idempotencyKey,
     ...(data.promotionCode ? { promotionCode: data.promotionCode } : {}),
   }
@@ -61,6 +66,17 @@ export function restoreWizardState(raw: string | null, services: Service[], now:
   const service = services.find((s) => s.id === saved.serviceId)
   if (!service || !service.isActive) return null
 
+  const modalities = sortModalities(service.modalities)
+  // La modalidad guardada se re-valida contra el servicio ACTUAL, igual que el
+  // resto de los campos denormalizados: si la dueña dejó de ofrecer domicilio
+  // mientras la clienta iba a /ingresar, la elección vieja no sobrevive.
+  const modality =
+    saved.serviceModality && modalities.includes(saved.serviceModality)
+      ? saved.serviceModality
+      : modalities.length === 1
+        ? modalities[0]
+        : null
+
   return {
     serviceId: service.id,
     serviceName: service.name,
@@ -68,6 +84,12 @@ export function restoreWizardState(raw: string | null, services: Service[], now:
     serviceDuration: service.durationMinutes,
     serviceDeposit: service.depositAmount,
     serviceColor: service.pastelColor || '',
+    serviceModalities: modalities,
+    serviceModality: modality,
+    // Se cuelga de la modalidad RESUELTA, no de la guardada: si el domicilio se
+    // descartó arriba, la dirección tiene que irse con él o el formulario queda
+    // con un dato que ya no corresponde a lo que se va a reservar.
+    serviceAddress: modality && requiresServiceAddress(modality) ? (saved.serviceAddress ?? '') : '',
     date: saved.date ? new Date(saved.date) : null,
     timeSlot: saved.timeSlotStart && saved.timeSlotEnd
       ? { start: new Date(saved.timeSlotStart), end: new Date(saved.timeSlotEnd) }

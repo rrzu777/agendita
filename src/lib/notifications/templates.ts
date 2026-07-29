@@ -3,6 +3,8 @@ import { es } from 'date-fns/locale'
 import { unsubscribeFooterHtml, unsubscribeFooterText } from './marketing-email'
 import { formatMoney } from '@/lib/money'
 import { getVocabulary } from '@/lib/vocabulary'
+import { MODALITY_LABELS } from '@/lib/services/modality'
+import { ServiceModality } from '@prisma/client'
 import type { BusinessCategory } from '@prisma/client'
 import type {
   BookingEmailData,
@@ -72,6 +74,52 @@ function bookingNumberRowHtml(n: number | null | undefined): string {
   return n != null
     ? `<tr><td style="padding:8px 0;color:#666">Reserva</td><td style="padding:8px 0;font-weight:600">#${n}</td></tr>`
     : ''
+}
+
+/** Datos de "dónde se atiende" que comparten los emails de reserva. */
+interface WhereFields {
+  modality?: ServiceModality | null
+  businessAddress?: string | null
+  serviceAddress?: string | null
+  meetingUrl?: string | null
+}
+
+/**
+ * Filas de "dónde". Reemplaza a la fila suelta de `businessAddress`, que era
+ * correcta sólo en el local: a domicilio la clienta no va a ningún lado (la
+ * dirección que importa es la suya) y online no hay dirección, hay link.
+ *
+ * Devuelve pares [etiqueta, valor] para que las versiones HTML y texto no
+ * repitan la lógica de decidir qué mostrar.
+ */
+function whereRows(data: WhereFields): Array<[string, string]> {
+  const modality = data.modality ?? ServiceModality.on_site
+  if (modality === ServiceModality.at_home) {
+    return [
+      ['Dónde', MODALITY_LABELS.at_home],
+      ...(data.serviceAddress ? [['Tu dirección', data.serviceAddress] as [string, string]] : []),
+    ]
+  }
+  if (modality === ServiceModality.online) {
+    return [
+      ['Dónde', MODALITY_LABELS.online],
+      ['Link', data.meetingUrl || 'Te lo enviamos antes de la cita'],
+    ]
+  }
+  // En el local: se mantiene la fila de siempre, sin etiqueta de modalidad
+  // cuando el negocio no ofrece nada más (no hay nada que aclarar).
+  return data.businessAddress ? [['Dirección', data.businessAddress]] : []
+}
+
+function whereRowsHtml(data: WhereFields): string {
+  return whereRows(data)
+    .map(([label, value]) =>
+      `<tr><td style="padding:8px 0;color:#666">${escapeHtml(label)}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(value)}</td></tr>`)
+    .join('')
+}
+
+function whereRowsText(data: WhereFields): string[] {
+  return whereRows(data).map(([label, value]) => `${label}: ${value}`)
 }
 
 function loyaltyLinkHtml(link: string | undefined): string {
@@ -198,7 +246,7 @@ export function bookingConfirmationCustomerHtml(data: BookingEmailData): string 
       ${bookingNumberRowHtml(data.bookingNumber)}
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${dateStr}</td></tr>
-      ${data.businessAddress ? `<tr><td style="padding:8px 0;color:#666">Dirección</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.businessAddress)}</td></tr>` : ''}
+      ${whereRowsHtml(data)}
       <tr><td style="padding:8px 0;color:#666">Precio total</td><td style="padding:8px 0;font-weight:600">${total}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Abono pagado</td><td style="padding:8px 0;font-weight:600">${deposit}</td></tr>
       ${remaining !== deposit ? `<tr><td style="padding:8px 0;color:#666">Saldo pendiente</td><td style="padding:8px 0;font-weight:600">${remaining}</td></tr>` : ''}
@@ -223,7 +271,7 @@ export function bookingConfirmationCustomerText(data: BookingEmailData): string 
     `Servicio: ${data.serviceName}`,
     `Fecha y hora: ${dateStr}`,
   ]
-  if (data.businessAddress) lines.push(`Dirección: ${data.businessAddress}`)
+  lines.push(...whereRowsText(data))
   lines.push(
     `Precio total: ${total}`,
     `Abono pagado: ${deposit}`,
@@ -270,7 +318,7 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
       ${bookingNumberRowHtml(data.bookingNumber)}
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${dateStr}</td></tr>
-      ${data.businessAddress ? `<tr><td style="padding:8px 0;color:#666">Dirección</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.businessAddress)}</td></tr>` : ''}
+      ${whereRowsHtml(data)}
       <tr><td style="padding:8px 0;color:#666">Precio total</td><td style="padding:8px 0;font-weight:600">${total}</td></tr>
       ${discountSection}
       ${data.awaitingApproval ? '' : `<tr><td style="padding:8px 0;color:#666">Abono requerido</td><td style="padding:8px 0;font-weight:600">${deposit}</td></tr>`}
@@ -300,7 +348,7 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
     `Servicio: ${data.serviceName}`,
     `Fecha y hora: ${dateStr}`,
   ]
-  if (data.businessAddress) lines.push(`Dirección: ${data.businessAddress}`)
+  lines.push(...whereRowsText(data))
   lines.push(`Precio total: ${total}`)
   if ((data.discountAmount ?? 0) > 0) {
     lines.push(
@@ -344,6 +392,7 @@ export function newBookingBusinessHtml(data: NewBookingBusinessEmailData): strin
       ${data.customerEmail ? `<tr><td style="padding:8px 0;color:#666">Email</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerEmail)}</td></tr>` : ''}
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${dateStr}</td></tr>
+      ${whereRowsHtml({ ...data, businessAddress: null })}
       <tr><td style="padding:8px 0;color:#666">Abono</td><td style="padding:8px 0;font-weight:600">${deposit}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Saldo pendiente</td><td style="padding:8px 0;font-weight:600">${remaining}</td></tr>
     </table>
@@ -565,6 +614,9 @@ export function newBookingBusinessText(data: NewBookingBusinessEmailData): strin
   lines.push(
     `Servicio: ${data.serviceName}`,
     `Fecha y hora: ${dateStr}`,
+    // businessAddress en null: al negocio no le sirve que le repitan su propia
+    // dirección; lo que necesita saber es si tiene que ir a algún lado.
+    ...whereRowsText({ ...data, businessAddress: null }),
     `Abono: ${deposit}`,
     `Saldo pendiente: ${remaining}`,
     ``,
@@ -626,7 +678,7 @@ export function bookingRescheduledCustomerHtml(data: RescheduledEmailData): stri
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Horario anterior</td><td style="padding:8px 0;font-weight:600">${previousDateStr}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Nuevo horario</td><td style="padding:8px 0;font-weight:600">${newDateStr}</td></tr>
-      ${data.businessAddress ? `<tr><td style="padding:8px 0;color:#666">Dirección</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.businessAddress)}</td></tr>` : ''}
+      ${whereRowsHtml(data)}
     </table>
     <p style="font-size:13px;color:#666;margin-top:16px">Si este nuevo horario no te acomoda, contacta a ${escapeHtml(data.businessName)}.</p>
     ${whatsappSection}
@@ -648,7 +700,7 @@ export function bookingRescheduledCustomerText(data: RescheduledEmailData): stri
     `Horario anterior: ${previousDateStr}`,
     `Nuevo horario: ${newDateStr}`,
   ]
-  if (data.businessAddress) lines.push(`Dirección: ${data.businessAddress}`)
+  lines.push(...whereRowsText(data))
   lines.push(
     ``,
     `Si este nuevo horario no te acomoda, contacta a ${data.businessName}.`,
@@ -1051,7 +1103,7 @@ export function bookingReminderHtml(data: ReminderEmailData): string {
     <div style="background:#f9f9f9;border-radius:12px;padding:20px;margin:16px 0">
       <p style="font-size:18px;font-weight:600;color:#1a1a2e;margin:0">${dateStr}</p>
       <p style="font-size:14px;color:#666;margin:8px 0 0">${escapeHtml(data.businessName)}</p>
-      ${data.businessAddress ? `<p style="font-size:13px;color:#999;margin:4px 0 0">${escapeHtml(data.businessAddress!)}</p>` : ''}
+      ${whereRows(data).map(([label, value]) => `<p style="font-size:13px;color:#999;margin:4px 0 0">${escapeHtml(label)}: ${escapeHtml(value)}</p>`).join('')}
     </div>
     <p style="font-size:14px;color:#666">Total: ${fmtCurrency(data.totalPrice, data.businessCurrency)} | Abonado: ${fmtCurrency(data.depositPaid, data.businessCurrency)}</p>
     ${balanceLine}
@@ -1076,7 +1128,7 @@ export function bookingReminderText(data: ReminderEmailData): string {
     ``,
     `${dateStr}`,
     `${data.businessName}`,
-    data.businessAddress ?? '',
+    ...whereRowsText(data),
     ``,
     `Total: ${data.businessCurrency} ${data.totalPrice} | Abonado: ${data.businessCurrency} ${data.depositPaid}`,
     balanceLine,

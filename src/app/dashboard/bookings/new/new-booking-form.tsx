@@ -13,6 +13,8 @@ import { usePackageAvailability } from '@/lib/packages/use-package-availability'
 import { searchCustomersForBooking } from '@/server/actions/customers'
 import type { CustomerSearchResult } from '@/server/actions/customers'
 import { formatDuration } from '@/lib/format-duration'
+import { MODALITY_LABELS, sortModalities, requiresServiceAddress } from '@/lib/services/modality'
+import { ServiceModality } from '@prisma/client'
 import { fromZonedTime } from 'date-fns-tz'
 import { getLocalDateStr } from '@/lib/availability/timezone'
 import { formatMoney } from '@/lib/money'
@@ -51,6 +53,9 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
   const [promoPending, setPromoPending] = useState(false)
 
   const [serviceId, setServiceId] = useState('')
+  // null = todavía no eligió (o el servicio tiene una sola y no se pregunta).
+  const [modality, setModality] = useState<ServiceModality | null>(null)
+  const [serviceAddress, setServiceAddress] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
@@ -175,6 +180,17 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
   // Un código se validó contra un servicio específico; si cambia el servicio el
   // descuento ya no aplica. Limpiar en render (patrón soportado por React, no
   // un effect): la condición se borra al limpiar, así que no puede ciclar.
+  const serviceModalities = useMemo(
+    () => (selectedService ? sortModalities(selectedService.modalities) : []),
+    [selectedService],
+  )
+  // Con una sola modalidad no se pregunta y vale esa; con varias, la elegida (y
+  // si todavía no eligió, la primera, que es lo que muestra el select).
+  const effectiveModality: ServiceModality | null =
+    serviceModalities.length === 0 ? null
+    : serviceModalities.length === 1 ? serviceModalities[0]
+    : (modality && serviceModalities.includes(modality) ? modality : serviceModalities[0])
+
   if (appliedPromo && appliedPromo.serviceId !== serviceId) {
     setAppliedPromo(null)
     setPromoError(null)
@@ -269,6 +285,8 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
         customerId: selectedCustomerId || undefined,
         promotionCode: appliedPromo?.code,
         skipPackage: !usePackage,
+        modality: effectiveModality ?? undefined,
+        serviceAddress: serviceAddress || undefined,
       })
       if (!res.ok) {
         setError(res.error)
@@ -330,6 +348,34 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
                   ))}
                 </select>
               </div>
+              {serviceModalities.length > 1 && (
+                <div className="space-y-2">
+                  <Label htmlFor="modality">¿Dónde se atiende? *</Label>
+                  <select
+                    id="modality"
+                    value={effectiveModality ?? ''}
+                    onChange={(e) => setModality(e.target.value as ServiceModality)}
+                    required
+                    className="studio-input w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                  >
+                    {serviceModalities.map((m) => (
+                      <option key={m} value={m}>{MODALITY_LABELS[m]}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {effectiveModality != null && requiresServiceAddress(effectiveModality) && (
+                <div className="space-y-2">
+                  <Label htmlFor="serviceAddress">Dirección *</Label>
+                  <Input
+                    id="serviceAddress"
+                    value={serviceAddress}
+                    onChange={(e) => setServiceAddress(e.target.value)}
+                    required
+                    placeholder="Calle, número, depto, comuna"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="space-y-4">

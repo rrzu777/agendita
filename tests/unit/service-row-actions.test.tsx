@@ -34,6 +34,7 @@ function rowService(overrides: Record<string, unknown> = {}) {
     price: 15000,
     depositAmount: 5000,
     pastelColor: '#FFB3BA',
+    modalities: ['on_site'],
     isActive: true,
     sortOrder: 0,
     ...overrides,

@@ -3,7 +3,7 @@
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import type { Booking, BusinessCategory } from '@prisma/client'
-import { BookingStatus, BookingPaymentStatus, PaymentType } from '@prisma/client'
+import { BookingStatus, BookingPaymentStatus, PaymentType, ServiceModality } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -23,6 +23,7 @@ import { addMinutes } from 'date-fns'
 import { applyPromotionInTx } from '@/lib/promotions/apply'
 import { recomputeBookingAmountsAfterDiscount } from '@/lib/booking/recompute'
 import { initialPublicBookingStatus, approvalHoldExpiresAt } from '@/lib/bookings/approval'
+import { resolveBookingModality, resolveServiceAddress } from '@/lib/services/modality'
 import { applyPackageInTx } from '@/lib/packages/consume'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
@@ -59,6 +60,10 @@ const createBookingSchema = z.object({
   promotionCode: z.string().trim().max(40).optional(),
   skipPackage: z.boolean().optional(),
   paymentMethod: z.enum(['bank_transfer']).optional(),
+  // Elección de la clienta; el server la re-deriva contra las modalidades reales
+  // del servicio (resolveBookingModality) antes de persistirla.
+  modality: z.nativeEnum(ServiceModality).optional(),
+  serviceAddress: z.string().trim().max(300, 'La dirección es demasiado larga').optional(),
 })
 
 const confirmPaymentSchema = z.object({
@@ -106,6 +111,9 @@ async function fireBookingNotifications(
     paymentMethod: string | null
     holdExpiresAt: Date | null
     status: BookingStatus
+    modality: ServiceModality
+    serviceAddress: string | null
+    meetingUrl: string | null
   } & { id: string; businessId: string; bookingNumber: number | null },
   serviceName: string,
   // La cuenta ya la leyó createBooking antes de la tx; se pasa para no
@@ -149,6 +157,9 @@ async function fireBookingNotifications(
           businessReplyToEmail,
           businessWhatsapp: business.whatsapp,
           businessAddress: business.addressText,
+          modality: booking.modality,
+          serviceAddress: booking.serviceAddress,
+          meetingUrl: booking.meetingUrl,
           businessTimezone,
           businessCurrency,
           businessCancellationPolicy: business.cancellationPolicy,
@@ -183,6 +194,11 @@ async function fireBookingNotifications(
         startDateTime: booking.startDateTime,
         businessTimezone,
         businessCurrency,
+        // A domicilio la dueña necesita la dirección en el aviso: es a dónde
+        // tiene que ir. Online, el link con el que se va a conectar.
+        modality: booking.modality,
+        serviceAddress: booking.serviceAddress,
+        meetingUrl: booking.meetingUrl,
         depositRequired: booking.depositRequired,
         remainingBalance: booking.remainingBalance,
         dashboardLink,
@@ -222,6 +238,9 @@ export async function getBookings() {
       totalPrice: true,
       remainingBalance: true,
       paymentMethod: true,
+      modality: true,
+      serviceAddress: true,
+      meetingUrl: true,
       service: { select: { name: true } },
       customer: { select: { name: true, phone: true, email: true } },
       // Declaración de transferencia pendiente de verificar, sea abono
@@ -274,6 +293,8 @@ async function _createBooking(data: {
   skipPackage?: boolean
   referralToken?: string
   paymentMethod?: typeof BANK_TRANSFER_METHOD
+  modality?: ServiceModality
+  serviceAddress?: string
 }, businessId: string) {
   const limit = await checkRateLimit('create-booking', 20, 60000)
   if (!limit.success) {
@@ -304,6 +325,7 @@ async function _createBooking(data: {
       subdomain: true,
       category: true,
       requireBookingApproval: true,
+      defaultMeetingUrl: true,
       subscriptionStatus: true,
     },
   })
@@ -320,6 +342,14 @@ async function _createBooking(data: {
   if (!service) {
     throw new UserError('Servicio no disponible')
   }
+
+  // Modalidad server-authoritative: con una sola modalidad el pedido del cliente
+  // se ignora, y con varias tiene que estar entre las que el servicio ofrece.
+  const modality = resolveBookingModality(service.modalities, data.modality)
+  const serviceAddress = resolveServiceAddress(modality, data.serviceAddress)
+  // La sala se copia AHORA: si el negocio la cambia después, las citas ya
+  // avisadas conservan el link que la clienta recibió por email.
+  const meetingUrl = modality === ServiceModality.online ? business.defaultMeetingUrl : null
 
   // Recalcular precios y horario server-side
   const totalPrice = service.price
@@ -423,6 +453,9 @@ async function _createBooking(data: {
           remainingBalance: finalAmount,
           finalAmount,
           paymentStatus: bookingPaymentStatus,
+          modality,
+          serviceAddress,
+          meetingUrl,
           holdExpiresAt,
           paymentMethod: bankTransferAccount && depositRequired > 0 ? BANK_TRANSFER_METHOD : null,
           idempotencyKey: data.idempotencyKey || null,
@@ -832,6 +865,8 @@ const createBookingFromDashboardSchema = z.object({
   customerId: z.string().min(1).optional(),
   promotionCode: z.string().trim().max(40).optional(),
   skipPackage: z.boolean().optional(),
+  modality: z.nativeEnum(ServiceModality).optional(),
+  serviceAddress: z.string().trim().max(300, 'La dirección es demasiado larga').optional(),
 })
 
 const PAYMENT_METHOD_MAP: Record<string, string> = {
@@ -855,6 +890,8 @@ async function _createBookingFromDashboard(data: {
   customerId?: string
   promotionCode?: string
   skipPackage?: boolean
+  modality?: ServiceModality
+  serviceAddress?: string
 }) {
   const { user, business, businessId } = await requireBusinessRole(['owner', 'admin'])
 
@@ -873,6 +910,12 @@ async function _createBookingFromDashboard(data: {
   if (!service) {
     throw new UserError('Servicio no disponible')
   }
+
+  // Misma derivación que el flujo público: con una sola modalidad no hay nada
+  // que elegir y el formulario del dashboard ni siquiera pregunta.
+  const modality = resolveBookingModality(service.modalities, data.modality)
+  const serviceAddress = resolveServiceAddress(modality, data.serviceAddress)
+  const meetingUrl = modality === ServiceModality.online ? business.defaultMeetingUrl : null
 
   const totalPrice = service.price
   const depositRequired = service.depositAmount
@@ -959,6 +1002,9 @@ async function _createBookingFromDashboard(data: {
         remainingBalance: finalAmount,
         finalAmount,
         paymentStatus: initialPaymentStatus,
+        modality,
+        serviceAddress,
+        meetingUrl,
         internalNotes: data.internalNotes || null,
         holdExpiresAt: status === BookingStatus.pending_payment ? addMinutes(new Date(), 60) : null,
         bookingNumber,

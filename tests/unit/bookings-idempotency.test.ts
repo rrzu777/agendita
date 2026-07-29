@@ -108,6 +108,7 @@ describe('createBooking idempotency', () => {
       price: 10000,
       depositAmount: 5000,
       durationMinutes: 60,
+      modalities: ['on_site'],
       isActive: true,
     })
     mockPrisma.customer.findFirst.mockResolvedValue(null)
@@ -263,6 +264,7 @@ describe('createBooking acceptedTerms enforcement', () => {
       durationMinutes: 60,
       price: 10000,
       depositAmount: 5000,
+      modalities: ['on_site'],
     })
   })
 

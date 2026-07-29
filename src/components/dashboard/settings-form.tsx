@@ -71,6 +71,7 @@ export function SettingsForm({ business }: { business: Business }) {
       slotStepMinutes: business.slotStepMinutes == null ? 'service' : String(business.slotStepMinutes) as FormData['slotStepMinutes'],
       selfServiceCutoffHours: business.selfServiceCutoffHours,
       requireBookingApproval: business.requireBookingApproval,
+      defaultMeetingUrl: business.defaultMeetingUrl || '',
       subdomain: business.subdomain,
       cancellationPolicy: business.cancellationPolicy || '',
       bookingPolicy: business.bookingPolicy || '',
@@ -257,6 +258,21 @@ export function SettingsForm({ business }: { business: Business }) {
               queda tomado mientras tanto, y si no respondés en 24 horas se libera solo.
               No aplica a los servicios con abono: ahí el pago ya hace de filtro.
             </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="defaultMeetingUrl">Sala de videollamada</Label>
+            <Input
+              id="defaultMeetingUrl"
+              type="url"
+              placeholder="https://meet.google.com/abc-defg-hij"
+              {...register('defaultMeetingUrl')}
+              aria-invalid={!!errors.defaultMeetingUrl}
+            />
+            <p className="text-xs text-muted-foreground">
+              Tu link fijo de Zoom o Meet. Se copia a cada reserva online cuando la toman,
+              así que si lo cambiás, las citas ya avisadas conservan el que se mandó.
+            </p>
+            {errors.defaultMeetingUrl && <p className="text-sm text-destructive">{errors.defaultMeetingUrl.message}</p>}
           </div>
           {/* Currency is intentionally read-only.
               Changing currency would break existing payment integrations

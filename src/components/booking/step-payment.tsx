@@ -285,6 +285,10 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       promotionCode: appliedPromo?.code,
       referralToken,
       skipPackage: !usePackage,
+      // El server re-deriva la modalidad contra las del servicio (y con una sola
+      // ignora lo que llegue): esto es la elección, no la autoridad.
+      modality: data.serviceModality ?? undefined,
+      serviceAddress: data.serviceAddress || undefined,
       ...extra,
     }
   }

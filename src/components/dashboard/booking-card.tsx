@@ -1,3 +1,5 @@
+import type { ServiceModality } from '@prisma/client'
+
 export type CalendarBooking = {
   id: string
   bookingNumber: number | null
@@ -14,4 +16,7 @@ export type CalendarBooking = {
   paymentStatus: string
   customerNotes?: string | null
   internalNotes?: string | null
+  modality: ServiceModality
+  serviceAddress?: string | null
+  meetingUrl?: string | null
 }

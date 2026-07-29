@@ -747,3 +747,60 @@ describe('email-provider: sendMultiNotificationSafely', () => {
     ).resolves.toBeDefined()
   })
 })
+
+// ── Modalidad de atención en los emails ────────────────────────────────────
+
+describe('templates: dónde se atiende', () => {
+  it('en el local sigue mostrando la dirección del negocio, sin etiqueta extra', () => {
+    // Es el comportamiento de siempre: no hay nada que aclarar cuando la clienta
+    // va al local como toda la vida.
+    const html = bookingConfirmationCustomerHtml({ ...sampleBookingData, modality: 'on_site' })
+    expect(html).toContain('Av. Siempre Viva 742')
+    expect(html).not.toContain('En el local')
+  })
+
+  it('sin modalidad (reservas anteriores al Track 3) se comporta como en el local', () => {
+    const html = bookingConfirmationCustomerHtml(sampleBookingData)
+    expect(html).toContain('Av. Siempre Viva 742')
+  })
+
+  it('a domicilio muestra la dirección de la clienta y NO la del negocio', () => {
+    // La del negocio ahí sería una invitación a ir al lugar equivocado.
+    const html = bookingConfirmationCustomerHtml({
+      ...sampleBookingData, modality: 'at_home', serviceAddress: 'Los Olmos 12, Ñuñoa',
+    })
+    expect(html).toContain('A domicilio')
+    expect(html).toContain('Los Olmos 12, Ñuñoa')
+    expect(html).not.toContain('Av. Siempre Viva 742')
+  })
+
+  it('online muestra el link de la videollamada', () => {
+    const html = bookingConfirmationCustomerHtml({
+      ...sampleBookingData, modality: 'online', meetingUrl: 'https://meet.example/sala',
+    })
+    expect(html).toContain('Online')
+    expect(html).toContain('https://meet.example/sala')
+    expect(html).not.toContain('Av. Siempre Viva 742')
+  })
+
+  it('online sin sala configurada avisa que el link llega después', () => {
+    const html = bookingConfirmationCustomerHtml({ ...sampleBookingData, modality: 'online' })
+    expect(html).toContain('Te lo enviamos antes de la cita')
+  })
+
+  it('el aviso al negocio incluye a dónde tiene que ir', () => {
+    const html = newBookingBusinessHtml({
+      ...sampleBusinessData, modality: 'at_home', serviceAddress: 'Los Olmos 12, Ñuñoa',
+    })
+    expect(html).toContain('A domicilio')
+    expect(html).toContain('Los Olmos 12, Ñuñoa')
+  })
+
+  it('la versión de texto también lleva el dónde', () => {
+    const text = bookingConfirmationCustomerText({
+      ...sampleBookingData, modality: 'at_home', serviceAddress: 'Los Olmos 12',
+    })
+    expect(text).toContain('Dónde: A domicilio')
+    expect(text).toContain('Tu dirección: Los Olmos 12')
+  })
+})
