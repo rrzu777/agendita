@@ -181,6 +181,14 @@ horarios**, no después.
 - Que la persona sea del negocio, esté activa y haga ese servicio.
 - Que la modalidad de la reserva esté en las de la persona.
 
+**Dónde entra `professionalId` al crear** (post-#121, `7653599`): la **validación** va
+adentro de `resolveBookingDraft` (`src/lib/bookings/draft.ts`), que ya resuelve servicio
+y modalidad — exactamente de lo que depende validar a la persona — y ya tira `UserError`.
+Es **un** lugar. Pero `BookingDraft` no tiene ningún campo de persona y
+`tx.booking.create` sigue escrito **dos** veces (`bookings.ts:297` público,
+`bookings.ts:787` dashboard), así que la **persistencia** son dos puntos. No confundir
+"el helper es compartido" con "hay un solo insert".
+
 `assertNoBookingOverlap` suma al SQL crudo, para una reserva **con** persona:
 
 ```sql
