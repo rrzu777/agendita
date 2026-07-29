@@ -46,6 +46,9 @@ export const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number
   'manage-promotion': { maxRequests: 60, windowMs: 60_000 },
   'preview-promotion': { maxRequests: 30, windowMs: 60_000 },
   'proof-upload-url': { maxRequests: 20, windowMs: 60_000 },
+  // Fotos de la ficha: se suben de a varias por visita, así que el presupuesto
+  // es más alto que el del comprobante (uno por reserva).
+  'photo-upload-url': { maxRequests: 60, windowMs: 60_000 },
   'create-campaign': { maxRequests: 20, windowMs: 60_000 },
   'send-campaign': { maxRequests: 120, windowMs: 60_000 },
   'send-campaign-email': { maxRequests: 30, windowMs: 60_000 },

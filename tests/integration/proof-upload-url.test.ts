@@ -7,7 +7,7 @@ import { unwrap, expectActionError } from './helpers/action-result'
 requireTestDatabase()
 
 // Flujo público: identidad = bookingId (cuid) + rate limit. Mockeamos el rate
-// limit y le inyectamos un ProofStorage falso vía `deps.storage` para que CI
+// limit y le inyectamos un ObjectStorage falso vía `deps.storage` para que CI
 // nunca toque R2 real. La semilla reutiliza seedDeclaredTransfer (negocio +
 // bankTransferAccount isEnabled + booking pending_payment, paymentMethod
 // 'bank_transfer').
@@ -17,6 +17,7 @@ const fakeStorage = {
   presignUpload: vi.fn().mockResolvedValue('https://signed/put'),
   presignDownload: vi.fn(),
   head: vi.fn(),
+  remove: vi.fn(),
 }
 
 // El helper solo necesita la reserva-transferencia; no hace falta el Payment declarado.

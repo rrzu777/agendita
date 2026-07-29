@@ -7,7 +7,7 @@ import { prisma } from '@/lib/db'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { BANK_TRANSFER_PUBLIC_SELECT, type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { btDeclaredId, btBalanceId, BANK_TRANSFER_METHOD, FIRM_BOOKING_STATUSES } from '@/lib/bank-transfer/declared'
-import { getProofStorage, isProofUploadAvailable, type ProofStorage } from '@/lib/storage/r2'
+import { getObjectStorage, isObjectStorageAvailable, type ObjectStorage } from '@/lib/storage/r2'
 import { proofKey, isAllowedProofType, PROOF_MAX_BYTES, type ProofKind } from '@/lib/storage/proof'
 import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
 import {
@@ -21,10 +21,10 @@ import { action, UserError } from '@/lib/actions/result'
 // en src/lib/bank-transfer/). Flujo PÚBLICO: sin sesión, mismo modelo de
 // seguridad que payments.ts (identidad = bookingId cuid + rate limit).
 
-/** Resuelve el ProofStorage: usa el inyectado por tests si viene (incluido
+/** Resuelve el ObjectStorage: usa el inyectado por tests si viene (incluido
  *  `null` explícito), si no el real. */
-function resolveStorage(injected?: ProofStorage | null): ProofStorage | null {
-  return injected !== undefined ? injected : getProofStorage()
+function resolveStorage(injected?: ObjectStorage | null): ObjectStorage | null {
+  return injected !== undefined ? injected : getObjectStorage()
 }
 
 /**
@@ -44,10 +44,10 @@ export async function getBankTransferInfo(businessId: string): Promise<BankTrans
   if (!row) return null
   const { business, ...rest } = row
   // requireProof se apaga si R2 no está disponible (aunque la dueña lo active).
-  return { ...rest, requireProof: business.requireTransferProof && isProofUploadAvailable() }
+  return { ...rest, requireProof: business.requireTransferProof && isObjectStorageAvailable() }
 }
 
-type ProofDeps = { storage?: ProofStorage | null }
+type ProofDeps = { storage?: ObjectStorage | null }
 
 /** Mina una URL PUT prefirmada para subir el comprobante ANTES de declarar.
  *  Público: identidad = bookingId (cuid) + rate limit, igual que declare*. */
@@ -89,7 +89,7 @@ export const createProofUploadUrl = action(_createProofUploadUrl)
 // Opciones de comprobante para los declare* y attachProof. TS-only (erased):
 // un módulo 'use server' solo puede EXPORTAR funciones async, pero declarar
 // tipos a nivel de módulo es válido (no genera un export en runtime).
-type DeclareProofOpts = { proofKey?: string; proofContentType?: string; storage?: ProofStorage | null }
+type DeclareProofOpts = { proofKey?: string; proofContentType?: string; storage?: ObjectStorage | null }
 
 /** Valida por HEAD que el objeto existe, pesa ≤ límite y es de tipo permitido.
  *  Devuelve { proofKey, proofContentType } para persistir, o null si no hubo proof.

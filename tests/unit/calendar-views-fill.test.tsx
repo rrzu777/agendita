@@ -20,6 +20,7 @@ const baseProps = {
   timezone: 'America/Santiago',
   businessCurrency: 'CLP',
   businessAddress: null,
+  photoUploadEnabled: false,
 }
 
 const booking = {

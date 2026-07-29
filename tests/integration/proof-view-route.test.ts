@@ -23,7 +23,7 @@ vi.mock('@/lib/auth/server', () => ({
 
 const presignDownload = vi.fn().mockResolvedValue('https://signed/get')
 vi.mock('@/lib/storage/r2', () => ({
-  getProofStorage: () => ({ presignUpload: vi.fn(), presignDownload, head: vi.fn() }),
+  getObjectStorage: () => ({ presignUpload: vi.fn(), presignDownload, head: vi.fn(), remove: vi.fn() }),
 }))
 
 // Import DESPUÉS de los mocks para que la ruta resuelva las versiones mockeadas.

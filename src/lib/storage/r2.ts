@@ -1,11 +1,22 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { logger } from '@/lib/logger'
 
-export interface ProofStorage {
+// Cliente único del bucket privado. Nació para los comprobantes de transferencia
+// y hoy también guarda las fotos de la ficha, por eso el nombre es genérico: lo
+// que cambia entre features es el prefijo de la key (lib/storage/proof.ts,
+// lib/storage/photos.ts), no el transporte.
+export interface ObjectStorage {
   presignUpload(key: string, contentType: string): Promise<string>
-  presignDownload(key: string, contentType: string): Promise<string>
+  presignDownload(key: string, contentType: string, filename?: string): Promise<string>
   head(key: string): Promise<{ contentLength: number; contentType: string | null } | null>
+  remove(key: string): Promise<void>
 }
 
 interface R2Config {
@@ -25,12 +36,12 @@ function readConfig(): R2Config | null {
 }
 
 /** never-throws: para gatear la feature en UI y actions. */
-export function isProofUploadAvailable(): boolean {
+export function isObjectStorageAvailable(): boolean {
   return readConfig() !== null
 }
 
 /** null si R2 no está configurado (mirror de getResend()). */
-export function getProofStorage(): ProofStorage | null {
+export function getObjectStorage(): ObjectStorage | null {
   const cfg = readConfig()
   if (!cfg) return null
   const client = new S3Client({
@@ -42,14 +53,14 @@ export function getProofStorage(): ProofStorage | null {
     async presignUpload(key, contentType) {
       return getSignedUrl(client, new PutObjectCommand({ Bucket: cfg.bucket, Key: key, ContentType: contentType }), { expiresIn: 120 })
     },
-    async presignDownload(key, contentType) {
+    async presignDownload(key, contentType, filename = 'comprobante') {
       return getSignedUrl(
         client,
         new GetObjectCommand({
           Bucket: cfg.bucket,
           Key: key,
           ResponseContentType: contentType,
-          ResponseContentDisposition: 'inline; filename="comprobante"',
+          ResponseContentDisposition: `inline; filename="${filename}"`,
         }),
         { expiresIn: 60 },
       )
@@ -66,6 +77,9 @@ export function getProofStorage(): ProofStorage | null {
         })
         return null
       }
+    },
+    async remove(key) {
+      await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: key }))
     },
   }
 }

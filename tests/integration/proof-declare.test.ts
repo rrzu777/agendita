@@ -13,7 +13,7 @@ import { unwrap, expectActionError } from './helpers/action-result'
 requireTestDatabase()
 
 // Flujo público: identidad = bookingId (cuid) + rate limit. Mockeamos rate limit
-// y notificaciones, e inyectamos un ProofStorage falso vía `opts.storage` para
+// y notificaciones, e inyectamos un ObjectStorage falso vía `opts.storage` para
 // que CI nunca toque R2 real. El HEAD es la validación server-authoritative
 // (existencia + tamaño ≤ límite + tipo permitido) que se hace ANTES de la tx.
 vi.mock('@/lib/rate-limit', () => ({
@@ -28,11 +28,13 @@ const okHead = {
   presignUpload: vi.fn(),
   presignDownload: vi.fn(),
   head: vi.fn().mockResolvedValue({ contentLength: 1000, contentType: 'image/png' }),
+  remove: vi.fn(),
 }
 const bigHead = {
   presignUpload: vi.fn(),
   presignDownload: vi.fn(),
   head: vi.fn().mockResolvedValue({ contentLength: 99_000_000, contentType: 'image/png' }),
+  remove: vi.fn(),
 }
 
 // El helper crea la reserva-transferencia (pending_payment, paymentMethod
