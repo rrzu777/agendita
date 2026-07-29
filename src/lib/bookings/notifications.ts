@@ -11,8 +11,8 @@
  * Sin `'use server'` a propósito: es una función server-side común, no un
  * endpoint. El único caller es `createBooking`.
  */
-import type { BusinessCategory } from '@prisma/client'
-import { BookingStatus, ServiceModality } from '@prisma/client'
+import type { BusinessCategory, ServiceModality } from '@prisma/client'
+import { BookingStatus } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'

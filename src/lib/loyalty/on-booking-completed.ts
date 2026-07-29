@@ -11,10 +11,9 @@
  * El caller decide SI corresponde emitir (status, config activa, pago no
  * revertido); acá se decide QUÉ se emite.
  */
-import type { LoyaltyConfig } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
-import { emitAutomaticReward, loadAutomaticRules } from '@/lib/loyalty/automatic'
+import { emitAutomaticReward, loadAutomaticRules, type EmitConfig } from '@/lib/loyalty/automatic'
 import { rewardReferralOnCompletion, notifyReferralReward } from '@/lib/loyalty/referral'
 import { firstVisitKey, conditionKind } from '@/lib/loyalty/automatic-match'
 
@@ -22,14 +21,10 @@ export async function emitAutomaticRewardsOnCompletion(args: {
   businessId: string
   customerId: string
   bookingId: string
-  config: Pick<LoyaltyConfig, 'grantExpiryDays' | 'forfeitGrantOnNoShow'>
+  config: EmitConfig
   isFirstVisit: boolean
 }) {
-  const { businessId, customerId, bookingId, isFirstVisit } = args
-  const emitCfg = {
-    grantExpiryDays: args.config.grantExpiryDays,
-    forfeitGrantOnNoShow: args.config.forfeitGrantOnNoShow,
-  }
+  const { businessId, customerId, bookingId, config, isFirstVisit } = args
   const now = new Date()
   // Cargá las reglas automáticas UNA vez (fuera de tx); cada emisión abre su propia tx
   // post-commit solo si hay regla aplicable (evita transacciones vacías en el caso común).
@@ -45,7 +40,7 @@ export async function emitAutomaticRewardsOnCompletion(args: {
           businessId,
           customerId,
           dedupeKey: firstVisitKey(customerId),
-          config: emitCfg,
+          config,
           triggeringBookingId: bookingId,
           now,
         }))
@@ -61,7 +56,7 @@ export async function emitAutomaticRewardsOnCompletion(args: {
           referredCustomerId: customerId,
           bookingId,
           rule: referralRule,
-          config: emitCfg,
+          config,
           now,
         }))
       // Email de recompensa de referido — best-effort, FUERA de la tx.
