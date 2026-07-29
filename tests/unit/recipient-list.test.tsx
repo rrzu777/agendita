@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { renderToStaticMarkup } from 'react-dom/server'
+import { renderWithVocabulary } from '../helpers/vocabulary'
 
 const mockSendCampaignMessage = vi.hoisted(() => vi.fn())
 const mockSendCampaignEmail = vi.hoisted(() => vi.fn())
@@ -24,7 +24,7 @@ describe('RecipientList', () => {
   it('renders metrics, send buttons and sent indicator', async () => {
     const { RecipientList } = await import('@/app/dashboard/campanas/[id]/recipient-list')
 
-    const html = renderToStaticMarkup(
+    const html = renderWithVocabulary('nails',
       <RecipientList
         campaignId="c1"
         recipients={[
@@ -77,7 +77,7 @@ describe('RecipientList', () => {
   it('shows redeemed indicator when the grant is redeemed', async () => {
     const { RecipientList } = await import('@/app/dashboard/campanas/[id]/recipient-list')
 
-    const html = renderToStaticMarkup(
+    const html = renderWithVocabulary('nails',
       <RecipientList
         campaignId="c1"
         recipients={[
@@ -102,7 +102,7 @@ describe('RecipientList', () => {
   it('renders empty state when there are no recipients', async () => {
     const { RecipientList } = await import('@/app/dashboard/campanas/[id]/recipient-list')
 
-    const html = renderToStaticMarkup(
+    const html = renderWithVocabulary('nails',
       <RecipientList
         campaignId="c1"
         recipients={[]}
@@ -113,10 +113,28 @@ describe('RecipientList', () => {
     expect(html).toContain('Sin destinatarias')
   })
 
+  // El mismo estado vacío en un rubro sin clientela femenina. Es la prueba de que
+  // el vocabulario llega hasta acá y no sólo de que existe el léxico.
+  it('el estado vacío usa la forma neutra en un rubro neutro', async () => {
+    const { RecipientList } = await import('@/app/dashboard/campanas/[id]/recipient-list')
+
+    const html = renderWithVocabulary('barber',
+      <RecipientList
+        campaignId="c1"
+        recipients={[]}
+        metrics={{ enviadas: 0, canjearon: 0, vigentes: 0 }}
+      />,
+    )
+
+    expect(html).toContain('Sin destinatarios')
+    expect(html).toContain('Ningún cliente coincidió')
+    expect(html).not.toContain('clienta')
+  })
+
   it('opt-out: fila "No contactar" sin botón de envío + métrica derivada con su conteo', async () => {
     const { RecipientList } = await import('@/app/dashboard/campanas/[id]/recipient-list')
 
-    const html = renderToStaticMarkup(
+    const html = renderWithVocabulary('nails',
       <RecipientList
         campaignId="c1"
         recipients={[
@@ -135,7 +153,7 @@ describe('RecipientList', () => {
   it('canal email: muestra "Enviar email" y no el botón de WhatsApp', async () => {
     const { RecipientList } = await import('@/app/dashboard/campanas/[id]/recipient-list')
 
-    const html = renderToStaticMarkup(
+    const html = renderWithVocabulary('nails',
       <RecipientList
         campaignId="c1"
         recipients={[

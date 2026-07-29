@@ -36,7 +36,7 @@ const sampleBookingData = {
 }
 
 const sampleBusinessData = {
-  businessName: 'Nails by Ana',
+  businessName: 'Nails by Ana', businessCategory: 'nails' as const,
   customerName: 'Maria',
   customerPhone: '+56987654321',
   customerEmail: 'maria@example.com',

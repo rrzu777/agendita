@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { saveBankTransferAccount, setBankTransferEnabled, setRequireTransferProof } from '@/server/actions/bank-transfer-settings'
 import type { BankTransferAccount } from '@prisma/client'
 import { DEFAULT_HOLD_HOURS, DEFAULT_VERIFY_HOURS, HOLD_HOURS_MAX, VERIFY_HOURS_MAX } from '@/lib/bank-transfer/schema'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 export function BankTransferForm({
   account,
@@ -20,6 +21,7 @@ export function BankTransferForm({
   requireProof: boolean
   proofUploadAvailable: boolean
 }) {
+  const vocabulary = useVocabulary()
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
@@ -94,7 +96,7 @@ export function BankTransferForm({
           <div>
             <p className="font-semibold text-primary">Aceptar transferencias</p>
             <p className="text-sm text-muted-foreground">
-              Tus clientas verán estos datos al reservar y podrán avisarte cuando transfieran.
+              Tus {vocabulary.clients} verán estos datos al reservar y podrán avisarte cuando transfieran.
             </p>
           </div>
           <Switch checked={account.isEnabled} onCheckedChange={handleToggle} />
@@ -106,7 +108,7 @@ export function BankTransferForm({
           <div>
             <p className="font-semibold text-primary">Exigir comprobante al declarar transferencia</p>
             <p className="text-sm text-muted-foreground">
-              Tus clientas deberán adjuntar el comprobante de la transferencia para poder avisarte.
+              Tus {vocabulary.clients} deberán adjuntar el comprobante de la transferencia para poder avisarte.
             </p>
           </div>
           <Switch checked={requireProof} onCheckedChange={handleProofToggle} />
@@ -141,7 +143,7 @@ export function BankTransferForm({
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="bt-instructions">Instrucciones para la clienta (opcional)</Label>
+        <Label htmlFor="bt-instructions">Instrucciones para {vocabulary.theClient} (opcional)</Label>
         <Textarea id="bt-instructions" value={form.instructions} onChange={e => set('instructions', e.target.value)} rows={2} placeholder="Ej: poné tu nombre y la fecha de la reserva en el asunto" />
       </div>
 
@@ -149,7 +151,7 @@ export function BankTransferForm({
         <div className="space-y-1.5">
           <Label htmlFor="bt-hold">Plazo para transferir (horas)</Label>
           <Input id="bt-hold" type="number" min={1} max={HOLD_HOURS_MAX} value={form.holdHours} onChange={e => set('holdHours', e.target.value)} required />
-          <p className="text-xs text-muted-foreground">Cuánto tiempo se le reserva el horario a la clienta para que transfiera y te avise.</p>
+          <p className="text-xs text-muted-foreground">Cuánto tiempo se le reserva el horario a {vocabulary.theClient} para que transfiera y te avise.</p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="bt-verify">Plazo para verificar (horas)</Label>

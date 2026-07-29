@@ -1,3 +1,4 @@
+import type { BusinessCategory } from '@prisma/client'
 export interface EmailResult {
   success: boolean
   skipped?: string
@@ -109,6 +110,11 @@ export interface ReviewRequestEmailData {
 }
 
 export interface NewBookingBusinessEmailData {
+  /** Rubro del negocio: decide cómo se nombra a la clientela en el aviso.
+   *  Va acá, junto a businessName/businessTimezone, y no como parámetro suelto:
+   *  el caller siempre tiene la fila del negocio a mano, así que no hace falta
+   *  una query extra ni un string posicional sin nombre. */
+  businessCategory: BusinessCategory
   businessName: string
   bookingNumber?: number | null
   customerName: string
@@ -191,6 +197,11 @@ export interface LoyaltyRewardEmailData {
 }
 
 export interface OwnerBookingChangedData {
+  /** Rubro del negocio: decide cómo se nombra a la clientela en el aviso.
+   *  Va acá, junto a businessName/businessTimezone, y no como parámetro suelto:
+   *  el caller siempre tiene la fila del negocio a mano, así que no hace falta
+   *  una query extra ni un string posicional sin nombre. */
+  businessCategory: BusinessCategory
   businessId: string
   businessName: string
   businessTimezone: string
@@ -204,6 +215,11 @@ export interface OwnerBookingChangedData {
 }
 
 export interface PackagePurchasedEmailData {
+  /** Rubro del negocio: decide cómo se nombra a la clientela en el aviso.
+   *  Va acá, junto a businessName/businessTimezone, y no como parámetro suelto:
+   *  el caller siempre tiene la fila del negocio a mano, así que no hace falta
+   *  una query extra ni un string posicional sin nombre. */
+  businessCategory: BusinessCategory
   businessName: string
   customerName: string
   productName: string
@@ -215,6 +231,11 @@ export interface PackagePurchasedEmailData {
 }
 
 export interface PackageDisputedEmailData {
+  /** Rubro del negocio: decide cómo se nombra a la clientela en el aviso.
+   *  Va acá, junto a businessName/businessTimezone, y no como parámetro suelto:
+   *  el caller siempre tiene la fila del negocio a mano, así que no hace falta
+   *  una query extra ni un string posicional sin nombre. */
+  businessCategory: BusinessCategory
   businessName: string
   customerName: string
   productName: string
@@ -224,6 +245,11 @@ export interface PackageDisputedEmailData {
 
 /** Aviso a la dueña de que entró un pago sobre un paquete que no lo esperaba. */
 export interface PackageUnexpectedPaymentEmailData {
+  /** Rubro del negocio: decide cómo se nombra a la clientela en el aviso.
+   *  Va acá, junto a businessName/businessTimezone, y no como parámetro suelto:
+   *  el caller siempre tiene la fila del negocio a mano, así que no hace falta
+   *  una query extra ni un string posicional sin nombre. */
+  businessCategory: BusinessCategory
   businessName: string
   customerName: string
   productName: string
@@ -236,6 +262,11 @@ export interface PackageUnexpectedPaymentEmailData {
 }
 
 export interface BookingDisputedEmailData {
+  /** Rubro del negocio: decide cómo se nombra a la clientela en el aviso.
+   *  Va acá, junto a businessName/businessTimezone, y no como parámetro suelto:
+   *  el caller siempre tiene la fila del negocio a mano, así que no hace falta
+   *  una query extra ni un string posicional sin nombre. */
+  businessCategory: BusinessCategory
   businessName: string
   customerName: string
   serviceName: string
@@ -247,7 +278,23 @@ export interface BookingDisputedEmailData {
   businessCurrency: string
 }
 
+/** Aviso a la dueña de que entró un pago sobre una reserva que ya estaba saldada. */
+export interface BookingUnexpectedPaymentEmailData {
+  businessName: string
+  customerName: string
+  serviceName: string
+  /** formatBookingNumber(bookingNumber, id) — p.ej. "#4738". */
+  bookingLabel: string
+  amount: number
+  businessCurrency: string
+}
+
 export interface PackageTransferDeclaredEmailData {
+  /** Rubro del negocio: decide cómo se nombra a la clientela en el aviso.
+   *  Va acá, junto a businessName/businessTimezone, y no como parámetro suelto:
+   *  el caller siempre tiene la fila del negocio a mano, así que no hace falta
+   *  una query extra ni un string posicional sin nombre. */
+  businessCategory: BusinessCategory
   businessName: string
   customerName: string
   productName: string

@@ -2,9 +2,12 @@
 
 import { useState, useTransition } from 'react'
 import { upsertAutomaticRule, archiveAutomaticRule } from '@/server/actions/loyalty'
+import { kindLabels } from '@/lib/loyalty/presets'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatMoney } from '@/lib/money'
+import { useVocabulary } from '@/components/vocabulary-provider'
+import type { Vocabulary } from '@/lib/vocabulary'
 
 type Service = { id: string; name: string; price: number }
 
@@ -35,14 +38,31 @@ type Rule = {
 
 type Kind = 'birthday' | 'first_visit' | 'review' | 'anniversary' | 'winback' | 'referral'
 
-const KINDS: { kind: Kind; label: string; description: string }[] = [
-  { kind: 'birthday', label: 'Cumpleaños', description: 'Premia a tus clientas en su cumpleaños.' },
-  { kind: 'first_visit', label: 'Primera visita', description: 'Premia la primera visita de una clienta.' },
-  { kind: 'review', label: 'Reseña', description: 'Premia cuando dejan una reseña.' },
-  { kind: 'anniversary', label: 'Aniversario (1 año)', description: 'Premia al cumplir un año como clienta.' },
-  { kind: 'winback', label: 'Reactivar inactivas', description: 'Premia a clientas que volvieron tras estar inactivas.' },
-  { kind: 'referral', label: 'Referidas', description: 'Premia cuando una clienta refiere a alguien nuevo.' },
-]
+// Sólo las descripciones viven acá; los nombres salen de kindLabels() para no
+// tener dos catálogos del mismo enum que puedan divergir en silencio.
+const DESCRIPTIONS = (v: Vocabulary): Record<Kind, string> => ({
+  birthday: `Premia a tus ${v.clients} en su cumpleaños.`,
+  first_visit: `Premia la primera visita de ${v.aClient}.`,
+  review: 'Premia cuando dejan una reseña.',
+  anniversary: `Premia al cumplir un año como ${v.client}.`,
+  winback: `Premia a ${v.clients} que volvieron tras estar ${v.inactive}.`,
+  referral: `Premia cuando ${v.aClient} refiere a alguien nuevo.`,
+})
+
+const KIND_ORDER: Kind[] = ['birthday', 'first_visit', 'review', 'anniversary', 'winback', 'referral']
+
+function kindsFor(v: Vocabulary): { kind: Kind; label: string; description: string }[] {
+  const labels = kindLabels(v)
+  const descriptions = DESCRIPTIONS(v)
+  return KIND_ORDER.map((kind) => ({
+    kind,
+    // "Aniversario (1 año)" sólo en el editor: acá el label es el título de una
+    // tarjeta con formulario y el plazo orienta; en el resumen del preset es un
+    // ítem de lista y sobra.
+    label: kind === 'anniversary' ? `${labels[kind]} (1 año)` : labels[kind],
+    description: descriptions[kind],
+  }))
+}
 
 /** Lee un campo numérico opcional del form: vacío/ausente => null. */
 const optNum = (v: FormDataEntryValue | null): number | null => (v ? Number(v) : null)
@@ -67,6 +87,9 @@ export function AutomaticRules({
   pointsLabel: string
   currency: string
 }) {
+  const vocabulary = useVocabulary()
+  const kinds = kindsFor(vocabulary)
+
   const byKind = new Map<string, Rule>()
   for (const r of rules) {
     const k = conditionsOf(r).kind
@@ -81,7 +104,7 @@ export function AutomaticRules({
       </p>
 
       <div className="mt-4 grid gap-4">
-        {KINDS.map(({ kind, label, description }) => (
+        {kinds.map(({ kind, label, description }) => (
           <RuleCard
             key={kind}
             kind={kind}
@@ -115,6 +138,7 @@ function RuleCard({
   pointsLabel: string
   currency: string
 }) {
+  const vocabulary = useVocabulary()
   const [isPending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -335,9 +359,9 @@ function RuleCard({
             defaultValue={cond.beneficiary ?? 'both'}
             className="w-56 rounded-md border border-border bg-background px-2 py-1 text-sm"
           >
-            <option value="both">Ambas (referidora y referida)</option>
-            <option value="referrer">Solo la referidora</option>
-            <option value="referred">Solo la referida</option>
+            <option value="both">{vocabulary.bothParties} ({vocabulary.referrerNoun} y {vocabulary.referredNoun})</option>
+            <option value="referrer">Solo {vocabulary.referrer}</option>
+            <option value="referred">Solo {vocabulary.referredPerson}</option>
           </select>
         )}
 
@@ -356,7 +380,7 @@ function RuleCard({
             name="maxPerCustomer"
             type="number"
             min={1}
-            placeholder="Tope por clienta (opc.)"
+            placeholder={`Tope por ${vocabulary.client} (opc.)`}
             defaultValue={rule?.maxPerCustomer ?? undefined}
             className="w-48"
           />

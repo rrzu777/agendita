@@ -19,6 +19,7 @@ import { formatMoney } from '@/lib/money'
 import { CalendarCheck2, User, Search, X } from 'lucide-react'
 import type { Service } from '@prisma/client'
 import { bookingStatusLabels } from '@/lib/bookings/status-labels'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 interface NewBookingFormProps {
   services: Service[]
@@ -38,6 +39,7 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
 }
 
 export function NewBookingForm({ services, businessId, timezone, currency }: NewBookingFormProps) {
+  const vocabulary = useVocabulary()
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -331,7 +333,7 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
             </div>
 
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-primary">Cliente</h3>
+              <h3 className="text-lg font-semibold text-primary">{vocabulary.Client}</h3>
 
               {selectedCustomerId ? (
                 <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 p-3">

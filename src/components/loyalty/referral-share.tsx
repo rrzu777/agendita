@@ -1,11 +1,20 @@
 'use client'
 
 import { useState } from 'react'
+import type { Vocabulary } from '@/lib/vocabulary'
 
-export function ReferralShare({ url, firstName }: { url: string; firstName: string }) {
+export function ReferralShare({
+  url,
+  firstName,
+  vocabulary,
+}: {
+  url: string
+  firstName: string
+  vocabulary: Vocabulary
+}) {
   const [copied, setCopied] = useState(false)
 
-  const message = `${firstName} te invita a reservar. Usa este enlace y ambas ganan: ${url}`
+  const message = `${firstName} te invita a reservar. Usa este enlace y ${vocabulary.bothWin}: ${url}`
   const whatsappHref = `https://wa.me/?text=${encodeURIComponent(message)}`
 
   async function handleCopy() {
@@ -20,9 +29,9 @@ export function ReferralShare({ url, firstName }: { url: string; firstName: stri
 
   return (
     <section className="mt-8">
-      <h2 className="mb-2 text-sm font-semibold text-gray-700">Referí a una amiga</h2>
+      <h2 className="mb-2 text-sm font-semibold text-gray-700">{vocabulary.referAFriend}</h2>
       <div className="rounded-2xl bg-pink-50 p-4">
-        <p className="text-sm text-pink-700">Comparte tu enlace y ambas ganan recompensas.</p>
+        <p className="text-sm text-pink-700">Comparte tu enlace y {vocabulary.bothWin} recompensas.</p>
         <div className="mt-3 flex items-center gap-2 rounded-lg bg-white px-3 py-2">
           <code className="flex-1 truncate font-mono text-xs text-gray-600">{url}</code>
           <button

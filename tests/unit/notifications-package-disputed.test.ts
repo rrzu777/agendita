@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { packageDisputedBusinessHtml, packageDisputedBusinessText } from '@/lib/notifications/templates'
 
 const data = {
-  businessName: 'Studio Ana',
+  businessName: 'Studio Ana', businessCategory: 'nails' as const,
   customerName: 'Ana',
   productName: 'Pack 5 sesiones',
   amount: 50000,

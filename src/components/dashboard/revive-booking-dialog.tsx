@@ -6,6 +6,7 @@ import { CheckCircle2, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { reviveBooking } from '@/server/actions/revive-booking'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 export function ReviveBookingDialog({
   bookingId,
@@ -27,6 +28,7 @@ export function ReviveBookingDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const vocabulary = useVocabulary()
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -89,7 +91,7 @@ export function ReviveBookingDialog({
 
           {!customerHasEmail && (
             <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
-              Esta clienta no tiene email: avisale por WhatsApp que su reserva revivió.
+              {vocabulary.thisClient} no tiene email: avisale por WhatsApp que su reserva revivió.
             </p>
           )}
           {/* Desviación consciente de la spec §5 ("reusar BookingContactButtons"):

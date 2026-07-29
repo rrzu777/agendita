@@ -2,6 +2,8 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
 import { unsubscribeFooterHtml, unsubscribeFooterText } from './marketing-email'
 import { formatMoney } from '@/lib/money'
+import { getVocabulary } from '@/lib/vocabulary'
+import type { BusinessCategory } from '@prisma/client'
 import type {
   BookingEmailData,
   CancellationEmailData,
@@ -20,6 +22,7 @@ import type {
   PackageDisputedEmailData,
   PackageUnexpectedPaymentEmailData,
   BookingDisputedEmailData,
+  BookingUnexpectedPaymentEmailData,
   PackageTransferDeclaredEmailData,
   PackageTransferReminderCustomerEmailData,
   PackageTransferUnverifiedBusinessEmailData,
@@ -36,6 +39,17 @@ function escapeHtml(str: string): string {
 
 function fmtDate(date: Date, timezone: string): string {
   return formatInTimeZone(date, timezone, "EEEE d 'de' MMMM 'de' yyyy, HH:mm", { locale: es })
+}
+
+/**
+ * Cómo nombrar a la clientela en un aviso al negocio, según su rubro.
+ *
+ * Lo resuelven las plantillas y no el caller porque el rubro ya viaja en el data
+ * de todos los avisos al negocio, junto a businessName y businessTimezone. Los
+ * emails A la clienta no muestran esta fila, así que no lo necesitan.
+ */
+function clientLabelOf(data: { businessCategory: BusinessCategory }): string {
+  return getVocabulary(data.businessCategory).Client
 }
 
 function fmtCurrency(amount: number, currency: string): string {
@@ -315,7 +329,7 @@ export function newBookingBusinessHtml(data: NewBookingBusinessEmailData): strin
     <p style="font-size:15px">${escapeHtml(data.customerName)} acaba de agendar una cita.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
       ${bookingNumberRowHtml(data.bookingNumber)}
-      <tr><td style="padding:8px 0;color:#666">Cliente</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">${escapeHtml(clientLabelOf(data))}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Teléfono</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerPhone)}</td></tr>
       ${data.customerEmail ? `<tr><td style="padding:8px 0;color:#666">Email</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerEmail)}</td></tr>` : ''}
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
@@ -356,7 +370,7 @@ export function ownerBookingChangedHtml(data: OwnerBookingChangedData): string {
     <p style="font-size:15px">${intro}</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
       ${bookingNumberRowHtml(data.bookingNumber)}
-      <tr><td style="padding:8px 0;color:#666">Cliente</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">${escapeHtml(clientLabelOf(data))}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
       ${scheduleRows}
     </table>
@@ -376,7 +390,7 @@ export function ownerBookingChangedText(data: OwnerBookingChangedData): string {
     plainIntro,
     ``,
     ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
-    `Cliente: ${data.customerName}`,
+    `${clientLabelOf(data)}: ${data.customerName}`,
     `Servicio: ${data.serviceName}`,
   ]
 
@@ -532,7 +546,7 @@ export function newBookingBusinessText(data: NewBookingBusinessEmailData): strin
     `${data.customerName} acaba de agendar una cita.`,
     ``,
     ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
-    `Cliente: ${data.customerName}`,
+    `${clientLabelOf(data)}: ${data.customerName}`,
     `Teléfono: ${data.customerPhone}`,
   ]
   if (data.customerEmail) lines.push(`Email: ${data.customerEmail}`)
@@ -776,7 +790,7 @@ export function packageSoldBusinessHtml(data: PackagePurchasedEmailData): string
     ${header('Vendiste un paquete')}
     <p style="font-size:15px">${escapeHtml(data.customerName)} compró un paquete online.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
-      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">${escapeHtml(clientLabelOf(data))}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Paquete</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.productName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Sesiones</td><td style="padding:8px 0;font-weight:600">${data.totalSessions}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Total</td><td style="padding:8px 0;font-weight:600">${price}</td></tr>
@@ -790,7 +804,7 @@ export function packageSoldBusinessText(data: PackagePurchasedEmailData): string
   return [
     'Vendiste un paquete', '',
     `${data.customerName} compró un paquete online.`, '',
-    `Clienta: ${data.customerName}`,
+    `${clientLabelOf(data)}: ${data.customerName}`,
     `Paquete: ${data.productName}`,
     `Sesiones: ${data.totalSessions}`,
     `Total: ${price}`, '',
@@ -804,7 +818,7 @@ export function packageDisputedBusinessHtml(data: PackageDisputedEmailData): str
     ${header('Contracargo de paquete')}
     <p style="font-size:15px">Se registró un contracargo (chargeback) de un paquete de ${escapeHtml(data.customerName)}. La compra fue revertida automáticamente.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
-      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">${escapeHtml(clientLabelOf(data))}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Paquete</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.productName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Monto</td><td style="padding:8px 0;font-weight:600">${amount}</td></tr>
     </table>
@@ -817,7 +831,7 @@ export function packageDisputedBusinessText(data: PackageDisputedEmailData): str
   return [
     'Contracargo de paquete', '',
     `Se registró un contracargo (chargeback) de un paquete de ${data.customerName}. La compra fue revertida automáticamente.`, '',
-    `Clienta: ${data.customerName}`,
+    `${clientLabelOf(data)}: ${data.customerName}`,
     `Paquete: ${data.productName}`,
     `Monto: ${amount}`, '',
     `Enviado por ${data.businessName} a través de Agendita`,
@@ -830,7 +844,7 @@ export function packageUnexpectedPaymentBusinessHtml(data: PackageUnexpectedPaym
     ${header('Pago inesperado de paquete')}
     <p style="font-size:15px">Entró un pago de ${escapeHtml(data.customerName)} por un paquete, pero ${escapeHtml(data.situation)}. No se tocó el paquete (las sesiones siguen siendo las mismas), pero la plata sí se cobró: revisá si corresponde devolverla.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
-      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">${escapeHtml(clientLabelOf(data))}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Paquete</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.productName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Monto cobrado</td><td style="padding:8px 0;font-weight:600">${amount}</td></tr>
     </table>
@@ -843,7 +857,7 @@ export function packageUnexpectedPaymentBusinessText(data: PackageUnexpectedPaym
   return [
     'Pago inesperado de paquete', '',
     `Entró un pago de ${data.customerName} por un paquete, pero ${data.situation}. No se tocó el paquete, pero la plata sí se cobró: revisá si corresponde devolverla.`, '',
-    `Clienta: ${data.customerName}`,
+    `${clientLabelOf(data)}: ${data.customerName}`,
     `Paquete: ${data.productName}`,
     `Monto cobrado: ${amount}`, '',
     `Enviado por ${data.businessName} a través de Agendita`,
@@ -856,7 +870,7 @@ export function bookingDisputedBusinessHtml(data: BookingDisputedEmailData): str
     ${header('Contracargo de reserva')}
     <p style="font-size:15px">Se registró un contracargo (chargeback) del pago de una reserva de ${escapeHtml(data.customerName)}. El pago fue revertido y la reserva quedó marcada — revisá si querés cancelarla, recobrar o atender igual.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
-      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">${escapeHtml(clientLabelOf(data))}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Reserva</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.bookingLabel)} — ${escapeHtml(data.serviceName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Fecha</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Monto</td><td style="padding:8px 0;font-weight:600">${amount}</td></tr>
@@ -870,10 +884,36 @@ export function bookingDisputedBusinessText(data: BookingDisputedEmailData): str
   return [
     'Contracargo de reserva', '',
     `Se registró un contracargo (chargeback) del pago de una reserva de ${data.customerName}. El pago fue revertido y la reserva quedó marcada.`, '',
-    `Clienta: ${data.customerName}`,
+    `${clientLabelOf(data)}: ${data.customerName}`,
     `Reserva: ${data.bookingLabel} — ${data.serviceName}`,
     `Fecha: ${fmtDate(data.startDateTime, data.businessTimezone)}`,
     `Monto: ${amount}`, '',
+    `Enviado por ${data.businessName} a través de Agendita`,
+  ].join('\n')
+}
+
+export function bookingUnexpectedPaymentBusinessHtml(data: BookingUnexpectedPaymentEmailData): string {
+  const amount = fmtCurrency(data.amount, data.businessCurrency)
+  return baseHtml(`
+    ${header('Pago inesperado de reserva')}
+    <p style="font-size:15px">Entró un pago de ${escapeHtml(data.customerName)} por una reserva que ya estaba pagada. La reserva no cambió, pero la plata sí se cobró: revisá si corresponde devolverla.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Reserva</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.bookingLabel)} — ${escapeHtml(data.serviceName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Monto cobrado</td><td style="padding:8px 0;font-weight:600">${amount}</td></tr>
+    </table>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function bookingUnexpectedPaymentBusinessText(data: BookingUnexpectedPaymentEmailData): string {
+  const amount = fmtCurrency(data.amount, data.businessCurrency)
+  return [
+    'Pago inesperado de reserva', '',
+    `Entró un pago de ${data.customerName} por una reserva que ya estaba pagada. La reserva no cambió, pero la plata sí se cobró: revisá si corresponde devolverla.`, '',
+    `Clienta: ${data.customerName}`,
+    `Reserva: ${data.bookingLabel} — ${data.serviceName}`,
+    `Monto cobrado: ${amount}`, '',
     `Enviado por ${data.businessName} a través de Agendita`,
   ].join('\n')
 }
@@ -884,7 +924,7 @@ export function packageTransferDeclaredBusinessHtml(data: PackageTransferDeclare
     ${header('Transferencia de paquete declarada')}
     <p style="font-size:15px">${escapeHtml(data.customerName)} declaró una transferencia por un paquete. Verificá el pago y confirmá o rechazá.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
-      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">${escapeHtml(clientLabelOf(data))}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Paquete</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.productName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Monto</td><td style="padding:8px 0;font-weight:600">${amount}</td></tr>
     </table>
@@ -897,7 +937,7 @@ export function packageTransferDeclaredBusinessText(data: PackageTransferDeclare
   return [
     'Transferencia de paquete declarada', '',
     `${data.customerName} declaró una transferencia por un paquete. Verificá el pago y confirmá o rechazá.`, '',
-    `Clienta: ${data.customerName}`,
+    `${clientLabelOf(data)}: ${data.customerName}`,
     `Paquete: ${data.productName}`,
     `Monto: ${amount}`, '',
     `Enviado por ${data.businessName} a través de Agendita`,

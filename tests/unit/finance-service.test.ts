@@ -777,6 +777,118 @@ describe('applyApprovedPayment', () => {
       ).rejects.toThrow('El tipo de pago no coincide con el pago registrado')
     })
   })
+
+  describe('pago que entra sobre una reserva YA saldada', () => {
+    /** Reserva de 20.000 con los 20.000 ya cobrados antes de que llegue el pago nuevo. */
+    function setupSettledBooking(newPayment: { id: string; amount: number; paymentType?: PaymentType }) {
+      const tx = setupTx()
+      tx.booking.findUnique.mockResolvedValue({
+        ...baseBooking,
+        depositPaid: 20000,
+        remainingBalance: 0,
+        paymentStatus: BookingPaymentStatus.fully_paid,
+        status: BookingStatus.confirmed,
+      })
+      tx.payment.findFirst.mockResolvedValue(null)
+      const created = { status: 'approved', paymentType: PaymentType.deposit, ...newPayment }
+      tx.payment.create.mockResolvedValue(created)
+      tx.payment.findMany.mockResolvedValue([
+        { id: 'pay-viejo', amount: 20000, status: 'approved', paymentType: PaymentType.full_payment },
+        created,
+      ])
+      tx.booking.update.mockResolvedValue({ ...baseBooking, depositPaid: 20000 + newPayment.amount, remainingBalance: 0 })
+      return tx
+    }
+
+    it('lo asienta como overpayment, fuera de los KPI, y lo marca para avisar', async () => {
+      const tx = setupSettledBooking({ id: 'pay-tarde', amount: 5000 })
+
+      const result = await applyApprovedPayment({
+        tx,
+        bookingId: 'booking-1',
+        businessId: 'biz-1',
+        amount: 5000,
+        currency: 'CLP',
+        provider: PaymentProvider.mercado_pago,
+        providerPaymentId: 'mp-999',
+        paymentType: PaymentType.deposit,
+      })
+
+      const ledgerData = tx.ledgerEntry.upsert.mock.calls[0][0].create
+      expect(ledgerData.type).toBe('overpayment')
+      expect(ledgerData.direction).toBe('income')
+      expect(ledgerData.amount).toBe(5000)
+      expect(ledgerData.description).toBe('Pago inesperado para reserva #4242: ya estaba pagada (revisar reembolso)')
+      expect(result.wasUnexpected).toBe(true)
+    })
+
+    it('un reembolso sobre la misma reserva NO es un pago inesperado', async () => {
+      const tx = setupSettledBooking({ id: 'pay-refund', amount: 5000, paymentType: PaymentType.refund })
+
+      const result = await applyApprovedPayment({
+        tx,
+        bookingId: 'booking-1',
+        businessId: 'biz-1',
+        amount: 5000,
+        currency: 'CLP',
+        provider: PaymentProvider.mercado_pago,
+        providerPaymentId: 'mp-refund',
+        paymentType: PaymentType.refund,
+      })
+
+      expect(tx.ledgerEntry.upsert.mock.calls[0][0].create.type).toBe('refund_issued')
+      expect(result.wasUnexpected).toBe(false)
+    })
+
+    it('el redelivery del MISMO pago no es plata nueva', async () => {
+      const tx = setupTx()
+      tx.booking.findUnique.mockResolvedValue({ ...baseBooking, depositPaid: 20000, remainingBalance: 0, status: BookingStatus.confirmed })
+      tx.payment.findFirst.mockResolvedValue({ id: 'pay-1', amount: 20000, status: 'approved', paymentType: PaymentType.full_payment })
+      tx.payment.findMany.mockResolvedValue([{ id: 'pay-1', amount: 20000, status: 'approved', paymentType: PaymentType.full_payment }])
+      tx.booking.update.mockResolvedValue({ ...baseBooking, depositPaid: 20000, remainingBalance: 0 })
+
+      const result = await applyApprovedPayment({
+        tx,
+        bookingId: 'booking-1',
+        businessId: 'biz-1',
+        amount: 20000,
+        currency: 'CLP',
+        provider: PaymentProvider.mercado_pago,
+        providerPaymentId: 'mp-1',
+        paymentType: PaymentType.full_payment,
+      })
+
+      expect(tx.ledgerEntry.upsert).not.toHaveBeenCalled()
+      expect(result.wasUnexpected).toBe(false)
+    })
+
+    it('un pago parcial que se pasa NO se marca: la reserva todavía debía plata', async () => {
+      const tx = setupTx()
+      tx.booking.findUnique.mockResolvedValue({ ...baseBooking, depositPaid: 15000, remainingBalance: 5000, status: BookingStatus.confirmed })
+      tx.payment.findFirst.mockResolvedValue(null)
+      const created = { id: 'pay-2', amount: 8000, status: 'approved', paymentType: PaymentType.final_payment }
+      tx.payment.create.mockResolvedValue(created)
+      tx.payment.findMany.mockResolvedValue([
+        { id: 'pay-1', amount: 15000, status: 'approved', paymentType: PaymentType.deposit },
+        created,
+      ])
+      tx.booking.update.mockResolvedValue({ ...baseBooking, depositPaid: 23000, remainingBalance: 0 })
+
+      const result = await applyApprovedPayment({
+        tx,
+        bookingId: 'booking-1',
+        businessId: 'biz-1',
+        amount: 8000,
+        currency: 'CLP',
+        provider: PaymentProvider.manual,
+        providerPaymentId: null,
+        paymentType: PaymentType.final_payment,
+      })
+
+      expect(tx.ledgerEntry.upsert.mock.calls[0][0].create.type).toBe('final_payment_paid')
+      expect(result.wasUnexpected).toBe(false)
+    })
+  })
 })
 
 describe('applyApprovedPackagePayment', () => {

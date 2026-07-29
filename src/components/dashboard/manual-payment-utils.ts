@@ -1,4 +1,5 @@
 import { isManuallyPayableStatus } from '@/lib/bookings/payable-statuses'
+import type { Vocabulary } from '@/lib/vocabulary'
 
 export type ManualPaymentMode = 'fixed' | 'percentage'
 
@@ -67,4 +68,18 @@ export function getManualPaymentSuggestion({
     amount: remainingBalance,
     label: 'Saldo pendiente',
   }
+}
+
+/**
+ * Confirmación de "rechazar transferencia". Vive acá porque el diálogo de
+ * verificación y la sección "por verificar" la muestran idéntica, y el texto del
+ * saldo cambia con el rubro — duplicarla era duplicar también la interpolación.
+ *
+ * Rechazar el ABONO cancela la reserva; rechazar el SALDO no, y por eso invita a
+ * volver a avisar.
+ */
+export function rejectTransferConfirmMessage(kind: 'deposit' | 'balance', vocabulary: Vocabulary): string {
+  return kind === 'balance'
+    ? `¿Rechazar esta transferencia del saldo? La reserva NO se cancela; ${vocabulary.theClient} podrá volver a avisar.`
+    : '¿Rechazar esta transferencia? Se cancelará la reserva.'
 }

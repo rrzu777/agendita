@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { openDeferredPopup } from '@/lib/popup'
 import { sendCampaignEmailBatch, sendCampaignMessage } from '@/server/actions/campaigns'
 import type { RecipientItem } from './recipient-list'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 const EMAIL_CHUNK = 10
 
@@ -24,6 +25,7 @@ export function BulkSendControls({
   campaignId: string
   recipients: RecipientItem[]
 }) {
+  const vocabulary = useVocabulary()
   const router = useRouter()
   const { email, whatsapp } = useMemo(() => pendingByChannel(recipients), [recipients])
 
@@ -82,7 +84,7 @@ export function BulkSendControls({
         popup.navigate(res.data.waUrl)
       } else {
         popup.close()
-        setWaError('La clienta no tiene un teléfono válido.')
+        setWaError(`${vocabulary.TheClient} no tiene un teléfono válido.`)
       }
     } catch {
       // action() no lanza salvo fallo de transporte (RPC de la server action en sí);

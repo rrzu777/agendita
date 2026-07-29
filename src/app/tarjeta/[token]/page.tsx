@@ -8,6 +8,7 @@ import { redeemPointsAsCustomer } from '@/server/actions/loyalty'
 import { setMarketingOptOutByToken } from '@/server/actions/marketing-optout'
 import { MarketingOptOutSection } from '@/components/loyalty/marketing-optout-section'
 import { PageMessage } from '@/components/ui/page-message'
+import { getVocabulary } from '@/lib/vocabulary'
 
 export const metadata: Metadata = { robots: { index: false, follow: false } }
 
@@ -39,6 +40,7 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
       <LoyaltyCard
         customerName={customer.name}
         business={{ name: customer.business.name, logoUrl: customer.business.logoUrl }}
+        vocabulary={getVocabulary(customer.business.category)}
         data={data}
         redeemAction={redeemAction.bind(null, token)}
       />

@@ -8,6 +8,7 @@ import { UserError } from '@/lib/actions/result'
 import { isEmailable } from '@/lib/customers/email'
 import { ensureLoyaltyToken } from '@/lib/loyalty/token'
 import { sendNotificationSafely, sendCampaignPromoEmail } from '@/lib/notifications'
+import { getVocabulary } from '@/lib/vocabulary'
 
 type Db = PrismaClient
 
@@ -53,20 +54,22 @@ export async function prepareCampaignSend(
           select: {
             id: true, name: true, messageTemplate: true,
             promotion: { select: { id: true, grantExpiryDays: true, isActive: true } },
-            business: { select: { name: true, timezone: true } },
+            business: { select: { name: true, timezone: true, category: true } },
           },
         },
       },
     }),
     db.loyaltyConfig.findUnique({ where: { businessId }, select: { grantExpiryDays: true } }),
   ])
-  if (!recipient) throw new ForbiddenError('Destinataria no encontrada')
+  // Sin recipient no hay negocio del cual sacar el léxico del rubro, así que el
+  // mensaje se redacta sin género en vez de adivinar.
+  if (!recipient) throw new ForbiddenError('No se encontró a esta persona en la campaña')
   // Puerta 2 (retroactiva): la clienta pudo hacer opt-out DESPUÉS de materializar la lista.
   // UserError: mensaje user-facing — sendCampaignEmailBatch lo captura per-item (no
   // le importa el tipo), pero sendCampaignMessage/sendCampaignEmail lo propagan tal
   // cual hasta el action() wrapper, que sólo preserva el texto de UserError.
   if (recipient.customer.marketingOptOutAt) {
-    throw new UserError('La clienta pidió no recibir campañas')
+    throw new UserError(`${getVocabulary(recipient.campaign.business.category).TheClient} pidió no recibir campañas`)
   }
   // Gate de promo activa: si la promo se archivó entre crear la campaña y enviar,
   // cortar (fail-fast) en vez de emitir beneficios contra una promo apagada.

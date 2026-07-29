@@ -2,8 +2,9 @@
 
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import type { Booking } from '@prisma/client'
+import type { Booking, BusinessCategory } from '@prisma/client'
 import { BookingStatus, BookingPaymentStatus, PaymentType } from '@prisma/client'
+import { getVocabulary } from '@/lib/vocabulary'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
@@ -86,6 +87,8 @@ async function fireBookingNotifications(
     cancellationPolicy: string | null
     slug: string
     subdomain: string | null
+    // El rubro decide el vocabulario del aviso al negocio.
+    category: BusinessCategory
   },
   booking: {
     customer: { name: string; phone: string; email: string | null }
@@ -107,6 +110,7 @@ async function fireBookingNotifications(
   const customerEmail = booking.customer.email
   const businessTimezone = business.timezone || 'America/Santiago'
   const businessCurrency = business.currency || 'CLP'
+  const vocabulary = getVocabulary(business.category)
 
   // Reserva con transferencia: el email de "reserva recibida" ES la fuente
   // durable de los datos bancarios (la pestaña del wizard es efímera).
@@ -160,6 +164,7 @@ async function fireBookingNotifications(
     sendMultiNotificationSafely('business notification', () =>
       sendNewBookingNotificationToBusiness(booking.businessId, {
         businessName: business.name,
+        businessCategory: business.category,
         bookingNumber: booking.bookingNumber,
         customerName: booking.customer.name,
         customerPhone: booking.customer.phone,
@@ -172,7 +177,7 @@ async function fireBookingNotifications(
         remainingBalance: booking.remainingBalance,
         dashboardLink,
         paymentNote: booking.paymentMethod === BANK_TRANSFER_METHOD
-          ? 'La clienta eligió pagar el abono por transferencia. Te va a llegar otro aviso cuando declare que transfirió.'
+          ? `${vocabulary.TheClient} eligió pagar el abono por transferencia. Te va a llegar otro aviso cuando declare que transfirió.`
           : undefined,
       }),
     ),
@@ -286,6 +291,7 @@ async function _createBooking(data: {
       cancellationPolicy: true,
       slug: true,
       subdomain: true,
+      category: true,
       subscriptionStatus: true,
     },
   })

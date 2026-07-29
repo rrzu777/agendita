@@ -567,6 +567,10 @@ enum LedgerEntryType {
   manual_expense
   adjustment
   package_sale
+  // Plata que entró sobre algo que ya estaba pagado (un segundo pago aprobado
+  // sobre una reserva saldada). Es un cobro real y visible en el ledger, pero
+  // queda FUERA de los KPI de ingreso: se va a devolver, no es facturación.
+  overpayment
 }
 
 enum LedgerDirection {

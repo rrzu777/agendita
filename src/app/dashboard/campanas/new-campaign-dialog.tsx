@@ -18,6 +18,7 @@ import {
 } from '@/lib/campaigns/schema'
 import { CAMPAIGN_PLACEHOLDERS, defaultMessageForSegment } from '@/lib/campaigns/message'
 import { segmentLabel } from '@/lib/campaigns/labels'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 export interface PromotionOption {
   id: string
@@ -50,6 +51,7 @@ export function NewCampaignDialog({
   services: ServiceOption[]
   currency: string
 }) {
+  const vocabulary = useVocabulary()
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -163,7 +165,7 @@ export function NewCampaignDialog({
                       : 'text-muted-foreground hover:bg-muted'
                   }`}
                 >
-                  {segmentLabel(s)}
+                  {segmentLabel(s, vocabulary)}
                 </button>
               ))}
             </div>

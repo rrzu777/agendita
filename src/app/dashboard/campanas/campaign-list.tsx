@@ -8,6 +8,7 @@ import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { segmentLabel } from '@/lib/campaigns/labels'
 import { formatMediumDate } from '@/lib/format-date'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 export interface CampaignListItem {
   id: string
@@ -19,6 +20,7 @@ export interface CampaignListItem {
 }
 
 export function CampaignList({ campaigns }: { campaigns: CampaignListItem[] }) {
+  const vocabulary = useVocabulary()
   if (campaigns.length === 0) {
     return (
       <div className="studio-card overflow-hidden py-12 text-center">
@@ -31,7 +33,7 @@ export function CampaignList({ campaigns }: { campaigns: CampaignListItem[] }) {
               Todavía no creaste ninguna campaña
             </p>
             <p className="text-sm text-muted-foreground">
-              Creá tu primera campaña para enviar promos por WhatsApp o email a un grupo de clientas.
+              Creá tu primera campaña para enviar promos por WhatsApp o email a un grupo de {vocabulary.clients}.
             </p>
           </div>
         </div>
@@ -48,7 +50,7 @@ export function CampaignList({ campaigns }: { campaigns: CampaignListItem[] }) {
               <TableHead>Nombre</TableHead>
               <TableHead className="w-[180px]">Segmento</TableHead>
               <TableHead>Promo</TableHead>
-              <TableHead className={TABLE_COL.uses}>Destinatarias</TableHead>
+              <TableHead className={TABLE_COL.uses}>{vocabulary.Recipients}</TableHead>
               <TableHead className={TABLE_COL.date}>Fecha</TableHead>
             </TableRow>
           </TableHeader>
@@ -64,7 +66,7 @@ export function CampaignList({ campaigns }: { campaigns: CampaignListItem[] }) {
                     </Link>
                   }
                 />
-                <TableCell className="w-[180px]">{segmentLabel(c.segmentType)}</TableCell>
+                <TableCell className="w-[180px]">{segmentLabel(c.segmentType, vocabulary)}</TableCell>
                 <TruncatedCell primary={c.promotion.name} />
                 <TableCell className={TABLE_COL.uses}>{c._count.recipients}</TableCell>
                 <TableCell className={`${TABLE_COL.date} whitespace-nowrap text-sm`}>
@@ -85,10 +87,10 @@ export function CampaignList({ campaigns }: { campaigns: CampaignListItem[] }) {
                 {c.name}
               </Link>
             }
-            subtitle={segmentLabel(c.segmentType)}
+            subtitle={segmentLabel(c.segmentType, vocabulary)}
             rows={[
               { label: 'Promo', value: c.promotion.name },
-              { label: 'Destinatarias', value: c._count.recipients },
+              { label: vocabulary.Recipients, value: c._count.recipients },
               { label: 'Fecha', value: formatMediumDate(c.createdAt) },
             ]}
           />

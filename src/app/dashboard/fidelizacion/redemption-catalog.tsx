@@ -5,6 +5,7 @@ import { upsertRedemptionOption, archiveRedemptionOption } from '@/server/action
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatMoney } from '@/lib/money'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 type Service = { id: string; name: string; price: number }
 type RedemptionOption = {
@@ -43,6 +44,7 @@ export function RedemptionCatalog({
   options: RedemptionOption[]
   services: Service[]
 }) {
+  const vocabulary = useVocabulary()
   const [isPending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<RedemptionOption | null>(null)
@@ -98,7 +100,7 @@ export function RedemptionCatalog({
     <section className="studio-card mt-6 p-4">
       <h3 className="text-lg font-semibold text-primary">Catálogo de canje</h3>
       <p className="text-sm text-muted-foreground">
-        Define qué recompensas pueden canjear tus clientas con sus puntos.
+        Define qué recompensas pueden canjear tus {vocabulary.clients} con sus puntos.
       </p>
 
       <ul className="mt-4 divide-y divide-border">
@@ -202,7 +204,7 @@ export function RedemptionCatalog({
             name="maxPerCustomer"
             type="number"
             min={1}
-            placeholder="Tope por clienta (opc.)"
+            placeholder={`Tope por ${vocabulary.client} (opc.)`}
             defaultValue={editing?.maxPerCustomer ?? undefined}
             className="w-44"
           />

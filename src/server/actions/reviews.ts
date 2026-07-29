@@ -6,6 +6,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { action, UserError } from '@/lib/actions/result'
+import { getVocabulary } from '@/lib/vocabulary'
 import { BookingStatus, Prisma } from '@prisma/client'
 import { submitReviewSchema } from '@/lib/reviews/schema'
 import { headers } from 'next/headers'
@@ -442,7 +443,7 @@ async function _getReviewWhatsappLink(
 export const getReviewWhatsappLink = action(_getReviewWhatsappLink)
 
 async function _sendReviewRequestEmail(bookingId: string) {
-  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('send-review-email', 10, 60000)
   if (!limit.success) {
     throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
@@ -476,7 +477,7 @@ async function _sendReviewRequestEmail(bookingId: string) {
   }
 
   if (!booking.customer.email) {
-    return { success: false, skipped: 'La clienta no tiene email registrado' }
+    return { success: false, skipped: `${getVocabulary(business.category).TheClient} no tiene email registrado` }
   }
 
   const headersList = await headers()

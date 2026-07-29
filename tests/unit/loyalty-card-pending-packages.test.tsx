@@ -5,6 +5,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: 
 
 import { LoyaltyCard } from '@/components/loyalty/loyalty-card'
 import type { LoyaltyCardData } from '@/lib/loyalty/card-data'
+import { getVocabulary } from '@/lib/vocabulary'
 
 const baseData = {
   config: null, balance: 0, history: [], catalog: [], grants: [], packages: [], referralUrl: null,
@@ -18,7 +19,7 @@ describe('LoyaltyCard — paquetes por confirmar', () => {
       pendingPackages: [{ id: 'pp1', productName: 'Pack 5', declared: false, resumeUrl: 'https://biz.agendita.cl/paquetes/confirmation?purchaseId=pp1' }],
     } as unknown as LoyaltyCardData
     const html = renderToStaticMarkup(
-      <LoyaltyCard customerName="Ana" business={{ name: 'Biz', logoUrl: null }} data={data} redeemAction={async () => ({ ok: true, data: undefined })} />,
+      <LoyaltyCard customerName="Ana" business={{ name: 'Biz', logoUrl: null }} vocabulary={getVocabulary('nails')} data={data} redeemAction={async () => ({ ok: true, data: undefined })} />,
     )
     expect(html).toContain('Pack 5')
     expect(html).toContain('Te falta transferir')
@@ -31,14 +32,14 @@ describe('LoyaltyCard — paquetes por confirmar', () => {
       pendingPackages: [{ id: 'pp1', productName: 'Pack 5', declared: true, resumeUrl: 'https://x/paquetes/confirmation?purchaseId=pp1' }],
     } as unknown as LoyaltyCardData
     const html = renderToStaticMarkup(
-      <LoyaltyCard customerName="Ana" business={{ name: 'Biz', logoUrl: null }} data={data} redeemAction={async () => ({ ok: true, data: undefined })} />,
+      <LoyaltyCard customerName="Ana" business={{ name: 'Biz', logoUrl: null }} vocabulary={getVocabulary('nails')} data={data} redeemAction={async () => ({ ok: true, data: undefined })} />,
     )
     expect(html).toContain('En verificación')
   })
 
   it('sin pendientes no renderiza la sección', () => {
     const html = renderToStaticMarkup(
-      <LoyaltyCard customerName="Ana" business={{ name: 'Biz', logoUrl: null }} data={baseData} redeemAction={async () => ({ ok: true, data: undefined })} />,
+      <LoyaltyCard customerName="Ana" business={{ name: 'Biz', logoUrl: null }} vocabulary={getVocabulary('nails')} data={baseData} redeemAction={async () => ({ ok: true, data: undefined })} />,
     )
     expect(html).not.toContain('Paquetes por confirmar')
   })

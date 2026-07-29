@@ -4,6 +4,7 @@ import {
   PRESETS, buildPresetPayload, planPresetApply, redemptionSignature,
   summarizeApply, presetCatalog, type CurrentLoyaltyState,
 } from '@/lib/loyalty/presets'
+import { getVocabulary } from '@/lib/vocabulary'
 
 const cleanState: CurrentLoyaltyState = { config: null, existingRuleKinds: [], existingRedemptionSignatures: [] }
 
@@ -95,14 +96,30 @@ describe('planPresetApply — aditivo e idempotente', () => {
 describe('summarizeApply / presetCatalog', () => {
   it('summarizeApply lista aplicados y salteados', () => {
     const plan = planPresetApply(buildPresetPayload('recommended-program'), { ...cleanState, existingRuleKinds: ['birthday'] })
-    const s = summarizeApply(plan)
+    const s = summarizeApply(plan, getVocabulary('nails'))
     expect(s.applied).toContain('Referidas')
     expect(s.skipped).toContain('Cumpleaños')
   })
 
+  it('summarizeApply usa el léxico del rubro en los labels con género', () => {
+    const plan = planPresetApply(buildPresetPayload('recommended-program'), cleanState)
+    expect(summarizeApply(plan, getVocabulary('barber')).applied).toContain('Referidos')
+  })
+
   it('presetCatalog expone metadata de display', () => {
-    const cat = presetCatalog()
+    const cat = presetCatalog(getVocabulary('nails'))
     expect(cat.find((c) => c.id === 'stamp-card')?.name).toBe('Tarjeta de sellos')
     expect(cat.every((c) => Array.isArray(c.describe))).toBe(true)
+  })
+
+  // El catálogo lleva tokens `{...}` porque es una constante de módulo. Si alguno
+  // no se resuelve, el usuario ve literalmente "{clients}" en pantalla.
+  it('presetCatalog no deja ningún token sin resolver', () => {
+    for (const category of ['nails', 'barber'] as const) {
+      for (const preset of presetCatalog(getVocabulary(category))) {
+        expect(preset.name, preset.id).not.toMatch(/[{}]/)
+        for (const line of preset.describe) expect(line, preset.id).not.toMatch(/[{}]/)
+      }
+    }
   })
 })

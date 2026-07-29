@@ -22,6 +22,7 @@ import { ManualPaymentDialog } from './manual-payment-dialog'
 import { formatManualPaymentMoney, isManualPaymentAllowed } from './manual-payment-utils'
 import { PaymentRevertedBadge } from './payment-reverted-badge'
 import { bookingStatusLabel } from '@/lib/bookings/status-labels'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false)
@@ -55,6 +56,7 @@ interface BookingDrawerProps {
 }
 
 export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, businessTimezone, businessAddress }: BookingDrawerProps) {
+  const vocabulary = useVocabulary()
   const isMobile = useIsMobile()
 
   const start = new Date(booking.startDateTime)
@@ -78,7 +80,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
           </div>
 
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Cliente</span>
+            <span className="text-sm text-muted-foreground">{vocabulary.Client}</span>
             <span className="text-sm font-medium">{booking.customer?.name || '—'}</span>
           </div>
 

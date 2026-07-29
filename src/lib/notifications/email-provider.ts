@@ -24,6 +24,7 @@ import type {
   PackageDisputedEmailData,
   PackageUnexpectedPaymentEmailData,
   BookingDisputedEmailData,
+  BookingUnexpectedPaymentEmailData,
   PackageTransferDeclaredEmailData,
   PackageTransferReminderCustomerEmailData,
   PackageTransferUnverifiedBusinessEmailData,
@@ -79,6 +80,8 @@ import {
   packageUnexpectedPaymentBusinessText,
   bookingDisputedBusinessHtml,
   bookingDisputedBusinessText,
+  bookingUnexpectedPaymentBusinessHtml,
+  bookingUnexpectedPaymentBusinessText,
   packageTransferDeclaredBusinessHtml,
   packageTransferDeclaredBusinessText,
   packageTransferReminderCustomerHtml,
@@ -577,12 +580,12 @@ export async function sendPackagePurchasedNotification(purchaseId: string, busin
     include: {
       product: { select: { name: true } },
       customer: { select: { name: true, email: true, loyaltyToken: true } },
-      business: { select: { name: true, slug: true, subdomain: true, currency: true } },
+      business: { select: { name: true, slug: true, subdomain: true, currency: true, category: true } },
     },
   })
 
   if (!purchase || !purchase.customer.email) {
-    return { success: false, skipped: 'Compra no encontrada o clienta sin email' }
+    return { success: false, skipped: 'Compra no encontrada o sin email' }
   }
 
   // /mi/[slug] es siempre path-based en el dominio principal (no hay ruteo por
@@ -591,6 +594,7 @@ export async function sendPackagePurchasedNotification(purchaseId: string, busin
 
   return sendPackagePurchasedToCustomer({
     businessName: purchase.business.name,
+    businessCategory: purchase.business.category,
     customerName: purchase.customer.name,
     productName: purchase.product.name,
     totalSessions: purchase.quantity + purchase.bonusQuantity,
@@ -682,6 +686,28 @@ export async function sendBookingDisputedToBusiness(
   return Promise.all(
     ownerEmails.map((owner) =>
       sendEmail(owner.email, `Contracargo de reserva - ${data.customerName}`, html, text, {}),
+    ),
+  )
+}
+
+/** Email a la(s) dueña(s)/admin(s) cuando entra un pago sobre una reserva ya saldada.
+ *  La clienta NO recibe nada: para ella no pasó nada nuevo con su reserva. */
+export async function sendBookingUnexpectedPaymentToBusiness(
+  businessId: string,
+  data: BookingUnexpectedPaymentEmailData,
+): Promise<EmailResult[]> {
+  const ownerEmails = await getBusinessOwnerEmails(businessId)
+
+  if (ownerEmails.length === 0) {
+    return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
+  }
+
+  const html = bookingUnexpectedPaymentBusinessHtml(data)
+  const text = bookingUnexpectedPaymentBusinessText(data)
+
+  return Promise.all(
+    ownerEmails.map((owner) =>
+      sendEmail(owner.email, `Pago inesperado de reserva - ${data.customerName}`, html, text, {}),
     ),
   )
 }
