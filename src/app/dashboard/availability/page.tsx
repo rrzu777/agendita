@@ -5,6 +5,7 @@ import { AvailabilityEditor } from '@/components/dashboard/availability-editor'
 import { TimeBlockList } from '@/components/dashboard/time-block-form'
 import { BlockTimeModal } from '@/components/dashboard/block-time-modal'
 import { ServiceFitWarnings } from '@/components/dashboard/service-fit-warnings'
+import { getVocabulary } from '@/lib/vocabulary'
 import { getAvailabilityRules } from '@/server/actions/availability'
 import { getServices } from '@/server/actions/services'
 import { getTimeBlocks, getTimeBlockSeries } from '@/server/actions/time-blocks'
@@ -49,7 +50,7 @@ export default async function AvailabilityPage() {
     <div>
       <DashboardHeader title="Disponibilidad" subtitle="Configura tus horarios de atención y bloqueos." />
       <div className="space-y-8 p-5 md:p-10">
-        <ServiceFitWarnings fits={serviceFits} />
+        <ServiceFitWarnings fits={serviceFits} vocabulary={getVocabulary(userData.business.category)} />
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>

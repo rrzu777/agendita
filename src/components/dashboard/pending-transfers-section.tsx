@@ -8,6 +8,7 @@ import { buildWhatsappUrl } from '@/lib/notifications'
 import { rejectBankTransfer } from '@/server/actions/bank-transfer-verify'
 import { formatManualPaymentMoney as formatMoney } from './manual-payment-utils'
 import { VerifyTransferDialog } from './verify-transfer-dialog'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 export type PendingTransferKind = 'deposit' | 'balance'
 
@@ -62,6 +63,7 @@ function PendingTransferRow({
   businessCurrency: string
   businessTimezone: string
 }) {
+  const vocabulary = useVocabulary()
   const router = useRouter()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -89,7 +91,7 @@ function PendingTransferRow({
 
   function handleReject() {
     const confirmMessage = item.kind === 'balance'
-      ? '¿Rechazar esta transferencia del saldo? La reserva NO se cancela; la clienta podrá volver a avisar.'
+      ? `¿Rechazar esta transferencia del saldo? La reserva NO se cancela; ${vocabulary.theClient} podrá volver a avisar.`
       : '¿Rechazar esta transferencia? Se cancelará la reserva.'
     if (!window.confirm(confirmMessage)) return
     startTransition(async () => {

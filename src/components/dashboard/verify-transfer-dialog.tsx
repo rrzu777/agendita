@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { confirmBankTransfer, rejectBankTransfer } from '@/server/actions/bank-transfer-verify'
 import { formatManualPaymentMoney as formatMoney } from './manual-payment-utils'
 import type { PendingTransferKind } from './pending-transfers-section'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 export function VerifyTransferDialog({
   paymentId,
@@ -30,6 +31,7 @@ export function VerifyTransferDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const vocabulary = useVocabulary()
   const proofUrl = proofKey ? `/dashboard/transfers/proof/${paymentId}` : null
   const router = useRouter()
   const [amount, setAmount] = useState(String(defaultAmount))
@@ -77,7 +79,7 @@ export function VerifyTransferDialog({
   function handleReject() {
     setError(null)
     const confirmMessage = kind === 'balance'
-      ? '¿Rechazar esta transferencia del saldo? La reserva NO se cancela; la clienta podrá volver a avisar.'
+      ? `¿Rechazar esta transferencia del saldo? La reserva NO se cancela; ${vocabulary.theClient} podrá volver a avisar.`
       : '¿Rechazar esta transferencia? Se cancelará la reserva.'
     if (!window.confirm(confirmMessage)) return
     startTransition(async () => {

@@ -23,6 +23,7 @@ import { getBusinessPublicUrl } from '@/lib/business/urls'
 import type { Business } from '@prisma/client'
 import { Globe, ExternalLink, AlertCircle, CheckCircle2 } from 'lucide-react'
 import type { z } from 'zod'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 const TIMEZONES = [
   { value: 'America/Santiago', label: 'América/Santiago (Chile)' },
@@ -43,6 +44,7 @@ const SLOT_STEP_OPTIONS = [
 type FormData = z.input<typeof updateBusinessSchema>
 
 export function SettingsForm({ business }: { business: Business }) {
+  const vocabulary = useVocabulary()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
@@ -221,7 +223,7 @@ export function SettingsForm({ business }: { business: Business }) {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Cada cuánto se ofrecen horas de inicio en tu página de reservas. &quot;Según la duración del servicio&quot; deja las citas pegadas una tras otra (sin huecos), pero da menos opciones de hora a tus clientas.
+              Cada cuánto se ofrecen horas de inicio en tu página de reservas. &quot;Según la duración del servicio&quot; deja las citas pegadas una tras otra (sin huecos), pero da menos opciones de hora a tus {vocabulary.clients}.
             </p>
           </div>
           <div className="space-y-2">
@@ -235,7 +237,7 @@ export function SettingsForm({ business }: { business: Business }) {
               aria-invalid={!!errors.selfServiceCutoffHours}
             />
             <p className="text-xs text-muted-foreground">
-              Hasta cuántas horas antes tus clientas pueden cancelar o reprogramar solas desde su cuenta. 0 = sin límite.
+              Hasta cuántas horas antes tus {vocabulary.clients} pueden cancelar o reprogramar por su cuenta. 0 = sin límite.
             </p>
             {errors.selfServiceCutoffHours && <p className="text-sm text-destructive">{errors.selfServiceCutoffHours.message}</p>}
           </div>

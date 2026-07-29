@@ -11,6 +11,7 @@ import { getAvailableSlotsForReschedule } from '@/server/actions/availability'
 import { CalendarCheck2, Clock3, Loader2, MessageCircle } from 'lucide-react'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { buildBookingRescheduledWhatsappUrl } from '@/lib/notifications/whatsapp'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 interface RescheduleFormProps {
   bookingId: string
@@ -33,6 +34,7 @@ export function RescheduleForm({
   timezone,
   businessAddress,
 }: RescheduleFormProps) {
+  const vocabulary = useVocabulary()
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [loadingSlots, setLoadingSlots] = useState(false)
@@ -127,7 +129,7 @@ export function RescheduleForm({
         <CardContent className="p-10 text-center">
           <CalendarCheck2 className="mx-auto mb-3 size-10 text-green-600" />
           <h3 className="text-xl font-semibold text-primary">Reserva reprogramada</h3>
-          <p className="mt-1 text-muted-foreground">Se avisará por email si la clienta tiene correo registrado.</p>
+          <p className="mt-1 text-muted-foreground">Se avisará por email si {vocabulary.theClient} tiene correo registrado.</p>
           <div className="mt-5 flex flex-col justify-center gap-3 sm:flex-row">
             {whatsappUrl && (
               <Button asChild>

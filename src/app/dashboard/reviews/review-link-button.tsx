@@ -9,6 +9,7 @@ import {
   getReviewLink,
   getReviewWhatsappLink,
 } from '@/server/actions/reviews'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 interface ReviewLinkButtonProps {
   bookingId: string
@@ -16,6 +17,7 @@ interface ReviewLinkButtonProps {
 }
 
 export function ReviewLinkButton({ bookingId, hasToken }: ReviewLinkButtonProps) {
+  const vocabulary = useVocabulary()
   const [loading, setLoading] = useState<null | 'copy' | 'whatsapp'>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -81,7 +83,7 @@ export function ReviewLinkButton({ bookingId, hasToken }: ReviewLinkButtonProps)
         // Sin teléfono: caemos a copiar el link.
         popup.close()
         await navigator.clipboard.writeText(res.data.reviewLink)
-        setError('La clienta no tiene teléfono. Copiamos el link al portapapeles.')
+        setError(`${vocabulary.TheClient} no tiene teléfono. Copiamos el link al portapapeles.`)
       }
     } catch {
       popup.close()
