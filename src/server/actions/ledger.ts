@@ -88,6 +88,18 @@ export async function getFinancialSummary() {
 
   const baseWhere = { businessId }
 
+  // Ingreso de RESERVA: `packagePurchaseId: null` deja afuera las ventas de paquete
+  // (van aparte, aditivas) y `type != overpayment` deja afuera la plata que entró
+  // sobre una reserva ya saldada — está cobrada, pero se va a devolver, así que
+  // sumarla infla una facturación que después se revierte. Ver el asiento
+  // `overpayment` en `applyApprovedPayment` (src/server/services/finance.ts).
+  const bookingIncomeWhere = {
+    ...baseWhere,
+    direction: 'income' as const,
+    packagePurchaseId: null,
+    type: { not: 'overpayment' as const },
+  }
+
   const [
     incomeToday,
     incomeMonth,
@@ -103,21 +115,11 @@ export async function getFinancialSummary() {
     packageRefundMonth,
   ] = await Promise.all([
     prisma.ledgerEntry.aggregate({
-      where: {
-        ...baseWhere,
-        direction: 'income',
-        packagePurchaseId: null,
-        occurredAt: { gte: today },
-      },
+      where: { ...bookingIncomeWhere, occurredAt: { gte: today } },
       _sum: { amount: true },
     }),
     prisma.ledgerEntry.aggregate({
-      where: {
-        ...baseWhere,
-        direction: 'income',
-        packagePurchaseId: null,
-        occurredAt: { gte: thisMonth },
-      },
+      where: { ...bookingIncomeWhere, occurredAt: { gte: thisMonth } },
       _sum: { amount: true },
     }),
     prisma.payment.aggregate({

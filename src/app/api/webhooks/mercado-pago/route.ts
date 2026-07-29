@@ -12,6 +12,7 @@ import {
   sendPackageDisputedToBusiness,
   sendPackageUnexpectedPaymentToBusiness,
   sendBookingDisputedToBusiness,
+  sendBookingUnexpectedPaymentToBusiness,
 } from '@/lib/notifications'
 import type { EmailResult } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
@@ -548,6 +549,35 @@ export async function POST(request: NextRequest) {
           await sendNotificationSafely('booking confirmed', () =>
             sendBookingConfirmedNotification(bookingId, payment.businessId),
           )
+        }
+
+        // Entró plata nueva sobre una reserva que ya estaba saldada (la clienta pagó
+        // por otra vía y MP aprobó tarde, o dos intentos que terminaron aprobados los
+        // dos). El servicio ya lo asentó como `overpayment`; acá sólo avisamos para
+        // que la dueña decida el reembolso. La clienta NO recibe nada: para ella su
+        // reserva no cambió.
+        if (result.wasUnexpected) {
+          const bk = await prisma.booking.findUnique({
+            where: { id: bookingId },
+            select: {
+              bookingNumber: true,
+              customer: { select: { name: true } },
+              service: { select: { name: true } },
+              business: { select: { name: true, currency: true } },
+            },
+          })
+          if (bk) {
+            await sendMultiNotificationSafely('booking unexpected payment business', async () =>
+              sendBookingUnexpectedPaymentToBusiness(payment.businessId, {
+                businessName: bk.business.name,
+                customerName: bk.customer?.name ?? 'Clienta',
+                serviceName: bk.service?.name ?? 'servicio',
+                bookingLabel: formatBookingNumber(bk.bookingNumber, bookingId),
+                amount: payment.amount,
+                businessCurrency: bk.business.currency || 'CLP',
+              }),
+            )
+          }
         }
 
         logger.payment.approved(payment.id, bookingId, payment.businessId)

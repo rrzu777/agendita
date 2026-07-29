@@ -278,6 +278,17 @@ export interface BookingDisputedEmailData {
   businessCurrency: string
 }
 
+/** Aviso a la dueña de que entró un pago sobre una reserva que ya estaba saldada. */
+export interface BookingUnexpectedPaymentEmailData {
+  businessName: string
+  customerName: string
+  serviceName: string
+  /** formatBookingNumber(bookingNumber, id) — p.ej. "#4738". */
+  bookingLabel: string
+  amount: number
+  businessCurrency: string
+}
+
 export interface PackageTransferDeclaredEmailData {
   /** Rubro del negocio: decide cómo se nombra a la clientela en el aviso.
    *  Va acá, junto a businessName/businessTimezone, y no como parámetro suelto:

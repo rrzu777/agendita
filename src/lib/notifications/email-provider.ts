@@ -24,6 +24,7 @@ import type {
   PackageDisputedEmailData,
   PackageUnexpectedPaymentEmailData,
   BookingDisputedEmailData,
+  BookingUnexpectedPaymentEmailData,
   PackageTransferDeclaredEmailData,
   PackageTransferReminderCustomerEmailData,
   PackageTransferUnverifiedBusinessEmailData,
@@ -79,6 +80,8 @@ import {
   packageUnexpectedPaymentBusinessText,
   bookingDisputedBusinessHtml,
   bookingDisputedBusinessText,
+  bookingUnexpectedPaymentBusinessHtml,
+  bookingUnexpectedPaymentBusinessText,
   packageTransferDeclaredBusinessHtml,
   packageTransferDeclaredBusinessText,
   packageTransferReminderCustomerHtml,
@@ -683,6 +686,28 @@ export async function sendBookingDisputedToBusiness(
   return Promise.all(
     ownerEmails.map((owner) =>
       sendEmail(owner.email, `Contracargo de reserva - ${data.customerName}`, html, text, {}),
+    ),
+  )
+}
+
+/** Email a la(s) dueña(s)/admin(s) cuando entra un pago sobre una reserva ya saldada.
+ *  La clienta NO recibe nada: para ella no pasó nada nuevo con su reserva. */
+export async function sendBookingUnexpectedPaymentToBusiness(
+  businessId: string,
+  data: BookingUnexpectedPaymentEmailData,
+): Promise<EmailResult[]> {
+  const ownerEmails = await getBusinessOwnerEmails(businessId)
+
+  if (ownerEmails.length === 0) {
+    return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
+  }
+
+  const html = bookingUnexpectedPaymentBusinessHtml(data)
+  const text = bookingUnexpectedPaymentBusinessText(data)
+
+  return Promise.all(
+    ownerEmails.map((owner) =>
+      sendEmail(owner.email, `Pago inesperado de reserva - ${data.customerName}`, html, text, {}),
     ),
   )
 }
