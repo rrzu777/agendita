@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import type { BusinessCategory } from '@prisma/client'
 import { getVocabulary, interpolate, VOCABULARIES } from '@/lib/vocabulary'
 
 describe('vocabulario por rubro', () => {
@@ -27,6 +28,37 @@ describe('vocabulario por rubro', () => {
       for (const [key, value] of Object.entries(lexicon)) {
         expect(value, key).not.toBe('')
       }
+    }
+  })
+
+  // El olvido más probable no es escribir mal una palabra — el compilador lo caza —
+  // sino olvidarse de darle su oficio a un rubro y que se quede con el genérico
+  // "profesional" sin que nada se queje.
+  it('cada rubro dice su propio oficio', () => {
+    const expected: Record<string, string> = {
+      barber: 'barbero',
+      nails: 'manicurista',
+      hair_salon: 'estilista',
+      beauty: 'especialista',
+      massage: 'terapeuta',
+      therapy: 'terapeuta',
+      other: 'profesional',
+    }
+    for (const [category, noun] of Object.entries(expected)) {
+      expect(getVocabulary(category as BusinessCategory).professional, category).toBe(noun)
+    }
+  })
+
+  // La concordancia del artículo es lo que el módulo existe para resolver: 'la
+  // manicurista' y 'el barbero' no se derivan del sustantivo.
+  it('el artículo concuerda con el género del rubro', () => {
+    for (const category of ['nails', 'beauty', 'hair_salon'] as const) {
+      expect(getVocabulary(category).theProfessional, category).toMatch(/^la /)
+      expect(getVocabulary(category).aProfessional, category).toMatch(/^una /)
+    }
+    for (const category of ['barber', 'massage', 'therapy', 'other'] as const) {
+      expect(getVocabulary(category).theProfessional, category).toMatch(/^el /)
+      expect(getVocabulary(category).aProfessional, category).toMatch(/^un /)
     }
   })
 })

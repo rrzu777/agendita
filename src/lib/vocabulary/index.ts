@@ -15,7 +15,36 @@ import type { BusinessCategory } from '@prisma/client'
  * alcanza con interpolar `clients` y la frase queda bien. Sólo las que arrastran
  * concordancia más allá del sustantivo viven enteras acá.
  */
-export interface Vocabulary {
+/**
+ * Las palabras del oficio: lo único del léxico que cambia por RUBRO y no sólo por
+ * género. Un barbero no es una manicurista y ninguno de los dos es "un profesional".
+ *
+ * Vive en su propio tipo para que `{ ...NEUTRAL, ...BARBERO }` compile sólo si están
+ * todas las claves, y para que una clave mal escrita sea un error de compilación en
+ * vez de una entrada fantasma que nadie lee.
+ */
+export interface ProfessionalWords {
+  /** "barbero" | "manicurista" — el sustantivo solo */
+  professional: string
+  /** "barberos" | "manicuristas" */
+  professionals: string
+  /** "Barbero" | "Manicurista" — encabezado de tabla y etiqueta de email */
+  Professional: string
+  /** "Barberos" | "Manicuristas" — ítem de navegación y título de sección */
+  Professionals: string
+  /** "el barbero" | "la manicurista" */
+  theProfessional: string
+  /** "El barbero" | "La manicurista" — arranque de oración */
+  TheProfessional: string
+  /** "un barbero" | "una manicurista" */
+  aProfessional: string
+  /** "Elegí tu barbero" | "Elegí tu manicurista" — título del paso del funnel */
+  chooseProfessional: string
+  /** "Sin barberos" | "Sin manicuristas" — estado vacío */
+  noProfessionals: string
+}
+
+export interface Vocabulary extends ProfessionalWords {
   /** "clienta" | "cliente" */
   client: string
   /** "clientas" | "clientes" */
@@ -70,7 +99,92 @@ export interface Vocabulary {
   birthdaySegment: string
 }
 
+// Los seis oficios. `manicurista`, `estilista`, `especialista`, `terapeuta` y
+// `profesional` son de género común — cambia el artículo, no el sustantivo; `barbero`
+// sí está marcado. De ahí que el oficio y el género sean dos ejes separados.
+
+const BARBERO: ProfessionalWords = {
+  professional: 'barbero',
+  professionals: 'barberos',
+  Professional: 'Barbero',
+  Professionals: 'Barberos',
+  theProfessional: 'el barbero',
+  TheProfessional: 'El barbero',
+  aProfessional: 'un barbero',
+  chooseProfessional: 'Elegí tu barbero',
+  noProfessionals: 'Sin barberos',
+}
+
+const MANICURISTA: ProfessionalWords = {
+  professional: 'manicurista',
+  professionals: 'manicuristas',
+  Professional: 'Manicurista',
+  Professionals: 'Manicuristas',
+  theProfessional: 'la manicurista',
+  TheProfessional: 'La manicurista',
+  aProfessional: 'una manicurista',
+  chooseProfessional: 'Elegí tu manicurista',
+  noProfessionals: 'Sin manicuristas',
+}
+
+const ESTILISTA: ProfessionalWords = {
+  professional: 'estilista',
+  professionals: 'estilistas',
+  Professional: 'Estilista',
+  Professionals: 'Estilistas',
+  theProfessional: 'la estilista',
+  TheProfessional: 'La estilista',
+  aProfessional: 'una estilista',
+  chooseProfessional: 'Elegí tu estilista',
+  noProfessionals: 'Sin estilistas',
+}
+
+const ESPECIALISTA: ProfessionalWords = {
+  professional: 'especialista',
+  professionals: 'especialistas',
+  Professional: 'Especialista',
+  Professionals: 'Especialistas',
+  theProfessional: 'la especialista',
+  TheProfessional: 'La especialista',
+  aProfessional: 'una especialista',
+  chooseProfessional: 'Elegí tu especialista',
+  noProfessionals: 'Sin especialistas',
+}
+
+const TERAPEUTA: ProfessionalWords = {
+  professional: 'terapeuta',
+  professionals: 'terapeutas',
+  Professional: 'Terapeuta',
+  Professionals: 'Terapeutas',
+  theProfessional: 'el terapeuta',
+  TheProfessional: 'El terapeuta',
+  aProfessional: 'un terapeuta',
+  chooseProfessional: 'Elegí tu terapeuta',
+  noProfessionals: 'Sin terapeutas',
+}
+
+/** El genérico. Es el oficio de `other` y la base de las dos formas del léxico. */
+const PROFESIONAL_NEUTRO: ProfessionalWords = {
+  professional: 'profesional',
+  professionals: 'profesionales',
+  Professional: 'Profesional',
+  Professionals: 'Profesionales',
+  theProfessional: 'el profesional',
+  TheProfessional: 'El profesional',
+  aProfessional: 'un profesional',
+  chooseProfessional: 'Elegí tu profesional',
+  noProfessionals: 'Sin profesionales',
+}
+
+const PROFESIONAL_FEMENINO: ProfessionalWords = {
+  ...PROFESIONAL_NEUTRO,
+  theProfessional: 'la profesional',
+  TheProfessional: 'La profesional',
+  aProfessional: 'una profesional',
+}
+
 const FEMININE: Vocabulary = {
+  ...PROFESIONAL_FEMENINO,
   client: 'clienta',
   clients: 'clientas',
   Client: 'Clienta',
@@ -100,6 +214,7 @@ const FEMININE: Vocabulary = {
 }
 
 const NEUTRAL: Vocabulary = {
+  ...PROFESIONAL_NEUTRO,
   client: 'cliente',
   clients: 'clientes',
   Client: 'Cliente',
@@ -133,14 +248,18 @@ export const VOCABULARIES = { feminine: FEMININE, neutral: NEUTRAL } as const
 /**
  * Femenino en los rubros donde ya era el texto vigente — cambiarlo les movería el
  * tono a las manicuristas que ya usan el producto. Neutro en todo lo demás.
+ *
+ * El oficio se superpone a la forma base: el género lo decide el rubro, el sustantivo
+ * también, y son dos ejes distintos. `other` no necesita override porque su oficio ES
+ * el genérico que ya trae NEUTRAL.
  */
 const BY_CATEGORY: Record<BusinessCategory, Vocabulary> = {
-  nails: FEMININE,
-  beauty: FEMININE,
-  hair_salon: FEMININE,
-  barber: NEUTRAL,
-  massage: NEUTRAL,
-  therapy: NEUTRAL,
+  nails: { ...FEMININE, ...MANICURISTA },
+  beauty: { ...FEMININE, ...ESPECIALISTA },
+  hair_salon: { ...FEMININE, ...ESTILISTA },
+  barber: { ...NEUTRAL, ...BARBERO },
+  massage: { ...NEUTRAL, ...TERAPEUTA },
+  therapy: { ...NEUTRAL, ...TERAPEUTA },
   other: NEUTRAL,
 }
 
