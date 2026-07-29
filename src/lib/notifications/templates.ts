@@ -20,6 +20,7 @@ import type {
   PackageDisputedEmailData,
   PackageUnexpectedPaymentEmailData,
   BookingDisputedEmailData,
+  BookingUnexpectedPaymentEmailData,
   PackageTransferDeclaredEmailData,
   PackageTransferReminderCustomerEmailData,
   PackageTransferUnverifiedBusinessEmailData,
@@ -874,6 +875,32 @@ export function bookingDisputedBusinessText(data: BookingDisputedEmailData): str
     `Reserva: ${data.bookingLabel} — ${data.serviceName}`,
     `Fecha: ${fmtDate(data.startDateTime, data.businessTimezone)}`,
     `Monto: ${amount}`, '',
+    `Enviado por ${data.businessName} a través de Agendita`,
+  ].join('\n')
+}
+
+export function bookingUnexpectedPaymentBusinessHtml(data: BookingUnexpectedPaymentEmailData): string {
+  const amount = fmtCurrency(data.amount, data.businessCurrency)
+  return baseHtml(`
+    ${header('Pago inesperado de reserva')}
+    <p style="font-size:15px">Entró un pago de ${escapeHtml(data.customerName)} por una reserva que ya estaba pagada. La reserva no cambió, pero la plata sí se cobró: revisá si corresponde devolverla.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Reserva</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.bookingLabel)} — ${escapeHtml(data.serviceName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Monto cobrado</td><td style="padding:8px 0;font-weight:600">${amount}</td></tr>
+    </table>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function bookingUnexpectedPaymentBusinessText(data: BookingUnexpectedPaymentEmailData): string {
+  const amount = fmtCurrency(data.amount, data.businessCurrency)
+  return [
+    'Pago inesperado de reserva', '',
+    `Entró un pago de ${data.customerName} por una reserva que ya estaba pagada. La reserva no cambió, pero la plata sí se cobró: revisá si corresponde devolverla.`, '',
+    `Clienta: ${data.customerName}`,
+    `Reserva: ${data.bookingLabel} — ${data.serviceName}`,
+    `Monto cobrado: ${amount}`, '',
     `Enviado por ${data.businessName} a través de Agendita`,
   ].join('\n')
 }

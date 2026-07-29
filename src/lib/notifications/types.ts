@@ -247,6 +247,17 @@ export interface BookingDisputedEmailData {
   businessCurrency: string
 }
 
+/** Aviso a la dueña de que entró un pago sobre una reserva que ya estaba saldada. */
+export interface BookingUnexpectedPaymentEmailData {
+  businessName: string
+  customerName: string
+  serviceName: string
+  /** formatBookingNumber(bookingNumber, id) — p.ej. "#4738". */
+  bookingLabel: string
+  amount: number
+  businessCurrency: string
+}
+
 export interface PackageTransferDeclaredEmailData {
   businessName: string
   customerName: string

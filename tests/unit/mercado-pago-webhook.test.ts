@@ -49,6 +49,8 @@ vi.mock('@/lib/booking-payments', () => ({
 vi.mock('@/lib/notifications', () => ({
   sendBookingConfirmedNotification: vi.fn(),
   sendNotificationSafely: vi.fn(),
+  sendMultiNotificationSafely: vi.fn((_label: string, fn: () => unknown) => fn()),
+  sendBookingUnexpectedPaymentToBusiness: vi.fn(),
 }))
 
 vi.mock('@/lib/payments/encryption', () => ({
@@ -100,6 +102,7 @@ function createRequestInit(overrides: Record<string, string> = {}): Record<strin
 
 const { applyApprovedPayment } = await import('@/server/services/finance')
 const { reverseVisitPoints } = await import('@/lib/loyalty/credit')
+const { sendBookingUnexpectedPaymentToBusiness, sendBookingConfirmedNotification } = await import('@/lib/notifications')
 
 describe('Mercado Pago webhook', () => {
   let POST: (req: Request) => Promise<Response>
@@ -423,6 +426,43 @@ describe('Mercado Pago webhook', () => {
 
       expect(res.status).toBe(200)
       expect(applyApprovedPayment).not.toHaveBeenCalled()
+    })
+
+    it('avisa a la dueña cuando la plata entró sobre una reserva ya saldada', async () => {
+      const secret = 'test-webhook-secret'
+      const body = { data: { id: 'mp-pay-001' } }
+      const signature = createMpSignatureHeader('mp-pay-001', 'req-123', secret)
+
+      mockMpFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(baseMpPayment) })
+      mockPrisma.payment.findUnique.mockResolvedValue(basePayment)
+      ;(applyApprovedPayment as ReturnType<typeof vi.fn>).mockResolvedValue({
+        booking: { id: 'booking-1', businessId: 'biz-1' },
+        wasConfirmed: false,
+        wasUnexpected: true,
+      })
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({ ...mockPrisma }))
+      mockPrisma.booking.findUnique.mockResolvedValue({
+        bookingNumber: 4242,
+        customer: { name: 'Ana' },
+        service: { name: 'Corte' },
+        business: { name: 'Peluquería', currency: 'CLP' },
+      })
+
+      const res = await POST(makeRequest(body, { 'x-signature': signature, 'x-request-id': 'req-123' }))
+
+      expect(res.status).toBe(200)
+      expect(sendBookingUnexpectedPaymentToBusiness).toHaveBeenCalledWith(
+        'biz-1',
+        expect.objectContaining({
+          customerName: 'Ana',
+          serviceName: 'Corte',
+          bookingLabel: '#4242',
+          amount: basePayment.amount,
+          businessCurrency: 'CLP',
+        }),
+      )
+      // La clienta no se entera: para ella la reserva no cambió.
+      expect(sendBookingConfirmedNotification).not.toHaveBeenCalled()
     })
   })
 

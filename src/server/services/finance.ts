@@ -84,6 +84,50 @@ export function getLedgerDescription(paymentType: PaymentType, bookingId: string
   }
 }
 
+/**
+ * Suma NETA de los pagos aprobados de una reserva: los reembolsos restan. Los
+ * montos se guardan siempre positivos, así que sin el signo un reembolso inflaría
+ * el total y podría dejar la reserva como pagada después de devolver la plata.
+ *
+ * `excludePaymentId` sirve para preguntar "cuánto había pagado ANTES de este pago",
+ * cuando el Payment ya quedó aprobado en la misma tx. Se descuenta en JS y no en el
+ * WHERE a propósito: así la query es siempre la misma y "cuánto hay aprobado" tiene
+ * una sola forma de preguntarse.
+ */
+async function sumApprovedPayments(
+  tx: Prisma.TransactionClient,
+  bookingId: string,
+  opts?: { excludePaymentId?: string },
+): Promise<number> {
+  const payments = await tx.payment.findMany({
+    where: { bookingId, status: 'approved' },
+    select: { id: true, amount: true, paymentType: true },
+  })
+  return payments.reduce((sum, p) => {
+    if (opts?.excludePaymentId && p.id === opts.excludePaymentId) return sum
+    const sign = mapPaymentTypeToLedgerDirection(p.paymentType) === 'expense' ? -1 : 1
+    return sum + sign * p.amount
+  }, 0)
+}
+
+/**
+ * Tipos de pago que representan a la CLIENTA pagando su reserva. Sólo estos pueden
+ * caer en "pago inesperado": un reembolso, un cargo por cancelación o un ajuste
+ * manual los origina la dueña a propósito, y que la reserva ya esté saldada no los
+ * vuelve raros. Lista blanca a propósito: un PaymentType nuevo no se marca solo.
+ */
+const CUSTOMER_BOOKING_PAYMENT_TYPES: ReadonlySet<PaymentType> = new Set<PaymentType>([
+  'deposit',
+  'final_payment',
+  'full_payment',
+])
+
+/** Descripción del asiento de un pago que entró sobre una reserva ya saldada.
+ *  Fuente única con el mail a la dueña, así los dos cuentan lo mismo. */
+export function unexpectedBookingPaymentDescription(bookingId: string, bookingNumber?: number | null): string {
+  return `Pago inesperado para reserva ${formatBookingNumber(bookingNumber, bookingId)}: ya estaba pagada (revisar reembolso)`
+}
+
 export interface ApplyApprovedPaymentInput {
   tx: Prisma.TransactionClient
   bookingId: string
@@ -191,7 +235,16 @@ export async function applyApprovedPayment({
   paymentId: explicitPaymentId,
   skipHoldExpiryCheck,
   allowCompleted,
-}: ApplyApprovedPaymentInput): Promise<{ booking: Awaited<ReturnType<typeof recalcBookingFromPayments>>['booking']; wasConfirmed: boolean }> {
+}: ApplyApprovedPaymentInput): Promise<{
+  booking: Awaited<ReturnType<typeof recalcBookingFromPayments>>['booking']
+  wasConfirmed: boolean
+  /**
+   * El pago entró sobre una reserva que ya estaba saldada. El asiento quedó como
+   * `overpayment` (fuera de los KPI de ingreso) y el caller debería avisarle a la
+   * dueña para que decida el reembolso. No es excluyente con `wasConfirmed`.
+   */
+  wasUnexpected: boolean
+}> {
   if (amount <= 0) {
     throw new UserError('El monto debe ser positivo')
   }
@@ -217,9 +270,27 @@ export async function applyApprovedPayment({
   })
 
   if (alreadyApproved) {
-    // Idempotencia: ya aprobado; solo recalcular y retornar.
-    return recalcBookingFromPayments(tx, bookingId)
+    // Idempotencia: ya aprobado; solo recalcular y retornar. Redelivery del mismo
+    // pago no es plata nueva, así que nunca es un pago inesperado.
+    return { ...(await recalcBookingFromPayments(tx, bookingId)), wasUnexpected: false }
   }
+
+  // Plata NUEVA sobre una reserva que ya no debía nada. Casos reales: la clienta
+  // arranca el checkout de MP, después paga por transferencia y la dueña confirma,
+  // y MP aprueba tarde; o dos intentos de pago que terminan aprobados los dos.
+  // El cobro es real y no se puede deshacer desde acá, pero tampoco es facturación:
+  // se va a devolver. Se asienta como `overpayment` — visible y trazable en el
+  // ledger, fuera de los KPI de ingreso — y el caller le avisa a la dueña para que
+  // decida el reembolso (mismo reparto que un contracargo, igual que en paquetes).
+  //
+  // `finalAmount > 0` es fail-open a propósito: si por lo que sea una reserva quedó
+  // en 0, sus pagos siguen contando como ingreso normal. Preferimos contar plata de
+  // más en los KPI antes que esconder plata real.
+  const paidBefore = await sumApprovedPayments(tx, bookingId, { excludePaymentId: payment.id })
+  const wasUnexpected =
+    booking.finalAmount > 0 &&
+    CUSTOMER_BOOKING_PAYMENT_TYPES.has(payment.paymentType) &&
+    paidBefore >= booking.finalAmount
 
   // Exactly one LedgerEntry per payment (upsert atómico sobre @@unique([paymentId])).
   await tx.ledgerEntry.upsert({
@@ -230,17 +301,22 @@ export async function applyApprovedPayment({
       bookingId,
       paymentId: payment.id,
       customerId: booking.customerId,
-      type: mapPaymentTypeToLedgerEntryType(payment.paymentType),
+      type: wasUnexpected ? 'overpayment' : mapPaymentTypeToLedgerEntryType(payment.paymentType),
       direction: mapPaymentTypeToLedgerDirection(payment.paymentType),
       amount: payment.amount,
       currency,
-      description: getLedgerDescription(payment.paymentType, booking.id, booking.bookingNumber),
+      description: wasUnexpected
+        ? unexpectedBookingPaymentDescription(booking.id, booking.bookingNumber)
+        : getLedgerDescription(payment.paymentType, booking.id, booking.bookingNumber),
       occurredAt: new Date(),
       createdByUserId: createdByUserId ?? null,
     },
   })
 
-  return recalcBookingFromPayments(tx, bookingId)
+  // `depositPaid` queda con el total REALMENTE pagado, sin tope: es un hecho, y
+  // `remainingBalance` ya está clampeado en 0. Taparlo escondería el cobro de más
+  // justo en la pantalla donde la dueña lo tiene que ver.
+  return { ...(await recalcBookingFromPayments(tx, bookingId)), wasUnexpected }
 }
 
 export interface ApplyApprovedPackagePaymentInput {
@@ -372,18 +448,7 @@ export async function recalcBookingFromPayments(
   })
   if (!booking) throw new UserError('Reserva no encontrada')
 
-  const approvedPayments = await tx.payment.findMany({
-    where: { bookingId, status: 'approved' },
-  })
-
-  // Net out money-out payments (refunds). Amounts are stored as positive
-  // integers regardless of direction, so a refund must subtract — otherwise it
-  // inflates depositPaid and can wrongly flip the booking to deposit_paid/
-  // fully_paid after a refund was issued.
-  const totalApproved = approvedPayments.reduce((sum, p) => {
-    const sign = mapPaymentTypeToLedgerDirection(p.paymentType) === 'expense' ? -1 : 1
-    return sum + sign * p.amount
-  }, 0)
+  const totalApproved = await sumApprovedPayments(tx, bookingId)
   const newDepositPaid = Math.max(0, totalApproved)
   const newRemainingBalance = Math.max(0, booking.finalAmount - newDepositPaid)
 

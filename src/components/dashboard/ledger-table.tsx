@@ -18,6 +18,7 @@ const typeLabels: Record<string, string> = {
   manual_expense: 'Gasto manual',
   adjustment: 'Ajuste',
   package_sale: 'Venta de paquete',
+  overpayment: 'Pago inesperado',
 }
 
 function amountClassName(direction: string): string {
