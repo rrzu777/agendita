@@ -260,15 +260,40 @@ export interface ApplyApprovedPackagePaymentInput {
 
 /**
  * Desenlaces EXCLUYENTES de `applyApprovedPackagePayment`. Un solo campo en vez
- * de banderas sueltas: un `{ wasActivated: true, wasDuplicate: true }` no debería
+ * de banderas sueltas: un `{ wasActivated: true, wasUnexpected: true }` no debería
  * ni poder escribirse.
  * - `activated`: primera aprobación, compra activada.
- * - `duplicate`: pago NUEVO sobre una compra ya activa (cobro doble). No
- *   re-activa; sólo asienta el movimiento, y el caller debe avisarle a la dueña
- *   para que decida el reembolso.
+ * - `unexpected`: pago NUEVO sobre una compra que no lo esperaba (ya activa, ya
+ *   reembolsada, rechazada por la dueña). No toca el paquete; sólo asienta el
+ *   movimiento, y el caller debe avisarle a la dueña para que decida el reembolso.
  * - `noop`: redelivery del mismo pago ya aprobado. Nada que hacer.
  */
-export type ApprovedPackagePaymentOutcome = 'activated' | 'duplicate' | 'noop'
+export type ApprovedPackagePaymentOutcome = 'activated' | 'unexpected' | 'noop'
+
+/**
+ * Estados de PackagePurchase en los que un pago aprobado SÍ debe activar. Es una
+ * lista blanca a propósito: cualquier estado nuevo cae en la rama segura (asentar
+ * + avisar) en vez de activar por descuido.
+ * - `pending`: el caso normal, la compra esperaba el pago.
+ * - `expired`: el hold venció pero la clienta pagó igual, sólo que tarde. Un
+ *   paquete no bloquea cupo, así que se revive (mismo criterio que B4b-3).
+ */
+const ACTIVATABLE_PURCHASE_STATUSES: ReadonlySet<string> = new Set(['pending', 'expired'])
+
+/** Por qué un pago aprobado no activó, en castellano llano. Fuente única para el
+ *  asiento de ledger y para el mail a la dueña, así los dos cuentan lo mismo. */
+export function describeUnexpectedPackagePayment(purchaseStatus: string): string {
+  switch (purchaseStatus) {
+    case 'active':
+      return 'el paquete ya estaba pagado y activo'
+    case 'refunded':
+      return 'el paquete ya se había reembolsado'
+    case 'rejected':
+      return 'la compra estaba rechazada'
+    default:
+      return `la compra estaba en estado ${purchaseStatus}`
+  }
+}
 
 /**
  * Rama paquete de la aprobación de pago (polimórfica con applyApprovedPayment).
@@ -297,12 +322,17 @@ export async function applyApprovedPackagePayment({
   // `wasConfirmed` de la rama de reserva.
   if (alreadyApproved) return { outcome: 'noop' }
 
-  // Pago NUEVO sobre una compra YA activa = cobro doble. Caso real: la clienta
-  // arranca el checkout de MP, después paga por transferencia, la dueña confirma
-  // (compra activa) y MP aprueba tarde. Re-activar duplicaría los grants, pero
-  // callar deja plata cobrada invisible en los libros. Asentamos y avisamos: la
-  // dueña decide si devuelve (mismo reparto que un contracargo).
-  if (purchase.status === 'active') {
+  // Pago NUEVO sobre una compra que no lo esperaba. Casos reales: la clienta
+  // arranca el checkout de MP, después paga por transferencia y la dueña confirma
+  // (`active`) o la rechaza (`rejected`), y MP aprueba tarde; o entra un cargo
+  // sobre un paquete ya reembolsado (`refunded`). Ninguno debe pasar por el
+  // activador: duplicaría grants, resucitaría un paquete devuelto o pisaría el "no"
+  // de la dueña — y sobre `refunded` ni siquiera podría, porque los grants
+  // reversados conservan su requestId y el P2002 tumbaría la tx (webhook 500 →
+  // MP reintentando para siempre). Pero callar deja plata cobrada invisible en los
+  // libros. Asentamos y avisamos: la dueña decide si devuelve (mismo reparto que
+  // un contracargo).
+  if (!ACTIVATABLE_PURCHASE_STATUSES.has(purchase.status)) {
     await tx.ledgerEntry.upsert({
       where: { paymentId: payment.id },
       update: {},
@@ -320,12 +350,12 @@ export async function applyApprovedPackagePayment({
         direction: 'income',
         amount: payment.amount,
         currency,
-        description: 'Pago duplicado de paquete (revisar reembolso)',
+        description: `Pago inesperado: ${describeUnexpectedPackagePayment(purchase.status)} (revisar reembolso)`,
         occurredAt: new Date(),
         createdByUserId: createdByUserId ?? null,
       },
     })
-    return { outcome: 'duplicate' }
+    return { outcome: 'unexpected' }
   }
 
   await activatePackagePurchaseInTx(tx, purchase, { requestId: purchase.id, paymentId: payment.id, createdByUserId })

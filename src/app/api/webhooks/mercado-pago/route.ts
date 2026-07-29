@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
-import { applyApprovedPayment, applyApprovedPackagePayment } from '@/server/services/finance'
+import { applyApprovedPayment, applyApprovedPackagePayment, describeUnexpectedPackagePayment } from '@/server/services/finance'
 import { createHmac, timingSafeEqual } from 'crypto'
 import {
   sendBookingConfirmedNotification,
@@ -10,7 +10,7 @@ import {
   sendPackagePurchasedNotification,
   sendPackageSoldNotificationToBusiness,
   sendPackageDisputedToBusiness,
-  sendPackageDuplicatePaymentToBusiness,
+  sendPackageUnexpectedPaymentToBusiness,
   sendBookingDisputedToBusiness,
 } from '@/lib/notifications'
 import type { EmailResult } from '@/lib/notifications'
@@ -610,18 +610,21 @@ export async function POST(request: NextRequest) {
         ])
       }
 
-      // Cobro doble: entró plata nueva sobre una compra ya activa (p.ej. la clienta
-      // pagó por transferencia, la dueña confirmó y MP aprobó tarde). El servicio ya
-      // lo asentó en el ledger; acá sólo avisamos para que la dueña decida el
-      // reembolso. La clienta NO recibe nada: para ella no hubo una compra nueva.
-      if (outcome === 'duplicate') {
-        await notifyBusinessAboutPurchase('package duplicate payment business', packagePurchaseId, (purchase) =>
-          sendPackageDuplicatePaymentToBusiness(payment.businessId, {
+      // Entró plata nueva sobre una compra que no la esperaba: ya activa (la clienta
+      // pagó por transferencia, la dueña confirmó y MP aprobó tarde), ya reembolsada
+      // o rechazada por la dueña. El servicio ya lo asentó en el ledger; acá sólo
+      // avisamos para que la dueña decida el reembolso. La clienta NO recibe nada:
+      // para ella no hubo una compra nueva. El `status` es el de antes de la tx —
+      // esta rama justamente no lo toca.
+      if (outcome === 'unexpected') {
+        await notifyBusinessAboutPurchase('package unexpected payment business', packagePurchaseId, (purchase) =>
+          sendPackageUnexpectedPaymentToBusiness(payment.businessId, {
             businessName: purchase.business.name,
             customerName: purchase.customer.name,
             productName: purchase.product.name,
             amount: payment.amount,
             businessCurrency: purchase.business.currency || 'CLP',
+            situation: describeUnexpectedPackagePayment(purchase.status),
           }),
         )
       }

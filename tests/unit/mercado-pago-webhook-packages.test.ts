@@ -41,7 +41,11 @@ const mockPrisma = {
 
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 
-vi.mock('@/server/services/finance', () => ({
+// `describeUnexpectedPackagePayment` va sin mockear a propósito: es una función pura
+// sin Prisma adentro, y stubearla haría que el test afirme una frase inventada en vez
+// de la que le va a llegar a la dueña.
+vi.mock('@/server/services/finance', async (importActual) => ({
+  ...(await importActual<typeof import('@/server/services/finance')>()),
   applyApprovedPayment: vi.fn(),
   applyApprovedPackagePayment: vi.fn().mockResolvedValue({ outcome: 'activated' }),
 }))
@@ -57,7 +61,7 @@ vi.mock('@/lib/notifications', () => ({
   sendPackagePurchasedNotification: vi.fn().mockResolvedValue({ success: true }),
   sendPackageSoldNotificationToBusiness: vi.fn().mockResolvedValue([{ success: true }]),
   sendPackageDisputedToBusiness: vi.fn().mockResolvedValue([{ success: true }]),
-  sendPackageDuplicatePaymentToBusiness: vi.fn().mockResolvedValue([{ success: true }]),
+  sendPackageUnexpectedPaymentToBusiness: vi.fn().mockResolvedValue([{ success: true }]),
 }))
 
 vi.mock('@/lib/packages/reverse', () => ({
@@ -115,7 +119,7 @@ function createRequestInit(overrides: Record<string, string> = {}): Record<strin
 
 const { applyApprovedPayment, applyApprovedPackagePayment } = await import('@/server/services/finance')
 const { revalidatePath } = await import('next/cache')
-const { sendPackagePurchasedNotification, sendPackageDuplicatePaymentToBusiness } = await import('@/lib/notifications')
+const { sendPackagePurchasedNotification, sendPackageUnexpectedPaymentToBusiness } = await import('@/lib/notifications')
 
 describe('Mercado Pago webhook — dispatch de paquete', () => {
   let POST: (req: Request) => Promise<Response>
@@ -182,6 +186,7 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
       id: 'pp-1',
       businessId: 'biz-1',
       customerId: 'cust-1',
+      status: 'active',
       quantity: 5,
       bonusQuantity: 1,
       pricePaid: 50000,
@@ -272,11 +277,11 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
       expect(res.status).toBe(200)
       expect(applyApprovedPackagePayment).toHaveBeenCalledTimes(1)
       expect(sendPackagePurchasedNotification).not.toHaveBeenCalled()
-      expect(sendPackageDuplicatePaymentToBusiness).not.toHaveBeenCalled()
+      expect(sendPackageUnexpectedPaymentToBusiness).not.toHaveBeenCalled()
     })
 
-    it('cobro doble (outcome duplicate): avisa a la dueña y NO manda los emails de venta', async () => {
-      ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ outcome: 'duplicate' })
+    it('pago inesperado (outcome unexpected): avisa a la dueña y NO manda los emails de venta', async () => {
+      ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ outcome: 'unexpected' })
 
       const secret = 'test-webhook-secret'
       const body = { data: { id: 'mp-pkg-001' } }
@@ -295,7 +300,7 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
       expect(res.status).toBe(200)
       // El paquete NO se vendió de nuevo: nada de "compra confirmada" a la clienta.
       expect(sendPackagePurchasedNotification).not.toHaveBeenCalled()
-      expect(sendPackageDuplicatePaymentToBusiness).toHaveBeenCalledWith(
+      expect(sendPackageUnexpectedPaymentToBusiness).toHaveBeenCalledWith(
         'biz-1',
         expect.objectContaining({
           businessName: 'Studio Ana',
@@ -303,6 +308,8 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
           productName: 'Pack 5 sesiones',
           amount: 50000,
           businessCurrency: 'CLP',
+          // El mail cuenta POR QUÉ no activó, leyendo el status real de la compra.
+          situation: 'el paquete ya estaba pagado y activo',
         }),
       )
     })

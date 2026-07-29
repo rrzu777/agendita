@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client'
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { requireTestDatabase } from './setup'
 import { applyApprovedPackagePayment } from '@/server/services/finance'
+import { reversePackagePurchaseInTx } from '@/lib/packages/reverse'
 
 requireTestDatabase()
 
@@ -225,7 +226,7 @@ describe('compra online de paquete (integración)', () => {
       }),
     )
 
-    expect(res).toEqual({ outcome: 'duplicate' })
+    expect(res).toEqual({ outcome: 'unexpected' })
 
     // El paquete NO se duplicó: siguen siendo 6 sesiones y una sola venta.
     const grants = await prisma.promotionGrant.count({ where: { packagePurchaseId: purchase.id } })
@@ -259,5 +260,73 @@ describe('compra online de paquete (integración)', () => {
     expect(again).toEqual({ outcome: 'noop' })
     const entries = await prisma.ledgerEntry.count({ where: { packagePurchaseId: purchase.id } })
     expect(entries).toBe(2)
+  })
+
+  it('un pago sobre una compra YA REEMBOLSADA no revive el paquete ni explota con P2002', async () => {
+    // Este es el caso que tumbaba el webhook: la reversión deja los grants en
+    // `reversed` pero NO los borra, así que el activador los re-emitía con el mismo
+    // (customerId, requestId) → P2002 → tx abortada → 500 → MP reintentando para
+    // siempre. Con Postgres de verdad, no con un mock: el P2002 sólo aparece acá.
+    const purchase = await prisma.packagePurchase.create({
+      data: {
+        businessId: BIZ, customerId, packageProductId: productId, pricePaid: 50000,
+        quantity: 5, bonusQuantity: 1, coversAll: true, coveredServiceIds: [],
+        source: 'online', status: 'pending',
+      },
+    })
+
+    const first = await prisma.payment.create({
+      data: {
+        businessId: BIZ, packagePurchaseId: purchase.id, customerId,
+        provider: 'mercado_pago', providerPaymentId: 'mp-ref-1', amount: 50000,
+        currency: 'CLP', status: 'pending', paymentType: 'package_purchase',
+      },
+    })
+    await prisma.$transaction((tx) =>
+      applyApprovedPackagePayment({
+        tx, packagePurchaseId: purchase.id, businessId: BIZ, amount: 50000,
+        currency: 'CLP', provider: 'mercado_pago', providerPaymentId: 'mp-ref-1',
+        paymentType: 'package_purchase', paymentMethod: null, paymentId: first.id,
+      }),
+    )
+
+    await prisma.$transaction((tx) =>
+      reversePackagePurchaseInTx(tx, { id: purchase.id, businessId: BIZ, customerId }, {
+        mode: 'voluntary', amount: 50000, currency: 'CLP', paymentId: first.id, now: new Date(),
+      }),
+    )
+    const refunded = await prisma.packagePurchase.findUnique({ where: { id: purchase.id } })
+    expect(refunded?.status).toBe('refunded')
+
+    // Pago tardío de MP sobre la compra ya reembolsada.
+    const late = await prisma.payment.create({
+      data: {
+        businessId: BIZ, packagePurchaseId: purchase.id, customerId,
+        provider: 'mercado_pago', providerPaymentId: 'mp-ref-2', amount: 50000,
+        currency: 'CLP', status: 'pending', paymentType: 'package_purchase',
+      },
+    })
+    const res = await prisma.$transaction((tx) =>
+      applyApprovedPackagePayment({
+        tx, packagePurchaseId: purchase.id, businessId: BIZ, amount: 50000,
+        currency: 'CLP', provider: 'mercado_pago', providerPaymentId: 'mp-ref-2',
+        paymentType: 'package_purchase', paymentMethod: null, paymentId: late.id,
+      }),
+    )
+
+    expect(res).toEqual({ outcome: 'unexpected' })
+
+    // La compra sigue reembolsada y los grants siguen reversados: no resucitó nada.
+    const after = await prisma.packagePurchase.findUnique({ where: { id: purchase.id } })
+    expect(after?.status).toBe('refunded')
+    const active = await prisma.promotionGrant.count({
+      where: { packagePurchaseId: purchase.id, status: 'active' },
+    })
+    expect(active).toBe(0)
+
+    // Y la plata quedó asentada, trazable y fuera de los KPI.
+    const entry = await prisma.ledgerEntry.findUnique({ where: { paymentId: late.id } })
+    expect(entry?.type).toBe('manual_income')
+    expect(entry?.description).toBe('Pago inesperado: el paquete ya se había reembolsado (revisar reembolso)')
   })
 })

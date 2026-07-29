@@ -22,7 +22,7 @@ import type {
   OwnerBookingChangedData,
   PackagePurchasedEmailData,
   PackageDisputedEmailData,
-  PackageDuplicatePaymentEmailData,
+  PackageUnexpectedPaymentEmailData,
   BookingDisputedEmailData,
   PackageTransferDeclaredEmailData,
   PackageTransferReminderCustomerEmailData,
@@ -75,8 +75,8 @@ import {
   packageSoldBusinessText,
   packageDisputedBusinessHtml,
   packageDisputedBusinessText,
-  packageDuplicatePaymentBusinessHtml,
-  packageDuplicatePaymentBusinessText,
+  packageUnexpectedPaymentBusinessHtml,
+  packageUnexpectedPaymentBusinessText,
   bookingDisputedBusinessHtml,
   bookingDisputedBusinessText,
   packageTransferDeclaredBusinessHtml,
@@ -644,10 +644,10 @@ export async function sendPackageDisputedToBusiness(
   )
 }
 
-/** Email a la(s) dueña(s)/admin(s) cuando entra un pago de más sobre un paquete ya activo. */
-export async function sendPackageDuplicatePaymentToBusiness(
+/** Email a la(s) dueña(s)/admin(s) cuando entra un pago sobre un paquete que no lo esperaba. */
+export async function sendPackageUnexpectedPaymentToBusiness(
   businessId: string,
-  data: PackageDuplicatePaymentEmailData,
+  data: PackageUnexpectedPaymentEmailData,
 ): Promise<EmailResult[]> {
   const ownerEmails = await getBusinessOwnerEmails(businessId)
 
@@ -655,12 +655,12 @@ export async function sendPackageDuplicatePaymentToBusiness(
     return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
   }
 
-  const html = packageDuplicatePaymentBusinessHtml(data)
-  const text = packageDuplicatePaymentBusinessText(data)
+  const html = packageUnexpectedPaymentBusinessHtml(data)
+  const text = packageUnexpectedPaymentBusinessText(data)
 
   return Promise.all(
     ownerEmails.map((owner) =>
-      sendEmail(owner.email, `Pago duplicado de paquete - ${data.customerName}`, html, text, {}),
+      sendEmail(owner.email, `Pago inesperado de paquete - ${data.customerName}`, html, text, {}),
     ),
   )
 }

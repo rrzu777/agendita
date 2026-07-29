@@ -50,6 +50,12 @@ export interface ActivateOptions {
  * perGrantRequestId), marca la compra `active` y escribe el asiento de ledger
  * `package_sale` (income = pricePaid). Único activador — lo invocan la venta
  * manual (sellPackage) y, a futuro, el pago online (webhook MP / transferencia).
+ *
+ * PRECONDICIÓN: la compra no tiene grants todavía. Los grants son idempotentes por
+ * (customerId, requestId) pero la reversión los deja en `reversed` SIN borrarlos, así
+ * que re-activar una compra ya activada/reembolsada revienta con P2002 — y dentro de
+ * una tx de Postgres eso no se puede atajar, la tx entera queda abortada. Por eso el
+ * filtro va en los callers (`ACTIVATABLE_PURCHASE_STATUSES` en finance.ts), no acá.
  */
 export async function activatePackagePurchaseInTx(
   tx: Prisma.TransactionClient,
