@@ -138,9 +138,10 @@ export async function reverseAutoRewardsForBooking(
   // de la tx. Acá pesa todavía más — esto corre dentro de la tx del refund/chargeback,
   // así que un asiento repetido tumbaría la reversión ENTERA. Una sola consulta para
   // las N claves: el dedupeKey lleva adentro el id del asiento original (un cuid
-  // global), así que no puede colisionar entre negocios.
+  // global), así que no puede colisionar entre negocios. Sin bonus no se consulta
+  // nada: el caso común (una reserva sin recompensa automática) no paga el viaje.
   const alreadyReversed = new Set(
-    (await tx.loyaltyLedger.findMany({
+    bonuses.length === 0 ? [] : (await tx.loyaltyLedger.findMany({
       where: { dedupeKey: { in: bonuses.map((b) => `reversal:${b.id}`) } },
       select: { dedupeKey: true },
     })).map((l) => l.dedupeKey),

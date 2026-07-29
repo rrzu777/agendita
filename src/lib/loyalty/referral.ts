@@ -36,7 +36,8 @@ export async function captureReferral(tx: Tx, args: {
   // transacción entera (Prisma no usa savepoints). El `tx.booking.create` que viene
   // después fallaría igual — la clienta no podría reservar por una atribución de
   // referida que ni siquiera importa.
-  const already = await tx.referral.findFirst({
+  // `referredCustomerId` es @unique GLOBAL (no por negocio), así que la clave alcanza sola.
+  const already = await tx.referral.findUnique({
     where: { referredCustomerId: args.referredCustomerId },
     select: { id: true },
   })

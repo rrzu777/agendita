@@ -9,7 +9,7 @@ describe('captureReferral', () => {
     return {
       customer: { findFirst: vi.fn().mockResolvedValue(referrer) },
       referral: {
-        findFirst: vi.fn().mockResolvedValue(existing),
+        findUnique: vi.fn().mockResolvedValue(existing),
         create: vi.fn().mockResolvedValue({ id: 'rf1' }),
       },
     } as any
