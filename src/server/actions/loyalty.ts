@@ -15,6 +15,7 @@ import { resolveLoyaltyCustomer } from '@/lib/loyalty/token'
 import { conditionKind } from '@/lib/loyalty/automatic-match'
 import { buildPresetPayload, planPresetApply, summarizeApply, redemptionSignature, type CurrentLoyaltyState, type ApplyPresetSummary } from '@/lib/loyalty/presets'
 import { action, UserError } from '@/lib/actions/result'
+import { getBusinessVocabulary } from '@/lib/vocabulary/server'
 
 // Module-local helpers — NOT exported (use server modules may only export async functions)
 
@@ -436,7 +437,7 @@ async function _applyLoyaltyPreset(presetId: unknown): Promise<ApplyPresetSummar
       })
     }
 
-    return summarizeApply(plan)
+    return summarizeApply(plan, await getBusinessVocabulary())
   })
 
   await revalidatePath('/dashboard/fidelizacion')

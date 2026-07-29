@@ -5,6 +5,7 @@ import { getCampaigns, listCampaignPromotions } from '@/server/actions/campaigns
 import { getServices } from '@/server/actions/services'
 import { CampaignList } from './campaign-list'
 import { NewCampaignDialog } from './new-campaign-dialog'
+import { getVocabulary } from '@/lib/vocabulary'
 
 type Campaign = Awaited<ReturnType<typeof getCampaigns>>[number]
 type CampaignPromotion = Awaited<ReturnType<typeof listCampaignPromotions>>[number]
@@ -37,18 +38,19 @@ export default async function CampanasPage() {
   }
 
   const serviceOptions = services.map((s) => ({ id: s.id, name: s.name }))
+  const vocabulary = getVocabulary(userData.business.category)
 
   return (
     <div>
       <DashboardHeader
         title="Campañas"
-        subtitle="Enviá promos por WhatsApp o email a un grupo de clientas."
+        subtitle={`Enviá promos por WhatsApp o email a un grupo de ${vocabulary.clients}.`}
       />
       <div className="p-5 md:p-10">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="font-heading text-2xl font-semibold tracking-tight text-primary">Tus campañas</h2>
-            <p className="text-sm text-muted-foreground">Segmentá clientas y regalales un beneficio.</p>
+            <p className="text-sm text-muted-foreground">Segmentá {vocabulary.clients} y regalales un beneficio.</p>
           </div>
           <NewCampaignDialog promotions={promotions} services={serviceOptions} currency={currency} />
         </div>

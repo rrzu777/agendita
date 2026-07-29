@@ -1,5 +1,6 @@
 import type { AutomaticRuleFormInput, RedemptionOptionFormInput } from './schema'
 import { UserError } from '@/lib/actions/result'
+import { interpolate, type Vocabulary } from '@/lib/vocabulary'
 
 export type PresetKind = 'base' | 'addon' | 'combo'
 
@@ -49,16 +50,20 @@ const DEFAULT_PROGRAM_NAME = 'Programa de fidelidad'
 // Espeja los kinds del motor (AUTOMATIC_KINDS) para el resumen legible. `anniversary`
 // aún no tiene preset en el catálogo, pero se deja para forward-compat; todo lookup
 // tiene fallback `?? kind`.
+// Los `{token}` los resuelve `interpolate` con el léxico del rubro (ver
+// src/lib/vocabulary). Este catálogo es una constante de módulo: no puede
+// recibir el léxico al construirse, así que lo lleva como tokens y lo resuelven
+// presetCatalog() y summarizeApply(), que sí reciben el vocabulario.
 const KIND_LABELS: Record<string, string> = {
   birthday: 'Cumpleaños', first_visit: 'Primera visita', review: 'Reseña',
-  anniversary: 'Aniversario', winback: 'Reactivar inactivas', referral: 'Referidas',
+  anniversary: 'Aniversario', winback: '{reactivateInactiveLabel}', referral: '{referralsLabel}',
 }
 
 // ─── Catálogo ──────────────────────────────────────────────────────────────
 
 const STAMP_CARD: LoyaltyPreset = {
   id: 'stamp-card', kind: 'base', name: 'Tarjeta de sellos', recommended: true,
-  describe: ['Tus clientas ganan 1 sello por visita.', 'A los 10 sellos, un servicio gratis.'],
+  describe: ['Tus {clients} ganan 1 sello por visita.', 'A los 10 sellos, un servicio gratis.'],
   config: { pointsLabel: 'sellos', pointsPerVisit: 1, spendPerPoint: null, minSpendToEarn: null },
   redemptionOptions: [{
     name: 'Servicio gratis', rewardType: 'free_service', rewardValue: 0, pointsCost: 10,
@@ -91,9 +96,9 @@ const BIRTHDAY: LoyaltyPreset = {
 }
 
 const REFERRAL: LoyaltyPreset = {
-  id: 'referral', kind: 'addon', name: 'Refiere una amiga', recommended: true,
-  describe: ['Cuando una clienta refiere a alguien nuevo, ambas reciben 20% de descuento.',
-    'Se premia al completar la primera visita de la referida.'],
+  id: 'referral', kind: 'addon', name: '{referralPresetName}', recommended: true,
+  describe: ['Cuando {aClient} refiere a alguien nuevo, {bothOfThem} reciben 20% de descuento.',
+    'Se premia al completar la primera visita de {referredPerson}.'],
   rules: [{
     kind: 'referral', isActive: true, priority: 10, rewardKind: 'grant',
     rewardType: 'percentage', rewardValue: 20, appliesToAll: true, serviceIds: [],
@@ -102,8 +107,8 @@ const REFERRAL: LoyaltyPreset = {
 }
 
 const WINBACK: LoyaltyPreset = {
-  id: 'winback', kind: 'addon', name: 'Reactivar inactivas',
-  describe: ['A quien no vuelve en 90 días, 15% para reactivarla.', 'Válido 3 semanas.'],
+  id: 'winback', kind: 'addon', name: '{reactivateInactiveLabel}',
+  describe: ['A quien no vuelve en 90 días, 15% para {reactivateThem}.', 'Válido 3 semanas.'],
   rules: [{
     kind: 'winback', isActive: true, priority: 5, rewardKind: 'grant',
     rewardType: 'percentage', rewardValue: 15, appliesToAll: true, serviceIds: [],
@@ -133,7 +138,7 @@ const REVIEW: LoyaltyPreset = {
 
 const RECOMMENDED: LoyaltyPreset = {
   id: 'recommended-program', kind: 'combo', name: 'Programa recomendado', recommended: true,
-  describe: ['Tarjeta de sellos + Cumpleaños + Refiere una amiga, todo de una.'],
+  describe: ['Tarjeta de sellos + Cumpleaños + {referralPresetName}, todo de una.'],
   componentIds: ['stamp-card', 'birthday', 'referral'],
 }
 
@@ -187,9 +192,17 @@ export function buildPresetPayload(presetId: string): PresetPayload {
   return { config: p.config ?? null, redemptionOptions: p.redemptionOptions ?? [], rules: p.rules ?? [] }
 }
 
-/** Metadata liviana para el cliente. */
-export function presetCatalog(): Array<Pick<LoyaltyPreset, 'id' | 'kind' | 'name' | 'recommended' | 'describe'>> {
-  return PRESETS.map(({ id, kind, name, recommended, describe }) => ({ id, kind, name, recommended, describe }))
+/** Metadata liviana para el cliente, con el copy ya resuelto al rubro. */
+export function presetCatalog(
+  vocabulary: Vocabulary,
+): Array<Pick<LoyaltyPreset, 'id' | 'kind' | 'name' | 'recommended' | 'describe'>> {
+  return PRESETS.map(({ id, kind, name, recommended, describe }) => ({
+    id,
+    kind,
+    name: interpolate(name, vocabulary),
+    recommended,
+    describe: describe.map((line) => interpolate(line, vocabulary)),
+  }))
 }
 
 /** Decide, aditivo e idempotente, qué del payload se siembra dado el estado actual. */
@@ -224,13 +237,14 @@ export function planPresetApply(payload: PresetPayload, state: CurrentLoyaltySta
 }
 
 /** Resumen legible para el picker: qué se encendió vs qué ya existía. */
-export function summarizeApply(plan: PresetPlan): ApplyPresetSummary {
+export function summarizeApply(plan: PresetPlan, vocabulary: Vocabulary): ApplyPresetSummary {
   const applied: string[] = []
   const skipped: string[] = []
+  const label = (kind: string) => interpolate(KIND_LABELS[kind] ?? kind, vocabulary)
   if (plan.configToWrite) applied.push('Programa base (cómo se acumula)')
-  for (const r of plan.rulesToCreate) applied.push(KIND_LABELS[r.kind] ?? r.kind)
+  for (const r of plan.rulesToCreate) applied.push(label(r.kind))
   for (const o of plan.redemptionsToCreate) applied.push(o.name)
-  for (const k of plan.skipped.rules) skipped.push(KIND_LABELS[k] ?? k)
+  for (const k of plan.skipped.rules) skipped.push(label(k))
   for (const n of plan.skipped.redemptions) skipped.push(n)
   return { applied, skipped }
 }

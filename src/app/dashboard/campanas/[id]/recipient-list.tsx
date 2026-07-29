@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { openDeferredPopup } from '@/lib/popup'
 import { sendCampaignMessage, sendCampaignEmail } from '@/server/actions/campaigns'
 import { BulkSendControls } from './bulk-send-controls'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 export interface RecipientItem {
   id: string
@@ -45,8 +46,9 @@ export function RecipientList({
   recipients: RecipientItem[]
   metrics: RecipientMetrics
 }) {
+  const vocabulary = useVocabulary()
   const router = useRouter()
-  // Derivado de recipients (igual que "Destinatarias"): no viaja como métrica.
+  // Derivado de recipients (igual que la fila de destinatarios): no viaja como métrica.
   const noContactar = recipients.filter((r) => r.optedOut).length
   const [sending, setSending] = useState<Set<string>>(new Set())
   const [error, setError] = useState<{ recipientId: string; message: string } | null>(null)
@@ -80,7 +82,7 @@ export function RecipientList({
         popup.navigate(res.data.waUrl)
       } else {
         popup.close()
-        setError({ recipientId, message: 'La clienta no tiene un teléfono válido.' })
+        setError({ recipientId, message: `${vocabulary.TheClient} no tiene un teléfono válido.` })
       }
       router.refresh()
     })
@@ -138,7 +140,7 @@ export function RecipientList({
       {/* Métricas (patrón stat-cards de customers/[id]) */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <div className="studio-card p-4">
-          <p className="studio-eyebrow">Destinatarias</p>
+          <p className="studio-eyebrow">{vocabulary.Recipients}</p>
           <p className="mt-1 text-2xl font-semibold text-primary">{recipients.length}</p>
         </div>
         <div className="studio-card p-4">
@@ -168,9 +170,9 @@ export function RecipientList({
               <Users className="size-7 text-muted-foreground" />
             </div>
             <div>
-              <p className="mb-1 font-heading text-base font-semibold text-primary">Sin destinatarias</p>
+              <p className="mb-1 font-heading text-base font-semibold text-primary">{vocabulary.noRecipients}</p>
               <p className="text-sm text-muted-foreground">
-                Ninguna clienta coincidió con el segmento de esta campaña.
+                {vocabulary.noClient} coincidió con el segmento de esta campaña.
               </p>
             </div>
           </div>

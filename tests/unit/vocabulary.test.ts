@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getVocabulary, VOCABULARIES } from '@/lib/vocabulary'
+import { getVocabulary, interpolate, VOCABULARIES } from '@/lib/vocabulary'
 
 describe('vocabulario por rubro', () => {
   it('los rubros con clientela femenina mantienen el texto actual', () => {
@@ -28,5 +28,29 @@ describe('vocabulario por rubro', () => {
         expect(value, key).not.toBe('')
       }
     }
+  })
+})
+
+describe('interpolate', () => {
+  it('reemplaza los tokens por la entrada del léxico', () => {
+    expect(interpolate('Tus {clients} ganan 1 sello.', getVocabulary('nails')))
+      .toBe('Tus clientas ganan 1 sello.')
+    expect(interpolate('Tus {clients} ganan 1 sello.', getVocabulary('barber')))
+      .toBe('Tus clientes ganan 1 sello.')
+  })
+
+  it('reemplaza varios tokens en la misma frase', () => {
+    expect(interpolate('Cuando {aClient} refiere, {bothOfThem} ganan.', getVocabulary('barber')))
+      .toBe('Cuando un cliente refiere, ambos ganan.')
+  })
+
+  // Un token mal escrito tiene que verse en pantalla, no dejar un hueco: el hueco
+  // pasa desapercibido en review y la frase queda mutilada en producción.
+  it('deja intacto un token que no existe en el léxico', () => {
+    expect(interpolate('Hola {noExiste}.', getVocabulary('nails'))).toBe('Hola {noExiste}.')
+  })
+
+  it('deja intacto un texto sin tokens', () => {
+    expect(interpolate('Sin tokens acá.', getVocabulary('nails'))).toBe('Sin tokens acá.')
   })
 })

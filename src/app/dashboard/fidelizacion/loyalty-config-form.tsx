@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { upsertLoyaltyConfig } from '@/server/actions/loyalty'
 import type { LoyaltyConfig } from '@prisma/client'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 export function LoyaltyConfigForm({ config }: { config: LoyaltyConfig | null }) {
+  const vocabulary = useVocabulary()
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -79,7 +81,7 @@ export function LoyaltyConfigForm({ config }: { config: LoyaltyConfig | null }) 
           defaultChecked={config?.forfeitGrantOnNoShow ?? false}
           className="size-4"
         />
-        <span className="text-sm text-foreground">Quitar la recompensa si la clienta no asiste (no-show)</span>
+        <span className="text-sm text-foreground">Quitar la recompensa si {vocabulary.theClient} no asiste (no-show)</span>
       </label>
 
       <label className="flex items-center gap-2">

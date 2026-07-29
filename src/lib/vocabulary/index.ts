@@ -32,12 +32,46 @@ export interface Vocabulary {
   thisClient: string
   /** "clientas inactivas" | "clientes inactivos" */
   inactiveClients: string
+  /** "inactivas" | "inactivos" — el adjetivo solo, cuando el sustantivo va antes */
+  inactive: string
   /** "Reactivar inactivas" | "Reactivar inactivos" — label de la regla automática */
   reactivateInactiveLabel: string
   /** "Referidas" | "Referidos" — label de la regla automática */
   referralsLabel: string
-  /** Preset de referidos: arrastra concordancia en dos puntos ("una clienta" + "ambas"). */
-  referralPresetLine: string
+  /** "ambas" | "ambos" — el preset de referidos premia a las dos partes */
+  bothOfThem: string
+  /** "reactivarla" | "reactivarlo" */
+  reactivateThem: string
+  /** "la referida" | "el referido" */
+  referredPerson: string
+  /** "Refiere una amiga" | "Refiere a alguien" — nombre del preset de referidos */
+  referralPresetName: string
+  /** "la referidora" | "el referidor" — quien trae a alguien nuevo */
+  referrer: string
+  /** "referidora" | "referidor" — el sustantivo solo */
+  referrerNoun: string
+  /** "referida" | "referido" — el sustantivo solo */
+  referredNoun: string
+  /** "Ambas" | "Ambos" — opción de beneficiario en la regla de referidos */
+  bothParties: string
+  /** "ambas ganan" | "ambos ganan" — copy de la tarjeta de fidelización */
+  bothWin: string
+  /** "Referí a una amiga" | "Referí a alguien" — título del bloque de referidos */
+  referAFriend: string
+  /** "Destinataria" | "Destinatario" */
+  Recipient: string
+  /** "Destinatarias" | "Destinatarios" */
+  Recipients: string
+  /** "destinatarias" | "destinatarios" */
+  recipients: string
+  /** "Sin destinatarias" | "Sin destinatarios" — estado vacío */
+  noRecipients: string
+  /** "Ninguna clienta" | "Ningún cliente" */
+  noClient: string
+  /** "Inactivas" | "Inactivos" — nombre del segmento de campaña */
+  InactiveSegment: string
+  /** "Cumpleañeras del mes" | "Cumpleañeros del mes" — nombre del segmento */
+  birthdaySegment: string
 }
 
 const FEMININE: Vocabulary = {
@@ -49,9 +83,26 @@ const FEMININE: Vocabulary = {
   aClient: 'una clienta',
   thisClient: 'Esta clienta',
   inactiveClients: 'clientas inactivas',
+  inactive: 'inactivas',
   reactivateInactiveLabel: 'Reactivar inactivas',
   referralsLabel: 'Referidas',
-  referralPresetLine: 'Cuando una clienta refiere a alguien nuevo, ambas reciben 20% de descuento.',
+  bothOfThem: 'ambas',
+  reactivateThem: 'reactivarla',
+  referredPerson: 'la referida',
+  referralPresetName: 'Refiere una amiga',
+  referrer: 'la referidora',
+  referrerNoun: 'referidora',
+  referredNoun: 'referida',
+  bothParties: 'Ambas',
+  bothWin: 'ambas ganan',
+  referAFriend: 'Referí a una amiga',
+  Recipient: 'Destinataria',
+  Recipients: 'Destinatarias',
+  recipients: 'destinatarias',
+  noRecipients: 'Sin destinatarias',
+  noClient: 'Ninguna clienta',
+  InactiveSegment: 'Inactivas',
+  birthdaySegment: 'Cumpleañeras del mes',
 }
 
 const NEUTRAL: Vocabulary = {
@@ -63,9 +114,26 @@ const NEUTRAL: Vocabulary = {
   aClient: 'un cliente',
   thisClient: 'Este cliente',
   inactiveClients: 'clientes inactivos',
+  inactive: 'inactivos',
   reactivateInactiveLabel: 'Reactivar inactivos',
   referralsLabel: 'Referidos',
-  referralPresetLine: 'Cuando un cliente refiere a alguien nuevo, ambos reciben 20% de descuento.',
+  bothOfThem: 'ambos',
+  reactivateThem: 'reactivarlo',
+  referredPerson: 'el referido',
+  referralPresetName: 'Refiere a alguien',
+  referrer: 'el referidor',
+  referrerNoun: 'referidor',
+  referredNoun: 'referido',
+  bothParties: 'Ambos',
+  bothWin: 'ambos ganan',
+  referAFriend: 'Referí a alguien',
+  Recipient: 'Destinatario',
+  Recipients: 'Destinatarios',
+  recipients: 'destinatarios',
+  noRecipients: 'Sin destinatarios',
+  noClient: 'Ningún cliente',
+  InactiveSegment: 'Inactivos',
+  birthdaySegment: 'Cumpleañeros del mes',
 }
 
 export const VOCABULARIES = { feminine: FEMININE, neutral: NEUTRAL } as const
@@ -86,4 +154,22 @@ const BY_CATEGORY: Record<BusinessCategory, Vocabulary> = {
 
 export function getVocabulary(category: BusinessCategory): Vocabulary {
   return BY_CATEGORY[category] ?? NEUTRAL
+}
+
+/**
+ * Reemplaza `{clave}` por la entrada del léxico.
+ *
+ * Para catálogos de copy que son constantes de módulo y no pueden recibir el
+ * léxico al construirse — hoy los presets de fidelización. En un componente no
+ * hace falta: ahí se interpola con template literals y se lee mejor.
+ *
+ * Una clave que no existe se deja tal cual (`{loQueSea}`) en vez de quedar
+ * vacía: si se cuela un token mal escrito, se ve en pantalla en lugar de
+ * producir una frase mutilada.
+ */
+export function interpolate(text: string, vocabulary: Vocabulary): string {
+  return text.replace(/\{(\w+)\}/g, (match, key: string) => {
+    const value = (vocabulary as unknown as Record<string, string | undefined>)[key]
+    return value ?? match
+  })
 }
