@@ -20,6 +20,7 @@ import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
 import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
 import { assertSlotIsAvailable } from '@/lib/availability/validation'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
+import { applyApprovedPayment } from '@/server/services/finance'
 import {
   sendNotificationSafely,
   sendBookingConfirmedNotification,
@@ -85,7 +86,6 @@ async function _confirmBankTransfer(
       const derivedType = deriveManualPaymentType(booking, amount)
       await tx.payment.update({ where: { id: paymentId }, data: { amount, paymentType: derivedType } })
 
-      const { applyApprovedPayment } = await import('@/server/services/finance')
       await applyApprovedPayment({
         tx,
         bookingId: booking.id,
@@ -151,7 +151,6 @@ async function _confirmBankTransfer(
       data: { amount, paymentType: derivedType },
     })
 
-    const { applyApprovedPayment } = await import('@/server/services/finance')
     const { wasConfirmed } = await applyApprovedPayment({
       tx,
       bookingId: booking.id,

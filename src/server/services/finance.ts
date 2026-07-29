@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client'
 import { BookingStatus, BookingPaymentStatus, PaymentProvider, PaymentType } from '@prisma/client'
-import { assertBookingPayable } from '@/lib/booking-payments'
+import { assertBookingPayable } from '@/lib/bookings/payments'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
 import { declaredBalancePaymentWhere } from '@/lib/bank-transfer/declared'
@@ -152,7 +152,7 @@ export interface ApplyApprovedPaymentInput {
   /**
    * Permite procesar pagos sobre una reserva `completed` (spec #3 §4: saldo por
    * transferencia declarado/pagado después de que la clienta fue atendida).
-   * Ver `assertBookingPayable` en `@/lib/booking-payments`.
+   * Ver `assertBookingPayable` en `@/lib/bookings/payments`.
    */
   allowCompleted?: boolean
 }

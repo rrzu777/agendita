@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { CheckCircle2, Clock } from 'lucide-react'
 import { formatMoney } from '@/lib/money'
 import { formatBookingNumber } from '@/lib/bookings/number'
-import { formatBookingDateTime } from '@/lib/booking/format-booking-datetime'
+import { formatBookingDateTime } from '@/lib/bookings/format-booking-datetime'
 import { AccountCta } from './account-cta'
 
 export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null }) {

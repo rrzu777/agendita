@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { assertBookingPayable, BookingNotPayableError } from '@/lib/booking-payments'
+import { assertBookingPayable, BookingNotPayableError } from '@/lib/bookings/payments'
 import { BookingStatus } from '@prisma/client'
 
 describe('assertBookingPayable', () => {

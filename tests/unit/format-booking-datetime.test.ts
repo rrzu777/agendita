@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatBookingDate, formatBookingTime, formatBookingDateTime } from '@/lib/booking/format-booking-datetime'
+import { formatBookingDate, formatBookingTime, formatBookingDateTime } from '@/lib/bookings/format-booking-datetime'
 
 describe('format-booking-datetime', () => {
   // 2026-07-09T13:00Z = 09:00 en Santiago (UTC-4), 22:00 en Tokio

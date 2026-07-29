@@ -9,7 +9,7 @@ import { StepPayment } from './step-payment'
 import { StepConfirmation } from './step-confirmation'
 import type { Service, ServiceModality } from '@prisma/client'
 import type { FunnelSession } from '@/lib/customers/session-prefill'
-import { restoreWizardState, serializeWizardState, wizardStorageKey } from '@/lib/booking/wizard-storage'
+import { restoreWizardState, serializeWizardState, wizardStorageKey } from '@/lib/bookings/wizard-storage'
 
 type WizardSession = Pick<FunnelSession, 'email' | 'name' | 'phone'> | null
 

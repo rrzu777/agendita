@@ -21,7 +21,9 @@ import { normalizePhone } from '@/lib/customers/phone'
 import { isValidBirthDateString, birthDateToUtcDate } from '@/lib/dates'
 import { addMinutes } from 'date-fns'
 import { applyPromotionInTx } from '@/lib/promotions/apply'
-import { recomputeBookingAmountsAfterDiscount } from '@/lib/booking/recompute'
+import { recomputeBookingAmountsAfterDiscount } from '@/lib/bookings/recompute'
+import { assertBookingPayable } from '@/lib/bookings/payments'
+import { applyApprovedPayment } from '@/server/services/finance'
 import { initialPublicBookingStatus, approvalHoldExpiresAt } from '@/lib/bookings/approval'
 import { resolveBookingModality, resolveServiceAddress } from '@/lib/services/modality'
 import { applyPackageInTx } from '@/lib/packages/consume'
@@ -775,7 +777,6 @@ async function _confirmPayment(bookingId: string, paymentId: string, amount: num
   })
   if (!booking) throw new ForbiddenError('Reserva no encontrada')
 
-  const { assertBookingPayable } = await import('@/lib/booking-payments')
   try {
     assertBookingPayable(booking)
   } catch (e) {
@@ -792,7 +793,6 @@ async function _confirmPayment(bookingId: string, paymentId: string, amount: num
   let wasConfirmed = false
 
   const updated = await prisma.$transaction(async (tx) => {
-    const { applyApprovedPayment } = await import('@/server/services/finance')
     const result = await applyApprovedPayment({
       tx,
       bookingId,
@@ -1071,8 +1071,6 @@ async function _createBookingFromDashboard(data: {
     }
 
     if (paymentMode === 'deposit_paid' && effDeposit > 0) {
-      const { applyApprovedPayment } = await import('@/server/services/finance')
-
       const payment = await tx.payment.create({
         data: {
           businessId,
@@ -1104,8 +1102,6 @@ async function _createBookingFromDashboard(data: {
     }
 
     if (paymentMode === 'full_paid' && effFinal > 0) {
-      const { applyApprovedPayment } = await import('@/server/services/finance')
-
       const payment = await tx.payment.create({
         data: {
           businessId,

@@ -31,7 +31,7 @@ describe('createBusinessForUser category templates', () => {
 
   it('category other does not create services by default', async () => {
     const tx = setupTransaction()
-    const { createBusinessForUser } = await import('@/lib/auth/actions')
+    const { createBusinessForUser } = await import('@/lib/business/create-for-user')
 
     await createBusinessForUser({
       userId: 'user-1',
@@ -46,7 +46,7 @@ describe('createBusinessForUser category templates', () => {
 
   it('category nails without useServiceTemplate does not create services', async () => {
     const tx = setupTransaction()
-    const { createBusinessForUser } = await import('@/lib/auth/actions')
+    const { createBusinessForUser } = await import('@/lib/business/create-for-user')
 
     await createBusinessForUser({
       userId: 'user-1',
@@ -62,7 +62,7 @@ describe('createBusinessForUser category templates', () => {
 
   it('category nails with useServiceTemplate creates services', async () => {
     const tx = setupTransaction()
-    const { createBusinessForUser } = await import('@/lib/auth/actions')
+    const { createBusinessForUser } = await import('@/lib/business/create-for-user')
 
     await createBusinessForUser({
       userId: 'user-1',
@@ -82,7 +82,7 @@ describe('createBusinessForUser category templates', () => {
 
   it('category barber with useServiceTemplate creates services', async () => {
     const tx = setupTransaction()
-    const { createBusinessForUser } = await import('@/lib/auth/actions')
+    const { createBusinessForUser } = await import('@/lib/business/create-for-user')
 
     await createBusinessForUser({
       userId: 'user-1',
@@ -102,7 +102,7 @@ describe('createBusinessForUser category templates', () => {
 
   it('category other with useServiceTemplate does not create services', async () => {
     const tx = setupTransaction()
-    const { createBusinessForUser } = await import('@/lib/auth/actions')
+    const { createBusinessForUser } = await import('@/lib/business/create-for-user')
 
     await createBusinessForUser({
       userId: 'user-1',
