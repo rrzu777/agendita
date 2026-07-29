@@ -157,6 +157,22 @@ Dos cambios, y el segundo es el que se pasa por alto:
 
 1. **Las dos queries** necesitan `OR: [{ professionalId: null }, { professionalId }]` —
    la de `timeBlock` y la de `timeBlockSeries`.
+
+   **Ese `OR` con `undefined` no filtra: matchea todo.** Prisma borra las claves
+   `undefined`, así que `{ professionalId: undefined }` queda en `{}` — un filtro vacío
+   que matchea TODAS las filas — y el `OR` entero pasa a ser "cualquiera". Un caller que
+   se olvide de pasar la persona ve **los bloqueos de todo el equipo mezclados** y
+   reporta como ocupadas horas que están libres. No corrompe datos, pero se disfraza del
+   reporte "los horarios no funcionan", sin error en ningún log. Por eso el parámetro es
+   `professionalId: string | null` **explícito**, nunca opcional: que el compilador
+   obligue a decidir. Es el mismo mecanismo que
+   `staffId ?? null` en el lookup de la regla, un nivel más arriba.
+
+   **Y la asimetría de la query se mantiene.** `effective-blocks.ts:23` compara `until`
+   contra el piso del día local a propósito: la query es un **superconjunto deliberado**
+   y el recorte fino lo hace `expandSeries`. Apretar la query de más ahí ya costó un bug
+   (una serie acotada perdía su último día). El filtro de persona se suma sin tocar esa
+   holgura.
 2. **`EffectiveBlock` es un tipo proyectado** (`id`, `startDateTime`, `endDateTime`,
    `reason`, `overlapToleranceMinutes`) que se construye en **dos** lugares: el `.map`
    de los bloqueos sueltos (`effective-blocks.ts:41`) y adentro de `expandSeries`. Un
@@ -388,6 +404,30 @@ reapuntar la base después no dispara nada — hay que cerrar y reabrir el PR.
 | **E** | Panel: calendario filtrable, columna en tablas, reserva manual, **reasignar**, profesional habitual en la ficha | Bajo |
 
 ---
+
+## Dependencias de otra sesión
+
+Dos fixes del backlog de disponibilidad caen **en las líneas exactas** que este track
+edita. La sesión de arquitectura los mete como PRs mínimos contra `main` antes de que se
+abran los PRs B y C:
+
+- **`expand-series.ts`** — `occurrenceDate` (`:93`) y `computeSeriesUntil` (`:122`) armaban
+  la medianoche a mano con `fromZonedTime` en vez de usar `startOfLocalDay`
+  (`timezone.ts:45`), que ya resuelve el gap de DST reintentando a las 01:00. El 6 de
+  septiembre la medianoche no existe en Santiago, el `occurrenceDate` cae al día anterior,
+  la clave del mapa de excepciones no matchea y **una excepción de serie se ignora**.
+  `:93` es el object literal de la proyección — el mismo donde entra `professionalId`.
+- **`finance.ts`** — el flip `pending_payment → confirmed` no re-chequea solape. El
+  `updateMany` sí es atómico contra doble-confirmación (el `where` guarda por status), pero
+  si el hold venció **por reloj y el cron todavía no lo flipeó**, otra clienta toma el slot
+  legítimamente — tanto `generateSlots` (`slots.ts:102`) como el SQL crudo tratan un hold
+  vencido como no-bloqueante a propósito — y el webhook posterior confirma el primero:
+  dos reservas confirmadas en la misma hora. El guard vive en `validation.ts:86,94,148`,
+  el archivo al que el PR C le agrega la persona.
+
+Que entren primero evita que el guard haya que escribirlo con `professionalId` ya adentro,
+y evita rebasar sobre un conflicto en la línea que se está editando. Los PRs 0 y A no
+tocan ninguno de los dos archivos, así que corren en paralelo sin esperar.
 
 ## Trampas conocidas
 
