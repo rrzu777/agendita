@@ -11,14 +11,14 @@ const data = {
 
 describe('template PackageDisputed (a la dueña)', () => {
   it('html incluye clienta, producto y monto; no exige datos de reserva', () => {
-    const html = packageDisputedBusinessHtml(data)
+    const html = packageDisputedBusinessHtml(data, 'Clienta')
     expect(html).toContain('Ana')
     expect(html).toContain('Pack 5 sesiones')
     // monto formateado (50.000 en es-CL / CLP); al menos los dígitos base
     expect(html).toMatch(/50\.?000/)
   })
   it('text incluye clienta y producto', () => {
-    const text = packageDisputedBusinessText(data)
+    const text = packageDisputedBusinessText(data, 'Clienta')
     expect(text).toContain('Ana')
     expect(text).toContain('Pack 5 sesiones')
   })

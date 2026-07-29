@@ -12,6 +12,7 @@ import {
   sendPackageTransferUnverifiedToBusiness,
 } from '@/lib/notifications'
 import { getBookingConfirmationUrl, getPackageConfirmationUrl } from '@/lib/business/urls'
+import { getVocabulary } from '@/lib/vocabulary'
 import { toBankTransferEmailInfo } from '@/lib/notifications/types'
 import { logger } from '@/lib/logger'
 
@@ -179,7 +180,7 @@ export async function sendTransferReminders(
     include: {
       service: { select: { name: true } },
       customer: { select: { name: true } },
-      business: { select: { id: true, name: true } },
+      business: { select: { id: true, name: true, category: true } },
     },
   })
 
@@ -204,7 +205,7 @@ export async function sendTransferReminders(
         const results = await sendMultiNotificationSafely('transfer reminder business', () =>
           deps.sendBusiness(b.business.id, {
             businessName: b.business.name,
-            customerName: b.customer?.name ?? 'la clienta',
+            customerName: b.customer?.name ?? getVocabulary(b.business.category).theClient,
             serviceName: b.service?.name ?? 'servicio',
             bookingNumber: b.bookingNumber,
           }),
@@ -308,7 +309,7 @@ export async function sendTransferReminders(
     include: {
       product: { select: { name: true } },
       customer: { select: { name: true } },
-      business: { select: { id: true, name: true } },
+      business: { select: { id: true, name: true, category: true } },
     },
   })
   const pkgBusinessClaimed: typeof pkgBusiness = []
@@ -326,7 +327,7 @@ export async function sendTransferReminders(
         const results = await sendMultiNotificationSafely('package transfer unverified business', () =>
           deps.sendPkgBusiness(p.business.id, {
             businessName: p.business.name,
-            customerName: p.customer?.name ?? 'la clienta',
+            customerName: p.customer?.name ?? getVocabulary(p.business.category).theClient,
             productName: p.product.name,
           }),
         )

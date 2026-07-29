@@ -769,13 +769,16 @@ export function packagePurchasedCustomerText(data: PackagePurchasedEmailData): s
   return lines.join('\n')
 }
 
-export function packageSoldBusinessHtml(data: PackagePurchasedEmailData): string {
+/** `clientLabel` va aparte del data: es cómo el rubro nombra a la clientela, y
+ *  sólo lo necesitan los avisos al negocio — el mismo data arma también el
+ *  email a la clienta, que no lleva esa fila. */
+export function packageSoldBusinessHtml(data: PackagePurchasedEmailData, clientLabel: string): string {
   const price = fmtCurrency(data.pricePaid, data.businessCurrency)
   return baseHtml(`
     ${header('Vendiste un paquete')}
     <p style="font-size:15px">${escapeHtml(data.customerName)} compró un paquete online.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
-      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">${escapeHtml(clientLabel)}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Paquete</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.productName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Sesiones</td><td style="padding:8px 0;font-weight:600">${data.totalSessions}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Total</td><td style="padding:8px 0;font-weight:600">${price}</td></tr>
@@ -784,12 +787,15 @@ export function packageSoldBusinessHtml(data: PackagePurchasedEmailData): string
   `)
 }
 
-export function packageSoldBusinessText(data: PackagePurchasedEmailData): string {
+/** `clientLabel` va aparte del data: es cómo el rubro nombra a la clientela, y
+ *  sólo lo necesitan los avisos al negocio — el mismo data arma también el
+ *  email a la clienta, que no lleva esa fila. */
+export function packageSoldBusinessText(data: PackagePurchasedEmailData, clientLabel: string): string {
   const price = fmtCurrency(data.pricePaid, data.businessCurrency)
   return [
     'Vendiste un paquete', '',
     `${data.customerName} compró un paquete online.`, '',
-    `Clienta: ${data.customerName}`,
+    `${clientLabel}: ${data.customerName}`,
     `Paquete: ${data.productName}`,
     `Sesiones: ${data.totalSessions}`,
     `Total: ${price}`, '',
@@ -797,13 +803,16 @@ export function packageSoldBusinessText(data: PackagePurchasedEmailData): string
   ].join('\n')
 }
 
-export function packageDisputedBusinessHtml(data: PackageDisputedEmailData): string {
+/** `clientLabel` va aparte del data: es cómo el rubro nombra a la clientela, y
+ *  sólo lo necesitan los avisos al negocio — el mismo data arma también el
+ *  email a la clienta, que no lleva esa fila. */
+export function packageDisputedBusinessHtml(data: PackageDisputedEmailData, clientLabel: string): string {
   const amount = fmtCurrency(data.amount, data.businessCurrency)
   return baseHtml(`
     ${header('Contracargo de paquete')}
     <p style="font-size:15px">Se registró un contracargo (chargeback) de un paquete de ${escapeHtml(data.customerName)}. La compra fue revertida automáticamente.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
-      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">${escapeHtml(clientLabel)}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Paquete</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.productName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Monto</td><td style="padding:8px 0;font-weight:600">${amount}</td></tr>
     </table>
@@ -811,25 +820,31 @@ export function packageDisputedBusinessHtml(data: PackageDisputedEmailData): str
   `)
 }
 
-export function packageDisputedBusinessText(data: PackageDisputedEmailData): string {
+/** `clientLabel` va aparte del data: es cómo el rubro nombra a la clientela, y
+ *  sólo lo necesitan los avisos al negocio — el mismo data arma también el
+ *  email a la clienta, que no lleva esa fila. */
+export function packageDisputedBusinessText(data: PackageDisputedEmailData, clientLabel: string): string {
   const amount = fmtCurrency(data.amount, data.businessCurrency)
   return [
     'Contracargo de paquete', '',
     `Se registró un contracargo (chargeback) de un paquete de ${data.customerName}. La compra fue revertida automáticamente.`, '',
-    `Clienta: ${data.customerName}`,
+    `${clientLabel}: ${data.customerName}`,
     `Paquete: ${data.productName}`,
     `Monto: ${amount}`, '',
     `Enviado por ${data.businessName} a través de Agendita`,
   ].join('\n')
 }
 
-export function bookingDisputedBusinessHtml(data: BookingDisputedEmailData): string {
+/** `clientLabel` va aparte del data: es cómo el rubro nombra a la clientela, y
+ *  sólo lo necesitan los avisos al negocio — el mismo data arma también el
+ *  email a la clienta, que no lleva esa fila. */
+export function bookingDisputedBusinessHtml(data: BookingDisputedEmailData, clientLabel: string): string {
   const amount = fmtCurrency(data.amount, data.businessCurrency)
   return baseHtml(`
     ${header('Contracargo de reserva')}
     <p style="font-size:15px">Se registró un contracargo (chargeback) del pago de una reserva de ${escapeHtml(data.customerName)}. El pago fue revertido y la reserva quedó marcada — revisá si querés cancelarla, recobrar o atender igual.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
-      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">${escapeHtml(clientLabel)}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Reserva</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.bookingLabel)} — ${escapeHtml(data.serviceName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Fecha</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Monto</td><td style="padding:8px 0;font-weight:600">${amount}</td></tr>
@@ -838,12 +853,15 @@ export function bookingDisputedBusinessHtml(data: BookingDisputedEmailData): str
   `)
 }
 
-export function bookingDisputedBusinessText(data: BookingDisputedEmailData): string {
+/** `clientLabel` va aparte del data: es cómo el rubro nombra a la clientela, y
+ *  sólo lo necesitan los avisos al negocio — el mismo data arma también el
+ *  email a la clienta, que no lleva esa fila. */
+export function bookingDisputedBusinessText(data: BookingDisputedEmailData, clientLabel: string): string {
   const amount = fmtCurrency(data.amount, data.businessCurrency)
   return [
     'Contracargo de reserva', '',
     `Se registró un contracargo (chargeback) del pago de una reserva de ${data.customerName}. El pago fue revertido y la reserva quedó marcada.`, '',
-    `Clienta: ${data.customerName}`,
+    `${clientLabel}: ${data.customerName}`,
     `Reserva: ${data.bookingLabel} — ${data.serviceName}`,
     `Fecha: ${fmtDate(data.startDateTime, data.businessTimezone)}`,
     `Monto: ${amount}`, '',
@@ -851,13 +869,16 @@ export function bookingDisputedBusinessText(data: BookingDisputedEmailData): str
   ].join('\n')
 }
 
-export function packageTransferDeclaredBusinessHtml(data: PackageTransferDeclaredEmailData): string {
+/** `clientLabel` va aparte del data: es cómo el rubro nombra a la clientela, y
+ *  sólo lo necesitan los avisos al negocio — el mismo data arma también el
+ *  email a la clienta, que no lleva esa fila. */
+export function packageTransferDeclaredBusinessHtml(data: PackageTransferDeclaredEmailData, clientLabel: string): string {
   const amount = fmtCurrency(data.amount, data.businessCurrency)
   return baseHtml(`
     ${header('Transferencia de paquete declarada')}
     <p style="font-size:15px">${escapeHtml(data.customerName)} declaró una transferencia por un paquete. Verificá el pago y confirmá o rechazá.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
-      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">${escapeHtml(clientLabel)}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Paquete</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.productName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Monto</td><td style="padding:8px 0;font-weight:600">${amount}</td></tr>
     </table>
@@ -865,12 +886,15 @@ export function packageTransferDeclaredBusinessHtml(data: PackageTransferDeclare
   `)
 }
 
-export function packageTransferDeclaredBusinessText(data: PackageTransferDeclaredEmailData): string {
+/** `clientLabel` va aparte del data: es cómo el rubro nombra a la clientela, y
+ *  sólo lo necesitan los avisos al negocio — el mismo data arma también el
+ *  email a la clienta, que no lleva esa fila. */
+export function packageTransferDeclaredBusinessText(data: PackageTransferDeclaredEmailData, clientLabel: string): string {
   const amount = fmtCurrency(data.amount, data.businessCurrency)
   return [
     'Transferencia de paquete declarada', '',
     `${data.customerName} declaró una transferencia por un paquete. Verificá el pago y confirmá o rechazá.`, '',
-    `Clienta: ${data.customerName}`,
+    `${clientLabel}: ${data.customerName}`,
     `Paquete: ${data.productName}`,
     `Monto: ${amount}`, '',
     `Enviado por ${data.businessName} a través de Agendita`,

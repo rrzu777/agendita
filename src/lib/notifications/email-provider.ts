@@ -4,6 +4,7 @@ import { BookingStatus } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
 import { getAppUrl } from '@/lib/business/urls'
+import { getVocabulary } from '@/lib/vocabulary'
 import { unsubscribeHeaders, unsubscribeFooterHtml, unsubscribeFooterText } from './marketing-email'
 import type {
   EmailResult,
@@ -177,6 +178,21 @@ async function getBusinessOwnerEmails(businessId: string): Promise<{ email: stri
   return users
     .filter((bu) => bu.user.email)
     .map((bu) => ({ email: bu.user.email, name: bu.user.name }))
+}
+
+/**
+ * Cómo llamar a la clientela en los avisos al negocio, según su rubro.
+ *
+ * Los emails salen de crons y webhooks, sin sesión, así que el léxico no puede
+ * venir del contexto de auth: se resuelve acá, donde ya estamos tocando la DB
+ * para armar el envío. Cae al neutro si el negocio no existe.
+ */
+async function getBusinessClientLabel(businessId: string): Promise<string> {
+  const business = await prisma.business.findUnique({
+    where: { id: businessId },
+    select: { category: true },
+  })
+  return getVocabulary(business?.category ?? 'other').Client
 }
 
 export async function getBusinessReplyToEmail(businessId: string): Promise<string | null> {
@@ -579,7 +595,7 @@ export async function sendPackagePurchasedNotification(purchaseId: string, busin
   })
 
   if (!purchase || !purchase.customer.email) {
-    return { success: false, skipped: 'Compra no encontrada o clienta sin email' }
+    return { success: false, skipped: 'Compra no encontrada o sin email' }
   }
 
   // /mi/[slug] es siempre path-based en el dominio principal (no hay ruteo por
@@ -610,8 +626,9 @@ export async function sendPackageSoldNotificationToBusiness(
     return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
   }
 
-  const html = packageSoldBusinessHtml(data)
-  const text = packageSoldBusinessText(data)
+  const clientLabel = await getBusinessClientLabel(businessId)
+  const html = packageSoldBusinessHtml(data, clientLabel)
+  const text = packageSoldBusinessText(data, clientLabel)
 
   return Promise.all(
     ownerEmails.map((owner) =>
@@ -631,8 +648,9 @@ export async function sendPackageDisputedToBusiness(
     return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
   }
 
-  const html = packageDisputedBusinessHtml(data)
-  const text = packageDisputedBusinessText(data)
+  const clientLabel = await getBusinessClientLabel(businessId)
+  const html = packageDisputedBusinessHtml(data, clientLabel)
+  const text = packageDisputedBusinessText(data, clientLabel)
 
   return Promise.all(
     ownerEmails.map((owner) =>
@@ -652,8 +670,9 @@ export async function sendBookingDisputedToBusiness(
     return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
   }
 
-  const html = bookingDisputedBusinessHtml(data)
-  const text = bookingDisputedBusinessText(data)
+  const clientLabel = await getBusinessClientLabel(businessId)
+  const html = bookingDisputedBusinessHtml(data, clientLabel)
+  const text = bookingDisputedBusinessText(data, clientLabel)
 
   return Promise.all(
     ownerEmails.map((owner) =>
@@ -673,8 +692,9 @@ export async function sendPackageTransferDeclaredToBusiness(
     return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
   }
 
-  const html = packageTransferDeclaredBusinessHtml(data)
-  const text = packageTransferDeclaredBusinessText(data)
+  const clientLabel = await getBusinessClientLabel(businessId)
+  const html = packageTransferDeclaredBusinessHtml(data, clientLabel)
+  const text = packageTransferDeclaredBusinessText(data, clientLabel)
 
   return Promise.all(
     ownerEmails.map((owner) =>

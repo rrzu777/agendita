@@ -38,7 +38,7 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
     <main className="mx-auto max-w-md px-4 py-10">
       <LoyaltyCard
         customerName={customer.name}
-        business={{ name: customer.business.name, logoUrl: customer.business.logoUrl }}
+        business={{ name: customer.business.name, logoUrl: customer.business.logoUrl, category: customer.business.category }}
         data={data}
         redeemAction={redeemAction.bind(null, token)}
       />

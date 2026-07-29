@@ -79,330 +79,70 @@ rompen con el primer adjetivo irregular.
 ## Estructura de archivos
 
 - Crear: `src/lib/vocabulary/index.ts` — léxicos + `getVocabulary(category)`. Puro, sin deps.
-- Crear: `src/lib/vocabulary/server.ts` — `getBusinessVocabulary()` para server components/actions.
+- ~~Crear: `src/lib/vocabulary/server.ts`~~ — se descartó en la ejecución, ver desviación 2.
 - Crear: `src/components/vocabulary-provider.tsx` — context + `useVocabulary()` para client components.
 - Crear: `tests/unit/vocabulary.test.ts`
 - Modificar: `src/app/dashboard/layout.tsx` — envolver el árbol en el provider.
 - Modificar: los ~25 archivos con strings de género (listados por tarea abajo).
 
-## Task 1.1 — El módulo de vocabulario
+## Estado: ✅ ENTREGADO
 
-**Files:**
-- Create: `src/lib/vocabulary/index.ts`
-- Test: `tests/unit/vocabulary.test.ts`
+Lo que efectivamente se hizo, con las desviaciones respecto del diseño de arriba.
 
-- [ ] **Paso 1: escribir el test que falla**
+### Módulo
 
-```ts
-import { describe, it, expect } from 'vitest'
-import { getVocabulary, VOCABULARIES } from '@/lib/vocabulary'
+- `src/lib/vocabulary/index.ts` — 28 entradas por léxico (`FEMININE` / `NEUTRAL`),
+  `getVocabulary(category)` e `interpolate(text, vocabulary)`.
+- `src/components/vocabulary-provider.tsx` — contexto + `useVocabulary()`, colgado del
+  layout del dashboard. **Es el primer contexto de React del proyecto.**
+- `tests/unit/vocabulary.test.ts` — 8 casos, incluido el que compara las claves de los
+  dos léxicos (el olvido más probable es agregar una clave a uno solo).
 
-describe('vocabulario por rubro', () => {
-  it('los rubros con clientela femenina mantienen el texto actual', () => {
-    for (const category of ['nails', 'beauty', 'hair_salon'] as const) {
-      expect(getVocabulary(category).clients).toBe('clientas')
-    }
-  })
+### Tres cosas salieron distinto del plan
 
-  it('los demás rubros usan la forma neutra', () => {
-    for (const category of ['barber', 'massage', 'therapy', 'other'] as const) {
-      expect(getVocabulary(category).clients).toBe('clientes')
-    }
-  })
+**1. El léxico terminó bastante más grande que las 11 claves previstas.** El grep
+inicial buscaba "clienta" y se perdió el resto del género: `Destinatarias`,
+`referidora`, `la referida`, `Inactivas`, `Cumpleañeras del mes`, `Refiere una amiga`,
+`ambas ganan`, `para reactivarla`. Un barrido más amplio
+(`clienta|dueña|destinatari|referid|amiga|inactiv`) los sacó a todos.
 
-  // Guarda contra el olvido más probable: agregar una clave a un léxico y no al otro.
-  it('todos los léxicos tienen exactamente las mismas claves', () => {
-    const [first, ...rest] = Object.values(VOCABULARIES)
-    for (const lexicon of rest) {
-      expect(Object.keys(lexicon).sort()).toEqual(Object.keys(first).sort())
-    }
-  })
+**2. `getBusinessVocabulary()` se creó y se borró en la misma sesión.** Resolvía el
+léxico desde la sesión (`getCurrentUserWithBusiness`), lo que agregaba una dependencia
+de `cookies()` en server actions que **ya tenían el negocio** en el contexto de
+`requireBusiness()`. Reventaba los tests unitarios de esas actions (mockean
+`@/lib/auth/server`, no `@/lib/auth/user`) con un error genérico en vez del mensaje
+esperado. Las actions ahora usan `getVocabulary(business.category)` a secas.
 
-  it('ninguna entrada queda vacía', () => {
-    for (const lexicon of Object.values(VOCABULARIES)) {
-      for (const [key, value] of Object.entries(lexicon)) {
-        expect(value, key).not.toBe('')
-      }
-    }
-  })
-})
-```
+**3. `ServiceFitWarnings` no puede ser async.** Se volvió `async` para leer el léxico
+del servidor y eso rompió sus tres tests: `renderToStaticMarkup` no renderiza un
+componente que suspende. Volvió a ser síncrono y recibe `vocabulary` por prop desde
+`availability/page.tsx`, que ya tiene el negocio cargado.
 
-- [ ] **Paso 2: correrlo y verificar que falla**
+### Superficies cubiertas
 
-```bash
-npx vitest run tests/unit/vocabulary.test.ts
-```
+| Superficie | Cómo llega el léxico |
+|---|---|
+| Client components del dashboard | `useVocabulary()` |
+| Server components del dashboard | `getVocabulary(userData.business.category)` |
+| Server actions | `getVocabulary(business.category)` del contexto de auth |
+| Presets y labels de segmento (constantes de módulo) | tokens `{clave}` + `interpolate()` |
+| Emails al negocio | `clientLabel` como 2º parámetro de la plantilla; el sender lo resuelve |
+| Crons y webhooks (sin sesión) | `category` sumada al `select` que ya hacían |
+| Tarjeta de fidelización (la ve la clienta) | prop desde `LoyaltyCard` |
 
-Esperado: FAIL — `Cannot find module '@/lib/vocabulary'`.
+### Fuera de alcance, a propósito
 
-- [ ] **Paso 3: implementar el módulo**
+- `src/server/actions/my-bookings.ts:52` — `reason: 'cancelada por la clienta desde /mi'`
+  es una nota interna del ledger, no la ve nadie.
+- `src/lib/campaigns/send.ts:64` — sin `recipient` no hay negocio del cual sacar el
+  rubro, así que ese mensaje se redactó sin género en vez de adivinar.
 
-```ts
-import type { BusinessCategory } from '@prisma/client'
+### Landmine encontrada
 
-/**
- * Vocabulario de cara al usuario que cambia según el rubro del negocio.
- *
- * POR QUÉ FRASES Y NO PALABRAS: en castellano el género arrastra artículos,
- * adjetivos y participios. Guardar sólo el sustantivo y pegarlo en el call site
- * produce "el clienta" y "clientes inactivas". Cada entrada acá ya viene con la
- * concordancia resuelta, escrita a mano, en las dos formas.
- *
- * POR QUÉ NO ES UN i18n COMPLETO: la enorme mayoría de las frases del producto
- * sólo tienen un sustantivo genérico y ninguna otra marca de género — ahí alcanza
- * con interpolar `clients`. Sólo las que arrastran concordancia viven enteras acá.
- */
-export interface Vocabulary {
-  /** "clienta" | "cliente" */
-  client: string
-  /** "clientas" | "clientes" */
-  clients: string
-  /** "Clienta" | "Cliente" — encabezado de tabla y etiqueta de email */
-  Client: string
-  /** "la clienta" | "el cliente" */
-  theClient: string
-  /** "La clienta" | "El cliente" — arranque de oración */
-  TheClient: string
-  /** "una clienta" | "un cliente" */
-  aClient: string
-  /** "Esta clienta" | "Este cliente" */
-  thisClient: string
-  /** "clientas inactivas" | "clientes inactivos" */
-  inactiveClients: string
-  /** "Reactivar inactivas" | "Reactivar inactivos" — label de la regla automática */
-  reactivateInactiveLabel: string
-  /** "Referidas" | "Referidos" — label de la regla automática */
-  referralsLabel: string
-  /** Preset de referidos: arrastra concordancia en dos puntos ("una clienta" + "ambas"). */
-  referralPresetLine: string
-}
-
-const FEMININE: Vocabulary = {
-  client: 'clienta',
-  clients: 'clientas',
-  Client: 'Clienta',
-  theClient: 'la clienta',
-  TheClient: 'La clienta',
-  aClient: 'una clienta',
-  thisClient: 'Esta clienta',
-  inactiveClients: 'clientas inactivas',
-  reactivateInactiveLabel: 'Reactivar inactivas',
-  referralsLabel: 'Referidas',
-  referralPresetLine: 'Cuando una clienta refiere a alguien nuevo, ambas reciben 20% de descuento.',
-}
-
-const NEUTRAL: Vocabulary = {
-  client: 'cliente',
-  clients: 'clientes',
-  Client: 'Cliente',
-  theClient: 'el cliente',
-  TheClient: 'El cliente',
-  aClient: 'un cliente',
-  thisClient: 'Este cliente',
-  inactiveClients: 'clientes inactivos',
-  reactivateInactiveLabel: 'Reactivar inactivos',
-  referralsLabel: 'Referidos',
-  referralPresetLine: 'Cuando un cliente refiere a alguien nuevo, ambos reciben 20% de descuento.',
-}
-
-export const VOCABULARIES = { feminine: FEMININE, neutral: NEUTRAL } as const
-
-/**
- * Femenino en los rubros donde ya era el texto vigente — cambiarlo les movería el
- * tono a las manicuristas que ya usan el producto. Neutro en todo lo demás.
- */
-const BY_CATEGORY: Record<BusinessCategory, Vocabulary> = {
-  nails: FEMININE,
-  beauty: FEMININE,
-  hair_salon: FEMININE,
-  barber: NEUTRAL,
-  massage: NEUTRAL,
-  therapy: NEUTRAL,
-  other: NEUTRAL,
-}
-
-export function getVocabulary(category: BusinessCategory): Vocabulary {
-  return BY_CATEGORY[category] ?? NEUTRAL
-}
-```
-
-- [ ] **Paso 4: correr el test y verificar que pasa**
-
-```bash
-npx vitest run tests/unit/vocabulary.test.ts
-```
-
-Esperado: PASS, 4 tests.
-
-- [ ] **Paso 5: commit**
-
-```bash
-git add src/lib/vocabulary/index.ts tests/unit/vocabulary.test.ts
-git commit -m "feat(vocabulario): léxico por rubro con concordancia resuelta"
-```
-
-## Task 1.2 — Acceso desde server y desde cliente
-
-**Files:**
-- Create: `src/lib/vocabulary/server.ts`
-- Create: `src/components/vocabulary-provider.tsx`
-- Modify: `src/app/dashboard/layout.tsx`
-
-- [ ] **Paso 1: helper de servidor**
-
-```ts
-import { getCurrentUserWithBusiness } from '@/lib/auth/user'
-import { getVocabulary, type Vocabulary } from './index'
-
-/**
- * Vocabulario del negocio en sesión, para server components y server actions.
- *
- * No agrega ninguna query: getCurrentUserWithBusiness está envuelto en React.cache
- * y el layout del dashboard ya la llamó en el mismo request.
- *
- * Devuelve el léxico neutro si no hay negocio (superficies públicas, /recover-business).
- */
-export async function getBusinessVocabulary(): Promise<Vocabulary> {
-  const userData = await getCurrentUserWithBusiness()
-  return getVocabulary(userData?.business?.category ?? 'other')
-}
-```
-
-- [ ] **Paso 2: provider para client components**
-
-```tsx
-'use client'
-
-import { createContext, useContext } from 'react'
-import { getVocabulary, type Vocabulary } from '@/lib/vocabulary'
-
-// El default es el neutro y no null: así un componente cliente montado fuera del
-// dashboard (Storybook, un test de render suelto) no revienta — muestra la forma
-// neutra, que es la que menos molesta si se escapa.
-const VocabularyContext = createContext<Vocabulary>(getVocabulary('other'))
-
-export function VocabularyProvider({ value, children }: { value: Vocabulary; children: React.ReactNode }) {
-  return <VocabularyContext.Provider value={value}>{children}</VocabularyContext.Provider>
-}
-
-export function useVocabulary(): Vocabulary {
-  return useContext(VocabularyContext)
-}
-```
-
-- [ ] **Paso 3: envolver el dashboard**
-
-En `src/app/dashboard/layout.tsx`, importar `getVocabulary` y `VocabularyProvider`,
-y envolver el `<div className="flex min-h-screen ...">` existente:
-
-```tsx
-<VocabularyProvider value={getVocabulary(userData.business.category)}>
-  <div className="flex min-h-screen bg-background text-foreground">
-    {/* ...contenido actual sin cambios... */}
-  </div>
-</VocabularyProvider>
-```
-
-- [ ] **Paso 4: verificar que compila**
-
-```bash
-npx tsc --noEmit 2>&1 | grep '^src/' || echo "sin errores de tipos"
-```
-
-- [ ] **Paso 5: commit**
-
-```bash
-git add src/lib/vocabulary/server.ts src/components/vocabulary-provider.tsx src/app/dashboard/layout.tsx
-git commit -m "feat(vocabulario): acceso desde server components y provider de cliente"
-```
-
-## Tasks 1.3 – 1.6 — Reemplazar los call sites
-
-Un commit por área. En cada archivo: si es client component, `useVocabulary()`; si es
-server component, `await getBusinessVocabulary()`.
-
-- [ ] **1.3 — Fidelización y promociones** (13 strings)
-  - `src/app/dashboard/fidelizacion/automatic-rules.tsx` (6, incluye `reactivateInactiveLabel` y `referralsLabel`)
-  - `src/app/dashboard/fidelizacion/redemption-catalog.tsx` (2)
-  - `src/app/dashboard/fidelizacion/loyalty-config-form.tsx` (1)
-  - `src/app/dashboard/fidelizacion/page.tsx` (1)
-  - `src/app/dashboard/promociones/redemptions-button.tsx` (2 — uno es encabezado de CSV)
-  - `src/lib/loyalty/presets.ts` (2 — usa `referralPresetLine`)
-
-- [ ] **1.4 — Campañas** (7 strings)
-  - `src/app/dashboard/campanas/page.tsx` (2)
-  - `src/app/dashboard/campanas/campaign-list.tsx` (1)
-  - `src/app/dashboard/campanas/[id]/recipient-list.tsx` (2)
-  - `src/app/dashboard/campanas/[id]/bulk-send-controls.tsx` (1)
-  - `src/lib/campaigns/send.ts` (1 — mensaje de `UserError`)
-
-- [ ] **1.5 — Pagos y transferencias** (10 strings)
-  - `src/app/dashboard/settings/payments/bank-transfer-form.tsx` (4)
-  - `src/app/dashboard/settings/payments/page.tsx` (2)
-  - `src/components/dashboard/verify-transfer-dialog.tsx` (1)
-  - `src/components/dashboard/pending-transfers-section.tsx` (1)
-  - `src/lib/cron/transfer-reminders.ts` (2 — fallback `'la clienta'`; el cron **no** tiene sesión, así que resuelve el léxico desde `business.category` del registro que ya trae)
-
-- [ ] **1.6 — Resto del dashboard y mensajes de error** (12 strings)
-  - `src/components/dashboard/settings-form.tsx` (2)
-  - `src/components/dashboard/service-fit-warnings.tsx` (1)
-  - `src/components/dashboard/revive-booking-dialog.tsx` (1 — `thisClient`)
-  - `src/app/dashboard/bookings/[id]/reschedule/reschedule-form.tsx` (1)
-  - `src/app/dashboard/paquetes/package-catalog.tsx` (1)
-  - `src/app/dashboard/reviews/review-link-button.tsx` (1)
-  - `src/server/actions/loyalty.ts` (3 — `'Clienta no encontrada'`)
-  - `src/server/actions/packages.ts` (1)
-  - `src/server/actions/campaigns.ts` (1)
-  - `src/server/actions/reviews.ts` (1)
-  - `src/lib/customers/link.ts` (1)
-
-**Fuera de alcance a propósito:** `src/server/actions/my-bookings.ts:52`
-(`reason: 'cancelada por la clienta desde /mi'`) es una nota interna del ledger, no
-la ve nadie. Se deja como está.
-
-## Task 1.7 — Plantillas de email
-
-**Files:**
-- Modify: `src/lib/notifications/templates.ts` (8 usos de `Clienta` como etiqueta de fila)
-- Modify: `src/lib/notifications/types.ts`
-- Modify: `src/lib/notifications/email-provider.ts` (1), `src/app/api/webhooks/mercado-pago/route.ts` (1 fallback)
-
-Los emails **no tienen sesión** — se mandan desde crons y webhooks. Así que el léxico
-no puede salir de `getBusinessVocabulary()`: hay que pasar `clientLabel: string` dentro
-del objeto `data` de cada plantilla, resuelto por el caller desde el `category` del
-negocio que ya carga.
-
-- [ ] Agregar `clientLabel: string` a los tipos de email que hoy escriben `Clienta`.
-- [ ] Reemplazar los literales por `${data.clientLabel}`.
-- [ ] Actualizar los callers para que lo pasen.
-- [ ] Ajustar los tests que asertan el texto (`src/lib/notifications/packages.test.ts`, `src/server/actions/packages-checkout.create.test.ts`).
-
-## Task 1.8 — Verificación y PR
-
-- [ ] **Paso 1: no quedan literales sueltos**
-
-```bash
-grep -rn "clienta\|Clienta" src/ --include="*.tsx" --include="*.ts" | grep -vE ":[0-9]+:\s*(//|\*|/\*)" | grep -v "src/lib/vocabulary/"
-```
-
-Esperado: sólo el ledger interno de `my-bookings.ts` y comentarios.
-
-- [ ] **Paso 2: suite completa**
-
-```bash
-npx vitest run
-```
-
-- [ ] **Paso 3: tipos** — CI corre `build` y vitest/eslint **no** chequean tipos.
-
-```bash
-npx tsc --noEmit 2>&1 | grep '^src/' || echo "sin errores de tipos"
-```
-
-- [ ] **Paso 4: PR** con título `feat(vocabulario): el texto del dashboard se adapta al rubro`.
-
----
+`npx tsc --noEmit | grep '^src/'` **no ve los errores de tipo en `tests/`**, y además
+se frena entero si `.next/dev/types/` tiene un archivo generado obsoleto (TS1434), con
+lo cual llega a reportar cero errores cuando en realidad no chequeó nada. Si el
+chequeo sale sospechosamente limpio: `rm -rf .next/dev/types` y correrlo sin el grep.
 
 # Track 2 — Confirmación manual del negocio
 

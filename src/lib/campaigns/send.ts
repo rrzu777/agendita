@@ -61,7 +61,9 @@ export async function prepareCampaignSend(
     }),
     db.loyaltyConfig.findUnique({ where: { businessId }, select: { grantExpiryDays: true } }),
   ])
-  if (!recipient) throw new ForbiddenError('Destinataria no encontrada')
+  // Sin recipient no hay negocio del cual sacar el léxico del rubro, así que el
+  // mensaje se redacta sin género en vez de adivinar.
+  if (!recipient) throw new ForbiddenError('No se encontró a esta persona en la campaña')
   // Puerta 2 (retroactiva): la clienta pudo hacer opt-out DESPUÉS de materializar la lista.
   // UserError: mensaje user-facing — sendCampaignEmailBatch lo captura per-item (no
   // le importa el tipo), pero sendCampaignMessage/sendCampaignEmail lo propagan tal

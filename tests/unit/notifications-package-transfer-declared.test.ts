@@ -11,14 +11,14 @@ const data = {
 
 describe('template PackageTransferDeclared (a la dueña)', () => {
   it('html incluye clienta, producto y monto', () => {
-    const html = packageTransferDeclaredBusinessHtml(data)
+    const html = packageTransferDeclaredBusinessHtml(data, 'Clienta')
     expect(html).toContain('Ana')
     expect(html).toContain('Pack 5 sesiones')
     // monto formateado (50.000 en es-CL / CLP); al menos los dígitos base
     expect(html).toMatch(/50\.?000/)
   })
   it('text incluye clienta y producto', () => {
-    const text = packageTransferDeclaredBusinessText(data)
+    const text = packageTransferDeclaredBusinessText(data, 'Clienta')
     expect(text).toContain('Ana')
     expect(text).toContain('Pack 5 sesiones')
   })

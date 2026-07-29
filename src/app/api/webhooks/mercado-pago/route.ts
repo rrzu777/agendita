@@ -19,6 +19,7 @@ import { clawbackLoyaltyForBooking } from '@/lib/loyalty/clawback'
 import { reversePackagePurchaseInTx } from '@/lib/packages/reverse'
 import { reverseBookingPaymentInTx } from '@/lib/bookings/reverse-payment'
 import { formatBookingNumber } from '@/lib/bookings/number'
+import { getVocabulary } from '@/lib/vocabulary'
 import type { Prisma } from '@prisma/client'
 
 function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
@@ -436,14 +437,14 @@ export async function POST(request: NextRequest) {
           select: {
             customer: { select: { name: true } },
             service: { select: { name: true } },
-            business: { select: { name: true, currency: true, timezone: true } },
+            business: { select: { name: true, currency: true, timezone: true, category: true } },
           },
         })
         if (bk) {
           await sendMultiNotificationSafely('booking disputed business', async () =>
             sendBookingDisputedToBusiness(payment.businessId, {
               businessName: bk.business.name,
-              customerName: bk.customer?.name ?? 'Clienta',
+              customerName: bk.customer?.name ?? getVocabulary(bk.business.category).Client,
               serviceName: bk.service?.name ?? 'servicio',
               bookingLabel: formatBookingNumber(booking.bookingNumber, bookingId),
               startDateTime: booking.startDateTime,

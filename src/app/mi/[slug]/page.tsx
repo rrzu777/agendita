@@ -54,7 +54,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
   const business = await prisma.business.findUnique({
     where: { slug },
     select: {
-      id: true, name: true, slug: true, subdomain: true, logoUrl: true, selfServiceCutoffHours: true,
+      id: true, name: true, slug: true, subdomain: true, logoUrl: true, category: true, selfServiceCutoffHours: true,
       loyaltyConfig: { select: { isActive: true, programName: true, pointsLabel: true, cardMessage: true } },
     },
   })
@@ -98,7 +98,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
         <LoyaltyCard
           key={c.id}
           customerName={c.name}
-          business={{ name: business.name, logoUrl: business.logoUrl }}
+          business={{ name: business.name, logoUrl: business.logoUrl, category: business.category }}
           data={cards[i]}
           redeemAction={redeemAction.bind(null, c.id)}
           titleAs="h2"

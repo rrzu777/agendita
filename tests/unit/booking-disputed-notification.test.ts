@@ -9,7 +9,7 @@ const DATA = {
 
 describe('BookingDisputed templates', () => {
   it('html incluye clienta, servicio, número, monto y aviso de contracargo', () => {
-    const html = bookingDisputedBusinessHtml(DATA)
+    const html = bookingDisputedBusinessHtml(DATA, 'Clienta')
     expect(html).toContain('Contracargo')
     expect(html).toContain('Caro P')
     expect(html).toContain('Manicure')
@@ -17,7 +17,7 @@ describe('BookingDisputed templates', () => {
     expect(html).toContain('8.000')
   })
   it('text plano incluye lo mismo', () => {
-    const text = bookingDisputedBusinessText(DATA)
+    const text = bookingDisputedBusinessText(DATA, 'Clienta')
     expect(text).toContain('Caro P')
     expect(text).toContain('#4738')
   })
