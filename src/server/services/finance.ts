@@ -259,16 +259,52 @@ export interface ApplyApprovedPackagePaymentInput {
 }
 
 /**
+ * Desenlaces EXCLUYENTES de `applyApprovedPackagePayment`. Un solo campo en vez
+ * de banderas sueltas: un `{ wasActivated: true, wasUnexpected: true }` no debería
+ * ni poder escribirse.
+ * - `activated`: primera aprobación, compra activada.
+ * - `unexpected`: pago NUEVO sobre una compra que no lo esperaba (ya activa, ya
+ *   reembolsada, rechazada por la dueña). No toca el paquete; sólo asienta el
+ *   movimiento, y el caller debe avisarle a la dueña para que decida el reembolso.
+ * - `noop`: redelivery del mismo pago ya aprobado. Nada que hacer.
+ */
+export type ApprovedPackagePaymentOutcome = 'activated' | 'unexpected' | 'noop'
+
+/**
+ * Estados de PackagePurchase en los que un pago aprobado SÍ debe activar. Es una
+ * lista blanca a propósito: cualquier estado nuevo cae en la rama segura (asentar
+ * + avisar) en vez de activar por descuido.
+ * - `pending`: el caso normal, la compra esperaba el pago.
+ * - `expired`: el hold venció pero la clienta pagó igual, sólo que tarde. Un
+ *   paquete no bloquea cupo, así que se revive (mismo criterio que B4b-3).
+ */
+const ACTIVATABLE_PURCHASE_STATUSES: ReadonlySet<string> = new Set(['pending', 'expired'])
+
+/** Por qué un pago aprobado no activó, en castellano llano. Fuente única para el
+ *  asiento de ledger y para el mail a la dueña, así los dos cuentan lo mismo. */
+export function describeUnexpectedPackagePayment(purchaseStatus: string): string {
+  switch (purchaseStatus) {
+    case 'active':
+      return 'el paquete ya estaba pagado y activo'
+    case 'refunded':
+      return 'el paquete ya se había reembolsado'
+    case 'rejected':
+      return 'la compra estaba rechazada'
+    default:
+      return `la compra estaba en estado ${purchaseStatus}`
+  }
+}
+
+/**
  * Rama paquete de la aprobación de pago (polimórfica con applyApprovedPayment).
  * Carga la PackagePurchase, upserta el Payment (packagePurchaseId, sin booking)
  * y, si la compra estaba pending, la activa (grants + asiento de ledger). NO
- * toca recalcBookingFromPayments. Idempotente. Sin caller público en B4b-1 —
- * la usará el webhook MP en B4b-2.
+ * toca recalcBookingFromPayments. Idempotente.
  */
 export async function applyApprovedPackagePayment({
   tx, packagePurchaseId, businessId, amount, currency, provider, providerPaymentId,
   paymentType, paymentMethod, rawPayload, createdByUserId, paymentId: explicitPaymentId,
-}: ApplyApprovedPackagePaymentInput): Promise<{ wasActivated: boolean }> {
+}: ApplyApprovedPackagePaymentInput): Promise<{ outcome: ApprovedPackagePaymentOutcome }> {
   if (amount <= 0) throw new UserError('El monto debe ser positivo')
 
   const purchase = await tx.packagePurchase.findUnique({ where: { id: packagePurchaseId } })
@@ -280,15 +316,50 @@ export async function applyApprovedPackagePayment({
     provider, providerPaymentId, paymentType, paymentMethod, rawPayload, explicitPaymentId,
   })
 
-  // Idempotencia: si el pago ya estaba aprobado o la compra ya está activa, no
-  // re-emitir grants ni re-asentar (los grants ya son idempotentes, pero cortar
-  // temprano evita trabajo y un asiento manual duplicado). Devolvemos
-  // `wasActivated: false` para que el caller (webhook) NO re-envíe notificaciones
-  // en cada redelivery de MP — espejo del `wasConfirmed` de la rama de reserva.
-  if (alreadyApproved || purchase.status === 'active') return { wasActivated: false }
+  // Idempotencia real: el MISMO pago ya estaba aprobado (redelivery de MP) → no
+  // hay plata nueva, no hay nada que hacer. El `noop` evita que el caller
+  // (webhook) re-envíe notificaciones en cada reintento — espejo del
+  // `wasConfirmed` de la rama de reserva.
+  if (alreadyApproved) return { outcome: 'noop' }
+
+  // Pago NUEVO sobre una compra que no lo esperaba. Casos reales: la clienta
+  // arranca el checkout de MP, después paga por transferencia y la dueña confirma
+  // (`active`) o la rechaza (`rejected`), y MP aprueba tarde; o entra un cargo
+  // sobre un paquete ya reembolsado (`refunded`). Ninguno debe pasar por el
+  // activador: duplicaría grants, resucitaría un paquete devuelto o pisaría el "no"
+  // de la dueña — y sobre `refunded` ni siquiera podría, porque los grants
+  // reversados conservan su requestId y el P2002 tumbaría la tx (webhook 500 →
+  // MP reintentando para siempre). Pero callar deja plata cobrada invisible en los
+  // libros. Asentamos y avisamos: la dueña decide si devuelve (mismo reparto que
+  // un contracargo).
+  if (!ACTIVATABLE_PURCHASE_STATUSES.has(purchase.status)) {
+    await tx.ledgerEntry.upsert({
+      where: { paymentId: payment.id },
+      update: {},
+      create: {
+        businessId,
+        packagePurchaseId: purchase.id,
+        paymentId: payment.id,
+        customerId: purchase.customerId,
+        // `manual_income` + packagePurchaseId seteado lo deja visible y trazable
+        // en el ledger pero FUERA de todos los KPI de ingreso (los de reserva
+        // filtran packagePurchaseId: null; los de paquete, type 'package_sale').
+        // Deliberado: un cargo duplicado que se va a devolver no es facturación,
+        // y sumarlo inflaría plata que después se revierte.
+        type: 'manual_income',
+        direction: 'income',
+        amount: payment.amount,
+        currency,
+        description: `Pago inesperado: ${describeUnexpectedPackagePayment(purchase.status)} (revisar reembolso)`,
+        occurredAt: new Date(),
+        createdByUserId: createdByUserId ?? null,
+      },
+    })
+    return { outcome: 'unexpected' }
+  }
 
   await activatePackagePurchaseInTx(tx, purchase, { requestId: purchase.id, paymentId: payment.id, createdByUserId })
-  return { wasActivated: true }
+  return { outcome: 'activated' }
 }
 
 export async function recalcBookingFromPayments(

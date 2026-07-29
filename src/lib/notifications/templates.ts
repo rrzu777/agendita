@@ -18,6 +18,7 @@ import type {
   OwnerBookingChangedData,
   PackagePurchasedEmailData,
   PackageDisputedEmailData,
+  PackageUnexpectedPaymentEmailData,
   BookingDisputedEmailData,
   PackageTransferDeclaredEmailData,
   PackageTransferReminderCustomerEmailData,
@@ -819,6 +820,32 @@ export function packageDisputedBusinessText(data: PackageDisputedEmailData): str
     `Clienta: ${data.customerName}`,
     `Paquete: ${data.productName}`,
     `Monto: ${amount}`, '',
+    `Enviado por ${data.businessName} a través de Agendita`,
+  ].join('\n')
+}
+
+export function packageUnexpectedPaymentBusinessHtml(data: PackageUnexpectedPaymentEmailData): string {
+  const amount = fmtCurrency(data.amount, data.businessCurrency)
+  return baseHtml(`
+    ${header('Pago inesperado de paquete')}
+    <p style="font-size:15px">Entró un pago de ${escapeHtml(data.customerName)} por un paquete, pero ${escapeHtml(data.situation)}. No se tocó el paquete (las sesiones siguen siendo las mismas), pero la plata sí se cobró: revisá si corresponde devolverla.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">Clienta</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Paquete</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.productName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Monto cobrado</td><td style="padding:8px 0;font-weight:600">${amount}</td></tr>
+    </table>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function packageUnexpectedPaymentBusinessText(data: PackageUnexpectedPaymentEmailData): string {
+  const amount = fmtCurrency(data.amount, data.businessCurrency)
+  return [
+    'Pago inesperado de paquete', '',
+    `Entró un pago de ${data.customerName} por un paquete, pero ${data.situation}. No se tocó el paquete, pero la plata sí se cobró: revisá si corresponde devolverla.`, '',
+    `Clienta: ${data.customerName}`,
+    `Paquete: ${data.productName}`,
+    `Monto cobrado: ${amount}`, '',
     `Enviado por ${data.businessName} a través de Agendita`,
   ].join('\n')
 }
