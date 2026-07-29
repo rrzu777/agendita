@@ -119,11 +119,14 @@ describe('expandSeries', () => {
   describe('gap de DST: el domingo en que la medianoche no existe', () => {
     // Almuerzo dominical, para que la serie caiga justo en el día del salto.
     const sunday: SeriesLike = { ...base, daysOfWeek: [0] }
-    // Mediodía local del 2026-09-06, ya en UTC-3.
-    const noonGapDay = new Date('2026-09-06T15:00:00.000Z')
+    // El 2026-09-06 completo. `range()` no sirve acá: tiene el -04:00 fijo y en
+    // septiembre Chile ya está en UTC-3. Arranca a las 01:00, el primer instante
+    // que existe ese día.
+    const gapDayStart = new Date('2026-09-06T01:00:00-03:00')
+    const gapDayEnd = new Date('2026-09-06T23:59:59-03:00')
 
     it('el occurrenceDate cae en ESE día local, no en el anterior', () => {
-      const [occ] = expandSeries(sunday, [], noonGapDay, noonGapDay, TZ)
+      const [occ] = expandSeries(sunday, [], gapDayStart, gapDayEnd, TZ)
       expect(occ.id).toBe('series-1:2026-09-06')
       // Es la clave real: así se indexan las excepciones en expandSeries.
       expect(getLocalDateStr(occ.occurrenceDate!, TZ)).toBe('2026-09-06')
@@ -136,11 +139,11 @@ describe('expandSeries', () => {
     // expandSeries no la encuentra nunca: saltás el almuerzo de ese domingo y el
     // bloqueo sigue apareciendo.
     it('saltear ese domingo con el occurrenceDate que devuelve la propia expansión funciona', () => {
-      const [occ] = expandSeries(sunday, [], noonGapDay, noonGapDay, TZ)
+      const [occ] = expandSeries(sunday, [], gapDayStart, gapDayEnd, TZ)
       const conExcepcion = expandSeries(
         sunday,
         [{ occurrenceDate: occ.occurrenceDate!, isSkipped: true, startDateTime: null, endDateTime: null, reason: null }],
-        noonGapDay, noonGapDay, TZ,
+        gapDayStart, gapDayEnd, TZ,
       )
       expect(conExcepcion).toEqual([])
     })
