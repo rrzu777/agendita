@@ -1,9 +1,13 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import type { SetupChecklist as SetupChecklistData } from '@/lib/dashboard/setup-checklist'
 import { CheckCircle2, Circle, Copy, ExternalLink, MessageCircle } from 'lucide-react'
+
+const ITEM_CLASS =
+  'flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card px-4 py-3 text-sm transition hover:border-primary/40'
 
 export function SetupChecklist({ checklist }: { checklist: SetupChecklistData }) {
   const [copied, setCopied] = useState<string | null>(null)
@@ -11,20 +15,27 @@ export function SetupChecklist({ checklist }: { checklist: SetupChecklistData })
     <div className="space-y-3">
       {checklist.items.map((item) => {
         const Icon = item.completed ? CheckCircle2 : Circle
-        return (
-          <a
-            key={item.key}
-            href={item.href}
-            target={item.href.startsWith('http') ? '_blank' : undefined}
-            rel={item.href.startsWith('http') ? 'noopener noreferrer' : undefined}
-            className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card px-4 py-3 text-sm transition hover:border-primary/40"
-          >
+        // Casi todos los items apuntan adentro del dashboard; el del link público es
+        // una URL absoluta al sitio del negocio. Los internos van por <Link> o cada
+        // paso del checklist recarga la app entera.
+        const isExternal = item.href.startsWith('http')
+        const body = (
+          <>
             <span className="flex min-w-0 items-center gap-3">
               <Icon className={item.completed ? 'size-5 shrink-0 text-green-600' : 'size-5 shrink-0 text-muted-foreground'} />
               <span className="font-medium text-primary">{item.label}</span>
             </span>
             <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
+          </>
+        )
+        return isExternal ? (
+          <a key={item.key} href={item.href} target="_blank" rel="noopener noreferrer" className={ITEM_CLASS}>
+            {body}
           </a>
+        ) : (
+          <Link key={item.key} href={item.href} className={ITEM_CLASS}>
+            {body}
+          </Link>
         )
       })}
     </div>

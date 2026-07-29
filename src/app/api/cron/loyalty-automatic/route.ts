@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runAutomaticLoyalty } from '@/lib/cron/loyalty-automatic'
 import { logger } from '@/lib/logger'
+import { hasValidBearerSecret } from '@/lib/auth/bearer-secret'
 
 /**
  * Cron de condiciones automáticas de fidelización (cumpleaños/aniversario/win-back).
@@ -8,12 +9,7 @@ import { logger } from '@/lib/logger'
  * Auth: Authorization: Bearer ${CRON_SECRET}.
  */
 async function handler(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const expectedSecret = process.env.CRON_SECRET
-
-  // No configured secret => nobody can authenticate. Return 401 (not 500) so we
-  // don't leak whether the secret is configured to anonymous callers.
-  if (!expectedSecret || authHeader !== `Bearer ${expectedSecret}`) {
+  if (!hasValidBearerSecret(request, process.env.CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

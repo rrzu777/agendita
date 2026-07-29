@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sendTransferReminders } from '@/lib/cron/transfer-reminders'
+import { hasValidBearerSecret } from '@/lib/auth/bearer-secret'
 
 /**
  * Endpoint de cron para los recordatorios intermedios de transferencia:
@@ -9,12 +10,7 @@ import { sendTransferReminders } from '@/lib/cron/transfer-reminders'
  * Authorization: Bearer ${CRON_SECRET}; también acepta GET.
  */
 async function handler(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const expectedSecret = process.env.CRON_SECRET
-
-  // No configured secret => nobody can authenticate. Return 401 (not 500) so we
-  // don't leak whether the secret is configured to anonymous callers.
-  if (!expectedSecret || authHeader !== `Bearer ${expectedSecret}`) {
+  if (!hasValidBearerSecret(request, process.env.CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

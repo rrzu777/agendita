@@ -592,7 +592,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         <TransferDetails bank={bankInfo} amount={effectiveDeposit} currency={currency} deadline={transferBooking.deadline} timezone={timezone} declaring={declaring} onDeclare={handleDeclare} bookingId={transferBooking.id} />
         <p className="mt-4 text-sm text-muted-foreground">
           También podés avisar más tarde desde{' '}
-          <a className="font-semibold text-primary underline" href={`/book/confirmation?bookingId=${transferBooking.id}`}>tu página de reserva</a>
+          <Link className="font-semibold text-primary underline" href={`/book/confirmation?bookingId=${transferBooking.id}`}>tu página de reserva</Link>
           {' '}(te mandamos los datos por email si dejaste uno).
         </p>
       </div>

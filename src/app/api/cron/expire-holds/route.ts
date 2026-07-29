@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { revalidateBusinessPublicPaths } from '@/server/actions/revalidate-business'
 import { expireStaleHolds } from '@/lib/cron/expire-holds'
+import { hasValidBearerSecret } from '@/lib/auth/bearer-secret'
 
 /**
  * Endpoint de cron para expirar reservas pending_payment sin pago.
@@ -10,12 +11,7 @@ import { expireStaleHolds } from '@/lib/cron/expire-holds'
  * automáticamente cuando CRON_SECRET está configurado.
  */
 async function handler(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const expectedSecret = process.env.CRON_SECRET
-
-  // No configured secret => nobody can authenticate. Return 401 (not 500) so we
-  // don't leak whether the secret is configured to anonymous callers.
-  if (!expectedSecret || authHeader !== `Bearer ${expectedSecret}`) {
+  if (!hasValidBearerSecret(request, process.env.CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

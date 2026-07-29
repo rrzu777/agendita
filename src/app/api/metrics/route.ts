@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { BookingStatus, PaymentStatus, PaymentProvider } from '@prisma/client'
+import { hasValidBearerSecret } from '@/lib/auth/bearer-secret'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,13 +78,10 @@ async function gatherMetrics(): Promise<string> {
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  // Auth guard — fail closed like the cron routes: if METRICS_SECRET is unset
-  // (new env, typo, preview deploy without the secret) nobody can authenticate,
-  // so per-tenant metrics are never exposed to anonymous callers. 401 (not 500)
-  // avoids leaking whether the secret is configured.
-  const expectedSecret = process.env.METRICS_SECRET
-  const authHeader = request.headers.get('authorization')
-  if (!expectedSecret || authHeader !== `Bearer ${expectedSecret}`) {
+  // Mismo guard que los crons, fail-closed: sin METRICS_SECRET nadie autentica y
+  // las métricas por negocio nunca se exponen a un caller anónimo. El cuerpo va en
+  // texto plano (no JSON) porque este endpoint lo scrapea Prometheus.
+  if (!hasValidBearerSecret(request, process.env.METRICS_SECRET)) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
