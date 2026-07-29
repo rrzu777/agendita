@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -69,6 +70,7 @@ export function SettingsForm({ business }: { business: Business }) {
       timezone: business.timezone,
       slotStepMinutes: business.slotStepMinutes == null ? 'service' : String(business.slotStepMinutes) as FormData['slotStepMinutes'],
       selfServiceCutoffHours: business.selfServiceCutoffHours,
+      requireBookingApproval: business.requireBookingApproval,
       subdomain: business.subdomain,
       cancellationPolicy: business.cancellationPolicy || '',
       bookingPolicy: business.bookingPolicy || '',
@@ -240,6 +242,21 @@ export function SettingsForm({ business }: { business: Business }) {
               Hasta cuántas horas antes tus {vocabulary.clients} pueden cancelar o reprogramar por su cuenta. 0 = sin límite.
             </p>
             {errors.selfServiceCutoffHours && <p className="text-sm text-destructive">{errors.selfServiceCutoffHours.message}</p>}
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="requireBookingApproval">Confirmar cada reserva a mano</Label>
+              <Switch
+                id="requireBookingApproval"
+                checked={!!watchedValues.requireBookingApproval}
+                onCheckedChange={(val) => setValue('requireBookingApproval', val)}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Las reservas llegan como solicitudes y vos las aceptás o las rechazás. El horario
+              queda tomado mientras tanto, y si no respondés en 24 horas se libera solo.
+              No aplica a los servicios con abono: ahí el pago ya hace de filtro.
+            </p>
           </div>
           {/* Currency is intentionally read-only.
               Changing currency would break existing payment integrations

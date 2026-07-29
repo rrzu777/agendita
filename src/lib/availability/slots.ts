@@ -3,6 +3,7 @@ import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { getLocalDayOfWeek } from './timezone'
 import { LEAD_TIME_MINUTES } from './constants'
 import { shrinkBlock } from './shrink-block'
+import { isHeldStatus } from '@/lib/bookings/approval'
 
 export interface TimeSlot {
   start: Date
@@ -95,8 +96,10 @@ export function generateSlots(
     if (booking.status === 'cancelled' || booking.status === 'no_show' || booking.status === 'expired') return false
     // A pending_payment hold that has already expired no longer blocks the
     // slot, even if the cron hasn't flipped it to `expired` yet. Mirrors the
-    // server-side guard in assertSlotIsAvailable.
-    if (booking.status === 'pending_payment' && booking.holdExpiresAt && booking.holdExpiresAt <= now) return false
+    // server-side guard in assertSlotIsAvailable. Misma regla para
+    // `pending_confirmation`: una solicitud que el negocio no respondió a tiempo
+    // libera el cupo (ver HELD_STATUSES en lib/bookings/approval.ts).
+    if (isHeldStatus(booking.status) && booking.holdExpiresAt && booking.holdExpiresAt <= now) return false
     return true
   }
 

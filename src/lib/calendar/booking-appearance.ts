@@ -27,6 +27,7 @@ interface StatusMeta {
 
 const STATUS_META: Record<string, StatusMeta> = {
   pending_payment: { kind: 'active', dotColor: '#f97316', icon: 'clock' },
+  pending_confirmation: { kind: 'active', dotColor: '#f59e0b', icon: 'clock' },
   confirmed: { kind: 'active', dotColor: '#22c55e', icon: 'check' },
   completed: { kind: 'done', dotColor: '#3b82f6', icon: 'check' },
   cancelled: { kind: 'negative', dotColor: '#ef4444', icon: 'x' },

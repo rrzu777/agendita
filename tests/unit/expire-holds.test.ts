@@ -26,7 +26,15 @@ describe('expireStaleHolds', () => {
     }
     return {
       booking: {
-        findMany: vi.fn().mockResolvedValue(overrides.findMany ?? []),
+        // El cron hace DOS barridos de reservas: primero las solicitudes sin
+        // responder (pending_confirmation) y después los holds de pago. El mock
+        // despacha por status para que un test de holds no se coma sus propias
+        // filas en el sweep de solicitudes.
+        findMany: vi.fn().mockImplementation(async (args: any) =>
+          args?.where?.status === BookingStatus.pending_confirmation
+            ? (overrides.requestsFindMany ?? [])
+            : (overrides.findMany ?? []),
+        ),
         // Exposed so assertions can target the booking.updateMany inside the tx.
         updateMany,
       },

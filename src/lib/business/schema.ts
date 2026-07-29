@@ -21,6 +21,9 @@ export const updateBusinessSchema = z.object({
     (v) => (v === '' || v == null ? undefined : v),
     z.coerce.number().int().min(0).max(720).default(24),
   ),
+  // Confirmación manual: las reservas sin abono quedan esperando que el negocio
+  // las acepte en vez de confirmarse solas.
+  requireBookingApproval: z.boolean().default(false),
   subdomain: z.string()
     .min(3, 'Mínimo 3 caracteres')
     .max(30, 'Máximo 30 caracteres')

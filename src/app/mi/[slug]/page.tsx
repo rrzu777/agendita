@@ -16,7 +16,7 @@ import { BookingActions } from './booking-actions'
 import type { BookingStatus } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
 
-const UPCOMING_STATUSES = ['pending_payment', 'confirmed'] as const
+const UPCOMING_STATUSES = ['pending_payment', 'pending_confirmation', 'confirmed'] as const
 
 // Solo el flag "transferencia declarada pendiente de verificación".
 const BT_DECLARED_SELECT = {

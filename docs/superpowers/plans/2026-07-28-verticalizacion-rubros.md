@@ -37,8 +37,8 @@ Playwright (e2e), Tailwind + shadcn.
 |---|---|
 | Vocabulario | Femenino en `nails`, `beauty`, `hair_salon`. Neutro en `barber`, `massage`, `therapy`, `other`. |
 | Modalidad | Es un atributo **del servicio**, no del negocio. Un servicio puede tener varias. |
-| Confirmación manual | Flag del negocio (`requireBookingApproval`), no del rubro. |
-| Multi-profesional | **Pendiente** — depende de quién cobra (ver Track 5). |
+| Confirmación manual | Flag del negocio (`requireBookingApproval`), no del rubro. Sólo aplica sin abono (ver Track 2). |
+| Multi-profesional | Resuelto: los dos modelos son válidos y coexisten (ver Track 5). |
 | Rubros nuevos | No se agregan valores al enum en esta iniciativa. `other` ya cubre constelaciones/registros akáshicos: lo que ese caso necesita es *modalidad online*, no un rubro propio. |
 
 ## Orden y por qué
@@ -146,21 +146,74 @@ chequeo sale sospechosamente limpio: `rm -rf .next/dev/types` y correrlo sin el 
 
 # Track 2 — Confirmación manual del negocio
 
-**Diseño cerrado, pasos pendientes.**
+**Estado: ✅ IMPLEMENTADO** (un PR). Cero cambio de comportamiento para los negocios
+que no encienden el flag.
 
-Hoy los estados son `pending_payment → confirmed`. Un negocio sin abono recibe reservas
-auto-confirmadas: cualquiera le llena la agenda.
+Hoy los estados eran `pending_payment → confirmed`. Un negocio sin abono recibía
+reservas auto-confirmadas: cualquiera le llena la agenda.
+
+## La decisión de alcance que hay que entender antes de tocar esto
+
+**El flag SÓLO aplica a las reservas sin abono.** Si el servicio pide abono, la
+reserva sigue naciendo `pending_payment` y el flag no hace nada.
+
+El motivo no es pereza: aprobar DESPUÉS de cobrar obliga a devolver plata, que es
+justo lo que el abono existe para evitar. Y con abono el negocio ya tiene un filtro
+manual — con transferencia bancaria la dueña verifica a mano y puede rechazar.
+
+**El agujero que queda:** un negocio con Mercado Pago + abono + confirmación manual
+no tiene ningún filtro (MP cobra y auto-confirma). Cerrarlo exige mover la aprobación
+ANTES del cobro, lo que implica una superficie nueva de "pagá tu reserva" alcanzable
+por link desde un email — hoy el pago sólo vive dentro del funnel `/book/[slug]`. Es
+un track propio, no un parche.
+
+## Qué se construyó
 
 - `Business.requireBookingApproval Boolean @default(false)` — flag, no rubro.
-- `BookingStatus.pending_confirmation` nuevo.
-- **Landmine:** el estado nuevo tiene que bloquear el slot igual que `confirmed`, o se
-  duplican reservas. Hay que sumarlo a toda enumeración de estados que ocupan agenda
-  (`generateSlots`, `getEffectiveBlocks`, los índices de `Booking`, `payable-statuses.ts`).
-- Aceptar → `confirmed` + email. Rechazar → `cancelled` + `rejectionReason` +
-  `suggestedStartDateTime DateTime?` opcional, que el email muestra con link para
-  re-reservar.
-- Interactúa con holds y con el cron de expiración: una reserva esperando confirmación
-  necesita su propio vencimiento, o queda colgada para siempre.
+  Switch en Ajustes, con el copy que aclara lo del abono.
+- `BookingStatus.pending_confirmation` nuevo. Migración
+  `20260729180000_booking_manual_approval` (el `ADD VALUE` va solo y sin usarse en la
+  misma migración: Postgres no deja referenciar un valor de enum recién creado dentro
+  de la transacción que lo crea, y `migrate deploy` corre cada archivo en una).
+- `src/lib/bookings/approval.ts` — fuente única: `HELD_STATUSES`,
+  `OCCUPYING_STATUSES`, `initialPublicBookingStatus()`, `approvalHoldExpiresAt()`.
+- **Aceptar = `updateBookingStatus(id, 'confirmed')`** (entrada nueva en
+  `VALID_STATUS_TRANSITIONS`); limpia el hold y dispara el email de confirmación.
+  **Rechazar = `cancelBooking(id, motivo)`**, que ya existía: libera canjes, cancela
+  declaraciones y ahora manda el motivo en el email. No hicieron falta actions nuevas.
+- Vencimiento: se reusa `holdExpiresAt` (campo e índice `[status, holdExpiresAt]` ya
+  existían, y todo lo que lo lee filtra además por status). Ventana de 24h **acotada a
+  la hora de la cita**: una solicitud no puede seguir viva después del turno.
+- Sweep nuevo en `expire-holds.ts` → `expired` + email a la clienta con el motivo.
+  **No filtra por `paymentStatus`** a diferencia del sweep de holds de pago: un
+  servicio gratis nace `fully_paid` y ese filtro lo dejaba colgado para siempre.
+
+## Landmine: el estado nuevo ocupa el cupo en CUATRO lugares
+
+Tiene que bloquear el slot mientras el hold viva, igual que `pending_payment`:
+
+1. `HELD_STATUSES` en `lib/bookings/approval.ts` — la fuente.
+2. `generateSlots` (en memoria) → usa `isHeldStatus()`.
+3. `overlappingActiveBookingsWhere` de `time-blocks.ts` (Prisma) → usa las constantes.
+4. **El SQL crudo de `assertNoBookingOverlap`** (`availability/validation.ts`) →
+   **repite los literales a mano.** No se pueden parametrizar: un `IN` de enums en
+   `$queryRaw` manda los valores como `text` y Postgres rompe con
+   `operator does not exist`. La única red de esa duplicación son los dos casos de
+   integración `slot-conflicts.test.ts` ("ocupa el cupo" / "libera el cupo").
+
+`getEffectiveBlocks` NO hacía falta tocarlo: es de bloqueos, no de reservas. Los dos
+loaders que sí leen reservas (`availability.ts`, `reschedule-slots.ts`) filtran con
+`notIn: ['cancelled','no_show','expired']`, así que ya incluían el estado nuevo.
+
+## Fuera de alcance, a propósito
+
+- **`suggestedStartDateTime`** ("te propongo otro horario" con link para re-reservar).
+  El rechazo con motivo libre ya funciona; proponer alternativa es un seam limpio
+  para un follow-up.
+- El copy de `getReviveReopenState` para una solicitud expirada dice "esta reserva no
+  eligió transferencia: confirmala y registrá el pago aparte". El camino que importa
+  (confirmar) funciona; la frase sobra cuando no hay nada que pagar. No recibe
+  `depositRequired` y threadearlo no valía el PR.
 
 # Track 3 — Modalidad de atención
 
@@ -185,15 +238,24 @@ auto-confirmadas: cualquiera le llena la agenda.
 
 # Track 5 — Multi-profesional
 
-**Bloqueado por una pregunta de producto, no por código.**
+**Ya NO está bloqueado.** La pregunta era "¿quién cobra?" y la respuesta del usuario es
+que **los dos casos son válidos y hay que cubrirlos**:
 
-La pregunta: **¿quién cobra?**
-
-- Si cada barbero cobra lo suyo → cada uno se hace su propia cuenta. **Ya funciona hoy,
-  el track no existe.**
-- Si el dueño cobra y le paga a los barberos → una cuenta, varios profesionales adentro,
+- barbero independiente → su propia cuenta. Ya funciona hoy, cero trabajo.
+- dueño de salón que gestiona a sus 4 personas en UNA cuenta → esto hay que construirlo,
   porque la plata, las fichas y el calendario son del negocio.
 
-Si resulta que hace falta, el diseño arranca por `StaffMember` **sin cuenta propia**
-(nombre, foto, bio, horario) y `Booking.staffId`. El login por profesional se cuelga
-después sin romper nada.
+Diseño: `StaffMember` **sin cuenta propia** (nombre, foto, bio, horario) +
+`Booking.staffId` **nullable**. Un negocio sin StaffMembers se comporta exactamente
+como hoy → cero migración, cero riesgo para las usuarias actuales; la feature se
+enciende cuando el dueño agrega a la primera persona. El login por profesional se
+cuelga después sin romper nada.
+
+**Lo caro no es el modelo, es la disponibilidad.** Hoy horario, bloqueos y detección de
+choques son DEL NEGOCIO ENTERO. Con varias personas la misma hora está libre para una y
+ocupada para otra → toca `generateSlots`, y el advisory lock anti-doble-reserva (hoy
+keyed por negocio + día local) tiene que incluir a la persona, o dos clientas
+reservando con profesionales distintos se estorban. Detrás viene **comisiones**, que es
+otro feature entero.
+
+Estimado: el track más grande de los cinco, 4-6 PRs. Va DESPUÉS de 2 y 3.

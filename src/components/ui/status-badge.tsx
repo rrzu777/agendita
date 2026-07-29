@@ -7,6 +7,9 @@ type StatusEntry = { label: string; className: string }
 // Labels desde la fuente compartida; acá solo se agregan colores.
 const BOOKING_STATUS: Record<string, StatusEntry> = {
   pending_payment: { label: bookingStatusLabels.pending_payment, className: 'bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300' },
+  // Ámbar y no naranja: comparte familia con "pendiente de pago" (las dos esperan
+  // algo) pero se distinguen de un vistazo en la tabla.
+  pending_confirmation: { label: bookingStatusLabels.pending_confirmation, className: 'bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-200' },
   confirmed: { label: bookingStatusLabels.confirmed, className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
   completed: { label: bookingStatusLabels.completed, className: 'bg-secondary text-secondary-foreground' },
   cancelled: { label: bookingStatusLabels.cancelled, className: 'bg-muted text-muted-foreground' },

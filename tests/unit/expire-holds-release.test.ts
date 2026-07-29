@@ -2,8 +2,17 @@ import { it, expect, vi } from 'vitest'
 import { expireStaleHolds } from '@/lib/cron/expire-holds'
 import { BookingStatus } from '@prisma/client'
 
+// El cron barre primero las solicitudes sin responder (pending_confirmation) y
+// después los holds de pago. El mock despacha por status: sin esto, el sweep de
+// solicitudes se comía las filas destinadas al de holds.
+function staleHoldsFindMany(rows: any[]) {
+  return vi.fn().mockImplementation(async (args: any) =>
+    args?.where?.status === BookingStatus.pending_confirmation ? [] : rows,
+  )
+}
+
 it('releases redemptions of expired holds', async () => {
-  const findMany = vi.fn().mockResolvedValueOnce([{ id: 'b1', businessId: 'biz1' }]) // expired bookings
+  const findMany = staleHoldsFindMany([{ id: 'b1', businessId: 'biz1' }]) // expired bookings
   const tx = {
     booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }), findMany: vi.fn().mockResolvedValue([]) },
     payment: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -46,7 +55,7 @@ it('releases redemptions of expired holds', async () => {
 
 it('does NOT release a booking that won the payment race in the tx window', async () => {
   // Candidate set from the pre-tx findMany: both b1 and b2 looked stale.
-  const findMany = vi.fn().mockResolvedValueOnce([
+  const findMany = staleHoldsFindMany([
     { id: 'b1', businessId: 'biz1' },
     { id: 'b2', businessId: 'biz2' },
   ])

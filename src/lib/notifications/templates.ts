@@ -262,8 +262,10 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
     : ''
 
   return baseHtml(`
-    ${header('Reserva recibida')}
-    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, recibimos tu reserva. Está pendiente de pago para quedar confirmada.</p>
+    ${header(data.awaitingApproval ? 'Solicitud enviada' : 'Reserva recibida')}
+    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, ${data.awaitingApproval
+      ? `le mandamos tu solicitud a ${escapeHtml(data.businessName)}. Te avisamos apenas la confirme.`
+      : 'recibimos tu reserva. Está pendiente de pago para quedar confirmada.'}</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
       ${bookingNumberRowHtml(data.bookingNumber)}
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
@@ -271,10 +273,12 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
       ${data.businessAddress ? `<tr><td style="padding:8px 0;color:#666">Dirección</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.businessAddress)}</td></tr>` : ''}
       <tr><td style="padding:8px 0;color:#666">Precio total</td><td style="padding:8px 0;font-weight:600">${total}</td></tr>
       ${discountSection}
-      <tr><td style="padding:8px 0;color:#666">Abono requerido</td><td style="padding:8px 0;font-weight:600">${deposit}</td></tr>
+      ${data.awaitingApproval ? '' : `<tr><td style="padding:8px 0;color:#666">Abono requerido</td><td style="padding:8px 0;font-weight:600">${deposit}</td></tr>`}
     </table>
     ${bankSection}
-    <p style="font-size:13px;color:#666;margin-top:16px">${data.bankTransfer ? 'Tu reserva quedará confirmada cuando el negocio verifique la transferencia.' : 'Recibirás una confirmación cuando el pago sea registrado.'}</p>
+    <p style="font-size:13px;color:#666;margin-top:16px">${data.awaitingApproval
+      ? 'Si no responden dentro de 24 horas, la solicitud se cancela sola y el horario queda libre.'
+      : data.bankTransfer ? 'Tu reserva quedará confirmada cuando el negocio verifique la transferencia.' : 'Recibirás una confirmación cuando el pago sea registrado.'}</p>
     ${policySection}${whatsappSection}
     ${footer(data.businessName)}
   `)
@@ -286,9 +290,11 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
   const deposit = fmtCurrency(data.depositRequired, data.businessCurrency)
 
   const lines = [
-    `Reserva recibida`,
+    data.awaitingApproval ? `Solicitud enviada` : `Reserva recibida`,
     ``,
-    `Hola ${data.customerName}, recibimos tu reserva. Está pendiente de pago para quedar confirmada.`,
+    data.awaitingApproval
+      ? `Hola ${data.customerName}, le mandamos tu solicitud a ${data.businessName}. Te avisamos apenas la confirme.`
+      : `Hola ${data.customerName}, recibimos tu reserva. Está pendiente de pago para quedar confirmada.`,
     ``,
     ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
     `Servicio: ${data.serviceName}`,
@@ -302,8 +308,10 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
       `Total con descuento: ${fmtCurrency(data.finalAmount ?? (data.totalPrice - data.discountAmount!), data.businessCurrency)}`,
     )
   }
-  lines.push(`Abono requerido: ${deposit}`)
-  if (data.bankTransfer) {
+  if (!data.awaitingApproval) lines.push(`Abono requerido: ${deposit}`)
+  if (data.awaitingApproval) {
+    lines.push(``, `Si no responden dentro de 24 horas, la solicitud se cancela sola y el horario queda libre.`)
+  } else if (data.bankTransfer) {
     lines.push(
       ...bankTransferBlockText(data.bankTransfer, deposit, data.businessTimezone),
       ``,
@@ -325,8 +333,10 @@ export function newBookingBusinessHtml(data: NewBookingBusinessEmailData): strin
   const remaining = fmtCurrency(data.remainingBalance, data.businessCurrency)
 
   return baseHtml(`
-    ${header('Nueva reserva recibida')}
-    <p style="font-size:15px">${escapeHtml(data.customerName)} acaba de agendar una cita.</p>
+    ${header(data.awaitingApproval ? 'Nueva solicitud de reserva' : 'Nueva reserva recibida')}
+    <p style="font-size:15px">${escapeHtml(data.customerName)} ${data.awaitingApproval
+      ? 'te pidió una hora. Aceptala o rechazala desde el dashboard: el horario queda tomado hasta que respondas.'
+      : 'acaba de agendar una cita.'}</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
       ${bookingNumberRowHtml(data.bookingNumber)}
       <tr><td style="padding:8px 0;color:#666">${escapeHtml(clientLabelOf(data))}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
@@ -541,9 +551,11 @@ export function newBookingBusinessText(data: NewBookingBusinessEmailData): strin
   const remaining = fmtCurrency(data.remainingBalance, data.businessCurrency)
 
   const lines = [
-    `Nueva reserva recibida`,
+    data.awaitingApproval ? `Nueva solicitud de reserva` : `Nueva reserva recibida`,
     ``,
-    `${data.customerName} acaba de agendar una cita.`,
+    data.awaitingApproval
+      ? `${data.customerName} te pidió una hora. Aceptala o rechazala desde el dashboard: el horario queda tomado hasta que respondas.`
+      : `${data.customerName} acaba de agendar una cita.`,
     ``,
     ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
     `${clientLabelOf(data)}: ${data.customerName}`,
@@ -573,6 +585,7 @@ export function bookingCancelledCustomerHtml(data: CancellationEmailData): strin
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${dateStr}</td></tr>
+      ${data.reason ? `<tr><td style="padding:8px 0;color:#666">Motivo</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.reason)}</td></tr>` : ''}
     </table>
     <p style="font-size:13px;color:#666;margin-top:16px">Si tienes dudas, contacta a ${escapeHtml(data.businessName)}.</p>
     ${footer(data.businessName)}
@@ -589,6 +602,7 @@ export function bookingCancelledCustomerText(data: CancellationEmailData): strin
     ``,
     `Servicio: ${data.serviceName}`,
     `Fecha y hora: ${dateStr}`,
+    ...(data.reason ? [`Motivo: ${data.reason}`] : []),
     ``,
     `Si tienes dudas, contacta a ${data.businessName}.`,
     ``,

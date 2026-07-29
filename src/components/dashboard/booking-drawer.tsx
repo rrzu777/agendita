@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import type { CalendarBooking } from './booking-card'
 import { BookingContactButtons } from './booking-contact-buttons'
 import { CancelBookingButton } from './cancel-booking-button'
+import { BookingStatusButton } from './booking-status-button'
 import { RefreshCw } from 'lucide-react'
 import { ManualPaymentDialog } from './manual-payment-dialog'
 import { formatManualPaymentMoney, isManualPaymentAllowed } from './manual-payment-utils'
@@ -39,6 +40,7 @@ function useIsMobile() {
 
 const statusBadgeClasses: Record<string, string> = {
   pending_payment: 'bg-orange-100 text-orange-800',
+  pending_confirmation: 'bg-amber-100 text-amber-900',
   confirmed: 'bg-green-100 text-green-800',
   completed: 'bg-secondary text-secondary-foreground',
   cancelled: 'bg-muted text-muted-foreground',
@@ -147,6 +149,27 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
                 triggerClassName="w-full"
                 triggerLabel="Abrir modal de pago"
               />
+            </div>
+          )}
+
+          {booking.status === 'pending_confirmation' && (
+            <div className="space-y-2 rounded-xl border border-border/60 p-3">
+              <h4 className="text-sm font-semibold">Solicitud por responder</h4>
+              <div className="flex gap-2">
+                <BookingStatusButton
+                  bookingId={booking.id}
+                  status="confirmed"
+                  label="Aceptar"
+                  pendingLabel="Aceptando…"
+                  errorLabel="Error al aceptar"
+                  variant="default"
+                  align="start"
+                  className="w-full"
+                />
+                <div className="flex-1">
+                  <CancelBookingButton bookingId={booking.id} mode="reject" label="Rechazar" size="sm" />
+                </div>
+              </div>
             </div>
           )}
 
