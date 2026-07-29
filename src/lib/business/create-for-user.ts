@@ -15,13 +15,12 @@
  * cliente, hay que envolverla — sus mensajes se redactan en prod.
  */
 import { prisma } from '@/lib/db'
-import { Prisma } from '@prisma/client'
 import { generateDefaultSubdomain } from '@/lib/business/subdomain'
 import { randomBookingNumberBase } from '@/lib/bookings/number'
 import { RegistrationError } from '@/lib/auth/registration-error'
 
-export const BUSINESS_CATEGORIES = ['nails', 'barber', 'hair_salon', 'beauty', 'massage', 'therapy', 'other'] as const
-export type BusinessCategoryInput = typeof BUSINESS_CATEGORIES[number]
+const BUSINESS_CATEGORIES = ['nails', 'barber', 'hair_salon', 'beauty', 'massage', 'therapy', 'other'] as const
+type BusinessCategoryInput = typeof BUSINESS_CATEGORIES[number]
 
 const SERVICE_TEMPLATES: Record<BusinessCategoryInput, Array<{ name: string; description: string; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; sortOrder: number }>> = {
   nails: [
