@@ -2,9 +2,8 @@
 
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import type { Booking, BusinessCategory } from '@prisma/client'
+import type { Booking } from '@prisma/client'
 import { BookingStatus, BookingPaymentStatus, PaymentType, ServiceModality } from '@prisma/client'
-import { getVocabulary } from '@/lib/vocabulary'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
@@ -30,22 +29,17 @@ import { applyPackageInTx } from '@/lib/packages/consume'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
 import { creditVisitPoints } from '@/lib/loyalty/credit'
-import { emitAutomaticReward, loadAutomaticRules } from '@/lib/loyalty/automatic'
-import { rewardReferralOnCompletion, captureReferral, notifyReferralReward } from '@/lib/loyalty/referral'
-import { firstVisitKey, conditionKind } from '@/lib/loyalty/automatic-match'
+import { emitAutomaticRewardsOnCompletion } from '@/lib/loyalty/on-booking-completed'
+import { captureReferral } from '@/lib/loyalty/referral'
 import { type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD, anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
-import { getBookingConfirmationUrl } from '@/lib/business/urls'
-import type { BookingEmailData } from '@/lib/notifications/types'
+import { fireBookingNotifications } from '@/lib/bookings/notifications'
 import {
-  sendBookingReceivedToCustomer,
-  sendNewBookingNotificationToBusiness,
   sendBookingCancelledNotification,
   sendBookingConfirmedNotification,
   sendBookingRescheduledNotification,
   sendNotificationSafely,
-  sendMultiNotificationSafely,
   getBusinessReplyToEmail,
 } from '@/lib/notifications'
 
@@ -87,135 +81,6 @@ const VALID_STATUS_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
   // (revive-booking.ts), que re-valida cupo antes de transicionar.
   expired: [],
 }
-
-async function fireBookingNotifications(
-  business: {
-    name: string
-    timezone: string
-    whatsapp: string | null
-    addressText: string | null
-    currency: string
-    cancellationPolicy: string | null
-    slug: string
-    subdomain: string | null
-    // El rubro decide el vocabulario del aviso al negocio.
-    category: BusinessCategory
-  },
-  booking: {
-    customer: { name: string; phone: string; email: string | null }
-    totalPrice: number
-    discountAmount: number
-    finalAmount: number
-    depositRequired: number
-    depositPaid: number
-    remainingBalance: number
-    startDateTime: Date
-    paymentMethod: string | null
-    holdExpiresAt: Date | null
-    status: BookingStatus
-    modality: ServiceModality
-    serviceAddress: string | null
-    meetingUrl: string | null
-  } & { id: string; businessId: string; bookingNumber: number | null },
-  serviceName: string,
-  // La cuenta ya la leyó createBooking antes de la tx; se pasa para no
-  // re-consultar la misma fila (solo presente en reservas-transferencia).
-  bankTransferAccount: BankTransferPublicInfo | null,
-) {
-  const customerEmail = booking.customer.email
-  const businessTimezone = business.timezone || 'America/Santiago'
-  const businessCurrency = business.currency || 'CLP'
-  const vocabulary = getVocabulary(business.category)
-  // Se deriva del status ya persistido, no del flag del negocio: si un descuento
-  // movió la reserva a otro estado, el email tiene que contar lo que pasó de
-  // verdad, no lo que la config decía al empezar.
-  const awaitingApproval = booking.status === BookingStatus.pending_confirmation
-
-  // Reserva con transferencia: el email de "reserva recibida" ES la fuente
-  // durable de los datos bancarios (la pestaña del wizard es efímera).
-  let bankTransfer: BookingEmailData['bankTransfer'] | undefined
-  if (booking.paymentMethod === BANK_TRANSFER_METHOD && bankTransferAccount) {
-    bankTransfer = {
-      ...bankTransferAccount,
-      deadline: booking.holdExpiresAt,
-      confirmationUrl: getBookingConfirmationUrl({ slug: business.slug, subdomain: business.subdomain }, booking.id),
-    }
-  }
-
-  const domain = process.env.NEXT_PUBLIC_APP_DOMAIN || process.env.APP_DOMAIN || 'localhost:3000'
-  const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '')
-  const protocol = cleanDomain.startsWith('localhost') || cleanDomain.endsWith('.localhost') || cleanDomain.startsWith('127.0.0.1') ? 'http' : 'https'
-  const dashboardLink = `${protocol}://${cleanDomain}/dashboard/bookings`
-  const businessReplyToEmail = await getBusinessReplyToEmail(booking.businessId)
-
-  const promises: Promise<unknown>[] = []
-
-  if (customerEmail) {
-    promises.push(
-      sendNotificationSafely('customer received', () =>
-        sendBookingReceivedToCustomer({
-          businessName: business.name,
-          bookingNumber: booking.bookingNumber,
-          businessReplyToEmail,
-          businessWhatsapp: business.whatsapp,
-          businessAddress: business.addressText,
-          modality: booking.modality,
-          serviceAddress: booking.serviceAddress,
-          meetingUrl: booking.meetingUrl,
-          businessTimezone,
-          businessCurrency,
-          businessCancellationPolicy: business.cancellationPolicy,
-          customerName: booking.customer.name,
-          customerEmail,
-          customerPhone: booking.customer.phone,
-          serviceName,
-          startDateTime: booking.startDateTime,
-          totalPrice: booking.totalPrice,
-          discountAmount: booking.discountAmount,
-          finalAmount: booking.finalAmount,
-          depositRequired: booking.depositRequired,
-          depositPaid: booking.depositPaid,
-          remainingBalance: booking.remainingBalance,
-          bankTransfer,
-          awaitingApproval,
-        }),
-      ),
-    )
-  }
-
-  promises.push(
-    sendMultiNotificationSafely('business notification', () =>
-      sendNewBookingNotificationToBusiness(booking.businessId, {
-        businessName: business.name,
-        businessCategory: business.category,
-        bookingNumber: booking.bookingNumber,
-        customerName: booking.customer.name,
-        customerPhone: booking.customer.phone,
-        customerEmail: customerEmail || null,
-        serviceName,
-        startDateTime: booking.startDateTime,
-        businessTimezone,
-        businessCurrency,
-        // A domicilio la dueña necesita la dirección en el aviso: es a dónde
-        // tiene que ir. Online, el link con el que se va a conectar.
-        modality: booking.modality,
-        serviceAddress: booking.serviceAddress,
-        meetingUrl: booking.meetingUrl,
-        depositRequired: booking.depositRequired,
-        remainingBalance: booking.remainingBalance,
-        dashboardLink,
-        awaitingApproval,
-        paymentNote: booking.paymentMethod === BANK_TRANSFER_METHOD
-          ? `${vocabulary.TheClient} eligió pagar el abono por transferencia. Te va a llegar otro aviso cuando declare que transfirió.`
-          : undefined,
-      }),
-    ),
-  )
-
-  await Promise.allSettled(promises)
-}
-
-// sendBookingConfirmedNotification is now centralized in @/lib/notifications
 
 // Lista completa del historial con SOLO las columnas que consumen la página de
 // Reservas (set pesado) y el diálogo de pago manual de Pagos (subset de
@@ -672,53 +537,13 @@ async function _updateBookingStatus(id: string, status: BookingStatus) {
 
   // R-EMIT: emisiones automáticas FUERA de la tx del evento (cada una en su propia tx, post-commit).
   if (status === BookingStatus.completed && existing.customerId && loyaltyConfig?.isActive && !paymentReverted) {
-    const customerId = existing.customerId
-    const emitCfg = {
-      grantExpiryDays: loyaltyConfig.grantExpiryDays,
-      forfeitGrantOnNoShow: loyaltyConfig.forfeitGrantOnNoShow,
-    }
-    const now = new Date()
-    // Cargá las reglas automáticas UNA vez (fuera de tx); cada emisión abre su propia tx
-    // post-commit solo si hay regla aplicable (evita transacciones vacías en el caso común).
-    const autoRules = await loadAutomaticRules(prisma, businessId)
-    const firstVisitRule = autoRules.find((r) => conditionKind(r.conditions) === 'first_visit')
-    const referralRule = autoRules.find((r) => conditionKind(r.conditions) === 'referral')
-
-    if (isFirstVisit && firstVisitRule) {
-      try {
-        await prisma.$transaction((tx) =>
-          emitAutomaticReward(tx, {
-            rule: firstVisitRule,
-            businessId,
-            customerId,
-            dedupeKey: firstVisitKey(customerId),
-            config: emitCfg,
-            triggeringBookingId: id,
-            now,
-          }))
-      } catch (e) {
-        logger.error('loyalty.first_visit_emit_failed', `first_visit emit falló booking=${id}: ${String(e)}`)
-      }
-    }
-    if (referralRule) {
-      try {
-        const referralResult = await prisma.$transaction((tx) =>
-          rewardReferralOnCompletion(tx, {
-            businessId,
-            referredCustomerId: customerId,
-            bookingId: id,
-            rule: referralRule,
-            config: emitCfg,
-            now,
-          }))
-        // Email de recompensa de referido — best-effort, FUERA de la tx.
-        if (referralResult) {
-          await notifyReferralReward(referralResult, businessId)
-        }
-      } catch (e) {
-        logger.error('loyalty.referral_emit_failed', `referral emit falló booking=${id}: ${String(e)}`)
-      }
-    }
+    await emitAutomaticRewardsOnCompletion({
+      businessId,
+      customerId: existing.customerId,
+      bookingId: id,
+      config: loyaltyConfig,
+      isFirstVisit,
+    })
   }
 
   // Solicitud aceptada: recién ahora la clienta tiene una reserva de verdad, así
