@@ -15,35 +15,6 @@ import type { BusinessCategory } from '@prisma/client'
  * alcanza con interpolar `clients` y la frase queda bien. Sólo las que arrastran
  * concordancia más allá del sustantivo viven enteras acá.
  */
-/**
- * Las palabras del oficio: lo único del léxico que cambia por RUBRO y no sólo por
- * género. Un barbero no es una manicurista y ninguno de los dos es "un profesional".
- *
- * Vive en su propio tipo para que `{ ...NEUTRAL, ...BARBERO }` compile sólo si están
- * todas las claves, y para que una clave mal escrita sea un error de compilación en
- * vez de una entrada fantasma que nadie lee.
- */
-export interface ProfessionalWords {
-  /** "barbero" | "manicurista" — el sustantivo solo */
-  professional: string
-  /** "barberos" | "manicuristas" */
-  professionals: string
-  /** "Barbero" | "Manicurista" — encabezado de tabla y etiqueta de email */
-  Professional: string
-  /** "Barberos" | "Manicuristas" — ítem de navegación y título de sección */
-  Professionals: string
-  /** "el barbero" | "la manicurista" */
-  theProfessional: string
-  /** "El barbero" | "La manicurista" — arranque de oración */
-  TheProfessional: string
-  /** "un barbero" | "una manicurista" */
-  aProfessional: string
-  /** "Elegí tu barbero" | "Elegí tu manicurista" — título del paso del funnel */
-  chooseProfessional: string
-  /** "Sin barberos" | "Sin manicuristas" — estado vacío */
-  noProfessionals: string
-}
-
 export interface Vocabulary extends ProfessionalWords {
   /** "clienta" | "cliente" */
   client: string
@@ -97,6 +68,35 @@ export interface Vocabulary extends ProfessionalWords {
   InactiveSegment: string
   /** "Cumpleañeras del mes" | "Cumpleañeros del mes" — nombre del segmento */
   birthdaySegment: string
+}
+
+/**
+ * Las palabras del oficio: lo único del léxico que cambia por RUBRO y no sólo por
+ * género. Un barbero no es una manicurista y ninguno de los dos es "un profesional".
+ *
+ * Vive en su propio tipo para que `{ ...NEUTRAL, ...BARBERO }` compile sólo si están
+ * todas las claves, y para que una clave mal escrita sea un error de compilación en
+ * vez de una entrada fantasma que nadie lee.
+ */
+export interface ProfessionalWords {
+  /** "barbero" | "manicurista" — el sustantivo solo */
+  professional: string
+  /** "barberos" | "manicuristas" */
+  professionals: string
+  /** "Barbero" | "Manicurista" — encabezado de tabla y etiqueta de email */
+  Professional: string
+  /** "Barberos" | "Manicuristas" — ítem de navegación y título de sección */
+  Professionals: string
+  /** "el barbero" | "la manicurista" */
+  theProfessional: string
+  /** "El barbero" | "La manicurista" — arranque de oración */
+  TheProfessional: string
+  /** "un barbero" | "una manicurista" */
+  aProfessional: string
+  /** "Elegí tu barbero" | "Elegí tu manicurista" — título del paso del funnel */
+  chooseProfessional: string
+  /** "Sin barberos" | "Sin manicuristas" — estado vacío */
+  noProfessionals: string
 }
 
 // Los seis oficios. `manicurista`, `estilista`, `especialista`, `terapeuta` y

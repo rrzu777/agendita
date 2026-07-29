@@ -401,12 +401,25 @@ que la suite completa es la que confirma que agregar claves no rompió a nadie.
 rm -rf .next/dev/types && npx tsc --noEmit
 ```
 
-Expected: sólo los **3 errores preexistentes en `tests/`** que no son de este PR. Ni uno
-en `src/`.
+Expected: **17 errores, todos preexistentes y todos en `tests/`** (`metrics.test.ts`,
+`reward-email.test.ts`). Ni uno en `src/`, ni uno en `vocabulary`. La forma de
+verificarlo es contra `main`, no de memoria:
+
+```bash
+npx tsc --noEmit 2>&1 | grep -c "error TS"
+```
+
+Tiene que dar el mismo número acá y en el checkout de `main`.
 
 Ojo con los dos puntos ciegos de este comando: se frena con un `.next/dev/types` viejo
 (de ahí el `rm -rf`), y filtrar con `grep '^src/'` esconde los errores de `tests/` — no
 filtrar.
+
+**Este paso encontró un error real la primera vez.** Tipar el array de léxicos como
+`Record<string, string>` no compila: una interfaz de TypeScript no es asignable a un
+`Record` porque no tiene index signature. Los 1854 tests pasaron igual — es exactamente
+el punto ciego de que `tsc` no lo corra ni vitest ni eslint. El tipo correcto es
+`Array<readonly [string, Vocabulary]>`.
 
 - [ ] **Step 3: lint**
 

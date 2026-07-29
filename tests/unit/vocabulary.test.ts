@@ -1,6 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import type { BusinessCategory } from '@prisma/client'
-import { getVocabulary, interpolate, VOCABULARIES } from '@/lib/vocabulary'
+import { getVocabulary, interpolate, VOCABULARIES, type Vocabulary } from '@/lib/vocabulary'
+
+// Los 7 valores de BusinessCategory. A mano y no derivada del enum de Prisma a
+// propósito: si mañana se agrega un rubro, este archivo tiene que fallar para que
+// alguien decida su oficio, en vez de heredar el genérico en silencio.
+const ALL_CATEGORIES = [
+  'nails',
+  'beauty',
+  'hair_salon',
+  'barber',
+  'massage',
+  'therapy',
+  'other',
+] as const satisfies readonly BusinessCategory[]
 
 describe('vocabulario por rubro', () => {
   it('los rubros con clientela femenina mantienen el texto actual', () => {
@@ -16,17 +29,26 @@ describe('vocabulario por rubro', () => {
   })
 
   // Guarda contra el olvido más probable: agregar una clave a un léxico y no al otro.
+  //
+  // Tienen que mirar los léxicos ARMADOS, no sólo las dos formas base: BY_CATEGORY
+  // aplica overrides por rubro y es ahí donde se cuela una clave de más o una entrada
+  // vacía. Iterar sólo VOCABULARIES los deja pasar enteros.
+  const EVERY_LEXICON: Array<readonly [string, Vocabulary]> = [
+    ...Object.entries(VOCABULARIES),
+    ...ALL_CATEGORIES.map((c) => [c, getVocabulary(c)] as const),
+  ]
+
   it('todos los léxicos tienen exactamente las mismas claves', () => {
-    const [first, ...rest] = Object.values(VOCABULARIES)
-    for (const lexicon of rest) {
-      expect(Object.keys(lexicon).sort()).toEqual(Object.keys(first).sort())
+    const reference = Object.keys(VOCABULARIES.neutral).sort()
+    for (const [name, lexicon] of EVERY_LEXICON) {
+      expect(Object.keys(lexicon).sort(), name).toEqual(reference)
     }
   })
 
   it('ninguna entrada queda vacía', () => {
-    for (const lexicon of Object.values(VOCABULARIES)) {
+    for (const [name, lexicon] of EVERY_LEXICON) {
       for (const [key, value] of Object.entries(lexicon)) {
-        expect(value, key).not.toBe('')
+        expect(value.trim(), `${name}.${key}`).not.toBe('')
       }
     }
   })
