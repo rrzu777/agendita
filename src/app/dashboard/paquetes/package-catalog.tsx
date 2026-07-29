@@ -6,6 +6,7 @@ import { upsertPackageProduct, archivePackageProduct } from '@/server/actions/pa
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatMoney } from '@/lib/money'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 type Service = { id: string; name: string; price: number }
 type PackageProduct = {
@@ -38,6 +39,7 @@ export function PackageCatalog({
   services: Service[]
   currency: string
 }) {
+  const vocabulary = useVocabulary()
   const router = useRouter()
   const [isPending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
@@ -97,7 +99,7 @@ export function PackageCatalog({
     <section className="studio-card mt-6 p-4">
       <h3 className="text-lg font-semibold text-primary">Catálogo de paquetes</h3>
       <p className="text-sm text-muted-foreground">
-        Definí los paquetes de sesiones prepagadas que podés vender a tus clientas.
+        Definí los paquetes de sesiones prepagadas que podés vender a tus {vocabulary.clients}.
       </p>
 
       <ul className="mt-4 divide-y divide-border">

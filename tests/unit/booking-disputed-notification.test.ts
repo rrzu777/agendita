@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { bookingDisputedBusinessHtml, bookingDisputedBusinessText } from '@/lib/notifications/templates'
 
 const DATA = {
-  businessName: 'Estudio Mimo', customerName: 'Caro P', serviceName: 'Manicure',
+  businessName: 'Estudio Mimo', businessCategory: 'nails' as const, customerName: 'Caro P', serviceName: 'Manicure',
   bookingLabel: '#4738', startDateTime: new Date('2026-07-20T15:00:00Z'),
   businessTimezone: 'America/Santiago', amount: 8000, businessCurrency: 'CLP',
 }

@@ -2,8 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ForbiddenError } from '../helpers/auth-errors'
 
 vi.mock('@/lib/auth/server', () => ({
-  requireBusiness: vi.fn().mockResolvedValue({ businessId: 'b1' }),
-  requireBusinessRole: vi.fn().mockResolvedValue({ businessId: 'b1', user: { id: 'u1' } }),
+  // `business` va con el mismo peso que `businessId`: el contrato real de
+  // requireBusiness/requireBusinessRole devuelve la fila completa del negocio, y
+  // las actions leen `business.category` para resolver el vocabulario del rubro.
+  // Un mock que lo omite deja de decir la verdad y rompe con un error genérico.
+  requireBusiness: vi.fn().mockResolvedValue({ businessId: 'b1', business: { id: 'b1', category: 'nails' } }),
+  requireBusinessRole: vi.fn().mockResolvedValue({ businessId: 'b1', business: { id: 'b1', category: 'nails' }, user: { id: 'u1' } }),
   ForbiddenError,
 }))
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: vi.fn().mockResolvedValue({ success: true }) }))

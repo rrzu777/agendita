@@ -7,6 +7,7 @@ import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { ForbiddenError } from '@/lib/auth/server'
 import { getCampaignDetail } from '@/server/actions/campaigns'
 import { segmentLabel } from '@/lib/campaigns/labels'
+import { getVocabulary } from '@/lib/vocabulary'
 import { formatMediumDate } from '@/lib/format-date'
 import { campaignChannel } from '@/lib/customers/channel'
 import { RecipientList } from './recipient-list'
@@ -29,6 +30,7 @@ export default async function CampaignDetailPage({ params }: Props) {
   }
 
   const { id } = await params
+  const vocabulary = getVocabulary(userData.business.category)
 
   let campaign
   let error: string | null = null
@@ -86,7 +88,7 @@ export default async function CampaignDetailPage({ params }: Props) {
     <div>
       <DashboardHeader
         title={campaign.name}
-        subtitle={`${segmentLabel(campaign.segmentType)} · ${campaign.promotion.name} · ${formatMediumDate(campaign.createdAt)}`}
+        subtitle={`${segmentLabel(campaign.segmentType, vocabulary)} · ${campaign.promotion.name} · ${formatMediumDate(campaign.createdAt)}`}
       />
       <div className="p-5 md:p-10">
         {/* Back link (patrón customers/[id]) */}

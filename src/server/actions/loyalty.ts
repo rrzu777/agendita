@@ -15,6 +15,20 @@ import { resolveLoyaltyCustomer } from '@/lib/loyalty/token'
 import { conditionKind } from '@/lib/loyalty/automatic-match'
 import { buildPresetPayload, planPresetApply, summarizeApply, redemptionSignature, type CurrentLoyaltyState, type ApplyPresetSummary } from '@/lib/loyalty/presets'
 import { action, UserError } from '@/lib/actions/result'
+import { getVocabulary } from '@/lib/vocabulary'
+import type { BusinessCategory } from '@prisma/client'
+
+/**
+ * `Clienta`/`Cliente` no encontrada, según el rubro.
+ *
+ * Recibe la categoría en vez de resolverla desde la sesión: el negocio ya viene
+ * en el contexto de requireBusinessRole(), y volver a leer la sesión acá suma
+ * una dependencia de `cookies()` que no aporta nada y rompe los tests unitarios
+ * de estas actions (que mockean @/lib/auth/server, no @/lib/auth/user).
+ */
+function customerNotFound(category: BusinessCategory): ForbiddenError {
+  return new ForbiddenError(`${getVocabulary(category).Client} no encontrada`)
+}
 
 // Module-local helpers — NOT exported (use server modules may only export async functions)
 
@@ -148,9 +162,9 @@ async function _upsertLoyaltyConfig(data: unknown) {
 export const upsertLoyaltyConfig = action(_upsertLoyaltyConfig)
 
 export async function getCustomerLoyalty(customerId: string) {
-  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   const customer = await prisma.customer.findFirst({ where: { id: customerId, businessId }, select: { id: true } })
-  if (!customer) throw new ForbiddenError('Clienta no encontrada')
+  if (!customer) throw customerNotFound(business.category)
   await prisma.$transaction((tx) => reconcileExpiredGrants(tx, customerId, businessId))
   const [balance, history, grants, catalog] = await Promise.all([
     getLoyaltyBalance(prisma, customerId, businessId),
@@ -172,7 +186,7 @@ export async function getCustomerLoyalty(customerId: string) {
 }
 
 async function _adjustCustomerPoints(customerId: string, delta: unknown, note: unknown) {
-  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, business, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('loyalty-adjust', 30, 60000, { userId: user.id, businessId })
   if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
 
@@ -181,7 +195,7 @@ async function _adjustCustomerPoints(customerId: string, delta: unknown, note: u
     throw new UserError('Datos inválidos: ' + parsed.error.issues.map((i) => i.message).join(', '))
   }
   const customer = await prisma.customer.findFirst({ where: { id: customerId, businessId }, select: { id: true } })
-  if (!customer) throw new ForbiddenError('Clienta no encontrada')
+  if (!customer) throw customerNotFound(business.category)
 
   await prisma.$transaction(async (tx) => {
     // Advisory lock por-clienta: bajo READ COMMITTED el aggregate NO toma lock, así
@@ -263,13 +277,13 @@ async function _archiveRedemptionOption(id: string) {
 export const archiveRedemptionOption = action(_archiveRedemptionOption)
 
 async function _redeemPointsAsOwner(customerId: string, optionId: unknown, requestId: unknown) {
-  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, business, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('loyalty-redeem', 30, 60000, { userId: user.id, businessId })
   if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
   const parsed = redeemSchema.safeParse({ optionId, requestId })
   if (!parsed.success) throw new UserError('Datos inválidos')
   const customer = await prisma.customer.findFirst({ where: { id: customerId, businessId }, select: { id: true } })
-  if (!customer) throw new ForbiddenError('Clienta no encontrada')
+  if (!customer) throw customerNotFound(business.category)
   await runRedemption({ businessId, customerId, optionId: parsed.data.optionId, requestId: parsed.data.requestId, createdByUserId: user.id })
   await revalidatePath(`/dashboard/customers/${customerId}`)
 }
@@ -385,7 +399,7 @@ async function _archiveAutomaticRule(id: string) {
 export const archiveAutomaticRule = action(_archiveAutomaticRule)
 
 async function _applyLoyaltyPreset(presetId: unknown): Promise<ApplyPresetSummary> {
-  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, business, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('loyalty-preset', 30, 60000, { userId: user.id, businessId })
   if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
   if (typeof presetId !== 'string') throw new UserError('Preset inválido')
@@ -436,7 +450,7 @@ async function _applyLoyaltyPreset(presetId: unknown): Promise<ApplyPresetSummar
       })
     }
 
-    return summarizeApply(plan)
+    return summarizeApply(plan, getVocabulary(business.category))
   })
 
   await revalidatePath('/dashboard/fidelizacion')

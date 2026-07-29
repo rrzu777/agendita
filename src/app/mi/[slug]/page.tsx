@@ -14,6 +14,7 @@ import { declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 import { canSelfManage } from '@/lib/bookings/self-service'
 import { BookingActions } from './booking-actions'
 import type { BookingStatus } from '@prisma/client'
+import { getVocabulary } from '@/lib/vocabulary'
 
 const UPCOMING_STATUSES = ['pending_payment', 'confirmed'] as const
 
@@ -54,7 +55,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
   const business = await prisma.business.findUnique({
     where: { slug },
     select: {
-      id: true, name: true, slug: true, subdomain: true, logoUrl: true, selfServiceCutoffHours: true,
+      id: true, name: true, slug: true, subdomain: true, logoUrl: true, category: true, selfServiceCutoffHours: true,
       loyaltyConfig: { select: { isActive: true, programName: true, pointsLabel: true, cardMessage: true } },
     },
   })
@@ -99,6 +100,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
           key={c.id}
           customerName={c.name}
           business={{ name: business.name, logoUrl: business.logoUrl }}
+          vocabulary={getVocabulary(business.category)}
           data={cards[i]}
           redeemAction={redeemAction.bind(null, c.id)}
           titleAs="h2"

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { getBookings } from '@/server/actions/bookings'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
+import { getVocabulary } from '@/lib/vocabulary'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { updateBookingStatus } from '@/server/actions/bookings'
@@ -226,6 +227,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
 
 export default async function BookingsPage() {
   const userData = await getCurrentUserWithBusiness()
+  const vocabulary = getVocabulary(userData?.business?.category ?? 'other')
 
   if (!userData?.user) {
     redirect('/login')
@@ -313,7 +315,7 @@ export default async function BookingsPage() {
                   <TableRow className="bg-muted/50">
                     <TableHead>Servicio</TableHead>
                     <TableHead className={TABLE_COL.date}>Fecha</TableHead>
-                    <TableHead className={TABLE_COL.customer}>Cliente</TableHead>
+                    <TableHead className={TABLE_COL.customer}>{vocabulary.Client}</TableHead>
                     <TableHead className={TABLE_COL.status}>Estado</TableHead>
                     <TableHead className={TABLE_COL.money}>Pago</TableHead>
                     <TableHead className={`${TABLE_COL.actions} text-right`}>Acciones</TableHead>

@@ -8,6 +8,7 @@ import { RedemptionCatalog } from './redemption-catalog'
 import { AutomaticRules } from './automatic-rules'
 import { PresetPicker } from './preset-picker'
 import { presetCatalog } from '@/lib/loyalty/presets'
+import { getVocabulary } from '@/lib/vocabulary'
 
 export default async function FidelizacionPage() {
   const userData = await getCurrentUserWithBusiness()
@@ -29,16 +30,17 @@ export default async function FidelizacionPage() {
 
   const currency = userData.business.currency
   const pointsLabel = config?.pointsLabel ?? 'puntos'
+  const vocabulary = getVocabulary(userData.business.category)
 
   return (
     <div>
       <DashboardHeader
         title="Fidelización"
-        subtitle="Programa de puntos para tus clientas."
+        subtitle={`Programa de puntos para tus ${vocabulary.clients}.`}
       />
       <div className="p-5 md:p-10">
         <div className="mx-auto max-w-2xl">
-          <PresetPicker presets={presetCatalog()} hasActiveProgram={config?.isActive ?? false} />
+          <PresetPicker presets={presetCatalog(vocabulary)} hasActiveProgram={config?.isActive ?? false} />
           <LoyaltyConfigForm config={config} />
           <RedemptionCatalog options={options} services={services} />
           <AutomaticRules

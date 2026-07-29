@@ -211,7 +211,7 @@ async function loadOwnedPurchase(purchaseId: string, userId: string) {
     include: {
       customer: { select: { userId: true, email: true, name: true } },
       product: { select: { name: true } },
-      business: { select: { name: true, slug: true, subdomain: true, currency: true } },
+      business: { select: { name: true, slug: true, subdomain: true, currency: true, category: true } },
     },
   })
   if (!purchase) throw new UserError('Compra no encontrada')
@@ -473,7 +473,8 @@ async function _declarePackageTransfer(input: { purchaseId: string }): Promise<{
   // Reusa los datos ya cargados por loadOwnedPurchase — sin segunda query.
   await sendMultiNotificationSafely('package transfer declared business', async () =>
     sendPackageTransferDeclaredToBusiness(purchase.businessId, {
-      businessName: purchase.business.name, customerName: purchase.customer.name, productName: purchase.product.name,
+      businessName: purchase.business.name, businessCategory: purchase.business.category,
+      customerName: purchase.customer.name, productName: purchase.product.name,
       amount: purchase.pricePaid, businessCurrency: purchase.business.currency || 'CLP',
     }),
   )

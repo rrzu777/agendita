@@ -96,7 +96,7 @@ export async function linkCustomerByLoyaltyToken(db: Db, userId: string, token: 
     where: { userId, businessId: customer.businessId },
     select: { id: true },
   })
-  if (isMember) throw new CardLinkError('No puedes vincular tarjetas de clientas de tu propio negocio.')
+  if (isMember) throw new CardLinkError('No puedes vincular tarjetas de tu propio negocio.')
   const res = await db.customer.updateMany({
     where: { id: customer.id, userId: null },
     data: { userId },

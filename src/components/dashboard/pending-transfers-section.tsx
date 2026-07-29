@@ -6,8 +6,9 @@ import { FileText, Landmark, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { buildWhatsappUrl } from '@/lib/notifications'
 import { rejectBankTransfer } from '@/server/actions/bank-transfer-verify'
-import { formatManualPaymentMoney as formatMoney } from './manual-payment-utils'
+import { formatManualPaymentMoney as formatMoney, rejectTransferConfirmMessage } from './manual-payment-utils'
 import { VerifyTransferDialog } from './verify-transfer-dialog'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 export type PendingTransferKind = 'deposit' | 'balance'
 
@@ -62,6 +63,7 @@ function PendingTransferRow({
   businessCurrency: string
   businessTimezone: string
 }) {
+  const vocabulary = useVocabulary()
   const router = useRouter()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -88,9 +90,7 @@ function PendingTransferRow({
     : null
 
   function handleReject() {
-    const confirmMessage = item.kind === 'balance'
-      ? '¿Rechazar esta transferencia del saldo? La reserva NO se cancela; la clienta podrá volver a avisar.'
-      : '¿Rechazar esta transferencia? Se cancelará la reserva.'
+    const confirmMessage = rejectTransferConfirmMessage(item.kind, vocabulary)
     if (!window.confirm(confirmMessage)) return
     startTransition(async () => {
       // best-effort silencioso (ok, error de la action, o rechazo de transporte):

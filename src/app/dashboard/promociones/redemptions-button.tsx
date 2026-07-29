@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Receipt, Download } from 'lucide-react'
 import { getPromotionRedemptions } from '@/server/actions/promotions'
 import { formatMoney } from '@/lib/money'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 type Redemption = Extract<Awaited<ReturnType<typeof getPromotionRedemptions>>, { ok: true }>['data'][number]
 
@@ -58,6 +59,7 @@ export function RedemptionsButton({
   onOpenChange?: (open: boolean) => void
   hideTrigger?: boolean
 }) {
+  const vocabulary = useVocabulary()
   const [internalOpen, setInternalOpen] = useState(false)
   const isControlled = controlledOpen !== undefined
   const open = isControlled ? controlledOpen : internalOpen
@@ -87,7 +89,7 @@ export function RedemptionsButton({
 
   function handleExport() {
     if (!rows || rows.length === 0) return
-    const header = ['Clienta', 'Reserva', 'Descuento', 'Fecha', 'Origen', 'Estado']
+    const header = [vocabulary.Client, 'Reserva', 'Descuento', 'Fecha', 'Origen', 'Estado']
     const lines = [header.map(csvField).join(',')]
     for (const r of rows) {
       lines.push(
@@ -172,7 +174,7 @@ export function RedemptionsButton({
               <Table fixed className={TABLE_MIN_WIDTH}>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
-                    <TableHead>Clienta</TableHead>
+                    <TableHead>{vocabulary.Client}</TableHead>
                     <TableHead className={TABLE_COL.date}>Reserva</TableHead>
                     <TableHead className={TABLE_COL.money}>Descuento</TableHead>
                     <TableHead className={TABLE_COL.date}>Fecha</TableHead>

@@ -12,6 +12,7 @@ import { prepareCampaignSend, sendOneCampaignEmail } from '@/lib/campaigns/send'
 import { buildWhatsappUrl } from '@/lib/notifications/whatsapp'
 import { isWhatsappablePhone } from '@/lib/customers/phone'
 import { getBusinessReplyToEmail } from '@/lib/notifications'
+import { getVocabulary } from '@/lib/vocabulary'
 
 // NOTE: 'use server' — SOLO funciones async exportadas. Schemas/consts/tipos
 // viven en src/lib/campaigns/.
@@ -155,18 +156,19 @@ export const sendCampaignMessage = action(_sendCampaignMessage)
  *  envío fue exitoso (a diferencia de WhatsApp, acá conocemos el resultado). El grant
  *  minteado persiste aunque el email falle; reintentar es idempotente. */
 async function _sendCampaignEmail(recipientId: string): Promise<{ sent: boolean; error?: string }> {
-  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, business, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('send-campaign-email', 30, 60000, { userId: user.id, businessId })
   if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
 
   const replyTo = await getBusinessReplyToEmail(businessId)
   const outcome = await sendOneCampaignEmail(prisma, businessId, recipientId, user.id, replyTo)
+  const vocabulary = getVocabulary(business.category)
 
   if (outcome.status === 'sent') return { sent: true }
   if (outcome.status === 'skipped') {
     return {
       sent: false,
-      error: outcome.reason === 'no_email' ? 'La clienta no tiene un email válido.' : 'Ya se había enviado.',
+      error: outcome.reason === 'no_email' ? `${vocabulary.TheClient} no tiene un email válido.` : 'Ya se había enviado.',
     }
   }
   return { sent: false, error: outcome.error }
@@ -186,10 +188,10 @@ async function _sendCampaignEmailBatch(
   campaignId: string,
   recipientIds: string[],
 ): Promise<{ results: BulkEmailResult[] }> {
-  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, business, user } = await requireBusinessRole(['owner', 'admin'])
   if (recipientIds.length === 0) return { results: [] }
   if (recipientIds.length > BULK_EMAIL_MAX_PER_CALL) {
-    throw new UserError(`Máximo ${BULK_EMAIL_MAX_PER_CALL} destinatarias por tanda`)
+    throw new UserError(`Máximo ${BULK_EMAIL_MAX_PER_CALL} ${getVocabulary(business.category).recipients} por tanda`)
   }
   const limit = await checkRateLimit('send-campaign-bulk-email', 60, 60000, { userId: user.id, businessId })
   if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')

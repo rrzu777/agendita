@@ -14,6 +14,7 @@ import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { CheckCircle, EyeOff, Star, MessageSquare, ExternalLink, Search, X } from 'lucide-react'
 import { ReviewLinkButton } from './review-link-button'
 import { approveReview, hideReview } from '@/server/actions/reviews'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 type ReviewState = 'pending' | 'approved' | 'hidden'
 
@@ -104,6 +105,7 @@ export function ReviewsClient({
   eligibleBookings: EligibleBooking[]
   pendingCount: number
 }) {
+  const vocabulary = useVocabulary()
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -225,7 +227,7 @@ export function ReviewsClient({
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead>Servicio</TableHead>
-                  <TableHead className={TABLE_COL.name}>Cliente</TableHead>
+                  <TableHead className={TABLE_COL.name}>{vocabulary.Client}</TableHead>
                   <TableHead className={TABLE_COL.date}>Fecha</TableHead>
                   <TableHead className={`${TABLE_COL.actions} text-right`}>Acción</TableHead>
                 </TableRow>
@@ -298,7 +300,7 @@ export function ReviewsClient({
             <Table fixed className={TABLE_MIN_WIDTH}>
               <TableHeader>
                 <TableRow className="bg-muted/50">
-                  <TableHead>Cliente</TableHead>
+                  <TableHead>{vocabulary.Client}</TableHead>
                   <TableHead className={TABLE_COL.name}>Servicio</TableHead>
                   <TableHead className={TABLE_COL.date}>Fecha reserva</TableHead>
                   <TableHead className={TABLE_COL.rating}>Calificación</TableHead>

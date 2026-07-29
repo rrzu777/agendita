@@ -17,7 +17,7 @@ import {
 const start = new Date('2026-08-01T15:00:00Z')
 
 const emailBase = {
-  businessName: 'Biz',
+  businessName: 'Biz', businessCategory: 'nails' as const,
   businessTimezone: 'America/Santiago',
   businessCurrency: 'CLP',
   customerName: 'Ana',
@@ -31,7 +31,7 @@ const emailBase = {
 }
 
 const businessBase = {
-  businessName: 'Biz',
+  businessName: 'Biz', businessCategory: 'nails' as const,
   customerName: 'Ana',
   customerPhone: '+56911111111',
   serviceName: 'Corte',
@@ -44,7 +44,7 @@ const businessBase = {
 }
 
 const reminderBase = {
-  businessName: 'Biz',
+  businessName: 'Biz', businessCategory: 'nails' as const,
   customerName: 'Ana',
   customerEmail: 'ana@test.com',
   serviceName: 'Corte',

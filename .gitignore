@@ -50,3 +50,6 @@ next-env.d.ts
 
 # Playwright MCP / browser artifacts
 .playwright-mcp/
+
+# Scripts de diagnóstico de una sola vez (suelen apuntar a la DB de prod).
+*.local.mjs

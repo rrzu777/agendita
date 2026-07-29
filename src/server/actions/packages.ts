@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { action, UserError } from '@/lib/actions/result'
+import { getVocabulary } from '@/lib/vocabulary'
 import { packageProductSchema, sellPackageSchema, computePackageRefund } from '@/lib/packages/schema'
 import { normalizePhone } from '@/lib/customers/phone'
 import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
@@ -70,7 +71,7 @@ export const archivePackageProduct = action(_archivePackageProduct)
 
 // ── vender ────────────────────────────────────────────────────────────
 async function _sellPackage(data: unknown) {
-  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, business, user } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('package-sell', 30, 60000, { userId: user.id, businessId })
   if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta más tarde.')
   const parsed = sellPackageSchema.safeParse(data)
@@ -85,7 +86,7 @@ async function _sellPackage(data: unknown) {
     prisma.customer.findFirst({ where: { id: d.customerId, businessId }, select: { id: true } }),
   ])
   if (!product) throw new UserError('Paquete no disponible')
-  if (!customer) throw new ForbiddenError('Clienta no encontrada')
+  if (!customer) throw new ForbiddenError(`${getVocabulary(business.category).Client} no encontrada`)
 
   const now = new Date()
   const expiresAt = product.expiryDays ? addDays(now, product.expiryDays) : null

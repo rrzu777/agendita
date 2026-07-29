@@ -21,6 +21,7 @@ import { clawbackLoyaltyForBooking } from '@/lib/loyalty/clawback'
 import { reversePackagePurchaseInTx } from '@/lib/packages/reverse'
 import { reverseBookingPaymentInTx } from '@/lib/bookings/reverse-payment'
 import { formatBookingNumber } from '@/lib/bookings/number'
+import { getVocabulary } from '@/lib/vocabulary'
 import type { Prisma } from '@prisma/client'
 
 function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
@@ -45,7 +46,7 @@ function findPurchaseForBusinessEmail(packagePurchaseId: string) {
     include: {
       product: { select: { name: true } },
       customer: { select: { name: true } },
-      business: { select: { name: true, currency: true } },
+      business: { select: { name: true, currency: true, category: true } },
     },
   })
 }
@@ -411,7 +412,8 @@ export async function POST(request: NextRequest) {
         if (reverseMode === 'chargeback') {
           await sendMultiNotificationSafely('package disputed business', async () =>
             sendPackageDisputedToBusiness(payment.businessId, {
-              businessName: purchase.business.name, customerName: purchase.customer.name, productName: purchase.product.name,
+              businessName: purchase.business.name, businessCategory: purchase.business.category,
+              customerName: purchase.customer.name, productName: purchase.product.name,
               amount: mpPayment.transaction_amount, businessCurrency: purchase.business.currency || 'CLP',
             }),
           )
@@ -461,14 +463,15 @@ export async function POST(request: NextRequest) {
           select: {
             customer: { select: { name: true } },
             service: { select: { name: true } },
-            business: { select: { name: true, currency: true, timezone: true } },
+            business: { select: { name: true, currency: true, timezone: true, category: true } },
           },
         })
         if (bk) {
           await sendMultiNotificationSafely('booking disputed business', async () =>
             sendBookingDisputedToBusiness(payment.businessId, {
               businessName: bk.business.name,
-              customerName: bk.customer?.name ?? 'Clienta',
+              businessCategory: bk.business.category,
+              customerName: bk.customer?.name ?? getVocabulary(bk.business.category).Client,
               serviceName: bk.service?.name ?? 'servicio',
               bookingLabel: formatBookingNumber(booking.bookingNumber, bookingId),
               startDateTime: booking.startDateTime,
@@ -600,6 +603,7 @@ export async function POST(request: NextRequest) {
           notifyBusinessAboutPurchase('package sold business', packagePurchaseId, (purchase) =>
             sendPackageSoldNotificationToBusiness(payment.businessId, {
               businessName: purchase.business.name,
+              businessCategory: purchase.business.category,
               customerName: purchase.customer.name,
               productName: purchase.product.name,
               totalSessions: purchase.quantity + purchase.bonusQuantity,
@@ -620,6 +624,7 @@ export async function POST(request: NextRequest) {
         await notifyBusinessAboutPurchase('package unexpected payment business', packagePurchaseId, (purchase) =>
           sendPackageUnexpectedPaymentToBusiness(payment.businessId, {
             businessName: purchase.business.name,
+            businessCategory: purchase.business.category,
             customerName: purchase.customer.name,
             productName: purchase.product.name,
             amount: payment.amount,

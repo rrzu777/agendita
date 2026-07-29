@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ServiceFitWarnings } from '@/components/dashboard/service-fit-warnings'
+import { getVocabulary } from '@/lib/vocabulary'
+
+const vocabulary = getVocabulary('nails')
 
 const fitOk = {
   serviceId: 'svc-90',
@@ -20,12 +23,12 @@ const fitNowhere = {
 
 describe('ServiceFitWarnings', () => {
   it('no renderiza nada cuando todos los servicios caben', () => {
-    const html = renderToStaticMarkup(<ServiceFitWarnings fits={[fitOk]} />)
+    const html = renderToStaticMarkup(<ServiceFitWarnings vocabulary={vocabulary} fits={[fitOk]} />)
     expect(html).toBe('')
   })
 
   it('muestra un aviso con nombre y duración por cada servicio que no cabe', () => {
-    const html = renderToStaticMarkup(<ServiceFitWarnings fits={[fitOk, fitNowhere]} />)
+    const html = renderToStaticMarkup(<ServiceFitWarnings vocabulary={vocabulary} fits={[fitOk, fitNowhere]} />)
     expect(html).toContain('MANICURA RUSA HIGH LEVEL')
     expect(html).toContain('225 min')
     expect(html).toContain('no cabe en ningún día')
@@ -35,7 +38,7 @@ describe('ServiceFitWarnings', () => {
 
   it('muestra un aviso por cada servicio afectado', () => {
     const otro = { ...fitNowhere, serviceId: 'svc-300', serviceName: 'PEDICURA SPA', durationMinutes: 300 }
-    const html = renderToStaticMarkup(<ServiceFitWarnings fits={[fitNowhere, otro]} />)
+    const html = renderToStaticMarkup(<ServiceFitWarnings vocabulary={vocabulary} fits={[fitNowhere, otro]} />)
     expect(html).toContain('MANICURA RUSA HIGH LEVEL')
     expect(html).toContain('PEDICURA SPA')
     expect(html).toContain('300 min')
