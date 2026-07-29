@@ -19,13 +19,10 @@ import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcemen
 import { normalizePhone } from '@/lib/customers/phone'
 import { isValidBirthDateString, birthDateToUtcDate } from '@/lib/dates'
 import { addMinutes } from 'date-fns'
-import { applyPromotionInTx } from '@/lib/promotions/apply'
 import { recomputeBookingAmountsAfterDiscount } from '@/lib/bookings/recompute'
 import { assertBookingPayable } from '@/lib/bookings/payments'
 import { applyApprovedPayment } from '@/server/services/finance'
 import { initialPublicBookingStatus, approvalHoldExpiresAt } from '@/lib/bookings/approval'
-import { resolveBookingModality, resolveServiceAddress } from '@/lib/services/modality'
-import { applyPackageInTx } from '@/lib/packages/consume'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
 import { creditVisitPoints } from '@/lib/loyalty/credit'
@@ -35,6 +32,8 @@ import { type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD, anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
 import { fireBookingNotifications } from '@/lib/bookings/notifications'
+import { resolveBookingDraft } from '@/lib/bookings/draft'
+import { applyBookingDiscountInTx } from '@/lib/bookings/discount'
 import {
   sendBookingCancelledNotification,
   sendBookingConfirmedNotification,
@@ -202,27 +201,16 @@ async function _createBooking(data: {
 
   assertBusinessCanReceiveBookings(business.subscriptionStatus)
 
-  // Validar que el servicio pertenezca al negocio
-  const service = await prisma.service.findFirst({
-    where: { id: data.serviceId, businessId, isActive: true },
-  })
-  if (!service) {
-    throw new UserError('Servicio no disponible')
-  }
-
-  // Modalidad server-authoritative: con una sola modalidad el pedido del cliente
-  // se ignora, y con varias tiene que estar entre las que el servicio ofrece.
-  const modality = resolveBookingModality(service.modalities, data.modality)
-  const serviceAddress = resolveServiceAddress(modality, data.serviceAddress)
-  // La sala se copia AHORA: si el negocio la cambia después, las citas ya
-  // avisadas conservan el link que la clienta recibió por email.
-  const meetingUrl = modality === ServiceModality.online ? business.defaultMeetingUrl : null
-
-  // Recalcular precios y horario server-side
-  const totalPrice = service.price
-  const depositRequired = service.depositAmount
-  const finalAmount = service.price
-  const endDateTime = addMinutes(data.startDateTime, service.durationMinutes)
+  // Servicio, modalidad y montos: todo server-side, nada del payload.
+  const { service, modality, serviceAddress, meetingUrl, totalPrice, depositRequired, finalAmount, endDateTime } =
+    await resolveBookingDraft({
+      businessId,
+      serviceId: data.serviceId,
+      startDateTime: data.startDateTime,
+      modality: data.modality,
+      serviceAddress: data.serviceAddress,
+      defaultMeetingUrl: business.defaultMeetingUrl,
+    })
 
   // Transferencia bancaria: validar server-side que esté habilitada. El hold
   // largo (holdHours, default 24h) da la ventana para transferir y declarar
@@ -334,29 +322,18 @@ async function _createBooking(data: {
         },
       })
 
-      // Aplicar promo por código (server-authoritative) dentro de la misma tx.
-      // Si el código es inválido/agotado, applyPromotionInTx lanza y TODA la
-      // transacción (booking + canje + incremento) hace rollback: no se crea reserva.
-      // Precedencia: paquete prepago gana sobre código. Si aplica un paquete, se ignora
-      // el código. applyPromotionInTx sigue lanzando si el código es inválido (rollback).
-      let discount: { discountAmount: number } | null = null
-      if (!data.skipPackage) {
-        discount = await applyPackageInTx(tx, {
-          businessId, customerId: customer.id, serviceId: data.serviceId,
-          bookingId: booking.id, totalPrice: service.price, source: 'public_booking',
-        })
-      }
-      if (!discount) {
-        discount = await applyPromotionInTx(tx, {
-          businessId,
-          code: parsed.data.promotionCode,
-          serviceId: data.serviceId,
-          customerId: customer.id,
-          totalPrice: service.price,
-          bookingId: booking.id,
-          source: 'public_booking',
-        })
-      }
+      // Paquete o código, dentro de la misma tx: un código inválido/agotado lanza y
+      // hace rollback de todo (booking + canje + incremento), no se crea la reserva.
+      const discount = await applyBookingDiscountInTx(tx, {
+        businessId,
+        customerId: customer.id,
+        serviceId: data.serviceId,
+        bookingId: booking.id,
+        totalPrice,
+        promotionCode: parsed.data.promotionCode,
+        skipPackage: data.skipPackage,
+        source: 'public_booking',
+      })
 
       if (!discount) return booking
 
@@ -729,23 +706,17 @@ async function _createBookingFromDashboard(data: {
     throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
-  const service = await prisma.service.findFirst({
-    where: { id: data.serviceId, businessId, isActive: true },
-  })
-  if (!service) {
-    throw new UserError('Servicio no disponible')
-  }
-
-  // Misma derivación que el flujo público: con una sola modalidad no hay nada
-  // que elegir y el formulario del dashboard ni siquiera pregunta.
-  const modality = resolveBookingModality(service.modalities, data.modality)
-  const serviceAddress = resolveServiceAddress(modality, data.serviceAddress)
-  const meetingUrl = modality === ServiceModality.online ? business.defaultMeetingUrl : null
-
-  const totalPrice = service.price
-  const depositRequired = service.depositAmount
-  const finalAmount = service.price
-  const endDateTime = addMinutes(data.startDateTime, service.durationMinutes)
+  // Misma derivación que el flujo público (el formulario del panel ni siquiera
+  // pregunta la modalidad cuando el servicio tiene una sola).
+  const { service, modality, serviceAddress, meetingUrl, totalPrice, depositRequired, finalAmount, endDateTime } =
+    await resolveBookingDraft({
+      businessId,
+      serviceId: data.serviceId,
+      startDateTime: data.startDateTime,
+      modality: data.modality,
+      serviceAddress: data.serviceAddress,
+      defaultMeetingUrl: business.defaultMeetingUrl,
+    })
 
   // Derive payment mode: new explicit mode takes precedence, fallback to legacy markDepositPaid
   const rawPaymentMode = data.paymentMode
@@ -837,30 +808,19 @@ async function _createBookingFromDashboard(data: {
       include: { service: true, customer: true },
     })
 
-    // Aplicar promo por código (server-authoritative) dentro de la misma tx.
-    // Si el código es inválido/agotado, applyPromotionInTx lanza y TODA la
-    // transacción (booking + canje + incremento + pagos) hace rollback.
-    // Precedencia: paquete prepago gana sobre código.
-    let discountRes: { discountAmount: number } | null = null
-    if (!data.skipPackage) {
-      discountRes = await applyPackageInTx(tx, {
-        businessId, customerId: customer.id, serviceId: data.serviceId,
-        bookingId: newBooking.id, totalPrice: service.price, source: 'dashboard_booking',
-        createdByUserId: user.id,
-      })
-    }
-    if (!discountRes) {
-      discountRes = await applyPromotionInTx(tx, {
-        businessId,
-        code: parsed.data.promotionCode,
-        serviceId: data.serviceId,
-        customerId: customer.id,
-        totalPrice: service.price,
-        bookingId: newBooking.id,
-        source: 'dashboard_booking',
-        createdByUserId: user.id,
-      })
-    }
+    // Paquete o código, dentro de la misma tx: un código inválido/agotado lanza y
+    // hace rollback de todo (booking + canje + incremento + pagos).
+    const discountRes = await applyBookingDiscountInTx(tx, {
+      businessId,
+      customerId: customer.id,
+      serviceId: data.serviceId,
+      bookingId: newBooking.id,
+      totalPrice,
+      promotionCode: parsed.data.promotionCode,
+      skipPackage: data.skipPackage,
+      source: 'dashboard_booking',
+      createdByUserId: user.id,
+    })
 
     // Montos efectivos: descontados cuando aplicó una promo, precio total si no.
     const discountAmount = discountRes?.discountAmount ?? 0
