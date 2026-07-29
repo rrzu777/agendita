@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
 import { getAvailableTimeSlots } from '@/server/actions/availability'
 import { LEAD_TIME_MINUTES } from '@/lib/availability/constants'
-import { formatBookingDate, formatBookingTime } from '@/lib/booking/format-booking-datetime'
+import { formatBookingDate, formatBookingTime } from '@/lib/bookings/format-booking-datetime'
 import { Clock3, Loader2 } from 'lucide-react'
 
 const LEAD_TIME_HINT = `Los horarios con menos de ${LEAD_TIME_MINUTES / 60} horas de anticipación no se muestran.`

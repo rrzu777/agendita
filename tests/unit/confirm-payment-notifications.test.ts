@@ -41,7 +41,7 @@ vi.mock('@/server/actions/revalidate-business', () => ({
   revalidateBusinessPublicPaths: vi.fn().mockResolvedValue(undefined),
 }))
 
-vi.mock('@/lib/booking-payments', () => ({
+vi.mock('@/lib/bookings/payments', () => ({
   assertBookingPayable: vi.fn(),
 }))
 

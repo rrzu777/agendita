@@ -47,7 +47,7 @@ vi.mock('@/server/actions/revalidate-business', () => ({
   revalidateBusinessPublicPaths: vi.fn().mockResolvedValue(undefined),
 }))
 
-vi.mock('@/lib/booking-payments', () => ({
+vi.mock('@/lib/bookings/payments', () => ({
   assertBookingPayable: vi.fn(),
   BookingNotPayableError: class extends Error {},
 }))
@@ -181,7 +181,7 @@ describe('createManualPayment en reservas completed con saldo (recobro post-char
   })
 
   it('pasa allowCompleted a assertBookingPayable y a applyApprovedPayment', async () => {
-    const { assertBookingPayable } = await import('@/lib/booking-payments')
+    const { assertBookingPayable } = await import('@/lib/bookings/payments')
     mockPrisma.booking.findFirst.mockResolvedValue(completedBooking)
     mockPrisma.booking.findUnique.mockResolvedValue(completedBooking)
 

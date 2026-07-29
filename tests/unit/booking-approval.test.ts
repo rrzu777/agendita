@@ -7,7 +7,7 @@ import {
   APPROVAL_WINDOW_HOURS,
   HELD_STATUSES,
 } from '@/lib/bookings/approval'
-import { recomputeBookingAmountsAfterDiscount } from '@/lib/booking/recompute'
+import { recomputeBookingAmountsAfterDiscount } from '@/lib/bookings/recompute'
 import { generateSlots } from '@/lib/availability/slots'
 
 const NOW = new Date('2028-03-01T12:00:00Z')

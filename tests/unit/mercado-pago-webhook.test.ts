@@ -42,7 +42,7 @@ vi.mock('@/server/services/finance', () => ({
   applyApprovedPayment: vi.fn(),
 }))
 
-vi.mock('@/lib/booking-payments', () => ({
+vi.mock('@/lib/bookings/payments', () => ({
   assertBookingPayable: vi.fn(),
 }))
 

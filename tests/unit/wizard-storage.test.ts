@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { serializeWizardState, restoreWizardState, wizardStorageKey } from '@/lib/booking/wizard-storage'
+import { serializeWizardState, restoreWizardState, wizardStorageKey } from '@/lib/bookings/wizard-storage'
 import type { BookingData } from '@/components/booking/wizard'
 
 const NOW = new Date('2026-07-11T12:00:00Z').getTime()

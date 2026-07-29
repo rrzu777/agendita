@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { BookingStatus } from '@prisma/client'
 import { isManualPaymentAllowed } from '@/components/dashboard/manual-payment-utils'
-import { assertBookingPayable } from '@/lib/booking-payments'
+import { assertBookingPayable } from '@/lib/bookings/payments'
 
 // Test anti-drift (hallazgo del review de FU-B4b-3): la UI (botón de pago
 // manual) y el server (assertBookingPayable con allowCompleted) deben derivar

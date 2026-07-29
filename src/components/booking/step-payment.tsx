@@ -15,7 +15,7 @@ import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { TransferDetails } from './transfer-details'
 import { formatMoney } from '@/lib/money'
 import { AlertCircle, Clock, Loader2 } from 'lucide-react'
-import { formatBookingDateTime } from '@/lib/booking/format-booking-datetime'
+import { formatBookingDateTime } from '@/lib/bookings/format-booking-datetime'
 
 function generateIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {

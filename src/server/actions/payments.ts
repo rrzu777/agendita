@@ -19,6 +19,8 @@ import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth
 import { action, UserError } from '@/lib/actions/result'
 import { sendBookingConfirmedNotification, sendNotificationSafely } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
+import { assertBookingPayable } from '@/lib/bookings/payments'
+import { applyApprovedPayment } from '@/server/services/finance'
 
 const initiatePaymentSchema = z.object({
   bookingId: z.string().min(1),
@@ -88,11 +90,9 @@ async function _initiatePayment(data: {
   }
 
   // No iniciar pago si la reserva no está en estado pagable o hold expirado.
-  // Import fuera del try: si el import fallara, su mensaje interno NO debe
-  // colarse como UserError. Catch acotado a la llamada de assertBookingPayable
-  // en sí, que solo lanza BookingNotPayableError con mensaje seguro
-  // (Spanish, user-facing).
-  const { assertBookingPayable } = await import('@/lib/booking-payments')
+  // Catch acotado a la llamada de assertBookingPayable en sí, que solo lanza
+  // BookingNotPayableError con mensaje seguro (Spanish, user-facing) — nada
+  // interno se cuela como UserError.
   try {
     assertBookingPayable(booking)
   } catch (e) {
@@ -270,9 +270,7 @@ async function _verifyAndConfirmPayment(paymentId: string, bookingId: string) {
   }
 
   // No confirmar si la reserva no es pagable (expired, cancelled, etc. o hold vencido).
-  // Import fuera del try, mismo motivo que en _initiatePayment: el catch queda
-  // acotado solo a la llamada de assertBookingPayable.
-  const { assertBookingPayable } = await import('@/lib/booking-payments')
+  // Catch acotado solo a assertBookingPayable, mismo motivo que en _initiatePayment.
   try {
     assertBookingPayable(payment.booking)
   } catch (e) {
@@ -304,7 +302,6 @@ async function _verifyAndConfirmPayment(paymentId: string, bookingId: string) {
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    const { applyApprovedPayment } = await import('@/server/services/finance')
     return applyApprovedPayment({
       tx,
       bookingId,
@@ -403,7 +400,6 @@ async function _createManualPayment(data: {
 
   // Catch acotado a assertBookingPayable: solo lanza BookingNotPayableError con
   // mensaje seguro (Spanish, user-facing) — no arrastra errores internos.
-  const { assertBookingPayable } = await import('@/lib/booking-payments')
   try {
     // allowCompleted: recobro post-chargeback y cobro de saldo tras atender
     // (spec FU-B4b-3 §6) — el guard de monto de abajo (remainingBalance) sigue
@@ -434,8 +430,6 @@ async function _createManualPayment(data: {
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    const { applyApprovedPayment } = await import('@/server/services/finance')
-
     const payment = await tx.payment.create({
       data: {
         businessId,

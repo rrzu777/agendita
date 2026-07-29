@@ -50,7 +50,7 @@ vi.mock('@/server/services/finance', async (importActual) => ({
   applyApprovedPackagePayment: vi.fn().mockResolvedValue({ outcome: 'activated' }),
 }))
 
-vi.mock('@/lib/booking-payments', () => ({
+vi.mock('@/lib/bookings/payments', () => ({
   assertBookingPayable: vi.fn(),
 }))
 

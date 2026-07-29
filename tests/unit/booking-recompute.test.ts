@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { addMinutes } from 'date-fns'
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
-import { recomputeBookingAmountsAfterDiscount } from '@/lib/booking/recompute'
+import { recomputeBookingAmountsAfterDiscount } from '@/lib/bookings/recompute'
 
 const NOW = new Date('2026-07-03T12:00:00Z')
 

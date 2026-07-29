@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import { BookingStatus } from '@prisma/client'
 import { addMinutes } from 'date-fns'
-import { formatBookingDateTime } from '@/lib/booking/format-booking-datetime'
+import { formatBookingDateTime } from '@/lib/bookings/format-booking-datetime'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
 import { assertSlotIsAvailable } from '@/lib/availability/validation'

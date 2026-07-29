@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatMoney } from '@/lib/money'
-import { formatBookingDateTime } from '@/lib/booking/format-booking-datetime'
+import { formatBookingDateTime } from '@/lib/bookings/format-booking-datetime'
 import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { isAllowedProofType, PROOF_MAX_BYTES } from '@/lib/storage/proof'
 import { createProofUploadUrl } from '@/server/actions/bank-transfer-public'

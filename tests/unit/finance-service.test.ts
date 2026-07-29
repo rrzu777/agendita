@@ -43,7 +43,7 @@ vi.mock('@/lib/db', () => ({
   prisma: mockPrisma,
 }))
 
-vi.mock('@/lib/booking-payments', () => ({
+vi.mock('@/lib/bookings/payments', () => ({
   assertBookingPayable: vi.fn(),
   BookingNotPayableError: class extends Error {},
 }))
