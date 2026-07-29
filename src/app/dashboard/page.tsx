@@ -10,6 +10,7 @@ import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
 import { buildSetupChecklist } from '@/lib/dashboard/setup-checklist'
 import { formatMoney } from '@/lib/money'
+import { bookingStatusLabel } from '@/lib/bookings/status-labels'
 import { SetupChecklist } from '@/components/dashboard/setup-checklist'
 import { PendingTransfersBanner } from '@/components/dashboard/pending-transfers-banner'
 import { PendingPackageTransfersBanner } from '@/components/dashboard/pending-package-transfers-banner'
@@ -193,7 +194,7 @@ export default async function DashboardPage() {
                           ? 'Por verificar'
                           : booking.status === 'pending_payment'
                             ? 'Pendiente'
-                            : booking.status}
+                            : bookingStatusLabel(booking.status)}
                     </span>
                     {hasPendingBalanceTransfer(booking) && (
                       <span className="self-start rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300 md:self-auto">

@@ -24,7 +24,9 @@ describe('canSelfManage', () => {
 })
 
 describe('SELF_MANAGEABLE_STATUSES', () => {
-  it('solo pending_payment y confirmed (únicos con transición válida a cancelled)', () => {
-    expect(SELF_MANAGEABLE_STATUSES).toEqual(['pending_payment', 'confirmed'])
+  it('los tres estados vivos: pending_payment, pending_confirmation y confirmed', () => {
+    // pending_confirmation entra porque una solicitud sin responder es lo más
+    // cancelable que hay: negarlo la deja ocupando el cupo hasta que venza.
+    expect(SELF_MANAGEABLE_STATUSES).toEqual(['pending_payment', 'pending_confirmation', 'confirmed'])
   })
 })

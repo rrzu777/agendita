@@ -20,7 +20,7 @@ describe('expireStaleHolds + declared transfers', () => {
       customerEmail: 'ana@x.com',
     })
     const spy = vi.fn().mockResolvedValue({ success: true })
-    await expireStaleHolds(new Date(), prisma, { sendExpiredEmail: spy })
+    await expireStaleHolds(new Date(), prisma, { sendExpiredEmail: spy, sendCancelledEmail: vi.fn().mockResolvedValue({ success: true }) })
     const payment = await prisma.payment.findUnique({ where: { id: paymentId } })
     const booking = await prisma.booking.findUnique({ where: { id: bookingId } })
     expect(booking!.status).toBe('expired')
@@ -34,7 +34,7 @@ describe('expireStaleHolds + declared transfers', () => {
       customerEmail: null,
     })
     const spy = vi.fn().mockResolvedValue({ success: true })
-    await expireStaleHolds(new Date(), prisma, { sendExpiredEmail: spy })
+    await expireStaleHolds(new Date(), prisma, { sendExpiredEmail: spy, sendCancelledEmail: vi.fn().mockResolvedValue({ success: true }) })
     const payment = await prisma.payment.findUnique({ where: { id: paymentId } })
     const booking = await prisma.booking.findUnique({ where: { id: bookingId } })
     expect(booking!.status).toBe('expired')

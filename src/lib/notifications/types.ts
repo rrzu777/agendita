@@ -28,6 +28,10 @@ export interface BookingEmailData {
   remainingBalance: number
   reviewLink?: string
   loyaltyCardLink?: string
+  /** La reserva quedó esperando que el negocio la acepte (confirmación manual).
+   *  Cambia el copy: sin esto el email decía "está pendiente de pago" sobre una
+   *  reserva que no tiene nada que pagar. */
+  awaitingApproval?: boolean
   /** Presente cuando la reserva eligió transferencia bancaria: el email de
    *  "reserva recibida" incluye los datos, el plazo y el link para declarar. */
   bankTransfer?: {
@@ -80,6 +84,10 @@ export interface CancellationEmailData {
   serviceName: string
   startDateTime: Date
   businessTimezone: string
+  /** Motivo visible para la clienta. Lo escribe el negocio al rechazar una
+   *  solicitud o al cancelar; el sweep de solicitudes sin responder manda el
+   *  suyo. Sin motivo el email queda igual que siempre. */
+  reason?: string | null
 }
 
 export interface RescheduledEmailData {
@@ -127,6 +135,9 @@ export interface NewBookingBusinessEmailData {
   depositRequired: number
   remainingBalance: number
   dashboardLink: string
+  /** Es una solicitud que espera respuesta, no una reserva ya agendada: el
+   *  negocio tiene que entrar a aceptarla o rechazarla. */
+  awaitingApproval?: boolean
   /** Nota extra sobre el método de pago (p.ej. "eligió transferencia"). */
   paymentNote?: string
 }

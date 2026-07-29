@@ -5,6 +5,7 @@ import { declaredTransferPaymentWhere, declaredPkgTransferPaymentWhere } from '@
 import {
   sendNotificationSafely,
   sendBankTransferExpiredToCustomer,
+  sendBookingCancelledNotification,
   getBusinessReplyToEmail,
 } from '@/lib/notifications'
 
@@ -13,10 +14,93 @@ export interface ExpireHoldsResult {
   businessIds: string[]
   declaredTransferExpired: number
   packagesExpired: number
+  /** Solicitudes que el negocio no respondió dentro de la ventana de aprobación. */
+  requestsExpired: number
 }
 
 interface ExpireHoldsDeps {
   sendExpiredEmail: typeof sendBankTransferExpiredToCustomer
+  sendCancelledEmail: typeof sendBookingCancelledNotification
+}
+
+/** Motivo que ve la clienta cuando el negocio dejó vencer su solicitud. */
+const UNANSWERED_REASON = 'El negocio no alcanzó a confirmar la reserva a tiempo'
+
+/**
+ * Expira las solicitudes (`pending_confirmation`) que nadie respondió antes de
+ * `holdExpiresAt`, libera sus canjes y avisa a la clienta.
+ *
+ * A diferencia del sweep de holds de pago, NO filtra por `paymentStatus`: una
+ * solicitud sobre un servicio gratis nace `fully_paid`, y filtrar por `unpaid`
+ * la dejaría colgada para siempre ocupando el cupo.
+ */
+async function expireUnansweredRequests(
+  now: Date,
+  db: Pick<PrismaClient, 'booking' | '$transaction'>,
+  deps: ExpireHoldsDeps,
+): Promise<{ count: number; businessIds: string[] }> {
+  const candidates = await db.booking.findMany({
+    where: {
+      status: BookingStatus.pending_confirmation,
+      holdExpiresAt: { lt: now },
+    },
+    select: { id: true, businessId: true },
+  })
+  if (candidates.length === 0) return { count: 0, businessIds: [] }
+
+  const ids = candidates.map((b) => b.id)
+  const count = await db.$transaction(async (tx) => {
+    const res = await tx.booking.updateMany({
+      // Repetir las condiciones dentro de la tx: una aprobación que entra entre
+      // el findMany y este update no debe expirarse (mismo patrón que el sweep
+      // de holds de pago).
+      where: { id: { in: ids }, status: BookingStatus.pending_confirmation, holdExpiresAt: { lt: now } },
+      data: { status: BookingStatus.expired },
+    })
+    // Filtrar por la relación: sólo liberamos el canje de las que REALMENTE
+    // transicionaron en este snapshot, no de las que ganaron la carrera.
+    const reds = await tx.promotionRedemption.findMany({
+      where: { status: 'applied', booking: { id: { in: ids }, status: BookingStatus.expired } },
+      select: { bookingId: true },
+    })
+    for (const r of reds) {
+      await releaseRedemptionForBooking(tx, r.bookingId, 'hold_expired')
+    }
+    return res.count
+  })
+
+  // Aviso best-effort a la clienta (post-tx). Sin esto se queda esperando una
+  // respuesta que ya no va a llegar, y el cupo se liberó sin que se entere.
+  const toNotify = await db.booking.findMany({
+    where: { id: { in: ids }, status: BookingStatus.expired },
+    include: { customer: true, service: true, business: true },
+  })
+  const replyToByBiz = new Map<string, string | null>()
+  await Promise.all(
+    [...new Set(toNotify.map((b) => b.businessId))].map(async (bizId) => {
+      replyToByBiz.set(bizId, await getBusinessReplyToEmail(bizId))
+    }),
+  )
+  await Promise.all(
+    toNotify
+      .filter((b) => b.customer?.email)
+      .map((b) =>
+        sendNotificationSafely('booking request expired', () =>
+          deps.sendCancelledEmail({
+            businessName: b.business.name,
+            businessReplyToEmail: replyToByBiz.get(b.businessId) ?? null,
+            customerName: b.customer!.name,
+            customerEmail: b.customer!.email!,
+            serviceName: b.service?.name ?? 'servicio',
+            startDateTime: b.startDateTime,
+            businessTimezone: b.business.timezone || 'America/Santiago',
+            reason: UNANSWERED_REASON,
+          }),
+        ),
+      ),
+  )
+
+  return { count, businessIds: [...new Set(candidates.map((b) => b.businessId))] }
 }
 
 /**
@@ -27,7 +111,10 @@ interface ExpireHoldsDeps {
 export async function expireStaleHolds(
   now = new Date(),
   db: Pick<PrismaClient, 'booking' | 'payment' | '$transaction' | 'packagePurchase'> = prisma,
-  deps: ExpireHoldsDeps = { sendExpiredEmail: sendBankTransferExpiredToCustomer }
+  deps: ExpireHoldsDeps = {
+    sendExpiredEmail: sendBankTransferExpiredToCustomer,
+    sendCancelledEmail: sendBookingCancelledNotification,
+  }
 ): Promise<ExpireHoldsResult> {
   // ── Sweep de compras de paquete pending con hold vencido (B4b-3) ──
   // Corre SIEMPRE, antes del early-return de reservas (el caso común es 0 reservas
@@ -73,6 +160,10 @@ export async function expireStaleHolds(
     packageBusinessIds.push(...new Set(expiredPurchases.map((p) => p.businessId)))
   }
 
+  // ── Sweep de solicitudes sin responder (confirmación manual) ──
+  // Igual que el de paquetes: corre SIEMPRE, antes del early-return de reservas.
+  const requests = await expireUnansweredRequests(now, db, deps)
+
   const expiredBookings = await db.booking.findMany({
     where: {
       status: BookingStatus.pending_payment,
@@ -83,7 +174,13 @@ export async function expireStaleHolds(
   })
 
   if (expiredBookings.length === 0) {
-    return { expired: 0, businessIds: [...packageBusinessIds], declaredTransferExpired: 0, packagesExpired }
+    return {
+      expired: 0,
+      businessIds: [...new Set([...packageBusinessIds, ...requests.businessIds])],
+      declaredTransferExpired: 0,
+      packagesExpired,
+      requestsExpired: requests.count,
+    }
   }
 
   const expiredIds = expiredBookings.map((b) => b.id)
@@ -180,7 +277,11 @@ export async function expireStaleHolds(
   // usamos el count. Si el count difiere del length, significa que hubo races.
   // En ese caso revalidamos todos los candidatos (conservador pero correcto).
   const businessIds = [
-    ...new Set([...expiredBookings.map((b) => b.businessId), ...packageBusinessIds]),
+    ...new Set([
+      ...expiredBookings.map((b) => b.businessId),
+      ...packageBusinessIds,
+      ...requests.businessIds,
+    ]),
   ]
 
   return {
@@ -188,5 +289,6 @@ export async function expireStaleHolds(
     businessIds,
     declaredTransferExpired: declaredBookingIds.length,
     packagesExpired,
+    requestsExpired: requests.count,
   }
 }

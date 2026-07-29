@@ -56,6 +56,32 @@ describe('assertSlotFreeOfConflicts', () => {
     await prisma.timeBlock.delete({ where: { id: block.id } })
   })
 
+  // El SQL crudo de assertNoBookingOverlap repite los literales de HELD_STATUSES
+  // (no se pueden parametrizar enums en $queryRaw). Estos dos casos son la única
+  // red que tiene esa duplicación: si alguien agrega un estado y se olvida del
+  // SQL, acá se cae.
+  it('una solicitud por confirmar con hold vivo ocupa el cupo', async () => {
+    const s = slot(4, 15)
+    await seedConfirmedBooking({
+      businessId: BT_VERIFY_BIZ, serviceId: BT_VERIFY_SVC, ...s,
+      status: 'pending_confirmation', holdExpiresAt: addMinutes(new Date(), 60),
+    })
+    await expect(
+      assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, ...s }),
+    ).rejects.toThrow('Ese horario ya no está disponible')
+  })
+
+  it('una solicitud con el hold vencido libera el cupo aunque el cron no haya corrido', async () => {
+    const s = slot(5, 15)
+    await seedConfirmedBooking({
+      businessId: BT_VERIFY_BIZ, serviceId: BT_VERIFY_SVC, ...s,
+      status: 'pending_confirmation', holdExpiresAt: addMinutes(new Date(), -60),
+    })
+    await expect(
+      assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, ...s }),
+    ).resolves.toBeUndefined()
+  })
+
   it('tira si una reserva activa solapa; excludeBookingId la exime', async () => {
     const s = slot(3, 15)
     const seeded = await seedConfirmedBooking({ businessId: BT_VERIFY_BIZ, serviceId: BT_VERIFY_SVC, ...s })

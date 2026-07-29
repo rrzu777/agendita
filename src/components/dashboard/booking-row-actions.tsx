@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -11,41 +11,12 @@ import { ManualPaymentDialog } from './manual-payment-dialog'
 import { isManualPaymentAllowed, type ManualPaymentBooking } from './manual-payment-utils'
 import { ReviveBookingButton } from './revive-booking-dialog'
 import { getReviveReopenState } from './revive-utils'
-import { updateBookingStatus } from '@/server/actions/bookings'
+import { BookingStatusButton } from './booking-status-button'
 
 type RowBooking = ManualPaymentBooking & {
   startDateTime: Date | string
   paymentMethod: string | null
   customer: { name: string; email?: string | null } | null
-}
-
-function CompleteBookingButton({ bookingId }: { bookingId: string }) {
-  const [pending, startTransition] = useTransition()
-  const [error, setError] = useState<string | null>(null)
-  return (
-    <div className="flex flex-col items-end">
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={pending}
-        onClick={() => {
-          setError(null)
-          startTransition(async () => {
-            try {
-              const res = await updateBookingStatus(bookingId, 'completed')
-              if (!res.ok) setError(res.error)
-            } catch {
-              setError('Error al completar')
-            }
-          })
-        }}
-      >
-        {pending ? 'Completando…' : 'Completar'}
-      </Button>
-      {error && <span className="text-xs text-destructive">{error}</span>}
-    </div>
-  )
 }
 
 export function BookingRowActions({
@@ -65,7 +36,9 @@ export function BookingRowActions({
   const canPay = isManualPaymentAllowed(booking)
   const isConfirmed = booking.status === 'confirmed'
   const isPending = booking.status === 'pending_payment'
-  const isActionable = isConfirmed || isPending
+  // Solicitud esperando el visto bueno del negocio (confirmación manual).
+  const isRequest = booking.status === 'pending_confirmation'
+  const isActionable = isConfirmed || isPending || isRequest
   const isExpired = booking.status === 'expired'
   // Recobro (spec FU-B4b-3 §6): una completed con saldo (post-chargeback o saldo
   // tras atender) debe poder cobrarse desde la tabla — solo "Cobrar", sin
@@ -94,8 +67,25 @@ export function BookingRowActions({
     return contact ? <div className="flex justify-end">{contact}</div> : null
   }
 
-  const primary = isConfirmed ? (
-    <CompleteBookingButton bookingId={booking.id} />
+  const primary = isRequest ? (
+    // Sólida (no outline): aceptar es la acción que el negocio viene a hacer a
+    // esta fila, y la solicitud ocupa el cupo hasta que responda.
+    <BookingStatusButton
+      bookingId={booking.id}
+      status="confirmed"
+      label="Aceptar"
+      pendingLabel="Aceptando…"
+      errorLabel="Error al aceptar"
+      variant="default"
+    />
+  ) : isConfirmed ? (
+    <BookingStatusButton
+      bookingId={booking.id}
+      status="completed"
+      label="Completar"
+      pendingLabel="Completando…"
+      errorLabel="Error al completar"
+    />
   ) : (
     <Button type="button" size="sm" variant="outline" onClick={() => setPayOpen(true)}>
       Cobrar
@@ -122,13 +112,14 @@ export function BookingRowActions({
             variant="destructive"
             onSelect={(e) => { e.preventDefault(); setCancelOpen(true) }}
           >
-            Cancelar
+            {isRequest ? 'Rechazar' : 'Cancelar'}
           </DropdownMenuItem>
         )}
       </TableActions>
 
       <CancelBookingButton
         bookingId={booking.id}
+        mode={isRequest ? 'reject' : 'cancel'}
         hideTrigger
         open={cancelOpen}
         onOpenChange={setCancelOpen}

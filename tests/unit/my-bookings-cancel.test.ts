@@ -141,7 +141,7 @@ describe('cancelMyBooking', () => {
     expect(mockFindFirstBooking).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          status: { in: ['pending_payment', 'confirmed'] },
+          status: { in: ['pending_payment', 'pending_confirmation', 'confirmed'] },
         }),
       }),
     )

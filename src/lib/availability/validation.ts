@@ -96,14 +96,19 @@ async function assertNoBookingOverlap(input: AssertConflictInput): Promise<void>
   // A pending_payment booking only blocks the slot while its hold is still live.
   // Once holdExpiresAt is in the past the slot is free again, even if the cron
   // that flips it to `expired` hasn't run yet — otherwise stale holds freeze
-  // slots until the next cron tick.
+  // slots until the next cron tick. `pending_confirmation` (solicitud esperando
+  // el visto bueno del negocio) sigue exactamente la misma regla.
+  //
+  // Los literales duplican HELD_STATUSES de lib/bookings/approval.ts a propósito:
+  // parametrizar un IN de enums en $queryRaw los manda como `text` y Postgres
+  // rompe. Si agregás un estado, tocá también ese módulo y sus dos consumidores.
   const overlappingBookings = input.excludeBookingId
     ? await tx.$queryRaw`
       SELECT "id" FROM "Booking"
       WHERE "businessId" = ${businessId}
         AND (
           "status" IN ('confirmed', 'completed')
-          OR ("status" = 'pending_payment' AND ("holdExpiresAt" IS NULL OR "holdExpiresAt" > ${now}))
+          OR ("status" IN ('pending_payment', 'pending_confirmation') AND ("holdExpiresAt" IS NULL OR "holdExpiresAt" > ${now}))
         )
         AND "startDateTime" < ${endDateTime}
         AND "endDateTime" > ${startDateTime}
@@ -115,7 +120,7 @@ async function assertNoBookingOverlap(input: AssertConflictInput): Promise<void>
       WHERE "businessId" = ${businessId}
         AND (
           "status" IN ('confirmed', 'completed')
-          OR ("status" = 'pending_payment' AND ("holdExpiresAt" IS NULL OR "holdExpiresAt" > ${now}))
+          OR ("status" IN ('pending_payment', 'pending_confirmation') AND ("holdExpiresAt" IS NULL OR "holdExpiresAt" > ${now}))
         )
         AND "startDateTime" < ${endDateTime}
         AND "endDateTime" > ${startDateTime}

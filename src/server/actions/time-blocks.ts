@@ -15,6 +15,7 @@ import { getLocalDateStr } from '@/lib/availability/timezone'
 import { computeSeriesUntil, expandSeries, type SeriesEndMode } from '@/lib/calendar/expand-series'
 import { planSeriesUpdate } from '@/lib/calendar/series-update-plan'
 import { timeToMinutes } from '@/lib/availability/time-range'
+import { HELD_STATUSES, OCCUPYING_STATUSES } from '@/lib/bookings/approval'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 
 const MAX_BLOCK_DURATION_MS = 32 * 24 * 60 * 60 * 1000 // 32 dias
@@ -22,9 +23,9 @@ const MAX_BLOCK_DURATION_MS = 32 * 24 * 60 * 60 * 1000 // 32 dias
 
 /**
  * Filtro de reservas activas que solapan [start, end]. Un hold
- * `pending_payment` con `holdExpiresAt` ya vencido no bloquea (misma semántica
- * que generateSlots/assertSlotIsAvailable), aunque el cron aún no lo haya
- * marcado como `expired`.
+ * `pending_payment`/`pending_confirmation` con `holdExpiresAt` ya vencido no
+ * bloquea (misma semántica que generateSlots/assertSlotIsAvailable), aunque el
+ * cron aún no lo haya marcado como `expired`.
  */
 function overlappingActiveBookingsWhere(businessId: string, start: Date, end: Date, now: Date): Prisma.BookingWhereInput {
   return {
@@ -32,9 +33,9 @@ function overlappingActiveBookingsWhere(businessId: string, start: Date, end: Da
     startDateTime: { lt: end },
     endDateTime: { gt: start },
     OR: [
-      { status: { in: ['confirmed', 'completed'] } },
+      { status: { in: [...OCCUPYING_STATUSES] } },
       {
-        status: 'pending_payment',
+        status: { in: [...HELD_STATUSES] },
         OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: now } }],
       },
     ],

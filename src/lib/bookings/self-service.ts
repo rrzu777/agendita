@@ -9,8 +9,11 @@ export function canSelfManage(startDateTime: Date, cutoffHours: number, now: Dat
   return msUntilStart > cutoffHours * 3_600_000
 }
 
-/** Únicos status con transición válida a cancelled desde self-service. */
-export const SELF_MANAGEABLE_STATUSES = ['pending_payment', 'confirmed'] as const
+/** Únicos status con transición válida a cancelled desde self-service.
+ *  `pending_confirmation` entra: una solicitud que el negocio todavía no respondió
+ *  es lo MÁS cancelable que hay — negarlo dejaría a la clienta esperando una cita
+ *  que ya no quiere y ocupando el cupo hasta que venza. */
+export const SELF_MANAGEABLE_STATUSES = ['pending_payment', 'pending_confirmation', 'confirmed'] as const
 
 /** Mensaje único de la política de ventana (actions, page y componente lo comparten
  *  para que el copy no driftee entre superficies). */

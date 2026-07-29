@@ -217,6 +217,27 @@ describe('templates: bookingCancelledCustomerHtml', () => {
     expect(html).toContain('Manicure semipermanente')
     expect(html).toContain('cancelada')
   })
+
+  it('sin motivo no muestra la fila de motivo', () => {
+    expect(bookingCancelledCustomerHtml(sampleCancellationData)).not.toContain('Motivo')
+  })
+
+  it('muestra el motivo cuando el negocio lo escribió (rechazo de solicitud)', () => {
+    const html = bookingCancelledCustomerHtml({
+      ...sampleCancellationData,
+      reason: 'Ese día tengo la agenda llena',
+    })
+    expect(html).toContain('Motivo')
+    expect(html).toContain('Ese día tengo la agenda llena')
+  })
+
+  it('escapa el motivo', () => {
+    const html = bookingCancelledCustomerHtml({
+      ...sampleCancellationData,
+      reason: '<script>alert(1)</script>',
+    })
+    expect(html).not.toContain('<script>')
+  })
 })
 
 describe('templates: bookingCancelledCustomerText', () => {
@@ -224,6 +245,14 @@ describe('templates: bookingCancelledCustomerText', () => {
     const text = bookingCancelledCustomerText(sampleCancellationData)
     expect(text).toContain('Maria')
     expect(text).toContain('cancelada')
+  })
+
+  it('incluye el motivo en la versión de texto', () => {
+    const text = bookingCancelledCustomerText({
+      ...sampleCancellationData,
+      reason: 'Ese día tengo la agenda llena',
+    })
+    expect(text).toContain('Motivo: Ese día tengo la agenda llena')
   })
 })
 

@@ -1,4 +1,5 @@
 import { addMinutes } from 'date-fns'
+import type { BookingStatus } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { btDeclaredId } from '@/lib/bank-transfer/declared'
 
@@ -212,17 +213,25 @@ export async function seedConfirmedBooking({
   serviceId,
   startDateTime,
   endDateTime,
+  status = 'confirmed',
+  holdExpiresAt = null,
+  customerEmail = null,
 }: {
   businessId: string
   serviceId: string
   startDateTime: Date
   endDateTime: Date
+  /** Para probar los estados que ocupan cupo sólo mientras vive el hold. */
+  status?: BookingStatus
+  holdExpiresAt?: Date | null
+  customerEmail?: string | null
 }): Promise<{ bookingId: string; customerId: string }> {
   const customer = await prisma.customer.create({
     data: {
       businessId,
       name: 'Otra Cliente',
       phone: nextCustomerPhone('+5691199'),
+      email: customerEmail,
     },
   })
   const booking = await prisma.booking.create({
@@ -232,7 +241,8 @@ export async function seedConfirmedBooking({
       customerId: customer.id,
       startDateTime,
       endDateTime,
-      status: 'confirmed',
+      status,
+      holdExpiresAt,
       totalPrice: 20000,
       depositRequired: 10000,
       depositPaid: 10000,

@@ -5,6 +5,7 @@ import type { BookingStatus } from '@prisma/client'
  *  new-booking-form). Sin imports server-only: la consumen componentes. */
 export const bookingStatusLabels: Record<BookingStatus, string> = {
   pending_payment: 'Pendiente de pago',
+  pending_confirmation: 'Por confirmar',
   confirmed: 'Confirmada',
   completed: 'Completada',
   cancelled: 'Cancelada',

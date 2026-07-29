@@ -66,6 +66,10 @@ model Business {
   selfServiceCutoffHours Int                @default(24) // ventana para cancelar/reprogramar self-service; 0 = sin límite (se usa en D1-b)
   bookingNumberSeq       Int                @default(1000)
   requireTransferProof   Boolean            @default(false)
+  // Confirmación manual: las reservas que hoy se auto-confirmarían quedan
+  // esperando el visto bueno del negocio. Sólo afecta a las que no piden abono;
+  // cuando hay abono, el pago ya es el filtro (ver lib/bookings/approval.ts).
+  requireBookingApproval Boolean            @default(false)
   isActive               Boolean            @default(true)
   planId                 String?
   subscriptionStatus     SubscriptionStatus @default(trialing)
@@ -444,6 +448,9 @@ model Booking {
 
 enum BookingStatus {
   pending_payment
+  // Solicitada: espera que el negocio la acepte o la rechace. Ocupa el cupo
+  // mientras el hold siga vivo, igual que pending_payment.
+  pending_confirmation
   confirmed
   completed
   cancelled

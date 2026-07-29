@@ -58,6 +58,7 @@ vi.mock('@/lib/notifications', () => ({
 const { updateBookingStatus } = await import('@/server/actions/bookings')
 const { creditVisitPoints } = await import('@/lib/loyalty/credit')
 const { loadAutomaticRules } = await import('@/lib/loyalty/automatic')
+const { sendBookingConfirmedNotification } = await import('@/lib/notifications')
 
 function makeBooking(paymentStatus: string) {
   return {
@@ -148,5 +149,51 @@ describe('updateBookingStatus — guard de carrera (status esperado en el update
     expect(creditVisitPoints).not.toHaveBeenCalled()
     expect(loadAutomaticRules).not.toHaveBeenCalled()
     expect(mockPrisma.customer.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('updateBookingStatus — aceptar una solicitud (confirmación manual)', () => {
+  function makeRequest() {
+    return {
+      ...makeBooking('unpaid'),
+      status: BookingStatus.pending_confirmation,
+      holdExpiresAt: new Date('2026-07-19T15:00:00Z'),
+    }
+  }
+
+  it('aceptar limpia el hold y le manda el email de confirmación a la clienta', async () => {
+    const booking = makeRequest()
+    mockPrisma.booking.findFirst.mockResolvedValue(booking)
+    mockPrisma.booking.findUnique.mockResolvedValue({ ...booking, status: BookingStatus.confirmed })
+
+    await updateBookingStatus('bk-1', BookingStatus.confirmed)
+
+    expect(mockPrisma.booking.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      // El where filtra por el status leído: si otra request ya la movió, count 0.
+      where: expect.objectContaining({ status: BookingStatus.pending_confirmation }),
+      data: expect.objectContaining({ status: BookingStatus.confirmed, holdExpiresAt: null }),
+    }))
+    expect(sendBookingConfirmedNotification).toHaveBeenCalledWith('bk-1', 'biz-1')
+  })
+
+  it('una solicitud no se puede completar directo: hay que aceptarla primero', async () => {
+    mockPrisma.booking.findFirst.mockResolvedValue(makeRequest())
+
+    await expect(updateBookingStatus('bk-1', BookingStatus.completed))
+      .resolves.toEqual({ ok: false, error: expect.stringContaining('No se puede cambiar el estado') })
+    expect(mockPrisma.booking.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('confirmar una pending_payment (flujo con abono) NO toca el hold', async () => {
+    // El hold de pago lo limpia el camino de pagos; sólo la aceptación lo anula.
+    const booking = { ...makeBooking('unpaid'), status: BookingStatus.pending_payment }
+    mockPrisma.booking.findFirst.mockResolvedValue(booking)
+    mockPrisma.booking.findUnique.mockResolvedValue({ ...booking, status: BookingStatus.confirmed })
+
+    await updateBookingStatus('bk-1', BookingStatus.confirmed)
+
+    const data = mockPrisma.booking.updateMany.mock.calls[0][0].data
+    expect(data).not.toHaveProperty('holdExpiresAt')
+    expect(sendBookingConfirmedNotification).not.toHaveBeenCalled()
   })
 })

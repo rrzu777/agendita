@@ -179,6 +179,24 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           )}
         </div>
       )}
+      {booking.status === 'pending_confirmation' && (
+        <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
+          <form action={async () => {
+            'use server'
+            // Misma semántica silenciosa que "Completar" de arriba: la card móvil
+            // no tiene dónde poner el error. El camino con feedback es la tabla.
+            const res = await updateBookingStatus(booking.id, 'confirmed')
+            if (!res.ok) return
+          }} className="flex-1">
+            <Button type="submit" className="w-full h-10 text-sm font-semibold">
+              Aceptar
+            </Button>
+          </form>
+          <div className="flex-1">
+            <CancelBookingButton bookingId={booking.id} mode="reject" label="Rechazar" size="default" />
+          </div>
+        </div>
+      )}
       {booking.status === 'pending_payment' && (
         <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
           {canRegisterPayment && (
@@ -248,6 +266,9 @@ export default async function BookingsPage() {
 
   const confirmedCount = bookings.filter(b => b.status === 'confirmed').length
   const pendingCount = bookings.filter(b => b.status === 'pending_payment').length
+  // Solicitudes esperando respuesta. La tarjeta sólo aparece si hay alguna: un
+  // negocio sin confirmación manual nunca ve un contador que siempre marca 0.
+  const requestCount = bookings.filter(b => b.status === 'pending_confirmation').length
 
   // Race orphans (spec §5): una reserva cancelada/expirada puede haber quedado
   // con un Payment pending sin barrer; no la mostramos como "por verificar".
@@ -284,11 +305,17 @@ export default async function BookingsPage() {
             Nueva reserva
           </Button>
         </Link>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className={`grid gap-4 ${requestCount > 0 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}`}>
           <div className="studio-card p-4">
             <p className="studio-eyebrow">Total</p>
             <p className="mt-1 text-3xl font-semibold text-primary">{bookings.length}</p>
           </div>
+          {requestCount > 0 && (
+            <div className="studio-card p-4">
+              <p className="studio-eyebrow">Por confirmar</p>
+              <p className="mt-1 text-3xl font-semibold text-amber-700 dark:text-amber-300">{requestCount}</p>
+            </div>
+          )}
           <div className="studio-card p-4">
             <p className="studio-eyebrow">Confirmadas</p>
             <p className="mt-1 text-3xl font-semibold text-primary">{confirmedCount}</p>

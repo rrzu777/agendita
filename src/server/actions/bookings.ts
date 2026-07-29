@@ -22,6 +22,7 @@ import { isValidBirthDateString, birthDateToUtcDate } from '@/lib/dates'
 import { addMinutes } from 'date-fns'
 import { applyPromotionInTx } from '@/lib/promotions/apply'
 import { recomputeBookingAmountsAfterDiscount } from '@/lib/booking/recompute'
+import { initialPublicBookingStatus, approvalHoldExpiresAt } from '@/lib/bookings/approval'
 import { applyPackageInTx } from '@/lib/packages/consume'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
@@ -68,6 +69,9 @@ const confirmPaymentSchema = z.object({
 
 const VALID_STATUS_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
   pending_payment: ['confirmed', 'cancelled', 'expired'],
+  // Aceptar una solicitud = confirmarla. Rechazarla = cancelarla (con motivo,
+  // vía cancelBooking). 'expired' lo pone el cron cuando nadie responde a tiempo.
+  pending_confirmation: ['confirmed', 'cancelled', 'expired'],
   confirmed: ['completed', 'cancelled', 'no_show'],
   completed: [],
   cancelled: [],
@@ -101,6 +105,7 @@ async function fireBookingNotifications(
     startDateTime: Date
     paymentMethod: string | null
     holdExpiresAt: Date | null
+    status: BookingStatus
   } & { id: string; businessId: string; bookingNumber: number | null },
   serviceName: string,
   // La cuenta ya la leyó createBooking antes de la tx; se pasa para no
@@ -111,6 +116,10 @@ async function fireBookingNotifications(
   const businessTimezone = business.timezone || 'America/Santiago'
   const businessCurrency = business.currency || 'CLP'
   const vocabulary = getVocabulary(business.category)
+  // Se deriva del status ya persistido, no del flag del negocio: si un descuento
+  // movió la reserva a otro estado, el email tiene que contar lo que pasó de
+  // verdad, no lo que la config decía al empezar.
+  const awaitingApproval = booking.status === BookingStatus.pending_confirmation
 
   // Reserva con transferencia: el email de "reserva recibida" ES la fuente
   // durable de los datos bancarios (la pestaña del wizard es efímera).
@@ -155,6 +164,7 @@ async function fireBookingNotifications(
           depositPaid: booking.depositPaid,
           remainingBalance: booking.remainingBalance,
           bankTransfer,
+          awaitingApproval,
         }),
       ),
     )
@@ -176,6 +186,7 @@ async function fireBookingNotifications(
         depositRequired: booking.depositRequired,
         remainingBalance: booking.remainingBalance,
         dashboardLink,
+        awaitingApproval,
         paymentNote: booking.paymentMethod === BANK_TRANSFER_METHOD
           ? `${vocabulary.TheClient} eligió pagar el abono por transferencia. Te va a llegar otro aviso cuando declare que transfirió.`
           : undefined,
@@ -292,6 +303,7 @@ async function _createBooking(data: {
       slug: true,
       subdomain: true,
       category: true,
+      requireBookingApproval: true,
       subscriptionStatus: true,
     },
   })
@@ -382,12 +394,17 @@ async function _createBooking(data: {
         })
       }
 
-      const noDepositRequired = depositRequired <= 0
       const isFreeService = finalAmount <= 0
 
-      const status = noDepositRequired ? BookingStatus.confirmed : BookingStatus.pending_payment
+      const status = initialPublicBookingStatus({
+        depositRequired,
+        requireBookingApproval: business.requireBookingApproval,
+      })
       const holdMinutes = bankTransferAccount && depositRequired > 0 ? bankTransferAccount.holdHours * 60 : 15
-      const holdExpiresAt = status === BookingStatus.pending_payment ? addMinutes(new Date(), holdMinutes) : null
+      const holdExpiresAt =
+        status === BookingStatus.pending_payment ? addMinutes(new Date(), holdMinutes)
+        : status === BookingStatus.pending_confirmation ? approvalHoldExpiresAt(data.startDateTime)
+        : null
       const bookingPaymentStatus = isFreeService ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid
 
       const bookingNumber = await assignBookingNumber(tx, businessId)
@@ -450,6 +467,10 @@ async function _createBooking(data: {
           // Sin esto, una reserva-transferencia con promo perdería su ventana
           // de 24h: recompute re-derivaba el hold a +15min incondicionalmente.
           holdMinutes,
+          approval: {
+            requireBookingApproval: business.requireBookingApproval,
+            startDateTime: data.startDateTime,
+          },
         }),
         include: { service: true, customer: true },
       })
@@ -537,6 +558,13 @@ async function _updateBookingStatus(id: string, status: BookingStatus) {
     ? { reviewToken: crypto.randomUUID(), reviewTokenCreatedAt: new Date() }
     : {}
 
+  // Aceptar una solicitud: el hold era la fecha límite para responder y ya no
+  // aplica. Sin limpiarlo, el sweep de solicitudes vencidas no la toca (filtra
+  // por status) pero la reserva queda con una fecha muerta que confunde al leerla.
+  const approving =
+    existing.status === BookingStatus.pending_confirmation && status === BookingStatus.confirmed
+  const approvalData = approving ? { holdExpiresAt: null } : {}
+
   // Config de fidelización (puede ser null si el negocio no la activó nunca).
   const loyaltyConfig =
     status === BookingStatus.completed
@@ -559,7 +587,7 @@ async function _updateBookingStatus(id: string, status: BookingStatus) {
     // el inválido cancelled→completed. Con el guard, count===0 == carrera perdida.
     const res = await tx.booking.updateMany({
       where: { id, businessId, status: existing.status },
-      data: { status, ...reviewTokenData },
+      data: { status, ...reviewTokenData, ...approvalData },
     })
     if (
       res.count > 0 &&
@@ -656,6 +684,15 @@ async function _updateBookingStatus(id: string, status: BookingStatus) {
         logger.error('loyalty.referral_emit_failed', `referral emit falló booking=${id}: ${String(e)}`)
       }
     }
+  }
+
+  // Solicitud aceptada: recién ahora la clienta tiene una reserva de verdad, así
+  // que le llega el mismo email de confirmación que en el flujo con abono (lee la
+  // reserva ya commiteada y exige status confirmed, por eso va acá y no en la tx).
+  if (approving) {
+    await sendNotificationSafely('booking approved', () =>
+      sendBookingConfirmedNotification(id, businessId),
+    )
   }
 
   if (status === BookingStatus.cancelled && existing.customer.email) {
@@ -1102,6 +1139,10 @@ async function _cancelBooking(bookingId: string, reason?: string) {
         serviceName: booking.service!.name,
         startDateTime: booking.startDateTime,
         businessTimezone: business.timezone || 'America/Santiago',
+        // Rechazar una solicitud es cancelarla con motivo: sin esto la clienta
+        // recibía "tu reserva fue cancelada" a secas y el motivo se quedaba en
+        // las notas internas de la dueña.
+        reason,
       }),
     )
   }

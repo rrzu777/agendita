@@ -158,11 +158,11 @@ describe('createTimeBlock', () => {
     expect(findManyCall.where.businessId).toBe('biz-1')
     expect(findManyCall.where.OR).toEqual([
       { status: { in: ['confirmed', 'completed'] } },
-      expect.objectContaining({ status: 'pending_payment' }),
+      expect.objectContaining({ status: { in: ['pending_payment', 'pending_confirmation'] } }),
     ])
   })
 
-  it('only checks active bookings for overlap, ignoring expired pending_payment holds', async () => {
+  it('only checks active bookings for overlap, ignoring expired holds', async () => {
     mockPrisma.booking.findMany.mockResolvedValue([])
 
     await createTimeBlock({ ...baseInput, confirmOverlap: false })
@@ -176,9 +176,10 @@ describe('createTimeBlock', () => {
     expect(statuses).not.toContain('expired')
     expect(statuses).not.toContain('no_show')
 
-    // Un hold pending_payment ya expirado no cuenta como conflicto
+    // Un hold ya expirado (de pago o de confirmación) no cuenta como conflicto
     const pendingClause = findManyCall.where.OR.find(
-      (clause: { status: string | { in: string[] } }) => clause.status === 'pending_payment',
+      (clause: { status: string | { in: string[] } }) =>
+        typeof clause.status !== 'string' && clause.status.in.includes('pending_payment'),
     )
     expect(pendingClause.OR).toEqual([
       { holdExpiresAt: null },
@@ -288,7 +289,7 @@ describe('createTimeBlockSeries', () => {
     expect(mockPrisma.timeBlockSeries.create).toHaveBeenCalledTimes(1)
   })
 
-  it('overlap query excludes expired pending_payment holds', async () => {
+  it('overlap query excludes expired holds (pago y confirmación)', async () => {
     await createTimeBlockSeries(seriesInput)
 
     const findManyCall = mockPrisma.booking.findMany.mock.calls[0][0]
@@ -296,7 +297,7 @@ describe('createTimeBlockSeries', () => {
     expect(findManyCall.where.OR).toEqual([
       { status: { in: ['confirmed', 'completed'] } },
       {
-        status: 'pending_payment',
+        status: { in: ['pending_payment', 'pending_confirmation'] },
         OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: expect.any(Date) } }],
       },
     ])

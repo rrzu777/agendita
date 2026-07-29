@@ -66,6 +66,7 @@ async function _updateBusinessSettings(data: UpdateBusinessInput) {
     timezone: validated.timezone,
     slotStepMinutes: slotStepToMinutes(validated.slotStepMinutes),
     selfServiceCutoffHours: validated.selfServiceCutoffHours,
+    requireBookingApproval: validated.requireBookingApproval,
     subdomain: validated.subdomain,
     cancellationPolicy: trimToNull(validated.cancellationPolicy),
     bookingPolicy: trimToNull(validated.bookingPolicy),
