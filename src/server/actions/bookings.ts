@@ -29,9 +29,8 @@ import { applyPackageInTx } from '@/lib/packages/consume'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
 import { creditVisitPoints } from '@/lib/loyalty/credit'
-import { emitAutomaticReward, loadAutomaticRules } from '@/lib/loyalty/automatic'
-import { rewardReferralOnCompletion, captureReferral, notifyReferralReward } from '@/lib/loyalty/referral'
-import { firstVisitKey, conditionKind } from '@/lib/loyalty/automatic-match'
+import { emitAutomaticRewardsOnCompletion } from '@/lib/loyalty/on-booking-completed'
+import { captureReferral } from '@/lib/loyalty/referral'
 import { type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD, anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
@@ -538,53 +537,13 @@ async function _updateBookingStatus(id: string, status: BookingStatus) {
 
   // R-EMIT: emisiones automáticas FUERA de la tx del evento (cada una en su propia tx, post-commit).
   if (status === BookingStatus.completed && existing.customerId && loyaltyConfig?.isActive && !paymentReverted) {
-    const customerId = existing.customerId
-    const emitCfg = {
-      grantExpiryDays: loyaltyConfig.grantExpiryDays,
-      forfeitGrantOnNoShow: loyaltyConfig.forfeitGrantOnNoShow,
-    }
-    const now = new Date()
-    // Cargá las reglas automáticas UNA vez (fuera de tx); cada emisión abre su propia tx
-    // post-commit solo si hay regla aplicable (evita transacciones vacías en el caso común).
-    const autoRules = await loadAutomaticRules(prisma, businessId)
-    const firstVisitRule = autoRules.find((r) => conditionKind(r.conditions) === 'first_visit')
-    const referralRule = autoRules.find((r) => conditionKind(r.conditions) === 'referral')
-
-    if (isFirstVisit && firstVisitRule) {
-      try {
-        await prisma.$transaction((tx) =>
-          emitAutomaticReward(tx, {
-            rule: firstVisitRule,
-            businessId,
-            customerId,
-            dedupeKey: firstVisitKey(customerId),
-            config: emitCfg,
-            triggeringBookingId: id,
-            now,
-          }))
-      } catch (e) {
-        logger.error('loyalty.first_visit_emit_failed', `first_visit emit falló booking=${id}: ${String(e)}`)
-      }
-    }
-    if (referralRule) {
-      try {
-        const referralResult = await prisma.$transaction((tx) =>
-          rewardReferralOnCompletion(tx, {
-            businessId,
-            referredCustomerId: customerId,
-            bookingId: id,
-            rule: referralRule,
-            config: emitCfg,
-            now,
-          }))
-        // Email de recompensa de referido — best-effort, FUERA de la tx.
-        if (referralResult) {
-          await notifyReferralReward(referralResult, businessId)
-        }
-      } catch (e) {
-        logger.error('loyalty.referral_emit_failed', `referral emit falló booking=${id}: ${String(e)}`)
-      }
-    }
+    await emitAutomaticRewardsOnCompletion({
+      businessId,
+      customerId: existing.customerId,
+      bookingId: id,
+      config: loyaltyConfig,
+      isFirstVisit,
+    })
   }
 
   // Solicitud aceptada: recién ahora la clienta tiene una reserva de verdad, así
