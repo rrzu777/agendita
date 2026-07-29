@@ -2,10 +2,16 @@ import { describe, it, expect, vi } from 'vitest'
 import { captureReferral, rewardReferralOnCompletion } from '@/lib/loyalty/referral'
 
 describe('captureReferral', () => {
-  function tx(referrer: any) {
+  /** `existing`: la clienta YA tenía una atribución de referida. Se chequea antes del
+   *  insert, no atajando el P2002: esto corre en la tx que crea la reserva, y en
+   *  Postgres una violación de constraint aborta la transacción entera. */
+  function tx(referrer: any, existing: any = null) {
     return {
       customer: { findFirst: vi.fn().mockResolvedValue(referrer) },
-      referral: { create: vi.fn().mockResolvedValue({ id: 'rf1' }) },
+      referral: {
+        findFirst: vi.fn().mockResolvedValue(existing),
+        create: vi.fn().mockResolvedValue({ id: 'rf1' }),
+      },
     } as any
   }
   it('crea Referral pending cuando el ref es válido y no es self', async () => {
@@ -22,6 +28,11 @@ describe('captureReferral', () => {
   })
   it('no crea self-referral (mismo teléfono)', async () => {
     const t = tx({ id: 'ref1', businessId: 'b1', phone: '222' })
+    await captureReferral(t, { businessId: 'b1', referredCustomerId: 'c2', referrerToken: 'tok', referredPhone: '222' })
+    expect(t.referral.create).not.toHaveBeenCalled()
+  })
+  it('ya referida: no intenta el insert (nada de P2002 adentro de la tx de la reserva)', async () => {
+    const t = tx({ id: 'ref1', businessId: 'b1', phone: '111' }, { id: 'rf-viejo' })
     await captureReferral(t, { businessId: 'b1', referredCustomerId: 'c2', referrerToken: 'tok', referredPhone: '222' })
     expect(t.referral.create).not.toHaveBeenCalled()
   })

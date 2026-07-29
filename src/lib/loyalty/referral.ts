@@ -1,6 +1,5 @@
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { isP2002 } from './credit'
 import { referralKey } from './automatic-match'
 import { emitAutomaticReward, type AutomaticRule, type EmitConfig, type EmittedReward } from './automatic'
 import { describeReward } from './view'
@@ -32,14 +31,20 @@ export async function captureReferral(tx: Tx, args: {
   if (!referrer) return
   if (referrer.id === args.referredCustomerId) return
   if (referrer.phone === args.referredPhone) return // self-referral por teléfono
-  try {
-    await tx.referral.create({
-      data: { businessId: args.businessId, referrerCustomerId: referrer.id,
-        referredCustomerId: args.referredCustomerId, status: 'pending' },
-    })
-  } catch (e) {
-    if (!isP2002(e)) throw e // ya referida (unique referredCustomerId): no-op
-  }
+  // "Ya referida" se chequea ANTES, no con un catch del P2002: esto corre dentro de
+  // la tx que crea la reserva, y en Postgres una violación de constraint aborta la
+  // transacción entera (Prisma no usa savepoints). El `tx.booking.create` que viene
+  // después fallaría igual — la clienta no podría reservar por una atribución de
+  // referida que ni siquiera importa.
+  const already = await tx.referral.findFirst({
+    where: { referredCustomerId: args.referredCustomerId },
+    select: { id: true },
+  })
+  if (already) return
+  await tx.referral.create({
+    data: { businessId: args.businessId, referrerCustomerId: referrer.id,
+      referredCustomerId: args.referredCustomerId, status: 'pending' },
+  })
 }
 
 type EmitFn = (tx: Tx, a: {

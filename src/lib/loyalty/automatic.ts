@@ -1,6 +1,5 @@
 import type { Prisma, PromotionReward, PrismaClient } from '@prisma/client'
 import { createGrantInTx } from './grant'
-import { isP2002 } from './credit'
 import { conditionKind } from './automatic-match'
 
 type Tx = Prisma.TransactionClient
@@ -58,7 +57,16 @@ export async function loadAutomaticRule(tx: Tx, businessId: string, kind: string
  *  - puntos: asiento `bonus` con `dedupeKey` (unique businessId+dedupeKey) y
  *    columnas `triggeringBookingId`/`sourcePromotionId` para el clawback/guard. `bookingId` queda null.
  *  - grant: PromotionGrant ganado (pointsSpent 0, refundOnExpiry false), `requestId = dedupeKey`.
- *  Devuelve null si ya estaba emitido (P2002) o si la regla no define recompensa. */
+ *  Devuelve null si ya estaba emitido o si la regla no define recompensa.
+ *
+ *  La dedup va por PRE-CHEQUEO de la clave única, no por try/catch del P2002: esta
+ *  función corre SIEMPRE adentro de un `prisma.$transaction` (bookings, reviews,
+ *  referidos, cron), y en Postgres una violación de constraint aborta la transacción
+ *  entera — Prisma no usa savepoints, así que atajar el error no recupera nada: lo
+ *  que siguiera fallaría con "current transaction is aborted". Mismo patrón que
+ *  `mintCampaignGrant`. La carrera que el pre-chequeo no cubre (dos tx simultáneas
+ *  con el mismo dedupeKey) termina en P2002 y la pierde una de las dos, que es lo
+ *  correcto: los callers ya envuelven la emisión en try/catch best-effort. */
 export async function emitAutomaticReward(tx: Tx, args: {
   rule: AutomaticRule
   businessId: string
@@ -84,33 +92,33 @@ export async function emitAutomaticReward(tx: Tx, args: {
 
   // Rama puntos
   if (rule.rewardPoints != null) {
-    try {
-      const led = await tx.loyaltyLedger.create({
-        data: { businessId, customerId, points: rule.rewardPoints, reason: 'bonus',
-          bookingId: null, dedupeKey, triggeringBookingId, sourcePromotionId: rule.id, metadata: meta },
-      })
-      return { kind: 'points', points: rule.rewardPoints, ledgerId: led.id }
-    } catch (e) {
-      if (isP2002(e)) return null
-      throw e
-    }
+    const alreadyEmitted = await tx.loyaltyLedger.findUnique({
+      where: { businessId_dedupeKey: { businessId, dedupeKey } },
+      select: { id: true },
+    })
+    if (alreadyEmitted) return null
+    const led = await tx.loyaltyLedger.create({
+      data: { businessId, customerId, points: rule.rewardPoints, reason: 'bonus',
+        bookingId: null, dedupeKey, triggeringBookingId, sourcePromotionId: rule.id, metadata: meta },
+    })
+    return { kind: 'points', points: rule.rewardPoints, ledgerId: led.id }
   }
 
   // Rama grant
   if (rule.rewardType == null) return null
+  const alreadyGranted = await tx.promotionGrant.findUnique({
+    where: { customerId_requestId: { customerId, requestId: dedupeKey } },
+    select: { id: true },
+  })
+  if (alreadyGranted) return null
   const expiryDays = rule.grantExpiryDays ?? config.grantExpiryDays
   const expiresAt = expiryDays != null ? new Date(now.getTime() + expiryDays * DAY_MS) : null
-  try {
-    const grant = await createGrantInTx(tx, {
-      businessId, promotionId: rule.id, customerId, requestId: dedupeKey,
-      expiresAt, triggeringBookingId,
-      forfeitOnNoShow: config.forfeitGrantOnNoShow, metadata: meta,
-    })
-    return { kind: 'grant', grantId: grant.id, code: grant.code }
-  } catch (e) {
-    if (isP2002(e)) return null
-    throw e
-  }
+  const grant = await createGrantInTx(tx, {
+    businessId, promotionId: rule.id, customerId, requestId: dedupeKey,
+    expiresAt, triggeringBookingId,
+    forfeitOnNoShow: config.forfeitGrantOnNoShow, metadata: meta,
+  })
+  return { kind: 'grant', grantId: grant.id, code: grant.code }
 }
 
 /** Clawback de recompensas automáticas gatilladas por una reserva (first_visit/referral),
@@ -126,17 +134,26 @@ export async function reverseAutoRewardsForBooking(
     where: { ...scope, reason: 'bonus', triggeringBookingId: bookingId },
     select: { id: true, businessId: true, customerId: true, points: true },
   })
+  // Mismo motivo que en `emitAutomaticReward`: el P2002 no se puede atajar adentro
+  // de la tx. Acá pesa todavía más — esto corre dentro de la tx del refund/chargeback,
+  // así que un asiento repetido tumbaría la reversión ENTERA. Una sola consulta para
+  // las N claves: el dedupeKey lleva adentro el id del asiento original (un cuid
+  // global), así que no puede colisionar entre negocios.
+  const alreadyReversed = new Set(
+    (await tx.loyaltyLedger.findMany({
+      where: { dedupeKey: { in: bonuses.map((b) => `reversal:${b.id}`) } },
+      select: { dedupeKey: true },
+    })).map((l) => l.dedupeKey),
+  )
   for (const b of bonuses) {
-    try {
-      await tx.loyaltyLedger.create({
-        data: { businessId: b.businessId, customerId: b.customerId, points: -b.points,
-          reason: 'bonus_reversal', bookingId: null, dedupeKey: `reversal:${b.id}`,
-          triggeringBookingId: bookingId,
-          metadata: { reversedLedgerId: b.id, triggeringBookingId: bookingId } },
-      })
-    } catch (e) {
-      if (!isP2002(e)) throw e // ya reversado
-    }
+    const dedupeKey = `reversal:${b.id}`
+    if (alreadyReversed.has(dedupeKey)) continue
+    await tx.loyaltyLedger.create({
+      data: { businessId: b.businessId, customerId: b.customerId, points: -b.points,
+        reason: 'bonus_reversal', bookingId: null, dedupeKey,
+        triggeringBookingId: bookingId,
+        metadata: { reversedLedgerId: b.id, triggeringBookingId: bookingId } },
+    })
   }
 
   const grants = await tx.promotionGrant.findMany({
