@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { expandSeries, computeSeriesUntil, type SeriesLike } from '@/lib/calendar/expand-series'
+import { getLocalDateStr } from '@/lib/availability/timezone'
 
 const TZ = 'America/Santiago'
 
@@ -110,6 +111,43 @@ describe('expandSeries', () => {
     expect(occ.startDateTime.toISOString()).toBe('2026-09-07T16:00:00.000Z')
     expect(occ.endDateTime.toISOString()).toBe('2026-09-07T17:00:00.000Z')
   })
+
+  // Chile pasa a horario de verano el 1er domingo de septiembre: el reloj salta de
+  // 23:59:59 del sábado a 01:00 del domingo, así que las 00:00 del 2026-09-06 NO
+  // existen. `fromZonedTime` resuelve esa medianoche inexistente cayendo al día
+  // anterior, y el occurrenceDate es la CLAVE con que se buscan las excepciones.
+  describe('gap de DST: el domingo en que la medianoche no existe', () => {
+    // Almuerzo dominical, para que la serie caiga justo en el día del salto.
+    const sunday: SeriesLike = { ...base, daysOfWeek: [0] }
+    // El 2026-09-06 completo. `range()` no sirve acá: tiene el -04:00 fijo y en
+    // septiembre Chile ya está en UTC-3. Arranca a las 01:00, el primer instante
+    // que existe ese día.
+    const gapDayStart = new Date('2026-09-06T01:00:00-03:00')
+    const gapDayEnd = new Date('2026-09-06T23:59:59-03:00')
+
+    it('el occurrenceDate cae en ESE día local, no en el anterior', () => {
+      const [occ] = expandSeries(sunday, [], gapDayStart, gapDayEnd, TZ)
+      expect(occ.id).toBe('series-1:2026-09-06')
+      // Es la clave real: así se indexan las excepciones en expandSeries.
+      expect(getLocalDateStr(occ.occurrenceDate!, TZ)).toBe('2026-09-06')
+      expect(occ.occurrenceDate?.toISOString()).toBe('2026-09-06T04:00:00.000Z')
+    })
+
+    // El bug tal como lo vive la dueña: la UI toma el occurrenceDate que produjo
+    // expandSeries y lo manda de vuelta a skipSeriesOccurrence, así que la fila se
+    // guarda con ESE valor. Si está corrido un día, la excepción se guarda bien pero
+    // expandSeries no la encuentra nunca: saltás el almuerzo de ese domingo y el
+    // bloqueo sigue apareciendo.
+    it('saltear ese domingo con el occurrenceDate que devuelve la propia expansión funciona', () => {
+      const [occ] = expandSeries(sunday, [], gapDayStart, gapDayEnd, TZ)
+      const conExcepcion = expandSeries(
+        sunday,
+        [{ occurrenceDate: occ.occurrenceDate!, isSkipped: true, startDateTime: null, endDateTime: null, reason: null }],
+        gapDayStart, gapDayEnd, TZ,
+      )
+      expect(conExcepcion).toEqual([])
+    })
+  })
 })
 
 describe('computeSeriesUntil', () => {
@@ -127,6 +165,13 @@ describe('computeSeriesUntil', () => {
   it('weeks -> anchor + N semanas (local)', () => {
     const until = computeSeriesUntil(anchor, 'weeks', 3, 'America/Santiago')
     expect(formatUntil(until)).toBe('2026-06-22')
+  })
+
+  it('un until que aterriza en el gap de DST no se corre un día para atrás', () => {
+    // 2026-08-06 + 1 mes = 2026-09-06, el domingo cuya medianoche no existe.
+    const anchorAugust = new Date('2026-08-06T04:00:00.000Z')
+    const until = computeSeriesUntil(anchorAugust, 'month', null, 'America/Santiago')
+    expect(formatUntil(until)).toBe('2026-09-06')
   })
 })
 
