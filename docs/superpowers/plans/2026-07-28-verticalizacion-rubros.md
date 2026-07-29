@@ -312,8 +312,21 @@ ningún cambio salvo un panel vacío en la ficha.
    mockeando `@/server/actions/customer-photos`.
 2. **El drawer sólo monta el panel mientras está abierto.** Si no, la agenda
    pediría las fotos de todas las citas del mes para mostrar una.
-3. **Subida de a una, no en paralelo.** La cuota se re-chequea en cada attach; en
-   paralelo dos subidas pueden pasarse del tope entre el presign y el insert.
+3. **Subida de a una, no en paralelo** — por progreso legible y para no saturar
+   el uplink del celular. La cuota NO es la razón: es best-effort igual (sin
+   constraint en la base, dos pestañas se pasan por una).
+4. **Prisma IGNORA un `id: undefined` en el `where`.** `resolveTarget` sin ficha
+   ni reserva resolvía a una ficha CUALQUIERA del negocio. Va guard explícito, y
+   hay un test de integración que lo fija.
+5. **`fetch` TIRA cuando se corta la red** (no devuelve un response con `ok:
+   false`). Sin try/catch alrededor del PUT, la excepción se escapaba del bucle
+   de subida y dejaba el botón trabado en "Subiendo…" para siempre.
+6. **La lectura y la escritura tienen que autorizar igual.** Al principio leer
+   las fotos de una reserva ajena devolvía `[]` ("sin fotos") y escribirla decía
+   "no encontrada". Ahora las dos pasan por `resolveTarget`.
+7. **Tragarse el error de lectura miente.** La ficha hacía `res.ok ? data : []`
+   y un R2 caído se veía idéntico a una clienta sin fotos. El motivo viaja al
+   panel (`initialError`).
 
 ## Fuera de alcance, a propósito
 
