@@ -9,6 +9,7 @@ import { MarketingOptOutSection } from '@/components/loyalty/marketing-optout-se
 import { getBookingFunnelUrl } from '@/lib/business/urls'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { bookingStatusLabels } from '@/lib/bookings/status-labels'
+import { bookingWhere, isNotableModality } from '@/lib/services/modality'
 import { formatShortDate } from '@/lib/format-date'
 import { declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 import { canSelfManage } from '@/lib/bookings/self-service'
@@ -81,7 +82,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
     prisma.booking.findMany({
       where: { customerId: { in: customerIds }, startDateTime: { gte: now }, status: { in: [...UPCOMING_STATUSES] } },
       orderBy: { startDateTime: 'asc' },
-      select: { id: true, bookingNumber: true, startDateTime: true, status: true, service: { select: { name: true } }, payments: BT_DECLARED_SELECT },
+      select: { id: true, bookingNumber: true, startDateTime: true, status: true, modality: true, serviceAddress: true, meetingUrl: true, service: { select: { name: true } }, payments: BT_DECLARED_SELECT },
     }),
     prisma.booking.findMany({
       where: { customerId: { in: customerIds }, OR: [{ startDateTime: { lt: now } }, { status: { notIn: [...UPCOMING_STATUSES] } }] },
@@ -117,6 +118,21 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
               <li key={b.id} className="rounded-lg border border-gray-100 px-3 py-2 text-sm">
                 <div className="font-medium">{b.service?.name}</div>
                 <div className="text-gray-500">{formatShortDate(b.startDateTime)} · {statusLabel(b)} · {formatBookingNumber(b.bookingNumber, b.id)}</div>
+                {isNotableModality(b.modality) && (
+                  <div className="text-gray-500">
+                    {bookingWhere(b).label}
+                    {bookingWhere(b).detail && (
+                      <>
+                        {' · '}
+                        {bookingWhere(b).isLink ? (
+                          <a href={bookingWhere(b).detail!} target="_blank" rel="noopener noreferrer" className="underline">
+                            Entrar a la videollamada
+                          </a>
+                        ) : bookingWhere(b).detail}
+                      </>
+                    )}
+                  </div>
+                )}
                 <BookingActions
                   bookingId={b.id}
                   slug={business.slug}

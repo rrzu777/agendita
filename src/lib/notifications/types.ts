@@ -1,4 +1,4 @@
-import type { BusinessCategory } from '@prisma/client'
+import type { BusinessCategory, ServiceModality } from '@prisma/client'
 export interface EmailResult {
   success: boolean
   skipped?: string
@@ -26,6 +26,14 @@ export interface BookingEmailData {
   depositRequired: number
   depositPaid: number
   remainingBalance: number
+  /** Dónde se atiende esta cita. Ausente = en el local (reservas anteriores al
+   *  Track 3). Decide qué dirección/link muestra el email: la del negocio, la de
+   *  la clienta o el link de la videollamada. */
+  modality?: ServiceModality | null
+  /** Dirección de la clienta; sólo en a domicilio. */
+  serviceAddress?: string | null
+  /** Link de videollamada; sólo online. */
+  meetingUrl?: string | null
   reviewLink?: string
   loyaltyCardLink?: string
   /** La reserva quedó esperando que el negocio la acepte (confirmación manual).
@@ -135,6 +143,14 @@ export interface NewBookingBusinessEmailData {
   depositRequired: number
   remainingBalance: number
   dashboardLink: string
+  /** Dónde se atiende esta cita. Ausente = en el local (reservas anteriores al
+   *  Track 3). Decide qué dirección/link muestra el email: la del negocio, la de
+   *  la clienta o el link de la videollamada. */
+  modality?: ServiceModality | null
+  /** Dirección de la clienta; sólo en a domicilio. */
+  serviceAddress?: string | null
+  /** Link de videollamada; sólo online. */
+  meetingUrl?: string | null
   /** Es una solicitud que espera respuesta, no una reserva ya agendada: el
    *  negocio tiene que entrar a aceptarla o rechazarla. */
   awaitingApproval?: boolean
@@ -329,6 +345,14 @@ export interface ReminderEmailData {
   businessTimezone: string
   businessWhatsapp?: string | null
   businessAddress?: string | null
+  /** Dónde se atiende esta cita. Ausente = en el local (reservas anteriores al
+   *  Track 3). Decide qué dirección/link muestra el email: la del negocio, la de
+   *  la clienta o el link de la videollamada. */
+  modality?: ServiceModality | null
+  /** Dirección de la clienta; sólo en a domicilio. */
+  serviceAddress?: string | null
+  /** Link de videollamada; sólo online. */
+  meetingUrl?: string | null
   businessCurrency: string
   totalPrice: number
   remainingBalance: number

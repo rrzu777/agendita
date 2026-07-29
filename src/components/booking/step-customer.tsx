@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { BookingData } from './wizard'
-import { Mail, Phone, User } from 'lucide-react'
+import { requiresServiceAddress } from '@/lib/services/modality'
+import { Mail, MapPin, Phone, User } from 'lucide-react'
 
 export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack }: {
   data: BookingData
@@ -21,14 +22,16 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
     customerEmail: data.customerEmail,
     customerBirthDate: data.customerBirthDate ?? '',
     customerNotes: data.customerNotes,
+    serviceAddress: data.serviceAddress,
   })
+  const needsAddress = data.serviceModality != null && requiresServiceAddress(data.serviceModality)
   // "No soy yo": reserva para otra persona SIN cerrar sesión (signOut perdería el wizard).
   const [dismissedSession, setDismissedSession] = useState(false)
   const showSession = sessionEmail !== null && !dismissedSession
 
   function handleNotMe() {
     setDismissedSession(true)
-    setFormData({ customerName: '', customerPhone: '', customerEmail: '', customerBirthDate: '', customerNotes: formData.customerNotes })
+    setFormData({ customerName: '', customerPhone: '', customerEmail: '', customerBirthDate: '', customerNotes: formData.customerNotes, serviceAddress: formData.serviceAddress })
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -91,6 +94,18 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
             value={formData.customerBirthDate}
             onChange={e => setFormData({ ...formData, customerBirthDate: e.target.value })} />
         </div>
+        {needsAddress && (
+          <div className="space-y-2">
+            <Label className="studio-eyebrow">Dirección *</Label>
+            <div className="relative">
+              <MapPin className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
+              <Input className="studio-input pl-12" required value={formData.serviceAddress}
+                onChange={e => setFormData({ ...formData, serviceAddress: e.target.value })}
+                placeholder="Calle, número, depto, comuna" />
+            </div>
+            <p className="text-xs text-muted-foreground">Vamos a tu domicilio: necesitamos saber a dónde.</p>
+          </div>
+        )}
         <div className="space-y-2">
           <Label className="studio-eyebrow">Notas (opcional)</Label>
           <Textarea className="min-h-28 rounded-lg border-border bg-card text-base focus-visible:border-primary focus-visible:ring-primary/20" value={formData.customerNotes}

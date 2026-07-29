@@ -23,6 +23,7 @@ import { ManualPaymentDialog } from './manual-payment-dialog'
 import { formatManualPaymentMoney, isManualPaymentAllowed } from './manual-payment-utils'
 import { PaymentRevertedBadge } from './payment-reverted-badge'
 import { bookingStatusLabel } from '@/lib/bookings/status-labels'
+import { bookingWhere } from '@/lib/services/modality'
 import { useVocabulary } from '@/components/vocabulary-provider'
 
 function useIsMobile() {
@@ -109,6 +110,27 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
               </span>
             </div>
           )}
+
+          {(() => {
+            const where = bookingWhere(booking)
+            return (
+              <div className="flex items-start justify-between gap-4">
+                <span className="text-sm text-muted-foreground">Dónde</span>
+                <span className="min-w-0 text-right text-sm font-medium">
+                  {where.label}
+                  {where.detail && (
+                    <span className="mt-0.5 block break-words text-xs font-normal text-muted-foreground">
+                      {where.isLink ? (
+                        <a href={where.detail} target="_blank" rel="noopener noreferrer" className="underline">
+                          {where.detail}
+                        </a>
+                      ) : where.detail}
+                    </span>
+                  )}
+                </span>
+              </div>
+            )
+          })()}
 
           {booking.customerNotes && (
             <div>

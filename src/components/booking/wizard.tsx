@@ -7,7 +7,7 @@ import { StepTime } from './step-time'
 import { StepCustomer } from './step-customer'
 import { StepPayment } from './step-payment'
 import { StepConfirmation } from './step-confirmation'
-import type { Service } from '@prisma/client'
+import type { Service, ServiceModality } from '@prisma/client'
 import type { FunnelSession } from '@/lib/customers/session-prefill'
 import { restoreWizardState, serializeWizardState, wizardStorageKey } from '@/lib/booking/wizard-storage'
 
@@ -32,6 +32,11 @@ export type BookingData = {
   serviceDuration: number
   serviceDeposit: number
   serviceColor: string
+  /** Modalidades que ofrece el servicio elegido; el picker sólo aparece si hay >1. */
+  serviceModalities: ServiceModality[]
+  serviceModality: ServiceModality | null
+  /** Dirección de la clienta; sólo se pide (y se manda) cuando es a domicilio. */
+  serviceAddress: string
   date: Date | null
   timeSlot: { start: Date; end: Date } | null
   customerName: string
@@ -50,6 +55,9 @@ const initialData: BookingData = {
   serviceDuration: 0,
   serviceDeposit: 0,
   serviceColor: '',
+  serviceModalities: [],
+  serviceModality: null,
+  serviceAddress: '',
   date: null,
   timeSlot: null,
   customerName: '',

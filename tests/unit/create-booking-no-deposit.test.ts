@@ -89,6 +89,7 @@ function setupMocks(depositAmount: number, servicePrice: number) {
     price: servicePrice,
     depositAmount,
     durationMinutes: 60,
+    modalities: ['on_site'],
     isActive: true,
   })
   const createBookingResult = {

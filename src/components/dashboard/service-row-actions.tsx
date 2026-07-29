@@ -14,6 +14,7 @@ import {
 import { TableActions } from '@/components/ui/table-actions'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { ServiceForm } from './service-form'
+import type { ServiceModality } from '@prisma/client'
 
 type RowService = {
   id: string
@@ -23,6 +24,7 @@ type RowService = {
   price: number
   depositAmount: number
   pastelColor: string
+  modalities: ServiceModality[]
   isActive: boolean
   sortOrder: number
 }

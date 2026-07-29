@@ -5,7 +5,8 @@ import type { BookingData } from '@/components/booking/wizard'
 
 const base: BookingData = {
   serviceId: 's1', serviceName: 'Manicure', servicePrice: 20000, serviceDuration: 60,
-  serviceDeposit: 0, serviceColor: '', date: null,
+  serviceDeposit: 0, serviceColor: '',
+  serviceModalities: ['on_site'], serviceModality: 'on_site', serviceAddress: '', date: null,
   timeSlot: { start: new Date('2026-07-20T15:00:00Z'), end: new Date('2026-07-20T16:00:00Z') },
   customerName: 'Maria', customerPhone: '+56911111111', customerEmail: 'maria@example.com',
   customerNotes: '', idempotencyKey: null,

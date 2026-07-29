@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import type { ServiceModality } from '@prisma/client'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -15,7 +16,7 @@ import { formatDuration } from '@/lib/format-duration'
 import { formatMoney } from '@/lib/money'
 import { Plus, ChevronUp, ChevronDown, X } from 'lucide-react'
 
-export function ServiceTable({ services: initialServices, currency }: { currency: string; services: { id: string; name: string; description: string | null; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; isActive: boolean; sortOrder: number }[] }) {
+export function ServiceTable({ services: initialServices, currency }: { currency: string; services: { id: string; name: string; description: string | null; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; modalities: ServiceModality[]; isActive: boolean; sortOrder: number }[] }) {
   const [services, setServices] = useState(initialServices)
   const [showInactive, setShowInactive] = useState(true)
   const [loadingRow, setLoadingRow] = useState<string | null>(null)

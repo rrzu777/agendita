@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { createService, updateService } from '@/server/actions/services'
 import { formatDuration } from '@/lib/format-duration'
 import { formatMoney } from '@/lib/money'
+import { ServiceModality } from '@prisma/client'
+import { MODALITY_LABELS, MODALITY_HINTS, MODALITY_ORDER, sortModalities } from '@/lib/services/modality'
 import { Pencil, AlertCircle } from 'lucide-react'
 import type { ReactNode } from 'react'
 
@@ -69,7 +71,7 @@ export function ServiceForm({
   triggerIcon,
   currency,
 }: {
-  service?: { id: string; name: string; description: string | null; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; isActive: boolean; sortOrder: number } | null
+  service?: { id: string; name: string; description: string | null; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; modalities: ServiceModality[]; isActive: boolean; sortOrder: number } | null
   onSuccess?: () => void
   triggerLabel?: string
   triggerIcon?: ReactNode
@@ -81,6 +83,11 @@ export function ServiceForm({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedColor, setSelectedColor] = useState(service?.pastelColor || PASTEL_COLORS[0])
+  // Un servicio existente sin modalidades sólo puede venir de datos corruptos; el
+  // fallback evita un formulario que no se puede guardar (el schema exige >= 1).
+  const [modalities, setModalities] = useState<ServiceModality[]>(
+    service?.modalities?.length ? sortModalities(service.modalities) : [ServiceModality.on_site],
+  )
   const [customHex, setCustomHex] = useState(service?.pastelColor || '')
 
   const [previewName, setPreviewName] = useState(service?.name || '')
@@ -129,6 +136,17 @@ export function ServiceForm({
     }
   }
 
+  function toggleModality(modality: ServiceModality) {
+    setModalities((prev) => {
+      // Desmarcar la última dejaría el servicio sin ninguna: el schema lo
+      // rechazaría igual, pero el error llegaría recién al guardar.
+      if (prev.includes(modality)) {
+        return prev.length === 1 ? prev : prev.filter((m) => m !== modality)
+      }
+      return sortModalities([...prev, modality])
+    })
+  }
+
   function handleColorPick(color: string) {
     setSelectedColor(color)
     setCustomHex(color)
@@ -157,6 +175,7 @@ export function ServiceForm({
       price: parseInt(formData.get('price') as string),
       depositAmount: parseInt(formData.get('depositAmount') as string),
       pastelColor: selectedColor,
+      modalities,
       isActive: true,
     }
 
@@ -306,6 +325,39 @@ export function ServiceForm({
               Total: {duration > 0 ? formatDuration(duration) : '0 min'}
             </p>
           </div>
+          <div>
+            <Label className="studio-eyebrow">¿Dónde se atiende?</Label>
+            <div className="mt-2 space-y-2">
+              {MODALITY_ORDER.map((modality) => {
+                const checked = modalities.includes(modality)
+                return (
+                  <label
+                    key={modality}
+                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+                      checked ? 'border-primary bg-secondary/40' : 'border-border'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 size-4 accent-current"
+                      checked={checked}
+                      onChange={() => toggleModality(modality)}
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-primary">{MODALITY_LABELS[modality]}</span>
+                      <span className="block text-xs text-muted-foreground">{MODALITY_HINTS[modality]}</span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {modalities.length > 1
+                ? 'Al reservar, la clienta elige una de estas.'
+                : 'Con una sola modalidad no se le pregunta nada a la clienta.'}
+            </p>
+          </div>
+
           <div>
             <Label className="studio-eyebrow">Color</Label>
             <div className="flex gap-2 mt-2">

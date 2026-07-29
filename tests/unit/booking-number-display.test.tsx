@@ -19,6 +19,7 @@ function makeBooking(bookingNumber: number | null) {
     paymentStatus: 'deposit_paid',
     totalPrice: 20000,
     remainingBalance: 10000,
+    modality: 'on_site' as const,
     service: { name: 'Corte' },
     customer: { name: 'Ana', phone: '+56911111111' },
     payments: [],

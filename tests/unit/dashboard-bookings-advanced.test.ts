@@ -122,6 +122,7 @@ function setupService(price: number, depositAmount: number) {
     price,
     depositAmount,
     durationMinutes: 60,
+    modalities: ['on_site'],
     isActive: true,
   })
 }

@@ -24,6 +24,16 @@ export const updateBusinessSchema = z.object({
   // Confirmación manual: las reservas sin abono quedan esperando que el negocio
   // las acepte en vez de confirmarse solas.
   requireBookingApproval: z.boolean().default(false),
+  // Sala fija de videollamada para los servicios online. URL completa: se manda
+  // tal cual por email, así que un "meet.google.com/xxx" sin esquema no serviría
+  // como link clickeable.
+  defaultMeetingUrl: z
+    .string()
+    .trim()
+    .url('Tiene que ser un link completo, con https://')
+    .max(500, 'El link es demasiado largo')
+    .optional()
+    .or(z.literal('')),
   subdomain: z.string()
     .min(3, 'Mínimo 3 caracteres')
     .max(30, 'Máximo 30 caracteres')

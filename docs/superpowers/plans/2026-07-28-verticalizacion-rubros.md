@@ -217,15 +217,51 @@ loaders que sí leen reservas (`availability.ts`, `reschedule-slots.ts`) filtran
 
 # Track 3 — Modalidad de atención
 
-**Diseño cerrado, pasos pendientes.**
+**Estado: ✅ IMPLEMENTADO** (un PR). Un negocio que no toca nada sigue funcionando
+igual: todo nace `on_site` y esa modalidad no cambia ni una pantalla.
 
 - `enum ServiceModality { on_site, at_home, online }`.
 - `Service.modalities ServiceModality[] @default([on_site])` — varias por servicio; el
-  wizard sólo pregunta cuando hay más de una.
-- `Booking.modality` + `Booking.serviceAddress String?` (domicilio) + `Booking.meetingUrl String?` (online).
+  funnel sólo pregunta cuando hay más de una.
+- `Booking.modality` (**NOT NULL con default**, así el backfill lo hace la propia
+  columna y nadie tiene que manejar un null que nunca significó nada) +
+  `Booking.serviceAddress` (domicilio) + `Booking.meetingUrl` (online).
+- `Business.defaultMeetingUrl` — la sala fija de Zoom/Meet. Se **copia** a la reserva
+  al crearla: si el negocio la cambia después, las citas ya avisadas conservan el link
+  que la clienta recibió. Sin esto, "modalidad online" era una etiqueta que no
+  entregaba nada y la practicante tenía que mandar el link por WhatsApp igual.
 - Desbloquea constelaciones y registros akáshicos sin agregar rubros al enum.
-- **Fuera de alcance:** tiempo de traslado entre domicilios. Es un problema real de
-  agenda y merece su propia iniciativa — no lo metas de contrabando acá.
+
+## Decisiones que conviene no re-litigar
+
+- **La modalidad es del SERVICIO, no del rubro.** Cero `if (category === ...)`.
+- **No toca la agenda.** El tiempo de traslado entre domicilios es un problema real de
+  disponibilidad y merece su propia iniciativa — no lo metas de contrabando acá.
+- **El server manda.** `resolveBookingModality` ignora lo que pida el cliente cuando el
+  servicio tiene una sola modalidad, y rechaza una que el servicio no ofrece. La
+  dirección se descarta fuera de domicilio en vez de guardarse "por las dudas".
+- **El picker vive dentro de la tarjeta del servicio**, no en un paso nuevo: con una
+  sola modalidad el click avanza como siempre y el funnel no se alarga.
+
+## Landmines encontradas al construirlo
+
+1. **`Service.modalities` es la primera lista escalar de enums del proyecto**
+   (`"ServiceModality"[]` en Postgres). `tests/integration/service-modality.test.ts`
+   existe para que la migración se pruebe de verdad: default del backfill, round-trip
+   del array y filtro `has`.
+2. **Los mocks de `service.findFirst` mentían.** Ninguno devolvía `modalities`, así que
+   `sortModalities` reventaba con un TypeError. Se arreglaron los fixtures en vez de
+   ablandar el helper: un `findFirst` real SIEMPRE trae la columna.
+3. **La dirección restaurada del wizard tiene que colgarse de la modalidad RESUELTA**,
+   no de la guardada. Si la dueña sacó "a domicilio" mientras la clienta iba a
+   `/ingresar`, la modalidad se descarta pero la dirección sobrevivía. Lo cazó un test.
+4. **`useState` después de un early return.** El picker se agregó dentro de
+   `StepService`, que retorna temprano cuando no hay servicios. Lo cazó el lint.
+
+## Fuera de alcance, a propósito
+
+- Editar el `meetingUrl` de UNA reserva desde el dashboard (hoy sale de la sala fija).
+- Un modelo de "zonas de cobertura" o recargo por domicilio.
 
 # Track 4 — Fotos en la ficha
 

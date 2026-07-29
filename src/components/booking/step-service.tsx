@@ -1,9 +1,11 @@
 'use client'
 
+import { useState } from 'react'
 import { BookingData } from './wizard'
-import type { Service } from '@prisma/client'
+import type { Service, ServiceModality } from '@prisma/client'
 import { formatDuration } from '@/lib/format-duration'
 import { formatMoney } from '@/lib/money'
+import { MODALITY_LABELS, sortModalities } from '@/lib/services/modality'
 import { Clock, Plus, Sparkles } from 'lucide-react'
 
 interface StepServiceProps {
@@ -13,7 +15,24 @@ interface StepServiceProps {
   onSelect: (data: Partial<BookingData>) => void
 }
 
+/** Campos denormalizados del servicio en BookingData, sin la modalidad. */
+function serviceFields(service: Service, modalities: ServiceModality[]) {
+  return {
+    serviceId: service.id,
+    serviceName: service.name,
+    servicePrice: service.price,
+    serviceDuration: service.durationMinutes,
+    serviceDeposit: service.depositAmount,
+    serviceColor: service.pastelColor,
+    serviceModalities: modalities,
+  }
+}
+
 export function StepService({ data, services, currency, onSelect }: StepServiceProps) {
+  // Servicio cuya tarjeta está desplegada esperando que elija dónde. Un solo id:
+  // abrir otro cierra el anterior.
+  const [pickingModalityFor, setPickingModalityFor] = useState<string | null>(null)
+
   if (services.length === 0) {
     return (
       <div className="py-12 text-center">
@@ -37,17 +56,23 @@ export function StepService({ data, services, currency, onSelect }: StepServiceP
         {services.map((service) => {
           const color = service.pastelColor || '#f4dbca'
           const isSelected = data.serviceId === service.id
+          const modalities = sortModalities(service.modalities)
+          // Con una sola modalidad no hay nada que preguntar: el click avanza
+          // igual que siempre. Con varias, despliega el "¿dónde?" y avanza recién
+          // cuando elige, para no meter un paso más en el funnel.
+          const needsModalityChoice = modalities.length > 1
+          const isPicking = pickingModalityFor === service.id
           return (
+            <div key={service.id}>
             <button
-              key={service.id}
-              onClick={() => onSelect({
-                serviceId: service.id,
-                serviceName: service.name,
-                servicePrice: service.price,
-                serviceDuration: service.durationMinutes,
-                serviceDeposit: service.depositAmount,
-                serviceColor: service.pastelColor,
-              })}
+              onClick={() => {
+                if (needsModalityChoice) {
+                  setPickingModalityFor(isPicking ? null : service.id)
+                  return
+                }
+                onSelect({ ...serviceFields(service, modalities), serviceModality: modalities[0] ?? null, serviceAddress: '' })
+              }}
+              aria-expanded={needsModalityChoice ? isPicking : undefined}
               className="group w-full rounded-[1.75rem] border p-4 text-left transition-all hover:-translate-y-0.5 sm:p-5"
               style={{
                 backgroundColor: `${color}24`,
@@ -86,6 +111,30 @@ export function StepService({ data, services, currency, onSelect }: StepServiceP
                 </div>
               </div>
             </button>
+            {needsModalityChoice && isPicking && (
+              <div className="mt-2 space-y-2 rounded-2xl border border-border bg-card p-3">
+                <p className="text-sm font-semibold text-primary">¿Dónde te lo hacemos?</p>
+                <div className="flex flex-wrap gap-2">
+                  {modalities.map((modality) => (
+                    <button
+                      key={modality}
+                      type="button"
+                      onClick={() => onSelect({
+                        ...serviceFields(service, modalities),
+                        serviceModality: modality,
+                        // Cambiar de modalidad tira la dirección: la de la vuelta
+                        // anterior no tiene por qué valer para esta.
+                        serviceAddress: '',
+                      })}
+                      className="rounded-full border border-border px-4 py-2 text-sm font-semibold text-primary transition hover:border-primary hover:bg-secondary/50"
+                    >
+                      {MODALITY_LABELS[modality]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            </div>
           )
         })}
       </div>
