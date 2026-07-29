@@ -28,7 +28,7 @@ const { sendOwnerBookingChangedNotification } = await import('@/lib/notification
 
 const baseData = {
   businessId: 'biz-1',
-  businessName: 'Nails by Ana',
+  businessName: 'Nails by Ana', businessCategory: 'nails' as const,
   businessTimezone: 'America/Santiago',
   customerName: 'Maria',
   serviceName: 'Manicure semipermanente',

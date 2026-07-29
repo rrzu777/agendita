@@ -14,6 +14,7 @@ import { declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 import { canSelfManage } from '@/lib/bookings/self-service'
 import { BookingActions } from './booking-actions'
 import type { BookingStatus } from '@prisma/client'
+import { getVocabulary } from '@/lib/vocabulary'
 
 const UPCOMING_STATUSES = ['pending_payment', 'confirmed'] as const
 
@@ -98,7 +99,8 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
         <LoyaltyCard
           key={c.id}
           customerName={c.name}
-          business={{ name: business.name, logoUrl: business.logoUrl, category: business.category }}
+          business={{ name: business.name, logoUrl: business.logoUrl }}
+          vocabulary={getVocabulary(business.category)}
           data={cards[i]}
           redeemAction={redeemAction.bind(null, c.id)}
           titleAs="h2"

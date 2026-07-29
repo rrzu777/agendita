@@ -30,8 +30,6 @@ export interface Vocabulary {
   aClient: string
   /** "Esta clienta" | "Este cliente" */
   thisClient: string
-  /** "clientas inactivas" | "clientes inactivos" */
-  inactiveClients: string
   /** "inactivas" | "inactivos" — el adjetivo solo, cuando el sustantivo va antes */
   inactive: string
   /** "Reactivar inactivas" | "Reactivar inactivos" — label de la regla automática */
@@ -58,8 +56,6 @@ export interface Vocabulary {
   bothWin: string
   /** "Referí a una amiga" | "Referí a alguien" — título del bloque de referidos */
   referAFriend: string
-  /** "Destinataria" | "Destinatario" */
-  Recipient: string
   /** "Destinatarias" | "Destinatarios" */
   Recipients: string
   /** "destinatarias" | "destinatarios" */
@@ -82,7 +78,6 @@ const FEMININE: Vocabulary = {
   TheClient: 'La clienta',
   aClient: 'una clienta',
   thisClient: 'Esta clienta',
-  inactiveClients: 'clientas inactivas',
   inactive: 'inactivas',
   reactivateInactiveLabel: 'Reactivar inactivas',
   referralsLabel: 'Referidas',
@@ -96,7 +91,6 @@ const FEMININE: Vocabulary = {
   bothParties: 'Ambas',
   bothWin: 'ambas ganan',
   referAFriend: 'Referí a una amiga',
-  Recipient: 'Destinataria',
   Recipients: 'Destinatarias',
   recipients: 'destinatarias',
   noRecipients: 'Sin destinatarias',
@@ -113,7 +107,6 @@ const NEUTRAL: Vocabulary = {
   TheClient: 'El cliente',
   aClient: 'un cliente',
   thisClient: 'Este cliente',
-  inactiveClients: 'clientes inactivos',
   inactive: 'inactivos',
   reactivateInactiveLabel: 'Reactivar inactivos',
   referralsLabel: 'Referidos',
@@ -127,7 +120,6 @@ const NEUTRAL: Vocabulary = {
   bothParties: 'Ambos',
   bothWin: 'ambos ganan',
   referAFriend: 'Referí a alguien',
-  Recipient: 'Destinatario',
   Recipients: 'Destinatarios',
   recipients: 'destinatarios',
   noRecipients: 'Sin destinatarios',

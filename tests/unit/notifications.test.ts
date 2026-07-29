@@ -16,7 +16,7 @@ import {
 } from '@/lib/notifications/templates'
 
 const sampleBookingData = {
-  businessName: 'Nails by Ana',
+  businessName: 'Nails by Ana', businessCategory: 'nails' as const,
   businessReplyToEmail: 'owner@nails.com',
   businessWhatsapp: '+56912345678',
   businessAddress: 'Av. Siempre Viva 742, Santiago',
@@ -36,7 +36,7 @@ const sampleBookingData = {
 }
 
 const sampleBusinessData = {
-  businessName: 'Nails by Ana',
+  businessName: 'Nails by Ana', businessCategory: 'nails' as const,
   customerName: 'Maria',
   customerPhone: '+56987654321',
   customerEmail: 'maria@example.com',
@@ -50,7 +50,7 @@ const sampleBusinessData = {
 }
 
 const sampleCancellationData = {
-  businessName: 'Nails by Ana',
+  businessName: 'Nails by Ana', businessCategory: 'nails' as const,
   businessReplyToEmail: 'owner@nails.com',
   customerName: 'Maria',
   customerEmail: 'maria@example.com',
@@ -60,7 +60,7 @@ const sampleCancellationData = {
 }
 
 const sampleRescheduleData = {
-  businessName: 'Nails by Ana',
+  businessName: 'Nails by Ana', businessCategory: 'nails' as const,
   businessReplyToEmail: 'owner@nails.com',
   businessWhatsapp: '+56912345678',
   businessAddress: 'Av. Siempre Viva 742, Santiago',
@@ -74,7 +74,7 @@ const sampleRescheduleData = {
 }
 
 const sampleReviewData = {
-  businessName: 'Nails by Ana',
+  businessName: 'Nails by Ana', businessCategory: 'nails' as const,
   businessReplyToEmail: 'owner@nails.com',
   customerName: 'Maria',
   customerEmail: 'maria@example.com',

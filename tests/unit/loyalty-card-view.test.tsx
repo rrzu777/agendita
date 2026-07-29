@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { LoyaltyCard } from '@/components/loyalty/loyalty-card'
+import { getVocabulary } from '@/lib/vocabulary'
 
 const baseData = {
   config: { isActive: true, programName: 'Club Mimos', pointsLabel: 'mimos', cardMessage: null },
@@ -16,7 +17,7 @@ const baseData = {
 describe('LoyaltyCard', () => {
   it('muestra balance, catálogo canjeable y botón habilitado si alcanza', () => {
     const html = renderToStaticMarkup(
-      <LoyaltyCard customerName="Ana Pérez" business={{ name: 'Mimos', logoUrl: null, category: 'nails' }} data={baseData as never} redeemAction={vi.fn() as never} />,
+      <LoyaltyCard customerName="Ana Pérez" business={{ name: 'Mimos', logoUrl: null }} vocabulary={getVocabulary('nails')} data={baseData as never} redeemAction={vi.fn() as never} />,
     )
     expect(html).toContain('120')
     expect(html).toContain('Descuento 10%')
@@ -27,7 +28,7 @@ describe('LoyaltyCard', () => {
   it('programa pausado: aviso y sin catálogo', () => {
     const data = { ...baseData, config: { ...baseData.config, isActive: false }, catalog: [] }
     const html = renderToStaticMarkup(
-      <LoyaltyCard customerName="Ana" business={{ name: 'Mimos', logoUrl: null, category: 'nails' }} data={data as never} redeemAction={vi.fn() as never} />,
+      <LoyaltyCard customerName="Ana" business={{ name: 'Mimos', logoUrl: null }} vocabulary={getVocabulary('nails')} data={data as never} redeemAction={vi.fn() as never} />,
     )
     expect(html).toContain('pausado')
   })

@@ -169,7 +169,7 @@ export function RescheduleForm({
 
           <div className="rounded-lg bg-muted/30 p-4 space-y-2">
             <p className="text-sm font-semibold text-primary">{serviceName}</p>
-            <p className="text-sm text-muted-foreground">Cliente: {customerName}</p>
+            <p className="text-sm text-muted-foreground">{vocabulary.Client}: {customerName}</p>
             <p className="text-sm text-muted-foreground">
               Fecha actual: {currentDate} a las {currentTime}
             </p>
@@ -221,7 +221,7 @@ export function RescheduleForm({
           {selectedSlot && (
             <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-2">
               <p className="text-sm font-semibold text-primary">Resumen del cambio</p>
-              <p className="text-sm text-muted-foreground">Cliente: {customerName}</p>
+              <p className="text-sm text-muted-foreground">{vocabulary.Client}: {customerName}</p>
               <p className="text-sm text-muted-foreground">Servicio: {serviceName}</p>
               <p className="text-sm text-muted-foreground">Antes: {currentDate} a las {currentTime}</p>
               <p className="text-sm text-muted-foreground">

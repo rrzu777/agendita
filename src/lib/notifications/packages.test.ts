@@ -5,8 +5,9 @@ import {
 } from './templates'
 
 const data = {
-  businessName: 'Studio Ana', customerName: 'Ana', productName: 'Pack 5 sesiones',
-  totalSessions: 6, pricePaid: 50000, businessCurrency: 'CLP', cardLink: 'https://app/mi/demo',
+  businessName: 'Studio Ana', businessCategory: 'nails' as const, customerName: 'Ana',
+  productName: 'Pack 5 sesiones', totalSessions: 6, pricePaid: 50000,
+  businessCurrency: 'CLP', cardLink: 'https://app/mi/demo',
 }
 
 describe('templates de paquete', () => {
@@ -20,17 +21,20 @@ describe('templates de paquete', () => {
     expect(packagePurchasedCustomerText(data)).toContain('Pack 5 sesiones')
   })
   it('business html incluye la clientela y el producto', () => {
-    const html = packageSoldBusinessHtml({ ...data }, 'Clienta')
+    const html = packageSoldBusinessHtml(data)
     expect(html).toContain('Ana')
     expect(html).toContain('Pack 5 sesiones')
+    expect(html).toContain('Clienta')
   })
   it('business text incluye la clientela', () => {
-    expect(packageSoldBusinessText({ ...data }, 'Clienta')).toContain('Ana')
+    expect(packageSoldBusinessText(data)).toContain('Clienta: Ana')
   })
-  // El aviso al negocio nombra a la clientela con el término de su rubro.
-  it('business usa la etiqueta que le pasa el rubro', () => {
-    expect(packageSoldBusinessHtml({ ...data }, 'Cliente')).toContain('Cliente')
-    expect(packageSoldBusinessHtml({ ...data }, 'Cliente')).not.toContain('Clienta')
-    expect(packageSoldBusinessText({ ...data }, 'Cliente')).toContain('Cliente: Ana')
+  // El aviso al negocio nombra a la clientela con el término del rubro, que viaja
+  // en el mismo data que businessName — no como un string suelto del caller.
+  it('business deriva la etiqueta del rubro del negocio', () => {
+    const barber = { ...data, businessCategory: 'barber' as const }
+    expect(packageSoldBusinessHtml(barber)).toContain('Cliente')
+    expect(packageSoldBusinessHtml(barber)).not.toContain('Clienta')
+    expect(packageSoldBusinessText(barber)).toContain('Cliente: Ana')
   })
 })

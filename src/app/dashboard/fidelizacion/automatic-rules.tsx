@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { upsertAutomaticRule, archiveAutomaticRule } from '@/server/actions/loyalty'
+import { kindLabels } from '@/lib/loyalty/presets'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatMoney } from '@/lib/money'
@@ -37,14 +38,31 @@ type Rule = {
 
 type Kind = 'birthday' | 'first_visit' | 'review' | 'anniversary' | 'winback' | 'referral'
 
-const kindsFor = (v: Vocabulary): { kind: Kind; label: string; description: string }[] => [
-  { kind: 'birthday', label: 'Cumpleaños', description: `Premia a tus ${v.clients} en su cumpleaños.` },
-  { kind: 'first_visit', label: 'Primera visita', description: `Premia la primera visita de ${v.aClient}.` },
-  { kind: 'review', label: 'Reseña', description: 'Premia cuando dejan una reseña.' },
-  { kind: 'anniversary', label: 'Aniversario (1 año)', description: `Premia al cumplir un año como ${v.client}.` },
-  { kind: 'winback', label: v.reactivateInactiveLabel, description: `Premia a ${v.clients} que volvieron tras estar ${v.inactive}.` },
-  { kind: 'referral', label: v.referralsLabel, description: `Premia cuando ${v.aClient} refiere a alguien nuevo.` },
-]
+// Sólo las descripciones viven acá; los nombres salen de kindLabels() para no
+// tener dos catálogos del mismo enum que puedan divergir en silencio.
+const DESCRIPTIONS = (v: Vocabulary): Record<Kind, string> => ({
+  birthday: `Premia a tus ${v.clients} en su cumpleaños.`,
+  first_visit: `Premia la primera visita de ${v.aClient}.`,
+  review: 'Premia cuando dejan una reseña.',
+  anniversary: `Premia al cumplir un año como ${v.client}.`,
+  winback: `Premia a ${v.clients} que volvieron tras estar ${v.inactive}.`,
+  referral: `Premia cuando ${v.aClient} refiere a alguien nuevo.`,
+})
+
+const KIND_ORDER: Kind[] = ['birthday', 'first_visit', 'review', 'anniversary', 'winback', 'referral']
+
+function kindsFor(v: Vocabulary): { kind: Kind; label: string; description: string }[] {
+  const labels = kindLabels(v)
+  const descriptions = DESCRIPTIONS(v)
+  return KIND_ORDER.map((kind) => ({
+    kind,
+    // "Aniversario (1 año)" sólo en el editor: acá el label es el título de una
+    // tarjeta con formulario y el plazo orienta; en el resumen del preset es un
+    // ítem de lista y sobra.
+    label: kind === 'anniversary' ? `${labels[kind]} (1 año)` : labels[kind],
+    description: descriptions[kind],
+  }))
+}
 
 /** Lee un campo numérico opcional del form: vacío/ausente => null. */
 const optNum = (v: FormDataEntryValue | null): number | null => (v ? Number(v) : null)

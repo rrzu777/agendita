@@ -50,13 +50,24 @@ const DEFAULT_PROGRAM_NAME = 'Programa de fidelidad'
 // Espeja los kinds del motor (AUTOMATIC_KINDS) para el resumen legible. `anniversary`
 // aún no tiene preset en el catálogo, pero se deja para forward-compat; todo lookup
 // tiene fallback `?? kind`.
-// Los `{token}` los resuelve `interpolate` con el léxico del rubro (ver
-// src/lib/vocabulary). Este catálogo es una constante de módulo: no puede
-// recibir el léxico al construirse, así que lo lleva como tokens y lo resuelven
-// presetCatalog() y summarizeApply(), que sí reciben el vocabulario.
-const KIND_LABELS: Record<string, string> = {
-  birthday: 'Cumpleaños', first_visit: 'Primera visita', review: 'Reseña',
-  anniversary: 'Aniversario', winback: '{reactivateInactiveLabel}', referral: '{referralsLabel}',
+/**
+ * Nombre de cada tipo de regla automática, ya resuelto al rubro.
+ *
+ * Fuente única: la usa el resumen de "qué se aplicó" de los presets y también el
+ * editor de reglas (`automatic-rules.tsx`). Antes había dos copias con dos
+ * mecanismos distintos —una con tokens, otra con la función— y el PR de
+ * vocabulario tuvo que editar las dos; agregar un kind nuevo pedía acordarse de
+ * ambas.
+ */
+export function kindLabels(vocabulary: Vocabulary): Record<string, string> {
+  return {
+    birthday: 'Cumpleaños',
+    first_visit: 'Primera visita',
+    review: 'Reseña',
+    anniversary: 'Aniversario',
+    winback: vocabulary.reactivateInactiveLabel,
+    referral: vocabulary.referralsLabel,
+  }
 }
 
 // ─── Catálogo ──────────────────────────────────────────────────────────────
@@ -240,7 +251,8 @@ export function planPresetApply(payload: PresetPayload, state: CurrentLoyaltySta
 export function summarizeApply(plan: PresetPlan, vocabulary: Vocabulary): ApplyPresetSummary {
   const applied: string[] = []
   const skipped: string[] = []
-  const label = (kind: string) => interpolate(KIND_LABELS[kind] ?? kind, vocabulary)
+  const labels = kindLabels(vocabulary)
+  const label = (kind: string) => labels[kind] ?? kind
   if (plan.configToWrite) applied.push('Programa base (cómo se acumula)')
   for (const r of plan.rulesToCreate) applied.push(label(r.kind))
   for (const o of plan.redemptionsToCreate) applied.push(o.name)

@@ -46,7 +46,7 @@ function findPurchaseForBusinessEmail(packagePurchaseId: string) {
     include: {
       product: { select: { name: true } },
       customer: { select: { name: true } },
-      business: { select: { name: true, currency: true } },
+      business: { select: { name: true, currency: true, category: true } },
     },
   })
 }
@@ -412,7 +412,8 @@ export async function POST(request: NextRequest) {
         if (reverseMode === 'chargeback') {
           await sendMultiNotificationSafely('package disputed business', async () =>
             sendPackageDisputedToBusiness(payment.businessId, {
-              businessName: purchase.business.name, customerName: purchase.customer.name, productName: purchase.product.name,
+              businessName: purchase.business.name, businessCategory: purchase.business.category,
+              customerName: purchase.customer.name, productName: purchase.product.name,
               amount: mpPayment.transaction_amount, businessCurrency: purchase.business.currency || 'CLP',
             }),
           )
@@ -469,6 +470,7 @@ export async function POST(request: NextRequest) {
           await sendMultiNotificationSafely('booking disputed business', async () =>
             sendBookingDisputedToBusiness(payment.businessId, {
               businessName: bk.business.name,
+              businessCategory: bk.business.category,
               customerName: bk.customer?.name ?? getVocabulary(bk.business.category).Client,
               serviceName: bk.service?.name ?? 'servicio',
               bookingLabel: formatBookingNumber(booking.bookingNumber, bookingId),
@@ -601,6 +603,7 @@ export async function POST(request: NextRequest) {
           notifyBusinessAboutPurchase('package sold business', packagePurchaseId, (purchase) =>
             sendPackageSoldNotificationToBusiness(payment.businessId, {
               businessName: purchase.business.name,
+              businessCategory: purchase.business.category,
               customerName: purchase.customer.name,
               productName: purchase.product.name,
               totalSessions: purchase.quantity + purchase.bonusQuantity,
@@ -621,6 +624,7 @@ export async function POST(request: NextRequest) {
         await notifyBusinessAboutPurchase('package unexpected payment business', packagePurchaseId, (purchase) =>
           sendPackageUnexpectedPaymentToBusiness(payment.businessId, {
             businessName: purchase.business.name,
+            businessCategory: purchase.business.category,
             customerName: purchase.customer.name,
             productName: purchase.product.name,
             amount: payment.amount,

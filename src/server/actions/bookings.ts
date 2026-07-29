@@ -164,6 +164,7 @@ async function fireBookingNotifications(
     sendMultiNotificationSafely('business notification', () =>
       sendNewBookingNotificationToBusiness(booking.businessId, {
         businessName: business.name,
+        businessCategory: business.category,
         bookingNumber: booking.bookingNumber,
         customerName: booking.customer.name,
         customerPhone: booking.customer.phone,

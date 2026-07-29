@@ -35,7 +35,7 @@ async function _cancelMyBooking(bookingId: string) {
       service: { select: { name: true } },
       customer: { select: { name: true, email: true } },
       business: {
-        select: { id: true, name: true, slug: true, timezone: true, selfServiceCutoffHours: true },
+        select: { id: true, name: true, slug: true, timezone: true, category: true, selfServiceCutoffHours: true },
       },
     },
   })
@@ -56,6 +56,7 @@ async function _cancelMyBooking(bookingId: string) {
     sendOwnerBookingChangedNotification({
       businessId: booking.business.id,
       businessName: booking.business.name,
+      businessCategory: booking.business.category,
       businessTimezone: booking.business.timezone || 'America/Santiago',
       customerName: booking.customer.name,
       serviceName: booking.service.name,
@@ -111,6 +112,7 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
           timezone: true,
           isActive: true,
           selfServiceCutoffHours: true,
+          category: true,
           whatsapp: true,
           addressText: true,
         },
@@ -151,6 +153,7 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
     sendOwnerBookingChangedNotification({
       businessId: booking.business.id,
       businessName: booking.business.name,
+      businessCategory: booking.business.category,
       businessTimezone: booking.business.timezone || 'America/Santiago',
       customerName: booking.customer.name,
       serviceName: booking.service.name,

@@ -4,12 +4,13 @@ import type { LoyaltyCardData } from '@/lib/loyalty/card-data'
 import { ReferralShare } from '@/components/loyalty/referral-share'
 import { RedeemButton } from '@/components/loyalty/redeem-button'
 import type { ActionResult } from '@/lib/actions/result'
-import type { BusinessCategory } from '@prisma/client'
-import { getVocabulary } from '@/lib/vocabulary'
+import type { Vocabulary } from '@/lib/vocabulary'
 
 interface LoyaltyCardProps {
   customerName: string
-  business: { name: string; logoUrl: string | null; category: BusinessCategory }
+  business: { name: string; logoUrl: string | null }
+  /** Léxico del rubro. Prop y no contexto: esta tarjeta vive fuera del dashboard. */
+  vocabulary: Vocabulary
   data: LoyaltyCardData
   /** Server action ya bindeada con la credencial (token o customerId). */
   redeemAction: (optionId: string, requestId: string) => Promise<ActionResult<void>>
@@ -17,7 +18,7 @@ interface LoyaltyCardProps {
   titleAs?: 'h1' | 'h2'
 }
 
-export function LoyaltyCard({ customerName, business, data, redeemAction, titleAs: TitleTag = 'h1' }: LoyaltyCardProps) {
+export function LoyaltyCard({ customerName, business, data, redeemAction, vocabulary, titleAs: TitleTag = 'h1' }: LoyaltyCardProps) {
   const { config, balance, history, catalog, grants, packages, pendingPackages, referralUrl } = data
   const label = config?.pointsLabel ?? 'puntos'
   const firstName = customerName.split(' ')[0]
@@ -113,7 +114,7 @@ export function LoyaltyCard({ customerName, business, data, redeemAction, titleA
       )}
 
       {referralUrl && (
-        <ReferralShare url={referralUrl} firstName={firstName} vocabulary={getVocabulary(business.category)} />
+        <ReferralShare url={referralUrl} firstName={firstName} vocabulary={vocabulary} />
       )}
 
       <section className="mt-8">
