@@ -8,8 +8,7 @@ vi.mock('@/server/actions/customer-photos', () => ({
   attachCustomerPhoto: vi.fn(),
   createCustomerPhotoUploadUrl: vi.fn(),
   deleteCustomerPhoto: vi.fn(),
-  getBookingPhotos: vi.fn(),
-  getCustomerPhotos: vi.fn(),
+  getPhotos: vi.fn(),
   updateCustomerPhotoCaption: vi.fn(),
 }))
 
@@ -53,6 +52,20 @@ describe('CustomerPhotos', () => {
     )
     expect(html).not.toContain('Agregar fotos')
     expect(html).toContain('/dashboard/photos/photo-1')
+  })
+
+  it('si la carga falló muestra el error, no "sin fotos"', () => {
+    const html = renderWithVocabulary(
+      'nails',
+      <CustomerPhotos
+        target={{ customerId: 'c1' }}
+        initialPhotos={[]}
+        initialError="La subida de fotos no está disponible."
+        uploadEnabled
+      />,
+    )
+    expect(html).toContain('La subida de fotos no está disponible.')
+    expect(html).not.toContain('Sin fotos todavía')
   })
 
   it('la advertencia de privacidad respeta el léxico del rubro', () => {

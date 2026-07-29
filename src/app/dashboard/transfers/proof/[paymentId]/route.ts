@@ -29,6 +29,7 @@ export async function GET(
   const url = await storage.presignDownload(
     payment.proofKey,
     payment.proofContentType ?? 'application/octet-stream',
+    'comprobante',
   )
   return NextResponse.redirect(url, 302)
 }

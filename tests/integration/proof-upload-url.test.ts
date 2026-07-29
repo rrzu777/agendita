@@ -3,6 +3,7 @@ import { requireTestDatabase } from './setup'
 import { createProofUploadUrl } from '@/server/actions/bank-transfer-public'
 import { seedDeclaredTransfer, cleanupBankTransferSeed } from './helpers/bank-transfer-seed'
 import { unwrap, expectActionError } from './helpers/action-result'
+import { fakeObjectStorage } from '../helpers/fake-object-storage'
 
 requireTestDatabase()
 
@@ -13,12 +14,7 @@ requireTestDatabase()
 // 'bank_transfer').
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: vi.fn().mockResolvedValue({ success: true }) }))
 
-const fakeStorage = {
-  presignUpload: vi.fn().mockResolvedValue('https://signed/put'),
-  presignDownload: vi.fn(),
-  head: vi.fn(),
-  remove: vi.fn(),
-}
+const fakeStorage = fakeObjectStorage()
 
 // El helper solo necesita la reserva-transferencia; no hace falta el Payment declarado.
 function seedTransferBooking() {

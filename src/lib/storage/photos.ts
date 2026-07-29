@@ -12,7 +12,10 @@ export const PHOTO_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as 
 
 export type PhotoContentType = (typeof PHOTO_ALLOWED_TYPES)[number]
 
-export const PHOTO_MAX_BYTES = 5 * 1024 * 1024 // 5 MiB, igual que los comprobantes
+export const PHOTO_MAX_BYTES = 5 * 1024 * 1024
+
+/** El tope en texto, para no repetir "5 MB" a mano en cada mensaje. */
+export const PHOTO_MAX_LABEL = `${PHOTO_MAX_BYTES / (1024 * 1024)} MB`
 
 /** Tope por ficha. Es una cuota de storage, no un límite de producto: 60 fotos
  *  cubren años de visitas y frenan que un bug de reintentos llene el bucket. */
@@ -51,24 +54,35 @@ export function isOwnCustomerPhotoKey(key: string, businessId: string, customerI
   return TOKEN_RE.test(key.slice(prefix.length))
 }
 
-const captionSchema = z
+export const photoCaptionSchema = z
   .string()
   .trim()
   .max(PHOTO_CAPTION_MAX, `La nota no puede pasar de ${PHOTO_CAPTION_MAX} caracteres`)
 
-export const photoCaptionSchema = captionSchema
+/**
+ * A qué se cuelga una foto. Es un union y no `{ customerId?, bookingId? }`
+ * porque con ambos opcionales `{}` compila, y entonces "falta el target" hay que
+ * atajarlo en runtime en cada camino. Así el compilador lo caza.
+ *
+ * Con `bookingId` solo alcanza: el servidor saca la ficha de la reserva y no le
+ * cree al cliente. Es lo que usa el drawer de la agenda, que no conoce el id de
+ * la clienta.
+ */
+export type PhotoTarget = { customerId: string; bookingId?: string } | { bookingId: string }
 
-/** La foto puede colgarse de la ficha o de una reserva. Con `bookingId` alcanza:
- *  el servidor saca la ficha de la reserva y no le cree al cliente. */
-export const attachCustomerPhotoSchema = z.object({
-  customerId: z.string().min(1).optional(),
-  bookingId: z.string().min(1).optional(),
-  key: z.string().min(1),
-  contentType: z
-    .string()
-    .refine(isAllowedPhotoType, 'Solo se pueden subir imágenes (JPG, PNG o WebP)'),
-  caption: captionSchema.optional(),
-})
+export const attachCustomerPhotoSchema = z
+  .object({
+    customerId: z.string().min(1).optional(),
+    bookingId: z.string().min(1).optional(),
+    key: z.string().min(1),
+    contentType: z
+      .string()
+      .refine(isAllowedPhotoType, 'Solo se pueden subir imágenes (JPG, PNG o WebP)'),
+    caption: photoCaptionSchema.optional(),
+  })
+  .refine((v) => Boolean(v.customerId || v.bookingId), {
+    message: 'Falta la ficha o la reserva',
+  })
 
 export type AttachCustomerPhotoInput = z.input<typeof attachCustomerPhotoSchema>
 

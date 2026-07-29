@@ -7,7 +7,7 @@ import { prisma } from '@/lib/db'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { BANK_TRANSFER_PUBLIC_SELECT, type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { btDeclaredId, btBalanceId, BANK_TRANSFER_METHOD, FIRM_BOOKING_STATUSES } from '@/lib/bank-transfer/declared'
-import { getObjectStorage, isObjectStorageAvailable, type ObjectStorage } from '@/lib/storage/r2'
+import { isObjectStorageAvailable, resolveStorage, type ObjectStorage, type StorageDeps } from '@/lib/storage/r2'
 import { proofKey, isAllowedProofType, PROOF_MAX_BYTES, type ProofKind } from '@/lib/storage/proof'
 import { deriveManualPaymentType } from '@/lib/payments/derive-payment-type'
 import {
@@ -21,11 +21,6 @@ import { action, UserError } from '@/lib/actions/result'
 // en src/lib/bank-transfer/). Flujo PÚBLICO: sin sesión, mismo modelo de
 // seguridad que payments.ts (identidad = bookingId cuid + rate limit).
 
-/** Resuelve el ObjectStorage: usa el inyectado por tests si viene (incluido
- *  `null` explícito), si no el real. */
-function resolveStorage(injected?: ObjectStorage | null): ObjectStorage | null {
-  return injected !== undefined ? injected : getObjectStorage()
-}
 
 /**
  * Deliberadamente SIN action(): nunca lanza (solo lee vía prisma.findFirst y
@@ -47,7 +42,6 @@ export async function getBankTransferInfo(businessId: string): Promise<BankTrans
   return { ...rest, requireProof: business.requireTransferProof && isObjectStorageAvailable() }
 }
 
-type ProofDeps = { storage?: ObjectStorage | null }
 
 /** Mina una URL PUT prefirmada para subir el comprobante ANTES de declarar.
  *  Público: identidad = bookingId (cuid) + rate limit, igual que declare*. */
@@ -55,7 +49,7 @@ async function _createProofUploadUrl(
   bookingId: string,
   kind: ProofKind,
   contentType: string,
-  deps: ProofDeps = {},
+  deps: StorageDeps = {},
 ): Promise<{ uploadUrl: string; key: string }> {
   const limit = await checkRateLimit('proof-upload-url')
   if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')

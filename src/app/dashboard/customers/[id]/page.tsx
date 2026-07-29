@@ -12,7 +12,7 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 import { formatMoney } from '@/lib/money'
 import { getCustomerLoyalty, getLoyaltyConfig } from '@/server/actions/loyalty'
 import { getCustomerPackages, listPackageProducts } from '@/server/actions/packages'
-import { getCustomerPhotos } from '@/server/actions/customer-photos'
+import { getPhotos } from '@/server/actions/customer-photos'
 import { CustomerPhotos } from '@/components/dashboard/customer-photos'
 import { isObjectStorageAvailable } from '@/lib/storage/r2'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
@@ -98,10 +98,12 @@ export default async function CustomerDetailPage({ params }: Props) {
     getLoyaltyConfig(),
     getCustomerPackages(id),
     listPackageProducts(),
-    getCustomerPhotos(id),
+    getPhotos({ customerId: id }),
   ])
   // Que R2 esté caído no puede tumbar la ficha entera: sin fotos, el resto se ve.
+  // El error viaja igual, para no mostrar "sin fotos" cuando en realidad falló.
   const photos = photosResult.ok ? photosResult.data : []
+  const photosError = photosResult.ok ? null : photosResult.error
 
   const currency = userData.business.currency || 'CLP'
   const sellableProducts = packageProducts
@@ -242,6 +244,7 @@ export default async function CustomerDetailPage({ params }: Props) {
               <CustomerPhotos
                 target={{ customerId: customer.id }}
                 initialPhotos={photos}
+                initialError={photosError}
                 uploadEnabled={isObjectStorageAvailable()}
               />
             </div>

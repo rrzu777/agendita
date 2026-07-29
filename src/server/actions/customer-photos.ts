@@ -7,7 +7,7 @@ import { requireBusiness } from '@/lib/auth/server'
 import { action, UserError } from '@/lib/actions/result'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
-import { getObjectStorage, type ObjectStorage } from '@/lib/storage/r2'
+import { resolveStorage, type StorageDeps } from '@/lib/storage/r2'
 import {
   attachCustomerPhotoSchema,
   customerPhotoKey,
@@ -16,9 +16,11 @@ import {
   isOwnCustomerPhotoKey,
   photoCaptionSchema,
   PHOTO_MAX_BYTES,
+  PHOTO_MAX_LABEL,
   PHOTO_MAX_PER_CUSTOMER,
   type AttachCustomerPhotoInput,
   type CustomerPhotoItem,
+  type PhotoTarget,
 } from '@/lib/storage/photos'
 
 // NOTE: módulo 'use server' — SOLO funciones async exportadas (consts, schemas y
@@ -30,49 +32,67 @@ import {
 // (attachCustomerPhoto), que es donde se verifica de verdad qué quedó en el
 // bucket — tamaño y tipo reales vía HEAD, no lo que dijo el cliente.
 
-type PhotoDeps = { storage?: ObjectStorage | null }
+const NOT_AN_IMAGE = 'Solo se pueden subir imágenes (JPG, PNG o WebP).'
+const NO_STORAGE = 'La subida de fotos no está disponible.'
 
-/** Resuelve el ObjectStorage: usa el inyectado por tests si viene (incluido
- *  `null` explícito), si no el real. */
-function resolveStorage(injected?: ObjectStorage | null): ObjectStorage | null {
-  return injected !== undefined ? injected : getObjectStorage()
+interface ResolvedTarget {
+  customerId: string
+  bookingId: string | null
+  /** Cuántas fotos tiene ya la ficha. Viene en la MISMA query que resuelve el
+   *  target: separarlo costaba un round-trip por foto subida. */
+  photoCount: number
 }
 
-type PhotoTarget = { customerId?: string; bookingId?: string }
-
 /**
- * Ficha (y reserva, si vino) a la que se cuelga la foto, verificando que sean
- * DE ESTE negocio. Con `bookingId` la ficha se saca de la reserva: es la que
- * usa el drawer de la agenda, que no conoce el id de la clienta.
+ * Ficha (y reserva, si vino) sobre la que se opera, verificando que sean DE ESTE
+ * negocio. Es el único lugar donde vive esa autorización: lo usan tanto la
+ * lectura como la escritura, así que una reserva ajena responde igual por los
+ * dos caminos.
+ *
+ * Acepta la forma laxa (los dos opcionales) porque también la llama el attach,
+ * que viene de un `safeParse` y no de un union. Los callers públicos usan
+ * `PhotoTarget`, que sí exige al menos uno en tiempo de compilación.
  */
 async function resolveTarget(
   businessId: string,
-  target: PhotoTarget,
-): Promise<{ customerId: string; bookingId: string | null }> {
+  target: { customerId?: string; bookingId?: string },
+): Promise<ResolvedTarget> {
+  const { customerId } = target
+
   if (target.bookingId) {
     const booking = await prisma.booking.findFirst({
       where: { id: target.bookingId, businessId },
-      select: { id: true, customerId: true },
+      select: {
+        id: true,
+        customerId: true,
+        customer: { select: { _count: { select: { photos: true } } } },
+      },
     })
     if (!booking) throw new UserError('Reserva no encontrada')
-    if (target.customerId && target.customerId !== booking.customerId) {
+    if (customerId && customerId !== booking.customerId) {
       throw new UserError('Esa reserva no es de esta ficha')
     }
-    return { customerId: booking.customerId, bookingId: booking.id }
+    return {
+      customerId: booking.customerId,
+      bookingId: booking.id,
+      photoCount: booking.customer._count.photos,
+    }
   }
 
-  if (!target.customerId) throw new UserError('Falta la ficha')
+  // Guard obligatorio: Prisma IGNORA un `id: undefined` en el where, así que sin
+  // esto un target vacío devolvería una ficha cualquiera del negocio.
+  if (!customerId) throw new UserError('Falta la ficha')
+
   const customer = await prisma.customer.findFirst({
-    where: { id: target.customerId, businessId },
-    select: { id: true },
+    where: { id: customerId, businessId },
+    select: { id: true, _count: { select: { photos: true } } },
   })
   if (!customer) throw new UserError('Ficha no encontrada')
-  return { customerId: customer.id, bookingId: null }
+  return { customerId: customer.id, bookingId: null, photoCount: customer._count.photos }
 }
 
-async function assertQuota(customerId: string) {
-  const count = await prisma.customerPhoto.count({ where: { customerId } })
-  if (count >= PHOTO_MAX_PER_CUSTOMER) {
+function assertQuota(photoCount: number) {
+  if (photoCount >= PHOTO_MAX_PER_CUSTOMER) {
     throw new UserError(
       `Esta ficha llegó a ${PHOTO_MAX_PER_CUSTOMER} fotos. Borrá alguna para subir otra.`,
     )
@@ -101,22 +121,20 @@ const PHOTO_SELECT = { id: true, bookingId: true, caption: true, createdAt: true
 async function _createCustomerPhotoUploadUrl(
   target: PhotoTarget,
   contentType: string,
-  deps: PhotoDeps = {},
+  deps: StorageDeps = {},
 ): Promise<{ uploadUrl: string; key: string }> {
   const { businessId } = await requireBusiness()
 
   const limit = await checkRateLimit('photo-upload-url')
   if (!limit.success) throw new UserError('Demasiadas fotos seguidas. Probá de nuevo en un minuto.')
 
-  if (!isAllowedPhotoType(contentType)) {
-    throw new UserError('Solo se pueden subir imágenes (JPG, PNG o WebP).')
-  }
+  if (!isAllowedPhotoType(contentType)) throw new UserError(NOT_AN_IMAGE)
 
   const storage = resolveStorage(deps.storage)
-  if (!storage) throw new UserError('La subida de fotos no está disponible.')
+  if (!storage) throw new UserError(NO_STORAGE)
 
-  const { customerId } = await resolveTarget(businessId, target)
-  await assertQuota(customerId)
+  const { customerId, photoCount } = await resolveTarget(businessId, target)
+  assertQuota(photoCount)
 
   const key = customerPhotoKey(businessId, customerId, crypto.randomUUID())
   const uploadUrl = await storage.presignUpload(key, contentType)
@@ -128,7 +146,7 @@ export const createCustomerPhotoUploadUrl = action(_createCustomerPhotoUploadUrl
 /** Confirma una foto ya subida a R2 y la guarda en la ficha. */
 async function _attachCustomerPhoto(
   input: AttachCustomerPhotoInput,
-  deps: PhotoDeps = {},
+  deps: StorageDeps = {},
 ): Promise<CustomerPhotoItem> {
   const { businessId } = await requireBusiness()
 
@@ -139,9 +157,9 @@ async function _attachCustomerPhoto(
   const data = parsed.data
 
   const storage = resolveStorage(deps.storage)
-  if (!storage) throw new UserError('La subida de fotos no está disponible.')
+  if (!storage) throw new UserError(NO_STORAGE)
 
-  const { customerId, bookingId } = await resolveTarget(businessId, data)
+  const { customerId, bookingId, photoCount } = await resolveTarget(businessId, data)
 
   // La key la emitimos nosotros hace un rato; que vuelva del cliente no la hace
   // confiable. Sin esto, alguien podría colgarse la foto de otro negocio.
@@ -153,14 +171,16 @@ async function _attachCustomerPhoto(
   const meta = await storage.head(data.key)
   if (!meta) throw new UserError('No encontramos la foto subida. Probá de nuevo.')
   if (meta.contentLength > PHOTO_MAX_BYTES) {
-    throw new UserError('La foto supera el tamaño máximo (5 MB).')
+    throw new UserError(`La foto supera el tamaño máximo (${PHOTO_MAX_LABEL}).`)
   }
   if (meta.contentType && !isAllowedPhotoType(meta.contentType)) {
-    throw new UserError('Solo se pueden subir imágenes (JPG, PNG o WebP).')
+    throw new UserError(NOT_AN_IMAGE)
   }
 
-  // Segundo chequeo de cuota: entre el presign y esto pudieron entrar otras.
-  await assertQuota(customerId)
+  // Este conteo es de hace dos round-trips, pero la cuota igual es aproximada:
+  // sin un constraint en la base, dos pestañas subiendo a la vez pueden pasarse
+  // por una. Es un límite de storage, no una regla de negocio.
+  assertQuota(photoCount)
 
   try {
     const photo = await prisma.customerPhoto.create({
@@ -169,7 +189,9 @@ async function _attachCustomerPhoto(
         customerId,
         bookingId,
         key: data.key,
-        contentType: data.contentType,
+        // El tipo REAL del objeto, no el que declaró el cliente: es el que la
+        // ruta le va a forzar al navegador al servirla.
+        contentType: meta.contentType ?? data.contentType,
         caption: data.caption || null,
       },
       select: PHOTO_SELECT,
@@ -188,10 +210,14 @@ async function _attachCustomerPhoto(
 
 export const attachCustomerPhoto = action(_attachCustomerPhoto)
 
-async function _getCustomerPhotos(customerId: string): Promise<CustomerPhotoItem[]> {
+/** Las fotos de una ficha, o las de una reserva puntual. Pasa por el mismo
+ *  `resolveTarget` que la escritura para que la autorización sea una sola. */
+async function _getPhotos(target: PhotoTarget): Promise<CustomerPhotoItem[]> {
   const { businessId } = await requireBusiness()
+  const { customerId, bookingId } = await resolveTarget(businessId, target)
+
   const photos = await prisma.customerPhoto.findMany({
-    where: { customerId, businessId },
+    where: bookingId ? { bookingId, businessId } : { customerId, businessId },
     select: PHOTO_SELECT,
     orderBy: { createdAt: 'desc' },
     take: PHOTO_MAX_PER_CUSTOMER,
@@ -199,20 +225,7 @@ async function _getCustomerPhotos(customerId: string): Promise<CustomerPhotoItem
   return photos.map(toItem)
 }
 
-export const getCustomerPhotos = action(_getCustomerPhotos)
-
-async function _getBookingPhotos(bookingId: string): Promise<CustomerPhotoItem[]> {
-  const { businessId } = await requireBusiness()
-  const photos = await prisma.customerPhoto.findMany({
-    where: { bookingId, businessId },
-    select: PHOTO_SELECT,
-    orderBy: { createdAt: 'desc' },
-    take: PHOTO_MAX_PER_CUSTOMER,
-  })
-  return photos.map(toItem)
-}
-
-export const getBookingPhotos = action(_getBookingPhotos)
+export const getPhotos = action(_getPhotos)
 
 async function _updateCustomerPhotoCaption(
   photoId: string,
@@ -244,7 +257,7 @@ export const updateCustomerPhotoCaption = action(_updateCustomerPhotoCaption)
 
 async function _deleteCustomerPhoto(
   photoId: string,
-  deps: PhotoDeps = {},
+  deps: StorageDeps = {},
 ): Promise<{ id: string }> {
   const { businessId } = await requireBusiness()
 

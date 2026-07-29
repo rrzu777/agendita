@@ -9,6 +9,7 @@ import {
   BT_VERIFY_BIZ,
 } from './helpers/bank-transfer-seed'
 import { unwrap, expectActionError } from './helpers/action-result'
+import { fakeObjectStorage } from '../helpers/fake-object-storage'
 
 requireTestDatabase()
 
@@ -24,18 +25,10 @@ vi.mock('@/lib/notifications', async (orig) => ({
   sendMultiNotificationSafely: vi.fn(),
 }))
 
-const okHead = {
-  presignUpload: vi.fn(),
-  presignDownload: vi.fn(),
-  head: vi.fn().mockResolvedValue({ contentLength: 1000, contentType: 'image/png' }),
-  remove: vi.fn(),
-}
-const bigHead = {
-  presignUpload: vi.fn(),
-  presignDownload: vi.fn(),
+const okHead = fakeObjectStorage()
+const bigHead = fakeObjectStorage({
   head: vi.fn().mockResolvedValue({ contentLength: 99_000_000, contentType: 'image/png' }),
-  remove: vi.fn(),
-}
+})
 
 // El helper crea la reserva-transferencia (pending_payment, paymentMethod
 // 'bank_transfer', hold vigente); `declared:false` la deja SIN el Payment.

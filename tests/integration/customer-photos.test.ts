@@ -4,6 +4,7 @@ import { ForbiddenError } from '../helpers/auth-errors'
 import { requireTestDatabase } from './setup'
 import { unwrap, expectActionError } from './helpers/action-result'
 import { customerPhotoKey, PHOTO_MAX_PER_CUSTOMER } from '@/lib/storage/photos'
+import { fakeObjectStorage } from '../helpers/fake-object-storage'
 
 requireTestDatabase()
 
@@ -27,12 +28,9 @@ vi.mock('@/lib/rate-limit', () => ({
 }))
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
 
-const storage = {
-  presignUpload: vi.fn().mockResolvedValue('https://signed/put'),
-  presignDownload: vi.fn(),
+const storage = fakeObjectStorage({
   head: vi.fn().mockResolvedValue({ contentLength: 1000, contentType: 'image/jpeg' }),
-  remove: vi.fn().mockResolvedValue(undefined),
-}
+})
 
 describe('fotos de la ficha', () => {
   let prisma: PrismaClient
@@ -138,7 +136,7 @@ describe('fotos de la ficha', () => {
     expect(saved.caption).toBe('Antes')
     expect(saved.url).toBe(`/dashboard/photos/${saved.id}`)
 
-    const listed = await unwrap(actions.getCustomerPhotos(customerId))
+    const listed = await unwrap(actions.getPhotos({ customerId }))
     expect(listed.map((p) => p.id)).toEqual([saved.id])
   })
 
@@ -155,7 +153,7 @@ describe('fotos de la ficha', () => {
     const row = await prisma.customerPhoto.findUnique({ where: { id: saved.id } })
     expect(row?.customerId).toBe(customerId)
 
-    const byBooking = await unwrap(actions.getBookingPhotos(bookingId))
+    const byBooking = await unwrap(actions.getPhotos({ bookingId }))
     expect(byBooking.map((p) => p.id)).toEqual([saved.id])
   })
 
@@ -177,6 +175,29 @@ describe('fotos de la ficha', () => {
     await expectActionError(
       createCustomerPhotoUploadUrl({ customerId: other.id }, 'image/jpeg', { storage }),
       'Ficha no encontrada',
+    )
+  })
+
+  it('leer una reserva ajena falla igual que escribirla', async () => {
+    // La lectura pasa por el mismo resolveTarget que la escritura: antes
+    // devolvía [] y el drawer decía "sin fotos" para una reserva de otro negocio.
+    const other = await prisma.customer.create({
+      data: { businessId: OTHER_BIZ, name: 'Ajena', phone: '+56977776666' },
+    })
+    const { getPhotos } = await import('@/server/actions/customer-photos')
+    await expectActionError(getPhotos({ customerId: other.id }), 'Ficha no encontrada')
+  })
+
+  it('un target vacío no engancha una ficha cualquiera del negocio', async () => {
+    // Prisma IGNORA `id: undefined` en el where: sin el guard explícito, esto
+    // habría resuelto a la primera ficha del negocio.
+    const { attachCustomerPhoto } = await import('@/server/actions/customer-photos')
+    await expectActionError(
+      attachCustomerPhoto(
+        { key: customerPhotoKey(BIZ, customerId, crypto.randomUUID()), contentType: 'image/jpeg' },
+        { storage },
+      ),
+      'Falta la ficha o la reserva',
     )
   })
 

@@ -141,19 +141,18 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
             </div>
           )}
 
-          {/* Sólo mientras el drawer está abierto: monta, pide las fotos de ESTA
-              reserva y se desmonta al cerrar. Así la agenda no carga fotos de
+          {/* Sin `initialPhotos`, el panel pide las fotos de ESTA reserva al
+              montarse. Sólo monta con el drawer abierto (el SheetContent de
+              Radix desmonta al cerrar), así que la agenda no carga fotos de
               todas las citas del mes para mostrar una. */}
-          {open && (
-            <div className="space-y-2 rounded-xl border border-border/60 p-3">
-              <h4 className="text-sm font-semibold">Fotos de esta cita</h4>
-              <CustomerPhotos
-                target={{ bookingId: booking.id }}
-                uploadEnabled={photoUploadEnabled}
-                compact
-              />
-            </div>
-          )}
+          <div className="space-y-2 rounded-xl border border-border/60 p-3">
+            <h4 className="text-sm font-semibold">Fotos de esta cita</h4>
+            <CustomerPhotos
+              target={{ bookingId: booking.id }}
+              uploadEnabled={photoUploadEnabled}
+              compact
+            />
+          </div>
 
           <div className="space-y-2 rounded-xl border border-border/60 p-3">
             <h4 className="text-sm font-semibold">Contactar cliente</h4>

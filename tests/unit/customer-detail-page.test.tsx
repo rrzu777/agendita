@@ -23,11 +23,10 @@ vi.mock('@/server/actions/packages', () => ({
 }))
 
 vi.mock('@/server/actions/customer-photos', () => ({
-  getCustomerPhotos: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+  getPhotos: vi.fn().mockResolvedValue({ ok: true, data: [] }),
   attachCustomerPhoto: vi.fn(),
   createCustomerPhotoUploadUrl: vi.fn(),
   deleteCustomerPhoto: vi.fn(),
-  getBookingPhotos: vi.fn(),
   updateCustomerPhotoCaption: vi.fn(),
 }))
 
