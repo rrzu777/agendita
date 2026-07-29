@@ -23,6 +23,7 @@ import type {
   OwnerBookingChangedData,
   PackagePurchasedEmailData,
   PackageDisputedEmailData,
+  PackageUnexpectedPaymentEmailData,
   BookingDisputedEmailData,
   PackageTransferDeclaredEmailData,
   PackageTransferReminderCustomerEmailData,
@@ -75,6 +76,8 @@ import {
   packageSoldBusinessText,
   packageDisputedBusinessHtml,
   packageDisputedBusinessText,
+  packageUnexpectedPaymentBusinessHtml,
+  packageUnexpectedPaymentBusinessText,
   bookingDisputedBusinessHtml,
   bookingDisputedBusinessText,
   packageTransferDeclaredBusinessHtml,
@@ -655,6 +658,28 @@ export async function sendPackageDisputedToBusiness(
   return Promise.all(
     ownerEmails.map((owner) =>
       sendEmail(owner.email, `Contracargo de paquete - ${data.customerName}`, html, text, {}),
+    ),
+  )
+}
+
+/** Email a la(s) dueña(s)/admin(s) cuando entra un pago sobre un paquete que no lo esperaba. */
+export async function sendPackageUnexpectedPaymentToBusiness(
+  businessId: string,
+  data: PackageUnexpectedPaymentEmailData,
+): Promise<EmailResult[]> {
+  const ownerEmails = await getBusinessOwnerEmails(businessId)
+
+  if (ownerEmails.length === 0) {
+    return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
+  }
+
+  const clientLabel = await getBusinessClientLabel(businessId)
+  const html = packageUnexpectedPaymentBusinessHtml(data, clientLabel)
+  const text = packageUnexpectedPaymentBusinessText(data, clientLabel)
+
+  return Promise.all(
+    ownerEmails.map((owner) =>
+      sendEmail(owner.email, `Pago inesperado de paquete - ${data.customerName}`, html, text, {}),
     ),
   )
 }

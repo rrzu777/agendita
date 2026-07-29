@@ -817,33 +817,97 @@ describe('applyApprovedPackagePayment', () => {
     )
   })
 
-  it('corta por status active aunque el pago aún no esté aprobado (cubre la cláusula || active)', async () => {
+  it('pago NUEVO sobre compra ya active: no re-activa, asienta el cobro doble y lo señala', async () => {
     const { applyApprovedPackagePayment } = await import('@/server/services/finance')
     // Compra ya active, pero NO hay pago aprobado previo (findFirst → null,
-    // create devuelve un pago recién aprobado) → alreadyApproved es false, así
-    // que el early-return depende ÚNICAMENTE de purchase.status === 'active'.
+    // create devuelve un pago recién aprobado) → alreadyApproved es false: es
+    // plata NUEVA sobre una compra ya pagada, no una redelivery.
     mockPrisma.packagePurchase.findUnique.mockResolvedValue({ id: 'p1', businessId: 'b1', customerId: 'c1', status: 'active', pricePaid: 30000, quantity: 3, bonusQuantity: 0, expiresAt: null, createdByUserId: null })
     mockPrisma.payment.findFirst.mockResolvedValue(null)
-    mockPrisma.payment.create.mockResolvedValue({ id: 'pay1', status: 'approved', paymentType: 'package_purchase', amount: 30000 })
+    mockPrisma.payment.create.mockResolvedValue({ id: 'pay2', status: 'approved', paymentType: 'package_purchase', amount: 30000 })
 
-    await applyApprovedPackagePayment({
+    const res = await applyApprovedPackagePayment({
       tx: mockPrisma, packagePurchaseId: 'p1', businessId: 'b1', amount: 30000,
-      currency: 'CLP', provider: PaymentProvider.mercado_pago, providerPaymentId: 'mp-1',
+      currency: 'CLP', provider: PaymentProvider.mercado_pago, providerPaymentId: 'mp-2',
       paymentType: PaymentType.package_purchase,
     })
+
     expect(activatePkg).not.toHaveBeenCalled()
+    expect(res).toEqual({ outcome: 'unexpected' })
+    // Asiento por el paymentId nuevo (upsert = idempotente ante redelivery).
+    expect(mockPrisma.ledgerEntry.upsert).toHaveBeenCalledTimes(1)
+    const call = mockPrisma.ledgerEntry.upsert.mock.calls[0][0]
+    expect(call.where).toEqual({ paymentId: 'pay2' })
+    // manual_income + packagePurchaseId seteado = visible en el ledger pero fuera
+    // de TODOS los KPI de ingreso (los de reserva filtran packagePurchaseId: null;
+    // los de paquete filtran type: 'package_sale').
+    expect(call.create).toMatchObject({
+      businessId: 'b1', packagePurchaseId: 'p1', paymentId: 'pay2', customerId: 'c1',
+      type: 'manual_income', direction: 'income', amount: 30000, currency: 'CLP',
+    })
+    // La descripción nombra el estado real, que es lo que la dueña va a leer en el
+    // libro meses después.
+    expect(call.create.description).toBe('Pago inesperado: el paquete ya estaba pagado y activo (revisar reembolso)')
   })
 
-  it('es idempotente: compra ya active no re-activa', async () => {
+  // El activador NO tolera correr dos veces: los grants reversados conservan su
+  // (customerId, requestId), así que re-activar una compra `refunded` explotaba con
+  // P2002 → tx abortada → webhook 500 → MP reintentando para siempre. `rejected` es
+  // un "no" explícito de la dueña que un webhook asincrónico no debe pisar. Los dos
+  // van a la misma rama segura que `active`.
+  it.each([
+    ['refunded', 'Pago inesperado: el paquete ya se había reembolsado (revisar reembolso)'],
+    ['rejected', 'Pago inesperado: la compra estaba rechazada (revisar reembolso)'],
+  ])('pago NUEVO sobre compra %s: no activa, asienta y avisa', async (status, description) => {
+    const { applyApprovedPackagePayment } = await import('@/server/services/finance')
+    mockPrisma.packagePurchase.findUnique.mockResolvedValue({ id: 'p1', businessId: 'b1', customerId: 'c1', status, pricePaid: 30000, quantity: 3, bonusQuantity: 0, expiresAt: null, createdByUserId: null })
+    mockPrisma.payment.findFirst.mockResolvedValue(null)
+    mockPrisma.payment.create.mockResolvedValue({ id: 'pay3', status: 'approved', paymentType: 'package_purchase', amount: 30000 })
+
+    const res = await applyApprovedPackagePayment({
+      tx: mockPrisma, packagePurchaseId: 'p1', businessId: 'b1', amount: 30000,
+      currency: 'CLP', provider: PaymentProvider.mercado_pago, providerPaymentId: 'mp-3',
+      paymentType: PaymentType.package_purchase,
+    })
+
+    expect(activatePkg).not.toHaveBeenCalled()
+    expect(res).toEqual({ outcome: 'unexpected' })
+    expect(mockPrisma.ledgerEntry.upsert.mock.calls[0][0].create.description).toBe(description)
+  })
+
+  // Contracara: `expired` (venció el hold, pagó tarde) SÍ activa. Un paquete no
+  // bloquea cupo y la clienta pagó de verdad — mismo criterio que revivir una
+  // compra expirada en el checkout.
+  it('pago sobre compra expired: revive y activa', async () => {
+    const { applyApprovedPackagePayment } = await import('@/server/services/finance')
+    mockPrisma.packagePurchase.findUnique.mockResolvedValue({ id: 'p1', businessId: 'b1', customerId: 'c1', status: 'expired', pricePaid: 30000, quantity: 3, bonusQuantity: 0, expiresAt: null, createdByUserId: null })
+    mockPrisma.payment.findFirst.mockResolvedValue(null)
+    mockPrisma.payment.create.mockResolvedValue({ id: 'pay4', status: 'approved', paymentType: 'package_purchase', amount: 30000 })
+
+    const res = await applyApprovedPackagePayment({
+      tx: mockPrisma, packagePurchaseId: 'p1', businessId: 'b1', amount: 30000,
+      currency: 'CLP', provider: PaymentProvider.mercado_pago, providerPaymentId: 'mp-4',
+      paymentType: PaymentType.package_purchase,
+    })
+
+    expect(res).toEqual({ outcome: 'activated' })
+    expect(activatePkg).toHaveBeenCalledTimes(1)
+    expect(mockPrisma.ledgerEntry.upsert).not.toHaveBeenCalled()
+  })
+
+  it('es idempotente: redelivery del MISMO pago aprobado no re-activa ni asienta', async () => {
     const { applyApprovedPackagePayment } = await import('@/server/services/finance')
     mockPrisma.packagePurchase.findUnique.mockResolvedValue({ id: 'p1', businessId: 'b1', customerId: 'c1', status: 'active', pricePaid: 30000, quantity: 3, bonusQuantity: 0, expiresAt: null, createdByUserId: null })
     mockPrisma.payment.findFirst.mockResolvedValue({ id: 'pay1', status: 'approved', paymentType: 'package_purchase', amount: 30000 })
 
-    await applyApprovedPackagePayment({
+    const res = await applyApprovedPackagePayment({
       tx: mockPrisma, packagePurchaseId: 'p1', businessId: 'b1', amount: 30000,
       currency: 'CLP', provider: PaymentProvider.mercado_pago, providerPaymentId: 'mp-1',
       paymentType: PaymentType.package_purchase,
     })
+
     expect(activatePkg).not.toHaveBeenCalled()
+    expect(mockPrisma.ledgerEntry.upsert).not.toHaveBeenCalled()
+    expect(res).toEqual({ outcome: 'noop' })
   })
 })

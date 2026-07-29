@@ -222,6 +222,19 @@ export interface PackageDisputedEmailData {
   businessCurrency: string
 }
 
+/** Aviso a la dueña de que entró un pago sobre un paquete que no lo esperaba. */
+export interface PackageUnexpectedPaymentEmailData {
+  businessName: string
+  customerName: string
+  productName: string
+  amount: number
+  businessCurrency: string
+  /** Por qué el pago no activó nada, en castellano llano ("el paquete ya estaba
+   *  pagado y activo"). Lo arma `describeUnexpectedPackagePayment` para que el mail
+   *  y el asiento de ledger cuenten exactamente lo mismo. */
+  situation: string
+}
+
 export interface BookingDisputedEmailData {
   businessName: string
   customerName: string

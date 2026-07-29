@@ -16,7 +16,7 @@ const baseData = {
 describe('LoyaltyCard', () => {
   it('muestra balance, catálogo canjeable y botón habilitado si alcanza', () => {
     const html = renderToStaticMarkup(
-      <LoyaltyCard customerName="Ana Pérez" business={{ name: 'Mimos', logoUrl: null }} data={baseData as never} redeemAction={vi.fn() as never} />,
+      <LoyaltyCard customerName="Ana Pérez" business={{ name: 'Mimos', logoUrl: null, category: 'nails' }} data={baseData as never} redeemAction={vi.fn() as never} />,
     )
     expect(html).toContain('120')
     expect(html).toContain('Descuento 10%')
@@ -27,7 +27,7 @@ describe('LoyaltyCard', () => {
   it('programa pausado: aviso y sin catálogo', () => {
     const data = { ...baseData, config: { ...baseData.config, isActive: false }, catalog: [] }
     const html = renderToStaticMarkup(
-      <LoyaltyCard customerName="Ana" business={{ name: 'Mimos', logoUrl: null }} data={data as never} redeemAction={vi.fn() as never} />,
+      <LoyaltyCard customerName="Ana" business={{ name: 'Mimos', logoUrl: null, category: 'nails' }} data={data as never} redeemAction={vi.fn() as never} />,
     )
     expect(html).toContain('pausado')
   })

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
-import { applyApprovedPayment, applyApprovedPackagePayment } from '@/server/services/finance'
+import { applyApprovedPayment, applyApprovedPackagePayment, describeUnexpectedPackagePayment } from '@/server/services/finance'
 import { createHmac, timingSafeEqual } from 'crypto'
 import {
   sendBookingConfirmedNotification,
@@ -10,8 +10,10 @@ import {
   sendPackagePurchasedNotification,
   sendPackageSoldNotificationToBusiness,
   sendPackageDisputedToBusiness,
+  sendPackageUnexpectedPaymentToBusiness,
   sendBookingDisputedToBusiness,
 } from '@/lib/notifications'
+import type { EmailResult } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
 import { decryptSecret } from '@/lib/payments/encryption'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
@@ -34,6 +36,36 @@ function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
       throw new Error(`Mercado Pago API error ${res.status} for ${path}: ${body}`)
     }
     return res.json() as Promise<T>
+  })
+}
+
+/** Compra de paquete con lo que necesitan los emails a la dueña (negocio, clienta, producto). */
+function findPurchaseForBusinessEmail(packagePurchaseId: string) {
+  return prisma.packagePurchase.findUnique({
+    where: { id: packagePurchaseId },
+    include: {
+      product: { select: { name: true } },
+      customer: { select: { name: true } },
+      business: { select: { name: true, currency: true } },
+    },
+  })
+}
+
+type PurchaseForBusinessEmail = NonNullable<Awaited<ReturnType<typeof findPurchaseForBusinessEmail>>>
+
+/** Carga la compra y manda el email a la dueña, error-aislado. Si la compra ya no
+ *  está, se salta en vez de romper el webhook. */
+function notifyBusinessAboutPurchase(
+  label: string,
+  packagePurchaseId: string,
+  send: (purchase: PurchaseForBusinessEmail) => Promise<EmailResult[]>,
+): Promise<unknown> {
+  return sendMultiNotificationSafely(label, async () => {
+    const purchase = await findPurchaseForBusinessEmail(packagePurchaseId)
+    if (!purchase) {
+      return [{ success: false as const, skipped: 'Compra no encontrada' }]
+    }
+    return send(purchase)
   })
 }
 
@@ -357,14 +389,7 @@ export async function POST(request: NextRequest) {
     ) {
       const packagePurchaseId = payment.packagePurchaseId
       // Un solo fetch con includes: sirve al guard de status y a la notif de abajo.
-      const purchase = await prisma.packagePurchase.findUnique({
-        where: { id: packagePurchaseId },
-        include: {
-          product: { select: { name: true } },
-          customer: { select: { name: true } },
-          business: { select: { name: true, currency: true } },
-        },
-      })
+      const purchase = await findPurchaseForBusinessEmail(packagePurchaseId)
       if (purchase && purchase.status === 'active') {
         // 'charged_back' = disputa involuntaria → reversión total (clawback + descubrir
         // reservas) + alarma a la dueña. 'refunded' que llega con la compra AÚN activa
@@ -538,7 +563,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Pago no asociado a una reserva ni a un paquete' }, { status: 400 })
       }
 
-      const { wasActivated } = await prisma.$transaction(async (tx) => {
+      const { outcome } = await prisma.$transaction(async (tx) => {
         // Actualizar providerPaymentId y rawPayload
         await tx.payment.update({
           where: { id: payment.id },
@@ -566,35 +591,43 @@ export async function POST(request: NextRequest) {
       // Notificar SOLO en la primera activación: MP redeliveria el webhook
       // (at-least-once) y sin este gate cada reintento reenviaría los dos emails.
       // Espejo del `wasConfirmed` de la rama de reserva.
-      if (wasActivated) {
+      if (outcome === 'activated') {
         // Ambos envíos son independientes y ya vienen error-aislados por sus
         // wrappers *Safely; corren en paralelo para no encadenar latencia de email.
         await Promise.all([
           sendNotificationSafely('package purchased customer', () =>
             sendPackagePurchasedNotification(packagePurchaseId, payment.businessId),
           ),
-          sendMultiNotificationSafely('package sold business', async () => {
-            const purchase = await prisma.packagePurchase.findUnique({
-              where: { id: packagePurchaseId },
-              include: {
-                product: { select: { name: true } },
-                customer: { select: { name: true } },
-                business: { select: { name: true, currency: true } },
-              },
-            })
-            if (!purchase) {
-              return [{ success: false as const, skipped: 'Compra no encontrada' }]
-            }
-            return sendPackageSoldNotificationToBusiness(payment.businessId, {
+          notifyBusinessAboutPurchase('package sold business', packagePurchaseId, (purchase) =>
+            sendPackageSoldNotificationToBusiness(payment.businessId, {
               businessName: purchase.business.name,
               customerName: purchase.customer.name,
               productName: purchase.product.name,
               totalSessions: purchase.quantity + purchase.bonusQuantity,
               pricePaid: purchase.pricePaid,
               businessCurrency: purchase.business.currency || 'CLP',
-            })
-          }),
+            }),
+          ),
         ])
+      }
+
+      // Entró plata nueva sobre una compra que no la esperaba: ya activa (la clienta
+      // pagó por transferencia, la dueña confirmó y MP aprobó tarde), ya reembolsada
+      // o rechazada por la dueña. El servicio ya lo asentó en el ledger; acá sólo
+      // avisamos para que la dueña decida el reembolso. La clienta NO recibe nada:
+      // para ella no hubo una compra nueva. El `status` es el de antes de la tx —
+      // esta rama justamente no lo toca.
+      if (outcome === 'unexpected') {
+        await notifyBusinessAboutPurchase('package unexpected payment business', packagePurchaseId, (purchase) =>
+          sendPackageUnexpectedPaymentToBusiness(payment.businessId, {
+            businessName: purchase.business.name,
+            customerName: purchase.customer.name,
+            productName: purchase.product.name,
+            amount: payment.amount,
+            businessCurrency: purchase.business.currency || 'CLP',
+            situation: describeUnexpectedPackagePayment(purchase.status),
+          }),
+        )
       }
 
       const customerId = payment.packagePurchase?.customerId
