@@ -122,9 +122,10 @@ const CUSTOMER_BOOKING_PAYMENT_TYPES: ReadonlySet<PaymentType> = new Set<Payment
   'full_payment',
 ])
 
-/** Descripción del asiento de un pago que entró sobre una reserva ya saldada.
- *  Fuente única con el mail a la dueña, así los dos cuentan lo mismo. */
-export function unexpectedBookingPaymentDescription(bookingId: string, bookingNumber?: number | null): string {
+/** Descripción del asiento de un pago que entró sobre una reserva ya saldada. Vive
+ *  al lado de `getLedgerDescription` porque es su rama excepcional; el mail a la
+ *  dueña tiene su propia redacción (plantilla HTML completa), no pasa por acá. */
+function unexpectedBookingPaymentDescription(bookingId: string, bookingNumber?: number | null): string {
   return `Pago inesperado para reserva ${formatBookingNumber(bookingNumber, bookingId)}: ya estaba pagada (revisar reembolso)`
 }
 
