@@ -12,6 +12,9 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 import { formatMoney } from '@/lib/money'
 import { getCustomerLoyalty, getLoyaltyConfig } from '@/server/actions/loyalty'
 import { getCustomerPackages, listPackageProducts } from '@/server/actions/packages'
+import { getPhotos } from '@/server/actions/customer-photos'
+import { CustomerPhotos } from '@/components/dashboard/customer-photos'
+import { isObjectStorageAvailable } from '@/lib/storage/r2'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { normalizePhone } from '@/lib/customers/phone'
 import { CustomerEditForm } from './edit-form'
@@ -91,11 +94,16 @@ export default async function CustomerDetailPage({ params }: Props) {
   // ejecuta en paralelo con otras lecturas sobre un pool chico (pgbouncer), la tx puede no
   // conseguir conexión para arrancar (P2028). Se corre sola y luego el resto en paralelo.
   const { balance, history, grants, catalog } = await getCustomerLoyalty(id)
-  const [loyaltyConfig, packages, packageProducts] = await Promise.all([
+  const [loyaltyConfig, packages, packageProducts, photosResult] = await Promise.all([
     getLoyaltyConfig(),
     getCustomerPackages(id),
     listPackageProducts(),
+    getPhotos({ customerId: id }),
   ])
+  // Que R2 esté caído no puede tumbar la ficha entera: sin fotos, el resto se ve.
+  // El error viaja igual, para no mostrar "sin fotos" cuando en realidad falló.
+  const photos = photosResult.ok ? photosResult.data : []
+  const photosError = photosResult.ok ? null : photosResult.error
 
   const currency = userData.business.currency || 'CLP'
   const sellableProducts = packageProducts
@@ -230,6 +238,17 @@ export default async function CustomerDetailPage({ params }: Props) {
 
           {/* Right: history */}
           <div className="space-y-6 lg:col-span-2">
+            {/* Fotos */}
+            <div className="studio-card p-4">
+              <h3 className="mb-3 text-lg font-semibold text-primary">Fotos</h3>
+              <CustomerPhotos
+                target={{ customerId: customer.id }}
+                initialPhotos={photos}
+                initialError={photosError}
+                uploadEnabled={isObjectStorageAvailable()}
+              />
+            </div>
+
             {/* Bookings */}
             <div className="studio-card p-4">
               <h3 className="mb-4 text-lg font-semibold text-primary">Historial de reservas</h3>

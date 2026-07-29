@@ -23,7 +23,7 @@ vi.mock('@/lib/auth/server', () => ({
 
 const presignDownload = vi.fn().mockResolvedValue('https://signed/get')
 vi.mock('@/lib/storage/r2', () => ({
-  getProofStorage: () => ({ presignUpload: vi.fn(), presignDownload, head: vi.fn() }),
+  getObjectStorage: () => ({ presignUpload: vi.fn(), presignDownload, head: vi.fn(), remove: vi.fn() }),
 }))
 
 // Import DESPUÉS de los mocks para que la ruta resuelva las versiones mockeadas.
@@ -60,7 +60,9 @@ describe('GET /dashboard/transfers/proof/[paymentId]', () => {
 
     expect([302, 307]).toContain(res.status)
     expect(res.headers.get('location')).toBe('https://signed/get')
-    expect(presignDownload).toHaveBeenCalledWith(key, 'image/png')
+    // El tercer argumento es el filename del Content-Disposition: es obligatorio
+    // desde que presignDownload dejó de asumir que todo objeto es un comprobante.
+    expect(presignDownload).toHaveBeenCalledWith(key, 'image/png', 'comprobante')
   })
 
   it('404 cuando el Payment es de OTRO negocio', async () => {

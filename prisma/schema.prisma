@@ -119,6 +119,7 @@ model Business {
   packageProducts      PackageProduct[]
   packagePurchases     PackagePurchase[]
   campaigns            Campaign[]
+  customerPhotos       CustomerPhoto[]
 }
 
 enum PaymentAccountStatus {
@@ -393,6 +394,7 @@ model Customer {
   referralReceived   Referral?           @relation("ReferralReferred")
   packagePurchases   PackagePurchase[]
   campaignRecipients CampaignRecipient[]
+  photos             CustomerPhoto[]
 
   @@index([businessId])
   // Una ficha por (negocio, teléfono). Es la misma clave con la que
@@ -451,6 +453,7 @@ model Booking {
   redemption                     PromotionRedemption?
   review                         Review?
   loyaltyLedger                  LoyaltyLedger[]
+  photos                         CustomerPhoto[]
   reviewToken                    String?              @unique
   reviewTokenCreatedAt           DateTime?
   reminderSentAt                 DateTime?
@@ -628,6 +631,37 @@ model Review {
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([businessId, isApproved, isHidden])
+}
+
+/// Fotos del trabajo hecho, colgadas de la ficha. Son PRIVADAS: el bucket R2 no
+/// es público y la única forma de verlas es la ruta del panel, que verifica que
+/// quien pide sea del negocio dueño. Nada que ver con GalleryImage, que es la
+/// vidriera pública del negocio y guarda una URL abierta.
+///
+/// `bookingId` es opcional a propósito: la foto puede subirse desde la ficha sin
+/// una cita atrás (una foto de referencia que trajo la clienta, por ejemplo), y
+/// si la reserva se borra la foto sigue viva en la ficha (SetNull).
+model CustomerPhoto {
+  id          String   @id @default(cuid())
+  businessId  String
+  customerId  String
+  bookingId   String?
+  /// Key del objeto en R2. Única: el token lo genera el servidor, nunca el cliente.
+  key         String   @unique
+  contentType String
+  caption     String?
+  createdAt   DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  booking  Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  // La galería de la ficha: por clienta, más nuevas primero.
+  @@index([customerId, createdAt])
+  // Las fotos de una reserva puntual (el panel del drawer).
+  @@index([bookingId])
+  // Cuota por negocio + performance del cascade delete.
+  @@index([businessId])
 }
 
 model GalleryImage {

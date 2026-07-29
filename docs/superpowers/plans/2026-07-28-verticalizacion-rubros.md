@@ -265,12 +265,77 @@ igual: todo nace `on_site` y esa modalidad no cambia ni una pantalla.
 
 # Track 4 — Fotos en la ficha
 
-**Diseño cerrado, pasos pendientes.**
+**Estado: ✅ IMPLEMENTADO** (un PR). Un negocio que nunca sube una foto no ve
+ningún cambio salvo un panel vacío en la ficha.
 
-- `CustomerPhoto` — `businessId`, `customerId`, `bookingId?`, `key`, `caption?`, `createdAt`.
-- Reusa el presign de `src/lib/storage/r2.ts` con un namespace nuevo
-  (`src/lib/storage/photos.ts`, espejo de `proof.ts`). Sólo imágenes, sin PDF.
-- Se ve en el detalle de la ficha y al abrir una reserva.
+- `CustomerPhoto` — `businessId`, `customerId`, `bookingId?`, `key` (única),
+  `contentType`, `caption?`, `createdAt`.
+- `src/lib/storage/photos.ts` — espejo de `proof.ts`: tipos permitidos (**sólo
+  imágenes**, nada de PDF), tope de 5 MB, cuota de 60 por ficha, armado y
+  validación de la key, schema del attach.
+- El bucket es el mismo de los comprobantes, así que `ProofStorage` pasó a
+  llamarse **`ObjectStorage`** (`getObjectStorage`, `isObjectStorageAvailable`) y
+  ganó `remove()`. Lo que distingue una feature de otra es el prefijo de la key,
+  no el transporte.
+- Las fotos se sirven por `/dashboard/photos/[photoId]`, que verifica el negocio
+  y redirige a un GET prefirmado de 60s. **Nunca** se expone la key ni una URL
+  pública, igual que el comprobante.
+- Se ven en la ficha (panel "Fotos", columna ancha) y en el drawer de la agenda,
+  filtradas por esa cita.
+
+## Decisiones que conviene no re-litigar
+
+- **La key la arma el servidor.** El token es un `crypto.randomUUID()` generado
+  en el presign; cuando la key vuelve del cliente para el attach,
+  `isOwnCustomerPhotoKey` exige el prefijo exacto de ESA ficha y que lo que sigue
+  sea un token nuestro y nada más. Sin eso, cualquiera podía colgarse el objeto
+  de otro negocio en su propia ficha.
+- **El bucket manda sobre el tamaño y el tipo.** El cliente valida para dar un
+  error rápido, pero el attach hace `HEAD` y decide con lo que hay en R2 de
+  verdad. Lo que dice el navegador no cuenta.
+- **Borrar: primero la fila, después el objeto, y el objeto sin bloquear.** Si R2
+  falla, queda un huérfano en el bucket y la foto ya no se ve en ningún lado. Al
+  revés, un fallo dejaría la ficha mostrando una foto rota — bastante peor.
+- **Al borrar la reserva la foto sobrevive** (`ON DELETE SET NULL`): es de la
+  ficha, la cita es sólo dónde se sacó.
+- **No exige owner/admin**, a diferencia del comprobante: la ficha ya la ve
+  cualquier persona del equipo y las fotos son parte de ella.
+- **Las sube el negocio, no la clienta.** No hay superficie pública. El panel lo
+  dice explícito ("las ve solo tu equipo").
+
+## Landmines encontradas al construirlo
+
+1. **`tests/unit/customer-detail-page.test.tsx` reventó por un mock incompleto de
+   `next/navigation`.** La página empezó a llamar una action envuelta en
+   `action()`, que usa `unstable_rethrow`; el mock no lo tenía y el fallo salía
+   como "No export is defined", no como "falta mockear las fotos". Se arregló
+   mockeando `@/server/actions/customer-photos`.
+2. **El drawer sólo monta el panel mientras está abierto.** Si no, la agenda
+   pediría las fotos de todas las citas del mes para mostrar una.
+3. **Subida de a una, no en paralelo** — por progreso legible y para no saturar
+   el uplink del celular. La cuota NO es la razón: es best-effort igual (sin
+   constraint en la base, dos pestañas se pasan por una).
+4. **Prisma IGNORA un `id: undefined` en el `where`.** `resolveTarget` sin ficha
+   ni reserva resolvía a una ficha CUALQUIERA del negocio. Va guard explícito, y
+   hay un test de integración que lo fija.
+5. **`fetch` TIRA cuando se corta la red** (no devuelve un response con `ok:
+   false`). Sin try/catch alrededor del PUT, la excepción se escapaba del bucle
+   de subida y dejaba el botón trabado en "Subiendo…" para siempre.
+6. **La lectura y la escritura tienen que autorizar igual.** Al principio leer
+   las fotos de una reserva ajena devolvía `[]` ("sin fotos") y escribirla decía
+   "no encontrada". Ahora las dos pasan por `resolveTarget`.
+7. **Tragarse el error de lectura miente.** La ficha hacía `res.ok ? data : []`
+   y un R2 caído se veía idéntico a una clienta sin fotos. El motivo viaja al
+   panel (`initialError`).
+
+## Fuera de alcance, a propósito
+
+- **Achicar la imagen en el navegador antes de subirla.** Vale la pena (una foto
+  de celular son 3-5 MB) pero re-encodear en canvas se come la orientación EXIF
+  si se hace mal, y eso son fotos rotadas — peor que fotos pesadas. Mientras
+  tanto: tope de 5 MB y `loading="lazy"` en la grilla.
+- Miniaturas server-side, álbumes/antes-después explícito, y que la clienta vea
+  sus propias fotos desde `/mi`.
 
 # Track 5 — Multi-profesional
 

@@ -9,11 +9,12 @@ import {
   BT_VERIFY_BIZ,
 } from './helpers/bank-transfer-seed'
 import { unwrap, expectActionError } from './helpers/action-result'
+import { fakeObjectStorage } from '../helpers/fake-object-storage'
 
 requireTestDatabase()
 
 // Flujo público: identidad = bookingId (cuid) + rate limit. Mockeamos rate limit
-// y notificaciones, e inyectamos un ProofStorage falso vía `opts.storage` para
+// y notificaciones, e inyectamos un ObjectStorage falso vía `opts.storage` para
 // que CI nunca toque R2 real. El HEAD es la validación server-authoritative
 // (existencia + tamaño ≤ límite + tipo permitido) que se hace ANTES de la tx.
 vi.mock('@/lib/rate-limit', () => ({
@@ -24,16 +25,10 @@ vi.mock('@/lib/notifications', async (orig) => ({
   sendMultiNotificationSafely: vi.fn(),
 }))
 
-const okHead = {
-  presignUpload: vi.fn(),
-  presignDownload: vi.fn(),
-  head: vi.fn().mockResolvedValue({ contentLength: 1000, contentType: 'image/png' }),
-}
-const bigHead = {
-  presignUpload: vi.fn(),
-  presignDownload: vi.fn(),
+const okHead = fakeObjectStorage()
+const bigHead = fakeObjectStorage({
   head: vi.fn().mockResolvedValue({ contentLength: 99_000_000, contentType: 'image/png' }),
-}
+})
 
 // El helper crea la reserva-transferencia (pending_payment, paymentMethod
 // 'bank_transfer', hold vigente); `declared:false` la deja SIN el Payment.

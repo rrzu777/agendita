@@ -22,6 +22,7 @@ import { RefreshCw } from 'lucide-react'
 import { ManualPaymentDialog } from './manual-payment-dialog'
 import { formatManualPaymentMoney, isManualPaymentAllowed } from './manual-payment-utils'
 import { PaymentRevertedBadge } from './payment-reverted-badge'
+import { CustomerPhotos } from './customer-photos'
 import { bookingStatusLabel } from '@/lib/bookings/status-labels'
 import { bookingWhere } from '@/lib/services/modality'
 import { useVocabulary } from '@/components/vocabulary-provider'
@@ -56,9 +57,10 @@ interface BookingDrawerProps {
   businessCurrency: string
   businessTimezone: string
   businessAddress: string | null
+  photoUploadEnabled: boolean
 }
 
-export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, businessTimezone, businessAddress }: BookingDrawerProps) {
+export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, businessTimezone, businessAddress, photoUploadEnabled }: BookingDrawerProps) {
   const vocabulary = useVocabulary()
   const isMobile = useIsMobile()
 
@@ -138,6 +140,19 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
               <p className="mt-1 text-sm">{booking.customerNotes}</p>
             </div>
           )}
+
+          {/* Sin `initialPhotos`, el panel pide las fotos de ESTA reserva al
+              montarse. Sólo monta con el drawer abierto (el SheetContent de
+              Radix desmonta al cerrar), así que la agenda no carga fotos de
+              todas las citas del mes para mostrar una. */}
+          <div className="space-y-2 rounded-xl border border-border/60 p-3">
+            <h4 className="text-sm font-semibold">Fotos de esta cita</h4>
+            <CustomerPhotos
+              target={{ bookingId: booking.id }}
+              uploadEnabled={photoUploadEnabled}
+              compact
+            />
+          </div>
 
           <div className="space-y-2 rounded-xl border border-border/60 p-3">
             <h4 className="text-sm font-semibold">Contactar cliente</h4>

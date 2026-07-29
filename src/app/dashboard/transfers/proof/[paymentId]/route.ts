@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireBusinessRole } from '@/lib/auth/server'
-import { getProofStorage } from '@/lib/storage/r2'
+import { getObjectStorage } from '@/lib/storage/r2'
 
 // Único camino para ver un comprobante: el bucket R2 es PRIVADO. Verificamos
 // que quien pide sea owner/admin del negocio DUEÑO del Payment y recién ahí
@@ -23,12 +23,13 @@ export async function GET(
     return new NextResponse('No encontrado', { status: 404 })
   }
 
-  const storage = getProofStorage()
+  const storage = getObjectStorage()
   if (!storage) return new NextResponse('No disponible', { status: 404 })
 
   const url = await storage.presignDownload(
     payment.proofKey,
     payment.proofContentType ?? 'application/octet-stream',
+    'comprobante',
   )
   return NextResponse.redirect(url, 302)
 }

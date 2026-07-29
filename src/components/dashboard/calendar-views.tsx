@@ -53,6 +53,9 @@ interface CalendarViewsProps {
   timezone: string
   businessCurrency: string
   businessAddress: string | null
+  /** false si R2 no está configurado: el drawer muestra las fotos que haya pero
+   *  no ofrece subir más. Se calcula en el servidor (lee env). */
+  photoUploadEnabled: boolean
 }
 
 const HOUR_HEIGHT = 56 // px por hora
@@ -78,6 +81,7 @@ export function CalendarViews({
   timezone,
   businessCurrency,
   businessAddress,
+  photoUploadEnabled,
 }: CalendarViewsProps) {
   const focus = parseISO(`${date}T12:00:00`)
   const [activeBooking, setActiveBooking] = useState<TimelineBooking | null>(null)
@@ -172,6 +176,7 @@ export function CalendarViews({
           businessCurrency={businessCurrency}
           businessTimezone={timezone}
           businessAddress={businessAddress}
+          photoUploadEnabled={photoUploadEnabled}
         />
       )}
 

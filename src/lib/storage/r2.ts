@@ -1,11 +1,34 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { logger } from '@/lib/logger'
 
-export interface ProofStorage {
+// Cliente único del bucket privado. Nació para los comprobantes de transferencia
+// y hoy también guarda las fotos de la ficha, por eso el nombre es genérico: lo
+// que cambia entre features es el prefijo de la key (lib/storage/proof.ts,
+// lib/storage/photos.ts), no el transporte.
+export interface ObjectStorage {
   presignUpload(key: string, contentType: string): Promise<string>
-  presignDownload(key: string, contentType: string): Promise<string>
+  /** `filename` es OBLIGATORIO a propósito: un default acá metería el nombre de
+   *  una feature adentro del transporte compartido, y el tercer caller serviría
+   *  archivos con el nombre de la primera sin enterarse. */
+  presignDownload(key: string, contentType: string, filename: string): Promise<string>
   head(key: string): Promise<{ contentLength: number; contentType: string | null } | null>
+  remove(key: string): Promise<void>
+}
+
+/** Inyección de storage para tests: `undefined` = usar el real, `null` = simular
+ *  que R2 no está configurado. Vive acá y no en cada server action porque los
+ *  módulos `'use server'` sólo pueden exportar funciones async. */
+export type StorageDeps = { storage?: ObjectStorage | null }
+
+export function resolveStorage(injected?: ObjectStorage | null): ObjectStorage | null {
+  return injected !== undefined ? injected : getObjectStorage()
 }
 
 interface R2Config {
@@ -25,31 +48,55 @@ function readConfig(): R2Config | null {
 }
 
 /** never-throws: para gatear la feature en UI y actions. */
-export function isProofUploadAvailable(): boolean {
+export function isObjectStorageAvailable(): boolean {
   return readConfig() !== null
 }
 
+// El S3Client se memoiza por config: armarlo resuelve credenciales y arma un
+// pool de conexiones, y con las fotos esto pasó de "una vez por comprobante
+// visto" a "una vez por <img> de la grilla". La clave incluye la config para que
+// un test que cambia las envs no se quede con el cliente viejo.
+let cachedClient: { key: string; client: S3Client } | null = null
+
+function getClient(cfg: R2Config): S3Client {
+  const key = JSON.stringify(cfg)
+  if (cachedClient?.key !== key) {
+    cachedClient = {
+      key,
+      client: new S3Client({
+        region: 'auto',
+        endpoint: `https://${cfg.accountId}.r2.cloudflarestorage.com`,
+        credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+      }),
+    }
+  }
+  return cachedClient.client
+}
+
+/** Sanea lo que va adentro de `filename="..."` del Content-Disposition: comillas
+ *  y saltos de línea romperían el header. Hoy los callers pasan literales, pero
+ *  la firma no puede garantizarlo y el header lo arma este módulo. */
+function safeFilename(filename: string): string {
+  return filename.replace(/[\r\n"\\]/g, '').trim() || 'archivo'
+}
+
 /** null si R2 no está configurado (mirror de getResend()). */
-export function getProofStorage(): ProofStorage | null {
+export function getObjectStorage(): ObjectStorage | null {
   const cfg = readConfig()
   if (!cfg) return null
-  const client = new S3Client({
-    region: 'auto',
-    endpoint: `https://${cfg.accountId}.r2.cloudflarestorage.com`,
-    credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
-  })
+  const client = getClient(cfg)
   return {
     async presignUpload(key, contentType) {
       return getSignedUrl(client, new PutObjectCommand({ Bucket: cfg.bucket, Key: key, ContentType: contentType }), { expiresIn: 120 })
     },
-    async presignDownload(key, contentType) {
+    async presignDownload(key, contentType, filename) {
       return getSignedUrl(
         client,
         new GetObjectCommand({
           Bucket: cfg.bucket,
           Key: key,
           ResponseContentType: contentType,
-          ResponseContentDisposition: 'inline; filename="comprobante"',
+          ResponseContentDisposition: `inline; filename="${safeFilename(filename)}"`,
         }),
         { expiresIn: 60 },
       )
@@ -66,6 +113,9 @@ export function getProofStorage(): ProofStorage | null {
         })
         return null
       }
+    },
+    async remove(key) {
+      await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: key }))
     },
   }
 }

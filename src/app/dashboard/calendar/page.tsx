@@ -4,6 +4,7 @@ import { CalendarViews, type CalendarView } from '@/components/dashboard/calenda
 import { getBookingsByRange } from '@/server/actions/bookings'
 import { getTimeBlocksByRange } from '@/server/actions/time-blocks'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
+import { isObjectStorageAvailable } from '@/lib/storage/r2'
 import {
   parseISO,
   startOfWeek,
@@ -111,6 +112,7 @@ export default async function CalendarPage({
           timezone={timezone}
           businessCurrency={business.currency}
           businessAddress={business.addressText}
+          photoUploadEnabled={isObjectStorageAvailable()}
         />
       </div>
     </div>

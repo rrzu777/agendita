@@ -22,6 +22,14 @@ vi.mock('@/server/actions/packages', () => ({
   listPackageProducts: vi.fn().mockResolvedValue([]),
 }))
 
+vi.mock('@/server/actions/customer-photos', () => ({
+  getPhotos: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+  attachCustomerPhoto: vi.fn(),
+  createCustomerPhotoUploadUrl: vi.fn(),
+  deleteCustomerPhoto: vi.fn(),
+  updateCustomerPhotoCaption: vi.fn(),
+}))
+
 vi.mock('next/navigation', () => ({
   redirect: vi.fn(),
   notFound: vi.fn(),
