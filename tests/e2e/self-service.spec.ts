@@ -1,4 +1,4 @@
-import { test, expect, Page } from '@playwright/test'
+import { test, expect, Page, Locator } from '@playwright/test'
 import { setOwnerAuth, setAdminAuth } from './helpers/auth'
 import { toLocalDateStr } from './helpers/dates'
 
@@ -73,6 +73,41 @@ function nextBookableDate(afterDays: number): Date {
 /** Mismo formato que src/lib/format-date.ts#formatShortDate, para matchear la fila en /mi. */
 function shortDateLabel(date: Date): string {
   return new Intl.DateTimeFormat('es', { day: '2-digit', month: 'short' }).format(date)
+}
+
+/**
+ * Localiza, entre varias filas de reserva, la que corresponde a la que este test
+ * acaba de crear, y devuelve un locator que apunta SÓLO a ella.
+ *
+ * Por qué hace falta: la fecha no identifica una fila. `afterDays` es aleatorio en
+ * una ventana de 50 días (`4 + ts % 50`) sobre una DB compartida que nadie limpia,
+ * así que dos corridas pueden caer en el mismo día; y una corrida que falló deja su
+ * reserva confirmada en "Próximas reservas" para siempre, envenenando esa fecha.
+ * Con `.first()` + `toHaveCount(0)` eso da un falso rojo: cancelás una fila y la
+ * otra sigue matcheando.
+ *
+ * La tarjeta muestra además el número de reserva (`#4738`), que sí es único. El
+ * contador es por negocio y sólo crece (ver assignBookingNumber), así que entre
+ * las candidatas la recién creada es la de número más alto.
+ */
+async function rowOfNewestBooking(rows: Locator): Promise<{ row: Locator; matcher: RegExp }> {
+  const textos = await rows.allTextContents()
+  const numeros = textos
+    .map((t) => t.match(/#(\d+)/)?.[1])
+    .filter((n): n is string => n != null)
+    .map(Number)
+
+  // Tirar y no devolver un matcher vacío: `filter({ hasText: '' })` matchea TODAS
+  // las filas y las aserciones pasarían sin probar nada.
+  if (numeros.length === 0) {
+    throw new Error(`Ninguna fila expone un número de reserva. Filas: ${textos.join(' | ') || '(ninguna)'}`)
+  }
+
+  // Devolvemos el regex, no el string: `hasText` con string hace substring, así que
+  // #123 matchearía #1234. El `(?!\d)` lo evita, y sirve igual en Historial, donde
+  // conviven muchas reservas viejas.
+  const matcher = new RegExp(`#${Math.max(...numeros)}(?!\\d)`)
+  return { row: rows.filter({ hasText: matcher }), matcher }
 }
 
 /**
@@ -163,11 +198,15 @@ test.describe('self-service (/mi): cancelación', () => {
     await gotoStable(page, href ?? '/mi')
     await waitForHydration(page)
 
-    // 3. Ubicar la fila de la reserva recién creada en "Próximas reservas" por
-    //    su fecha corta (único identificador visible en la tarjeta de /mi).
+    // 3. Ubicar la fila de la reserva recién creada en "Próximas reservas": primero
+    //    por fecha corta, y entre las candidatas por su número de reserva, que es el
+    //    único identificador unívoco de la tarjeta (ver rowOfNewestBooking).
     const upcomingSection = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Próximas reservas' }) })
-    const bookingRow = upcomingSection.locator('li').filter({ hasText: dateLabel }).first()
-    await expect(bookingRow).toBeVisible({ timeout: 15_000 })
+    const rowsForDate = upcomingSection.locator('li').filter({ hasText: dateLabel })
+    await expect(rowsForDate.first()).toBeVisible({ timeout: 15_000 })
+
+    const { row: bookingRow, matcher: bookingMatcher } = await rowOfNewestBooking(rowsForDate)
+    await expect(bookingRow).toHaveCount(1)
 
     // La reserva está a >48h y selfServiceCutoffHours por defecto es 24 →
     // BookingActions debe renderizar ambas acciones.
@@ -179,11 +218,13 @@ test.describe('self-service (/mi): cancelación', () => {
     await bookingRow.getByRole('button', { name: 'Sí, cancelar' }).click()
 
     // 5. La fila desaparece de "Próximas reservas"...
+    //    Ahora es exacto: el locator apunta a ESA reserva por su número, así que una
+    //    fila ajena que comparta la fecha no puede mantener el conteo en 1.
     await expect(bookingRow).toHaveCount(0, { timeout: 15_000 })
 
     // ...y reaparece en "Historial" como "Cancelada".
     const historialSection = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Historial' }) })
-    const historialRow = historialSection.locator('li').filter({ hasText: dateLabel }).first()
+    const historialRow = historialSection.locator('li').filter({ hasText: bookingMatcher }).first()
     await expect(historialRow).toBeVisible({ timeout: 15_000 })
     await expect(historialRow).toContainText('Cancelada')
   })
