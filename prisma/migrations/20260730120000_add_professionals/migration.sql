@@ -54,8 +54,14 @@ ALTER TABLE "AvailabilityRule" ADD CONSTRAINT "AvailabilityRule_professionalId_f
 ALTER TABLE "TimeBlock" ADD CONSTRAINT "TimeBlock_professionalId_fkey" FOREIGN KEY ("professionalId") REFERENCES "Professional"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "TimeBlockSeries" ADD CONSTRAINT "TimeBlockSeries_professionalId_fkey" FOREIGN KEY ("professionalId") REFERENCES "Professional"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- Las reservas NO: RESTRICT. Un SET NULL acá las convertiría en reservas sin
--- persona, que por la semántica elegida chocan contra TODO EL EQUIPO — un salón
--- de 4 se queda sin agenda y nadie entiende por qué. Que la base se niegue es el
--- guard de verdad; el mensaje entendible lo pone la action.
-ALTER TABLE "Booking" ADD CONSTRAINT "Booking_professionalId_fkey" FOREIGN KEY ("professionalId") REFERENCES "Professional"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- Las reservas NO se cascadean ni se ponen en NULL. Un SET NULL las convertiría en
+-- reservas sin persona, que por la semántica elegida chocan contra TODO EL EQUIPO —
+-- un salón de 4 se queda sin agenda y nadie entiende por qué. Que la base se niegue
+-- es el guard de verdad; el mensaje entendible lo pone la action.
+--
+-- NO ACTION y no RESTRICT, que es la diferencia sutil: los dos rechazan borrar a
+-- alguien con citas, pero RESTRICT se chequea de INMEDIATO y NO ACTION al final del
+-- statement. Al borrar un Business, Postgres cascadea a Booking y a Professional en
+-- el mismo statement y sin orden garantizado: con RESTRICT, si le toca la persona
+-- antes que sus reservas, el borrado del negocio explota.
+ALTER TABLE "Booking" ADD CONSTRAINT "Booking_professionalId_fkey" FOREIGN KEY ("professionalId") REFERENCES "Professional"("id") ON DELETE NO ACTION ON UPDATE CASCADE;

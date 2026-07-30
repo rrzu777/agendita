@@ -507,11 +507,17 @@ model Booking {
   business                       Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
   service                        Service              @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   customer                       Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  // Restrict y NO SetNull: un SetNull acá convertiría las citas de quien se
-  // borra en reservas sin persona, que por la semántica de null chocan contra
-  // TODO el equipo — un salón de 4 se queda sin agenda. Que la base se niegue
-  // es el guard de verdad; el mensaje entendible lo pone la action.
-  professional                   Professional?        @relation(fields: [professionalId], references: [id], onDelete: Restrict)
+  // NO SetNull: convertiría las citas de quien se borra en reservas sin persona,
+  // que por la semántica de null chocan contra TODO el equipo — un salón de 4 se
+  // queda sin agenda. Que la base se niegue es el guard de verdad; el mensaje
+  // entendible lo pone la action.
+  //
+  // NoAction y no Restrict, que es la diferencia sutil: los dos rechazan borrar a
+  // alguien con citas, pero Restrict se chequea de INMEDIATO y NoAction al final
+  // del statement. Al borrar un Business, Postgres cascadea a Booking y a
+  // Professional en el mismo statement y sin orden garantizado: con Restrict, si
+  // le toca la persona antes que sus reservas, el borrado del negocio explota.
+  professional                   Professional?        @relation(fields: [professionalId], references: [id], onDelete: NoAction)
   payments                       Payment[]
   ledgerEntries                  LedgerEntry[]
   redemption                     PromotionRedemption?
