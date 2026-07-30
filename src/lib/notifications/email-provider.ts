@@ -25,7 +25,7 @@ import type {
   PackageUnexpectedPaymentEmailData,
   BookingDisputedEmailData,
   BookingUnexpectedPaymentEmailData,
-  BookingSlotTakenEmailData,
+  BookingPaymentNotConfirmedEmailData,
   PackageTransferDeclaredEmailData,
   PackageTransferReminderCustomerEmailData,
   PackageTransferUnverifiedBusinessEmailData,
@@ -83,8 +83,8 @@ import {
   bookingDisputedBusinessText,
   bookingUnexpectedPaymentBusinessHtml,
   bookingUnexpectedPaymentBusinessText,
-  bookingSlotTakenBusinessHtml,
-  bookingSlotTakenBusinessText,
+  bookingPaymentNotConfirmedBusinessHtml,
+  bookingPaymentNotConfirmedBusinessText,
   packageTransferDeclaredBusinessHtml,
   packageTransferDeclaredBusinessText,
   packageTransferReminderCustomerHtml,
@@ -718,12 +718,13 @@ export async function sendBookingUnexpectedPaymentToBusiness(
   )
 }
 
-/** Email a la(s) dueña(s)/admin(s) cuando el pago entró pero el horario ya estaba
- *  tomado, así que la reserva NO se confirmó. La clienta no recibe nada acá: qué
- *  pasa con su hora lo decide la dueña (reacomodar o reembolsar). */
-export async function sendBookingSlotTakenToBusiness(
+/** Email a la(s) dueña(s)/admin(s) cuando el pago entró pero la reserva NO quedó
+ *  confirmada: el horario ya estaba tomado, o la reserva ya no estaba vigente
+ *  (vencida, cancelada). La clienta no recibe nada acá: qué pasa con su hora lo
+ *  decide la dueña (reacomodar o reembolsar). */
+export async function sendBookingPaymentNotConfirmedToBusiness(
   businessId: string,
-  data: BookingSlotTakenEmailData,
+  data: BookingPaymentNotConfirmedEmailData,
 ): Promise<EmailResult[]> {
   const ownerEmails = await getBusinessOwnerEmails(businessId)
 
@@ -731,12 +732,12 @@ export async function sendBookingSlotTakenToBusiness(
     return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
   }
 
-  const html = bookingSlotTakenBusinessHtml(data)
-  const text = bookingSlotTakenBusinessText(data)
+  const html = bookingPaymentNotConfirmedBusinessHtml(data)
+  const text = bookingPaymentNotConfirmedBusinessText(data)
 
   return Promise.all(
     ownerEmails.map((owner) =>
-      sendEmail(owner.email, `Pago recibido pero el horario está ocupado - ${data.customerName}`, html, text, {}),
+      sendEmail(owner.email, `Pago recibido pero la reserva no quedó confirmada - ${data.customerName}`, html, text, {}),
     ),
   )
 }

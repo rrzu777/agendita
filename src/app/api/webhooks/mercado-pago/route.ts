@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
 import { applyApprovedPayment, applyApprovedPackagePayment, describeUnexpectedPackagePayment } from '@/server/services/finance'
-import { fireSlotTakenNotification } from '@/lib/bookings/notify-slot-taken'
+import { firePaymentNotConfirmedNotification } from '@/lib/bookings/notify-payment-not-confirmed'
 import { createHmac, timingSafeEqual } from 'crypto'
 import {
   sendBookingConfirmedNotification,
@@ -539,6 +539,13 @@ export async function POST(request: NextRequest) {
             paymentMethod: payment.paymentMethod,
             rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
             paymentId: payment.id,
+            // El cobro YA ocurrió y del otro lado no hay nadie a quien decirle
+            // "no": si esto lanzara (reserva vencida por el cron, cancelada, hold
+            // vencido), el webhook devolvería 500, MP reintentaría el mismo evento
+            // para siempre y la plata no quedaría asentada en ningún lado. Se
+            // registra igual; `unconfirmedReason` dice por qué no confirmó y el
+            // aviso de abajo se lo cuenta a la dueña.
+            recordEvenIfNotPayable: true,
           })
           // 15s y no el default de 5s: al confirmar, esta tx ahora toma el advisory
           // lock por negocio+día para re-chequear el cupo, así que puede quedar
@@ -586,16 +593,17 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Carrera pago/hold: la plata entró y quedó asentada, pero el horario ya no
-        // estaba libre, así que la reserva NO se confirmó. Este mail es el único
-        // canal — pasa en un webhook, sin nadie mirando la pantalla — y decide la
-        // dueña: reacomodar en otra hora o reembolsar. La clienta no recibe nada
-        // todavía, justamente porque su hora está en manos de esa decisión.
-        if (result.slotConflict) {
-          await fireSlotTakenNotification({
+        // La plata entró y quedó asentada, pero la reserva NO se confirmó: el
+        // horario ya no estaba libre, o la reserva ya no estaba vigente (venció y
+        // el cron la barrió, la dueña la canceló). Este mail es el único canal —
+        // pasa en un webhook, sin nadie mirando la pantalla — y decide la dueña:
+        // reacomodar en otra hora o reembolsar. La clienta no recibe nada todavía,
+        // justamente porque su hora está en manos de esa decisión.
+        if (result.unconfirmedReason) {
+          await firePaymentNotConfirmedNotification({
             bookingId,
             businessId: payment.businessId,
-            conflict: result.slotConflict,
+            reason: result.unconfirmedReason,
             amount: payment.amount,
           })
         }
@@ -607,7 +615,9 @@ export async function POST(request: NextRequest) {
         // siempre el mismo evento ya procesado.
         return NextResponse.json({
           success: true,
-          message: result.slotConflict ? 'Payment approved, booking left unconfirmed: slot taken' : 'Payment approved',
+          message: result.unconfirmedReason
+            ? `Payment approved, booking left unconfirmed: ${result.unconfirmedReason.kind}`
+            : 'Payment approved',
           bookingId: result.booking.id,
         })
       }

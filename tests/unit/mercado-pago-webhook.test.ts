@@ -46,6 +46,10 @@ vi.mock('@/lib/bookings/payments', () => ({
   assertBookingPayable: vi.fn(),
 }))
 
+vi.mock('@/lib/bookings/notify-payment-not-confirmed', () => ({
+  firePaymentNotConfirmedNotification: vi.fn(),
+}))
+
 vi.mock('@/lib/notifications', () => ({
   sendBookingConfirmedNotification: vi.fn(),
   sendNotificationSafely: vi.fn(),
@@ -101,6 +105,7 @@ function createRequestInit(overrides: Record<string, string> = {}): Record<strin
 }
 
 const { applyApprovedPayment } = await import('@/server/services/finance')
+const { firePaymentNotConfirmedNotification } = await import('@/lib/bookings/notify-payment-not-confirmed')
 const { reverseVisitPoints } = await import('@/lib/loyalty/credit')
 const { sendBookingUnexpectedPaymentToBusiness, sendBookingConfirmedNotification } = await import('@/lib/notifications')
 
@@ -400,6 +405,67 @@ describe('Mercado Pago webhook', () => {
           }),
         }),
       )
+    })
+
+    // El cobro ya ocurrió: si el webhook devuelve error, MP reintenta el mismo
+    // evento para siempre y la plata nunca queda asentada. Por eso pide asentar
+    // pase lo que pase con el estado de la reserva, y cuando vuelve un motivo lo
+    // resuelve con un aviso a la dueña, no con un error.
+    it('asienta el cobro aunque la reserva ya no esté vigente y avisa a la dueña', async () => {
+      const secret = 'test-webhook-secret'
+      const body = { data: { id: 'mp-pay-001' } }
+      const signature = createMpSignatureHeader('mp-pay-001', 'req-123', secret)
+
+      mockMpFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(baseMpPayment),
+      })
+
+      // La reserva la barrió el cron de holds mientras MP terminaba de aprobar.
+      mockPrisma.payment.findUnique.mockResolvedValue({
+        ...basePayment,
+        booking: { ...basePayment.booking, status: 'expired' },
+      })
+
+      // Imita al servicio de verdad: lanza salvo que el caller pida asentar de
+      // todas formas. Sin eso este test pasaría igual aunque el webhook dejara de
+      // mandar la bandera — con la bandera puesta da 200, sin ella da el 500 que
+      // hacía reintentar a MP para siempre.
+      ;(applyApprovedPayment as ReturnType<typeof vi.fn>).mockImplementation(
+        async (input: { recordEvenIfNotPayable?: boolean }) => {
+          if (!input.recordEvenIfNotPayable) throw new Error('No se puede procesar pago para esta reserva')
+          return {
+            booking: { id: 'booking-1', businessId: 'biz-1' },
+            wasConfirmed: false,
+            wasUnexpected: false,
+            unconfirmedReason: { kind: 'booking_status', status: 'expired' },
+          }
+        },
+      )
+
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
+        return fn({ ...mockPrisma })
+      })
+
+      const res = await POST(makeRequest(body, {
+        'x-signature': signature,
+        'x-request-id': 'req-123',
+      }))
+
+      expect(res.status).toBe(200)
+      expect((await res.json()).success).toBe(true)
+
+      // Sin este aviso la dueña no se enteraría nunca: pasa en un webhook.
+      expect(firePaymentNotConfirmedNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bookingId: 'booking-1',
+          businessId: 'biz-1',
+          reason: { kind: 'booking_status', status: 'expired' },
+          amount: 10000,
+        }),
+      )
+      // Y la clienta NO recibe una confirmación de una hora que no tiene.
+      expect(sendBookingConfirmedNotification).not.toHaveBeenCalled()
     })
 
     it('returns 200 idempotent without side effects if already approved', async () => {

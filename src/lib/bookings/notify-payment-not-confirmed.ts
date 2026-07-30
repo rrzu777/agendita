@@ -1,5 +1,5 @@
 /**
- * El aviso a la dueña de que entró un pago sobre un horario que ya no está libre.
+ * El aviso a la dueña de que entró plata y el turno NO quedó en pie.
  *
  * Vive en su propio módulo porque lo disparan TRES caminos distintos de cobro
  * (webhook de Mercado Pago, confirmación pública post-checkout y pago manual del
@@ -8,6 +8,10 @@
  * aparece, tiene que llamar a esto — un no-confirmar silencioso es plata cobrada
  * por una hora que la clienta no tiene.
  *
+ * El motivo (horario tomado, reserva vencida, cancelada…) viaja en `reason` y sólo
+ * cambia una línea del mail: para la dueña la decisión es la misma, reacomodar o
+ * devolver.
+ *
  * Best-effort como todas las notificaciones: se traga sus propios errores, así
  * que nunca hace fallar el cobro que la disparó. Sin `'use server'` a propósito:
  * es una función server-side común, no un endpoint.
@@ -15,14 +19,13 @@
 import { prisma } from '@/lib/db'
 import { getVocabulary } from '@/lib/vocabulary'
 import { formatBookingNumber } from '@/lib/bookings/number'
-import { describeSlotConflict } from '@/server/services/finance'
-import type { SlotConflict } from '@/lib/availability/validation'
-import { sendBookingSlotTakenToBusiness, sendMultiNotificationSafely } from '@/lib/notifications'
+import { describeUnconfirmedPayment, type UnconfirmedPaymentReason } from '@/server/services/finance'
+import { sendBookingPaymentNotConfirmedToBusiness, sendMultiNotificationSafely } from '@/lib/notifications'
 
-export async function fireSlotTakenNotification(args: {
+export async function firePaymentNotConfirmedNotification(args: {
   bookingId: string
   businessId: string
-  conflict: SlotConflict
+  reason: UnconfirmedPaymentReason
   /** Lo que se cobró recién, para que el mail diga cuánta plata hay que resolver. */
   amount: number
 }): Promise<void> {
@@ -38,8 +41,8 @@ export async function fireSlotTakenNotification(args: {
   })
   if (!booking) return
 
-  await sendMultiNotificationSafely('booking slot taken business', async () =>
-    sendBookingSlotTakenToBusiness(args.businessId, {
+  await sendMultiNotificationSafely('booking payment not confirmed business', async () =>
+    sendBookingPaymentNotConfirmedToBusiness(args.businessId, {
       businessName: booking.business.name,
       businessCategory: booking.business.category,
       customerName: booking.customer?.name ?? getVocabulary(booking.business.category).Client,
@@ -49,7 +52,7 @@ export async function fireSlotTakenNotification(args: {
       businessTimezone: booking.business.timezone || 'America/Santiago',
       amount: args.amount,
       businessCurrency: booking.business.currency || 'CLP',
-      situation: describeSlotConflict(args.conflict),
+      situation: describeUnconfirmedPayment(args.reason),
     }),
   )
 }

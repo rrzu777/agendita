@@ -22,7 +22,7 @@ import { addMinutes } from 'date-fns'
 import { recomputeBookingAmountsAfterDiscount } from '@/lib/bookings/recompute'
 import { assertBookingPayable } from '@/lib/bookings/payments'
 import { applyApprovedPayment } from '@/server/services/finance'
-import { fireSlotTakenNotification } from '@/lib/bookings/notify-slot-taken'
+import { firePaymentNotConfirmedNotification } from '@/lib/bookings/notify-payment-not-confirmed'
 import { initialPublicBookingStatus, approvalHoldExpiresAt } from '@/lib/bookings/approval'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
@@ -595,7 +595,7 @@ async function _confirmPayment(bookingId: string, paymentId: string, amount: num
 
   // Devolver el resultado en vez de escribirlo en variables de afuera: con un `let`
   // anotado, TypeScript no ve la asignación de adentro del callback.
-  const { booking: updated, wasConfirmed, slotConflict } = await prisma.$transaction((tx) =>
+  const { booking: updated, wasConfirmed, unconfirmedReason } = await prisma.$transaction((tx) =>
     applyApprovedPayment({
       tx,
       bookingId,
@@ -616,11 +616,12 @@ async function _confirmPayment(bookingId: string, paymentId: string, amount: num
     )
   }
 
-  // El pago se aplicó pero la reserva quedó sin confirmar: el horario ya está
-  // ocupado. Sin este aviso la dueña ve el pago aplicado y la reserva pendiente,
-  // sin ninguna pista de por qué.
-  if (slotConflict) {
-    await fireSlotTakenNotification({ bookingId, businessId, conflict: slotConflict, amount: payment.amount })
+  // El pago se aplicó pero la reserva quedó sin confirmar (horario ocupado, o el
+  // cron de holds la venció entre el `assertBookingPayable` de arriba y esta tx).
+  // Sin este aviso la dueña ve el pago aplicado y la reserva pendiente, sin
+  // ninguna pista de por qué.
+  if (unconfirmedReason) {
+    await firePaymentNotConfirmedNotification({ bookingId, businessId, reason: unconfirmedReason, amount: payment.amount })
   }
 
   revalidatePath('/dashboard/bookings')
