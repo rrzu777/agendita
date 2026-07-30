@@ -332,7 +332,7 @@ export async function applyApprovedPayment({
 
   /** El desenlace en un solo lugar: el estado de la reserva pesa más que el cupo
    *  (si no puede recibir pagos, nunca se preguntó por el horario). */
-  const unconfirmedReason = (slotConflict: SlotConflict | null): UnconfirmedPaymentReason | null => {
+  const toUnconfirmedReason = (slotConflict: SlotConflict | null): UnconfirmedPaymentReason | null => {
     if (statusBlocksPayment) return { kind: 'booking_status', status: booking.status }
     return slotConflict ? { kind: 'slot_taken', conflict: slotConflict } : null
   }
@@ -351,7 +351,7 @@ export async function applyApprovedPayment({
       booking: recalc.booking,
       wasConfirmed: recalc.wasConfirmed,
       wasUnexpected: false,
-      unconfirmedReason: unconfirmedReason(recalc.slotConflict),
+      unconfirmedReason: toUnconfirmedReason(recalc.slotConflict),
     }
   }
 
@@ -412,7 +412,7 @@ export async function applyApprovedPayment({
     booking: recalc.booking,
     wasConfirmed: recalc.wasConfirmed,
     wasUnexpected,
-    unconfirmedReason: unconfirmedReason(recalc.slotConflict),
+    unconfirmedReason: toUnconfirmedReason(recalc.slotConflict),
   }
 }
 
