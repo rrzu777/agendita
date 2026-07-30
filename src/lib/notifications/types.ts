@@ -316,6 +316,27 @@ export interface BookingUnexpectedPaymentEmailData {
   businessCurrency: string
 }
 
+/**
+ * Aviso a la dueña: el pago alcanzaba para confirmar la reserva, pero el horario
+ * ya no está libre, así que la reserva quedó sin confirmar. Es el único canal por
+ * el que se entera: pasa en un webhook, sin nadie mirando la pantalla.
+ */
+export interface BookingSlotTakenEmailData {
+  /** Rubro del negocio: decide cómo se nombra a la clientela en el aviso. */
+  businessCategory: BusinessCategory
+  businessName: string
+  customerName: string
+  serviceName: string
+  /** formatBookingNumber(bookingNumber, id) — p.ej. "#4738". */
+  bookingLabel: string
+  startDateTime: Date
+  businessTimezone: string
+  amount: number
+  businessCurrency: string
+  /** Qué ocupa el horario, en castellano llano. Lo arma `describeSlotConflict`. */
+  situation: string
+}
+
 export interface PackageTransferDeclaredEmailData {
   /** Rubro del negocio: decide cómo se nombra a la clientela en el aviso.
    *  Va acá, junto a businessName/businessTimezone, y no como parámetro suelto:

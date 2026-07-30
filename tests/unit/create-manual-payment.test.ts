@@ -55,6 +55,14 @@ vi.mock('@/lib/bookings/payments', () => ({
 // Import después de los mocks
 const { createManualPayment } = await import('@/server/actions/payments')
 
+// Turnos en el PASADO a propósito: acá se prueba la contabilidad del pago, no el
+// cupo. Al confirmar una reserva futura, `recalcBookingFromPayments` re-chequea el
+// solape del horario (ver recalc-slot-conflict.test.ts) y habría que montar todo el
+// mock de bloqueos, series y advisory lock para nada. Con el turno pasado ese
+// chequeo se saltea por diseño: no hay cupo que proteger.
+const START_PASADO = new Date('2020-05-05T15:00:00Z')
+const END_PASADO = new Date('2020-05-05T16:00:00Z')
+
 describe('createManualPayment', () => {
   const baseBooking = {
     id: 'booking-1',
@@ -66,6 +74,8 @@ describe('createManualPayment', () => {
     remainingBalance: 20000,
     status: BookingStatus.pending_payment,
     currency: 'CLP',
+    startDateTime: START_PASADO,
+    endDateTime: END_PASADO,
   }
 
   beforeEach(() => {
@@ -263,6 +273,9 @@ describe('createManualPayment server-side paymentType derivation', () => {
     remainingBalance: 20000,
     status: BookingStatus.pending_payment,
     currency: 'CLP',
+    // Ver el comentario de START_PASADO arriba: turno pasado = sin re-chequeo de cupo.
+    startDateTime: START_PASADO,
+    endDateTime: END_PASADO,
   }
 
   beforeEach(() => {

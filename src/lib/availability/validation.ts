@@ -38,7 +38,20 @@ export interface AssertConflictInput {
   excludeBookingId?: string
 }
 
-async function assertNoTimeBlockConflict(input: AssertConflictInput): Promise<void> {
+/**
+ * Por qué un slot no está libre. Lo devuelve `findSlotConflict` para los callers
+ * que NO pueden lanzar: el webhook de pago necesita asentar la plata que ya entró
+ * y decidir qué hacer, no abortar la transacción entera.
+ */
+export type SlotConflict =
+  | { reason: 'end_before_start' }
+  | { reason: 'timeblock_overlap' }
+  | { reason: 'booking_overlap'; overlappingBookingIds: string[] }
+
+/** Único mensaje de rechazo de horario: la clienta nunca ve el motivo interno. */
+const SLOT_UNAVAILABLE_MESSAGE = 'Ese horario ya no está disponible. Por favor selecciona otro.'
+
+async function findTimeBlockConflict(input: AssertConflictInput): Promise<SlotConflict | null> {
   const { tx, businessId, startDateTime, endDateTime, timezone } = input
 
   const [oneOffBlocks, blockSeries] = await Promise.all([
@@ -79,11 +92,12 @@ async function assertNoTimeBlockConflict(input: AssertConflictInput): Promise<vo
 
   if (blockedByOneOff || blockedBySeries) {
     logEvent('slot_validation_rejected', { businessId, reason: 'timeblock_overlap' })
-    throw new UserError('Ese horario ya no está disponible. Por favor selecciona otro.')
+    return { reason: 'timeblock_overlap' }
   }
+  return null
 }
 
-async function assertNoBookingOverlap(input: AssertConflictInput): Promise<void> {
+async function findBookingOverlap(input: AssertConflictInput): Promise<SlotConflict | null> {
   const { tx, businessId, startDateTime, endDateTime, timezone } = input
   const now = new Date()
 
@@ -128,8 +142,32 @@ async function assertNoBookingOverlap(input: AssertConflictInput): Promise<void>
     `
   if (Array.isArray(overlappingBookings) && overlappingBookings.length > 0) {
     logEvent('slot_validation_rejected', { businessId, reason: 'booking_overlap', overlappingCount: overlappingBookings.length })
-    throw new UserError('Ese horario ya no está disponible. Por favor selecciona otro.')
+    return {
+      reason: 'booking_overlap',
+      // El cast es el shape del SELECT de arriba: `$queryRaw` devuelve `unknown`
+      // y no hay forma de tiparlo desde el template.
+      overlappingBookingIds: (overlappingBookings as { id: string }[]).map((b) => b.id),
+    }
   }
+  return null
+}
+
+/**
+ * Chequeo de SOLAPE puro que DEVUELVE el conflicto en vez de lanzarlo. Existe
+ * para el borde donde ya entró plata: la confirmación de un pago no puede abortar
+ * su transacción por un slot ocupado, porque eso desasentaría el cobro que
+ * Mercado Pago ya hizo. `assertSlotFreeOfConflicts` es este mismo chequeo con el
+ * throw puesto encima, para los callers que sí pueden rechazar.
+ *
+ * Mismas garantías que antes: el advisory lock por negocio+día y el `FOR UPDATE`
+ * viven adentro, así que el resultado sigue siendo válido hasta el fin de la tx.
+ */
+export async function findSlotConflict(input: AssertConflictInput): Promise<SlotConflict | null> {
+  if (input.endDateTime <= input.startDateTime) {
+    logEvent('slot_validation_rejected', { businessId: input.businessId, reason: 'end_before_start' })
+    return { reason: 'end_before_start' }
+  }
+  return (await findTimeBlockConflict(input)) ?? (await findBookingOverlap(input))
 }
 
 /**
@@ -140,12 +178,7 @@ async function assertNoBookingOverlap(input: AssertConflictInput): Promise<void>
  * dueña cambió el catálogo después (spec §3).
  */
 export async function assertSlotFreeOfConflicts(input: AssertConflictInput): Promise<void> {
-  if (input.endDateTime <= input.startDateTime) {
-    logEvent('slot_validation_rejected', { businessId: input.businessId, reason: 'end_before_start' })
-    throw new UserError('Ese horario ya no está disponible. Por favor selecciona otro.')
-  }
-  await assertNoTimeBlockConflict(input)
-  await assertNoBookingOverlap(input)
+  if (await findSlotConflict(input)) throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
 }
 
 export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<void> {
@@ -153,7 +186,7 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
 
   if (endDateTime <= startDateTime) {
     logEvent('slot_validation_rejected', { businessId, reason: 'end_before_start' })
-    throw new UserError('Ese horario ya no está disponible. Por favor selecciona otro.')
+    throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
   }
 
   const now = new Date()
@@ -163,7 +196,7 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
   const minStart = addMinutes(now, leadTimeMinutes)
   if (startDateTime < minStart) {
     logEvent('slot_validation_rejected', { businessId, reason: 'lead_time', slotStart: startDateTime.toISOString() })
-    throw new UserError('Ese horario ya no está disponible. Por favor selecciona otro.')
+    throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
   }
 
   const business = await tx.business.findUnique({
@@ -176,7 +209,7 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
   const maxStart = addDays(now, bookingWindowDays)
   if (startDateTime > maxStart) {
     logEvent('slot_validation_rejected', { businessId, reason: 'booking_window', slotStart: startDateTime.toISOString(), maxStart: maxStart.toISOString() })
-    throw new UserError('Ese horario ya no está disponible. Por favor selecciona otro.')
+    throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
   }
 
   const service = await tx.service.findFirst({
@@ -185,13 +218,13 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
   })
   if (!service) {
     logEvent('slot_validation_rejected', { businessId, reason: 'service_not_found' })
-    throw new UserError('Ese horario ya no está disponible. Por favor selecciona otro.')
+    throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
   }
 
   const duration = differenceInMinutes(endDateTime, startDateTime)
   if (duration !== service.durationMinutes) {
     logEvent('slot_validation_rejected', { businessId, reason: 'duration_mismatch' })
-    throw new UserError('Ese horario ya no está disponible. Por favor selecciona otro.')
+    throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
   }
 
   // Usar timezone del negocio para calcular día y rango horario
@@ -204,7 +237,7 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
   })
   if (!rule) {
     logEvent('slot_validation_rejected', { businessId, reason: 'no_availability_rule', dayOfWeek: localDayOfWeek })
-    throw new UserError('Ese horario ya no está disponible. Por favor selecciona otro.')
+    throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
   }
 
   // Construir timestamps UTC reales para inicio y fin de regla
@@ -213,7 +246,7 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
 
   if (startDateTime < ruleStart || endDateTime > ruleEnd) {
     logEvent('slot_validation_rejected', { businessId, reason: 'outside_rule_hours' })
-    throw new UserError('Ese horario ya no está disponible. Por favor selecciona otro.')
+    throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
   }
 
   await assertSlotFreeOfConflicts({ tx, businessId, startDateTime, endDateTime, timezone, excludeBookingId: input.excludeBookingId })

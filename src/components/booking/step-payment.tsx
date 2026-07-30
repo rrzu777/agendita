@@ -411,11 +411,18 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         setTimeout(() => reject(new Error('Timeout al verificar el pago')), 10000)
       )
       const verifyRes = await Promise.race([verifyPromise, timeoutPromise])
-      // verifyAndConfirmPayment puede devolver { ok:true, data:{success:false,...} }
-      // (ej. mercado_pago pendiente por webhook, "Pago no aprobado"): preexistente,
-      // este flujo mock/dev nunca terminaba de disparar esas ramas — no se toca acá.
       if (!verifyRes.ok) {
         setErrorMessage(verifyRes.error)
+        setStep('error')
+        return
+      }
+
+      // `{ ok: true, data: { success: false, message } }`: la action corrió bien pero
+      // el pago no terminó en una reserva confirmada — pago no aprobado, MP todavía
+      // pendiente de webhook, o el horario se ocupó mientras se pagaba. Antes esto
+      // caía en la pantalla de éxito: la clienta se iba creyendo que tenía su hora.
+      if (!verifyRes.data.success) {
+        setErrorMessage(verifyRes.data.message ?? 'No se pudo confirmar tu reserva')
         setStep('error')
         return
       }

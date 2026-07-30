@@ -32,6 +32,7 @@ export {
   sendPackageTransferDeclaredToBusiness,
   sendBookingDisputedToBusiness,
   sendBookingUnexpectedPaymentToBusiness,
+  sendBookingSlotTakenToBusiness,
   sendPackageTransferReminderToCustomer,
   sendPackageTransferUnverifiedToBusiness,
 } from './email-provider'
@@ -100,6 +101,8 @@ export {
   bookingDisputedBusinessText,
   bookingUnexpectedPaymentBusinessHtml,
   bookingUnexpectedPaymentBusinessText,
+  bookingSlotTakenBusinessHtml,
+  bookingSlotTakenBusinessText,
   packageTransferDeclaredBusinessHtml,
   packageTransferDeclaredBusinessText,
   packageTransferReminderCustomerHtml,
@@ -107,5 +110,5 @@ export {
   packageTransferUnverifiedBusinessHtml,
   packageTransferUnverifiedBusinessText,
 } from './templates'
-export type { EmailResult, BookingEmailData, CancellationEmailData, RescheduledEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, BankTransferVerifyCustomerEmailData, BalanceTransferCustomerEmailData, ReminderEmailData, LoyaltyRewardEmailData, NotificationResult, TransferReminderCustomerEmailData, TransferReminderBusinessEmailData, OwnerBookingChangedData, PackagePurchasedEmailData, PackageDisputedEmailData, PackageUnexpectedPaymentEmailData, BookingDisputedEmailData, BookingUnexpectedPaymentEmailData, PackageTransferDeclaredEmailData, PackageTransferReminderCustomerEmailData, PackageTransferUnverifiedBusinessEmailData } from './types'
+export type { EmailResult, BookingEmailData, CancellationEmailData, RescheduledEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, BankTransferVerifyCustomerEmailData, BalanceTransferCustomerEmailData, ReminderEmailData, LoyaltyRewardEmailData, NotificationResult, TransferReminderCustomerEmailData, TransferReminderBusinessEmailData, OwnerBookingChangedData, PackagePurchasedEmailData, PackageDisputedEmailData, PackageUnexpectedPaymentEmailData, BookingDisputedEmailData, BookingUnexpectedPaymentEmailData, BookingSlotTakenEmailData, PackageTransferDeclaredEmailData, PackageTransferReminderCustomerEmailData, PackageTransferUnverifiedBusinessEmailData } from './types'
 export type { BookingWhatsappData, BookingRescheduledWhatsappData, ReviewRequestWhatsappData } from './whatsapp'
