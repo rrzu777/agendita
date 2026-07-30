@@ -218,6 +218,72 @@ llega como `text` y Postgres tira `operator does not exist`. `HELD_STATUSES`
 (`src/lib/bookings/approval.ts`) es la fuente para el resto pero el crudo no la puede
 importar. Los 2 casos de `tests/integration/slot-conflicts.test.ts` son la **única** red.
 
+### `Booking_no_overlap` hace imposible la feature, y hay que tocarla
+
+**Esta sección se agregó tarde: el spec no la tenía y es un bloqueante del PR C.** La
+encontró la sesión de pago/hold reportando otra cosa.
+
+`init/migration.sql:512` define un EXCLUDE parcial que **no está en `schema.prisma`**
+(no es representable) y por eso no aparece en ninguna búsqueda del modelo:
+
+```sql
+ALTER TABLE "Booking" ADD CONSTRAINT "Booking_no_overlap"
+EXCLUDE USING gist ("businessId" WITH =, tsrange("startDateTime","endDateTime",'[)') WITH &&)
+WHERE (status IN ('pending_payment','confirmed','completed'));
+```
+
+Prohíbe que **dos reservas activas cualesquiera del mismo negocio** se solapen. Con 4
+barberos, dos citas confirmadas a las 15:00 con personas distintas es **exactamente el
+punto de la feature**, y Postgres rechaza la segunda con `23P01`. No es un detalle de
+validación: es la base negándose a que el multi-profesional exista.
+
+**Y no se arregla agregando `"professionalId" WITH =`.** En un EXCLUDE, si alguno de los
+operadores devuelve NULL para un par de filas, **la constraint no se considera violada
+para ese par**. Con `professionalId` nullable eso significa:
+
+| Par | Hoy | Con `professionalId WITH =` a secas |
+|---|---|---|
+| null vs null | choca ✅ | **NO choca** ⛔ regresión en el caso más común de prod |
+| null vs persona | choca ✅ | NO choca ⛔ contradice `null = choca contra todos` |
+| persona A vs persona B | choca ⛔ | no choca ✅ |
+
+O sea que el cambio ingenuo **debilita** la constraint justo para las filas viejas.
+`COALESCE("professionalId", '') WITH =` recupera el primer caso (los dos NULL pasan a
+`''` y chocan) pero **no** el segundo: `''` vs `'prof-1'` no son iguales.
+
+**"null choca contra todos" no se puede expresar en un EXCLUDE con `WITH =`.** Hay que
+elegir, y la decisión es del PR C:
+
+- **Opción elegida (a confirmar al escribirla):** `COALESCE("professionalId", '') WITH =`.
+  Conserva el backstop de la base para null-vs-null y para persona-vs-la-misma-persona, y
+  deja el caso **mixto** (una reserva vieja sin persona contra una nueva con persona)
+  guardado sólo a nivel app — el advisory lock más el SQL crudo de `assertNoBookingOverlap`.
+  Es una degradación real del backstop, acotada a un caso que sólo existe en negocios que
+  ya tenían reservas antes de armar el equipo, y que se vuelve más raro con el tiempo.
+- Lo que **no** se hace: dejar la constraint como está (mata la feature) ni borrarla
+  (perder el backstop entero por un caso de borde).
+
+La migración del PR C tiene que hacer `DROP CONSTRAINT` + `ADD CONSTRAINT`, y **puede
+fallar al crearse si en prod ya hay filas que la violarían** — hay que chequear los datos
+antes. Ese chequeo lo corre el usuario.
+
+### `pending_confirmation` tampoco está en la constraint (bug de hoy, previo a este track)
+
+Del mismo hallazgo, y **no es del multi-profesional**: `20260729180000_booking_manual_approval`
+agregó el valor al enum sin tocar el EXCLUDE. Así que una solicitud puede solapar
+legalmente una reserva pagada, y cuando la dueña **aprueba**, el status pasa a `confirmed`
+—que sí está cubierto— y salta un `23P01`. En `bookings.ts:456` el `updateMany` de la
+aprobación **no lo ataja**: es un 500 sin mensaje útil. El único lugar del proyecto que
+detecta esta constraint por nombre es `revive-booking.ts:44`.
+
+El camino real para llegar ahí es el mismo que la carrera pago/hold: el hold de la
+solicitud vence por reloj, el cron todavía no la expiró, otra clienta toma el slot
+legítimamente (un hold vencido no bloquea, a propósito), y después la dueña aprueba la
+solicitud vieja.
+
+Se arregla aparte y **antes** de meterle `professionalId` a la constraint, para no mezclar
+dos cambios en la misma migración.
+
 ### El advisory lock se queda como está
 
 `acquireAdvisoryXactLock(tx, `${businessId}:${localStartStr}`)` — por negocio y día
@@ -523,7 +589,8 @@ Del repo, ya mordieron antes:
    panel.
 4. **`tsc` no lo corre ni vitest ni eslint.** Correr `tsc --noEmit` a mano, borrando
    antes `.next/dev/types` (se frena con uno viejo) y sin filtrar por `^src/` (esconde
-   `tests/`; hay 3 errores preexistentes ahí que no son de este track).
+   `tests/`; hay **17** errores preexistentes ahí — `metrics.test.ts` y
+   `reward-email.test.ts` — que no son de este track).
 5. **El Postgres local tiene que estar en UTC** o `slot-conflicts.test.ts` falla en
    falso: el SQL de solape castea con el TZ del **servidor**.
 6. **`migrate diff` levanta cambios de ramas hermanas.** Revisar el `.sql` a mano y

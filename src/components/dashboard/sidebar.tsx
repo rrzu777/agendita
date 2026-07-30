@@ -25,24 +25,36 @@ import {
   Star,
   Ticket,
   Users,
+  UsersRound,
 } from 'lucide-react'
+import { useVocabulary } from '@/components/vocabulary-provider'
+import type { Vocabulary } from '@/lib/vocabulary'
 
-const navItems = [
-  { href: '/dashboard', label: 'Resumen', icon: LayoutDashboard },
-  { href: '/dashboard/bookings', label: 'Reservas', icon: MessageSquareText },
-  { href: '/dashboard/calendar', label: 'Calendario', icon: CalendarDays },
-  { href: '/dashboard/services', label: 'Servicios', icon: Scissors },
-  { href: '/dashboard/availability', label: 'Horarios', icon: Clock3 },
-  { href: '/dashboard/customers', label: 'Clientes', icon: Users },
-  { href: '/dashboard/payments', label: 'Pagos', icon: CreditCard },
-  { href: '/dashboard/promociones', label: 'Promociones', icon: Ticket },
-  { href: '/dashboard/fidelizacion', label: 'Fidelización', icon: Sparkles },
-  { href: '/dashboard/campanas', label: 'Campañas', icon: Megaphone },
-  { href: '/dashboard/paquetes', label: 'Paquetes', icon: Package },
-  { href: '/dashboard/billing', label: 'Facturación', icon: ReceiptText },
-  { href: '/dashboard/reviews', label: 'Reseñas', icon: Star },
-  { href: '/dashboard/settings', label: 'Configuración', icon: Settings },
-]
+// El label de Equipo lo decide el rubro ("Barberos", "Manicuristas"), así que la
+// lista dejó de poder ser una constante de módulo.
+//
+// Ícono propio y no `Users`, que ya lo usa Clientes: dos ítems con el mismo ícono
+// se leen como el mismo lugar, y con el menú colapsado el ícono es lo ÚNICO que se
+// ve.
+function buildNavItems(v: Vocabulary) {
+  return [
+    { href: '/dashboard', label: 'Resumen', icon: LayoutDashboard },
+    { href: '/dashboard/bookings', label: 'Reservas', icon: MessageSquareText },
+    { href: '/dashboard/calendar', label: 'Calendario', icon: CalendarDays },
+    { href: '/dashboard/services', label: 'Servicios', icon: Scissors },
+    { href: '/dashboard/equipo', label: v.Professionals, icon: UsersRound },
+    { href: '/dashboard/availability', label: 'Horarios', icon: Clock3 },
+    { href: '/dashboard/customers', label: 'Clientes', icon: Users },
+    { href: '/dashboard/payments', label: 'Pagos', icon: CreditCard },
+    { href: '/dashboard/promociones', label: 'Promociones', icon: Ticket },
+    { href: '/dashboard/fidelizacion', label: 'Fidelización', icon: Sparkles },
+    { href: '/dashboard/campanas', label: 'Campañas', icon: Megaphone },
+    { href: '/dashboard/paquetes', label: 'Paquetes', icon: Package },
+    { href: '/dashboard/billing', label: 'Facturación', icon: ReceiptText },
+    { href: '/dashboard/reviews', label: 'Reseñas', icon: Star },
+    { href: '/dashboard/settings', label: 'Configuración', icon: Settings },
+  ]
+}
 
 const COLLAPSE_KEY = 'agendita:sidebar-collapsed'
 
@@ -52,6 +64,8 @@ interface DashboardSidebarProps {
 }
 
 export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
+  const v = useVocabulary()
+  const navItems = buildNavItems(v)
   const pathname = usePathname()
   const userName = user.user_metadata?.name || user.email?.split('@')[0] || 'Usuario'
   const mobileItems = navItems.slice(0, 4)

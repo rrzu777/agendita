@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { createServiceSchema, updateServiceSchema, reorderSchema } from '@/lib/services/schema'
+import { createServiceSchema, updateServiceSchema } from '@/lib/services/schema'
+import { reorderSchema } from '@/lib/reorder-schema'
 
 const validService = {
   name: 'Corte de pelo',

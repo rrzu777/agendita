@@ -166,7 +166,13 @@ export async function getTimeBlocks() {
   })
 }
 
-async function _createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean }) {
+// `professionalId` va en el Omit aunque la columna exista: derivar el tipo de
+// entrada del modelo de Prisma hace que CUALQUIER columna nueva se vuelva un
+// parámetro obligatorio de esta firma, y una columna nullable no debería cambiarle
+// nada a los callers de hoy. El bloqueo por persona entra a propósito en el PR B,
+// junto con el CRUD que lo sabe manejar; hasta entonces todo lo que se crea acá es
+// del negocio (professionalId = null, el default de la columna).
+async function _createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes' | 'professionalId'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean }) {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('create-timeblock', 20, 60000)
   if (!limit.success) {
@@ -253,7 +259,7 @@ export const deleteTimeBlock = action(_deleteTimeBlock)
 
 async function _updateTimeBlock(
   id: string,
-  data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean },
+  data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes' | 'professionalId'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean },
 ): Promise<TimeBlock | { requiresConfirmation: true; message: string }> {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('update-timeblock', 20, 60000)
@@ -524,6 +530,13 @@ async function _updateTimeBlockSeries(
         until: existing.until,
         // La tolerancia es de la serie y el diálogo no la edita: se conserva
         overlapToleranceMinutes: existing.overlapToleranceMinutes ?? 0,
+        // De quién es el bloqueo también se conserva. HOY es siempre null y esta
+        // línea no hace nada — va igual porque es el olvido más caro del track:
+        // con `null` significando "cierra para todos", partir el almuerzo
+        // recurrente de UNA persona cerraría el local entero, todas las semanas.
+        // Es más barato que quede resuelto acá que confiar en que quien escriba el
+        // PR B se acuerde de agregarlo a esta copia campo por campo.
+        professionalId: existing.professionalId,
       },
     }),
   ])

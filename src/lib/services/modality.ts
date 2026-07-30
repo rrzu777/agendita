@@ -44,6 +44,25 @@ export function sortModalities(modalities: ServiceModality[]): ServiceModality[]
 }
 
 /**
+ * Tilda o destilda una modalidad **sin dejar la lista en cero**: sin ninguna, ni un
+ * servicio ni una persona pueden atender nada.
+ *
+ * Vive acá y no adentro de un formulario porque ese piso de "al menos una" es el
+ * único guard del lado del cliente del `.min(1)` de los schemas de Zod, y estaba
+ * escrito dos veces (servicios y equipo). Duplicado, arreglar una copia dejaba la
+ * otra mostrando el error recién al guardar y sólo en una pantalla.
+ */
+export function toggleModalityIn(
+  list: ServiceModality[],
+  modality: ServiceModality,
+): ServiceModality[] {
+  if (list.includes(modality)) {
+    return list.length === 1 ? list : list.filter((m) => m !== modality)
+  }
+  return sortModalities([...list, modality])
+}
+
+/**
  * Modalidad efectiva de una reserva nueva, server-authoritative.
  *
  * - Un servicio con una sola modalidad la impone y **el pedido del cliente se

@@ -22,6 +22,15 @@ const SERVICE_STATUS: Record<string, StatusEntry> = {
   inactive: { label: 'Inactivo', className: 'bg-muted text-muted-foreground' },
 }
 
+// Mapa propio y no el de servicios: acá el estado es de una PERSONA, y
+// "Activo"/"Inactivo" quedaría en masculino en una tabla de manicuristas — el
+// problema exacto que el léxico por rubro vino a resolver. "En agenda"/"En pausa"
+// no tiene género y además dice mejor qué significa: quién entra al funnel.
+const PROFESSIONAL_STATUS: Record<string, StatusEntry> = {
+  active: { label: 'En agenda', className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
+  inactive: { label: 'En pausa', className: 'bg-muted text-muted-foreground' },
+}
+
 const REVIEW_STATUS: Record<string, StatusEntry> = {
   pending: { label: 'Pendiente', className: 'bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300' },
   approved: { label: 'Aprobada', className: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' },
@@ -85,6 +94,7 @@ const CAMPAIGN_RECIPIENT_STATUS: Record<string, StatusEntry> = {
 export const STATUS_MAPS = {
   booking: BOOKING_STATUS,
   service: SERVICE_STATUS,
+  professional: PROFESSIONAL_STATUS,
   review: REVIEW_STATUS,
   payment: PAYMENT_STATUS,
   promo: PROMO_STATUS,
