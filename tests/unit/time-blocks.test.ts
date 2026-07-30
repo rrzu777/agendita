@@ -679,3 +679,75 @@ describe('overlapToleranceMinutes', () => {
     )
   })
 })
+
+// Contra qué reservas choca un bloqueo depende de DE QUIÉN es el bloqueo. La palanca
+// está en `overlappingActiveBookingsWhere` y no en el literal de la serie propuesta:
+// sin esto, crear el almuerzo recurrente de una persona avisa "se solapa con reservas
+// en N día(s)" por las citas de OTRA, la dueña aprende a tildar "confirmar" siempre y
+// el aviso deja de significar algo.
+//
+// Hoy nada escribe `professionalId`, así que todos estos caminos piden "todas las
+// reservas" — que es el default conservador. Los casos existen para que el PR que
+// empiece a escribirlo no tenga que descubrir dónde estaba la palanca.
+describe('de quién es el bloqueo decide contra qué reservas choca', () => {
+  function scopeOfLastBookingQuery() {
+    const calls = mockPrisma.booking.findMany.mock.calls
+    return (calls[calls.length - 1][0] as { where: { AND?: unknown } }).where.AND
+  }
+
+  const soloDeJuan = { OR: [{ professionalId: null }, { professionalId: 'juan' }] }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPrisma.booking.findMany.mockResolvedValue([])
+  })
+
+  it('un bloqueo del salón choca contra TODAS las citas', async () => {
+    mockPrisma.timeBlock.create.mockResolvedValue({ id: 'block-1', businessId: 'biz-1' })
+
+    await createTimeBlock({ ...baseInput, confirmOverlap: true })
+
+    expect(scopeOfLastBookingQuery()).toEqual({})
+  })
+
+  it('editar el bloqueo de una persona sólo mira las citas de ella', async () => {
+    mockPrisma.timeBlock.findFirst.mockResolvedValue({
+      id: 'block-1',
+      businessId: 'biz-1',
+      professionalId: 'juan',
+      startDateTime: baseInput.startDateTime,
+      endDateTime: baseInput.endDateTime,
+      reason: baseInput.reason,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    })
+    mockPrisma.timeBlock.updateMany.mockResolvedValue({ count: 1 })
+
+    // Con horario cambiado, que es cuando corre el chequeo de solape.
+    await updateTimeBlock('block-1', {
+      startDateTime: new Date('2026-06-01T11:00:00Z'),
+      endDateTime: new Date('2026-06-01T12:00:00Z'),
+      reason: 'Movido',
+      confirmOverlap: true,
+    })
+
+    expect(scopeOfLastBookingQuery()).toEqual(soloDeJuan)
+  })
+
+  it('la excepción de un día hereda de quién es la serie', async () => {
+    mockPrisma.timeBlockSeries.findFirst.mockResolvedValue({
+      id: 'series-1',
+      businessId: 'biz-1',
+      professionalId: 'juan',
+    })
+    mockPrisma.timeBlockException.upsert.mockResolvedValue({})
+
+    await overrideSeriesOccurrence('series-1', fromZonedTime('2026-08-03 00:00:00', TZ), {
+      startDateTime: fromZonedTime('2026-08-03 12:00:00', TZ),
+      endDateTime: fromZonedTime('2026-08-03 15:00:00', TZ),
+      reason: 'Almuerzo largo',
+      confirmed: true,
+    })
+
+    expect(scopeOfLastBookingQuery()).toEqual(soloDeJuan)
+  })
+})
