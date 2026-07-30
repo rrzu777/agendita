@@ -317,11 +317,12 @@ export interface BookingUnexpectedPaymentEmailData {
 }
 
 /**
- * Aviso a la dueña: el pago alcanzaba para confirmar la reserva, pero el horario
- * ya no está libre, así que la reserva quedó sin confirmar. Es el único canal por
- * el que se entera: pasa en un webhook, sin nadie mirando la pantalla.
+ * Aviso a la dueña: entró el pago pero la reserva quedó SIN confirmar — el horario
+ * ya no estaba libre, o la reserva ya no estaba vigente (vencida, cancelada). Es el
+ * único canal por el que se entera: pasa en un webhook, sin nadie mirando la
+ * pantalla.
  */
-export interface BookingSlotTakenEmailData {
+export interface BookingPaymentNotConfirmedEmailData {
   /** Rubro del negocio: decide cómo se nombra a la clientela en el aviso. */
   businessCategory: BusinessCategory
   businessName: string
@@ -333,7 +334,7 @@ export interface BookingSlotTakenEmailData {
   businessTimezone: string
   amount: number
   businessCurrency: string
-  /** Qué ocupa el horario, en castellano llano. Lo arma `describeSlotConflict`. */
+  /** Por qué no se confirmó, en castellano llano. Lo arma `describeUnconfirmedPayment`. */
   situation: string
 }
 

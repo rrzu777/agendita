@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import { BookingStatus, BookingPaymentStatus, PaymentProvider, PaymentType } from '@prisma/client'
 import { assertBookingPayable } from '@/lib/bookings/payments'
+import { isManuallyPayableStatus } from '@/lib/bookings/payable-statuses'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
 import { declaredBalancePaymentWhere } from '@/lib/bank-transfer/declared'
@@ -130,6 +131,40 @@ function unexpectedBookingPaymentDescription(bookingId: string, bookingNumber?: 
   return `Pago inesperado para reserva ${formatBookingNumber(bookingNumber, bookingId)}: ya estaba pagada (revisar reembolso)`
 }
 
+/**
+ * Por qué la reserva no podía recibir este pago, en castellano llano. FUENTE
+ * ÚNICA del asiento de ledger y del mail a la dueña, así los dos cuentan lo mismo
+ * —mismo criterio que `describeUnexpectedPackagePayment`.
+ *
+ * Sin sujeto a propósito: lo pone cada lado ("Pago inesperado para reserva #4738:
+ * ya había vencido…" / "…pero la reserva ya había vencido…").
+ */
+function describeUnpayableBookingStatus(status: BookingStatus): string {
+  switch (status) {
+    case BookingStatus.expired:
+      return 'ya había vencido y el horario se liberó'
+    case BookingStatus.cancelled:
+      return 'estaba cancelada'
+    case BookingStatus.no_show:
+      return 'estaba marcada como no asistió'
+    case BookingStatus.pending_confirmation:
+      return 'todavía estaba esperando tu confirmación'
+    // Fail-safe: un estado nuevo del enum no debe quedar sin explicación. Los
+    // pagables (pending_payment, confirmed, completed) nunca llegan acá.
+    default:
+      return `estaba en estado ${status}`
+  }
+}
+
+/** Asiento de un pago que entró sobre una reserva cuyo estado no admite pagos. */
+function unpayableBookingPaymentDescription(
+  status: BookingStatus,
+  bookingId: string,
+  bookingNumber?: number | null,
+): string {
+  return `Pago inesperado para reserva ${formatBookingNumber(bookingNumber, bookingId)}: ${describeUnpayableBookingStatus(status)} (revisar reembolso)`
+}
+
 export interface ApplyApprovedPaymentInput {
   tx: Prisma.TransactionClient
   bookingId: string
@@ -156,6 +191,23 @@ export interface ApplyApprovedPaymentInput {
    * Ver `assertBookingPayable` en `@/lib/bookings/payments`.
    */
   allowCompleted?: boolean
+  /**
+   * Camino automatizado en el que NO hay a quién decirle "no": el webhook de
+   * Mercado Pago. El cobro ya ocurrió, así que rechazarlo no lo deshace — sólo
+   * hace que el webhook devuelva 500, que MP reintente para siempre el mismo
+   * evento y que la plata no quede asentada en ningún lado.
+   *
+   * Con esta bandera el pago se registra igual, pase lo que pase con el estado de
+   * la reserva: si la reserva no puede recibir pagos (vencida, cancelada, no
+   * asistió) el asiento va como `overpayment` —fuera de los KPI de ingreso— la
+   * reserva NO se toca y el motivo vuelve en `unconfirmedReason` para que el
+   * caller le avise a la dueña. Espejo exacto de lo que la rama de paquetes ya
+   * hace con `ACTIVATABLE_PURCHASE_STATUSES`.
+   *
+   * Los caminos interactivos (dueña en el dashboard, clienta post-checkout) NO la
+   * usan: ahí sí hay una pantalla donde decir que no se pudo.
+   */
+  recordEvenIfNotPayable?: boolean
 }
 
 interface UpsertApprovedPaymentInput {
@@ -237,6 +289,7 @@ export async function applyApprovedPayment({
   paymentId: explicitPaymentId,
   skipHoldExpiryCheck,
   allowCompleted,
+  recordEvenIfNotPayable,
 }: ApplyApprovedPaymentInput): Promise<{
   booking: Awaited<ReturnType<typeof recalcBookingFromPayments>>['booking']
   wasConfirmed: boolean
@@ -246,8 +299,12 @@ export async function applyApprovedPayment({
    * dueña para que decida el reembolso. No es excluyente con `wasConfirmed`.
    */
   wasUnexpected: boolean
-  /** Ver `recalcBookingFromPayments`: el pago alcanzaba pero el horario ya está tomado. */
-  slotConflict: SlotConflict | null
+  /**
+   * La plata quedó asentada pero el turno NO quedó en pie. Si viene con algo, el
+   * caller TIENE que avisarle a la dueña: es la única forma de que se entere.
+   * Ver `UnconfirmedPaymentReason`.
+   */
+  unconfirmedReason: UnconfirmedPaymentReason | null
 }> {
   if (amount <= 0) {
     throw new UserError('El monto debe ser positivo')
@@ -265,7 +322,20 @@ export async function applyApprovedPayment({
     throw new UserError('La reserva no pertenece al negocio')
   }
 
-  assertBookingPayable(booking, { allowExpiredHold: skipHoldExpiryCheck, allowCompleted })
+  // El estado de la reserva no admite pagos (vencida, cancelada, no asistió). En
+  // los caminos interactivos esto lanza y ahí termina; en el webhook se asienta
+  // igual y se avisa —ver `recordEvenIfNotPayable`.
+  const statusBlocksPayment = !isManuallyPayableStatus(booking.status)
+  if (!recordEvenIfNotPayable) {
+    assertBookingPayable(booking, { allowExpiredHold: skipHoldExpiryCheck, allowCompleted })
+  }
+
+  /** El desenlace en un solo lugar: el estado de la reserva pesa más que el cupo
+   *  (si no puede recibir pagos, nunca se preguntó por el horario). */
+  const toUnconfirmedReason = (slotConflict: SlotConflict | null): UnconfirmedPaymentReason | null => {
+    if (statusBlocksPayment) return { kind: 'booking_status', status: booking.status }
+    return slotConflict ? { kind: 'slot_taken', conflict: slotConflict } : null
+  }
 
   const { payment, alreadyApproved } = await upsertApprovedPayment({
     tx, businessId, bookingId, customerId: booking.customerId, amount, currency,
@@ -276,7 +346,13 @@ export async function applyApprovedPayment({
   if (alreadyApproved) {
     // Idempotencia: ya aprobado; solo recalcular y retornar. Redelivery del mismo
     // pago no es plata nueva, así que nunca es un pago inesperado.
-    return { ...(await recalcBookingFromPayments(tx, bookingId)), wasUnexpected: false }
+    const recalc = await recalcBookingFromPayments(tx, bookingId)
+    return {
+      booking: recalc.booking,
+      wasConfirmed: recalc.wasConfirmed,
+      wasUnexpected: false,
+      unconfirmedReason: toUnconfirmedReason(recalc.slotConflict),
+    }
   }
 
   // Plata NUEVA sobre una reserva que ya no debía nada. Casos reales: la clienta
@@ -291,7 +367,11 @@ export async function applyApprovedPayment({
   // en 0, sus pagos siguen contando como ingreso normal. Preferimos contar plata de
   // más en los KPI antes que esconder plata real.
   const paidBefore = await sumApprovedPayments(tx, bookingId, { excludePaymentId: payment.id })
+  // `statusBlocksPayment` gana: si la reserva está vencida o cancelada, el aviso
+  // que corresponde es "no quedó confirmada, decidí vos" y no "ya estaba pagada".
+  // Excluyentes a propósito, así la dueña recibe UN mail y no dos.
   const wasUnexpected =
+    !statusBlocksPayment &&
     booking.finalAmount > 0 &&
     CUSTOMER_BOOKING_PAYMENT_TYPES.has(payment.paymentType) &&
     paidBefore >= booking.finalAmount
@@ -305,13 +385,20 @@ export async function applyApprovedPayment({
       bookingId,
       paymentId: payment.id,
       customerId: booking.customerId,
-      type: wasUnexpected ? 'overpayment' : mapPaymentTypeToLedgerEntryType(payment.paymentType),
+      // `overpayment` = plata real, trazable en el ledger, FUERA de los KPI de
+      // ingreso. Es lo que corresponde a un cobro que se va a devolver o a
+      // reacomodar: contarlo como facturación infla ingresos que se revierten.
+      type: wasUnexpected || statusBlocksPayment
+        ? 'overpayment'
+        : mapPaymentTypeToLedgerEntryType(payment.paymentType),
       direction: mapPaymentTypeToLedgerDirection(payment.paymentType),
       amount: payment.amount,
       currency,
-      description: wasUnexpected
-        ? unexpectedBookingPaymentDescription(booking.id, booking.bookingNumber)
-        : getLedgerDescription(payment.paymentType, booking.id, booking.bookingNumber),
+      description: statusBlocksPayment
+        ? unpayableBookingPaymentDescription(booking.status, booking.id, booking.bookingNumber)
+        : wasUnexpected
+          ? unexpectedBookingPaymentDescription(booking.id, booking.bookingNumber)
+          : getLedgerDescription(payment.paymentType, booking.id, booking.bookingNumber),
       occurredAt: new Date(),
       createdByUserId: createdByUserId ?? null,
     },
@@ -320,7 +407,13 @@ export async function applyApprovedPayment({
   // `depositPaid` queda con el total REALMENTE pagado, sin tope: es un hecho, y
   // `remainingBalance` ya está clampeado en 0. Taparlo escondería el cobro de más
   // justo en la pantalla donde la dueña lo tiene que ver.
-  return { ...(await recalcBookingFromPayments(tx, bookingId)), wasUnexpected }
+  const recalc = await recalcBookingFromPayments(tx, bookingId)
+  return {
+    booking: recalc.booking,
+    wasConfirmed: recalc.wasConfirmed,
+    wasUnexpected,
+    unconfirmedReason: toUnconfirmedReason(recalc.slotConflict),
+  }
 }
 
 export interface ApplyApprovedPackagePaymentInput {
@@ -375,11 +468,28 @@ export function describeUnexpectedPackagePayment(purchaseStatus: string): string
   }
 }
 
+/**
+ * Entró plata y el turno NO quedó en pie. Dos motivos EXCLUYENTES entre sí:
+ * - `slot_taken`: la reserva podía confirmarse pero el horario ya no está libre.
+ *   Exige `pending_payment`, o sea un estado que sí admite pagos.
+ * - `booking_status`: el estado de la reserva no admite pagos (vencida,
+ *   cancelada, no asistió). Ahí nunca se llega a preguntar por el horario.
+ *
+ * Van en un solo tipo porque el desenlace es el mismo —el cobro es real, la hora
+ * no está reservada y decide la dueña— y viajan por el mismo aviso.
+ */
+export type UnconfirmedPaymentReason =
+  | { kind: 'slot_taken'; conflict: SlotConflict }
+  | { kind: 'booking_status'; status: BookingStatus }
+
 /** Por qué no se pudo confirmar el turno, en castellano llano para el mail a la
  *  dueña. Vive al lado de `describeUnexpectedPackagePayment` por el mismo motivo:
  *  el aviso tiene que decir qué pasó, no un código interno. */
-export function describeSlotConflict(conflict: SlotConflict): string {
-  switch (conflict.reason) {
+export function describeUnconfirmedPayment(reason: UnconfirmedPaymentReason): string {
+  if (reason.kind === 'booking_status') {
+    return `la reserva ${describeUnpayableBookingStatus(reason.status)}`
+  }
+  switch (reason.conflict.reason) {
     case 'booking_overlap':
       return 'ese horario ya lo tomó otra reserva'
     case 'timeblock_overlap':
@@ -387,6 +497,19 @@ export function describeSlotConflict(conflict: SlotConflict): string {
     case 'end_before_start':
       return 'el horario de la reserva quedó inconsistente'
   }
+}
+
+/**
+ * Lo que se le dice a la CLIENTA cuando su pago entró pero su hora no quedó
+ * reservada. Separado del texto del mail a la dueña a propósito: son dos lectores
+ * distintos y el de la clienta no debe hablar de la agenda del negocio.
+ */
+export function unconfirmedPaymentCustomerMessage(reason: UnconfirmedPaymentReason): string {
+  const causa =
+    reason.kind === 'slot_taken'
+      ? 'ese horario acaba de ocuparse'
+      : 'esa reserva ya no estaba vigente'
+  return `Recibimos tu pago, pero ${causa}. El negocio te va a contactar para reacomodar tu hora o devolverte la plata.`
 }
 
 /**
