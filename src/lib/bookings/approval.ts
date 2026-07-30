@@ -36,8 +36,9 @@ export const HELD_STATUSES = [
 /** Estados que ocupan el cupo siempre, sin importar el hold. */
 export const OCCUPYING_STATUSES = [BookingStatus.confirmed, BookingStatus.completed] as const
 
-/** Estados que NO ocupan cupo: la reserva ya no está en pie. */
-const RELEASED_STATUSES = [
+/** Estados que NO ocupan cupo: la reserva ya no está en pie. Sirve además para no
+ *  traer esas filas cuando lo único que se va a hacer con ellas es descartarlas. */
+export const RELEASED_STATUSES = [
   BookingStatus.cancelled,
   BookingStatus.no_show,
   BookingStatus.expired,

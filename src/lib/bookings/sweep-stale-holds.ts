@@ -15,8 +15,9 @@ import { releaseRedemptionsOfExpiredBookings } from '@/lib/promotions/release'
  * transferencia de por medio. Todo lo que le deba un mail a la clienta lo sigue
  * barriendo el cron (`lib/cron/expire-holds.ts`), que sí puede mandarlo.
  *
- * Devuelve cuántas transicionaron de verdad (puede ser menos que `ids.length`: un
- * pago que llegó entre la lectura y esto gana la carrera y se queda con su hora).
+ * Devuelve cuántas transicionaron de verdad. Con el `FOR UPDATE` del caller puesto
+ * eso es siempre `ids.length`; se loguean los dos para que una diferencia — que
+ * significaría que alguien pudo cambiar una fila que creíamos lockeada — se vea.
  */
 export async function sweepStaleHoldsInTx(
   tx: Prisma.TransactionClient | PrismaClient,
