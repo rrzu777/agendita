@@ -20,6 +20,10 @@ describe('getTimeBlocksByRange', () => {
     mockRequireBusiness.mockResolvedValue({ businessId: 'biz-1', business: { timezone: 'America/Santiago' } })
   })
 
+  // El calendario del panel es una pantalla para MOSTRAR: tiene que traer los bloqueos
+  // de todo el equipo, no sólo los del negocio. Con `business` acá, las vacaciones de
+  // una persona serían invisibles en el calendario y parecería que el bloqueo no se
+  // guardó. Por eso el `scope` va en la aserción exacta de abajo.
   it('routes through getEffectiveBlocks with the business timezone', async () => {
     mockGetEffectiveBlocks.mockResolvedValueOnce([
       { id: 'tb1', startDateTime: new Date('2026-05-18T10:00:00Z') },
@@ -39,18 +43,6 @@ describe('getTimeBlocksByRange', () => {
       timezone: 'America/Santiago',
       scope: { kind: 'everyone' },
     })
-  })
-
-  // El calendario del panel es una pantalla para MOSTRAR: tiene que traer los
-  // bloqueos de todo el equipo, no sólo los del negocio. Con `business` acá, las
-  // vacaciones de una persona serían invisibles en el calendario y parecería que el
-  // bloqueo no se guardó.
-  it('pide el alcance de TODOS, no sólo los del negocio', async () => {
-    await getTimeBlocksByRange(new Date('2026-05-01'), new Date('2026-05-31'))
-
-    expect(mockGetEffectiveBlocks).toHaveBeenCalledWith(
-      expect.objectContaining({ scope: { kind: 'everyone' } }),
-    )
   })
 
   it('falls back to America/Santiago when the business has no timezone', async () => {

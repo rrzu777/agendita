@@ -5,8 +5,8 @@ import { LEAD_TIME_MINUTES } from './constants'
 import { shrinkBlock } from './shrink-block'
 import { expandSeries } from '@/lib/calendar/expand-series'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
-import { blockScopeFor, normalizeProfessionalId, resolveDayRule } from '@/lib/availability/scope'
-import { blockScopeCondition } from '@/lib/availability/effective-blocks'
+import { blockScopeFor, bookingScopeSql, resolveDayRule } from '@/lib/availability/scope'
+import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 // `Prisma` entra como VALOR y no sólo como tipo: el SQL crudo del solape compone
 // fragmentos con `Prisma.sql` / `Prisma.empty` en vez de repetir la consulta entera
 // por cada combinación de cláusulas opcionales.
@@ -72,60 +72,35 @@ const SLOT_UNAVAILABLE_MESSAGE = 'Ese horario ya no está disponible. Por favor 
 async function findTimeBlockConflict(input: AssertConflictInput): Promise<SlotConflict | null> {
   const { tx, businessId, startDateTime, endDateTime, timezone, professionalId } = input
 
-  // Los bloqueos que dejan a esta reserva sin lugar: los del negocio (cierra para
-  // todos) más los de la persona a nombre de quien va. Las vacaciones de OTRA
-  // persona no tienen nada que ver.
+  // La MISMA función que usa el funnel para ofrecer horas, con el `tx` de esta
+  // transacción. Antes este archivo repetía las dos queries, el truco del
+  // superconjunto de `until` y el fan-out de series por su cuenta: eran las dos
+  // puntas del mismo contrato, y si se separaban se ofrecía una hora que después se
+  // rechazaba (o se escribía una reserva encima de un bloqueo).
   //
-  // Este archivo repite la query de `effective-blocks.ts` en vez de llamarlo
-  // porque necesita el `tx` de la transacción; la condición del alcance sí es
-  // compartida para que las dos no se desincronicen.
-  const scopeCondition = blockScopeCondition(blockScopeFor(professionalId))
+  // El alcance sale de la persona a nombre de quien va la reserva: los bloqueos del
+  // negocio la dejan sin lugar, los de OTRA persona no tienen nada que ver.
+  //
+  // Corre ANTES del advisory lock, y está bien: el lock protege reserva-vs-reserva,
+  // no bloqueos.
+  const blocks = await getEffectiveBlocks({
+    businessId,
+    rangeStart: startDateTime,
+    rangeEnd: endDateTime,
+    timezone,
+    scope: blockScopeFor(professionalId),
+    client: tx,
+  })
 
-  const [oneOffBlocks, blockSeries] = await Promise.all([
-    // Query por bordes crudos (superconjunto); la tolerancia se aplica en
-    // memoria con shrinkBlock — un bloqueo tolerante puede no bloquear el slot
-    // aunque sus bordes crudos lo solapen.
-    tx.timeBlock.findMany({
-      where: {
-        businessId,
-        startDateTime: { lt: endDateTime },
-        endDateTime: { gt: startDateTime },
-        AND: [scopeCondition],
-      },
-      select: { startDateTime: true, endDateTime: true, overlapToleranceMinutes: true },
-    }),
-    tx.timeBlockSeries.findMany({
-      where: {
-        businessId,
-        isActive: true,
-        anchorDate: { lte: endDateTime },
-        // `until` es marcador de día (00:00 local); comparamos contra el piso del
-        // día local del slot para no descartar el último día de una serie acotada.
-        // Superconjunto seguro: expandSeries filtra el día con precisión.
-        OR: [{ until: null }, { until: { gte: startOfLocalDay(getLocalDateStr(startDateTime, timezone), timezone) } }],
-        // `AND` y no spread: el `OR` de arriba es de `until` y un segundo `OR` en
-        // el mismo nivel lo sobrescribiría sin decir nada.
-        AND: [scopeCondition],
-      },
-      include: { exceptions: true },
-    }),
-  ])
-
-  const overlapsShrunk = (block: { startDateTime: Date; endDateTime: Date; overlapToleranceMinutes?: number }): boolean => {
+  // La query trae un superconjunto por bordes crudos; la tolerancia se aplica acá con
+  // shrinkBlock — un bloqueo tolerante puede no bloquear el slot aunque sus bordes
+  // crudos lo solapen, y uno que apenas se toca en el borde tampoco (`<` estricto).
+  const blocked = blocks.some((block) => {
     const core = shrinkBlock(block)
     return core !== null && core.start < endDateTime && startDateTime < core.end
-  }
+  })
 
-  const blockedByOneOff = oneOffBlocks.some(overlapsShrunk)
-
-  // El chequeo de bloqueo corre ANTES del advisory lock; expandir las series en
-  // memoria aquí no pierde ninguna garantía de concurrencia (esta protege
-  // booking-vs-booking, no bloqueos).
-  const blockedBySeries = blockSeries.some((s) =>
-    expandSeries(s, s.exceptions, startDateTime, endDateTime, timezone).some(overlapsShrunk),
-  )
-
-  if (blockedByOneOff || blockedBySeries) {
+  if (blocked) {
     logEvent('slot_validation_rejected', { businessId, reason: 'timeblock_overlap' })
     return { reason: 'timeblock_overlap' }
   }
@@ -134,7 +109,6 @@ async function findTimeBlockConflict(input: AssertConflictInput): Promise<SlotCo
 
 async function findBookingOverlap(input: AssertConflictInput): Promise<SlotConflict | null> {
   const { tx, businessId, startDateTime, endDateTime, timezone } = input
-  const professionalId = normalizeProfessionalId(input.professionalId)
   const now = new Date()
 
   // Advisory lock por businessId + día local del negocio.
@@ -164,14 +138,10 @@ async function findBookingOverlap(input: AssertConflictInput): Promise<SlotConfl
     ? Prisma.sql`AND "id" != ${input.excludeBookingId}`
     : Prisma.empty
 
-  // Una reserva CON persona sólo choca contra las de esa persona y contra las que
-  // no tienen ninguna. Una reserva SIN persona no lleva cláusula: choca contra
-  // todas, que es lo conservador — son las citas de antes de que hubiera equipo y
-  // nunca queremos meterle una encima a alguien.
-  const professionalClause =
-    professionalId === null
-      ? Prisma.empty
-      : Prisma.sql`AND ("professionalId" IS NULL OR "professionalId" = ${professionalId})`
+  // El filtro de persona sale de `scope.ts`, pegado a la versión Prisma que usan los
+  // lectores: son la lectura y la escritura del mismo contrato, y separarlas es cómo
+  // se llega a que el funnel ofrezca una hora que la escritura rechaza.
+  const professionalClause = bookingScopeSql(input.professionalId)
 
   const overlappingBookings = await tx.$queryRaw<{ id: string }[]>`
     SELECT "id" FROM "Booking"
@@ -186,7 +156,7 @@ async function findBookingOverlap(input: AssertConflictInput): Promise<SlotConfl
       ${professionalClause}
     FOR UPDATE
   `
-  if (Array.isArray(overlappingBookings) && overlappingBookings.length > 0) {
+  if (overlappingBookings.length > 0) {
     logEvent('slot_validation_rejected', { businessId, reason: 'booking_overlap', overlappingCount: overlappingBookings.length })
     return {
       reason: 'booking_overlap',

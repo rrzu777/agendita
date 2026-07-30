@@ -40,7 +40,7 @@ export async function computeRescheduleSlots(
         status: { notIn: ['cancelled', 'no_show', 'expired'] },
         startDateTime: { lte: dayEnd },
         endDateTime: { gte: dayStart },
-        AND: [bookingScopeCondition(booking.professionalId)],
+        AND: bookingScopeCondition(booking.professionalId),
       },
       orderBy: { startDateTime: 'asc' },
     }),

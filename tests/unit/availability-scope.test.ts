@@ -1,12 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
+  blockScopeCondition,
   blockScopeFor,
   bookingScopeCondition,
-  hasOwnAvailabilityRules,
+  bookingScopeSql,
   resolveAvailabilityRules,
   resolveDayRule,
+  resolveRuleScope,
 } from '@/lib/availability/scope'
-import { blockScopeCondition } from '@/lib/availability/effective-blocks'
 
 // Estos tests miran los WHERE que se arman, no filas de una base. Es a propósito:
 // lo que puede salir mal acá no es el resultado de una query sino el filtro que se
@@ -14,25 +15,20 @@ import { blockScopeCondition } from '@/lib/availability/effective-blocks'
 
 type RuleRow = { dayOfWeek: number; isActive: boolean; professionalId: string | null }
 
+// El fake exige `businessId` en todo `where`: sin eso, un filtro al que se le
+// olvidara el negocio pasaba estos tests y se llevaba las filas de otro salón.
 function fakeClient(rows: RuleRow[]) {
+  const scoped = (where: Record<string, unknown>) => {
+    if (where.businessId !== 'biz') throw new Error(`where sin businessId: ${JSON.stringify(where)}`)
+    return rows.filter((r) => r.professionalId === (where.professionalId as string | null))
+  }
   const findMany = vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
-    rows.filter(
-      (r) =>
-        r.professionalId === (where.professionalId as string | null) &&
-        (where.isActive === undefined || r.isActive === where.isActive),
-    ),
+    scoped(where).filter((r) => where.isActive === undefined || r.isActive === where.isActive),
   )
   const findFirst = vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
-    rows.find(
-      (r) =>
-        r.professionalId === (where.professionalId as string | null) &&
-        r.dayOfWeek === where.dayOfWeek &&
-        r.isActive === where.isActive,
-    ) ?? null,
+    scoped(where).find((r) => r.dayOfWeek === where.dayOfWeek && r.isActive === where.isActive) ?? null,
   )
-  const count = vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
-    rows.filter((r) => r.professionalId === (where.professionalId as string | null)).length,
-  )
+  const count = vi.fn(async ({ where }: { where: Record<string, unknown> }) => scoped(where).length)
   const client = { availabilityRule: { findMany, findFirst, count } }
   // El cast es el precio de no arrastrar el PrismaClient entero a un test que sólo
   // necesita tres métodos.
@@ -97,13 +93,19 @@ describe('bookingScopeCondition', () => {
   })
 })
 
-describe('hasOwnAvailabilityRules', () => {
-  it('es false sin filas propias y true con una sola', async () => {
+describe('resolveRuleScope', () => {
+  it('sin persona no pregunta nada: el alcance es el del negocio', async () => {
+    const { client, count } = fakeClient([negocio(1), deJuan(6)])
+    expect(await resolveRuleScope(client, 'biz', null)).toBeNull()
+    expect(count).not.toHaveBeenCalled()
+  })
+
+  it('devuelve la persona con filas propias, y null sin ninguna', async () => {
     const sin = fakeClient([negocio(1)])
-    expect(await hasOwnAvailabilityRules(sin.client, 'biz', 'juan')).toBe(false)
+    expect(await resolveRuleScope(sin.client, 'biz', 'juan')).toBeNull()
 
     const con = fakeClient([negocio(1), deJuan(6)])
-    expect(await hasOwnAvailabilityRules(con.client, 'biz', 'juan')).toBe(true)
+    expect(await resolveRuleScope(con.client, 'biz', 'juan')).toBe('juan')
   })
 
   // El borde que invierte el sentido de todo: si la pregunta filtrara por isActive,
@@ -111,7 +113,7 @@ describe('hasOwnAvailabilityRules', () => {
   // tanto ABIERTO en el horario del salón.
   it('no filtra por isActive: una semana entera cerrada sigue siendo horario propio', async () => {
     const { client, count } = fakeClient([negocio(1), deJuan(1, false), deJuan(2, false)])
-    expect(await hasOwnAvailabilityRules(client, 'biz', 'juan')).toBe(true)
+    expect(await resolveRuleScope(client, 'biz', 'juan')).toBe('juan')
     expect(count).toHaveBeenCalledWith({ where: { businessId: 'biz', professionalId: 'juan' } })
   })
 })
@@ -172,6 +174,32 @@ describe('resolveDayRule', () => {
       const desdeLaLista = (await resolveAvailabilityRules(a, 'biz', 'juan')).some((r) => r.dayOfWeek === dia)
       const desdeElDia = (await resolveDayRule(b, 'biz', 'juan', dia)) !== null
       expect(desdeElDia, `día ${dia}`).toBe(desdeLaLista)
+    }
+  })
+})
+
+// El fragmento SQL y la condición de Prisma son la lectura y la escritura del MISMO
+// contrato: los lectores usan `bookingScopeCondition` y el `$queryRaw` del solape usa
+// esto. Si se separan, el funnel ofrece una hora que la escritura rechaza.
+describe('bookingScopeSql', () => {
+  it('sin persona no agrega cláusula: choca contra todas las reservas', () => {
+    expect(bookingScopeSql(null).sql).toBe('')
+    expect(bookingScopeSql(undefined as unknown as null).sql).toBe('')
+  })
+
+  it('con persona filtra a las suyas y a las que no tienen dueño', () => {
+    const frag = bookingScopeSql('juan')
+    expect(frag.sql).toContain('"professionalId" IS NULL OR "professionalId" =')
+    expect(frag.values).toEqual(['juan'])
+  })
+
+  // Las dos formas tienen que estar de acuerdo sobre cuándo NO filtran, que es la
+  // mitad conservadora de la asimetría.
+  it('coincide con bookingScopeCondition en cuándo no filtra', () => {
+    for (const id of [null, '', 'juan']) {
+      const filtraEnPrisma = Object.keys(bookingScopeCondition(id)).length > 0
+      const filtraEnSql = bookingScopeSql(id).sql !== ''
+      expect(filtraEnSql, String(id)).toBe(filtraEnPrisma)
     }
   })
 })

@@ -11,6 +11,7 @@ import { action, UserError } from '@/lib/actions/result'
 import { differenceInMilliseconds, addDays } from 'date-fns'
 import { getEffectiveBlocks, type EffectiveBlock } from '@/lib/availability/effective-blocks'
 import { computeServiceFit, SERVICE_FIT_WINDOW_DAYS } from '@/lib/availability/service-fit'
+import { bookingScopeCondition, resolveAvailabilityRules } from '@/lib/availability/scope'
 import { getLocalDateStr } from '@/lib/availability/timezone'
 import { computeSeriesUntil, expandSeries, type SeriesEndMode } from '@/lib/calendar/expand-series'
 import { planSeriesUpdate } from '@/lib/calendar/series-update-plan'
@@ -26,8 +27,23 @@ const MAX_BLOCK_DURATION_MS = 32 * 24 * 60 * 60 * 1000 // 32 dias
  * `pending_payment`/`pending_confirmation` con `holdExpiresAt` ya vencido no
  * bloquea (misma semántica que generateSlots/assertSlotIsAvailable), aunque el
  * cron aún no lo haya marcado como `expired`.
+ *
+ * `professionalId` es de QUIÉN es el bloqueo que se está creando, no de la reserva:
+ * un bloqueo del salón choca contra todas las citas, y el de una persona sólo contra
+ * las suyas y las que no tienen dueño. **Acá está la palanca**, no en el literal de
+ * la serie propuesta: sin este parámetro, crear el almuerzo recurrente de Juan avisa
+ * "se solapa con reservas en 12 día(s)" por las citas de Ana, la dueña aprende a
+ * tildar "confirmar" siempre y el aviso deja de significar algo.
+ *
+ * `AND` y no spread: el `OR` de los holds vencidos ya ocupa ese nivel.
  */
-function overlappingActiveBookingsWhere(businessId: string, start: Date, end: Date, now: Date): Prisma.BookingWhereInput {
+function overlappingActiveBookingsWhere(
+  businessId: string,
+  start: Date,
+  end: Date,
+  now: Date,
+  professionalId: string | null,
+): Prisma.BookingWhereInput {
   return {
     businessId,
     startDateTime: { lt: end },
@@ -39,6 +55,7 @@ function overlappingActiveBookingsWhere(businessId: string, start: Date, end: Da
         OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: now } }],
       },
     ],
+    AND: bookingScopeCondition(professionalId),
   }
 }
 
@@ -58,7 +75,7 @@ async function findSeriesBookingConflicts(
   const checkEnd = addDays(now, bookingWindowDays)
   const occurrences = expandSeries(proposed, [], now, checkEnd, timezone)
   const bookings = await prisma.booking.findMany({
-    where: overlappingActiveBookingsWhere(businessId, now, checkEnd, now),
+    where: overlappingActiveBookingsWhere(businessId, now, checkEnd, now, proposed.professionalId),
     select: { startDateTime: true, endDateTime: true },
   })
   const overlappingDates = Array.from(
@@ -97,7 +114,12 @@ async function serviceFitAddendum(
   try {
     const [services, rules] = await Promise.all([
       prisma.service.findMany({ where: { businessId, isActive: true } }),
-      prisma.availabilityRule.findMany({ where: { businessId, isActive: true } }),
+      // Por `resolveAvailabilityRules` y no un findMany crudo: es el mismo
+      // `computeServiceFit` que la pantalla de Disponibilidad, y ahí las reglas ya
+      // vienen con alcance. Sin esto, el día que alguien tenga horario propio este
+      // aviso simularía el fit con los horarios de todo el equipo mezclados y daría
+      // una respuesta distinta a la de la pantalla sobre exactamente lo mismo.
+      resolveAvailabilityRules(prisma, businessId, null),
     ])
     if (services.length === 0 || rules.length === 0) return ''
 
@@ -200,7 +222,9 @@ async function _createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' | 'busi
 
   const now = new Date()
   const overlappingBookings = await prisma.booking.findMany({
-    where: overlappingActiveBookingsWhere(businessId, startDateTime, endDateTime, now),
+    // `null` = bloqueo del salón, choca contra todas las citas. Cuando el diálogo
+    // pregunte de quién es el bloqueo, acá va esa persona.
+    where: overlappingActiveBookingsWhere(businessId, startDateTime, endDateTime, now, null),
     select: { id: true },
     take: 1,
   })
@@ -244,8 +268,13 @@ export async function getTimeBlocksByRange(start: Date, end: Date) {
   // `everyone` y no `business`: esto alimenta el calendario del panel, que es una
   // pantalla para MOSTRAR. La dueña tiene que ver las vacaciones de cada persona
   // igual que el feriado del salón; filtrarlas acá las volvería invisibles y
-  // parecería que el bloqueo no se guardó. Poder distinguirlas es lo que hace
-  // `EffectiveBlock.professionalId`, y filtrar por persona es del PR del panel.
+  // parecería que el bloqueo no se guardó.
+  //
+  // OJO hasta dónde llega el dueño del bloqueo: `EffectiveBlock.professionalId` sale
+  // de acá, pero `dashboard/calendar/page.tsx` serializa campo por campo y NO lo
+  // pasa, así que hoy el calendario dibuja igual un feriado del salón y las
+  // vacaciones de una persona. Serializarlo y distinguirlos es del PR del panel — la
+  // plomería NO está hecha, no asumir que alcanza con leerlo.
   return getEffectiveBlocks({ businessId, rangeStart: start, rangeEnd: end, timezone, scope: { kind: 'everyone' } })
 }
 
@@ -305,7 +334,7 @@ async function _updateTimeBlock(
   if (timeChanged) {
     const now = new Date()
     const overlappingBookings = await prisma.booking.findMany({
-      where: overlappingActiveBookingsWhere(businessId, startDateTime, endDateTime, now),
+      where: overlappingActiveBookingsWhere(businessId, startDateTime, endDateTime, now, existing.professionalId),
       select: { id: true },
       take: 1,
     })
@@ -595,13 +624,14 @@ async function _overrideSeriesOccurrence(
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   await rateLimitOrThrow('update-timeblock')
   if (data.endDateTime <= data.startDateTime) throw new UserError('La hora de fin debe ser posterior a la de inicio')
-  await assertSeriesOwned(seriesId, businessId)
+  const series = await assertSeriesOwned(seriesId, businessId)
 
   // Mismo patrón requiresConfirmation que los bloqueos sueltos: el nuevo rango
   // del día no debe pisar reservas activas sin confirmación explícita.
   const now = new Date()
   const overlappingBookings = await prisma.booking.findMany({
-    where: overlappingActiveBookingsWhere(businessId, data.startDateTime, data.endDateTime, now),
+    // La excepción es del día de una serie: hereda de quién es la serie.
+    where: overlappingActiveBookingsWhere(businessId, data.startDateTime, data.endDateTime, now, series.professionalId),
     select: { id: true },
     take: 1,
   })
