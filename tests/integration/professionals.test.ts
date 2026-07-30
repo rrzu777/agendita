@@ -27,6 +27,15 @@ const P2 = 'prof-test-2'
 const DISPOSABLE = { biz: 'prof-cascade-biz', owner: 'prof-cascade-owner' }
 
 async function cleanupProfessionals() {
+  // Desenganchar las reservas ANTES de borrar la gente, y no es opcional: la FK de
+  // Booking es NO ACTION, así que una reserva que todavía apunte a alguien hace
+  // fallar el deleteMany. Si una corrida anterior murió a mitad —la DB es compartida
+  // y nadie más la limpia— sin esto el beforeAll explota y el archivo entero queda
+  // rojo con un error de FK que no dice nada del test que se está escribiendo.
+  await prisma.booking.updateMany({
+    where: { businessId: BT_VERIFY_BIZ, professionalId: { not: null } },
+    data: { professionalId: null },
+  })
   await prisma.availabilityRule.deleteMany({ where: { businessId: BT_VERIFY_BIZ } })
   await prisma.timeBlock.deleteMany({ where: { businessId: BT_VERIFY_BIZ } })
   await prisma.professional.deleteMany({ where: { businessId: BT_VERIFY_BIZ } })
