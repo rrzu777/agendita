@@ -1,4 +1,4 @@
-import { test, expect, Page } from '@playwright/test'
+import { test, expect, Page, Locator } from '@playwright/test'
 import { setOwnerAuth, setAdminAuth } from './helpers/auth'
 import { toLocalDateStr } from './helpers/dates'
 
@@ -20,7 +20,9 @@ import { toLocalDateStr } from './helpers/dates'
 //      reserva está a >48h → BookingActions debe mostrar "Reprogramar" y
 //      "Cancelar reserva").
 //   3. Cancelar (confirmación inline "Sí, cancelar") → la fila desaparece de
-//      "Próximas reservas" y reaparece en "Historial" como "Cancelada".
+//      "Próximas reservas", sin error inline. Que el estado quede en 'cancelled'
+//      lo verifica contra la DB tests/integration/self-service-bookings.test.ts;
+//      acá no se mira "Historial" (ver el porqué al final del test).
 //
 // Si la fila User del admin no existe en la DB target, el bypass no puede
 // fabricar la sesión y /mi redirige a /ingresar → el test se salta (skip) en
@@ -73,6 +75,39 @@ function nextBookableDate(afterDays: number): Date {
 /** Mismo formato que src/lib/format-date.ts#formatShortDate, para matchear la fila en /mi. */
 function shortDateLabel(date: Date): string {
   return new Intl.DateTimeFormat('es', { day: '2-digit', month: 'short' }).format(date)
+}
+
+/**
+ * Localiza, entre varias filas de reserva, la que corresponde a la que este test
+ * acaba de crear, y devuelve un locator que apunta SÓLO a ella.
+ *
+ * Por qué hace falta: la fecha no identifica una fila. `afterDays` es aleatorio en
+ * una ventana de 50 días (`4 + ts % 50`) sobre una DB compartida que nadie limpia,
+ * así que dos corridas pueden caer en el mismo día; y una corrida que falló deja su
+ * reserva confirmada en "Próximas reservas" para siempre, envenenando esa fecha.
+ * Con `.first()` + `toHaveCount(0)` eso da un falso rojo: cancelás una fila y la
+ * otra sigue matcheando.
+ *
+ * La tarjeta muestra además el número de reserva (`#4738`), que sí es único. El
+ * contador es por negocio y sólo crece (ver assignBookingNumber), así que entre
+ * las candidatas la recién creada es la de número más alto.
+ */
+async function rowOfNewestBooking(rows: Locator): Promise<Locator> {
+  const textos = await rows.allTextContents()
+  const numeros = textos
+    .map((t) => t.match(/#(\d+)/)?.[1])
+    .filter((n): n is string => n != null)
+    .map(Number)
+
+  // Tirar y no devolver un locator laxo: `filter({ hasText: '' })` matchea TODAS las
+  // filas y las aserciones pasarían sin probar nada.
+  if (numeros.length === 0) {
+    throw new Error(`Ninguna fila expone un número de reserva. Filas: ${textos.join(' | ') || '(ninguna)'}`)
+  }
+
+  // Regex y no string: `hasText` con string hace substring, así que #123 matchearía
+  // #1234. El `(?!\d)` lo evita.
+  return rows.filter({ hasText: new RegExp(`#${Math.max(...numeros)}(?!\\d)`) })
 }
 
 /**
@@ -133,7 +168,7 @@ async function createConfirmedBookingWithAdminEmail(
 }
 
 test.describe('self-service (/mi): cancelación', () => {
-  test('cancelar una reserva próxima la mueve a Historial como Cancelada', async ({ page }) => {
+  test('cancelar una reserva próxima la saca de "Próximas reservas"', async ({ page }) => {
     test.setTimeout(90_000)
     setOwnerAuth(page)
 
@@ -163,11 +198,15 @@ test.describe('self-service (/mi): cancelación', () => {
     await gotoStable(page, href ?? '/mi')
     await waitForHydration(page)
 
-    // 3. Ubicar la fila de la reserva recién creada en "Próximas reservas" por
-    //    su fecha corta (único identificador visible en la tarjeta de /mi).
+    // 3. Ubicar la fila de la reserva recién creada en "Próximas reservas": primero
+    //    por fecha corta, y entre las candidatas por su número de reserva, que es el
+    //    único identificador unívoco de la tarjeta (ver rowOfNewestBooking).
     const upcomingSection = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Próximas reservas' }) })
-    const bookingRow = upcomingSection.locator('li').filter({ hasText: dateLabel }).first()
-    await expect(bookingRow).toBeVisible({ timeout: 15_000 })
+    const rowsForDate = upcomingSection.locator('li').filter({ hasText: dateLabel })
+    await expect(rowsForDate.first()).toBeVisible({ timeout: 15_000 })
+
+    const bookingRow = await rowOfNewestBooking(rowsForDate)
+    await expect(bookingRow).toHaveCount(1)
 
     // La reserva está a >48h y selfServiceCutoffHours por defecto es 24 →
     // BookingActions debe renderizar ambas acciones.
@@ -178,13 +217,37 @@ test.describe('self-service (/mi): cancelación', () => {
     await bookingRow.getByRole('button', { name: 'Cancelar reserva' }).click()
     await bookingRow.getByRole('button', { name: 'Sí, cancelar' }).click()
 
-    // 5. La fila desaparece de "Próximas reservas"...
-    await expect(bookingRow).toHaveCount(0, { timeout: 15_000 })
+    // 5. Esperar el desenlace: o la fila se va de "Próximas reservas", o la action
+    //    rechazó y booking-actions.tsx pinta el motivo en un span rojo DENTRO de la
+    //    fila (rate limit, cutoff, ownership).
+    //
+    //    Va en UN solo poll y no en dos aserciones sueltas a propósito: un
+    //    `expect(error).toHaveCount(0)` se cumple mientras el error TODAVÍA no
+    //    apareció, así que pasaría en t=0 —antes de que la action conteste— y no
+    //    cazaría nada. Así el rojo trae el motivo en vez de un conteo mudo.
+    const errorInline = bookingRow.locator('span.text-red-600')
+    const FILA_FUERA = 'la fila salió de Próximas reservas'
 
-    // ...y reaparece en "Historial" como "Cancelada".
-    const historialSection = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Historial' }) })
-    const historialRow = historialSection.locator('li').filter({ hasText: dateLabel }).first()
-    await expect(historialRow).toBeVisible({ timeout: 15_000 })
-    await expect(historialRow).toContainText('Cancelada')
+    await expect
+      .poll(
+        async () => {
+          // `count()` primero porque es inmediato: `textContent()` sobre un locator
+          // sin match ESPERA el timeout de acción y después tira, y eso se comería el
+          // presupuesto del poll en dos o tres iteraciones.
+          if ((await errorInline.count()) > 0) {
+            return `la action rechazó: ${await errorInline.first().textContent()}`
+          }
+          return (await bookingRow.count()) === 0 ? FILA_FUERA : 'la fila sigue en Próximas reservas'
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(FILA_FUERA)
+
+    // NO se chequea que reaparezca en "Historial": esa lista es `take: 20` ordenada
+    // por startDateTime desc (mi/[slug]/page.tsx), y las canceladas de corridas
+    // anteriores quedan con fecha FUTURA, así que compiten en ese top 20 y empujan a
+    // la nuestra afuera — falso rojo con la cancelación funcionando bien. Que el
+    // estado quede en 'cancelled' ya lo cubre, contra la DB y en limpio,
+    // tests/integration/self-service-bookings.test.ts.
   })
 })
