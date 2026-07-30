@@ -8,11 +8,19 @@ requireTestDatabase()
 const BIZ = 'slotrace-biz-1'
 const USER = 'slotrace-user-1'
 
-// La carrera pago/hold: el hold de una reserva vence (o simplemente deja de
-// bloquear), otra clienta se lleva el horario, y DESPUÉS llega el pago de la
-// primera. Antes eso confirmaba una segunda reserva en la misma hora sin ruido
-// ninguno. Ahora el pago se asienta igual —el cobro es real— pero la reserva NO
-// se confirma y la dueña recibe el aviso.
+// La carrera pago/hold: el hold de una reserva vence —y deja de bloquear el slot al
+// instante, sin esperar al cron—, algo se lleva el horario, y DESPUÉS llega el pago
+// de la primera. Antes el flip a `confirmed` no miraba el horario.
+//
+// Cuánto de esto tapaba ya la DB: la constraint de exclusión `Booking_no_overlap`
+// cubre `pending_payment/confirmed/completed`, así que en ESOS estados dos reservas
+// solapadas no se pueden ni crear (primer caso de abajo). Lo que queda descubierto y
+// este guard ataja: los bloqueos de la dueña (`TimeBlock`, que la constraint no mira)
+// y `pending_confirmation` (que se agregó al enum después y nunca entró a la
+// constraint).
+//
+// En los dos casos el pago se asienta igual —el cobro es real— pero la reserva NO se
+// confirma y la dueña recibe el aviso.
 describe('pago que llega cuando el horario ya se ocupó', () => {
   let prisma: PrismaClient
   let serviceId: string
@@ -63,6 +71,35 @@ describe('pago que llega cuando el horario ya se ocupó', () => {
     await prisma.timeBlock.deleteMany({ where: { businessId: BIZ } })
   })
 
+  /**
+   * La reserva que se lleva el horario mientras la otra espera el pago.
+   *
+   * Va como `pending_confirmation` y NO como `confirmed` por una razón de fondo, no
+   * por comodidad del test: la DB tiene una constraint de exclusión
+   * (`Booking_no_overlap`, en la migración `init`) que prohíbe dos reservas solapadas
+   * del mismo negocio **mientras su status esté en
+   * `('pending_payment','confirmed','completed')`**. Crear una `confirmed` encima de
+   * nuestra `pending_payment` es literalmente imposible: Postgres tira 23P01.
+   *
+   * `pending_confirmation` —una solicitud esperando el visto bueno del negocio— se
+   * agregó al enum en `20260729180000_booking_manual_approval` y **nunca se agregó a
+   * la constraint**. Así que es un estado real, alcanzable, que la DB no cubre y que
+   * el SQL de solape de la app SÍ cuenta como ocupado mientras su hold viva. Es el
+   * agujero que este guard tapa.
+   */
+  function crearReservaGanadora() {
+    return prisma.booking.create({ data: {
+      businessId: BIZ, serviceId, customerId,
+      startDateTime: START, endDateTime: END,
+      status: BookingStatus.pending_confirmation,
+      // Hold vivo: así el SQL de solape la cuenta como ocupando el horario.
+      holdExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      totalPrice: 10000, depositRequired: 5000, depositPaid: 0,
+      remainingBalance: 10000, finalAmount: 10000,
+      paymentStatus: BookingPaymentStatus.unpaid,
+    } })
+  }
+
   /** La reserva que está esperando el pago, con el hold ya vencido. */
   function crearReservaPendiente() {
     return prisma.booking.create({ data: {
@@ -98,16 +135,25 @@ describe('pago que llega cuando el horario ya se ocupó', () => {
     expect(after!.status).toBe(BookingStatus.confirmed)
   })
 
-  it('con otra reserva confirmada encima, asienta la plata y NO confirma', async () => {
-    const booking = await crearReservaPendiente()
-    const ganadora = await prisma.booking.create({ data: {
+  it('la DB ya impide dos reservas solapadas en los estados que cubre la constraint', async () => {
+    await crearReservaPendiente()
+
+    // Este es el backstop real para `pending_payment/confirmed/completed`, y por eso
+    // el caso de abajo usa `pending_confirmation`: acá no hay carrera que ganar, la
+    // segunda reserva no se puede ni crear.
+    await expect(prisma.booking.create({ data: {
       businessId: BIZ, serviceId, customerId,
       startDateTime: START, endDateTime: END,
       status: BookingStatus.confirmed,
       totalPrice: 10000, depositRequired: 5000, depositPaid: 5000,
       remainingBalance: 5000, finalAmount: 10000,
       paymentStatus: BookingPaymentStatus.deposit_paid,
-    } })
+    } })).rejects.toThrow(/Booking_no_overlap|exclusion constraint/)
+  })
+
+  it('con una solicitud encima, asienta la plata y NO confirma', async () => {
+    const booking = await crearReservaPendiente()
+    const ganadora = await crearReservaGanadora()
 
     const res = await pagarAbono(booking.id, 'mp-race-pisada')
 
@@ -148,14 +194,7 @@ describe('pago que llega cuando el horario ya se ocupó', () => {
 
   it('el redelivery del mismo pago no confirma de rebote ni duplica el asiento', async () => {
     const booking = await crearReservaPendiente()
-    await prisma.booking.create({ data: {
-      businessId: BIZ, serviceId, customerId,
-      startDateTime: START, endDateTime: END,
-      status: BookingStatus.confirmed,
-      totalPrice: 10000, depositRequired: 5000, depositPaid: 5000,
-      remainingBalance: 5000, finalAmount: 10000,
-      paymentStatus: BookingPaymentStatus.deposit_paid,
-    } })
+    await crearReservaGanadora()
 
     await pagarAbono(booking.id, 'mp-race-redelivery')
     const otraVez = await pagarAbono(booking.id, 'mp-race-redelivery')
