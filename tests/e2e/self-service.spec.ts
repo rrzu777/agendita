@@ -217,16 +217,31 @@ test.describe('self-service (/mi): cancelación', () => {
     await bookingRow.getByRole('button', { name: 'Cancelar reserva' }).click()
     await bookingRow.getByRole('button', { name: 'Sí, cancelar' }).click()
 
-    // 5. Si la action rechazó (rate limit, cutoff, ownership), booking-actions.tsx
-    //    pinta el motivo en un span rojo DENTRO de la fila. Chequearlo primero hace
-    //    que el test falle con la causa en vez de con un conteo mudo 15s después.
+    // 5. Esperar el desenlace: o la fila se va de "Próximas reservas", o la action
+    //    rechazó y booking-actions.tsx pinta el motivo en un span rojo DENTRO de la
+    //    fila (rate limit, cutoff, ownership).
+    //
+    //    Va en UN solo poll y no en dos aserciones sueltas a propósito: un
+    //    `expect(error).toHaveCount(0)` se cumple mientras el error TODAVÍA no
+    //    apareció, así que pasaría en t=0 —antes de que la action conteste— y no
+    //    cazaría nada. Así el rojo trae el motivo en vez de un conteo mudo.
     const errorInline = bookingRow.locator('span.text-red-600')
-    await expect(errorInline).toHaveCount(0, { timeout: 5_000 })
+    const FILA_FUERA = 'la fila salió de Próximas reservas'
 
-    // 6. La fila desaparece de "Próximas reservas". Es exacto: el locator apunta a ESA
-    //    reserva por su número, así que una fila ajena que comparta la fecha no puede
-    //    mantener el conteo en 1.
-    await expect(bookingRow).toHaveCount(0, { timeout: 15_000 })
+    await expect
+      .poll(
+        async () => {
+          // `count()` primero porque es inmediato: `textContent()` sobre un locator
+          // sin match ESPERA el timeout de acción y después tira, y eso se comería el
+          // presupuesto del poll en dos o tres iteraciones.
+          if ((await errorInline.count()) > 0) {
+            return `la action rechazó: ${await errorInline.first().textContent()}`
+          }
+          return (await bookingRow.count()) === 0 ? FILA_FUERA : 'la fila sigue en Próximas reservas'
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(FILA_FUERA)
 
     // NO se chequea que reaparezca en "Historial": esa lista es `take: 20` ordenada
     // por startDateTime desc (mi/[slug]/page.tsx), y las canceladas de corridas
