@@ -523,7 +523,8 @@ Del repo, ya mordieron antes:
    panel.
 4. **`tsc` no lo corre ni vitest ni eslint.** Correr `tsc --noEmit` a mano, borrando
    antes `.next/dev/types` (se frena con uno viejo) y sin filtrar por `^src/` (esconde
-   `tests/`; hay 3 errores preexistentes ahí que no son de este track).
+   `tests/`; hay **17** errores preexistentes ahí — `metrics.test.ts` y
+   `reward-email.test.ts` — que no son de este track).
 5. **El Postgres local tiene que estar en UTC** o `slot-conflicts.test.ts` falla en
    falso: el SQL de solape castea con el TZ del **servidor**.
 6. **`migrate diff` levanta cambios de ramas hermanas.** Revisar el `.sql` a mano y
