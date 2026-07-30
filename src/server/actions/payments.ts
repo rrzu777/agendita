@@ -20,8 +20,8 @@ import { action, UserError } from '@/lib/actions/result'
 import { sendBookingConfirmedNotification, sendNotificationSafely } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
 import { assertBookingPayable } from '@/lib/bookings/payments'
-import { applyApprovedPayment } from '@/server/services/finance'
-import { fireSlotTakenNotification } from '@/lib/bookings/notify-slot-taken'
+import { applyApprovedPayment, unconfirmedPaymentCustomerMessage } from '@/server/services/finance'
+import { firePaymentNotConfirmedNotification } from '@/lib/bookings/notify-payment-not-confirmed'
 
 const initiatePaymentSchema = z.object({
   bookingId: z.string().min(1),
@@ -329,21 +329,23 @@ async function _verifyAndConfirmPayment(paymentId: string, bookingId: string) {
   revalidatePath('/dashboard/bookings')
   await revalidateBusinessPublicPaths(result.booking.businessId)
 
-  // El pago quedó asentado pero el horario ya estaba tomado: la reserva NO se
-  // confirmó. Se lo decimos a la clienta con todas las letras —la plata salió de su
-  // cuenta, merece saber en qué quedó; el `success: false` lo muestra StepPayment— y
-  // a la dueña por mail, que es quien decide si la reacomoda o le devuelve.
-  if (result.slotConflict) {
-    await fireSlotTakenNotification({
+  // El pago quedó asentado pero la reserva NO se confirmó. Se lo decimos a la
+  // clienta con todas las letras —la plata salió de su cuenta, merece saber en qué
+  // quedó; el `success: false` lo muestra StepPayment— y a la dueña por mail, que es
+  // quien decide si la reacomoda o le devuelve.
+  //
+  // El motivo casi siempre es `slot_taken` (el `assertBookingPayable` de arriba ya
+  // rechazó las reservas no vigentes), pero puede ser `booking_status` si el cron de
+  // holds la expiró entre ese chequeo y esta tx: por eso el mensaje sale del motivo
+  // y no está escrito a mano acá.
+  if (result.unconfirmedReason) {
+    await firePaymentNotConfirmedNotification({
       bookingId,
       businessId: payment.businessId,
-      conflict: result.slotConflict,
+      reason: result.unconfirmedReason,
       amount: payment.amount,
     })
-    return {
-      success: false,
-      message: 'Recibimos tu pago, pero ese horario acaba de ocuparse. El negocio te va a contactar para reacomodar tu hora o devolverte la plata.',
-    }
+    return { success: false, message: unconfirmedPaymentCustomerMessage(result.unconfirmedReason) }
   }
 
   return { success: true }
@@ -465,7 +467,7 @@ async function _createManualPayment(data: {
       },
     })
 
-    const { booking: updatedBooking, wasConfirmed, slotConflict } = await applyApprovedPayment({
+    const { booking: updatedBooking, wasConfirmed, unconfirmedReason } = await applyApprovedPayment({
       tx,
       bookingId: data.bookingId,
       businessId,
@@ -482,7 +484,7 @@ async function _createManualPayment(data: {
     // Volver a leer el Payment actualizado para retornar datos frescos (status approved, paidAt, etc.)
     const refreshedPayment = await tx.payment.findUnique({ where: { id: payment.id } })
 
-    return { payment: refreshedPayment ?? payment, booking: updatedBooking, wasConfirmed, slotConflict }
+    return { payment: refreshedPayment ?? payment, booking: updatedBooking, wasConfirmed, unconfirmedReason }
   })
 
   if (result.wasConfirmed) {
@@ -491,14 +493,15 @@ async function _createManualPayment(data: {
     )
   }
 
-  // El pago se registró pero la reserva quedó sin confirmar porque el horario ya
-  // está ocupado. La dueña está mirando la pantalla, pero la pantalla no lo dice:
-  // el mail es lo que le explica por qué esa reserva sigue pendiente.
-  if (result.slotConflict) {
-    await fireSlotTakenNotification({
+  // El pago se registró pero la reserva quedó sin confirmar (el horario ya está
+  // ocupado, o el cron de holds la venció mientras se registraba). La dueña está
+  // mirando la pantalla, pero la pantalla no lo dice: el mail es lo que le explica
+  // por qué esa reserva sigue pendiente.
+  if (result.unconfirmedReason) {
+    await firePaymentNotConfirmedNotification({
       bookingId: data.bookingId,
       businessId,
-      conflict: result.slotConflict,
+      reason: result.unconfirmedReason,
       amount: data.amount,
     })
   }

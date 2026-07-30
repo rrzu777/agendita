@@ -13,7 +13,8 @@ import { getConfirmedSessionUser } from '@/lib/auth/user'
 import { findOrCreateCustomerInTx } from '@/lib/customers/find-or-create'
 import { logger } from '@/lib/logger'
 
-import { assertSlotIsAvailable } from '@/lib/availability/validation'
+import { assertSlotIsAvailable, SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
+import { isNoOverlapViolation } from '@/lib/db/no-overlap'
 import { assignBookingNumber } from '@/lib/bookings/number'
 import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcement'
 import { normalizePhone } from '@/lib/customers/phone'
@@ -22,7 +23,7 @@ import { addMinutes } from 'date-fns'
 import { recomputeBookingAmountsAfterDiscount } from '@/lib/bookings/recompute'
 import { assertBookingPayable } from '@/lib/bookings/payments'
 import { applyApprovedPayment } from '@/server/services/finance'
-import { fireSlotTakenNotification } from '@/lib/bookings/notify-slot-taken'
+import { firePaymentNotConfirmedNotification } from '@/lib/bookings/notify-payment-not-confirmed'
 import { initialPublicBookingStatus, approvalHoldExpiresAt } from '@/lib/bookings/approval'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
@@ -397,6 +398,18 @@ async function _createBooking(data: {
     }
     // Safe error handling: log internal error, return generic message
     const msg = e instanceof Error ? e.message : String(e)
+    // El EXCLUDE Booking_no_overlap rechazó el insert: alguien se quedó con el
+    // horario en el medio, o quedó tapado por una reserva que el chequeo de solape
+    // no puede liberar. Sin este caso el rechazo cae en el `throw e` de abajo (no
+    // trae `.code`) y la clienta lee "Ocurrió un error inesperado" sobre un horario
+    // que la pantalla le sigue ofreciendo.
+    if (isNoOverlapViolation(e)) {
+      logger.error('booking.error', `Booking_no_overlap rejected createBooking: ${msg}`, {
+        businessId,
+        metadata: { error: msg },
+      })
+      throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
+    }
     if (prismaError.code?.startsWith('P')) {
       logger.error('booking.error', `Database error in createBooking: ${msg}`, {
         businessId,
@@ -599,7 +612,7 @@ async function _confirmPayment(bookingId: string, paymentId: string, amount: num
 
   // Devolver el resultado en vez de escribirlo en variables de afuera: con un `let`
   // anotado, TypeScript no ve la asignación de adentro del callback.
-  const { booking: updated, wasConfirmed, slotConflict } = await prisma.$transaction((tx) =>
+  const { booking: updated, wasConfirmed, unconfirmedReason } = await prisma.$transaction((tx) =>
     applyApprovedPayment({
       tx,
       bookingId,
@@ -620,11 +633,12 @@ async function _confirmPayment(bookingId: string, paymentId: string, amount: num
     )
   }
 
-  // El pago se aplicó pero la reserva quedó sin confirmar: el horario ya está
-  // ocupado. Sin este aviso la dueña ve el pago aplicado y la reserva pendiente,
-  // sin ninguna pista de por qué.
-  if (slotConflict) {
-    await fireSlotTakenNotification({ bookingId, businessId, conflict: slotConflict, amount: payment.amount })
+  // El pago se aplicó pero la reserva quedó sin confirmar (horario ocupado, o el
+  // cron de holds la venció entre el `assertBookingPayable` de arriba y esta tx).
+  // Sin este aviso la dueña ve el pago aplicado y la reserva pendiente, sin
+  // ninguna pista de por qué.
+  if (unconfirmedReason) {
+    await firePaymentNotConfirmedNotification({ bookingId, businessId, reason: unconfirmedReason, amount: payment.amount })
   }
 
   revalidatePath('/dashboard/bookings')

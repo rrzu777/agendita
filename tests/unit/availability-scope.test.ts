@@ -3,7 +3,7 @@ import {
   blockScopeCondition,
   blockScopeFor,
   bookingScopeCondition,
-  bookingScopeSql,
+  bookingBlocksProfessional,
   resolveAvailabilityRules,
   resolveDayRule,
   resolveRuleScope,
@@ -178,19 +178,34 @@ describe('resolveDayRule', () => {
   })
 })
 
-// El fragmento SQL y la condición de Prisma son la lectura y la escritura del MISMO
-// contrato: los lectores usan `bookingScopeCondition` y el `$queryRaw` del solape usa
-// esto. Si se separan, el funnel ofrece una hora que la escritura rechaza.
-describe('bookingScopeSql', () => {
-  it('sin persona no agrega cláusula: choca contra todas las reservas', () => {
-    expect(bookingScopeSql(null).sql).toBe('')
-    expect(bookingScopeSql(undefined as unknown as null).sql).toBe('')
+// El predicado en memoria y la condición de Prisma son la lectura y la escritura del
+// MISMO contrato: los lectores usan `bookingScopeCondition` y la validación al escribir
+// usa esto, porque su query no puede filtrar por persona (trae todo con FOR UPDATE para
+// que el sweep de holds abandonados pueda barrerlos, y el EXCLUDE de la base es por
+// negocio). Si se separan, el funnel ofrece una hora que la escritura rechaza.
+describe('bookingBlocksProfessional', () => {
+  const deAna = { professionalId: 'ana' }
+  const sinDueno = { professionalId: null }
+
+  it('una reserva SIN persona nueva choca contra todo', () => {
+    expect(bookingBlocksProfessional(deAna, null)).toBe(true)
+    expect(bookingBlocksProfessional(sinDueno, null)).toBe(true)
+    expect(bookingBlocksProfessional(deAna, undefined as unknown as null)).toBe(true)
   })
 
-  it('con persona filtra a las suyas y a las que no tienen dueño', () => {
-    const frag = bookingScopeSql('juan')
-    expect(frag.sql).toContain('"professionalId" IS NULL OR "professionalId" =')
-    expect(frag.values).toEqual(['juan'])
+  it('la cita de Ana no le tapa la hora a Juan', () => {
+    expect(bookingBlocksProfessional(deAna, 'juan')).toBe(false)
+  })
+
+  it('la cita de Ana sí le tapa la hora a Ana', () => {
+    expect(bookingBlocksProfessional(deAna, 'ana')).toBe(true)
+  })
+
+  // Las de antes de que hubiera equipo no tienen dueño: no sabemos quién las iba a
+  // atender, así que le bloquean la hora a cualquiera.
+  it('una cita sin dueño le tapa la hora a todos', () => {
+    expect(bookingBlocksProfessional(sinDueno, 'juan')).toBe(true)
+    expect(bookingBlocksProfessional(sinDueno, 'ana')).toBe(true)
   })
 
   // Las dos formas tienen que estar de acuerdo sobre cuándo NO filtran, que es la
@@ -198,8 +213,8 @@ describe('bookingScopeSql', () => {
   it('coincide con bookingScopeCondition en cuándo no filtra', () => {
     for (const id of [null, '', 'juan']) {
       const filtraEnPrisma = Object.keys(bookingScopeCondition(id)).length > 0
-      const filtraEnSql = bookingScopeSql(id).sql !== ''
-      expect(filtraEnSql, String(id)).toBe(filtraEnPrisma)
+      const filtraEnMemoria = !bookingBlocksProfessional(deAna, id)
+      expect(filtraEnMemoria, String(id)).toBe(filtraEnPrisma)
     }
   })
 })

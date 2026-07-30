@@ -20,14 +20,31 @@ describe('assertSlotIsAvailable', () => {
   const start = new Date('2026-05-20T14:00:00Z')
   const end = new Date('2026-05-20T15:00:00Z')
 
+  /** Fila tal como la devuelve el SELECT de findBookingOverlap (enums ya en texto). */
+  const overlapping = (over: Record<string, unknown> = {}) => ({
+    id: 'b1', status: 'confirmed', holdExpiresAt: null,
+    paymentStatus: 'unpaid', paymentMethod: null, ...over,
+  })
+
+  /** El updateMany del sweep de holds abandonados, para espiarlo. */
+  let bookingUpdateMany: ReturnType<typeof vi.fn>
+
   function makeTx(mocks: Record<string, unknown> = {}) {
+    bookingUpdateMany = vi.fn().mockResolvedValue({ count: 1 })
     return {
       ...mocks,
       business: { findUnique: vi.fn().mockResolvedValue({ bookingWindowDays: 90 }) },
       service: { findFirst: vi.fn().mockResolvedValue(mocks.service ?? null) },
-      availabilityRule: { findFirst: vi.fn().mockResolvedValue(mocks.rule ?? null) },
+      availabilityRule: {
+        findFirst: vi.fn().mockResolvedValue(mocks.rule ?? null),
+        // Cuántas reglas PROPIAS tiene la persona. 0 = hereda el horario del negocio,
+        // que es el caso de todos estos tests: la regla mockeada es la del salón.
+        count: vi.fn().mockResolvedValue(mocks.ownRules ?? 0),
+      },
       timeBlock: { findMany: vi.fn().mockResolvedValue(mocks.block ? [mocks.block] : []) },
       timeBlockSeries: { findMany: vi.fn().mockResolvedValue(mocks.series ?? []) },
+      booking: { updateMany: bookingUpdateMany },
+      promotionRedemption: { findMany: vi.fn().mockResolvedValue([]) },
       $executeRaw: vi.fn().mockResolvedValue(1),
       $queryRaw: vi.fn().mockResolvedValue(mocks.queryRawResult ?? []),
     } as unknown as Parameters<typeof assertSlotIsAvailable>[0]['tx']
@@ -84,25 +101,138 @@ describe('assertSlotIsAvailable', () => {
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 
-  it('rejects when overlapping booking exists (confirmed)', async () => {
-    const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
-    const tx = makeTx({ service: { durationMinutes: 60 }, rule, block: null, queryRawResult: [{ id: 'b1' }] })
+  const RULE = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
+
+  // Ahora la query trae las filas que solapan y el filtro lo hace `occupiesSlot`:
+  // el status de la fila mockeada es lo que decide, así que cada caso lo declara.
+  for (const status of ['confirmed', 'completed', 'pending_confirmation']) {
+    it(`rejects when overlapping booking exists (${status})`, async () => {
+      const tx = makeTx({
+        service: { durationMinutes: 60 }, rule: RULE, block: null,
+        queryRawResult: [overlapping({ status })],
+      })
+      await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
+        .rejects.toThrow('Ese horario ya no está disponible')
+    })
+  }
+
+  it('rejects when overlapping booking exists (pending_payment con hold vivo)', async () => {
+    const tx = makeTx({
+      service: { durationMinutes: 60 }, rule: RULE, block: null,
+      queryRawResult: [overlapping({ status: 'pending_payment', holdExpiresAt: new Date('2026-05-19T12:00:00Z') })],
+    })
     await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
+    expect(bookingUpdateMany).not.toHaveBeenCalled()
   })
 
-  it('rejects when overlapping booking exists (pending_payment)', async () => {
-    const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
-    const tx = makeTx({ service: { durationMinutes: 60 }, rule, block: null, queryRawResult: [{ id: 'b1' }] })
+  // El caso del bug: la agenda daba el horario por libre y el EXCLUDE
+  // Booking_no_overlap rechazaba el insert porque la fila seguía pending_payment.
+  it('un hold de pago abandonado no bloquea Y se marca expired en la misma tx', async () => {
+    const tx = makeTx({
+      service: { durationMinutes: 60 }, rule: RULE, block: null,
+      queryRawResult: [overlapping({
+        status: 'pending_payment',
+        holdExpiresAt: new Date('2026-05-18T12:00:00Z'), // vencido
+      })],
+    })
     await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
-      .rejects.toThrow('Ese horario ya no está disponible')
+      .resolves.toBeUndefined()
+    expect(bookingUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: { in: ['b1'] }, status: 'pending_payment' }),
+      data: { status: 'expired' },
+    }))
   })
 
-  it('rejects when overlapping booking exists (completed)', async () => {
-    const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
-    const tx = makeTx({ service: { durationMinutes: 60 }, rule, block: null, queryRawResult: [{ id: 'b1' }] })
+  it('un hold de pago vencido CON plata encima sigue bloqueando y no se barre', async () => {
+    const tx = makeTx({
+      service: { durationMinutes: 60 }, rule: RULE, block: null,
+      queryRawResult: [overlapping({
+        status: 'pending_payment',
+        holdExpiresAt: new Date('2026-05-18T12:00:00Z'),
+        paymentStatus: 'deposit_paid',
+      })],
+    })
     await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
+    expect(bookingUpdateMany).not.toHaveBeenCalled()
+  })
+
+  // ── de quién es la cita que tapa el horario ───────────────────────────────
+  //
+  // Es la costura entre dos cambios que llegaron juntos: la query trae TODAS las
+  // filas solapadas (para que el sweep de holds abandonados pueda barrerlas y el
+  // EXCLUDE `Booking_no_overlap`, que es por negocio, no rechace el insert) y la
+  // persona se aplica recién al decidir qué BLOQUEA. Confundir las dos capas rompe
+  // una de las dos cosas sin que nada avise.
+
+  it('la cita de otra persona no le tapa el horario a esta reserva', async () => {
+    const tx = makeTx({
+      service: { durationMinutes: 60 }, rule: RULE, block: null,
+      queryRawResult: [overlapping({ status: 'confirmed', professionalId: 'ana' })],
+    })
+    await expect(assertSlotIsAvailable({
+      tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone,
+      professionalId: 'juan',
+    })).resolves.toBeUndefined()
+  })
+
+  it('la cita de esta misma persona sí le tapa el horario', async () => {
+    const tx = makeTx({
+      service: { durationMinutes: 60 }, rule: RULE, block: null,
+      queryRawResult: [overlapping({ status: 'confirmed', professionalId: 'ana' })],
+    })
+    await expect(assertSlotIsAvailable({
+      tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone,
+      professionalId: 'ana',
+    })).rejects.toThrow('Ese horario ya no está disponible')
+  })
+
+  it('una cita sin dueño le tapa el horario a cualquiera', async () => {
+    const tx = makeTx({
+      service: { durationMinutes: 60 }, rule: RULE, block: null,
+      queryRawResult: [overlapping({ status: 'confirmed', professionalId: null })],
+    })
+    await expect(assertSlotIsAvailable({
+      tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone,
+      professionalId: 'juan',
+    })).rejects.toThrow('Ese horario ya no está disponible')
+  })
+
+  // El caso que justifica que la QUERY no filtre por persona: el hold abandonado de
+  // OTRA persona no bloquea lógicamente, pero para el EXCLUDE de la base —que no sabe
+  // de personas— sigue tapando el horario. Si el sweep no lo barre, el insert muere
+  // con un 23P01 que nadie puede explicar.
+  it('barre el hold abandonado de otra persona aunque no le bloquee el horario', async () => {
+    const tx = makeTx({
+      service: { durationMinutes: 60 }, rule: RULE, block: null,
+      queryRawResult: [overlapping({
+        status: 'pending_payment',
+        holdExpiresAt: new Date('2026-05-18T12:00:00Z'), // vencido
+        professionalId: 'ana',
+      })],
+    })
+
+    await expect(assertSlotIsAvailable({
+      tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone,
+      professionalId: 'juan',
+    })).resolves.toBeUndefined()
+
+    expect(bookingUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: { in: ['b1'] }, status: 'pending_payment' }),
+      data: { status: 'expired' },
+    }))
+  })
+
+  it('excludeBookingId no cuenta como conflicto propio', async () => {
+    const tx = makeTx({
+      service: { durationMinutes: 60 }, rule: RULE, block: null,
+      queryRawResult: [overlapping({ id: 'la-misma', status: 'confirmed' })],
+    })
+    await expect(assertSlotIsAvailable({
+      tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone,
+      professionalId: null, excludeBookingId: 'la-misma',
+    })).resolves.toBeUndefined()
   })
 
   it('allows contiguous booking (end === other.start)', async () => {

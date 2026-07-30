@@ -123,18 +123,32 @@ export function bookingScopeCondition(professionalId: string | null): Prisma.Boo
 }
 
 /**
- * La MISMA regla que `bookingScopeCondition`, en SQL, para el `$queryRaw` del solape
- * —que no puede usar el `where` de Prisma porque necesita el `FOR UPDATE`—.
+ * La MISMA regla que `bookingScopeCondition`, pero **en memoria**, sobre una fila ya
+ * traída: ¿esta reserva le tapa el horario a esta persona?
  *
- * Vive pegada a su hermana a propósito: son la lectura y la escritura del mismo
- * contrato. Si la asimetría de arriba cambia y se toca sólo una, el funnel ofrece una
- * hora que la escritura rechaza (o peor, al revés). `Prisma.empty` para el caso sin
- * persona es lo que hace que choque contra todas.
+ * Existe porque la validación al escribir no puede filtrar por persona en su query.
+ * Esa query trae las filas con `FOR UPDATE` para que el sweep de holds abandonados
+ * pueda barrerlos, y el EXCLUDE `Booking_no_overlap` es por NEGOCIO: si la query se
+ * acotara a una persona, un hold vencido de otra quedaría sin barrer y el insert
+ * moriría con un 23P01 que nadie puede explicar. Así que se trae todo y la persona se
+ * aplica recién al decidir qué bloquea.
+ *
+ * Vive pegada a su hermana de Prisma a propósito: son la lectura y la escritura del
+ * mismo contrato, y separarlas es cómo se llega a que el funnel ofrezca una hora que
+ * la escritura rechaza.
  */
-export function bookingScopeSql(professionalId: string | null): Prisma.Sql {
-  const id = normalizeProfessionalId(professionalId)
-  if (id === null) return Prisma.empty
-  return Prisma.sql`AND ("professionalId" IS NULL OR "professionalId" = ${id})`
+export function bookingBlocksProfessional(
+  row: { professionalId: string | null },
+  professionalId: string | null,
+): boolean {
+  // Normaliza los DOS lados, y en los dos casos el valor ausente significa "sin
+  // persona", que es el lado conservador: si la reserva NUEVA no tiene persona,
+  // cualquier cita le tapa la hora; si la fila que vino de la base no tiene dueño
+  // —o llegó sin el campo—, le tapa la hora a cualquiera.
+  const nueva = normalizeProfessionalId(professionalId)
+  if (nueva === null) return true
+  const dueña = normalizeProfessionalId(row.professionalId)
+  return dueña === null || dueña === nueva
 }
 
 // ─── Reglas de horario ───────────────────────────────────────────────────────

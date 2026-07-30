@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db'
 import { BookingStatus, type PrismaClient } from '@prisma/client'
-import { releaseRedemptionForBooking } from '@/lib/promotions/release'
+import { releaseRedemptionsOfExpiredBookings } from '@/lib/promotions/release'
 import { declaredTransferPaymentWhere, declaredPkgTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 import {
   sendNotificationSafely,
@@ -57,15 +57,7 @@ async function expireUnansweredRequests(
       where: { id: { in: ids }, status: BookingStatus.pending_confirmation, holdExpiresAt: { lt: now } },
       data: { status: BookingStatus.expired },
     })
-    // Filtrar por la relación: sólo liberamos el canje de las que REALMENTE
-    // transicionaron en este snapshot, no de las que ganaron la carrera.
-    const reds = await tx.promotionRedemption.findMany({
-      where: { status: 'applied', booking: { id: { in: ids }, status: BookingStatus.expired } },
-      select: { bookingId: true },
-    })
-    for (const r of reds) {
-      await releaseRedemptionForBooking(tx, r.bookingId, 'hold_expired')
-    }
+    await releaseRedemptionsOfExpiredBookings(tx, ids)
     return res.count
   })
 
@@ -107,6 +99,12 @@ async function expireUnansweredRequests(
  * Expira transaccionalmente reservas pending_payment cuyo hold haya vencido.
  * El updateMany repite las condiciones de findMany para evitar races
  * con pagos que entren entre la búsqueda y la actualización.
+ *
+ * Reparto con `sweepStaleHoldsInTx` (lib/bookings/sweep-stale-holds.ts), que barre
+ * lo mismo pero en el momento en que alguien intenta reservar el horario: ése se
+ * queda sólo con los abandonos silenciosos, y este cron con TODO lo vencido —
+ * incluida la transferencia ya declarada — porque es el único que puede mandarle
+ * el mail a la clienta antes de sacarle la hora.
  */
 export async function expireStaleHolds(
   now = new Date(),
@@ -197,21 +195,7 @@ export async function expireStaleHolds(
         status: BookingStatus.expired,
       },
     })
-    // Filter through the booking relation so we only release redemptions whose
-    // booking ACTUALLY transitioned to `expired` in this same tx snapshot.
-    // A booking that won the payment race (got confirmed/paid in the race window)
-    // is re-excluded by the in-tx updateMany guard above; releasing it would
-    // corrupt a live redemption and free a capped slot still in use.
-    const reds = await tx.promotionRedemption.findMany({
-      where: {
-        status: 'applied',
-        booking: { id: { in: expiredIds }, status: BookingStatus.expired },
-      },
-      select: { bookingId: true },
-    })
-    for (const r of reds) {
-      await releaseRedemptionForBooking(tx, r.bookingId, 'hold_expired')
-    }
+    await releaseRedemptionsOfExpiredBookings(tx, expiredIds)
 
     // Cerrar el Payment declarado huérfano (bt-declared) de las reservas que
     // REALMENTE transicionaron a `expired` en esta corrida — filtrando por la

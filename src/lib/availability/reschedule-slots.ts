@@ -3,6 +3,7 @@ import { generateSlots } from '@/lib/availability/slots'
 import { getBusinessDayRange } from '@/lib/availability/timezone'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 import { blockScopeFor, bookingScopeCondition, resolveAvailabilityRules } from '@/lib/availability/scope'
+import { RELEASED_STATUSES } from '@/lib/bookings/approval'
 
 /** Slots disponibles para reprogramar una reserva (excluye la reserva misma).
  *  SIN auth: el caller (action de dueña o de clienta) valida ownership antes.
@@ -37,7 +38,7 @@ export async function computeRescheduleSlots(
       where: {
         businessId: booking.businessId,
         id: { not: booking.id },
-        status: { notIn: ['cancelled', 'no_show', 'expired'] },
+        status: { notIn: [...RELEASED_STATUSES] },
         startDateTime: { lte: dayEnd },
         endDateTime: { gte: dayStart },
         AND: bookingScopeCondition(booking.professionalId),

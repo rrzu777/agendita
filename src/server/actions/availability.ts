@@ -12,6 +12,7 @@ import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth
 import { isValidTimeRange } from '@/lib/availability/time-range'
 import { computeRescheduleSlots } from '@/lib/availability/reschedule-slots'
 import { blockScopeFor, bookingScopeCondition, normalizeProfessionalId, resolveAvailabilityRules } from '@/lib/availability/scope'
+import { RELEASED_STATUSES } from '@/lib/bookings/approval'
 import { action, UserError } from '@/lib/actions/result'
 
 const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
@@ -107,7 +108,7 @@ async function _getAvailableTimeSlots(
     prisma.booking.findMany({
       where: {
         businessId,
-        status: { notIn: ['cancelled', 'no_show', 'expired'] },
+        status: { notIn: [...RELEASED_STATUSES] },
         startDateTime: { lte: dayEnd },
         endDateTime: { gte: dayStart },
         AND: bookingScopeCondition(professionalId),

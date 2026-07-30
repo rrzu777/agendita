@@ -12,6 +12,9 @@ import { requireBusinessRole } from '@/lib/auth/server'
 import { revalidatePath } from 'next/cache'
 import { revalidateBusinessPublicPaths } from '@/server/actions/revalidate-business'
 import { assertSlotFreeOfConflicts } from '@/lib/availability/validation'
+// El EXCLUDE puede rechazar el update aun cuando el chequeo de solape pasó (p.ej.
+// un confirm de turno pasado, que no pasa por el assert).
+import { isNoOverlapViolation } from '@/lib/db/no-overlap'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
@@ -24,25 +27,6 @@ import {
 } from '@/lib/notifications'
 import { toBankTransferEmailInfo } from '@/lib/notifications/types'
 import { action, UserError } from '@/lib/actions/result'
-
-// El EXCLUDE parcial Booking_no_overlap puede rechazar el update aun cuando el
-// chequeo de solape pasó (p.ej. pending_payment con hold recién vencido que el
-// assert considera libre, o confirm de turno pasado sin assert). Postgres tira
-// 23P01; Prisma no lo mapea a un código conocido — detectamos por el nombre
-// del constraint en message/meta.
-function isNoOverlapViolation(e: unknown): boolean {
-  const msg = e instanceof Error ? e.message : String(e)
-  const meta = (e as { meta?: unknown } | null)?.meta
-  let metaStr = ''
-  try {
-    metaStr = JSON.stringify(meta ?? {})
-  } catch {
-    // meta puede traer BigInt u otros valores no serializables por JSON.stringify
-    // (p.ej. counts de Postgres); no dejamos que eso enmascare el error original.
-    metaStr = ''
-  }
-  return `${msg} ${metaStr}`.includes('Booking_no_overlap')
-}
 
 type ReviveResult =
   | { mode: 'confirm'; isFuture: boolean }

@@ -2,7 +2,7 @@
 
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import type { Prisma, TimeBlock, TimeBlockSeries } from '@prisma/client'
+import { BookingStatus, BookingPaymentStatus, type Prisma, type TimeBlock, type TimeBlockSeries } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
@@ -16,17 +16,20 @@ import { getLocalDateStr } from '@/lib/availability/timezone'
 import { computeSeriesUntil, expandSeries, type SeriesEndMode } from '@/lib/calendar/expand-series'
 import { planSeriesUpdate } from '@/lib/calendar/series-update-plan'
 import { timeToMinutes } from '@/lib/availability/time-range'
-import { HELD_STATUSES, OCCUPYING_STATUSES } from '@/lib/bookings/approval'
+import { OCCUPYING_STATUSES } from '@/lib/bookings/approval'
+import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 
 const MAX_BLOCK_DURATION_MS = 32 * 24 * 60 * 60 * 1000 // 32 dias
 
 
 /**
- * Filtro de reservas activas que solapan [start, end]. Un hold
- * `pending_payment`/`pending_confirmation` con `holdExpiresAt` ya vencido no
- * bloquea (misma semántica que generateSlots/assertSlotIsAvailable), aunque el
- * cron aún no lo haya marcado como `expired`.
+ * Filtro de reservas activas que solapan [start, end]. Es `occupiesSlot`
+ * (lib/bookings/approval.ts) escrito como where de Prisma — un where no puede
+ * llamar a una función, así que la regla vive dos veces y ese módulo es la fuente:
+ * un hold vencido libera el cupo, salvo los que ningún sweep va a barrer (con
+ * plata encima o con transferencia bancaria de por medio), que siguen tapando
+ * porque para el EXCLUDE `Booking_no_overlap` siguen ocupando el horario.
  *
  * `professionalId` es de QUIÉN es el bloqueo que se está creando, no de la reserva:
  * un bloqueo del salón choca contra todas las citas, y el de una persona sólo contra
@@ -35,7 +38,7 @@ const MAX_BLOCK_DURATION_MS = 32 * 24 * 60 * 60 * 1000 // 32 dias
  * "se solapa con reservas en 12 día(s)" por las citas de Ana, la dueña aprende a
  * tildar "confirmar" siempre y el aviso deja de significar algo.
  *
- * `AND` y no spread: el `OR` de los holds vencidos ya ocupa ese nivel.
+ * `AND` y no spread: el `OR` de los estados ya ocupa ese nivel.
  */
 function overlappingActiveBookingsWhere(
   businessId: string,
@@ -44,15 +47,21 @@ function overlappingActiveBookingsWhere(
   now: Date,
   professionalId: string | null,
 ): Prisma.BookingWhereInput {
+  const holdAliveOr = [{ holdExpiresAt: null }, { holdExpiresAt: { gt: now } }]
   return {
     businessId,
     startDateTime: { lt: end },
     endDateTime: { gt: start },
     OR: [
       { status: { in: [...OCCUPYING_STATUSES] } },
+      { status: BookingStatus.pending_confirmation, OR: holdAliveOr },
       {
-        status: { in: [...HELD_STATUSES] },
-        OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: now } }],
+        status: BookingStatus.pending_payment,
+        OR: [
+          ...holdAliveOr,
+          { paymentStatus: { not: BookingPaymentStatus.unpaid } },
+          { paymentMethod: BANK_TRANSFER_METHOD },
+        ],
       },
     ],
     AND: bookingScopeCondition(professionalId),

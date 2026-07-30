@@ -5,13 +5,11 @@ import { LEAD_TIME_MINUTES } from './constants'
 import { shrinkBlock } from './shrink-block'
 import { expandSeries } from '@/lib/calendar/expand-series'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
-import { blockScopeFor, bookingScopeSql, resolveDayRule } from '@/lib/availability/scope'
+import { blockScopeFor, bookingBlocksProfessional, resolveDayRule } from '@/lib/availability/scope'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
-// `Prisma` entra como VALOR y no sólo como tipo: el SQL crudo del solape compone
-// fragmentos con `Prisma.sql` / `Prisma.empty` en vez de repetir la consulta entera
-// por cada combinación de cláusulas opcionales.
-import { Prisma } from '@prisma/client'
-import type { PrismaClient } from '@prisma/client'
+import { occupiesSlot, isSweepableExpiredHold, type SlotOccupancyFields } from '@/lib/bookings/approval'
+import { sweepStaleHoldsInTx } from '@/lib/bookings/sweep-stale-holds'
+import type { PrismaClient, Prisma } from '@prisma/client'
 // UserError: estos mensajes son user-facing y deben sobrevivir al wrapper
 // action(); para callers sin wrapper es un Error normal (extends Error).
 import { UserError } from '@/lib/actions/result'
@@ -67,7 +65,7 @@ export type SlotConflict =
   | { reason: 'booking_overlap'; overlappingBookingIds: string[] }
 
 /** Único mensaje de rechazo de horario: la clienta nunca ve el motivo interno. */
-const SLOT_UNAVAILABLE_MESSAGE = 'Ese horario ya no está disponible. Por favor selecciona otro.'
+export const SLOT_UNAVAILABLE_MESSAGE = 'Ese horario ya no está disponible. Por favor selecciona otro.'
 
 async function findTimeBlockConflict(input: AssertConflictInput): Promise<SlotConflict | null> {
   const { tx, businessId, startDateTime, endDateTime, timezone, professionalId } = input
@@ -107,6 +105,10 @@ async function findTimeBlockConflict(input: AssertConflictInput): Promise<SlotCo
   return null
 }
 
+/** El shape del SELECT de abajo: `$queryRaw` devuelve `unknown` y no hay forma de
+ *  tiparlo desde el template. Los enums vienen casteados a texto. */
+type OverlappingRow = SlotOccupancyFields & { id: string; professionalId: string | null }
+
 async function findBookingOverlap(input: AssertConflictInput): Promise<SlotConflict | null> {
   const { tx, businessId, startDateTime, endDateTime, timezone } = input
   const now = new Date()
@@ -122,59 +124,89 @@ async function findBookingOverlap(input: AssertConflictInput): Promise<SlotConfl
   const localStartStr = formatInTimeZone(startDateTime, timezone, 'yyyy-MM-dd')
   await acquireAdvisoryXactLock(tx, `${businessId}:${localStartStr}`)
 
-  // A pending_payment booking only blocks the slot while its hold is still live.
-  // Once holdExpiresAt is in the past the slot is free again, even if the cron
-  // that flips it to `expired` hasn't run yet — otherwise stale holds freeze
-  // slots until the next cron tick. `pending_confirmation` (solicitud esperando
-  // el visto bueno del negocio) sigue exactamente la misma regla.
+  // La query trae TODAS las reservas que solapan sin decidir nada: quién tapa el
+  // horario lo resuelve `occupiesSlot` en memoria, la misma función que usa
+  // `generateSlots`. Antes la regla estaba escrita otra vez acá en SQL (los
+  // literales de estado no se pueden parametrizar: un `IN` de enums vía $queryRaw
+  // viaja como `text` y Postgres rompe con `operator does not exist`), y las dos
+  // copias se podían separar sin que nada avisara.
   //
-  // Los literales duplican HELD_STATUSES de lib/bookings/approval.ts a propósito:
-  // parametrizar un IN de enums en $queryRaw los manda como `text` y Postgres
-  // rompe. Si agregás un estado, tocá también ese módulo y sus dos consumidores.
-  // Las cláusulas opcionales se componen como fragmentos en vez de repetir la
-  // consulta entera por combinación: con dos opcionales serían CUATRO copias del
-  // mismo SELECT, y la que se olvide de actualizar es la que se lleva el bug.
-  const excludeClause = input.excludeBookingId
-    ? Prisma.sql`AND "id" != ${input.excludeBookingId}`
-    : Prisma.empty
-
-  // El filtro de persona sale de `scope.ts`, pegado a la versión Prisma que usan los
-  // lectores: son la lectura y la escritura del mismo contrato, y separarlas es cómo
-  // se llega a que el funnel ofrezca una hora que la escritura rechaza.
-  const professionalClause = bookingScopeSql(input.professionalId)
-
-  const overlappingBookings = await tx.$queryRaw<{ id: string }[]>`
-    SELECT "id" FROM "Booking"
+  // Sigue crudo por el `FOR UPDATE`, que Prisma no expone: es lo que mantiene
+  // válido el resultado —y lockeadas las filas que el sweep va a tocar— hasta el
+  // fin de la transacción. Los estados son los que mira el EXCLUDE
+  // `Booking_no_overlap`, más `pending_confirmation`, que ocupa cupo para la app
+  // aunque el constraint lo ignore.
+  //
+  // La query NO filtra por persona, y es a propósito: el EXCLUDE de la base es por
+  // NEGOCIO y no sabe de personas, así que el sweep de holds abandonados tiene que
+  // poder barrer los de cualquiera —si no, un hold vencido de otra persona hace
+  // fallar el insert con un 23P01 que nadie puede explicar—. La persona entra
+  // después, sólo en la decisión de qué TAPA el horario.
+  const rows = (await tx.$queryRaw`
+    SELECT
+      "id",
+      "status"::text AS "status",
+      "holdExpiresAt",
+      "paymentStatus"::text AS "paymentStatus",
+      "paymentMethod",
+      "professionalId"
+    FROM "Booking"
     WHERE "businessId" = ${businessId}
-      AND (
-        "status" IN ('confirmed', 'completed')
-        OR ("status" IN ('pending_payment', 'pending_confirmation') AND ("holdExpiresAt" IS NULL OR "holdExpiresAt" > ${now}))
-      )
+      AND "status" IN ('pending_payment', 'pending_confirmation', 'confirmed', 'completed')
       AND "startDateTime" < ${endDateTime}
       AND "endDateTime" > ${startDateTime}
-      ${excludeClause}
-      ${professionalClause}
     FOR UPDATE
-  `
-  if (overlappingBookings.length > 0) {
-    logEvent('slot_validation_rejected', { businessId, reason: 'booking_overlap', overlappingCount: overlappingBookings.length })
+  `) as OverlappingRow[]
+
+  // El excluido se filtra acá y no en el SQL: así hay UNA query en vez de dos
+  // copias del template. Que su fila quede lockeada no molesta — es la reserva que
+  // el caller está por actualizar en esta misma transacción.
+  const overlapping = rows.filter((r) => r.id !== input.excludeBookingId)
+
+  // Los holds abandonados que la agenda ya da por libres se marcan `expired` ACÁ,
+  // con el lock puesto: si no, el EXCLUDE los seguiría viendo `pending_payment` y
+  // rechazaría el insert con un error que nadie puede explicar. Sin filtrar por
+  // persona, por el mismo motivo que la query.
+  const sweepable = overlapping.filter((r) => isSweepableExpiredHold(r, now))
+  if (sweepable.length > 0) {
+    const swept = await sweepStaleHoldsInTx(tx, sweepable.map((r) => r.id), now)
+    logEvent('stale_holds_swept', { businessId, candidates: sweepable.length, swept })
+  }
+
+  // Acá sí entra la persona: una cita de OTRA persona no le tapa el horario a esta
+  // reserva. `occupiesSlot` decide si la fila ocupa cupo; `bookingBlocksProfessional`,
+  // si le ocupa cupo A ESTA.
+  //
+  // OJO: que esto devuelva vacío NO alcanza para que dos personas puedan tener cita a
+  // la misma hora. El EXCLUDE `Booking_no_overlap` es por negocio y va a rechazar el
+  // insert igual. Cambiar el constraint es un PR aparte y necesita chequear datos de
+  // producción antes; hasta entonces esta rama es sólo la mitad lógica.
+  const blocking = overlapping.filter(
+    (r) => occupiesSlot(r, now) && bookingBlocksProfessional(r, input.professionalId),
+  )
+  if (blocking.length > 0) {
+    logEvent('slot_validation_rejected', { businessId, reason: 'booking_overlap', overlappingCount: blocking.length })
     return {
       reason: 'booking_overlap',
-      overlappingBookingIds: overlappingBookings.map((b) => b.id),
+      overlappingBookingIds: blocking.map((b) => b.id),
     }
   }
   return null
 }
 
 /**
- * Chequeo de SOLAPE puro que DEVUELVE el conflicto en vez de lanzarlo. Existe
- * para el borde donde ya entró plata: la confirmación de un pago no puede abortar
- * su transacción por un slot ocupado, porque eso desasentaría el cobro que
- * Mercado Pago ya hizo. `assertSlotFreeOfConflicts` es este mismo chequeo con el
- * throw puesto encima, para los callers que sí pueden rechazar.
+ * Chequeo de SOLAPE que DEVUELVE el conflicto en vez de lanzarlo. Existe para el
+ * borde donde ya entró plata: la confirmación de un pago no puede abortar su
+ * transacción por un slot ocupado, porque eso desasentaría el cobro que Mercado
+ * Pago ya hizo. `assertSlotFreeOfConflicts` es este mismo chequeo con el throw
+ * puesto encima, para los callers que sí pueden rechazar.
  *
- * Mismas garantías que antes: el advisory lock por negocio+día y el `FOR UPDATE`
- * viven adentro, así que el resultado sigue siendo válido hasta el fin de la tx.
+ * El advisory lock por negocio+día y el `FOR UPDATE` viven adentro, así que el
+ * resultado sigue siendo válido hasta el fin de la tx.
+ *
+ * NO es de sólo lectura: de paso marca `expired` los holds abandonados que solapan
+ * el horario (ver `sweepStaleHoldsInTx`). Sin eso, un horario que la agenda ofrece
+ * como libre puede ser inbookeable para Postgres.
  */
 export async function findSlotConflict(input: AssertConflictInput): Promise<SlotConflict | null> {
   if (input.endDateTime <= input.startDateTime) {
@@ -185,7 +217,7 @@ export async function findSlotConflict(input: AssertConflictInput): Promise<Slot
 }
 
 /**
- * Chequeo de SOLAPE puro para revivir reservas: valida solo conflictos contra
+ * Chequeo de SOLAPE para revivir reservas: valida solo conflictos contra
  * reservas activas y bloqueos de tiempo (mismo advisory lock que
  * assertSlotIsAvailable). NO exige servicio activo, duración vigente, regla del
  * día ni ventana de reserva — una cita ya pactada no debe caerse porque la
