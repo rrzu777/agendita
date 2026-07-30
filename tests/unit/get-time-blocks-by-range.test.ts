@@ -32,7 +32,25 @@ describe('getTimeBlocksByRange', () => {
     expect(result.length).toBe(1)
     expect(result[0].id).toBe('tb1')
     expect(mockRequireBusiness).toHaveBeenCalledTimes(1)
-    expect(mockGetEffectiveBlocks).toHaveBeenCalledWith('biz-1', start, end, 'America/Santiago')
+    expect(mockGetEffectiveBlocks).toHaveBeenCalledWith({
+      businessId: 'biz-1',
+      rangeStart: start,
+      rangeEnd: end,
+      timezone: 'America/Santiago',
+      scope: { kind: 'everyone' },
+    })
+  })
+
+  // El calendario del panel es una pantalla para MOSTRAR: tiene que traer los
+  // bloqueos de todo el equipo, no sólo los del negocio. Con `business` acá, las
+  // vacaciones de una persona serían invisibles en el calendario y parecería que el
+  // bloqueo no se guardó.
+  it('pide el alcance de TODOS, no sólo los del negocio', async () => {
+    await getTimeBlocksByRange(new Date('2026-05-01'), new Date('2026-05-31'))
+
+    expect(mockGetEffectiveBlocks).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: { kind: 'everyone' } }),
+    )
   })
 
   it('falls back to America/Santiago when the business has no timezone', async () => {
@@ -42,7 +60,9 @@ describe('getTimeBlocksByRange', () => {
 
     await getTimeBlocksByRange(start, end)
 
-    expect(mockGetEffectiveBlocks).toHaveBeenCalledWith('biz-1', start, end, 'America/Santiago')
+    expect(mockGetEffectiveBlocks).toHaveBeenCalledWith(
+      expect.objectContaining({ timezone: 'America/Santiago' }),
+    )
   })
 
   it('returns empty array when no blocks match', async () => {

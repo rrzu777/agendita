@@ -257,6 +257,10 @@ async function _createBooking(data: {
         startDateTime: data.startDateTime,
         endDateTime,
         timezone: business.timezone || 'America/Santiago',
+        // Sin persona: el paso de elegir con quién atenderse todavía no existe en
+        // el funnel. Cuando exista, acá va la que eligió la clienta y este chequeo
+        // pasa a mirar SU horario y SUS citas.
+        professionalId: null,
       })
 
       // Buscar o crear cliente dentro de la transacción (matcher único por
@@ -763,6 +767,8 @@ async function _createBookingFromDashboard(data: {
       startDateTime: data.startDateTime,
       endDateTime,
       timezone: business.timezone || 'America/Santiago',
+      // Sin persona: la reserva manual del panel todavía no pregunta con quién.
+      professionalId: null,
       // La dueña puede anotar walk-ins que empiezan ahora mismo
       leadTimeMinutes: 0,
     })

@@ -102,7 +102,15 @@ async function serviceFitAddendum(
     if (services.length === 0 || rules.length === 0) return ''
 
     const fitWindowEnd = addDays(now, SERVICE_FIT_WINDOW_DAYS + 1)
-    let blocks = await getEffectiveBlocks(businessId, now, fitWindowEnd, timezone)
+    // Alcance del negocio: este aviso acompaña al CRUD de bloqueos del salón. El
+    // fit por persona entra con el PR que deja crear bloqueos de una persona.
+    let blocks = await getEffectiveBlocks({
+      businessId,
+      rangeStart: now,
+      rangeEnd: fitWindowEnd,
+      timezone,
+      scope: { kind: 'business' },
+    })
     if (excludeBlock) blocks = blocks.filter((b) => !excludeBlock(b))
     // Las ocurrencias fuera de la ventana simulada son ruido puro para el fit
     const proposedInWindow = proposedBlocks.filter((b) => b.startDateTime < fitWindowEnd)
@@ -233,7 +241,12 @@ export async function getTimeBlocksByRange(start: Date, end: Date) {
     throw new UserError('La fecha de inicio debe ser anterior a la fecha de término')
   }
   const timezone = business.timezone || 'America/Santiago'
-  return getEffectiveBlocks(businessId, start, end, timezone)
+  // `everyone` y no `business`: esto alimenta el calendario del panel, que es una
+  // pantalla para MOSTRAR. La dueña tiene que ver las vacaciones de cada persona
+  // igual que el feriado del salón; filtrarlas acá las volvería invisibles y
+  // parecería que el bloqueo no se guardó. Poder distinguirlas es lo que hace
+  // `EffectiveBlock.professionalId`, y filtrar por persona es del PR del panel.
+  return getEffectiveBlocks({ businessId, rangeStart: start, rangeEnd: end, timezone, scope: { kind: 'everyone' } })
 }
 
 async function _deleteTimeBlock(id: string) {
@@ -382,7 +395,10 @@ async function _createTimeBlockSeries(data: {
   const now = new Date()
   const { occurrences, overlappingDates } = await findSeriesBookingConflicts(
     businessId,
-    { id: 'proposed', daysOfWeek: data.daysOfWeek, startTime: data.startTime, endTime: data.endTime, reason: data.reason ?? null, anchorDate: data.anchorDate, until },
+    // `professionalId: null` = del negocio. Hoy el diálogo de bloqueo recurrente no
+    // pregunta de quién es; cuando pregunte, este literal tiene que llevar la
+    // persona o el chequeo de conflictos miraría las reservas de todo el equipo.
+    { id: 'proposed', daysOfWeek: data.daysOfWeek, startTime: data.startTime, endTime: data.endTime, reason: data.reason ?? null, anchorDate: data.anchorDate, until, professionalId: null },
     timezone,
     now,
     business.bookingWindowDays ?? 90,
@@ -478,7 +494,9 @@ async function _updateTimeBlockSeries(
     const futureAnchor = mode === 'split' ? anchorToday : existing.anchorDate
     const { occurrences, overlappingDates } = await findSeriesBookingConflicts(
       businessId,
-      { id: 'proposed', daysOfWeek: existing.daysOfWeek, startTime: changes.startTime, endTime: changes.endTime, reason: changes.reason ?? null, anchorDate: futureAnchor, until: existing.until },
+      // La serie propuesta hereda de quién es la que se está editando: editar hora
+      // y motivo no cambia el dueño del bloqueo.
+      { id: 'proposed', daysOfWeek: existing.daysOfWeek, startTime: changes.startTime, endTime: changes.endTime, reason: changes.reason ?? null, anchorDate: futureAnchor, until: existing.until, professionalId: existing.professionalId },
       timezone,
       now,
       business.bookingWindowDays ?? 90,

@@ -13,6 +13,7 @@ const base: SeriesLike = {
   reason: 'Almuerzo',
   anchorDate: new Date('2026-06-01T04:00:00.000Z'), // 2026-06-01 00:00 local
   until: null,
+  professionalId: null,
 }
 
 function range(startLocal: string, endLocal: string) {

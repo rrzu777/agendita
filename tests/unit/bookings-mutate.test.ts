@@ -57,7 +57,7 @@ describe('rescheduleBookingInTx', () => {
   const baseInput = {
     booking: {
       id: 'b1', businessId: 'biz1', serviceId: 's1',
-      startDateTime: new Date('2026-07-20T15:00:00Z'), internalNotes: null,
+      startDateTime: new Date('2026-07-20T15:00:00Z'), internalNotes: null, professionalId: null,
     },
     newStartDateTime: new Date('2026-07-21T15:00:00Z'),
     durationMinutes: 60,
@@ -93,7 +93,7 @@ describe('rescheduleBookingInTx', () => {
     const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
     await rescheduleBookingInTx(tx as never, {
       ...baseInput,
-      booking: { ...baseInput.booking, startDateTime: new Date('2026-07-21T02:00:00Z'), internalNotes: null },
+      booking: { ...baseInput.booking, startDateTime: new Date('2026-07-21T02:00:00Z'), internalNotes: null, professionalId: null },
       leadTimeMinutes: 0,
     })
     expect(tx.booking.updateMany).toHaveBeenCalledWith(expect.objectContaining({

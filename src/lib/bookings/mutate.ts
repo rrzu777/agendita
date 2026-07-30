@@ -53,7 +53,7 @@ export async function cancelBookingInTx(
 export async function rescheduleBookingInTx(
   tx: Tx,
   input: {
-    booking: { id: string; businessId: string; serviceId: string; startDateTime: Date; internalNotes: string | null }
+    booking: { id: string; businessId: string; serviceId: string; startDateTime: Date; internalNotes: string | null; professionalId: string | null }
     newStartDateTime: Date
     durationMinutes: number
     timezone: string
@@ -70,6 +70,9 @@ export async function rescheduleBookingInTx(
     startDateTime: newStartDateTime,
     endDateTime,
     timezone,
+    // Reprogramar conserva a quien iba a atender: los slots que se ofrecieron son
+    // los suyos y el chequeo tiene que ser contra los mismos.
+    professionalId: booking.professionalId,
     excludeBookingId: booking.id,
     ...(leadTimeMinutes !== undefined ? { leadTimeMinutes } : {}),
   })

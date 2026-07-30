@@ -139,6 +139,7 @@ async function _confirmBankTransfer(
         startDateTime: booking.startDateTime,
         endDateTime: booking.endDateTime,
         timezone: business.timezone || 'America/Santiago',
+        professionalId: booking.professionalId,
         excludeBookingId: booking.id,
         leadTimeMinutes: 0,
       })

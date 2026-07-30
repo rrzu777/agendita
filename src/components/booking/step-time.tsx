@@ -35,7 +35,10 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     setError(null)
     setSelectedSlot(null)
 
-    getAvailableTimeSlots(businessId, data.serviceId, data.date)
+    // `null` = sin persona, el horario del negocio. El paso de elegir con quién
+    // atenderse todavía no existe en el funnel; cuando exista, acá va lo que la
+    // clienta eligió y este cálculo pasa a ser el horario de esa persona.
+    getAvailableTimeSlots(businessId, data.serviceId, data.date, null)
       .then((res) => {
         if (ignoreRef.current) return
         if (!res.ok) {

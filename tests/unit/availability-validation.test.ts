@@ -35,7 +35,7 @@ describe('assertSlotIsAvailable', () => {
 
   it('rejects when end <= start', async () => {
     const tx = makeTx({ service: { durationMinutes: 60 } })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: end, endDateTime: start, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: end, endDateTime: start, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 
@@ -43,25 +43,25 @@ describe('assertSlotIsAvailable', () => {
     const past = new Date(Date.now() - 1000 * 60 * 60)
     const pastEnd = new Date(past.getTime() + 1000 * 60 * 60)
     const tx = makeTx({ service: { durationMinutes: 60 } })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: past, endDateTime: pastEnd, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: past, endDateTime: pastEnd, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 
   it('rejects when service is missing or inactive', async () => {
     const tx = makeTx({ service: null })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 
   it('rejects when duration does not match service', async () => {
     const tx = makeTx({ service: { durationMinutes: 30 } })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 
   it('rejects when no active availability rule for day', async () => {
     const tx = makeTx({ service: { durationMinutes: 60 }, rule: null })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 
@@ -71,7 +71,7 @@ describe('assertSlotIsAvailable', () => {
     const lateStart = new Date('2026-05-20T22:00:00Z')
     const lateEnd = new Date('2026-05-20T23:00:00Z')
     const tx = makeTx({ service: { durationMinutes: 60 }, rule })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: lateStart, endDateTime: lateEnd, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: lateStart, endDateTime: lateEnd, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 
@@ -80,56 +80,56 @@ describe('assertSlotIsAvailable', () => {
     // 10:00-11:00 Santiago = solapa exactamente el slot bajo prueba
     const block = { id: 'tb-1', startDateTime: new Date('2026-05-20T14:00:00Z'), endDateTime: new Date('2026-05-20T15:00:00Z'), overlapToleranceMinutes: 0 }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule, block })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 
   it('rejects when overlapping booking exists (confirmed)', async () => {
     const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule, block: null, queryRawResult: [{ id: 'b1' }] })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 
   it('rejects when overlapping booking exists (pending_payment)', async () => {
     const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule, block: null, queryRawResult: [{ id: 'b1' }] })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 
   it('rejects when overlapping booking exists (completed)', async () => {
     const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule, block: null, queryRawResult: [{ id: 'b1' }] })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 
   it('allows contiguous booking (end === other.start)', async () => {
     const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule, block: null, queryRawResult: [] })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .resolves.toBeUndefined()
   })
 
   it('allows cancelled bookings to be rebooked', async () => {
     const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule, block: null, queryRawResult: [] })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .resolves.toBeUndefined()
   })
 
   it('allows no_show bookings to be rebooked', async () => {
     const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule, block: null, queryRawResult: [] })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .resolves.toBeUndefined()
   })
 
   it('allows when all checks pass', async () => {
     const rule = { dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule, block: null, queryRawResult: [] })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .resolves.toBeUndefined()
   })
 
@@ -146,7 +146,7 @@ describe('assertSlotIsAvailable', () => {
       service: { findFirst: vi.fn().mockResolvedValue({ durationMinutes: 60 }) },
     } as unknown as Parameters<typeof assertSlotIsAvailable>[0]['tx']
 
-    await assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: utcMonday, endDateTime: utcEnd, timezone: 'America/Santiago' })
+    await assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: utcMonday, endDateTime: utcEnd, timezone: 'America/Santiago', professionalId: null })
 
     expect(findFirstSpy).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ dayOfWeek: 0 })
@@ -173,8 +173,8 @@ describe('assertSlotIsAvailable', () => {
       $queryRaw: queryRawSpy,
     })
 
-    await assertSlotIsAvailable({ tx: makeTxWithSpy() as unknown as Parameters<typeof assertSlotIsAvailable>[0]['tx'], businessId, serviceId, startDateTime: start1, endDateTime: end1, timezone })
-    await assertSlotIsAvailable({ tx: makeTxWithSpy() as unknown as Parameters<typeof assertSlotIsAvailable>[0]['tx'], businessId, serviceId, startDateTime: start2, endDateTime: end2, timezone })
+    await assertSlotIsAvailable({ tx: makeTxWithSpy() as unknown as Parameters<typeof assertSlotIsAvailable>[0]['tx'], businessId, serviceId, startDateTime: start1, endDateTime: end1, timezone, professionalId: null })
+    await assertSlotIsAvailable({ tx: makeTxWithSpy() as unknown as Parameters<typeof assertSlotIsAvailable>[0]['tx'], businessId, serviceId, startDateTime: start2, endDateTime: end2, timezone, professionalId: null })
 
     // Los locks deben ser iguales (mismos args de template literal + hash)
     const lockCall1 = executeRawSpy.mock.calls[0]
@@ -190,7 +190,7 @@ describe('assertSlotIsAvailable', () => {
     const soonEnd = new Date('2026-05-19T01:30:00Z')
     const rule = { dayOfWeek: 1, startTime: '09:00', endTime: '22:00', isActive: true }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: soonStart, endDateTime: soonEnd, timezone, leadTimeMinutes: 0 }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: soonStart, endDateTime: soonEnd, timezone, professionalId: null, leadTimeMinutes: 0 }))
       .resolves.toBeUndefined()
   })
 
@@ -199,7 +199,7 @@ describe('assertSlotIsAvailable', () => {
     const soonEnd = new Date('2026-05-19T01:30:00Z')
     const rule = { dayOfWeek: 1, startTime: '09:00', endTime: '22:00', isActive: true }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: soonStart, endDateTime: soonEnd, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: soonStart, endDateTime: soonEnd, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 
@@ -208,7 +208,7 @@ describe('assertSlotIsAvailable', () => {
     const pastEnd = new Date('2026-05-18T21:00:00Z')
     const rule = { dayOfWeek: 1, startTime: '09:00', endTime: '22:00', isActive: true }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: pastStart, endDateTime: pastEnd, timezone, leadTimeMinutes: 0 }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: pastStart, endDateTime: pastEnd, timezone, professionalId: null, leadTimeMinutes: 0 }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 
@@ -222,7 +222,7 @@ describe('assertSlotIsAvailable', () => {
       overlapToleranceMinutes: 45,
     }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule, block })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .resolves.toBeUndefined()
   })
 
@@ -234,7 +234,7 @@ describe('assertSlotIsAvailable', () => {
       overlapToleranceMinutes: 0,
     }
     const tx = makeTx({ service: { durationMinutes: 60 }, rule, block })
-    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 
@@ -253,11 +253,11 @@ describe('assertSlotIsAvailable', () => {
       exceptions: [],
     }]
     const tolerant = makeTx({ service: { durationMinutes: 60 }, rule, series: makeSeries(45) })
-    await expect(assertSlotIsAvailable({ tx: tolerant, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx: tolerant, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .resolves.toBeUndefined()
 
     const strict = makeTx({ service: { durationMinutes: 60 }, rule, series: makeSeries(0) })
-    await expect(assertSlotIsAvailable({ tx: strict, businessId, serviceId, startDateTime: start, endDateTime: end, timezone }))
+    await expect(assertSlotIsAvailable({ tx: strict, businessId, serviceId, startDateTime: start, endDateTime: end, timezone, professionalId: null }))
       .rejects.toThrow('Ese horario ya no está disponible')
   })
 })

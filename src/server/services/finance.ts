@@ -469,7 +469,7 @@ export async function applyApprovedPackagePayment({
  */
 async function findConfirmationSlotConflict(
   tx: Prisma.TransactionClient,
-  booking: { id: string; businessId: string; startDateTime: Date; endDateTime: Date },
+  booking: { id: string; businessId: string; startDateTime: Date; endDateTime: Date; professionalId: string | null },
 ): Promise<SlotConflict | null> {
   // Un turno que ya pasó no tiene cupo que proteger, y una fila solapada vieja
   // bloquearía para siempre el registro de un pago legítimo — el mismo criterio
@@ -487,6 +487,7 @@ async function findConfirmationSlotConflict(
     startDateTime: booking.startDateTime,
     endDateTime: booking.endDateTime,
     timezone: business?.timezone || 'America/Santiago',
+    professionalId: booking.professionalId,
     // Su propio hold no compite consigo mismo.
     excludeBookingId: booking.id,
   })

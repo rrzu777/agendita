@@ -65,6 +65,10 @@ const booking = {
   status: 'confirmed',
   startDateTime: new Date('2026-06-15T14:00:00Z'),
   endDateTime: new Date('2026-06-15T15:00:00Z'),
+  // Reprogramar conserva a quien atendía; `null` = sin persona, el horario del
+  // negocio. Sin este campo el alcance quedaba "de una persona sin id", que en un
+  // `where` de Prisma no filtra nada.
+  professionalId: null,
   service: { id: 'svc-1', durationMinutes: 60, name: 'Manicure', isActive: true },
   customer: { name: 'Maria', email: 'maria@example.com', phone: '+56912345678' },
   bookingNumber: 42,

@@ -127,7 +127,7 @@ describe('createTimeBlockSeries', () => {
       // serie hasta viernes 2026-06-05 (00:00 local); slot ese viernes 13:00-14:00 (17:00Z-18:00Z)
       await createTimeBlockSeries({ daysOfWeek: [5], startTime: '13:00', endTime: '14:00', reason: 'Almuerzo', anchorDate: new Date('2026-05-29T04:00:00Z'), endMode: 'weeks', weeks: 1 })
       await expect(
-        prisma.$transaction((tx) => assertSlotIsAvailable({ tx, businessId, serviceId: svc.id, startDateTime: new Date('2026-06-05T17:00:00Z'), endDateTime: new Date('2026-06-05T18:00:00Z'), timezone: 'America/Santiago' })),
+        prisma.$transaction((tx) => assertSlotIsAvailable({ tx, businessId, serviceId: svc.id, startDateTime: new Date('2026-06-05T17:00:00Z'), endDateTime: new Date('2026-06-05T18:00:00Z'), timezone: 'America/Santiago', professionalId: null })),
       ).rejects.toThrow()
     } finally {
       vi.useRealTimers()

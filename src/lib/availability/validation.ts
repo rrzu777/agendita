@@ -5,7 +5,13 @@ import { LEAD_TIME_MINUTES } from './constants'
 import { shrinkBlock } from './shrink-block'
 import { expandSeries } from '@/lib/calendar/expand-series'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
-import type { PrismaClient, Prisma } from '@prisma/client'
+import { blockScopeFor, normalizeProfessionalId, resolveDayRule } from '@/lib/availability/scope'
+import { blockScopeCondition } from '@/lib/availability/effective-blocks'
+// `Prisma` entra como VALOR y no sólo como tipo: el SQL crudo del solape compone
+// fragmentos con `Prisma.sql` / `Prisma.empty` en vez de repetir la consulta entera
+// por cada combinación de cláusulas opcionales.
+import { Prisma } from '@prisma/client'
+import type { PrismaClient } from '@prisma/client'
 // UserError: estos mensajes son user-facing y deben sobrevivir al wrapper
 // action(); para callers sin wrapper es un Error normal (extends Error).
 import { UserError } from '@/lib/actions/result'
@@ -17,6 +23,16 @@ export interface AssertSlotInput {
   startDateTime: Date
   endDateTime: Date
   timezone: string
+  /**
+   * A nombre de quién es la reserva. `null` = sin persona: se valida contra el
+   * horario del negocio y choca contra TODAS las reservas.
+   *
+   * Obligatorio y no opcional a propósito. Un `undefined` que llegue a un `where`
+   * de Prisma no significa "sin persona": Prisma borra la clave y el filtro pasa a
+   * matchear todo, o sea "traeme la regla de cualquiera". Sería el mismo bug que
+   * ya mordió una vez, pero en el camino crítico de reservar.
+   */
+  professionalId: string | null
   excludeBookingId?: string
   /** Anticipación mínima en minutos; los flujos de la dueña pasan 0 (walk-ins). Default: LEAD_TIME_MINUTES. */
   leadTimeMinutes?: number
@@ -34,6 +50,8 @@ export interface AssertConflictInput {
   startDateTime: Date
   endDateTime: Date
   timezone: string
+  /** A nombre de quién. Ver `AssertSlotInput.professionalId`. */
+  professionalId: string | null
   /** Solo afecta el chequeo de solape de RESERVAS (los TimeBlocks no se eximen). */
   excludeBookingId?: string
 }
@@ -52,14 +70,28 @@ export type SlotConflict =
 const SLOT_UNAVAILABLE_MESSAGE = 'Ese horario ya no está disponible. Por favor selecciona otro.'
 
 async function findTimeBlockConflict(input: AssertConflictInput): Promise<SlotConflict | null> {
-  const { tx, businessId, startDateTime, endDateTime, timezone } = input
+  const { tx, businessId, startDateTime, endDateTime, timezone, professionalId } = input
+
+  // Los bloqueos que dejan a esta reserva sin lugar: los del negocio (cierra para
+  // todos) más los de la persona a nombre de quien va. Las vacaciones de OTRA
+  // persona no tienen nada que ver.
+  //
+  // Este archivo repite la query de `effective-blocks.ts` en vez de llamarlo
+  // porque necesita el `tx` de la transacción; la condición del alcance sí es
+  // compartida para que las dos no se desincronicen.
+  const scopeCondition = blockScopeCondition(blockScopeFor(professionalId))
 
   const [oneOffBlocks, blockSeries] = await Promise.all([
     // Query por bordes crudos (superconjunto); la tolerancia se aplica en
     // memoria con shrinkBlock — un bloqueo tolerante puede no bloquear el slot
     // aunque sus bordes crudos lo solapen.
     tx.timeBlock.findMany({
-      where: { businessId, startDateTime: { lt: endDateTime }, endDateTime: { gt: startDateTime } },
+      where: {
+        businessId,
+        startDateTime: { lt: endDateTime },
+        endDateTime: { gt: startDateTime },
+        AND: [scopeCondition],
+      },
       select: { startDateTime: true, endDateTime: true, overlapToleranceMinutes: true },
     }),
     tx.timeBlockSeries.findMany({
@@ -71,6 +103,9 @@ async function findTimeBlockConflict(input: AssertConflictInput): Promise<SlotCo
         // día local del slot para no descartar el último día de una serie acotada.
         // Superconjunto seguro: expandSeries filtra el día con precisión.
         OR: [{ until: null }, { until: { gte: startOfLocalDay(getLocalDateStr(startDateTime, timezone), timezone) } }],
+        // `AND` y no spread: el `OR` de arriba es de `until` y un segundo `OR` en
+        // el mismo nivel lo sobrescribiría sin decir nada.
+        AND: [scopeCondition],
       },
       include: { exceptions: true },
     }),
@@ -99,11 +134,17 @@ async function findTimeBlockConflict(input: AssertConflictInput): Promise<SlotCo
 
 async function findBookingOverlap(input: AssertConflictInput): Promise<SlotConflict | null> {
   const { tx, businessId, startDateTime, endDateTime, timezone } = input
+  const professionalId = normalizeProfessionalId(input.professionalId)
   const now = new Date()
 
   // Advisory lock por businessId + día local del negocio.
   // Esto serializa todas las creaciones de reserva para un negocio en un día,
   // evitando doble-booking concurrente incluso entre slots con distinto startDateTime.
+  //
+  // La persona NO entra en la llave, aunque el plan original lo pedía: una reserva
+  // vieja con `professionalId = null` tomaría otro lock, no se serializaría contra
+  // las que sí tienen persona, y entrarían las dos pisándose. El costo de dejarlo
+  // grueso son milisegundos de espera entre dos clientas del mismo día.
   const localStartStr = formatInTimeZone(startDateTime, timezone, 'yyyy-MM-dd')
   await acquireAdvisoryXactLock(tx, `${businessId}:${localStartStr}`)
 
@@ -116,37 +157,40 @@ async function findBookingOverlap(input: AssertConflictInput): Promise<SlotConfl
   // Los literales duplican HELD_STATUSES de lib/bookings/approval.ts a propósito:
   // parametrizar un IN de enums en $queryRaw los manda como `text` y Postgres
   // rompe. Si agregás un estado, tocá también ese módulo y sus dos consumidores.
-  const overlappingBookings = input.excludeBookingId
-    ? await tx.$queryRaw`
-      SELECT "id" FROM "Booking"
-      WHERE "businessId" = ${businessId}
-        AND (
-          "status" IN ('confirmed', 'completed')
-          OR ("status" IN ('pending_payment', 'pending_confirmation') AND ("holdExpiresAt" IS NULL OR "holdExpiresAt" > ${now}))
-        )
-        AND "startDateTime" < ${endDateTime}
-        AND "endDateTime" > ${startDateTime}
-        AND "id" != ${input.excludeBookingId}
-      FOR UPDATE
-    `
-    : await tx.$queryRaw`
-      SELECT "id" FROM "Booking"
-      WHERE "businessId" = ${businessId}
-        AND (
-          "status" IN ('confirmed', 'completed')
-          OR ("status" IN ('pending_payment', 'pending_confirmation') AND ("holdExpiresAt" IS NULL OR "holdExpiresAt" > ${now}))
-        )
-        AND "startDateTime" < ${endDateTime}
-        AND "endDateTime" > ${startDateTime}
-      FOR UPDATE
-    `
+  // Las cláusulas opcionales se componen como fragmentos en vez de repetir la
+  // consulta entera por combinación: con dos opcionales serían CUATRO copias del
+  // mismo SELECT, y la que se olvide de actualizar es la que se lleva el bug.
+  const excludeClause = input.excludeBookingId
+    ? Prisma.sql`AND "id" != ${input.excludeBookingId}`
+    : Prisma.empty
+
+  // Una reserva CON persona sólo choca contra las de esa persona y contra las que
+  // no tienen ninguna. Una reserva SIN persona no lleva cláusula: choca contra
+  // todas, que es lo conservador — son las citas de antes de que hubiera equipo y
+  // nunca queremos meterle una encima a alguien.
+  const professionalClause =
+    professionalId === null
+      ? Prisma.empty
+      : Prisma.sql`AND ("professionalId" IS NULL OR "professionalId" = ${professionalId})`
+
+  const overlappingBookings = await tx.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "Booking"
+    WHERE "businessId" = ${businessId}
+      AND (
+        "status" IN ('confirmed', 'completed')
+        OR ("status" IN ('pending_payment', 'pending_confirmation') AND ("holdExpiresAt" IS NULL OR "holdExpiresAt" > ${now}))
+      )
+      AND "startDateTime" < ${endDateTime}
+      AND "endDateTime" > ${startDateTime}
+      ${excludeClause}
+      ${professionalClause}
+    FOR UPDATE
+  `
   if (Array.isArray(overlappingBookings) && overlappingBookings.length > 0) {
     logEvent('slot_validation_rejected', { businessId, reason: 'booking_overlap', overlappingCount: overlappingBookings.length })
     return {
       reason: 'booking_overlap',
-      // El cast es el shape del SELECT de arriba: `$queryRaw` devuelve `unknown`
-      // y no hay forma de tiparlo desde el template.
-      overlappingBookingIds: (overlappingBookings as { id: string }[]).map((b) => b.id),
+      overlappingBookingIds: overlappingBookings.map((b) => b.id),
     }
   }
   return null
@@ -231,10 +275,10 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
   const localStartStr = formatInTimeZone(startDateTime, timezone, 'yyyy-MM-dd')
   const localDayOfWeek = getLocalDayOfWeek(startDateTime, timezone)
 
-  const rule = await tx.availabilityRule.findFirst({
-    where: { businessId, dayOfWeek: localDayOfWeek, isActive: true },
-    select: { startTime: true, endTime: true },
-  })
+  // `resolveDayRule` y no un `findFirst` a mano: la herencia del horario (sin
+  // filas propias, rige el del negocio) tiene que ser la misma que ve el funnel al
+  // ofrecer los slots, o se puede ofrecer una hora que después se rechaza.
+  const rule = await resolveDayRule(tx, businessId, input.professionalId, localDayOfWeek)
   if (!rule) {
     logEvent('slot_validation_rejected', { businessId, reason: 'no_availability_rule', dayOfWeek: localDayOfWeek })
     throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
@@ -249,5 +293,5 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
     throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
   }
 
-  await assertSlotFreeOfConflicts({ tx, businessId, startDateTime, endDateTime, timezone, excludeBookingId: input.excludeBookingId })
+  await assertSlotFreeOfConflicts({ tx, businessId, startDateTime, endDateTime, timezone, professionalId: input.professionalId, excludeBookingId: input.excludeBookingId })
 }

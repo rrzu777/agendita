@@ -42,6 +42,7 @@ describe('timezone roundtrip', () => {
       startDateTime: firstSlot.start,
       endDateTime: firstSlot.end,
       timezone,
+      professionalId: null,
     })
   })
 })
