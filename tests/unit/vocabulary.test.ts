@@ -76,6 +76,30 @@ describe('vocabulario por rubro', () => {
     }
   })
 
+  // Las otras ocho formas del oficio no tienen aserción de valor propia — sería copiar
+  // el léxico entero en el test. Lo que sí las cubre es este invariante: las nueve
+  // formas de un rubro hablan del MISMO sustantivo. Caza la contaminación por
+  // copy-paste, que es el error probable con seis bloques casi idénticos escritos a
+  // mano ('Sin barberos' colgado adentro de MANICURISTA pasaba todos los otros guards).
+  it('las nueve formas de cada rubro hablan del mismo oficio', () => {
+    for (const category of ALL_CATEGORIES) {
+      const v = getVocabulary(category)
+      const forms = {
+        professionals: v.professionals,
+        Professional: v.Professional,
+        Professionals: v.Professionals,
+        theProfessional: v.theProfessional,
+        TheProfessional: v.TheProfessional,
+        aProfessional: v.aProfessional,
+        chooseProfessional: v.chooseProfessional,
+        noProfessionals: v.noProfessionals,
+      }
+      for (const [form, text] of Object.entries(forms)) {
+        expect(text.toLowerCase(), `${category}.${form}`).toContain(v.professional)
+      }
+    }
+  })
+
   // La concordancia del artículo es lo que el módulo existe para resolver: 'la
   // manicurista' y 'el barbero' no se derivan del sustantivo.
   it('el artículo concuerda con el género del rubro', () => {
