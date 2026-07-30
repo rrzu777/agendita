@@ -10,6 +10,11 @@ const mockPrisma = {
     update: vi.fn(),
     updateMany: vi.fn(),
   },
+  // Un servicio nuevo se pre-asigna al equipo activo, así que createService
+  // consulta esta tabla.
+  professional: {
+    findMany: vi.fn(),
+  },
   $transaction: vi.fn(),
 }
 
@@ -76,6 +81,8 @@ describe('services actions', () => {
     mockRequireBusiness.mockResolvedValue({ businessId: 'biz-1' })
     mockRequireBusinessRole.mockResolvedValue({ businessId: 'biz-1' })
     mockRevalidateBusinessPublicPaths.mockResolvedValue(undefined)
+    // Por defecto, un negocio sin equipo: el caso de todos los que existen hoy.
+    mockPrisma.professional.findMany.mockResolvedValue([])
   })
 
   describe('getServices', () => {
@@ -124,6 +131,38 @@ describe('services actions', () => {
       expect(result.ok).toBe(true)
       if (!result.ok) throw new Error('expected ok result')
       expect(result.data.businessId).toBe('session-biz-123')
+    })
+
+    // Un servicio que nadie hace no se puede reservar. Pre-asignarlo al equipo
+    // activo hace que ese estado sea raro en vez de el default.
+    it('pre-asigna el servicio nuevo a todo el equipo activo', async () => {
+      mockPrisma.professional.findMany.mockResolvedValue([{ id: 'prof-1' }, { id: 'prof-2' }])
+      mockPrisma.service.create.mockResolvedValue(createdService)
+
+      await createService(validServiceData)
+
+      expect(mockPrisma.professional.findMany).toHaveBeenCalledWith({
+        where: { businessId: 'biz-1', isActive: true },
+        select: { id: true },
+      })
+      expect(mockPrisma.service.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          professionals: { connect: [{ id: 'prof-1' }, { id: 'prof-2' }] },
+        }),
+      })
+    })
+
+    // Sin equipo el connect queda vacío y no cambia nada: es el caso de todos los
+    // negocios que existen hoy.
+    it('sin equipo activo el connect queda vacío', async () => {
+      mockPrisma.professional.findMany.mockResolvedValue([])
+      mockPrisma.service.create.mockResolvedValue(createdService)
+
+      await createService(validServiceData)
+
+      expect(mockPrisma.service.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ professionals: { connect: [] } }),
+      })
     })
 
     it('ignores businessId from input data', async () => {
