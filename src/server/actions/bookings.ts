@@ -22,6 +22,7 @@ import { addMinutes } from 'date-fns'
 import { recomputeBookingAmountsAfterDiscount } from '@/lib/bookings/recompute'
 import { assertBookingPayable } from '@/lib/bookings/payments'
 import { applyApprovedPayment } from '@/server/services/finance'
+import { fireSlotTakenNotification } from '@/lib/bookings/notify-slot-taken'
 import { initialPublicBookingStatus, approvalHoldExpiresAt } from '@/lib/bookings/approval'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
@@ -592,10 +593,10 @@ async function _confirmPayment(bookingId: string, paymentId: string, amount: num
   if (payment.bookingId !== bookingId) throw new ForbiddenError('El pago no corresponde a esta reserva')
   if (payment.amount !== amount) throw new ForbiddenError('El monto no coincide con el pago registrado')
 
-  let wasConfirmed = false
-
-  const updated = await prisma.$transaction(async (tx) => {
-    const result = await applyApprovedPayment({
+  // Devolver el resultado en vez de escribirlo en variables de afuera: con un `let`
+  // anotado, TypeScript no ve la asignación de adentro del callback.
+  const { booking: updated, wasConfirmed, slotConflict } = await prisma.$transaction((tx) =>
+    applyApprovedPayment({
       tx,
       bookingId,
       businessId,
@@ -606,15 +607,20 @@ async function _confirmPayment(bookingId: string, paymentId: string, amount: num
       paymentType: payment.paymentType,
       paymentMethod: payment.paymentMethod,
       paymentId: payment.id,
-    })
-    wasConfirmed = result.wasConfirmed
-    return result.booking
-  })
+    }),
+  )
 
   if (updated && wasConfirmed) {
     await sendNotificationSafely('booking confirmed', () =>
       sendBookingConfirmedNotification(bookingId, businessId),
     )
+  }
+
+  // El pago se aplicó pero la reserva quedó sin confirmar: el horario ya está
+  // ocupado. Sin este aviso la dueña ve el pago aplicado y la reserva pendiente,
+  // sin ninguna pista de por qué.
+  if (slotConflict) {
+    await fireSlotTakenNotification({ bookingId, businessId, conflict: slotConflict, amount: payment.amount })
   }
 
   revalidatePath('/dashboard/bookings')

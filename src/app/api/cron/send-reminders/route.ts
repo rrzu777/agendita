@@ -5,9 +5,11 @@ import { hasValidBearerSecret } from '@/lib/auth/bearer-secret'
 
 /**
  * Endpoint de cron para enviar recordatorios ~24h antes de la cita.
- * Lo dispara Vercel Cron (GET) según el schedule en vercel.json; también acepta
- * POST para invocación manual. Vercel adjunta Authorization: Bearer ${CRON_SECRET}
- * automáticamente cuando CRON_SECRET está configurado.
+ *
+ * Lo dispara **GitHub Actions**, no Vercel: `.github/workflows/cron.yml` le pega
+ * cada hora con `curl -X POST` y `Authorization: Bearer ${CRON_SECRET}`. NO hay
+ * `vercel.json` y es a propósito — Vercel Hobby capea los crons a ~uno por día.
+ * (El GET queda para invocación manual.)
  */
 async function handler(request: NextRequest) {
   if (!hasValidBearerSecret(request, process.env.CRON_SECRET)) {

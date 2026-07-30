@@ -4,6 +4,7 @@ import { assertBookingPayable } from '@/lib/bookings/payments'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { activatePackagePurchaseInTx } from '@/lib/packages/activate'
 import { declaredBalancePaymentWhere } from '@/lib/bank-transfer/declared'
+import { findSlotConflict, type SlotConflict } from '@/lib/availability/validation'
 import type { LedgerEntryType, LedgerDirection } from '@prisma/client'
 // UserError acá es seguro para el caller NO migrado (webhook MP):
 // UserError extends Error, así que todo `instanceof
@@ -245,6 +246,8 @@ export async function applyApprovedPayment({
    * dueña para que decida el reembolso. No es excluyente con `wasConfirmed`.
    */
   wasUnexpected: boolean
+  /** Ver `recalcBookingFromPayments`: el pago alcanzaba pero el horario ya está tomado. */
+  slotConflict: SlotConflict | null
 }> {
   if (amount <= 0) {
     throw new UserError('El monto debe ser positivo')
@@ -372,6 +375,20 @@ export function describeUnexpectedPackagePayment(purchaseStatus: string): string
   }
 }
 
+/** Por qué no se pudo confirmar el turno, en castellano llano para el mail a la
+ *  dueña. Vive al lado de `describeUnexpectedPackagePayment` por el mismo motivo:
+ *  el aviso tiene que decir qué pasó, no un código interno. */
+export function describeSlotConflict(conflict: SlotConflict): string {
+  switch (conflict.reason) {
+    case 'booking_overlap':
+      return 'ese horario ya lo tomó otra reserva'
+    case 'timeblock_overlap':
+      return 'ese horario quedó bloqueado en tu agenda'
+    case 'end_before_start':
+      return 'el horario de la reserva quedó inconsistente'
+  }
+}
+
 /**
  * Rama paquete de la aprobación de pago (polimórfica con applyApprovedPayment).
  * Carga la PackagePurchase, upserta el Payment (packagePurchaseId, sin booking)
@@ -439,11 +456,57 @@ export async function applyApprovedPackagePayment({
   return { outcome: 'activated' }
 }
 
+/**
+ * ¿Hay algo que impida CONFIRMAR este turno ahora mismo? Se pregunta justo antes
+ * del flip `pending_payment → confirmed`, que es el único momento en que la
+ * reserva pasa a ocupar cupo de verdad.
+ *
+ * El chequeo de hold vencido de `assertBookingPayable` NO cubre esto: es un proxy
+ * (¿sigue vivo el hold?) y no la pregunta real (¿sigue libre el horario?). Entre
+ * que nació el hold y que llegó el pago, el horario pudo habérselo llevado otra
+ * clienta —el hold vencido deja de bloquear el slot al instante, sin esperar al
+ * cron— o un bloqueo que la dueña creó encima.
+ */
+async function findConfirmationSlotConflict(
+  tx: Prisma.TransactionClient,
+  booking: { id: string; businessId: string; startDateTime: Date; endDateTime: Date },
+): Promise<SlotConflict | null> {
+  // Un turno que ya pasó no tiene cupo que proteger, y una fila solapada vieja
+  // bloquearía para siempre el registro de un pago legítimo — el mismo criterio
+  // (y el mismo motivo) que la re-validación de `bank-transfer-verify.ts`.
+  if (booking.startDateTime <= new Date()) return null
+
+  const business = await tx.business.findUnique({
+    where: { id: booking.businessId },
+    select: { timezone: true },
+  })
+
+  return findSlotConflict({
+    tx,
+    businessId: booking.businessId,
+    startDateTime: booking.startDateTime,
+    endDateTime: booking.endDateTime,
+    timezone: business?.timezone || 'America/Santiago',
+    // Su propio hold no compite consigo mismo.
+    excludeBookingId: booking.id,
+  })
+}
+
 export async function recalcBookingFromPayments(
   tx: Prisma.TransactionClient,
   bookingId: string,
   opts?: { paymentStatusOverride?: BookingPaymentStatus },
-): Promise<{ booking: { id: string; status: string; businessId: string; customerId: string; totalPrice: number; depositRequired: number; depositPaid: number; remainingBalance: number; finalAmount: number; paymentStatus: string }; wasConfirmed: boolean }> {
+): Promise<{
+  booking: { id: string; status: string; businessId: string; customerId: string; totalPrice: number; depositRequired: number; depositPaid: number; remainingBalance: number; finalAmount: number; paymentStatus: string }
+  wasConfirmed: boolean
+  /**
+   * El pago alcanzaba para confirmar pero el horario ya no está libre. La plata
+   * queda asentada igual (el cobro es real y no se deshace desde acá) y la reserva
+   * NO se confirma: decide la dueña, reacomodar o reembolsar. El caller le tiene
+   * que avisar — nadie más se va a enterar.
+   */
+  slotConflict: SlotConflict | null
+}> {
   const booking = await tx.booking.findUnique({
     where: { id: bookingId },
   })
@@ -481,7 +544,12 @@ export async function recalcBookingFromPayments(
     booking.status === BookingStatus.pending_payment &&
     totalApproved >= booking.depositRequired
 
-  if (shouldConfirm) {
+  // Sólo se pregunta cuando este pago iba a confirmar: los recálculos que no
+  // cambian el status (redeliveries, reversiones, saldos) no pagan el costo de la
+  // query ni pueden quedar bloqueados por un conflicto que no les corresponde.
+  const slotConflict = shouldConfirm ? await findConfirmationSlotConflict(tx, booking) : null
+
+  if (shouldConfirm && !slotConflict) {
     // Atomic: only transitions if still pending_payment. Avoids two concurrent
     // transactions both returning wasConfirmed=true for the same booking.
     const result = await tx.booking.updateMany({
@@ -509,6 +577,7 @@ export async function recalcBookingFromPayments(
           paymentStatus: newPaymentStatus,
         },
         wasConfirmed: true,
+        slotConflict: null,
       }
     }
 
@@ -525,10 +594,13 @@ export async function recalcBookingFromPayments(
       },
     })
 
-    return { booking: updated, wasConfirmed: false }
+    return { booking: updated, wasConfirmed: false, slotConflict: null }
   }
 
-  // No confirmation needed — just update payment fields
+  // No hacía falta confirmar —o no se pudo, porque el horario ya está tomado— así
+  // que sólo se asientan los montos. Con `slotConflict` la reserva queda tal cual
+  // estaba (`pending_payment`) con la plata registrada: es exactamente el estado
+  // que la dueña necesita ver para decidir.
   const updated = await tx.booking.update({
     where: { id: bookingId },
     data: {
@@ -538,5 +610,5 @@ export async function recalcBookingFromPayments(
     },
   })
 
-  return { booking: updated, wasConfirmed: false }
+  return { booking: updated, wasConfirmed: false, slotConflict }
 }

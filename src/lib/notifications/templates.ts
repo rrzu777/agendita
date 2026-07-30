@@ -25,6 +25,7 @@ import type {
   PackageUnexpectedPaymentEmailData,
   BookingDisputedEmailData,
   BookingUnexpectedPaymentEmailData,
+  BookingSlotTakenEmailData,
   PackageTransferDeclaredEmailData,
   PackageTransferReminderCustomerEmailData,
   PackageTransferUnverifiedBusinessEmailData,
@@ -979,6 +980,34 @@ export function bookingUnexpectedPaymentBusinessText(data: BookingUnexpectedPaym
     `Entró un pago de ${data.customerName} por una reserva que ya estaba pagada. La reserva no cambió, pero la plata sí se cobró: revisá si corresponde devolverla.`, '',
     `Clienta: ${data.customerName}`,
     `Reserva: ${data.bookingLabel} — ${data.serviceName}`,
+    `Monto cobrado: ${amount}`, '',
+    `Enviado por ${data.businessName} a través de Agendita`,
+  ].join('\n')
+}
+
+export function bookingSlotTakenBusinessHtml(data: BookingSlotTakenEmailData): string {
+  const amount = fmtCurrency(data.amount, data.businessCurrency)
+  return baseHtml(`
+    ${header('Pago recibido, horario ocupado')}
+    <p style="font-size:15px">Entró el pago de ${escapeHtml(data.customerName)}, pero ${escapeHtml(data.situation)}, así que la reserva <strong>no quedó confirmada</strong>. La plata sí se cobró: hay que reacomodarla en otro horario o devolverle el pago.</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
+      <tr><td style="padding:8px 0;color:#666">${escapeHtml(clientLabelOf(data))}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Reserva</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.bookingLabel)} — ${escapeHtml(data.serviceName)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Horario pedido</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
+      <tr><td style="padding:8px 0;color:#666">Monto cobrado</td><td style="padding:8px 0;font-weight:600">${amount}</td></tr>
+    </table>
+    ${footer(data.businessName)}
+  `)
+}
+
+export function bookingSlotTakenBusinessText(data: BookingSlotTakenEmailData): string {
+  const amount = fmtCurrency(data.amount, data.businessCurrency)
+  return [
+    'Pago recibido, horario ocupado', '',
+    `Entró el pago de ${data.customerName}, pero ${data.situation}, así que la reserva NO quedó confirmada. La plata sí se cobró: hay que reacomodarla en otro horario o devolverle el pago.`, '',
+    `${clientLabelOf(data)}: ${data.customerName}`,
+    `Reserva: ${data.bookingLabel} — ${data.serviceName}`,
+    `Horario pedido: ${fmtDate(data.startDateTime, data.businessTimezone)}`,
     `Monto cobrado: ${amount}`, '',
     `Enviado por ${data.businessName} a través de Agendita`,
   ].join('\n')

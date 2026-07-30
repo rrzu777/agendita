@@ -25,6 +25,7 @@ import type {
   PackageUnexpectedPaymentEmailData,
   BookingDisputedEmailData,
   BookingUnexpectedPaymentEmailData,
+  BookingSlotTakenEmailData,
   PackageTransferDeclaredEmailData,
   PackageTransferReminderCustomerEmailData,
   PackageTransferUnverifiedBusinessEmailData,
@@ -82,6 +83,8 @@ import {
   bookingDisputedBusinessText,
   bookingUnexpectedPaymentBusinessHtml,
   bookingUnexpectedPaymentBusinessText,
+  bookingSlotTakenBusinessHtml,
+  bookingSlotTakenBusinessText,
   packageTransferDeclaredBusinessHtml,
   packageTransferDeclaredBusinessText,
   packageTransferReminderCustomerHtml,
@@ -711,6 +714,29 @@ export async function sendBookingUnexpectedPaymentToBusiness(
   return Promise.all(
     ownerEmails.map((owner) =>
       sendEmail(owner.email, `Pago inesperado de reserva - ${data.customerName}`, html, text, {}),
+    ),
+  )
+}
+
+/** Email a la(s) dueña(s)/admin(s) cuando el pago entró pero el horario ya estaba
+ *  tomado, así que la reserva NO se confirmó. La clienta no recibe nada acá: qué
+ *  pasa con su hora lo decide la dueña (reacomodar o reembolsar). */
+export async function sendBookingSlotTakenToBusiness(
+  businessId: string,
+  data: BookingSlotTakenEmailData,
+): Promise<EmailResult[]> {
+  const ownerEmails = await getBusinessOwnerEmails(businessId)
+
+  if (ownerEmails.length === 0) {
+    return [{ success: false, skipped: 'No hay owners/admins con email para el negocio' }]
+  }
+
+  const html = bookingSlotTakenBusinessHtml(data)
+  const text = bookingSlotTakenBusinessText(data)
+
+  return Promise.all(
+    ownerEmails.map((owner) =>
+      sendEmail(owner.email, `Pago recibido pero el horario está ocupado - ${data.customerName}`, html, text, {}),
     ),
   )
 }

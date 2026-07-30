@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
 import { applyApprovedPayment, applyApprovedPackagePayment, describeUnexpectedPackagePayment } from '@/server/services/finance'
+import { fireSlotTakenNotification } from '@/lib/bookings/notify-slot-taken'
 import { createHmac, timingSafeEqual } from 'crypto'
 import {
   sendBookingConfirmedNotification,
@@ -539,7 +540,12 @@ export async function POST(request: NextRequest) {
             rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
             paymentId: payment.id,
           })
-        })
+          // 15s y no el default de 5s: al confirmar, esta tx ahora toma el advisory
+          // lock por negocio+día para re-chequear el cupo, así que puede quedar
+          // esperando a una creación de reserva concurrente. Con 5s el timeout daría
+          // 500 → MP reintenta y el cobro no queda asentado, justo lo que este camino
+          // trata de evitar. Mismo presupuesto que la tx de createBooking.
+        }, { timeout: 15_000 })
 
         if (!result || !result.booking) {
           throw new Error('Reserva no encontrada')
@@ -580,11 +586,28 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // Carrera pago/hold: la plata entró y quedó asentada, pero el horario ya no
+        // estaba libre, así que la reserva NO se confirmó. Este mail es el único
+        // canal — pasa en un webhook, sin nadie mirando la pantalla — y decide la
+        // dueña: reacomodar en otra hora o reembolsar. La clienta no recibe nada
+        // todavía, justamente porque su hora está en manos de esa decisión.
+        if (result.slotConflict) {
+          await fireSlotTakenNotification({
+            bookingId,
+            businessId: payment.businessId,
+            conflict: result.slotConflict,
+            amount: payment.amount,
+          })
+        }
+
         logger.payment.approved(payment.id, bookingId, payment.businessId)
 
+        // 200 y no error: el cobro ya quedó registrado, así que un redelivery no
+        // arregla nada — devolver 500 sólo haría que Mercado Pago reintentara para
+        // siempre el mismo evento ya procesado.
         return NextResponse.json({
           success: true,
-          message: 'Payment approved',
+          message: result.slotConflict ? 'Payment approved, booking left unconfirmed: slot taken' : 'Payment approved',
           bookingId: result.booking.id,
         })
       }

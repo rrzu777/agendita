@@ -182,6 +182,13 @@ describe('applyApprovedPayment', () => {
     status: BookingStatus.pending_payment,
     currency: 'CLP',
     holdExpiresAt: null,
+    // Turno en el PASADO a propósito: acá se prueba la contabilidad del pago, no el
+    // cupo. Al confirmar una reserva futura, `recalcBookingFromPayments` re-chequea
+    // el solape del horario (ver recalc-slot-conflict.test.ts) y habría que montar
+    // el mock de bloqueos, series y advisory lock para nada. Con el turno pasado ese
+    // chequeo se saltea por diseño: no hay cupo que proteger.
+    startDateTime: new Date('2020-05-05T15:00:00Z'),
+    endDateTime: new Date('2020-05-05T16:00:00Z'),
   }
 
   beforeEach(() => {
