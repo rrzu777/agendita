@@ -37,8 +37,21 @@ async function _createService(
     throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
+  // Un servicio que nadie hace no se puede reservar. Pre-asignarlo a todo el
+  // equipo activo hace que ese estado sea raro en vez de el default; la dueña
+  // después destilda a quien no lo haga. Con 0 profesionales activos el connect
+  // queda vacío y esto no hace nada — el caso de todos los negocios de hoy.
+  const activeProfessionals = await prisma.professional.findMany({
+    where: { businessId, isActive: true },
+    select: { id: true },
+  })
+
   const newService = await prisma.service.create({
-    data: { ...parsed.data, businessId },
+    data: {
+      ...parsed.data,
+      businessId,
+      professionals: { connect: activeProfessionals.map((p) => ({ id: p.id })) },
+    },
   })
 
   revalidatePath('/dashboard/services')
