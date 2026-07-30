@@ -6,11 +6,8 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { action, UserError } from '@/lib/actions/result'
-import {
-  createServiceSchema,
-  updateServiceSchema,
-  reorderSchema,
-} from '@/lib/services/schema'
+import { createServiceSchema, updateServiceSchema } from '@/lib/services/schema'
+import { reorderSchema } from '@/lib/reorder-schema'
 
 export async function getServices(includeInactive = false) {
   const { businessId } = await requireBusiness()

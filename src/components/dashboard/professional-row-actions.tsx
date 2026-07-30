@@ -68,10 +68,13 @@ export function ProfessionalRowActions({
               <AlertTriangle className="size-5 text-amber-500" />
               Poner en pausa
             </DialogTitle>
+            {/* Tiempo futuro a propósito: la elección al reservar todavía no existe
+                (llega con el funnel por persona). Prometerlo en presente hace que la
+                dueña crea que la pausa ya tiene efecto en lo que ve su clienta. */}
             <DialogDescription className="pt-2 text-base">
-              {professional.name} sale de la agenda: nadie va a poder reservar con esta
-              persona. Sus citas ya tomadas quedan intactas — la pausa no las mueve, y
-              para pasarlas a otra persona hay que reasignarlas.
+              {professional.name} sale de la agenda: cuando se pueda reservar eligiendo
+              persona, no va a aparecer. Sus citas ya tomadas quedan intactas — la pausa
+              no las mueve, y para pasarlas a otra persona hay que reasignarlas.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -94,14 +97,15 @@ export function ProfessionalRowActions({
               <AlertTriangle className="size-5 text-destructive" />
               Borrar del equipo
             </DialogTitle>
-            {/* El borrado sólo pasa si nunca atendió. Con reservas a su nombre el
-                servidor lo rechaza y explica que se pone en pausa: la tabla no carga
-                el conteo de reservas en cada lectura, así que la aclaración va acá y
-                el mensaje del servidor es el que educa si igual se intenta. */}
+            {/* "ninguna reserva" y no "nunca atendió": el guard cuenta TODAS las
+                reservas, canceladas incluidas, porque tiene que espejar la FK, que no
+                mira el status. La tabla no carga ese conteo en cada lectura, así que
+                acá se avisa la regla y el mensaje del servidor es el que educa si
+                igual se intenta. */}
             <DialogDescription className="pt-2 text-base">
               Se borra a {professional.name} junto con su horario y sus bloqueos. Sólo
-              funciona si nunca atendió: con reservas a su nombre no se puede borrar, y
-              lo que corresponde es la pausa, que conserva esas citas.
+              funciona si no tiene ninguna reserva a su nombre, ni siquiera cancelada;
+              si tiene, lo que corresponde es la pausa, que conserva esas citas.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">

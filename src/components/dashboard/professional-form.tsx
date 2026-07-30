@@ -9,10 +9,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { createProfessional, updateProfessional } from '@/server/actions/professionals'
 import { useVocabulary } from '@/components/vocabulary-provider'
 import { deriveModalities } from '@/lib/professionals/modalities'
-import { MODALITY_LABELS, MODALITY_HINTS, MODALITY_ORDER, sortModalities } from '@/lib/services/modality'
+import { sortModalities, toggleModalityIn } from '@/lib/services/modality'
+import { ModalityCheckboxes } from './modality-checkboxes'
 import type { ServiceModality } from '@prisma/client'
-import { Pencil } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { Pencil, Plus } from 'lucide-react'
 
 export type AssignableService = {
   id: string
@@ -32,14 +32,10 @@ export function ProfessionalForm({
   professional,
   services,
   onSuccess,
-  triggerLabel,
-  triggerIcon,
 }: {
   professional?: FormProfessional | null
   services: AssignableService[]
   onSuccess?: () => void
-  triggerLabel?: string
-  triggerIcon?: ReactNode
 }) {
   const v = useVocabulary()
   const [open, setOpen] = useState(false)
@@ -76,13 +72,7 @@ export function ProfessionalForm({
 
   function toggleModality(modality: ServiceModality) {
     setModalitiesTouched(true)
-    setModalities((prev) => {
-      if (prev.includes(modality)) {
-        // No se puede quedar en cero: sin ninguna modalidad no puede atender nada.
-        return prev.length === 1 ? prev : prev.filter((m) => m !== modality)
-      }
-      return sortModalities([...prev, modality])
-    })
+    setModalities((prev) => toggleModalityIn(prev, modality))
   }
 
   async function handleSubmit(formData: FormData) {
@@ -123,8 +113,8 @@ export function ProfessionalForm({
           size={professional ? 'sm' : 'default'}
           className="font-semibold"
         >
-          {professional ? <Pencil className="mr-2 size-4" /> : triggerIcon}
-          {professional ? 'Editar' : triggerLabel || title}
+          {professional ? <Pencil className="mr-2 size-4" /> : <Plus className="mr-2 size-4" />}
+          {professional ? 'Editar' : title}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-lg">
@@ -190,37 +180,12 @@ export function ProfessionalForm({
             )}
           </div>
 
-          <div>
-            <Label className="studio-eyebrow">¿Dónde atiende?</Label>
-            <div className="mt-2 space-y-2">
-              {MODALITY_ORDER.map((modality) => {
-                const checked = modalities.includes(modality)
-                return (
-                  <label
-                    key={modality}
-                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
-                      checked ? 'border-primary bg-secondary/40' : 'border-border'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 size-4 accent-current"
-                      checked={checked}
-                      onChange={() => toggleModality(modality)}
-                    />
-                    <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-primary">{MODALITY_LABELS[modality]}</span>
-                      <span className="block text-xs text-muted-foreground">{MODALITY_HINTS[modality]}</span>
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Sale de los servicios asignados. Destildá lo que no haga — por ejemplo, si
-              no va a domicilio.
-            </p>
-          </div>
+          <ModalityCheckboxes
+            selected={modalities}
+            onToggle={toggleModality}
+            label="¿Dónde atiende?"
+            hint="Sale de los servicios asignados. Destildá lo que no haga — por ejemplo, si no va a domicilio."
+          />
 
           {error && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">

@@ -377,9 +377,10 @@ model TimeBlockSeries {
   /// null = cierra para TODOS (y todo lo que existe hoy). Con persona = sólo
   /// esa persona (su almuerzo, su día franco).
   ///
-  /// OJO al partir una serie: la copia campo por campo de time-blocks.ts tiene
-  /// que arrastrar esto. Sin él, partir el almuerzo de una persona cierra el
-  /// local entero, todas las semanas.
+  /// El split de series (la copia campo por campo de `time-blocks.ts` al partir
+  /// en "hoy") YA lo arrastra. Si aparece otra copia de una serie, tiene que
+  /// arrastrarlo igual: sin él, partir el almuerzo de UNA persona cierra el local
+  /// entero, todas las semanas.
   professionalId          String?
   daysOfWeek              Int[]
   startTime               String
@@ -468,9 +469,15 @@ model Booking {
   businessId     String
   serviceId      String
   customerId     String
-  /// Quién atiende. null = reserva sin persona: por conservadora CHOCA CONTRA
-  /// TODOS. Son las reservas hechas antes de que el negocio tuviera equipo, y
-  /// nunca queremos meterle a alguien una cita encima.
+  /// Quién atiende. null = reserva sin persona, y la intención es que choque
+  /// contra TODOS: son las reservas hechas antes de que el negocio tuviera
+  /// equipo, y nunca queremos meterle a alguien una cita encima.
+  ///
+  /// OJO, eso es la intención y todavía NO está implementado acá: hoy ninguna
+  /// query filtra por esta columna. El solape por persona lo escribe el PR C, y
+  /// el spec del track deja escrito que el caso mixto (null contra una persona)
+  /// NO se va a poder expresar en la constraint `Booking_no_overlap` — va a
+  /// quedar guardado sólo a nivel app. No asumir que la base lo respalda.
   professionalId String?
   startDateTime  DateTime
   endDateTime    DateTime

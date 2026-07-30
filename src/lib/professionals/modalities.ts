@@ -12,14 +12,18 @@ import { sortModalities } from '@/lib/services/modality'
  *
  * Por qué existe como función y no como un `useState` adentro del formulario: se
  * usa en DOS lugares — el formulario, para pre-marcar los checkboxes, y el
- * servidor, cuando el payload no trae modalidades. Si sólo viviera en la UI, un
- * alta por otra vía dejaría a la persona en `on_site` a secas y un servicio
- * online-only se quedaría sin nadie que lo pueda dar, sin que el negocio se
- * entere.
+ * servidor, cuando el payload no trae modalidades.
  *
- * Sin servicios (o con servicios sin modalidades, que es un dato corrupto)
- * devuelve `[on_site]`, el mismo default que el schema: una lista vacía dejaría
- * a la persona sin poder atender nada.
+ * Ojo con lo que esto NO garantiza: derivar de una lista vacía devuelve
+ * `[on_site]`, así que un alta sin servicios asignados igual queda "en el local" y
+ * un negocio 100% online se puede quedar con un servicio que nadie da. Lo que
+ * evita ese estado es el default del formulario, que arranca con todos los
+ * servicios activos tildados — o sea que la defensa vive en el cliente y esto es
+ * sólo el cálculo. Si algún día hay otra vía de alta, la defensa hay que
+ * repetirla ahí; no alcanza con llamar a esta función.
+ *
+ * El `[on_site]` de la lista vacía es el mismo default que el schema: devolver
+ * una lista vacía dejaría a la persona sin poder atender nada, que es peor.
  */
 export function deriveModalities(
   services: { modalities: ServiceModality[] }[],

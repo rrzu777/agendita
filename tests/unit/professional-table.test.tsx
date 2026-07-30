@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { renderToStaticMarkup } from 'react-dom/server'
 import type { BusinessCategory, ServiceModality } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
-import { VocabularyProvider } from '@/components/vocabulary-provider'
+import { renderWithVocabulary } from '../helpers/vocabulary'
 import { ProfessionalTable } from '@/components/dashboard/professional-table'
 import type { RowProfessional } from '@/components/dashboard/professional-row-actions'
 
@@ -41,10 +40,9 @@ function person(overrides: Partial<RowProfessional> = {}): RowProfessional {
 }
 
 function render(professionals: RowProfessional[], category: BusinessCategory = 'barber') {
-  return renderToStaticMarkup(
-    <VocabularyProvider value={getVocabulary(category)}>
-      <ProfessionalTable professionals={professionals} services={SERVICES} />
-    </VocabularyProvider>,
+  return renderWithVocabulary(
+    category,
+    <ProfessionalTable professionals={professionals} services={SERVICES} />,
   )
 }
 
@@ -84,31 +82,65 @@ describe('ProfessionalTable — el interruptor', () => {
   // La presencia de gente EN AGENDA es el interruptor del multi-profesional: no
   // hay flag que configurar. Este texto es el único lugar donde la dueña puede
   // anticipar el salto de 1 a 2 antes de darlo.
-  it('con nadie en agenda avisa que el negocio funciona como siempre', () => {
-    expect(render([])).toContain('funciona como siempre')
+  it('con nadie en agenda avisa que hay un solo horario para todo', () => {
+    expect(render([])).toContain('un solo horario para todo')
   })
 
   it('con nadie en agenda lo dice también si hay gente en pausa', () => {
-    const markup = render([person({ isActive: false })])
-    expect(markup).toContain('funciona como siempre')
+    expect(render([person({ isActive: false })])).toContain('un solo horario para todo')
   })
 
-  it('con una sola persona en agenda avisa que se asigna sola', () => {
-    expect(render([person()])).toContain('se asigna sola')
+  it('con una sola persona en agenda avisa que se va a asignar sola', () => {
+    expect(render([person()])).toContain('se va a asignar sola')
   })
 
-  it('con dos o más avisa que la clienta elige, y dice cuántas hay', () => {
+  it('con dos o más dice cuántas hay y que van a poder elegir', () => {
     const markup = render([person(), person({ id: 'p-2', name: 'Ana', sortOrder: 1 })])
-    expect(markup).toContain('eligen con quién se atienden')
-    expect(markup).toContain('2 personas en agenda')
+    expect(markup).toContain('Con 2 personas en agenda')
+    expect(markup).toContain('van a poder elegir')
   })
 
   // El aviso cuenta ACTIVOS, no filas. Si contara filas, poner a alguien en pausa
   // dejaría el texto de 2+ mintiendo.
   it('la gente en pausa no cuenta para el aviso', () => {
     const markup = render([person(), person({ id: 'p-2', name: 'Ana', sortOrder: 1, isActive: false })])
-    expect(markup).toContain('se asigna sola')
-    expect(markup).not.toContain('eligen con quién se atienden')
+    expect(markup).toContain('se va a asignar sola')
+    expect(markup).not.toContain('van a poder elegir')
+  })
+})
+
+// Este bloque existe por un hallazgo de la revisión: la pantalla decía "tus
+// clientas eligen con quién se atienden" en PRESENTE, y eso todavía no es cierto —
+// el horario por persona y la elección en el funnel llegan después. La dueña carga
+// a sus 3 barberos, la pantalla le confirma que ya funciona, abre el funnel y no
+// cambió nada. Eso entra como reporte de bug, no como "falta una parte".
+//
+// Estos casos se borran cuando el funnel por persona exista de verdad. Hasta
+// entonces son lo que impide que la promesa vuelva en presente sin que nadie lo note.
+describe('ProfessionalTable — no promete lo que todavía no funciona', () => {
+  const PRESENTE_PROHIBIDO = [
+    'eligen con quién se atienden',
+    'cada persona tiene su propio horario',
+    'nadie va a poder reservar con esta persona',
+  ]
+
+  it('con gente en agenda avisa que por ahora sólo se guarda', () => {
+    expect(render([person()])).toContain('Por ahora sólo se guarda')
+    expect(render([person(), person({ id: 'p-2', sortOrder: 1 })])).toContain(
+      'Por ahora sólo se guarda',
+    )
+  })
+
+  it('sin nadie en agenda no muestra ese aviso, que no aplica', () => {
+    expect(render([])).not.toContain('Por ahora sólo se guarda')
+  })
+
+  it('no afirma en presente ninguna capacidad que no exista', () => {
+    for (const markup of [render([person()]), render([person(), person({ id: 'p-2', sortOrder: 1 })])]) {
+      for (const frase of PRESENTE_PROHIBIDO) {
+        expect(markup, frase).not.toContain(frase)
+      }
+    }
   })
 })
 

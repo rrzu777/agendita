@@ -7,18 +7,8 @@ import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { action, UserError } from '@/lib/actions/result'
 import { deriveModalities } from '@/lib/professionals/modalities'
-import {
-  createProfessionalSchema,
-  updateProfessionalSchema,
-  reorderProfessionalsSchema,
-} from '@/lib/professionals/schema'
-
-// La pantalla necesita saber qué servicios hace cada persona para pre-marcar los
-// checkboxes del formulario. Los ids alcanzan: los nombres salen de la lista de
-// servicios, que se carga una sola vez.
-const WITH_SERVICE_IDS = {
-  services: { select: { id: true } },
-} as const
+import { createProfessionalSchema, updateProfessionalSchema } from '@/lib/professionals/schema'
+import { reorderSchema } from '@/lib/reorder-schema'
 
 export async function getProfessionals(includeInactive = false) {
   const { businessId } = await requireBusiness()
@@ -27,7 +17,10 @@ export async function getProfessionals(includeInactive = false) {
       ...(includeInactive ? {} : { isActive: true }),
       businessId,
     },
-    include: WITH_SERVICE_IDS,
+    // La pantalla necesita qué servicios hace cada persona para pre-marcar los
+    // checkboxes del formulario. Los ids alcanzan: los nombres salen de la lista de
+    // servicios, que se carga una sola vez.
+    include: { services: { select: { id: true } } },
     orderBy: { sortOrder: 'asc' },
   })
 }
@@ -53,6 +46,12 @@ export async function getAssignableServices() {
  * Va por ForbiddenError y no por UserError a propósito: un id ajeno no es un
  * error de forma que la dueña pueda corregir, es un intento de colgarle a alguien
  * el servicio de otro negocio.
+ *
+ * **No filtra `isActive`, y es a propósito.** Dar de baja un servicio es un
+ * soft-delete, así que las asignaciones viejas sobreviven — y el formulario
+ * devuelve TODOS los ids asignados, tildados o no. Si acá se exigiera que estén
+ * activos, editar a cualquier persona que tenga un servicio dado de baja fallaría,
+ * y guardar le borraría esa asignación en silencio.
  */
 async function assertServicesOwned(businessId: string, serviceIds: string[]) {
   if (serviceIds.length === 0) return
@@ -77,28 +76,35 @@ async function _createProfessional(data: Record<string, unknown>) {
   }
 
   const serviceIds = parsed.data.serviceIds ?? []
-  await assertServicesOwned(businessId, serviceIds)
 
-  // Sin modalidades explícitas se derivan de los servicios asignados. Dejar el
-  // default de la columna (on_site) dejaría un servicio online-only sin nadie que
-  // lo pueda dar, y el negocio no se enteraría.
-  let modalities = parsed.data.modalities
-  if (!modalities) {
-    const services = await prisma.service.findMany({
-      where: { id: { in: serviceIds }, businessId },
-      select: { modalities: true },
-    })
-    modalities = deriveModalities(services)
+  // Las dos lecturas van juntas porque no dependen una de otra. Y son DOS, no
+  // tres: traer los servicios pedidos sirve al mismo tiempo para verificar que
+  // sean de este negocio (comparando cuántos volvieron) y para derivarles las
+  // modalidades — antes eran dos queries con el `where` idéntico.
+  const [ownedServices, last] = await Promise.all([
+    serviceIds.length > 0
+      ? prisma.service.findMany({
+          where: { id: { in: serviceIds }, businessId },
+          select: { id: true, modalities: true },
+        })
+      : Promise.resolve([]),
+    // Quien llega, llega al final. Se busca el mayor sortOrder y no se cuentan las
+    // filas: con altas y bajas los sortOrder tienen huecos, y un count daría un
+    // número ya usado.
+    prisma.professional.findFirst({
+      where: { businessId },
+      orderBy: { sortOrder: 'desc' },
+      select: { sortOrder: true },
+    }),
+  ])
+
+  if (ownedServices.length !== serviceIds.length) {
+    throw new ForbiddenError('Uno o más servicios no pertenecen a este negocio')
   }
 
-  // Quien llega, llega al final. Se busca el mayor sortOrder y no se cuenta las
-  // filas: con altas y bajas los sortOrder tienen huecos, y un count daría un
-  // número ya usado.
-  const last = await prisma.professional.findFirst({
-    where: { businessId },
-    orderBy: { sortOrder: 'desc' },
-    select: { sortOrder: true },
-  })
+  // Sin modalidades explícitas se derivan de los servicios asignados; ver el
+  // docstring de deriveModalities para qué defiende y qué no.
+  const modalities = parsed.data.modalities ?? deriveModalities(ownedServices)
 
   const created = await prisma.professional.create({
     data: {
@@ -109,7 +115,6 @@ async function _createProfessional(data: Record<string, unknown>) {
       sortOrder: last ? last.sortOrder + 1 : 0,
       services: { connect: serviceIds.map((id) => ({ id })) },
     },
-    include: WITH_SERVICE_IDS,
   })
 
   revalidatePath('/dashboard/equipo')
@@ -159,7 +164,6 @@ async function _updateProfessional(professionalId: string, data: Record<string, 
       // a alguien de un servicio nunca más.
       ...(serviceIds ? { services: { set: serviceIds.map((id) => ({ id })) } } : {}),
     },
-    include: WITH_SERVICE_IDS,
   })
 
   revalidatePath('/dashboard/equipo')
@@ -190,7 +194,6 @@ async function _toggleProfessional(professionalId: string) {
   const updated = await prisma.professional.update({
     where: { id: professionalId },
     data: { isActive: !existing.isActive },
-    include: WITH_SERVICE_IDS,
   })
 
   revalidatePath('/dashboard/equipo')
@@ -215,11 +218,19 @@ async function _deleteProfessional(professionalId: string) {
     throw new ForbiddenError('Profesional no encontrado')
   }
 
-  // Quien ya atendió no se borra. La FK de Booking es RESTRICT, así que la base
-  // rechazaría el borrado igual: esto es el mensaje entendible, no el guard.
+  // El conteo es de TODAS las reservas, sin filtrar por estado — canceladas y
+  // vencidas incluidas. Es a propósito: tiene que espejar exactamente lo que la FK
+  // permite, y la FK no mira el status. Filtrar por los estados "vivos" dejaría
+  // pasar borrados que la base después rechaza con un error crudo, y `action()`
+  // convierte cualquier cosa que no sea UserError en "Ocurrió un error inesperado."
+  //
+  // La FK es NO ACTION (no RESTRICT: ver el comentario del schema — con RESTRICT se
+  // rompía el borrado en cascada de un negocio). Las dos rechazan igual este caso,
+  // así que la base sigue siendo el guard de verdad y esto es sólo el mensaje
+  // entendible.
   if (existing._count.bookings > 0) {
     throw new UserError(
-      'Tiene reservas a su nombre, así que no se puede borrar. Desactivá en vez de borrar: sale de la agenda y conserva sus citas.',
+      'Tiene reservas a su nombre —aunque estén canceladas— así que no se puede borrar. Usá la pausa: sale de la agenda y conserva sus citas.',
     )
   }
 
@@ -242,7 +253,7 @@ async function _reorderProfessionals(items: { id: string; sortOrder: number }[])
     throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
-  const parsed = reorderProfessionalsSchema.safeParse({ items })
+  const parsed = reorderSchema.safeParse({ items })
   if (!parsed.success) {
     throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }

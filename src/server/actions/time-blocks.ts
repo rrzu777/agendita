@@ -530,6 +530,13 @@ async function _updateTimeBlockSeries(
         until: existing.until,
         // La tolerancia es de la serie y el diálogo no la edita: se conserva
         overlapToleranceMinutes: existing.overlapToleranceMinutes ?? 0,
+        // De quién es el bloqueo también se conserva. HOY es siempre null y esta
+        // línea no hace nada — va igual porque es el olvido más caro del track:
+        // con `null` significando "cierra para todos", partir el almuerzo
+        // recurrente de UNA persona cerraría el local entero, todas las semanas.
+        // Es más barato que quede resuelto acá que confiar en que quien escriba el
+        // PR B se acuerde de agregarlo a esta copia campo por campo.
+        professionalId: existing.professionalId,
       },
     }),
   ])

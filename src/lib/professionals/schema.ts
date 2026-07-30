@@ -49,10 +49,3 @@ export const updateProfessionalSchema = z.object({
   modalities: modalitiesSchema.optional(),
   serviceIds: serviceIdsSchema.optional(),
 }).strip()
-
-export const reorderProfessionalsSchema = z.object({
-  items: z.array(z.object({
-    id: z.string(),
-    sortOrder: z.number().int().nonnegative(),
-  })),
-}).strip()

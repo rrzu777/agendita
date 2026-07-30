@@ -13,7 +13,7 @@ import { ProfessionalRowActions, type RowProfessional } from './professional-row
 import { toggleProfessional, deleteProfessional, reorderProfessionals } from '@/server/actions/professionals'
 import { useVocabulary } from '@/components/vocabulary-provider'
 import { MODALITY_LABELS } from '@/lib/services/modality'
-import { Plus, ChevronUp, ChevronDown, X, Users } from 'lucide-react'
+import { ChevronUp, ChevronDown, X, Users } from 'lucide-react'
 
 export function ProfessionalTable({
   professionals: initial,
@@ -35,16 +35,25 @@ export function ProfessionalTable({
   const displayed = showPaused ? sorted : sorted.filter(p => p.isActive)
   const reorderDisabled = !showPaused && pausedCount > 0
 
-  // Qué cambia según cuánta gente hay EN AGENDA. La presencia de filas activas es
-  // el interruptor del multi-profesional — no hay ningún flag que configurar — así
-  // que este texto es el único lugar donde la dueña puede anticipar el salto de 1
-  // a 2 antes de darlo.
-  const switchHint =
-    activeCount === 0
-      ? `Sin nadie en agenda, tu negocio funciona como siempre: un solo horario para todo, y al reservar no se elige con quién.`
-      : activeCount === 1
-        ? `Con una sola persona en agenda no se elige nada al reservar: se asigna sola.`
-        : `Al reservar, tus ${v.clients} eligen con quién se atienden entre las ${activeCount} personas en agenda.`
+  // Qué VA A cambiar según cuánta gente haya en agenda. La presencia de filas
+  // activas es el interruptor del multi-profesional —no hay ningún flag que
+  // configurar— así que este texto es el único lugar donde la dueña puede
+  // anticipar el salto de 1 a 2 antes de darlo.
+  //
+  // OJO EL TIEMPO VERBAL, no es un detalle de estilo: hoy dar de alta gente NO
+  // cambia nada al reservar. El horario por persona y la elección en el funnel
+  // vienen después, así que prometerlo en presente es decirle a la dueña que
+  // apretó un interruptor que todavía no está conectado — y el reporte que llega
+  // es "cargué a mis 3 barberos y no pasó nada".
+  function switchHint(): string {
+    if (activeCount === 0) {
+      return 'Sin nadie en agenda, tu negocio funciona con un solo horario para todo y al reservar no se elige con quién.'
+    }
+    if (activeCount === 1) {
+      return 'Con una sola persona en agenda no va a haber nada que elegir al reservar: se va a asignar sola.'
+    }
+    return `Con ${activeCount} personas en agenda, tus ${v.clients} van a poder elegir con quién se atienden.`
+  }
 
   function refresh() {
     window.location.reload()
@@ -69,7 +78,7 @@ export function ProfessionalTable({
     setError(null)
     try {
       const res = await deleteProfessional(id)
-      // El servidor rechaza el borrado de quien ya atendió y explica por qué; ese
+      // El servidor rechaza el borrado de quien tiene reservas y explica por qué; ese
       // mensaje se muestra tal cual, porque es la información útil.
       if (!res.ok) { setError(res.error); return }
       setProfessionals(professionals.filter(p => p.id !== id))
@@ -113,10 +122,17 @@ export function ProfessionalTable({
     }
   }
 
+  // Cuenta sólo los servicios ACTIVOS asignados, porque el denominador
+  // (`services`) son los activos. Sin el filtro, alguien con 3 servicios de los
+  // cuales 1 se dio de baja, en un negocio con 2 activos, mostraba "3 de 2" — y no
+  // es un borde raro: dar de baja un servicio es un soft-delete, así que la
+  // asignación vieja sobrevive. Las inactivas igual se conservan al guardar (el
+  // formulario devuelve todos los ids, tildados o no).
   function serviceSummary(p: RowProfessional): string {
-    if (p.serviceIds.length === 0) return 'Ninguno'
-    if (p.serviceIds.length === services.length) return 'Todos'
-    return `${p.serviceIds.length} de ${services.length}`
+    const assignedActive = p.serviceIds.filter((id) => services.some((s) => s.id === id)).length
+    if (assignedActive === 0) return 'Ninguno'
+    if (assignedActive === services.length) return 'Todos'
+    return `${assignedActive} de ${services.length}`
   }
 
   return (
@@ -133,7 +149,15 @@ export function ProfessionalTable({
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <h2 className="font-heading text-2xl font-semibold tracking-tight text-primary">Tu equipo</h2>
-          <p className="max-w-xl text-sm text-muted-foreground">{switchHint}</p>
+          <p className="max-w-xl text-sm text-muted-foreground">{switchHint()}</p>
+          {/* Mientras la agenda por persona no esté, decirlo. Es la diferencia entre
+              "todavía no lo terminamos" y "cargué a mi equipo y la app no funciona". */}
+          {activeCount > 0 && (
+            <p className="mt-1 max-w-xl text-sm text-amber-700 dark:text-amber-400">
+              Por ahora sólo se guarda: al reservar todavía no se elige con quién, y el
+              horario sigue siendo uno para todo el negocio.
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-4">
           {pausedCount > 0 && (
@@ -144,12 +168,7 @@ export function ProfessionalTable({
               </Label>
             </div>
           )}
-          <ProfessionalForm
-            services={services}
-            onSuccess={refresh}
-            triggerLabel={`Agregar ${v.professional}`}
-            triggerIcon={<Plus className="mr-2 size-4" />}
-          />
+          <ProfessionalForm services={services} onSuccess={refresh} />
         </div>
       </div>
 
@@ -167,21 +186,16 @@ export function ProfessionalTable({
             </div>
             <div>
               <p className="mb-1 text-base font-semibold text-primary">
-                {showPaused ? v.noProfessionals : `Nadie en agenda`}
+                {showPaused ? v.noProfessionals : 'Nadie en agenda'}
               </p>
               <p className="mx-auto max-w-md text-sm text-muted-foreground">
                 {showPaused
-                  ? `Tu agenda funciona igual sin esto. Sumá a tu equipo cuando quieras que cada persona tenga su propio horario y sus propias citas.`
-                  : `Todo el equipo está en pausa. Volvé a poner a alguien en agenda para que se pueda reservar con esa persona.`}
+                  ? 'Tu agenda funciona igual sin esto. Sumá a tu equipo para que más adelante cada persona tenga su propio horario y sus propias citas.'
+                  : 'Todo el equipo está en pausa. Volvé a poner a alguien en agenda cuando quieras que vuelva a contar.'}
               </p>
             </div>
             {showPaused && (
-              <ProfessionalForm
-                services={services}
-                onSuccess={refresh}
-                triggerLabel={`Agregar ${v.professional}`}
-                triggerIcon={<Plus className="mr-2 size-4" />}
-              />
+              <ProfessionalForm services={services} onSuccess={refresh} />
             )}
           </div>
         </div>

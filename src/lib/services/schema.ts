@@ -77,10 +77,3 @@ export const updateServiceSchema = z.object({
     .nonnegative('El orden debe ser un número positivo')
     .optional(),
 }).strip()
-
-export const reorderSchema = z.object({
-  items: z.array(z.object({
-    id: z.string(),
-    sortOrder: z.number().int().nonnegative(),
-  })),
-}).strip()

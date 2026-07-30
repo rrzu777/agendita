@@ -21,10 +21,17 @@ requireTestDatabase()
 const P1 = 'prof-test-1'
 const P2 = 'prof-test-2'
 
+// Los negocios desechables que crea el caso del cascade. Se limpian en el afterAll
+// y no al final del caso: si un `expect` falla, el cleanup inline no corre y las
+// filas quedan en la DB compartida, que nadie más limpia.
+const DISPOSABLE = { biz: 'prof-cascade-biz', owner: 'prof-cascade-owner' }
+
 async function cleanupProfessionals() {
   await prisma.availabilityRule.deleteMany({ where: { businessId: BT_VERIFY_BIZ } })
   await prisma.timeBlock.deleteMany({ where: { businessId: BT_VERIFY_BIZ } })
   await prisma.professional.deleteMany({ where: { businessId: BT_VERIFY_BIZ } })
+  await prisma.business.deleteMany({ where: { id: DISPOSABLE.biz } })
+  await prisma.user.deleteMany({ where: { id: DISPOSABLE.owner } })
 }
 
 beforeAll(async () => {
@@ -181,8 +188,7 @@ describe('borrar a una persona', () => {
   // Negocio propio y desechable: no se puede borrar el del seed en medio de la
   // suite.
   it('borrar el negocio entero funciona igual, con gente que tiene reservas', async () => {
-    const BIZ = 'prof-cascade-biz'
-    const OWNER = 'prof-cascade-owner'
+    const { biz: BIZ, owner: OWNER } = DISPOSABLE
 
     await prisma.user.create({
       data: { id: OWNER, email: 'prof-cascade@test.test', name: 'Dueña' },
@@ -235,7 +241,5 @@ describe('borrar a una persona', () => {
 
     expect(await prisma.professional.count({ where: { businessId: BIZ } })).toBe(0)
     expect(await prisma.booking.count({ where: { businessId: BIZ } })).toBe(0)
-
-    await prisma.user.delete({ where: { id: OWNER } })
   })
 })
