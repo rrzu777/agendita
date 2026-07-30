@@ -243,7 +243,18 @@ const NEUTRAL: Vocabulary = {
   birthdaySegment: 'Cumpleañeros del mes',
 }
 
-export const VOCABULARIES = { feminine: FEMININE, neutral: NEUTRAL } as const
+/**
+ * Las dos formas BASE, antes de que el rubro les pise el oficio.
+ *
+ * Ningún negocio real recibe una de éstas tal cual salvo `other`: los otros seis rubros
+ * las combinan con su sustantivo de oficio en `BY_CATEGORY`. Si buscás el léxico que ve
+ * una usuaria, es `getVocabulary(category)` — no esto.
+ *
+ * Existe para que los guards del léxico puedan chequear las formas base, que de otro
+ * modo quedarían sin cobertura: las palabras de oficio genéricas de `FEMININE` no son
+ * alcanzables por ningún rubro, porque los tres femeninos siempre las overridean.
+ */
+export const BASE_VOCABULARIES = { feminine: FEMININE, neutral: NEUTRAL } as const
 
 /**
  * Femenino en los rubros donde ya era el texto vigente — cambiarlo les movería el

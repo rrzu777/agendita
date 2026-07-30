@@ -1,19 +1,33 @@
 import { describe, it, expect } from 'vitest'
 import type { BusinessCategory } from '@prisma/client'
-import { getVocabulary, interpolate, VOCABULARIES, type Vocabulary } from '@/lib/vocabulary'
+import { getVocabulary, interpolate, BASE_VOCABULARIES, type Vocabulary } from '@/lib/vocabulary'
 
-// Los 7 valores de BusinessCategory. A mano y no derivada del enum de Prisma a
-// propósito: si mañana se agrega un rubro, este archivo tiene que fallar para que
-// alguien decida su oficio, en vez de heredar el genérico en silencio.
-const ALL_CATEGORIES = [
-  'nails',
-  'beauty',
-  'hair_salon',
-  'barber',
-  'massage',
-  'therapy',
-  'other',
-] as const satisfies readonly BusinessCategory[]
+// El oficio que le toca a cada rubro. Es la ÚNICA lista escrita a mano del archivo y
+// todo lo demás se deriva de ella.
+//
+// El tipo es `Record<BusinessCategory, string>` a propósito: agregar un rubro al enum de
+// Prisma pasa a ser un error de COMPILACIÓN acá, así que alguien tiene que decidir su
+// oficio antes de que el código compile. Una lista escrita a mano no da esa garantía —
+// nada obliga a actualizarla, y el rubro nuevo se escapa de todos los guards de abajo en
+// silencio. Verificado: sacarle un rubro a este mapa deja los 10 tests en verde y sólo
+// falla `tsc`.
+//
+// Por qué el tipo no alcanza solo: `BY_CATEGORY` ya es `Record<BusinessCategory,
+// Vocabulary>`, así que el rubro nuevo tiene que tener alguna entrada — pero `NEUTRAL`
+// pelado compila perfecto y deja el oficio en el genérico. Que "barbero" sea la palabra
+// correcta para `barber` es una decisión de producto, no una propiedad estructural: el
+// tipo fuerza que alguien la tome, el `it()` verifica cuál tomó.
+const EXPECTED_NOUN: Record<BusinessCategory, string> = {
+  barber: 'barbero',
+  nails: 'manicurista',
+  hair_salon: 'estilista',
+  beauty: 'especialista',
+  massage: 'terapeuta',
+  therapy: 'terapeuta',
+  other: 'profesional',
+}
+
+const ALL_CATEGORIES = Object.keys(EXPECTED_NOUN) as BusinessCategory[]
 
 describe('vocabulario por rubro', () => {
   it('los rubros con clientela femenina mantienen el texto actual', () => {
@@ -32,14 +46,14 @@ describe('vocabulario por rubro', () => {
   //
   // Tienen que mirar los léxicos ARMADOS, no sólo las dos formas base: BY_CATEGORY
   // aplica overrides por rubro y es ahí donde se cuela una clave de más o una entrada
-  // vacía. Iterar sólo VOCABULARIES los deja pasar enteros.
+  // vacía. Iterar sólo BASE_VOCABULARIES los deja pasar enteros.
   const EVERY_LEXICON: Array<readonly [string, Vocabulary]> = [
-    ...Object.entries(VOCABULARIES),
+    ...Object.entries(BASE_VOCABULARIES),
     ...ALL_CATEGORIES.map((c) => [c, getVocabulary(c)] as const),
   ]
 
   it('todos los léxicos tienen exactamente las mismas claves', () => {
-    const reference = Object.keys(VOCABULARIES.neutral).sort()
+    const reference = Object.keys(BASE_VOCABULARIES.neutral).sort()
     for (const [name, lexicon] of EVERY_LEXICON) {
       expect(Object.keys(lexicon).sort(), name).toEqual(reference)
     }
@@ -53,20 +67,11 @@ describe('vocabulario por rubro', () => {
     }
   })
 
-  // El olvido más probable no es escribir mal una palabra — el compilador lo caza —
-  // sino olvidarse de darle su oficio a un rubro y que se quede con el genérico
-  // "profesional" sin que nada se queje.
+  // El compilador ya obliga a que EXPECTED_NOUN tenga los 7 rubros (ver arriba); esto
+  // verifica que la palabra elegida sea la que llega de verdad, o sea que el override
+  // esté enganchado en BY_CATEGORY y no colgado sin usar.
   it('cada rubro dice su propio oficio', () => {
-    const expected: Record<string, string> = {
-      barber: 'barbero',
-      nails: 'manicurista',
-      hair_salon: 'estilista',
-      beauty: 'especialista',
-      massage: 'terapeuta',
-      therapy: 'terapeuta',
-      other: 'profesional',
-    }
-    for (const [category, noun] of Object.entries(expected)) {
+    for (const [category, noun] of Object.entries(EXPECTED_NOUN)) {
       expect(getVocabulary(category as BusinessCategory).professional, category).toBe(noun)
     }
   })
