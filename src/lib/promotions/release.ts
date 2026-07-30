@@ -37,6 +37,30 @@ export async function releaseRedemptionForBooking(
   })
 }
 
+/**
+ * Libera los canjes de las reservas que REALMENTE quedaron `expired` en esta
+ * misma transacción.
+ *
+ * El filtro por la relación (`booking.status`) es la parte que importa: es la red
+ * contra la carrera con un pago que entró entre el findMany y el updateMany. Esa
+ * reserva se re-excluye del update y liberar su canje corrompería una promo viva.
+ * Filtrar por relación en el `where` es seguro; el landmine conocido es
+ * `relationLoadStrategy: 'join'`, no esto.
+ */
+export async function releaseRedemptionsOfExpiredBookings(
+  tx: TxLike,
+  bookingIds: string[],
+): Promise<void> {
+  if (bookingIds.length === 0) return
+  const redemptions = await tx.promotionRedemption.findMany({
+    where: { status: 'applied', booking: { id: { in: bookingIds }, status: 'expired' } },
+    select: { bookingId: true },
+  })
+  for (const r of redemptions) {
+    await releaseRedemptionForBooking(tx, r.bookingId, 'hold_expired')
+  }
+}
+
 /** Al liberarse una reserva con grant aplicado: reactivar la recompensa para que la
  *  clienta la recupere. En no_show se reactiva salvo que el grant tenga el snapshot
  *  forfeitOnNoShow. Si el grant ya venció, se aplica la política de vencimiento. */
