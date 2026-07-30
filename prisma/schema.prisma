@@ -120,6 +120,7 @@ model Business {
   packagePurchases     PackagePurchase[]
   campaigns            Campaign[]
   customerPhotos       CustomerPhoto[]
+  professionals        Professional[]
 }
 
 enum PaymentAccountStatus {
@@ -273,7 +274,7 @@ enum BusinessRole {
 }
 
 model Service {
-  id              String   @id @default(cuid())
+  id              String            @id @default(cuid())
   businessId      String
   name            String
   description     String?
@@ -281,38 +282,81 @@ model Service {
   price           Int
   depositAmount   Int
   pastelColor     String
-  isActive        Boolean  @default(true)
-  sortOrder       Int      @default(0)
+  isActive        Boolean           @default(true)
+  sortOrder       Int               @default(0)
   /// Dónde se puede pedir este servicio. Puede tener varias; el funnel sólo
   /// pregunta cuando hay más de una. Nunca vacío (el schema de Zod lo exige).
   modalities      ServiceModality[] @default([on_site])
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
   business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
   bookings        Booking[]
   promotions      Promotion[]      @relation("PromotionServices")
   packageProducts PackageProduct[] @relation("PackageProductServices")
+  professionals   Professional[]   @relation("ProfessionalServices")
+
+  @@index([businessId, isActive])
+}
+
+/// Quién atiende. Sin cuenta propia: no hay login por profesional, y el enum
+/// `BusinessRole.staff` (hoy muerto, cero usos) es un rol de login, otra cosa.
+/// Colgarle un `userId` nullable más adelante no rompe nada de esto.
+///
+/// La PRESENCIA de filas activas es el interruptor del multi-profesional: cero
+/// activos = el negocio se comporta exactamente como antes de que este modelo
+/// existiera, y desactivar a toda la gente es la vuelta atrás.
+model Professional {
+  id         String            @id @default(cuid())
+  businessId String
+  name       String
+  bio        String?
+  isActive   Boolean           @default(true)
+  sortOrder  Int               @default(0)
+  /// Dónde atiende ESTA persona. Se intersecta con las del servicio: un servicio
+  /// a domicilio + alguien que no viaja = combinación que el funnel no ofrece.
+  /// El default de acá es sólo un piso; al crear a alguien desde el panel se
+  /// pre-marca la UNIÓN de las modalidades de sus servicios, porque dejarlo en
+  /// on_site a secas deja un servicio online-only sin nadie que lo pueda dar y
+  /// el negocio no se entera.
+  modalities ServiceModality[] @default([on_site])
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  business Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  services Service[]          @relation("ProfessionalServices")
+  rules    AvailabilityRule[]
+  blocks   TimeBlock[]
+  series   TimeBlockSeries[]
+  bookings Booking[]
 
   @@index([businessId, isActive])
 }
 
 model AvailabilityRule {
-  id         String  @id @default(cuid())
-  businessId String
-  dayOfWeek  Int
-  startTime  String
-  endTime    String
-  isActive   Boolean @default(true)
+  id             String  @id @default(cuid())
+  businessId     String
+  /// null = el horario DEL NEGOCIO (todas las filas que existen hoy).
+  /// Con persona = el horario de esa persona.
+  professionalId String?
+  dayOfWeek      Int
+  startTime      String
+  endTime        String
+  isActive       Boolean @default(true)
 
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  professional Professional? @relation(fields: [professionalId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
+  @@index([professionalId])
 }
 
 model TimeBlock {
   id                      String   @id @default(cuid())
   businessId              String
+  /// null = cierra para TODOS (el feriado del salón, y todo lo que existe hoy).
+  /// Con persona = sólo esa persona (sus vacaciones).
+  professionalId          String?
   startDateTime           DateTime
   endDateTime             DateTime
   reason                  String?
@@ -320,14 +364,23 @@ model TimeBlock {
   overlapToleranceMinutes Int      @default(0)
   createdAt               DateTime @default(now())
 
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  professional Professional? @relation(fields: [professionalId], references: [id], onDelete: Cascade)
 
   @@index([businessId, startDateTime, endDateTime])
+  @@index([professionalId])
 }
 
 model TimeBlockSeries {
   id                      String    @id @default(cuid())
   businessId              String
+  /// null = cierra para TODOS (y todo lo que existe hoy). Con persona = sólo
+  /// esa persona (su almuerzo, su día franco).
+  ///
+  /// OJO al partir una serie: la copia campo por campo de time-blocks.ts tiene
+  /// que arrastrar esto. Sin él, partir el almuerzo de una persona cierra el
+  /// local entero, todas las semanas.
+  professionalId          String?
   daysOfWeek              Int[]
   startTime               String
   endTime                 String
@@ -339,10 +392,12 @@ model TimeBlockSeries {
   isActive                Boolean   @default(true)
   createdAt               DateTime  @default(now())
 
-  business   Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  exceptions TimeBlockException[]
+  business     Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  professional Professional?        @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  exceptions   TimeBlockException[]
 
   @@index([businessId, isActive])
+  @@index([professionalId])
 }
 
 model TimeBlockException {
@@ -396,7 +451,6 @@ model Customer {
   campaignRecipients CampaignRecipient[]
   photos             CustomerPhoto[]
 
-  @@index([businessId])
   // Una ficha por (negocio, teléfono). Es la misma clave con la que
   // findOrCreateCustomerInTx resuelve la Customer, y reemplaza al índice no-único
   // que había acá (mismas columnas, mismo orden). Defensa en profundidad detrás
@@ -405,17 +459,22 @@ model Customer {
   // (normalizePhone) en los tres sitios que escriben, así que comparar la columna
   // cruda alcanza.
   @@unique([businessId, phone])
+  @@index([businessId])
   @@index([userId])
 }
 
 model Booking {
-  id            String        @id @default(cuid())
-  businessId    String
-  serviceId     String
-  customerId    String
-  startDateTime DateTime
-  endDateTime   DateTime
-  status        BookingStatus
+  id             String        @id @default(cuid())
+  businessId     String
+  serviceId      String
+  customerId     String
+  /// Quién atiende. null = reserva sin persona: por conservadora CHOCA CONTRA
+  /// TODOS. Son las reservas hechas antes de que el negocio tuviera equipo, y
+  /// nunca queremos meterle a alguien una cita encima.
+  professionalId String?
+  startDateTime  DateTime
+  endDateTime    DateTime
+  status         BookingStatus
 
   totalPrice       Int
   depositRequired  Int
@@ -448,6 +507,11 @@ model Booking {
   business                       Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
   service                        Service              @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   customer                       Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  // Restrict y NO SetNull: un SetNull acá convertiría las citas de quien se
+  // borra en reservas sin persona, que por la semántica de null chocan contra
+  // TODO el equipo — un salón de 4 se queda sin agenda. Que la base se niegue
+  // es el guard de verdad; el mensaje entendible lo pone la action.
+  professional                   Professional?        @relation(fields: [professionalId], references: [id], onDelete: Restrict)
   payments                       Payment[]
   ledgerEntries                  LedgerEntry[]
   redemption                     PromotionRedemption?
@@ -473,6 +537,9 @@ model Booking {
   @@index([status, holdExpiresAt])
   // Sweep cross-business de recordatorios (cron send-reminders): status + rango.
   @@index([status, startDateTime])
+  // Las citas de una persona: el filtro del calendario y el chequeo de si se
+  // la puede borrar.
+  @@index([professionalId])
 }
 
 enum BookingStatus {
