@@ -13,7 +13,8 @@ import { getConfirmedSessionUser } from '@/lib/auth/user'
 import { findOrCreateCustomerInTx } from '@/lib/customers/find-or-create'
 import { logger } from '@/lib/logger'
 
-import { assertSlotIsAvailable } from '@/lib/availability/validation'
+import { assertSlotIsAvailable, SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
+import { isNoOverlapViolation } from '@/lib/db/no-overlap'
 import { assignBookingNumber } from '@/lib/bookings/number'
 import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcement'
 import { normalizePhone } from '@/lib/customers/phone'
@@ -393,6 +394,18 @@ async function _createBooking(data: {
     }
     // Safe error handling: log internal error, return generic message
     const msg = e instanceof Error ? e.message : String(e)
+    // El EXCLUDE Booking_no_overlap rechazó el insert: alguien se quedó con el
+    // horario en el medio, o quedó tapado por una reserva que el chequeo de solape
+    // no puede liberar. Sin este caso el rechazo cae en el `throw e` de abajo (no
+    // trae `.code`) y la clienta lee "Ocurrió un error inesperado" sobre un horario
+    // que la pantalla le sigue ofreciendo.
+    if (isNoOverlapViolation(e)) {
+      logger.error('booking.error', `Booking_no_overlap rejected createBooking: ${msg}`, {
+        businessId,
+        metadata: { error: msg },
+      })
+      throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
+    }
     if (prismaError.code?.startsWith('P')) {
       logger.error('booking.error', `Database error in createBooking: ${msg}`, {
         businessId,

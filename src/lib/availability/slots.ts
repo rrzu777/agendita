@@ -3,18 +3,16 @@ import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { getLocalDayOfWeek } from './timezone'
 import { LEAD_TIME_MINUTES } from './constants'
 import { shrinkBlock } from './shrink-block'
-import { isHeldStatus } from '@/lib/bookings/approval'
+import { occupiesSlot, type SlotOccupancyFields } from '@/lib/bookings/approval'
 
 export interface TimeSlot {
   start: Date
   end: Date
 }
 
-export interface BookingLike {
+export interface BookingLike extends SlotOccupancyFields {
   startDateTime: Date
   endDateTime: Date
-  status: string
-  holdExpiresAt?: Date | null
 }
 
 export interface TimeBlockLike {
@@ -92,24 +90,18 @@ export function generateSlots(
   // en el último día de la ventana.
   const maxStart = addDays(now, bookingWindowDays)
 
-  const blocksSlot = (booking: BookingLike): boolean => {
-    if (booking.status === 'cancelled' || booking.status === 'no_show' || booking.status === 'expired') return false
-    // A pending_payment hold that has already expired no longer blocks the
-    // slot, even if the cron hasn't flipped it to `expired` yet. Mirrors the
-    // server-side guard in assertSlotIsAvailable. Misma regla para
-    // `pending_confirmation`: una solicitud que el negocio no respondió a tiempo
-    // libera el cupo (ver HELD_STATUSES en lib/bookings/approval.ts).
-    if (isHeldStatus(booking.status) && booking.holdExpiresAt && booking.holdExpiresAt <= now) return false
-    return true
-  }
-
   // Obstáculos que intersectan la ventana del día, ordenados por inicio.
   // Los bloqueos se encogen según su tolerancia de solape (shrinkBlock).
+  // Qué reserva tapa su horario lo decide `occupiesSlot` — la MISMA función que
+  // usa el chequeo de solape del servidor, para que la agenda nunca ofrezca un
+  // horario que después se rechaza (ver lib/bookings/approval.ts).
   const obstacles = [
     ...blocks
       .map((b) => shrinkBlock(b))
       .filter((b): b is { start: Date; end: Date } => b !== null),
-    ...bookings.filter(blocksSlot).map((b) => ({ start: b.startDateTime, end: b.endDateTime })),
+    ...bookings
+      .filter((b) => occupiesSlot(b, now))
+      .map((b) => ({ start: b.startDateTime, end: b.endDateTime })),
   ]
     .filter((o) => o.start < availabilityEnd && o.end > availabilityStart)
     .sort((a, b) => a.start.getTime() - b.start.getTime())

@@ -158,7 +158,8 @@ describe('createTimeBlock', () => {
     expect(findManyCall.where.businessId).toBe('biz-1')
     expect(findManyCall.where.OR).toEqual([
       { status: { in: ['confirmed', 'completed'] } },
-      expect.objectContaining({ status: { in: ['pending_payment', 'pending_confirmation'] } }),
+      expect.objectContaining({ status: 'pending_confirmation' }),
+      expect.objectContaining({ status: 'pending_payment' }),
     ])
   })
 
@@ -176,12 +177,19 @@ describe('createTimeBlock', () => {
     expect(statuses).not.toContain('expired')
     expect(statuses).not.toContain('no_show')
 
-    // Un hold ya expirado (de pago o de confirmación) no cuenta como conflicto
-    const pendingClause = findManyCall.where.OR.find(
-      (clause: { status: string | { in: string[] } }) =>
-        typeof clause.status !== 'string' && clause.status.in.includes('pending_payment'),
-    )
-    expect(pendingClause.OR).toEqual([
+    // Un hold ya expirado no cuenta como conflicto... salvo los que ningún sweep
+    // puede barrer (con plata encima o con transferencia bancaria de por medio):
+    // ésos siguen ocupando el horario porque el EXCLUDE los sigue viendo ocupado.
+    const findClause = (status: string) =>
+      findManyCall.where.OR.find((clause: { status: unknown }) => clause.status === status)
+    expect(findClause('pending_payment').OR).toEqual([
+      { holdExpiresAt: null },
+      { holdExpiresAt: { gt: expect.any(Date) } },
+      { paymentStatus: { not: 'unpaid' } },
+      { paymentMethod: 'bank_transfer' },
+    ])
+    // Una solicitud vencida sí libera sin condiciones: la barre el cron siempre.
+    expect(findClause('pending_confirmation').OR).toEqual([
       { holdExpiresAt: null },
       { holdExpiresAt: { gt: expect.any(Date) } },
     ])
@@ -297,8 +305,17 @@ describe('createTimeBlockSeries', () => {
     expect(findManyCall.where.OR).toEqual([
       { status: { in: ['confirmed', 'completed'] } },
       {
-        status: { in: ['pending_payment', 'pending_confirmation'] },
+        status: 'pending_confirmation',
         OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: expect.any(Date) } }],
+      },
+      {
+        status: 'pending_payment',
+        OR: [
+          { holdExpiresAt: null },
+          { holdExpiresAt: { gt: expect.any(Date) } },
+          { paymentStatus: { not: 'unpaid' } },
+          { paymentMethod: 'bank_transfer' },
+        ],
       },
     ])
   })
