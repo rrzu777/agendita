@@ -540,7 +540,12 @@ export async function POST(request: NextRequest) {
             rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
             paymentId: payment.id,
           })
-        })
+          // 15s y no el default de 5s: al confirmar, esta tx ahora toma el advisory
+          // lock por negocio+día para re-chequear el cupo, así que puede quedar
+          // esperando a una creación de reserva concurrente. Con 5s el timeout daría
+          // 500 → MP reintenta y el cobro no queda asentado, justo lo que este camino
+          // trata de evitar. Mismo presupuesto que la tx de createBooking.
+        }, { timeout: 15_000 })
 
         if (!result || !result.booking) {
           throw new Error('Reserva no encontrada')
