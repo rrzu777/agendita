@@ -56,10 +56,11 @@ describe('assertSlotFreeOfConflicts', () => {
     await prisma.timeBlock.delete({ where: { id: block.id } })
   })
 
-  // El SQL crudo de assertNoBookingOverlap repite los literales de HELD_STATUSES
-  // (no se pueden parametrizar enums en $queryRaw). Estos dos casos son la única
-  // red que tiene esa duplicación: si alguien agrega un estado y se olvida del
-  // SQL, acá se cae.
+  // El SQL crudo ya no repite la regla, pero sigue siendo crudo: los estados van
+  // como literales y las filas vuelven de `$queryRaw` para que las lea
+  // `occupiesSlot` en memoria. Estos dos casos son la red de esa costura — si el
+  // status llegara con otro nombre, o `holdExpiresAt` como string en vez de Date,
+  // el predicado dejaría de distinguir hold vivo de hold vencido y acá se cae.
   it('una solicitud por confirmar con hold vivo ocupa el cupo', async () => {
     const s = slot(4, 15)
     await seedConfirmedBooking({
