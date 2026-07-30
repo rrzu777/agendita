@@ -20,7 +20,9 @@ import { toLocalDateStr } from './helpers/dates'
 //      reserva está a >48h → BookingActions debe mostrar "Reprogramar" y
 //      "Cancelar reserva").
 //   3. Cancelar (confirmación inline "Sí, cancelar") → la fila desaparece de
-//      "Próximas reservas" y reaparece en "Historial" como "Cancelada".
+//      "Próximas reservas", sin error inline. Que el estado quede en 'cancelled'
+//      lo verifica contra la DB tests/integration/self-service-bookings.test.ts;
+//      acá no se mira "Historial" (ver el porqué al final del test).
 //
 // Si la fila User del admin no existe en la DB target, el bypass no puede
 // fabricar la sesión y /mi redirige a /ingresar → el test se salta (skip) en
@@ -90,24 +92,22 @@ function shortDateLabel(date: Date): string {
  * contador es por negocio y sólo crece (ver assignBookingNumber), así que entre
  * las candidatas la recién creada es la de número más alto.
  */
-async function rowOfNewestBooking(rows: Locator): Promise<{ row: Locator; matcher: RegExp }> {
+async function rowOfNewestBooking(rows: Locator): Promise<Locator> {
   const textos = await rows.allTextContents()
   const numeros = textos
     .map((t) => t.match(/#(\d+)/)?.[1])
     .filter((n): n is string => n != null)
     .map(Number)
 
-  // Tirar y no devolver un matcher vacío: `filter({ hasText: '' })` matchea TODAS
-  // las filas y las aserciones pasarían sin probar nada.
+  // Tirar y no devolver un locator laxo: `filter({ hasText: '' })` matchea TODAS las
+  // filas y las aserciones pasarían sin probar nada.
   if (numeros.length === 0) {
     throw new Error(`Ninguna fila expone un número de reserva. Filas: ${textos.join(' | ') || '(ninguna)'}`)
   }
 
-  // Devolvemos el regex, no el string: `hasText` con string hace substring, así que
-  // #123 matchearía #1234. El `(?!\d)` lo evita, y sirve igual en Historial, donde
-  // conviven muchas reservas viejas.
-  const matcher = new RegExp(`#${Math.max(...numeros)}(?!\\d)`)
-  return { row: rows.filter({ hasText: matcher }), matcher }
+  // Regex y no string: `hasText` con string hace substring, así que #123 matchearía
+  // #1234. El `(?!\d)` lo evita.
+  return rows.filter({ hasText: new RegExp(`#${Math.max(...numeros)}(?!\\d)`) })
 }
 
 /**
@@ -168,7 +168,7 @@ async function createConfirmedBookingWithAdminEmail(
 }
 
 test.describe('self-service (/mi): cancelación', () => {
-  test('cancelar una reserva próxima la mueve a Historial como Cancelada', async ({ page }) => {
+  test('cancelar una reserva próxima la saca de "Próximas reservas"', async ({ page }) => {
     test.setTimeout(90_000)
     setOwnerAuth(page)
 
@@ -205,7 +205,7 @@ test.describe('self-service (/mi): cancelación', () => {
     const rowsForDate = upcomingSection.locator('li').filter({ hasText: dateLabel })
     await expect(rowsForDate.first()).toBeVisible({ timeout: 15_000 })
 
-    const { row: bookingRow, matcher: bookingMatcher } = await rowOfNewestBooking(rowsForDate)
+    const bookingRow = await rowOfNewestBooking(rowsForDate)
     await expect(bookingRow).toHaveCount(1)
 
     // La reserva está a >48h y selfServiceCutoffHours por defecto es 24 →
@@ -217,15 +217,22 @@ test.describe('self-service (/mi): cancelación', () => {
     await bookingRow.getByRole('button', { name: 'Cancelar reserva' }).click()
     await bookingRow.getByRole('button', { name: 'Sí, cancelar' }).click()
 
-    // 5. La fila desaparece de "Próximas reservas"...
-    //    Ahora es exacto: el locator apunta a ESA reserva por su número, así que una
-    //    fila ajena que comparta la fecha no puede mantener el conteo en 1.
+    // 5. Si la action rechazó (rate limit, cutoff, ownership), booking-actions.tsx
+    //    pinta el motivo en un span rojo DENTRO de la fila. Chequearlo primero hace
+    //    que el test falle con la causa en vez de con un conteo mudo 15s después.
+    const errorInline = bookingRow.locator('span.text-red-600')
+    await expect(errorInline).toHaveCount(0, { timeout: 5_000 })
+
+    // 6. La fila desaparece de "Próximas reservas". Es exacto: el locator apunta a ESA
+    //    reserva por su número, así que una fila ajena que comparta la fecha no puede
+    //    mantener el conteo en 1.
     await expect(bookingRow).toHaveCount(0, { timeout: 15_000 })
 
-    // ...y reaparece en "Historial" como "Cancelada".
-    const historialSection = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Historial' }) })
-    const historialRow = historialSection.locator('li').filter({ hasText: bookingMatcher }).first()
-    await expect(historialRow).toBeVisible({ timeout: 15_000 })
-    await expect(historialRow).toContainText('Cancelada')
+    // NO se chequea que reaparezca en "Historial": esa lista es `take: 20` ordenada
+    // por startDateTime desc (mi/[slug]/page.tsx), y las canceladas de corridas
+    // anteriores quedan con fecha FUTURA, así que compiten en ese top 20 y empujan a
+    // la nuestra afuera — falso rojo con la cancelación funcionando bien. Que el
+    // estado quede en 'cancelled' ya lo cubre, contra la DB y en limpio,
+    // tests/integration/self-service-bookings.test.ts.
   })
 })
