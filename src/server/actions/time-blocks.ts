@@ -166,7 +166,13 @@ export async function getTimeBlocks() {
   })
 }
 
-async function _createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean }) {
+// `professionalId` va en el Omit aunque la columna exista: derivar el tipo de
+// entrada del modelo de Prisma hace que CUALQUIER columna nueva se vuelva un
+// parámetro obligatorio de esta firma, y una columna nullable no debería cambiarle
+// nada a los callers de hoy. El bloqueo por persona entra a propósito en el PR B,
+// junto con el CRUD que lo sabe manejar; hasta entonces todo lo que se crea acá es
+// del negocio (professionalId = null, el default de la columna).
+async function _createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes' | 'professionalId'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean }) {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('create-timeblock', 20, 60000)
   if (!limit.success) {
@@ -253,7 +259,7 @@ export const deleteTimeBlock = action(_deleteTimeBlock)
 
 async function _updateTimeBlock(
   id: string,
-  data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean },
+  data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes' | 'professionalId'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean },
 ): Promise<TimeBlock | { requiresConfirmation: true; message: string }> {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('update-timeblock', 20, 60000)
