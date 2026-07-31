@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ForbiddenError } from '../helpers/auth-errors'
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 import { UserError } from '@/lib/actions/result'
+import { DEFAULT_HOLD_MINUTES } from '@/lib/bookings/hold'
 
 // Mocks de dependencias server-only
 const mockPrisma = {
@@ -10,7 +11,7 @@ const mockPrisma = {
   booking: {
     findUnique: vi.fn(),
     create: vi.fn(),
-    update: vi.fn(),
+    updateMany: vi.fn(),
   },
   customer: {
     findFirst: vi.fn(),
@@ -74,14 +75,20 @@ vi.mock('@/lib/notifications', () => ({
 
 const mockAssertSlotFreeOfConflicts = vi.fn().mockResolvedValue(undefined)
 
-vi.mock('@/lib/availability/validation', () => ({
+// Sólo los dos asserts se mockean: `SLOT_UNAVAILABLE_MESSAGE` sale del módulo real,
+// para que un cambio de copy no deje al test asertando un texto que ya no existe.
+vi.mock('@/lib/availability/validation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/availability/validation')>()),
   assertSlotIsAvailable: vi.fn().mockResolvedValue(undefined),
   assertSlotFreeOfConflicts: mockAssertSlotFreeOfConflicts,
-  SLOT_UNAVAILABLE_MESSAGE: 'Ese horario ya no está disponible. Por favor selecciona otro.',
 }))
 
-// Import DESPUÉS de los mocks
+// Import DESPUÉS de los mocks — incluido el mensaje real de slot ocupado, que se
+// lee del módulo mockeado (el factory conserva todo lo que no reemplaza). Arriba
+// no puede ir: cargar `validation` a nivel de módulo dispara el factory de
+// `@/lib/db` antes de que exista `mockPrisma`.
 const { createBooking } = await import('@/server/actions/bookings')
+const { SLOT_UNAVAILABLE_MESSAGE } = await import('@/lib/availability/validation')
 
 describe('createBooking idempotency', () => {
   const baseInput = {
@@ -142,19 +149,25 @@ describe('createBooking idempotency', () => {
         startDateTime: EN_UNA_SEMANA,
         endDateTime: new Date(EN_UNA_SEMANA.getTime() + 60 * 60 * 1000),
         professionalId: null,
+        discountAmount: 0,
         holdExpiresAt: new Date(Date.now() - 60 * 60 * 1000), // vencido hace rato
         ...over,
       }
     }
 
-    /** El $transaction real corre el callback; el default del mock no. */
-    function corriendoLaTx() {
-      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(mockPrisma))
+    /** El hold renovado, tal como quedó escrito en la base. */
+    function holdEscrito(): Date {
+      return mockPrisma.booking.updateMany.mock.calls[0][0].data.holdExpiresAt as Date
     }
+
+    beforeEach(() => {
+      // El $transaction real corre su callback; el default del mock no.
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(mockPrisma))
+      mockPrisma.booking.updateMany.mockResolvedValue({ count: 1 })
+    })
 
     it('con el horario libre renueva el hold y devuelve la misma reserva', async () => {
       mockPrisma.booking.findUnique.mockResolvedValue(reservaGuardada())
-      corriendoLaTx()
       const antes = Date.now()
 
       const result = await createBooking(input, 'biz-1')
@@ -165,36 +178,44 @@ describe('createBooking idempotency', () => {
 
       // El hold vencido se renueva: sin esto initiatePayment rechaza el pago y
       // no hay forma de salir del error.
-      const renovado = mockPrisma.booking.update.mock.calls[0][0].data.holdExpiresAt as Date
-      const minutos = (renovado.getTime() - antes) / 60_000
-      expect(minutos).toBeGreaterThan(14)
-      expect(minutos).toBeLessThan(16)
-      expect(result.ok && (result.data as { holdExpiresAt: Date }).holdExpiresAt).toEqual(renovado)
+      const minutos = (holdEscrito().getTime() - antes) / 60_000
+      expect(minutos).toBeGreaterThan(DEFAULT_HOLD_MINUTES - 1)
+      expect(minutos).toBeLessThan(DEFAULT_HOLD_MINUTES + 1)
+      expect(result.ok && result.data.holdExpiresAt).toEqual(holdEscrito())
+    })
+
+    it('el update va guardado por status: si el cron la expiró en el medio, no escribe un hold zombi', async () => {
+      // La reserva se lee FUERA de la tx. El updateMany condicionado es lo que
+      // convierte esa carrera en un no-op con aviso, en vez de un hold fresco
+      // sobre una reserva muerta.
+      mockPrisma.booking.findUnique.mockResolvedValue(reservaGuardada())
+      mockPrisma.booking.updateMany.mockResolvedValue({ count: 0 })
+
+      const result = await createBooking(input, 'biz-1')
+
+      expect(result.ok).toBe(false)
+      expect(!result.ok && result.error).toContain('ya no está vigente')
     })
 
     it('no acorta un hold más largo que el default (transferencia → MP)', async () => {
       const holdLargo = new Date(Date.now() + 20 * 60 * 60 * 1000)
       mockPrisma.booking.findUnique.mockResolvedValue(reservaGuardada({ holdExpiresAt: holdLargo }))
-      corriendoLaTx()
 
       await createBooking(input, 'biz-1')
 
       // Recalcular a secas le comería casi 20 horas de plazo a quien ya las tenía.
-      expect(mockPrisma.booking.update.mock.calls[0][0].data.holdExpiresAt).toEqual(holdLargo)
+      expect(holdEscrito()).toEqual(holdLargo)
     })
 
     it('si el horario ya no está libre, no deja seguir al pago', async () => {
       mockPrisma.booking.findUnique.mockResolvedValue(reservaGuardada())
-      corriendoLaTx()
-      mockAssertSlotFreeOfConflicts.mockRejectedValueOnce(
-        new UserError('Ese horario ya no está disponible. Por favor selecciona otro.'),
-      )
+      mockAssertSlotFreeOfConflicts.mockRejectedValueOnce(new UserError(SLOT_UNAVAILABLE_MESSAGE))
 
       const result = await createBooking(input, 'biz-1')
 
       expect(result.ok).toBe(false)
       expect(!result.ok && result.error).toContain('ya no está disponible')
-      expect(mockPrisma.booking.update).not.toHaveBeenCalled()
+      expect(mockPrisma.booking.updateMany).not.toHaveBeenCalled()
     })
 
     it('rechaza la key si la reserva guardada es de otro horario', async () => {
@@ -202,7 +223,7 @@ describe('createBooking idempotency', () => {
       // elegir, así que esto es el fail-closed: devolver la vieja sería cobrarle
       // por una hora que ya no eligió.
       mockPrisma.booking.findUnique.mockResolvedValue(
-        reservaGuardada({ startDateTime: new Date('2026-05-20T18:00:00Z') }),
+        reservaGuardada({ startDateTime: new Date(EN_UNA_SEMANA.getTime() + 3 * 60 * 60 * 1000) }),
       )
 
       const result = await createBooking(input, 'biz-1')
@@ -212,9 +233,21 @@ describe('createBooking idempotency', () => {
       expect(mockPrisma.$transaction).not.toHaveBeenCalled()
     })
 
-    it('no revive una reserva cancelada ni una expirada', async () => {
-      for (const status of [BookingStatus.cancelled, BookingStatus.expired, BookingStatus.no_show]) {
-        vi.clearAllMocks()
+    it('rechaza la key si el cupón se aplicó después de crear la reserva', async () => {
+      // Aplicar el descuento en el paso de pago y reintentar devolvía la reserva
+      // SIN descuento mientras la pantalla mostraba el precio rebajado.
+      mockPrisma.booking.findUnique.mockResolvedValue(reservaGuardada({ discountAmount: 0 }))
+
+      const result = await createBooking({ ...input, promotionCode: 'PRIMERA' }, 'biz-1')
+
+      expect(result.ok).toBe(false)
+      expect(!result.ok && result.error).toContain('descuento')
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+    })
+
+    it.each([BookingStatus.cancelled, BookingStatus.expired, BookingStatus.no_show])(
+      'no revive una reserva %s',
+      async (status) => {
         mockPrisma.booking.findUnique.mockResolvedValue(reservaGuardada({ status }))
 
         const result = await createBooking(input, 'biz-1')
@@ -222,8 +255,8 @@ describe('createBooking idempotency', () => {
         expect(result.ok).toBe(false)
         expect(!result.ok && result.error).toContain('ya no está vigente')
         expect(mockPrisma.$transaction).not.toHaveBeenCalled()
-      }
-    })
+      },
+    )
 
     it('un reenvío sobre una reserva ya confirmada la devuelve intacta', async () => {
       const confirmada = reservaGuardada({ status: BookingStatus.confirmed, holdExpiresAt: null })
@@ -233,7 +266,7 @@ describe('createBooking idempotency', () => {
 
       expect(result).toEqual({ ok: true, data: confirmada })
       expect(mockPrisma.$transaction).not.toHaveBeenCalled()
-      expect(mockPrisma.booking.update).not.toHaveBeenCalled()
+      expect(mockPrisma.booking.updateMany).not.toHaveBeenCalled()
     })
   })
 
@@ -279,23 +312,37 @@ describe('createBooking idempotency', () => {
   })
 
   it('handles race condition by returning existing booking on P2002', async () => {
+    // Dos envíos concurrentes con la misma key: el perdedor no encuentra nada en
+    // el fast path, choca contra el unique constraint y recupera la reserva del
+    // ganador — por el MISMO resume que el fast path, así que también le renueva
+    // el hold y re-valida el cupo.
+    const enUnaSemana = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
     mockPrisma.booking.findUnique.mockResolvedValueOnce(null)
     const existingBooking = {
       id: 'booking-race',
       businessId: 'biz-1',
       serviceId: 'svc-1',
+      status: BookingStatus.pending_payment,
+      startDateTime: enUnaSemana,
+      endDateTime: new Date(enUnaSemana.getTime() + 60 * 60 * 1000),
+      professionalId: null,
+      discountAmount: 0,
+      holdExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
     }
     mockPrisma.booking.findUnique.mockResolvedValueOnce(existingBooking)
 
-    // Simular que $transaction lanza P2002 por unique constraint
+    // La tx de creación lanza P2002 por unique constraint; la del resume corre normal.
     const p2002Error = new Error('Unique constraint failed') as Error & { code: string; meta?: unknown }
     p2002Error.code = 'P2002'
     p2002Error.meta = { target: ['businessId_idempotencyKey'] }
-    mockPrisma.$transaction.mockRejectedValue(p2002Error)
+    mockPrisma.$transaction.mockRejectedValueOnce(p2002Error)
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(mockPrisma))
+    mockPrisma.booking.updateMany.mockResolvedValue({ count: 1 })
 
-    const result = await createBooking(baseInput, 'biz-1')
+    const result = await createBooking({ ...baseInput, startDateTime: enUnaSemana }, 'biz-1')
 
-    expect(result).toEqual({ ok: true, data: existingBooking })
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data.id).toBe('booking-race')
   })
 
   it('re-throws non-idempotency errors as safe generic message', async () => {

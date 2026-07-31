@@ -13,7 +13,7 @@ import { getConfirmedSessionUser } from '@/lib/auth/user'
 import { findOrCreateCustomerInTx } from '@/lib/customers/find-or-create'
 import { logger } from '@/lib/logger'
 
-import { assertSlotIsAvailable, assertSlotFreeOfConflicts, SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
+import { assertSlotIsAvailable, SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
 import { isNoOverlapViolation } from '@/lib/db/no-overlap'
 import { assignBookingNumber } from '@/lib/bookings/number'
 import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcement'
@@ -25,7 +25,8 @@ import { assertBookingPayable } from '@/lib/bookings/payments'
 import { applyApprovedPayment } from '@/server/services/finance'
 import { firePaymentNotConfirmedNotification } from '@/lib/bookings/notify-payment-not-confirmed'
 import { initialPublicBookingStatus, approvalHoldExpiresAt } from '@/lib/bookings/approval'
-import { DEFAULT_HOLD_MINUTES } from '@/lib/bookings/hold'
+import { DEFAULT_HOLD_MINUTES, DASHBOARD_HOLD_MINUTES } from '@/lib/bookings/hold'
+import { resumeBookingForRetry } from '@/lib/bookings/retry'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
 import { creditVisitPoints } from '@/lib/loyalty/credit'
@@ -149,87 +150,6 @@ export async function getBookingsSummary() {
   })
 }
 
-/** Estados de los que una reserva ya no vuelve por este camino: el reintento no
- *  revive nada. Salir de `expired` es decisión de la dueña (`reviveBooking`, el
- *  único camino de salida), y `cancelled`/`no_show` son punto final. */
-const RETRY_DEAD_STATUSES: BookingStatus[] = [
-  BookingStatus.expired,
-  BookingStatus.cancelled,
-  BookingStatus.no_show,
-]
-
-/**
- * Segundo (o tercer) envío con la MISMA idempotencyKey: la clienta apretó
- * "Intentar de nuevo" tras un error, o volvió del checkout y re-envió.
- *
- * Devolver la reserva guardada tal cual —lo que se hacía antes— era mandarla a
- * pagar a ciegas: entre el primer intento y este, el horario pudo habérselo
- * llevado otra reserva o un bloqueo de la dueña, y el hold pudo vencer. Lo
- * primero terminaba en un cobro real por un horario ajeno (la pantalla de
- * retorno de MP recién lo dice desde el fix de `paid_unconfirmed`); lo segundo,
- * en un callejón sin salida — `initiatePayment` rechaza el hold vencido y el
- * botón de reintentar reusa la misma key, así que el error se repite para
- * siempre.
- *
- * Devuelve la reserva con el hold ya renovado (mismo objeto, sin re-consultar:
- * el caller necesita `service` y `customer` incluidos).
- */
-async function resumeBookingForRetry<T extends Booking>(
-  existing: T,
-  ctx: { serviceId: string; startDateTime: Date; timezone: string; holdMinutes: number },
-): Promise<T> {
-  // La key identifica UN intento. Si lo que se pide ahora no es lo que quedó
-  // guardado, la clienta volvió atrás y cambió de horario (o de servicio):
-  // devolver la vieja sería cobrarle por una hora que ya no eligió. El wizard
-  // suelta la key al elegir horario, así que desde nuestra UI esto no pasa; es
-  // el fail-closed para cualquier otro cliente.
-  if (
-    existing.serviceId !== ctx.serviceId ||
-    existing.startDateTime.getTime() !== ctx.startDateTime.getTime()
-  ) {
-    throw new UserError('Esa reserva es de otro horario. Vuelve a elegir la hora para reservar de nuevo.')
-  }
-
-  if (RETRY_DEAD_STATUSES.includes(existing.status)) {
-    throw new UserError('Esa reserva ya no está vigente. Vuelve a elegir la hora para reservar de nuevo.')
-  }
-
-  // `confirmed`, `completed` y `pending_confirmation` no esperan plata de este
-  // camino: son reenvíos legítimos y se devuelven tal cual, sin tocar el hold.
-  if (existing.status !== BookingStatus.pending_payment) return existing
-
-  if (existing.startDateTime <= new Date()) {
-    throw new UserError('Esa hora ya pasó. Vuelve a elegir la hora para reservar de nuevo.')
-  }
-
-  // Nunca ACORTAR el hold: si el primer intento fue por transferencia (ventana
-  // de 24h) y este viene por Mercado Pago, recalcular a secas le comería 23
-  // horas y media de plazo a una reserva que ya las tenía.
-  const renovado = addMinutes(new Date(), ctx.holdMinutes)
-  const holdExpiresAt =
-    existing.holdExpiresAt && existing.holdExpiresAt > renovado ? existing.holdExpiresAt : renovado
-
-  await prisma.$transaction(async (tx) => {
-    // `assertSlotFreeOfConflicts` y no el assert completo: acá el horario ya
-    // está pactado, y no debería caerse porque la dueña cambió sus horas o
-    // desactivó el servicio después (mismo criterio que revivir y que la
-    // verificación de transferencia). Lo que sí importa es que nadie más se lo
-    // haya llevado.
-    await assertSlotFreeOfConflicts({
-      tx,
-      businessId: existing.businessId,
-      startDateTime: existing.startDateTime,
-      endDateTime: existing.endDateTime,
-      timezone: ctx.timezone,
-      professionalId: existing.professionalId,
-      excludeBookingId: existing.id,
-    })
-    await tx.booking.update({ where: { id: existing.id }, data: { holdExpiresAt } })
-  })
-
-  return { ...existing, holdExpiresAt }
-}
-
 async function _createBooking(data: {
   serviceId: string
   customerName: string
@@ -318,6 +238,16 @@ async function _createBooking(data: {
   // Remoto (getUser) porque el link exige el email_confirmed_at confiable.
   const sessionUser = await getConfirmedSessionUser()
 
+  // Las dos puertas a "esta key ya se usó" —el fast path de acá abajo y el P2002
+  // del catch— pasan por el mismo resume con este contexto.
+  const retryCtx = {
+    serviceId: data.serviceId,
+    startDateTime: data.startDateTime,
+    promotionCode: data.promotionCode,
+    timezone: business.timezone || 'America/Santiago',
+    holdMinutes,
+  }
+
   // Idempotencia: si llega key, buscar booking existente fuera de tx (fast path).
   // El race final se maneja con el unique constraint de DB dentro de la tx.
   if (data.idempotencyKey) {
@@ -330,14 +260,7 @@ async function _createBooking(data: {
       },
       include: { service: true, customer: true },
     })
-    if (existing) {
-      return await resumeBookingForRetry(existing, {
-        serviceId: data.serviceId,
-        startDateTime: data.startDateTime,
-        timezone: business.timezone || 'America/Santiago',
-        holdMinutes,
-      })
-    }
+    if (existing) return await resumeBookingForRetry(existing, retryCtx)
   }
 
   try {
@@ -468,7 +391,10 @@ async function _createBooking(data: {
     return booking
   } catch (e: unknown) {
     // Race: otro request creó la misma idempotencyKey entre el findUnique y el create.
-    // El unique constraint de DB lo detecta y devolvemos la reserva existente.
+    // El unique constraint de DB lo detecta y devolvemos la reserva existente — por
+    // el MISMO resume que el fast path, no pelada: la reserva que ganó la carrera
+    // recién nació, pero nada garantiza que sea del horario que este request pidió
+    // (dos envíos concurrentes con la misma key y distinto horario caen acá).
     const prismaError = e as { code?: string; meta?: { target?: string[] } }
     if (
       prismaError.code === 'P2002' &&
@@ -485,7 +411,7 @@ async function _createBooking(data: {
         },
         include: { service: true, customer: true },
       })
-      if (existing) return existing
+      if (existing) return await resumeBookingForRetry(existing, retryCtx)
     }
     // Safe error handling: log internal error, return generic message
     const msg = e instanceof Error ? e.message : String(e)
@@ -919,7 +845,7 @@ async function _createBookingFromDashboard(data: {
         serviceAddress,
         meetingUrl,
         internalNotes: data.internalNotes || null,
-        holdExpiresAt: status === BookingStatus.pending_payment ? addMinutes(new Date(), 60) : null,
+        holdExpiresAt: status === BookingStatus.pending_payment ? addMinutes(new Date(), DASHBOARD_HOLD_MINUTES) : null,
         bookingNumber,
       },
       include: { service: true, customer: true },
@@ -956,7 +882,7 @@ async function _createBookingFromDashboard(data: {
       const effShouldConfirm = paymentMode === 'full_paid' || paymentMode === 'deposit_paid' || effNoDeposit
       const effStatus = effShouldConfirm ? BookingStatus.confirmed : BookingStatus.pending_payment
       const effPaymentStatus = effFree ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid
-      const effHold = effStatus === BookingStatus.pending_payment ? addMinutes(new Date(), 60) : null
+      const effHold = effStatus === BookingStatus.pending_payment ? addMinutes(new Date(), DASHBOARD_HOLD_MINUTES) : null
       bookingResult = await tx.booking.update({
         where: { id: newBooking.id },
         data: {

@@ -61,10 +61,16 @@ describe('reintento de pago con la misma idempotencyKey', () => {
     }
   })
 
-  async function limpiar() {
+  /** Lo que cambia entre casos. El resto del seed (negocio, servicio, reglas) vive
+   *  todo el archivo. */
+  async function limpiarReservas() {
     await prisma.payment.deleteMany({ where: { businessId: BIZ } })
     await prisma.booking.deleteMany({ where: { businessId: BIZ } })
     await prisma.timeBlock.deleteMany({ where: { businessId: BIZ } })
+  }
+
+  async function limpiar() {
+    await limpiarReservas()
     await prisma.customer.deleteMany({ where: { businessId: BIZ } })
     await prisma.service.deleteMany({ where: { businessId: BIZ } })
     await prisma.availabilityRule.deleteMany({ where: { businessId: BIZ } })
@@ -79,42 +85,45 @@ describe('reintento de pago con la misma idempotencyKey', () => {
 
   // Cada caso arranca sin reservas ni bloqueos: una reserva ajena en el mismo
   // horario haría pasar (o fallar) al siguiente por el motivo equivocado.
-  beforeEach(async () => {
-    await prisma.payment.deleteMany({ where: { businessId: BIZ } })
-    await prisma.booking.deleteMany({ where: { businessId: BIZ } })
-    await prisma.timeBlock.deleteMany({ where: { businessId: BIZ } })
-  })
+  beforeEach(limpiarReservas)
 
-  /** Un horario futuro distinto por caso: la key es única por negocio, y así dos
-   *  casos no se pisan el mismo hueco de la agenda. */
-  function horario(diasAdelante: number) {
+  /** Un horario futuro, lejos del lead time y dentro de la ventana de reserva.
+   *  Compartido: la tabla se vacía entre casos, nadie se pisa el hueco. */
+  const START = (() => {
     const d = new Date()
-    d.setUTCDate(d.getUTCDate() + diasAdelante)
+    d.setUTCDate(d.getUTCDate() + 3)
     d.setUTCHours(15, 0, 0, 0)
     return d
-  }
+  })()
 
-  async function reservar(key: string, startDateTime: Date) {
+  /** Devuelve el ActionResult crudo: los casos que esperan éxito lo pasan por
+   *  `unwrap`, los que esperan el rechazo por `expectActionError`. */
+  async function reservar(key: string, startDateTime: Date = START) {
     const { createBooking } = await import('@/server/actions/bookings')
-    return unwrap(createBooking({
+    return createBooking({
       serviceId, customerName: 'Ana', customerPhone: '+56911300001',
       startDateTime, acceptedTerms: true, idempotencyKey: key,
-    }, BIZ))
+    }, BIZ)
+  }
+
+  /** Vencer el hold es lo que abre la ventana: el horario queda ofrecible para
+   *  otra clienta y la reserva, inpagable para `initiatePayment`. */
+  function vencerHold(id: string) {
+    return prisma.booking.update({
+      where: { id },
+      data: { holdExpiresAt: new Date(Date.now() - 60 * 60 * 1000) },
+    })
   }
 
   it('con el horario libre devuelve la misma reserva y le renueva el hold', async () => {
-    const start = horario(3)
-    const primera = await reservar('retry-key-libre', start)
+    const primera = await unwrap(reservar('retry-key-libre'))
 
     // El hold se venció mientras la clienta estaba en el checkout. Antes esto
     // dejaba la reserva inpagable Y sin forma de empezar de nuevo: initiatePayment
     // rechaza el hold vencido y "Intentar de nuevo" reusa esta misma key.
-    await prisma.booking.update({
-      where: { id: primera.id },
-      data: { holdExpiresAt: new Date(Date.now() - 60 * 60 * 1000) },
-    })
+    await vencerHold(primera.id)
 
-    const segunda = await reservar('retry-key-libre', start)
+    const segunda = await unwrap(reservar('retry-key-libre'))
 
     expect(segunda.id).toBe(primera.id)
     expect(await prisma.booking.count({ where: { businessId: BIZ } })).toBe(1)
@@ -124,54 +133,23 @@ describe('reintento de pago con la misma idempotencyKey', () => {
   })
 
   it('con el horario ya tomado no deja pagar y no toca la reserva', async () => {
-    const start = horario(4)
-    const primera = await reservar('retry-key-tomado', start)
-    await prisma.booking.update({
-      where: { id: primera.id },
-      data: { holdExpiresAt: new Date(Date.now() - 60 * 60 * 1000) },
-    })
+    const primera = await unwrap(reservar('retry-key-tomado'))
+    await vencerHold(primera.id)
 
     // Un bloqueo de la dueña encima del horario: es la vía limpia de simularlo,
     // porque el EXCLUDE `Booking_no_overlap` impide crear la reserva rival
     // mientras la nuestra siga `pending_payment`.
     await prisma.timeBlock.create({ data: {
-      businessId: BIZ, startDateTime: start, endDateTime: new Date(start.getTime() + 60 * 60 * 1000),
+      businessId: BIZ, startDateTime: START, endDateTime: new Date(START.getTime() + 60 * 60 * 1000),
       reason: 'Tapado',
     } })
 
-    const { createBooking } = await import('@/server/actions/bookings')
-    await expectActionError(createBooking({
-      serviceId, customerName: 'Ana', customerPhone: '+56911300001',
-      startDateTime: start, acceptedTerms: true, idempotencyKey: 'retry-key-tomado',
-    }, BIZ), 'ya no está disponible')
+    await expectActionError(reservar('retry-key-tomado'), 'ya no está disponible')
 
     // Sin cobro y sin renovación: el hold sigue vencido, y el aviso llega ANTES
     // de mandarla a Mercado Pago, que es todo el punto.
     const fila = await prisma.booking.findUnique({ where: { id: primera.id } })
     expect(fila!.holdExpiresAt!.getTime()).toBeLessThan(Date.now())
     expect(await prisma.booking.count({ where: { businessId: BIZ } })).toBe(1)
-  })
-
-  it('la misma key con otro horario se rechaza en vez de devolver el viejo', async () => {
-    const start = horario(5)
-    await reservar('retry-key-cambio', start)
-
-    const { createBooking } = await import('@/server/actions/bookings')
-    await expectActionError(createBooking({
-      serviceId, customerName: 'Ana', customerPhone: '+56911300001',
-      startDateTime: horario(6), acceptedTerms: true, idempotencyKey: 'retry-key-cambio',
-    }, BIZ), 'de otro horario')
-  })
-
-  it('no revive una reserva cancelada', async () => {
-    const start = horario(7)
-    const primera = await reservar('retry-key-cancelada', start)
-    await prisma.booking.update({ where: { id: primera.id }, data: { status: 'cancelled' } })
-
-    const { createBooking } = await import('@/server/actions/bookings')
-    await expectActionError(createBooking({
-      serviceId, customerName: 'Ana', customerPhone: '+56911300001',
-      startDateTime: start, acceptedTerms: true, idempotencyKey: 'retry-key-cancelada',
-    }, BIZ), 'ya no está vigente')
   })
 })

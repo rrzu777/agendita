@@ -6,3 +6,9 @@
  *  dueña configura en su cuenta.
  */
 export const DEFAULT_HOLD_MINUTES = 15
+
+/** El hold de una reserva creada desde el panel. Es más largo a propósito: la
+ *  dueña la anotó a mano y el cobro lo coordina ella, así que el plazo no es el
+ *  de un checkout abierto. Vive acá al lado del otro para que se lea como una
+ *  política distinta y no como un número que alguien se olvidó de nombrar. */
+export const DASHBOARD_HOLD_MINUTES = 60
