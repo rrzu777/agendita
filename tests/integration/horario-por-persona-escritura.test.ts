@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { prisma } from '@/lib/db'
-import { materializeProfessionalSchedule } from '@/lib/availability/weekly-schedule'
+import { materializeProfessionalSchedule, setWeekday } from '@/lib/availability/weekly-schedule'
 import { resolveAvailabilityRules, resolveRuleScope } from '@/lib/availability/scope'
 import { requireTestDatabase } from './setup'
 
@@ -137,6 +137,68 @@ describe('materializar el horario de una persona', () => {
 
     const propias = await prisma.availabilityRule.count({ where: { businessId: BIZ, professionalId: juan } })
     expect(propias).toBe(7)
+  })
+})
+
+describe('guardar un día', () => {
+  /**
+   * **El bug que arregla la escritura unificada, contra la base.** El negocio se siembra
+   * sin fila de domingo y el editor viejo guardaba por id de regla: sin fila no hay id,
+   * así que un salón que atiende domingo no tenía forma de decirlo. Se prueba acá y no
+   * con mocks porque lo que importa es que la fila quede escrita y que las reglas que
+   * rigen la incluyan.
+   */
+  it('el salón puede abrir un día que no tenía fila', async () => {
+    const antes = await resolveAvailabilityRules(prisma, BIZ, null)
+    expect(antes.map((r) => r.dayOfWeek)).not.toContain(0)
+
+    await prisma.$transaction((tx) =>
+      setWeekday(tx, BIZ, null, { dayOfWeek: 0, startTime: '11:00', endTime: '15:00', isActive: true }),
+    )
+
+    const rigen = await resolveAvailabilityRules(prisma, BIZ, null)
+    expect(rigen.find((r) => r.dayOfWeek === 0)).toMatchObject({ startTime: '11:00', endTime: '15:00' })
+    // Y una sola fila: escribir dos veces el mismo día no lo duplica.
+    await prisma.$transaction((tx) =>
+      setWeekday(tx, BIZ, null, { dayOfWeek: 0, startTime: '12:00', endTime: '16:00', isActive: true }),
+    )
+    const domingos = await prisma.availabilityRule.count({ where: { businessId: BIZ, professionalId: null, dayOfWeek: 0 } })
+    expect(domingos).toBe(1)
+  })
+
+  it('guardarle un día a una persona que heredaba le deja la semana entera propia', async () => {
+    await prisma.$transaction((tx) =>
+      setWeekday(tx, BIZ, juan, { dayOfWeek: 1, startTime: '14:00', endTime: '20:00', isActive: true }),
+    )
+
+    const propias = await prisma.availabilityRule.findMany({ where: { businessId: BIZ, professionalId: juan } })
+    expect(propias).toHaveLength(7)
+    expect(propias.find((r) => r.dayOfWeek === 1)).toMatchObject({ startTime: '14:00', endTime: '20:00' })
+    // El resto quedó como el del salón, no cerrado ni en blanco.
+    expect(propias.find((r) => r.dayOfWeek === 2)).toMatchObject({ startTime: '09:00', endTime: '18:00', isActive: true })
+    // Y el salón no se movió.
+    const salonLunes = await prisma.availabilityRule.findFirst({ where: { businessId: BIZ, professionalId: null, dayOfWeek: 1 } })
+    expect(salonLunes?.startTime).toBe('09:00')
+  })
+
+  /**
+   * Filas propias parciales: la materialización nunca las completa, porque una sola fila
+   * ya cuenta como "tiene horario propio". Sin el create, guardar ese día es un
+   * `updateMany` que no toca nada y una pantalla que dice "guardado".
+   */
+  it('completa el día que falta cuando la persona tiene filas propias parciales', async () => {
+    await prisma.availabilityRule.create({
+      data: { businessId: BIZ, professionalId: juan, dayOfWeek: 3, startTime: '09:00', endTime: '18:00', isActive: true },
+    })
+
+    await prisma.$transaction((tx) =>
+      setWeekday(tx, BIZ, juan, { dayOfWeek: 5, startTime: '08:00', endTime: '13:00', isActive: true }),
+    )
+
+    const viernes = await prisma.availabilityRule.findFirst({
+      where: { businessId: BIZ, professionalId: juan, dayOfWeek: 5 },
+    })
+    expect(viernes).toMatchObject({ startTime: '08:00', endTime: '13:00', isActive: true })
   })
 })
 

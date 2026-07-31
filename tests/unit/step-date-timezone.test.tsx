@@ -16,17 +16,22 @@ describe('StepDate timezone', () => {
       root = null
     }
     document.body.replaceChildren()
+    // Acá y no en un `finally` por test: dos de los tres fijan el reloj, y devolverlo
+    // desde un solo lugar es lo que impide que un test nuevo se olvide y contamine al
+    // siguiente con una fecha que no eligió.
     vi.useRealTimers()
   })
 
+  /**
+   * El reloj va fijo, y no es prolijidad: la grilla muestra el mes en curso y Tokio va
+   * medio día adelante, así que el último día del mes —desde que en Tokio ya es el mes
+   * siguiente— **todos** los días visibles quedan en el pasado y deshabilitados. El test
+   * fallaba unas horas por mes, con `main` verde el día anterior y rojo sin que nadie
+   * tocara nada. Un martes a mitad de mes deja siempre días futuros por delante.
+   */
   it('emits the business-local noon instant for the clicked day', async () => {
-    // Con reloj real este test se caía el último día del mes: el grid muestra el
-    // mes del DISPOSITIVO y "hoy" se mide en Tokio, que a esa hora ya está en el
-    // mes siguiente, así que no quedaba ni un día habilitado para clickear. Un
-    // mediados de mes deja el resultado igual corra donde corra.
     vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date(2026, 4, 15, 12, 0, 0))
-
+    vi.setSystemTime(new Date(2026, 6, 6, 12, 0, 0))
     const onSelect = vi.fn()
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -59,21 +64,24 @@ describe('StepDate timezone', () => {
     // (lunes-primero), o sea 2 celdas de relleno antes del primer botón.
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(2026, 6, 6, 12, 0, 0))
+    try {
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      act(() => {
+        root?.render(<StepDate data={data} timezone="America/Santiago" onSelect={() => {}} onBack={() => {}} />)
+      })
 
-    const container = document.createElement('div')
-    document.body.appendChild(container)
-    root = createRoot(container)
-    act(() => {
-      root?.render(<StepDate data={data} timezone="America/Santiago" onSelect={() => {}} onBack={() => {}} />)
-    })
-
-    const grid = container.querySelector('.grid-cols-7')!
-    const cells = Array.from(grid.children)
-    // 7 encabezados (Lun..Dom) + 2 rellenos, la celda 9 es el día 1
-    expect(cells[9].getAttribute('data-day')).toBe('2026-07-01')
-    // El lunes 6 de julio queda en la columna LUN (índice % 7 === 0)
-    const monday6 = cells.findIndex(c => c.getAttribute('data-day') === '2026-07-06')
-    expect(monday6 % 7).toBe(0)
+      const grid = container.querySelector('.grid-cols-7')!
+      const cells = Array.from(grid.children)
+      // 7 encabezados (Lun..Dom) + 2 rellenos, la celda 9 es el día 1
+      expect(cells[9].getAttribute('data-day')).toBe('2026-07-01')
+      // El lunes 6 de julio queda en la columna LUN (índice % 7 === 0)
+      const monday6 = cells.findIndex(c => c.getAttribute('data-day') === '2026-07-06')
+      expect(monday6 % 7).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('disables days that are already past in the business timezone', () => {

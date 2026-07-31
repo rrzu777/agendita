@@ -12,7 +12,7 @@ import { differenceInMilliseconds, addDays } from 'date-fns'
 import { getEffectiveBlocks, type EffectiveBlock } from '@/lib/availability/effective-blocks'
 import { computeServiceFit, SERVICE_FIT_WINDOW_DAYS } from '@/lib/availability/service-fit'
 import { blockScopeFor, bookingScopeCondition, resolveAvailabilityRules } from '@/lib/availability/scope'
-import { assertBlockOwner } from '@/lib/professionals/ownership'
+import { assertOwnerScope } from '@/lib/professionals/ownership'
 import { getLocalDateStr, startOfLocalDay } from '@/lib/availability/timezone'
 import { computeSeriesUntil, expandSeries, type SeriesEndMode } from '@/lib/calendar/expand-series'
 import { planSeriesUpdate } from '@/lib/calendar/series-update-plan'
@@ -228,7 +228,7 @@ export async function getTimeBlocks() {
  *
  * Que sea obligatorio es lo que fuerza a cada caller a decidir de quién es el bloqueo.
  * Un `undefined` que igual se cuele desde el navegador cae en "del salón"
- * (`assertBlockOwner` normaliza), que es el lado conservador: choca contra todo en vez
+ * (`assertOwnerScope` normaliza), que es el lado conservador: choca contra todo en vez
  * de contra nada.
  */
 type TimeBlockInput = Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes'> & {
@@ -254,7 +254,7 @@ async function _createTimeBlock(data: TimeBlockInput) {
     throw new UserError('La duración máxima de un bloqueo es de 32 días')
   }
 
-  const professionalId = await assertBlockOwner(prisma, businessId, data.professionalId)
+  const professionalId = await assertOwnerScope(prisma, businessId, data.professionalId)
 
   const now = new Date()
   const overlappingBookings = await prisma.booking.findMany({
@@ -464,7 +464,7 @@ async function _createTimeBlockSeries(data: {
 
   const until = computeSeriesUntil(data.anchorDate, data.endMode, data.weeks ?? null, timezone)
 
-  const professionalId = await assertBlockOwner(prisma, businessId, data.professionalId)
+  const professionalId = await assertOwnerScope(prisma, businessId, data.professionalId)
 
   // Chequeo ANTES de crear: ocurrencias de la serie propuesta vs reservas
   // activas dentro de la ventana de reserva del negocio. Si hay conflicto y no

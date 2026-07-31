@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ForbiddenError } from '../helpers/auth-errors'
 
-// Los dos bordes por persona de `server/actions/availability.ts`. Los dos son
-// inertes hoy —nadie tiene horario propio y el funnel manda siempre `null`— y los dos
-// son la clase de guard que se descubre roto recién cuando la feature está encendida.
+// El borde por persona de `getAvailableTimeSlots`: la procedencia del id que llega del
+// navegador. La escritura del horario —los dos alcances— vive en
+// `availability-professional-schedule.test.ts`.
 
 const mockRequireBusiness = vi.fn()
 const mockRequireBusinessRole = vi.fn()
@@ -34,7 +34,7 @@ vi.mock('@/lib/availability/slots', () => ({
   generateSlots: (...a: unknown[]) => mockGenerateSlots(...a),
 }))
 
-const { getAvailableTimeSlots, updateAvailabilityRule } = await import('@/server/actions/availability')
+const { getAvailableTimeSlots } = await import('@/server/actions/availability')
 
 const BIZ = 'biz-1'
 
@@ -100,29 +100,5 @@ describe('getAvailableTimeSlots — de quién es el horario que devuelve', () =>
 
     expect(res.ok).toBe(true)
     expect(mockPrisma.professional.findFirst).not.toHaveBeenCalled()
-  })
-})
-
-describe('updateAvailabilityRule — edita el horario DEL SALÓN', () => {
-  // El `professionalId: null` va en el WHERE del write y no sólo en la lectura. Sin
-  // eso, la única defensa contra editar el horario de una persona desde el editor
-  // semanal es que la pantalla no reciba esos ids: una coincidencia de la capa de
-  // presentación, no una garantía.
-  it('el where del update exige que la regla no sea de nadie', async () => {
-    await updateAvailabilityRule('r1', { startTime: '09:00', endTime: '18:00', isActive: true })
-
-    expect(mockPrisma.availabilityRule.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'r1', businessId: BIZ, professionalId: null } }),
-    )
-  })
-
-  it('si la regla es de una persona, no la encuentra', async () => {
-    mockPrisma.availabilityRule.updateMany.mockResolvedValue({ count: 0 })
-
-    const res = await updateAvailabilityRule('regla-de-juan', { startTime: '09:00', endTime: '18:00', isActive: true })
-
-    expect(res.ok).toBe(false)
-    if (res.ok) throw new Error('debía rechazar')
-    expect(res.error).toContain('no encontrada')
   })
 })
