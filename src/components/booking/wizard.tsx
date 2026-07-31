@@ -154,7 +154,7 @@ export function BookingWizard({ businessId, slug, timezone, currency, services, 
       <section className="rounded-[2rem] border border-border/50 bg-card p-5 shadow-[var(--cream-shadow)] sm:p-8">
         {currentStep === 1 && (
           <StepService data={data} services={services} currency={currency} onSelect={(service) => {
-            updateData(service)
+            updateData({ ...service, idempotencyKey: null })
             nextStep()
           }} />
         )}
@@ -170,7 +170,13 @@ export function BookingWizard({ businessId, slug, timezone, currency, services, 
             timezone={timezone}
             data={data}
             onSelect={(timeSlot) => {
-              updateData({ timeSlot })
+              // Elegir hora (o servicio) abre un intento NUEVO: la key vieja
+              // apunta a la reserva del horario anterior, y createBooking la
+              // devolvería en vez de reservar el que se acaba de elegir. Es
+              // también la única salida cuando ese intento ya no sirve —el
+              // horario se lo llevó otra, el hold venció—: volver acá y elegir
+              // empieza de cero en vez de repetir el mismo error.
+              updateData({ timeSlot, idempotencyKey: null })
               nextStep()
             }} onBack={prevStep} />
         )}

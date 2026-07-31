@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ForbiddenError } from '../helpers/auth-errors'
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
+import { UserError } from '@/lib/actions/result'
 
 // Mocks de dependencias server-only
 const mockPrisma = {
@@ -9,6 +10,7 @@ const mockPrisma = {
   booking: {
     findUnique: vi.fn(),
     create: vi.fn(),
+    update: vi.fn(),
   },
   customer: {
     findFirst: vi.fn(),
@@ -70,8 +72,12 @@ vi.mock('@/lib/notifications', () => ({
   sendMultiNotificationSafely: vi.fn().mockResolvedValue([]),
 }))
 
+const mockAssertSlotFreeOfConflicts = vi.fn().mockResolvedValue(undefined)
+
 vi.mock('@/lib/availability/validation', () => ({
   assertSlotIsAvailable: vi.fn().mockResolvedValue(undefined),
+  assertSlotFreeOfConflicts: mockAssertSlotFreeOfConflicts,
+  SLOT_UNAVAILABLE_MESSAGE: 'Ese horario ya no está disponible. Por favor selecciona otro.',
 }))
 
 // Import DESPUÉS de los mocks
@@ -115,20 +121,120 @@ describe('createBooking idempotency', () => {
     mockPrisma.customer.create.mockResolvedValue({ id: 'cust-1' })
   })
 
-  it('returns existing booking when idempotencyKey already exists', async () => {
-    const existingBooking = {
-      id: 'booking-1',
-      businessId: 'biz-1',
-      serviceId: 'svc-1',
-      status: BookingStatus.pending_payment,
+  // El reintento con la misma key (botón "Intentar de nuevo", re-envío tras
+  // volver del checkout). Antes devolvía la reserva guardada sin mirar nada: si
+  // el horario ya era de otra, la mandaba a pagarlo igual; si el hold había
+  // vencido, initiatePayment la rechazaba y el botón repetía el mismo error para
+  // siempre, porque reusaba la misma key.
+  describe('reintento con la misma idempotencyKey', () => {
+    // Futuro relativo, no una fecha escrita a mano: el reintento sí mira el reloj
+    // (una reserva cuya hora ya pasó no se paga), así que una constante de 2026
+    // haría fallar el archivo al llegar la fecha.
+    const EN_UNA_SEMANA = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    const input = { ...baseInput, startDateTime: EN_UNA_SEMANA }
+
+    function reservaGuardada(over: Record<string, unknown> = {}) {
+      return {
+        id: 'booking-1',
+        businessId: 'biz-1',
+        serviceId: 'svc-1',
+        status: BookingStatus.pending_payment,
+        startDateTime: EN_UNA_SEMANA,
+        endDateTime: new Date(EN_UNA_SEMANA.getTime() + 60 * 60 * 1000),
+        professionalId: null,
+        holdExpiresAt: new Date(Date.now() - 60 * 60 * 1000), // vencido hace rato
+        ...over,
+      }
     }
-    mockPrisma.booking.findUnique.mockResolvedValue(existingBooking)
 
-    const result = await createBooking(baseInput, 'biz-1')
+    /** El $transaction real corre el callback; el default del mock no. */
+    function corriendoLaTx() {
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(mockPrisma))
+    }
 
-    expect(result).toEqual({ ok: true, data: existingBooking })
-    expect(mockPrisma.$transaction).not.toHaveBeenCalled()
-    expect(mockPrisma.booking.create).not.toHaveBeenCalled()
+    it('con el horario libre renueva el hold y devuelve la misma reserva', async () => {
+      mockPrisma.booking.findUnique.mockResolvedValue(reservaGuardada())
+      corriendoLaTx()
+      const antes = Date.now()
+
+      const result = await createBooking(input, 'biz-1')
+
+      expect(result.ok).toBe(true)
+      expect(result.ok && result.data.id).toBe('booking-1')
+      expect(mockPrisma.booking.create).not.toHaveBeenCalled()
+
+      // El hold vencido se renueva: sin esto initiatePayment rechaza el pago y
+      // no hay forma de salir del error.
+      const renovado = mockPrisma.booking.update.mock.calls[0][0].data.holdExpiresAt as Date
+      const minutos = (renovado.getTime() - antes) / 60_000
+      expect(minutos).toBeGreaterThan(14)
+      expect(minutos).toBeLessThan(16)
+      expect(result.ok && (result.data as { holdExpiresAt: Date }).holdExpiresAt).toEqual(renovado)
+    })
+
+    it('no acorta un hold más largo que el default (transferencia → MP)', async () => {
+      const holdLargo = new Date(Date.now() + 20 * 60 * 60 * 1000)
+      mockPrisma.booking.findUnique.mockResolvedValue(reservaGuardada({ holdExpiresAt: holdLargo }))
+      corriendoLaTx()
+
+      await createBooking(input, 'biz-1')
+
+      // Recalcular a secas le comería casi 20 horas de plazo a quien ya las tenía.
+      expect(mockPrisma.booking.update.mock.calls[0][0].data.holdExpiresAt).toEqual(holdLargo)
+    })
+
+    it('si el horario ya no está libre, no deja seguir al pago', async () => {
+      mockPrisma.booking.findUnique.mockResolvedValue(reservaGuardada())
+      corriendoLaTx()
+      mockAssertSlotFreeOfConflicts.mockRejectedValueOnce(
+        new UserError('Ese horario ya no está disponible. Por favor selecciona otro.'),
+      )
+
+      const result = await createBooking(input, 'biz-1')
+
+      expect(result.ok).toBe(false)
+      expect(!result.ok && result.error).toContain('ya no está disponible')
+      expect(mockPrisma.booking.update).not.toHaveBeenCalled()
+    })
+
+    it('rechaza la key si la reserva guardada es de otro horario', async () => {
+      // La clienta volvió atrás y eligió otra hora. El wizard suelta la key al
+      // elegir, así que esto es el fail-closed: devolver la vieja sería cobrarle
+      // por una hora que ya no eligió.
+      mockPrisma.booking.findUnique.mockResolvedValue(
+        reservaGuardada({ startDateTime: new Date('2026-05-20T18:00:00Z') }),
+      )
+
+      const result = await createBooking(input, 'biz-1')
+
+      expect(result.ok).toBe(false)
+      expect(!result.ok && result.error).toContain('de otro horario')
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+    })
+
+    it('no revive una reserva cancelada ni una expirada', async () => {
+      for (const status of [BookingStatus.cancelled, BookingStatus.expired, BookingStatus.no_show]) {
+        vi.clearAllMocks()
+        mockPrisma.booking.findUnique.mockResolvedValue(reservaGuardada({ status }))
+
+        const result = await createBooking(input, 'biz-1')
+
+        expect(result.ok).toBe(false)
+        expect(!result.ok && result.error).toContain('ya no está vigente')
+        expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+      }
+    })
+
+    it('un reenvío sobre una reserva ya confirmada la devuelve intacta', async () => {
+      const confirmada = reservaGuardada({ status: BookingStatus.confirmed, holdExpiresAt: null })
+      mockPrisma.booking.findUnique.mockResolvedValue(confirmada)
+
+      const result = await createBooking(input, 'biz-1')
+
+      expect(result).toEqual({ ok: true, data: confirmada })
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+      expect(mockPrisma.booking.update).not.toHaveBeenCalled()
+    })
   })
 
   it('creates new booking when idempotencyKey is new', async () => {
