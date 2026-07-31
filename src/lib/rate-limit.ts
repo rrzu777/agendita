@@ -42,6 +42,11 @@ export const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number
   'confirm-payment': { maxRequests: 30, windowMs: 60_000 },
   'create-manual-payment': { maxRequests: 20, windowMs: 60_000 },
   'get-availability': { maxRequests: 60, windowMs: 60_000 },
+  // El bucket lo comparten los tres editores de horario (el semanal del salón, el día
+  // de una persona y soltarle el horario). Estaba declarado tres veces con los mismos
+  // números en cada action: un mismo bucket con tres presupuestos es un límite que se
+  // comporta distinto según por qué pantalla entró la request.
+  'update-availability': { maxRequests: 30, windowMs: 60_000 },
   'create-promotion': { maxRequests: 30, windowMs: 60_000 },
   'manage-promotion': { maxRequests: 60, windowMs: 60_000 },
   'preview-promotion': { maxRequests: 30, windowMs: 60_000 },

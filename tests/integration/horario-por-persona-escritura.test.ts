@@ -25,6 +25,15 @@ let juan = ''
 let ana = ''
 
 async function limpiar() {
+  // El orden importa y lo pagó caro la suite hermana (`availability-por-persona`): la
+  // FK de Booking a Professional es NO ACTION, así que una reserva que todavía apunte a
+  // alguien hace fallar el borrado. Los bloqueos van también, aunque esta suite no cree
+  // ninguno todavía: si una corrida anterior murió a mitad —o el PR de la pantalla
+  // agrega un caso—, el `beforeAll` explota con un error de FK que no dice nada del
+  // test que se está escribiendo.
+  await prisma.booking.deleteMany({ where: { businessId: BIZ } })
+  await prisma.timeBlockSeries.deleteMany({ where: { businessId: BIZ } })
+  await prisma.timeBlock.deleteMany({ where: { businessId: BIZ } })
   await prisma.availabilityRule.deleteMany({ where: { businessId: BIZ } })
   await prisma.professional.deleteMany({ where: { businessId: BIZ } })
   await prisma.business.deleteMany({ where: { id: BIZ } })

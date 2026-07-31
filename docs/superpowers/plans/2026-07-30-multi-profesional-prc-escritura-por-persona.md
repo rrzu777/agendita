@@ -2,8 +2,10 @@
 
 **Qué entrega:** la ESCRITURA por persona. El horario propio (materializar, editar un
 día, soltarlo) y el dueño en el alta de bloqueos sueltos y recurrentes. **Sin pantalla**:
-ninguna superficie llama todavía a nada de esto con una persona, así que es un no-op
-observable, igual que el PR B.
+ninguna superficie llama todavía a nada de esto con una persona, así que **desde la UI**
+no hay estado nuevo alcanzable, igual que el PR B. Dicho con precisión: las actions
+están exportadas y una dueña podría invocarlas con un id real, así que el sistema sí
+admite el estado nuevo — lo que no existe es el camino de pantalla.
 
 **Qué NO entrega:** el selector en Disponibilidad y el editor por persona. Van en el PR
 siguiente, y por eso este PR no toca ni un texto de la UI — la regla del repo es que la
@@ -73,9 +75,34 @@ de contra nada.
    `dashboard/onboarding/page.tsx`, `onboarding.ts`) contaban las reglas de todo el
    mundo. Como booleano sobrevivía; como número mostrado, un salón de 4 personas dice
    28 días de atención. Van con `professionalId: null`.
-3. **La siembra estaba escrita dos veces a mano**, igual, en `create-for-user.ts` y
-   `recover-business.ts`. Ahora es `DEFAULT_WEEKLY_SCHEDULE`, la misma constante que usa
-   la proyección para rellenar un día que no existe.
+3. **La siembra estaba escrita a mano en cuatro lugares.** Dos se unificaron en
+   `DEFAULT_WEEKLY_SCHEDULE` (`create-for-user.ts`, `recover-business.ts`). Las otras
+   dos —`prisma/seed.ts` y `src/lib/data/mock-store.ts`— **no pueden importarla**: el
+   seed corre con `ts-node` en CommonJS sin resolución de alias. Queda documentado en la
+   constante porque la del seed es la que muerde: mover el sábado acá y no allá rompe
+   los e2e de disponibilidad por una diferencia que no aparece en ningún diff.
+
+## Decisiones que el PR de la pantalla tiene que tomar
+
+- **Hay dos modelos de "la semana" conviviendo.** El editor del salón escribe **por id
+  de regla** y sólo ve las filas que existen (6 días); el editor por persona escribe por
+  `(persona, día)` sobre una semana proyectada de 7. Consecuencia visible hoy: el salón
+  **no puede abrir el domingo** —no hay fila, no hay id, no hay camino— y una persona sí.
+  Lo correcto de fondo es una sola escritura `setWeekday({ businessId, professionalId,
+  dayOfWeek, ... })` con `null` = salón, que jubila `updateAvailabilityRule` por id. Si
+  la pantalla se construye sin unificar, los dos editores quedan para siempre.
+- **La materialización es "si no tiene ninguna, copiar 7" y debería ser "asegurar que
+  existan los 7".** Una fila propia parcial —hoy ningún camino la crea, pero un backfill
+  sí— deja a la persona con 1 día abierto y 6 cerrados, y la materialización **nunca** la
+  arregla porque ya tiene filas propias.
+- **El lock está compensando un unique que falta.** Con un unique sobre
+  `(businessId, professionalId, dayOfWeek)` —y `NULLS NOT DISTINCT`, que es PG15+, o un
+  unique parcial para las filas del salón— la doble copia sería imposible aunque un
+  camino futuro se olvide del lock. Necesita migración y limpiar duplicados previos.
+- **`isProfessionalOfBusiness` exige `isActive` en todas las superficies**, así que a
+  alguien en pausa tampoco se le puede soltar el horario propio. Es prolijo pero traba
+  la salida de emergencia; se decide cuando la pantalla defina si muestra a la gente
+  pausada.
 
 ## Lo que queda para el PR siguiente
 

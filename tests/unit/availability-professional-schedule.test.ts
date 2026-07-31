@@ -7,6 +7,19 @@ import { ForbiddenError } from '../helpers/auth-errors'
 
 const mockRequireBusinessRole = vi.fn()
 
+// La transacción es un objeto DISTINTO del cliente de afuera, a propósito: con el
+// mismo mock para los dos, un test que afirme "el update va adentro de la tx" pasa
+// igual si el update se mueve afuera.
+const mockTx = {
+  availabilityRule: {
+    count: vi.fn(),
+    findMany: vi.fn(),
+    createMany: vi.fn(),
+    updateMany: vi.fn(),
+    deleteMany: vi.fn(),
+  },
+}
+
 const mockPrisma = {
   professional: { findFirst: vi.fn() },
   availabilityRule: {
@@ -30,8 +43,10 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/server/actions/revalidate-business', () => ({
   revalidateBusinessPublicPaths: vi.fn().mockResolvedValue(undefined),
 }))
+
+const mockLock = vi.fn().mockResolvedValue(undefined)
 vi.mock('@/lib/db/advisory-lock', () => ({
-  acquireAdvisoryXactLock: vi.fn().mockResolvedValue(undefined),
+  acquireAdvisoryXactLock: (...a: unknown[]) => mockLock(...a),
 }))
 
 const {
@@ -48,60 +63,61 @@ const salon = [
   { dayOfWeek: 2, startTime: '09:00', endTime: '18:00', isActive: true },
 ]
 
+/** El `where` del último `findMany` de reglas hecho sobre el cliente de afuera. */
+function lastRulesQuery() {
+  const calls = mockPrisma.availabilityRule.findMany.mock.calls
+  return calls[calls.length - 1][0] as { where: Record<string, unknown>; select: Record<string, unknown> }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   mockRequireBusinessRole.mockResolvedValue({ businessId: BIZ, business: { timezone: 'America/Santiago' } })
   mockPrisma.professional.findFirst.mockResolvedValue({ id: JUAN })
-  mockPrisma.availabilityRule.findMany.mockResolvedValue([])
+  mockPrisma.availabilityRule.findMany.mockResolvedValue(salon)
   mockPrisma.availabilityRule.count.mockResolvedValue(0)
-  mockPrisma.availabilityRule.updateMany.mockResolvedValue({ count: 1 })
-  mockPrisma.availabilityRule.createMany.mockResolvedValue({ count: 7 })
-  mockPrisma.availabilityRule.deleteMany.mockResolvedValue({ count: 0 })
-  // La tx corre el callback con el mismo mock: alcanza para ver qué queries se hacen.
-  mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(mockPrisma))
+  mockTx.availabilityRule.count.mockResolvedValue(0)
+  mockTx.availabilityRule.findMany.mockResolvedValue(salon)
+  mockTx.availabilityRule.createMany.mockResolvedValue({ count: 7 })
+  mockTx.availabilityRule.updateMany.mockResolvedValue({ count: 1 })
+  mockTx.availabilityRule.deleteMany.mockResolvedValue({ count: 7 })
+  mockLock.mockResolvedValue(undefined)
+  mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(mockTx))
 })
 
 describe('getProfessionalSchedule', () => {
   it('sin filas propias devuelve el horario del salón, dicho como heredado', async () => {
-    mockPrisma.availabilityRule.findMany
-      .mockResolvedValueOnce([])      // las propias
-      .mockResolvedValueOnce(salon)   // las del salón
+    mockPrisma.availabilityRule.count.mockResolvedValue(0)
 
     const res = await getProfessionalSchedule(JUAN)
 
     expect(res.ok).toBe(true)
     if (!res.ok) throw new Error('debía resolver')
     expect(res.data.inherited).toBe(true)
+    expect(lastRulesQuery().where).toEqual({ businessId: BIZ, professionalId: null })
     expect(res.data.days).toHaveLength(7)
     expect(res.data.days[1]).toMatchObject({ startTime: '09:00', isActive: true })
   })
 
-  it('con filas propias ya no hereda', async () => {
-    mockPrisma.availabilityRule.findMany.mockResolvedValueOnce([
-      { dayOfWeek: 3, startTime: '14:00', endTime: '20:00', isActive: true },
-    ])
+  it('con filas propias trae las suyas y ya no hereda', async () => {
+    mockPrisma.availabilityRule.count.mockResolvedValue(7)
 
     const res = await getProfessionalSchedule(JUAN)
 
     expect(res.ok && res.data.inherited).toBe(false)
-    // Y no pregunta por el del salón: ya no rige.
-    expect(mockPrisma.availabilityRule.findMany).toHaveBeenCalledTimes(1)
+    expect(lastRulesQuery().where).toEqual({ businessId: BIZ, professionalId: JUAN })
   })
 
   /**
    * Cuando hereda, las filas que se devuelven son LAS DEL SALÓN. Si sus ids salieran
    * de acá, la pantalla de Juan tendría en la mano exactamente lo que hace falta para
-   * editar el horario del salón creyendo que edita el de Juan.
+   * editar el horario del salón creyendo que edita el de Juan. `projectWeek` los
+   * descarta igual (eso lo prueba `weekly-schedule.test.ts`); esto afirma la otra
+   * mitad, que la base ni siquiera los devuelve.
    */
-  it('no devuelve ids, ni siquiera cuando las filas son del salón', async () => {
-    mockPrisma.availabilityRule.findMany
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce(salon.map((r, i) => ({ ...r, id: `regla-salon-${i}` })))
+  it('no pide el id de las reglas a la base', async () => {
+    await getProfessionalSchedule(JUAN)
 
-    const res = await getProfessionalSchedule(JUAN)
-
-    if (!res.ok) throw new Error('debía resolver')
-    expect(JSON.stringify(res.data.days)).not.toContain('regla-salon')
+    expect(lastRulesQuery().select).not.toHaveProperty('id')
   })
 
   it('rechaza un id que no es de este negocio', async () => {
@@ -117,21 +133,19 @@ describe('getProfessionalSchedule', () => {
 describe('updateProfessionalAvailabilityRule', () => {
   const lunes = { dayOfWeek: 1, startTime: '10:00', endTime: '16:00', isActive: true }
 
-  it('materializa la semana antes de tocar el día', async () => {
+  it('materializa antes de tocar el día', async () => {
     await updateProfessionalAvailabilityRule(JUAN, lunes)
 
-    expect(mockPrisma.availabilityRule.createMany).toHaveBeenCalledTimes(1)
-    const rows = mockPrisma.availabilityRule.createMany.mock.calls[0][0].data as unknown[]
-    expect(rows).toHaveLength(7)
+    expect(mockTx.availabilityRule.createMany).toHaveBeenCalledTimes(1)
   })
 
   it('no vuelve a materializar si ya tiene horario propio', async () => {
-    mockPrisma.availabilityRule.count.mockResolvedValue(7)
+    mockTx.availabilityRule.count.mockResolvedValue(7)
 
     await updateProfessionalAvailabilityRule(JUAN, lunes)
 
-    expect(mockPrisma.availabilityRule.createMany).not.toHaveBeenCalled()
-    expect(mockPrisma.availabilityRule.updateMany).toHaveBeenCalled()
+    expect(mockTx.availabilityRule.createMany).not.toHaveBeenCalled()
+    expect(mockTx.availabilityRule.updateMany).toHaveBeenCalled()
   })
 
   /**
@@ -141,18 +155,21 @@ describe('updateProfessionalAvailabilityRule', () => {
   it('el update apunta a (negocio, persona, día)', async () => {
     await updateProfessionalAvailabilityRule(JUAN, lunes)
 
-    expect(mockPrisma.availabilityRule.updateMany).toHaveBeenCalledWith({
+    expect(mockTx.availabilityRule.updateMany).toHaveBeenCalledWith({
       where: { businessId: BIZ, professionalId: JUAN, dayOfWeek: 1 },
       data: { startTime: '10:00', endTime: '16:00', isActive: true },
     })
   })
 
-  it('materializar y editar van en la MISMA transacción', async () => {
+  // Si la copia commitea y el update falla, la persona queda con el horario del salón
+  // congelado y sin el cambio que pidió: peor que no haber hecho nada. El mock de la
+  // tx es un objeto aparte, así que esto se rompe de verdad si el update sale afuera.
+  it('materializar y editar corren los dos sobre la transacción', async () => {
     await updateProfessionalAvailabilityRule(JUAN, lunes)
 
-    // Si la copia commitea y el update falla, la persona queda con el horario del
-    // salón congelado y sin el cambio que pidió: peor que no haber hecho nada.
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
+    expect(mockTx.availabilityRule.updateMany).toHaveBeenCalled()
+    expect(mockPrisma.availabilityRule.updateMany).not.toHaveBeenCalled()
   })
 
   it('rechaza un horario dado vuelta', async () => {
@@ -177,6 +194,21 @@ describe('updateProfessionalAvailabilityRule', () => {
     expect(res.ok).toBe(false)
     expect(mockPrisma.$transaction).not.toHaveBeenCalled()
   })
+
+  /**
+   * El borde que hace peligroso a Prisma: un `undefined` en un `where` **borra la
+   * clave**. Si el guard de procedencia no normalizara, `findFirst({ id: undefined })`
+   * devolvería una persona cualquiera del negocio, el chequeo pasaría, y el mismo
+   * `undefined` seguiría hasta el `updateMany` — que sin `professionalId` le cambia el
+   * día al salón y a todo el equipo.
+   */
+  it('un undefined no pasa por persona válida', async () => {
+    const res = await updateProfessionalAvailabilityRule(undefined as unknown as string, lunes)
+
+    expect(res.ok).toBe(false)
+    expect(mockPrisma.professional.findFirst).not.toHaveBeenCalled()
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+  })
 })
 
 describe('resetProfessionalSchedule', () => {
@@ -187,9 +219,20 @@ describe('resetProfessionalSchedule', () => {
   it('borra sólo las reglas de esa persona', async () => {
     await resetProfessionalSchedule(JUAN)
 
-    expect(mockPrisma.availabilityRule.deleteMany).toHaveBeenCalledWith({
+    expect(mockTx.availabilityRule.deleteMany).toHaveBeenCalledWith({
       where: { businessId: BIZ, professionalId: JUAN },
     })
+  })
+
+  /**
+   * El lock protege el recurso `(negocio, persona)`, no una función: un reset que caiga
+   * entre el `count` y el `createMany` de un guardado concurrente queda deshecho en
+   * silencio, y la dueña ve que el botón "no hizo nada".
+   */
+  it('toma el MISMO lock que la materialización', async () => {
+    await resetProfessionalSchedule(JUAN)
+
+    expect(mockLock).toHaveBeenCalledWith(mockTx, `availability-rules:${BIZ}:${JUAN}`)
   })
 
   it('rechaza una persona que no es de este negocio', async () => {
@@ -198,6 +241,15 @@ describe('resetProfessionalSchedule', () => {
     const res = await resetProfessionalSchedule('de-otro-salon')
 
     expect(res.ok).toBe(false)
-    expect(mockPrisma.availabilityRule.deleteMany).not.toHaveBeenCalled()
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+  })
+
+  // Mismo borde que el update: sin normalizar, el `deleteMany` se lleva el horario del
+  // salón entero.
+  it('un undefined no pasa por persona válida', async () => {
+    const res = await resetProfessionalSchedule(undefined as unknown as string)
+
+    expect(res.ok).toBe(false)
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled()
   })
 })

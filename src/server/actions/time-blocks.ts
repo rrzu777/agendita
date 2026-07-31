@@ -11,8 +11,8 @@ import { action, UserError } from '@/lib/actions/result'
 import { differenceInMilliseconds, addDays } from 'date-fns'
 import { getEffectiveBlocks, type EffectiveBlock } from '@/lib/availability/effective-blocks'
 import { computeServiceFit, SERVICE_FIT_WINDOW_DAYS } from '@/lib/availability/service-fit'
-import { blockScopeFor, bookingScopeCondition, normalizeProfessionalId, resolveAvailabilityRules } from '@/lib/availability/scope'
-import { isProfessionalOfBusiness } from '@/lib/professionals/ownership'
+import { blockScopeFor, bookingScopeCondition, resolveAvailabilityRules } from '@/lib/availability/scope'
+import { assertBlockOwner } from '@/lib/professionals/ownership'
 import { getLocalDateStr } from '@/lib/availability/timezone'
 import { computeSeriesUntil, expandSeries, type SeriesEndMode } from '@/lib/calendar/expand-series'
 import { planSeriesUpdate } from '@/lib/calendar/series-update-plan'
@@ -221,30 +221,19 @@ export async function getTimeBlocks() {
 }
 
 /**
- * De quién es el bloqueo que se está creando: `null` = del salón, cierra para todos.
+ * La entrada de un bloqueo. `professionalId` **sale del modelo** (el tipo generado ya
+ * es `string | null`, nunca `undefined`) y por eso deja de estar en el `Omit`: acá se
+ * lo quiere obligatorio, que es exactamente lo que da no omitirlo. Los otros cuatro
+ * siguen omitidos porque son de la fila, no de la entrada.
  *
- * Sigue en el `Omit` y se declara a mano —en vez de dejar que salga del modelo de
- * Prisma— porque así el tipo dice `string | null` y **obliga** a cada caller a
- * decidir, en lugar de heredar `string | null | undefined` de la columna nullable. Un
- * `undefined` que llegue hasta acá se convierte en "del salón" (`normalizeProfessionalId`),
- * que es el lado conservador: choca contra todo en vez de contra nada.
+ * Que sea obligatorio es lo que fuerza a cada caller a decidir de quién es el bloqueo.
+ * Un `undefined` que igual se cuele desde el navegador cae en "del salón"
+ * (`assertBlockOwner` normaliza), que es el lado conservador: choca contra todo en vez
+ * de contra nada.
  */
-type TimeBlockInput = Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes' | 'professionalId'> & {
-  professionalId: string | null
+type TimeBlockInput = Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes'> & {
   overlapToleranceMinutes?: number
   confirmOverlap?: boolean
-}
-
-/**
- * Valida que el bloqueo se pueda crear a nombre de esa persona. `null` pasa siempre
- * (es el bloqueo del salón, que existe en todos los negocios).
- */
-async function assertBlockOwner(businessId: string, input: string | null): Promise<string | null> {
-  const professionalId = normalizeProfessionalId(input)
-  if (professionalId !== null && !(await isProfessionalOfBusiness(prisma, businessId, professionalId))) {
-    throw new ForbiddenError('Persona no encontrada')
-  }
-  return professionalId
 }
 
 async function _createTimeBlock(data: TimeBlockInput) {
@@ -265,7 +254,7 @@ async function _createTimeBlock(data: TimeBlockInput) {
     throw new UserError('La duración máxima de un bloqueo es de 32 días')
   }
 
-  const professionalId = await assertBlockOwner(businessId, data.professionalId)
+  const professionalId = await assertBlockOwner(prisma, businessId, data.professionalId)
 
   const now = new Date()
   const overlappingBookings = await prisma.booking.findMany({
@@ -475,7 +464,7 @@ async function _createTimeBlockSeries(data: {
 
   const until = computeSeriesUntil(data.anchorDate, data.endMode, data.weeks ?? null, timezone)
 
-  const professionalId = await assertBlockOwner(businessId, data.professionalId)
+  const professionalId = await assertBlockOwner(prisma, businessId, data.professionalId)
 
   // Chequeo ANTES de crear: ocurrencias de la serie propuesta vs reservas
   // activas dentro de la ventana de reserva del negocio. Si hay conflicto y no

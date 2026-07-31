@@ -163,7 +163,6 @@ describe('materializeProfessionalSchedule', () => {
 
     await materializeProfessionalSchedule(tx, BIZ, JUAN)
 
-    expect(calls[0]).toBe('lock')
     expect(calls).toEqual(['lock', 'count', 'findMany', 'createMany'])
     expect(mockLock).toHaveBeenCalledWith(tx, `availability-rules:${BIZ}:${JUAN}`)
   })

@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
+import { businessScheduleWhere, resolveRuleScope } from '@/lib/availability/scope'
 
 /**
  * La semana de horario: cómo se proyecta para mostrarla y cómo se le copia a una
@@ -15,8 +16,15 @@ export type ScheduleDay = {
 }
 
 /**
- * El horario con el que arranca un negocio nuevo. Estaba escrito dos veces, igual y
- * a mano, en `create-for-user.ts` y en `recover-business.ts`.
+ * El horario con el que arranca un negocio nuevo. Unifica las dos copias que estaban
+ * escritas a mano en `create-for-user.ts` y `recover-business.ts`.
+ *
+ * **Quedan dos copias más que NO pueden importar esto y hay que mover a mano:**
+ * `prisma/seed.ts` (corre con `ts-node --compiler-options module=CommonJS`, sin
+ * resolución de alias, así que no ve `@/lib/...`) y `src/lib/data/mock-store.ts` (el
+ * modo demo). La del seed es la que muerde: si el sábado se mueve acá y no allá, los
+ * e2e de disponibilidad empiezan a fallar por una diferencia que no aparece en ningún
+ * diff.
  *
  * **Domingo no está**, y eso significa cerrado: la ausencia de fila es un día cerrado
  * en todo el proyecto (`resolveAvailabilityRules` filtra `isActive`, y un día sin fila
@@ -31,7 +39,15 @@ export const DEFAULT_WEEKLY_SCHEDULE: readonly Omit<ScheduleDay, 'isActive'>[] =
   { dayOfWeek: 6, startTime: '10:00', endTime: '15:00' },
 ]
 
-/** Horas de relleno para un día que no tiene fila: se muestra cerrado y prellenado. */
+/**
+ * Horas que se prellenan en un día que no tiene fila. **No** salen de
+ * `DEFAULT_WEEKLY_SCHEDULE`: esa constante contesta "qué recibe un negocio nuevo", y si
+ * además contestara "qué muestra el editor en un día cerrado", mover el sábado de la
+ * siembra le cambiaría en silencio la pantalla a una dueña que nunca usó ese default.
+ * Son dos preguntas distintas y cada una tiene su fuente.
+ *
+ * El día sale CERRADO igual, así que esto es sólo lo que aparece escrito si lo abre.
+ */
 const FALLBACK_HOURS = { startTime: '09:00', endTime: '18:00' }
 
 /**
@@ -60,13 +76,7 @@ export function projectWeek(rules: readonly ScheduleDay[]): ScheduleDay[] {
         isActive: existing.isActive,
       }
     }
-    const preset = DEFAULT_WEEKLY_SCHEDULE.find((d) => d.dayOfWeek === dayOfWeek)
-    return {
-      dayOfWeek,
-      startTime: preset?.startTime ?? FALLBACK_HOURS.startTime,
-      endTime: preset?.endTime ?? FALLBACK_HOURS.endTime,
-      isActive: false,
-    }
+    return { dayOfWeek, ...FALLBACK_HOURS, isActive: false }
   })
 }
 
@@ -90,18 +100,32 @@ export function projectWeek(rules: readonly ScheduleDay[]): ScheduleDay[] {
  * `(businessId, professionalId, dayOfWeek)` —sólo índices—, así que la base no lo
  * atajaría: quedarían 14 filas y la mitad de los días con dos horarios.
  */
+/**
+ * La clave del lock que serializa las escrituras del horario de una persona. Vive acá
+ * y se exporta porque el lock protege el RECURSO `(negocio, persona)`, no esta función:
+ * soltar el horario propio tiene que tomar el mismo, o un reset que caiga en medio de
+ * una materialización queda deshecho sin que nadie se entere.
+ */
+export function scheduleLockKey(businessId: string, professionalId: string): string {
+  return `availability-rules:${businessId}:${professionalId}`
+}
+
 export async function materializeProfessionalSchedule(
   tx: Prisma.TransactionClient,
   businessId: string,
   professionalId: string,
 ): Promise<void> {
-  await acquireAdvisoryXactLock(tx, `availability-rules:${businessId}:${professionalId}`)
+  await acquireAdvisoryXactLock(tx, scheduleLockKey(businessId, professionalId))
 
-  const own = await tx.availabilityRule.count({ where: { businessId, professionalId } })
-  if (own > 0) return
+  // La pregunta "¿ya tiene horario propio?" se hace donde vive la herencia y no se
+  // rearma acá: es el MISMO `resolveRuleScope` que usan los lectores. Con un `count`
+  // propio, el día que la regla cambie la escritura materializaría cuando la lectura
+  // todavía cree que hereda — o se re-materializa en cada guardado, o quedan filas
+  // duplicadas, que es justo lo que el lock de arriba está evitando.
+  if ((await resolveRuleScope(tx, businessId, professionalId)) !== null) return
 
   const salon = await tx.availabilityRule.findMany({
-    where: { businessId, professionalId: null },
+    where: businessScheduleWhere(businessId),
     select: { dayOfWeek: true, startTime: true, endTime: true, isActive: true },
   })
 
