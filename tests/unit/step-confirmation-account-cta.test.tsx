@@ -13,9 +13,11 @@ const base: BookingData = {
 }
 const props = { timezone: 'America/Santiago', currency: 'CLP', bookingId: 'b1', bookingNumber: 4738, mode: 'paid' as const }
 
+const business = { name: 'Negocio', addressText: null, whatsapp: null }
+
 describe('StepConfirmation — CTA de cuenta', () => {
   it('sin sesión + con email: invita a crear cuenta con ese email', () => {
-    const html = renderToStaticMarkup(<StepConfirmation {...props} data={base} sessionEmail={null} />)
+    const html = renderToStaticMarkup(<StepConfirmation {...props} data={base} sessionEmail={null} business={business} where={{}} />)
     expect(html).toContain('Crea tu cuenta')
     expect(html).toContain('maria@example.com')
     expect(html).toContain('/ingresar?next=/mi')
@@ -23,14 +25,14 @@ describe('StepConfirmation — CTA de cuenta', () => {
 
   it('sin sesión + sin email: NO muestra el CTA (evita el /mi vacío)', () => {
     const html = renderToStaticMarkup(
-      <StepConfirmation {...props} data={{ ...base, customerEmail: '' }} sessionEmail={null} />,
+      <StepConfirmation {...props} data={{ ...base, customerEmail: '' }} sessionEmail={null} business={business} where={{}} />,
     )
     expect(html).not.toContain('Crea tu cuenta')
     expect(html).not.toContain('/ingresar')
   })
 
   it('con sesión: "Ver mis reservas" hacia /mi (home)', () => {
-    const html = renderToStaticMarkup(<StepConfirmation {...props} data={base} sessionEmail="maria@example.com" />)
+    const html = renderToStaticMarkup(<StepConfirmation {...props} data={base} sessionEmail="maria@example.com" business={business} where={{}} />)
     expect(html).toContain('Ver mis reservas')
     expect(html).toContain('href="/mi"')
     expect(html).not.toContain('Crea tu cuenta')

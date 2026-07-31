@@ -7,12 +7,39 @@ import { CheckCircle2, Clock } from 'lucide-react'
 import { formatMoney } from '@/lib/money'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { formatBookingDateTime } from '@/lib/bookings/format-booking-datetime'
+import { whereRows, type WhereFields } from '@/lib/services/modality'
+import { buildBookingHelpWhatsappUrl } from '@/lib/notifications/whatsapp'
 import { AccountCta } from './account-cta'
+import { WhatsappHelpLine, WhereRowValue } from './where-row-value'
 
-export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null }) {
+/** El negocio, en lo que la reserva no trae. La modalidad, la dirección de la
+ *  clienta y el link de la videollamada NO van acá: los resuelve el servidor al
+ *  crear la reserva y llegan con ella. */
+export interface ConfirmationBusiness {
+  name: string
+  addressText: string | null
+  whatsapp: string | null
+}
+
+export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail, business, where }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields }) {
   const isPending = mode === 'pending'
   const isFree = data.servicePrice <= 0
   const noDeposit = data.serviceDeposit <= 0
+
+  // Las mismas filas que manda el mail: el momento es el mismo (la clienta ya no
+  // está en la página del negocio) y contestar distinto en cada lado sería peor
+  // que no contestar. La modalidad y compañía salen de la reserva que devolvió el
+  // servidor, no de lo que el wizard cree: `resolveBookingDraft` pisa la modalidad
+  // pedida cuando el servicio tiene una sola, y en un reintento con la misma key
+  // la reserva devuelta puede ser otra.
+  const donde = whereRows({ ...where, businessAddress: business.addressText })
+
+  const whatsappHref = business.whatsapp
+    ? buildBookingHelpWhatsappUrl(business.whatsapp, {
+        bookingRef: formatBookingNumber(bookingNumber, bookingId),
+        businessName: business.name,
+      })
+    : null
 
   // Display-only: si la reserva trae un descuento, el precio efectivo para los
   // cálculos de "Total por pagar" / "Saldo" es el finalAmount persistido.
@@ -43,6 +70,12 @@ export function StepConfirmation({ data, timezone, currency, bookingId, bookingN
       <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5 text-left">
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.timeSlot ? formatBookingDateTime(data.timeSlot.start, timezone) : ''}</span></div>
+        {donde.map((row) => (
+          <div key={row.label} className="flex justify-between gap-4">
+            <span className="text-muted-foreground">{row.label}</span>
+            <WhereRowValue row={row} />
+          </div>
+        ))}
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice, currency)}</span></div>
         {hasDiscount && (
           <>
@@ -70,6 +103,8 @@ export function StepConfirmation({ data, timezone, currency, bookingId, bookingN
       </div>
 
       <p className="mb-6 text-sm text-muted-foreground">Número de reserva: {formatBookingNumber(bookingNumber, bookingId)}</p>
+
+      {whatsappHref && <WhatsappHelpLine href={whatsappHref} businessName={business.name} className="mb-6" />}
 
       <AccountCta sessionActive={sessionEmail !== null} customerEmail={data.customerEmail || null} className="mb-6" />
 

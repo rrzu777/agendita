@@ -5,8 +5,8 @@ import { StepService } from './step-service'
 import { StepDate } from './step-date'
 import { StepTime } from './step-time'
 import { StepCustomer } from './step-customer'
-import { StepPayment } from './step-payment'
-import { StepConfirmation } from './step-confirmation'
+import { StepPayment, type BookingCreated } from './step-payment'
+import { StepConfirmation, type ConfirmationBusiness } from './step-confirmation'
 import type { Service, ServiceModality } from '@prisma/client'
 import type { FunnelSession } from '@/lib/customers/session-prefill'
 import { restoreWizardState, serializeWizardState, wizardStorageKey } from '@/lib/bookings/wizard-storage'
@@ -80,6 +80,8 @@ const steps = [
 interface BookingWizardProps {
   businessId: string
   slug: string
+  /** Para contestar "¿dónde tengo que ir?" en la confirmación. */
+  business: ConfirmationBusiness
   timezone: string
   currency: string
   services: Service[]
@@ -88,13 +90,15 @@ interface BookingWizardProps {
   session: WizardSession
 }
 
-export function BookingWizard({ businessId, slug, timezone, currency, services, cancellationPolicy, referralToken, session }: BookingWizardProps) {
+export function BookingWizard({ businessId, slug, business, timezone, currency, services, cancellationPolicy, referralToken, session }: BookingWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const [data, setData] = useState<BookingData>(() => applySessionPrefill(initialData, session))
   const [bookingId, setBookingId] = useState<string | null>(null)
   const [bookingNumber, setBookingNumber] = useState<number | null>(null)
   const [confirmationMode, setConfirmationMode] = useState<'paid' | 'pending'>('paid')
   const [confirmationPromo, setConfirmationPromo] = useState<{ discountAmount: number; finalAmount: number } | null>(null)
+  // El "dónde" de la reserva ya escrita, para la confirmación. Ver `BookingCreated`.
+  const [confirmationWhere, setConfirmationWhere] = useState<BookingCreated['where']>({})
 
   // Restaura el estado guardado antes del viaje a /ingresar (solo con ?continuar=1;
   // el storage se limpia siempre para no restaurar dos veces ni dejar residuo).
@@ -209,11 +213,12 @@ export function BookingWizard({ businessId, slug, timezone, currency, services, 
           </div>
         )}
         {currentStep === 5 && data.serviceId && data.timeSlot && (
-          <StepPayment data={data} updateData={updateData} businessId={businessId} timezone={timezone} currency={currency} cancellationPolicy={cancellationPolicy} referralToken={referralToken} onSuccess={(id, mode, promo, number) => {
-            setBookingId(id)
-            setBookingNumber(number ?? null)
-            setConfirmationMode(mode)
-            setConfirmationPromo(promo ?? null)
+          <StepPayment data={data} updateData={updateData} businessId={businessId} timezone={timezone} currency={currency} cancellationPolicy={cancellationPolicy} referralToken={referralToken} onSuccess={(reserva) => {
+            setBookingId(reserva.id)
+            setBookingNumber(reserva.bookingNumber)
+            setConfirmationMode(reserva.mode)
+            setConfirmationPromo(reserva.promo)
+            setConfirmationWhere(reserva.where)
             nextStep()
           }} onBack={prevStep} />
         )}
@@ -224,7 +229,7 @@ export function BookingWizard({ businessId, slug, timezone, currency, services, 
           </div>
         )}
         {currentStep === 6 && (
-          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} sessionEmail={session?.email ?? null} />
+          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} sessionEmail={session?.email ?? null} business={business} where={confirmationWhere} />
         )}
       </section>
     </div>

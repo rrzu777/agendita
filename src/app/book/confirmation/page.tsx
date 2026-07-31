@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { CheckCircle2, Clock, XCircle, Calendar, Check, AlertCircle } from 'lucide-react'
+import { CheckCircle2, Clock, XCircle, Calendar, Check, AlertCircle, MapPin } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { prisma } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth/user'
@@ -14,6 +14,9 @@ import { BANK_TRANSFER_METHOD, BT_DECLARED_PREFIX } from '@/lib/bank-transfer/de
 import { TransferPanel } from './transfer-panel'
 import { AccountCta } from '@/components/booking/account-cta'
 import { formatConfirmationDateTime } from './format-datetime'
+import { whereRows } from '@/lib/services/modality'
+import { buildBookingHelpWhatsappUrl } from '@/lib/notifications/whatsapp'
+import { WhatsappHelpLine, WhereRowValue } from '@/components/booking/where-row-value'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
@@ -36,6 +39,8 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           subdomain: true,
           timezone: true,
           currency: true,
+          addressText: true,
+          whatsapp: true,
         },
       },
       service: true,
@@ -89,6 +94,24 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
   )
   const remainingBalance = booking.finalAmount - booking.depositPaid
   const currency = booking.business.currency || 'CLP'
+
+  // Las mismas filas que manda el mail de la reserva: es el momento en que la
+  // clienta cierra la pestaña y necesita saber a dónde va.
+  const donde = whereRows({
+    modality: booking.modality,
+    businessAddress: booking.business.addressText,
+    serviceAddress: booking.serviceAddress,
+    // El link de la reserva, no el del negocio: `resolveBookingDraft` lo copia al
+    // crearla justamente para que cambiar de sala no reescriba las citas ya avisadas.
+    // El mail manda éste; la pantalla tiene que decir lo mismo.
+    meetingUrl: booking.meetingUrl,
+  })
+  const whatsappHref = booking.business.whatsapp
+    ? buildBookingHelpWhatsappUrl(booking.business.whatsapp, {
+        bookingRef: formatBookingNumber(booking.bookingNumber, booking.id),
+        businessName: booking.business.name,
+      })
+    : null
 
   const stateConfig = {
     confirmed: {
@@ -217,6 +240,18 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
                 </div>
                 <span className="text-right font-semibold text-primary">{formattedTime}</span>
               </div>
+
+              {donde.map((row) => (
+                <div key={row.label} className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3 text-muted-foreground">
+                    <div className="flex size-10 items-center justify-center rounded-lg bg-secondary">
+                      <MapPin className="size-5" />
+                    </div>
+                    <span className="text-sm font-medium">{row.label}</span>
+                  </div>
+                  <WhereRowValue row={row} />
+                </div>
+              ))}
             </div>
 
             <div className="mt-6 border-t border-border/50 pt-5">
@@ -242,6 +277,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
               <p className="text-sm text-muted-foreground">
                 Tu código de reserva: <span className="font-mono font-semibold text-primary">{formatBookingNumber(booking.bookingNumber, booking.id)}</span>
               </p>
+              {whatsappHref && <WhatsappHelpLine href={whatsappHref} businessName={booking.business.name} className="mt-2" />}
             </div>
           </div>
         </div>
