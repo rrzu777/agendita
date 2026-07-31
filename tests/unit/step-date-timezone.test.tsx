@@ -18,32 +18,45 @@ describe('StepDate timezone', () => {
     document.body.replaceChildren()
   })
 
+  /**
+   * El reloj va fijo, y no es prolijidad: la grilla muestra el mes en curso y Tokio va
+   * medio día adelante, así que el último día del mes —desde que en Tokio ya es el mes
+   * siguiente— **todos** los días visibles quedan en el pasado y deshabilitados. El test
+   * fallaba unas horas por mes, con `main` verde el día anterior y rojo sin que nadie
+   * tocara nada. Un martes a mitad de mes deja siempre días futuros por delante.
+   */
   it('emits the business-local noon instant for the clicked day', async () => {
-    const onSelect = vi.fn()
-    const container = document.createElement('div')
-    document.body.appendChild(container)
-    root = createRoot(container)
-    act(() => {
-      root?.render(<StepDate data={data} timezone="Asia/Tokyo" onSelect={onSelect} onBack={() => {}} />)
-    })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 6, 6, 12, 0, 0))
+    try {
+      const onSelect = vi.fn()
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      act(() => {
+        root?.render(<StepDate data={data} timezone="Asia/Tokyo" onSelect={onSelect} onBack={() => {}} />)
+      })
 
-    // Click en un día futuro habilitado (el último habilitado del mes visible)
-    const dayButtons = Array.from(container.querySelectorAll('button[data-day]')).filter(b => !(b as HTMLButtonElement).disabled)
-    expect(dayButtons.length).toBeGreaterThan(0)
-    const target = dayButtons[dayButtons.length - 1] as HTMLButtonElement
-    const dayStr = target.getAttribute('data-day')!
-    act(() => {
-      target.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    const continueBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Continuar'))!
-    act(() => {
-      continueBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+      // Click en un día futuro habilitado (el último habilitado del mes visible)
+      const dayButtons = Array.from(container.querySelectorAll('button[data-day]')).filter(b => !(b as HTMLButtonElement).disabled)
+      expect(dayButtons.length).toBeGreaterThan(0)
+      const target = dayButtons[dayButtons.length - 1] as HTMLButtonElement
+      const dayStr = target.getAttribute('data-day')!
+      act(() => {
+        target.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      const continueBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Continuar'))!
+      act(() => {
+        continueBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
 
-    expect(onSelect).toHaveBeenCalledTimes(1)
-    const emitted: Date = onSelect.mock.calls[0][0]
-    // El instante emitido debe ser exactamente el mediodía de ese día EN TOKIO
-    expect(formatInTimeZone(emitted, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm')).toBe(`${dayStr} 12:00`)
+      expect(onSelect).toHaveBeenCalledTimes(1)
+      const emitted: Date = onSelect.mock.calls[0][0]
+      // El instante emitido debe ser exactamente el mediodía de ese día EN TOKIO
+      expect(formatInTimeZone(emitted, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm')).toBe(`${dayStr} 12:00`)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('aligns the first day of the month with its real weekday column', () => {
