@@ -1,9 +1,4 @@
 import { formatInTimeZone } from 'date-fns-tz'
-import { localDateTimeToUtc } from '@/lib/availability/timezone'
-
-export function parseTimeUTC(dateStr: string, timeStr: string, timezone: string): Date {
-  return localDateTimeToUtc(dateStr, timeStr, timezone)
-}
 
 export interface BlockFormValues {
   date: string

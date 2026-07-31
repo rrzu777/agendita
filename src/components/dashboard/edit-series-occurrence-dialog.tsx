@@ -10,7 +10,8 @@ import {
   skipSeriesOccurrence, overrideSeriesOccurrence, updateTimeBlockSeries, deleteTimeBlockSeries,
 } from '@/server/actions/time-blocks'
 import type { ActionResult } from '@/lib/actions/result'
-import { deriveBlockFormValues, parseTimeUTC } from '@/lib/calendar/block-form-values'
+import { deriveBlockFormValues } from '@/lib/calendar/block-form-values'
+import { localDateTimeToUtc } from '@/lib/availability/timezone'
 import { BlockFormFields } from './block-form-fields'
 import type { CalendarTimeBlock } from './time-block-card'
 
@@ -65,7 +66,7 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
         router.refresh()
         handleOpenChange(false)
       } catch {
-        // parseTimeUTC (date-fns-tz) solo lanza en formatos internos rotos
+        // localDateTimeToUtc (date-fns-tz) solo lanza en formatos internos rotos
         // (TypeError de aridad / RangeError de opciones), nunca mensaje
         // relevante para la usuaria; fn() ya devuelve ActionResult.
         setError('Error al guardar')
@@ -77,8 +78,8 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
     const call =
       scope === 'occurrence'
         ? () => overrideSeriesOccurrence(seriesId, occurrenceDate, {
-            startDateTime: parseTimeUTC(date, startTime, timezone),
-            endDateTime: parseTimeUTC(date, endTime, timezone),
+            startDateTime: localDateTimeToUtc(date, startTime, timezone),
+            endDateTime: localDateTimeToUtc(date, endTime, timezone),
             reason: reason || null,
             confirmed,
           })

@@ -12,7 +12,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { updateTimeBlock, deleteTimeBlock } from '@/server/actions/time-blocks'
-import { deriveBlockFormValues, parseTimeUTC } from '@/lib/calendar/block-form-values'
+import { deriveBlockFormValues } from '@/lib/calendar/block-form-values'
+import { localDateTimeToUtc } from '@/lib/availability/timezone'
 import { BlockFormFields } from './block-form-fields'
 import type { CalendarTimeBlock } from './time-block-card'
 
@@ -60,8 +61,8 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
 
     startTransition(async () => {
       try {
-        const start = parseTimeUTC(date, startTime, timezone)
-        const end = parseTimeUTC(date, endTime, timezone)
+        const start = localDateTimeToUtc(date, startTime, timezone)
+        const end = localDateTimeToUtc(date, endTime, timezone)
 
         const result = await updateTimeBlock(block.id, {
           startDateTime: start,
@@ -78,7 +79,7 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
         router.refresh()
         handleOpenChange(false)
       } catch {
-        // parseTimeUTC (date-fns-tz) solo lanza en formatos internos rotos,
+        // localDateTimeToUtc (date-fns-tz) solo lanza en formatos internos rotos,
         // nunca mensaje relevante para la usuaria; la acción ya devuelve ActionResult.
         setError('Error al guardar el bloqueo')
       }

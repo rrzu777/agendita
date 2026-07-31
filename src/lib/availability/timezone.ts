@@ -33,8 +33,9 @@ function addLocalDays(localDateStr: string, n: number): string {
   return formatInTimeZone(dt, 'UTC', 'yyyy-MM-dd')
 }
 
-/** Tope de la búsqueda del primer instante real: ningún país saltea más de 2 h. */
-const MAX_GAP_MINUTES = 120
+/** Tope de la búsqueda del primer instante real. El gap más largo que usa hoy
+ *  algún país es de 2 h (Troll, Antártida); el margen es para no depender de eso. */
+const MAX_GAP_MINUTES = 180
 
 /**
  * Construye el instante UTC de una hora local (`HH:mm`, o con segundos) de una
@@ -48,16 +49,19 @@ const MAX_GAP_MINUTES = 120
  * quiso decir quien escribió "a esta hora".
  */
 export function localDateTimeToUtc(localDateStr: string, localTimeStr: string, timezone: string): Date {
-  const instante = fromZonedTime(`${localDateStr}T${localTimeStr}`, timezone)
   // La comparación va al minuto: es la resolución en la que se define un gap, y
-  // así el helper acepta también horas con segundos o milisegundos.
+  // así el helper acepta también horas con segundos.
   const pedido = `${localDateStr} ${localTimeStr.slice(0, 5)}`
-  if (formatInTimeZone(instante, timezone, 'yyyy-MM-dd HH:mm') === pedido) return instante
-  // Hasta el salto la hora local sigue siendo anterior a la pedida; en el salto
-  // pasa a ser posterior. El primer candidato que la alcanza ES el salto.
+  const alcanza = (d: Date) => formatInTimeZone(d, timezone, 'yyyy-MM-dd HH:mm') >= pedido
+
+  const instante = fromZonedTime(`${localDateStr}T${localTimeStr}`, timezone)
+  // `fromZonedTime` nunca se pasa: si la hora existe la devuelve clavada, y si
+  // cayó en el gap devuelve un instante ANTERIOR. Hasta el salto la hora local
+  // sigue siendo menor a la pedida; el primer candidato que la alcanza ES el salto.
+  if (alcanza(instante)) return instante
   for (let minuto = 1; minuto <= MAX_GAP_MINUTES; minuto++) {
     const candidato = new Date(instante.getTime() + minuto * 60_000)
-    if (formatInTimeZone(candidato, timezone, 'yyyy-MM-dd HH:mm') >= pedido) return candidato
+    if (alcanza(candidato)) return candidato
   }
   return instante
 }
@@ -68,7 +72,7 @@ export function localDateTimeToUtc(localDateStr: string, localTimeStr: string, t
  * medianoche local no existe, es el primer instante que sí (01:00 en Santiago).
  */
 export function startOfLocalDay(localDateStr: string, timezone: string): Date {
-  return localDateTimeToUtc(localDateStr, '00:00:00.000', timezone)
+  return localDateTimeToUtc(localDateStr, '00:00', timezone)
 }
 
 /**

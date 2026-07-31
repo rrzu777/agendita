@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths } from 'date-fns'
-import { fromZonedTime } from 'date-fns-tz'
-import { getLocalDateStr } from '@/lib/availability/timezone'
+import { getLocalDateStr, localDateTimeToUtc } from '@/lib/availability/timezone'
 import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
 import { formatDuration } from '@/lib/format-duration'
@@ -72,7 +71,7 @@ export function StepDate({ data, timezone, onSelect, onBack }: { data: BookingDa
       <div className="mt-8 flex gap-3">
         <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
         <Button className="h-12 flex-1 rounded-full text-base font-semibold" disabled={!selectedDay}
-          onClick={() => selectedDay && onSelect(fromZonedTime(`${selectedDay} 12:00`, timezone))}>
+          onClick={() => selectedDay && onSelect(localDateTimeToUtc(selectedDay, '12:00', timezone))}>
           Continuar
         </Button>
       </div>

@@ -37,7 +37,18 @@ export async function getEffectiveBlocks({
   // día local para que la query sea un SUPERCONJUNTO seguro; expandSeries filtra
   // el día con precisión.
   const rangeStartDay = startOfLocalDay(getLocalDateStr(rangeStart, timezone), timezone)
+  const rangeEndDay = startOfLocalDay(getLocalDateStr(rangeEnd, timezone), timezone)
   const condition = blockScopeCondition(scope)
+
+  // Una excepción puede MOVER su ocurrencia a otro día, incluso fuera de
+  // [anchorDate, until] (el diálogo deja elegir cualquier fecha). Es el mismo
+  // criterio que usa `expandSeries` para repescarla, escrito acá porque si la
+  // serie no entra en esta query no hay nada que repescar.
+  const excepcionMovidaAlRango = {
+    isSkipped: false,
+    startDateTime: { lte: rangeEnd },
+    endDateTime: { gte: rangeStart },
+  }
 
   const [oneOff, series] = await Promise.all([
     client.timeBlock.findMany({
@@ -53,11 +64,29 @@ export async function getEffectiveBlocks({
       where: {
         businessId,
         isActive: true,
-        anchorDate: { lte: rangeEnd },
-        OR: [{ until: null }, { until: { gte: rangeStartDay } }],
         AND: condition,
+        OR: [
+          {
+            anchorDate: { lte: rangeEnd },
+            OR: [{ until: null }, { until: { gte: rangeStartDay } }],
+          },
+          { exceptions: { some: excepcionMovidaAlRango } },
+        ],
       },
-      include: { exceptions: true },
+      // Acotadas y no todas: `expandSeries` necesita las del rango barrido (por su
+      // día original, que es como se guardan los skips y los cambios de hora) más
+      // las movidas hacia el rango. Traerlas todas hacía que cada consulta de
+      // disponibilidad recorriera el historial completo de la serie.
+      include: {
+        exceptions: {
+          where: {
+            OR: [
+              { occurrenceDate: { gte: rangeStartDay, lte: rangeEndDay } },
+              excepcionMovidaAlRango,
+            ],
+          },
+        },
+      },
     }),
   ])
 

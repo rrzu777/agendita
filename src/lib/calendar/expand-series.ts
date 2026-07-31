@@ -106,37 +106,31 @@ export function expandSeries(
   const startStr = getLocalDateStr(rangeStart, timezone)
   const endStr = getLocalDateStr(rangeEnd, timezone)
 
-  const result: EffectiveBlock[] = []
-  let cursor = startStr
-  let guard = 0
-
-  while (cursor <= endStr && guard < MAX_EXPANSION_DAYS) {
-    guard++
-    if (esDiaDeLaRegla(cursor)) {
-      const exc = exceptionByDate.get(cursor)
-      if (!exc?.isSkipped) {
-        const occ = ocurrencia(cursor, exc)
-        // Si una excepción la movió fuera del rango, el bloqueo ya no está acá:
-        // aparece cuando se pregunte por el día al que se fue.
-        if (solapaElRango(occ)) result.push(occ)
-      }
-    }
-    cursor = nextLocalDate(cursor)
+  // Días candidatos: los del rango pedido...
+  const dias = new Set<string>()
+  for (let cursor = startStr, guard = 0; cursor <= endStr && guard < MAX_EXPANSION_DAYS; cursor = nextLocalDate(cursor), guard++) {
+    dias.add(cursor)
   }
-  const finDelBarrido = cursor // primer día local que el barrido ya no miró
+  // ...más el día ORIGINAL de las excepciones que MOVIERON su ocurrencia a otro
+  // día. La excepción se guarda con el día original como clave y el horario nuevo
+  // adentro, así que preguntar por el día nuevo no la encontraba: un bloqueo real
+  // que el chequeo de disponibilidad no veía, y se podía reservar justo encima.
+  // El filtro de solape va acá, antes de componer nada: son dos comparaciones de
+  // Date contra las cuatro conversiones de timezone que cuesta una ocurrencia.
+  for (const [dia, exc] of exceptionByDate) {
+    if (exc.startDateTime && exc.endDateTime && exc.startDateTime <= rangeEnd && exc.endDateTime >= rangeStart) {
+      dias.add(dia)
+    }
+  }
 
-  // El barrido recorre los días que dicta la regla, y una excepción que MUEVE la
-  // ocurrencia se guarda con el día original como clave y el horario nuevo adentro.
-  // Si el rango cubre el día nuevo pero no el original, nadie la visitaba: un
-  // bloqueo real que el chequeo de disponibilidad no veía, y se podía reservar
-  // justo encima. Las excepciones llegan todas (la query no las filtra por
-  // rango), así que las repescamos por su horario de verdad.
-  for (const exc of exceptions) {
-    if (exc.isSkipped || !exc.startDateTime || !exc.endDateTime) continue
-    const diaOriginal = getLocalDateStr(exc.occurrenceDate, timezone)
-    if (diaOriginal >= startStr && diaOriginal < finDelBarrido) continue // ya la miró el barrido
-    if (!esDiaDeLaRegla(diaOriginal)) continue
-    const occ = ocurrencia(diaOriginal, exc)
+  const result: EffectiveBlock[] = []
+  for (const dia of dias) {
+    if (!esDiaDeLaRegla(dia)) continue
+    const exc = exceptionByDate.get(dia)
+    if (exc?.isSkipped) continue
+    const occ = ocurrencia(dia, exc)
+    // Si una excepción la movió fuera del rango, el bloqueo ya no está acá:
+    // aparece cuando se pregunte por el día al que se fue.
     if (solapaElRango(occ)) result.push(occ)
   }
 
