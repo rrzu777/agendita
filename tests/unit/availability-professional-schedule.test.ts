@@ -172,6 +172,21 @@ describe('updateProfessionalAvailabilityRule', () => {
     expect(mockPrisma.availabilityRule.updateMany).not.toHaveBeenCalled()
   })
 
+  /**
+   * `count: 0` después de materializar significa filas propias PARCIALES (un backfill,
+   * un import). Sin el guard es un updateMany que no toca nada y una pantalla que dice
+   * "guardado" — el peor desenlace, porque nadie se entera.
+   */
+  it('si el día no existe después de materializar, falla en vez de decir "guardado"', async () => {
+    mockTx.availabilityRule.count.mockResolvedValue(3) // parciales: ya "tiene horario propio"
+    mockTx.availabilityRule.updateMany.mockResolvedValue({ count: 0 })
+
+    const res = await updateProfessionalAvailabilityRule(JUAN, lunes)
+
+    expect(res.ok).toBe(false)
+    expect(mockTx.availabilityRule.createMany).not.toHaveBeenCalled()
+  })
+
   it('rechaza un horario dado vuelta', async () => {
     const res = await updateProfessionalAvailabilityRule(JUAN, { ...lunes, startTime: '18:00', endTime: '09:00' })
 

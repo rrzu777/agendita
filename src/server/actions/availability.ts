@@ -273,13 +273,20 @@ async function _updateProfessionalAvailabilityRule(
   await prisma.$transaction(async (tx) => {
     await materializeProfessionalSchedule(tx, businessId, id)
     // `updateMany` y no `update`: la clave es `(negocio, persona, día)` y no hay unique
-    // que la respalde, así que no existe un `where` de `update` que la exprese. Después
-    // de materializar siempre hay fila para los 7 días, por eso no hay rama de "no
-    // encontrada" — si alguna vez `count` diera 0, la materialización está rota.
-    await tx.availabilityRule.updateMany({
+    // que la respalde, así que no existe un `where` de `update` que la exprese.
+    const updated = await tx.availabilityRule.updateMany({
       where: { businessId, professionalId: id, dayOfWeek },
       data: { startTime, endTime, isActive },
     })
+    // Después de materializar tiene que haber fila para los 7 días, así que `count: 0`
+    // significa que la persona tiene filas propias PARCIALES — hoy ningún camino de la
+    // app las crea, pero un backfill o un import sí, y la materialización nunca las
+    // completa porque ya cuenta como "tiene horario propio". Sin este guard eso es un
+    // `updateMany` que no toca nada y una pantalla que dice "guardado": el peor
+    // desenlace posible, porque nadie se entera.
+    if (updated.count === 0) {
+      throw new UserError('No pudimos guardar ese día. Soltá el horario propio de esta persona y volvé a configurarlo.')
+    }
   })
 
   revalidatePath('/dashboard/availability')
