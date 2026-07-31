@@ -133,7 +133,9 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
       try {
         if (recurring) {
           const anchorDate = fromZonedTime(`${date} 00:00:00`, timezone)
-          const res = await createTimeBlockSeries({ daysOfWeek, startTime, endTime, reason: reason || null, anchorDate, endMode, weeks: endMode === 'weeks' ? weeks : null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmed: confirmOverlap })
+          // `professionalId: null` = bloqueo del salón, cierra para todos. Este diálogo
+          // todavía no pregunta de quién es; el selector llega con la pantalla.
+          const res = await createTimeBlockSeries({ daysOfWeek, startTime, endTime, reason: reason || null, anchorDate, endMode, weeks: endMode === 'weeks' ? weeks : null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmed: confirmOverlap, professionalId: null })
           if (!res.ok) { setError(res.error); return }
           // Mismo patrón que los bloqueos sueltos: si hay reservas que chocan,
           // la serie NO se crea hasta que la dueña marque la confirmación.
@@ -149,7 +151,7 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
         }
         const start = parseTimeUTC(date, startTime, timezone)
         const end = parseTimeUTC(date, endTime, timezone)
-        const result = await createTimeBlock({ startDateTime: start, endDateTime: end, reason: reason || null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmOverlap })
+        const result = await createTimeBlock({ startDateTime: start, endDateTime: end, reason: reason || null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmOverlap, professionalId: null })
         if (!result.ok) { setError(result.error); return }
         if ('requiresConfirmation' in result.data) { setError(result.data.message); return }
         router.refresh()

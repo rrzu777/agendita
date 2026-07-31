@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/db'
 import { requireBusiness } from '@/lib/auth/server'
 import { action, UserError } from '@/lib/actions/result'
+import { businessScheduleWhere } from '@/lib/availability/scope'
 
 async function _saveOnboardingStep(businessId: string, step: number) {
   const { businessId: sessionBusinessId } = await requireBusiness()
@@ -25,7 +26,10 @@ async function _completeOnboarding(businessId: string) {
 
   const [servicesCount, availabilityCount] = await Promise.all([
     prisma.service.count({ where: { businessId, isActive: true } }),
-    prisma.availabilityRule.count({ where: { businessId, isActive: true } }),
+    // Del salón, no del equipo: el requisito para terminar el onboarding es que el
+    // NEGOCIO tenga al menos un día de atención. Sin el filtro, alguien del equipo con
+    // horario propio alcanzaría para dar por cumplido un horario que el salón no tiene.
+    prisma.availabilityRule.count({ where: { ...businessScheduleWhere(businessId), isActive: true } }),
   ])
 
   if (servicesCount === 0) {

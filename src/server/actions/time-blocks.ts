@@ -11,7 +11,8 @@ import { action, UserError } from '@/lib/actions/result'
 import { differenceInMilliseconds, addDays } from 'date-fns'
 import { getEffectiveBlocks, type EffectiveBlock } from '@/lib/availability/effective-blocks'
 import { computeServiceFit, SERVICE_FIT_WINDOW_DAYS } from '@/lib/availability/service-fit'
-import { bookingScopeCondition, resolveAvailabilityRules } from '@/lib/availability/scope'
+import { blockScopeFor, bookingScopeCondition, resolveAvailabilityRules } from '@/lib/availability/scope'
+import { assertBlockOwner } from '@/lib/professionals/ownership'
 import { getLocalDateStr } from '@/lib/availability/timezone'
 import { computeSeriesUntil, expandSeries, type SeriesEndMode } from '@/lib/calendar/expand-series'
 import { planSeriesUpdate } from '@/lib/calendar/series-update-plan'
@@ -112,35 +113,49 @@ function buildSeriesConflictMessage(intro: string, overlappingDates: string[], i
  * Texto adicional para los mensajes de confirmación: servicios activos que hoy
  * caben en algún día pero que con el bloqueo propuesto no cabrían en ninguno.
  * Es un aviso best-effort — si algo falla, no rompe el flujo de guardado.
+ *
+ * Parámetros con nombre y no posicionales: `timezone` y `professionalId` son los dos
+ * `string` y cambiarlos de lugar compila. Es la misma razón por la que
+ * `getEffectiveBlocks` toma un objeto.
  */
-async function serviceFitAddendum(
-  businessId: string,
-  timezone: string,
-  proposedBlocks: { startDateTime: Date; endDateTime: Date }[],
-  now: Date,
-  excludeBlock?: (block: EffectiveBlock) => boolean,
-): Promise<string> {
+async function serviceFitAddendum({
+  businessId,
+  timezone,
+  proposedBlocks,
+  now,
+  professionalId,
+  excludeBlock,
+}: {
+  businessId: string
+  timezone: string
+  proposedBlocks: { startDateTime: Date; endDateTime: Date }[]
+  now: Date
+  /** De quién es el bloqueo propuesto. El aviso se simula contra SU horario. */
+  professionalId: string | null
+  excludeBlock?: (block: EffectiveBlock) => boolean
+}): Promise<string> {
   try {
     const [services, rules] = await Promise.all([
       prisma.service.findMany({ where: { businessId, isActive: true } }),
       // Por `resolveAvailabilityRules` y no un findMany crudo: es el mismo
       // `computeServiceFit` que la pantalla de Disponibilidad, y ahí las reglas ya
-      // vienen con alcance. Sin esto, el día que alguien tenga horario propio este
-      // aviso simularía el fit con los horarios de todo el equipo mezclados y daría
-      // una respuesta distinta a la de la pantalla sobre exactamente lo mismo.
-      resolveAvailabilityRules(prisma, businessId, null),
+      // vienen con alcance. Sin esto, el aviso sobre el bloqueo de una persona
+      // simularía el fit con los horarios de todo el equipo mezclados y daría una
+      // respuesta distinta a la de la pantalla sobre exactamente lo mismo.
+      resolveAvailabilityRules(prisma, businessId, professionalId),
     ])
     if (services.length === 0 || rules.length === 0) return ''
 
     const fitWindowEnd = addDays(now, SERVICE_FIT_WINDOW_DAYS + 1)
-    // Alcance del negocio: este aviso acompaña al CRUD de bloqueos del salón. El
-    // fit por persona entra con el PR que deja crear bloqueos de una persona.
+    // El mismo alcance que las reglas, en la otra punta del cálculo: el aviso sobre
+    // las vacaciones de Juan no puede contar el franco de Ana como si le cerrara el
+    // día a Juan.
     let blocks = await getEffectiveBlocks({
       businessId,
       rangeStart: now,
       rangeEnd: fitWindowEnd,
       timezone,
-      scope: { kind: 'business' },
+      scope: blockScopeFor(professionalId),
     })
     if (excludeBlock) blocks = blocks.filter((b) => !excludeBlock(b))
     // Las ocurrencias fuera de la ventana simulada son ruido puro para el fit
@@ -205,13 +220,23 @@ export async function getTimeBlocks() {
   })
 }
 
-// `professionalId` va en el Omit aunque la columna exista: derivar el tipo de
-// entrada del modelo de Prisma hace que CUALQUIER columna nueva se vuelva un
-// parámetro obligatorio de esta firma, y una columna nullable no debería cambiarle
-// nada a los callers de hoy. El bloqueo por persona entra a propósito en el PR B,
-// junto con el CRUD que lo sabe manejar; hasta entonces todo lo que se crea acá es
-// del negocio (professionalId = null, el default de la columna).
-async function _createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes' | 'professionalId'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean }) {
+/**
+ * La entrada de un bloqueo. `professionalId` **sale del modelo** (el tipo generado ya
+ * es `string | null`, nunca `undefined`) y por eso deja de estar en el `Omit`: acá se
+ * lo quiere obligatorio, que es exactamente lo que da no omitirlo. Los otros cuatro
+ * siguen omitidos porque son de la fila, no de la entrada.
+ *
+ * Que sea obligatorio es lo que fuerza a cada caller a decidir de quién es el bloqueo.
+ * Un `undefined` que igual se cuele desde el navegador cae en "del salón"
+ * (`assertBlockOwner` normaliza), que es el lado conservador: choca contra todo en vez
+ * de contra nada.
+ */
+type TimeBlockInput = Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes'> & {
+  overlapToleranceMinutes?: number
+  confirmOverlap?: boolean
+}
+
+async function _createTimeBlock(data: TimeBlockInput) {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('create-timeblock', 20, 60000)
   if (!limit.success) {
@@ -229,11 +254,11 @@ async function _createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' | 'busi
     throw new UserError('La duración máxima de un bloqueo es de 32 días')
   }
 
+  const professionalId = await assertBlockOwner(prisma, businessId, data.professionalId)
+
   const now = new Date()
   const overlappingBookings = await prisma.booking.findMany({
-    // `null` = bloqueo del salón, choca contra todas las citas. Cuando el diálogo
-    // pregunte de quién es el bloqueo, acá va esa persona.
-    where: overlappingActiveBookingsWhere(businessId, startDateTime, endDateTime, now, null),
+    where: overlappingActiveBookingsWhere(businessId, startDateTime, endDateTime, now, professionalId),
     select: { id: true },
     take: 1,
   })
@@ -243,7 +268,13 @@ async function _createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' | 'busi
     // resultado estructurado en lugar de lanzar, para no generar un 500 (y su
     // ruido en los logs) en un flujo de validación esperado.
     const timezone = business.timezone || 'America/Santiago'
-    const addendum = await serviceFitAddendum(businessId, timezone, [{ startDateTime, endDateTime }], now)
+    const addendum = await serviceFitAddendum({
+      businessId,
+      timezone,
+      proposedBlocks: [{ startDateTime, endDateTime }],
+      now,
+      professionalId,
+    })
     return {
       requiresConfirmation: true as const,
       message:
@@ -255,7 +286,7 @@ async function _createTimeBlock(data: Omit<TimeBlock, 'id' | 'createdAt' | 'busi
   }
 
   const newBlock = await prisma.timeBlock.create({
-    data: { startDateTime, endDateTime, reason, overlapToleranceMinutes, businessId },
+    data: { startDateTime, endDateTime, reason, overlapToleranceMinutes, businessId, professionalId },
   })
   revalidatePath('/dashboard/availability')
   revalidatePath('/dashboard/calendar')
@@ -308,9 +339,12 @@ async function _deleteTimeBlock(id: string) {
 
 export const deleteTimeBlock = action(_deleteTimeBlock)
 
+// Sin `professionalId` en la entrada, a diferencia de crear: editar hora y motivo no
+// cambia de quién es el bloqueo. Reasignarlo sería otra operación (y otra pregunta:
+// qué pasa con las reservas que ese cambio deja tapadas o destapadas).
 async function _updateTimeBlock(
   id: string,
-  data: Omit<TimeBlock, 'id' | 'createdAt' | 'businessId' | 'overlapToleranceMinutes' | 'professionalId'> & { overlapToleranceMinutes?: number; confirmOverlap?: boolean },
+  data: Omit<TimeBlockInput, 'professionalId'>,
 ): Promise<TimeBlock | { requiresConfirmation: true; message: string }> {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('update-timeblock', 20, 60000)
@@ -352,13 +386,14 @@ async function _updateTimeBlock(
       const timezone = business.timezone || 'America/Santiago'
       // El bloqueo editado se excluye del "antes": lo que importa es el efecto
       // de su nuevo horario, no el del horario que se está reemplazando.
-      const addendum = await serviceFitAddendum(
+      const addendum = await serviceFitAddendum({
         businessId,
         timezone,
-        [{ startDateTime, endDateTime }],
+        proposedBlocks: [{ startDateTime, endDateTime }],
         now,
-        (b) => b.id === id,
-      )
+        professionalId: existing.professionalId,
+        excludeBlock: (b) => b.id === id,
+      })
       return {
         requiresConfirmation: true as const,
         message:
@@ -411,6 +446,8 @@ async function _createTimeBlockSeries(data: {
   weeks?: number | null
   overlapToleranceMinutes?: number
   confirmed?: boolean
+  /** De quién es el bloqueo recurrente. `null` = del salón. Ver `TimeBlockInput`. */
+  professionalId: string | null
 }): Promise<
   | { requiresConfirmation: true; message: string }
   | { series: TimeBlockSeries; overlappingDates: string[] }
@@ -427,23 +464,22 @@ async function _createTimeBlockSeries(data: {
 
   const until = computeSeriesUntil(data.anchorDate, data.endMode, data.weeks ?? null, timezone)
 
+  const professionalId = await assertBlockOwner(prisma, businessId, data.professionalId)
+
   // Chequeo ANTES de crear: ocurrencias de la serie propuesta vs reservas
   // activas dentro de la ventana de reserva del negocio. Si hay conflicto y no
   // viene confirmación, NO se crea nada.
   const now = new Date()
   const { occurrences, overlappingDates } = await findSeriesBookingConflicts(
     businessId,
-    // `professionalId: null` = del negocio. Hoy el diálogo de bloqueo recurrente no
-    // pregunta de quién es; cuando pregunte, este literal tiene que llevar la
-    // persona o el chequeo de conflictos miraría las reservas de todo el equipo.
-    { id: 'proposed', daysOfWeek: data.daysOfWeek, startTime: data.startTime, endTime: data.endTime, reason: data.reason ?? null, anchorDate: data.anchorDate, until, professionalId: null },
+    { id: 'proposed', daysOfWeek: data.daysOfWeek, startTime: data.startTime, endTime: data.endTime, reason: data.reason ?? null, anchorDate: data.anchorDate, until, professionalId },
     timezone,
     now,
     business.bookingWindowDays ?? 90,
   )
 
   if (overlappingDates.length > 0 && data.confirmed !== true) {
-    const addendum = await serviceFitAddendum(businessId, timezone, occurrences, now)
+    const addendum = await serviceFitAddendum({ businessId, timezone, proposedBlocks: occurrences, now, professionalId })
     return {
       requiresConfirmation: true as const,
       message: buildSeriesConflictMessage(
@@ -465,6 +501,7 @@ async function _createTimeBlockSeries(data: {
       anchorDate: data.anchorDate,
       until,
       overlapToleranceMinutes: data.overlapToleranceMinutes ?? 0,
+      professionalId,
     },
   })
 
@@ -542,7 +579,14 @@ async function _updateTimeBlockSeries(
 
     if (overlappingDates.length > 0 && changes.confirmed !== true) {
       // La serie original se excluye del "antes": su horario será reemplazado.
-      const addendum = await serviceFitAddendum(businessId, timezone, occurrences, now, (b) => b.seriesId === seriesId)
+      const addendum = await serviceFitAddendum({
+        businessId,
+        timezone,
+        proposedBlocks: occurrences,
+        now,
+        professionalId: existing.professionalId,
+        excludeBlock: (b) => b.seriesId === seriesId,
+      })
       return {
         requiresConfirmation: true as const,
         message: buildSeriesConflictMessage(
@@ -648,16 +692,17 @@ async function _overrideSeriesOccurrence(
   if (overlappingBookings.length > 0 && data.confirmed !== true) {
     const timezone = business.timezone || 'America/Santiago'
     // La ocurrencia original de ese día se excluye del "antes": será reemplazada.
-    const addendum = await serviceFitAddendum(
+    const addendum = await serviceFitAddendum({
       businessId,
       timezone,
-      [{ startDateTime: data.startDateTime, endDateTime: data.endDateTime }],
+      proposedBlocks: [{ startDateTime: data.startDateTime, endDateTime: data.endDateTime }],
       now,
-      (b) =>
+      professionalId: series.professionalId,
+      excludeBlock: (b) =>
         b.seriesId === seriesId &&
         b.occurrenceDate != null &&
         getLocalDateStr(b.occurrenceDate, timezone) === getLocalDateStr(occurrenceDate, timezone),
-    )
+    })
     return {
       requiresConfirmation: true as const,
       message:

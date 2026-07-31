@@ -175,6 +175,19 @@ export function bookingBlocksProfessional(
  * cerrada). Si la pregunta filtrara los activos, cerrarle toda la semana la dejaría
  * **abierta en el horario del salón**.
  */
+/**
+ * "El horario del salón", como concepto y no como literal suelto. Lo preguntan cuatro
+ * lugares —el editor semanal y los tres contadores de onboarding— y en los tres
+ * contadores el filtro **faltaba**: contaban las reglas de todo el equipo, así que un
+ * salón de 4 personas decía 28 días de atención.
+ *
+ * Existe para que la quinta copia nazca con el filtro puesto. Mismo patrón que
+ * `pendingPackageTransferWhere`, que se usa en la línea de al lado en `dashboard/page.tsx`.
+ */
+export function businessScheduleWhere(businessId: string): Prisma.AvailabilityRuleWhereInput {
+  return { businessId, professionalId: null }
+}
+
 export async function resolveRuleScope(
   client: Db,
   businessId: string,

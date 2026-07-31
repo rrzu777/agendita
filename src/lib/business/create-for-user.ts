@@ -18,6 +18,7 @@ import { prisma } from '@/lib/db'
 import { generateDefaultSubdomain } from '@/lib/business/subdomain'
 import { randomBookingNumberBase } from '@/lib/bookings/number'
 import { RegistrationError } from '@/lib/auth/registration-error'
+import { DEFAULT_WEEKLY_SCHEDULE } from '@/lib/availability/weekly-schedule'
 
 const BUSINESS_CATEGORIES = ['nails', 'barber', 'hair_salon', 'beauty', 'massage', 'therapy', 'other'] as const
 type BusinessCategoryInput = typeof BUSINESS_CATEGORIES[number]
@@ -151,15 +152,10 @@ export async function createBusinessForUser({ userId, email, name, subdomain, ca
       }
     }
 
+    // `professionalId: null` explícito aunque sea el default de la columna: es el
+    // horario DEL SALÓN, el que hereda todo el equipo mientras no tenga uno propio.
     await tx.availabilityRule.createMany({
-      data: [
-        { businessId: business.id, dayOfWeek: 1, startTime: '09:00', endTime: '18:00' },
-        { businessId: business.id, dayOfWeek: 2, startTime: '09:00', endTime: '18:00' },
-        { businessId: business.id, dayOfWeek: 3, startTime: '09:00', endTime: '18:00' },
-        { businessId: business.id, dayOfWeek: 4, startTime: '09:00', endTime: '18:00' },
-        { businessId: business.id, dayOfWeek: 5, startTime: '09:00', endTime: '18:00' },
-        { businessId: business.id, dayOfWeek: 6, startTime: '10:00', endTime: '15:00' },
-      ],
+      data: DEFAULT_WEEKLY_SCHEDULE.map((day) => ({ ...day, businessId: business.id, professionalId: null })),
     })
   })
 }

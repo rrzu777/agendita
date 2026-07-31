@@ -15,6 +15,7 @@ import { SetupChecklist } from '@/components/dashboard/setup-checklist'
 import { PendingTransfersBanner } from '@/components/dashboard/pending-transfers-banner'
 import { PendingPackageTransfersBanner } from '@/components/dashboard/pending-package-transfers-banner'
 import { hasPendingBalanceTransfer, hasPendingDeclaredTransfer, pendingPackageTransferWhere } from '@/lib/bank-transfer/declared'
+import { businessScheduleWhere } from '@/lib/availability/scope'
 import { CalendarCheck2, CreditCard, ExternalLink, TrendingUp, Users } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -37,7 +38,9 @@ export default async function DashboardPage() {
     getBookingsSummary(),
     getFinancialSummary(),
     prisma.service.count({ where: { businessId: business.id, isActive: true } }),
-    prisma.availabilityRule.count({ where: { businessId: business.id, isActive: true } }),
+    // Progreso de onboarding ("¿ya configuró su horario?"), del SALÓN. Sin el filtro,
+    // un salón de 4 personas con horario propio cuenta 28 días de atención en vez de 7.
+    prisma.availabilityRule.count({ where: { ...businessScheduleWhere(business.id), isActive: true } }),
     prisma.paymentAccount.count({ where: { businessId: business.id, status: 'connected' } }),
     prisma.packagePurchase.count({ where: pendingPackageTransferWhere(business.id) }),
   ])

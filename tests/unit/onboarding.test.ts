@@ -32,6 +32,22 @@ describe('completeOnboarding', () => {
     expect(mockPrisma.business.update).not.toHaveBeenCalled()
   })
 
+  /**
+   * El requisito es que el NEGOCIO tenga al menos un día de atención. Sin
+   * `professionalId: null`, alguien del equipo con horario propio alcanzaría para dar
+   * por cumplido un horario que el salón no tiene — y el mismo contador se muestra
+   * como número en el panel, donde un salón de 4 personas diría 28 días de atención.
+   */
+  it('el horario que cuenta es el del salón, no el del equipo', async () => {
+    mockPrisma.service.count.mockResolvedValue(1)
+
+    await completeOnboarding('biz-1')
+
+    expect(mockPrisma.availabilityRule.count).toHaveBeenCalledWith({
+      where: { businessId: 'biz-1', professionalId: null, isActive: true },
+    })
+  })
+
   it('completes onboarding when services and availability are configured', async () => {
     mockPrisma.service.count.mockResolvedValue(1)
 

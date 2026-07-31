@@ -3,6 +3,7 @@ import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard'
+import { businessScheduleWhere } from '@/lib/availability/scope'
 
 export default async function OnboardingPage() {
   const userData = await getCurrentUserWithBusiness()
@@ -23,7 +24,8 @@ export default async function OnboardingPage() {
 
   const [servicesCount, availabilityCount] = await Promise.all([
     prisma.service.count({ where: { businessId: business.id, isActive: true } }),
-    prisma.availabilityRule.count({ where: { businessId: business.id, isActive: true } }),
+    // Del salón: ver el mismo contador en `dashboard/page.tsx`.
+    prisma.availabilityRule.count({ where: { ...businessScheduleWhere(business.id), isActive: true } }),
   ])
 
   const publicUrl = getBusinessPublicUrl(business)
