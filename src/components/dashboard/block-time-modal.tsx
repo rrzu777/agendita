@@ -21,8 +21,7 @@ import {
 } from '@/components/ui/select'
 import { createTimeBlock, deleteTimeBlock, createTimeBlockSeries } from '@/server/actions/time-blocks'
 import { CheckCircle2, Lock, Trash2, X } from 'lucide-react'
-import { fromZonedTime } from 'date-fns-tz'
-import { parseTimeUTC } from '@/lib/calendar/block-form-values'
+import { localDateTimeToUtc, startOfLocalDay } from '@/lib/availability/timezone'
 import { BlockFormFields } from './block-form-fields'
 import { RecurrenceFields } from './recurrence-fields'
 import type { SeriesEndMode } from '@/lib/calendar/expand-series'
@@ -132,7 +131,7 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
     startTransition(async () => {
       try {
         if (recurring) {
-          const anchorDate = fromZonedTime(`${date} 00:00:00`, timezone)
+          const anchorDate = startOfLocalDay(date, timezone)
           // `professionalId: null` = bloqueo del salón, cierra para todos. Este diálogo
           // todavía no pregunta de quién es; el selector llega con la pantalla.
           const res = await createTimeBlockSeries({ daysOfWeek, startTime, endTime, reason: reason || null, anchorDate, endMode, weeks: endMode === 'weeks' ? weeks : null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmed: confirmOverlap, professionalId: null })
@@ -149,8 +148,8 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
           setOpen(false)
           return
         }
-        const start = parseTimeUTC(date, startTime, timezone)
-        const end = parseTimeUTC(date, endTime, timezone)
+        const start = localDateTimeToUtc(date, startTime, timezone)
+        const end = localDateTimeToUtc(date, endTime, timezone)
         const result = await createTimeBlock({ startDateTime: start, endDateTime: end, reason: reason || null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmOverlap, professionalId: null })
         if (!result.ok) { setError(result.error); return }
         if ('requiresConfirmation' in result.data) { setError(result.data.message); return }
@@ -158,7 +157,7 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
         setFeedback('Bloqueo creado')
         setOpen(false)
       } catch {
-        // parseTimeUTC (date-fns-tz) solo lanza en formatos internos rotos
+        // localDateTimeToUtc (date-fns-tz) solo lanza en formatos internos rotos
         // (TypeError de aridad / RangeError de opciones), nunca mensaje
         // relevante para la usuaria; las acciones ya devuelven ActionResult.
         setError('Error al crear bloqueo')

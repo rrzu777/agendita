@@ -15,8 +15,7 @@ import type { CustomerSearchResult } from '@/server/actions/customers'
 import { formatDuration } from '@/lib/format-duration'
 import { MODALITY_LABELS, sortModalities, requiresServiceAddress } from '@/lib/services/modality'
 import { ServiceModality } from '@prisma/client'
-import { fromZonedTime } from 'date-fns-tz'
-import { getLocalDateStr } from '@/lib/availability/timezone'
+import { getLocalDateStr, localDateTimeToUtc } from '@/lib/availability/timezone'
 import { formatMoney } from '@/lib/money'
 import { CalendarCheck2, User, Search, X } from 'lucide-react'
 import type { Service } from '@prisma/client'
@@ -269,7 +268,7 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
     }
 
     // Instante real en el timezone del negocio (no el del dispositivo de la dueña)
-    const startDateTime = fromZonedTime(`${date} ${time}`, timezone)
+    const startDateTime = localDateTimeToUtc(date, time, timezone)
 
     try {
       const res = await createBookingFromDashboard({

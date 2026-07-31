@@ -33,19 +33,46 @@ function addLocalDays(localDateStr: string, n: number): string {
   return formatInTimeZone(dt, 'UTC', 'yyyy-MM-dd')
 }
 
+/** Tope de la búsqueda del primer instante real. El gap más largo que usa hoy
+ *  algún país es de 2 h (Troll, Antártida); el margen es para no depender de eso. */
+const MAX_GAP_MINUTES = 180
+
+/**
+ * Construye el instante UTC de una hora local (`HH:mm`, o con segundos) de una
+ * fecha local `yyyy-MM-dd`, en el timezone del negocio.
+ *
+ * En el "gap" del cambio de hora de primavera hay horas locales que NO existen
+ * (Santiago, 1er domingo de sep: el reloj salta de 00:00 a 01:00). `fromZonedTime`
+ * las resuelve con el offset de ANTES del salto y devuelve un instante que se lee
+ * como el día anterior: pedir las 00:30 da las 23:30 del sábado. Cuando pasa eso
+ * devolvemos el primer instante que sí existe —el del salto—, que es lo que
+ * quiso decir quien escribió "a esta hora".
+ */
+export function localDateTimeToUtc(localDateStr: string, localTimeStr: string, timezone: string): Date {
+  // La comparación va al minuto: es la resolución en la que se define un gap, y
+  // así el helper acepta también horas con segundos.
+  const pedido = `${localDateStr} ${localTimeStr.slice(0, 5)}`
+  const alcanza = (d: Date) => formatInTimeZone(d, timezone, 'yyyy-MM-dd HH:mm') >= pedido
+
+  const instante = fromZonedTime(`${localDateStr}T${localTimeStr}`, timezone)
+  // `fromZonedTime` nunca se pasa: si la hora existe la devuelve clavada, y si
+  // cayó en el gap devuelve un instante ANTERIOR. Hasta el salto la hora local
+  // sigue siendo menor a la pedida; el primer candidato que la alcanza ES el salto.
+  if (alcanza(instante)) return instante
+  for (let minuto = 1; minuto <= MAX_GAP_MINUTES; minuto++) {
+    const candidato = new Date(instante.getTime() + minuto * 60_000)
+    if (alcanza(candidato)) return candidato
+  }
+  return instante
+}
+
 /**
  * Construye el instante UTC del inicio del día local (00:00:00.000) para una
- * fecha local `yyyy-MM-dd` en el timezone del negocio.
- *
- * En el "gap" del cambio de hora de primavera (ej. Santiago: la medianoche del
- * 1er domingo de sep no existe, el reloj salta de 00:00 a 01:00) `fromZonedTime`
- * resuelve el 00:00 inexistente cayendo al día anterior (23:00). En ese caso el
- * inicio real del día es el primer instante que sí existe: reintentamos con 01:00.
+ * fecha local `yyyy-MM-dd` en el timezone del negocio. En el día en que la
+ * medianoche local no existe, es el primer instante que sí (01:00 en Santiago).
  */
 export function startOfLocalDay(localDateStr: string, timezone: string): Date {
-  const midnight = fromZonedTime(`${localDateStr}T00:00:00.000`, timezone)
-  if (getLocalDateStr(midnight, timezone) === localDateStr) return midnight
-  return fromZonedTime(`${localDateStr}T01:00:00.000`, timezone)
+  return localDateTimeToUtc(localDateStr, '00:00', timezone)
 }
 
 /**

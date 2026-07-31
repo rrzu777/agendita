@@ -1,9 +1,8 @@
 import { addMinutes, differenceInMinutes, addDays } from 'date-fns'
-import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
-import { getLocalDayOfWeek, getLocalDateStr, startOfLocalDay } from './timezone'
+import { formatInTimeZone } from 'date-fns-tz'
+import { getLocalDayOfWeek, getLocalDateStr, localDateTimeToUtc, startOfLocalDay } from './timezone'
 import { LEAD_TIME_MINUTES } from './constants'
 import { shrinkBlock } from './shrink-block'
-import { expandSeries } from '@/lib/calendar/expand-series'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
 import { blockScopeFor, bookingBlocksProfessional, resolveDayRule } from '@/lib/availability/scope'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
@@ -287,8 +286,8 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
   }
 
   // Construir timestamps UTC reales para inicio y fin de regla
-  const ruleStart = fromZonedTime(`${localStartStr} ${rule.startTime}`, timezone)
-  const ruleEnd = fromZonedTime(`${localStartStr} ${rule.endTime}`, timezone)
+  const ruleStart = localDateTimeToUtc(localStartStr, rule.startTime, timezone)
+  const ruleEnd = localDateTimeToUtc(localStartStr, rule.endTime, timezone)
 
   if (startDateTime < ruleStart || endDateTime > ruleEnd) {
     logEvent('slot_validation_rejected', { businessId, reason: 'outside_rule_hours' })

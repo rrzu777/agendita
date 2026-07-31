@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { fromZonedTime } from 'date-fns-tz'
+import { endOfLocalDay, startOfLocalDay } from '@/lib/availability/timezone'
 import { prisma } from '@/lib/db'
 import { requireBusinessRole, AuthError, ForbiddenError } from '@/lib/auth/server'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -64,8 +64,8 @@ export async function GET(request: NextRequest) {
 
     const timezone = business.timezone || 'America/Santiago'
 
-    const fromStart = fromZonedTime(`${parsed.data.from}T00:00:00.000`, timezone)
-    const toEnd = fromZonedTime(`${parsed.data.to}T23:59:59.999`, timezone)
+    const fromStart = startOfLocalDay(parsed.data.from, timezone)
+    const toEnd = endOfLocalDay(parsed.data.to, timezone)
 
     const entries = await prisma.ledgerEntry.findMany({
       where: {

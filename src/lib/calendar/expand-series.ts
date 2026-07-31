@@ -1,6 +1,6 @@
-import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { formatInTimeZone } from 'date-fns-tz'
 import { addDays, addMonths, addWeeks, parseISO } from 'date-fns'
-import { getLocalDateStr, startOfLocalDay } from '@/lib/availability/timezone'
+import { getLocalDateStr, localDateTimeToUtc, startOfLocalDay } from '@/lib/availability/timezone'
 
 export interface SeriesLike {
   id: string
@@ -76,46 +76,62 @@ export function expandSeries(
     exceptionByDate.set(getLocalDateStr(exc.occurrenceDate, timezone), exc)
   }
 
+  /** ¿La regla dicta ocurrencia ese día local? */
+  const esDiaDeLaRegla = (dateStr: string) =>
+    series.daysOfWeek.includes(dayOfWeekOfLocalDate(dateStr)) &&
+    dateStr >= anchorStr &&
+    (untilStr === null || dateStr <= untilStr)
+
+  /** La ocurrencia de ese día, con la excepción ya aplicada si la hay. */
+  const ocurrencia = (dateStr: string, exc: ExceptionLike | undefined): EffectiveBlock => ({
+    id: `${series.id}:${dateStr}`,
+    startDateTime: exc?.startDateTime ?? localDateTimeToUtc(dateStr, series.startTime, timezone),
+    endDateTime: exc?.endDateTime ?? localDateTimeToUtc(dateStr, series.endTime, timezone),
+    reason: exc ? exc.reason : series.reason,
+    seriesId: series.id,
+    // `startOfLocalDay` y no componer la medianoche a mano: en el gap de DST no
+    // existe y caería al día anterior, con lo que la clave de búsqueda de
+    // excepciones (el Map de arriba) dejaría de matchear.
+    occurrenceDate: startOfLocalDay(dateStr, timezone),
+    // Los override de excepción cambian hora/motivo; la tolerancia es de la serie
+    overlapToleranceMinutes: series.overlapToleranceMinutes ?? 0,
+    // Y el dueño también es de la serie: una excepción edita el día, no de
+    // quién es el bloqueo.
+    professionalId: series.professionalId,
+  })
+
+  /** Mismo criterio (inclusivo) con que la query filtra los bloqueos sueltos. */
+  const solapaElRango = (b: EffectiveBlock) => b.startDateTime <= rangeEnd && b.endDateTime >= rangeStart
+
   const startStr = getLocalDateStr(rangeStart, timezone)
   const endStr = getLocalDateStr(rangeEnd, timezone)
 
-  const result: EffectiveBlock[] = []
-  let cursor = startStr
-  let guard = 0
-
-  while (cursor <= endStr && guard < MAX_EXPANSION_DAYS) {
-    guard++
-    const dow = dayOfWeekOfLocalDate(cursor)
-    const inRule =
-      series.daysOfWeek.includes(dow) &&
-      cursor >= anchorStr &&
-      (untilStr === null || cursor <= untilStr)
-
-    if (inRule) {
-      const exc = exceptionByDate.get(cursor)
-      if (!exc?.isSkipped) {
-        const start = exc?.startDateTime ?? fromZonedTime(`${cursor} ${series.startTime}`, timezone)
-        const end = exc?.endDateTime ?? fromZonedTime(`${cursor} ${series.endTime}`, timezone)
-        const reason = exc ? exc.reason : series.reason
-        result.push({
-          id: `${series.id}:${cursor}`,
-          startDateTime: start,
-          endDateTime: end,
-          reason,
-          seriesId: series.id,
-          // `startOfLocalDay` y no `fromZonedTime` a mano: en el gap de DST la
-          // medianoche local no existe y caería al día anterior, con lo que la clave
-          // de búsqueda de excepciones (línea de arriba) dejaría de matchear.
-          occurrenceDate: startOfLocalDay(cursor, timezone),
-          // Los override de excepción cambian hora/motivo; la tolerancia es de la serie
-          overlapToleranceMinutes: series.overlapToleranceMinutes ?? 0,
-          // Y el dueño también es de la serie: una excepción edita el día, no de
-          // quién es el bloqueo.
-          professionalId: series.professionalId,
-        })
-      }
+  // Días candidatos: los del rango pedido...
+  const dias = new Set<string>()
+  for (let cursor = startStr, guard = 0; cursor <= endStr && guard < MAX_EXPANSION_DAYS; cursor = nextLocalDate(cursor), guard++) {
+    dias.add(cursor)
+  }
+  // ...más el día ORIGINAL de las excepciones que MOVIERON su ocurrencia a otro
+  // día. La excepción se guarda con el día original como clave y el horario nuevo
+  // adentro, así que preguntar por el día nuevo no la encontraba: un bloqueo real
+  // que el chequeo de disponibilidad no veía, y se podía reservar justo encima.
+  // El filtro de solape va acá, antes de componer nada: son dos comparaciones de
+  // Date contra las cuatro conversiones de timezone que cuesta una ocurrencia.
+  for (const [dia, exc] of exceptionByDate) {
+    if (exc.startDateTime && exc.endDateTime && exc.startDateTime <= rangeEnd && exc.endDateTime >= rangeStart) {
+      dias.add(dia)
     }
-    cursor = nextLocalDate(cursor)
+  }
+
+  const result: EffectiveBlock[] = []
+  for (const dia of dias) {
+    if (!esDiaDeLaRegla(dia)) continue
+    const exc = exceptionByDate.get(dia)
+    if (exc?.isSkipped) continue
+    const occ = ocurrencia(dia, exc)
+    // Si una excepción la movió fuera del rango, el bloqueo ya no está acá:
+    // aparece cuando se pregunte por el día al que se fue.
+    if (solapaElRango(occ)) result.push(occ)
   }
 
   return result
