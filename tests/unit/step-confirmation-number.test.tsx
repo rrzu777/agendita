@@ -15,17 +15,24 @@ const data = {
   customerEmail: '',
 } as unknown as BookingData
 
+const business = {
+  name: 'Negocio',
+  addressText: null,
+  whatsapp: null,
+  defaultMeetingUrl: null,
+}
+
 describe('StepConfirmation booking number', () => {
   it('renders #<number> when present', () => {
     const html = renderToStaticMarkup(
-      <StepConfirmation timezone="America/Santiago" currency="CLP" data={data} bookingId="clabc12345" bookingNumber={4738} mode="paid" promo={null} sessionEmail={null} />,
+      <StepConfirmation timezone="America/Santiago" currency="CLP" data={data} bookingId="clabc12345" bookingNumber={4738} mode="paid" promo={null} sessionEmail={null} business={business} />,
     )
     expect(html).toContain('#4738')
   })
 
   it('falls back to the cuid slice when number is null', () => {
     const html = renderToStaticMarkup(
-      <StepConfirmation timezone="America/Santiago" currency="CLP" data={data} bookingId="clabc12345" bookingNumber={null} mode="paid" promo={null} sessionEmail={null} />,
+      <StepConfirmation timezone="America/Santiago" currency="CLP" data={data} bookingId="clabc12345" bookingNumber={null} mode="paid" promo={null} sessionEmail={null} business={business} />,
     )
     expect(html).toContain('#clabc123')
   })

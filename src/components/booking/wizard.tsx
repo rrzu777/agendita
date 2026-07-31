@@ -10,6 +10,7 @@ import { StepConfirmation } from './step-confirmation'
 import type { Service, ServiceModality } from '@prisma/client'
 import type { FunnelSession } from '@/lib/customers/session-prefill'
 import { restoreWizardState, serializeWizardState, wizardStorageKey } from '@/lib/bookings/wizard-storage'
+import type { ConfirmationBusiness } from './step-confirmation'
 
 type WizardSession = Pick<FunnelSession, 'email' | 'name' | 'phone'> | null
 
@@ -80,6 +81,8 @@ const steps = [
 interface BookingWizardProps {
   businessId: string
   slug: string
+  /** Para contestar "¿dónde tengo que ir?" en la confirmación. */
+  business: ConfirmationBusiness
   timezone: string
   currency: string
   services: Service[]
@@ -88,7 +91,7 @@ interface BookingWizardProps {
   session: WizardSession
 }
 
-export function BookingWizard({ businessId, slug, timezone, currency, services, cancellationPolicy, referralToken, session }: BookingWizardProps) {
+export function BookingWizard({ businessId, slug, business, timezone, currency, services, cancellationPolicy, referralToken, session }: BookingWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const [data, setData] = useState<BookingData>(() => applySessionPrefill(initialData, session))
   const [bookingId, setBookingId] = useState<string | null>(null)
@@ -224,7 +227,7 @@ export function BookingWizard({ businessId, slug, timezone, currency, services, 
           </div>
         )}
         {currentStep === 6 && (
-          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} sessionEmail={session?.email ?? null} />
+          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} sessionEmail={session?.email ?? null} business={business} />
         )}
       </section>
     </div>

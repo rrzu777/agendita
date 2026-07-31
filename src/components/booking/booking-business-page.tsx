@@ -32,6 +32,12 @@ export function BookingBusinessPage({ business, profileHref, referralToken, sess
         <BookingWizard
           businessId={business.id}
           slug={business.slug}
+          business={{
+            name: business.name,
+            addressText: business.addressText,
+            whatsapp: business.whatsapp,
+            defaultMeetingUrl: business.defaultMeetingUrl,
+          }}
           timezone={business.timezone || 'America/Santiago'}
           currency={business.currency || 'CLP'}
           services={business.services}

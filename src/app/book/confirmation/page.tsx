@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { CheckCircle2, Clock, XCircle, Calendar, Check, AlertCircle } from 'lucide-react'
+import { CheckCircle2, Clock, XCircle, Calendar, Check, AlertCircle, MapPin } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { prisma } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth/user'
@@ -14,6 +14,8 @@ import { BANK_TRANSFER_METHOD, BT_DECLARED_PREFIX } from '@/lib/bank-transfer/de
 import { TransferPanel } from './transfer-panel'
 import { AccountCta } from '@/components/booking/account-cta'
 import { formatConfirmationDateTime } from './format-datetime'
+import { whereRowHref, whereRows } from '@/lib/services/modality'
+import { buildWhatsappUrl } from '@/lib/notifications/whatsapp'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
@@ -36,6 +38,9 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           subdomain: true,
           timezone: true,
           currency: true,
+          addressText: true,
+          whatsapp: true,
+          defaultMeetingUrl: true,
         },
       },
       service: true,
@@ -89,6 +94,21 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
   )
   const remainingBalance = booking.finalAmount - booking.depositPaid
   const currency = booking.business.currency || 'CLP'
+
+  // Las mismas filas que manda el mail de la reserva: es el momento en que la
+  // clienta cierra la pestaña y necesita saber a dónde va.
+  const donde = whereRows({
+    modality: booking.modality,
+    businessAddress: booking.business.addressText,
+    serviceAddress: booking.serviceAddress,
+    meetingUrl: booking.meetingUrl ?? booking.business.defaultMeetingUrl,
+  })
+  const whatsappHref = booking.business.whatsapp
+    ? buildWhatsappUrl(
+        booking.business.whatsapp,
+        `Hola, te escribo por mi reserva ${formatBookingNumber(booking.bookingNumber, booking.id)} en ${booking.business.name}.`,
+      )
+    : null
 
   const stateConfig = {
     confirmed: {
@@ -217,6 +237,27 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
                 </div>
                 <span className="text-right font-semibold text-primary">{formattedTime}</span>
               </div>
+
+              {donde.map((row) => {
+                const href = whereRowHref(row)
+                return (
+                  <div key={row.label} className="flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-3 text-muted-foreground">
+                      <div className="flex size-10 items-center justify-center rounded-lg bg-secondary">
+                        <MapPin className="size-5" />
+                      </div>
+                      <span className="text-sm font-medium">{row.label}</span>
+                    </div>
+                    {href ? (
+                      <a href={href} target="_blank" rel="noopener noreferrer" className="break-words text-right font-semibold text-primary underline">
+                        {row.value}
+                      </a>
+                    ) : (
+                      <span className="text-right font-semibold text-primary">{row.value}</span>
+                    )}
+                  </div>
+                )
+              })}
             </div>
 
             <div className="mt-6 border-t border-border/50 pt-5">
@@ -242,6 +283,14 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
               <p className="text-sm text-muted-foreground">
                 Tu código de reserva: <span className="font-mono font-semibold text-primary">{formatBookingNumber(booking.bookingNumber, booking.id)}</span>
               </p>
+              {whatsappHref && (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  ¿Necesitas cambiar algo?{' '}
+                  <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="font-semibold text-primary underline">
+                    Escríbele a {booking.business.name} por WhatsApp
+                  </a>
+                </p>
+              )}
             </div>
           </div>
         </div>
