@@ -16,9 +16,22 @@ describe('StepDate timezone', () => {
       root = null
     }
     document.body.replaceChildren()
+    // Acá y no en un `finally` por test: dos de los tres fijan el reloj, y devolverlo
+    // desde un solo lugar es lo que impide que un test nuevo se olvide y contamine al
+    // siguiente con una fecha que no eligió.
+    vi.useRealTimers()
   })
 
+  /**
+   * El reloj va fijo, y no es prolijidad: la grilla muestra el mes en curso y Tokio va
+   * medio día adelante, así que el último día del mes —desde que en Tokio ya es el mes
+   * siguiente— **todos** los días visibles quedan en el pasado y deshabilitados. El test
+   * fallaba unas horas por mes, con `main` verde el día anterior y rojo sin que nadie
+   * tocara nada. Un martes a mitad de mes deja siempre días futuros por delante.
+   */
   it('emits the business-local noon instant for the clicked day', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 6, 6, 12, 0, 0))
     const onSelect = vi.fn()
     const container = document.createElement('div')
     document.body.appendChild(container)
