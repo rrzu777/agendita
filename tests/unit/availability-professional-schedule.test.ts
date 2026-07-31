@@ -4,6 +4,14 @@ import { ForbiddenError } from '../helpers/auth-errors'
 // La lectura y la escritura del horario semanal, en sus dos alcances: el salón
 // (`professionalId: null`) y una persona. Son la MISMA action, y estos tests son lo que
 // impide que se vuelvan a separar en dos con reglas distintas.
+//
+// Lo que se prueba ACÁ es lo que la action aporta: auth, rate limit, el parseo, la
+// normalización del alcance y que todo caiga adentro de una transacción. La mecánica de
+// la escritura —materializar, crear el día que falta, la llave del lock— es de
+// `setWeekday` y se prueba en `weekly-schedule.test.ts`, más dos casos contra la base en
+// `tests/integration/horario-por-persona-escritura.test.ts`. Repetirla acá con un
+// segundo arnés de mocks obligaba a reescribir la misma expectativa en tres archivos el
+// día que la escritura cambie.
 
 const mockRequireBusiness = vi.fn()
 const mockRequireBusinessRole = vi.fn()
@@ -159,23 +167,8 @@ describe('getWeeklySchedule — una persona', () => {
   })
 })
 
-describe('setWeeklyScheduleDay — una persona', () => {
+describe('setWeeklyScheduleDay', () => {
   const lunes = { dayOfWeek: 1, startTime: '10:00', endTime: '16:00', isActive: true }
-
-  it('materializa antes de tocar el día', async () => {
-    await setWeeklyScheduleDay(JUAN, lunes)
-
-    expect(mockTx.availabilityRule.createMany).toHaveBeenCalledTimes(1)
-  })
-
-  it('no vuelve a materializar si ya tiene horario propio', async () => {
-    mockTx.availabilityRule.count.mockResolvedValue(7)
-
-    await setWeeklyScheduleDay(JUAN, lunes)
-
-    expect(mockTx.availabilityRule.createMany).not.toHaveBeenCalled()
-    expect(mockTx.availabilityRule.updateMany).toHaveBeenCalled()
-  })
 
   /**
    * El where lleva las tres claves. Sin `professionalId`, este updateMany le cambia el
@@ -199,24 +192,6 @@ describe('setWeeklyScheduleDay — una persona', () => {
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
     expect(mockTx.availabilityRule.updateMany).toHaveBeenCalled()
     expect(mockPrisma.availabilityRule.updateMany).not.toHaveBeenCalled()
-  })
-
-  /**
-   * `count: 0` después de materializar significa filas propias PARCIALES (un backfill,
-   * un import): la materialización nunca las completa, porque tres filas ya cuentan
-   * como "tiene horario propio". Crear la que falta repara ese estado; devolver
-   * "guardado" sin guardar nada sería el peor desenlace, porque nadie se entera.
-   */
-  it('si el día no existe después de materializar, lo crea', async () => {
-    mockTx.availabilityRule.count.mockResolvedValue(3) // parciales: ya "tiene horario propio"
-    mockTx.availabilityRule.updateMany.mockResolvedValue({ count: 0 })
-
-    const res = await setWeeklyScheduleDay(JUAN, lunes)
-
-    expect(res.ok).toBe(true)
-    expect(mockTx.availabilityRule.create).toHaveBeenCalledWith({
-      data: { businessId: BIZ, professionalId: JUAN, dayOfWeek: 1, startTime: '10:00', endTime: '16:00', isActive: true },
-    })
   })
 
   it('rechaza un horario dado vuelta', async () => {
@@ -257,41 +232,6 @@ describe('setWeeklyScheduleDay — una persona', () => {
       where: { businessId: BIZ, professionalId: null, dayOfWeek: 1 },
       data: { startTime: '10:00', endTime: '16:00', isActive: true },
     })
-  })
-})
-
-describe('setWeeklyScheduleDay — el salón', () => {
-  const domingo = { dayOfWeek: 0, startTime: '11:00', endTime: '15:00', isActive: true }
-
-  it('escribe con professionalId null y no materializa a nadie', async () => {
-    await setWeeklyScheduleDay(null, domingo)
-
-    expect(mockTx.availabilityRule.createMany).not.toHaveBeenCalled()
-    expect(mockTx.availabilityRule.updateMany).toHaveBeenCalledWith({
-      where: { businessId: BIZ, professionalId: null, dayOfWeek: 0 },
-      data: { startTime: '11:00', endTime: '15:00', isActive: true },
-    })
-  })
-
-  /**
-   * **El bug que este PR arregla.** El negocio se siembra sin fila de domingo; el editor
-   * viejo guardaba por id de regla, así que no tenía qué mandar y abrir el domingo era
-   * imposible desde la pantalla.
-   */
-  it('crea la fila del día que el salón no tenía', async () => {
-    mockTx.availabilityRule.updateMany.mockResolvedValue({ count: 0 })
-
-    await setWeeklyScheduleDay(null, domingo)
-
-    expect(mockTx.availabilityRule.create).toHaveBeenCalledWith({
-      data: { businessId: BIZ, professionalId: null, dayOfWeek: 0, startTime: '11:00', endTime: '15:00', isActive: true },
-    })
-  })
-
-  it('toma su propio lock, que no es el de ninguna persona', async () => {
-    await setWeeklyScheduleDay(null, domingo)
-
-    expect(mockLock).toHaveBeenCalledWith(mockTx, `availability-rules:${BIZ}:salon`)
   })
 })
 

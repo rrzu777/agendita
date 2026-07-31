@@ -11,8 +11,8 @@ import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { isValidTimeRange } from '@/lib/availability/time-range'
 import { computeRescheduleSlots } from '@/lib/availability/reschedule-slots'
-import { blockScopeFor, bookingScopeCondition, businessScheduleWhere, normalizeProfessionalId, resolveAvailabilityRules, resolveRuleScope } from '@/lib/availability/scope'
-import { projectWeek, scheduleLockKey, setWeekday } from '@/lib/availability/weekly-schedule'
+import { blockScopeFor, bookingScopeCondition, normalizeProfessionalId, resolveAvailabilityRules, resolveRuleScope } from '@/lib/availability/scope'
+import { readWeek, scheduleLockKey, setWeekday } from '@/lib/availability/weekly-schedule'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
 import { assertOwnerScope, assertProfessionalOfBusiness, isProfessionalOfBusiness } from '@/lib/professionals/ownership'
 import { RELEASED_STATUSES } from '@/lib/bookings/approval'
@@ -20,25 +20,21 @@ import { action, UserError } from '@/lib/actions/result'
 
 const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
 
-const weekdayHoursShape = z.object({
-  startTime: z.string().regex(timeRegex, 'Formato de hora inválido (HH:MM)'),
-  endTime: z.string().regex(timeRegex, 'Formato de hora inválido (HH:MM)'),
-  isActive: z.boolean(),
-})
-
-const validRange = {
-  check: (d: { startTime: string; endTime: string }) => isValidTimeRange(d.startTime, d.endTime),
-  message: 'La hora de inicio debe ser anterior a la de término',
-}
-
 // Por día y no por id de regla, y vale para los dos alcances. Dos razones y las dos
 // son de fondo: cuando una persona hereda no tiene ninguna fila propia todavía, así que
 // no hay id que mandar (ver `projectWeek`); y el salón se siembra sin domingo, así que
 // tampoco había id para el día que quería abrir. `(negocio, alcance, día)` es la
 // identidad real de un día de horario.
-const weekdayScheduleSchema = weekdayHoursShape
-  .extend({ dayOfWeek: z.number().int().min(0).max(6) })
-  .refine(validRange.check, { message: validRange.message })
+const weekdayScheduleSchema = z
+  .object({
+    dayOfWeek: z.number().int().min(0).max(6),
+    startTime: z.string().regex(timeRegex, 'Formato de hora inválido (HH:MM)'),
+    endTime: z.string().regex(timeRegex, 'Formato de hora inválido (HH:MM)'),
+    isActive: z.boolean(),
+  })
+  .refine((d) => isValidTimeRange(d.startTime, d.endTime), {
+    message: 'La hora de inicio debe ser anterior a la de término',
+  })
 
 const rescheduleSlotsSchema = z.object({
   bookingId: z.string().min(1),
@@ -57,6 +53,10 @@ const NON_RESCHEDULABLE_STATUSES = ['completed', 'cancelled', 'no_show', 'expire
  * es siempre `false` — el salón no hereda de nadie.
  */
 export async function getWeeklySchedule(professionalId: string | null) {
+  // `requireBusiness` y no `requireBusinessRole`: es el mismo permiso que tenía la
+  // lectura del horario del salón antes de este PR. Alguien con rol `staff` ve la
+  // pantalla en modo consulta —cada guardado sí exige owner/admin— y subirle el listón
+  // a la lectura le rompería la página con un error en vez de mostrarla.
   const { businessId } = await requireBusiness()
   const owner = await assertOwnerScope(prisma, businessId, professionalId)
 
@@ -66,14 +66,10 @@ export async function getWeeklySchedule(professionalId: string | null) {
   // propio" mientras los slots se calculan con el del salón, sin error en ningún lado.
   const scope = owner === null ? null : await resolveRuleScope(prisma, businessId, owner)
 
-  const rules = await prisma.availabilityRule.findMany({
-    where: { businessId, professionalId: scope },
-    // Sin `id` en el select: cuando hereda, estas filas son las DEL SALÓN. `projectWeek`
-    // igual los descartaría, pero que no salgan de la base es una defensa más.
-    select: { dayOfWeek: true, startTime: true, endTime: true, isActive: true },
-  })
-
-  return { inherited: owner !== null && scope === null, days: projectWeek(rules) }
+  return {
+    inherited: owner !== null && scope === null,
+    days: await readWeek(prisma, businessId, scope),
+  }
 }
 
 // `professionalId` es obligatorio y no opcional con default: un `undefined` que
@@ -258,18 +254,20 @@ async function _resetProfessionalSchedule(professionalId: string) {
     await tx.availabilityRule.deleteMany({ where: { businessId, professionalId: id } })
   })
 
+  // La MISMA lectura que usa la pantalla al cargar (`getWeeklySchedule`), no una copia:
+  // las dos terminan en el mismo `useState` del editor, así que dos lecturas distintas
+  // significan que la pantalla muestra una semana al soltar el horario y otra al
+  // recargar, sin un error en ningún lado.
+  //
   // Fuera de la transacción a propósito: ya está borrado, y leerlo adentro no lo haría
   // más consistente para quien mira la pantalla — el salón puede cambiar un segundo
   // después igual.
-  const salon = await prisma.availabilityRule.findMany({
-    where: businessScheduleWhere(businessId),
-    select: { dayOfWeek: true, startTime: true, endTime: true, isActive: true },
-  })
+  const days = await readWeek(prisma, businessId, null)
 
   revalidatePath('/dashboard/availability')
   await revalidateBusinessPublicPaths(businessId)
 
-  return { days: projectWeek(salon) }
+  return { days }
 }
 
 export const resetProfessionalSchedule = action(_resetProfessionalSchedule)

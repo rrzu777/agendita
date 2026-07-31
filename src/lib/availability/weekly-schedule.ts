@@ -1,6 +1,6 @@
-import type { Prisma } from '@prisma/client'
+import type { Prisma, PrismaClient } from '@prisma/client'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
-import { businessScheduleWhere, resolveRuleScope } from '@/lib/availability/scope'
+import { resolveRuleScope } from '@/lib/availability/scope'
 
 /**
  * La semana de horario: cómo se proyecta para mostrarla y cómo se le copia a una
@@ -120,6 +120,31 @@ export function scheduleLockKey(businessId: string, professionalId: string | nul
   return `availability-rules:${businessId}:${scope}`
 }
 
+/**
+ * Los 7 días de un alcance, tal como los pinta el editor y tal como los copia la
+ * materialización. Las tres lecturas de la semana pasan por acá a propósito: son la
+ * misma pregunta, y cuando eran tres copias del mismo `select` + `projectWeek`, un
+ * `orderBy` o un filtro agregado en una dejaba a las otras dos devolviendo otra semana
+ * sin un solo error — la pantalla mostraría una cosa al soltar el horario y otra al
+ * recargar.
+ *
+ * **Sin `id` en el select**, y no es de más: cuando una persona hereda, las filas que
+ * se leen son las DEL SALÓN, y sus ids son exactamente lo que hace falta para editar el
+ * horario del salón creyendo que se edita el de ella. `projectWeek` los descartaría
+ * igual; que no salgan de la base es la segunda defensa.
+ */
+export async function readWeek(
+  client: Prisma.TransactionClient | PrismaClient,
+  businessId: string,
+  professionalId: string | null,
+): Promise<ScheduleDay[]> {
+  const rules = await client.availabilityRule.findMany({
+    where: { businessId, professionalId },
+    select: { dayOfWeek: true, startTime: true, endTime: true, isActive: true },
+  })
+  return projectWeek(rules)
+}
+
 export async function materializeProfessionalSchedule(
   tx: Prisma.TransactionClient,
   businessId: string,
@@ -134,13 +159,10 @@ export async function materializeProfessionalSchedule(
   // duplicadas, que es justo lo que el lock de arriba está evitando.
   if ((await resolveRuleScope(tx, businessId, professionalId)) !== null) return
 
-  const salon = await tx.availabilityRule.findMany({
-    where: businessScheduleWhere(businessId),
-    select: { dayOfWeek: true, startTime: true, endTime: true, isActive: true },
-  })
+  const salon = await readWeek(tx, businessId, null)
 
   await tx.availabilityRule.createMany({
-    data: projectWeek(salon).map((day) => ({ businessId, professionalId, ...day })),
+    data: salon.map((day) => ({ businessId, professionalId, ...day })),
   })
 }
 
@@ -154,9 +176,11 @@ export async function materializeProfessionalSchedule(
  * tenía qué mandar. Un negocio que atiende domingo no tenía forma de decirlo.
  *
  * Por eso escribe por `(negocio, alcance, día)`, que es la identidad real de un día de
- * horario, y **crea la fila si no existe**. Eso también repara el caso de filas propias
- * parciales —un backfill que dejó 3 de 7—, que la materialización nunca completa porque
- * tres filas ya cuentan como "tiene horario propio".
+ * horario, y **crea la fila si no existe**. Para el salón crear es el camino PRINCIPAL,
+ * no un caso raro: el salón nunca materializa nada, así que el día que no venía sembrado
+ * sólo puede aparecer así. De yapa cubre las filas propias parciales —un backfill que
+ * dejó 3 de 7—, que la materialización nunca completa porque tres filas ya cuentan como
+ * "tiene horario propio".
  *
  * El orden importa: lock, materializar, recién ahí escribir. Ver
  * `materializeProfessionalSchedule` — copiar sólo el día editado deja a esa persona

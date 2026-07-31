@@ -74,6 +74,11 @@ export async function assertProfessionalOfBusiness(
  * cambie qué cuenta como dueño válido (gente en pausa, por ejemplo), tiene que cambiar
  * para el horario y para los bloqueos a la vez o quedan pantallas que aceptan lo que la
  * otra rechaza.
+ *
+ * **Ojo: misma validación, distinto significado río abajo.** Con el mismo id, los
+ * bloqueos son una UNIÓN —los del salón **más** los suyos, `blockScopeFor`— y el horario
+ * es un O EXCLUSIVO —el suyo **o** el del salón, nunca los dos, `resolveRuleScope`—.
+ * Esta función dice si el dueño es válido; qué se hace con él lo decide cada dominio.
  */
 export async function assertOwnerScope(
   client: Db,

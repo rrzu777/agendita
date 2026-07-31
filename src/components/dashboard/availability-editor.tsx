@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { TimeInput } from '@/components/ui/time-input'
@@ -10,6 +9,15 @@ import { isValidTimeRange } from '@/lib/availability/time-range'
 import type { ScheduleDay } from '@/lib/availability/weekly-schedule'
 
 const DAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+
+/**
+ * Reemplaza un día en la semana. La identidad es `dayOfWeek` y no un id de fila: cuando
+ * una persona hereda no hay fila propia todavía. Acá para que esa regla esté escrita una
+ * sola vez — estaba en cuatro `map` idénticos, y este PR tuvo que editar los cuatro.
+ */
+function withDay(days: ScheduleDay[], day: ScheduleDay): ScheduleDay[] {
+  return days.map((d) => (d.dayOfWeek === day.dayOfWeek ? day : d))
+}
 const INVALID_RANGE_MESSAGE = 'La hora de inicio debe ser anterior a la de término'
 const SAVE_ERROR_MESSAGE = 'No pudimos guardar los cambios. Intenta de nuevo.'
 
@@ -42,7 +50,6 @@ export function AvailabilityEditor({
   const [owns, setOwns] = useState(professionalId !== null && !inherited)
   const [resetting, setResetting] = useState(false)
   const [resetError, setResetError] = useState<string | null>(null)
-  const router = useRouter()
 
   function clearError(day: number) {
     setErrors(prev => {
@@ -92,8 +99,8 @@ export function AvailabilityEditor({
     clearError(dayOfWeek)
     const next = { ...day, isActive }
     if (!(await persist(next))) return
-    setSaved(prev => prev.map(d => d.dayOfWeek === dayOfWeek ? next : d))
-    setDrafts(prev => prev.map(d => d.dayOfWeek === dayOfWeek ? next : d))
+    setSaved(prev => withDay(prev, next))
+    setDrafts(prev => withDay(prev, next))
     setStatus(prev => ({ ...prev, [dayOfWeek]: 'saved' }))
   }
 
@@ -101,7 +108,7 @@ export function AvailabilityEditor({
     const draft = drafts.find(d => d.dayOfWeek === dayOfWeek)
     if (!draft || draft[field] === value) return
     const next = { ...draft, [field]: value }
-    setDrafts(prev => prev.map(d => d.dayOfWeek === dayOfWeek ? next : d))
+    setDrafts(prev => withDay(prev, next))
     clearStatus(dayOfWeek)
     if (!isValidTimeRange(next.startTime, next.endTime)) {
       setErrors(prev => ({ ...prev, [dayOfWeek]: INVALID_RANGE_MESSAGE }))
@@ -115,7 +122,7 @@ export function AvailabilityEditor({
     if (!draft || !isValidTimeRange(draft.startTime, draft.endTime)) return
     if (!(await persist(draft))) return
     clearError(dayOfWeek)
-    setSaved(prev => prev.map(d => d.dayOfWeek === dayOfWeek ? draft : d))
+    setSaved(prev => withDay(prev, draft))
     setStatus(prev => ({ ...prev, [dayOfWeek]: 'saved' }))
   }
 
@@ -137,7 +144,10 @@ export function AvailabilityEditor({
       setErrors({})
       setStatus({})
       setOwns(false)
-      router.refresh()
+      // Sin `router.refresh()`: la action ya llama `revalidatePath`, y como el `key` del
+      // editor no cambia, un re-render del servidor NO reinicializa este `useState`. El
+      // repintado sale entero de las tres líneas de arriba; el refresh era una vuelta
+      // completa al servidor cuyo resultado este componente descarta.
     } finally {
       setResetting(false)
     }
@@ -145,25 +155,30 @@ export function AvailabilityEditor({
 
   return (
     <div className="space-y-4">
-      {professionalId !== null && !owns ? (
+      {/* Un solo condicional anidado y no dos hermanos: heredar y tener horario propio
+          son las dos ramas de la MISMA pregunta, y como dos `if` sueltos nada impide que
+          un día se muestren los dos avisos —o ninguno— sin que falle nada. */}
+      {professionalId === null ? null : owns ? (
+        <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            Tiene horario propio: los cambios del horario del salón ya no le llegan.
+          </p>
+          <div className="flex flex-col items-start gap-1 sm:items-end">
+            <Button variant="outline" size="sm" className="rounded-full" disabled={resetting} onClick={handleReset}>
+              {resetting ? 'Soltando…' : 'Volver al horario del salón'}
+            </Button>
+            {/* Adentro de esta rama: es el error de ese botón, y afuera podía quedar
+                colgado sin nada arriba que explicara de dónde salió. */}
+            {resetError ? <p className="text-sm text-destructive">{resetError}</p> : null}
+          </div>
+        </div>
+      ) : (
         <div className="rounded-xl border border-border/60 bg-muted/40 p-4 text-sm text-muted-foreground" role="status">
           Sigue el horario del salón. Si cambiás un día,{' '}
           {professionalName ?? 'esta persona'} pasa a tener horario propio y los días que
           no toques quedan como están hoy.
         </div>
-      ) : null}
-
-      {professionalId !== null && owns ? (
-        <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
-            Tiene horario propio: los cambios del horario del salón ya no le llegan.
-          </p>
-          <Button variant="outline" size="sm" className="rounded-full" disabled={resetting} onClick={handleReset}>
-            {resetting ? 'Soltando…' : 'Volver al horario del salón'}
-          </Button>
-        </div>
-      ) : null}
-      {resetError ? <p className="text-sm text-destructive">{resetError}</p> : null}
+      )}
 
       {drafts.map((draft) => {
         const savedDay = saved.find(d => d.dayOfWeek === draft.dayOfWeek)!

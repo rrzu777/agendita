@@ -16,6 +16,10 @@ describe('StepDate timezone', () => {
       root = null
     }
     document.body.replaceChildren()
+    // Acá y no en un `finally` por test: dos de los tres fijan el reloj, y devolverlo
+    // desde un solo lugar es lo que impide que un test nuevo se olvide y contamine al
+    // siguiente con una fecha que no eligió.
+    vi.useRealTimers()
   })
 
   /**
@@ -28,35 +32,31 @@ describe('StepDate timezone', () => {
   it('emits the business-local noon instant for the clicked day', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(2026, 6, 6, 12, 0, 0))
-    try {
-      const onSelect = vi.fn()
-      const container = document.createElement('div')
-      document.body.appendChild(container)
-      root = createRoot(container)
-      act(() => {
-        root?.render(<StepDate data={data} timezone="Asia/Tokyo" onSelect={onSelect} onBack={() => {}} />)
-      })
+    const onSelect = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => {
+      root?.render(<StepDate data={data} timezone="Asia/Tokyo" onSelect={onSelect} onBack={() => {}} />)
+    })
 
-      // Click en un día futuro habilitado (el último habilitado del mes visible)
-      const dayButtons = Array.from(container.querySelectorAll('button[data-day]')).filter(b => !(b as HTMLButtonElement).disabled)
-      expect(dayButtons.length).toBeGreaterThan(0)
-      const target = dayButtons[dayButtons.length - 1] as HTMLButtonElement
-      const dayStr = target.getAttribute('data-day')!
-      act(() => {
-        target.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      })
-      const continueBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Continuar'))!
-      act(() => {
-        continueBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      })
+    // Click en un día futuro habilitado (el último habilitado del mes visible)
+    const dayButtons = Array.from(container.querySelectorAll('button[data-day]')).filter(b => !(b as HTMLButtonElement).disabled)
+    expect(dayButtons.length).toBeGreaterThan(0)
+    const target = dayButtons[dayButtons.length - 1] as HTMLButtonElement
+    const dayStr = target.getAttribute('data-day')!
+    act(() => {
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const continueBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Continuar'))!
+    act(() => {
+      continueBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
 
-      expect(onSelect).toHaveBeenCalledTimes(1)
-      const emitted: Date = onSelect.mock.calls[0][0]
-      // El instante emitido debe ser exactamente el mediodía de ese día EN TOKIO
-      expect(formatInTimeZone(emitted, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm')).toBe(`${dayStr} 12:00`)
-    } finally {
-      vi.useRealTimers()
-    }
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    const emitted: Date = onSelect.mock.calls[0][0]
+    // El instante emitido debe ser exactamente el mediodía de ese día EN TOKIO
+    expect(formatInTimeZone(emitted, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm')).toBe(`${dayStr} 12:00`)
   })
 
   it('aligns the first day of the month with its real weekday column', () => {

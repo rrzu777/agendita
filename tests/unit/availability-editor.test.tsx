@@ -4,13 +4,11 @@ import { createRoot, type Root } from 'react-dom/client'
 
 const mockSetWeeklyScheduleDay = vi.fn()
 const mockResetProfessionalSchedule = vi.fn()
-const mockRefresh = vi.fn()
 
 vi.mock('@/server/actions/availability', () => ({
   setWeeklyScheduleDay: (...args: unknown[]) => mockSetWeeklyScheduleDay(...args),
   resetProfessionalSchedule: (...args: unknown[]) => mockResetProfessionalSchedule(...args),
 }))
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: mockRefresh }) }))
 
 import { AvailabilityEditor } from '@/components/dashboard/availability-editor'
 
@@ -28,7 +26,6 @@ describe('AvailabilityEditor', () => {
     document.body.replaceChildren()
     mockSetWeeklyScheduleDay.mockReset()
     mockResetProfessionalSchedule.mockReset()
-    mockRefresh.mockReset()
   })
 
   it('does not persist time changes until the save button is clicked', async () => {
@@ -327,7 +324,7 @@ describe('AvailabilityEditor', () => {
   }
 
   function findSaveButton(container: HTMLElement) {
-    return Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Guardar'))
+    return findButtonContaining(container, 'Guardar')
   }
 
   function renderEditor(props: Partial<React.ComponentProps<typeof AvailabilityEditor>> = {}) {
