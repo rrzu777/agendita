@@ -9,7 +9,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { rescheduleBooking } from '@/server/actions/bookings'
 import { getAvailableSlotsForReschedule } from '@/server/actions/availability'
 import { CalendarCheck2, Clock3, Loader2, MessageCircle } from 'lucide-react'
-import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { formatInTimeZone } from 'date-fns-tz'
+import { localDateTimeToUtc, startOfLocalDay } from '@/lib/availability/timezone'
 import { buildBookingRescheduledWhatsappUrl } from '@/lib/notifications/whatsapp'
 import { useVocabulary } from '@/components/vocabulary-provider'
 
@@ -59,7 +60,7 @@ export function RescheduleForm({
     setError('')
     setSelectedSlot(null)
 
-    getAvailableSlotsForReschedule(bookingId, fromZonedTime(`${date} 00:00`, timezone))
+    getAvailableSlotsForReschedule(bookingId, startOfLocalDay(date, timezone))
       .then((res) => {
         if (ignoreRef.current || requestIdRef.current !== requestId) return
         if (!res.ok) {
@@ -109,7 +110,7 @@ export function RescheduleForm({
         ? buildBookingRescheduledWhatsappUrl(customerPhone, {
             customerName,
             serviceName,
-            previousStartDateTime: fromZonedTime(`${currentDate} ${currentTime}`, timezone),
+            previousStartDateTime: localDateTimeToUtc(currentDate, currentTime, timezone),
             newStartDateTime: selectedSlot.start,
             businessTimezone: timezone,
             businessAddress,

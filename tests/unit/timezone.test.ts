@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getLocalDateStr, getLocalDayOfWeek, getLocalTimeStr, getBusinessDayRange, startOfLocalDay, startOfLocalMonth } from '@/lib/availability/timezone'
+import { getLocalDateStr, getLocalDayOfWeek, getLocalTimeStr, getBusinessDayRange, localDateTimeToUtc, startOfLocalDay, startOfLocalMonth } from '@/lib/availability/timezone'
 
 describe('timezone helpers', () => {
   it('getLocalDateStr returns correct local date in America/Santiago', () => {
@@ -94,6 +94,28 @@ describe('timezone helpers', () => {
       const lastHourSat = new Date('2026-09-06T03:30:00Z')
       expect(lastHourSat >= sat.dayStart && lastHourSat <= sat.dayEnd).toBe(true)
       expect(lastHourSat >= sun.dayStart).toBe(false)
+    })
+
+    // `startOfLocalDay` resolvía sólo la medianoche. Cualquier OTRA hora del gap
+    // (00:01…00:59 en Santiago) seguía componiéndose cruda, y una hora local que
+    // no existe cae al día anterior: un bloqueo recurrente de 00:30 se dibujaba a
+    // las 23:30 del sábado, un día antes y en un horario que la dueña no eligió.
+    it('primavera: una hora local que NO existe se corre al primer instante real, no al día anterior', () => {
+      const inicio = localDateTimeToUtc('2026-09-06', '00:30', tz)
+      expect(inicio.toISOString()).toBe('2026-09-06T04:00:00.000Z') // 01:00 local, cuando el día arranca
+      expect(getLocalDateStr(inicio, tz)).toBe('2026-09-06')
+    })
+
+    it('una hora local que sí existe se compone tal cual', () => {
+      expect(localDateTimeToUtc('2026-09-06', '13:00', tz).toISOString()).toBe('2026-09-06T16:00:00.000Z')
+    })
+
+    it('otoño: la hora que ocurre dos veces se compone sin correrse de día', () => {
+      // 23:30 del sábado 2026-04-04 pasa dos veces; cualquiera de las dos sirve,
+      // lo que no puede es terminar en otro día.
+      const instante = localDateTimeToUtc('2026-04-04', '23:30', tz)
+      expect(getLocalDateStr(instante, tz)).toBe('2026-04-04')
+      expect(getLocalTimeStr(instante, tz)).toBe('23:30')
     })
 
     it('otoño: los rangos de días consecutivos NO dejan hueco (cubren la hora repetida)', () => {

@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/select'
 import { createTimeBlock, deleteTimeBlock, createTimeBlockSeries } from '@/server/actions/time-blocks'
 import { CheckCircle2, Lock, Trash2, X } from 'lucide-react'
-import { fromZonedTime } from 'date-fns-tz'
+import { startOfLocalDay } from '@/lib/availability/timezone'
 import { parseTimeUTC } from '@/lib/calendar/block-form-values'
 import { BlockFormFields } from './block-form-fields'
 import { RecurrenceFields } from './recurrence-fields'
@@ -132,7 +132,7 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
     startTransition(async () => {
       try {
         if (recurring) {
-          const anchorDate = fromZonedTime(`${date} 00:00:00`, timezone)
+          const anchorDate = startOfLocalDay(date, timezone)
           // `professionalId: null` = bloqueo del salón, cierra para todos. Este diálogo
           // todavía no pregunta de quién es; el selector llega con la pantalla.
           const res = await createTimeBlockSeries({ daysOfWeek, startTime, endTime, reason: reason || null, anchorDate, endMode, weeks: endMode === 'weeks' ? weeks : null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmed: confirmOverlap, professionalId: null })

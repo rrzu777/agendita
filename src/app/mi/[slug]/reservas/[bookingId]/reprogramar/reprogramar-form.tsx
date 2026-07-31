@@ -8,7 +8,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { getMyRescheduleSlots, rescheduleMyBooking } from '@/server/actions/my-bookings'
 import { CalendarCheck2, Clock3, Loader2 } from 'lucide-react'
-import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { formatInTimeZone } from 'date-fns-tz'
+import { startOfLocalDay } from '@/lib/availability/timezone'
 
 interface ReprogramarFormProps {
   bookingId: string
@@ -50,7 +51,7 @@ export function ReprogramarForm({
     setError('')
     setSelectedSlot(null)
 
-    getMyRescheduleSlots(bookingId, fromZonedTime(`${date} 00:00`, timezone))
+    getMyRescheduleSlots(bookingId, startOfLocalDay(date, timezone))
       .then((res) => {
         if (ignoreRef.current || requestIdRef.current !== requestId) return
         if (!res.ok) {

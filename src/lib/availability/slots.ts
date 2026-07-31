@@ -1,6 +1,6 @@
 import { addMinutes, addDays } from 'date-fns'
-import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
-import { getLocalDayOfWeek } from './timezone'
+import { formatInTimeZone } from 'date-fns-tz'
+import { getLocalDayOfWeek, localDateTimeToUtc } from './timezone'
 import { LEAD_TIME_MINUTES } from './constants'
 import { shrinkBlock } from './shrink-block'
 import { occupiesSlot, type SlotOccupancyFields } from '@/lib/bookings/approval'
@@ -80,8 +80,8 @@ export function generateSlots(
   if (!rule) return []
 
   // Construir timestamps UTC reales para inicio y fin de disponibilidad
-  const availabilityStart = fromZonedTime(`${localDateStr} ${rule.startTime}`, timezone)
-  const availabilityEnd = fromZonedTime(`${localDateStr} ${rule.endTime}`, timezone)
+  const availabilityStart = localDateTimeToUtc(localDateStr, rule.startTime, timezone)
+  const availabilityEnd = localDateTimeToUtc(localDateStr, rule.endTime, timezone)
 
   // Lead time: no mostrar slots que requieran menos de leadTimeMinutes de antelación
   const cutoff = addMinutes(now, leadTimeMinutes)

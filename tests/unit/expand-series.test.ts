@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { expandSeries, computeSeriesUntil, type SeriesLike } from '@/lib/calendar/expand-series'
+import { expandSeries, computeSeriesUntil, type ExceptionLike, type SeriesLike } from '@/lib/calendar/expand-series'
 import { getLocalDateStr } from '@/lib/availability/timezone'
 
 const TZ = 'America/Santiago'
@@ -147,6 +147,66 @@ describe('expandSeries', () => {
         gapDayStart, gapDayEnd, TZ,
       )
       expect(conExcepcion).toEqual([])
+    })
+
+    // El mismo gap, pero en la HORA de la serie y no en la clave: componer una
+    // hora local que no existe la manda al día anterior. Un bloqueo "toda la
+    // madrugada" arrancaba a las 23:00 del sábado, tapando una hora que la dueña
+    // no bloqueó.
+    it('una serie que arranca en la hora que el reloj se saltea no se corre al día anterior', () => {
+      const madrugada: SeriesLike = { ...sunday, startTime: '00:00', endTime: '10:00' }
+      const [occ] = expandSeries(madrugada, [], gapDayStart, gapDayEnd, TZ)
+      expect(getLocalDateStr(occ.startDateTime, TZ)).toBe('2026-09-06')
+      expect(occ.startDateTime.toISOString()).toBe('2026-09-06T04:00:00.000Z') // 01:00 local
+      expect(occ.endDateTime.toISOString()).toBe('2026-09-06T13:00:00.000Z') // 10:00 local (UTC-3)
+    })
+  })
+
+  // La dueña abre el bloqueo de un día y le cambia la FECHA: el diálogo guarda la
+  // excepción con el día ORIGINAL como clave y el horario nuevo adentro. El barrido
+  // sólo visita los días que dicta la regla dentro del rango, así que preguntar por
+  // el día nuevo no la encontraba: un bloqueo real que el chequeo de disponibilidad
+  // no veía, y encima se podía reservar.
+  describe('una excepción que mueve la ocurrencia a otro día', () => {
+    const lunes: SeriesLike = { ...base, daysOfWeek: [1] }
+    const movidaAlMartes: ExceptionLike = {
+      occurrenceDate: new Date('2026-06-01T04:00:00.000Z'), // lunes 1, la clave
+      isSkipped: false,
+      startDateTime: new Date('2026-06-02T19:00:00.000Z'), // martes 2, 15:00 local
+      endDateTime: new Date('2026-06-02T20:00:00.000Z'),
+      reason: 'Movido al martes',
+    }
+
+    it('aparece cuando se pregunta por el día NUEVO', () => {
+      const { start, end } = range('2026-06-02', '2026-06-02')
+      const occ = expandSeries(lunes, [movidaAlMartes], start, end, TZ)
+      expect(occ).toHaveLength(1)
+      expect(occ[0].startDateTime.toISOString()).toBe('2026-06-02T19:00:00.000Z')
+      expect(occ[0].reason).toBe('Movido al martes')
+      // Sigue siendo la ocurrencia del lunes: es la clave con que la UI edita o saltea.
+      expect(occ[0].id).toBe('series-1:2026-06-01')
+      expect(occ[0].occurrenceDate?.toISOString()).toBe('2026-06-01T04:00:00.000Z')
+    })
+
+    it('ya no aparece en el día del que se fue', () => {
+      const { start, end } = range('2026-06-01', '2026-06-01')
+      expect(expandSeries(lunes, [movidaAlMartes], start, end, TZ)).toEqual([])
+    })
+
+    it('con los dos días en el rango aparece una sola vez', () => {
+      const { start, end } = range('2026-06-01', '2026-06-02')
+      const occ = expandSeries(lunes, [movidaAlMartes], start, end, TZ)
+      expect(occ.map((o) => o.id)).toEqual(['series-1:2026-06-01'])
+    })
+
+    it('una excepción de un día que la serie ya no dicta no revive', () => {
+      // La serie pasó a ser sólo de martes; la excepción del lunes quedó huérfana.
+      const martes: SeriesLike = { ...base, daysOfWeek: [2] }
+      const { start, end } = range('2026-06-02', '2026-06-02')
+      const occ = expandSeries(martes, [movidaAlMartes], start, end, TZ)
+      // Sólo la ocurrencia propia del martes (13:00), no la huérfana movida.
+      expect(occ.map((o) => o.id)).toEqual(['series-1:2026-06-02'])
+      expect(occ[0].startDateTime.toISOString()).toBe('2026-06-02T17:00:00.000Z')
     })
   })
 })

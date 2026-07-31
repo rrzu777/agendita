@@ -13,13 +13,13 @@ import { getEffectiveBlocks, type EffectiveBlock } from '@/lib/availability/effe
 import { computeServiceFit, SERVICE_FIT_WINDOW_DAYS } from '@/lib/availability/service-fit'
 import { blockScopeFor, bookingScopeCondition, resolveAvailabilityRules } from '@/lib/availability/scope'
 import { assertBlockOwner } from '@/lib/professionals/ownership'
-import { getLocalDateStr } from '@/lib/availability/timezone'
+import { getLocalDateStr, startOfLocalDay } from '@/lib/availability/timezone'
 import { computeSeriesUntil, expandSeries, type SeriesEndMode } from '@/lib/calendar/expand-series'
 import { planSeriesUpdate } from '@/lib/calendar/series-update-plan'
 import { timeToMinutes } from '@/lib/availability/time-range'
 import { OCCUPYING_STATUSES } from '@/lib/bookings/approval'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
-import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { formatInTimeZone } from 'date-fns-tz'
 
 const MAX_BLOCK_DURATION_MS = 32 * 24 * 60 * 60 * 1000 // 32 dias
 
@@ -552,8 +552,8 @@ async function _updateTimeBlockSeries(
   const now = new Date()
   const todayStr = formatInTimeZone(now, timezone, 'yyyy-MM-dd')
   const yesterdayStr = formatInTimeZone(addDays(now, -1), timezone, 'yyyy-MM-dd')
-  const oldUntil = fromZonedTime(`${yesterdayStr} 00:00:00`, timezone)
-  const anchorToday = fromZonedTime(`${todayStr} 00:00:00`, timezone)
+  const oldUntil = startOfLocalDay(yesterdayStr, timezone)
+  const anchorToday = startOfLocalDay(todayStr, timezone)
 
   // Partir la serie solo cuando conviene conservar el historial (hay pasado Y
   // futuro). Si es solo-futura o ya terminó, editar en el lugar: el split

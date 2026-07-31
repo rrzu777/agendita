@@ -1,7 +1,8 @@
-import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { formatInTimeZone } from 'date-fns-tz'
+import { localDateTimeToUtc } from '@/lib/availability/timezone'
 
 export function parseTimeUTC(dateStr: string, timeStr: string, timezone: string): Date {
-  return fromZonedTime(`${dateStr} ${timeStr}`, timezone)
+  return localDateTimeToUtc(dateStr, timeStr, timezone)
 }
 
 export interface BlockFormValues {

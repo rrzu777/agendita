@@ -12,7 +12,8 @@ import {
   startOfMonth,
   endOfMonth,
 } from 'date-fns'
-import { fromZonedTime, formatInTimeZone } from 'date-fns-tz'
+import { formatInTimeZone } from 'date-fns-tz'
+import { endOfLocalDay, startOfLocalDay } from '@/lib/availability/timezone'
 
 const WEEK_OPTS = { weekStartsOn: 1 as const }
 
@@ -51,8 +52,8 @@ function rangeForView(view: CalendarView, focusLocalDate: Date, timezone: string
   const startStr = formatInTimeZone(startLocal, 'UTC', 'yyyy-MM-dd')
   const endStr = formatInTimeZone(endLocal, 'UTC', 'yyyy-MM-dd')
   return {
-    start: fromZonedTime(`${startStr} 00:00:00`, timezone),
-    end: fromZonedTime(`${endStr} 23:59:59`, timezone),
+    start: startOfLocalDay(startStr, timezone),
+    end: endOfLocalDay(endStr, timezone),
   }
 }
 
