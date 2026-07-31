@@ -2,6 +2,7 @@ import { PrismaClient, BookingStatus, BookingPaymentStatus, PaymentType } from '
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { requireTestDatabase } from './setup'
 import { applyApprovedPayment } from '@/server/services/finance'
+import { deriveConfirmationState } from '@/lib/payments/confirmation-state'
 
 requireTestDatabase()
 
@@ -179,6 +180,25 @@ describe('pago que llega y la reserva no queda confirmada', () => {
     const asientos = await prisma.ledgerEntry.findMany({ where: { bookingId: booking.id } })
     expect(asientos).toHaveLength(1)
     expect(asientos[0].amount).toBe(5000)
+  })
+
+  // La otra punta del mismo hecho: lo que ve la clienta. Esa fila —pago aprobado,
+  // reserva sin confirmar— es la que lee `/book/confirmation`, que es la URL de retorno
+  // de Mercado Pago. Antes la pantalla deducía "Reserva confirmada" del pago aprobado y
+  // le prometía el día y la hora a alguien cuyo horario ya era de otra persona. Va acá
+  // y no en un unit test porque lo que puede volver a romperse es la correspondencia
+  // entre los campos que escribe `recalcBookingFromPayments` y los que lee la pantalla.
+  it('la pantalla de la clienta no dice "confirmada" con el horario perdido', async () => {
+    const booking = await crearReservaPendiente()
+    await crearReservaGanadora()
+
+    await pagarAbono(booking.id, 'mp-race-pantalla')
+
+    const fila = await prisma.booking.findUnique({
+      where: { id: booking.id },
+      include: { payments: { select: { status: true, provider: true, providerPaymentId: true } } },
+    })
+    expect(deriveConfirmationState(fila!)).toBe('paid_unconfirmed')
   })
 
   it('un bloqueo de la dueña encima del horario también frena la confirmación', async () => {

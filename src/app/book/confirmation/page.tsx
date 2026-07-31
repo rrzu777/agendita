@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { CheckCircle2, Clock, XCircle, Calendar, Check } from 'lucide-react'
+import { CheckCircle2, Clock, XCircle, Calendar, Check, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { prisma } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth/user'
@@ -120,6 +120,17 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
       message: booking.paymentMethod === BANK_TRANSFER_METHOD
         ? 'Transferí el abono y avisanos con el botón de abajo para confirmar tu reserva.'
         : 'Completa el pago del abono para confirmar tu reserva.',
+    },
+    // La plata entró pero la reserva no quedó en pie (ver `paid_unconfirmed`): esta
+    // pantalla es la URL de retorno de Mercado Pago, así que es lo primero que ve la
+    // clienta. Antes decía "Reserva confirmada, te esperamos el {día} a las {hora}" y
+    // la mandaba a un horario que ya era de otra persona.
+    paid_unconfirmed: {
+      icon: AlertCircle,
+      iconColor: 'text-amber-600',
+      iconBg: 'bg-amber-50',
+      title: 'Recibimos tu pago, pero la reserva no quedó confirmada',
+      message: `${booking.business.name} ya está al tanto y te va a contactar para reubicarte o devolverte ${formatMoney(booking.depositPaid, currency)}. Suele pasar cuando alguien toma el horario justo antes de que entre el pago.`,
     },
     verifying_transfer: {
       icon: Clock,

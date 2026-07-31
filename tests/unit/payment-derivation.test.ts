@@ -63,10 +63,15 @@ describe('deriveManualPaymentType', () => {
 })
 
 describe('deriveConfirmationState with manual payments', () => {
+  // Reserva que todavía debe el abono: los montos son parte de la entrada desde que
+  // un pago aprobado dejó de alcanzar para dar la reserva por confirmada.
+  const debiendo = { depositRequired: 5000, depositPaid: 0, paymentStatus: 'unpaid' }
+
   it('returns confirmed for confirmed status regardless of payments', () => {
-    expect(deriveConfirmationState({ status: 'confirmed', payments: [] })).toBe('confirmed')
+    expect(deriveConfirmationState({ ...debiendo, status: 'confirmed', payments: [] })).toBe('confirmed')
     expect(
       deriveConfirmationState({
+        ...debiendo,
         status: 'confirmed',
         payments: [{ status: 'pending', provider: 'manual' as const }],
       })
@@ -76,6 +81,7 @@ describe('deriveConfirmationState with manual payments', () => {
   it('returns pending when only manual payments exist on pending_payment', () => {
     expect(
       deriveConfirmationState({
+        ...debiendo,
         status: 'pending_payment',
         payments: [{ status: 'approved', provider: 'manual' as const }],
       })
@@ -83,6 +89,6 @@ describe('deriveConfirmationState with manual payments', () => {
   })
 
   it('completed status is confirmed', () => {
-    expect(deriveConfirmationState({ status: 'completed', payments: [] })).toBe('confirmed')
+    expect(deriveConfirmationState({ ...debiendo, status: 'completed', payments: [] })).toBe('confirmed')
   })
 })
