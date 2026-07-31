@@ -36,7 +36,6 @@ export function BookingBusinessPage({ business, profileHref, referralToken, sess
             name: business.name,
             addressText: business.addressText,
             whatsapp: business.whatsapp,
-            defaultMeetingUrl: business.defaultMeetingUrl,
           }}
           timezone={business.timezone || 'America/Santiago'}
           currency={business.currency || 'CLP'}

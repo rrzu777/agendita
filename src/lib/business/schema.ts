@@ -27,10 +27,16 @@ export const updateBusinessSchema = z.object({
   // Sala fija de videollamada para los servicios online. URL completa: se manda
   // tal cual por email, así que un "meet.google.com/xxx" sin esquema no serviría
   // como link clickeable.
+  //
+  // El esquema se exige explícitamente: `.url()` de Zod acepta CUALQUIER esquema
+  // que el parser de URL entienda, incluido `javascript:`, y este valor termina
+  // como href en pantallas públicas. Sin este refine, la dueña de un negocio
+  // puede guardar un XSS que se ejecuta en el navegador de sus clientas.
   defaultMeetingUrl: z
     .string()
     .trim()
     .url('Tiene que ser un link completo, con https://')
+    .refine((v) => /^https?:\/\//i.test(v), 'Tiene que empezar con https://')
     .max(500, 'El link es demasiado largo')
     .optional()
     .or(z.literal('')),

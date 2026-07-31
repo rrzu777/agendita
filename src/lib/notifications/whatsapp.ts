@@ -53,6 +53,19 @@ export function buildWhatsappUrl(phone: string, message: string): string {
   return `https://wa.me/${normalized}?text=${encoded}`
 }
 
+/**
+ * El link que le damos a la clienta para escribirle al negocio por su reserva.
+ *
+ * Con el mensaje ya redactado: cuando alguien necesita mover o cancelar, lo
+ * primero que el negocio pregunta es cuál reserva, y el número lo tenemos acá.
+ */
+export function buildBookingHelpWhatsappUrl(
+  phone: string,
+  data: { bookingRef: string; businessName: string },
+): string {
+  return buildWhatsappUrl(phone, `Hola, te escribo por mi reserva ${data.bookingRef} en ${data.businessName}.`)
+}
+
 export function buildBookingConfirmationWhatsappMessage(data: BookingWhatsappData): string {
   const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
   const total = fmtCurrency(data.totalPrice, data.businessCurrency)

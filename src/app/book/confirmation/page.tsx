@@ -14,8 +14,9 @@ import { BANK_TRANSFER_METHOD, BT_DECLARED_PREFIX } from '@/lib/bank-transfer/de
 import { TransferPanel } from './transfer-panel'
 import { AccountCta } from '@/components/booking/account-cta'
 import { formatConfirmationDateTime } from './format-datetime'
-import { whereRowHref, whereRows } from '@/lib/services/modality'
-import { buildWhatsappUrl } from '@/lib/notifications/whatsapp'
+import { whereRows } from '@/lib/services/modality'
+import { buildBookingHelpWhatsappUrl } from '@/lib/notifications/whatsapp'
+import { WhatsappHelpLine, WhereRowValue } from '@/components/booking/where-row-value'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
@@ -40,7 +41,6 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           currency: true,
           addressText: true,
           whatsapp: true,
-          defaultMeetingUrl: true,
         },
       },
       service: true,
@@ -101,13 +101,16 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
     modality: booking.modality,
     businessAddress: booking.business.addressText,
     serviceAddress: booking.serviceAddress,
-    meetingUrl: booking.meetingUrl ?? booking.business.defaultMeetingUrl,
+    // El link de la reserva, no el del negocio: `resolveBookingDraft` lo copia al
+    // crearla justamente para que cambiar de sala no reescriba las citas ya avisadas.
+    // El mail manda éste; la pantalla tiene que decir lo mismo.
+    meetingUrl: booking.meetingUrl,
   })
   const whatsappHref = booking.business.whatsapp
-    ? buildWhatsappUrl(
-        booking.business.whatsapp,
-        `Hola, te escribo por mi reserva ${formatBookingNumber(booking.bookingNumber, booking.id)} en ${booking.business.name}.`,
-      )
+    ? buildBookingHelpWhatsappUrl(booking.business.whatsapp, {
+        bookingRef: formatBookingNumber(booking.bookingNumber, booking.id),
+        businessName: booking.business.name,
+      })
     : null
 
   const stateConfig = {
@@ -238,26 +241,17 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
                 <span className="text-right font-semibold text-primary">{formattedTime}</span>
               </div>
 
-              {donde.map((row) => {
-                const href = whereRowHref(row)
-                return (
-                  <div key={row.label} className="flex items-start justify-between gap-4">
-                    <div className="flex items-center gap-3 text-muted-foreground">
-                      <div className="flex size-10 items-center justify-center rounded-lg bg-secondary">
-                        <MapPin className="size-5" />
-                      </div>
-                      <span className="text-sm font-medium">{row.label}</span>
+              {donde.map((row) => (
+                <div key={row.label} className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3 text-muted-foreground">
+                    <div className="flex size-10 items-center justify-center rounded-lg bg-secondary">
+                      <MapPin className="size-5" />
                     </div>
-                    {href ? (
-                      <a href={href} target="_blank" rel="noopener noreferrer" className="break-words text-right font-semibold text-primary underline">
-                        {row.value}
-                      </a>
-                    ) : (
-                      <span className="text-right font-semibold text-primary">{row.value}</span>
-                    )}
+                    <span className="text-sm font-medium">{row.label}</span>
                   </div>
-                )
-              })}
+                  <WhereRowValue row={row} />
+                </div>
+              ))}
             </div>
 
             <div className="mt-6 border-t border-border/50 pt-5">
@@ -283,14 +277,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
               <p className="text-sm text-muted-foreground">
                 Tu código de reserva: <span className="font-mono font-semibold text-primary">{formatBookingNumber(booking.bookingNumber, booking.id)}</span>
               </p>
-              {whatsappHref && (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  ¿Necesitas cambiar algo?{' '}
-                  <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="font-semibold text-primary underline">
-                    Escríbele a {booking.business.name} por WhatsApp
-                  </a>
-                </p>
-              )}
+              {whatsappHref && <WhatsappHelpLine href={whatsappHref} businessName={booking.business.name} className="mt-2" />}
             </div>
           </div>
         </div>

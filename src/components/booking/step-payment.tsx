@@ -16,6 +16,26 @@ import { TransferDetails } from './transfer-details'
 import { formatMoney } from '@/lib/money'
 import { AlertCircle, Clock, Loader2 } from 'lucide-react'
 import { formatBookingDateTime } from '@/lib/bookings/format-booking-datetime'
+import type { WhereFields } from '@/lib/services/modality'
+import type { ServiceModality } from '@prisma/client'
+
+/**
+ * Lo que el paso de pago le pasa a la confirmación: la reserva tal como quedó
+ * escrita, no lo que el wizard creía.
+ *
+ * El "dónde" viene de acá y no del estado del wizard a propósito: el servidor es
+ * quien manda (`resolveBookingDraft` pisa la modalidad pedida cuando el servicio
+ * tiene una sola, y copia el link de la sala en la reserva), y en un reintento
+ * con la misma idempotencyKey la reserva devuelta puede no ser la que la clienta
+ * acaba de armar.
+ */
+export interface BookingCreated {
+  id: string
+  mode: 'paid' | 'pending'
+  bookingNumber: number | null
+  promo: { discountAmount: number; finalAmount: number } | null
+  where: WhereFields
+}
 
 function generateIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -55,7 +75,7 @@ function BusinessCancellationPolicy({ policy }: { policy?: string | null }) {
   )
 }
 
-export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; referralToken?: string; onSuccess: (id: string, mode: 'paid' | 'pending', promo?: { discountAmount: number; finalAmount: number } | null, bookingNumber?: number | null) => void; onBack: () => void }) {
+export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; referralToken?: string; onSuccess: (result: BookingCreated) => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error' | 'transfer-details' | 'transfer-declared'>('review')
   const [bankInfo, setBankInfo] = useState<BankTransferPublicInfo | null>(null)
@@ -338,6 +358,20 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     }
   }
 
+  /** Arma el resultado desde la reserva que devolvió el servidor. */
+  function resultado(
+    booking: { id: string; bookingNumber: number | null; modality: ServiceModality; serviceAddress: string | null; meetingUrl: string | null },
+    mode: 'paid' | 'pending',
+  ): BookingCreated {
+    return {
+      id: booking.id,
+      mode,
+      bookingNumber: booking.bookingNumber,
+      promo: appliedPromo ? { discountAmount: appliedPromo.discount, finalAmount: appliedPromo.finalAmount } : null,
+      where: { modality: booking.modality, serviceAddress: booking.serviceAddress, meetingUrl: booking.meetingUrl },
+    }
+  }
+
   async function handleManualBooking() {
     setLoading(true)
     setStep('processing')
@@ -354,7 +388,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
       setStep('success')
       const mode = noDepositNeeded ? 'paid' as const : 'pending' as const
-      onSuccess(booking.id, mode, appliedPromo ? { discountAmount: appliedPromo.discount, finalAmount: appliedPromo.finalAmount } : null, booking.bookingNumber)
+      onSuccess(resultado(booking, mode))
     } catch (err) {
       console.error('Booking error:', err)
       setErrorMessage('Error al crear la reserva')
@@ -428,7 +462,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       }
 
       setStep('success')
-      onSuccess(booking.id, 'paid', appliedPromo ? { discountAmount: appliedPromo.discount, finalAmount: appliedPromo.finalAmount } : null, booking.bookingNumber)
+      onSuccess(resultado(booking, 'paid'))
     } catch (err) {
       console.error('Payment error:', err)
       setErrorMessage('Error al procesar el pago')

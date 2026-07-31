@@ -96,11 +96,26 @@ export interface WhereFields {
   meetingUrl?: string | null
 }
 
-/** Una fila de "dónde". `kind` es para que quien la muestre sepa si es clickeable. */
+/** Una fila de "dónde", con el link ya resuelto: `href` null = no se clickea. */
 export interface WhereRow {
   label: string
   value: string
-  kind: 'text' | 'address' | 'url'
+  href: string | null
+}
+
+/** Buscar una dirección en un mapa, sin atarse a la app de mapas de nadie. */
+function mapsHref(address: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+}
+
+/**
+ * Un link de videollamada sólo si es navegable. El valor lo escribe la dueña y
+ * termina como href en pantallas públicas: `javascript:...` ahí es un XSS que
+ * corre en el navegador de la clienta. El alta ya lo valida (business/schema.ts);
+ * esto es el segundo cerrojo, porque las filas viejas se guardaron sin él.
+ */
+function linkNavegable(url: string): string | null {
+  return /^https?:\/\//i.test(url) ? url : null
 }
 
 /**
@@ -109,54 +124,46 @@ export interface WhereRow {
  * ningún lado (la dirección que importa es la suya) y online no hay dirección,
  * hay link.
  *
- * Las usan el mail de reserva y la pantalla de confirmación, que son las dos
- * puntas del mismo momento: contestar "¿dónde tengo que ir?" cuando la clienta
- * ya no está en la página del negocio.
+ * Las usan el mail de reserva y las dos pantallas de confirmación, que son las
+ * puntas del mismo momento: contestar "¿dónde tengo que ir?" cuando la clienta ya
+ * no está en la página del negocio. El `href` se decide acá y no en cada pantalla
+ * para que no haya dos criterios de qué es clickeable.
  */
 export function whereRows(data: WhereFields): WhereRow[] {
   const modality = data.modality ?? ServiceModality.on_site
   if (modality === ServiceModality.at_home) {
     return [
-      { label: 'Dónde', value: MODALITY_LABELS.at_home, kind: 'text' },
+      { label: 'Dónde', value: MODALITY_LABELS.at_home, href: null },
+      // Sin link al mapa: es la casa de la clienta, la única dirección que no
+      // necesita que le expliquen cómo llegar.
       ...(data.serviceAddress
-        ? [{ label: 'Tu dirección', value: data.serviceAddress, kind: 'address' as const }]
+        ? [{ label: 'Tu dirección', value: data.serviceAddress, href: null }]
         : []),
     ]
   }
   if (modality === ServiceModality.online) {
     return [
-      { label: 'Dónde', value: MODALITY_LABELS.online, kind: 'text' },
+      { label: 'Dónde', value: MODALITY_LABELS.online, href: null },
       data.meetingUrl
-        ? { label: 'Link', value: data.meetingUrl, kind: 'url' }
-        : { label: 'Link', value: 'Te lo enviamos antes de la cita', kind: 'text' },
+        ? { label: 'Link', value: data.meetingUrl, href: linkNavegable(data.meetingUrl) }
+        : { label: 'Link', value: 'Te lo enviamos antes de la cita', href: null },
     ]
   }
   // En el local: se mantiene la fila de siempre, sin etiqueta de modalidad
   // cuando el negocio no ofrece nada más (no hay nada que aclarar).
   return data.businessAddress
-    ? [{ label: 'Dirección', value: data.businessAddress, kind: 'address' }]
+    ? [{ label: 'Dirección', value: data.businessAddress, href: mapsHref(data.businessAddress) }]
     : []
-}
-
-/** Buscar una dirección en un mapa, sin atarse a la app de mapas de nadie. */
-export function mapsHref(address: string): string {
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
-}
-
-/** A dónde lleva una fila de "dónde", o null si no lleva a ningún lado. */
-export function whereRowHref(row: WhereRow): string | null {
-  if (row.kind === 'address') return mapsHref(row.value)
-  if (row.kind === 'url') return row.value
-  return null
 }
 
 /**
  * Qué mostrar de "dónde" en una reserva ya creada (dashboard, /mi).
  *
- * `detail` es null en el local: la dirección del negocio ya está en su propia
- * página y repetirla en cada fila es ruido. Es la variante para quien YA está
- * adentro del negocio; `whereRows` (acá arriba) es la variante para la clienta,
- * y sí incluye la dirección porque ahí no tiene dónde más buscarla.
+ * `detail` es null en el local: en una LISTA de reservas la dirección del negocio
+ * es la misma en todas las filas y sólo hace ruido. Esa es la división real con
+ * `whereRows` (acá arriba) —lista vs. una reserva sola, no negocio vs. clienta—:
+ * `whereRows` es para cuando la reserva se mira sin nada alrededor (el mail, la
+ * confirmación) y ahí la dirección tiene que estar sí o sí.
  */
 export function bookingWhere(booking: {
   modality: ServiceModality
