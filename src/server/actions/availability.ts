@@ -12,12 +12,25 @@ import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth
 import { isValidTimeRange } from '@/lib/availability/time-range'
 import { computeRescheduleSlots } from '@/lib/availability/reschedule-slots'
 import { blockScopeFor, bookingScopeCondition, normalizeProfessionalId, resolveAvailabilityRules } from '@/lib/availability/scope'
+import { materializeProfessionalSchedule, projectWeek } from '@/lib/availability/weekly-schedule'
+import { isProfessionalOfBusiness } from '@/lib/professionals/ownership'
 import { RELEASED_STATUSES } from '@/lib/bookings/approval'
 import { action, UserError } from '@/lib/actions/result'
 
 const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
 
 const updateAvailabilityRuleSchema = z.object({
+  startTime: z.string().regex(timeRegex, 'Formato de hora inválido (HH:MM)'),
+  endTime: z.string().regex(timeRegex, 'Formato de hora inválido (HH:MM)'),
+  isActive: z.boolean(),
+}).refine((d) => isValidTimeRange(d.startTime, d.endTime), {
+  message: 'La hora de inicio debe ser anterior a la de término',
+})
+
+// Por día y no por id de regla: cuando una persona hereda, no tiene ninguna fila
+// propia todavía, así que no hay id que mandar. Ver `projectWeek`.
+const professionalRuleSchema = z.object({
+  dayOfWeek: z.number().int().min(0).max(6),
   startTime: z.string().regex(timeRegex, 'Formato de hora inválido (HH:MM)'),
   endTime: z.string().regex(timeRegex, 'Formato de hora inválido (HH:MM)'),
   isActive: z.boolean(),
@@ -78,14 +91,8 @@ async function _getAvailableTimeSlots(
   // este negocio, o de alguien que ya no atiende, caería por herencia al horario del
   // salón y devolvería slots como si todo estuviera bien: el problema se descubriría
   // recién cuando la reserva se crea a nombre de nadie.
-  if (professionalId !== null) {
-    const persona = await prisma.professional.findFirst({
-      where: { id: professionalId, businessId, isActive: true },
-      select: { id: true },
-    })
-    if (!persona) {
-      throw new UserError('Esa persona no está disponible para reservar')
-    }
+  if (professionalId !== null && !(await isProfessionalOfBusiness(prisma, businessId, professionalId))) {
+    throw new UserError('Esa persona no está disponible para reservar')
   }
 
   const timezone = business.timezone || 'America/Santiago'
@@ -201,3 +208,103 @@ async function _updateAvailabilityRule(
 }
 
 export const updateAvailabilityRule = action(_updateAvailabilityRule)
+
+/**
+ * El horario que rige a una persona, para el editor. `inherited` dice **de dónde
+ * salió**: sin filas propias, lo que se devuelve es el horario del salón, y esa
+ * distinción es la única forma de que la pantalla no diga "este es el horario de Ana"
+ * cuando en realidad es el del salón que Ana todavía no cambió.
+ */
+async function _getProfessionalSchedule(professionalId: string) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+
+  if (!(await isProfessionalOfBusiness(prisma, businessId, professionalId))) {
+    throw new ForbiddenError('Persona no encontrada')
+  }
+
+  const own = await prisma.availabilityRule.findMany({
+    where: { businessId, professionalId },
+    select: { dayOfWeek: true, startTime: true, endTime: true, isActive: true },
+  })
+  if (own.length > 0) {
+    return { inherited: false, days: projectWeek(own) }
+  }
+
+  const salon = await prisma.availabilityRule.findMany({
+    where: { businessId, professionalId: null },
+    select: { dayOfWeek: true, startTime: true, endTime: true, isActive: true },
+  })
+  return { inherited: true, days: projectWeek(salon) }
+}
+
+export const getProfessionalSchedule = action(_getProfessionalSchedule)
+
+/**
+ * Cambia UN día del horario de una persona. Si todavía heredaba, en la misma
+ * transacción se le copia la semana entera y recién después se aplica el cambio —
+ * ver `materializeProfessionalSchedule`: copiar sólo el día editado la deja cerrada
+ * el resto de la semana.
+ */
+async function _updateProfessionalAvailabilityRule(
+  professionalId: string,
+  data: { dayOfWeek: number; startTime: string; endTime: string; isActive: boolean },
+) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('update-availability', 30, 60000)
+  if (!limit.success) {
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  }
+
+  const parsed = professionalRuleSchema.safeParse(data)
+  if (!parsed.success) {
+    throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
+  }
+  const { dayOfWeek, startTime, endTime, isActive } = parsed.data
+
+  if (!(await isProfessionalOfBusiness(prisma, businessId, professionalId))) {
+    throw new ForbiddenError('Persona no encontrada')
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await materializeProfessionalSchedule(tx, businessId, professionalId)
+    // `updateMany` y no `update`: la clave es `(negocio, persona, día)` y no hay unique
+    // que la respalde, así que no existe un `where` de `update` que la exprese. Después
+    // de materializar siempre hay fila para los 7 días, por eso no hay rama de "no
+    // encontrada" — si alguna vez `count` diera 0, la materialización está rota.
+    await tx.availabilityRule.updateMany({
+      where: { businessId, professionalId, dayOfWeek },
+      data: { startTime, endTime, isActive },
+    })
+  })
+
+  revalidatePath('/dashboard/availability')
+  await revalidateBusinessPublicPaths(businessId)
+}
+
+export const updateProfessionalAvailabilityRule = action(_updateProfessionalAvailabilityRule)
+
+/**
+ * Le saca el horario propio a una persona: vuelve a seguir el del salón, y a seguirlo
+ * **hacia adelante** — es la razón de ser de la herencia (ver `resolveRuleScope`).
+ */
+async function _resetProfessionalSchedule(professionalId: string) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const limit = await checkRateLimit('update-availability', 30, 60000)
+  if (!limit.success) {
+    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  }
+
+  if (!(await isProfessionalOfBusiness(prisma, businessId, professionalId))) {
+    throw new ForbiddenError('Persona no encontrada')
+  }
+
+  // `professionalId` en el where es lo único que separa esto de borrar el horario del
+  // salón: sin él, un `deleteMany` por `businessId` deja al negocio sin ningún día de
+  // atención y sin forma de recuperarlo desde la pantalla.
+  await prisma.availabilityRule.deleteMany({ where: { businessId, professionalId } })
+
+  revalidatePath('/dashboard/availability')
+  await revalidateBusinessPublicPaths(businessId)
+}
+
+export const resetProfessionalSchedule = action(_resetProfessionalSchedule)

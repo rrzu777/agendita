@@ -37,7 +37,10 @@ export default async function DashboardPage() {
     getBookingsSummary(),
     getFinancialSummary(),
     prisma.service.count({ where: { businessId: business.id, isActive: true } }),
-    prisma.availabilityRule.count({ where: { businessId: business.id, isActive: true } }),
+    // `professionalId: null`: esto es progreso de onboarding ("¿ya configuró su
+    // horario?"), del SALÓN. Sin el filtro, un salón de 4 personas con horario propio
+    // cuenta 28 días de atención en vez de 7.
+    prisma.availabilityRule.count({ where: { businessId: business.id, professionalId: null, isActive: true } }),
     prisma.paymentAccount.count({ where: { businessId: business.id, status: 'connected' } }),
     prisma.packagePurchase.count({ where: pendingPackageTransferWhere(business.id) }),
   ])

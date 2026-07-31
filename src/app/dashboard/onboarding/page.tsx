@@ -23,7 +23,8 @@ export default async function OnboardingPage() {
 
   const [servicesCount, availabilityCount] = await Promise.all([
     prisma.service.count({ where: { businessId: business.id, isActive: true } }),
-    prisma.availabilityRule.count({ where: { businessId: business.id, isActive: true } }),
+    // Del salón: ver el mismo contador en `dashboard/page.tsx`.
+    prisma.availabilityRule.count({ where: { businessId: business.id, professionalId: null, isActive: true } }),
   ])
 
   const publicUrl = getBusinessPublicUrl(business)

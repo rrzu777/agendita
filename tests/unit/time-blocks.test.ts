@@ -25,6 +25,10 @@ const mockPrisma = {
   },
   availabilityRule: {
     findMany: vi.fn().mockResolvedValue([]),
+    count: vi.fn().mockResolvedValue(0),
+  },
+  professional: {
+    findFirst: vi.fn().mockResolvedValue({ id: 'juan' }),
   },
   booking: {
     findMany: vi.fn(),
@@ -73,6 +77,7 @@ const baseInput = {
   endDateTime: new Date('2026-06-01T10:00:00Z'),
   reason: 'Test block',
   confirmOverlap: false,
+  professionalId: null,
 }
 
 describe('createTimeBlock', () => {
@@ -237,6 +242,7 @@ describe('createTimeBlockSeries', () => {
     anchorDate: fromZonedTime(`${formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd')} 00:00:00`, TZ),
     endMode: 'forever' as const,
     weeks: null,
+    professionalId: null,
   }
 
   beforeEach(() => {
@@ -654,6 +660,7 @@ describe('overlapToleranceMinutes', () => {
       endMode: 'forever',
       weeks: null,
       overlapToleranceMinutes: 45,
+      professionalId: null,
     })
     expect(res.ok && 'series' in res.data).toBe(true)
     expect(mockPrisma.timeBlockSeries.create).toHaveBeenCalledWith(
@@ -671,6 +678,7 @@ describe('overlapToleranceMinutes', () => {
       endMode: 'forever',
       weeks: null,
       overlapToleranceMinutes: 31,
+      professionalId: null,
     })
     expect(res).toEqual({ ok: false, error: expect.stringContaining('Datos inválidos') })
     expect(mockPrisma.timeBlockSeries.create).not.toHaveBeenCalled()
@@ -766,5 +774,99 @@ describe('de quién es el bloqueo decide contra qué reservas choca', () => {
     })
 
     expect(scopeOfLastBookingQuery()).toEqual(soloDeJuan)
+  })
+})
+
+describe('crear un bloqueo a nombre de una persona', () => {
+  const anchorDate = fromZonedTime(`${formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd')} 00:00:00`, TZ)
+  const seriesInputConDueño = {
+    daysOfWeek: [1],
+    startTime: '12:00',
+    endTime: '14:00',
+    reason: 'Almuerzo',
+    anchorDate,
+    endMode: 'forever' as const,
+    weeks: null,
+    professionalId: null as string | null,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPrisma.booking.findMany.mockResolvedValue([])
+    mockPrisma.professional.findFirst.mockResolvedValue({ id: 'juan' })
+    mockPrisma.timeBlock.create.mockResolvedValue({ id: 'block-1', businessId: 'biz-1' })
+    mockPrisma.timeBlockSeries.create.mockResolvedValue({ id: 'series-1', businessId: 'biz-1' })
+  })
+
+  it('el bloqueo suelto se guarda con su dueño', async () => {
+    await createTimeBlock({ ...baseInput, professionalId: 'juan' })
+
+    expect(mockPrisma.timeBlock.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ professionalId: 'juan' }) }),
+    )
+  })
+
+  /**
+   * Es el olvido más caro del track: con `null` significando "cierra para todos", una
+   * serie que pierde a su dueño en cualquier copia cierra el local entero, todas las
+   * semanas. El split ya está cubierto más arriba; esto cubre el alta.
+   */
+  it('la serie se guarda con su dueño', async () => {
+    await createTimeBlockSeries({ ...seriesInputConDueño, professionalId: 'juan' })
+
+    expect(mockPrisma.timeBlockSeries.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ professionalId: 'juan' }) }),
+    )
+  })
+
+  it('el chequeo de solape del alta mira sólo las citas de esa persona', async () => {
+    await createTimeBlock({ ...baseInput, professionalId: 'juan' })
+
+    const calls = mockPrisma.booking.findMany.mock.calls
+    const where = (calls[calls.length - 1][0] as { where: { AND?: unknown } }).where
+    expect(where.AND).toEqual({ OR: [{ professionalId: null }, { professionalId: 'juan' }] })
+  })
+
+  /**
+   * Normalizar defiende la forma; esto defiende la procedencia. Un id de otro salón no
+   * da error en ninguna query: se guardaría un bloqueo a nombre de alguien que no
+   * existe acá, invisible para todas las pantallas de este negocio.
+   */
+  it('rechaza un id que no es de una persona activa de este negocio', async () => {
+    mockPrisma.professional.findFirst.mockResolvedValue(null)
+
+    const res = await createTimeBlock({ ...baseInput, professionalId: 'de-otro-salon' })
+
+    expect(res.ok).toBe(false)
+    expect(mockPrisma.timeBlock.create).not.toHaveBeenCalled()
+  })
+
+  it('rechaza también en la serie', async () => {
+    mockPrisma.professional.findFirst.mockResolvedValue(null)
+
+    const res = await createTimeBlockSeries({ ...seriesInputConDueño, professionalId: 'de-otro-salon' })
+
+    expect(res.ok).toBe(false)
+    expect(mockPrisma.timeBlockSeries.create).not.toHaveBeenCalled()
+  })
+
+  it('el chequeo exige que sea de este negocio y esté activa', async () => {
+    await createTimeBlock({ ...baseInput, professionalId: 'juan' })
+
+    expect(mockPrisma.professional.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'juan', businessId: 'biz-1', isActive: true } }),
+    )
+  })
+
+  // Un bundle viejo durante un deploy manda un argumento de menos. Eso NO puede
+  // convertirse en un filtro "de una persona sin id", que en Prisma no filtra nada.
+  it('un undefined es "del salón", no una persona inválida', async () => {
+    const res = await createTimeBlock({ ...baseInput, professionalId: undefined as unknown as null })
+
+    expect(res.ok).toBe(true)
+    expect(mockPrisma.professional.findFirst).not.toHaveBeenCalled()
+    expect(mockPrisma.timeBlock.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ professionalId: null }) }),
+    )
   })
 })

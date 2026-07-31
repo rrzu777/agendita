@@ -36,7 +36,7 @@ describe('createTimeBlockSeries', () => {
     const { createTimeBlockSeries } = await import('@/server/actions/time-blocks')
     const res = await createTimeBlockSeries({
       daysOfWeek: [1, 2, 3, 4], startTime: '13:00', endTime: '14:00', reason: 'Almuerzo',
-      anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'weeks', weeks: 3,
+      anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'weeks', weeks: 3, professionalId: null,
     })
     expect(res.ok && 'series' in res.data).toBe(true)
     if (res.ok && 'series' in res.data) {
@@ -49,7 +49,7 @@ describe('createTimeBlockSeries', () => {
 
   it('skipSeriesOccurrence crea una excepción isSkipped', async () => {
     const { createTimeBlockSeries, skipSeriesOccurrence } = await import('@/server/actions/time-blocks')
-    const created = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever' })
+    const created = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever', professionalId: null })
     if (!created.ok || !('series' in created.data)) throw new Error(created.ok ? 'esperaba serie creada' : created.error)
     const series = created.data.series
     await skipSeriesOccurrence(series.id, new Date('2026-06-08T04:00:00Z'))
@@ -59,7 +59,7 @@ describe('createTimeBlockSeries', () => {
 
   it('overrideSeriesOccurrence hace upsert de un override', async () => {
     const { createTimeBlockSeries, overrideSeriesOccurrence } = await import('@/server/actions/time-blocks')
-    const created = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever' })
+    const created = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever', professionalId: null })
     if (!created.ok || !('series' in created.data)) throw new Error(created.ok ? 'esperaba serie creada' : created.error)
     const series = created.data.series
     const occDate = new Date('2026-06-15T04:00:00Z')
@@ -72,7 +72,7 @@ describe('createTimeBlockSeries', () => {
 
   it('updateTimeBlockSeries hace split conservando los días y cambiando la hora', async () => {
     const { createTimeBlockSeries, updateTimeBlockSeries } = await import('@/server/actions/time-blocks')
-    const created = await createTimeBlockSeries({ daysOfWeek: [1, 2, 3, 4], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2020-01-06T04:00:00Z'), endMode: 'forever' })
+    const created = await createTimeBlockSeries({ daysOfWeek: [1, 2, 3, 4], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2020-01-06T04:00:00Z'), endMode: 'forever', professionalId: null })
     if (!created.ok || !('series' in created.data)) throw new Error(created.ok ? 'esperaba serie creada' : created.error)
     const series = created.data.series
     const res = await updateTimeBlockSeries(series.id, { startTime: '12:30', endTime: '13:30', reason: 'A2' })
@@ -87,7 +87,7 @@ describe('createTimeBlockSeries', () => {
   it('updateTimeBlockSeries edita en el lugar una serie solo-futura (sin split, misma id)', async () => {
     const { createTimeBlockSeries, updateTimeBlockSeries } = await import('@/server/actions/time-blocks')
     // Ancla muy en el futuro: no hay ocurrencias pasadas que preservar.
-    const created = await createTimeBlockSeries({ daysOfWeek: [1, 2, 3], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2099-01-05T04:00:00Z'), endMode: 'forever' })
+    const created = await createTimeBlockSeries({ daysOfWeek: [1, 2, 3], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2099-01-05T04:00:00Z'), endMode: 'forever', professionalId: null })
     if (!created.ok || !('series' in created.data)) throw new Error(created.ok ? 'esperaba serie creada' : created.error)
     const series = created.data.series
     const before = await prisma.timeBlockSeries.count({ where: { businessId } })
@@ -101,7 +101,7 @@ describe('createTimeBlockSeries', () => {
   it('updateTimeBlockSeries NO crea una serie fantasma al editar una serie ya terminada', async () => {
     const { createTimeBlockSeries, updateTimeBlockSeries } = await import('@/server/actions/time-blocks')
     // Serie totalmente en el pasado (anchor 2020, 1 semana): until << hoy.
-    const created = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2020-01-06T04:00:00Z'), endMode: 'weeks', weeks: 1 })
+    const created = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2020-01-06T04:00:00Z'), endMode: 'weeks', weeks: 1, professionalId: null })
     if (!created.ok || !('series' in created.data)) throw new Error(created.ok ? 'esperaba serie creada' : created.error)
     const series = created.data.series
     const res = await updateTimeBlockSeries(series.id, { startTime: '12:30', endTime: '13:30', reason: 'A2' })
@@ -125,7 +125,7 @@ describe('createTimeBlockSeries', () => {
       await prisma.availabilityRule.create({ data: { businessId, dayOfWeek: 5, startTime: '09:00', endTime: '18:00', isActive: true } })
       const svc = await prisma.service.create({ data: { businessId, name: 'C1 svc', durationMinutes: 60, price: 10000, depositAmount: 0, pastelColor: '#FFD700', isActive: true } })
       // serie hasta viernes 2026-06-05 (00:00 local); slot ese viernes 13:00-14:00 (17:00Z-18:00Z)
-      await createTimeBlockSeries({ daysOfWeek: [5], startTime: '13:00', endTime: '14:00', reason: 'Almuerzo', anchorDate: new Date('2026-05-29T04:00:00Z'), endMode: 'weeks', weeks: 1 })
+      await createTimeBlockSeries({ daysOfWeek: [5], startTime: '13:00', endTime: '14:00', reason: 'Almuerzo', anchorDate: new Date('2026-05-29T04:00:00Z'), endMode: 'weeks', weeks: 1, professionalId: null })
       await expect(
         prisma.$transaction((tx) => assertSlotIsAvailable({ tx, businessId, serviceId: svc.id, startDateTime: new Date('2026-06-05T17:00:00Z'), endDateTime: new Date('2026-06-05T18:00:00Z'), timezone: 'America/Santiago', professionalId: null })),
       ).rejects.toThrow()
@@ -136,7 +136,7 @@ describe('createTimeBlockSeries', () => {
 
   it('deleteTimeBlockSeries borra la serie y sus excepciones', async () => {
     const { createTimeBlockSeries, skipSeriesOccurrence, deleteTimeBlockSeries } = await import('@/server/actions/time-blocks')
-    const created = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever' })
+    const created = await createTimeBlockSeries({ daysOfWeek: [1], startTime: '13:00', endTime: '14:00', reason: 'A', anchorDate: new Date('2026-06-01T04:00:00Z'), endMode: 'forever', professionalId: null })
     if (!created.ok || !('series' in created.data)) throw new Error(created.ok ? 'esperaba serie creada' : created.error)
     const series = created.data.series
     await skipSeriesOccurrence(series.id, new Date('2026-06-08T04:00:00Z'))

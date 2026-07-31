@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db'
 import { generateDefaultSubdomain } from '@/lib/business/subdomain'
 import { randomBookingNumberBase } from '@/lib/bookings/number'
 import { Prisma } from '@prisma/client'
+import { DEFAULT_WEEKLY_SCHEDULE } from '@/lib/availability/weekly-schedule'
 
 type RecoverBusinessResult =
   | { success: true; alreadyExists?: boolean; redirectTo: string }
@@ -152,15 +153,10 @@ export async function recoverBusiness(): Promise<RecoverBusinessResult> {
         },
       })
 
+      // Del salón, igual que al crear el negocio. Recuperar un negocio NO recupera su
+      // equipo: es a propósito, y por eso acá no hay nada por persona que sembrar.
       await tx.availabilityRule.createMany({
-        data: [
-          { businessId: business.id, dayOfWeek: 1, startTime: '09:00', endTime: '18:00' },
-          { businessId: business.id, dayOfWeek: 2, startTime: '09:00', endTime: '18:00' },
-          { businessId: business.id, dayOfWeek: 3, startTime: '09:00', endTime: '18:00' },
-          { businessId: business.id, dayOfWeek: 4, startTime: '09:00', endTime: '18:00' },
-          { businessId: business.id, dayOfWeek: 5, startTime: '09:00', endTime: '18:00' },
-          { businessId: business.id, dayOfWeek: 6, startTime: '10:00', endTime: '15:00' },
-        ],
+        data: DEFAULT_WEEKLY_SCHEDULE.map((day) => ({ ...day, businessId: business.id, professionalId: null })),
       })
     })
 
