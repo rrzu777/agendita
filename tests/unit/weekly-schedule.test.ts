@@ -3,6 +3,8 @@ import {
   DEFAULT_WEEKLY_SCHEDULE,
   projectWeek,
   materializeProfessionalSchedule,
+  scheduleLockKey,
+  setWeekday,
 } from '@/lib/availability/weekly-schedule'
 import type { Prisma } from '@prisma/client'
 
@@ -20,11 +22,19 @@ type SalonRule = { dayOfWeek: number; startTime: string; endTime: string; isActi
  * Una tx que registra el orden de las llamadas. El orden importa: el lock tiene que
  * tomarse ANTES de contar, o dos pestañas leen las dos "no tiene horario propio".
  */
-function makeTx(opts: { own?: number; salon?: SalonRule[] } = {}) {
+function makeTx(opts: { own?: number; salon?: SalonRule[]; updated?: number } = {}) {
   const calls: string[] = []
   const createMany = vi.fn(async (_args: { data: Record<string, unknown>[] }) => {
     calls.push('createMany')
     return { count: _args.data.length }
+  })
+  const create = vi.fn(async () => {
+    calls.push('create')
+    return {}
+  })
+  const updateMany = vi.fn(async () => {
+    calls.push('updateMany')
+    return { count: opts.updated ?? 1 }
   })
   const tx = {
     availabilityRule: {
@@ -32,6 +42,8 @@ function makeTx(opts: { own?: number; salon?: SalonRule[] } = {}) {
         calls.push('count')
         return opts.own ?? 0
       }),
+      create,
+      updateMany,
       findMany: vi.fn(async () => {
         calls.push('findMany')
         return opts.salon ?? []
@@ -39,7 +51,7 @@ function makeTx(opts: { own?: number; salon?: SalonRule[] } = {}) {
       createMany,
     },
   } as unknown as Prisma.TransactionClient
-  return { tx, calls, createMany }
+  return { tx, calls, createMany, create, updateMany }
 }
 
 const semanaDelSalon: SalonRule[] = [
@@ -164,7 +176,87 @@ describe('materializeProfessionalSchedule', () => {
     await materializeProfessionalSchedule(tx, BIZ, JUAN)
 
     expect(calls).toEqual(['lock', 'count', 'findMany', 'createMany'])
-    expect(mockLock).toHaveBeenCalledWith(tx, `availability-rules:${BIZ}:${JUAN}`)
+    expect(mockLock).toHaveBeenCalledWith(tx, `availability-rules:${BIZ}:p:${JUAN}`)
+  })
+})
+
+describe('scheduleLockKey', () => {
+  // El salón y una persona se escriben en paralelo sin pisarse, pero el salón tampoco
+  // puede quedar sin llave: abrir un día que no tiene fila también es "leer y crear".
+  it('el salón tiene su propia llave, distinta de la de cualquier persona', () => {
+    expect(scheduleLockKey(BIZ, null)).not.toBe(scheduleLockKey(BIZ, JUAN))
+  })
+
+  // Un id que fuera literalmente `salon` no puede colisionar con el salón.
+  it('el id de una persona va prefijado', () => {
+    expect(scheduleLockKey(BIZ, 'salon')).not.toBe(scheduleLockKey(BIZ, null))
+  })
+})
+
+describe('setWeekday', () => {
+  const lunes = { dayOfWeek: 1, startTime: '10:00', endTime: '16:00', isActive: true }
+
+  it('con una persona, materializa antes de escribir el día', async () => {
+    const { tx, calls } = makeTx({ own: 0, salon: semanaDelSalon })
+    mockLock.mockImplementation(() => { calls.push('lock') })
+
+    await setWeekday(tx, BIZ, JUAN, lunes)
+
+    expect(calls).toEqual(['lock', 'lock', 'count', 'findMany', 'createMany', 'updateMany'])
+  })
+
+  // El salón no hereda de nadie: materializarlo no significaría nada, y copiar su
+  // propio horario encima suyo sería duplicarlo.
+  it('con el salón no materializa nada', async () => {
+    const { tx, createMany, updateMany } = makeTx()
+
+    await setWeekday(tx, BIZ, null, lunes)
+
+    expect(createMany).not.toHaveBeenCalled()
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { businessId: BIZ, professionalId: null, dayOfWeek: 1 },
+      data: { startTime: '10:00', endTime: '16:00', isActive: true },
+    })
+  })
+
+  /**
+   * **El bug que arregla la escritura unificada.** El negocio se siembra sin fila de
+   * domingo; el editor viejo guardaba por id de regla, y sin fila no hay id: un negocio
+   * que atiende domingo no tenía forma de decirlo desde la pantalla.
+   */
+  it('crea la fila del día que no existía', async () => {
+    const { tx, create } = makeTx({ updated: 0 })
+
+    await setWeekday(tx, BIZ, null, { dayOfWeek: 0, startTime: '11:00', endTime: '15:00', isActive: true })
+
+    expect(create).toHaveBeenCalledWith({
+      data: { businessId: BIZ, professionalId: null, dayOfWeek: 0, startTime: '11:00', endTime: '15:00', isActive: true },
+    })
+  })
+
+  it('no crea nada si el día ya existía', async () => {
+    const { tx, create } = makeTx({ own: 7, updated: 1 })
+
+    await setWeekday(tx, BIZ, JUAN, lunes)
+
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Filas propias PARCIALES —hoy ningún camino de la app las crea, pero un backfill
+   * sí— que la materialización nunca completa, porque tres filas ya cuentan como
+   * "tiene horario propio". Crear la que falta repara ese estado en vez de guardar
+   * nada y decir "guardado".
+   */
+  it('con filas propias parciales completa el día que falta', async () => {
+    const { tx, createMany, create } = makeTx({ own: 3, updated: 0 })
+
+    await setWeekday(tx, BIZ, JUAN, lunes)
+
+    expect(createMany).not.toHaveBeenCalled()
+    expect(create).toHaveBeenCalledWith({
+      data: { businessId: BIZ, professionalId: JUAN, dayOfWeek: 1, startTime: '10:00', endTime: '16:00', isActive: true },
+    })
   })
 })
 
