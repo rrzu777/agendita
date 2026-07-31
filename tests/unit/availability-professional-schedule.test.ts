@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ForbiddenError } from '../helpers/auth-errors'
 
-// La escritura del horario por persona. Todo esto es inerte hasta que exista la
-// pantalla que lo llame, y es exactamente la clase de código que se descubre roto
-// recién cuando la feature está encendida y alguien perdió media semana de agenda.
+// La lectura y la escritura del horario semanal, en sus dos alcances: el salón
+// (`professionalId: null`) y una persona. Son la MISMA action, y estos tests son lo que
+// impide que se vuelvan a separar en dos con reglas distintas.
 
+const mockRequireBusiness = vi.fn()
 const mockRequireBusinessRole = vi.fn()
 
 // La transacción es un objeto DISTINTO del cliente de afuera, a propósito: con el
@@ -14,6 +15,7 @@ const mockTx = {
   availabilityRule: {
     count: vi.fn(),
     findMany: vi.fn(),
+    create: vi.fn(),
     createMany: vi.fn(),
     updateMany: vi.fn(),
     deleteMany: vi.fn(),
@@ -34,7 +36,7 @@ const mockPrisma = {
 
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 vi.mock('@/lib/auth/server', () => ({
-  requireBusiness: vi.fn(),
+  requireBusiness: (...a: unknown[]) => mockRequireBusiness(...a),
   requireBusinessRole: (...a: unknown[]) => mockRequireBusinessRole(...a),
   ForbiddenError,
 }))
@@ -50,8 +52,8 @@ vi.mock('@/lib/db/advisory-lock', () => ({
 }))
 
 const {
-  getProfessionalSchedule,
-  updateProfessionalAvailabilityRule,
+  getWeeklySchedule,
+  setWeeklyScheduleDay,
   resetProfessionalSchedule,
 } = await import('@/server/actions/availability')
 
@@ -71,12 +73,14 @@ function lastRulesQuery() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockRequireBusiness.mockResolvedValue({ businessId: BIZ, business: { timezone: 'America/Santiago' } })
   mockRequireBusinessRole.mockResolvedValue({ businessId: BIZ, business: { timezone: 'America/Santiago' } })
   mockPrisma.professional.findFirst.mockResolvedValue({ id: JUAN })
   mockPrisma.availabilityRule.findMany.mockResolvedValue(salon)
   mockPrisma.availabilityRule.count.mockResolvedValue(0)
   mockTx.availabilityRule.count.mockResolvedValue(0)
   mockTx.availabilityRule.findMany.mockResolvedValue(salon)
+  mockTx.availabilityRule.create.mockResolvedValue({})
   mockTx.availabilityRule.createMany.mockResolvedValue({ count: 7 })
   mockTx.availabilityRule.updateMany.mockResolvedValue({ count: 1 })
   mockTx.availabilityRule.deleteMany.mockResolvedValue({ count: 7 })
@@ -84,26 +88,53 @@ beforeEach(() => {
   mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(mockTx))
 })
 
-describe('getProfessionalSchedule', () => {
+describe('getWeeklySchedule — el salón', () => {
+  it('trae las reglas del salón y nunca dice que hereda', async () => {
+    const res = await getWeeklySchedule(null)
+
+    expect(res.inherited).toBe(false)
+    expect(lastRulesQuery().where).toEqual({ businessId: BIZ, professionalId: null })
+    expect(res.days).toHaveLength(7)
+  })
+
+  /**
+   * El salón se siembra sin domingo, y antes el editor mostraba sólo las filas que
+   * existían: no había fila, no había fila que editar, y un negocio que atiende domingo
+   * no tenía forma de decirlo. Proyectar los 7 es lo que le da la fila donde escribir.
+   */
+  it('proyecta los días que el salón no tiene, cerrados', async () => {
+    const res = await getWeeklySchedule(null)
+
+    expect(res.days[0]).toMatchObject({ dayOfWeek: 0, isActive: false })
+    expect(res.days[6]).toMatchObject({ dayOfWeek: 6, isActive: false })
+  })
+
+  it('no pregunta por la herencia de nadie', async () => {
+    await getWeeklySchedule(null)
+
+    expect(mockPrisma.availabilityRule.count).not.toHaveBeenCalled()
+    expect(mockPrisma.professional.findFirst).not.toHaveBeenCalled()
+  })
+})
+
+describe('getWeeklySchedule — una persona', () => {
   it('sin filas propias devuelve el horario del salón, dicho como heredado', async () => {
     mockPrisma.availabilityRule.count.mockResolvedValue(0)
 
-    const res = await getProfessionalSchedule(JUAN)
+    const res = await getWeeklySchedule(JUAN)
 
-    expect(res.ok).toBe(true)
-    if (!res.ok) throw new Error('debía resolver')
-    expect(res.data.inherited).toBe(true)
+    expect(res.inherited).toBe(true)
     expect(lastRulesQuery().where).toEqual({ businessId: BIZ, professionalId: null })
-    expect(res.data.days).toHaveLength(7)
-    expect(res.data.days[1]).toMatchObject({ startTime: '09:00', isActive: true })
+    expect(res.days).toHaveLength(7)
+    expect(res.days[1]).toMatchObject({ startTime: '09:00', isActive: true })
   })
 
   it('con filas propias trae las suyas y ya no hereda', async () => {
     mockPrisma.availabilityRule.count.mockResolvedValue(7)
 
-    const res = await getProfessionalSchedule(JUAN)
+    const res = await getWeeklySchedule(JUAN)
 
-    expect(res.ok && res.data.inherited).toBe(false)
+    expect(res.inherited).toBe(false)
     expect(lastRulesQuery().where).toEqual({ businessId: BIZ, professionalId: JUAN })
   })
 
@@ -115,7 +146,7 @@ describe('getProfessionalSchedule', () => {
    * mitad, que la base ni siquiera los devuelve.
    */
   it('no pide el id de las reglas a la base', async () => {
-    await getProfessionalSchedule(JUAN)
+    await getWeeklySchedule(JUAN)
 
     expect(lastRulesQuery().select).not.toHaveProperty('id')
   })
@@ -123,18 +154,16 @@ describe('getProfessionalSchedule', () => {
   it('rechaza un id que no es de este negocio', async () => {
     mockPrisma.professional.findFirst.mockResolvedValue(null)
 
-    const res = await getProfessionalSchedule('de-otro-salon')
-
-    expect(res.ok).toBe(false)
+    await expect(getWeeklySchedule('de-otro-salon')).rejects.toThrow()
     expect(mockPrisma.availabilityRule.findMany).not.toHaveBeenCalled()
   })
 })
 
-describe('updateProfessionalAvailabilityRule', () => {
+describe('setWeeklyScheduleDay — una persona', () => {
   const lunes = { dayOfWeek: 1, startTime: '10:00', endTime: '16:00', isActive: true }
 
   it('materializa antes de tocar el día', async () => {
-    await updateProfessionalAvailabilityRule(JUAN, lunes)
+    await setWeeklyScheduleDay(JUAN, lunes)
 
     expect(mockTx.availabilityRule.createMany).toHaveBeenCalledTimes(1)
   })
@@ -142,7 +171,7 @@ describe('updateProfessionalAvailabilityRule', () => {
   it('no vuelve a materializar si ya tiene horario propio', async () => {
     mockTx.availabilityRule.count.mockResolvedValue(7)
 
-    await updateProfessionalAvailabilityRule(JUAN, lunes)
+    await setWeeklyScheduleDay(JUAN, lunes)
 
     expect(mockTx.availabilityRule.createMany).not.toHaveBeenCalled()
     expect(mockTx.availabilityRule.updateMany).toHaveBeenCalled()
@@ -153,7 +182,7 @@ describe('updateProfessionalAvailabilityRule', () => {
    * lunes al salón entero —y a todo el que herede— desde la pantalla de una persona.
    */
   it('el update apunta a (negocio, persona, día)', async () => {
-    await updateProfessionalAvailabilityRule(JUAN, lunes)
+    await setWeeklyScheduleDay(JUAN, lunes)
 
     expect(mockTx.availabilityRule.updateMany).toHaveBeenCalledWith({
       where: { businessId: BIZ, professionalId: JUAN, dayOfWeek: 1 },
@@ -165,7 +194,7 @@ describe('updateProfessionalAvailabilityRule', () => {
   // congelado y sin el cambio que pidió: peor que no haber hecho nada. El mock de la
   // tx es un objeto aparte, así que esto se rompe de verdad si el update sale afuera.
   it('materializar y editar corren los dos sobre la transacción', async () => {
-    await updateProfessionalAvailabilityRule(JUAN, lunes)
+    await setWeeklyScheduleDay(JUAN, lunes)
 
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
     expect(mockTx.availabilityRule.updateMany).toHaveBeenCalled()
@@ -174,28 +203,31 @@ describe('updateProfessionalAvailabilityRule', () => {
 
   /**
    * `count: 0` después de materializar significa filas propias PARCIALES (un backfill,
-   * un import). Sin el guard es un updateMany que no toca nada y una pantalla que dice
-   * "guardado" — el peor desenlace, porque nadie se entera.
+   * un import): la materialización nunca las completa, porque tres filas ya cuentan
+   * como "tiene horario propio". Crear la que falta repara ese estado; devolver
+   * "guardado" sin guardar nada sería el peor desenlace, porque nadie se entera.
    */
-  it('si el día no existe después de materializar, falla en vez de decir "guardado"', async () => {
+  it('si el día no existe después de materializar, lo crea', async () => {
     mockTx.availabilityRule.count.mockResolvedValue(3) // parciales: ya "tiene horario propio"
     mockTx.availabilityRule.updateMany.mockResolvedValue({ count: 0 })
 
-    const res = await updateProfessionalAvailabilityRule(JUAN, lunes)
+    const res = await setWeeklyScheduleDay(JUAN, lunes)
 
-    expect(res.ok).toBe(false)
-    expect(mockTx.availabilityRule.createMany).not.toHaveBeenCalled()
+    expect(res.ok).toBe(true)
+    expect(mockTx.availabilityRule.create).toHaveBeenCalledWith({
+      data: { businessId: BIZ, professionalId: JUAN, dayOfWeek: 1, startTime: '10:00', endTime: '16:00', isActive: true },
+    })
   })
 
   it('rechaza un horario dado vuelta', async () => {
-    const res = await updateProfessionalAvailabilityRule(JUAN, { ...lunes, startTime: '18:00', endTime: '09:00' })
+    const res = await setWeeklyScheduleDay(JUAN, { ...lunes, startTime: '18:00', endTime: '09:00' })
 
     expect(res.ok).toBe(false)
     expect(mockPrisma.$transaction).not.toHaveBeenCalled()
   })
 
   it('rechaza un día fuera de 0–6', async () => {
-    const res = await updateProfessionalAvailabilityRule(JUAN, { ...lunes, dayOfWeek: 7 })
+    const res = await setWeeklyScheduleDay(JUAN, { ...lunes, dayOfWeek: 7 })
 
     expect(res.ok).toBe(false)
     expect(mockPrisma.$transaction).not.toHaveBeenCalled()
@@ -204,7 +236,7 @@ describe('updateProfessionalAvailabilityRule', () => {
   it('rechaza una persona que no es de este negocio', async () => {
     mockPrisma.professional.findFirst.mockResolvedValue(null)
 
-    const res = await updateProfessionalAvailabilityRule('de-otro-salon', lunes)
+    const res = await setWeeklyScheduleDay('de-otro-salon', lunes)
 
     expect(res.ok).toBe(false)
     expect(mockPrisma.$transaction).not.toHaveBeenCalled()
@@ -212,17 +244,54 @@ describe('updateProfessionalAvailabilityRule', () => {
 
   /**
    * El borde que hace peligroso a Prisma: un `undefined` en un `where` **borra la
-   * clave**. Si el guard de procedencia no normalizara, `findFirst({ id: undefined })`
-   * devolvería una persona cualquiera del negocio, el chequeo pasaría, y el mismo
-   * `undefined` seguiría hasta el `updateMany` — que sin `professionalId` le cambia el
-   * día al salón y a todo el equipo.
+   * clave**. Acá `undefined` es distinto de los otros callers: como `null` es un alcance
+   * VÁLIDO (el salón), no puede rechazarse — se normaliza a salón, que es el lado
+   * conservador. Lo que no puede pasar es que llegue crudo al `where`, donde no filtra
+   * nada y le cambiaría el día al salón y a todo el equipo a la vez.
    */
-  it('un undefined no pasa por persona válida', async () => {
-    const res = await updateProfessionalAvailabilityRule(undefined as unknown as string, lunes)
+  it('un undefined cae en el salón, no en "cualquier persona"', async () => {
+    await setWeeklyScheduleDay(undefined as unknown as string, lunes)
 
-    expect(res.ok).toBe(false)
     expect(mockPrisma.professional.findFirst).not.toHaveBeenCalled()
-    expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+    expect(mockTx.availabilityRule.updateMany).toHaveBeenCalledWith({
+      where: { businessId: BIZ, professionalId: null, dayOfWeek: 1 },
+      data: { startTime: '10:00', endTime: '16:00', isActive: true },
+    })
+  })
+})
+
+describe('setWeeklyScheduleDay — el salón', () => {
+  const domingo = { dayOfWeek: 0, startTime: '11:00', endTime: '15:00', isActive: true }
+
+  it('escribe con professionalId null y no materializa a nadie', async () => {
+    await setWeeklyScheduleDay(null, domingo)
+
+    expect(mockTx.availabilityRule.createMany).not.toHaveBeenCalled()
+    expect(mockTx.availabilityRule.updateMany).toHaveBeenCalledWith({
+      where: { businessId: BIZ, professionalId: null, dayOfWeek: 0 },
+      data: { startTime: '11:00', endTime: '15:00', isActive: true },
+    })
+  })
+
+  /**
+   * **El bug que este PR arregla.** El negocio se siembra sin fila de domingo; el editor
+   * viejo guardaba por id de regla, así que no tenía qué mandar y abrir el domingo era
+   * imposible desde la pantalla.
+   */
+  it('crea la fila del día que el salón no tenía', async () => {
+    mockTx.availabilityRule.updateMany.mockResolvedValue({ count: 0 })
+
+    await setWeeklyScheduleDay(null, domingo)
+
+    expect(mockTx.availabilityRule.create).toHaveBeenCalledWith({
+      data: { businessId: BIZ, professionalId: null, dayOfWeek: 0, startTime: '11:00', endTime: '15:00', isActive: true },
+    })
+  })
+
+  it('toma su propio lock, que no es el de ninguna persona', async () => {
+    await setWeeklyScheduleDay(null, domingo)
+
+    expect(mockLock).toHaveBeenCalledWith(mockTx, `availability-rules:${BIZ}:salon`)
   })
 })
 
@@ -247,7 +316,22 @@ describe('resetProfessionalSchedule', () => {
   it('toma el MISMO lock que la materialización', async () => {
     await resetProfessionalSchedule(JUAN)
 
-    expect(mockLock).toHaveBeenCalledWith(mockTx, `availability-rules:${BIZ}:${JUAN}`)
+    expect(mockLock).toHaveBeenCalledWith(mockTx, `availability-rules:${BIZ}:p:${JUAN}`)
+  })
+
+  /**
+   * Devuelve el horario DEL SALÓN, que es el que pasa a regir. La pantalla tiene en la
+   * mano las horas propias que se acaban de borrar: sin esto seguiría mostrando un
+   * horario que ya no existe en ningún lado.
+   */
+  it('devuelve la semana del salón que vuelve a regir', async () => {
+    const res = await resetProfessionalSchedule(JUAN)
+
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error('debía resolver')
+    expect(res.data.days).toHaveLength(7)
+    expect(res.data.days[1]).toMatchObject({ startTime: '09:00', isActive: true })
+    expect(lastRulesQuery().where).toEqual({ businessId: BIZ, professionalId: null })
   })
 
   it('rechaza una persona que no es de este negocio', async () => {
@@ -259,8 +343,8 @@ describe('resetProfessionalSchedule', () => {
     expect(mockPrisma.$transaction).not.toHaveBeenCalled()
   })
 
-  // Mismo borde que el update: sin normalizar, el `deleteMany` se lleva el horario del
-  // salón entero.
+  // Acá `undefined` SÍ tiene que rechazarse: soltar el horario necesita una persona, y
+  // sin normalizar el `deleteMany` se lleva el horario del salón entero.
   it('un undefined no pasa por persona válida', async () => {
     const res = await resetProfessionalSchedule(undefined as unknown as string)
 

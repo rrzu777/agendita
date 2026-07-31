@@ -66,10 +66,16 @@ export async function assertProfessionalOfBusiness(
 }
 
 /**
- * La variante para los bloqueos, donde `null` **sí** es válido: es el bloqueo del
- * salón, que cierra para todos y existe en todos los negocios.
+ * La variante para todo lo que puede ser **del salón o de una persona**: horario
+ * semanal y bloqueos. Acá `null` **sí** es válido —es el salón, que existe en todos los
+ * negocios— y por eso devuelve `string | null` en vez de tirar.
+ *
+ * Es la misma pregunta en las dos superficies y por eso es una sola función: el día que
+ * cambie qué cuenta como dueño válido (gente en pausa, por ejemplo), tiene que cambiar
+ * para el horario y para los bloqueos a la vez o quedan pantallas que aceptan lo que la
+ * otra rechaza.
  */
-export async function assertBlockOwner(
+export async function assertOwnerScope(
   client: Db,
   businessId: string,
   professionalId: string | null,

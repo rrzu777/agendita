@@ -2,21 +2,20 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
-const mockUpdateAvailabilityRule = vi.fn()
+const mockSetWeeklyScheduleDay = vi.fn()
+const mockResetProfessionalSchedule = vi.fn()
+const mockRefresh = vi.fn()
 
 vi.mock('@/server/actions/availability', () => ({
-  updateAvailabilityRule: (...args: unknown[]) => mockUpdateAvailabilityRule(...args),
+  setWeeklyScheduleDay: (...args: unknown[]) => mockSetWeeklyScheduleDay(...args),
+  resetProfessionalSchedule: (...args: unknown[]) => mockResetProfessionalSchedule(...args),
 }))
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: mockRefresh }) }))
 
 import { AvailabilityEditor } from '@/components/dashboard/availability-editor'
 
-const mondayRule = {
-  id: 'rule-monday',
-  dayOfWeek: 1,
-  startTime: '09:00',
-  endTime: '18:00',
-  isActive: true,
-}
+const monday = { dayOfWeek: 1, startTime: '09:00', endTime: '18:00', isActive: true }
+const sunday = { dayOfWeek: 0, startTime: '09:00', endTime: '18:00', isActive: false }
 
 describe('AvailabilityEditor', () => {
   let root: Root | null = null
@@ -27,15 +26,17 @@ describe('AvailabilityEditor', () => {
       root = null
     }
     document.body.replaceChildren()
-    mockUpdateAvailabilityRule.mockReset()
+    mockSetWeeklyScheduleDay.mockReset()
+    mockResetProfessionalSchedule.mockReset()
+    mockRefresh.mockReset()
   })
 
   it('does not persist time changes until the save button is clicked', async () => {
-    mockUpdateAvailabilityRule.mockResolvedValue({ ok: true, data: null })
+    mockSetWeeklyScheduleDay.mockResolvedValue({ ok: true, data: null })
     const container = renderEditor()
 
     await changeTime(container, 'Lunes inicio', { minute: '45' })
-    expect(mockUpdateAvailabilityRule).not.toHaveBeenCalled()
+    expect(mockSetWeeklyScheduleDay).not.toHaveBeenCalled()
 
     const saveButton = findSaveButton(container)
     expect(saveButton).toBeTruthy()
@@ -43,7 +44,8 @@ describe('AvailabilityEditor', () => {
       saveButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(mockUpdateAvailabilityRule).toHaveBeenCalledWith('rule-monday', {
+    expect(mockSetWeeklyScheduleDay).toHaveBeenCalledWith(null, {
+      dayOfWeek: 1,
       startTime: '09:45',
       endTime: '18:00',
       isActive: true,
@@ -63,7 +65,7 @@ describe('AvailabilityEditor', () => {
 
     await changeTime(container, 'Lunes inicio', { minute: '00' })
     expect(findSaveButton(container)).toBeUndefined()
-    expect(mockUpdateAvailabilityRule).not.toHaveBeenCalled()
+    expect(mockSetWeeklyScheduleDay).not.toHaveBeenCalled()
   })
 
   it('disables saving an inverted time range and shows the validation error', async () => {
@@ -73,11 +75,11 @@ describe('AvailabilityEditor', () => {
     expect(container.textContent).toContain('La hora de inicio debe ser anterior a la de término')
     const saveButton = findSaveButton(container)
     expect(saveButton?.disabled).toBe(true)
-    expect(mockUpdateAvailabilityRule).not.toHaveBeenCalled()
+    expect(mockSetWeeklyScheduleDay).not.toHaveBeenCalled()
   })
 
   it('clears the error and saves once the range becomes valid', async () => {
-    mockUpdateAvailabilityRule.mockResolvedValue({ ok: true, data: null })
+    mockSetWeeklyScheduleDay.mockResolvedValue({ ok: true, data: null })
     const container = renderEditor()
 
     await changeTime(container, 'Lunes inicio', { hour: '19' })
@@ -89,7 +91,8 @@ describe('AvailabilityEditor', () => {
       saveButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(mockUpdateAvailabilityRule).toHaveBeenCalledWith('rule-monday', {
+    expect(mockSetWeeklyScheduleDay).toHaveBeenCalledWith(null, {
+      dayOfWeek: 1,
       startTime: '19:00',
       endTime: '21:00',
       isActive: true,
@@ -97,7 +100,7 @@ describe('AvailabilityEditor', () => {
   })
 
   it('shows the ActionResult error verbatim and keeps the pending changes', async () => {
-    mockUpdateAvailabilityRule.mockResolvedValue({ ok: false, error: 'Regla no encontrada' })
+    mockSetWeeklyScheduleDay.mockResolvedValue({ ok: false, error: 'Regla no encontrada' })
     const container = renderEditor()
 
     await changeTime(container, 'Lunes inicio', { minute: '45' })
@@ -113,7 +116,7 @@ describe('AvailabilityEditor', () => {
   })
 
   it('keeps the pending changes and shows a generic error on a transport failure', async () => {
-    mockUpdateAvailabilityRule.mockRejectedValue(new Error('boom'))
+    mockSetWeeklyScheduleDay.mockRejectedValue(new Error('boom'))
     const container = renderEditor()
 
     await changeTime(container, 'Lunes inicio', { minute: '45' })
@@ -129,7 +132,7 @@ describe('AvailabilityEditor', () => {
   })
 
   it('persists the toggle immediately using the saved times, discarding drafts', async () => {
-    mockUpdateAvailabilityRule.mockResolvedValue({ ok: true, data: null })
+    mockSetWeeklyScheduleDay.mockResolvedValue({ ok: true, data: null })
     const container = renderEditor()
 
     await changeTime(container, 'Lunes inicio', { minute: '45' })
@@ -138,14 +141,145 @@ describe('AvailabilityEditor', () => {
       toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(mockUpdateAvailabilityRule).toHaveBeenCalledTimes(1)
-    expect(mockUpdateAvailabilityRule).toHaveBeenCalledWith('rule-monday', {
+    expect(mockSetWeeklyScheduleDay).toHaveBeenCalledTimes(1)
+    expect(mockSetWeeklyScheduleDay).toHaveBeenCalledWith(null, {
+      dayOfWeek: 1,
       startTime: '09:00',
       endTime: '18:00',
       isActive: false,
     })
     expect(findSaveButton(container)).toBeUndefined()
   })
+
+  /**
+   * Un día cerrado no muestra horas, así que el switch es el único camino para abrirlo
+   * — y con el salón es el único camino que existe para abrir un día que **no tiene
+   * fila**, que era justamente lo que la pantalla no podía hacer antes.
+   */
+  it('abre un día cerrado con las horas de relleno que muestra', async () => {
+    mockSetWeeklyScheduleDay.mockResolvedValue({ ok: true, data: null })
+    const container = renderEditor({ days: [sunday] })
+
+    const toggle = container.querySelector<HTMLButtonElement>('[role="switch"]')!
+    await act(async () => {
+      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(mockSetWeeklyScheduleDay).toHaveBeenCalledWith(null, {
+      dayOfWeek: 0,
+      startTime: '09:00',
+      endTime: '18:00',
+      isActive: true,
+    })
+  })
+
+  it('manda el id de la persona cuando se está editando su horario', async () => {
+    mockSetWeeklyScheduleDay.mockResolvedValue({ ok: true, data: null })
+    const container = renderEditor({ professionalId: 'juan', inherited: true, professionalName: 'Juan' })
+
+    await changeTime(container, 'Lunes inicio', { minute: '45' })
+    await act(async () => {
+      findSaveButton(container)!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(mockSetWeeklyScheduleDay).toHaveBeenCalledWith('juan', expect.objectContaining({ dayOfWeek: 1 }))
+  })
+
+  describe('la herencia del horario del salón', () => {
+    it('con el salón seleccionado no habla de heredar ni ofrece soltar nada', () => {
+      const container = renderEditor()
+
+      expect(container.textContent).not.toContain('horario del salón')
+      expect(findButtonContaining(container, 'Volver al horario del salón')).toBeUndefined()
+    })
+
+    it('avisa que la persona sigue el horario del salón, y de que el primer cambio lo corta', () => {
+      const container = renderEditor({ professionalId: 'juan', inherited: true, professionalName: 'Juan' })
+
+      expect(container.textContent).toContain('Sigue el horario del salón')
+      expect(container.textContent).toContain('Juan')
+      expect(findButtonContaining(container, 'Volver al horario del salón')).toBeUndefined()
+    })
+
+    /**
+     * Guardar un día materializa la semana ENTERA (ver `setWeekday`), así que a partir
+     * de ese click la persona ya no hereda. El aviso tiene que caerse solo: dejarlo
+     * puesto es exactamente la confusión que el aviso existe para evitar.
+     */
+    it('deja de avisar que hereda apenas se guarda un día', async () => {
+      mockSetWeeklyScheduleDay.mockResolvedValue({ ok: true, data: null })
+      const container = renderEditor({ professionalId: 'juan', inherited: true, professionalName: 'Juan' })
+
+      await changeTime(container, 'Lunes inicio', { minute: '45' })
+      await act(async () => {
+        findSaveButton(container)!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(container.textContent).not.toContain('Sigue el horario del salón')
+      expect(findButtonContaining(container, 'Volver al horario del salón')).toBeTruthy()
+    })
+
+    it('un guardado fallido no la da por dueña de su horario', async () => {
+      mockSetWeeklyScheduleDay.mockResolvedValue({ ok: false, error: 'Demasiadas solicitudes' })
+      const container = renderEditor({ professionalId: 'juan', inherited: true, professionalName: 'Juan' })
+
+      await changeTime(container, 'Lunes inicio', { minute: '45' })
+      await act(async () => {
+        findSaveButton(container)!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(container.textContent).toContain('Sigue el horario del salón')
+    })
+
+    /**
+     * Las horas que la pantalla tiene en la mano son las que se acaban de borrar. Si no
+     * pintara las que devuelve la action, mostraría un horario que ya no existe en
+     * ningún lado — y el próximo guardado lo volvería a escribir como propio.
+     */
+    it('al soltar el horario propio pinta el del salón que vuelve a regir', async () => {
+      mockResetProfessionalSchedule.mockResolvedValue({
+        ok: true,
+        data: { days: [{ dayOfWeek: 1, startTime: '07:00', endTime: '12:00', isActive: true }] },
+      })
+      const container = renderEditor({
+        days: [{ dayOfWeek: 1, startTime: '15:00', endTime: '20:00', isActive: true }],
+        professionalId: 'juan',
+        inherited: false,
+        professionalName: 'Juan',
+      })
+
+      await act(async () => {
+        findButtonContaining(container, 'Volver al horario del salón')!
+          .dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(mockResetProfessionalSchedule).toHaveBeenCalledWith('juan')
+      expect(container.querySelector<HTMLButtonElement>('button[aria-label="Lunes inicio"]')?.textContent).toContain('07:00')
+      expect(container.textContent).toContain('Sigue el horario del salón')
+    })
+
+    it('si soltar falla, muestra el error y no cambia el horario que se ve', async () => {
+      mockResetProfessionalSchedule.mockResolvedValue({ ok: false, error: 'No autorizado' })
+      const container = renderEditor({
+        days: [{ dayOfWeek: 1, startTime: '15:00', endTime: '20:00', isActive: true }],
+        professionalId: 'juan',
+        inherited: false,
+        professionalName: 'Juan',
+      })
+
+      await act(async () => {
+        findButtonContaining(container, 'Volver al horario del salón')!
+          .dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(container.textContent).toContain('No autorizado')
+      expect(container.querySelector<HTMLButtonElement>('button[aria-label="Lunes inicio"]')?.textContent).toContain('15:00')
+    })
+  })
+
+  function findButtonContaining(container: HTMLElement, text: string) {
+    return Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes(text))
+  }
 
   async function changeTime(
     container: HTMLElement,
@@ -196,13 +330,21 @@ describe('AvailabilityEditor', () => {
     return Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Guardar'))
   }
 
-  function renderEditor() {
+  function renderEditor(props: Partial<React.ComponentProps<typeof AvailabilityEditor>> = {}) {
     const container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
 
     act(() => {
-      root?.render(<AvailabilityEditor rules={[mondayRule]} />)
+      root?.render(
+        <AvailabilityEditor
+          days={[monday]}
+          professionalId={null}
+          inherited={false}
+          professionalName={null}
+          {...props}
+        />,
+      )
     })
 
     return container

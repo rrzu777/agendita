@@ -101,13 +101,23 @@ export function projectWeek(rules: readonly ScheduleDay[]): ScheduleDay[] {
  * atajaría: quedarían 14 filas y la mitad de los días con dos horarios.
  */
 /**
- * La clave del lock que serializa las escrituras del horario de una persona. Vive acá
- * y se exporta porque el lock protege el RECURSO `(negocio, persona)`, no esta función:
- * soltar el horario propio tiene que tomar el mismo, o un reset que caiga en medio de
- * una materialización queda deshecho sin que nadie se entere.
+ * La clave del lock que serializa las escrituras de UN horario. Vive acá y se exporta
+ * porque el lock protege el RECURSO `(negocio, alcance)`, no esta función: soltar el
+ * horario propio tiene que tomar el mismo, o un reset que caiga en medio de una
+ * materialización queda deshecho sin que nadie se entere.
+ *
+ * `null` es el horario del salón y tiene su propia llave: no comparte lock con nadie
+ * —el salón y una persona se escriben en paralelo sin tocarse— pero tampoco puede
+ * quedar sin llave, porque escribir un día que no tiene fila también es un
+ * "leer y después crear" que dos pestañas duplicarían.
+ *
+ * El prefijo `p:` está para que un id que fuera literalmente `salon` no colisione con
+ * el salón. Hoy son cuids y no puede pasar; el día que los ids los elija otra cosa,
+ * esta llave ya está a salvo.
  */
-export function scheduleLockKey(businessId: string, professionalId: string): string {
-  return `availability-rules:${businessId}:${professionalId}`
+export function scheduleLockKey(businessId: string, professionalId: string | null): string {
+  const scope = professionalId === null ? 'salon' : `p:${professionalId}`
+  return `availability-rules:${businessId}:${scope}`
 }
 
 export async function materializeProfessionalSchedule(
@@ -132,4 +142,57 @@ export async function materializeProfessionalSchedule(
   await tx.availabilityRule.createMany({
     data: projectWeek(salon).map((day) => ({ businessId, professionalId, ...day })),
   })
+}
+
+/**
+ * Guarda **un día** del horario de un alcance: `null` es el salón, un id es esa persona.
+ *
+ * Es la única escritura del horario semanal, y que sea una sola es el punto. Antes eran
+ * dos: el salón se editaba **por id de regla** y una persona por `(persona, día)`. La
+ * consecuencia no era teórica — el salón **no podía abrir el domingo**, porque el
+ * negocio se siembra sin fila de domingo, sin fila no hay id, y sin id el editor no
+ * tenía qué mandar. Un negocio que atiende domingo no tenía forma de decirlo.
+ *
+ * Por eso escribe por `(negocio, alcance, día)`, que es la identidad real de un día de
+ * horario, y **crea la fila si no existe**. Eso también repara el caso de filas propias
+ * parciales —un backfill que dejó 3 de 7—, que la materialización nunca completa porque
+ * tres filas ya cuentan como "tiene horario propio".
+ *
+ * El orden importa: lock, materializar, recién ahí escribir. Ver
+ * `materializeProfessionalSchedule` — copiar sólo el día editado deja a esa persona
+ * cerrada el resto de la semana.
+ */
+export async function setWeekday(
+  tx: Prisma.TransactionClient,
+  businessId: string,
+  professionalId: string | null,
+  day: ScheduleDay,
+): Promise<void> {
+  // El lock se toma acá aunque la materialización tome el mismo un renglón más abajo, y
+  // no es un descuido: `pg_advisory_xact_lock` es re-entrante dentro de la misma
+  // transacción (una sesión que ya tiene el lock lo vuelve a obtener sin esperar) y se
+  // suelta solo al commitear. Tomarlo acá deja la garantía en ESTA función, que es la
+  // que la necesita para las dos ramas — el salón no materializa nada y quedaría sin
+  // lock si dependiera de la de abajo.
+  await acquireAdvisoryXactLock(tx, scheduleLockKey(businessId, professionalId))
+
+  if (professionalId !== null) {
+    await materializeProfessionalSchedule(tx, businessId, professionalId)
+  }
+
+  const { dayOfWeek, startTime, endTime, isActive } = day
+  // `updateMany` y no `update`: la clave es `(negocio, alcance, día)` y no hay unique
+  // que la respalde, así que no existe un `where` de `update` que la exprese. Y si
+  // quedaron filas duplicadas de antes, las actualiza a todas — convergen en vez de
+  // dejar una vieja rigiendo al azar.
+  const updated = await tx.availabilityRule.updateMany({
+    where: { businessId, professionalId, dayOfWeek },
+    data: { startTime, endTime, isActive },
+  })
+
+  if (updated.count === 0) {
+    await tx.availabilityRule.create({
+      data: { businessId, professionalId, dayOfWeek, startTime, endTime, isActive },
+    })
+  }
 }
