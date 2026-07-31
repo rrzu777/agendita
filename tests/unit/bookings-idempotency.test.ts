@@ -11,6 +11,7 @@ const mockPrisma = {
   booking: {
     findUnique: vi.fn(),
     create: vi.fn(),
+    update: vi.fn(),
     updateMany: vi.fn(),
   },
   customer: {
@@ -23,6 +24,7 @@ const mockPrisma = {
     ]),
   },
   promotionGrant: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
+  promotionRedemption: { findFirst: vi.fn().mockResolvedValue(null) },
   $executeRaw: vi.fn().mockResolvedValue(0),
   $transaction: vi.fn(),
 }
@@ -237,24 +239,53 @@ describe('createBooking idempotency', () => {
       // Aplicar el descuento en el paso de pago y reintentar devolvía la reserva
       // SIN descuento mientras la pantalla mostraba el precio rebajado.
       mockPrisma.booking.findUnique.mockResolvedValue(reservaGuardada({ discountAmount: 0 }))
+      mockPrisma.promotionRedemption.findFirst.mockResolvedValue(null)
 
       const result = await createBooking({ ...input, promotionCode: 'PRIMERA' }, 'biz-1')
 
       expect(result.ok).toBe(false)
       expect(!result.ok && result.error).toContain('descuento')
-      expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+      expect(mockPrisma.booking.updateMany).not.toHaveBeenCalled()
+    })
+
+    it('un cupón que ya se aplicó y vale $0 NO rompe el reintento', async () => {
+      // `rewardValue` admite 0 y un porcentaje chico se va a 0 por el Math.floor:
+      // el descuento en 0 no prueba que el cupón falte. Lo que decide es el canje.
+      mockPrisma.booking.findUnique.mockResolvedValue(reservaGuardada({ discountAmount: 0 }))
+      mockPrisma.promotionRedemption.findFirst.mockResolvedValue({ id: 'redemption-1' })
+
+      const result = await createBooking({ ...input, promotionCode: 'PRIMERA' }, 'biz-1')
+
+      expect(result.ok).toBe(true)
+      expect(mockPrisma.booking.updateMany).toHaveBeenCalled()
     })
 
     it.each([BookingStatus.cancelled, BookingStatus.expired, BookingStatus.no_show])(
-      'no revive una reserva %s',
+      'una reserva %s suelta la key y deja reservar de nuevo',
       async (status) => {
+        // No se revive: la vieja se queda muerta y se le saca la key, que no
+        // protege nada (una reserva muerta no se puede duplicar). Quedarse con
+        // ella era el callejón sin salida que este fix vino a cerrar.
         mockPrisma.booking.findUnique.mockResolvedValue(reservaGuardada({ status }))
+        mockPrisma.booking.create.mockResolvedValue({
+          id: 'booking-nueva',
+          status: BookingStatus.pending_payment,
+          totalPrice: 10000, depositRequired: 5000, depositPaid: 0,
+          remainingBalance: 10000, finalAmount: 10000,
+          paymentStatus: BookingPaymentStatus.unpaid,
+          startDateTime: EN_UNA_SEMANA,
+          endDateTime: new Date(EN_UNA_SEMANA.getTime() + 60 * 60 * 1000),
+          service: { name: 'Manicure' },
+          customer: { name: 'Juan', phone: '+56912345678', email: null },
+        })
 
         const result = await createBooking(input, 'biz-1')
 
-        expect(result.ok).toBe(false)
-        expect(!result.ok && result.error).toContain('ya no está vigente')
-        expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+        expect(mockPrisma.booking.update).toHaveBeenCalledWith({
+          where: { id: 'booking-1' },
+          data: { idempotencyKey: null },
+        })
+        expect(result.ok && result.data.id).toBe('booking-nueva')
       },
     )
 

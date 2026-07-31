@@ -26,8 +26,11 @@ function volverAElegir(motivo: string): UserError {
  * siempre.
  *
  * Recibe la reserva ya leída y NO abre transacción hasta que hace falta: los
- * cuatro guards de abajo son en memoria, y los casos muertos (otro horario,
- * cancelada, hora pasada, ya confirmada) no pagan el advisory lock.
+ * guards de abajo son en memoria, y los casos que no renuevan nada (otro
+ * horario, hora pasada, ya confirmada) no pagan el advisory lock.
+ *
+ * Devuelve `null` cuando la reserva guardada ya no está en pie: en ese caso le
+ * suelta la key y el caller sigue al camino de creación normal.
  */
 export async function resumeBookingForRetry<T extends Booking>(
   existing: T,
@@ -38,7 +41,7 @@ export async function resumeBookingForRetry<T extends Booking>(
     timezone: string
     holdMinutes: number
   },
-): Promise<T> {
+): Promise<T | null> {
   // La key identifica UN intento. Si lo que se pide ahora no es lo que quedó
   // guardado, la clienta volvió atrás y cambió de horario (o de servicio):
   // devolver la vieja sería cobrarle por una hora que ya no eligió. El wizard
@@ -51,28 +54,43 @@ export async function resumeBookingForRetry<T extends Booking>(
     throw volverAElegir('Esa reserva es de otro horario.')
   }
 
-  // El descuento también es parte del intento: aplicar un cupón DESPUÉS de que la
-  // reserva se creó y reintentar devolvía la reserva sin descuento mientras la
-  // pantalla mostraba el precio rebajado. Un código aceptado siempre deja
-  // `discountAmount > 0` (`applyPromotionInTx` lanza y hace rollback si no vale),
-  // así que un 0 acá significa que este cupón no estuvo en el intento guardado.
-  // NO cubre todo el input —modalidad, dirección, datos de contacto—: la forma
-  // completa de cerrarlo es derivar la key del contenido del intento, y eso es
-  // un PR aparte.
-  if (ctx.promotionCode && existing.discountAmount === 0) {
-    throw volverAElegir('Ese descuento no estaba en la reserva que empezaste.')
-  }
-
+  // Ya no está en pie: la key no protege nada —una reserva muerta no se puede
+  // duplicar— y quedarse con ella era el callejón sin salida que este fix vino a
+  // cerrar. Se libera y el caller reserva de nuevo. Sacarla de `expired` NO es
+  // revivirla: la vieja se queda muerta, esto crea una reserva nueva.
   if ((RELEASED_STATUSES as readonly string[]).includes(existing.status)) {
-    throw volverAElegir('Esa reserva ya no está vigente.')
+    await prisma.booking.update({ where: { id: existing.id }, data: { idempotencyKey: null } })
+    return null
   }
 
   // `confirmed`, `completed` y `pending_confirmation` no esperan plata de este
-  // camino: son reenvíos legítimos y se devuelven tal cual, sin tocar el hold.
+  // camino: son reenvíos legítimos y se devuelven tal cual, sin tocar el hold ni
+  // mirar el descuento (a alguien que ya pagó no se le dice "volvé a elegir").
   if (existing.status !== BookingStatus.pending_payment) return existing
 
   if (existing.startDateTime <= new Date()) {
     throw volverAElegir('Esa hora ya pasó.')
+  }
+
+  // El descuento también es parte del intento: aplicar un cupón DESPUÉS de que la
+  // reserva se creó y reintentar devolvía la reserva sin descuento mientras la
+  // pantalla mostraba el precio rebajado.
+  //
+  // El 0 solo no alcanza para decir que el cupón no se aplicó: un código válido
+  // puede valer 0 (`rewardValue` admite 0, y un porcentaje chico se va a 0 por el
+  // `Math.floor` de `computeDiscount`), y rechazar ESE reintento sería romper uno
+  // legítimo. Lo que decide es si quedó canje: `applyPromotionInTx` inserta un
+  // `PromotionRedemption` siempre que acepta el código, valga lo que valga.
+  //
+  // NO cubre todo el input —modalidad, dirección, datos de contacto—: la forma
+  // completa de cerrarlo es derivar la key del contenido del intento, y eso es
+  // un PR aparte.
+  if (ctx.promotionCode && existing.discountAmount === 0) {
+    const canje = await prisma.promotionRedemption.findFirst({
+      where: { bookingId: existing.id },
+      select: { id: true },
+    })
+    if (!canje) throw volverAElegir('Ese descuento no estaba en la reserva que empezaste.')
   }
 
   // Nunca ACORTAR el hold: si el primer intento fue por transferencia (ventana

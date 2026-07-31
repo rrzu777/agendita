@@ -132,6 +132,22 @@ describe('reintento de pago con la misma idempotencyKey', () => {
     expect(fila!.holdExpiresAt!.getTime()).toBeGreaterThan(Date.now())
   })
 
+  it('una reserva ya no vigente suelta la key y deja reservar de nuevo', async () => {
+    const primera = await unwrap(reservar('retry-key-expirada'))
+    // Lo que hace el cron de holds cuando la clienta se fue del checkout.
+    await prisma.booking.update({ where: { id: primera.id }, data: { status: 'expired' } })
+
+    const segunda = await unwrap(reservar('retry-key-expirada'))
+
+    // Reserva NUEVA, no la vieja revivida: salir de `expired` sigue siendo
+    // decisión de la dueña. Va a la base porque lo que se prueba es que el unique
+    // constraint de la key deja de estorbar.
+    expect(segunda.id).not.toBe(primera.id)
+    const vieja = await prisma.booking.findUnique({ where: { id: primera.id } })
+    expect(vieja!.status).toBe('expired')
+    expect(vieja!.idempotencyKey).toBeNull()
+  })
+
   it('con el horario ya tomado no deja pagar y no toca la reserva', async () => {
     const primera = await unwrap(reservar('retry-key-tomado'))
     await vencerHold(primera.id)

@@ -260,7 +260,12 @@ async function _createBooking(data: {
       },
       include: { service: true, customer: true },
     })
-    if (existing) return await resumeBookingForRetry(existing, retryCtx)
+    // `null` = la reserva guardada ya no está en pie y el resume le soltó la key:
+    // seguimos al camino de creación normal, que ahora la puede volver a usar.
+    if (existing) {
+      const resumida = await resumeBookingForRetry(existing, retryCtx)
+      if (resumida) return resumida
+    }
   }
 
   try {
@@ -411,7 +416,12 @@ async function _createBooking(data: {
         },
         include: { service: true, customer: true },
       })
-      if (existing) return await resumeBookingForRetry(existing, retryCtx)
+      // Acá `null` no debería pasar: la reserva que ganó la carrera nació hace
+      // milisegundos. Si pasara, cae al manejo de error de abajo con el P2002.
+      if (existing) {
+        const resumida = await resumeBookingForRetry(existing, retryCtx)
+        if (resumida) return resumida
+      }
     }
     // Safe error handling: log internal error, return generic message
     const msg = e instanceof Error ? e.message : String(e)

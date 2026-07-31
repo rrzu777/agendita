@@ -170,19 +170,23 @@ export function BookingWizard({ businessId, slug, timezone, currency, services, 
             timezone={timezone}
             data={data}
             onSelect={(timeSlot) => {
-              // Elegir hora abre un intento NUEVO: la key vieja apunta a la
+              // Cambiar de hora abre un intento NUEVO: la key vieja apunta a la
               // reserva del horario anterior, y createBooking la devolvería en
-              // vez de reservar el que se acaba de elegir. Es también la única
-              // salida cuando ese intento ya no sirve —el horario se lo llevó
-              // otra, el hold venció—: volver acá y elegir empieza de cero en
-              // vez de repetir el mismo error.
+              // vez de reservar el que se acaba de elegir.
+              //
+              // Sólo si CAMBIÓ. Volver atrás y reelegir la MISMA hora tiene que
+              // conservar la key: si no, la reserva que ya está en pie queda
+              // huérfana ocupando ese horario y la clienta se choca contra su
+              // propia reserva ("ese horario ya no está disponible") hasta que
+              // venza el hold — que con transferencia son horas.
               //
               // Alcanza con soltarla ACÁ, aunque el intento también cambie al
               // cambiar de servicio: no hay camino al pago que no pase por este
               // paso (el 4 está gateado por `data.timeSlot` y este `onSelect` es
               // su único setter). El server igual rechaza la key que no
               // corresponde, que es el fail-closed de verdad.
-              updateData({ timeSlot, idempotencyKey: null })
+              const cambioDeHora = data.timeSlot?.start.getTime() !== timeSlot.start.getTime()
+              updateData(cambioDeHora ? { timeSlot, idempotencyKey: null } : { timeSlot })
               nextStep()
             }} onBack={prevStep} />
         )}
