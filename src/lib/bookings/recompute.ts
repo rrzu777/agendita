@@ -1,6 +1,7 @@
 import { addMinutes } from 'date-fns'
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 import { initialPublicBookingStatus, approvalHoldExpiresAt } from '@/lib/bookings/approval'
+import { DEFAULT_HOLD_MINUTES } from '@/lib/bookings/hold'
 
 /** Recomputa montos/estado de una reserva tras aplicar un descuento (código o paquete).
  *  Extraído de bookings.ts para reusarlo en ambos caminos. Devuelve el objeto `data`
@@ -34,7 +35,7 @@ export function recomputeBookingAmountsAfterDiscount(args: {
     remainingBalance: discountedFinal,
     status,
     holdExpiresAt:
-      status === BookingStatus.pending_payment ? addMinutes(now, args.holdMinutes ?? 15)
+      status === BookingStatus.pending_payment ? addMinutes(now, args.holdMinutes ?? DEFAULT_HOLD_MINUTES)
       : status === BookingStatus.pending_confirmation && args.approval
         ? approvalHoldExpiresAt(args.approval.startDateTime, now)
         : null,

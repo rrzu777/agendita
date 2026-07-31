@@ -25,6 +25,8 @@ import { assertBookingPayable } from '@/lib/bookings/payments'
 import { applyApprovedPayment } from '@/server/services/finance'
 import { firePaymentNotConfirmedNotification } from '@/lib/bookings/notify-payment-not-confirmed'
 import { initialPublicBookingStatus, approvalHoldExpiresAt } from '@/lib/bookings/approval'
+import { DEFAULT_HOLD_MINUTES, DASHBOARD_HOLD_MINUTES } from '@/lib/bookings/hold'
+import { resumeBookingForRetry } from '@/lib/bookings/retry'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
 import { creditVisitPoints } from '@/lib/loyalty/credit'
@@ -227,9 +229,24 @@ async function _createBooking(data: {
     }
   }
 
+  // Cuánto vive el hold de esta reserva. Se calcula acá arriba porque lo usan
+  // los dos caminos: la creación y el reintento que renueva el hold.
+  const holdMinutes =
+    bankTransferAccount && depositRequired > 0 ? bankTransferAccount.holdHours * 60 : DEFAULT_HOLD_MINUTES
+
   // Vía 3 de vinculación (leer sesión ANTES de la tx: toca Supabase/cookies).
   // Remoto (getUser) porque el link exige el email_confirmed_at confiable.
   const sessionUser = await getConfirmedSessionUser()
+
+  // Las dos puertas a "esta key ya se usó" —el fast path de acá abajo y el P2002
+  // del catch— pasan por el mismo resume con este contexto.
+  const retryCtx = {
+    serviceId: data.serviceId,
+    startDateTime: data.startDateTime,
+    promotionCode: data.promotionCode,
+    timezone: business.timezone || 'America/Santiago',
+    holdMinutes,
+  }
 
   // Idempotencia: si llega key, buscar booking existente fuera de tx (fast path).
   // El race final se maneja con el unique constraint de DB dentro de la tx.
@@ -243,8 +260,11 @@ async function _createBooking(data: {
       },
       include: { service: true, customer: true },
     })
+    // `null` = la reserva guardada ya no está en pie y el resume le soltó la key:
+    // seguimos al camino de creación normal, que ahora la puede volver a usar.
     if (existing) {
-      return existing
+      const resumida = await resumeBookingForRetry(existing, retryCtx)
+      if (resumida) return resumida
     }
   }
 
@@ -291,7 +311,6 @@ async function _createBooking(data: {
         depositRequired,
         requireBookingApproval: business.requireBookingApproval,
       })
-      const holdMinutes = bankTransferAccount && depositRequired > 0 ? bankTransferAccount.holdHours * 60 : 15
       const holdExpiresAt =
         status === BookingStatus.pending_payment ? addMinutes(new Date(), holdMinutes)
         : status === BookingStatus.pending_confirmation ? approvalHoldExpiresAt(data.startDateTime)
@@ -377,7 +396,10 @@ async function _createBooking(data: {
     return booking
   } catch (e: unknown) {
     // Race: otro request creó la misma idempotencyKey entre el findUnique y el create.
-    // El unique constraint de DB lo detecta y devolvemos la reserva existente.
+    // El unique constraint de DB lo detecta y devolvemos la reserva existente — por
+    // el MISMO resume que el fast path, no pelada: la reserva que ganó la carrera
+    // recién nació, pero nada garantiza que sea del horario que este request pidió
+    // (dos envíos concurrentes con la misma key y distinto horario caen acá).
     const prismaError = e as { code?: string; meta?: { target?: string[] } }
     if (
       prismaError.code === 'P2002' &&
@@ -394,7 +416,12 @@ async function _createBooking(data: {
         },
         include: { service: true, customer: true },
       })
-      if (existing) return existing
+      // Acá `null` no debería pasar: la reserva que ganó la carrera nació hace
+      // milisegundos. Si pasara, cae al manejo de error de abajo con el P2002.
+      if (existing) {
+        const resumida = await resumeBookingForRetry(existing, retryCtx)
+        if (resumida) return resumida
+      }
     }
     // Safe error handling: log internal error, return generic message
     const msg = e instanceof Error ? e.message : String(e)
@@ -828,7 +855,7 @@ async function _createBookingFromDashboard(data: {
         serviceAddress,
         meetingUrl,
         internalNotes: data.internalNotes || null,
-        holdExpiresAt: status === BookingStatus.pending_payment ? addMinutes(new Date(), 60) : null,
+        holdExpiresAt: status === BookingStatus.pending_payment ? addMinutes(new Date(), DASHBOARD_HOLD_MINUTES) : null,
         bookingNumber,
       },
       include: { service: true, customer: true },
@@ -865,7 +892,7 @@ async function _createBookingFromDashboard(data: {
       const effShouldConfirm = paymentMode === 'full_paid' || paymentMode === 'deposit_paid' || effNoDeposit
       const effStatus = effShouldConfirm ? BookingStatus.confirmed : BookingStatus.pending_payment
       const effPaymentStatus = effFree ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid
-      const effHold = effStatus === BookingStatus.pending_payment ? addMinutes(new Date(), 60) : null
+      const effHold = effStatus === BookingStatus.pending_payment ? addMinutes(new Date(), DASHBOARD_HOLD_MINUTES) : null
       bookingResult = await tx.booking.update({
         where: { id: newBooking.id },
         data: {

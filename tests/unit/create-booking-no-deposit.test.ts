@@ -207,7 +207,17 @@ describe('createBooking - no deposit / free service', () => {
 
   it('honors idempotencyKey and returns existing booking', async () => {
     setupMocks(5000, 20000)
-    const existingBooking = { id: 'booking-existing', service: { name: 'Manicure' }, customer: { name: 'Juan', phone: '+56912345678', email: null } }
+    // Servicio sin abono → la reserva quedó `confirmed` de entrada: el re-envío
+    // con la misma key la devuelve tal cual, sin re-validar cupo ni tocar el hold
+    // (eso es sólo para las que siguen esperando el pago).
+    const existingBooking = {
+      id: 'booking-existing',
+      serviceId: baseInput.serviceId,
+      startDateTime: baseInput.startDateTime,
+      status: BookingStatus.confirmed,
+      service: { name: 'Manicure' },
+      customer: { name: 'Juan', phone: '+56912345678', email: null },
+    }
     mockPrisma.booking.findUnique.mockResolvedValueOnce(existingBooking)
 
     const result = await createBooking({ ...baseInput, idempotencyKey: 'key-1' }, 'biz-1')
