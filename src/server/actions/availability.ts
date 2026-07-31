@@ -11,6 +11,7 @@ import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { isValidTimeRange } from '@/lib/availability/time-range'
 import { computeRescheduleSlots } from '@/lib/availability/reschedule-slots'
+import { blockScopeFor, bookingScopeCondition, normalizeProfessionalId, resolveAvailabilityRules } from '@/lib/availability/scope'
 import { RELEASED_STATUSES } from '@/lib/bookings/approval'
 import { action, UserError } from '@/lib/actions/result'
 
@@ -31,15 +32,33 @@ const rescheduleSlotsSchema = z.object({
 
 const NON_RESCHEDULABLE_STATUSES = ['completed', 'cancelled', 'no_show', 'expired'] as const
 
+// El horario del negocio, para el editor semanal: `professionalId: null` explícito
+// aunque hoy no haya otras filas. Sin el filtro, el día que existan reglas por
+// persona esta pantalla mostraría 14 filas mezcladas sin decir de quién es cada
+// una — y el editor guarda por id, así que la dueña editaría el horario de
+// cualquiera creyendo que edita el del salón.
 export async function getAvailabilityRules() {
   const { businessId } = await requireBusiness()
   return prisma.availabilityRule.findMany({
-    where: { businessId },
+    where: { businessId, professionalId: null },
     orderBy: { dayOfWeek: 'asc' },
   })
 }
 
-async function _getAvailableTimeSlots(businessId: string, serviceId: string, date: Date) {
+// `professionalId` es obligatorio y no opcional con default: un `undefined` que
+// llegue hasta un `where` de Prisma no filtra, matchea todo, y acá eso significa
+// mezclar el horario y los bloqueos de todo el equipo en un solo cálculo. El
+// resultado es "los horarios no funcionan" sin un error en ningún log. Que el
+// compilador obligue a decidir en cada caller.
+async function _getAvailableTimeSlots(
+  businessId: string,
+  serviceId: string,
+  date: Date,
+  professionalIdInput: string | null,
+) {
+  // Esta action es PÚBLICA: el cuarto argumento llega del navegador. Se normaliza una
+  // sola vez acá —el borde— y abajo se usa siempre el valor normalizado.
+  const professionalId = normalizeProfessionalId(professionalIdInput)
   // Config 'get-availability' (60/min por IP): una clienta explorando fechas
   // hace un request por click; 10/min se agotaba en uso humano normal.
   const limit = await checkRateLimit('get-availability')
@@ -55,6 +74,20 @@ async function _getAvailableTimeSlots(businessId: string, serviceId: string, dat
     throw new UserError('Negocio no válido')
   }
 
+  // Normalizar defiende la FORMA; esto defiende la PROCEDENCIA. Un id que no es de
+  // este negocio, o de alguien que ya no atiende, caería por herencia al horario del
+  // salón y devolvería slots como si todo estuviera bien: el problema se descubriría
+  // recién cuando la reserva se crea a nombre de nadie.
+  if (professionalId !== null) {
+    const persona = await prisma.professional.findFirst({
+      where: { id: professionalId, businessId, isActive: true },
+      select: { id: true },
+    })
+    if (!persona) {
+      throw new UserError('Esa persona no está disponible para reservar')
+    }
+  }
+
   const timezone = business.timezone || 'America/Santiago'
   const bookingWindowDays = business.bookingWindowDays ?? 90
   const { dayStart, dayEnd } = getBusinessDayRange(date, timezone)
@@ -64,17 +97,21 @@ async function _getAvailableTimeSlots(businessId: string, serviceId: string, dat
       where: { id: serviceId, businessId, isActive: true },
       select: { durationMinutes: true },
     }),
-    prisma.availabilityRule.findMany({
-      where: { businessId, isActive: true },
-      orderBy: { dayOfWeek: 'asc' },
+    resolveAvailabilityRules(prisma, businessId, professionalId),
+    getEffectiveBlocks({
+      businessId,
+      rangeStart: dayStart,
+      rangeEnd: dayEnd,
+      timezone,
+      scope: blockScopeFor(professionalId),
     }),
-    getEffectiveBlocks(businessId, dayStart, dayEnd, timezone),
     prisma.booking.findMany({
       where: {
         businessId,
         status: { notIn: [...RELEASED_STATUSES] },
         startDateTime: { lte: dayEnd },
         endDateTime: { gte: dayStart },
+        AND: bookingScopeCondition(professionalId),
       },
       orderBy: { startDateTime: 'asc' },
     }),
@@ -142,8 +179,13 @@ async function _updateAvailabilityRule(
     throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
   }
 
+  // `professionalId: null` en el WHERE del write, no sólo en la lectura: esta action
+  // edita el horario DEL SALÓN. Sin esto, la única defensa contra editar el horario
+  // de una persona desde acá es que la pantalla no reciba esos ids — o sea una
+  // coincidencia de la capa de presentación, no una garantía. El editor por persona
+  // del PR siguiente necesita decir explícitamente de quién es la regla que toca.
   const updateResult = await prisma.availabilityRule.updateMany({
-    where: { id, businessId },
+    where: { id, businessId, professionalId: null },
     data,
   })
   if (updateResult.count === 0) {

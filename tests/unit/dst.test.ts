@@ -105,6 +105,7 @@ describe('DST America/Santiago', () => {
       startDateTime: firstSlot.start,
       endDateTime: firstSlot.end,
       timezone,
+      professionalId: null,
     })
 
     expect(formatInTimeZone(firstSlot.start, timezone, 'yyyy-MM-dd HH:mm')).toBe('2026-09-06 09:00')

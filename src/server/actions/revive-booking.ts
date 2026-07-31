@@ -83,6 +83,7 @@ async function _reviveBooking(bookingId: string, mode: 'confirm' | 'reopen'): Pr
             startDateTime: booking.startDateTime,
             endDateTime: booking.endDateTime,
             timezone,
+            professionalId: booking.professionalId,
             excludeBookingId: booking.id,
           })
         }
@@ -113,6 +114,7 @@ async function _reviveBooking(bookingId: string, mode: 'confirm' | 'reopen'): Pr
         startDateTime: booking.startDateTime,
         endDateTime: booking.endDateTime,
         timezone,
+        professionalId: booking.professionalId,
         excludeBookingId: booking.id,
       })
 

@@ -36,7 +36,17 @@ export default async function AvailabilityPage() {
     getTimeBlocks(),
     getTimeBlockSeries(),
     getServices(),
-    getEffectiveBlocks(userData.business.id, now, addDays(now, SERVICE_FIT_WINDOW_DAYS + 1), timezone),
+    // Alcance del negocio, en las dos puntas: `getAvailabilityRules` trae las
+    // reglas con `professionalId: null` y el fit se simula contra los bloqueos del
+    // salón. El aviso "este servicio no cabe" es sobre el horario del salón; el
+    // mismo aviso por persona llega con la pantalla que deja darle horario propio.
+    getEffectiveBlocks({
+      businessId: userData.business.id,
+      rangeStart: now,
+      rangeEnd: addDays(now, SERVICE_FIT_WINDOW_DAYS + 1),
+      timezone,
+      scope: { kind: 'business' },
+    }),
   ])
   const serviceFits = computeServiceFit(
     services,

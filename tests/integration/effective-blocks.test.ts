@@ -41,7 +41,7 @@ describe('getEffectiveBlocks', () => {
   it('une bloqueos sueltos + ocurrencias expandidas de la serie', async () => {
     const start = new Date('2026-06-01T00:00:00-04:00')
     const end = new Date('2026-06-05T23:59:59-04:00')
-    const blocks = await getEffectiveBlocks(businessId, start, end, TZ)
+    const blocks = await getEffectiveBlocks({ businessId, rangeStart: start, rangeEnd: end, timezone: TZ, scope: { kind: 'business' } })
     const reasons = blocks.map((b) => b.reason).sort()
     expect(blocks).toHaveLength(5) // 4 almuerzos (Lun-Jue) + 1 suelto (viernes)
     expect(reasons.filter((r) => r === 'Almuerzo')).toHaveLength(4)
@@ -53,7 +53,7 @@ describe('getEffectiveBlocks', () => {
     await prisma.availabilityRule.deleteMany({ where: { businessId } })
     await prisma.availabilityRule.create({ data: { businessId, dayOfWeek: 1, startTime: '09:00', endTime: '18:00', isActive: true } })
     const svc = await prisma.service.create({ data: { businessId, name: 'Corte', durationMinutes: 60, price: 10000, depositAmount: 0, pastelColor: '#FFD700', isActive: true } })
-    const result = await getAvailableTimeSlots(businessId, svc.id, new Date('2026-06-01T15:00:00Z'))
+    const result = await getAvailableTimeSlots(businessId, svc.id, new Date('2026-06-01T15:00:00Z'), null)
     if (!result.ok) throw new Error(`expected ok, got: ${result.error}`)
     expect(result.data.some((s) => s.start.toISOString() === '2026-06-01T17:00:00.000Z')).toBe(false)
   })
@@ -67,7 +67,7 @@ describe('getEffectiveBlocks', () => {
 
     const start = new Date('2026-06-01T17:00:00Z') // 13:00 local, lunes (en daysOfWeek [1..4])
     const end = new Date('2026-06-01T18:00:00Z')
-    const input = { businessId, serviceId: svc.id, startDateTime: start, endDateTime: end, timezone: TZ }
+    const input = { businessId, serviceId: svc.id, startDateTime: start, endDateTime: end, timezone: TZ, professionalId: null }
 
     await expect(
       prisma.$transaction((tx) => assertSlotIsAvailable({ tx, ...input })),
@@ -88,7 +88,7 @@ describe('getEffectiveBlocks', () => {
       data: { businessId, daysOfWeek: [1, 2, 3, 4, 5], startTime: '13:00', endTime: '14:00', reason: 'Almuerzo', anchorDate: new Date('2026-06-01T04:00:00Z'), until: new Date('2026-06-05T04:00:00Z') },
     })
     // rango de un solo día = el último día (viernes), arrancando a las 13:00 local (17:00Z)
-    const blocks = await getEffectiveBlocks(businessId, new Date('2026-06-05T17:00:00Z'), new Date('2026-06-05T18:00:00Z'), TZ)
+    const blocks = await getEffectiveBlocks({ businessId, rangeStart: new Date('2026-06-05T17:00:00Z'), rangeEnd: new Date('2026-06-05T18:00:00Z'), timezone: TZ, scope: { kind: 'business' } })
     expect(blocks.some((b) => b.reason === 'Almuerzo')).toBe(true)
   })
 })

@@ -36,7 +36,7 @@ describe('assertSlotFreeOfConflicts', () => {
   it('resuelve cuando el slot está libre (sin exigir servicio activo ni reglas)', async () => {
     const s = slot(1, 15)
     await expect(
-      assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, ...s }),
+      assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, professionalId: null, ...s }),
     ).resolves.toBeUndefined()
   })
 
@@ -51,7 +51,7 @@ describe('assertSlotFreeOfConflicts', () => {
       },
     })
     await expect(
-      assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, ...s }),
+      assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, professionalId: null, ...s }),
     ).rejects.toThrow('Ese horario ya no está disponible')
     await prisma.timeBlock.delete({ where: { id: block.id } })
   })
@@ -68,7 +68,7 @@ describe('assertSlotFreeOfConflicts', () => {
       status: 'pending_confirmation', holdExpiresAt: addMinutes(new Date(), 60),
     })
     await expect(
-      assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, ...s }),
+      assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, professionalId: null, ...s }),
     ).rejects.toThrow('Ese horario ya no está disponible')
   })
 
@@ -79,7 +79,7 @@ describe('assertSlotFreeOfConflicts', () => {
       status: 'pending_confirmation', holdExpiresAt: addMinutes(new Date(), -60),
     })
     await expect(
-      assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, ...s }),
+      assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, professionalId: null, ...s }),
     ).resolves.toBeUndefined()
   })
 
@@ -87,11 +87,11 @@ describe('assertSlotFreeOfConflicts', () => {
     const s = slot(3, 15)
     const seeded = await seedConfirmedBooking({ businessId: BT_VERIFY_BIZ, serviceId: BT_VERIFY_SVC, ...s })
     await expect(
-      assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, ...s }),
+      assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, professionalId: null, ...s }),
     ).rejects.toThrow('Ese horario ya no está disponible')
     await expect(
       assertSlotFreeOfConflicts({
-        tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, ...s, excludeBookingId: seeded.bookingId,
+        tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, professionalId: null, ...s, excludeBookingId: seeded.bookingId,
       }),
     ).resolves.toBeUndefined()
   })

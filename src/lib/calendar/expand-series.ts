@@ -12,6 +12,9 @@ export interface SeriesLike {
   until: Date | null
   /** Minutos que una cita puede invadir por cada borde de cada ocurrencia. */
   overlapToleranceMinutes?: number
+  /** De quién es la serie. `null` = del negocio, cierra para todos. Obligatorio a
+   *  propósito: es un dato que se pierde callado si se puede omitir. */
+  professionalId: string | null
 }
 
 export interface ExceptionLike {
@@ -31,6 +34,16 @@ export interface EffectiveBlock {
   occurrenceDate?: Date
   /** Minutos que una cita puede invadir por cada borde del bloqueo. */
   overlapToleranceMinutes?: number
+  /**
+   * De quién es el bloqueo. `null` = del negocio, cierra para todos.
+   *
+   * `EffectiveBlock` es un tipo PROYECTADO y se construye en dos lugares: el
+   * `.map` de los bloqueos sueltos (`effective-blocks.ts`) y acá abajo. Filtrar
+   * la query sin proyectar el campo deja los recurrentes sin dueño aguas abajo, y
+   * el calendario no puede distinguir el feriado del salón de las vacaciones de
+   * una persona.
+   */
+  professionalId: string | null
 }
 
 /** Tope de días que expande una serie de una sola pasada (evita rangos patológicos). */
@@ -96,6 +109,9 @@ export function expandSeries(
           occurrenceDate: startOfLocalDay(cursor, timezone),
           // Los override de excepción cambian hora/motivo; la tolerancia es de la serie
           overlapToleranceMinutes: series.overlapToleranceMinutes ?? 0,
+          // Y el dueño también es de la serie: una excepción edita el día, no de
+          // quién es el bloqueo.
+          professionalId: series.professionalId,
         })
       }
     }

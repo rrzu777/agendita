@@ -92,6 +92,7 @@ describe('holds vencidos vs Booking_no_overlap', () => {
   function chequearSlot() {
     return prisma.$transaction((tx) => assertSlotFreeOfConflicts({
       tx, businessId: BIZ, startDateTime: START, endDateTime: END, timezone: TZ,
+      professionalId: null,
     }))
   }
 
