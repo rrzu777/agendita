@@ -498,9 +498,10 @@ function BlockBand({ p, onClick }: { p: PositionedItem<CalendarTimeBlock>; onCli
   // El dueño va ADELANTE del motivo porque la banda es angosta y trunca por la derecha:
   // "Ana · Almuer…" sigue diciendo lo importante, "Almuerzo · A…" no. Sin nombre el
   // bloqueo es del negocio y cierra para todos, que es como se leía siempre.
-  const owner = p.item.professionalName ?? null
-  const texto = owner ? `${owner} · ${reason}` : reason
-  const deQuien = owner ? ` de ${owner}` : ''
+  // "de Ana" en las dos formas del aria-label: con motivo ("Bloqueo de Ana: Almuerzo") y
+  // sin motivo ("Bloqueo de horario de Ana"). Sin dueño queda igual que siempre.
+  const deQuien = p.item.professionalName ? ` de ${p.item.professionalName}` : ''
+  const texto = p.item.professionalName ? `${p.item.professionalName} · ${reason}` : reason
   const ariaLabel = p.item.reason ? `Bloqueo${deQuien}: ${p.item.reason}` : `Bloqueo de horario${deQuien}`
   return (
     <button

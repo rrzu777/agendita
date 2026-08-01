@@ -15,7 +15,7 @@ export function BlockOwnerTag({ label }: { label: string | null }) {
   if (label === null) return null
 
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+    <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
       <User className="size-3" aria-hidden="true" />
       {label}
     </span>

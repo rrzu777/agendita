@@ -52,7 +52,7 @@ export function RecurringBlockList({ series }: { series: RecurringSeriesItem[] }
               <div className="text-xs text-muted-foreground">
                 {s.reason ? `${s.reason} · ` : ''}{s.until ? 'hasta fecha límite' : 'indefinido'}
               </div>
-              <div className="mt-1"><BlockOwnerTag label={s.ownerLabel} /></div>
+              <BlockOwnerTag label={s.ownerLabel} />
             </div>
             <DeleteSeriesButton seriesId={s.id} />
           </div>

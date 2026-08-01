@@ -3,7 +3,7 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { CalendarViews, type CalendarView } from '@/components/dashboard/calendar-views'
 import { getBookingsByRange } from '@/server/actions/bookings'
 import { getTimeBlocksByRange } from '@/server/actions/time-blocks'
-import { getProfessionals } from '@/server/actions/professionals'
+import { getProfessionalNames } from '@/server/actions/professionals'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { isObjectStorageAvailable } from '@/lib/storage/r2'
 import {
@@ -89,11 +89,10 @@ export default async function CalendarPage({
   const [bookings, timeBlocks, professionals] = await Promise.all([
     getBookingsByRange(start, end),
     getTimeBlocksByRange(start, end),
-    // Con las pausadas incluidas: los bloqueos de alguien que dejó de atender siguen
-    // dibujados en el calendario, y son justo los que la dueña no puede explicarse si
-    // aparecen sin nombre. Para el selector de dueño se filtran los activos, que son
-    // los únicos a los que el servidor acepta colgarle un bloqueo nuevo.
-    getProfessionals(true),
+    // Trae a las pausadas también: sus bloqueos siguen dibujados acá. Para el selector
+    // de dueño se filtran las activas, que son las únicas a las que el servidor acepta
+    // colgarle un bloqueo nuevo.
+    getProfessionalNames(),
   ])
   const nombrePorId = new Map(professionals.map((p) => [p.id, p.name]))
 

@@ -51,7 +51,7 @@ export function TimeBlockList({ blocks: initialBlocks }: { blocks: TimeBlockList
               {new Date(block.startDateTime).toLocaleDateString('es-CL')} {new Date(block.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} - {new Date(block.endDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
             </div>
             {block.reason && <div className="text-sm text-muted-foreground">{block.reason}</div>}
-            <div className="mt-1"><BlockOwnerTag label={block.ownerLabel} /></div>
+            <BlockOwnerTag label={block.ownerLabel} />
             </div>
           </div>
           <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(block.id)} aria-label="Eliminar bloqueo">
