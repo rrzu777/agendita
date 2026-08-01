@@ -141,3 +141,43 @@ describe('el guard de la escritura', () => {
       .rejects.toThrow(PROFESSIONAL_UNAVAILABLE_MESSAGE)
   })
 })
+
+/**
+ * El test que ata las dos caras de la regla.
+ *
+ * `professionalChoice` filtra en el navegador sobre una lista ya traída;
+ * `assertProfessionalOffersService` filtra en Postgres para autorizar la escritura.
+ * Son dos implementaciones del mismo predicado y las dos fallas son mudas: si el
+ * navegador queda más permisivo, la clienta elige a alguien y se entera del rechazo
+ * en el paso de PAGO; si queda más restrictivo, la persona desaparece de la lista y
+ * nadie se entera nunca.
+ *
+ * Recorre la matriz entera —cada persona × cada servicio × cada modalidad— en vez de
+ * casos elegidos a mano: la próxima condición de elegibilidad que se agregue de un
+ * solo lado cae acá sin que haya que acordarse de escribir el caso.
+ */
+describe('las dos caras de la elegibilidad dicen lo mismo', () => {
+  it('para toda combinación de persona, servicio y modalidad', async () => {
+    const business = await prisma.business.findUnique({ where: { id: BIZ }, include: bookingBusinessInclude })
+    const equipo = business!.professionals.map((p) => ({
+      id: p.id, name: p.name, bio: p.bio, modalities: p.modalities, serviceIds: p.services.map((s) => s.id),
+    }))
+
+    for (const persona of equipo) {
+      for (const serviceId of [corte, masaje]) {
+        for (const modality of ['on_site', 'at_home'] as const) {
+          // Lo que diría la pantalla: ¿esta persona aparece entre las opciones?
+          const choice = professionalChoice([persona], serviceId, modality)
+          const enLaLista = choice.kind !== 'none'
+
+          // Lo que diría la escritura.
+          const autorizada = await assertProfessionalOffersService(prisma, BIZ, persona.id, serviceId, modality)
+            .then(() => true)
+            .catch(() => false)
+
+          expect(autorizada, `${persona.name} · ${serviceId === corte ? 'corte' : 'masaje'} · ${modality}`).toBe(enLaLista)
+        }
+      }
+    }
+  })
+})

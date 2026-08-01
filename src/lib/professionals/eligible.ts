@@ -1,4 +1,4 @@
-import type { ServiceModality } from '@prisma/client'
+import type { Prisma, ServiceModality } from '@prisma/client'
 
 /**
  * Lo que el funnel público sabe de cada persona del equipo. Es un tipo propio y no
@@ -69,20 +69,74 @@ export function professionalChoice(
 }
 
 /**
- * El id que le corresponde a la reserva según la elección de la clienta.
+ * La MISMA regla de arriba, escrita para Postgres.
  *
- * Existe porque el caso `ask` tiene dos estados —todavía no eligió, o ya eligió— y
- * la diferencia entre "sin persona" y "falta elegir" no se puede leer del
- * `professionalId` suelto: los dos son `null`. Acá el `null` de `ask` significa
- * "el paso está pendiente" y el wizard no deja pasar de ahí.
+ * Vive pegada a `professionalChoice` y no en el módulo del servidor a propósito: son
+ * las dos caras de una sola decisión —quién puede tomar esta reserva— y separarlas es
+ * cómo se llega a que el funnel ofrezca a alguien que la escritura después rechaza.
+ * Es el mismo criterio con el que `lib/availability/scope.ts` guarda juntas su
+ * condición de Prisma y su fragmento de SQL crudo.
+ *
+ * Las dos fallas son mudas y asimétricas: si el filtro del navegador queda más
+ * permisivo, la clienta elige a alguien y se entera del rechazo **en el paso de
+ * pago**; si queda más restrictivo, la persona desaparece de la lista y nadie se
+ * entera nunca. `tests/integration/funnel-profesional.test.ts` las ata: recorre una
+ * matriz de persona × servicio × modalidad y exige que las dos contesten lo mismo.
+ *
+ * El `import type` de Prisma se borra al compilar, así que esto no le agrega nada al
+ * bundle del navegador.
+ *
+ * `modality` acá NO es opcional: en el servidor es la modalidad ya resuelta, y un
+ * `undefined` haría que Prisma borre la clave y el chequeo pase a ser "en cualquier
+ * lado". El caso "todavía no hay modalidad" sólo existe en la pantalla.
+ */
+export function professionalEligibilityWhere(
+  serviceId: string,
+  modality: ServiceModality,
+): Prisma.ProfessionalWhereInput {
+  return {
+    services: { some: { id: serviceId } },
+    modalities: { has: modality },
+  }
+}
+
+/**
+ * La persona a nombre de quien queda la reserva, o `null`.
+ *
+ * Existe porque el caso `ask` tiene dos estados —todavía no eligió, o ya eligió— y la
+ * diferencia entre "sin persona" y "falta elegir" no se puede leer del id suelto: los
+ * dos son `null`. Acá el `null` de `ask` significa "el paso está pendiente" y el
+ * wizard no deja pasar de ahí.
  *
  * También es el cerrojo contra el estado viejo: si la clienta eligió a alguien y
- * después volvió atrás y cambió de servicio, `elegido` puede ser de una persona que
- * ya no está entre las opciones. Devolverlo igual escribiría una reserva a nombre de
+ * después volvió atrás y cambió de servicio, `elegido` puede ser de una persona que ya
+ * no está entre las opciones. Devolverlo igual escribiría una reserva a nombre de
  * quien no hace ese servicio; el server la rechazaría, pero recién en el pago.
  */
-export function resolveProfessionalId(choice: ProfessionalChoice, elegido: string | null): string | null {
+function resolveProfessional(
+  choice: ProfessionalChoice,
+  elegido: string | null,
+): FunnelProfessional | null {
   if (choice.kind === 'none') return null
-  if (choice.kind === 'auto') return choice.professional.id
-  return choice.options.some((p) => p.id === elegido) ? elegido : null
+  if (choice.kind === 'auto') return choice.professional
+  return choice.options.find((p) => p.id === elegido) ?? null
 }
+
+/**
+ * Los dos campos que el wizard guarda de la persona, derivados de una sola vez.
+ *
+ * El nombre está denormalizado —como `serviceName`— para que la confirmación y el paso
+ * de la hora no necesiten el equipo entero. Eso trae la invariante de que el nombre
+ * corresponda al id, y por eso los dos salen de acá: mientras cada call site los
+ * escribía por su cuenta, la invariante dependía de que nadie se olvidara. Olvidarse
+ * dejaba "Te atiende Ana" sobre una reserva que quedó a nombre de otra, sin que nada
+ * fallara.
+ */
+export function professionalFields(
+  choice: ProfessionalChoice,
+  elegido: string | null,
+): { professionalId: string | null; professionalName: string } {
+  const persona = resolveProfessional(choice, elegido)
+  return { professionalId: persona?.id ?? null, professionalName: persona?.name ?? '' }
+}
+

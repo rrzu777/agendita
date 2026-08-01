@@ -11,8 +11,8 @@ import { StepConfirmation, type ConfirmationBusiness } from './step-confirmation
 import type { Service, ServiceModality } from '@prisma/client'
 import type { FunnelSession } from '@/lib/customers/session-prefill'
 import type { ProfessionalWords } from '@/lib/vocabulary'
-import { professionalChoice, type FunnelProfessional, type ProfessionalChoice } from '@/lib/professionals/eligible'
-import { entryStepAfterRestore, stepAfter, stepBefore, stepsFor, type StepKey } from '@/lib/bookings/wizard-steps'
+import { professionalChoice, professionalFields, type FunnelProfessional } from '@/lib/professionals/eligible'
+import { entryStepAfterRestore, stepAfter, stepBefore, stepsFor, type StepKey, type WizardStep } from '@/lib/bookings/wizard-steps'
 import { restoreWizardState, serializeWizardState, wizardStorageKey } from '@/lib/bookings/wizard-storage'
 
 type WizardSession = Pick<FunnelSession, 'email' | 'name' | 'phone'> | null
@@ -27,21 +27,6 @@ function applySessionPrefill(data: BookingData, session: WizardSession): Booking
     customerPhone: session.phone || data.customerPhone,
     customerEmail: session.email,
   }
-}
-
-/**
- * A nombre de quién queda la reserva, para el servicio que se acaba de elegir.
- *
- * Con una sola persona elegible se asigna sin preguntar; con varias queda vacío
- * hasta que la clienta elija. Se escribe en el estado al elegir SERVICIO —y no se
- * deriva en cada render— porque cambiar de servicio tiene que soltar a la persona
- * anterior: si no, quien eligió a Ana para un corte se lleva a Ana a un servicio
- * que Ana no hace.
- */
-function professionalFieldsFor(choice: ProfessionalChoice): Pick<BookingData, 'professionalId' | 'professionalName'> {
-  return choice.kind === 'auto'
-    ? { professionalId: choice.professional.id, professionalName: choice.professional.name }
-    : { professionalId: null, professionalName: '' }
 }
 
 export type BookingData = {
@@ -121,11 +106,23 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
   // El "dónde" de la reserva ya escrita, para la confirmación. Ver `BookingCreated`.
   const [confirmationWhere, setConfirmationWhere] = useState<BookingCreated['where']>({})
 
-  // La lista de pasos depende del servicio elegido, así que se recalcula en cada
-  // render. El estado es la CLAVE del paso y no su índice justamente por esto:
-  // un índice cambia de significado cuando la lista crece a mitad del recorrido.
-  const choice = professionalChoice(professionals, data.serviceId, data.serviceModality)
-  const steps = stepsFor(choice.kind === 'ask' ? professionalWords.Professional : null)
+  /**
+   * Todo lo que depende del servicio elegido sale de acá, y de un solo lugar.
+   *
+   * Toma el `BookingData` como argumento en vez de leer `data` directo porque **cada
+   * transición necesita derivarlo del estado SIGUIENTE**: cuando la clienta elige un
+   * servicio, el `data` de este render todavía tiene el anterior, y avanzar con esa
+   * lista saltea el paso que acaba de aparecer. Con esto, el render, el handler de
+   * servicio y el restore usan la misma cuenta en vez de tres copias.
+   */
+  function derivar(d: BookingData): { choice: ReturnType<typeof professionalChoice>; steps: WizardStep[] } {
+    const choice = professionalChoice(professionals, d.serviceId, d.serviceModality)
+    return { choice, steps: stepsFor(choice.kind === 'ask' ? professionalWords.Professional : null) }
+  }
+
+  // El estado es la CLAVE del paso y no su índice justamente porque esta lista crece
+  // a mitad del recorrido: un índice cambiaría de significado sin avisar.
+  const { choice, steps } = derivar(data)
   const currentIndex = Math.max(0, steps.findIndex((s) => s.key === currentStep))
 
   // Restaura el estado guardado antes del viaje a /ingresar (solo con ?continuar=1;
@@ -140,10 +137,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
     if (!restored) return
     /* eslint-disable react-hooks/set-state-in-effect -- one-time restore from sessionStorage on mount, gated by ?continuar=1 */
     setData(applySessionPrefill(restored, session))
-    setCurrentStep(entryStepAfterRestore(
-      restored,
-      professionalChoice(professionals, restored.serviceId, restored.serviceModality).kind === 'ask',
-    ))
+    setCurrentStep(entryStepAfterRestore(restored, derivar(restored).steps))
     /* eslint-enable react-hooks/set-state-in-effect */
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar
   }, [])
@@ -189,12 +183,18 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
       <section className="rounded-[2rem] border border-border/50 bg-card p-5 shadow-[var(--cream-shadow)] sm:p-8">
         {currentStep === 'service' && (
           <StepService data={data} services={services} currency={currency} onSelect={(service) => {
-            // El paso siguiente se decide con el servicio RECIÉN elegido y no con
-            // `steps`, que todavía se calculó con el anterior: el estado de React
-            // no cambió aún y `stepAfter` saltearía el paso que acaba de aparecer.
-            const elegido = professionalChoice(professionals, service.serviceId ?? null, service.serviceModality ?? null)
-            updateData({ ...service, ...professionalFieldsFor(elegido) })
-            setCurrentStep(elegido.kind === 'ask' ? 'professional' : 'date')
+            // Se deriva del estado SIGUIENTE, no del de este render: `steps` todavía
+            // se calculó con el servicio anterior y avanzar con esa lista saltearía
+            // el paso que acaba de aparecer.
+            //
+            // El destino igual sale de `stepAfter` y no escrito a mano: el orden de
+            // los pasos tiene que vivir en `stepsFor` y en ningún otro lado, o la
+            // barra de progreso y la navegación se separan en silencio.
+            const siguiente = derivar({ ...data, ...service })
+            // La persona elegida sobrevive si también hace el servicio nuevo; si no,
+            // se suelta. Es la misma cuenta que hace el restore.
+            updateData({ ...service, ...professionalFields(siguiente.choice, data.professionalId) })
+            setCurrentStep(stepAfter(siguiente.steps, 'service'))
           }} />
         )}
         {currentStep === 'professional' && choice.kind === 'ask' && (
@@ -205,17 +205,15 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
             title={professionalWords.chooseProfessional}
             onSelect={(professional) => {
               // Cambiar de persona cambia la agenda: la hora que se había elegido
-              // era de otra y puede estar ocupada para esta. Se sueltan hora y
-              // fecha-derivados igual que al cambiar de servicio.
+              // era de otra y puede estar ocupada para esta.
               const cambio = data.professionalId !== professional.id
               updateData({
-                professionalId: professional.id,
-                professionalName: professional.name,
+                ...professionalFields(choice, professional.id),
                 ...(cambio ? { timeSlot: null, idempotencyKey: null } : {}),
               })
-              setCurrentStep('date')
+              nextStep()
             }}
-            onBack={() => setCurrentStep('service')}
+            onBack={prevStep}
           />
         )}
         {currentStep === 'date' && (

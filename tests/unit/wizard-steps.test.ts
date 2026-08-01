@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { entryStepAfterRestore, stepAfter, stepBefore, stepsFor } from '@/lib/bookings/wizard-steps'
+import type { BookingData } from '@/components/booking/wizard'
 
 const SIN_EQUIPO = stepsFor(null)
 const CON_EQUIPO = stepsFor('Barbero')
@@ -30,12 +31,15 @@ describe('moverse por la lista', () => {
 })
 
 describe('a dónde vuelve quien se fue a crear su cuenta', () => {
-  const conHora = { date: new Date(), timeSlot: {}, professionalId: 'ana' }
+  const base = {
+    date: new Date(), timeSlot: {} as BookingData['timeSlot'], professionalId: 'ana',
+    serviceModalities: ['on_site'] as BookingData['serviceModalities'], serviceModality: 'on_site' as const,
+  }
 
   it('al paso más lejano que el estado sostiene', () => {
-    expect(entryStepAfterRestore(conHora, false)).toBe('customer')
-    expect(entryStepAfterRestore({ date: new Date(), timeSlot: null, professionalId: null }, false)).toBe('time')
-    expect(entryStepAfterRestore({ date: null, timeSlot: null, professionalId: null }, false)).toBe('date')
+    expect(entryStepAfterRestore(base, SIN_EQUIPO)).toBe('customer')
+    expect(entryStepAfterRestore({ ...base, timeSlot: null }, SIN_EQUIPO)).toBe('time')
+    expect(entryStepAfterRestore({ ...base, timeSlot: null, date: null }, SIN_EQUIPO)).toBe('date')
   })
 
   /**
@@ -44,10 +48,27 @@ describe('a dónde vuelve quien se fue a crear su cuenta', () => {
    * ese horario sería ofrecerle algo que ya no existe.
    */
   it('con el paso pendiente, ahí queda, aunque traiga fecha y hora', () => {
-    expect(entryStepAfterRestore({ ...conHora, professionalId: null }, true)).toBe('professional')
+    expect(entryStepAfterRestore({ ...base, professionalId: null }, CON_EQUIPO)).toBe('professional')
   })
 
   it('con la persona intacta el paso pendiente no estorba', () => {
-    expect(entryStepAfterRestore(conHora, true)).toBe('customer')
+    expect(entryStepAfterRestore(base, CON_EQUIPO)).toBe('customer')
+  })
+
+  /**
+   * El "dónde" se elige adentro del paso 1, así que es el único lugar donde se puede
+   * volver a preguntar. Si la dueña dejó de ofrecer la modalidad guardada, el restore
+   * la descarta y sin esto nadie vuelve a preguntar: la reserva sale con la que
+   * elija el servidor, y "a domicilio" se convierte en "en el local" sin avisar.
+   */
+  it('vuelve al servicio cuando quedó sin modalidad y el servicio ofrece varias', () => {
+    expect(entryStepAfterRestore(
+      { ...base, serviceModalities: ['on_site', 'at_home'], serviceModality: null },
+      SIN_EQUIPO,
+    )).toBe('service')
+  })
+
+  it('con una sola modalidad no hay nada que volver a preguntar', () => {
+    expect(entryStepAfterRestore({ ...base, serviceModality: null }, SIN_EQUIPO)).toBe('customer')
   })
 })

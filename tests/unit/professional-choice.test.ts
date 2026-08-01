@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { professionalChoice, resolveProfessionalId, type FunnelProfessional } from '@/lib/professionals/eligible'
+import { professionalChoice, professionalFields, type FunnelProfessional } from '@/lib/professionals/eligible'
 
 function persona(id: string, serviceIds: string[], modalities: FunnelProfessional['modalities'] = ['on_site']): FunnelProfessional {
   return { id, name: `Persona ${id}`, bio: null, modalities, serviceIds }
@@ -44,14 +44,14 @@ describe('a quién le puede tocar la reserva', () => {
   })
 })
 
-describe('qué id termina en la reserva', () => {
+describe('qué persona termina en la reserva', () => {
   it('con una sola elegible, la suya, aunque el estado no traiga nada', () => {
     const choice = professionalChoice([persona('ana', ['svc-1'])], 'svc-1', 'on_site')
-    expect(resolveProfessionalId(choice, null)).toBe('ana')
+    expect(professionalFields(choice, null)).toEqual({ professionalId: 'ana', professionalName: 'Persona ana' })
   })
 
   it('sin elegibles, ninguno', () => {
-    expect(resolveProfessionalId({ kind: 'none' }, 'ana')).toBeNull()
+    expect(professionalFields({ kind: 'none' }, 'ana')).toEqual({ professionalId: null, professionalName: '' })
   })
 
   /**
@@ -61,7 +61,7 @@ describe('qué id termina en la reserva', () => {
    */
   it('descarta al elegido que ya no está entre las opciones', () => {
     const choice = professionalChoice([persona('b', ['svc-1']), persona('c', ['svc-1'])], 'svc-1', 'on_site')
-    expect(resolveProfessionalId(choice, 'ana')).toBeNull()
-    expect(resolveProfessionalId(choice, 'c')).toBe('c')
+    expect(professionalFields(choice, 'ana').professionalId).toBeNull()
+    expect(professionalFields(choice, 'c').professionalId).toBe('c')
   })
 })

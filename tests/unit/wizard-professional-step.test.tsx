@@ -105,6 +105,29 @@ describe('el wizard con equipo', () => {
     expect(container.textContent).not.toContain('Elegí tu barbero')
   })
 
+  /**
+   * Cambiar de servicio no le hace re-elegir persona a quien vuelve al mismo equipo:
+   * si Sofía también hace el servicio nuevo, sigue marcada. La regla de "¿sobrevive
+   * la elección?" es una sola y vive en `professionalFields`, la misma que usa el
+   * restore — antes el wizard tenía la suya, que soltaba a la persona siempre.
+   */
+  it('la persona elegida sobrevive al cambio de servicio si también lo hace', () => {
+    montar([persona('p-1', 'Juan'), persona('p-2', 'Sofía')])
+    elegirServicio()
+    const sofia = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Sofía'))
+    act(() => sofia?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    // Atrás hasta el servicio y lo vuelve a elegir (mismo equipo elegible).
+    act(() => Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Atrás')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    act(() => Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Atrás')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    elegirServicio()
+
+    expect(container.textContent).toContain('Elegí tu barbero')
+    expect(container.querySelector('[aria-pressed="true"]')?.textContent).toContain('Sofía')
+  })
+
   it('elegir persona lleva a la fecha, ya con siete pasos', () => {
     montar([persona('p-1', 'Juan'), persona('p-2', 'Sofía')])
     elegirServicio()

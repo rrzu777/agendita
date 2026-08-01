@@ -1,3 +1,5 @@
+import type { BookingData } from '@/components/booking/wizard'
+
 /**
  * Los pasos del funnel, que dejaron de ser una lista fija.
  *
@@ -37,15 +39,17 @@ export function stepsFor(professionalLabel: string | null): WizardStep[] {
   ]
 }
 
-/** El siguiente/anterior de la lista, con los bordes pegados. */
+/** El siguiente/anterior de la lista, con los bordes pegados. `stepsFor` nunca
+ *  devuelve una lista vacía y los dos índices quedan adentro del rango incluso si
+ *  `findIndex` da -1, así que no hay caso sin resultado. */
 export function stepAfter(steps: WizardStep[], current: StepKey): StepKey {
   const i = steps.findIndex((s) => s.key === current)
-  return steps[Math.min(i + 1, steps.length - 1)]?.key ?? current
+  return steps[Math.min(i + 1, steps.length - 1)].key
 }
 
 export function stepBefore(steps: WizardStep[], current: StepKey): StepKey {
   const i = steps.findIndex((s) => s.key === current)
-  return steps[Math.max(i - 1, 0)]?.key ?? current
+  return steps[Math.max(i - 1, 0)].key
 }
 
 /**
@@ -58,12 +62,23 @@ export function stepBefore(steps: WizardStep[], current: StepKey): StepKey {
  * es lo que dejaría a alguien parado en "Hora" sin fecha.
  */
 export function entryStepAfterRestore(
-  restored: { date: Date | null; timeSlot: unknown; professionalId: string | null },
-  askProfessional: boolean,
+  restored: Pick<BookingData, 'date' | 'timeSlot' | 'professionalId' | 'serviceModalities' | 'serviceModality'>,
+  steps: WizardStep[],
 ): StepKey {
+  // El "dónde" se elige DENTRO del paso 1, así que un servicio con varias
+  // modalidades y ninguna resuelta sólo se puede contestar volviendo ahí. Pasa
+  // cuando la dueña deja de ofrecer la que estaba guardada: `restoreWizardState` la
+  // descarta y nadie vuelve a preguntar. Sin esto la reserva sale con la modalidad
+  // que el servidor elija —"a domicilio" convertido en "en el local" sin avisar—.
+  if (restored.serviceModalities.length > 1 && restored.serviceModality === null) return 'service'
+
+  // Recibe la LISTA y no un "¿hay que preguntar?" ya masticado: la lista es la que
+  // decide qué pasos existen, y con un booleano aparte había que derivar la misma
+  // condición dos veces y acordarse de mantenerlas iguales.
+  //
   // El paso pendiente manda sobre lo que venga después: sin persona elegida, la
   // fecha y la hora que se restauraron se calcularon para el horario equivocado.
-  if (askProfessional && !restored.professionalId) return 'professional'
+  if (steps.some((s) => s.key === 'professional') && !restored.professionalId) return 'professional'
   if (restored.timeSlot) return 'customer'
   if (restored.date) return 'time'
   return 'date'

@@ -259,6 +259,7 @@ async function _createBooking(data: {
   const retryCtx = {
     serviceId: data.serviceId,
     startDateTime: data.startDateTime,
+    professionalId,
     promotionCode: data.promotionCode,
     timezone: business.timezone || 'America/Santiago',
     holdMinutes,
