@@ -9,7 +9,16 @@ vi.mock('@/lib/db', () => {
     businessId: 'biz-1',
     customerId: 'cust-1',
     status: BookingStatus.confirmed,
+    bookingNumber: 4738,
     startDateTime: new Date('2026-06-15T18:00:00Z'),
+    // El evento de calendario sale de esta misma fila: cuándo termina, qué
+    // versión es (updatedAt - createdAt) y dónde se atiende.
+    endDateTime: new Date('2026-06-15T19:00:00Z'),
+    createdAt: new Date('2026-06-01T12:00:00Z'),
+    updatedAt: new Date('2026-06-01T12:00:00Z'),
+    modality: 'on_site',
+    serviceAddress: null,
+    meetingUrl: null,
     totalPrice: 25000,
     depositRequired: 5000,
     depositPaid: 5000,
@@ -18,6 +27,8 @@ vi.mock('@/lib/db', () => {
     customer: { name: 'Maria', phone: '+56987654321', email: 'maria@example.com' },
     business: {
       name: 'Nails by Ana',
+      slug: 'nails-by-ana',
+      subdomain: null,
       timezone: 'America/Santiago',
       whatsapp: '+56912345678',
       addressText: 'Av. Siempre Viva 742',
@@ -29,19 +40,6 @@ vi.mock('@/lib/db', () => {
     prisma: {
       booking: {
         findFirst: vi.fn().mockResolvedValue(mockBooking),
-        // El .ics que se adjunta a la confirmación se lee aparte (loadBookingInvite),
-        // con los campos que el evento necesita y el mail no usa.
-        findUnique: vi.fn().mockResolvedValue({
-          ...mockBooking,
-          bookingNumber: 4738,
-          endDateTime: new Date('2026-06-15T19:00:00Z'),
-          createdAt: new Date('2026-06-01T12:00:00Z'),
-          updatedAt: new Date('2026-06-01T12:00:00Z'),
-          modality: 'on_site',
-          serviceAddress: null,
-          meetingUrl: null,
-          business: { ...mockBooking.business, slug: 'nails-by-ana', subdomain: null },
-        }),
       },
       businessUser: {
         findMany: vi.fn().mockResolvedValue([
@@ -191,18 +189,6 @@ describe('sendBookingConfirmedNotification', () => {
     expect(call.attachments[0].filename).toBe('reserva-4738.ics')
     expect(call.attachments[0].content.toString('utf8')).toContain('SUMMARY:Manicure semipermanente en Nails by Ana')
     expect(call.html).toContain('/api/bookings/booking-1/calendar')
-  })
-
-  // El evento es un extra: si la base no contesta, el aviso sale igual.
-  it('si el .ics falla el mail sale sin calendario', async () => {
-    const { prisma } = await import('@/lib/db')
-    ;(prisma.booking.findUnique as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('DB caída'))
-    mockResendSend.mockResolvedValue({ data: { id: 'msg_790' }, error: null })
-
-    const result = await sendBookingConfirmedNotification('booking-1', 'biz-1')
-
-    expect(result.success).toBe(true)
-    expect(mockResendSend.mock.calls[0][0].attachments).toBeUndefined()
   })
 
   it('returns graceful result when booking is not found', async () => {

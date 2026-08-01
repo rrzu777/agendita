@@ -6,7 +6,7 @@
  * Existe para que las dos digan exactamente lo mismo — el título, el dónde y el
  * link de vuelta se deciden una sola vez, acá.
  */
-import { ServiceModality } from '@prisma/client'
+import { ServiceModality, type BookingStatus } from '@prisma/client'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import { linkNavegable } from '@/lib/services/modality'
@@ -20,7 +20,21 @@ import { linkNavegable } from '@/lib/services/modality'
  */
 const UID_DOMAIN = 'agendita.cl'
 
-export type BookingEventStatus = 'CONFIRMED' | 'TENTATIVE' | 'CANCELLED'
+/**
+ * Qué reserva merece un evento de calendario.
+ *
+ * **Sólo las confirmadas.** Una cita que todavía espera el pago o el visto bueno
+ * del negocio puede no existir nunca, y un evento que nadie va a borrar le queda
+ * a la clienta en el teléfono para siempre: en el mejor caso se presenta a una
+ * hora que se liberó, en el peor lo ve y cree que está todo listo.
+ *
+ * Vive acá, y no adentro del gate del servidor, porque las pantallas tienen que
+ * decidir lo mismo antes de ofrecer el botón: si los criterios se separan, la
+ * clienta ve el botón y el endpoint le contesta que no encuentra la reserva.
+ */
+export function deservesCalendarEvent(status: BookingStatus): boolean {
+  return status === 'confirmed'
+}
 
 export interface BookingCalendarEvent {
   uid: string
@@ -33,7 +47,6 @@ export interface BookingCalendarEvent {
    *  ese va en la descripción, donde no compite con "conectarse". */
   url: string | null
   description: string
-  status: BookingEventStatus
   /** Versión del evento para el cliente de calendario: número más alto = pisa a
    *  la anterior. Ver `sequenceOf`. */
   sequence: number
@@ -106,7 +119,6 @@ export function buildBookingCalendarEvent(booking: BookingEventSource): BookingC
     location: locationOf(booking),
     url: meetingUrl,
     description,
-    status: 'CONFIRMED',
     sequence: sequenceOf(booking),
     stamp: booking.updatedAt,
   }

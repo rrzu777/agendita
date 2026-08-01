@@ -1,4 +1,5 @@
 import { CalendarPlus } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { getBookingCalendarPath } from '@/lib/business/urls'
 
 /**
@@ -18,13 +19,12 @@ export function AddToCalendar({ bookingId, className }: { bookingId: string; cla
 
   return (
     <div className={`text-center ${className ?? ''}`}>
-      <a
-        href={path}
-        className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-border bg-background px-6 text-base font-semibold text-primary transition-colors hover:bg-muted"
-      >
-        <CalendarPlus className="size-5" />
-        Agregar al calendario
-      </a>
+      <Button asChild variant="outline" className="h-12 gap-2 rounded-full px-6 text-base font-semibold">
+        <a href={path}>
+          <CalendarPlus className="size-5" />
+          Agregar al calendario
+        </a>
+      </Button>
       <p className="mt-2 text-sm text-muted-foreground">
         ¿Usas Google Calendar?{' '}
         <a

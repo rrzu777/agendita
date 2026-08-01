@@ -28,7 +28,8 @@ vi.mock('@/lib/auth/server', async (importOriginal) => {
 })
 vi.mock('@/lib/db', () => ({
   prisma: {
-    booking: { findFirst: mockFindFirstBooking },
+    // findUnique = la relectura para el .ics del nuevo horario; null = sin evento.
+    booking: { findFirst: mockFindFirstBooking, findUnique: vi.fn().mockResolvedValue(null) },
     $transaction: mockTx,
   },
 }))

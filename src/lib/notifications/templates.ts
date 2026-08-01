@@ -87,10 +87,13 @@ function whereRowsText(data: WhereFields): string[] {
   return whereRows(data).map(({ label, value }) => `${label}: ${value}`)
 }
 
+/** Un link suelto en el cuerpo de un mail, con el color y el peso de siempre. */
+function emailLinkHtml(href: string, label: string, style = 'color:#e91e63;text-decoration:none;font-weight:600'): string {
+  return `<a href="${escapeHtml(href)}" style="${style}">${label}</a>`
+}
+
 function loyaltyLinkHtml(link: string | undefined): string {
-  return link
-    ? `<p style="margin-top:16px"><a href="${escapeHtml(link)}" style="color:#e91e63;text-decoration:none;font-weight:600">Ver mi tarjeta de puntos</a></p>`
-    : ''
+  return link ? `<p style="margin-top:16px">${emailLinkHtml(link, 'Ver mi tarjeta de puntos')}</p>` : ''
 }
 
 /**
@@ -100,15 +103,15 @@ function loyaltyLinkHtml(link: string | undefined): string {
  * adjunto queda abajo de todo y hay que bajarlo a mano. Este link abre el mismo
  * archivo de un clic, y con `?app=google` manda directo a Google Calendar.
  */
-function calendarLinksHtml(url: string | undefined): string {
-  return url
-    ? `<p style="margin-top:16px"><a href="${escapeHtml(url)}" style="color:#e91e63;text-decoration:none;font-weight:600">Agregar al calendario</a>
-        <span style="color:#666;font-size:13px"> · <a href="${escapeHtml(`${url}?app=google`)}" style="color:#666">Google Calendar</a></span></p>`
-    : ''
+function calendarLinksHtml(calendar: BookingEmailData['calendar']): string {
+  if (!calendar) return ''
+  return `<p style="margin-top:16px">${emailLinkHtml(calendar.url, 'Agregar al calendario')}
+        <span style="color:#666;font-size:13px"> · ${emailLinkHtml(`${calendar.url}?app=google`, 'Google Calendar', 'color:#666')}</span></p>`
 }
 
-function calendarLinksText(url: string | undefined): string[] {
-  return url ? [``, `Agregar al calendario: ${url}`, `Google Calendar: ${url}?app=google`] : []
+function calendarLinksText(calendar: BookingEmailData['calendar']): string[] {
+  if (!calendar) return []
+  return [``, `Agregar al calendario: ${calendar.url}`, `Google Calendar: ${calendar.url}?app=google`]
 }
 
 export function bankTransferBlockHtml(
@@ -234,7 +237,7 @@ export function bookingConfirmationCustomerHtml(data: BookingEmailData): string 
       <tr><td style="padding:8px 0;color:#666">Abono pagado</td><td style="padding:8px 0;font-weight:600">${deposit}</td></tr>
       ${remaining !== deposit ? `<tr><td style="padding:8px 0;color:#666">Saldo pendiente</td><td style="padding:8px 0;font-weight:600">${remaining}</td></tr>` : ''}
     </table>
-    ${calendarLinksHtml(data.calendarUrl)}
+    ${calendarLinksHtml(data.calendar)}
     ${policySection}${reviewSection}${loyaltySection}${whatsappSection}
     ${footer(data.businessName)}
   `)
@@ -261,7 +264,7 @@ export function bookingConfirmationCustomerText(data: BookingEmailData): string 
     `Abono pagado: ${deposit}`,
   )
   if (remaining !== deposit) lines.push(`Saldo pendiente: ${remaining}`)
-  lines.push(...calendarLinksText(data.calendarUrl))
+  lines.push(...calendarLinksText(data.calendar))
   if (data.businessCancellationPolicy) lines.push(``, `Política de cancelación: ${data.businessCancellationPolicy}`)
   if (data.reviewLink) lines.push(``, `Dejar una reseña: ${data.reviewLink}`)
   if (data.loyaltyCardLink) lines.push(``, `Tu tarjeta de puntos: ${data.loyaltyCardLink}`)
@@ -314,7 +317,7 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
     ${data.confirmed ? '' : `<p style="font-size:13px;color:#666;margin-top:16px">${data.awaitingApproval
       ? 'Si no responden dentro de 24 horas, la solicitud se cancela sola y el horario queda libre.'
       : data.bankTransfer ? 'Tu reserva quedará confirmada cuando el negocio verifique la transferencia.' : 'Recibirás una confirmación cuando el pago sea registrado.'}</p>`}
-    ${calendarLinksHtml(data.calendarUrl)}
+    ${calendarLinksHtml(data.calendar)}
     ${policySection}${whatsappSection}
     ${footer(data.businessName)}
   `)
@@ -347,9 +350,9 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
     )
   }
   if (!data.awaitingApproval && !data.confirmed) lines.push(`Abono requerido: ${deposit}`)
-  if (data.confirmed) {
-    // Nada que agregar: no hay abono que pagar ni confirmación que esperar.
-  } else if (data.awaitingApproval) {
+  // La reserva confirmada no lleva nada de esto: no hay abono que pagar ni
+  // confirmación que esperar (por eso el último caso pregunta por ella).
+  if (data.awaitingApproval) {
     lines.push(``, `Si no responden dentro de 24 horas, la solicitud se cancela sola y el horario queda libre.`)
   } else if (data.bankTransfer) {
     lines.push(
@@ -357,10 +360,10 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
       ``,
       `Tu reserva quedará confirmada cuando el negocio verifique la transferencia.`,
     )
-  } else {
+  } else if (!data.confirmed) {
     lines.push(``, `Recibirás una confirmación cuando el pago sea registrado.`)
   }
-  lines.push(...calendarLinksText(data.calendarUrl))
+  lines.push(...calendarLinksText(data.calendar))
   if (data.businessCancellationPolicy) lines.push(``, `Política de cancelación: ${data.businessCancellationPolicy}`)
   if (data.businessWhatsapp) lines.push(``, `WhatsApp: https://wa.me/${data.businessWhatsapp.replace(/\D/g, '')}`)
   lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)
@@ -674,7 +677,7 @@ export function bookingRescheduledCustomerHtml(data: RescheduledEmailData): stri
       ${whereRowsHtml(data)}
     </table>
     <p style="font-size:13px;color:#666;margin-top:16px">Si este nuevo horario no te acomoda, contacta a ${escapeHtml(data.businessName)}.</p>
-    ${calendarLinksHtml(data.calendarUrl)}
+    ${calendarLinksHtml(data.calendar)}
     ${whatsappSection}
     ${footer(data.businessName)}
   `)
@@ -699,7 +702,7 @@ export function bookingRescheduledCustomerText(data: RescheduledEmailData): stri
     ``,
     `Si este nuevo horario no te acomoda, contacta a ${data.businessName}.`,
   )
-  lines.push(...calendarLinksText(data.calendarUrl))
+  lines.push(...calendarLinksText(data.calendar))
   if (data.businessWhatsapp) lines.push(`WhatsApp: https://wa.me/${data.businessWhatsapp.replace(/\D/g, '')}`)
   lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)
 

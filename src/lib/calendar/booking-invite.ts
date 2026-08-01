@@ -1,15 +1,23 @@
 /**
- * El `.ics` de una reserva, cargado desde la base.
+ * El `.ics` de una reserva, armado de punta a punta: el evento, el archivo, el
+ * nombre y la URL que lo sirve. Lo comparten la ruta que baja el archivo y los
+ * mails que lo adjuntan, así que los dos mandan exactamente lo mismo.
  *
- * Es el único lugar donde se decide QUÉ reserva merece un evento de calendario,
- * y por eso lo comparten la ruta que sirve el archivo y los mails que lo
- * adjuntan: si el criterio viviera en cada uno, el mail podría mandar un
- * archivo que la ruta después no sirve.
+ * Viene en dos: `bookingInvite` no toca la base y lo usa quien ya tiene la fila
+ * (crear y confirmar una reserva la acaban de leer), y `loadBookingInvite` la
+ * trae para quien no la tiene o la tiene vieja. Los dos pasan por el mismo
+ * `deservesCalendarEvent`, que es donde vive el criterio.
  */
-import { BookingStatus } from '@prisma/client'
+import type { BookingStatus } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { getBookingCalendarUrl } from '@/lib/business/urls'
-import { buildBookingCalendarEvent, bookingIcsFilename, type BookingCalendarEvent } from './booking-event'
+import {
+  buildBookingCalendarEvent,
+  bookingIcsFilename,
+  deservesCalendarEvent,
+  type BookingCalendarEvent,
+  type BookingEventSource,
+} from './booking-event'
 import { buildIcs } from './ics'
 
 export interface BookingCalendarInvite {
@@ -20,15 +28,26 @@ export interface BookingCalendarInvite {
   url: string
 }
 
-/**
- * Devuelve el evento de una reserva, o null si no corresponde ofrecerlo.
- *
- * **Sólo reservas confirmadas.** Una cita que todavía espera el pago o el visto
- * bueno del negocio puede no existir nunca, y un evento que nadie va a borrar le
- * queda a la clienta en el teléfono para siempre: en el mejor caso se presenta a
- * una hora que se liberó, en el peor lo ve y cree que está todo listo. Cuando la
- * reserva se confirma de verdad sale el mail de confirmación, y ahí sí va.
- */
+/** El evento de una reserva que ya está leída, o null si no corresponde
+ *  ofrecerlo (ver `deservesCalendarEvent`). Sin I/O: lo usa quien acaba de
+ *  crear o confirmar la reserva y la tiene en la mano. */
+export function bookingInvite(
+  booking: BookingEventSource & { status: BookingStatus },
+): BookingCalendarInvite | null {
+  if (!deservesCalendarEvent(booking.status)) return null
+
+  const event = buildBookingCalendarEvent(booking)
+  return {
+    event,
+    filename: bookingIcsFilename(booking),
+    ics: buildIcs(event),
+    url: getBookingCalendarUrl(booking.id),
+  }
+}
+
+/** Lo mismo, trayendo la reserva de la base: para quien no la tiene (la ruta que
+ *  sirve el archivo) o la tiene vieja (después de reprogramar, la fila en
+ *  memoria conserva el horario anterior). */
 export async function loadBookingInvite(bookingId: string): Promise<BookingCalendarInvite | null> {
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
@@ -48,13 +67,5 @@ export async function loadBookingInvite(bookingId: string): Promise<BookingCalen
     },
   })
 
-  if (!booking || booking.status !== BookingStatus.confirmed) return null
-
-  const event = buildBookingCalendarEvent(booking)
-  return {
-    event,
-    filename: bookingIcsFilename(booking),
-    ics: buildIcs(event),
-    url: getBookingCalendarUrl(booking.id),
-  }
+  return booking ? bookingInvite(booking) : null
 }

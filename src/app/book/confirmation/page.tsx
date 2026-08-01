@@ -14,6 +14,7 @@ import { BANK_TRANSFER_METHOD, BT_DECLARED_PREFIX } from '@/lib/bank-transfer/de
 import { TransferPanel } from './transfer-panel'
 import { AccountCta } from '@/components/booking/account-cta'
 import { AddToCalendar } from '@/components/booking/add-to-calendar'
+import { deservesCalendarEvent } from '@/lib/calendar/booking-event'
 import { formatConfirmationDateTime } from './format-datetime'
 import { whereRows } from '@/lib/services/modality'
 import { buildBookingHelpWhatsappUrl } from '@/lib/notifications/whatsapp'
@@ -284,9 +285,10 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
         </div>
 
         {/* El status de la reserva y no `state`: `deriveConfirmationState` trata
-            a una reserva ya cumplida como confirmada, y agendar una cita que ya
-            pasó no le sirve a nadie. */}
-        {booking.status === 'confirmed' && <AddToCalendar bookingId={booking.id} className="mb-8" />}
+            a una reserva ya cumplida como confirmada, y el mismo predicado que
+            usa el servidor deja afuera ese caso. Si acá y allá no dijeran lo
+            mismo, la clienta vería el botón y el endpoint le contestaría 404. */}
+        {deservesCalendarEvent(booking.status) && <AddToCalendar bookingId={booking.id} className="mb-8" />}
 
         {canDeclare && bankInfo && (
           <TransferPanel

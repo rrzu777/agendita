@@ -16,7 +16,7 @@ const MAX_OCTETS = 75
  *  así el archivo no necesita declarar un VTIMEZONE ni depender de que el
  *  cliente de calendario tenga la base de zonas al día. */
 function utcStamp(date: Date): string {
-  return `${date.toISOString().replace(/[-:]/g, '').slice(0, 15)}Z`
+  return date.toISOString().replace(/[-:]|\.\d+/g, '')
 }
 
 /** Escapado de los campos TEXT. El orden importa: la barra primero, o se
@@ -76,7 +76,9 @@ export function buildIcs(event: BookingCalendarEvent): string {
     `DTSTART:${utcStamp(event.start)}`,
     `DTEND:${utcStamp(event.end)}`,
     `SEQUENCE:${event.sequence}`,
-    `STATUS:${event.status}`,
+    // Fijo: sólo se emite el evento de una reserva confirmada. Ver
+    // `deservesCalendarEvent`.
+    'STATUS:CONFIRMED',
     `SUMMARY:${escapeText(event.title)}`,
     `DESCRIPTION:${escapeText(event.description)}`,
     ...(event.location ? [`LOCATION:${escapeText(event.location)}`] : []),

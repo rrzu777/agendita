@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { BookingStatus } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
-import { loadBookingInvite } from '@/lib/calendar/booking-invite'
+import { bookingInvite, loadBookingInvite, type BookingCalendarInvite } from '@/lib/calendar/booking-invite'
 import { getAppUrl } from '@/lib/business/urls'
 import { unsubscribeHeaders, unsubscribeFooterHtml, unsubscribeFooterText } from './marketing-email'
 import type {
@@ -205,36 +205,9 @@ function buildDashboardLink(): string {
   return `${protocol}://${domain}/dashboard/bookings`
 }
 
-/**
- * El evento de calendario de la reserva, si corresponde ofrecerlo.
- *
- * Devuelve los datos ya listos para el template y para el adjunto. Sin
- * `bookingId` (callers viejos) el mail sale igual, sin evento — es información
- * de más, nunca un motivo para no avisar.
- */
-async function calendarFields(data: { bookingId?: string }): Promise<{
-  fields: { calendarUrl?: string; confirmed?: boolean }
-  attachments: { filename: string; content: Buffer }[]
-}> {
-  const vacio = { fields: {}, attachments: [] }
-  if (!data.bookingId) return vacio
-
-  try {
-    const invite = await loadBookingInvite(data.bookingId)
-    if (!invite) return vacio
-
-    return {
-      fields: { calendarUrl: invite.url, confirmed: true },
-      attachments: [{ filename: invite.filename, content: Buffer.from(invite.ics, 'utf8') }],
-    }
-  } catch (e) {
-    // El evento es un extra; el aviso es lo importante. Si la base no contesta,
-    // el mail sale sin calendario en vez de no salir.
-    logger.warn('notification.calendar.failed', 'No se pudo armar el .ics de la reserva', {
-      metadata: { bookingId: data.bookingId, reason: e instanceof Error ? e.message : String(e) },
-    })
-    return vacio
-  }
+/** El `.ics` como adjunto de Resend. Vacío = no hay evento que mandar. */
+function icsAttachments(invite: BookingCalendarInvite | null | undefined): { filename: string; content: Buffer }[] {
+  return invite ? [{ filename: invite.filename, content: Buffer.from(invite.ics, 'utf8') }] : []
 }
 
 export async function sendBookingConfirmationToCustomer(data: BookingEmailData): Promise<EmailResult> {
@@ -242,17 +215,15 @@ export async function sendBookingConfirmationToCustomer(data: BookingEmailData):
     return { success: false, skipped: 'Cliente sin email' }
   }
 
-  const { fields, attachments } = await calendarFields(data)
-  const withCalendar = { ...data, ...fields }
-  const html = bookingConfirmationCustomerHtml(withCalendar)
-  const text = bookingConfirmationCustomerText(withCalendar)
+  const html = bookingConfirmationCustomerHtml(data)
+  const text = bookingConfirmationCustomerText(data)
 
   return sendEmail(
     data.customerEmail,
     `Reserva confirmada - ${data.businessName}`,
     html,
     text,
-    { replyTo: data.businessReplyToEmail, attachments },
+    { replyTo: data.businessReplyToEmail, attachments: icsAttachments(data.calendar) },
   )
 }
 
@@ -261,19 +232,17 @@ export async function sendBookingReceivedToCustomer(data: BookingEmailData): Pro
     return { success: false, skipped: 'Cliente sin email' }
   }
 
-  // Sin abono y sin confirmación manual la reserva nace confirmada, así que este
-  // mail —el único que recibe esa clienta— también lleva el evento.
-  const { fields, attachments } = await calendarFields(data)
-  const withCalendar = { ...data, ...fields }
-  const html = bookingReceivedCustomerHtml(withCalendar)
-  const text = bookingReceivedCustomerText(withCalendar)
+  const html = bookingReceivedCustomerHtml(data)
+  const text = bookingReceivedCustomerText(data)
 
   return sendEmail(
     data.customerEmail,
-    fields.confirmed ? `Reserva confirmada - ${data.businessName}` : `Reserva recibida - ${data.businessName}`,
+    // Sin abono y sin confirmación manual la reserva nace confirmada, y este es
+    // el único mail que recibe esa clienta: tiene que decirle lo que pasó.
+    data.confirmed ? `Reserva confirmada - ${data.businessName}` : `Reserva recibida - ${data.businessName}`,
     html,
     text,
-    { replyTo: data.businessReplyToEmail, attachments },
+    { replyTo: data.businessReplyToEmail, attachments: icsAttachments(data.calendar) },
   )
 }
 
@@ -453,6 +422,10 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
       business: {
         select: {
           name: true,
+          // slug y subdomain son para el link de vuelta que lleva el evento de
+          // calendario; el resto ya se usaba.
+          slug: true,
+          subdomain: true,
           timezone: true,
           whatsapp: true,
           addressText: true,
@@ -482,7 +455,9 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
 
   return sendBookingConfirmationToCustomer({
     businessName: business.name,
-    bookingId: booking.id,
+    // La reserva ya está leída acá arriba: el evento se arma con ella, sin
+    // volver a la base.
+    calendar: bookingInvite(booking),
     bookingNumber: booking.bookingNumber,
     businessReplyToEmail: await getBusinessReplyToEmail(businessId),
     businessWhatsapp: business.whatsapp,
@@ -528,17 +503,15 @@ export async function sendBookingRescheduledNotification(data: RescheduledEmailD
     return { success: false, skipped: 'Cliente sin email' }
   }
 
-  const { fields, attachments } = await calendarFields(data)
-  const withCalendar = { ...data, calendarUrl: fields.calendarUrl }
-  const html = bookingRescheduledCustomerHtml(withCalendar)
-  const text = bookingRescheduledCustomerText(withCalendar)
+  const html = bookingRescheduledCustomerHtml(data)
+  const text = bookingRescheduledCustomerText(data)
 
   return sendEmail(
     data.customerEmail,
     `Reserva reprogramada - ${data.businessName}`,
     html,
     text,
-    { replyTo: data.businessReplyToEmail, attachments },
+    { replyTo: data.businessReplyToEmail, attachments: icsAttachments(data.calendar) },
   )
 }
 

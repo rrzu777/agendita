@@ -93,13 +93,10 @@ interface BookingWizardProps {
 export function BookingWizard({ businessId, slug, business, timezone, currency, services, cancellationPolicy, referralToken, session }: BookingWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const [data, setData] = useState<BookingData>(() => applySessionPrefill(initialData, session))
-  const [bookingId, setBookingId] = useState<string | null>(null)
-  const [bookingNumber, setBookingNumber] = useState<number | null>(null)
-  const [confirmationMode, setConfirmationMode] = useState<'paid' | 'pending'>('paid')
-  const [confirmationPromo, setConfirmationPromo] = useState<{ discountAmount: number; finalAmount: number } | null>(null)
-  // El "dónde" de la reserva ya escrita, para la confirmación. Ver `BookingCreated`.
-  const [confirmationWhere, setConfirmationWhere] = useState<BookingCreated['where']>({})
-  const [confirmationConfirmed, setConfirmationConfirmed] = useState(false)
+  // La reserva ya escrita, tal como la devolvió el servidor: es lo único que
+  // lee el paso de confirmación. Un solo estado y no un campo por dato porque
+  // se escriben todos juntos y se leen todos juntos. Ver `BookingCreated`.
+  const [reserva, setReserva] = useState<BookingCreated | null>(null)
 
   // Restaura el estado guardado antes del viaje a /ingresar (solo con ?continuar=1;
   // el storage se limpia siempre para no restaurar dos veces ni dejar residuo).
@@ -214,13 +211,8 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
           </div>
         )}
         {currentStep === 5 && data.serviceId && data.timeSlot && (
-          <StepPayment data={data} updateData={updateData} businessId={businessId} timezone={timezone} currency={currency} cancellationPolicy={cancellationPolicy} referralToken={referralToken} onSuccess={(reserva) => {
-            setBookingId(reserva.id)
-            setBookingNumber(reserva.bookingNumber)
-            setConfirmationMode(reserva.mode)
-            setConfirmationPromo(reserva.promo)
-            setConfirmationWhere(reserva.where)
-            setConfirmationConfirmed(reserva.confirmed)
+          <StepPayment data={data} updateData={updateData} businessId={businessId} timezone={timezone} currency={currency} cancellationPolicy={cancellationPolicy} referralToken={referralToken} onSuccess={(creada) => {
+            setReserva(creada)
             nextStep()
           }} onBack={prevStep} />
         )}
@@ -231,7 +223,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
           </div>
         )}
         {currentStep === 6 && (
-          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} sessionEmail={session?.email ?? null} business={business} where={confirmationWhere} confirmed={confirmationConfirmed} />
+          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={reserva?.id ?? null} bookingNumber={reserva?.bookingNumber ?? null} mode={reserva?.mode ?? 'paid'} promo={reserva?.promo ?? null} sessionEmail={session?.email ?? null} business={business} where={reserva?.where ?? {}} confirmed={reserva?.confirmed ?? false} />
         )}
       </section>
     </div>

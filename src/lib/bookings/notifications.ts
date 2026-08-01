@@ -16,6 +16,7 @@ import { BookingStatus } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
+import { bookingInvite } from '@/lib/calendar/booking-invite'
 import { type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import type { BookingEmailData } from '@/lib/notifications/types'
 import {
@@ -41,6 +42,11 @@ export async function fireBookingNotifications(
   },
   booking: {
     customer: { name: string; phone: string; email: string | null }
+    // Los tres son para el evento de calendario: cuándo termina la cita y qué
+    // versión del evento es (ver `sequenceOf`).
+    endDateTime: Date
+    createdAt: Date
+    updatedAt: Date
     totalPrice: number
     discountAmount: number
     finalAmount: number
@@ -93,7 +99,10 @@ export async function fireBookingNotifications(
       sendNotificationSafely('customer received', () =>
         sendBookingReceivedToCustomer({
           businessName: business.name,
-          bookingId: booking.id,
+          confirmed: booking.status === BookingStatus.confirmed,
+          // La reserva recién escrita ya está acá: el evento no cuesta una
+          // query, y el gate de `bookingInvite` decide si corresponde.
+          calendar: bookingInvite({ ...booking, service: { name: serviceName }, business }),
           bookingNumber: booking.bookingNumber,
           businessReplyToEmail,
           businessWhatsapp: business.whatsapp,

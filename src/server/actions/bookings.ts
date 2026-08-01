@@ -38,6 +38,7 @@ import { BANK_TRANSFER_METHOD, anyDeclaredTransferWhere } from '@/lib/bank-trans
 import { fireBookingNotifications } from '@/lib/bookings/notifications'
 import { resolveBookingDraft } from '@/lib/bookings/draft'
 import { applyBookingDiscountInTx } from '@/lib/bookings/discount'
+import { loadBookingInvite } from '@/lib/calendar/booking-invite'
 import {
   sendBookingCancelledNotification,
   sendBookingConfirmedNotification,
@@ -1074,7 +1075,9 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
     await sendNotificationSafely('booking rescheduled', async () =>
       sendBookingRescheduledNotification({
         businessName: business.name,
-        bookingId: booking.id,
+        // Releído: la fila en memoria conserva el horario anterior. Ver el
+        // gemelo en `my-bookings.ts`.
+        calendar: await loadBookingInvite(booking.id),
         bookingNumber: booking.bookingNumber,
         businessReplyToEmail: await getBusinessReplyToEmail(businessId),
         businessWhatsapp: business.whatsapp,
