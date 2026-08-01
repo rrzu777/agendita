@@ -4,8 +4,18 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { deleteTimeBlock } from '@/server/actions/time-blocks'
 import { Ban, Trash2 } from 'lucide-react'
+import { BlockOwnerTag } from './block-owner-tag'
 
-export function TimeBlockList({ blocks: initialBlocks }: { blocks: { id: string; startDateTime: Date | string; endDateTime: Date | string; reason: string | null }[] }) {
+export interface TimeBlockListItem {
+  id: string
+  startDateTime: Date | string
+  endDateTime: Date | string
+  reason: string | null
+  /** De quién es, ya resuelto a texto por la página; `null` = no hay nada que aclarar. */
+  ownerLabel: string | null
+}
+
+export function TimeBlockList({ blocks: initialBlocks }: { blocks: TimeBlockListItem[] }) {
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set())
   const blocks = initialBlocks.filter((block) => !deletedIds.has(block.id))
 
@@ -41,6 +51,7 @@ export function TimeBlockList({ blocks: initialBlocks }: { blocks: { id: string;
               {new Date(block.startDateTime).toLocaleDateString('es-CL')} {new Date(block.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} - {new Date(block.endDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
             </div>
             {block.reason && <div className="text-sm text-muted-foreground">{block.reason}</div>}
+            <div className="mt-1"><BlockOwnerTag label={block.ownerLabel} /></div>
             </div>
           </div>
           <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(block.id)} aria-label="Eliminar bloqueo">

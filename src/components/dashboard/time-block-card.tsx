@@ -4,6 +4,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
 import { Lock } from 'lucide-react'
 import { DeleteBlockButton } from './block-time-modal'
+import { BlockOwnerTag } from './block-owner-tag'
 
 export type CalendarTimeBlock = {
   id: string
@@ -12,6 +13,12 @@ export type CalendarTimeBlock = {
   reason?: string | null
   seriesId?: string
   occurrenceDate?: string
+  /**
+   * Nombre del dueño, o `null`/ausente si el bloqueo es del negocio. El calendario
+   * muestra los de TODO el equipo mezclados, así que sin esto un rato bloqueado se lee
+   * como "el local está cerrado" cuando en realidad hay tres personas atendiendo.
+   */
+  professionalName?: string | null
 }
 
 interface TimeBlockCardProps {
@@ -32,6 +39,7 @@ export function TimeBlockCard({ timeBlock, timezone }: TimeBlockCardProps) {
         {timeBlock.reason && (
           <div className="text-xs text-muted-foreground">{timeBlock.reason}</div>
         )}
+        <BlockOwnerTag label={timeBlock.professionalName ?? null} />
       </div>
       <DeleteBlockButton blockId={timeBlock.id} />
     </div>

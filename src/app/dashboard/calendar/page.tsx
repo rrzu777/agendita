@@ -3,6 +3,7 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { CalendarViews, type CalendarView } from '@/components/dashboard/calendar-views'
 import { getBookingsByRange } from '@/server/actions/bookings'
 import { getTimeBlocksByRange } from '@/server/actions/time-blocks'
+import { getProfessionals } from '@/server/actions/professionals'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { isObjectStorageAvailable } from '@/lib/storage/r2'
 import {
@@ -85,10 +86,16 @@ export default async function CalendarPage({
 
   const { start, end } = rangeForView(view, focusLocalDate, timezone)
 
-  const [bookings, timeBlocks] = await Promise.all([
+  const [bookings, timeBlocks, professionals] = await Promise.all([
     getBookingsByRange(start, end),
     getTimeBlocksByRange(start, end),
+    // Con las pausadas incluidas: los bloqueos de alguien que dejó de atender siguen
+    // dibujados en el calendario, y son justo los que la dueña no puede explicarse si
+    // aparecen sin nombre. Para el selector de dueño se filtran los activos, que son
+    // los únicos a los que el servidor acepta colgarle un bloqueo nuevo.
+    getProfessionals(true),
   ])
+  const nombrePorId = new Map(professionals.map((p) => [p.id, p.name]))
 
   return (
     <div>
@@ -106,6 +113,7 @@ export default async function CalendarPage({
             reason: tb.reason ?? null,
             seriesId: tb.seriesId,
             occurrenceDate: tb.occurrenceDate ? tb.occurrenceDate.toISOString() : undefined,
+            professionalName: tb.professionalId ? nombrePorId.get(tb.professionalId) ?? null : null,
           }))}
           view={view}
           date={dateStr}
@@ -114,6 +122,7 @@ export default async function CalendarPage({
           businessCurrency={business.currency}
           businessAddress={business.addressText}
           photoUploadEnabled={isObjectStorageAvailable()}
+          professionals={professionals.filter((p) => p.isActive).map((p) => ({ id: p.id, name: p.name }))}
         />
       </div>
     </div>
