@@ -46,6 +46,24 @@ export function getBookingConfirmationUrl(business: BusinessUrlInput, bookingId:
   return `${getBusinessPublicUrl(business)}/book/confirmation?bookingId=${bookingId}`
 }
 
+/**
+ * Path del `.ics` de una reserva. Relativo a propósito: el endpoint no es del
+ * negocio sino de la app, así que sirve igual desde el apex que desde el
+ * subdominio del tenant, y así el link de la pantalla no depende de en cuál de
+ * los dos está parada la clienta.
+ *
+ * `?app=google` sobre el mismo path redirige a Google Calendar en vez de bajar
+ * el archivo.
+ */
+export function getBookingCalendarPath(bookingId: string): string {
+  return `/api/bookings/${bookingId}/calendar`
+}
+
+/** La misma URL, absoluta: la que va adentro del mail. */
+export function getBookingCalendarUrl(bookingId: string): string {
+  return getAppUrl(getBookingCalendarPath(bookingId))
+}
+
 /** URL de la página de confirmación de una compra de paquete
  *  (`/paquetes/confirmation?purchaseId=`), colgando de la URL pública del negocio. */
 export function getPackageConfirmationUrl(business: BusinessUrlInput, purchaseId: string): string {

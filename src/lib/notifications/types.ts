@@ -40,6 +40,16 @@ export interface BookingEmailData {
    *  Cambia el copy: sin esto el email decía "está pendiente de pago" sobre una
    *  reserva que no tiene nada que pagar. */
   awaitingApproval?: boolean
+  /** Id de la reserva. Con esto el sender carga el `.ics` para adjuntarlo; sin
+   *  esto el mail sale igual, pero sin evento de calendario. */
+  bookingId?: string
+  /** La reserva ya está confirmada. Mismo problema que `awaitingApproval` y por
+   *  el otro lado: el mail de "reserva recibida" decía "está pendiente de pago"
+   *  sobre una reserva sin abono, que nace confirmada y ya está en la agenda. */
+  confirmed?: boolean
+  /** URL que sirve el `.ics` de la reserva. Sólo viene cuando hay algo que
+   *  agendar — ver el gate de `loadBookingInvite`. */
+  calendarUrl?: string
   /** Presente cuando la reserva eligió transferencia bancaria: el email de
    *  "reserva recibida" incluye los datos, el plazo y el link para declarar. */
   bankTransfer?: {
@@ -100,6 +110,11 @@ export interface CancellationEmailData {
 
 export interface RescheduledEmailData {
   businessName: string
+  /** Ver `BookingEmailData.bookingId`: el `.ics` del nuevo horario viaja con el
+   *  mismo UID que el anterior, así que en el calendario pisa al viejo en vez de
+   *  dejar la cita duplicada en dos horarios. */
+  bookingId?: string
+  calendarUrl?: string
   bookingNumber?: number | null
   businessReplyToEmail?: string | null
   businessWhatsapp?: string | null

@@ -167,6 +167,7 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
     await sendNotificationSafely('self-service reschedule (customer)', async () =>
       sendBookingRescheduledNotification({
         businessName: booking.business.name,
+        bookingId: booking.id,
         bookingNumber: booking.bookingNumber,
         businessReplyToEmail: await getBusinessReplyToEmail(booking.business.id),
         businessWhatsapp: booking.business.whatsapp,

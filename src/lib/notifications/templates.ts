@@ -93,6 +93,24 @@ function loyaltyLinkHtml(link: string | undefined): string {
     : ''
 }
 
+/**
+ * "Agregar al calendario", en el cuerpo del mail.
+ *
+ * El `.ics` va adjunto —es lo que funciona en el teléfono— pero en un webmail el
+ * adjunto queda abajo de todo y hay que bajarlo a mano. Este link abre el mismo
+ * archivo de un clic, y con `?app=google` manda directo a Google Calendar.
+ */
+function calendarLinksHtml(url: string | undefined): string {
+  return url
+    ? `<p style="margin-top:16px"><a href="${escapeHtml(url)}" style="color:#e91e63;text-decoration:none;font-weight:600">Agregar al calendario</a>
+        <span style="color:#666;font-size:13px"> · <a href="${escapeHtml(`${url}?app=google`)}" style="color:#666">Google Calendar</a></span></p>`
+    : ''
+}
+
+function calendarLinksText(url: string | undefined): string[] {
+  return url ? [``, `Agregar al calendario: ${url}`, `Google Calendar: ${url}?app=google`] : []
+}
+
 export function bankTransferBlockHtml(
   bt: NonNullable<BookingEmailData['bankTransfer']>, depositLabel: string, timezone: string, kind: string = 'abono',
 ): string {
@@ -216,6 +234,7 @@ export function bookingConfirmationCustomerHtml(data: BookingEmailData): string 
       <tr><td style="padding:8px 0;color:#666">Abono pagado</td><td style="padding:8px 0;font-weight:600">${deposit}</td></tr>
       ${remaining !== deposit ? `<tr><td style="padding:8px 0;color:#666">Saldo pendiente</td><td style="padding:8px 0;font-weight:600">${remaining}</td></tr>` : ''}
     </table>
+    ${calendarLinksHtml(data.calendarUrl)}
     ${policySection}${reviewSection}${loyaltySection}${whatsappSection}
     ${footer(data.businessName)}
   `)
@@ -242,6 +261,7 @@ export function bookingConfirmationCustomerText(data: BookingEmailData): string 
     `Abono pagado: ${deposit}`,
   )
   if (remaining !== deposit) lines.push(`Saldo pendiente: ${remaining}`)
+  lines.push(...calendarLinksText(data.calendarUrl))
   if (data.businessCancellationPolicy) lines.push(``, `Política de cancelación: ${data.businessCancellationPolicy}`)
   if (data.reviewLink) lines.push(``, `Dejar una reseña: ${data.reviewLink}`)
   if (data.loyaltyCardLink) lines.push(``, `Tu tarjeta de puntos: ${data.loyaltyCardLink}`)
@@ -275,10 +295,12 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
     : ''
 
   return baseHtml(`
-    ${header(data.awaitingApproval ? 'Solicitud enviada' : 'Reserva recibida')}
+    ${header(data.awaitingApproval ? 'Solicitud enviada' : data.confirmed ? '¡Reserva confirmada!' : 'Reserva recibida')}
     <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, ${data.awaitingApproval
       ? `le mandamos tu solicitud a ${escapeHtml(data.businessName)}. Te avisamos apenas la confirme.`
-      : 'recibimos tu reserva. Está pendiente de pago para quedar confirmada.'}</p>
+      : data.confirmed
+        ? 'tu reserva quedó confirmada y lista en la agenda.'
+        : 'recibimos tu reserva. Está pendiente de pago para quedar confirmada.'}</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
       ${bookingNumberRowHtml(data.bookingNumber)}
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
@@ -286,12 +308,13 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
       ${whereRowsHtml(data)}
       <tr><td style="padding:8px 0;color:#666">Precio total</td><td style="padding:8px 0;font-weight:600">${total}</td></tr>
       ${discountSection}
-      ${data.awaitingApproval ? '' : `<tr><td style="padding:8px 0;color:#666">Abono requerido</td><td style="padding:8px 0;font-weight:600">${deposit}</td></tr>`}
+      ${data.awaitingApproval || data.confirmed ? '' : `<tr><td style="padding:8px 0;color:#666">Abono requerido</td><td style="padding:8px 0;font-weight:600">${deposit}</td></tr>`}
     </table>
     ${bankSection}
-    <p style="font-size:13px;color:#666;margin-top:16px">${data.awaitingApproval
+    ${data.confirmed ? '' : `<p style="font-size:13px;color:#666;margin-top:16px">${data.awaitingApproval
       ? 'Si no responden dentro de 24 horas, la solicitud se cancela sola y el horario queda libre.'
-      : data.bankTransfer ? 'Tu reserva quedará confirmada cuando el negocio verifique la transferencia.' : 'Recibirás una confirmación cuando el pago sea registrado.'}</p>
+      : data.bankTransfer ? 'Tu reserva quedará confirmada cuando el negocio verifique la transferencia.' : 'Recibirás una confirmación cuando el pago sea registrado.'}</p>`}
+    ${calendarLinksHtml(data.calendarUrl)}
     ${policySection}${whatsappSection}
     ${footer(data.businessName)}
   `)
@@ -303,11 +326,13 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
   const deposit = fmtCurrency(data.depositRequired, data.businessCurrency)
 
   const lines = [
-    data.awaitingApproval ? `Solicitud enviada` : `Reserva recibida`,
+    data.awaitingApproval ? `Solicitud enviada` : data.confirmed ? `¡Reserva confirmada!` : `Reserva recibida`,
     ``,
     data.awaitingApproval
       ? `Hola ${data.customerName}, le mandamos tu solicitud a ${data.businessName}. Te avisamos apenas la confirme.`
-      : `Hola ${data.customerName}, recibimos tu reserva. Está pendiente de pago para quedar confirmada.`,
+      : data.confirmed
+        ? `Hola ${data.customerName}, tu reserva quedó confirmada y lista en la agenda.`
+        : `Hola ${data.customerName}, recibimos tu reserva. Está pendiente de pago para quedar confirmada.`,
     ``,
     ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
     `Servicio: ${data.serviceName}`,
@@ -321,8 +346,10 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
       `Total con descuento: ${fmtCurrency(data.finalAmount ?? (data.totalPrice - data.discountAmount!), data.businessCurrency)}`,
     )
   }
-  if (!data.awaitingApproval) lines.push(`Abono requerido: ${deposit}`)
-  if (data.awaitingApproval) {
+  if (!data.awaitingApproval && !data.confirmed) lines.push(`Abono requerido: ${deposit}`)
+  if (data.confirmed) {
+    // Nada que agregar: no hay abono que pagar ni confirmación que esperar.
+  } else if (data.awaitingApproval) {
     lines.push(``, `Si no responden dentro de 24 horas, la solicitud se cancela sola y el horario queda libre.`)
   } else if (data.bankTransfer) {
     lines.push(
@@ -333,6 +360,7 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
   } else {
     lines.push(``, `Recibirás una confirmación cuando el pago sea registrado.`)
   }
+  lines.push(...calendarLinksText(data.calendarUrl))
   if (data.businessCancellationPolicy) lines.push(``, `Política de cancelación: ${data.businessCancellationPolicy}`)
   if (data.businessWhatsapp) lines.push(``, `WhatsApp: https://wa.me/${data.businessWhatsapp.replace(/\D/g, '')}`)
   lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)
@@ -646,6 +674,7 @@ export function bookingRescheduledCustomerHtml(data: RescheduledEmailData): stri
       ${whereRowsHtml(data)}
     </table>
     <p style="font-size:13px;color:#666;margin-top:16px">Si este nuevo horario no te acomoda, contacta a ${escapeHtml(data.businessName)}.</p>
+    ${calendarLinksHtml(data.calendarUrl)}
     ${whatsappSection}
     ${footer(data.businessName)}
   `)
@@ -670,6 +699,7 @@ export function bookingRescheduledCustomerText(data: RescheduledEmailData): stri
     ``,
     `Si este nuevo horario no te acomoda, contacta a ${data.businessName}.`,
   )
+  lines.push(...calendarLinksText(data.calendarUrl))
   if (data.businessWhatsapp) lines.push(`WhatsApp: https://wa.me/${data.businessWhatsapp.replace(/\D/g, '')}`)
   lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)
 

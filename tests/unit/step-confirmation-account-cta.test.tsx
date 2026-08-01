@@ -11,7 +11,7 @@ const base: BookingData = {
   customerName: 'Maria', customerPhone: '+56911111111', customerEmail: 'maria@example.com',
   customerNotes: '', idempotencyKey: null,
 }
-const props = { timezone: 'America/Santiago', currency: 'CLP', bookingId: 'b1', bookingNumber: 4738, mode: 'paid' as const }
+const props = { timezone: 'America/Santiago', currency: 'CLP', bookingId: 'b1', bookingNumber: 4738, mode: 'paid' as const, confirmed: true }
 
 const business = { name: 'Negocio', addressText: null, whatsapp: null }
 

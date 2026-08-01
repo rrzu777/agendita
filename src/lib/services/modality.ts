@@ -113,8 +113,11 @@ function mapsHref(address: string): string {
  * termina como href en pantallas públicas: `javascript:...` ahí es un XSS que
  * corre en el navegador de la clienta. El alta ya lo valida (business/schema.ts);
  * esto es el segundo cerrojo, porque las filas viejas se guardaron sin él.
+ *
+ * Exportada: el evento de calendario es otra superficie donde el link sale como
+ * link (`src/lib/calendar/booking-event.ts`), y el criterio tiene que ser uno.
  */
-function linkNavegable(url: string): string | null {
+export function linkNavegable(url: string): string | null {
   return /^https?:\/\//i.test(url) ? url : null
 }
 

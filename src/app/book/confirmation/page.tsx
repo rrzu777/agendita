@@ -13,6 +13,7 @@ import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD, BT_DECLARED_PREFIX } from '@/lib/bank-transfer/declared'
 import { TransferPanel } from './transfer-panel'
 import { AccountCta } from '@/components/booking/account-cta'
+import { AddToCalendar } from '@/components/booking/add-to-calendar'
 import { formatConfirmationDateTime } from './format-datetime'
 import { whereRows } from '@/lib/services/modality'
 import { buildBookingHelpWhatsappUrl } from '@/lib/notifications/whatsapp'
@@ -281,6 +282,11 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
             </div>
           </div>
         </div>
+
+        {/* El status de la reserva y no `state`: `deriveConfirmationState` trata
+            a una reserva ya cumplida como confirmada, y agendar una cita que ya
+            pasó no le sirve a nadie. */}
+        {booking.status === 'confirmed' && <AddToCalendar bookingId={booking.id} className="mb-8" />}
 
         {canDeclare && bankInfo && (
           <TransferPanel

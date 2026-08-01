@@ -29,6 +29,19 @@ vi.mock('@/lib/db', () => {
     prisma: {
       booking: {
         findFirst: vi.fn().mockResolvedValue(mockBooking),
+        // El .ics que se adjunta a la confirmación se lee aparte (loadBookingInvite),
+        // con los campos que el evento necesita y el mail no usa.
+        findUnique: vi.fn().mockResolvedValue({
+          ...mockBooking,
+          bookingNumber: 4738,
+          endDateTime: new Date('2026-06-15T19:00:00Z'),
+          createdAt: new Date('2026-06-01T12:00:00Z'),
+          updatedAt: new Date('2026-06-01T12:00:00Z'),
+          modality: 'on_site',
+          serviceAddress: null,
+          meetingUrl: null,
+          business: { ...mockBooking.business, slug: 'nails-by-ana', subdomain: null },
+        }),
       },
       businessUser: {
         findMany: vi.fn().mockResolvedValue([
@@ -165,6 +178,31 @@ describe('sendBookingConfirmedNotification', () => {
     expect(call.html).toContain('Manicure semipermanente')
     expect(call.text).toContain('Maria')
     expect(call.text).toContain('Manicure semipermanente')
+  })
+
+  // Lo que hace que la cita exista en el teléfono sin que la clienta haga nada.
+  it('adjunta el .ics de la reserva y ofrece el link en el cuerpo', async () => {
+    mockResendSend.mockResolvedValue({ data: { id: 'msg_789' }, error: null })
+
+    await sendBookingConfirmedNotification('booking-1', 'biz-1')
+
+    const call = mockResendSend.mock.calls[0][0]
+    expect(call.attachments).toHaveLength(1)
+    expect(call.attachments[0].filename).toBe('reserva-4738.ics')
+    expect(call.attachments[0].content.toString('utf8')).toContain('SUMMARY:Manicure semipermanente en Nails by Ana')
+    expect(call.html).toContain('/api/bookings/booking-1/calendar')
+  })
+
+  // El evento es un extra: si la base no contesta, el aviso sale igual.
+  it('si el .ics falla el mail sale sin calendario', async () => {
+    const { prisma } = await import('@/lib/db')
+    ;(prisma.booking.findUnique as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('DB caída'))
+    mockResendSend.mockResolvedValue({ data: { id: 'msg_790' }, error: null })
+
+    const result = await sendBookingConfirmedNotification('booking-1', 'biz-1')
+
+    expect(result.success).toBe(true)
+    expect(mockResendSend.mock.calls[0][0].attachments).toBeUndefined()
   })
 
   it('returns graceful result when booking is not found', async () => {

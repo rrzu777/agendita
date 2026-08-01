@@ -99,6 +99,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
   const [confirmationPromo, setConfirmationPromo] = useState<{ discountAmount: number; finalAmount: number } | null>(null)
   // El "dónde" de la reserva ya escrita, para la confirmación. Ver `BookingCreated`.
   const [confirmationWhere, setConfirmationWhere] = useState<BookingCreated['where']>({})
+  const [confirmationConfirmed, setConfirmationConfirmed] = useState(false)
 
   // Restaura el estado guardado antes del viaje a /ingresar (solo con ?continuar=1;
   // el storage se limpia siempre para no restaurar dos veces ni dejar residuo).
@@ -219,6 +220,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
             setConfirmationMode(reserva.mode)
             setConfirmationPromo(reserva.promo)
             setConfirmationWhere(reserva.where)
+            setConfirmationConfirmed(reserva.confirmed)
             nextStep()
           }} onBack={prevStep} />
         )}
@@ -229,7 +231,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
           </div>
         )}
         {currentStep === 6 && (
-          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} sessionEmail={session?.email ?? null} business={business} where={confirmationWhere} />
+          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={bookingId} bookingNumber={bookingNumber} mode={confirmationMode} promo={confirmationPromo} sessionEmail={session?.email ?? null} business={business} where={confirmationWhere} confirmed={confirmationConfirmed} />
         )}
       </section>
     </div>

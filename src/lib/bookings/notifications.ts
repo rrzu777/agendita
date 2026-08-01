@@ -93,6 +93,7 @@ export async function fireBookingNotifications(
       sendNotificationSafely('customer received', () =>
         sendBookingReceivedToCustomer({
           businessName: business.name,
+          bookingId: booking.id,
           bookingNumber: booking.bookingNumber,
           businessReplyToEmail,
           businessWhatsapp: business.whatsapp,
