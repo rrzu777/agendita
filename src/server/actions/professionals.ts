@@ -26,6 +26,28 @@ export async function getProfessionals(includeInactive = false) {
 }
 
 /**
+ * Quiénes hay, en la versión mínima: id, nombre y si atienden.
+ *
+ * Existe aparte de `getProfessionals` por el calendario, que se carga en cada
+ * navegación del panel y sólo necesita ponerle nombre al dueño de cada bloqueo y
+ * llenar el selector del diálogo. `getProfessionals` trae la fila entera más el join
+ * de servicios, que ahí no se mira nunca.
+ *
+ * **Trae también a la gente en pausa, a propósito**: sus bloqueos siguen dibujados en
+ * el calendario, y son justo los que la dueña no puede explicarse si aparecen sin
+ * nombre. Quien arma un selector filtra por `isActive` — el servidor sólo acepta
+ * colgarle un bloqueo nuevo a alguien que atiende.
+ */
+export async function getProfessionalNames() {
+  const { businessId } = await requireBusiness()
+  return prisma.professional.findMany({
+    where: { businessId },
+    select: { id: true, name: true, isActive: true },
+    orderBy: { sortOrder: 'asc' },
+  })
+}
+
+/**
  * Los servicios que se le pueden asignar a alguien: sólo los de este negocio.
  *
  * Devuelve las modalidades porque el formulario las necesita para pre-marcar con

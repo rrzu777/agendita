@@ -56,6 +56,8 @@ interface CalendarViewsProps {
   /** false si R2 no está configurado: el drawer muestra las fotos que haya pero
    *  no ofrece subir más. Se calcula en el servidor (lee env). */
   photoUploadEnabled: boolean
+  /** Quiénes atienden, para poder bloquearle el rato a una sola persona desde acá. */
+  professionals: { id: string; name: string }[]
 }
 
 const HOUR_HEIGHT = 56 // px por hora
@@ -82,6 +84,7 @@ export function CalendarViews({
   businessCurrency,
   businessAddress,
   photoUploadEnabled,
+  professionals,
 }: CalendarViewsProps) {
   const focus = parseISO(`${date}T12:00:00`)
   const [activeBooking, setActiveBooking] = useState<TimelineBooking | null>(null)
@@ -129,7 +132,11 @@ export function CalendarViews({
 
         <div className="flex flex-wrap items-center gap-2">
           <ViewSwitch view={view} date={date} />
-          {view !== 'month' && <BlockTimeModal defaultDate={date} timezone={timezone} />}
+          {view !== 'month' && (
+            // Sin `defaultProfessionalId`: el calendario muestra a todo el equipo junto,
+            // así que no hay una persona "que se esté mirando" de la cual heredar.
+            <BlockTimeModal defaultDate={date} timezone={timezone} professionals={professionals} />
+          )}
         </div>
       </div>
 
@@ -488,7 +495,14 @@ function BookingBlock({
 
 function BlockBand({ p, onClick }: { p: PositionedItem<CalendarTimeBlock>; onClick: () => void }) {
   const reason = p.item.reason || 'Bloqueado'
-  const ariaLabel = p.item.reason ? `Bloqueo: ${p.item.reason}` : 'Bloqueo de horario'
+  // El dueño va ADELANTE del motivo porque la banda es angosta y trunca por la derecha:
+  // "Ana · Almuer…" sigue diciendo lo importante, "Almuerzo · A…" no. Sin nombre el
+  // bloqueo es del negocio y cierra para todos, que es como se leía siempre.
+  // "de Ana" en las dos formas del aria-label: con motivo ("Bloqueo de Ana: Almuerzo") y
+  // sin motivo ("Bloqueo de horario de Ana"). Sin dueño queda igual que siempre.
+  const deQuien = p.item.professionalName ? ` de ${p.item.professionalName}` : ''
+  const texto = p.item.professionalName ? `${p.item.professionalName} · ${reason}` : reason
+  const ariaLabel = p.item.reason ? `Bloqueo${deQuien}: ${p.item.reason}` : `Bloqueo de horario${deQuien}`
   return (
     <button
       type="button"
@@ -500,7 +514,7 @@ function BlockBand({ p, onClick }: { p: PositionedItem<CalendarTimeBlock>; onCli
         height: Math.max((p.heightMin / 60) * HOUR_HEIGHT - 2, 16),
       }}
     >
-      {reason}
+      {texto}
     </button>
   )
 }

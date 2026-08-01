@@ -68,6 +68,8 @@ const {
   createTimeBlockSeries,
   updateTimeBlockSeries,
   overrideSeriesOccurrence,
+  getTimeBlocks,
+  getTimeBlockSeries,
 } = await import('@/server/actions/time-blocks')
 
 const TZ = 'America/Santiago'
@@ -868,5 +870,62 @@ describe('crear un bloqueo a nombre de una persona', () => {
     expect(mockPrisma.timeBlock.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ professionalId: null }) }),
     )
+  })
+})
+
+/**
+ * La lista de la pantalla tiene que mostrar exactamente los bloqueos que le tapan la
+ * agenda al alcance elegido — ni más ni menos. De más, la dueña ve las vacaciones de
+ * Ana arriba del horario del negocio y cree que el local cierra; de menos, le bloquea a
+ * Ana un rato que ya estaba cerrado por un feriado y no entiende por qué "no pasa nada".
+ */
+describe('de quién son los bloqueos que se listan', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPrisma.professional.findFirst.mockResolvedValue({ id: 'juan' })
+    mockPrisma.timeBlock.findMany.mockResolvedValue([])
+    mockPrisma.timeBlockSeries.findMany.mockResolvedValue([])
+  })
+
+  it('sin persona lista sólo los del negocio', async () => {
+    await getTimeBlocks()
+
+    const where = mockPrisma.timeBlock.findMany.mock.calls[0][0].where
+    expect(where.AND).toEqual({ professionalId: null })
+  })
+
+  it('con una persona lista los suyos MÁS los del negocio', async () => {
+    await getTimeBlocks('juan')
+
+    const where = mockPrisma.timeBlock.findMany.mock.calls[0][0].where
+    expect(where.AND).toEqual({ OR: [{ professionalId: null }, { professionalId: 'juan' }] })
+  })
+
+  it('trae el nombre del dueño en el mismo viaje', async () => {
+    await getTimeBlocks('juan')
+
+    const args = mockPrisma.timeBlock.findMany.mock.calls[0][0]
+    expect(args.include).toEqual({ professional: { select: { name: true } } })
+  })
+
+  /**
+   * El alcance va adentro del `AND` justamente por esto: la query de series ya tiene su
+   * propio `OR` —el de `until`— y un segundo `OR` al mismo nivel lo pisa en silencio.
+   * Las series terminadas volverían a la lista sin un solo error.
+   */
+  it('el alcance de las series no se come el filtro de fecha de fin', async () => {
+    await getTimeBlockSeries('juan')
+
+    const where = mockPrisma.timeBlockSeries.findMany.mock.calls[0][0].where
+    expect(where.AND).toEqual({ OR: [{ professionalId: null }, { professionalId: 'juan' }] })
+    expect(where.OR).toHaveLength(2)
+    expect(where.OR[0]).toEqual({ until: null })
+  })
+
+  it('rechaza pedir los bloqueos de alguien que no es de este negocio', async () => {
+    mockPrisma.professional.findFirst.mockResolvedValue(null)
+
+    await expect(getTimeBlocks('de-otro-salon')).rejects.toThrow(ForbiddenError)
+    expect(mockPrisma.timeBlock.findMany).not.toHaveBeenCalled()
   })
 })

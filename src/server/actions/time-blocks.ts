@@ -11,7 +11,7 @@ import { action, UserError } from '@/lib/actions/result'
 import { differenceInMilliseconds, addDays } from 'date-fns'
 import { getEffectiveBlocks, type EffectiveBlock } from '@/lib/availability/effective-blocks'
 import { computeServiceFit, SERVICE_FIT_WINDOW_DAYS } from '@/lib/availability/service-fit'
-import { blockScopeFor, bookingScopeCondition, resolveAvailabilityRules } from '@/lib/availability/scope'
+import { blockScopeCondition, blockScopeFor, bookingScopeCondition, resolveAvailabilityRules } from '@/lib/availability/scope'
 import { assertOwnerScope } from '@/lib/professionals/ownership'
 import { getLocalDateStr, startOfLocalDay } from '@/lib/availability/timezone'
 import { computeSeriesUntil, expandSeries, type SeriesEndMode } from '@/lib/calendar/expand-series'
@@ -212,10 +212,28 @@ function revalidateTimeBlocks(businessId: string) {
   return revalidateBusinessPublicPaths(businessId)
 }
 
-export async function getTimeBlocks() {
+/**
+ * Los bloqueos que le tapan la agenda a esta persona (o al negocio), para la lista de
+ * la pantalla de disponibilidad.
+ *
+ * El alcance es el MISMO que usa el cálculo de slots (`blockScopeFor`), y eso es lo
+ * que hace que la lista sea una explicación de la agenda y no una tabla aparte: con
+ * una persona elegida se ven los suyos **más** los del negocio, que son justamente los
+ * dos que la dejan sin atender. Con el negocio elegido se ven sólo los del negocio —
+ * las vacaciones de una persona no cierran el local, así que listarlas ahí diría que
+ * cierran.
+ *
+ * Trae el nombre del dueño en el mismo viaje, y no lo cruza contra la lista de gente
+ * activa que ya tiene la página, porque los bloqueos de alguien **en pausa** siguen
+ * existiendo: cruzando contra los activos quedarían sin nombre justo los que la dueña
+ * no puede explicarse.
+ */
+export async function getTimeBlocks(professionalId: string | null = null) {
   const { businessId } = await requireBusiness()
+  const owner = await assertOwnerScope(prisma, businessId, professionalId)
   return prisma.timeBlock.findMany({
-    where: { businessId },
+    where: { businessId, AND: blockScopeCondition(blockScopeFor(owner)) },
+    include: { professional: { select: { name: true } } },
     orderBy: { startDateTime: 'asc' },
   })
 }
@@ -661,10 +679,21 @@ async function _deleteTimeBlockSeries(seriesId: string) {
 
 export const deleteTimeBlockSeries = action(_deleteTimeBlockSeries)
 
-export async function getTimeBlockSeries() {
+/** Las series vigentes con el mismo alcance y el mismo porqué que `getTimeBlocks`. */
+export async function getTimeBlockSeries(professionalId: string | null = null) {
   const { businessId } = await requireBusiness()
+  const owner = await assertOwnerScope(prisma, businessId, professionalId)
   return prisma.timeBlockSeries.findMany({
-    where: { businessId, isActive: true, OR: [{ until: null }, { until: { gte: new Date() } }] },
+    where: {
+      businessId,
+      isActive: true,
+      // El alcance va adentro del `AND` y no suelto: esta query ya tiene su propio `OR`
+      // —el de `until`— y un segundo `OR` en el mismo nivel lo pisa en silencio, con lo
+      // que las series terminadas volverían a aparecer.
+      AND: blockScopeCondition(blockScopeFor(owner)),
+      OR: [{ until: null }, { until: { gte: new Date() } }],
+    },
+    include: { professional: { select: { name: true } } },
     orderBy: { createdAt: 'desc' },
   })
 }

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Repeat, Trash2 } from 'lucide-react'
 import { deleteTimeBlockSeries } from '@/server/actions/time-blocks'
+import { BlockOwnerTag } from './block-owner-tag'
 
 const DAY_LABELS: Record<number, string> = { 0: 'Dom', 1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie', 6: 'Sáb' }
 
@@ -15,6 +16,8 @@ export interface RecurringSeriesItem {
   endTime: string
   reason?: string | null
   until: string | null
+  /** De quién es, ya resuelto a texto por la página; `null` = no hay nada que aclarar. */
+  ownerLabel: string | null
 }
 
 function DeleteSeriesButton({ seriesId }: { seriesId: string }) {
@@ -49,6 +52,7 @@ export function RecurringBlockList({ series }: { series: RecurringSeriesItem[] }
               <div className="text-xs text-muted-foreground">
                 {s.reason ? `${s.reason} · ` : ''}{s.until ? 'hasta fecha límite' : 'indefinido'}
               </div>
+              <BlockOwnerTag label={s.ownerLabel} />
             </div>
             <DeleteSeriesButton seriesId={s.id} />
           </div>

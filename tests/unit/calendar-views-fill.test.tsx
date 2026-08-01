@@ -21,6 +21,7 @@ const baseProps = {
   businessCurrency: 'CLP',
   businessAddress: null,
   photoUploadEnabled: false,
+  professionals: [],
 }
 
 const booking = {
@@ -93,6 +94,30 @@ describe('CalendarViews — bloqueo interactivo (día)', () => {
     )
     expect(html).toContain('<button')
     expect(html).toContain('aria-label="Bloqueo: Almuerzo"')
+  })
+
+  /**
+   * El calendario muestra los bloqueos de TODO el equipo mezclados. Sin el nombre, el
+   * almuerzo de una sola persona se lee igual que un feriado del negocio: la dueña ve
+   * el local cerrado a la hora en que tiene otras tres personas atendiendo.
+   */
+  it('el bloqueo de una persona lleva su nombre, el del negocio no', () => {
+    const deAna = renderToStaticMarkup(
+      <CalendarViews
+        {...baseProps}
+        view="day"
+        date="2026-06-30"
+        bookings={[]}
+        timeBlocks={[{ ...timeBlock, professionalName: 'Ana' }]}
+      />,
+    )
+    expect(deAna).toContain('aria-label="Bloqueo de Ana: Almuerzo"')
+    expect(deAna).toContain('Ana · Almuerzo')
+
+    const delNegocio = renderToStaticMarkup(
+      <CalendarViews {...baseProps} view="day" date="2026-06-30" bookings={[]} timeBlocks={[timeBlock]} />,
+    )
+    expect(delNegocio).not.toContain('·')
   })
 })
 

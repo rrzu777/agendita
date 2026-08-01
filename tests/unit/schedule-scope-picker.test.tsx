@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ScheduleScopePicker } from '@/components/dashboard/schedule-scope-picker'
+import { WHOLE_BUSINESS_LABEL } from '@/lib/professionals/scope-label'
 
 // El selector es el único que conoce el contrato del `?persona=`: la página lo lee y
 // resuelve el alcance con él. Un href mal armado no rompe nada visiblemente —cae en el
@@ -25,6 +26,15 @@ describe('ScheduleScopePicker', () => {
     expect(html).toContain('href="/dashboard/availability"')
     expect(html).toContain('href="/dashboard/availability?persona=juan"')
     expect(html).toContain('href="/dashboard/availability?persona=ana"')
+  })
+
+  /**
+   * El mismo texto lo dicen tres controles que se leen juntos en esta pantalla (éste,
+   * el selector de dueño del bloqueo y la etiqueta de cada bloqueo listado). Dos
+   * redacciones ahí adentro se leen como dos alcances distintos.
+   */
+  it('el alcance sin persona se llama igual que en el resto de la pantalla', () => {
+    expect(render()).toContain(WHOLE_BUSINESS_LABEL)
   })
 
   it('marca cuál está elegido', () => {

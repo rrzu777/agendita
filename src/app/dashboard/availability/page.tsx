@@ -15,6 +15,8 @@ import { RecurringBlockList } from '@/components/dashboard/recurring-block-list'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { computeServiceFit, SERVICE_FIT_WINDOW_DAYS } from '@/lib/availability/service-fit'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
+import { blockScopeFor } from '@/lib/availability/scope'
+import { blockOwnerLabel } from '@/lib/professionals/scope-label'
 
 export default async function AvailabilityPage({
   searchParams,
@@ -42,45 +44,42 @@ export default async function AvailabilityPage({
   const selectedId = selected?.id ?? null
 
   // Fit de servicios: semana simulada con reglas activas y bloqueos efectivos (sueltos +
-  // series expandidas), sin reservas ni lead time.
-  //
-  // Se simula contra el horario y los bloqueos del SALÓN, así que el aviso sólo se
-  // muestra con el salón elegido — arriba del horario de una persona diría "este
-  // servicio no cabe" sobre una semana que no es la suya. Y por eso ni siquiera se
-  // cargan los datos con una persona elegida: son tres queries más la expansión de las
-  // series, tiradas a la basura en cada carga de la pantalla nueva. El fit por persona
-  // llega con los bloqueos por persona.
-  const cargaElFit = selectedId === null
-
+  // series expandidas), sin reservas ni lead time. Todo lo que entra —horario, bloqueos
+  // y servicios— es del alcance elegido, así que con una persona elegida el aviso habla
+  // de SU semana y no de la del negocio.
   const [schedule, blocks, recurringSeries, services, effectiveBlocks] = await Promise.all([
     getWeeklySchedule(selectedId),
-    getTimeBlocks(),
-    getTimeBlockSeries(),
-    cargaElFit ? getServices() : Promise.resolve([]),
-    cargaElFit
-      ? getEffectiveBlocks({
-          businessId: userData.business.id,
-          rangeStart: now,
-          rangeEnd: addDays(now, SERVICE_FIT_WINDOW_DAYS + 1),
-          timezone,
-          scope: { kind: 'business' },
-        })
-      : Promise.resolve([]),
+    getTimeBlocks(selectedId),
+    getTimeBlockSeries(selectedId),
+    getServices(),
+    getEffectiveBlocks({
+      businessId: userData.business.id,
+      rangeStart: now,
+      rangeEnd: addDays(now, SERVICE_FIT_WINDOW_DAYS + 1),
+      timezone,
+      scope: blockScopeFor(selectedId),
+    }),
   ])
 
+  // Sólo los servicios que esa persona hace: avisarle que "Color no cabe en ningún día"
+  // a quien no hace color es ruido que además no tiene arreglo desde esta pantalla.
+  const propios = selected === null ? services : services.filter((s) => selected.services.some((a) => a.id === s.id))
+
   const serviceFits = computeServiceFit(
-    services,
+    propios,
     schedule.days.filter((d) => d.isActive),
     effectiveBlocks,
     timezone,
     now,
   )
 
+  const etiqueta = (name: string | null) => blockOwnerLabel(selectedId, name)
+
   return (
     <div>
       <DashboardHeader title="Disponibilidad" subtitle="Configura tus horarios de atención y bloqueos." />
       <div className="space-y-8 p-5 md:p-10">
-        <ServiceFitWarnings fits={serviceFits} vocabulary={v} />
+        <ServiceFitWarnings fits={serviceFits} vocabulary={v} scopeName={selected?.name ?? null} />
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
@@ -116,16 +115,17 @@ export default async function AvailabilityPage({
               <p className="text-sm text-muted-foreground">
                 {selected === null
                   ? 'Marca días o rangos en los que no estarás disponible.'
-                  // No cambian al elegir persona, y decirlo evita la lectura errónea de
-                  // que lo que se ve abajo son los bloqueos de esa persona. Los bloqueos
-                  // con dueño llegan en el PR siguiente; hasta entonces la pantalla no
-                  // los promete.
-                  : 'Estos bloqueos son del salón: valen para todo el equipo.'}
+                  : `Los de ${selected.name} y los del negocio, que también le cierran la agenda.`}
               </p>
             </div>
-            <BlockTimeModal defaultDate={null} timezone={timezone} />
+            <BlockTimeModal
+              defaultDate={null}
+              timezone={timezone}
+              professionals={professionals}
+              defaultProfessionalId={selectedId}
+            />
           </div>
-          <TimeBlockList blocks={blocks} />
+          <TimeBlockList blocks={blocks.map((b) => ({ ...b, ownerLabel: etiqueta(b.professional?.name ?? null) }))} />
           <div className="space-y-3">
             <h3 className="text-sm font-semibold text-muted-foreground">Bloqueos recurrentes</h3>
             <RecurringBlockList
@@ -136,6 +136,7 @@ export default async function AvailabilityPage({
                 endTime: s.endTime,
                 reason: s.reason,
                 until: s.until ? s.until.toISOString() : null,
+                ownerLabel: etiqueta(s.professional?.name ?? null),
               }))}
             />
           </div>

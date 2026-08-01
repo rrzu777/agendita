@@ -23,6 +23,7 @@ import { createTimeBlock, deleteTimeBlock, createTimeBlockSeries } from '@/serve
 import { CheckCircle2, Lock, Trash2, X } from 'lucide-react'
 import { localDateTimeToUtc, startOfLocalDay } from '@/lib/availability/timezone'
 import { BlockFormFields } from './block-form-fields'
+import { BlockOwnerSelect } from './block-owner-select'
 import { RecurrenceFields } from './recurrence-fields'
 import type { SeriesEndMode } from '@/lib/calendar/expand-series'
 
@@ -38,15 +39,32 @@ const PRESETS = [
 interface BlockTimeModalProps {
   defaultDate: string | null
   timezone: string
+  /**
+   * A quién se le puede colgar el bloqueo. Vacío (el default) = negocio sin equipo:
+   * el diálogo queda igual que siempre y todo lo que se crea es del negocio.
+   */
+  professionals?: { id: string; name: string }[]
+  /**
+   * De quién arranca elegido. La pantalla de disponibilidad manda a la persona que se
+   * está mirando: si la dueña está editando el horario de Ana y bloquea un rato, es de
+   * Ana. El calendario no tiene alcance elegido y arranca en el negocio.
+   */
+  defaultProfessionalId?: string | null
 }
 
-export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
+export function BlockTimeModal({
+  defaultDate,
+  timezone,
+  professionals = [],
+  defaultProfessionalId = null,
+}: BlockTimeModalProps) {
   const [open, setOpen] = useState(false)
   const [preset, setPreset] = useState('custom')
   const [date, setDate] = useState(defaultDate || '')
   const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('10:00')
   const [reason, setReason] = useState('')
+  const [professionalId, setProfessionalId] = useState<string | null>(defaultProfessionalId)
   const [recurring, setRecurring] = useState(false)
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([])
   const [endMode, setEndMode] = useState<SeriesEndMode>('forever')
@@ -102,6 +120,10 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
     if (!newOpen) {
       setConfirmOverlap(false)
       setError(null)
+      // Vuelve al alcance de la pantalla. Sin esto, bloquearle el almuerzo a Ana deja
+      // el diálogo apuntando a Ana, y el bloqueo siguiente —el feriado del negocio—
+      // sale a nombre suyo sin que nada lo diga.
+      setProfessionalId(defaultProfessionalId)
     }
     setOpen(newOpen)
   }
@@ -132,9 +154,7 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
       try {
         if (recurring) {
           const anchorDate = startOfLocalDay(date, timezone)
-          // `professionalId: null` = bloqueo del salón, cierra para todos. Este diálogo
-          // todavía no pregunta de quién es; el selector llega con la pantalla.
-          const res = await createTimeBlockSeries({ daysOfWeek, startTime, endTime, reason: reason || null, anchorDate, endMode, weeks: endMode === 'weeks' ? weeks : null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmed: confirmOverlap, professionalId: null })
+          const res = await createTimeBlockSeries({ daysOfWeek, startTime, endTime, reason: reason || null, anchorDate, endMode, weeks: endMode === 'weeks' ? weeks : null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmed: confirmOverlap, professionalId })
           if (!res.ok) { setError(res.error); return }
           // Mismo patrón que los bloqueos sueltos: si hay reservas que chocan,
           // la serie NO se crea hasta que la dueña marque la confirmación.
@@ -150,7 +170,7 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
         }
         const start = localDateTimeToUtc(date, startTime, timezone)
         const end = localDateTimeToUtc(date, endTime, timezone)
-        const result = await createTimeBlock({ startDateTime: start, endDateTime: end, reason: reason || null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmOverlap, professionalId: null })
+        const result = await createTimeBlock({ startDateTime: start, endDateTime: end, reason: reason || null, overlapToleranceMinutes: Number(overlapTolerance) || 0, confirmOverlap, professionalId })
         if (!result.ok) { setError(result.error); return }
         if ('requiresConfirmation' in result.data) { setError(result.data.message); return }
         router.refresh()
@@ -205,6 +225,12 @@ export function BlockTimeModal({ defaultDate, timezone }: BlockTimeModalProps) {
                 </SelectContent>
               </Select>
             </div>
+
+            <BlockOwnerSelect
+              professionals={professionals}
+              value={professionalId}
+              onChange={setProfessionalId}
+            />
 
             <BlockFormFields
               date={date}
