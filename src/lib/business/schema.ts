@@ -37,6 +37,10 @@ export const updateBusinessSchema = z.object({
     .trim()
     .url('Tiene que ser un link completo, con https://')
     .refine((v) => /^https?:\/\//i.test(v), 'Tiene que empezar con https://')
+    // Sin caracteres de control: `.url()` los deja pasar (el parser de URL los
+    // ignora, pero el valor guardado los conserva) y el `.ics` de la reserva
+    // escribe este link crudo en una línea propia, donde un salto la parte.
+    .refine((v) => !/[\u0000-\u001F\u007F]/.test(v), 'El link no puede tener saltos de línea')
     .max(500, 'El link es demasiado largo')
     .optional()
     .or(z.literal('')),

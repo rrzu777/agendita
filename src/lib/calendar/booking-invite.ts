@@ -10,7 +10,7 @@
  */
 import type { BookingStatus } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { getBookingCalendarUrl } from '@/lib/business/urls'
+import { getBookingCalendarUrl, getBookingConfirmationUrl } from '@/lib/business/urls'
 import {
   buildBookingCalendarEvent,
   bookingIcsFilename,
@@ -45,10 +45,19 @@ export function bookingInvite(
   }
 }
 
+/** Lo que se sabe de una reserva buscada por id. `null` = no existe; con
+ *  `invite` en null la reserva existe pero ya no hay nada que agendar (se
+ *  cumplió, se canceló), y ahí lo que corresponde es mandarla a su pantalla de
+ *  confirmación, que sabe contar cada caso. */
+export interface BookingInviteLookup {
+  invite: BookingCalendarInvite | null
+  confirmationUrl: string
+}
+
 /** Lo mismo, trayendo la reserva de la base: para quien no la tiene (la ruta que
  *  sirve el archivo) o la tiene vieja (después de reprogramar, la fila en
  *  memoria conserva el horario anterior). */
-export async function loadBookingInvite(bookingId: string): Promise<BookingCalendarInvite | null> {
+export async function loadBookingInvite(bookingId: string): Promise<BookingInviteLookup | null> {
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
     select: {
@@ -67,5 +76,9 @@ export async function loadBookingInvite(bookingId: string): Promise<BookingCalen
     },
   })
 
-  return booking ? bookingInvite(booking) : null
+  if (!booking) return null
+  return {
+    invite: bookingInvite(booking),
+    confirmationUrl: getBookingConfirmationUrl(booking.business, booking.id),
+  }
 }

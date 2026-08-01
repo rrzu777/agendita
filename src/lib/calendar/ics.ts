@@ -24,7 +24,10 @@ function utcStamp(date: Date): string {
 function escapeText(value: string): string {
   return value
     .replace(/\\/g, '\\\\')
-    .replace(/\r?\n/g, '\\n')
+    // Los tres cortes de línea, no sólo el del sistema: un CR suelto pegado
+    // desde otra app en la dirección de la clienta partía la línea en crudo y
+    // rompía el archivo entero.
+    .replace(/\r\n|\r|\n/g, '\\n')
     .replace(/([;,])/g, '\\$1')
 }
 
@@ -66,10 +69,11 @@ export function buildIcs(event: BookingCalendarEvent): string {
     'VERSION:2.0',
     'PRODID:-//Agendita//Reservas//ES',
     'CALSCALE:GREGORIAN',
-    // PUBLISH y no REQUEST: esto es "acá tenés tu cita", no una invitación que
-    // pide respuesta. Con REQUEST el mail muestra botones de Sí/No/Quizás sobre
-    // algo que la clienta ya reservó, y las respuestas no las lee nadie.
-    'METHOD:PUBLISH',
+    // Sin METHOD a propósito. `METHOD:PUBLISH` convertiría el archivo en un
+    // mensaje iTIP, y ahí RFC 5546 exige `ORGANIZER` — Outlook lo hace cumplir y
+    // se niega a abrirlo. Sin METHOD es lo que baja cualquier botón de "agregar
+    // al calendario" y lo acepta todo el mundo. `REQUEST` sería peor todavía:
+    // mostraría botones de Sí/No/Quizás sobre una cita que la clienta ya reservó.
     'BEGIN:VEVENT',
     `UID:${event.uid}`,
     `DTSTAMP:${utcStamp(event.stamp)}`,

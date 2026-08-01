@@ -58,6 +58,13 @@ describe('el .ics de una reserva', () => {
     expect(modificada).toContain('SEQUENCE:100')
   })
 
+  // Un CR suelto (texto pegado de otra app) también tiene que quedar escapado:
+  // crudo parte la línea igual que un CRLF.
+  it('escapa los tres cortes de línea del texto', () => {
+    const lines = unfold(ics({ serviceAddress: 'Los Leones 55\rdpto 3', modality: ServiceModality.at_home }))
+    expect(lines).toContain('LOCATION:Los Leones 55\\ndpto 3')
+  })
+
   it('escapa las comas, los punto y coma y las barras del texto', () => {
     const lines = unfold(ics({ service: { name: 'Corte, barba; y color \\ extra' } }))
     expect(lines).toContain('SUMMARY:Corte\\, barba\\; y color \\\\ extra en Barbería Carlos')
@@ -95,6 +102,14 @@ describe('el .ics de una reserva', () => {
   it('un link de sala que no es http no entra al archivo', () => {
     const text = ics({ modality: ServiceModality.online, meetingUrl: 'javascript:alert(1)' })
     expect(text).not.toContain('javascript:')
+  })
+
+  // `URL:` es un URI y va sin el escapado de texto, así que un salto de línea
+  // adentro del link parte la línea y mete una propiedad nueva en el archivo.
+  it('un link con un salto de línea adentro no entra al archivo', () => {
+    const text = ics({ modality: ServiceModality.online, meetingUrl: 'https://meet.example/s\r\nX-EVIL:1' })
+    expect(text).not.toContain('X-EVIL')
+    expect(unfold(text).every((l) => /^[A-Z-]+[:;]/.test(l))).toBe(true)
   })
 
   it('sin dirección cargada no inventa un lugar vacío', () => {

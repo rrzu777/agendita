@@ -635,7 +635,8 @@ export function bookingCancelledCustomerHtml(data: CancellationEmailData): strin
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${dateStr}</td></tr>
       ${data.reason ? `<tr><td style="padding:8px 0;color:#666">Motivo</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.reason)}</td></tr>` : ''}
     </table>
-    <p style="font-size:13px;color:#666;margin-top:16px">Si tienes dudas, contacta a ${escapeHtml(data.businessName)}.</p>
+    <p style="font-size:13px;color:#666;margin-top:16px">Si la tenías agendada en tu calendario, acordate de borrarla.</p>
+    <p style="font-size:13px;color:#666;margin-top:8px">Si tienes dudas, contacta a ${escapeHtml(data.businessName)}.</p>
     ${footer(data.businessName)}
   `)
 }
@@ -652,6 +653,7 @@ export function bookingCancelledCustomerText(data: CancellationEmailData): strin
     `Fecha y hora: ${dateStr}`,
     ...(data.reason ? [`Motivo: ${data.reason}`] : []),
     ``,
+    `Si la tenías agendada en tu calendario, acordate de borrarla.`,
     `Si tienes dudas, contacta a ${data.businessName}.`,
     ``,
     `Enviado por ${data.businessName} a través de Agendita`,
@@ -677,6 +679,7 @@ export function bookingRescheduledCustomerHtml(data: RescheduledEmailData): stri
       ${whereRowsHtml(data)}
     </table>
     <p style="font-size:13px;color:#666;margin-top:16px">Si este nuevo horario no te acomoda, contacta a ${escapeHtml(data.businessName)}.</p>
+    ${data.calendar ? '<p style="font-size:13px;color:#666;margin-top:8px">Si ya la tenías en tu calendario, revisá que haya quedado el horario nuevo.</p>' : ''}
     ${calendarLinksHtml(data.calendar)}
     ${whatsappSection}
     ${footer(data.businessName)}
@@ -702,6 +705,7 @@ export function bookingRescheduledCustomerText(data: RescheduledEmailData): stri
     ``,
     `Si este nuevo horario no te acomoda, contacta a ${data.businessName}.`,
   )
+  if (data.calendar) lines.push(`Si ya la tenías en tu calendario, revisá que haya quedado el horario nuevo.`)
   lines.push(...calendarLinksText(data.calendar))
   if (data.businessWhatsapp) lines.push(`WhatsApp: https://wa.me/${data.businessWhatsapp.replace(/\D/g, '')}`)
   lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)

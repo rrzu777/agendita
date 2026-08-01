@@ -170,7 +170,7 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
         businessName: booking.business.name,
         // Releído: `booking` quedó con el horario anterior y con el `updatedAt`
         // viejo, y el evento necesita los dos nuevos para pisar al anterior.
-        calendar: await loadBookingInvite(booking.id),
+        calendar: (await loadBookingInvite(booking.id))?.invite ?? null,
         bookingNumber: booking.bookingNumber,
         businessReplyToEmail: await getBusinessReplyToEmail(booking.business.id),
         businessWhatsapp: booking.business.whatsapp,

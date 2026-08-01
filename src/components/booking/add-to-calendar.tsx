@@ -26,14 +26,14 @@ export function AddToCalendar({ bookingId, className }: { bookingId: string; cla
         </a>
       </Button>
       <p className="mt-2 text-sm text-muted-foreground">
-        ¿Usas Google Calendar?{' '}
+        ¿Usás Google Calendar?{' '}
         <a
           href={`${path}?app=google`}
           target="_blank"
           rel="noopener noreferrer"
           className="font-semibold text-primary underline"
         >
-          Agrégalo acá
+          Agregala desde acá
         </a>
       </p>
     </div>

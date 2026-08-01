@@ -29,11 +29,11 @@ describe('loadBookingInvite', () => {
   it('devuelve el archivo, el nombre y la URL de una reserva confirmada', async () => {
     findUnique.mockResolvedValue(reserva)
 
-    const invite = await loadBookingInvite('clbooking123')
+    const encontrada = await loadBookingInvite('clbooking123')
 
-    expect(invite?.filename).toBe('reserva-4738.ics')
-    expect(invite?.ics).toContain('BEGIN:VEVENT')
-    expect(invite?.url).toBe('http://localhost:3000/api/bookings/clbooking123/calendar')
+    expect(encontrada?.invite?.filename).toBe('reserva-4738.ics')
+    expect(encontrada?.invite?.ics).toContain('BEGIN:VEVENT')
+    expect(encontrada?.invite?.url).toBe('http://localhost:3000/api/bookings/clbooking123/calendar')
   })
 
   it('no existe la reserva: null', async () => {
@@ -50,8 +50,17 @@ describe('loadBookingInvite', () => {
     BookingStatus.cancelled,
     BookingStatus.expired,
     BookingStatus.completed,
-  ])('reserva en %s: null', async (status) => {
+  ])('reserva en %s: sin evento, pero con adónde mandarla', async (status) => {
     findUnique.mockResolvedValue({ ...reserva, status })
-    expect(await loadBookingInvite('clbooking123')).toBeNull()
+
+    const encontrada = await loadBookingInvite('clbooking123')
+
+    // La reserva EXISTE: no es lo mismo que un id inventado. El link del mail
+    // vive para siempre, y quien lo toca con la reserva ya cumplida tiene que
+    // caer en su pantalla, no en un "no encontramos esa reserva".
+    expect(encontrada?.invite).toBeNull()
+    expect(encontrada?.confirmationUrl).toBe(
+      'http://localhost:3000/b/barberia-carlos/book/confirmation?bookingId=clbooking123',
+    )
   })
 })

@@ -27,11 +27,19 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return new NextResponse('Demasiados pedidos', { status: 429 })
   }
 
-  const invite = await loadBookingInvite(bookingId)
-  // Reserva inexistente y reserva sin confirmar contestan lo mismo a propósito:
-  // así la ruta no sirve para averiguar si un id existe.
-  if (!invite) {
+  const encontrada = await loadBookingInvite(bookingId)
+  if (!encontrada) {
     return new NextResponse('No encontramos esa reserva', { status: 404 })
+  }
+
+  const { invite } = encontrada
+  // La reserva existe pero ya no hay nada que agendar: se cumplió, se canceló o
+  // todavía no está confirmada. El link vive para siempre en un mail, así que
+  // esto lo toca gente con la reserva vieja — contestarle "no encontramos esa
+  // reserva" le diría que su reserva desapareció. Su pantalla de confirmación
+  // sabe contar cada caso.
+  if (!invite) {
+    return NextResponse.redirect(encontrada.confirmationUrl, 307)
   }
 
   if (request.nextUrl.searchParams.get('app') === 'google') {

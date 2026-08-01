@@ -1077,7 +1077,7 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
         businessName: business.name,
         // Releído: la fila en memoria conserva el horario anterior. Ver el
         // gemelo en `my-bookings.ts`.
-        calendar: await loadBookingInvite(booking.id),
+        calendar: (await loadBookingInvite(booking.id))?.invite ?? null,
         bookingNumber: booking.bookingNumber,
         businessReplyToEmail: await getBusinessReplyToEmail(businessId),
         businessWhatsapp: business.whatsapp,

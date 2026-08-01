@@ -116,7 +116,7 @@ function getAppDomain(): string {
 type SendEmailOptions = {
   replyTo?: string | null
   headers?: Record<string, string>
-  attachments?: { filename: string; content: Buffer }[]
+  attachments?: { filename: string; content: Buffer; contentType?: string }[]
 }
 
 async function sendEmail(
@@ -205,9 +205,19 @@ function buildDashboardLink(): string {
   return `${protocol}://${domain}/dashboard/bookings`
 }
 
-/** El `.ics` como adjunto de Resend. Vacío = no hay evento que mandar. */
-function icsAttachments(invite: BookingCalendarInvite | null | undefined): { filename: string; content: Buffer }[] {
-  return invite ? [{ filename: invite.filename, content: Buffer.from(invite.ics, 'utf8') }] : []
+/**
+ * El `.ics` como adjunto de Resend. Vacío = no hay evento que mandar.
+ *
+ * El `contentType` va explícito: es lo que hace que el mail del teléfono ofrezca
+ * abrirlo con el calendario en vez de tratarlo como un archivo de texto. Sin
+ * esto Resend lo deduce del nombre, que hoy funciona pero no es nuestro.
+ */
+function icsAttachments(
+  invite: BookingCalendarInvite | null | undefined,
+): { filename: string; content: Buffer; contentType: string }[] {
+  return invite
+    ? [{ filename: invite.filename, content: Buffer.from(invite.ics, 'utf8'), contentType: 'text/calendar; charset=utf-8' }]
+    : []
 }
 
 export async function sendBookingConfirmationToCustomer(data: BookingEmailData): Promise<EmailResult> {
