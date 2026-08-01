@@ -309,6 +309,10 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       // ignora lo que llegue): esto es la elección, no la autoridad.
       modality: data.serviceModality ?? undefined,
       serviceAddress: data.serviceAddress || undefined,
+      // Con quién. El server verifica que sea de este negocio, que siga
+      // atendiendo y que haga este servicio en esta modalidad: acá abajo llega
+      // lo que eligió la clienta, no una autorización.
+      professionalId: data.professionalId,
       ...extra,
     }
   }

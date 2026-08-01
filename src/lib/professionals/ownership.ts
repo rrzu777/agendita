@@ -1,8 +1,14 @@
-import type { Prisma, PrismaClient } from '@prisma/client'
+import type { Prisma, PrismaClient, ServiceModality } from '@prisma/client'
 import { ForbiddenError } from '@/lib/auth/server'
+import { UserError } from '@/lib/actions/result'
 import { normalizeProfessionalId } from '@/lib/availability/scope'
 
 type Db = PrismaClient | Prisma.TransactionClient
+
+/** Lo único que ve la clienta cuando la persona que pidió no sirve, sea porque no
+ *  existe, porque se dio de baja o porque no hace ese servicio. Un solo mensaje: los
+ *  motivos internos no son asunto de quien reserva. */
+export const PROFESSIONAL_UNAVAILABLE_MESSAGE = 'Esa persona no está disponible para reservar'
 
 /**
  * ¿Ese id es de alguien de ESTE negocio que además sigue atendiendo?
@@ -87,4 +93,48 @@ export async function assertOwnerScope(
 ): Promise<string | null> {
   const id = normalizeProfessionalId(professionalId)
   return id === null ? null : assertProfessionalOfBusiness(client, businessId, id)
+}
+
+/**
+ * El guard del funnel PÚBLICO: ¿esta persona puede tomar ESTA reserva?
+ *
+ * Es la contraparte servidor de `professionalChoice` (`lib/professionals/eligible.ts`),
+ * que decide lo mismo en el navegador para armar la lista. Las dos existen porque
+ * responden a preguntas distintas: aquella arma una pantalla, ésta autoriza una
+ * escritura. El id llega de un formulario público, así que lo que se muestre allá no
+ * limita nada de lo que puede llegar acá.
+ *
+ * Tres condiciones, y las tres en el mismo `where` para que sea una sola consulta:
+ * que sea de este negocio y siga atendiendo (lo mismo que `isProfessionalOfBusiness`),
+ * que haga el servicio, y que atienda en esa modalidad. La última es la que se olvida:
+ * un servicio se puede pedir a domicilio sin que todo el equipo viaje.
+ *
+ * **La modalidad es la RESUELTA por `resolveBookingDraft`, no la pedida.** El servidor
+ * pisa la modalidad cuando el servicio tiene una sola, así que validar contra la que
+ * mandó el navegador dejaría pasar a alguien que no atiende donde la reserva va a
+ * decir que se atiende. Por eso el parámetro no es opcional: un `undefined` acá borra
+ * la clave del `where` y el chequeo pasa a ser "en cualquier lado".
+ */
+export async function assertProfessionalOffersService(
+  client: Db,
+  businessId: string,
+  professionalId: string,
+  serviceId: string,
+  modality: ServiceModality,
+): Promise<string> {
+  const id = normalizeProfessionalId(professionalId)
+  if (id === null) throw new UserError(PROFESSIONAL_UNAVAILABLE_MESSAGE)
+
+  const found = await client.professional.findFirst({
+    where: {
+      id,
+      businessId,
+      isActive: true,
+      services: { some: { id: serviceId } },
+      modalities: { has: modality },
+    },
+    select: { id: true },
+  })
+  if (!found) throw new UserError(PROFESSIONAL_UNAVAILABLE_MESSAGE)
+  return id
 }

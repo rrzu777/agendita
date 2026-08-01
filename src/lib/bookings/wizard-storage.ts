@@ -1,5 +1,6 @@
 import type { Service, ServiceModality } from '@prisma/client'
 import { sortModalities, requiresServiceAddress } from '@/lib/services/modality'
+import { professionalChoice, resolveProfessionalId, type FunnelProfessional } from '@/lib/professionals/eligible'
 import type { BookingData } from '@/components/booking/wizard'
 
 /** Persistencia del wizard para el viaje a /ingresar y de vuelta (spec CTA funnel).
@@ -24,6 +25,8 @@ interface SavedState {
   customerNotes: string
   serviceModality: ServiceModality | null
   serviceAddress: string
+  /** Sólo el id: el nombre se re-deriva del equipo actual, como los del servicio. */
+  professionalId: string | null
   idempotencyKey: string | null
   promotionCode?: string
 }
@@ -43,6 +46,7 @@ export function serializeWizardState(data: BookingData, now: number = Date.now()
     customerNotes: data.customerNotes,
     serviceModality: data.serviceModality,
     serviceAddress: data.serviceAddress,
+    professionalId: data.professionalId,
     idempotencyKey: data.idempotencyKey,
     ...(data.promotionCode ? { promotionCode: data.promotionCode } : {}),
   }
@@ -53,7 +57,12 @@ export function serializeWizardState(data: BookingData, now: number = Date.now()
  *  (expirado, corrupto, o el servicio ya no existe/está inactivo — en ese caso
  *  se descarta TODO: nada de restauraciones parciales). Los campos denormalizados
  *  del servicio se re-derivan de la lista actual, no del snapshot. */
-export function restoreWizardState(raw: string | null, services: Service[], now: number = Date.now()): BookingData | null {
+export function restoreWizardState(
+  raw: string | null,
+  services: Service[],
+  professionals: FunnelProfessional[],
+  now: number = Date.now(),
+): BookingData | null {
   if (!raw) return null
   let saved: SavedState
   try {
@@ -77,6 +86,26 @@ export function restoreWizardState(raw: string | null, services: Service[], now:
         ? modalities[0]
         : null
 
+  // La persona se re-valida contra el equipo ACTUAL y contra la modalidad que
+  // sobrevivió arriba: alguien que se dio de baja, que dejó de hacer ese servicio o
+  // que no viaja a domicilio ya no es una opción. Y con una sola elegible se
+  // re-asigna sola, que es lo mismo que hace el funnel al elegir servicio.
+  const choice = professionalChoice(professionals, service.id, modality)
+  const professionalId = resolveProfessionalId(choice, saved.professionalId ?? null)
+  const professionalName =
+    choice.kind === 'auto' ? choice.professional.name
+    : choice.kind === 'ask' ? choice.options.find((p) => p.id === professionalId)?.name ?? ''
+    : ''
+
+  // Si la reserva ya no va a nombre de quien la clienta eligió, el horario guardado
+  // tampoco sirve: se calculó contra SU agenda. Se suelta acá y no en el wizard
+  // porque es la misma regla que aplica el paso cuando cambia de persona a mano.
+  //
+  // Se compara contra el id GUARDADO y no contra `null` a propósito: cuando queda
+  // una sola elegible, `resolveProfessionalId` re-asigna sin preguntar —es lo mismo
+  // que ve una clienta que entra de cero— y ahí tampoco vale la hora vieja.
+  const perdioLaPersona = saved.professionalId != null && professionalId !== saved.professionalId
+
   return {
     serviceId: service.id,
     serviceName: service.name,
@@ -90,8 +119,10 @@ export function restoreWizardState(raw: string | null, services: Service[], now:
     // descartó arriba, la dirección tiene que irse con él o el formulario queda
     // con un dato que ya no corresponde a lo que se va a reservar.
     serviceAddress: modality && requiresServiceAddress(modality) ? (saved.serviceAddress ?? '') : '',
+    professionalId,
+    professionalName,
     date: saved.date ? new Date(saved.date) : null,
-    timeSlot: saved.timeSlotStart && saved.timeSlotEnd
+    timeSlot: !perdioLaPersona && saved.timeSlotStart && saved.timeSlotEnd
       ? { start: new Date(saved.timeSlotStart), end: new Date(saved.timeSlotEnd) }
       : null,
     customerName: saved.customerName ?? '',

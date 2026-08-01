@@ -8,6 +8,7 @@ const data: BookingData = {
   serviceDeposit: 0, serviceColor: '',
   serviceModalities: ['on_site'], serviceModality: 'on_site', serviceAddress: '', date: null, timeSlot: null,
   customerName: 'Maria', customerPhone: '+56911111111', customerEmail: 'maria@example.com',
+  professionalId: null, professionalName: '',
   customerNotes: '', idempotencyKey: null,
 }
 const noop = vi.fn()

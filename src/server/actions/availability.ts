@@ -14,7 +14,7 @@ import { computeRescheduleSlots } from '@/lib/availability/reschedule-slots'
 import { blockScopeFor, bookingScopeCondition, normalizeProfessionalId, resolveAvailabilityRules, resolveRuleScope } from '@/lib/availability/scope'
 import { readWeek, scheduleLockKey, setWeekday } from '@/lib/availability/weekly-schedule'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
-import { assertOwnerScope, assertProfessionalOfBusiness, isProfessionalOfBusiness } from '@/lib/professionals/ownership'
+import { assertOwnerScope, assertProfessionalOfBusiness, isProfessionalOfBusiness, PROFESSIONAL_UNAVAILABLE_MESSAGE } from '@/lib/professionals/ownership'
 import { RELEASED_STATUSES } from '@/lib/bookings/approval'
 import { action, UserError } from '@/lib/actions/result'
 
@@ -106,7 +106,7 @@ async function _getAvailableTimeSlots(
   // salón y devolvería slots como si todo estuviera bien: el problema se descubriría
   // recién cuando la reserva se crea a nombre de nadie.
   if (professionalId !== null && !(await isProfessionalOfBusiness(prisma, businessId, professionalId))) {
-    throw new UserError('Esa persona no está disponible para reservar')
+    throw new UserError(PROFESSIONAL_UNAVAILABLE_MESSAGE)
   }
 
   const timezone = business.timezone || 'America/Santiago'
