@@ -40,6 +40,10 @@ export const funnelProfessionalSelect = {
  * unión de horarios de "cualquiera disponible". Compartir sólo el `select` dejaba el
  * `where` y el `orderBy` escritos dos veces, y el día que aparezca un "no mostrar en el
  * funnel" se movería una lista y no la otra.
+ *
+ * **No trae `businessId`, y quien la use suelta tiene que agregarlo.** Acá no puede
+ * estar: la consulta de la pantalla cuelga de un `include` del negocio, donde Prisma
+ * ya la acota y un `businessId` propio no tendría de dónde salir.
  */
 export const funnelProfessionalsQuery = {
   where: { isActive: true },

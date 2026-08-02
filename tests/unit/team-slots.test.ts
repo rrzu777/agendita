@@ -201,6 +201,23 @@ describe('los horarios de "cualquiera disponible"', () => {
     SERVICE.modalities = ['on_site']
   })
 
+  /**
+   * El fragmento de query es compartido con la pantalla pública, donde cuelga de un
+   * `include` del negocio y Prisma lo acota solo. Suelto, sin esta línea, `findMany`
+   * devuelve a la gente activa de TODOS los negocios: los horarios de otro salón se
+   * meterían en esta unión, y en las tres lecturas siguientes también.
+   */
+  it('las cuatro lecturas se acotan a este negocio', async () => {
+    await pedir()
+
+    expect(mockPrisma.professional.findMany.mock.calls[0][0]).toMatchObject({
+      where: { businessId: 'biz-1', isActive: true },
+    })
+    expect(mockPrisma.availabilityRule.findMany.mock.calls[0][0]).toMatchObject({ where: { businessId: 'biz-1' } })
+    expect(mockPrisma.booking.findMany.mock.calls[0][0]).toMatchObject({ where: { businessId: 'biz-1' } })
+    expect(getEffectiveBlocks.mock.calls[0][0]).toMatchObject({ businessId: 'biz-1' })
+  })
+
   it('sin equipo elegible no hay horarios que unir', async () => {
     mockPrisma.professional.findMany.mockResolvedValue([])
 
