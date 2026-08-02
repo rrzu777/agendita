@@ -4,6 +4,7 @@ import { addMinutes } from 'date-fns'
 import { prisma } from '@/lib/db'
 import { assertSlotFreeOfConflicts } from '@/lib/availability/validation'
 import { RELEASED_STATUSES } from '@/lib/bookings/approval'
+import type { ProfessionalPick } from '@/lib/professionals/eligible'
 import { UserError } from '@/lib/actions/result'
 
 /** Los tres mensajes comparten cola: el único camino de vuelta es el paso de la
@@ -37,7 +38,7 @@ export async function resumeBookingForRetry<T extends Booking>(
   ctx: {
     serviceId: string
     startDateTime: Date
-    professionalId: string | null
+    professional: ProfessionalPick
     promotionCode?: string
     timezone: string
     holdMinutes: number
@@ -52,10 +53,20 @@ export async function resumeBookingForRetry<T extends Booking>(
   // La persona entró en la lista cuando el funnel empezó a preguntarla: sin ella,
   // dos intentos con la misma key y distinto barbero devolvían el primero, y la
   // clienta pagaba por una hora con quien no eligió.
+  //
+  // **`anyone` no compara nada, y no es un agujero**: quien pidió "cualquiera" no
+  // eligió a nadie en particular, así que la persona que el primer intento asignó
+  // cumple igual lo que se está pidiendo ahora. Compararla contra `null` rechazaría
+  // todos los reintentos legítimos de ese camino, y volver a resolver movería la
+  // reserva a otra persona por nada.
+  const personaCambio =
+    ctx.professional.kind !== 'anyone' &&
+    existing.professionalId !== (ctx.professional.kind === 'person' ? ctx.professional.id : null)
+
   if (
     existing.serviceId !== ctx.serviceId ||
     existing.startDateTime.getTime() !== ctx.startDateTime.getTime() ||
-    existing.professionalId !== ctx.professionalId
+    personaCambio
   ) {
     throw volverAElegir('Esa reserva es de otro horario.')
   }

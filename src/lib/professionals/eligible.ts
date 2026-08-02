@@ -17,6 +17,43 @@ export interface FunnelProfessional {
 }
 
 /**
+ * Qué columnas hacen falta para armar un `FunnelProfessional`, escrito una sola vez.
+ *
+ * Lo usan la query pública del negocio y la del cálculo de "cualquiera disponible", y
+ * es la misma lista a propósito: si una trajera menos campos que la otra, el filtro de
+ * elegibilidad daría distinto en cada superficie sin que nada fallara.
+ *
+ * Es un objeto literal —`satisfies` sólo lo tipa— así que no arrastra Prisma al bundle
+ * del navegador.
+ */
+export const funnelProfessionalSelect = {
+  id: true,
+  name: true,
+  bio: true,
+  modalities: true,
+  services: { select: { id: true } },
+} satisfies Prisma.ProfessionalSelect
+
+/** Aplana la relación de Prisma: al funnel le sirve la lista de ids, no el anidado. */
+export function toFunnelProfessionals(
+  rows: {
+    id: string
+    name: string
+    bio: string | null
+    modalities: ServiceModality[]
+    services: { id: string }[]
+  }[],
+): FunnelProfessional[] {
+  return rows.map((p) => ({
+    id: p.id,
+    name: p.name,
+    bio: p.bio,
+    modalities: p.modalities,
+    serviceIds: p.services.map((s) => s.id),
+  }))
+}
+
+/**
  * Qué tiene que hacer el funnel con el equipo, para el servicio y la modalidad que
  * la clienta ya eligió.
  *
@@ -68,6 +105,12 @@ export function professionalChoice(
   return { kind: 'ask', options }
 }
 
+/** La gente que puede tomar esta reserva, sin importar si el funnel pregunta o no. */
+export function eligibleProfessionals(choice: ProfessionalChoice): FunnelProfessional[] {
+  if (choice.kind === 'none') return []
+  return choice.kind === 'auto' ? [choice.professional] : choice.options
+}
+
 /**
  * La MISMA regla de arriba, escrita para Postgres.
  *
@@ -101,42 +144,84 @@ export function professionalEligibilityWhere(
 }
 
 /**
- * La persona a nombre de quien queda la reserva, o `null`.
- *
- * Existe porque el caso `ask` tiene dos estados —todavía no eligió, o ya eligió— y la
- * diferencia entre "sin persona" y "falta elegir" no se puede leer del id suelto: los
- * dos son `null`. Acá el `null` de `ask` significa "el paso está pendiente" y el
- * wizard no deja pasar de ahí.
- *
- * También es el cerrojo contra el estado viejo: si la clienta eligió a alguien y
- * después volvió atrás y cambió de servicio, `elegido` puede ser de una persona que ya
- * no está entre las opciones. Devolverlo igual escribiría una reserva a nombre de
- * quien no hace ese servicio; el server la rechazaría, pero recién en el pago.
+ * Cómo se llama la opción "me da igual" en toda la app. No entra al vocabulario por
+ * rubro (`lib/vocabulary`) a propósito: no varía ni por género ni por oficio, y ese
+ * módulo guarda sólo lo que varía.
  */
-function resolveProfessional(
-  choice: ProfessionalChoice,
-  elegido: string | null,
-): FunnelProfessional | null {
-  if (choice.kind === 'none') return null
-  if (choice.kind === 'auto') return choice.professional
-  return choice.options.find((p) => p.id === elegido) ?? null
+export const ANYONE_LABEL = 'Cualquiera disponible'
+
+/**
+ * A nombre de quién va la reserva, tal como quedó elegido en el funnel.
+ *
+ * Es un tipo cerrado y no un `professionalId: string | null` porque **hay tres
+ * respuestas, no dos**, y las dos que comparten el `null` significan cosas opuestas:
+ *
+ * - `none` — no hay equipo elegible. La reserva va sin persona y contra la agenda
+ *   choca contra TODAS (ver `bookingBlocksProfessional`). Es lo que pasa hoy en un
+ *   negocio sin equipo cargado. En un paso `ask` significa además "todavía no
+ *   eligió", y el wizard no deja pasar de ahí.
+ * - `anyone` — "Cualquiera disponible". Los horarios que se ofrecen son la UNIÓN de
+ *   los del equipo elegible, y **quién atiende lo decide el servidor adentro de la
+ *   transacción** (`assertSlotAndResolveProfessional`). El navegador nunca resuelve
+ *   esto: entre que se muestra la hora y se escribe la reserva, la persona que
+ *   parecía libre puede haberse ocupado.
+ * - `person` — esa y nadie más.
+ *
+ * Con un booleano al lado del id, `{ id: 'juan', anyone: true }` sería representable
+ * y no querría decir nada; peor, un lector que mirara sólo el id trataría `anyone`
+ * como `none` —horario del negocio en vez de la unión del equipo— sin un error en
+ * ningún lado. Es el mismo criterio de `BlockScope`.
+ */
+export type ProfessionalPick =
+  | { kind: 'none' }
+  | { kind: 'anyone' }
+  | { kind: 'person'; id: string }
+
+/** El caso vacío, escrito una sola vez: es el default de todos los callers viejos. */
+export const NO_PROFESSIONAL: ProfessionalPick = { kind: 'none' }
+
+/** ¿Es la misma elección? Cambiarla invalida la hora elegida: la agenda es otra. */
+export function samePick(a: ProfessionalPick, b: ProfessionalPick): boolean {
+  if (a.kind !== b.kind) return false
+  return a.kind !== 'person' || a.id === (b as { id: string }).id
 }
 
 /**
- * Los dos campos que el wizard guarda de la persona, derivados de una sola vez.
+ * Los dos campos que el wizard guarda de la persona, derivados de una sola vez a
+ * partir de lo que el equipo permite (`choice`) y de lo que la clienta traía elegido.
  *
- * El nombre está denormalizado —como `serviceName`— para que la confirmación y el paso
- * de la hora no necesiten el equipo entero. Eso trae la invariante de que el nombre
- * corresponda al id, y por eso los dos salen de acá: mientras cada call site los
- * escribía por su cuenta, la invariante dependía de que nadie se olvidara. Olvidarse
- * dejaba "Te atiende Ana" sobre una reserva que quedó a nombre de otra, sin que nada
- * fallara.
+ * El nombre está denormalizado —como `serviceName`— para que el paso de la hora no
+ * necesite el equipo entero. Eso trae la invariante de que el nombre corresponda a la
+ * elección, y por eso los dos salen de acá: mientras cada call site los escribía por
+ * su cuenta, la invariante dependía de que nadie se olvidara. Olvidarse dejaba
+ * "Te atiende Ana" sobre una reserva que quedó a nombre de otra, sin que nada fallara.
+ *
+ * También es el cerrojo contra el estado viejo: si la clienta eligió a alguien y
+ * después volvió atrás y cambió de servicio, `previa` puede apuntar a una persona que
+ * ya no está entre las opciones. Devolverla igual escribiría una reserva a nombre de
+ * quien no hace ese servicio; el server la rechazaría, pero recién en el pago.
+ *
+ * **`anyone` sobrevive mientras el paso siga existiendo**, y colapsa solo cuando deja
+ * de haber algo que elegir: con una sola elegible, "cualquiera" ES esa persona y la
+ * reserva queda a su nombre —así la confirmación la puede nombrar—; sin ninguna, se
+ * cae junto con el paso.
  */
 export function professionalFields(
   choice: ProfessionalChoice,
-  elegido: string | null,
-): { professionalId: string | null; professionalName: string } {
-  const persona = resolveProfessional(choice, elegido)
-  return { professionalId: persona?.id ?? null, professionalName: persona?.name ?? '' }
+  previa: ProfessionalPick,
+): { professional: ProfessionalPick; professionalName: string } {
+  if (choice.kind === 'none') return { professional: NO_PROFESSIONAL, professionalName: '' }
+  if (choice.kind === 'auto') {
+    return {
+      professional: { kind: 'person', id: choice.professional.id },
+      professionalName: choice.professional.name,
+    }
+  }
+  if (previa.kind === 'anyone') return { professional: previa, professionalName: ANYONE_LABEL }
+
+  const persona = previa.kind === 'person' ? choice.options.find((p) => p.id === previa.id) : undefined
+  return persona
+    ? { professional: { kind: 'person', id: persona.id }, professionalName: persona.name }
+    : { professional: NO_PROFESSIONAL, professionalName: '' }
 }
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ForbiddenError } from '../helpers/auth-errors'
+import type { ProfessionalPick } from '@/lib/professionals/eligible'
 
 // El borde por persona de `getAvailableTimeSlots`: la procedencia del id que llega del
 // navegador. La escritura del horario —los dos alcances— vive en
@@ -38,6 +39,15 @@ const { getAvailableTimeSlots } = await import('@/server/actions/availability')
 
 const BIZ = 'biz-1'
 
+function pedir(professional: ProfessionalPick) {
+  return getAvailableTimeSlots({
+    businessId: BIZ,
+    serviceId: 'svc-1',
+    date: new Date('2026-06-01T15:00:00Z'),
+    professional,
+  })
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   mockRequireBusiness.mockResolvedValue({ businessId: BIZ, business: { timezone: 'America/Santiago' } })
@@ -45,7 +55,7 @@ beforeEach(() => {
   mockPrisma.business.findUnique.mockResolvedValue({
     id: BIZ, timezone: 'America/Santiago', bookingWindowDays: 90, slotStepMinutes: null,
   })
-  mockPrisma.service.findFirst.mockResolvedValue({ durationMinutes: 60 })
+  mockPrisma.service.findFirst.mockResolvedValue({ id: 'svc-1', durationMinutes: 60, modalities: ['on_site'] })
   mockPrisma.availabilityRule.findMany.mockResolvedValue([])
   mockPrisma.availabilityRule.count.mockResolvedValue(0)
   mockPrisma.timeBlock.findMany.mockResolvedValue([])
@@ -64,7 +74,7 @@ describe('getAvailableTimeSlots — de quién es el horario que devuelve', () =>
   it('rechaza un id que no es una persona activa de este negocio', async () => {
     mockPrisma.professional.findFirst.mockResolvedValue(null)
 
-    const res = await getAvailableTimeSlots(BIZ, 'svc-1', new Date('2026-06-01T15:00:00Z'), 'de-otro-salon')
+    const res = await pedir({ kind: 'person', id: 'de-otro-salon' })
 
     expect(res.ok).toBe(false)
     if (res.ok) throw new Error('debía rechazar')
@@ -76,7 +86,7 @@ describe('getAvailableTimeSlots — de quién es el horario que devuelve', () =>
   it('el chequeo exige que sea de este negocio y esté activa', async () => {
     mockPrisma.professional.findFirst.mockResolvedValue({ id: 'juan' })
 
-    await getAvailableTimeSlots(BIZ, 'svc-1', new Date('2026-06-01T15:00:00Z'), 'juan')
+    await pedir({ kind: 'person', id: 'juan' })
 
     expect(mockPrisma.professional.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'juan', businessId: BIZ, isActive: true } }),
@@ -85,18 +95,19 @@ describe('getAvailableTimeSlots — de quién es el horario que devuelve', () =>
 
   // Sin persona no se paga una query que no hace falta, y es el camino de hoy.
   it('sin persona no pregunta por nadie', async () => {
-    await getAvailableTimeSlots(BIZ, 'svc-1', new Date('2026-06-01T15:00:00Z'), null)
+    await pedir({ kind: 'none' })
 
     expect(mockPrisma.professional.findFirst).not.toHaveBeenCalled()
     expect(mockGenerateSlots).toHaveBeenCalled()
   })
 
-  // Un bundle viejo durante un deploy manda un argumento de menos. Eso NO puede
+  // Un bundle viejo durante un deploy manda un objeto sin el campo. Eso NO puede
   // convertirse en un filtro "de una persona sin id", que en Prisma no filtra nada.
   it('un undefined es "sin persona", no una persona inválida', async () => {
-    const res = await getAvailableTimeSlots(
-      BIZ, 'svc-1', new Date('2026-06-01T15:00:00Z'), undefined as unknown as null,
-    )
+    const res = await getAvailableTimeSlots({
+      businessId: BIZ, serviceId: 'svc-1', date: new Date('2026-06-01T15:00:00Z'),
+      professional: undefined as unknown as ProfessionalPick,
+    })
 
     expect(res.ok).toBe(true)
     expect(mockPrisma.professional.findFirst).not.toHaveBeenCalled()

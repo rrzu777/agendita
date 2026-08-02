@@ -24,7 +24,7 @@ const guardada = {
 const ctx = {
   serviceId: 'svc-1',
   startDateTime: INICIO,
-  professionalId: 'juan',
+  professional: { kind: 'person' as const, id: 'juan' },
   timezone: 'America/Santiago',
   holdMinutes: 15,
 }
@@ -37,7 +37,7 @@ const ctx = {
  */
 describe('el reintento con la misma key mira también con quién', () => {
   it('rechaza el reintento que pide otra persona', async () => {
-    await expect(resumeBookingForRetry(guardada, { ...ctx, professionalId: 'ana' }))
+    await expect(resumeBookingForRetry(guardada, { ...ctx, professional: { kind: 'person', id: 'ana' } }))
       .rejects.toThrow('Esa reserva es de otro horario.')
   })
 
@@ -53,5 +53,19 @@ describe('el reintento con la misma key mira también con quién', () => {
       .rejects.toThrow('Esa reserva es de otro horario.')
     await expect(resumeBookingForRetry(guardada, { ...ctx, serviceId: 'svc-2' }))
       .rejects.toThrow('Esa reserva es de otro horario.')
+  })
+
+  /**
+   * Quien pidió "cualquiera" no eligió a nadie: la persona que asignó el primer
+   * intento cumple igual lo que se está pidiendo ahora. Compararla contra `null`
+   * rechazaría TODOS los reintentos de ese camino —el más común, porque es la opción
+   * que va primero— y la clienta quedaría sin poder volver a pagar su propia reserva.
+   */
+  it('con "cualquiera" acepta a quien haya quedado asignado', async () => {
+    const res = await resumeBookingForRetry(
+      { ...guardada, status: 'confirmed' } as Booking,
+      { ...ctx, professional: { kind: 'anyone' } },
+    )
+    expect(res?.id).toBe('bk-1')
   })
 })

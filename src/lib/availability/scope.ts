@@ -96,6 +96,28 @@ export function blockScopeCondition(
   }
 }
 
+/**
+ * La MISMA regla que `blockScopeCondition({ kind: 'professional' })`, pero **en
+ * memoria**, sobre bloqueos ya traídos: ¿este bloqueo le tapa el horario a esta
+ * persona?
+ *
+ * Existe para el cálculo de "cualquiera disponible", que necesita los bloqueos de
+ * varias personas a la vez: los trae UNA vez con alcance `everyone` y reparte acá, en
+ * vez de una query por persona. Ojo que `everyone` **no** sirve para calcular slots tal
+ * cual —las vacaciones de una sola persona cerrarían el local—; lo que lo vuelve
+ * correcto es justamente este filtro, que reconstruye el alcance de cada una.
+ *
+ * Vive pegada a su hermana de Prisma por el mismo motivo que
+ * `bookingBlocksProfessional`: son la lectura y la escritura del mismo contrato.
+ */
+export function blockAppliesToProfessional(
+  block: { professionalId: string | null },
+  professionalId: string,
+): boolean {
+  const dueña = normalizeProfessionalId(block.professionalId)
+  return dueña === null || dueña === professionalId
+}
+
 // ─── Reservas ────────────────────────────────────────────────────────────────
 
 /**
@@ -197,6 +219,28 @@ export async function resolveRuleScope(
   if (id === null) return null
   const own = await client.availabilityRule.count({ where: { businessId, professionalId: id } })
   return own > 0 ? id : null
+}
+
+/**
+ * La MISMA herencia que `resolveRuleScope`, pero **en memoria**, sobre las reglas del
+ * negocio y de todo el equipo ya traídas: ¿cuáles rigen a esta persona?
+ *
+ * Existe para el cálculo de "cualquiera disponible", que necesita el horario de varias
+ * personas a la vez y las trae en una sola query en vez de dos por cabeza.
+ *
+ * **Recibe las filas SIN filtrar por `isActive`, y eso no es un descuido**: es el mismo
+ * borde que documenta `resolveRuleScope`. Tener horario propio se decide por la
+ * EXISTENCIA de filas, no por que estén activas — alguien con sus 7 días cerrados está
+ * cerrado, y si la existencia mirara `isActive` quedaría abierto en el horario del
+ * salón. Quién atiende cada día lo filtra después `generateSlots`, que ya mira
+ * `isActive` por su cuenta.
+ */
+export function rulesForProfessional<T extends { professionalId: string | null }>(
+  todas: T[],
+  professionalId: string,
+): T[] {
+  const propias = todas.filter((r) => normalizeProfessionalId(r.professionalId) === professionalId)
+  return propias.length > 0 ? propias : todas.filter((r) => r.professionalId === null)
 }
 
 /** Las reglas activas que rigen a una persona (o al negocio), con la herencia. */

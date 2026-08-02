@@ -37,8 +37,15 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
 
     // Con persona, los horarios son los SUYOS: su horario semanal (o el del
     // negocio, si no tiene propio), sus bloqueos y los del negocio, y las citas que
-    // le tapan la hora. `null` = sin persona, el horario del negocio de siempre.
-    getAvailableTimeSlots(businessId, data.serviceId, data.date, data.professionalId)
+    // le tapan la hora. Con "cualquiera disponible", la unión de los de todo el
+    // equipo elegible. Sin nadie, el horario del negocio de siempre.
+    getAvailableTimeSlots({
+      businessId,
+      serviceId: data.serviceId,
+      date: data.date,
+      professional: data.professional,
+      modality: data.serviceModality,
+    })
       .then((res) => {
         if (ignoreRef.current) return
         if (!res.ok) {
@@ -60,7 +67,10 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     return () => {
       ignoreRef.current = true
     }
-  }, [businessId, data.date, data.serviceId, data.professionalId, retryKey])
+    // `data.professional` es un objeto nuevo en cada render del wizard sólo cuando
+    // cambia de verdad (sale de `professionalFields`, que corre en los handlers y no
+    // en el render), así que sirve como dependencia.
+  }, [businessId, data.date, data.serviceId, data.professional, data.serviceModality, retryKey])
 
   if (loading) {
     return (

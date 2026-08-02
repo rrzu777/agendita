@@ -45,6 +45,9 @@ export interface BookingCreated {
    * `pending_payment` sobre una reserva que el cobro ya confirmó.
    */
   confirmed: boolean
+  /** Con quién quedó. Vacío si la reserva no tiene persona. Con "Cualquiera
+   *  disponible" es lo ÚNICO que sabe quién atiende: lo eligió el servidor. */
+  professionalName: string
 }
 
 function generateIdempotencyKey(): string {
@@ -320,9 +323,10 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       modality: data.serviceModality ?? undefined,
       serviceAddress: data.serviceAddress || undefined,
       // Con quién. El server verifica que sea de este negocio, que siga
-      // atendiendo y que haga este servicio en esta modalidad: acá abajo llega
-      // lo que eligió la clienta, no una autorización.
-      professionalId: data.professionalId,
+      // atendiendo y que haga este servicio en esta modalidad —y con "cualquiera"
+      // elige él adentro de la transacción—: acá abajo llega lo que eligió la
+      // clienta, no una autorización.
+      professional: data.professional,
       ...extra,
     }
   }
@@ -374,7 +378,14 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
   /** Arma el resultado desde la reserva que devolvió el servidor. */
   function resultado(
-    booking: { id: string; bookingNumber: number | null; modality: ServiceModality; serviceAddress: string | null; meetingUrl: string | null },
+    booking: {
+      id: string
+      bookingNumber: number | null
+      modality: ServiceModality
+      serviceAddress: string | null
+      meetingUrl: string | null
+      professional?: { name: string } | null
+    },
     mode: 'paid' | 'pending',
     confirmed: boolean,
   ): BookingCreated {
@@ -385,6 +396,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       promo: appliedPromo ? { discountAmount: appliedPromo.discount, finalAmount: appliedPromo.finalAmount } : null,
       where: { modality: booking.modality, serviceAddress: booking.serviceAddress, meetingUrl: booking.meetingUrl },
       confirmed,
+      professionalName: booking.professional?.name ?? '',
     }
   }
 

@@ -4,6 +4,7 @@ import { BookingWizard } from '@/components/booking/wizard'
 import type { BookingBusiness } from '@/lib/business/public'
 import type { FunnelSession } from '@/lib/customers/session-prefill'
 import { getVocabulary } from '@/lib/vocabulary'
+import { toFunnelProfessionals } from '@/lib/professionals/eligible'
 
 interface BookingBusinessPageProps {
   business: BookingBusiness
@@ -43,13 +44,7 @@ export function BookingBusinessPage({ business, profileHref, referralToken, sess
           services={business.services}
           // La relación se aplana acá, en el borde servidor→cliente: al wizard le
           // sirve la lista de ids y no el objeto anidado que devuelve Prisma.
-          professionals={business.professionals.map((p) => ({
-            id: p.id,
-            name: p.name,
-            bio: p.bio,
-            modalities: p.modalities,
-            serviceIds: p.services.map((s) => s.id),
-          }))}
+          professionals={toFunnelProfessionals(business.professionals)}
           professionalWords={getVocabulary(business.category)}
           cancellationPolicy={business.cancellationPolicy}
           referralToken={referralToken}

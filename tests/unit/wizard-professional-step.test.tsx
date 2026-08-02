@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import type { Service } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
-import type { FunnelProfessional } from '@/lib/professionals/eligible'
+import { ANYONE_LABEL, type FunnelProfessional } from '@/lib/professionals/eligible'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
 vi.mock('@/server/actions/bookings', () => ({ createBooking: vi.fn() }))
@@ -126,6 +126,33 @@ describe('el wizard con equipo', () => {
 
     expect(container.textContent).toContain('Elegí tu barbero')
     expect(container.querySelector('[aria-pressed="true"]')?.textContent).toContain('Sofía')
+  })
+
+  /**
+   * "Cualquiera disponible" es una respuesta como cualquier otra: avanza igual, y
+   * llega hasta el paso de la hora, que es donde cambia lo que se ofrece (la unión
+   * del equipo en vez de la agenda de una).
+   */
+  it('elegir "cualquiera" también avanza, y queda marcada al volver', () => {
+    montar([persona('p-1', 'Juan'), persona('p-2', 'Sofía')])
+    elegirServicio()
+    const cualquiera = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes(ANYONE_LABEL))
+    act(() => cualquiera?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(container.textContent).toContain('Paso 3 de 7')
+
+    act(() => Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Atrás')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(container.querySelector('[aria-pressed="true"]')?.textContent).toContain(ANYONE_LABEL)
+  })
+
+  /**
+   * Con una sola elegible "cualquiera" ES esa persona, así que el paso no aparece y
+   * la opción tampoco: ofrecerla sería preguntar entre una sola respuesta.
+   */
+  it('con una sola elegible tampoco se ofrece "cualquiera"', () => {
+    montar([persona('p-1', 'Juan')])
+    elegirServicio()
+    expect(container.textContent).not.toContain(ANYONE_LABEL)
   })
 
   it('elegir persona lleva a la fecha, ya con siete pasos', () => {

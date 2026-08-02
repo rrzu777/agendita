@@ -32,7 +32,8 @@ describe('moverse por la lista', () => {
 
 describe('a dónde vuelve quien se fue a crear su cuenta', () => {
   const base = {
-    date: new Date(), timeSlot: {} as BookingData['timeSlot'], professionalId: 'ana',
+    date: new Date(), timeSlot: {} as BookingData['timeSlot'],
+    professional: { kind: 'person', id: 'ana' } as BookingData['professional'],
     serviceModalities: ['on_site'] as BookingData['serviceModalities'], serviceModality: 'on_site' as const,
   }
 
@@ -48,11 +49,18 @@ describe('a dónde vuelve quien se fue a crear su cuenta', () => {
    * ese horario sería ofrecerle algo que ya no existe.
    */
   it('con el paso pendiente, ahí queda, aunque traiga fecha y hora', () => {
-    expect(entryStepAfterRestore({ ...base, professionalId: null }, CON_EQUIPO)).toBe('professional')
+    expect(entryStepAfterRestore({ ...base, professional: { kind: 'none' } }, CON_EQUIPO)).toBe('professional')
   })
 
   it('con la persona intacta el paso pendiente no estorba', () => {
     expect(entryStepAfterRestore(base, CON_EQUIPO)).toBe('customer')
+  })
+
+  // "Cualquiera disponible" ES una respuesta, y la hora restaurada salió de la unión
+  // del equipo, que no cambió por el viaje a /ingresar. Tratarla como pendiente la
+  // devolvería al paso a contestar lo que ya contestó.
+  it('"cualquiera" cuenta como elegido y no vuelve al paso', () => {
+    expect(entryStepAfterRestore({ ...base, professional: { kind: 'anyone' } }, CON_EQUIPO)).toBe('customer')
   })
 
   /**

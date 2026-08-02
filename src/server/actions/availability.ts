@@ -1,11 +1,14 @@
 'use server'
 
 import { z } from 'zod'
+import type { ServiceModality } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { generateSlots } from '@/lib/availability/slots'
+import { getTeamAvailableSlots } from '@/lib/availability/team-slots'
+import { NO_PROFESSIONAL, type ProfessionalPick } from '@/lib/professionals/eligible'
 import { getBusinessDayRange } from '@/lib/availability/timezone'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
@@ -72,20 +75,33 @@ export async function getWeeklySchedule(professionalId: string | null) {
   }
 }
 
-// `professionalId` es obligatorio y no opcional con default: un `undefined` que
-// llegue hasta un `where` de Prisma no filtra, matchea todo, y acá eso significa
-// mezclar el horario y los bloqueos de todo el equipo en un solo cálculo. El
-// resultado es "los horarios no funcionan" sin un error en ningún log. Que el
-// compilador obligue a decidir en cada caller.
-async function _getAvailableTimeSlots(
-  businessId: string,
-  serviceId: string,
-  date: Date,
-  professionalIdInput: string | null,
-) {
-  // Esta action es PÚBLICA: el cuarto argumento llega del navegador. Se normaliza una
-  // sola vez acá —el borde— y abajo se usa siempre el valor normalizado.
-  const professionalId = normalizeProfessionalId(professionalIdInput)
+/**
+ * Un solo objeto y no cinco argumentos posicionales: `businessId`, `serviceId` y el id
+ * de la persona son los tres `string` y cambiarlos de lugar compila. Es la misma trampa
+ * que ya documenta `BlockScope`, y acá el precio de pisarla es devolver el horario de
+ * otro.
+ */
+export interface AvailableSlotsInput {
+  businessId: string
+  serviceId: string
+  date: Date
+  /** Con quién se atiende. Ver `ProfessionalPick`: son tres casos, no un id nullable. */
+  professional: ProfessionalPick
+  /** La elegida en el paso 1. Sólo la usa `anyone`, y el servidor la re-deriva. */
+  modality?: ServiceModality | null
+}
+
+// `professional` es obligatorio y no opcional con default: un `undefined` que llegue
+// hasta un `where` de Prisma no filtra, matchea todo, y acá eso significa mezclar el
+// horario y los bloqueos de todo el equipo en un solo cálculo. El resultado es "los
+// horarios no funcionan" sin un error en ningún log. Que el compilador obligue a
+// decidir en cada caller.
+async function _getAvailableTimeSlots(input: AvailableSlotsInput) {
+  const { businessId, serviceId, date } = input
+  // Esta action es PÚBLICA: el input entero llega del navegador. Un bundle viejo
+  // durante un deploy manda un objeto sin este campo, y eso tiene que significar "sin
+  // persona" —el funnel de siempre— y no una elección rota.
+  const professional = input.professional ?? NO_PROFESSIONAL
   // Config 'get-availability' (60/min por IP): una clienta explorando fechas
   // hace un request por click; 10/min se agotaba en uso humano normal.
   const limit = await checkRateLimit('get-availability')
@@ -93,29 +109,59 @@ async function _getAvailableTimeSlots(
     throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
   }
 
-  const business = await prisma.business.findUnique({
-    where: { id: businessId, isActive: true },
-    select: { id: true, timezone: true, bookingWindowDays: true, slotStepMinutes: true },
-  })
+  // El servicio no depende del negocio, así que va en paralelo: la profundidad sigue
+  // siendo de dos round trips, como cuando el servicio viajaba en el Promise.all de
+  // abajo. Acá arriba porque "cualquiera disponible" necesita sus modalidades para
+  // saber quién es elegible, y esa rama no usa nada más de lo que se pide después.
+  const [business, service] = await Promise.all([
+    prisma.business.findUnique({
+      where: { id: businessId, isActive: true },
+      select: { id: true, timezone: true, bookingWindowDays: true, slotStepMinutes: true },
+    }),
+    prisma.service.findFirst({
+      where: { id: serviceId, businessId, isActive: true },
+      select: { id: true, durationMinutes: true, modalities: true },
+    }),
+  ])
   if (!business) {
     throw new UserError('Negocio no válido')
   }
+  if (!service) {
+    throw new UserError('Servicio no disponible')
+  }
 
   const timezone = business.timezone || 'America/Santiago'
-  const bookingWindowDays = business.bookingWindowDays ?? 90
+  const slotOptions = {
+    timezone,
+    now: new Date(),
+    bookingWindowDays: business.bookingWindowDays ?? 90,
+    slotStepMinutes: business.slotStepMinutes,
+  }
+
+  // La unión del equipo: otra forma de contar, no una variante de la de abajo. Ver
+  // `getTeamAvailableSlots` para por qué las lecturas van enteras y se reparten en
+  // memoria.
+  if (professional.kind === 'anyone') {
+    return getTeamAvailableSlots({
+      businessId,
+      service,
+      date,
+      requestedModality: input.modality,
+      timezone,
+      slotOptions,
+    })
+  }
+
+  const professionalId = professional.kind === 'person' ? normalizeProfessionalId(professional.id) : null
   const { dayStart, dayEnd } = getBusinessDayRange(date, timezone)
 
   // El chequeo de procedencia va ADENTRO del Promise.all y no antes: no depende de
   // nada de lo que se pide acá, y en serie le sumaba un round trip a la lectura más
   // caliente del producto —una clienta explorando fechas hace un request por click—.
-  // Que las otras cuatro consultas corran con un id inválido no ensucia nada: el
+  // Que las otras tres consultas corran con un id inválido no ensucia nada: el
   // throw de abajo pasa antes de que ningún resultado se use.
-  const [profValido, service, availabilityRules, timeBlocks, bookings] = await Promise.all([
+  const [profValido, availabilityRules, timeBlocks, bookings] = await Promise.all([
     professionalId === null || isProfessionalOfBusiness(prisma, businessId, professionalId),
-    prisma.service.findFirst({
-      where: { id: serviceId, businessId, isActive: true },
-      select: { durationMinutes: true },
-    }),
     resolveAvailabilityRules(prisma, businessId, professionalId),
     getEffectiveBlocks({
       businessId,
@@ -144,16 +190,7 @@ async function _getAvailableTimeSlots(
     throw new UserError(PROFESSIONAL_UNAVAILABLE_MESSAGE)
   }
 
-  if (!service) {
-    throw new UserError('Servicio no disponible')
-  }
-
-  return generateSlots(date, service.durationMinutes, availabilityRules, timeBlocks, bookings, {
-    timezone,
-    now: new Date(),
-    bookingWindowDays,
-    slotStepMinutes: business.slotStepMinutes,
-  })
+  return generateSlots(date, service.durationMinutes, availabilityRules, timeBlocks, bookings, slotOptions)
 }
 
 export const getAvailableTimeSlots = action(_getAvailableTimeSlots)

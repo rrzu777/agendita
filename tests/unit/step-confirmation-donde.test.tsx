@@ -33,7 +33,7 @@ function render(where: WhereFields = enElLocal, biz: ConfirmationBusiness = busi
     <StepConfirmation
       timezone="America/Santiago" currency="CLP" data={base} bookingId="clabc12345"
       bookingNumber={4738} mode="paid" promo={null} sessionEmail={null} business={biz} where={where}
-      confirmed={confirmed}
+      confirmed={confirmed} professionalName=""
     />,
   )
 }

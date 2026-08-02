@@ -4,10 +4,11 @@ import { ForbiddenError } from '../helpers/auth-errors'
 const mockPrisma = {
   business: { findUnique: vi.fn() },
   service: { findFirst: vi.fn() },
-  professional: { findFirst: vi.fn() },
+  professional: { findFirst: vi.fn(), findMany: vi.fn() },
   booking: {
     findUnique: vi.fn().mockResolvedValue(null),
     create: vi.fn(),
+    groupBy: vi.fn().mockResolvedValue([]),
   },
   customer: {
     findFirst: vi.fn().mockResolvedValue(null),
@@ -75,6 +76,8 @@ function setupMocks() {
     durationMinutes: 30, modalities: ['on_site'], isActive: true,
   })
   mockPrisma.professional.findFirst.mockResolvedValue({ id: 'prof-1' })
+  mockPrisma.professional.findMany.mockResolvedValue([{ id: 'prof-1' }, { id: 'prof-2' }])
+  mockPrisma.booking.groupBy.mockResolvedValue([])
   mockPrisma.booking.create.mockResolvedValue({
     id: 'booking-created',
     customer: { name: 'Juan', phone: '+56912345678', email: null },
@@ -83,9 +86,10 @@ function setupMocks() {
   mockPrisma.$transaction.mockImplementation(async (fn: Function) => fn({
     business: { findUnique: mockPrisma.business.findUnique, update: vi.fn().mockResolvedValue({ bookingNumberSeq: 7 }) },
     service: { findFirst: mockPrisma.service.findFirst },
-    booking: { create: mockPrisma.booking.create },
+    booking: { create: mockPrisma.booking.create, groupBy: mockPrisma.booking.groupBy },
     customer: { findFirst: mockPrisma.customer.findFirst, create: mockPrisma.customer.create },
     promotionGrant: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
+    professional: { findFirst: mockPrisma.professional.findFirst, findMany: mockPrisma.professional.findMany },
     timeBlock: { findMany: vi.fn().mockResolvedValue([]) },
     availabilityRule: { findFirst: vi.fn().mockResolvedValue({ startTime: '08:00', endTime: '20:00' }) },
     $executeRaw: vi.fn(),
@@ -113,7 +117,7 @@ describe('createBooking — con quién', () => {
   })
 
   it('guarda la persona y la usa para validar el horario', async () => {
-    await createBooking({ ...baseInput, professionalId: 'prof-1' }, 'biz-1')
+    await createBooking({ ...baseInput, professional: { kind: 'person', id: 'prof-1' } }, 'biz-1')
 
     expect(datosCreados().professionalId).toBe('prof-1')
     expect(assertSlotIsAvailable.mock.calls[0][0]).toMatchObject({ professionalId: 'prof-1' })
@@ -134,7 +138,7 @@ describe('createBooking — con quién', () => {
   it('rechaza a quien no está entre las opciones, sin escribir nada', async () => {
     mockPrisma.professional.findFirst.mockResolvedValue(null)
 
-    const res = await createBooking({ ...baseInput, professionalId: 'de-otro-salon' }, 'biz-1')
+    const res = await createBooking({ ...baseInput, professional: { kind: 'person', id: 'de-otro-salon' } }, 'biz-1')
 
     expect(res.ok).toBe(false)
     expect(res.ok === false && res.error).toBe('Esa persona no está disponible para reservar')
@@ -147,7 +151,7 @@ describe('createBooking — con quién', () => {
    * olvida, y sin ella el funnel manda a alguien a domicilio que no viaja.
    */
   it('verifica negocio, alta, servicio y modalidad en una sola consulta', async () => {
-    await createBooking({ ...baseInput, professionalId: 'prof-1' }, 'biz-1')
+    await createBooking({ ...baseInput, professional: { kind: 'person', id: 'prof-1' } }, 'biz-1')
 
     expect(mockPrisma.professional.findFirst.mock.calls[0][0]).toMatchObject({
       where: {
@@ -160,12 +164,58 @@ describe('createBooking — con quién', () => {
     })
   })
 
-  // Un string vacío que llegue del navegador no es una persona. Sin normalizar
-  // entraría al `where` y Prisma devolvería una fila cualquiera del negocio.
-  it('trata el id vacío como "sin persona"', async () => {
-    await createBooking({ ...baseInput, professionalId: '' }, 'biz-1')
+  /**
+   * El id vacío no es una persona. Antes había que normalizarlo a mano —sin eso
+   * entraba al `where` y Prisma devolvía una fila cualquiera del negocio—; ahora el
+   * schema lo rechaza de entrada, que es más fuerte: nunca llega a ningún `where`.
+   */
+  it('rechaza el id vacío en vez de tratarlo como una persona', async () => {
+    const res = await createBooking(
+      { ...baseInput, professional: { kind: 'person', id: '' } },
+      'biz-1',
+    )
 
-    expect(datosCreados().professionalId).toBeNull()
+    expect(res.ok).toBe(false)
+    expect(mockPrisma.booking.create).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * "Cualquiera disponible" es el único caso donde el navegador NO manda a nadie y la
+ * reserva igual queda a nombre de alguien. Todo lo que decide vive del lado del
+ * servidor, adentro de la transacción.
+ */
+describe('createBooking — "cualquiera disponible"', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupMocks()
+  })
+
+  it('guarda a quien resolvió el servidor', async () => {
+    await createBooking({ ...baseInput, professional: { kind: 'anyone' } }, 'biz-1')
+
+    expect(datosCreados().professionalId).toBe('prof-1')
+  })
+
+  /**
+   * No hay id que autorizar: la persona no existe hasta que la transacción la elija.
+   * Ese `findFirst` es el guard de la elección EXPLÍCITA, y correrlo acá con un id
+   * que no existe rechazaría la reserva antes de empezar.
+   */
+  it('no pasa por el guard de la elección explícita', async () => {
+    await createBooking({ ...baseInput, professional: { kind: 'anyone' } }, 'biz-1')
+
     expect(mockPrisma.professional.findFirst).not.toHaveBeenCalled()
+    expect(mockPrisma.professional.findMany).toHaveBeenCalled()
+  })
+
+  // El equipo se busca DENTRO de la transacción: hacerlo afuera es la carrera que
+  // esta feature vino a evitar —entre la lectura y el insert alguien se ocupa—.
+  it('resuelve adentro de la transacción, no antes', async () => {
+    const antesDeLaTx = mockPrisma.$transaction.mock.calls.length
+    await createBooking({ ...baseInput, professional: { kind: 'anyone' } }, 'biz-1')
+
+    expect(antesDeLaTx).toBe(0)
+    expect(mockPrisma.$transaction).toHaveBeenCalled()
   })
 })
