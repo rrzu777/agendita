@@ -125,15 +125,74 @@ describe('BlockTimeModal', () => {
 
     await unmount()
   })
+
+  /**
+   * De quién es el bloqueo no es un detalle de forma: `null` cierra la agenda de todo
+   * el equipo. Un mapeo roto entre el `<Select>` —que no puede tener un valor vacío— y
+   * el `null` del servidor no falla en ningún lado: se guarda como bloqueo del negocio
+   * y le cierra el día a gente que sí podía atender.
+   */
+  it('el bloqueo sale a nombre de la persona que se está mirando', async () => {
+    mockCreateTimeBlock.mockResolvedValue({ ok: true, data: { id: 'block-1' } })
+    const { unmount } = await renderBlockTimeModal({
+      professionals: [{ id: 'ana', name: 'Ana' }],
+      defaultProfessionalId: 'ana',
+    })
+
+    await clickButton(document.body, 'Bloquear horario')
+    await clickButton(document.body, 'Bloquear')
+    await flushPromises()
+
+    expect(mockCreateTimeBlock.mock.calls[0][0].professionalId).toBe('ana')
+
+    await unmount()
+  })
+
+  // El caso de casi todos los negocios hoy: sin equipo no hay nada que elegir y el
+  // diálogo tiene que quedar exactamente como estaba.
+  it('sin equipo no pregunta nada y el bloqueo es del negocio', async () => {
+    mockCreateTimeBlock.mockResolvedValue({ ok: true, data: { id: 'block-1' } })
+    const { unmount } = await renderBlockTimeModal()
+
+    await clickButton(document.body, 'Bloquear horario')
+    expect(document.body.textContent).not.toContain('¿Para quién es el bloqueo?')
+
+    await clickButton(document.body, 'Bloquear')
+    await flushPromises()
+
+    expect(mockCreateTimeBlock.mock.calls[0][0].professionalId).toBeNull()
+
+    await unmount()
+  })
+
+  it('la serie recurrente también se guarda con su dueño', async () => {
+    mockCreateTimeBlockSeries.mockResolvedValue({ ok: true, data: { series: { id: 's1' }, overlappingDates: [] } })
+    const { unmount } = await renderBlockTimeModal({
+      professionals: [{ id: 'ana', name: 'Ana' }],
+      defaultProfessionalId: 'ana',
+    })
+
+    await clickButton(document.body, 'Bloquear horario')
+    await changeCheckbox(document.body, 'recurring', true)
+    await clickButton(document.body, 'Lun')
+    await clickButton(document.body, 'Bloquear')
+    await flushPromises()
+
+    expect(mockCreateTimeBlockSeries.mock.calls[0][0].professionalId).toBe('ana')
+
+    await unmount()
+  })
 })
 
-async function renderBlockTimeModal() {
+async function renderBlockTimeModal(
+  props: Partial<React.ComponentProps<typeof BlockTimeModal>> = {},
+) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
 
   await act(async () => {
-    root.render(<BlockTimeModal defaultDate="2026-06-01" timezone="America/Santiago" />)
+    root.render(<BlockTimeModal defaultDate="2026-06-01" timezone="America/Santiago" {...props} />)
   })
 
   return {

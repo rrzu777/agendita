@@ -14,6 +14,8 @@ import { findOrCreateCustomerInTx } from '@/lib/customers/find-or-create'
 import { logger } from '@/lib/logger'
 
 import { assertSlotIsAvailable, SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
+import { normalizeProfessionalId } from '@/lib/availability/scope'
+import { assertProfessionalOffersService } from '@/lib/professionals/ownership'
 import { isNoOverlapViolation } from '@/lib/db/no-overlap'
 import { assignBookingNumber } from '@/lib/bookings/number'
 import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcement'
@@ -64,6 +66,9 @@ const createBookingSchema = z.object({
   // del servicio (resolveBookingModality) antes de persistirla.
   modality: z.nativeEnum(ServiceModality).optional(),
   serviceAddress: z.string().trim().max(300, 'La dirección es demasiado larga').optional(),
+  // Con quién se atiende. Ausente o null = sin persona, que es el funnel de
+  // siempre. La procedencia se verifica abajo, con la modalidad ya resuelta.
+  professionalId: z.string().max(64).nullish(),
 })
 
 const confirmPaymentSchema = z.object({
@@ -166,6 +171,7 @@ async function _createBooking(data: {
   paymentMethod?: typeof BANK_TRANSFER_METHOD
   modality?: ServiceModality
   serviceAddress?: string
+  professionalId?: string | null
 }, businessId: string) {
   const limit = await checkRateLimit('create-booking', 20, 60000)
   if (!limit.success) {
@@ -217,6 +223,16 @@ async function _createBooking(data: {
       defaultMeetingUrl: business.defaultMeetingUrl,
     })
 
+  // Con quién. Va DESPUÉS del draft porque se valida contra la modalidad RESUELTA
+  // (el servidor pisa la pedida cuando el servicio tiene una sola), y afuera de la
+  // transacción porque es una lectura que el lock no protege: quien se dé de baja
+  // entre este chequeo y el insert deja una reserva a su nombre, igual que las que
+  // ya tenía agendadas.
+  const professionalId = normalizeProfessionalId(data.professionalId ?? null)
+  if (professionalId !== null) {
+    await assertProfessionalOffersService(prisma, businessId, professionalId, data.serviceId, modality)
+  }
+
   // Transferencia bancaria: validar server-side que esté habilitada. El hold
   // largo (holdHours, default 24h) da la ventana para transferir y declarar
   // (spec transferencia §5.2). Solo aplica si el servicio requiere abono.
@@ -244,6 +260,7 @@ async function _createBooking(data: {
   const retryCtx = {
     serviceId: data.serviceId,
     startDateTime: data.startDateTime,
+    professionalId,
     promotionCode: data.promotionCode,
     timezone: business.timezone || 'America/Santiago',
     holdMinutes,
@@ -279,10 +296,10 @@ async function _createBooking(data: {
         startDateTime: data.startDateTime,
         endDateTime,
         timezone: business.timezone || 'America/Santiago',
-        // Sin persona: el paso de elegir con quién atenderse todavía no existe en
-        // el funnel. Cuando exista, acá va la que eligió la clienta y este chequeo
-        // pasa a mirar SU horario y SUS citas.
-        professionalId: null,
+        // La que eligió la clienta: el chequeo mira SU horario, SUS bloqueos (más
+        // los del negocio) y las citas que le tapan la hora. `null` = sin persona,
+        // que valida contra el horario del negocio y choca contra todas.
+        professionalId,
       })
 
       // Buscar o crear cliente dentro de la transacción (matcher único por
@@ -325,6 +342,7 @@ async function _createBooking(data: {
           businessId,
           serviceId: data.serviceId,
           customerId: customer.id,
+          professionalId,
           startDateTime: data.startDateTime,
           endDateTime,
           status,

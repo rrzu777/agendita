@@ -36,6 +36,20 @@ describe('ServiceFitWarnings', () => {
     expect(html).not.toContain('ESMALTADO')
   })
 
+  /**
+   * El aviso manda a arreglar algo, así que tiene que mandar al horario correcto: con
+   * una persona elegida, "amplía un horario" arriba de SU semana manda a tocar el del
+   * negocio, que no es el que la está dejando sin lugar.
+   */
+  it('con una persona elegida el aviso habla de su horario', () => {
+    const html = renderToStaticMarkup(
+      <ServiceFitWarnings vocabulary={vocabulary} fits={[fitNowhere]} scopeName="Ana" />,
+    )
+    expect(html).toContain('el horario y los bloqueos de Ana')
+    expect(html).toContain('Amplía su horario')
+    expect(html).not.toContain('tu horario')
+  })
+
   it('muestra un aviso por cada servicio afectado', () => {
     const otro = { ...fitNowhere, serviceId: 'svc-300', serviceName: 'PEDICURA SPA', durationMinutes: 300 }
     const html = renderToStaticMarkup(<ServiceFitWarnings vocabulary={vocabulary} fits={[fitNowhere, otro]} />)

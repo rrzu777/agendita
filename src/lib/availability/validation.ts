@@ -176,10 +176,11 @@ async function findBookingOverlap(input: AssertConflictInput): Promise<SlotConfl
   // reserva. `occupiesSlot` decide si la fila ocupa cupo; `bookingBlocksProfessional`,
   // si le ocupa cupo A ESTA.
   //
-  // OJO: que esto devuelva vacío NO alcanza para que dos personas puedan tener cita a
-  // la misma hora. El EXCLUDE `Booking_no_overlap` es por negocio y va a rechazar el
-  // insert igual. Cambiar el constraint es un PR aparte y necesita chequear datos de
-  // producción antes; hasta entonces esta rama es sólo la mitad lógica.
+  // La otra mitad vive en la base y ya está puesta: el EXCLUDE `Booking_no_overlap`
+  // lleva la persona adentro desde la migración `booking_overlap_por_persona`. Hasta
+  // entonces esta rama decidía bien y el insert moría igual con un 23P01. Las dos
+  // tienen que decir lo mismo — si alguna vez difieren, la que gana es la base y el
+  // error que ve la clienta no explica nada.
   const blocking = overlapping.filter(
     (r) => occupiesSlot(r, now) && bookingBlocksProfessional(r, input.professionalId),
   )

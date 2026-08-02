@@ -59,15 +59,39 @@ export const getPublicBusinessBySubdomain = unstable_cache(async (subdomain: str
   return business?.isActive ? business : null
 }, ['public-business-by-subdomain'], { revalidate: 300, tags: ['public-business-by-subdomain'] })
 
+// El equipo viaja en el mismo payload que los servicios porque el funnel necesita
+// las dos cosas para decidir su PRIMER paso: cuánta gente hace el servicio que la
+// clienta acaba de elegir. Pedirlo aparte sería una action pública nueva —otra
+// superficie que autorizar y limitar— para un dato que ya está en esta consulta.
+//
+// `select` y no la fila entera: esto se serializa al navegador. Sale lo que el paso
+// muestra y nada más (ver `FunnelProfessional`).
+//
+// Las dos variantes —slug y subdominio— comparten el include a propósito: son la
+// misma pantalla servida por dos caminos, y cuando estaban escritas dos veces era
+// cuestión de tiempo que una creciera sin la otra.
+export const bookingBusinessInclude = {
+  services: {
+    where: { isActive: true },
+    orderBy: { sortOrder: 'asc' },
+  },
+  professionals: {
+    where: { isActive: true },
+    orderBy: { sortOrder: 'asc' },
+    select: {
+      id: true,
+      name: true,
+      bio: true,
+      modalities: true,
+      services: { select: { id: true } },
+    },
+  },
+} satisfies Prisma.BusinessInclude
+
 export const getBookingBusinessBySlug = unstable_cache(async (slug: string) => {
   const business = await prisma.business.findUnique({
     where: { slug },
-    include: {
-      services: {
-        where: { isActive: true },
-        orderBy: { sortOrder: 'asc' },
-      },
-    },
+    include: bookingBusinessInclude,
   })
 
   return business?.isActive ? business : null
@@ -76,12 +100,7 @@ export const getBookingBusinessBySlug = unstable_cache(async (slug: string) => {
 export const getBookingBusinessBySubdomain = unstable_cache(async (subdomain: string) => {
   const business = await prisma.business.findUnique({
     where: { subdomain },
-    include: {
-      services: {
-        where: { isActive: true },
-        orderBy: { sortOrder: 'asc' },
-      },
-    },
+    include: bookingBusinessInclude,
   })
 
   return business?.isActive ? business : null

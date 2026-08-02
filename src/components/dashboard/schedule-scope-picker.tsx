@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { WHOLE_BUSINESS_LABEL } from '@/lib/professionals/scope-label'
 
 export interface ScheduleScopeOption {
   id: string
@@ -58,10 +59,10 @@ export function ScheduleScopePicker({
 }: ScheduleScopePickerProps) {
   if (professionals.length === 0) return null
 
-  const options = [{ id: null as string | null, name: 'Todo el salón' }, ...professionals]
+  const options = [{ id: null as string | null, name: WHOLE_BUSINESS_LABEL }, ...professionals]
 
   return (
-    <nav aria-label={`Horario del salón o de cada ${professionalsLabel.toLowerCase()}`} className="flex flex-wrap gap-2">
+    <nav aria-label={`Horario del negocio o de cada ${professionalsLabel.toLowerCase()}`} className="flex flex-wrap gap-2">
       {options.map((option) => {
         const isSelected = option.id === selectedId
         return (

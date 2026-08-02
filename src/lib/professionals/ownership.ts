@@ -1,8 +1,28 @@
-import type { Prisma, PrismaClient } from '@prisma/client'
+import type { Prisma, PrismaClient, ServiceModality } from '@prisma/client'
 import { ForbiddenError } from '@/lib/auth/server'
+import { UserError } from '@/lib/actions/result'
 import { normalizeProfessionalId } from '@/lib/availability/scope'
+import { professionalEligibilityWhere } from '@/lib/professionals/eligible'
 
 type Db = PrismaClient | Prisma.TransactionClient
+
+/** Lo único que ve la clienta cuando la persona que pidió no sirve, sea porque no
+ *  existe, porque se dio de baja o porque no hace ese servicio. Un solo mensaje: los
+ *  motivos internos no son asunto de quien reserva. */
+export const PROFESSIONAL_UNAVAILABLE_MESSAGE = 'Esa persona no está disponible para reservar'
+
+/**
+ * Quién cuenta como persona válida de este negocio: de acá y en agenda.
+ *
+ * Es un fragmento compartido y no tres claves escritas dos veces porque **la regla no
+ * es estable**: el docstring de `isProfessionalOfBusiness` deja anotado que el
+ * `isActive` se revisa cuando exista la pantalla que muestra a la gente pausada. Con
+ * dos copias, ese día se toca la del panel y el funnel público sigue con la vieja —
+ * una superficie acepta a quien la otra rechaza, sin error, y la reserva se escribe.
+ */
+function professionalOfBusinessWhere(businessId: string, id: string): Prisma.ProfessionalWhereInput {
+  return { id, businessId, isActive: true }
+}
 
 /**
  * ¿Ese id es de alguien de ESTE negocio que además sigue atendiendo?
@@ -87,4 +107,44 @@ export async function assertOwnerScope(
 ): Promise<string | null> {
   const id = normalizeProfessionalId(professionalId)
   return id === null ? null : assertProfessionalOfBusiness(client, businessId, id)
+}
+
+/**
+ * El guard del funnel PÚBLICO: ¿esta persona puede tomar ESTA reserva?
+ *
+ * Es la contraparte servidor de `professionalChoice` (`lib/professionals/eligible.ts`),
+ * que decide lo mismo en el navegador para armar la lista. Las dos existen porque
+ * responden a preguntas distintas: aquella arma una pantalla, ésta autoriza una
+ * escritura. El id llega de un formulario público, así que lo que se muestre allá no
+ * limita nada de lo que puede llegar acá.
+ *
+ * El `where` se COMPONE y no se escribe: el mismo fragmento de procedencia que usa el
+ * panel, más el de elegibilidad, que vive pegado a `professionalChoice` porque son las
+ * dos caras de una sola regla. Todo en una consulta.
+ *
+ * **La modalidad es la RESUELTA por `resolveBookingDraft`, no la pedida.** El servidor
+ * pisa la modalidad cuando el servicio tiene una sola, así que validar contra la que
+ * mandó el navegador dejaría pasar a alguien que no atiende donde la reserva va a
+ * decir que se atiende. Por eso el parámetro no es opcional: un `undefined` acá borra
+ * la clave del `where` y el chequeo pasa a ser "en cualquier lado".
+ */
+export async function assertProfessionalOffersService(
+  client: Db,
+  businessId: string,
+  professionalId: string,
+  serviceId: string,
+  modality: ServiceModality,
+): Promise<string> {
+  const id = normalizeProfessionalId(professionalId)
+  if (id === null) throw new UserError(PROFESSIONAL_UNAVAILABLE_MESSAGE)
+
+  const found = await client.professional.findFirst({
+    where: {
+      ...professionalOfBusinessWhere(businessId, id),
+      ...professionalEligibilityWhere(serviceId, modality),
+    },
+    select: { id: true },
+  })
+  if (!found) throw new UserError(PROFESSIONAL_UNAVAILABLE_MESSAGE)
+  return id
 }

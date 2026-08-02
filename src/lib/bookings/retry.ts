@@ -37,19 +37,25 @@ export async function resumeBookingForRetry<T extends Booking>(
   ctx: {
     serviceId: string
     startDateTime: Date
+    professionalId: string | null
     promotionCode?: string
     timezone: string
     holdMinutes: number
   },
 ): Promise<T | null> {
   // La key identifica UN intento. Si lo que se pide ahora no es lo que quedó
-  // guardado, la clienta volvió atrás y cambió de horario (o de servicio):
-  // devolver la vieja sería cobrarle por una hora que ya no eligió. El wizard
-  // suelta la key al elegir horario, así que desde nuestra UI esto no pasa; es
-  // el fail-closed para cualquier otro cliente.
+  // guardado, la clienta volvió atrás y cambió de horario, de servicio o de
+  // persona: devolver la vieja sería cobrarle por una cita que ya no eligió. El
+  // wizard suelta la key en esos tres casos, así que desde nuestra UI esto no
+  // pasa; es el fail-closed para cualquier otro cliente.
+  //
+  // La persona entró en la lista cuando el funnel empezó a preguntarla: sin ella,
+  // dos intentos con la misma key y distinto barbero devolvían el primero, y la
+  // clienta pagaba por una hora con quien no eligió.
   if (
     existing.serviceId !== ctx.serviceId ||
-    existing.startDateTime.getTime() !== ctx.startDateTime.getTime()
+    existing.startDateTime.getTime() !== ctx.startDateTime.getTime() ||
+    existing.professionalId !== ctx.professionalId
   ) {
     throw volverAElegir('Esa reserva es de otro horario.')
   }

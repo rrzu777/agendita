@@ -35,10 +35,10 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     setError(null)
     setSelectedSlot(null)
 
-    // `null` = sin persona, el horario del negocio. El paso de elegir con quién
-    // atenderse todavía no existe en el funnel; cuando exista, acá va lo que la
-    // clienta eligió y este cálculo pasa a ser el horario de esa persona.
-    getAvailableTimeSlots(businessId, data.serviceId, data.date, null)
+    // Con persona, los horarios son los SUYOS: su horario semanal (o el del
+    // negocio, si no tiene propio), sus bloqueos y los del negocio, y las citas que
+    // le tapan la hora. `null` = sin persona, el horario del negocio de siempre.
+    getAvailableTimeSlots(businessId, data.serviceId, data.date, data.professionalId)
       .then((res) => {
         if (ignoreRef.current) return
         if (!res.ok) {
@@ -60,7 +60,7 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     return () => {
       ignoreRef.current = true
     }
-  }, [businessId, data.date, data.serviceId, retryKey])
+  }, [businessId, data.date, data.serviceId, data.professionalId, retryKey])
 
   if (loading) {
     return (
@@ -101,7 +101,10 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     <div>
       <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Elige una hora</h2>
       <p className="mb-7 text-base text-muted-foreground">
-        {data.serviceName} · {data.date ? formatBookingDate(data.date, timezone) : ''}
+        {/* La persona se nombra acá y no sólo en su paso: es lo que explica que
+            los horarios cambien, y es la única pantalla que la ve alguien a quien
+            el funnel se la asignó sin preguntar (una sola elegible). */}
+        {data.serviceName}{data.professionalName ? ` · ${data.professionalName}` : ''} · {data.date ? formatBookingDate(data.date, timezone) : ''}
       </p>
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">

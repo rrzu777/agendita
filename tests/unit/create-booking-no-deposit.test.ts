@@ -214,6 +214,11 @@ describe('createBooking - no deposit / free service', () => {
       id: 'booking-existing',
       serviceId: baseInput.serviceId,
       startDateTime: baseInput.startDateTime,
+      // Explícito y no ausente: el resume compara los tres campos que definen la
+      // cita, y una fila de Prisma SIEMPRE trae la columna. Sin esto el fixture
+      // dice `undefined` donde la base dice `null`, y el chequeo rechaza el
+      // reintento por una diferencia que no existe.
+      professionalId: null,
       status: BookingStatus.confirmed,
       service: { name: 'Manicure' },
       customer: { name: 'Juan', phone: '+56912345678', email: null },
