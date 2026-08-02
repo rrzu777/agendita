@@ -413,7 +413,11 @@ async function _createBooking(data: {
             startDateTime: data.startDateTime,
           },
         }),
-        include: { service: true, customer: true },
+        // Con la persona, como el `create` de arriba: sin esto, aplicar un paquete o
+        // un código deja la reserva sin `professional` en la respuesta y la
+        // confirmación se queda sin poder decir quién atiende — justo en el camino
+        // más común, porque el paquete se usa por default cuando la clienta tiene.
+        include: { service: true, customer: true, professional: { select: { name: true } } },
       })
       return updated
       // 15s: la tx hace lock de slot + upsert de cliente + creación de reserva +
@@ -453,7 +457,9 @@ async function _createBooking(data: {
             idempotencyKey: data.idempotencyKey,
           },
         },
-        include: { service: true, customer: true },
+        // Con la persona, por el mismo motivo que las otras dos lecturas de esta
+        // key: lo que se devuelve acá es lo que va a leer la confirmación.
+        include: { service: true, customer: true, professional: { select: { name: true } } },
       })
       // Acá `null` no debería pasar: la reserva que ganó la carrera nació hace
       // milisegundos. Si pasara, cae al manejo de error de abajo con el P2002.

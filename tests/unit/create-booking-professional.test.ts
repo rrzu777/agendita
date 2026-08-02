@@ -8,6 +8,7 @@ const mockPrisma = {
   booking: {
     findUnique: vi.fn().mockResolvedValue(null),
     create: vi.fn(),
+    update: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
   customer: {
@@ -59,6 +60,13 @@ vi.mock('@/lib/availability/validation', () => ({
 }))
 vi.mock('@/lib/subscriptions/enforcement', () => ({ assertBusinessCanReceiveBookings: vi.fn() }))
 
+// El descuento se mockea para poder forzar la rama del `update`: con paquete o con
+// código, la reserva que se devuelve NO es la del `create` sino la actualizada.
+const applyBookingDiscountInTx = vi.fn().mockResolvedValue(null)
+vi.mock('@/lib/bookings/discount', () => ({
+  applyBookingDiscountInTx: (...args: unknown[]) => applyBookingDiscountInTx(...args),
+}))
+
 const { createBooking } = await import('@/server/actions/bookings')
 
 function setupMocks() {
@@ -85,11 +93,19 @@ function setupMocks() {
     id: 'booking-created',
     customer: { name: 'Juan', phone: '+56912345678', email: null },
     service: { name: 'Corte' },
+    professional: { name: 'Ana' },
   })
+  mockPrisma.booking.update.mockResolvedValue({
+    id: 'booking-created',
+    customer: { name: 'Juan', phone: '+56912345678', email: null },
+    service: { name: 'Corte' },
+    professional: { name: 'Ana' },
+  })
+  applyBookingDiscountInTx.mockResolvedValue(null)
   mockPrisma.$transaction.mockImplementation(async (fn: Function) => fn({
     business: { findUnique: mockPrisma.business.findUnique, update: vi.fn().mockResolvedValue({ bookingNumberSeq: 7 }) },
     service: { findFirst: mockPrisma.service.findFirst },
-    booking: { create: mockPrisma.booking.create, findMany: mockPrisma.booking.findMany },
+    booking: { create: mockPrisma.booking.create, update: mockPrisma.booking.update, findMany: mockPrisma.booking.findMany },
     customer: { findFirst: mockPrisma.customer.findFirst, create: mockPrisma.customer.create },
     promotionGrant: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
     professional: { findFirst: mockPrisma.professional.findFirst, findMany: mockPrisma.professional.findMany },
@@ -220,5 +236,54 @@ describe('createBooking — "cualquiera disponible"', () => {
 
     expect(antesDeLaTx).toBe(0)
     expect(mockPrisma.$transaction).toHaveBeenCalled()
+  })
+})
+
+/**
+ * El nombre de quien atiende viaja en la RESERVA que devuelve la action, y la
+ * confirmación no tiene otra fuente: con "cualquiera disponible" el wizard no sabe a
+ * quién le tocó. Así que cada camino de salida tiene que pedirlo, no sólo el `create`.
+ *
+ * El caso que se escapaba: con paquete o con código, lo que se devuelve es el `update`
+ * de después del descuento. Y el paquete se usa POR DEFAULT cuando la clienta tiene
+ * sesiones, así que es el camino común, no un borde.
+ *
+ * Se verifica el `include` que se PIDE y no el nombre que vuelve, porque con Prisma
+ * mockeado la respuesta la escribe el propio test: un mock devuelve la relación aunque
+ * nadie la haya pedido, así que mirar el resultado sería un test que no puede fallar.
+ */
+describe('createBooking — la persona se pide en todos los caminos de salida', () => {
+  const CON_LA_PERSONA = { include: { professional: { select: { name: true } } } }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupMocks()
+  })
+
+  it('sin descuento, en el create', async () => {
+    await createBooking({ ...baseInput, professional: { kind: 'anyone' } }, 'biz-1')
+
+    expect(mockPrisma.booking.create.mock.calls[0][0]).toMatchObject(CON_LA_PERSONA)
+    expect(mockPrisma.booking.update).not.toHaveBeenCalled()
+  })
+
+  it('con descuento, en el update que lo aplica', async () => {
+    applyBookingDiscountInTx.mockResolvedValue({ discountAmount: 3000, source: 'package' })
+
+    await createBooking({ ...baseInput, professional: { kind: 'anyone' } }, 'biz-1')
+
+    expect(mockPrisma.booking.update.mock.calls[0][0]).toMatchObject(CON_LA_PERSONA)
+  })
+
+  // El reintento devuelve la reserva GUARDADA, así que esa lectura también la necesita.
+  it('en el reintento con la misma key', async () => {
+    mockPrisma.booking.findUnique.mockResolvedValue(null)
+
+    await createBooking(
+      { ...baseInput, professional: { kind: 'anyone' }, idempotencyKey: 'key-1' },
+      'biz-1',
+    )
+
+    expect(mockPrisma.booking.findUnique.mock.calls[0][0]).toMatchObject(CON_LA_PERSONA)
   })
 })
