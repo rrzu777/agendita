@@ -8,17 +8,16 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { generateSlots } from '@/lib/availability/slots'
 import { getTeamAvailableSlots } from '@/lib/availability/team-slots'
-import { NO_PROFESSIONAL, type ProfessionalPick } from '@/lib/professionals/eligible'
+import { parseProfessionalPick, type ProfessionalPick } from '@/lib/professionals/eligible'
 import { getBusinessDayRange } from '@/lib/availability/timezone'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { isValidTimeRange } from '@/lib/availability/time-range'
 import { computeRescheduleSlots } from '@/lib/availability/reschedule-slots'
-import { blockScopeFor, bookingScopeCondition, normalizeProfessionalId, resolveAvailabilityRules, resolveRuleScope } from '@/lib/availability/scope'
+import { blockScopeFor, bookingScopeCondition, bookingsOfDayWhere, normalizeProfessionalId, resolveAvailabilityRules, resolveRuleScope } from '@/lib/availability/scope'
 import { readWeek, scheduleLockKey, setWeekday } from '@/lib/availability/weekly-schedule'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
 import { assertOwnerScope, assertProfessionalOfBusiness, isProfessionalOfBusiness, PROFESSIONAL_UNAVAILABLE_MESSAGE } from '@/lib/professionals/ownership'
-import { RELEASED_STATUSES } from '@/lib/bookings/approval'
 import { action, UserError } from '@/lib/actions/result'
 
 const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
@@ -99,9 +98,9 @@ export interface AvailableSlotsInput {
 async function _getAvailableTimeSlots(input: AvailableSlotsInput) {
   const { businessId, serviceId, date } = input
   // Esta action es PÚBLICA: el input entero llega del navegador. Un bundle viejo
-  // durante un deploy manda un objeto sin este campo, y eso tiene que significar "sin
-  // persona" —el funnel de siempre— y no una elección rota.
-  const professional = input.professional ?? NO_PROFESSIONAL
+  // durante un deploy manda un objeto sin este campo —y uno manipulado, cualquier
+  // cosa—; las dos tienen que significar "sin persona", el funnel de siempre.
+  const professional = parseProfessionalPick(input.professional)
   // Config 'get-availability' (60/min por IP): una clienta explorando fechas
   // hace un request por click; 10/min se agotaba en uso humano normal.
   const limit = await checkRateLimit('get-availability')
@@ -172,10 +171,7 @@ async function _getAvailableTimeSlots(input: AvailableSlotsInput) {
     }),
     prisma.booking.findMany({
       where: {
-        businessId,
-        status: { notIn: [...RELEASED_STATUSES] },
-        startDateTime: { lte: dayEnd },
-        endDateTime: { gte: dayStart },
+        ...bookingsOfDayWhere(businessId, dayStart, dayEnd),
         AND: bookingScopeCondition(professionalId),
       },
       orderBy: { startDateTime: 'asc' },

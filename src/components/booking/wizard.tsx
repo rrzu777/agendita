@@ -206,10 +206,9 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
               // salió de otra y puede estar ocupada para esta. Vale igual al pasar de
               // una persona a "cualquiera" —la unión ofrece horas que ella no tenía—
               // y al revés.
-              const elegida = professionalFields(choice, pick)
-              const cambio = !samePick(data.professional, elegida.professional)
+              const cambio = !samePick(data.professional, pick)
               updateData({
-                ...elegida,
+                ...professionalFields(choice, pick),
                 ...(cambio ? { timeSlot: null, idempotencyKey: null } : {}),
               })
               nextStep()

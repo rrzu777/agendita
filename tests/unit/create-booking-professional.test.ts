@@ -8,7 +8,7 @@ const mockPrisma = {
   booking: {
     findUnique: vi.fn().mockResolvedValue(null),
     create: vi.fn(),
-    groupBy: vi.fn().mockResolvedValue([]),
+    findMany: vi.fn().mockResolvedValue([]),
   },
   customer: {
     findFirst: vi.fn().mockResolvedValue(null),
@@ -50,8 +50,11 @@ vi.mock('@/lib/notifications', () => ({
 }))
 
 const assertSlotIsAvailable = vi.fn().mockResolvedValue(undefined)
+const assertProfessionalIsFree = vi.fn().mockResolvedValue(undefined)
 vi.mock('@/lib/availability/validation', () => ({
   assertSlotIsAvailable: (...args: unknown[]) => assertSlotIsAvailable(...args),
+  assertSlotIsBookable: vi.fn().mockResolvedValue(undefined),
+  assertProfessionalIsFree: (...args: unknown[]) => assertProfessionalIsFree(...args),
   SLOT_UNAVAILABLE_MESSAGE: 'Ese horario ya no está disponible. Por favor selecciona otro.',
 }))
 vi.mock('@/lib/subscriptions/enforcement', () => ({ assertBusinessCanReceiveBookings: vi.fn() }))
@@ -77,7 +80,7 @@ function setupMocks() {
   })
   mockPrisma.professional.findFirst.mockResolvedValue({ id: 'prof-1' })
   mockPrisma.professional.findMany.mockResolvedValue([{ id: 'prof-1' }, { id: 'prof-2' }])
-  mockPrisma.booking.groupBy.mockResolvedValue([])
+  mockPrisma.booking.findMany.mockResolvedValue([])
   mockPrisma.booking.create.mockResolvedValue({
     id: 'booking-created',
     customer: { name: 'Juan', phone: '+56912345678', email: null },
@@ -86,7 +89,7 @@ function setupMocks() {
   mockPrisma.$transaction.mockImplementation(async (fn: Function) => fn({
     business: { findUnique: mockPrisma.business.findUnique, update: vi.fn().mockResolvedValue({ bookingNumberSeq: 7 }) },
     service: { findFirst: mockPrisma.service.findFirst },
-    booking: { create: mockPrisma.booking.create, groupBy: mockPrisma.booking.groupBy },
+    booking: { create: mockPrisma.booking.create, findMany: mockPrisma.booking.findMany },
     customer: { findFirst: mockPrisma.customer.findFirst, create: mockPrisma.customer.create },
     promotionGrant: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
     professional: { findFirst: mockPrisma.professional.findFirst, findMany: mockPrisma.professional.findMany },
@@ -120,7 +123,7 @@ describe('createBooking — con quién', () => {
     await createBooking({ ...baseInput, professional: { kind: 'person', id: 'prof-1' } }, 'biz-1')
 
     expect(datosCreados().professionalId).toBe('prof-1')
-    expect(assertSlotIsAvailable.mock.calls[0][0]).toMatchObject({ professionalId: 'prof-1' })
+    expect(assertProfessionalIsFree.mock.calls[0][0]).toMatchObject({ professionalId: 'prof-1' })
   })
 
   it('sin persona sigue siendo el funnel de siempre', async () => {

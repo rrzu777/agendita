@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
 import { getAvailableTimeSlots } from '@/server/actions/availability'
+import { pickCacheKey } from '@/lib/professionals/eligible'
 import { LEAD_TIME_MINUTES } from '@/lib/availability/constants'
 import { formatBookingDate, formatBookingTime } from '@/lib/bookings/format-booking-datetime'
 import { Clock3, Loader2 } from 'lucide-react'
@@ -19,6 +20,7 @@ interface StepTimeProps {
 }
 
 export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepTimeProps) {
+  const pickKey = pickCacheKey(data.professional)
   const [slots, setSlots] = useState<{ start: Date; end: Date }[]>([])
   const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null)
   const [loading, setLoading] = useState(true)
@@ -67,10 +69,12 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     return () => {
       ignoreRef.current = true
     }
-    // `data.professional` es un objeto nuevo en cada render del wizard sólo cuando
-    // cambia de verdad (sale de `professionalFields`, que corre en los handlers y no
-    // en el render), así que sirve como dependencia.
-  }, [businessId, data.date, data.serviceId, data.professional, data.serviceModality, retryKey])
+    // La elección entra como clave y no como objeto: `professionalFields` arma uno
+    // NUEVO en cada llamada, así que la identidad cambiaría sin que cambie la
+    // elección y esto es la lectura más caliente del producto. `pickKey` la
+    // representa entera —`kind` más el id—, así que no se pierde nada.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `pickKey` representa a `data.professional`
+  }, [businessId, data.date, data.serviceId, pickKey, data.serviceModality, retryKey])
 
   if (loading) {
     return (

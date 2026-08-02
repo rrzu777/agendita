@@ -1,6 +1,6 @@
 import type { Service, ServiceModality } from '@prisma/client'
 import { sortModalities, requiresServiceAddress } from '@/lib/services/modality'
-import { NO_PROFESSIONAL, professionalChoice, professionalFields, samePick, type FunnelProfessional, type ProfessionalPick } from '@/lib/professionals/eligible'
+import { parseProfessionalPick, professionalChoice, professionalFields, samePick, type FunnelProfessional, type ProfessionalPick } from '@/lib/professionals/eligible'
 import type { BookingData } from '@/components/booking/wizard'
 
 /** Persistencia del wizard para el viaje a /ingresar y de vuelta (spec CTA funnel).
@@ -91,10 +91,10 @@ export function restoreWizardState(
   // que no viaja a domicilio ya no es una opción. Y con una sola elegible se
   // re-asigna sola, que es lo mismo que hace el funnel al elegir servicio.
   //
-  // El `?? NO_PROFESSIONAL` cubre el estado guardado por una versión anterior del
-  // wizard, que escribía un `professionalId` suelto: el TTL es de 30 minutos, así que
-  // sólo pasa durante un deploy, y volver a preguntar es más barato que adivinar.
-  const guardada = saved.professional ?? NO_PROFESSIONAL
+  // El parseo cubre el estado guardado por una versión anterior del wizard, que
+  // escribía un `professionalId` suelto: el TTL es de 30 minutos, así que sólo pasa
+  // durante un deploy, y volver a preguntar es más barato que adivinar.
+  const guardada = parseProfessionalPick(saved.professional)
   const persona = professionalFields(
     professionalChoice(professionals, service.id, modality),
     guardada,

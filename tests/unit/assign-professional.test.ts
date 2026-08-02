@@ -1,20 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { UserError } from '@/lib/actions/result'
 
-// El chequeo de horario se mockea porque acá se prueba OTRA cosa: a quién se le
-// ofrece la hora y en qué orden. Que el chequeo sea el de verdad es justamente lo que
-// se verifica en la integración (`tests/integration/cualquiera-disponible.test.ts`).
-const assertSlotIsAvailable = vi.fn()
+// Los dos chequeos se mockean porque acá se prueba OTRA cosa: a quién se le ofrece la
+// hora y en qué orden. Que los chequeos sean los de verdad es justamente lo que
+// verifica la integración (`tests/integration/cualquiera-disponible.test.ts`).
+const assertSlotIsBookable = vi.fn()
+const assertProfessionalIsFree = vi.fn()
 vi.mock('@/lib/availability/validation', () => ({
-  assertSlotIsAvailable: (...args: unknown[]) => assertSlotIsAvailable(...args),
+  assertSlotIsBookable: (...args: unknown[]) => assertSlotIsBookable(...args),
+  assertProfessionalIsFree: (...args: unknown[]) => assertProfessionalIsFree(...args),
   SLOT_UNAVAILABLE_MESSAGE: 'Ese horario ya no está disponible. Por favor selecciona otro.',
 }))
 
 const { assertSlotAndResolveProfessional, NO_ONE_AVAILABLE_MESSAGE } = await import('@/lib/professionals/assign')
 
 const findMany = vi.fn()
-const groupBy = vi.fn()
-const tx = { professional: { findMany }, booking: { groupBy } } as never
+const citasDelDia = vi.fn()
+const tx = { professional: { findMany }, booking: { findMany: citasDelDia } } as never
 
 const slot = {
   tx,
@@ -31,16 +33,38 @@ function equipo(...ids: string[]) {
   findMany.mockResolvedValue(ids.map((id) => ({ id })))
 }
 
-/** Citas de ese día por persona, como las devuelve el `groupBy`. */
-function cargas(porPersona: Record<string, number>) {
-  groupBy.mockResolvedValue(
-    Object.entries(porPersona).map(([professionalId, n]) => ({ professionalId, _count: { _all: n } })),
-  )
+const CITA_BASE = { status: 'confirmed', holdExpiresAt: null, paymentStatus: 'unpaid', paymentMethod: null }
+
+/** Citas en OTRA hora: cuentan para la carga y no chocan con el slot pedido. */
+function citasEnOtraHora(professionalId: string, n: number) {
+  return Array.from({ length: n }, (_, i) => ({
+    ...CITA_BASE,
+    professionalId,
+    startDateTime: new Date(`2026-06-15T1${6 + i}:00:00Z`),
+    endDateTime: new Date(`2026-06-15T1${6 + i}:30:00Z`),
+  }))
+}
+
+function cargas(porPersona: Record<string, number>, extra: unknown[] = []) {
+  citasDelDia.mockResolvedValue([
+    ...Object.entries(porPersona).flatMap(([id, n]) => citasEnOtraHora(id, n)),
+    ...extra,
+  ])
+}
+
+/** Una cita encima del slot pedido: la corazonada de `candidatesByLoad` la ve. */
+function ocupadaAEsaHora(professionalId: string) {
+  return {
+    ...CITA_BASE,
+    professionalId,
+    startDateTime: new Date('2026-06-15T14:00:00Z'),
+    endDateTime: new Date('2026-06-15T14:30:00Z'),
+  }
 }
 
 /** Quién da libre. Los demás rebotan como rebota el chequeo real: con `UserError`. */
 function libres(...ids: string[]) {
-  assertSlotIsAvailable.mockImplementation(async ({ professionalId }: { professionalId: string | null }) => {
+  assertProfessionalIsFree.mockImplementation(async ({ professionalId }: { professionalId: string | null }) => {
     if (professionalId === null || ids.includes(professionalId)) return
     throw new UserError('Ese horario ya no está disponible. Por favor selecciona otro.')
   })
@@ -48,6 +72,7 @@ function libres(...ids: string[]) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  assertSlotIsBookable.mockResolvedValue(undefined)
   cargas({})
   libres()
 })
@@ -55,7 +80,7 @@ beforeEach(() => {
 describe('a nombre de quién queda la reserva', () => {
   it('sin persona valida contra el negocio y no busca candidatos', async () => {
     expect(await assertSlotAndResolveProfessional({ ...slot, professional: { kind: 'none' } })).toBeNull()
-    expect(assertSlotIsAvailable).toHaveBeenCalledWith(expect.objectContaining({ professionalId: null }))
+    expect(assertProfessionalIsFree).toHaveBeenCalledWith(expect.objectContaining({ professionalId: null }))
     expect(findMany).not.toHaveBeenCalled()
   })
 
@@ -119,7 +144,51 @@ describe('"cualquiera disponible": a quién le toca', () => {
     libres('juan')
 
     expect(await assertSlotAndResolveProfessional(anyone)).toBe('juan')
-    expect(assertSlotIsAvailable).toHaveBeenCalledTimes(2)
+    expect(assertProfessionalIsFree).toHaveBeenCalledTimes(2)
+  })
+
+  /**
+   * La corazonada: quien ya tiene una cita ENCIMA de esa hora se prueba último. Sale
+   * de las mismas citas que se traen para contar la carga, así que es gratis, y evita
+   * preguntarle a la base por cada persona ocupada con el advisory lock puesto.
+   */
+  it('prueba último a quien ya tiene una cita a esa hora', async () => {
+    equipo('juan', 'ana')
+    // Juan es el MENOS cargado del día y el primero del panel: por carga y por orden
+    // ganaría él. Lo único que lo manda al fondo es tener la hora ya tomada.
+    cargas({ ana: 3 }, [ocupadaAEsaHora('juan')])
+    libres('juan', 'ana')
+
+    expect(await assertSlotAndResolveProfessional(anyone)).toBe('ana')
+    expect(assertProfessionalIsFree).toHaveBeenCalledTimes(1)
+  })
+
+  /**
+   * Y ordena, no filtra: la lectura va sin `FOR UPDATE` y sin barrer los holds
+   * abandonados, así que puede dar por ocupado a alguien que en realidad está libre.
+   * Descartarlo dejaría sin reservar una hora que sí se podía reservar.
+   */
+  it('pero igual lo prueba si es el único', async () => {
+    equipo('juan', 'ana')
+    cargas({}, [ocupadaAEsaHora('juan'), ocupadaAEsaHora('ana')])
+    libres('juan')
+
+    expect(await assertSlotAndResolveProfessional(anyone)).toBe('juan')
+  })
+
+  /**
+   * Lo que NO depende de la persona se pregunta una sola vez. Con un candidato por
+   * pasada, un servicio dado de baja o una hora fuera de la ventana costaban N vueltas
+   * a la base para terminar diciendo lo mismo.
+   */
+  it('lo que no depende de la persona se chequea una vez y corta', async () => {
+    equipo('juan', 'ana')
+    assertSlotIsBookable.mockRejectedValue(new UserError('Ese horario ya no está disponible. Por favor selecciona otro.'))
+
+    await expect(assertSlotAndResolveProfessional(anyone)).rejects.toThrow('Ese horario ya no está disponible')
+    expect(assertSlotIsBookable).toHaveBeenCalledTimes(1)
+    expect(findMany).not.toHaveBeenCalled()
+    expect(assertProfessionalIsFree).not.toHaveBeenCalled()
   })
 
   it('si nadie tiene la hora, la respuesta es que el horario se fue', async () => {
@@ -138,7 +207,7 @@ describe('"cualquiera disponible": a quién le toca', () => {
     equipo()
 
     await expect(assertSlotAndResolveProfessional(anyone)).rejects.toThrow(NO_ONE_AVAILABLE_MESSAGE)
-    expect(assertSlotIsAvailable).not.toHaveBeenCalled()
+    expect(assertProfessionalIsFree).not.toHaveBeenCalled()
   })
 
   // Con un solo candidato no hace falta preguntar la carga: no hay nada que ordenar.
@@ -147,7 +216,7 @@ describe('"cualquiera disponible": a quién le toca', () => {
     libres('juan')
 
     expect(await assertSlotAndResolveProfessional(anyone)).toBe('juan')
-    expect(groupBy).not.toHaveBeenCalled()
+    expect(citasDelDia).not.toHaveBeenCalled()
   })
 
   /**
@@ -157,7 +226,7 @@ describe('"cualquiera disponible": a quién le toca', () => {
    */
   it('un error que no es de horario se propaga', async () => {
     equipo('juan', 'ana')
-    assertSlotIsAvailable.mockRejectedValue(new Error('se cayó la conexión'))
+    assertProfessionalIsFree.mockRejectedValue(new Error('se cayó la conexión'))
 
     await expect(assertSlotAndResolveProfessional(anyone)).rejects.toThrow('se cayó la conexión')
   })

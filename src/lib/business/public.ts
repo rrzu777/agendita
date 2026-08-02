@@ -1,7 +1,7 @@
 import { unstable_cache } from 'next/cache'
 import { prisma } from '@/lib/db'
 import type { Prisma } from '@prisma/client'
-import { funnelProfessionalSelect } from '@/lib/professionals/eligible'
+import { funnelProfessionalsQuery } from '@/lib/professionals/eligible'
 
 export const publicBusinessInclude = {
   services: {
@@ -76,11 +76,7 @@ export const bookingBusinessInclude = {
     where: { isActive: true },
     orderBy: { sortOrder: 'asc' },
   },
-  professionals: {
-    where: { isActive: true },
-    orderBy: { sortOrder: 'asc' },
-    select: funnelProfessionalSelect,
-  },
+  professionals: funnelProfessionalsQuery,
 } satisfies Prisma.BusinessInclude
 
 export const getBookingBusinessBySlug = unstable_cache(async (slug: string) => {

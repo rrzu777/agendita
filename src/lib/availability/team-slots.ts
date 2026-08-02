@@ -6,13 +6,13 @@ import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 import {
   blockAppliesToProfessional,
   bookingBlocksProfessional,
+  bookingsOfDayWhere,
   rulesForProfessional,
 } from '@/lib/availability/scope'
-import { RELEASED_STATUSES } from '@/lib/bookings/approval'
 import { resolveBookingModality } from '@/lib/services/modality'
 import {
   eligibleProfessionals,
-  funnelProfessionalSelect,
+  funnelProfessionalsQuery,
   professionalChoice,
   toFunnelProfessionals,
 } from '@/lib/professionals/eligible'
@@ -41,6 +41,17 @@ import {
  * que garantiza que la unión que se ofrece acá y los horarios que se ven al elegir a
  * una persona en particular sean la misma cuenta; si divergieran, elegir a Juan después
  * de ver "15:00 con cualquiera" haría desaparecer las 15:00 sin explicación.
+ *
+ * **Deuda anotada a propósito:** esto y la rama por persona de `_getAvailableTimeSlots`
+ * son el mismo cálculo con el alcance armado en distinto lado —acá en memoria, allá en
+ * el `where`—, y el precio es que un cambio en cómo se acota (un tipo de obstáculo
+ * nuevo, un estado más que ocupe cupo) hay que hacerlo en dos lugares. Lo que hoy los
+ * ata es `tests/integration/cualquiera-disponible.test.ts`, que exige que la unión sea
+ * exactamente la unión. No se unificaron acá porque el camino batcheado le haría traer
+ * a TODOS los negocios —incluidos los miles que no tienen equipo— el horario, los
+ * bloqueos y las citas del día entero para recortarlos en memoria: es un cambio en la
+ * lectura más caliente del producto para todo el mundo, por una función que sólo usan
+ * los negocios con equipo. Merece su propio PR y su propia medición.
  */
 export async function getTeamAvailableSlots({
   businessId,
@@ -66,24 +77,28 @@ export async function getTeamAvailableSlots({
   const { dayStart, dayEnd } = getBusinessDayRange(date, timezone)
 
   const [equipo, reglas, bloqueos, reservas] = await Promise.all([
-    prisma.professional.findMany({
-      where: { businessId, isActive: true },
-      orderBy: { sortOrder: 'asc' },
-      select: funnelProfessionalSelect,
-    }),
+    // La MISMA query que sirve la pantalla de reservar, no una parecida: las dos
+    // tienen que devolver el mismo equipo (ver `funnelProfessionalsQuery`).
+    prisma.professional.findMany(funnelProfessionalsQuery),
     // Sin `isActive` y sin filtrar por persona: la herencia se decide por la
     // EXISTENCIA de filas propias (ver `rulesForProfessional`), así que filtrar acá
     // dejaría a alguien con la semana cerrada heredando el horario del salón.
-    prisma.availabilityRule.findMany({ where: { businessId } }),
+    prisma.availabilityRule.findMany({
+      where: { businessId },
+      select: { professionalId: true, dayOfWeek: true, startTime: true, endTime: true, isActive: true },
+    }),
     // `everyone` y no el alcance de cada una: los bloqueos del negocio más los de
     // cualquier persona, repartidos después con `blockAppliesToProfessional`.
     getEffectiveBlocks({ businessId, rangeStart: dayStart, rangeEnd: dayEnd, timezone, scope: { kind: 'everyone' } }),
+    // Con `select` y no la fila entera: ésta es la única de las tres consultas que va
+    // sin acotar a una persona —trae el día de todo el negocio— y es la lectura más
+    // caliente del producto. Son las columnas que miran `occupiesSlot` y
+    // `bookingBlocksProfessional`, ni una más.
     prisma.booking.findMany({
-      where: {
-        businessId,
-        status: { notIn: [...RELEASED_STATUSES] },
-        startDateTime: { lte: dayEnd },
-        endDateTime: { gte: dayStart },
+      where: bookingsOfDayWhere(businessId, dayStart, dayEnd),
+      select: {
+        professionalId: true, startDateTime: true, endDateTime: true,
+        status: true, holdExpiresAt: true, paymentStatus: true, paymentMethod: true,
       },
       orderBy: { startDateTime: 'asc' },
     }),

@@ -4,7 +4,9 @@ import {
   blockScopeFor,
   bookingScopeCondition,
   bookingBlocksProfessional,
+  bookingsOfDayWhere,
   resolveAvailabilityRules,
+  rulesForProfessional,
   resolveDayRule,
   resolveRuleScope,
 } from '@/lib/availability/scope'
@@ -216,5 +218,70 @@ describe('bookingBlocksProfessional', () => {
       const filtraEnMemoria = !bookingBlocksProfessional(deAna, id)
       expect(filtraEnMemoria, String(id)).toBe(filtraEnPrisma)
     }
+  })
+})
+
+/**
+ * La herencia en memoria, que es la que usa "cualquiera disponible" para repartir una
+ * sola lectura entre varias personas. Tiene que dar lo MISMO que `resolveRuleScope` +
+ * `resolveAvailabilityRules`, que es la versión en SQL de la misma regla.
+ */
+describe('rulesForProfessional', () => {
+  const salon = { professionalId: null, dayOfWeek: 1, isActive: true }
+  const salonMartes = { professionalId: null, dayOfWeek: 2, isActive: true }
+  const deAna = { professionalId: 'ana', dayOfWeek: 1, isActive: true }
+  const deJuan = { professionalId: 'juan', dayOfWeek: 1, isActive: true }
+
+  it('quien tiene filas propias se rige por las suyas, y sólo por las suyas', () => {
+    expect(rulesForProfessional([salon, salonMartes, deAna, deJuan], 'ana')).toEqual([deAna])
+  })
+
+  it('quien no tiene ninguna hereda el horario del salón', () => {
+    expect(rulesForProfessional([salon, salonMartes, deAna], 'juan')).toEqual([salon, salonMartes])
+  })
+
+  /**
+   * El borde que invierte el sentido, igual que en `resolveRuleScope`: la EXISTENCIA
+   * se pregunta sin mirar `isActive`. Alguien con su único día cerrado está cerrado; si
+   * la existencia filtrara los activos, quedaría abierto en el horario del salón.
+   */
+  it('una semana entera cerrada es horario propio, no herencia', () => {
+    const anaCerrada = { professionalId: 'ana', dayOfWeek: 1, isActive: false }
+    expect(rulesForProfessional([salon, anaCerrada], 'ana')).toEqual([])
+  })
+
+  // Y lo que devuelve son los días que SÍ atiende: un día cerrado del salón no puede
+  // salir de acá como si estuviera abierto.
+  it('devuelve sólo los días activos', () => {
+    const salonDomingoCerrado = { professionalId: null, dayOfWeek: 0, isActive: false }
+    expect(rulesForProfessional([salon, salonDomingoCerrado], 'juan')).toEqual([salon])
+  })
+})
+
+/**
+ * El `where` de "las citas que ocupan cupo ese día". Vive junto porque la lista de
+ * estados no está cerrada —`pending_confirmation` ocupa para la app aunque el EXCLUDE
+ * de la base lo ignore— y lo comparten los tres lectores de horarios y el reparto.
+ */
+describe('bookingsOfDayWhere', () => {
+  const inicio = new Date('2026-06-15T04:00:00Z')
+  const fin = new Date('2026-06-16T03:59:59Z')
+
+  it('acota por SOLAPE con el día, no por fecha de creación', () => {
+    expect(bookingsOfDayWhere('biz-1', inicio, fin)).toMatchObject({
+      businessId: 'biz-1',
+      startDateTime: { lte: fin },
+      endDateTime: { gte: inicio },
+    })
+  })
+
+  // Las liberadas no ocupan: una cancelada no le tapa la hora a nadie.
+  it('deja afuera los estados liberados y adentro los que ocupan', () => {
+    const where = bookingsOfDayWhere('biz-1', inicio, fin)
+    const fuera = (where.status as { notIn: string[] }).notIn
+    expect(fuera).toContain('cancelled')
+    expect(fuera).toContain('expired')
+    expect(fuera).not.toContain('confirmed')
+    expect(fuera).not.toContain('pending_confirmation')
   })
 })

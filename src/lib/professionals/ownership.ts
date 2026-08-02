@@ -20,8 +20,12 @@ export const PROFESSIONAL_UNAVAILABLE_MESSAGE = 'Esa persona no está disponible
  * dos copias, ese día se toca la del panel y el funnel público sigue con la vieja —
  * una superficie acepta a quien la otra rechaza, sin error, y la reserva se escribe.
  */
+export function activeProfessionalWhere(businessId: string): Prisma.ProfessionalWhereInput {
+  return { businessId, isActive: true }
+}
+
 function professionalOfBusinessWhere(businessId: string, id: string): Prisma.ProfessionalWhereInput {
-  return { id, businessId, isActive: true }
+  return { id, ...activeProfessionalWhere(businessId) }
 }
 
 /**

@@ -2,8 +2,7 @@ import { prisma } from '@/lib/db'
 import { generateSlots } from '@/lib/availability/slots'
 import { getBusinessDayRange } from '@/lib/availability/timezone'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
-import { blockScopeFor, bookingScopeCondition, resolveAvailabilityRules } from '@/lib/availability/scope'
-import { RELEASED_STATUSES } from '@/lib/bookings/approval'
+import { blockScopeFor, bookingScopeCondition, bookingsOfDayWhere, resolveAvailabilityRules } from '@/lib/availability/scope'
 
 /** Slots disponibles para reprogramar una reserva (excluye la reserva misma).
  *  SIN auth: el caller (action de dueña o de clienta) valida ownership antes.
@@ -36,11 +35,8 @@ export async function computeRescheduleSlots(
     }),
     prisma.booking.findMany({
       where: {
-        businessId: booking.businessId,
+        ...bookingsOfDayWhere(booking.businessId, dayStart, dayEnd),
         id: { not: booking.id },
-        status: { notIn: [...RELEASED_STATUSES] },
-        startDateTime: { lte: dayEnd },
-        endDateTime: { gte: dayStart },
         AND: bookingScopeCondition(booking.professionalId),
       },
       orderBy: { startDateTime: 'asc' },

@@ -34,15 +34,27 @@ export const funnelProfessionalSelect = {
   services: { select: { id: true } },
 } satisfies Prisma.ProfessionalSelect
 
-/** Aplana la relación de Prisma: al funnel le sirve la lista de ids, no el anidado. */
+/**
+ * La query entera —a quién se trae y en qué orden, no sólo qué columnas—, porque las
+ * dos consultas tienen que devolver EL MISMO equipo: una arma la pantalla y la otra la
+ * unión de horarios de "cualquiera disponible". Compartir sólo el `select` dejaba el
+ * `where` y el `orderBy` escritos dos veces, y el día que aparezca un "no mostrar en el
+ * funnel" se movería una lista y no la otra.
+ */
+export const funnelProfessionalsQuery = {
+  where: { isActive: true },
+  orderBy: { sortOrder: 'asc' },
+  select: funnelProfessionalSelect,
+} satisfies { where: Prisma.ProfessionalWhereInput; orderBy: Prisma.ProfessionalOrderByWithRelationInput; select: Prisma.ProfessionalSelect }
+
+/**
+ * Aplana la relación de Prisma: al funnel le sirve la lista de ids, no el anidado.
+ *
+ * El tipo de entrada se DERIVA del select de arriba en vez de repetirlo: si mañana
+ * alguien le agrega una columna, esto se entera solo.
+ */
 export function toFunnelProfessionals(
-  rows: {
-    id: string
-    name: string
-    bio: string | null
-    modalities: ServiceModality[]
-    services: { id: string }[]
-  }[],
+  rows: Prisma.ProfessionalGetPayload<{ select: typeof funnelProfessionalSelect }>[],
 ): FunnelProfessional[] {
   return rows.map((p) => ({
     id: p.id,
@@ -180,10 +192,41 @@ export type ProfessionalPick =
 /** El caso vacío, escrito una sola vez: es el default de todos los callers viejos. */
 export const NO_PROFESSIONAL: ProfessionalPick = { kind: 'none' }
 
+/**
+ * Lo que llega del navegador o del sessionStorage, convertido en una elección o en
+ * "sin persona".
+ *
+ * Existe porque el `?? NO_PROFESSIONAL` que había en cada borde defiende de un campo
+ * AUSENTE y de nada más: un `{ kind: 'cualquierCosa' }` se colaba entero y los lectores
+ * lo trataban como "sin persona" sin decirlo en ningún lado. Acá la decisión está
+ * escrita una vez y es la misma en los dos bordes que no pasan por zod (el schema de
+ * `createBooking` valida lo suyo con una unión discriminada, que es más estricta).
+ *
+ * Un `person` sin id no es una persona: cae a "sin persona", que es el lado
+ * conservador —choca contra todas las citas— y además el que el paso vuelve a
+ * preguntar.
+ */
+export function parseProfessionalPick(value: unknown): ProfessionalPick {
+  if (typeof value !== 'object' || value === null) return NO_PROFESSIONAL
+  const { kind, id } = value as { kind?: unknown; id?: unknown }
+  if (kind === 'anyone') return { kind: 'anyone' }
+  if (kind === 'person' && typeof id === 'string' && id.length > 0) return { kind: 'person', id }
+  return NO_PROFESSIONAL
+}
+
+/**
+ * La elección como texto, para usarla de clave: el `useEffect` que pide horarios no
+ * puede depender del objeto, porque `professionalFields` arma uno NUEVO en cada
+ * llamada y la identidad cambiaría sin que cambie la elección.
+ */
+export function pickCacheKey(pick: ProfessionalPick): string {
+  return pick.kind === 'person' ? `person:${pick.id}` : pick.kind
+}
+
 /** ¿Es la misma elección? Cambiarla invalida la hora elegida: la agenda es otra. */
 export function samePick(a: ProfessionalPick, b: ProfessionalPick): boolean {
   if (a.kind !== b.kind) return false
-  return a.kind !== 'person' || a.id === (b as { id: string }).id
+  return a.kind === 'person' && b.kind === 'person' ? a.id === b.id : true
 }
 
 /**
