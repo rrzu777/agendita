@@ -28,11 +28,12 @@ const business: ConfirmationBusiness = {
 // El "dónde" llega de la reserva que devolvió el servidor, no del estado del wizard.
 const enElLocal: WhereFields = { modality: ServiceModality.on_site, serviceAddress: null, meetingUrl: null }
 
-function render(where: WhereFields = enElLocal, biz: ConfirmationBusiness = business) {
+function render(where: WhereFields = enElLocal, biz: ConfirmationBusiness = business, confirmed = true) {
   return renderToStaticMarkup(
     <StepConfirmation
       timezone="America/Santiago" currency="CLP" data={base} bookingId="clabc12345"
       bookingNumber={4738} mode="paid" promo={null} sessionEmail={null} business={biz} where={where}
+      confirmed={confirmed}
     />,
   )
 }
@@ -79,5 +80,18 @@ describe('StepConfirmation: dónde y con quién hablar', () => {
   it('sin WhatsApp cargado no ofrece escribir', () => {
     const html = render(enElLocal, { ...business, whatsapp: null })
     expect(html).not.toContain('wa.me')
+  })
+
+  it('con la reserva confirmada ofrece agregarla al calendario', () => {
+    const html = render()
+    expect(html).toContain('/api/bookings/clabc12345/calendar')
+    expect(html).toContain('/api/bookings/clabc12345/calendar?app=google')
+  })
+
+  // Una cita que todavía puede caerse no va al calendario de nadie: el evento
+  // queda para siempre y nadie lo borra. Mismo criterio que `loadBookingInvite`.
+  it('sin confirmar no ofrece el calendario', () => {
+    const html = render(enElLocal, business, false)
+    expect(html).not.toContain('/calendar')
   })
 })

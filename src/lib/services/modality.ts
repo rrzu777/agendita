@@ -113,8 +113,17 @@ function mapsHref(address: string): string {
  * termina como href en pantallas públicas: `javascript:...` ahí es un XSS que
  * corre en el navegador de la clienta. El alta ya lo valida (business/schema.ts);
  * esto es el segundo cerrojo, porque las filas viejas se guardaron sin él.
+ *
+ * Exportada: el evento de calendario es otra superficie donde el link sale como
+ * link (`src/lib/calendar/booking-event.ts`), y el criterio tiene que ser uno.
  */
-function linkNavegable(url: string): string | null {
+export function linkNavegable(url: string): string | null {
+  // Ni un carácter de control. Una URL no los tiene nunca, y el `.ics` escribe
+  // este valor CRUDO en su línea `URL:` (ahí no va el escapado de texto, es un
+  // URI): un `\r\n` adentro corta la línea e inyecta propiedades al archivo.
+  // `.url()` de Zod no los rechaza — el parser de URL los ignora para poder
+  // parsear, pero el valor guardado los conserva.
+  if (/[\u0000-\u001F\u007F]/.test(url)) return null
   return /^https?:\/\//i.test(url) ? url : null
 }
 

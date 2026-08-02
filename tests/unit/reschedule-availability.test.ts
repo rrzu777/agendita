@@ -11,6 +11,8 @@ const mockSendNotificationSafely = vi.fn()
 const mockPrisma = {
   booking: {
     findFirst: vi.fn(),
+    // La relectura para el .ics del nuevo horario; null = el mail sale sin evento.
+    findUnique: vi.fn().mockResolvedValue(null),
     findMany: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),

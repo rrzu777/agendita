@@ -35,6 +35,16 @@ export interface BookingCreated {
   bookingNumber: number | null
   promo: { discountAmount: number; finalAmount: number } | null
   where: WhereFields
+  /**
+   * La reserva quedó CONFIRMADA de verdad, que no es lo mismo que `mode`:
+   * `mode` habla de la plata (no había abono que pagar) y esto del estado de la
+   * reserva, que además puede quedar esperando el visto bueno del negocio.
+   *
+   * Lo decide cada camino y no se deduce del status que devolvió `createBooking`
+   * porque en el flujo de pago esa fila se leyó ANTES de cobrar: dice
+   * `pending_payment` sobre una reserva que el cobro ya confirmó.
+   */
+  confirmed: boolean
 }
 
 function generateIdempotencyKey(): string {
@@ -366,6 +376,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
   function resultado(
     booking: { id: string; bookingNumber: number | null; modality: ServiceModality; serviceAddress: string | null; meetingUrl: string | null },
     mode: 'paid' | 'pending',
+    confirmed: boolean,
   ): BookingCreated {
     return {
       id: booking.id,
@@ -373,6 +384,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       bookingNumber: booking.bookingNumber,
       promo: appliedPromo ? { discountAmount: appliedPromo.discount, finalAmount: appliedPromo.finalAmount } : null,
       where: { modality: booking.modality, serviceAddress: booking.serviceAddress, meetingUrl: booking.meetingUrl },
+      confirmed,
     }
   }
 
@@ -392,7 +404,9 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
       setStep('success')
       const mode = noDepositNeeded ? 'paid' as const : 'pending' as const
-      onSuccess(resultado(booking, mode))
+      // Sin abono que pagar la reserva nace confirmada, salvo que el negocio
+      // confirme a mano: ahí queda esperando y todavía no hay nada que agendar.
+      onSuccess(resultado(booking, mode, booking.status === 'confirmed'))
     } catch (err) {
       console.error('Booking error:', err)
       setErrorMessage('Error al crear la reserva')
@@ -466,7 +480,9 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       }
 
       setStep('success')
-      onSuccess(resultado(booking, 'paid'))
+      // `verifyRes.data.success` es la reserva ya confirmada server-side; la fila
+      // `booking` de acá se leyó antes de cobrar y todavía dice pendiente.
+      onSuccess(resultado(booking, 'paid', true))
     } catch (err) {
       console.error('Payment error:', err)
       setErrorMessage('Error al procesar el pago')

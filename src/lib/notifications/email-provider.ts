@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { BookingStatus } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
+import { bookingInvite, loadBookingInvite, type BookingCalendarInvite } from '@/lib/calendar/booking-invite'
 import { getAppUrl } from '@/lib/business/urls'
 import { unsubscribeHeaders, unsubscribeFooterHtml, unsubscribeFooterText } from './marketing-email'
 import type {
@@ -115,6 +116,7 @@ function getAppDomain(): string {
 type SendEmailOptions = {
   replyTo?: string | null
   headers?: Record<string, string>
+  attachments?: { filename: string; content: Buffer; contentType?: string }[]
 }
 
 async function sendEmail(
@@ -150,6 +152,7 @@ async function sendEmail(
       text,
       ...(options?.replyTo ? { replyTo: options.replyTo } : {}),
       ...(options?.headers ? { headers: options.headers } : {}),
+      ...(options?.attachments?.length ? { attachments: options.attachments } : {}),
     })
 
     if (error) {
@@ -202,6 +205,21 @@ function buildDashboardLink(): string {
   return `${protocol}://${domain}/dashboard/bookings`
 }
 
+/**
+ * El `.ics` como adjunto de Resend. Vacío = no hay evento que mandar.
+ *
+ * El `contentType` va explícito: es lo que hace que el mail del teléfono ofrezca
+ * abrirlo con el calendario en vez de tratarlo como un archivo de texto. Sin
+ * esto Resend lo deduce del nombre, que hoy funciona pero no es nuestro.
+ */
+function icsAttachments(
+  invite: BookingCalendarInvite | null | undefined,
+): { filename: string; content: Buffer; contentType: string }[] {
+  return invite
+    ? [{ filename: invite.filename, content: Buffer.from(invite.ics, 'utf8'), contentType: 'text/calendar; charset=utf-8' }]
+    : []
+}
+
 export async function sendBookingConfirmationToCustomer(data: BookingEmailData): Promise<EmailResult> {
   if (!data.customerEmail) {
     return { success: false, skipped: 'Cliente sin email' }
@@ -215,7 +233,7 @@ export async function sendBookingConfirmationToCustomer(data: BookingEmailData):
     `Reserva confirmada - ${data.businessName}`,
     html,
     text,
-    { replyTo: data.businessReplyToEmail },
+    { replyTo: data.businessReplyToEmail, attachments: icsAttachments(data.calendar) },
   )
 }
 
@@ -229,10 +247,12 @@ export async function sendBookingReceivedToCustomer(data: BookingEmailData): Pro
 
   return sendEmail(
     data.customerEmail,
-    `Reserva recibida - ${data.businessName}`,
+    // Sin abono y sin confirmación manual la reserva nace confirmada, y este es
+    // el único mail que recibe esa clienta: tiene que decirle lo que pasó.
+    data.confirmed ? `Reserva confirmada - ${data.businessName}` : `Reserva recibida - ${data.businessName}`,
     html,
     text,
-    { replyTo: data.businessReplyToEmail },
+    { replyTo: data.businessReplyToEmail, attachments: icsAttachments(data.calendar) },
   )
 }
 
@@ -412,6 +432,10 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
       business: {
         select: {
           name: true,
+          // slug y subdomain son para el link de vuelta que lleva el evento de
+          // calendario; el resto ya se usaba.
+          slug: true,
+          subdomain: true,
           timezone: true,
           whatsapp: true,
           addressText: true,
@@ -441,6 +465,9 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
 
   return sendBookingConfirmationToCustomer({
     businessName: business.name,
+    // La reserva ya está leída acá arriba: el evento se arma con ella, sin
+    // volver a la base.
+    calendar: bookingInvite(booking),
     bookingNumber: booking.bookingNumber,
     businessReplyToEmail: await getBusinessReplyToEmail(businessId),
     businessWhatsapp: business.whatsapp,
@@ -494,7 +521,7 @@ export async function sendBookingRescheduledNotification(data: RescheduledEmailD
     `Reserva reprogramada - ${data.businessName}`,
     html,
     text,
-    { replyTo: data.businessReplyToEmail },
+    { replyTo: data.businessReplyToEmail, attachments: icsAttachments(data.calendar) },
   )
 }
 

@@ -9,7 +9,16 @@ vi.mock('@/lib/db', () => {
     businessId: 'biz-1',
     customerId: 'cust-1',
     status: BookingStatus.confirmed,
+    bookingNumber: 4738,
     startDateTime: new Date('2026-06-15T18:00:00Z'),
+    // El evento de calendario sale de esta misma fila: cuándo termina, qué
+    // versión es (updatedAt - createdAt) y dónde se atiende.
+    endDateTime: new Date('2026-06-15T19:00:00Z'),
+    createdAt: new Date('2026-06-01T12:00:00Z'),
+    updatedAt: new Date('2026-06-01T12:00:00Z'),
+    modality: 'on_site',
+    serviceAddress: null,
+    meetingUrl: null,
     totalPrice: 25000,
     depositRequired: 5000,
     depositPaid: 5000,
@@ -18,6 +27,8 @@ vi.mock('@/lib/db', () => {
     customer: { name: 'Maria', phone: '+56987654321', email: 'maria@example.com' },
     business: {
       name: 'Nails by Ana',
+      slug: 'nails-by-ana',
+      subdomain: null,
       timezone: 'America/Santiago',
       whatsapp: '+56912345678',
       addressText: 'Av. Siempre Viva 742',
@@ -165,6 +176,19 @@ describe('sendBookingConfirmedNotification', () => {
     expect(call.html).toContain('Manicure semipermanente')
     expect(call.text).toContain('Maria')
     expect(call.text).toContain('Manicure semipermanente')
+  })
+
+  // Lo que hace que la cita exista en el teléfono sin que la clienta haga nada.
+  it('adjunta el .ics de la reserva y ofrece el link en el cuerpo', async () => {
+    mockResendSend.mockResolvedValue({ data: { id: 'msg_789' }, error: null })
+
+    await sendBookingConfirmedNotification('booking-1', 'biz-1')
+
+    const call = mockResendSend.mock.calls[0][0]
+    expect(call.attachments).toHaveLength(1)
+    expect(call.attachments[0].filename).toBe('reserva-4738.ics')
+    expect(call.attachments[0].content.toString('utf8')).toContain('SUMMARY:Manicure semipermanente en Nails by Ana')
+    expect(call.html).toContain('/api/bookings/booking-1/calendar')
   })
 
   it('returns graceful result when booking is not found', async () => {

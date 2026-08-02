@@ -1,4 +1,6 @@
 import type { BusinessCategory, ServiceModality } from '@prisma/client'
+import type { BookingCalendarInvite } from '@/lib/calendar/booking-invite'
+
 export interface EmailResult {
   success: boolean
   skipped?: string
@@ -40,6 +42,18 @@ export interface BookingEmailData {
    *  Cambia el copy: sin esto el email decía "está pendiente de pago" sobre una
    *  reserva que no tiene nada que pagar. */
   awaitingApproval?: boolean
+  /** La reserva ya está confirmada. Mismo problema que `awaitingApproval` y por
+   *  el otro lado: el mail de "reserva recibida" decía "está pendiente de pago"
+   *  sobre una reserva sin abono, que nace confirmada y ya está en la agenda.
+   *
+   *  Sale del status de la reserva, NUNCA de si se pudo armar el `calendar`: el
+   *  evento es opcional y podría faltar por sus propios motivos, y el copy no
+   *  puede quedar colgado de eso. */
+  confirmed?: boolean
+  /** El evento de calendario, ya armado por quien tenía la reserva a mano. El
+   *  mail lo manda adjunto y ofrece el link en el cuerpo. Ausente = no hay nada
+   *  que agendar (ver `deservesCalendarEvent`). */
+  calendar?: BookingCalendarInvite | null
   /** Presente cuando la reserva eligió transferencia bancaria: el email de
    *  "reserva recibida" incluye los datos, el plazo y el link para declarar. */
   bankTransfer?: {
@@ -100,6 +114,10 @@ export interface CancellationEmailData {
 
 export interface RescheduledEmailData {
   businessName: string
+  /** Ver `BookingEmailData.calendar`: el `.ics` del nuevo horario viaja con el
+   *  mismo UID que el anterior, así que en el calendario pisa al viejo en vez de
+   *  dejar la cita duplicada en dos horarios. */
+  calendar?: BookingCalendarInvite | null
   bookingNumber?: number | null
   businessReplyToEmail?: string | null
   businessWhatsapp?: string | null

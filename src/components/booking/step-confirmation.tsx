@@ -10,6 +10,7 @@ import { formatBookingDateTime } from '@/lib/bookings/format-booking-datetime'
 import { whereRows, type WhereFields } from '@/lib/services/modality'
 import { buildBookingHelpWhatsappUrl } from '@/lib/notifications/whatsapp'
 import { AccountCta } from './account-cta'
+import { AddToCalendar } from './add-to-calendar'
 import { WhatsappHelpLine, WhereRowValue } from './where-row-value'
 
 /** El negocio, en lo que la reserva no trae. La modalidad, la dirección de la
@@ -21,7 +22,7 @@ export interface ConfirmationBusiness {
   whatsapp: string | null
 }
 
-export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail, business, where }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields }) {
+export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail, business, where, confirmed }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields; confirmed: boolean }) {
   const isPending = mode === 'pending'
   const isFree = data.servicePrice <= 0
   const noDeposit = data.serviceDeposit <= 0
@@ -109,6 +110,11 @@ export function StepConfirmation({ data, timezone, currency, bookingId, bookingN
       </div>
 
       <p className="mb-6 text-sm text-muted-foreground">Número de reserva: {formatBookingNumber(bookingNumber, bookingId)}</p>
+
+      {/* Sólo con la reserva confirmada: una cita que todavía puede caerse no va
+          al calendario de nadie. Ver `loadBookingInvite`, que aplica el mismo
+          criterio del lado del servidor. */}
+      {confirmed && bookingId && <AddToCalendar bookingId={bookingId} className="mb-6" />}
 
       {whatsappHref && <WhatsappHelpLine href={whatsappHref} businessName={business.name} className="mb-6" />}
 

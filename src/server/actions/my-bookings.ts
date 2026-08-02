@@ -19,6 +19,7 @@ import {
 } from '@/lib/notifications'
 import { revalidateBusinessPublicPaths } from '@/server/actions/revalidate-business'
 import { action, UserError } from '@/lib/actions/result'
+import { loadBookingInvite } from '@/lib/calendar/booking-invite'
 
 async function _cancelMyBooking(bookingId: string) {
   const user = await requireUser()
@@ -167,6 +168,9 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
     await sendNotificationSafely('self-service reschedule (customer)', async () =>
       sendBookingRescheduledNotification({
         businessName: booking.business.name,
+        // Releído: `booking` quedó con el horario anterior y con el `updatedAt`
+        // viejo, y el evento necesita los dos nuevos para pisar al anterior.
+        calendar: (await loadBookingInvite(booking.id))?.invite ?? null,
         bookingNumber: booking.bookingNumber,
         businessReplyToEmail: await getBusinessReplyToEmail(booking.business.id),
         businessWhatsapp: booking.business.whatsapp,
