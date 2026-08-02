@@ -70,6 +70,12 @@ export function StepConfirmation({ data, timezone, currency, bookingId, bookingN
       <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5 text-left">
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.timeSlot ? formatBookingDateTime(data.timeSlot.start, timezone) : ''}</span></div>
+        {/* Sale del estado del wizard y no de `where` porque el servidor no la
+            re-deriva: la reserva queda a nombre de quien se pidió o no se crea.
+            Es el mismo criterio que `serviceName`, acá arriba. */}
+        {data.professionalName && (
+          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Te atiende</span><span className="font-semibold text-primary">{data.professionalName}</span></div>
+        )}
         {donde.map((row) => (
           <div key={row.label} className="flex justify-between gap-4">
             <span className="text-muted-foreground">{row.label}</span>

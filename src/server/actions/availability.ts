@@ -14,7 +14,7 @@ import { computeRescheduleSlots } from '@/lib/availability/reschedule-slots'
 import { blockScopeFor, bookingScopeCondition, normalizeProfessionalId, resolveAvailabilityRules, resolveRuleScope } from '@/lib/availability/scope'
 import { readWeek, scheduleLockKey, setWeekday } from '@/lib/availability/weekly-schedule'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
-import { assertOwnerScope, assertProfessionalOfBusiness, isProfessionalOfBusiness } from '@/lib/professionals/ownership'
+import { assertOwnerScope, assertProfessionalOfBusiness, isProfessionalOfBusiness, PROFESSIONAL_UNAVAILABLE_MESSAGE } from '@/lib/professionals/ownership'
 import { RELEASED_STATUSES } from '@/lib/bookings/approval'
 import { action, UserError } from '@/lib/actions/result'
 
@@ -101,19 +101,17 @@ async function _getAvailableTimeSlots(
     throw new UserError('Negocio no válido')
   }
 
-  // Normalizar defiende la FORMA; esto defiende la PROCEDENCIA. Un id que no es de
-  // este negocio, o de alguien que ya no atiende, caería por herencia al horario del
-  // salón y devolvería slots como si todo estuviera bien: el problema se descubriría
-  // recién cuando la reserva se crea a nombre de nadie.
-  if (professionalId !== null && !(await isProfessionalOfBusiness(prisma, businessId, professionalId))) {
-    throw new UserError('Esa persona no está disponible para reservar')
-  }
-
   const timezone = business.timezone || 'America/Santiago'
   const bookingWindowDays = business.bookingWindowDays ?? 90
   const { dayStart, dayEnd } = getBusinessDayRange(date, timezone)
 
-  const [service, availabilityRules, timeBlocks, bookings] = await Promise.all([
+  // El chequeo de procedencia va ADENTRO del Promise.all y no antes: no depende de
+  // nada de lo que se pide acá, y en serie le sumaba un round trip a la lectura más
+  // caliente del producto —una clienta explorando fechas hace un request por click—.
+  // Que las otras cuatro consultas corran con un id inválido no ensucia nada: el
+  // throw de abajo pasa antes de que ningún resultado se use.
+  const [profValido, service, availabilityRules, timeBlocks, bookings] = await Promise.all([
+    professionalId === null || isProfessionalOfBusiness(prisma, businessId, professionalId),
     prisma.service.findFirst({
       where: { id: serviceId, businessId, isActive: true },
       select: { durationMinutes: true },
@@ -137,6 +135,14 @@ async function _getAvailableTimeSlots(
       orderBy: { startDateTime: 'asc' },
     }),
   ])
+
+  // Normalizar defiende la FORMA; esto defiende la PROCEDENCIA. Un id que no es de
+  // este negocio, o de alguien que ya no atiende, cae por herencia al horario del
+  // salón y devuelve slots como si todo estuviera bien: el problema se descubriría
+  // recién cuando la reserva se crea a nombre de nadie.
+  if (!profValido) {
+    throw new UserError(PROFESSIONAL_UNAVAILABLE_MESSAGE)
+  }
 
   if (!service) {
     throw new UserError('Servicio no disponible')
