@@ -52,6 +52,46 @@ vi.mock('@/app/dashboard/customers/[id]/package-panel', () => ({
   PackagePanel: () => <div>package panel</div>,
 }))
 
+const baseDetail = {
+  id: 'cust-1',
+  name: 'Maria Perez',
+  phone: '+56912345678',
+  email: 'maria@test.com',
+  notes: null,
+  birthDate: null,
+  marketingOptOutAt: null,
+  bookingCount: 2,
+  lastBookingAt: new Date('2026-06-01T14:00:00Z'),
+  totalPaidApproved: 30000,
+  pendingBalance: 12000,
+  createdAt: new Date('2026-01-01T00:00:00Z'),
+  updatedAt: new Date('2026-01-01T00:00:00Z'),
+  lastAttendedBy: null,
+  bookings: [],
+  payments: [],
+}
+
+// El nombre no es substring de ningún otro texto de la página.
+function bookingEntry(professionalName: string | null) {
+  return {
+    id: 'bk-1',
+    bookingNumber: 4738,
+    serviceName: 'Corte',
+    startDateTime: new Date('2026-05-01T14:00:00Z'),
+    status: 'completed',
+    professionalName,
+    totalPrice: 20000,
+    remainingBalance: 0,
+    finalAmount: 20000,
+  }
+}
+
+async function renderPage() {
+  const { default: CustomerDetailPage } = await import('@/app/dashboard/customers/[id]/page')
+  const element = await CustomerDetailPage({ params: Promise.resolve({ id: 'cust-1' }) })
+  return renderToStaticMarkup(element)
+}
+
 describe('CustomerDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -59,30 +99,11 @@ describe('CustomerDetailPage', () => {
       user: { id: 'user-1' },
       business: { timezone: 'America/Santiago', currency: 'CLP' },
     })
-    mockGetCustomerDetail.mockResolvedValue({
-      id: 'cust-1',
-      name: 'Maria Perez',
-      phone: '+56912345678',
-      email: 'maria@test.com',
-      notes: null,
-      birthDate: null,
-      marketingOptOutAt: null,
-      bookingCount: 2,
-      lastBookingAt: new Date('2026-06-01T14:00:00Z'),
-      totalPaidApproved: 30000,
-      pendingBalance: 12000,
-      createdAt: new Date('2026-01-01T00:00:00Z'),
-      updatedAt: new Date('2026-01-01T00:00:00Z'),
-      bookings: [],
-      payments: [],
-    })
+    mockGetCustomerDetail.mockResolvedValue(baseDetail)
   })
 
   it('shows total value as paid plus pending balance', async () => {
-    const { default: CustomerDetailPage } = await import('@/app/dashboard/customers/[id]/page')
-
-    const element = await CustomerDetailPage({ params: Promise.resolve({ id: 'cust-1' }) })
-    const html = renderToStaticMarkup(element)
+    const html = await renderPage()
 
     expect(html).toContain('Total')
     expect(html).toContain('$42.000')
@@ -90,5 +111,34 @@ describe('CustomerDetailPage', () => {
     expect(html).toContain('$30.000')
     expect(html).toContain('Saldo pendiente')
     expect(html).toContain('$12.000')
+  })
+
+  it('dice quién la atendió la última vez', async () => {
+    mockGetCustomerDetail.mockResolvedValue({ ...baseDetail, lastAttendedBy: 'RaulBarbero' })
+
+    const html = await renderPage()
+
+    expect(html).toContain('Atendió la última vez')
+    expect(html).toContain('RaulBarbero')
+  })
+
+  it('sin persona no promete nada', async () => {
+    const html = await renderPage()
+
+    expect(html).not.toContain('Atendió la última vez')
+  })
+
+  it('el historial dice quién atiende cada cita, y calla cuando no hay persona', async () => {
+    mockGetCustomerDetail.mockResolvedValue({
+      ...baseDetail,
+      bookings: [bookingEntry('RaulBarbero'), { ...bookingEntry(null), id: 'bk-2' }],
+    })
+
+    const html = await renderPage()
+
+    expect(html).toContain('Atiende: RaulBarbero')
+    // Una sola vez por vista (mobile card + tabla desktop = 2 en total), no en
+    // la fila sin persona.
+    expect(html.split('Atiende').length - 1).toBe(2)
   })
 })

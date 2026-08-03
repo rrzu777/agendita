@@ -346,6 +346,78 @@ describe('customers actions', () => {
       })
     })
 
+    // Fila como la devuelve el select de getCustomerDetail. El nombre de la
+    // persona no es substring de ningún otro dato del fixture.
+    function bookingRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'bk-1',
+        bookingNumber: 4738,
+        startDateTime: new Date('2026-07-01T14:00:00Z'),
+        status: BookingStatus.completed,
+        totalPrice: 20000,
+        remainingBalance: 0,
+        finalAmount: 20000,
+        service: { name: 'Corte' },
+        professional: null,
+        ...overrides,
+      }
+    }
+
+    it('pide la persona en el select (con Prisma mockeado, mirar el render no prueba nada)', async () => {
+      await getCustomerDetail('cust-1')
+
+      expect(mockPrisma.booking.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({ professional: { select: { name: true } } }),
+        })
+      )
+    })
+
+    it('cada reserva del historial lleva su professionalName', async () => {
+      mockPrisma.booking.findMany.mockResolvedValueOnce([
+        bookingRow({ id: 'bk-1', professional: { name: 'RaulBarbero' } }),
+        bookingRow({ id: 'bk-2', professional: null }),
+      ])
+
+      const result = await getCustomerDetail('cust-1')
+
+      expect(result.bookings.map((b) => b.professionalName)).toEqual(['RaulBarbero', null])
+    })
+
+    it('lastAttendedBy es la persona de la COMPLETADA más reciente, no de una futura', async () => {
+      mockPrisma.booking.findMany.mockResolvedValueOnce([
+        // desc: la primera es una cita futura confirmada con otra persona
+        bookingRow({ id: 'bk-3', status: BookingStatus.confirmed, professional: { name: 'SofiBarbera' } }),
+        bookingRow({ id: 'bk-2', status: BookingStatus.completed, professional: { name: 'RaulBarbero' } }),
+        bookingRow({ id: 'bk-1', status: BookingStatus.completed, professional: { name: 'SofiBarbera' } }),
+      ])
+
+      const result = await getCustomerDetail('cust-1')
+
+      expect(result.lastAttendedBy).toBe('RaulBarbero')
+    })
+
+    it('lastAttendedBy no salta a una completada más vieja con persona: la última fue sin equipo', async () => {
+      mockPrisma.booking.findMany.mockResolvedValueOnce([
+        bookingRow({ id: 'bk-2', status: BookingStatus.completed, professional: null }),
+        bookingRow({ id: 'bk-1', status: BookingStatus.completed, professional: { name: 'RaulBarbero' } }),
+      ])
+
+      const result = await getCustomerDetail('cust-1')
+
+      expect(result.lastAttendedBy).toBeNull()
+    })
+
+    it('lastAttendedBy es null sin reservas completadas', async () => {
+      mockPrisma.booking.findMany.mockResolvedValueOnce([
+        bookingRow({ status: BookingStatus.confirmed, professional: { name: 'RaulBarbero' } }),
+      ])
+
+      const result = await getCustomerDetail('cust-1')
+
+      expect(result.lastAttendedBy).toBeNull()
+    })
+
     it('payment aggregate excludes refunds', async () => {
       await getCustomerDetail('cust-1')
 

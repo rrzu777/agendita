@@ -142,12 +142,24 @@ export type CustomerDetail = {
   pendingBalance: number
   createdAt: Date
   updatedAt: Date
+  /**
+   * Quién la atendió la última vez: la persona de la reserva COMPLETADA más
+   * reciente (spec multi-profesional §Panel). Derivado del historial, sin
+   * columna nueva. `null` = nunca vino, o su última visita fue sin persona
+   * asignada — en ambos casos la ficha no muestra la fila.
+   *
+   * Requerido (no opcional) como todo `professionalName` del track: opcional,
+   * el próximo caller lo olvida y el dato desaparece sin error de compilación.
+   */
+  lastAttendedBy: string | null
   bookings: {
     id: string
     bookingNumber: number | null
     serviceName: string
     startDateTime: Date
     status: string
+    /** Requerido por el mismo motivo que `lastAttendedBy`. */
+    professionalName: string | null
     totalPrice: number
     remainingBalance: number
     finalAmount: number
@@ -188,6 +200,7 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
         remainingBalance: true,
         finalAmount: true,
         service: { select: { name: true } },
+        professional: { select: { name: true } },
       },
     }),
     prisma.payment.findMany({
@@ -251,12 +264,18 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
     pendingBalance: pendingBalanceSum._sum.remainingBalance ?? 0,
     createdAt: customer.createdAt,
     updatedAt: customer.updatedAt,
+    // La completada más reciente (la lista ya viene desc), tenga o no persona:
+    // saltar a una completada más vieja CON persona diría "la atendió Raul"
+    // cuando la última vez la atendió la dueña sin equipo.
+    lastAttendedBy:
+      bookings.find((b) => b.status === BookingStatus.completed)?.professional?.name ?? null,
     bookings: bookings.map((b) => ({
       id: b.id,
       bookingNumber: b.bookingNumber,
       serviceName: b.service.name,
       startDateTime: b.startDateTime,
       status: b.status,
+      professionalName: b.professional?.name ?? null,
       totalPrice: b.totalPrice,
       remainingBalance: b.remainingBalance,
       finalAmount: b.finalAmount,

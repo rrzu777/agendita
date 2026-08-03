@@ -188,6 +188,13 @@ export default async function CustomerDetailPage({ params }: Props) {
                 ? new Date(customer.lastBookingAt).toLocaleDateString('es-CL', { timeZone: businessTimezone })
                 : '—'}
             </p>
+            {/* El sujeto es la persona del equipo, no la clienta: copy sin
+                género, mismo criterio que el "Atiende" invariable del panel. */}
+            {customer.lastAttendedBy && (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Atendió la última vez: <span className="font-medium">{customer.lastAttendedBy}</span>
+              </p>
+            )}
           </div>
         </div>
 
@@ -272,6 +279,9 @@ export default async function CustomerDetailPage({ params }: Props) {
                             label: 'Fecha',
                             value: `${new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })} ${new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: businessTimezone })}`,
                           },
+                          ...(booking.professionalName
+                            ? [{ label: 'Atiende', value: booking.professionalName }]
+                            : []),
                           { label: 'Total', value: formatMoney(booking.totalPrice, currency) },
                           {
                             label: 'Saldo',
@@ -305,7 +315,10 @@ export default async function CustomerDetailPage({ params }: Props) {
                             <TruncatedCell
                               className="font-semibold text-primary"
                               primary={booking.serviceName}
-                              secondary={formatBookingNumber(booking.bookingNumber, booking.id)}
+                              secondary={[
+                                formatBookingNumber(booking.bookingNumber, booking.id),
+                                booking.professionalName && `Atiende: ${booking.professionalName}`,
+                              ].filter(Boolean).join(' · ')}
                             />
                             <TableCell className={TABLE_COL.date}>
                               <div>{new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })}</div>
