@@ -19,6 +19,7 @@ const mockPrisma = {
   },
   timeBlockException: {
     upsert: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   service: {
     findMany: vi.fn().mockResolvedValue([]),
@@ -394,6 +395,49 @@ describe('updateTimeBlockSeries', () => {
 
     expect(result).toEqual({ ok: true, data: { series: expect.objectContaining({ id: 'series-2' }) } })
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
+  })
+
+  // La tercera capa del bug de la ocurrencia movida (las otras dos, #133): el
+  // reset de excepciones clasificaba por `occurrenceDate` (el día ORIGINAL), así
+  // que una ocurrencia de ayer movida a la semana que viene contaba como pasado
+  // y sobrevivía al reset con el horario viejo — y el rescate de #133 la seguía
+  // materializando después del split. "Futuro" se mide por dónde cae la
+  // ocurrencia de verdad: `startDateTime` si la movieron, `occurrenceDate` si es
+  // salteada (no tiene horario propio).
+  describe('reset de excepciones por su día EFECTIVO, no el original', () => {
+    const anchorToday = fromZonedTime(`${formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd')} 00:00:00`, TZ)
+    const resetEsperado = {
+      seriesId: 'series-1',
+      OR: [
+        { startDateTime: { gte: anchorToday } },
+        { startDateTime: null, occurrenceDate: { gte: anchorToday } },
+      ],
+    }
+
+    it('el split borra las excepciones cuya ocurrencia real cae de hoy en adelante', async () => {
+      await updateTimeBlockSeries('series-1', { startTime: '13:00', endTime: '15:00' })
+
+      expect(mockPrisma.timeBlockSeries.create).toHaveBeenCalledTimes(1)
+      expect(mockPrisma.timeBlockException.deleteMany).toHaveBeenCalledWith({ where: resetEsperado })
+    })
+
+    it('el modo in-place (serie solo-futura) usa el mismo criterio', async () => {
+      const mananaStr = formatInTimeZone(addDays(new Date(), 1), TZ, 'yyyy-MM-dd')
+      mockPrisma.timeBlockSeries.findFirst.mockResolvedValue({
+        ...existingSeries,
+        anchorDate: fromZonedTime(`${mananaStr} 00:00:00`, TZ),
+      })
+
+      await updateTimeBlockSeries('series-1', { startTime: '13:00', endTime: '15:00' })
+
+      // Solo-futura: edita el registro, no crea serie nueva.
+      expect(mockPrisma.timeBlockSeries.create).not.toHaveBeenCalled()
+      expect(mockPrisma.timeBlockSeries.update).toHaveBeenCalledWith({
+        where: { id: 'series-1' },
+        data: { startTime: '13:00', endTime: '15:00', reason: null },
+      })
+      expect(mockPrisma.timeBlockException.deleteMany).toHaveBeenCalledWith({ where: resetEsperado })
+    })
   })
 })
 

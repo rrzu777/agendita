@@ -580,6 +580,22 @@ async function _updateTimeBlockSeries(
   const untilStr = existing.until ? getLocalDateStr(existing.until, timezone) : null
   const { mode, hasFuture } = planSeriesUpdate(anchorStr, untilStr, todayStr, yesterdayStr)
 
+  // Qué excepciones restablece el horario nuevo: las de ocurrencias que todavía
+  // no pasaron. "No pasó" se mide por dónde cae la ocurrencia DE VERDAD, no por
+  // su día original (`occurrenceDate`, el RECURRENCE-ID): una ocurrencia de ayer
+  // movida a la semana que viene es futuro, y clasificarla por el día original
+  // la dejaba viva con el horario viejo después del reset — es la tercera capa
+  // del bug de la ocurrencia movida (las otras dos, expandSeries y la query de
+  // getEffectiveBlocks, en #133). La salteada no tiene horario propio
+  // (startDateTime null): su día efectivo sigue siendo el original.
+  const excepcionesFuturas = {
+    seriesId,
+    OR: [
+      { startDateTime: { gte: anchorToday } },
+      { startDateTime: null, occurrenceDate: { gte: anchorToday } },
+    ],
+  }
+
   // Chequeo ANTES de guardar: ocurrencias que TOMARÁN el horario nuevo (de hoy en
   // adelante) vs reservas activas. En split arrancan hoy; in-place solo-futura
   // arrancan en su propio anchor (>= hoy). Sin futuro no hay nada que chequear.
@@ -622,7 +638,7 @@ async function _updateTimeBlockSeries(
     // Misma id → la UI re-renderiza el horario nuevo al refrescar. Restablece las
     // ocurrencias editadas individualmente de hoy en adelante (igual que el split).
     const [, updated] = await prisma.$transaction([
-      prisma.timeBlockException.deleteMany({ where: { seriesId, occurrenceDate: { gte: anchorToday } } }),
+      prisma.timeBlockException.deleteMany({ where: excepcionesFuturas }),
       prisma.timeBlockSeries.update({
         where: { id: seriesId },
         data: { startTime: changes.startTime, endTime: changes.endTime, reason: changes.reason ?? null },
@@ -634,8 +650,15 @@ async function _updateTimeBlockSeries(
 
   // Split en hoy: la serie vieja termina AYER (inclusivo), la nueva arranca hoy y
   // CONSERVA el patrón de días y la fecha de fin (until) originales — el diálogo de
-  // edición solo cambia hora/motivo. Reset de excepciones futuras (viven en la vieja).
-  const [, newSeries] = await prisma.$transaction([
+  // edición solo cambia hora/motivo.
+  //
+  // Las excepciones futuras se BORRAN, no basta con que el `until` nuevo las tape:
+  // el rescate de #133 (getEffectiveBlocks trae la serie si una excepción movida
+  // cae en el rango, y expandSeries la materializa) le pasa por encima al until,
+  // así que una ocurrencia movida al futuro seguía apareciendo con el horario
+  // viejo después del split — un fantasma que ningún reset alcanzaba.
+  const [, , newSeries] = await prisma.$transaction([
+    prisma.timeBlockException.deleteMany({ where: excepcionesFuturas }),
     prisma.timeBlockSeries.update({ where: { id: seriesId }, data: { until: oldUntil, isActive: existing.anchorDate <= oldUntil } }),
     prisma.timeBlockSeries.create({
       data: {
