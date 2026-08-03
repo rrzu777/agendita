@@ -19,18 +19,24 @@ interface DeriveInput {
   /** El marcador de la reserva, no el del pago: `refunded` sobrevive a la reversión. */
   paymentStatus: string
   /** Para adelantar el "expiró" al hold vencido que el cron todavía no barrió.
-   *  Opcional porque no todos los callers lo tienen a mano; sin él, el estado
-   *  sale del status persistido, como siempre. */
-  holdExpiresAt?: Date | null
+   *  Requerido a propósito: el caller que no lo pase estaría mostrando
+   *  "completá el pago" sobre un horario que ya se libera. `null` = sin hold. */
+  holdExpiresAt: Date | null
   payments: { status: string; provider: string; providerPaymentId?: string | null }[]
 }
 
 /**
  * El hold venció y el cron todavía no pasó: la reserva VA a expirar, solo falta
- * que alguien lo asiente. Espeja exactamente las condiciones del barrido
- * (`expireStaleHolds` / `sweepStaleHoldsInTx`): `pending_payment` + `unpaid` +
- * hold vencido. El `unpaid` importa — una reserva con plata parcial adentro no
- * se barre, así que tampoco hay que darla por muerta acá.
+ * que alguien lo asiente. Espeja exactamente las condiciones del CRON
+ * (`expireStaleHolds`): `pending_payment` + `unpaid` + hold vencido. El `unpaid`
+ * importa — una reserva con plata parcial adentro no se barre, así que tampoco
+ * hay que darla por muerta acá.
+ *
+ * NO es `isSweepableExpiredHold` (approval.ts) a propósito: ése describe el
+ * barrido perezoso, que excluye transferencias porque no puede mandar el mail.
+ * El cron sí las expira, y una transferencia NO declarada con hold vencido
+ * también está condenada — la declarada nunca llega acá (corta antes en
+ * `verifying_transfer`).
  */
 function isDoomedHold(input: DeriveInput, now: Date): boolean {
   return (
@@ -112,10 +118,6 @@ export function deriveConfirmationState(input: DeriveInput, now = new Date()): C
   // haya vencido (esa carrera la arbitra el guard de solape del webhook).
   if (isDoomedHold(input, now)) {
     return 'expired'
-  }
-
-  if (mpPayments.length === 0) {
-    return 'pending'
   }
 
   const hasFailed = mpPayments.some(

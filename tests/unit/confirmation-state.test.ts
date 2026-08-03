@@ -21,6 +21,7 @@ describe('deriveConfirmationState', () => {
       depositRequired: 5000,
       depositPaid: 0,
       paymentStatus: 'unpaid',
+      holdExpiresAt: null,
       ...over,
     }
   }
@@ -324,8 +325,10 @@ describe('deriveConfirmationState', () => {
       ).toBe('pending')
     })
 
-    it('sin holdExpiresAt (callers que no lo pasan) se comporta como siempre', () => {
-      expect(deriveConfirmationState(booking({ status: 'pending_payment', payments: [] }), now)).toBe('pending')
+    it('con holdExpiresAt null (reserva sin hold) se comporta como siempre', () => {
+      expect(
+        deriveConfirmationState(booking({ status: 'pending_payment', payments: [], holdExpiresAt: null }), now),
+      ).toBe('pending')
     })
   })
 })

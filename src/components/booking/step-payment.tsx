@@ -704,6 +704,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     )
   }
 
+  const eligeTransferencia = Boolean(bankInfo) && method === 'transfer'
+
   return (
     <div>
       <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Pago de abono</h2>
@@ -770,7 +772,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
       {/* Sólo el camino online: la transferencia tiene su ventana larga y la
           muestra con hora exacta en la pantalla siguiente (TransferDetails). */}
-      {!(bankInfo && method === 'transfer') && (
+      {!eligeTransferencia && (
         <p className="mb-4 text-sm text-muted-foreground">
           Al pagar, tu horario queda guardado por {DEFAULT_HOLD_MINUTES} minutos. Si el pago no se completa en ese tiempo, se libera.
         </p>
@@ -778,7 +780,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
-        {bankInfo && method === 'transfer' ? (
+        {eligeTransferencia ? (
           <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleTransferBooking} disabled={loading || !acceptedTerms}>
             {loading ? 'Procesando...' : 'Continuar con transferencia'}
           </Button>
