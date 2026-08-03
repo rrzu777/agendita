@@ -222,6 +222,7 @@ export function CalendarViews({
           businessTimezone={timezone}
           businessAddress={businessAddress}
           photoUploadEnabled={photoUploadEnabled}
+          teamCount={professionals.length}
         />
       )}
 

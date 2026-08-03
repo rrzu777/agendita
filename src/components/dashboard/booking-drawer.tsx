@@ -23,6 +23,7 @@ import { ManualPaymentDialog } from './manual-payment-dialog'
 import { formatManualPaymentMoney, isManualPaymentAllowed } from './manual-payment-utils'
 import { PaymentRevertedBadge } from './payment-reverted-badge'
 import { CustomerPhotos } from './customer-photos'
+import { ReassignControl } from './reassign-control'
 import { bookingStatusLabel } from '@/lib/bookings/status-labels'
 import { bookingWhere } from '@/lib/services/modality'
 import { useVocabulary } from '@/components/vocabulary-provider'
@@ -58,13 +59,21 @@ interface BookingDrawerProps {
   businessTimezone: string
   businessAddress: string | null
   photoUploadEnabled: boolean
+  /** Cuántas personas ACTIVAS tiene el negocio. Requerido: gobierna si aparece
+   *  el control de reasignar, y opcional lo dejaría siempre apagado sin error
+   *  de compilación (mismo argumento que `professional` en CalendarBooking). */
+  teamCount: number
 }
 
-export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, businessTimezone, businessAddress, photoUploadEnabled }: BookingDrawerProps) {
+export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, businessTimezone, businessAddress, photoUploadEnabled, teamCount }: BookingDrawerProps) {
   const vocabulary = useVocabulary()
   const isMobile = useIsMobile()
 
   const start = new Date(booking.startDateTime)
+  // En un estado terminal no hay nada que reasignar (el server también lo
+  // rechaza; esto sólo evita ofrecer un botón que va a fallar).
+  const reassignable = teamCount > 0 &&
+    !['completed', 'cancelled', 'no_show', 'expired'].includes(booking.status)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -89,12 +98,24 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
             <span className="text-sm font-medium">{booking.customer?.name || '—'}</span>
           </div>
 
-          {/* Sin persona no hay fila: label invariable, misma decisión que los
-              emails y la pantalla de confirmación. */}
-          {booking.professional && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Atiende</span>
-              <span className="text-sm font-medium">{booking.professional.name}</span>
+          {/* Sin persona Y sin equipo no hay fila (label invariable, misma
+              decisión que los emails); con equipo la fila aparece aunque la
+              cita no tenga a nadie, porque asignarla es parte del control. */}
+          {(booking.professional || reassignable) && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Atiende</span>
+                <span className="text-sm font-medium">{booking.professional?.name ?? '—'}</span>
+              </div>
+              {reassignable && (
+                <div className="flex justify-end">
+                  <ReassignControl
+                    bookingId={booking.id}
+                    currentName={booking.professional?.name ?? null}
+                    onReassigned={() => onOpenChange(false)}
+                  />
+                </div>
+              )}
             </div>
           )}
 

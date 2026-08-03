@@ -14,9 +14,9 @@ import { findOrCreateCustomerInTx } from '@/lib/customers/find-or-create'
 import { logger } from '@/lib/logger'
 
 import { SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
-import { assertProfessionalOffersService } from '@/lib/professionals/ownership'
+import { activeProfessionalWhere, assertProfessionalOffersService } from '@/lib/professionals/ownership'
 import { assertSlotAndResolveProfessional } from '@/lib/professionals/assign'
-import { NO_PROFESSIONAL, type ProfessionalPick } from '@/lib/professionals/eligible'
+import { NO_PROFESSIONAL, professionalEligibilityWhere, type ProfessionalPick } from '@/lib/professionals/eligible'
 import { isNoOverlapViolation } from '@/lib/db/no-overlap'
 import { assignBookingNumber } from '@/lib/bookings/number'
 import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcement'
@@ -31,7 +31,7 @@ import { initialPublicBookingStatus, approvalHoldExpiresAt } from '@/lib/booking
 import { DEFAULT_HOLD_MINUTES, DASHBOARD_HOLD_MINUTES } from '@/lib/bookings/hold'
 import { resumeBookingForRetry } from '@/lib/bookings/retry'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
-import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
+import { cancelBookingInTx, reassignBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
 import { creditVisitPoints } from '@/lib/loyalty/credit'
 import { emitAutomaticRewardsOnCompletion } from '@/lib/loyalty/on-booking-completed'
 import { captureReferral } from '@/lib/loyalty/referral'
@@ -1189,3 +1189,106 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
 }
 
 export const rescheduleBooking = action(_rescheduleBooking)
+
+/**
+ * A quién se le puede pasar ESTA cita: gente activa del negocio que hace este
+ * servicio en esta modalidad, sin quien ya la atiende. La regla es la MISMA del
+ * funnel (`professionalEligibilityWhere`): ofrecer acá a alguien que la
+ * escritura después rechaza es el bug que ese módulo existe para impedir.
+ *
+ * Se carga bajo demanda desde el drawer y no viaja con el calendario a
+ * propósito: el calendario se abre en cada navegación del panel y esta lista
+ * sólo se mira cuando la dueña aprieta "Reasignar" (mismo criterio con el que
+ * `getProfessionalNames` existe aparte de `getProfessionals`).
+ */
+async function _getReassignTargets(bookingId: string) {
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, businessId },
+    select: { serviceId: true, modality: true, professionalId: true },
+  })
+  if (!booking) {
+    throw new UserError('Reserva no encontrada')
+  }
+
+  return prisma.professional.findMany({
+    where: {
+      ...activeProfessionalWhere(businessId),
+      ...professionalEligibilityWhere(booking.serviceId, booking.modality),
+      ...(booking.professionalId ? { NOT: { id: booking.professionalId } } : {}),
+    },
+    select: { id: true, name: true },
+    orderBy: { sortOrder: 'asc' },
+  })
+}
+
+export const getReassignTargets = action(_getReassignTargets)
+
+/** El rechazo de disponibilidad, contado para esta operación: acá "elegí otra
+ *  hora" no es una salida — la hora es fija y lo que se elige es la persona. */
+const REASSIGN_BUSY_MESSAGE = 'Esa persona no está disponible en ese horario'
+
+async function _reassignBooking(bookingId: string, professionalId: string) {
+  const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
+
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, businessId },
+    include: { professional: { select: { name: true } } },
+  })
+  if (!booking) {
+    throw new UserError('Reserva no encontrada')
+  }
+  if (['completed', 'cancelled', 'no_show', 'expired'].includes(booking.status)) {
+    throw new UserError('No se puede reasignar una reserva en este estado')
+  }
+  if (booking.professionalId === professionalId) {
+    throw new UserError('Esa persona ya atiende esta cita')
+  }
+
+  // Autorización con la modalidad DE LA RESERVA (quedó resuelta al crearla).
+  await assertProfessionalOffersService(prisma, businessId, professionalId, booking.serviceId, booking.modality)
+  // El nombre para la nota del historial; la fila existe porque la autorización
+  // de arriba acaba de encontrarla.
+  const target = await prisma.professional.findUniqueOrThrow({
+    where: { id: professionalId },
+    select: { name: true },
+  })
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await reassignBookingInTx(tx, {
+        booking,
+        newProfessionalId: professionalId,
+        newProfessionalName: target.name,
+        previousProfessionalName: booking.professional?.name ?? null,
+        timezone: business.timezone || 'America/Santiago',
+      })
+    })
+  } catch (error) {
+    // Los dos rechazos de disponibilidad —el chequeo con lock adentro de la tx
+    // y el EXCLUDE por persona como cerrojo final— se cuentan con el mensaje de
+    // ESTA operación, no con el genérico de "elegí otra hora".
+    if (error instanceof UserError && error.message === SLOT_UNAVAILABLE_MESSAGE) {
+      throw new UserError(REASSIGN_BUSY_MESSAGE)
+    }
+    if (isNoOverlapViolation(error)) {
+      throw new UserError(REASSIGN_BUSY_MESSAGE)
+    }
+    throw error
+  }
+
+  revalidatePath('/dashboard/bookings')
+  revalidatePath('/dashboard/calendar')
+  revalidatePath('/dashboard')
+  // La disponibilidad pública cambió: se libera la agenda de una persona y se
+  // ocupa la de otra.
+  await revalidateBusinessPublicPaths(businessId)
+
+  // Sin aviso automático a la clienta a propósito: la hora no cambió, y el
+  // panel tiene los WhatsApp a mano si el negocio quiere contarle quién la
+  // atiende ahora.
+  return { professionalName: target.name }
+}
+
+export const reassignBooking = action(_reassignBooking)

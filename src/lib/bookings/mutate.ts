@@ -4,7 +4,7 @@ import { addMinutes } from 'date-fns'
 import { formatBookingDateTime } from '@/lib/bookings/format-booking-datetime'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
-import { assertSlotIsAvailable } from '@/lib/availability/validation'
+import { assertProfessionalIsFree, assertSlotIsAvailable } from '@/lib/availability/validation'
 // UserError: estos mensajes son user-facing y deben sobrevivir al wrapper
 // action(); para callers sin wrapper (bookings.ts dueña) es un Error normal
 // (extends Error).
@@ -96,4 +96,71 @@ export async function rescheduleBookingInTx(
     throw new UserError('No se puede reprogramar una reserva en este estado')
   }
   return { endDateTime }
+}
+
+/** Core tx-aware de REASIGNACIÓN (SIN auth): cambiarle la persona a una cita
+ *  sin mover la hora — la operación de un martes cualquiera, cuando alguien
+ *  avisa que está enfermo y sus citas del día pasan a otra persona.
+ *
+ *  Lo único a validar es que la persona NUEVA tenga ese horario libre — su
+ *  regla del día, sus bloqueos más los del negocio, y las citas que le tapan
+ *  la hora — excluyendo esta misma cita. La mitad "bookable" (lead time,
+ *  ventana, servicio activo) se salta A PROPÓSITO: una cita ya pactada no se
+ *  cae porque el catálogo cambió después, mismo criterio que revivir.
+ *  `assertProfessionalIsFree` toma el advisory lock por negocio+día adentro,
+ *  así que el resultado vale hasta el fin de la tx.
+ *
+ *  El caller autoriza antes (persona activa del negocio que hace ESTE servicio
+ *  en ESTA modalidad, vía `assertProfessionalOffersService`) y trae los
+ *  nombres: acá sólo se usan para la nota del historial. */
+export async function reassignBookingInTx(
+  tx: Tx,
+  input: {
+    booking: {
+      id: string
+      businessId: string
+      serviceId: string
+      startDateTime: Date
+      endDateTime: Date
+      internalNotes: string | null
+      professionalId: string | null
+    }
+    newProfessionalId: string
+    newProfessionalName: string
+    previousProfessionalName: string | null
+    timezone: string
+  },
+): Promise<void> {
+  const { booking, newProfessionalId, newProfessionalName, previousProfessionalName, timezone } = input
+
+  await assertProfessionalIsFree({
+    tx,
+    businessId: booking.businessId,
+    serviceId: booking.serviceId,
+    startDateTime: booking.startDateTime,
+    endDateTime: booking.endDateTime,
+    timezone,
+    professionalId: newProfessionalId,
+    excludeBookingId: booking.id,
+  })
+
+  // Asignar (de nadie a alguien) es la misma operación con nota distinta: una
+  // reserva vieja sin persona también necesita dueña cuando aparece el equipo.
+  const historyNote = previousProfessionalName
+    ? `[REASIGNADA: de ${previousProfessionalName} a ${newProfessionalName}]`
+    : `[ASIGNADA a ${newProfessionalName}]`
+  const updateResult = await tx.booking.updateMany({
+    where: {
+      id: booking.id,
+      businessId: booking.businessId,
+      status: { notIn: [BookingStatus.completed, BookingStatus.cancelled, BookingStatus.no_show, BookingStatus.expired] },
+    },
+    data: {
+      professionalId: newProfessionalId,
+      internalNotes: booking.internalNotes ? `${booking.internalNotes}\n${historyNote}` : historyNote,
+    },
+  })
+  if (updateResult.count === 0) {
+    throw new UserError('No se puede reasignar una reserva en este estado')
+  }
 }
