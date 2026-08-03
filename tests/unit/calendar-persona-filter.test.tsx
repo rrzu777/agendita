@@ -111,6 +111,23 @@ describe('el filtro por persona del calendario', () => {
     expect(html).toContain('ClientaSinPersona')
   })
 
+  it('el link guardado a alguien que después se pausó también cae en "todo el equipo"', async () => {
+    // getProfessionalNames trae a las pausadas (sus bloqueos siguen dibujados);
+    // la resolución del filtro tiene que ignorarlas o el id pausado se hereda
+    // al modal de bloqueos y "Bloquear horario" muere con ForbiddenError. La
+    // primera versión de este archivo decía "o viejo" en el test de arriba pero
+    // nunca lo ejercitaba: lo encontró la review, no el test.
+    mockProfessionalNames.mockResolvedValue([
+      { id: 'p-juan', name: 'Juan', isActive: true },
+      { id: 'p-ana', name: 'Ana P', isActive: false },
+    ])
+    const html = await renderCalendar({ view: 'day', date: '2026-08-05', persona: 'p-ana' })
+
+    expect(html).toContain('ClientaDeJuan')
+    expect(html).toContain('ClientaDeAna')
+    expect(html).toContain('ClientaSinPersona')
+  })
+
   it('el parámetro sobrevive a la navegación: NINGÚN link interno lo pierde', async () => {
     const html = await renderCalendar({ view: 'day', date: '2026-08-05', persona: 'p-ana' })
 

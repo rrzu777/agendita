@@ -101,13 +101,19 @@ export default async function CalendarPage({
   // Filtro por persona (?persona=). La resolución es la COMPARTIDA del panel
   // (resolveScheduleScope, la misma de /dashboard/availability): un id inventado
   // o viejo cae en "todo el equipo" en vez de en un filtro que no matchea nada.
+  // Se resuelve contra las ACTIVAS — getProfessionalNames trae también a las
+  // pausadas (sus bloqueos siguen dibujados y nombrePorId las necesita), y sin
+  // este filtro un link guardado a alguien que después se pausó resolvía igual,
+  // heredaba su id al modal de bloqueos y "Bloquear horario" moría con un
+  // ForbiddenError críptico ("Persona no encontrada").
   // Cada lista se filtra con SU predicado del motor de agenda — reservas con
   // bookingBlocksProfessional y bloqueos con blockAppliesToProfessional, que hoy
   // coinciden pero scope.ts los mantiene separados a propósito—: lo del negocio
   // (professionalId null) aplica a todas, así que el día filtrado de Juan
   // muestra también lo sin persona — exactamente lo que su agenda considera
   // ocupado.
-  const persona = resolveScheduleScope(professionals, params)?.id ?? null
+  const activas = professionals.filter((p) => p.isActive)
+  const persona = resolveScheduleScope(activas, params)?.id ?? null
   const visibleBookings = persona
     ? bookings.filter((b) => bookingBlocksProfessional(b, persona))
     : bookings
@@ -140,7 +146,7 @@ export default async function CalendarPage({
           businessCurrency={business.currency}
           businessAddress={business.addressText}
           photoUploadEnabled={isObjectStorageAvailable()}
-          professionals={professionals.filter((p) => p.isActive).map((p) => ({ id: p.id, name: p.name }))}
+          professionals={activas.map((p) => ({ id: p.id, name: p.name }))}
           selectedProfessionalId={persona}
         />
       </div>
