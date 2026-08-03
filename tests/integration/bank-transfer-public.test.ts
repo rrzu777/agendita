@@ -163,7 +163,14 @@ describe('bank-transfer flujo público', () => {
       expect(!res.ok && res.error).toContain('transferencia')
     })
 
-    it('sin paymentMethod el hold sigue siendo ~15min', async () => {
+    // Sin elegir transferencia y con `PAYMENT_PROVIDER=mock` (el de este
+    // entorno), el resolver POR NEGOCIO contesta "no disponible" —es lo que le
+    // hace decir al wizard "este negocio coordina el abono directamente
+    // contigo"—, así que la reserva es de coordinación manual: ventana larga y
+    // marcador. Antes heredaba los 15 minutos del checkout y el cron la mataba
+    // sin que nadie pudiera pagar. El hold corto se ejercita en
+    // `bookings-idempotency` con el resolver diciendo que SÍ hay checkout.
+    it('sin transferencia y sin checkout online: ventana de coordinación manual', async () => {
       const { createBooking } = await import('@/server/actions/bookings')
       const before = Date.now()
       const res = await createBooking({
@@ -173,10 +180,11 @@ describe('bank-transfer flujo público', () => {
       if (!res.ok) throw new Error(res.error)
       const booking = res.data
       const row = await prisma.booking.findUnique({ where: { id: booking.id } })
-      expect(row!.paymentMethod).toBeNull()
-      const mins = (row!.holdExpiresAt!.getTime() - before) / 60_000
-      expect(mins).toBeGreaterThan(13)
-      expect(mins).toBeLessThan(17)
+      expect(row!.paymentMethod).toBe('manual')
+      const negocio = await prisma.business.findUnique({ where: { id: BIZ } })
+      const horas = (row!.holdExpiresAt!.getTime() - before) / 3_600_000
+      expect(horas).toBeGreaterThan(negocio!.manualHoldHours - 0.1)
+      expect(horas).toBeLessThan(negocio!.manualHoldHours + 0.1)
     })
   })
 
