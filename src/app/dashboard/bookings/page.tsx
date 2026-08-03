@@ -7,7 +7,7 @@ import { getVocabulary } from '@/lib/vocabulary'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { updateBookingStatus } from '@/server/actions/bookings'
-import { CalendarDays, Clock, User, CreditCard, MapPin, Phone, Plus, RefreshCw } from 'lucide-react'
+import { CalendarDays, Clock, User, UserCheck, CreditCard, MapPin, Phone, Plus, RefreshCw } from 'lucide-react'
 import { BookingContactButtons } from '@/components/dashboard/booking-contact-buttons'
 import { CancelBookingButton } from '@/components/dashboard/cancel-booking-button'
 import { ManualPaymentDialog } from '@/components/dashboard/manual-payment-dialog'
@@ -64,6 +64,8 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
     serviceAddress?: string | null
     meetingUrl?: string | null
     service: { name: string } | null
+    /** Quién atiende; null = sin persona asignada, no se muestra la fila. */
+    professional: { name: string } | null
     customer: { name: string; phone: string | null; email?: string | null } | null
     payments: { id: string; providerPaymentId?: string | null }[]
   }
@@ -111,6 +113,14 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           <User className="size-4 text-muted-foreground" />
           <span className="text-primary">{booking.customer?.name || 'Sin cliente'}</span>
         </div>
+        {booking.professional && (
+          <div className="flex items-center gap-3 text-sm">
+            <UserCheck className="size-4 text-muted-foreground" />
+            <span className="text-muted-foreground">
+              Atiende: <span className="text-primary">{booking.professional.name}</span>
+            </span>
+          </div>
+        )}
         <div className="flex items-center gap-3 text-sm">
           <CreditCard className="size-4 text-muted-foreground" />
           <span className={booking.paymentStatus === 'fully_paid' ? 'text-green-700' : 'text-primary'}>
@@ -382,7 +392,13 @@ export default async function BookingsPage() {
                           {new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: businessTimezone })}
                         </div>
                       </TableCell>
-                      <TruncatedCell className={TABLE_COL.customer} primary={booking.customer?.name || '—'} />
+                      <TruncatedCell
+                        className={TABLE_COL.customer}
+                        primary={booking.customer?.name || '—'}
+                        // "Atiende:" y no el nombre pelado: dos nombres de pila
+                        // apilados no dicen cuál es la clienta y cuál el equipo.
+                        secondary={booking.professional ? `Atiende: ${booking.professional.name}` : undefined}
+                      />
                       <TableCell className={TABLE_COL.status}>
                         <div className="flex flex-col items-start gap-1">
                           {hasPendingDeclaredTransfer(booking) ? (

@@ -15,6 +15,7 @@ import {
 } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { endOfLocalDay, startOfLocalDay } from '@/lib/availability/timezone'
+import { blockAppliesToProfessional } from '@/lib/availability/scope'
 
 const WEEK_OPTS = { weekStartsOn: 1 as const }
 
@@ -61,7 +62,7 @@ function rangeForView(view: CalendarView, focusLocalDate: Date, timezone: string
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; date?: string }>
+  searchParams: Promise<{ view?: string; date?: string; persona?: string }>
 }) {
   const userData = await getCurrentUserWithBusiness()
   if (!userData?.user) {
@@ -96,6 +97,20 @@ export default async function CalendarPage({
   ])
   const nombrePorId = new Map(professionals.map((p) => [p.id, p.name]))
 
+  // Filtro por persona (?persona=). Se valida contra la lista real: un id
+  // inventado o viejo cae en "todo el equipo" en vez de en un filtro que no
+  // matchea nada. El predicado es EL MISMO que usa el motor de agenda
+  // (blockAppliesToProfessional): lo del negocio (professionalId null) aplica a
+  // todas, así que el día filtrado de Juan muestra también las citas y bloqueos
+  // sin persona — exactamente lo que su agenda considera ocupado.
+  const persona = professionals.some((p) => p.id === params.persona) ? params.persona! : null
+  const visibleBookings = persona
+    ? bookings.filter((b) => blockAppliesToProfessional(b, persona))
+    : bookings
+  const visibleBlocks = persona
+    ? timeBlocks.filter((tb) => blockAppliesToProfessional(tb, persona))
+    : timeBlocks
+
   return (
     <div>
       <DashboardHeader
@@ -104,8 +119,8 @@ export default async function CalendarPage({
       />
       <div className="max-w-6xl p-5 md:p-10">
         <CalendarViews
-          bookings={serializeDates(bookings)}
-          timeBlocks={timeBlocks.map((tb) => ({
+          bookings={serializeDates(visibleBookings)}
+          timeBlocks={visibleBlocks.map((tb) => ({
             id: tb.id,
             startDateTime: tb.startDateTime.toISOString(),
             endDateTime: tb.endDateTime.toISOString(),
@@ -122,6 +137,7 @@ export default async function CalendarPage({
           businessAddress={business.addressText}
           photoUploadEnabled={isObjectStorageAvailable()}
           professionals={professionals.filter((p) => p.isActive).map((p) => ({ id: p.id, name: p.name }))}
+          selectedProfessionalId={persona}
         />
       </div>
     </div>

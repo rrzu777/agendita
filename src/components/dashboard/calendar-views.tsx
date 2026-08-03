@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   format,
   addDays,
@@ -58,6 +59,11 @@ interface CalendarViewsProps {
   photoUploadEnabled: boolean
   /** Quiénes atienden, para poder bloquearle el rato a una sola persona desde acá. */
   professionals: { id: string; name: string }[]
+  /** Filtro por persona (?persona=), ya validado por el servidor contra la
+   *  lista real. null = todo el equipo. El filtrado de citas/bloqueos lo hace
+   *  el servidor con el mismo predicado del motor de agenda; acá solo se
+   *  mantiene el parámetro vivo en cada link y se dibuja el selector. */
+  selectedProfessionalId: string | null
 }
 
 const HOUR_HEIGHT = 56 // px por hora
@@ -70,8 +76,11 @@ const statusIcons: Record<StatusIcon, typeof Clock> = {
   dash: Minus,
 }
 
-function hrefFor(view: CalendarView, date: Date): string {
-  return `/dashboard/calendar?view=${view}&date=${format(date, 'yyyy-MM-dd')}`
+/** `personaQS`: '' o `&persona=<id>` — el filtro tiene que sobrevivir a CADA
+ *  navegación interna (anterior/siguiente, Hoy, cambiar de vista, click en un
+ *  día); si un solo link lo pierde, el filtro "se suelta" al navegar. */
+function hrefFor(view: CalendarView, date: Date, personaQS: string): string {
+  return `/dashboard/calendar?view=${view}&date=${format(date, 'yyyy-MM-dd')}${personaQS}`
 }
 
 export function CalendarViews({
@@ -85,7 +94,9 @@ export function CalendarViews({
   businessAddress,
   photoUploadEnabled,
   professionals,
+  selectedProfessionalId,
 }: CalendarViewsProps) {
+  const personaQS = selectedProfessionalId ? `&persona=${selectedProfessionalId}` : ''
   const focus = parseISO(`${date}T12:00:00`)
   const [activeBooking, setActiveBooking] = useState<TimelineBooking | null>(null)
   const [activeBlock, setActiveBlock] = useState<CalendarTimeBlock | null>(null)
@@ -113,15 +124,15 @@ export function CalendarViews({
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="icon" asChild>
-            <Link href={hrefFor(view, prev)} aria-label="Anterior">
+            <Link href={hrefFor(view, prev, personaQS)} aria-label="Anterior">
               <ChevronLeft className="size-4" />
             </Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/dashboard/calendar?view=${view}&date=${todayKey}`}>Hoy</Link>
+            <Link href={`/dashboard/calendar?view=${view}&date=${todayKey}${personaQS}`}>Hoy</Link>
           </Button>
           <Button variant="outline" size="icon" asChild>
-            <Link href={hrefFor(view, next)} aria-label="Siguiente">
+            <Link href={hrefFor(view, next, personaQS)} aria-label="Siguiente">
               <ChevronRight className="size-4" />
             </Link>
           </Button>
@@ -131,7 +142,15 @@ export function CalendarViews({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <ViewSwitch view={view} date={date} />
+          {professionals.length > 0 && (
+            <ProfessionalFilter
+              professionals={professionals}
+              selected={selectedProfessionalId}
+              view={view}
+              date={date}
+            />
+          )}
+          <ViewSwitch view={view} date={date} personaQS={personaQS} />
           {view !== 'month' && (
             // Sin `defaultProfessionalId`: el calendario muestra a todo el equipo junto,
             // así que no hay una persona "que se esté mirando" de la cual heredar.
@@ -146,6 +165,7 @@ export function CalendarViews({
           focus={focus}
           timezone={timezone}
           todayKey={todayKey}
+          personaQS={personaQS}
           onBookingClick={setActiveBooking}
         />
       )}
@@ -159,6 +179,7 @@ export function CalendarViews({
           timeBlocks={timeBlocks}
           timezone={timezone}
           todayKey={todayKey}
+          personaQS={personaQS}
           onBookingClick={setActiveBooking}
           onBlockClick={setActiveBlock}
         />
@@ -170,6 +191,7 @@ export function CalendarViews({
           timeBlocks={timeBlocks}
           timezone={timezone}
           todayKey={todayKey}
+          personaQS={personaQS}
           onBookingClick={setActiveBooking}
           onBlockClick={setActiveBlock}
         />
@@ -208,7 +230,7 @@ export function CalendarViews({
   )
 }
 
-function ViewSwitch({ view, date }: { view: CalendarView; date: string }) {
+function ViewSwitch({ view, date, personaQS }: { view: CalendarView; date: string; personaQS: string }) {
   const options: Array<{ key: CalendarView; label: string }> = [
     { key: 'day', label: 'Día' },
     { key: 'week', label: 'Semana' },
@@ -219,7 +241,7 @@ function ViewSwitch({ view, date }: { view: CalendarView; date: string }) {
       {options.map((o) => (
         <Link
           key={o.key}
-          href={`/dashboard/calendar?view=${o.key}&date=${date}`}
+          href={`/dashboard/calendar?view=${o.key}&date=${date}${personaQS}`}
           className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
             view === o.key
               ? 'bg-card text-primary shadow-sm'
@@ -233,17 +255,57 @@ function ViewSwitch({ view, date }: { view: CalendarView; date: string }) {
   )
 }
 
+/**
+ * El filtro por persona. Navega en vez de filtrar en memoria: el parámetro
+ * tiene que quedar en la URL para sobrevivir a anterior/siguiente/Hoy (que son
+ * Links al servidor), y el filtrado ya lo hizo la página con el predicado del
+ * motor de agenda.
+ */
+function ProfessionalFilter({
+  professionals,
+  selected,
+  view,
+  date,
+}: {
+  professionals: { id: string; name: string }[]
+  selected: string | null
+  view: CalendarView
+  date: string
+}) {
+  const router = useRouter()
+  return (
+    <select
+      aria-label="Filtrar por quién atiende"
+      value={selected ?? ''}
+      onChange={(e) => {
+        const persona = e.target.value ? `&persona=${e.target.value}` : ''
+        router.push(`/dashboard/calendar?view=${view}&date=${date}${persona}`)
+      }}
+      className="h-9 rounded-lg border border-border bg-card px-2 text-sm font-medium text-foreground"
+    >
+      <option value="">Todo el equipo</option>
+      {professionals.map((p) => (
+        <option key={p.id} value={p.id}>
+          {p.name}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 function MonthView({
   bookings,
   focus,
   timezone,
   todayKey,
+  personaQS,
   onBookingClick,
 }: {
   bookings: TimelineBooking[]
   focus: Date
   timezone: string
   todayKey: string
+  personaQS: string
   onBookingClick: (b: TimelineBooking) => void
 }) {
   const monthStart = startOfMonth(focus)
@@ -283,7 +345,7 @@ function MonthView({
               }`}
             >
               <Link
-                href={hrefFor('day', day)}
+                href={hrefFor('day', day, personaQS)}
                 className="absolute inset-0 rounded-lg"
                 aria-label={`Ver ${format(day, "EEEE d 'de' MMMM", { locale: es })}`}
               />
@@ -347,6 +409,7 @@ function TimelineView({
   timeBlocks,
   timezone,
   todayKey,
+  personaQS,
   onBookingClick,
   onBlockClick,
 }: {
@@ -355,6 +418,7 @@ function TimelineView({
   timeBlocks: CalendarTimeBlock[]
   timezone: string
   todayKey: string
+  personaQS: string
   onBookingClick: (b: TimelineBooking) => void
   onBlockClick: (b: CalendarTimeBlock) => void
 }) {
@@ -394,7 +458,7 @@ function TimelineView({
               >
                 {/* Cabecera del día */}
                 <Link
-                  href={hrefFor('day', day)}
+                  href={hrefFor('day', day, personaQS)}
                   className="flex h-8 items-center justify-center gap-1.5 border-b border-border text-xs font-medium hover:bg-muted/40"
                 >
                   <span className="capitalize text-muted-foreground">{format(day, 'EEE', { locale: es })}</span>
@@ -489,6 +553,11 @@ function BookingBlock({
       <div className={`font-semibold ${strike}`}>{start}</div>
       <div className={`truncate ${strike}`}>{b.customer?.name || 'Cliente'}</div>
       {p.heightMin >= 45 && b.service?.name && <div className="truncate">{b.service.name}</div>}
+      {/* Quién atiende, si el chip tiene alto para una línea más. Con el filtro
+          en "todo el equipo" es lo que distingue dos citas a la misma hora. */}
+      {p.heightMin >= 60 && b.professional && (
+        <div className={`truncate ${strike}`}>{b.professional.name}</div>
+      )}
     </button>
   )
 }

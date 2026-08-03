@@ -16,6 +16,7 @@ import { CalendarViews } from '@/components/dashboard/calendar-views'
 
 const baseProps = {
   timeBlocks: [],
+  selectedProfessionalId: null,
   todayKey: '2026-06-30',
   timezone: 'America/Santiago',
   businessCurrency: 'CLP',
@@ -31,6 +32,7 @@ const booking = {
   status: 'confirmed',
   customer: { name: 'Ana' },
   service: { name: 'Corte', pastelColor: '#FFB3BA' },
+  professional: null,
 }
 
 describe('CalendarViews — relleno de color (día)', () => {

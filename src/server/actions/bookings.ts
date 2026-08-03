@@ -126,6 +126,9 @@ export async function getBookings() {
       serviceAddress: true,
       meetingUrl: true,
       service: { select: { name: true } },
+      // Quién atiende: la tabla y la card lo muestran junto al servicio. null =
+      // sin persona asignada (negocio sin equipo o reserva anterior al track 5).
+      professional: { select: { name: true } },
       customer: { select: { name: true, phone: true, email: true } },
       // Declaración de transferencia pendiente de verificar, sea abono
       // (bt-declared) o saldo (bt-balance). El array queda vacío salvo que
@@ -744,6 +747,10 @@ export async function getBookingsByRange(start: Date, end: Date) {
     include: {
       service: true,
       customer: true,
+      // Para el calendario: el nombre va en el chip y en el drawer, y el
+      // `professionalId` escalar (que el include trae solo) alimenta el filtro
+      // por persona de la página.
+      professional: { select: { name: true } },
     },
   })
 }
