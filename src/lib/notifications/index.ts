@@ -20,8 +20,6 @@ export {
   sendMultiNotificationSafely,
   getBusinessReplyToEmail,
   sendReminderEmail,
-  sendBookingReminderNotification,
-  sendBookingCancelledNotificationById,
   sendPaymentReceivedNotification,
   sendLoyaltyRewardNotification,
   sendCampaignPromoEmail,
