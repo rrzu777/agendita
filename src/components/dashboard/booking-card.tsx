@@ -7,6 +7,10 @@ export type CalendarBooking = {
   startDateTime: string
   endDateTime: string
   service: { name: string } | null
+  /** Quién atiende. Requerido a propósito (mismo criterio que los emails): si
+   *  fuera opcional, una consulta que olvide la relación compila igual y la
+   *  fila desaparece en silencio. `null` = sin persona asignada. */
+  professional: { name: string } | null
   customer: { name: string; phone: string; email: string | null } | null
   totalPrice: number
   depositPaid: number

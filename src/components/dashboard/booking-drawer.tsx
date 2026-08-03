@@ -89,6 +89,15 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
             <span className="text-sm font-medium">{booking.customer?.name || '—'}</span>
           </div>
 
+          {/* Sin persona no hay fila: label invariable, misma decisión que los
+              emails y la pantalla de confirmación. */}
+          {booking.professional && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Atiende</span>
+              <span className="text-sm font-medium">{booking.professional.name}</span>
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Pagado</span>
             <span className="flex items-center gap-2 text-sm font-medium">

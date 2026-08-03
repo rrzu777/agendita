@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   format,
   addDays,
@@ -27,6 +28,8 @@ import { EditBlockDialog } from './edit-block-dialog'
 import { EditSeriesOccurrenceDialog } from './edit-series-occurrence-dialog'
 import type { CalendarBooking } from './booking-card'
 import type { CalendarTimeBlock } from './time-block-card'
+import { SCOPE_PARAM } from './schedule-scope-picker'
+import { WHOLE_BUSINESS_LABEL } from '@/lib/professionals/scope-label'
 import {
   localDayKey,
   computeHourRange,
@@ -58,6 +61,11 @@ interface CalendarViewsProps {
   photoUploadEnabled: boolean
   /** Quiénes atienden, para poder bloquearle el rato a una sola persona desde acá. */
   professionals: { id: string; name: string }[]
+  /** Filtro por persona (?persona=), ya validado por el servidor contra la
+   *  lista real. null = todo el equipo. El filtrado de citas/bloqueos lo hace
+   *  el servidor con el mismo predicado del motor de agenda; acá solo se
+   *  mantiene el parámetro vivo en cada link y se dibuja el selector. */
+  selectedProfessionalId: string | null
 }
 
 const HOUR_HEIGHT = 56 // px por hora
@@ -70,8 +78,17 @@ const statusIcons: Record<StatusIcon, typeof Clock> = {
   dash: Minus,
 }
 
-function hrefFor(view: CalendarView, date: Date): string {
-  return `/dashboard/calendar?view=${view}&date=${format(date, 'yyyy-MM-dd')}`
+/**
+ * EL builder de URLs del calendario — el único. El filtro por persona tiene que
+ * sobrevivir a CADA navegación interna (anterior/siguiente, Hoy, cambiar de
+ * vista, click en un día): si un solo link arma la URL a mano y lo pierde, el
+ * filtro "se suelta" al navegar. Por eso el `&persona=` se escribe acá y en
+ * ningún otro lado, con el nombre del parámetro importado del contrato
+ * compartido del panel (SCOPE_PARAM).
+ */
+function calendarHref(view: CalendarView, date: string, personaId: string | null): string {
+  const persona = personaId ? `&${SCOPE_PARAM}=${personaId}` : ''
+  return `/dashboard/calendar?view=${view}&date=${date}${persona}`
 }
 
 export function CalendarViews({
@@ -85,6 +102,7 @@ export function CalendarViews({
   businessAddress,
   photoUploadEnabled,
   professionals,
+  selectedProfessionalId,
 }: CalendarViewsProps) {
   const focus = parseISO(`${date}T12:00:00`)
   const [activeBooking, setActiveBooking] = useState<TimelineBooking | null>(null)
@@ -113,15 +131,15 @@ export function CalendarViews({
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="icon" asChild>
-            <Link href={hrefFor(view, prev)} aria-label="Anterior">
+            <Link href={calendarHref(view, format(prev, 'yyyy-MM-dd'), selectedProfessionalId)} aria-label="Anterior">
               <ChevronLeft className="size-4" />
             </Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/dashboard/calendar?view=${view}&date=${todayKey}`}>Hoy</Link>
+            <Link href={calendarHref(view, todayKey, selectedProfessionalId)}>Hoy</Link>
           </Button>
           <Button variant="outline" size="icon" asChild>
-            <Link href={hrefFor(view, next)} aria-label="Siguiente">
+            <Link href={calendarHref(view, format(next, 'yyyy-MM-dd'), selectedProfessionalId)} aria-label="Siguiente">
               <ChevronRight className="size-4" />
             </Link>
           </Button>
@@ -131,11 +149,28 @@ export function CalendarViews({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <ViewSwitch view={view} date={date} />
+          {/* Con una sola persona el filtro es un no-op (lo suyo + lo del
+              negocio = todo): mismo criterio que el funnel, que con una sola
+              tampoco pregunta. */}
+          {professionals.length > 1 && (
+            <ProfessionalFilter
+              professionals={professionals}
+              selected={selectedProfessionalId}
+              view={view}
+              date={date}
+            />
+          )}
+          <ViewSwitch view={view} date={date} personaId={selectedProfessionalId} />
           {view !== 'month' && (
-            // Sin `defaultProfessionalId`: el calendario muestra a todo el equipo junto,
-            // así que no hay una persona "que se esté mirando" de la cual heredar.
-            <BlockTimeModal defaultDate={date} timezone={timezone} professionals={professionals} />
+            // Con el filtro puesto SÍ hay una persona "que se está mirando":
+            // el bloqueo nuevo arranca en ella, no en "todo el negocio" (el
+            // default más caro de equivocarse — cierra el local entero).
+            <BlockTimeModal
+              defaultDate={date}
+              timezone={timezone}
+              professionals={professionals}
+              defaultProfessionalId={selectedProfessionalId}
+            />
           )}
         </div>
       </div>
@@ -146,6 +181,7 @@ export function CalendarViews({
           focus={focus}
           timezone={timezone}
           todayKey={todayKey}
+          personaId={selectedProfessionalId}
           onBookingClick={setActiveBooking}
         />
       )}
@@ -159,6 +195,7 @@ export function CalendarViews({
           timeBlocks={timeBlocks}
           timezone={timezone}
           todayKey={todayKey}
+          personaId={selectedProfessionalId}
           onBookingClick={setActiveBooking}
           onBlockClick={setActiveBlock}
         />
@@ -170,6 +207,7 @@ export function CalendarViews({
           timeBlocks={timeBlocks}
           timezone={timezone}
           todayKey={todayKey}
+          personaId={selectedProfessionalId}
           onBookingClick={setActiveBooking}
           onBlockClick={setActiveBlock}
         />
@@ -208,7 +246,7 @@ export function CalendarViews({
   )
 }
 
-function ViewSwitch({ view, date }: { view: CalendarView; date: string }) {
+function ViewSwitch({ view, date, personaId }: { view: CalendarView; date: string; personaId: string | null }) {
   const options: Array<{ key: CalendarView; label: string }> = [
     { key: 'day', label: 'Día' },
     { key: 'week', label: 'Semana' },
@@ -219,7 +257,7 @@ function ViewSwitch({ view, date }: { view: CalendarView; date: string }) {
       {options.map((o) => (
         <Link
           key={o.key}
-          href={`/dashboard/calendar?view=${o.key}&date=${date}`}
+          href={calendarHref(o.key, date, personaId)}
           className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
             view === o.key
               ? 'bg-card text-primary shadow-sm'
@@ -233,17 +271,60 @@ function ViewSwitch({ view, date }: { view: CalendarView; date: string }) {
   )
 }
 
+/**
+ * El filtro por persona. Navega en vez de filtrar en memoria: el parámetro
+ * tiene que quedar en la URL para sobrevivir a anterior/siguiente/Hoy (que son
+ * Links al servidor), y el filtrado ya lo hizo la página con los predicados
+ * del motor de agenda.
+ *
+ * `<select>` nativo a propósito (y no el Select de ui ni el patrón links de
+ * ScheduleScopePicker): acá la lista puede ser larga y el control convive
+ * apretado con la barra del calendario; el nativo da teclado y móvil gratis.
+ * La opción nula usa WHOLE_BUSINESS_LABEL, la redacción única del alcance
+ * "sin persona" en todo el panel.
+ */
+function ProfessionalFilter({
+  professionals,
+  selected,
+  view,
+  date,
+}: {
+  professionals: { id: string; name: string }[]
+  selected: string | null
+  view: CalendarView
+  date: string
+}) {
+  const router = useRouter()
+  return (
+    <select
+      aria-label="Filtrar por quién atiende"
+      value={selected ?? ''}
+      onChange={(e) => router.push(calendarHref(view, date, e.target.value || null))}
+      className="h-9 rounded-lg border border-border bg-card px-2 text-sm font-medium text-foreground"
+    >
+      <option value="">{WHOLE_BUSINESS_LABEL}</option>
+      {professionals.map((p) => (
+        <option key={p.id} value={p.id}>
+          {p.name}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 function MonthView({
   bookings,
   focus,
   timezone,
   todayKey,
+  personaId,
   onBookingClick,
 }: {
   bookings: TimelineBooking[]
   focus: Date
   timezone: string
   todayKey: string
+  personaId: string | null
   onBookingClick: (b: TimelineBooking) => void
 }) {
   const monthStart = startOfMonth(focus)
@@ -283,7 +364,7 @@ function MonthView({
               }`}
             >
               <Link
-                href={hrefFor('day', day)}
+                href={calendarHref('day', key, personaId)}
                 className="absolute inset-0 rounded-lg"
                 aria-label={`Ver ${format(day, "EEEE d 'de' MMMM", { locale: es })}`}
               />
@@ -347,6 +428,7 @@ function TimelineView({
   timeBlocks,
   timezone,
   todayKey,
+  personaId,
   onBookingClick,
   onBlockClick,
 }: {
@@ -355,6 +437,7 @@ function TimelineView({
   timeBlocks: CalendarTimeBlock[]
   timezone: string
   todayKey: string
+  personaId: string | null
   onBookingClick: (b: TimelineBooking) => void
   onBlockClick: (b: CalendarTimeBlock) => void
 }) {
@@ -394,7 +477,7 @@ function TimelineView({
               >
                 {/* Cabecera del día */}
                 <Link
-                  href={hrefFor('day', day)}
+                  href={calendarHref('day', dayKey, personaId)}
                   className="flex h-8 items-center justify-center gap-1.5 border-b border-border text-xs font-medium hover:bg-muted/40"
                 >
                   <span className="capitalize text-muted-foreground">{format(day, 'EEE', { locale: es })}</span>
@@ -489,6 +572,11 @@ function BookingBlock({
       <div className={`font-semibold ${strike}`}>{start}</div>
       <div className={`truncate ${strike}`}>{b.customer?.name || 'Cliente'}</div>
       {p.heightMin >= 45 && b.service?.name && <div className="truncate">{b.service.name}</div>}
+      {/* Quién atiende, si el chip tiene alto para una línea más. Con el filtro
+          en "todo el equipo" es lo que distingue dos citas a la misma hora. */}
+      {p.heightMin >= 60 && b.professional && (
+        <div className={`truncate ${strike}`}>{b.professional.name}</div>
+      )}
     </button>
   )
 }

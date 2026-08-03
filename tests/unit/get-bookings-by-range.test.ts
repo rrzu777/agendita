@@ -42,6 +42,7 @@ describe('getBookingsByRange', () => {
       include: {
         service: true,
         customer: true,
+        professional: { select: { name: true } },
       },
     })
   })
