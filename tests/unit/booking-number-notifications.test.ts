@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { ServiceModality } from '@prisma/client'
 import {
   bookingConfirmationCustomerHtml,
   bookingConfirmationCustomerText,
@@ -60,6 +61,7 @@ const reminderBase = {
 }
 
 const whatsappBase = {
+  modality: ServiceModality.on_site,
   customerName: 'Ana',
   customerPhone: '+56911111111',
   serviceName: 'Corte',

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ServiceModality } from '@prisma/client'
 
 // ── Templates ──────────────────────────────────────────────────────────────
 
@@ -65,6 +66,7 @@ const sampleRescheduleData = {
   businessName: 'Nails by Ana',
   businessReplyToEmail: 'owner@nails.com',
   businessWhatsapp: '+56912345678',
+  modality: ServiceModality.on_site,
   businessAddress: 'Av. Siempre Viva 742, Santiago',
   businessTimezone: 'America/Santiago',
   customerName: 'Maria',
@@ -279,6 +281,22 @@ describe('templates: bookingRescheduledCustomer', () => {
     expect(text).toContain('Nuevo horario')
     expect(text).toContain('Manicure semipermanente')
   })
+
+  it('a domicilio manda la dirección de la clienta, no la del local', () => {
+    // El mismo bug que el WhatsApp: con la modalidad opcional, whereRows caía al
+    // default on_site y este mail imprimía la dirección del local en una cita a
+    // domicilio. La modalidad requerida en RescheduledEmailData es el cerrojo.
+    const domicilio = {
+      ...sampleRescheduleData,
+      modality: ServiceModality.at_home,
+      serviceAddress: 'Los Olmos 12',
+    }
+    for (const render of [bookingRescheduledCustomerHtml, bookingRescheduledCustomerText]) {
+      const out = render(domicilio)
+      expect(out).toContain('Los Olmos 12')
+      expect(out).not.toContain('Av. Siempre Viva')
+    }
+  })
 })
 
 describe('templates: reviewRequestHtml', () => {
@@ -372,6 +390,7 @@ import {
 } from '@/lib/notifications/whatsapp'
 
 const sampleWhatsappData = {
+  modality: ServiceModality.on_site,
   customerName: 'Maria',
   customerPhone: '+56987654321',
   serviceName: 'Manicure semipermanente',

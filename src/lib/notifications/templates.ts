@@ -3,7 +3,7 @@ import { es } from 'date-fns/locale'
 import { unsubscribeFooterHtml, unsubscribeFooterText } from './marketing-email'
 import { formatMoney } from '@/lib/money'
 import { getVocabulary } from '@/lib/vocabulary'
-import { whereRows, type WhereFields } from '@/lib/services/modality'
+import { whereRows, whereText, type WhereFields } from '@/lib/services/modality'
 import type { BusinessCategory } from '@prisma/client'
 import type {
   BookingEmailData,
@@ -83,9 +83,9 @@ function whereRowsHtml(data: WhereFields): string {
     .join('')
 }
 
-function whereRowsText(data: WhereFields): string[] {
-  return whereRows(data).map(({ label, value }) => `${label}: ${value}`)
-}
+// La proyección a texto plano es la compartida (`whereText`, junto a
+// `whereRows`): el WhatsApp usa la misma, así ningún canal cuenta otro "dónde".
+const whereRowsText = whereText
 
 /**
  * La fila "con quién es la cita". "Te atiende" en los mails a la clienta,

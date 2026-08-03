@@ -1,8 +1,9 @@
 import { formatInTimeZone } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
 import { formatMoney } from '@/lib/money'
+import { bookingWhere, isNotableModality, whereText, type BookingWhere } from '@/lib/services/modality'
 
-export interface BookingWhatsappData {
+export interface BookingWhatsappData extends BookingWhere {
   bookingNumber?: number | null
   customerName: string
   customerPhone: string
@@ -15,7 +16,6 @@ export interface BookingWhatsappData {
   finalAmount?: number
   depositPaid: number
   remainingBalance: number
-  businessAddress?: string | null
   loyaltyCardLink?: string
 }
 
@@ -26,13 +26,18 @@ export interface ReviewRequestWhatsappData {
   loyaltyCardLink?: string
 }
 
-export interface BookingRescheduledWhatsappData {
+export interface BookingRescheduledWhatsappData extends BookingWhere {
   customerName: string
   serviceName: string
   previousStartDateTime: Date
   newStartDateTime: Date
   businessTimezone: string
-  businessAddress?: string | null
+}
+
+/** El "dónde" con el 📍 de estos mensajes; el texto es el compartido
+ *  (`whereText`), para que el WhatsApp no cuente otra cosa que el mail. */
+function whereLines(data: BookingWhere): string[] {
+  return whereText(data).map((line) => `📍 ${line}`)
 }
 
 function fmtDate(date: Date, timezone: string): string {
@@ -79,10 +84,8 @@ export function buildBookingConfirmationWhatsappMessage(data: BookingWhatsappDat
     ...(data.bookingNumber != null ? [`🔖 Reserva #${data.bookingNumber}`] : []),
     `📋 Servicio: ${data.serviceName}`,
     `📅 Fecha y hora: ${dateStr}`,
+    ...whereLines(data),
   ]
-  if (data.businessAddress) {
-    lines.push(`📍 Dirección: ${data.businessAddress}`)
-  }
   lines.push(
     ``,
     `💰 Precio total: ${total}`,
@@ -128,8 +131,13 @@ export function buildWhatsappBookingSummaryText(data: BookingWhatsappData): stri
     `Total: ${fmtCurrency(data.totalPrice, data.businessCurrency)}`,
     `Teléfono: ${data.customerPhone}`,
   ]
-  if (data.businessAddress) {
-    parts.push(`Dirección: ${data.businessAddress}`)
+  // El resumen es para la dueña, no para la clienta: en el local su propia
+  // dirección es ruido, pero a domicilio el dato clave es A DÓNDE va (la
+  // dirección de la clienta) y online, el link. Antes imprimía la dirección del
+  // local en los tres casos.
+  if (isNotableModality(data.modality)) {
+    const where = bookingWhere(data)
+    parts.push(where.detail ? `${where.label}: ${where.detail}` : where.label)
   }
   return parts.join(' | ')
 }
@@ -147,10 +155,8 @@ export function buildWhatsappReminderMessage(data: BookingWhatsappData): string 
     ...(data.bookingNumber != null ? [`🔖 Reserva #${data.bookingNumber}`] : []),
     `📋 Servicio: ${data.serviceName}`,
     `📅 Fecha y hora: ${dateStr}`,
+    ...whereLines(data),
   ]
-  if (data.businessAddress) {
-    lines.push(`📍 Dirección: ${data.businessAddress}`)
-  }
   lines.push(
     ``,
     `💰 Precio total: ${total}`,
@@ -182,8 +188,9 @@ export function buildBookingRescheduledWhatsappMessage(data: BookingRescheduledW
     `Servicio: ${data.serviceName}`,
     `Horario anterior: ${previousDateStr}`,
     `Nuevo horario: ${newDateStr}`,
+    // Este mensaje va sin emojis; las mismas filas que el resto, en plano.
+    ...whereText(data),
   ]
-  if (data.businessAddress) lines.push(`Dirección: ${data.businessAddress}`)
   lines.push(``, `Si este nuevo horario no te acomoda, respondeme por aquí.`)
 
   return lines.join('\n')
