@@ -37,8 +37,16 @@ interface DeriveInput {
  * El cron sí las expira, y una transferencia NO declarada con hold vencido
  * también está condenada — la declarada nunca llega acá (corta antes en
  * `verifying_transfer`).
+ *
+ * Exportado con firma angosta: /mi lo usa para la etiqueta de estado, que no
+ * tiene (ni necesita) montos ni pagos. Quien tenga el input completo debe
+ * preferir `deriveConfirmationState`, que además arbitra el orden contra
+ * "verificando" y "transferencia declarada".
  */
-function isDoomedHold(input: DeriveInput, now: Date): boolean {
+export function isDoomedHold(
+  input: Pick<DeriveInput, 'status' | 'paymentStatus' | 'holdExpiresAt'>,
+  now: Date,
+): boolean {
   return (
     input.status === 'pending_payment' &&
     input.paymentStatus === 'unpaid' &&

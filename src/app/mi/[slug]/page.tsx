@@ -12,6 +12,7 @@ import { bookingStatusLabels } from '@/lib/bookings/status-labels'
 import { bookingWhere, isNotableModality } from '@/lib/services/modality'
 import { formatShortDate } from '@/lib/format-date'
 import { declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
+import { isDoomedHold } from '@/lib/payments/confirmation-state'
 import { canSelfManage } from '@/lib/bookings/self-service'
 import { BookingActions } from './booking-actions'
 import { ServiceModality, type BookingStatus } from '@prisma/client'
@@ -26,11 +27,20 @@ const BT_DECLARED_SELECT = {
 }
 
 // "Pendiente de pago" suena a "no pagaste": si la clienta ya declaró la
-// transferencia, mostrar el estado real.
-function statusLabel(b: { status: BookingStatus; payments: { id: string }[] }) {
-  return b.status === 'pending_payment' && b.payments.length > 0
-    ? 'Transferencia en verificación'
-    : bookingStatusLabels[b.status]
+// transferencia, mostrar el estado real. Y si el hold ya venció y el cron
+// todavía no lo asentó, adelantar "Expirada" — mismo criterio que
+// /book/confirmation: pedirle que pague un horario que se está liberando
+// es mentirle. La declarada gana sobre el hold muerto (el cron no la barre
+// sin que la dueña la resuelva).
+function statusLabel(
+  b: { status: BookingStatus; paymentStatus: string; holdExpiresAt: Date | null; payments: { id: string }[] },
+  now: Date,
+) {
+  if (b.status === 'pending_payment') {
+    if (b.payments.length > 0) return 'Transferencia en verificación'
+    if (isDoomedHold(b, now)) return bookingStatusLabels.expired
+  }
+  return bookingStatusLabels[b.status]
 }
 
 async function redeemAction(customerId: string, optionId: string, requestId: string) {
@@ -83,13 +93,13 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
     prisma.booking.findMany({
       where: { customerId: { in: customerIds }, startDateTime: { gte: now }, status: { in: [...UPCOMING_STATUSES] } },
       orderBy: { startDateTime: 'asc' },
-      select: { id: true, bookingNumber: true, startDateTime: true, status: true, modality: true, serviceAddress: true, meetingUrl: true, service: { select: { name: true } }, payments: BT_DECLARED_SELECT },
+      select: { id: true, bookingNumber: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true, modality: true, serviceAddress: true, meetingUrl: true, service: { select: { name: true } }, payments: BT_DECLARED_SELECT },
     }),
     prisma.booking.findMany({
       where: { customerId: { in: customerIds }, OR: [{ startDateTime: { lt: now } }, { status: { notIn: [...UPCOMING_STATUSES] } }] },
       orderBy: { startDateTime: 'desc' },
       take: 20,
-      select: { id: true, bookingNumber: true, startDateTime: true, status: true, service: { select: { name: true } }, payments: BT_DECLARED_SELECT },
+      select: { id: true, bookingNumber: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true, service: { select: { name: true } }, payments: BT_DECLARED_SELECT },
     }),
   ])
 
@@ -122,7 +132,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
               return (
               <li key={b.id} className="rounded-lg border border-gray-100 px-3 py-2 text-sm">
                 <div className="font-medium">{b.service?.name}</div>
-                <div className="text-gray-500">{formatShortDate(b.startDateTime)} · {statusLabel(b)} · {formatBookingNumber(b.bookingNumber, b.id)}</div>
+                <div className="text-gray-500">{formatShortDate(b.startDateTime)} · {statusLabel(b, now)} · {formatBookingNumber(b.bookingNumber, b.id)}</div>
                 {(isNotableModality(b.modality) || where.detail) && (
                   <div className="text-gray-500">
                     {where.label}
@@ -166,7 +176,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
             {past.map((b) => (
               <li key={b.id} className="flex items-center justify-between py-2 text-sm">
                 <span>{b.service?.name}</span>
-                <span className="text-gray-400">{formatShortDate(b.startDateTime)} · {statusLabel(b)}</span>
+                <span className="text-gray-400">{formatShortDate(b.startDateTime)} · {statusLabel(b, now)}</span>
               </li>
             ))}
           </ul>
