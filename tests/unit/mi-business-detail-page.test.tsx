@@ -100,9 +100,43 @@ describe('/mi/[slug]', () => {
     it('transferencia declarada gana aunque el hold haya vencido', async () => {
       const html = await renderConUpcoming({
         holdExpiresAt: new Date(Date.now() - 60000),
-        payments: [{ id: 'p1' }],
+        payments: [{ id: 'p1', provider: 'manual', status: 'pending', providerPaymentId: 'bt-declared:bk1' }],
       })
       expect(html).toContain('Transferencia en verificación')
+      expect(html).not.toContain('Expirada')
+    })
+
+    // El pago en vuelo puede aterrizar y confirmar aunque el hold haya vencido:
+    // decir "Expirada" acá contradecía a /book/confirmation, que muestra
+    // "Verificando tu pago" para la MISMA reserva en el mismo instante.
+    it('pago de Mercado Pago en vuelo gana al hold muerto', async () => {
+      const html = await renderConUpcoming({
+        holdExpiresAt: new Date(Date.now() - 60000),
+        payments: [{ id: 'p1', provider: 'mercado_pago', status: 'pending', providerPaymentId: '123' }],
+      })
+      expect(html).toContain('Verificando tu pago')
+      expect(html).not.toContain('Expirada')
+    })
+
+    // La solicitud sin responder también vence (expireUnansweredRequests), y
+    // sin filtro de pago: decía "Por confirmar" sobre una respuesta muerta.
+    it('solicitud con hold vencido → Expirada, no "Por confirmar"', async () => {
+      const html = await renderConUpcoming({
+        status: 'pending_confirmation',
+        paymentStatus: 'fully_paid',
+        holdExpiresAt: new Date(Date.now() - 60000),
+      })
+      expect(html).toContain('Expirada')
+      expect(html).not.toContain('Por confirmar')
+    })
+
+    it('solicitud con hold vivo sigue "Por confirmar"', async () => {
+      const html = await renderConUpcoming({
+        status: 'pending_confirmation',
+        paymentStatus: 'fully_paid',
+        holdExpiresAt: new Date(Date.now() + 600000),
+      })
+      expect(html).toContain('Por confirmar')
       expect(html).not.toContain('Expirada')
     })
   })

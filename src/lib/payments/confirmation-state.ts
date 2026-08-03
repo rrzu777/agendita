@@ -27,10 +27,16 @@ interface DeriveInput {
 
 /**
  * El hold venció y el cron todavía no pasó: la reserva VA a expirar, solo falta
- * que alguien lo asiente. Espeja exactamente las condiciones del CRON
- * (`expireStaleHolds`): `pending_payment` + `unpaid` + hold vencido. El `unpaid`
- * importa — una reserva con plata parcial adentro no se barre, así que tampoco
- * hay que darla por muerta acá.
+ * que alguien lo asiente. Espeja exactamente las condiciones de los DOS sweeps
+ * del CRON (`expire-holds.ts`):
+ *
+ * - `pending_payment` + `unpaid` + hold vencido (`expireStaleHolds`). El
+ *   `unpaid` importa — una reserva con plata parcial adentro no se barre, así
+ *   que tampoco hay que darla por muerta acá.
+ * - `pending_confirmation` + hold vencido (`expireUnansweredRequests`), SIN
+ *   filtro de pago: una solicitud gratis nace `fully_paid` y también vence.
+ *   Sin esta rama, /mi decía "Por confirmar" sobre una respuesta que ya no
+ *   iba a llegar — la misma mentira, un status al lado.
  *
  * NO es `isSweepableExpiredHold` (approval.ts) a propósito: ése describe el
  * barrido perezoso, que excluye transferencias porque no puede mandar el mail.
@@ -39,20 +45,17 @@ interface DeriveInput {
  * `verifying_transfer`).
  *
  * Exportado con firma angosta: /mi lo usa para la etiqueta de estado, que no
- * tiene (ni necesita) montos ni pagos. Quien tenga el input completo debe
- * preferir `deriveConfirmationState`, que además arbitra el orden contra
- * "verificando" y "transferencia declarada".
+ * tiene (ni necesita) montos. OJO: la etiqueta que lo use tiene que respetar el
+ * MISMO orden que deriveConfirmationState — un pago en vuelo o una declaración
+ * pendiente ganan sobre el hold muerto, o las dos pantallas se contradicen.
  */
 export function isDoomedHold(
   input: Pick<DeriveInput, 'status' | 'paymentStatus' | 'holdExpiresAt'>,
   now: Date,
 ): boolean {
-  return (
-    input.status === 'pending_payment' &&
-    input.paymentStatus === 'unpaid' &&
-    input.holdExpiresAt != null &&
-    input.holdExpiresAt < now
-  )
+  if (input.holdExpiresAt == null || input.holdExpiresAt >= now) return false
+  if (input.status === 'pending_payment') return input.paymentStatus === 'unpaid'
+  return input.status === 'pending_confirmation'
 }
 
 /**
