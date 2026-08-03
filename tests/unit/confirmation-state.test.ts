@@ -316,10 +316,21 @@ describe('deriveConfirmationState', () => {
       ).toBe('pending')
     })
 
-    it('una solicitud por confirmar (pending_confirmation) no entra: su hold es de aprobación', () => {
+    // La solicitud sin responder también muere sola (`expireUnansweredRequests`),
+    // y ese sweep NO filtra por pago: una solicitud gratis nace `fully_paid`.
+    it('una solicitud por confirmar con el hold vencido también está condenada', () => {
       expect(
         deriveConfirmationState(
-          booking({ status: 'pending_confirmation', payments: [], holdExpiresAt: vencido }),
+          booking({ status: 'pending_confirmation', payments: [], holdExpiresAt: vencido, paymentStatus: 'fully_paid' }),
+          now,
+        ),
+      ).toBe('expired')
+    })
+
+    it('la solicitud con el hold vivo sigue esperando respuesta', () => {
+      expect(
+        deriveConfirmationState(
+          booking({ status: 'pending_confirmation', payments: [], holdExpiresAt: vivo }),
           now,
         ),
       ).toBe('pending')
