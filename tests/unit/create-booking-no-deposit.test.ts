@@ -62,6 +62,10 @@ vi.mock('@/lib/notifications', () => ({
 
 vi.mock('@/lib/availability/validation', () => ({
   assertSlotIsAvailable: vi.fn().mockResolvedValue(undefined),
+  // Las dos mitades del assert: son las que llama el camino de reservar desde que
+  // "cualquiera disponible" prueba candidatos (ver `assertSlotAndResolveProfessional`).
+  assertSlotIsBookable: vi.fn().mockResolvedValue(undefined),
+  assertProfessionalIsFree: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/subscriptions/enforcement', () => ({

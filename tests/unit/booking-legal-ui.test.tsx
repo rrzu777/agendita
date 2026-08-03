@@ -40,7 +40,7 @@ const bookingData = {
   customerPhone: '+56912345678',
   customerEmail: 'maria@test.com',
   customerNotes: '',
-  professionalId: null,
+  professional: { kind: 'none' as const },
   professionalName: '',
   idempotencyKey: null,
 }

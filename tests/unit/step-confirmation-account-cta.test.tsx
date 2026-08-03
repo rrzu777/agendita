@@ -9,10 +9,10 @@ const base: BookingData = {
   serviceModalities: ['on_site'], serviceModality: 'on_site', serviceAddress: '', date: null,
   timeSlot: { start: new Date('2026-07-20T15:00:00Z'), end: new Date('2026-07-20T16:00:00Z') },
   customerName: 'Maria', customerPhone: '+56911111111', customerEmail: 'maria@example.com',
-  professionalId: null, professionalName: '',
+  professional: { kind: 'none' }, professionalName: '',
   customerNotes: '', idempotencyKey: null,
 }
-const props = { timezone: 'America/Santiago', currency: 'CLP', bookingId: 'b1', bookingNumber: 4738, mode: 'paid' as const, confirmed: true }
+const props = { timezone: 'America/Santiago', currency: 'CLP', bookingId: 'b1', bookingNumber: 4738, mode: 'paid' as const, confirmed: true, professionalName: '' }
 
 const business = { name: 'Negocio', addressText: null, whatsapp: null }
 

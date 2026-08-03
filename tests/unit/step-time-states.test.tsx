@@ -14,6 +14,7 @@ const data = {
   date: new Date('2026-07-09T16:00:00Z'),
   serviceId: 'svc-1',
   serviceName: 'Esmaltado',
+  professional: { kind: 'none' },
 } as unknown as BookingData
 
 describe('StepTime states', () => {

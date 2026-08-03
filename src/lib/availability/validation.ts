@@ -227,8 +227,21 @@ export async function assertSlotFreeOfConflicts(input: AssertConflictInput): Pro
   if (await findSlotConflict(input)) throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
 }
 
-export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<void> {
-  const { tx, businessId, serviceId, startDateTime, endDateTime, timezone } = input
+/**
+ * La mitad del chequeo que **no depende de con quién** sea la reserva: que el rango
+ * tenga sentido, que respete la anticipación y la ventana de reserva, y que dure lo
+ * que dura el servicio.
+ *
+ * Está separada porque "cualquiera disponible" prueba varios candidatos sobre el mismo
+ * horario (ver `assertSlotAndResolveProfessional`): esto se contesta UNA vez y no una
+ * por cabeza. También hace legible por qué el bucle de allá puede atajar el rechazo de
+ * un candidato y seguir con el siguiente — lo que atrapa es la mitad de abajo, la que
+ * sí habla de una persona.
+ */
+export async function assertSlotIsBookable(
+  input: Omit<AssertSlotInput, 'professionalId' | 'excludeBookingId'>,
+): Promise<void> {
+  const { tx, businessId, serviceId, startDateTime, endDateTime } = input
 
   if (endDateTime <= startDateTime) {
     logEvent('slot_validation_rejected', { businessId, reason: 'end_before_start' })
@@ -272,6 +285,17 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
     logEvent('slot_validation_rejected', { businessId, reason: 'duration_mismatch' })
     throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
   }
+}
+
+/**
+ * Que ESTA persona (o el negocio, con `null`) tenga ese horario: su regla del día, sus
+ * bloqueos más los del negocio, y las citas que le tapan la hora.
+ *
+ * Es la mitad que sí depende de con quién, y la única que el bucle de candidatos de
+ * "cualquiera disponible" tiene que repetir.
+ */
+export async function assertProfessionalIsFree(input: AssertSlotInput): Promise<void> {
+  const { tx, businessId, startDateTime, endDateTime, timezone } = input
 
   // Usar timezone del negocio para calcular día y rango horario
   const localStartStr = formatInTimeZone(startDateTime, timezone, 'yyyy-MM-dd')
@@ -296,4 +320,10 @@ export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<voi
   }
 
   await assertSlotFreeOfConflicts({ tx, businessId, startDateTime, endDateTime, timezone, professionalId: input.professionalId, excludeBookingId: input.excludeBookingId })
+}
+
+/** El chequeo completo: lo que no depende de la persona, y después la persona. */
+export async function assertSlotIsAvailable(input: AssertSlotInput): Promise<void> {
+  await assertSlotIsBookable(input)
+  await assertProfessionalIsFree(input)
 }

@@ -72,7 +72,9 @@ describe('getEffectiveBlocks', () => {
   it('un almuerzo recurrente bloquea el slot correspondiente en getAvailableTimeSlots', async () => {
     const { getAvailableTimeSlots } = await import('@/server/actions/availability')
     const svc = await reglasYServicio([1], 'Corte')
-    const result = await getAvailableTimeSlots(businessId, svc.id, new Date('2026-06-01T15:00:00Z'), null)
+    const result = await getAvailableTimeSlots({
+      businessId, serviceId: svc.id, date: new Date('2026-06-01T15:00:00Z'), professional: { kind: 'none' },
+    })
     if (!result.ok) throw new Error(`expected ok, got: ${result.error}`)
     expect(result.data.some((s) => s.start.toISOString() === '2026-06-01T17:00:00.000Z')).toBe(false)
   })

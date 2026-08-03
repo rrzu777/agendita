@@ -22,7 +22,7 @@ export interface ConfirmationBusiness {
   whatsapp: string | null
 }
 
-export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail, business, where, confirmed }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields; confirmed: boolean }) {
+export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail, business, where, confirmed, professionalName }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields; confirmed: boolean; professionalName: string }) {
   const isPending = mode === 'pending'
   const isFree = data.servicePrice <= 0
   const noDeposit = data.serviceDeposit <= 0
@@ -71,11 +71,12 @@ export function StepConfirmation({ data, timezone, currency, bookingId, bookingN
       <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5 text-left">
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.timeSlot ? formatBookingDateTime(data.timeSlot.start, timezone) : ''}</span></div>
-        {/* Sale del estado del wizard y no de `where` porque el servidor no la
-            re-deriva: la reserva queda a nombre de quien se pidió o no se crea.
-            Es el mismo criterio que `serviceName`, acá arriba. */}
-        {data.professionalName && (
-          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Te atiende</span><span className="font-semibold text-primary">{data.professionalName}</span></div>
+        {/* Sale de la reserva que devolvió el servidor y NO del estado del wizard,
+            por el mismo motivo que `donde`: con "Cualquiera disponible" el wizard no
+            sabe a quién le tocó —lo eligió el servidor adentro de la transacción— y
+            mostrar "Cualquiera disponible" en "Te atiende" no le sirve a nadie. */}
+        {professionalName && (
+          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Te atiende</span><span className="font-semibold text-primary">{professionalName}</span></div>
         )}
         {donde.map((row) => (
           <div key={row.label} className="flex justify-between gap-4">

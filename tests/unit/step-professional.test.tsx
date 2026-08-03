@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { BusinessCategory } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
 import { StepProfessional } from '@/components/booking/step-professional'
-import type { FunnelProfessional } from '@/lib/professionals/eligible'
+import { ANYONE_LABEL, type FunnelProfessional, type ProfessionalPick } from '@/lib/professionals/eligible'
 
 // Los componentes de UI que arrastra el paso no llaman al router, pero el mock queda
 // por la misma razón que en el panel: un import indirecto que sí lo llame revienta
@@ -17,11 +17,11 @@ const OPCIONES: FunnelProfessional[] = [
   { id: 'p-2', name: 'Sofía', bio: null, modalities: ['on_site'], serviceIds: ['svc-1'] },
 ]
 
-function render(category: BusinessCategory = 'barber', selectedId: string | null = null) {
+function render(category: BusinessCategory = 'barber', selected: ProfessionalPick = { kind: 'none' }) {
   return renderToStaticMarkup(
     <StepProfessional
       options={OPCIONES}
-      selectedId={selectedId}
+      selected={selected}
       serviceName="Corte"
       title={getVocabulary(category).chooseProfessional}
       onSelect={() => {}}
@@ -50,7 +50,24 @@ describe('el paso de con quién', () => {
   })
 
   it('marca cuál está elegida para quien vuelve atrás', () => {
-    expect(render('barber', 'p-2')).toContain('aria-pressed="true"')
+    expect(render('barber', { kind: 'person', id: 'p-2' })).toContain('aria-pressed="true"')
+    expect(render()).not.toContain('aria-pressed="true"')
+  })
+
+  /**
+   * "Cualquiera disponible" va primero: es la respuesta de la mayoría y la que más
+   * horarios ofrece. Que esté ANTES de la primera persona importa — abajo de la lista
+   * la ve sólo quien scrollea.
+   */
+  it('ofrece "cualquiera disponible" arriba de todo', () => {
+    const markup = render()
+    expect(markup).toContain(ANYONE_LABEL)
+    expect(markup.indexOf(ANYONE_LABEL)).toBeLessThan(markup.indexOf('Juan'))
+  })
+
+  it('y la marca cuando es la elegida', () => {
+    const markup = render('barber', { kind: 'anyone' })
+    expect(markup.indexOf('aria-pressed="true"')).toBeLessThan(markup.indexOf('Juan'))
   })
 
   /**

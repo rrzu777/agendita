@@ -9,7 +9,8 @@ vi.mock('@/server/actions/availability', () => ({ getAvailableTimeSlots }))
 const { StepTime } = await import('@/components/booking/step-time')
 
 const base = {
-  serviceId: 'svc-1', serviceName: 'Corte', professionalId: null, professionalName: '',
+  serviceId: 'svc-1', serviceName: 'Corte', professional: { kind: 'none' }, professionalName: '',
+  serviceModality: 'on_site',
   date: new Date('2026-06-15T15:00:00Z'), timeSlot: null,
 } as unknown as BookingData
 
@@ -45,18 +46,37 @@ describe('los horarios que pide el paso de la hora', () => {
    * reserva se cae recién al pagar, contra el horario de verdad.
    */
   it('los pide a nombre de la persona elegida', async () => {
-    await montar({ ...base, professionalId: 'p-1', professionalName: 'Juan' })
-    expect(getAvailableTimeSlots).toHaveBeenCalledWith('biz-1', 'svc-1', base.date, 'p-1')
+    await montar({ ...base, professional: { kind: 'person', id: 'p-1' }, professionalName: 'Juan' })
+    expect(getAvailableTimeSlots).toHaveBeenCalledWith({
+      businessId: 'biz-1', serviceId: 'svc-1', date: base.date,
+      professional: { kind: 'person', id: 'p-1' }, modality: 'on_site',
+    })
   })
 
   it('sin persona, los del negocio', async () => {
     await montar(base)
-    expect(getAvailableTimeSlots).toHaveBeenCalledWith('biz-1', 'svc-1', base.date, null)
+    expect(getAvailableTimeSlots).toHaveBeenCalledWith({
+      businessId: 'biz-1', serviceId: 'svc-1', date: base.date,
+      professional: { kind: 'none' }, modality: 'on_site',
+    })
+  })
+
+  /**
+   * La modalidad viaja porque el servidor la necesita para saber QUIÉN es elegible
+   * cuando la respuesta es "cualquiera": sin ella, la unión incluiría los horarios de
+   * quien no viaja a domicilio y la reserva se caería recién al pagar.
+   */
+  it('con "cualquiera" manda la elección y la modalidad', async () => {
+    await montar({ ...base, professional: { kind: 'anyone' }, serviceModality: 'at_home' } as BookingData)
+    expect(getAvailableTimeSlots).toHaveBeenCalledWith({
+      businessId: 'biz-1', serviceId: 'svc-1', date: base.date,
+      professional: { kind: 'anyone' }, modality: 'at_home',
+    })
   })
 
   it('nombra a la persona junto al servicio y la fecha', async () => {
     getAvailableTimeSlots.mockResolvedValue({ ok: true, data: [{ start: new Date('2026-06-15T18:00:00Z'), end: new Date('2026-06-15T18:30:00Z') }] })
-    await montar({ ...base, professionalId: 'p-1', professionalName: 'Juan' })
+    await montar({ ...base, professional: { kind: 'person', id: 'p-1' }, professionalName: 'Juan' })
     expect(container.textContent).toContain('Corte · Juan')
   })
 })

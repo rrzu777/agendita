@@ -14,8 +14,9 @@ import { findOrCreateCustomerInTx } from '@/lib/customers/find-or-create'
 import { logger } from '@/lib/logger'
 
 import { assertSlotIsAvailable, SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
-import { normalizeProfessionalId } from '@/lib/availability/scope'
 import { assertProfessionalOffersService } from '@/lib/professionals/ownership'
+import { assertSlotAndResolveProfessional } from '@/lib/professionals/assign'
+import { NO_PROFESSIONAL, type ProfessionalPick } from '@/lib/professionals/eligible'
 import { isNoOverlapViolation } from '@/lib/db/no-overlap'
 import { assignBookingNumber } from '@/lib/bookings/number'
 import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcement'
@@ -66,9 +67,16 @@ const createBookingSchema = z.object({
   // del servicio (resolveBookingModality) antes de persistirla.
   modality: z.nativeEnum(ServiceModality).optional(),
   serviceAddress: z.string().trim().max(300, 'La dirección es demasiado larga').optional(),
-  // Con quién se atiende. Ausente o null = sin persona, que es el funnel de
-  // siempre. La procedencia se verifica abajo, con la modalidad ya resuelta.
-  professionalId: z.string().max(64).nullish(),
+  // Con quién se atiende. Ausente = sin persona, que es el funnel de siempre y lo
+  // que manda el panel. La procedencia se verifica abajo, con la modalidad ya
+  // resuelta; a quién le toca en `anyone` lo decide el servidor adentro de la tx.
+  professional: z
+    .discriminatedUnion('kind', [
+      z.object({ kind: z.literal('none') }),
+      z.object({ kind: z.literal('anyone') }),
+      z.object({ kind: z.literal('person'), id: z.string().min(1).max(64) }),
+    ])
+    .optional(),
 })
 
 const confirmPaymentSchema = z.object({
@@ -171,7 +179,7 @@ async function _createBooking(data: {
   paymentMethod?: typeof BANK_TRANSFER_METHOD
   modality?: ServiceModality
   serviceAddress?: string
-  professionalId?: string | null
+  professional?: ProfessionalPick
 }, businessId: string) {
   const limit = await checkRateLimit('create-booking', 20, 60000)
   if (!limit.success) {
@@ -228,9 +236,14 @@ async function _createBooking(data: {
   // transacción porque es una lectura que el lock no protege: quien se dé de baja
   // entre este chequeo y el insert deja una reserva a su nombre, igual que las que
   // ya tenía agendadas.
-  const professionalId = normalizeProfessionalId(data.professionalId ?? null)
-  if (professionalId !== null) {
-    await assertProfessionalOffersService(prisma, businessId, professionalId, data.serviceId, modality)
+  //
+  // Sólo la elección explícita se autoriza acá. "Cualquiera disponible" no tiene nada
+  // que autorizar todavía —la persona no existe hasta que la transacción la elija— y
+  // su equivalente corre allá adentro (`assertSlotAndResolveProfessional`), que arma
+  // la lista de candidatos con este mismo filtro de elegibilidad.
+  const professional = data.professional ?? NO_PROFESSIONAL
+  if (professional.kind === 'person') {
+    await assertProfessionalOffersService(prisma, businessId, professional.id, data.serviceId, modality)
   }
 
   // Transferencia bancaria: validar server-side que esté habilitada. El hold
@@ -260,7 +273,7 @@ async function _createBooking(data: {
   const retryCtx = {
     serviceId: data.serviceId,
     startDateTime: data.startDateTime,
-    professionalId,
+    professional,
     promotionCode: data.promotionCode,
     timezone: business.timezone || 'America/Santiago',
     holdMinutes,
@@ -276,7 +289,7 @@ async function _createBooking(data: {
           idempotencyKey: data.idempotencyKey,
         },
       },
-      include: { service: true, customer: true },
+      include: { service: true, customer: true, professional: { select: { name: true } } },
     })
     // `null` = la reserva guardada ya no está en pie y el resume le soltó la key:
     // seguimos al camino de creación normal, que ahora la puede volver a usar.
@@ -288,18 +301,21 @@ async function _createBooking(data: {
 
   try {
     const booking = await prisma.$transaction(async (tx) => {
-      // Validación transaccional de disponibilidad con lock
-      await assertSlotIsAvailable({
+      // Validación transaccional de disponibilidad con lock, y de paso quién atiende:
+      // con una persona elegida el chequeo mira SU horario, SUS bloqueos (más los del
+      // negocio) y las citas que le tapan la hora; con "cualquiera disponible" prueba
+      // a los candidatos en orden de carga y devuelve al primero que da libre.
+      // `null` = sin persona, que valida contra el horario del negocio y choca contra
+      // todas.
+      const professionalId = await assertSlotAndResolveProfessional({
         tx,
         businessId,
         serviceId: data.serviceId,
         startDateTime: data.startDateTime,
         endDateTime,
         timezone: business.timezone || 'America/Santiago',
-        // La que eligió la clienta: el chequeo mira SU horario, SUS bloqueos (más
-        // los del negocio) y las citas que le tapan la hora. `null` = sin persona,
-        // que valida contra el horario del negocio y choca contra todas.
-        professionalId,
+        professional,
+        modality,
       })
 
       // Buscar o crear cliente dentro de la transacción (matcher único por
@@ -363,6 +379,10 @@ async function _createBooking(data: {
         include: {
           service: true,
           customer: true,
+          // El nombre vuelve al navegador porque con "Cualquiera disponible" la
+          // clienta no sabe a quién le tocó hasta que se lo decimos, y el estado del
+          // wizard no lo puede saber: lo eligió el servidor recién acá adentro.
+          professional: { select: { name: true } },
         },
       })
 
@@ -393,7 +413,11 @@ async function _createBooking(data: {
             startDateTime: data.startDateTime,
           },
         }),
-        include: { service: true, customer: true },
+        // Con la persona, como el `create` de arriba: sin esto, aplicar un paquete o
+        // un código deja la reserva sin `professional` en la respuesta y la
+        // confirmación se queda sin poder decir quién atiende — justo en el camino
+        // más común, porque el paquete se usa por default cuando la clienta tiene.
+        include: { service: true, customer: true, professional: { select: { name: true } } },
       })
       return updated
       // 15s: la tx hace lock de slot + upsert de cliente + creación de reserva +
@@ -433,7 +457,9 @@ async function _createBooking(data: {
             idempotencyKey: data.idempotencyKey,
           },
         },
-        include: { service: true, customer: true },
+        // Con la persona, por el mismo motivo que las otras dos lecturas de esta
+        // key: lo que se devuelve acá es lo que va a leer la confirmación.
+        include: { service: true, customer: true, professional: { select: { name: true } } },
       })
       // Acá `null` no debería pasar: la reserva que ganó la carrera nació hace
       // milisegundos. Si pasara, cae al manejo de error de abajo con el P2002.

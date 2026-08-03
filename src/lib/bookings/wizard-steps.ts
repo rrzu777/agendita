@@ -62,7 +62,7 @@ export function stepBefore(steps: WizardStep[], current: StepKey): StepKey {
  * es lo que dejaría a alguien parado en "Hora" sin fecha.
  */
 export function entryStepAfterRestore(
-  restored: Pick<BookingData, 'date' | 'timeSlot' | 'professionalId' | 'serviceModalities' | 'serviceModality'>,
+  restored: Pick<BookingData, 'date' | 'timeSlot' | 'professional' | 'serviceModalities' | 'serviceModality'>,
   steps: WizardStep[],
 ): StepKey {
   // El "dónde" se elige DENTRO del paso 1, así que un servicio con varias
@@ -76,9 +76,11 @@ export function entryStepAfterRestore(
   // decide qué pasos existen, y con un booleano aparte había que derivar la misma
   // condición dos veces y acordarse de mantenerlas iguales.
   //
-  // El paso pendiente manda sobre lo que venga después: sin persona elegida, la
-  // fecha y la hora que se restauraron se calcularon para el horario equivocado.
-  if (steps.some((s) => s.key === 'professional') && !restored.professionalId) return 'professional'
+  // El paso pendiente manda sobre lo que venga después: sin elección, la fecha y la
+  // hora que se restauraron se calcularon para el horario equivocado. Con el paso en
+  // la lista, `none` significa "todavía no eligió" — que no haya equipo elegible es
+  // justo el caso en el que el paso no está (ver `ProfessionalPick`).
+  if (steps.some((s) => s.key === 'professional') && restored.professional.kind === 'none') return 'professional'
   if (restored.timeSlot) return 'customer'
   if (restored.date) return 'time'
   return 'date'

@@ -1,6 +1,6 @@
 import type { Service, ServiceModality } from '@prisma/client'
 import { sortModalities, requiresServiceAddress } from '@/lib/services/modality'
-import { professionalChoice, professionalFields, type FunnelProfessional } from '@/lib/professionals/eligible'
+import { parseProfessionalPick, professionalChoice, professionalFields, samePick, type FunnelProfessional, type ProfessionalPick } from '@/lib/professionals/eligible'
 import type { BookingData } from '@/components/booking/wizard'
 
 /** Persistencia del wizard para el viaje a /ingresar y de vuelta (spec CTA funnel).
@@ -25,8 +25,8 @@ interface SavedState {
   customerNotes: string
   serviceModality: ServiceModality | null
   serviceAddress: string
-  /** Sólo el id: el nombre se re-deriva del equipo actual, como los del servicio. */
-  professionalId: string | null
+  /** Sólo la elección: el nombre se re-deriva del equipo actual, como los del servicio. */
+  professional: ProfessionalPick
   idempotencyKey: string | null
   promotionCode?: string
 }
@@ -46,7 +46,7 @@ export function serializeWizardState(data: BookingData, now: number = Date.now()
     customerNotes: data.customerNotes,
     serviceModality: data.serviceModality,
     serviceAddress: data.serviceAddress,
-    professionalId: data.professionalId,
+    professional: data.professional,
     idempotencyKey: data.idempotencyKey,
     ...(data.promotionCode ? { promotionCode: data.promotionCode } : {}),
   }
@@ -86,23 +86,30 @@ export function restoreWizardState(
         ? modalities[0]
         : null
 
-  // La persona se re-valida contra el equipo ACTUAL y contra la modalidad que
+  // La elección se re-valida contra el equipo ACTUAL y contra la modalidad que
   // sobrevivió arriba: alguien que se dio de baja, que dejó de hacer ese servicio o
   // que no viaja a domicilio ya no es una opción. Y con una sola elegible se
   // re-asigna sola, que es lo mismo que hace el funnel al elegir servicio.
+  //
+  // El parseo cubre el estado guardado por una versión anterior del wizard, que
+  // escribía un `professionalId` suelto: el TTL es de 30 minutos, así que sólo pasa
+  // durante un deploy, y volver a preguntar es más barato que adivinar.
+  const guardada = parseProfessionalPick(saved.professional)
   const persona = professionalFields(
     professionalChoice(professionals, service.id, modality),
-    saved.professionalId ?? null,
+    guardada,
   )
 
-  // Si la reserva ya no va a nombre de quien la clienta eligió, el horario guardado
-  // tampoco sirve: se calculó contra SU agenda. Se suelta acá y no en el wizard
+  // Si la reserva ya no va a nombre de lo que la clienta eligió, el horario guardado
+  // tampoco sirve: se calculó contra ESA agenda. Se suelta acá y no en el wizard
   // porque es la misma regla que aplica el paso cuando cambia de persona a mano.
   //
-  // Se compara contra el id GUARDADO y no contra `null` a propósito: cuando queda
+  // Se compara contra lo GUARDADO y no contra "quedó vacío" a propósito: cuando queda
   // una sola elegible, `professionalFields` re-asigna sin preguntar —es lo mismo
-  // que ve una clienta que entra de cero— y ahí tampoco vale la hora vieja.
-  const perdioLaPersona = saved.professionalId != null && persona.professionalId !== saved.professionalId
+  // que ve una clienta que entra de cero— y ahí tampoco vale la hora vieja. Un
+  // "cualquiera" que sigue siendo "cualquiera" sí la conserva: la unión de horarios
+  // no cambió por volver de /ingresar.
+  const perdioLaPersona = guardada.kind !== 'none' && !samePick(persona.professional, guardada)
 
   return {
     serviceId: service.id,

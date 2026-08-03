@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { serializeWizardState, restoreWizardState, wizardStorageKey } from '@/lib/bookings/wizard-storage'
 import type { BookingData } from '@/components/booking/wizard'
-import type { FunnelProfessional } from '@/lib/professionals/eligible'
+import { ANYONE_LABEL, type FunnelProfessional } from '@/lib/professionals/eligible'
 
 const NOW = new Date('2026-07-11T12:00:00Z').getTime()
 
@@ -20,7 +20,7 @@ const data: BookingData = {
   date: new Date('2026-07-20T00:00:00Z'),
   timeSlot: { start: new Date('2026-07-20T15:00:00Z'), end: new Date('2026-07-20T16:00:00Z') },
   customerName: 'Maria', customerPhone: '+56911111111', customerEmail: 'maria@example.com',
-  professionalId: null, professionalName: '',
+  professional: { kind: 'none' }, professionalName: '',
   customerNotes: '', idempotencyKey: 'idem-1', promotionCode: 'PROMO',
 }
 
@@ -101,9 +101,9 @@ const BETO: FunnelProfessional = { id: 'beto', name: 'Beto', bio: null, modaliti
 
 describe('restore de con quién', () => {
   it('conserva la persona elegida y le vuelve a poner el nombre', () => {
-    const raw = serializeWizardState({ ...data, professionalId: 'beto' }, NOW)
+    const raw = serializeWizardState({ ...data, professional: { kind: 'person', id: 'beto' } }, NOW)
     const restored = restoreWizardState(raw, [service], [ANA, BETO], NOW + 60_000)
-    expect(restored!.professionalId).toBe('beto')
+    expect(restored!.professional).toEqual({ kind: 'person', id: 'beto' })
     // El nombre no se guarda: se re-deriva del equipo actual, igual que los campos
     // del servicio. Si Beto se cambió el nombre mientras tanto, vale el nuevo.
     expect(restored!.professionalName).toBe('Beto')
@@ -116,9 +116,9 @@ describe('restore de con quién', () => {
    */
   it('suelta a quien ya no está, y con él la hora que era suya', () => {
     const CARLA: FunnelProfessional = { ...ANA, id: 'carla', name: 'Carla' }
-    const raw = serializeWizardState({ ...data, professionalId: 'beto' }, NOW)
+    const raw = serializeWizardState({ ...data, professional: { kind: 'person', id: 'beto' } }, NOW)
     const restored = restoreWizardState(raw, [service], [ANA, CARLA], NOW + 60_000)
-    expect(restored!.professionalId).toBeNull()
+    expect(restored!.professional).toEqual({ kind: 'none' })
     expect(restored!.timeSlot).toBeNull()
     expect(restored!.date).not.toBeNull() // el día sigue sirviendo; la hora no
   })
@@ -129,25 +129,60 @@ describe('restore de con quién', () => {
    * estaba guardada salió de la agenda de Beto y nada dice que Ana esté libre.
    */
   it('re-asigna a la única que queda, pero no le regala la hora del otro', () => {
-    const raw = serializeWizardState({ ...data, professionalId: 'beto' }, NOW)
+    const raw = serializeWizardState({ ...data, professional: { kind: 'person', id: 'beto' } }, NOW)
     const restored = restoreWizardState(raw, [service], [ANA], NOW + 60_000)
-    expect(restored!.professionalId).toBe('ana')
+    expect(restored!.professional).toEqual({ kind: 'person', id: 'ana' })
     expect(restored!.timeSlot).toBeNull()
   })
 
   // Con una sola elegible no hay nada que preguntar ni al volver: se re-asigna,
   // que es lo mismo que hace el funnel al elegir servicio.
   it('con una sola elegible la re-asigna aunque el estado no la traiga', () => {
-    const raw = serializeWizardState({ ...data, professionalId: null }, NOW)
+    const raw = serializeWizardState({ ...data, professional: { kind: 'none' } }, NOW)
     const restored = restoreWizardState(raw, [service], [ANA], NOW + 60_000)
-    expect(restored!.professionalId).toBe('ana')
+    expect(restored!.professional).toEqual({ kind: 'person', id: 'ana' })
     expect(restored!.timeSlot).not.toBeNull()
   })
 
   it('sin equipo no aparece nadie', () => {
-    const raw = serializeWizardState({ ...data, professionalId: 'ana' }, NOW)
+    const raw = serializeWizardState({ ...data, professional: { kind: 'person', id: 'ana' } }, NOW)
     const restored = restoreWizardState(raw, [service], [], NOW + 60_000)
-    expect(restored!.professionalId).toBeNull()
+    expect(restored!.professional).toEqual({ kind: 'none' })
     expect(restored!.professionalName).toBe('')
+  })
+
+  /**
+   * "Cualquiera disponible" no depende de nadie en particular, así que el viaje a
+   * /ingresar no le cambia nada: la unión de horarios del equipo es la misma. Soltar
+   * la hora acá sería hacerle re-elegir por las dudas.
+   */
+  it('"cualquiera" vuelve como "cualquiera", con su hora', () => {
+    const raw = serializeWizardState({ ...data, professional: { kind: 'anyone' } }, NOW)
+    const restored = restoreWizardState(raw, [service], [ANA, BETO], NOW + 60_000)
+    expect(restored!.professional).toEqual({ kind: 'anyone' })
+    expect(restored!.professionalName).toBe(ANYONE_LABEL)
+    expect(restored!.timeSlot).not.toBeNull()
+  })
+
+  // Se fue todo el equipo menos Ana: "cualquiera" ES Ana, pero la hora guardada salió
+  // de la unión de dos agendas y nada dice que sea de las de Ana.
+  it('"cualquiera" colapsa en la única que queda, y suelta la hora', () => {
+    const raw = serializeWizardState({ ...data, professional: { kind: 'anyone' } }, NOW)
+    const restored = restoreWizardState(raw, [service], [ANA], NOW + 60_000)
+    expect(restored!.professional).toEqual({ kind: 'person', id: 'ana' })
+    expect(restored!.timeSlot).toBeNull()
+  })
+
+  /**
+   * Estado escrito por la versión anterior del wizard, que guardaba un id suelto. Con
+   * el TTL de 30 minutos sólo pasa durante un deploy, y lo que NO puede hacer es
+   * romper el restore entero ni colarse como una elección válida.
+   */
+  it('un estado viejo, sin el campo, vuelve a preguntar', () => {
+    const raw = JSON.parse(serializeWizardState(data, NOW)!)
+    delete raw.professional
+    raw.professionalId = 'beto'
+    const restored = restoreWizardState(JSON.stringify(raw), [service], [ANA, BETO], NOW + 60_000)
+    expect(restored!.professional).toEqual({ kind: 'none' })
   })
 })

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
 import { getAvailableTimeSlots } from '@/server/actions/availability'
+import { pickCacheKey } from '@/lib/professionals/eligible'
 import { LEAD_TIME_MINUTES } from '@/lib/availability/constants'
 import { formatBookingDate, formatBookingTime } from '@/lib/bookings/format-booking-datetime'
 import { Clock3, Loader2 } from 'lucide-react'
@@ -19,6 +20,7 @@ interface StepTimeProps {
 }
 
 export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepTimeProps) {
+  const pickKey = pickCacheKey(data.professional)
   const [slots, setSlots] = useState<{ start: Date; end: Date }[]>([])
   const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null)
   const [loading, setLoading] = useState(true)
@@ -37,8 +39,15 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
 
     // Con persona, los horarios son los SUYOS: su horario semanal (o el del
     // negocio, si no tiene propio), sus bloqueos y los del negocio, y las citas que
-    // le tapan la hora. `null` = sin persona, el horario del negocio de siempre.
-    getAvailableTimeSlots(businessId, data.serviceId, data.date, data.professionalId)
+    // le tapan la hora. Con "cualquiera disponible", la unión de los de todo el
+    // equipo elegible. Sin nadie, el horario del negocio de siempre.
+    getAvailableTimeSlots({
+      businessId,
+      serviceId: data.serviceId,
+      date: data.date,
+      professional: data.professional,
+      modality: data.serviceModality,
+    })
       .then((res) => {
         if (ignoreRef.current) return
         if (!res.ok) {
@@ -60,7 +69,12 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     return () => {
       ignoreRef.current = true
     }
-  }, [businessId, data.date, data.serviceId, data.professionalId, retryKey])
+    // La elección entra como clave y no como objeto: `professionalFields` arma uno
+    // NUEVO en cada llamada, así que la identidad cambiaría sin que cambie la
+    // elección y esto es la lectura más caliente del producto. `pickKey` la
+    // representa entera —`kind` más el id—, así que no se pierde nada.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `pickKey` representa a `data.professional`
+  }, [businessId, data.date, data.serviceId, pickKey, data.serviceModality, retryKey])
 
   if (loading) {
     return (

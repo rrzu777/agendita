@@ -11,7 +11,7 @@ import { StepConfirmation, type ConfirmationBusiness } from './step-confirmation
 import type { Service, ServiceModality } from '@prisma/client'
 import type { FunnelSession } from '@/lib/customers/session-prefill'
 import type { ProfessionalWords } from '@/lib/vocabulary'
-import { professionalChoice, professionalFields, type FunnelProfessional } from '@/lib/professionals/eligible'
+import { NO_PROFESSIONAL, professionalChoice, professionalFields, samePick, type FunnelProfessional, type ProfessionalPick } from '@/lib/professionals/eligible'
 import { entryStepAfterRestore, stepAfter, stepBefore, stepsFor, type StepKey, type WizardStep } from '@/lib/bookings/wizard-steps'
 import { restoreWizardState, serializeWizardState, wizardStorageKey } from '@/lib/bookings/wizard-storage'
 
@@ -41,10 +41,10 @@ export type BookingData = {
   serviceModality: ServiceModality | null
   /** Dirección de la clienta; sólo se pide (y se manda) cuando es a domicilio. */
   serviceAddress: string
-  /** Con quién. `null` = sin persona: es el caso de un negocio sin equipo cargado,
-   *  y contra la agenda significa que la reserva choca contra todas. */
-  professionalId: string | null
-  /** Denormalizado para mostrarlo en la confirmación, igual que `serviceName`. */
+  /** Con quién. Ver `ProfessionalPick`: son tres casos, no un id nullable. */
+  professional: ProfessionalPick
+  /** Cómo se llama esa elección en pantalla: un nombre propio, "Cualquiera
+   *  disponible", o vacío. Denormalizado igual que `serviceName`. */
   professionalName: string
   date: Date | null
   timeSlot: { start: Date; end: Date } | null
@@ -67,7 +67,7 @@ const initialData: BookingData = {
   serviceModalities: [],
   serviceModality: null,
   serviceAddress: '',
-  professionalId: null,
+  professional: NO_PROFESSIONAL,
   professionalName: '',
   date: null,
   timeSlot: null,
@@ -191,22 +191,24 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
             const siguiente = derivar({ ...data, ...service })
             // La persona elegida sobrevive si también hace el servicio nuevo; si no,
             // se suelta. Es la misma cuenta que hace el restore.
-            updateData({ ...service, ...professionalFields(siguiente.choice, data.professionalId) })
+            updateData({ ...service, ...professionalFields(siguiente.choice, data.professional) })
             setCurrentStep(stepAfter(siguiente.steps, 'service'))
           }} />
         )}
         {currentStep === 'professional' && choice.kind === 'ask' && (
           <StepProfessional
             options={choice.options}
-            selectedId={data.professionalId}
+            selected={data.professional}
             serviceName={data.serviceName}
             title={professionalWords.chooseProfessional}
-            onSelect={(professional) => {
-              // Cambiar de persona cambia la agenda: la hora que se había elegido
-              // era de otra y puede estar ocupada para esta.
-              const cambio = data.professionalId !== professional.id
+            onSelect={(pick) => {
+              // Cambiar de elección cambia la agenda: la hora que se había elegido
+              // salió de otra y puede estar ocupada para esta. Vale igual al pasar de
+              // una persona a "cualquiera" —la unión ofrece horas que ella no tenía—
+              // y al revés.
+              const cambio = !samePick(data.professional, pick)
               updateData({
-                ...professionalFields(choice, professional.id),
+                ...professionalFields(choice, pick),
                 ...(cambio ? { timeSlot: null, idempotencyKey: null } : {}),
               })
               nextStep()
@@ -277,7 +279,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
           </div>
         )}
         {currentStep === 'confirmation' && (
-          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={reserva?.id ?? null} bookingNumber={reserva?.bookingNumber ?? null} mode={reserva?.mode ?? 'paid'} promo={reserva?.promo ?? null} sessionEmail={session?.email ?? null} business={business} where={reserva?.where ?? {}} confirmed={reserva?.confirmed ?? false} />
+          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={reserva?.id ?? null} bookingNumber={reserva?.bookingNumber ?? null} mode={reserva?.mode ?? 'paid'} promo={reserva?.promo ?? null} sessionEmail={session?.email ?? null} business={business} where={reserva?.where ?? {}} confirmed={reserva?.confirmed ?? false} professionalName={reserva?.professionalName ?? ''} />
         )}
       </section>
     </div>

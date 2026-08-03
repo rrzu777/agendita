@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import type { AvailabilityRule, PrismaClient } from '@prisma/client'
+import { RELEASED_STATUSES } from '@/lib/bookings/approval'
 
 /**
  * Dado un negocio y una persona (o ninguna), **qué reglas, qué bloqueos y qué
@@ -96,6 +97,28 @@ export function blockScopeCondition(
   }
 }
 
+/**
+ * La MISMA regla que `blockScopeCondition({ kind: 'professional' })`, pero **en
+ * memoria**, sobre bloqueos ya traídos: ¿este bloqueo le tapa el horario a esta
+ * persona?
+ *
+ * Existe para el cálculo de "cualquiera disponible", que necesita los bloqueos de
+ * varias personas a la vez: los trae UNA vez con alcance `everyone` y reparte acá, en
+ * vez de una query por persona. Ojo que `everyone` **no** sirve para calcular slots tal
+ * cual —las vacaciones de una sola persona cerrarían el local—; lo que lo vuelve
+ * correcto es justamente este filtro, que reconstruye el alcance de cada una.
+ *
+ * Vive pegada a su hermana de Prisma por el mismo motivo que
+ * `bookingBlocksProfessional`: son la lectura y la escritura del mismo contrato.
+ */
+export function blockAppliesToProfessional(
+  block: { professionalId: string | null },
+  professionalId: string,
+): boolean {
+  const dueña = normalizeProfessionalId(block.professionalId)
+  return dueña === null || dueña === professionalId
+}
+
 // ─── Reservas ────────────────────────────────────────────────────────────────
 
 /**
@@ -120,6 +143,34 @@ export function bookingScopeCondition(professionalId: string | null): Prisma.Boo
   const id = normalizeProfessionalId(professionalId)
   if (id === null) return {}
   return { OR: [{ professionalId: null }, { professionalId: id }] }
+}
+
+/**
+ * Las citas que ocupan cupo en un día del negocio. Es la otra mitad del `where` de
+ * disponibilidad —`bookingScopeCondition` dice de quién, esto dice cuáles— y estaba
+ * escrita a mano en cuatro lugares: los dos lectores de horarios, el de reprogramar y
+ * el reparto de "cualquiera disponible".
+ *
+ * Vale la pena tenerla junta porque **la lista de estados no está cerrada**:
+ * `pending_confirmation` ocupa cupo para la app aunque el EXCLUDE de la base lo ignore,
+ * y el día que eso se acomode hay que tocar un solo lugar. Con cuatro copias, olvidarse
+ * de una hace que la pantalla ofrezca una hora que la escritura rechaza — o que el
+ * reparto cuente una carga distinta de la que se mostró.
+ *
+ * El rango es por SOLAPE con el día, no por fecha de creación: una cita que empieza
+ * antes y termina adentro cuenta.
+ */
+export function bookingsOfDayWhere(
+  businessId: string,
+  dayStart: Date,
+  dayEnd: Date,
+): Prisma.BookingWhereInput {
+  return {
+    businessId,
+    status: { notIn: [...RELEASED_STATUSES] },
+    startDateTime: { lte: dayEnd },
+    endDateTime: { gte: dayStart },
+  }
 }
 
 /**
@@ -197,6 +248,29 @@ export async function resolveRuleScope(
   if (id === null) return null
   const own = await client.availabilityRule.count({ where: { businessId, professionalId: id } })
   return own > 0 ? id : null
+}
+
+/**
+ * La MISMA herencia que `resolveRuleScope`, pero **en memoria**, sobre las reglas del
+ * negocio y de todo el equipo ya traídas: ¿cuáles rigen a esta persona?
+ *
+ * Existe para el cálculo de "cualquiera disponible", que necesita el horario de varias
+ * personas a la vez y las trae en una sola query en vez de dos por cabeza.
+ *
+ * **Recibe las filas SIN filtrar por `isActive` y devuelve sólo las activas**, igual
+ * que `resolveAvailabilityRules`. Los dos pasos son distintos y el orden importa: tener
+ * horario propio se decide por la EXISTENCIA de filas, no por que estén activas —
+ * alguien con sus 7 días cerrados está cerrado, y si la existencia mirara `isActive`
+ * quedaría abierto en el horario del salón—; recién después se filtra qué días atiende.
+ * Por eso el caller tiene que pasarle TODAS las filas del negocio, sin filtro previo.
+ */
+export function rulesForProfessional<T extends { professionalId: string | null; isActive: boolean }>(
+  todas: T[],
+  professionalId: string,
+): T[] {
+  const propias = todas.filter((r) => normalizeProfessionalId(r.professionalId) === professionalId)
+  const rigen = propias.length > 0 ? propias : todas.filter((r) => r.professionalId === null)
+  return rigen.filter((r) => r.isActive)
 }
 
 /** Las reglas activas que rigen a una persona (o al negocio), con la herencia. */
