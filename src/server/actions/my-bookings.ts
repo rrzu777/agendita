@@ -9,6 +9,8 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { canSelfManage, ownedManageableBookingWhere, selfServiceBlockedMessage } from '@/lib/bookings/self-service'
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
 import { computeRescheduleSlots } from '@/lib/availability/reschedule-slots'
+import { SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
+import { isNoOverlapViolation } from '@/lib/db/no-overlap'
 import {
   sendNotificationSafely,
   sendMultiNotificationSafely,
@@ -149,15 +151,26 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
 
   const previousStartDateTime = booking.startDateTime
 
-  await prisma.$transaction(async (tx) => {
-    await rescheduleBookingInTx(tx, {
-      booking,
-      newStartDateTime,
-      durationMinutes: booking.service.durationMinutes,
-      timezone: booking.business.timezone || 'America/Santiago',
-      // sin leadTimeMinutes → default del funnel público
+  try {
+    await prisma.$transaction(async (tx) => {
+      await rescheduleBookingInTx(tx, {
+        booking,
+        newStartDateTime,
+        durationMinutes: booking.service.durationMinutes,
+        timezone: booking.business.timezone || 'America/Santiago',
+        // sin leadTimeMinutes → default del funnel público
+      })
     })
-  })
+  } catch (error) {
+    // El EXCLUDE rechazó el update: para quien reprograma es la MISMA condición
+    // que detecta el chequeo de solape, así que le damos el mismo mensaje. La
+    // traducción va acá y no adentro de `rescheduleBookingInTx` porque un 23P01
+    // aborta la transacción entera y no se puede atajar adentro. Ver
+    // `isNoOverlapViolation`: llega sin `.code`, así que sin este caso la clienta
+    // lee "Ocurrió un error inesperado" sobre un horario que la pantalla le ofrecía.
+    if (isNoOverlapViolation(error)) throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
+    throw error
+  }
 
   await sendMultiNotificationSafely('self-service reschedule (owner)', () =>
     sendOwnerBookingChangedNotification({

@@ -166,6 +166,22 @@ describe('rescheduleMyBooking', () => {
     expect(mockRescheduleBookingInTx).not.toHaveBeenCalled()
   })
 
+  // Gemelo del test de la dueña en reschedule-availability: el EXCLUDE es la
+  // otra mitad del chequeo de solape y su rechazo llega sin `.code`, así que sin
+  // traducirlo la clienta lee el genérico sobre un horario que se le ofreció.
+  it('el rechazo del EXCLUDE (23P01) sale con el mismo mensaje que el chequeo de solape', async () => {
+    mockFindFirstBooking.mockResolvedValue(makeBooking())
+    mockRescheduleBookingInTx.mockRejectedValue(
+      new Error('conflicting key value violates exclusion constraint "Booking_no_overlap"'),
+    )
+
+    const { rescheduleMyBooking } = await import('@/server/actions/my-bookings')
+    const result = await rescheduleMyBooking('bk-1', new Date(NOW.getTime() + 72 * 3_600_000))
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toBe('Ese horario ya no está disponible. Por favor selecciona otro.')
+  })
+
   it('ownership ajeno: booking no encontrado', async () => {
     mockFindFirstBooking.mockResolvedValue(null)
 

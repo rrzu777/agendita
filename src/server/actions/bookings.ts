@@ -1183,16 +1183,25 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
 
   const previousStartDateTime = booking.startDateTime
 
-  await prisma.$transaction(async (tx) => {
-    await rescheduleBookingInTx(tx, {
-      booking,
-      newStartDateTime,
-      durationMinutes: service.durationMinutes,
-      timezone: business.timezone || 'America/Santiago',
-      // Reagendar desde el dashboard no exige anticipación (la dueña manda)
-      leadTimeMinutes: 0,
+  try {
+    await prisma.$transaction(async (tx) => {
+      await rescheduleBookingInTx(tx, {
+        booking,
+        newStartDateTime,
+        durationMinutes: service.durationMinutes,
+        timezone: business.timezone || 'America/Santiago',
+        // Reagendar desde el dashboard no exige anticipación (la dueña manda)
+        leadTimeMinutes: 0,
+      })
     })
-  })
+  } catch (error) {
+    // Mismo cerrojo final que crear, revivir y reasignar: el EXCLUDE rechazó el
+    // update y para quien reprograma es la misma condición que ya detecta el
+    // chequeo de solape, así que sale con su mismo mensaje. Va afuera del
+    // $transaction a propósito — un 23P01 aborta la tx y no se ataja adentro.
+    if (isNoOverlapViolation(error)) throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
+    throw error
+  }
 
   if (booking.customer?.email) {
     await sendNotificationSafely('booking rescheduled', async () =>

@@ -47,6 +47,9 @@ vi.mock('@/lib/availability/slots', () => ({
 
 vi.mock('@/lib/availability/validation', () => ({
   assertSlotIsAvailable: (...args: unknown[]) => mockAssertSlotIsAvailable(...args),
+  // El mensaje real: es el que la action le pone al rechazo del EXCLUDE, así que
+  // mockearlo `undefined` haría pasar el test sin que la traducción exista.
+  SLOT_UNAVAILABLE_MESSAGE: 'Ese horario ya no está disponible. Por favor selecciona otro.',
 }))
 
 vi.mock('@/lib/notifications', () => ({
@@ -243,6 +246,20 @@ describe('rescheduleBooking terminal states and availability', () => {
     const result = await rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z'))
     expect(result.ok).toBe(false)
     expect(!result.ok && result.error).toMatch(/horario ya no está disponible/)
+  })
+
+  // El chequeo de arriba y el EXCLUDE de la base son dos predicados distintos
+  // sobre la misma pregunta; cuando difieren gana la base. Sin traducir su
+  // rechazo, la dueña lee el genérico "Ocurrió un error inesperado" sobre un
+  // horario que la pantalla le seguía ofreciendo.
+  it('el rechazo del EXCLUDE (23P01) sale con el mismo mensaje que el chequeo de solape', async () => {
+    mockPrisma.booking.updateMany.mockRejectedValue(
+      new Error('conflicting key value violates exclusion constraint "Booking_no_overlap"'),
+    )
+
+    const result = await rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z'))
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toBe('Ese horario ya no está disponible. Por favor selecciona otro.')
   })
 
   it('does not update if booking became terminal during the transaction', async () => {
