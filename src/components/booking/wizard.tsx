@@ -92,11 +92,14 @@ interface BookingWizardProps {
   /** El sustantivo de oficio del rubro; da el título y la etiqueta del paso nuevo. */
   professionalWords: ProfessionalWords
   cancellationPolicy?: string | null
+  /** Ventana del hold cuando el negocio coordina el abono a mano; el aviso del
+   *  paso de pago la muestra para que la promesa coincida con el server. */
+  manualHoldHours: number
   referralToken?: string
   session: WizardSession
 }
 
-export function BookingWizard({ businessId, slug, business, timezone, currency, services, professionals, professionalWords, cancellationPolicy, referralToken, session }: BookingWizardProps) {
+export function BookingWizard({ businessId, slug, business, timezone, currency, services, professionals, professionalWords, cancellationPolicy, manualHoldHours, referralToken, session }: BookingWizardProps) {
   const [currentStep, setCurrentStep] = useState<StepKey>('service')
   const [data, setData] = useState<BookingData>(() => applySessionPrefill(initialData, session))
   // La reserva ya escrita, tal como la devolvió el servidor: es lo único que
@@ -267,7 +270,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
           </div>
         )}
         {currentStep === 'payment' && data.serviceId && data.timeSlot && (
-          <StepPayment data={data} updateData={updateData} businessId={businessId} timezone={timezone} currency={currency} cancellationPolicy={cancellationPolicy} referralToken={referralToken} onSuccess={(creada) => {
+          <StepPayment data={data} updateData={updateData} businessId={businessId} timezone={timezone} currency={currency} cancellationPolicy={cancellationPolicy} manualHoldHours={manualHoldHours} referralToken={referralToken} onSuccess={(creada) => {
             setReserva(creada)
             nextStep()
           }} onBack={prevStep} />

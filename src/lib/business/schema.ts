@@ -21,6 +21,14 @@ export const updateBusinessSchema = z.object({
     (v) => (v === '' || v == null ? undefined : v),
     z.coerce.number().int().min(0).max(720).default(24),
   ),
+  // Cuántas horas se le guarda el horario a una reserva cuando el negocio
+  // coordina el abono a mano (sin pago online ni transferencia). Mínimo 1: un
+  // hold de 0 horas nacería vencido. Vacío → default 24, mismo criterio que
+  // arriba: un campo borrado por accidente no debe achicar la ventana.
+  manualHoldHours: z.preprocess(
+    (v) => (v === '' || v == null ? undefined : v),
+    z.coerce.number().int().min(1).max(720).default(24),
+  ),
   // Confirmación manual: las reservas sin abono quedan esperando que el negocio
   // las acepte en vez de confirmarse solas.
   requireBookingApproval: z.boolean().default(false),

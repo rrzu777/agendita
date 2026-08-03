@@ -94,3 +94,45 @@ describe('fireBookingNotifications y la persona', () => {
     expect(calendar.ics).not.toContain('Te atiende')
   })
 })
+
+// Coordinación manual: la promesa ("el negocio te contacta") y la ventana
+// tienen que viajar en LOS DOS emails — sin esto la clienta cree que debe
+// pagar algo que no puede, y la dueña no sabe que la reserva expira sola.
+describe('fireBookingNotifications y la coordinación manual', () => {
+  beforeEach(() => {
+    mockReceived.mockClear()
+    mockBusinessNotif.mockClear()
+  })
+
+  function manualBooking() {
+    return {
+      ...makeBooking(null),
+      status: BookingStatus.pending_payment,
+      paymentMethod: 'manual',
+      depositRequired: 5000,
+      holdExpiresAt: new Date('2026-08-04T12:00:00Z'),
+    }
+  }
+
+  it('la clienta recibe la promesa con el plazo y la dueña el pedido de confirmar', async () => {
+    await fireBookingNotifications(business, manualBooking(), 'Corte de pelo', null)
+
+    expect(mockReceived).toHaveBeenCalledWith(
+      expect.objectContaining({
+        manualCoordination: { deadline: new Date('2026-08-04T12:00:00Z') },
+      }),
+    )
+    const { paymentNote } = mockBusinessNotif.mock.calls[0][1] as { paymentNote: string }
+    expect(paymentNote).toContain('coordinás directamente')
+    expect(paymentNote).toContain('Confirmá la reserva antes de que venza')
+  })
+
+  it('una reserva común no lleva nada de coordinación manual', async () => {
+    await fireBookingNotifications(business, makeBooking(null), 'Corte de pelo', null)
+
+    expect(mockReceived).toHaveBeenCalledWith(
+      expect.objectContaining({ manualCoordination: undefined }),
+    )
+    expect(mockBusinessNotif.mock.calls[0][1].paymentNote).toBeUndefined()
+  })
+})

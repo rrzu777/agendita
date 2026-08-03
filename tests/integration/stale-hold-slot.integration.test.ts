@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { requireTestDatabase } from './setup'
 import { assertSlotFreeOfConflicts } from '@/lib/availability/validation'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
+import { MANUAL_COORDINATION_METHOD } from '@/lib/bookings/hold'
 
 requireTestDatabase()
 
@@ -179,6 +180,18 @@ describe('holds vencidos vs Booking_no_overlap', () => {
     await expect(chequearSlot()).rejects.toThrow('Ese horario ya no está disponible')
 
     const after = await prisma.booking.findUnique({ where: { id: transferencia.id } })
+    expect(after!.status).toBe(BookingStatus.pending_payment)
+  })
+
+  it('un hold vencido de coordinación manual sigue ocupando: lo barre el cron, con aviso', async () => {
+    const manual = await crearHold({
+      holdExpiresAt: VENCIDO(),
+      paymentMethod: MANUAL_COORDINATION_METHOD,
+    })
+
+    await expect(chequearSlot()).rejects.toThrow('Ese horario ya no está disponible')
+
+    const after = await prisma.booking.findUnique({ where: { id: manual.id } })
     expect(after!.status).toBe(BookingStatus.pending_payment)
   })
 })

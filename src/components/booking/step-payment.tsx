@@ -89,7 +89,7 @@ function BusinessCancellationPolicy({ policy }: { policy?: string | null }) {
   )
 }
 
-export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; referralToken?: string; onSuccess: (result: BookingCreated) => void; onBack: () => void }) {
+export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, manualHoldHours, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; manualHoldHours: number; referralToken?: string; onSuccess: (result: BookingCreated) => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error' | 'transfer-details' | 'transfer-declared'>('review')
   const [bankInfo, setBankInfo] = useState<BankTransferPublicInfo | null>(null)
@@ -617,7 +617,10 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
               {availabilityError || 'Este negocio coordina el abono directamente contigo'}
             </p>
             {!availabilityError && (
-              <p className="mt-1">Tu reserva quedará pendiente hasta que el negocio confirme el abono.</p>
+              <p className="mt-1">
+                Tu reserva quedará pendiente hasta que el negocio confirme el abono.
+                Te guardamos el horario por {manualHoldHours} horas.
+              </p>
             )}
           </div>
         </div>

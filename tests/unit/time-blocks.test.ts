@@ -194,7 +194,7 @@ describe('createTimeBlock', () => {
       { holdExpiresAt: null },
       { holdExpiresAt: { gt: expect.any(Date) } },
       { paymentStatus: { not: 'unpaid' } },
-      { paymentMethod: 'bank_transfer' },
+      { paymentMethod: { in: ['bank_transfer', 'manual'] } },
     ])
     // Una solicitud vencida sí libera sin condiciones: la barre el cron siempre.
     expect(findClause('pending_confirmation').OR).toEqual([
@@ -323,7 +323,7 @@ describe('createTimeBlockSeries', () => {
           { holdExpiresAt: null },
           { holdExpiresAt: { gt: expect.any(Date) } },
           { paymentStatus: { not: 'unpaid' } },
-          { paymentMethod: 'bank_transfer' },
+          { paymentMethod: { in: ['bank_transfer', 'manual'] } },
         ],
       },
     ])

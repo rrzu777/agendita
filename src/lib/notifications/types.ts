@@ -61,6 +61,13 @@ export interface BookingEmailData {
    *  mail lo manda adjunto y ofrece el link en el cuerpo. Ausente = no hay nada
    *  que agendar (ver `deservesCalendarEvent`). */
   calendar?: BookingCalendarInvite | null
+  /** Presente cuando la reserva es de coordinación manual del abono (sin pago
+   *  online ni transferencia): el email de "reserva recibida" tiene que decir
+   *  que el NEGOCIO la contacta — sin esto insinuaba que ella debía pagar algo
+   *  que no tiene cómo pagar — y hasta cuándo se le guarda el horario. */
+  manualCoordination?: {
+    deadline: Date | null
+  }
   /** Presente cuando la reserva eligió transferencia bancaria: el email de
    *  "reserva recibida" incluye los datos, el plazo y el link para declarar. */
   bankTransfer?: {

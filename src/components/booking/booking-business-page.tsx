@@ -47,6 +47,7 @@ export function BookingBusinessPage({ business, profileHref, referralToken, sess
           professionals={toFunnelProfessionals(business.professionals)}
           professionalWords={getVocabulary(business.category)}
           cancellationPolicy={business.cancellationPolicy}
+          manualHoldHours={business.manualHoldHours}
           referralToken={referralToken}
           session={session}
         />

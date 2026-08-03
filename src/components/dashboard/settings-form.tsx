@@ -70,6 +70,7 @@ export function SettingsForm({ business }: { business: Business }) {
       timezone: business.timezone,
       slotStepMinutes: business.slotStepMinutes == null ? 'service' : String(business.slotStepMinutes) as FormData['slotStepMinutes'],
       selfServiceCutoffHours: business.selfServiceCutoffHours,
+      manualHoldHours: business.manualHoldHours,
       requireBookingApproval: business.requireBookingApproval,
       defaultMeetingUrl: business.defaultMeetingUrl || '',
       subdomain: business.subdomain,
@@ -243,6 +244,21 @@ export function SettingsForm({ business }: { business: Business }) {
               Hasta cuántas horas antes tus {vocabulary.clients} pueden cancelar o reprogramar por su cuenta. 0 = sin límite.
             </p>
             {errors.selfServiceCutoffHours && <p className="text-sm text-destructive">{errors.selfServiceCutoffHours.message}</p>}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="manualHoldHours">Reserva sin pago online (horas)</Label>
+            <Input
+              id="manualHoldHours"
+              type="number"
+              min={1}
+              max={720}
+              {...register('manualHoldHours')}
+              aria-invalid={!!errors.manualHoldHours}
+            />
+            <p className="text-xs text-muted-foreground">
+              Si no tenés pago online ni transferencia configurados, cuántas horas se guarda el horario mientras coordinás el abono. Pasado el plazo, la reserva expira sola.
+            </p>
+            {errors.manualHoldHours && <p className="text-sm text-destructive">{errors.manualHoldHours.message}</p>}
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-4">

@@ -7,7 +7,11 @@ import { BookingStatus } from '@prisma/client'
 // solicitudes se comía las filas destinadas al de holds.
 function staleHoldsFindMany(rows: any[]) {
   return vi.fn().mockImplementation(async (args: any) =>
-    args?.where?.status === BookingStatus.pending_confirmation ? [] : rows,
+    // pending_confirmation = sweep de solicitudes; paymentMethod = el aviso a
+    // las reservas de coordinación manual. Ninguno debe comerse los candidatos.
+    args?.where?.status === BookingStatus.pending_confirmation || args?.where?.paymentMethod
+      ? []
+      : rows,
   )
 }
 

@@ -94,6 +94,15 @@ describe('occupiesSlot / isSweepableExpiredHold', () => {
     expect(isSweepableExpiredHold(transferencia, NOW)).toBe(false)
   })
 
+  // Mismo trato que la transferencia y por el mismo motivo: a esta clienta la
+  // pantalla le prometió "el negocio te contacta" y el único que le avisa que
+  // la ventana venció es el cron. El sweep silencioso la dejaría esperando.
+  it('con coordinación manual sigue tapando: la barre el cron, con aviso', () => {
+    const manual = { ...abandonado, paymentMethod: 'manual' }
+    expect(occupiesSlot(manual, NOW)).toBe(true)
+    expect(isSweepableExpiredHold(manual, NOW)).toBe(false)
+  })
+
   it('sin paymentStatus tapa el horario: un caller que no trajo el campo no decide', () => {
     const sinCampo = { status: abandonado.status, holdExpiresAt: abandonado.holdExpiresAt }
     expect(occupiesSlot(sinCampo, NOW)).toBe(true)
