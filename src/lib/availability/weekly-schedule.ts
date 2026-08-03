@@ -205,10 +205,12 @@ export async function setWeekday(
   }
 
   const { dayOfWeek, startTime, endTime, isActive } = day
-  // `updateMany` y no `update`: la clave es `(negocio, alcance, día)` y no hay unique
-  // que la respalde, así que no existe un `where` de `update` que la exprese. Y si
-  // quedaron filas duplicadas de antes, las actualiza a todas — convergen en vez de
-  // dejar una vieja rigiendo al azar.
+  // `updateMany` y no `update`: la clave es `(negocio, alcance, día)` y la base SÍ
+  // la garantiza —dos índices únicos parciales, migración `availability_rule_unique`—
+  // pero Prisma no expresa índices parciales, así que no existe un `where` de
+  // `update`/`upsert` que los nombre. El par updateMany+create queda, ahora con la
+  // base cubriéndole la espalda: el advisory lock de arriba serializa a los
+  // escritores y el índice ataja cualquier camino que no pase por acá.
   const updated = await tx.availabilityRule.updateMany({
     where: { businessId, professionalId, dayOfWeek },
     data: { startTime, endTime, isActive },
