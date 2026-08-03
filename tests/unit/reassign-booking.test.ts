@@ -16,7 +16,7 @@ const mockAssertProfessionalIsFree = vi.fn()
 
 const mockPrisma = {
   booking: { findFirst: vi.fn(), updateMany: vi.fn() },
-  professional: { findFirst: vi.fn(), findMany: vi.fn(), findUniqueOrThrow: vi.fn() },
+  professional: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
   $transaction: vi.fn(),
 }
 
@@ -97,8 +97,8 @@ beforeEach(() => {
   mockPrisma.booking.updateMany.mockResolvedValue({ count: 1 })
   // La autorización (real) encuentra a la persona nueva…
   mockPrisma.professional.findFirst.mockResolvedValue({ id: 'prof-ana' })
-  // …y la búsqueda del nombre para la nota también.
-  mockPrisma.professional.findUniqueOrThrow.mockResolvedValue({ name: 'AnaBarbera' })
+  // …y la búsqueda del nombre para la nota (en paralelo con la cita) también.
+  mockPrisma.professional.findUnique.mockResolvedValue({ name: 'AnaBarbera' })
   mockAssertProfessionalIsFree.mockResolvedValue(undefined)
 })
 
@@ -119,7 +119,9 @@ describe('getReassignTargets', () => {
         NOT: { id: 'prof-juan' },
       },
       select: { id: true, name: true },
-      orderBy: { sortOrder: 'asc' },
+      // Con el desempate por id, como candidatesByLoad: empates de sortOrder no
+      // deben salir en un orden que dependa del plan de Postgres.
+      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
     })
   })
 

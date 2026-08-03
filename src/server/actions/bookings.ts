@@ -14,7 +14,7 @@ import { findOrCreateCustomerInTx } from '@/lib/customers/find-or-create'
 import { logger } from '@/lib/logger'
 
 import { SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
-import { activeProfessionalWhere, assertProfessionalOffersService } from '@/lib/professionals/ownership'
+import { activeProfessionalWhere, assertProfessionalOffersService, PROFESSIONAL_UNAVAILABLE_MESSAGE } from '@/lib/professionals/ownership'
 import { assertSlotAndResolveProfessional } from '@/lib/professionals/assign'
 import { NO_PROFESSIONAL, professionalEligibilityWhere, type ProfessionalPick } from '@/lib/professionals/eligible'
 import { isNoOverlapViolation } from '@/lib/db/no-overlap'
@@ -32,6 +32,7 @@ import { DEFAULT_HOLD_MINUTES, DASHBOARD_HOLD_MINUTES } from '@/lib/bookings/hol
 import { resumeBookingForRetry } from '@/lib/bookings/retry'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { cancelBookingInTx, reassignBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
+import { isTerminalBookingStatus } from '@/lib/bookings/status-labels'
 import { creditVisitPoints } from '@/lib/loyalty/credit'
 import { emitAutomaticRewardsOnCompletion } from '@/lib/loyalty/on-booking-completed'
 import { captureReferral } from '@/lib/loyalty/referral'
@@ -1129,7 +1130,7 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
     throw new UserError('Reserva no encontrada')
   }
 
-  if (['completed', 'cancelled', 'no_show', 'expired'].includes(booking.status)) {
+  if (isTerminalBookingStatus(booking.status)) {
     throw new UserError('No se puede reprogramar una reserva en este estado')
   }
 
@@ -1219,7 +1220,10 @@ async function _getReassignTargets(bookingId: string) {
       ...(booking.professionalId ? { NOT: { id: booking.professionalId } } : {}),
     },
     select: { id: true, name: true },
-    orderBy: { sortOrder: 'asc' },
+    // El mismo orden (y el mismo desempate) que candidatesByLoad: dos personas
+    // con igual sortOrder no deben salir en un orden que dependa del plan de
+    // Postgres.
+    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
   })
 }
 
@@ -1232,14 +1236,31 @@ const REASSIGN_BUSY_MESSAGE = 'Esa persona no está disponible en ese horario'
 async function _reassignBooking(bookingId: string, professionalId: string) {
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
 
-  const booking = await prisma.booking.findFirst({
-    where: { id: bookingId, businessId },
-    include: { professional: { select: { name: true } } },
-  })
+  // La cita y el nombre de la persona nueva en paralelo: no dependen entre sí
+  // (el nombre es para la nota del historial). Sólo los campos que consume la
+  // tx — sin email de por medio, la fila gorda de BOOKING_RESULT_INCLUDE sobra.
+  const [booking, target] = await Promise.all([
+    prisma.booking.findFirst({
+      where: { id: bookingId, businessId },
+      select: {
+        id: true,
+        businessId: true,
+        serviceId: true,
+        modality: true,
+        status: true,
+        startDateTime: true,
+        endDateTime: true,
+        internalNotes: true,
+        professionalId: true,
+        professional: { select: { name: true } },
+      },
+    }),
+    prisma.professional.findUnique({ where: { id: professionalId }, select: { name: true } }),
+  ])
   if (!booking) {
     throw new UserError('Reserva no encontrada')
   }
-  if (['completed', 'cancelled', 'no_show', 'expired'].includes(booking.status)) {
+  if (isTerminalBookingStatus(booking.status)) {
     throw new UserError('No se puede reasignar una reserva en este estado')
   }
   if (booking.professionalId === professionalId) {
@@ -1247,19 +1268,20 @@ async function _reassignBooking(bookingId: string, professionalId: string) {
   }
 
   // Autorización con la modalidad DE LA RESERVA (quedó resuelta al crearla).
-  await assertProfessionalOffersService(prisma, businessId, professionalId, booking.serviceId, booking.modality)
-  // El nombre para la nota del historial; la fila existe porque la autorización
-  // de arriba acaba de encontrarla.
-  const target = await prisma.professional.findUniqueOrThrow({
-    where: { id: professionalId },
-    select: { name: true },
-  })
+  // Devuelve el id NORMALIZADO y es el que se persiste — el guard existe para
+  // que el caller no use el crudo. Si la autorización pasó, la persona existe;
+  // el `!target` sólo puede ser un id que la normalización cambió, y se trata
+  // igual que no elegible.
+  const normalizedId = await assertProfessionalOffersService(prisma, businessId, professionalId, booking.serviceId, booking.modality)
+  if (!target) {
+    throw new UserError(PROFESSIONAL_UNAVAILABLE_MESSAGE)
+  }
 
   try {
     await prisma.$transaction(async (tx) => {
       await reassignBookingInTx(tx, {
         booking,
-        newProfessionalId: professionalId,
+        newProfessionalId: normalizedId,
         newProfessionalName: target.name,
         previousProfessionalName: booking.professional?.name ?? null,
         timezone: business.timezone || 'America/Santiago',
@@ -1269,10 +1291,7 @@ async function _reassignBooking(bookingId: string, professionalId: string) {
     // Los dos rechazos de disponibilidad —el chequeo con lock adentro de la tx
     // y el EXCLUDE por persona como cerrojo final— se cuentan con el mensaje de
     // ESTA operación, no con el genérico de "elegí otra hora".
-    if (error instanceof UserError && error.message === SLOT_UNAVAILABLE_MESSAGE) {
-      throw new UserError(REASSIGN_BUSY_MESSAGE)
-    }
-    if (isNoOverlapViolation(error)) {
+    if ((error instanceof UserError && error.message === SLOT_UNAVAILABLE_MESSAGE) || isNoOverlapViolation(error)) {
       throw new UserError(REASSIGN_BUSY_MESSAGE)
     }
     throw error

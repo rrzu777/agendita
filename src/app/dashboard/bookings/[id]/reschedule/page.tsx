@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db'
 import { RescheduleForm } from './reschedule-form'
 import { formatInTimeZone } from 'date-fns-tz'
 import { formatBookingNumber } from '@/lib/bookings/number'
+import { isTerminalBookingStatus } from '@/lib/bookings/status-labels'
 
 interface ReschedulePageProps {
   params: Promise<{ id: string }>
@@ -31,7 +32,7 @@ export default async function ReschedulePage({ params }: ReschedulePageProps) {
     notFound()
   }
 
-  if (['completed', 'cancelled', 'no_show', 'expired'].includes(booking.status)) {
+  if (isTerminalBookingStatus(booking.status)) {
     redirect(`/dashboard/bookings`)
   }
 

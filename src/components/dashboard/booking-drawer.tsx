@@ -24,7 +24,7 @@ import { formatManualPaymentMoney, isManualPaymentAllowed } from './manual-payme
 import { PaymentRevertedBadge } from './payment-reverted-badge'
 import { CustomerPhotos } from './customer-photos'
 import { ReassignControl } from './reassign-control'
-import { bookingStatusLabel } from '@/lib/bookings/status-labels'
+import { bookingStatusLabel, isTerminalBookingStatus } from '@/lib/bookings/status-labels'
 import { bookingWhere } from '@/lib/services/modality'
 import { useVocabulary } from '@/components/vocabulary-provider'
 
@@ -59,21 +59,20 @@ interface BookingDrawerProps {
   businessTimezone: string
   businessAddress: string | null
   photoUploadEnabled: boolean
-  /** Cuántas personas ACTIVAS tiene el negocio. Requerido: gobierna si aparece
-   *  el control de reasignar, y opcional lo dejaría siempre apagado sin error
-   *  de compilación (mismo argumento que `professional` en CalendarBooking). */
-  teamCount: number
+  /** Si el negocio tiene gente ACTIVA. Requerido: gobierna si aparece el
+   *  control de reasignar, y opcional lo dejaría siempre apagado sin error de
+   *  compilación (mismo argumento que `professional` en CalendarBooking). */
+  hasTeam: boolean
 }
 
-export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, businessTimezone, businessAddress, photoUploadEnabled, teamCount }: BookingDrawerProps) {
+export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, businessTimezone, businessAddress, photoUploadEnabled, hasTeam }: BookingDrawerProps) {
   const vocabulary = useVocabulary()
   const isMobile = useIsMobile()
 
   const start = new Date(booking.startDateTime)
   // En un estado terminal no hay nada que reasignar (el server también lo
   // rechaza; esto sólo evita ofrecer un botón que va a fallar).
-  const reassignable = teamCount > 0 &&
-    !['completed', 'cancelled', 'no_show', 'expired'].includes(booking.status)
+  const reassignable = hasTeam && !isTerminalBookingStatus(booking.status)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

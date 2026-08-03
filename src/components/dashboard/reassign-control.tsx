@@ -31,16 +31,20 @@ export function ReassignControl({
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // null = todavía cargando: todas las salidas de handleOpen setean la lista,
+  // así que "cargando" se deriva en vez de llevarse en un estado aparte.
   const [targets, setTargets] = useState<{ id: string; name: string }[] | null>(null)
   const [targetId, setTargetId] = useState('')
+
+  const loading = open && targets === null
+  const hasTargets = !!targets?.length
 
   async function handleOpen() {
     setOpen(true)
     setError('')
-    setLoading(true)
+    setTargets(null)
     try {
       const res = await getReassignTargets(bookingId)
       if (!res.ok) {
@@ -53,8 +57,6 @@ export function ReassignControl({
     } catch {
       setError('No se pudieron cargar las opciones')
       setTargets([])
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -88,25 +90,25 @@ export function ReassignControl({
 
   return (
     <div className="w-full space-y-2 rounded-lg border border-border/60 bg-muted/30 p-3">
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Cargando opciones...</p>
-      ) : targets && targets.length === 0 && !error ? (
-        // Sin elegibles no hay operación posible: decirlo es mejor que un
-        // selector vacío. Pasa cuando nadie más hace este servicio.
+      {loading && <p className="text-sm text-muted-foreground">Cargando opciones...</p>}
+      {/* Sin elegibles no hay operación posible: decirlo es mejor que un
+          selector vacío. Pasa cuando nadie más hace este servicio. */}
+      {!loading && !hasTargets && !error && (
         <p className="text-sm text-muted-foreground">
           No hay nadie más que pueda tomar esta cita.
         </p>
-      ) : targets && targets.length > 0 ? (
+      )}
+      {hasTargets && (
         <>
           <Label htmlFor="reassign-target">{currentName ? '¿A quién se la pasás?' : '¿Quién la atiende?'}</Label>
           <select
             id="reassign-target"
             value={targetId}
             onChange={(e) => setTargetId(e.target.value)}
-            className="studio-input h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+            className="studio-input w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
             disabled={saving}
           >
-            {targets.map((t) => (
+            {targets!.map((t) => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>
@@ -114,12 +116,12 @@ export function ReassignControl({
             La hora no se mueve. Se valida que tenga el horario libre.
           </p>
         </>
-      ) : null}
+      )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="flex gap-2">
-        {targets && targets.length > 0 && (
+        {hasTargets && (
           <Button type="button" size="xs" onClick={handleConfirm} disabled={saving || !targetId}>
             {saving ? 'Reasignando...' : 'Confirmar'}
           </Button>

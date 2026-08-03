@@ -19,6 +19,7 @@ import { readWeek, scheduleLockKey, setWeekday } from '@/lib/availability/weekly
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
 import { assertOwnerScope, assertProfessionalOfBusiness, isProfessionalOfBusiness, PROFESSIONAL_UNAVAILABLE_MESSAGE } from '@/lib/professionals/ownership'
 import { action, UserError } from '@/lib/actions/result'
+import { isTerminalBookingStatus } from '@/lib/bookings/status-labels'
 
 const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
 
@@ -43,7 +44,6 @@ const rescheduleSlotsSchema = z.object({
   date: z.date(),
 })
 
-const NON_RESCHEDULABLE_STATUSES = ['completed', 'cancelled', 'no_show', 'expired'] as const
 
 /**
  * El horario semanal de un alcance, para el editor: `null` es el salón, un id es esa
@@ -211,7 +211,7 @@ async function _getAvailableSlotsForReschedule(bookingId: string, date: Date) {
     throw new ForbiddenError('Reserva no encontrada')
   }
 
-  if (NON_RESCHEDULABLE_STATUSES.includes(booking.status as typeof NON_RESCHEDULABLE_STATUSES[number])) {
+  if (isTerminalBookingStatus(booking.status)) {
     throw new UserError('No se puede reprogramar una reserva en este estado')
   }
 

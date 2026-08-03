@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client'
 import { BookingStatus } from '@prisma/client'
 import { addMinutes } from 'date-fns'
 import { formatBookingDateTime } from '@/lib/bookings/format-booking-datetime'
+import { TERMINAL_BOOKING_STATUSES } from '@/lib/bookings/status-labels'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
 import { assertProfessionalIsFree, assertSlotIsAvailable } from '@/lib/availability/validation'
@@ -84,7 +85,7 @@ export async function rescheduleBookingInTx(
     where: {
       id: booking.id,
       businessId: booking.businessId,
-      status: { notIn: [BookingStatus.completed, BookingStatus.cancelled, BookingStatus.no_show, BookingStatus.expired] },
+      status: { notIn: [...TERMINAL_BOOKING_STATUSES] },
     },
     data: {
       startDateTime: newStartDateTime,
@@ -153,7 +154,7 @@ export async function reassignBookingInTx(
     where: {
       id: booking.id,
       businessId: booking.businessId,
-      status: { notIn: [BookingStatus.completed, BookingStatus.cancelled, BookingStatus.no_show, BookingStatus.expired] },
+      status: { notIn: [...TERMINAL_BOOKING_STATUSES] },
     },
     data: {
       professionalId: newProfessionalId,
