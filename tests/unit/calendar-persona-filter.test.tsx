@@ -111,12 +111,17 @@ describe('el filtro por persona del calendario', () => {
     expect(html).toContain('ClientaSinPersona')
   })
 
-  it('el parámetro sobrevive a la navegación: anterior/siguiente/Hoy/vistas lo llevan', async () => {
+  it('el parámetro sobrevive a la navegación: NINGÚN link interno lo pierde', async () => {
     const html = await renderCalendar({ view: 'day', date: '2026-08-05', persona: 'p-ana' })
 
-    // Anterior + Hoy + Siguiente + 3 vistas del switch, como mínimo.
-    const conPersona = html.match(/persona=p-ana/g) ?? []
-    expect(conPersona.length).toBeGreaterThanOrEqual(6)
+    // Todos los links al calendario (anterior/siguiente/Hoy/vistas/días), uno
+    // por uno: contar "al menos N" dejó pasar un sabotaje que le sacaba el
+    // parámetro a un solo link — con perder uno, el filtro se suelta al navegar.
+    const links = html.match(/href="\/dashboard\/calendar\?[^"]*"/g) ?? []
+    expect(links.length).toBeGreaterThanOrEqual(6)
+    for (const link of links) {
+      expect(link).toContain('persona=p-ana')
+    }
   })
 
   it('el selector aparece con equipo y no aparece sin equipo', async () => {
@@ -130,12 +135,16 @@ describe('el filtro por persona del calendario', () => {
   })
 
   it('el chip de la cita dice quién atiende', async () => {
-    // Sin selector (equipo vacío) el nombre sólo puede venir del chip; si no,
-    // el <option> del filtro haría pasar este test aunque el chip no lo diga.
+    // Sin selector (equipo vacío) y con un nombre que NO es substring de la
+    // clienta: la primera versión buscaba 'Juan' y 'ClientaDeJuan' la hacía
+    // pasar con el chip borrado — un test que no podía fallar.
     mockProfessionalNames.mockResolvedValue([])
+    mockBookingsByRange.mockResolvedValue([
+      booking('bk-juan', 'ClientaCualquiera', 'p-juan', 'JuanBarbero'),
+    ])
     const html = await renderCalendar({ view: 'day', date: '2026-08-05' })
-    // La cita de Juan dura 60 min: el chip tiene alto para la línea del nombre.
-    expect(html).toContain('Juan')
+    // La cita dura 60 min: el chip tiene alto para la línea del nombre.
+    expect(html).toContain('JuanBarbero')
     expect(html).not.toContain('Filtrar por quién atiende')
   })
 })
