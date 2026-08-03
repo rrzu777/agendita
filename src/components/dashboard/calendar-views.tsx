@@ -28,6 +28,8 @@ import { EditBlockDialog } from './edit-block-dialog'
 import { EditSeriesOccurrenceDialog } from './edit-series-occurrence-dialog'
 import type { CalendarBooking } from './booking-card'
 import type { CalendarTimeBlock } from './time-block-card'
+import { SCOPE_PARAM } from './schedule-scope-picker'
+import { WHOLE_BUSINESS_LABEL } from '@/lib/professionals/scope-label'
 import {
   localDayKey,
   computeHourRange,
@@ -76,11 +78,17 @@ const statusIcons: Record<StatusIcon, typeof Clock> = {
   dash: Minus,
 }
 
-/** `personaQS`: '' o `&persona=<id>` — el filtro tiene que sobrevivir a CADA
- *  navegación interna (anterior/siguiente, Hoy, cambiar de vista, click en un
- *  día); si un solo link lo pierde, el filtro "se suelta" al navegar. */
-function hrefFor(view: CalendarView, date: Date, personaQS: string): string {
-  return `/dashboard/calendar?view=${view}&date=${format(date, 'yyyy-MM-dd')}${personaQS}`
+/**
+ * EL builder de URLs del calendario — el único. El filtro por persona tiene que
+ * sobrevivir a CADA navegación interna (anterior/siguiente, Hoy, cambiar de
+ * vista, click en un día): si un solo link arma la URL a mano y lo pierde, el
+ * filtro "se suelta" al navegar. Por eso el `&persona=` se escribe acá y en
+ * ningún otro lado, con el nombre del parámetro importado del contrato
+ * compartido del panel (SCOPE_PARAM).
+ */
+function calendarHref(view: CalendarView, date: string, personaId: string | null): string {
+  const persona = personaId ? `&${SCOPE_PARAM}=${personaId}` : ''
+  return `/dashboard/calendar?view=${view}&date=${date}${persona}`
 }
 
 export function CalendarViews({
@@ -96,7 +104,6 @@ export function CalendarViews({
   professionals,
   selectedProfessionalId,
 }: CalendarViewsProps) {
-  const personaQS = selectedProfessionalId ? `&persona=${selectedProfessionalId}` : ''
   const focus = parseISO(`${date}T12:00:00`)
   const [activeBooking, setActiveBooking] = useState<TimelineBooking | null>(null)
   const [activeBlock, setActiveBlock] = useState<CalendarTimeBlock | null>(null)
@@ -124,15 +131,15 @@ export function CalendarViews({
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="icon" asChild>
-            <Link href={hrefFor(view, prev, personaQS)} aria-label="Anterior">
+            <Link href={calendarHref(view, format(prev, 'yyyy-MM-dd'), selectedProfessionalId)} aria-label="Anterior">
               <ChevronLeft className="size-4" />
             </Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/dashboard/calendar?view=${view}&date=${todayKey}${personaQS}`}>Hoy</Link>
+            <Link href={calendarHref(view, todayKey, selectedProfessionalId)}>Hoy</Link>
           </Button>
           <Button variant="outline" size="icon" asChild>
-            <Link href={hrefFor(view, next, personaQS)} aria-label="Siguiente">
+            <Link href={calendarHref(view, format(next, 'yyyy-MM-dd'), selectedProfessionalId)} aria-label="Siguiente">
               <ChevronRight className="size-4" />
             </Link>
           </Button>
@@ -142,7 +149,10 @@ export function CalendarViews({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {professionals.length > 0 && (
+          {/* Con una sola persona el filtro es un no-op (lo suyo + lo del
+              negocio = todo): mismo criterio que el funnel, que con una sola
+              tampoco pregunta. */}
+          {professionals.length > 1 && (
             <ProfessionalFilter
               professionals={professionals}
               selected={selectedProfessionalId}
@@ -150,11 +160,17 @@ export function CalendarViews({
               date={date}
             />
           )}
-          <ViewSwitch view={view} date={date} personaQS={personaQS} />
+          <ViewSwitch view={view} date={date} personaId={selectedProfessionalId} />
           {view !== 'month' && (
-            // Sin `defaultProfessionalId`: el calendario muestra a todo el equipo junto,
-            // así que no hay una persona "que se esté mirando" de la cual heredar.
-            <BlockTimeModal defaultDate={date} timezone={timezone} professionals={professionals} />
+            // Con el filtro puesto SÍ hay una persona "que se está mirando":
+            // el bloqueo nuevo arranca en ella, no en "todo el negocio" (el
+            // default más caro de equivocarse — cierra el local entero).
+            <BlockTimeModal
+              defaultDate={date}
+              timezone={timezone}
+              professionals={professionals}
+              defaultProfessionalId={selectedProfessionalId}
+            />
           )}
         </div>
       </div>
@@ -165,7 +181,7 @@ export function CalendarViews({
           focus={focus}
           timezone={timezone}
           todayKey={todayKey}
-          personaQS={personaQS}
+          personaId={selectedProfessionalId}
           onBookingClick={setActiveBooking}
         />
       )}
@@ -179,7 +195,7 @@ export function CalendarViews({
           timeBlocks={timeBlocks}
           timezone={timezone}
           todayKey={todayKey}
-          personaQS={personaQS}
+          personaId={selectedProfessionalId}
           onBookingClick={setActiveBooking}
           onBlockClick={setActiveBlock}
         />
@@ -191,7 +207,7 @@ export function CalendarViews({
           timeBlocks={timeBlocks}
           timezone={timezone}
           todayKey={todayKey}
-          personaQS={personaQS}
+          personaId={selectedProfessionalId}
           onBookingClick={setActiveBooking}
           onBlockClick={setActiveBlock}
         />
@@ -230,7 +246,7 @@ export function CalendarViews({
   )
 }
 
-function ViewSwitch({ view, date, personaQS }: { view: CalendarView; date: string; personaQS: string }) {
+function ViewSwitch({ view, date, personaId }: { view: CalendarView; date: string; personaId: string | null }) {
   const options: Array<{ key: CalendarView; label: string }> = [
     { key: 'day', label: 'Día' },
     { key: 'week', label: 'Semana' },
@@ -241,7 +257,7 @@ function ViewSwitch({ view, date, personaQS }: { view: CalendarView; date: strin
       {options.map((o) => (
         <Link
           key={o.key}
-          href={`/dashboard/calendar?view=${o.key}&date=${date}${personaQS}`}
+          href={calendarHref(o.key, date, personaId)}
           className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
             view === o.key
               ? 'bg-card text-primary shadow-sm'
@@ -258,8 +274,14 @@ function ViewSwitch({ view, date, personaQS }: { view: CalendarView; date: strin
 /**
  * El filtro por persona. Navega en vez de filtrar en memoria: el parámetro
  * tiene que quedar en la URL para sobrevivir a anterior/siguiente/Hoy (que son
- * Links al servidor), y el filtrado ya lo hizo la página con el predicado del
- * motor de agenda.
+ * Links al servidor), y el filtrado ya lo hizo la página con los predicados
+ * del motor de agenda.
+ *
+ * `<select>` nativo a propósito (y no el Select de ui ni el patrón links de
+ * ScheduleScopePicker): acá la lista puede ser larga y el control convive
+ * apretado con la barra del calendario; el nativo da teclado y móvil gratis.
+ * La opción nula usa WHOLE_BUSINESS_LABEL, la redacción única del alcance
+ * "sin persona" en todo el panel.
  */
 function ProfessionalFilter({
   professionals,
@@ -277,13 +299,10 @@ function ProfessionalFilter({
     <select
       aria-label="Filtrar por quién atiende"
       value={selected ?? ''}
-      onChange={(e) => {
-        const persona = e.target.value ? `&persona=${e.target.value}` : ''
-        router.push(`/dashboard/calendar?view=${view}&date=${date}${persona}`)
-      }}
+      onChange={(e) => router.push(calendarHref(view, date, e.target.value || null))}
       className="h-9 rounded-lg border border-border bg-card px-2 text-sm font-medium text-foreground"
     >
-      <option value="">Todo el equipo</option>
+      <option value="">{WHOLE_BUSINESS_LABEL}</option>
       {professionals.map((p) => (
         <option key={p.id} value={p.id}>
           {p.name}
@@ -298,14 +317,14 @@ function MonthView({
   focus,
   timezone,
   todayKey,
-  personaQS,
+  personaId,
   onBookingClick,
 }: {
   bookings: TimelineBooking[]
   focus: Date
   timezone: string
   todayKey: string
-  personaQS: string
+  personaId: string | null
   onBookingClick: (b: TimelineBooking) => void
 }) {
   const monthStart = startOfMonth(focus)
@@ -345,7 +364,7 @@ function MonthView({
               }`}
             >
               <Link
-                href={hrefFor('day', day, personaQS)}
+                href={calendarHref('day', key, personaId)}
                 className="absolute inset-0 rounded-lg"
                 aria-label={`Ver ${format(day, "EEEE d 'de' MMMM", { locale: es })}`}
               />
@@ -409,7 +428,7 @@ function TimelineView({
   timeBlocks,
   timezone,
   todayKey,
-  personaQS,
+  personaId,
   onBookingClick,
   onBlockClick,
 }: {
@@ -418,7 +437,7 @@ function TimelineView({
   timeBlocks: CalendarTimeBlock[]
   timezone: string
   todayKey: string
-  personaQS: string
+  personaId: string | null
   onBookingClick: (b: TimelineBooking) => void
   onBlockClick: (b: CalendarTimeBlock) => void
 }) {
@@ -458,7 +477,7 @@ function TimelineView({
               >
                 {/* Cabecera del día */}
                 <Link
-                  href={hrefFor('day', day, personaQS)}
+                  href={calendarHref('day', dayKey, personaId)}
                   className="flex h-8 items-center justify-center gap-1.5 border-b border-border text-xs font-medium hover:bg-muted/40"
                 >
                   <span className="capitalize text-muted-foreground">{format(day, 'EEE', { locale: es })}</span>

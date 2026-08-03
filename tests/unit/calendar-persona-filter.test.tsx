@@ -124,10 +124,17 @@ describe('el filtro por persona del calendario', () => {
     }
   })
 
-  it('el selector aparece con equipo y no aparece sin equipo', async () => {
+  it('el selector aparece con 2+ personas; con una o ninguna no', async () => {
     const conEquipo = await renderCalendar({ view: 'day', date: '2026-08-05' })
     expect(conEquipo).toContain('Filtrar por quién atiende')
-    expect(conEquipo).toContain('Todo el equipo')
+    // La redacción ÚNICA del alcance "sin persona" en el panel (scope-label).
+    expect(conEquipo).toContain('Todo el negocio')
+
+    // Con una sola persona el filtro es un no-op (lo suyo + lo del negocio =
+    // todo): mismo criterio que el funnel, que con una sola tampoco pregunta.
+    mockProfessionalNames.mockResolvedValue([{ id: 'p-juan', name: 'Juan', isActive: true }])
+    const unaSola = await renderCalendar({ view: 'day', date: '2026-08-05' })
+    expect(unaSola).not.toContain('Filtrar por quién atiende')
 
     mockProfessionalNames.mockResolvedValue([])
     const sinEquipo = await renderCalendar({ view: 'day', date: '2026-08-05' })

@@ -15,7 +15,8 @@ import {
 } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { endOfLocalDay, startOfLocalDay } from '@/lib/availability/timezone'
-import { blockAppliesToProfessional } from '@/lib/availability/scope'
+import { blockAppliesToProfessional, bookingBlocksProfessional } from '@/lib/availability/scope'
+import { SCOPE_PARAM, resolveScheduleScope } from '@/components/dashboard/schedule-scope-picker'
 
 const WEEK_OPTS = { weekStartsOn: 1 as const }
 
@@ -62,7 +63,7 @@ function rangeForView(view: CalendarView, focusLocalDate: Date, timezone: string
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; date?: string; persona?: string }>
+  searchParams: Promise<{ view?: string; date?: string; [SCOPE_PARAM]?: string }>
 }) {
   const userData = await getCurrentUserWithBusiness()
   if (!userData?.user) {
@@ -97,15 +98,18 @@ export default async function CalendarPage({
   ])
   const nombrePorId = new Map(professionals.map((p) => [p.id, p.name]))
 
-  // Filtro por persona (?persona=). Se valida contra la lista real: un id
-  // inventado o viejo cae en "todo el equipo" en vez de en un filtro que no
-  // matchea nada. El predicado es EL MISMO que usa el motor de agenda
-  // (blockAppliesToProfessional): lo del negocio (professionalId null) aplica a
-  // todas, así que el día filtrado de Juan muestra también las citas y bloqueos
-  // sin persona — exactamente lo que su agenda considera ocupado.
-  const persona = professionals.some((p) => p.id === params.persona) ? params.persona! : null
+  // Filtro por persona (?persona=). La resolución es la COMPARTIDA del panel
+  // (resolveScheduleScope, la misma de /dashboard/availability): un id inventado
+  // o viejo cae en "todo el equipo" en vez de en un filtro que no matchea nada.
+  // Cada lista se filtra con SU predicado del motor de agenda — reservas con
+  // bookingBlocksProfessional y bloqueos con blockAppliesToProfessional, que hoy
+  // coinciden pero scope.ts los mantiene separados a propósito—: lo del negocio
+  // (professionalId null) aplica a todas, así que el día filtrado de Juan
+  // muestra también lo sin persona — exactamente lo que su agenda considera
+  // ocupado.
+  const persona = resolveScheduleScope(professionals, params)?.id ?? null
   const visibleBookings = persona
-    ? bookings.filter((b) => blockAppliesToProfessional(b, persona))
+    ? bookings.filter((b) => bookingBlocksProfessional(b, persona))
     : bookings
   const visibleBlocks = persona
     ? timeBlocks.filter((tb) => blockAppliesToProfessional(tb, persona))
