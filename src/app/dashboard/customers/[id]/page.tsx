@@ -16,7 +16,8 @@ import { getPhotos } from '@/server/actions/customer-photos'
 import { CustomerPhotos } from '@/components/dashboard/customer-photos'
 import { isObjectStorageAvailable } from '@/lib/storage/r2'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
-import { BASE_VOCABULARIES, getVocabulary } from '@/lib/vocabulary'
+import { ForbiddenError } from '@/lib/auth/server'
+import { getVocabulary } from '@/lib/vocabulary'
 import { normalizePhone } from '@/lib/customers/phone'
 import { CustomerEditForm } from './edit-form'
 import { MarketingOptOutToggle } from './marketing-optout-toggle'
@@ -47,13 +48,6 @@ interface Props {
   params: Promise<{ id: string }>
 }
 
-// La action arma el mensaje con el léxico de SU lectura del negocio; comparar
-// contra las dos formas base evita acoplar la página a que ambas lecturas del
-// rubro coincidan.
-const CLIENT_NOT_FOUND_MESSAGES: ReadonlySet<string> = new Set(
-  Object.values(BASE_VOCABULARIES).map((v) => v.clientNotFound)
-)
-
 export default async function CustomerDetailPage({ params }: Props) {
   const userData = await getCurrentUserWithBusiness()
 
@@ -74,7 +68,10 @@ export default async function CustomerDetailPage({ params }: Props) {
   try {
     customer = await getCustomerDetail(id)
   } catch (err) {
-    if (err instanceof Error && CLIENT_NOT_FOUND_MESSAGES.has(err.message)) {
+    // Sólo not-found/ownership → 404; un error real (DB caída, etc.) muestra la
+    // card de error. Mismo patrón que campanas/[id]; el mensaje ahora depende
+    // del rubro, así que la clase es el identificador, no el string.
+    if (err instanceof ForbiddenError) {
       notFound()
     }
     error = err instanceof Error ? err.message : `Error al cargar ${v.theClient}`
@@ -90,7 +87,7 @@ export default async function CustomerDetailPage({ params }: Props) {
             <p className="mt-2 max-w-md text-muted-foreground">{error || 'No encontrada'}</p>
             <Link href="/dashboard/customers">
               <Button className="mt-6" variant="outline">
-                {`Volver a ${v.clients}`}
+                Volver a {v.clients}
               </Button>
             </Link>
           </div>
@@ -225,7 +222,7 @@ export default async function CustomerDetailPage({ params }: Props) {
             <div className="studio-card p-4">
               <h3 className="mb-3 text-lg font-semibold text-primary">Notas internas</h3>
               <p className="mb-3 text-xs text-muted-foreground">
-                {`Solo visibles para ti y tu equipo. ${v.TheClient} no puede ver estas notas.`}
+                Solo visibles para ti y tu equipo. {v.TheClient} no puede ver estas notas.
               </p>
               <CustomerNotesForm customerId={customer.id} initialNotes={customer.notes} />
             </div>

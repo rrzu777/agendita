@@ -100,7 +100,7 @@ export default async function DashboardPage() {
               <div>
                 <h3 className="mb-1 text-lg font-semibold text-primary">Tu perfil público</h3>
                 <p className="text-sm text-muted-foreground">
-                  {`Comparte este link con tus ${v.clients} para que reserven`}
+                  Comparte este link con tus {v.clients} para que reserven
                 </p>
                 <code className="mt-3 inline-block max-w-full rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm text-primary">
                   {publicUrl}
@@ -170,7 +170,7 @@ export default async function DashboardPage() {
               </div>
               <h3 className="mb-2 text-lg font-semibold text-primary">No tienes reservas próximas</h3>
               <p className="text-sm text-muted-foreground">
-                {`Comparte tu perfil público para recibir reservas de tus ${v.clients}.`}
+                Comparte tu perfil público para recibir reservas de tus {v.clients}.
               </p>
               <code className="mt-3 inline-block rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm text-primary">
                 {publicUrl}

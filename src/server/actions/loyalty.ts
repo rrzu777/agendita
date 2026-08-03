@@ -27,7 +27,7 @@ import type { BusinessCategory } from '@prisma/client'
  * de estas actions (que mockean @/lib/auth/server, no @/lib/auth/user).
  */
 function customerNotFound(category: BusinessCategory): ForbiddenError {
-  return new ForbiddenError(`${getVocabulary(category).Client} no encontrada`)
+  return new ForbiddenError(getVocabulary(category).clientNotFound)
 }
 
 // Module-local helpers — NOT exported (use server modules may only export async functions)

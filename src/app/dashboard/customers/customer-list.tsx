@@ -95,9 +95,9 @@ export function CustomerList({ customers, error, currency }: CustomerListProps) 
         <div className="mb-5 flex size-16 items-center justify-center rounded-2xl bg-secondary text-primary">
           <Users className="size-8" />
         </div>
-        <h2 className="text-xl font-semibold text-primary">{`Sin ${v.clients}`}</h2>
+        <h2 className="text-xl font-semibold text-primary">Sin {v.clients}</h2>
         <p className="mt-2 max-w-md text-muted-foreground">
-          {`${v.TheClients} aparecerán aquí cuando realicen su primera reserva.`}
+          {v.TheClients} aparecerán aquí cuando realicen su primera reserva.
         </p>
       </div>
     )

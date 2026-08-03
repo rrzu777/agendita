@@ -47,7 +47,7 @@ function EmptyState() {
   )
 }
 
-export function BookingCard({ booking, businessCurrency, businessTimezone, businessAddress, transferEnabled, clientLabel }: {
+export function BookingCard({ booking, businessCurrency, businessTimezone, businessAddress, transferEnabled }: {
   booking: {
     id: string
     bookingNumber: number | null
@@ -73,8 +73,6 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
   businessTimezone: string
   businessAddress: string | null
   transferEnabled?: boolean
-  /** "Clienta" | "Cliente" según el rubro; requerido para que el compilador encuentre a los callers. */
-  clientLabel: string
 }) {
   const canRegisterPayment = isManualPaymentAllowed(booking)
   const isPendingTransfer = hasPendingDeclaredTransfer(booking)
@@ -266,7 +264,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           <ReviveBookingButton
             bookingId={booking.id}
             serviceName={booking.service?.name || 'Servicio'}
-            customerName={booking.customer?.name || clientLabel}
+            customerName={booking.customer?.name}
             customerHasEmail={!!booking.customer?.email}
             canReopen={reviveState.canReopen}
             reopenDisabledReason={reviveState.reason}
@@ -475,7 +473,6 @@ export default async function BookingsPage() {
                   businessTimezone={businessTimezone}
                   businessAddress={businessAddress}
                   transferEnabled={transferEnabled}
-                  clientLabel={vocabulary.Client}
                 />
               ))}
             </div>

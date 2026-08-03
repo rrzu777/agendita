@@ -14,6 +14,7 @@ interface BusinessProfileProps {
 }
 
 export function BusinessProfile({ business, bookingHref = `/book/${business.slug}`, packagesHref, accountCta }: BusinessProfileProps) {
+  const v = getVocabulary(business.category)
   const daysOfWeek = ['Domingos', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábados']
 
   return (
@@ -149,7 +150,7 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
                 <article key={review.id} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-primary">
-                      {review.customer?.name || getVocabulary(business.category).Client}
+                      {review.customer?.name || v.Client}
                     </p>
                     <div className="flex shrink-0 items-center gap-0.5" aria-label={`${review.rating} de 5 estrellas`}>
                       {Array.from({ length: 5 }).map((_, i) => (

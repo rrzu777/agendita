@@ -30,7 +30,7 @@ function makeBooking(bookingNumber: number | null) {
 describe('BookingCard booking number', () => {
   it('renders #<number> when present', () => {
     const html = renderToStaticMarkup(
-      <BookingCard booking={makeBooking(4738)} businessCurrency="CLP" businessTimezone="America/Santiago" businessAddress={null} clientLabel="Cliente" />,
+      <BookingCard booking={makeBooking(4738)} businessCurrency="CLP" businessTimezone="America/Santiago" businessAddress={null} />,
     )
     expect(html).toContain('#4738')
     expect(html).not.toContain('#clabc123')
@@ -38,7 +38,7 @@ describe('BookingCard booking number', () => {
 
   it('falls back to the cuid slice when the number is null', () => {
     const html = renderToStaticMarkup(
-      <BookingCard booking={makeBooking(null)} businessCurrency="CLP" businessTimezone="America/Santiago" businessAddress={null} clientLabel="Cliente" />,
+      <BookingCard booking={makeBooking(null)} businessCurrency="CLP" businessTimezone="America/Santiago" businessAddress={null} />,
     )
     expect(html).toContain('#clabc123')
   })
