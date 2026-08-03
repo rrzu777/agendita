@@ -315,11 +315,10 @@ export default async function CustomerDetailPage({ params }: Props) {
                             <TruncatedCell
                               className="font-semibold text-primary"
                               primary={booking.serviceName}
-                              secondary={
-                                booking.professionalName
-                                  ? `${formatBookingNumber(booking.bookingNumber, booking.id)} · Atiende: ${booking.professionalName}`
-                                  : formatBookingNumber(booking.bookingNumber, booking.id)
-                              }
+                              secondary={[
+                                formatBookingNumber(booking.bookingNumber, booking.id),
+                                booking.professionalName && `Atiende: ${booking.professionalName}`,
+                              ].filter(Boolean).join(' · ')}
                             />
                             <TableCell className={TABLE_COL.date}>
                               <div>{new Date(booking.startDateTime).toLocaleDateString('es-CL', { timeZone: businessTimezone })}</div>
