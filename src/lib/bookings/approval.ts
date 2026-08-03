@@ -1,6 +1,7 @@
 import { addHours } from 'date-fns'
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
+import { MANUAL_COORDINATION_METHOD } from '@/lib/bookings/hold'
 
 /**
  * Confirmación manual: el negocio acepta o rechaza cada solicitud en vez de que
@@ -79,6 +80,10 @@ export interface SlotOccupancyFields {
  *   para no cargar los pagos en la generación de slots: es más grueso pero del
  *   lado seguro ({declaradas} ⊆ {transferencia}), y lo único que cuesta es que un
  *   checkout de transferencia abandonado retenga el cupo hasta el próximo cron.
+ * - **Coordinación manual**: mismo trato que la transferencia y por el mismo
+ *   motivo — a esa clienta la pantalla le prometió "el negocio te contacta", y
+ *   el único que le avisa que la ventana venció es el cron. Barrerla acá la
+ *   deja esperando un contacto que ya no llega, sin mail y sin hora.
  *
  * `paymentStatus` ausente devuelve false a propósito: un caller que no trajo el
  * campo prefiere ofrecer un slot de menos antes que uno que la BD va a rechazar.
@@ -89,7 +94,8 @@ export function isSweepableExpiredHold(b: SlotOccupancyFields, now: Date): boole
     !!b.holdExpiresAt &&
     b.holdExpiresAt <= now &&
     b.paymentStatus === BookingPaymentStatus.unpaid &&
-    b.paymentMethod !== BANK_TRANSFER_METHOD
+    b.paymentMethod !== BANK_TRANSFER_METHOD &&
+    b.paymentMethod !== MANUAL_COORDINATION_METHOD
   )
 }
 

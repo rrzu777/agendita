@@ -39,7 +39,10 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;')
 }
 
-function fmtDate(date: Date, timezone: string): string {
+/** Exportado: los compositores (p. ej. el paymentNote de coordinación manual
+ *  en `fireBookingNotifications`) formatean el plazo con el mismo formato que
+ *  el resto del email. */
+export function fmtDate(date: Date, timezone: string): string {
   return formatInTimeZone(date, timezone, "EEEE d 'de' MMMM 'de' yyyy, HH:mm", { locale: es })
 }
 
@@ -293,6 +296,17 @@ export function bookingConfirmationCustomerText(data: BookingEmailData): string 
   return lines.join('\n')
 }
 
+/** El pie del mail de "recibida" para coordinación manual: la promesa y el
+ *  plazo, compartidos entre el html y el texto plano. */
+function manualCoordinationNote(
+  manual: NonNullable<BookingEmailData['manualCoordination']>,
+  timezone: string,
+): string {
+  return manual.deadline
+    ? `El negocio te va a contactar para coordinar el abono. Te guardamos el horario hasta el ${fmtDate(manual.deadline, timezone)}.`
+    : 'El negocio te va a contactar para coordinar el abono y confirmar tu reserva.'
+}
+
 export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
   const dateStr = fmtDate(data.startDateTime, data.businessTimezone)
   const total = fmtCurrency(data.totalPrice, data.businessCurrency)
@@ -322,7 +336,9 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
       ? `le mandamos tu solicitud a ${escapeHtml(data.businessName)}. Te avisamos apenas la confirme.`
       : data.confirmed
         ? 'tu reserva quedó confirmada y lista en la agenda.'
-        : 'recibimos tu reserva. Está pendiente de pago para quedar confirmada.'}</p>
+        : data.manualCoordination
+          ? `recibimos tu reserva. ${escapeHtml(data.businessName)} coordina el abono directamente contigo para confirmarla.`
+          : 'recibimos tu reserva. Está pendiente de pago para quedar confirmada.'}</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
       ${bookingNumberRowHtml(data.bookingNumber)}
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
@@ -336,7 +352,9 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
     ${bankSection}
     ${data.confirmed ? '' : `<p style="font-size:13px;color:#666;margin-top:16px">${data.awaitingApproval
       ? 'Si no responden dentro de 24 horas, la solicitud se cancela sola y el horario queda libre.'
-      : data.bankTransfer ? 'Tu reserva quedará confirmada cuando el negocio verifique la transferencia.' : 'Recibirás una confirmación cuando el pago sea registrado.'}</p>`}
+      : data.bankTransfer ? 'Tu reserva quedará confirmada cuando el negocio verifique la transferencia.'
+      : data.manualCoordination ? manualCoordinationNote(data.manualCoordination, data.businessTimezone)
+      : 'Recibirás una confirmación cuando el pago sea registrado.'}</p>`}
     ${calendarLinksHtml(data.calendar)}
     ${policySection}${whatsappSection}
     ${footer(data.businessName)}
@@ -355,7 +373,9 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
       ? `Hola ${data.customerName}, le mandamos tu solicitud a ${data.businessName}. Te avisamos apenas la confirme.`
       : data.confirmed
         ? `Hola ${data.customerName}, tu reserva quedó confirmada y lista en la agenda.`
-        : `Hola ${data.customerName}, recibimos tu reserva. Está pendiente de pago para quedar confirmada.`,
+        : data.manualCoordination
+          ? `Hola ${data.customerName}, recibimos tu reserva. ${data.businessName} coordina el abono directamente contigo para confirmarla.`
+          : `Hola ${data.customerName}, recibimos tu reserva. Está pendiente de pago para quedar confirmada.`,
     ``,
     ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
     `Servicio: ${data.serviceName}`,
@@ -381,6 +401,8 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
       ``,
       `Tu reserva quedará confirmada cuando el negocio verifique la transferencia.`,
     )
+  } else if (data.manualCoordination && !data.confirmed) {
+    lines.push(``, manualCoordinationNote(data.manualCoordination, data.businessTimezone))
   } else if (!data.confirmed) {
     lines.push(``, `Recibirás una confirmación cuando el pago sea registrado.`)
   }
@@ -597,41 +619,55 @@ export function balanceTransferRejectedCustomerText(data: BalanceTransferCustome
   return `Hola ${data.customerName}, ${data.businessName} no pudo verificar tu transferencia del saldo de ${fmtCurrency(data.amount, data.currency)} por ${data.serviceName} (${fmtDate(data.startDateTime, data.businessTimezone)}). Tu reserva sigue igual. Escribile al negocio o volvé a avisar desde tu página de reserva.`
 }
 
-export function bankTransferExpiredCustomerHtml(data: BankTransferVerifyCustomerEmailData): string {
+/** Los dos mails de "tu reserva expiró" comparten el layout entero; sólo
+ *  cambian el motivo y el consejo. Transferencia: la clienta pudo haber
+ *  mandado la plata. Coordinación manual: ella no debía transferir nada — el
+ *  negocio tenía que contactarla y no llegó a tiempo, así que el copy no puede
+ *  echarle la culpa ni hablar de transferencias. */
+function expiredCustomerHtml(
+  data: BankTransferVerifyCustomerEmailData,
+  motivo: string,
+  consejo: string,
+): string {
   return baseHtml(`
     ${header('Tu reserva expiró')}
-    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, tu reserva en ${escapeHtml(data.businessName)} expiró porque no se verificó el pago a tiempo.</p>
+    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, tu reserva en ${escapeHtml(data.businessName)} expiró porque ${motivo}.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
     </table>
-    <p style="margin-top:16px;font-size:14px">Si transferiste, escribile al negocio: también puede reactivar tu reserva. Si no, podés reservar de nuevo cuando quieras.</p>
+    <p style="margin-top:16px;font-size:14px">${consejo} Si no, podés reservar de nuevo cuando quieras.</p>
     ${footer(data.businessName)}
   `)
+}
+
+function expiredCustomerText(
+  data: BankTransferVerifyCustomerEmailData,
+  motivo: string,
+  consejo: string,
+): string {
+  return `Hola ${data.customerName}, tu reserva en ${data.businessName} (${data.serviceName}, ${fmtDate(data.startDateTime, data.businessTimezone)}) expiró porque ${motivo}. ${consejo}`
+}
+
+const BT_EXPIRED_MOTIVO = 'no se verificó el pago a tiempo'
+const BT_EXPIRED_CONSEJO = 'Si transferiste, escribile al negocio: también puede reactivar tu reserva.'
+const MANUAL_EXPIRED_MOTIVO = 'no se llegó a coordinar el abono a tiempo'
+const MANUAL_EXPIRED_CONSEJO = 'Si ya coordinaste el pago o seguís interesada, escribile al negocio: puede reactivar tu reserva.'
+
+export function bankTransferExpiredCustomerHtml(data: BankTransferVerifyCustomerEmailData): string {
+  return expiredCustomerHtml(data, BT_EXPIRED_MOTIVO, BT_EXPIRED_CONSEJO)
 }
 
 export function bankTransferExpiredCustomerText(data: BankTransferVerifyCustomerEmailData): string {
-  return `Hola ${data.customerName}, tu reserva en ${data.businessName} (${data.serviceName}, ${fmtDate(data.startDateTime, data.businessTimezone)}) expiró porque no se verificó el pago a tiempo. Si transferiste, escribile al negocio: también puede reactivar tu reserva.`
+  return expiredCustomerText(data, BT_EXPIRED_MOTIVO, BT_EXPIRED_CONSEJO)
 }
 
-/** La expiración del camino de coordinación manual: acá la clienta no debía
- *  transferir nada — el negocio tenía que contactarla y no llegó a tiempo. El
- *  copy no puede echarle la culpa a ella ni hablar de transferencias. */
 export function manualHoldExpiredCustomerHtml(data: BankTransferVerifyCustomerEmailData): string {
-  return baseHtml(`
-    ${header('Tu reserva expiró')}
-    <p style="font-size:15px">Hola ${escapeHtml(data.customerName)}, tu reserva en ${escapeHtml(data.businessName)} expiró porque no se llegó a coordinar el abono a tiempo.</p>
-    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
-      <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
-      <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${fmtDate(data.startDateTime, data.businessTimezone)}</td></tr>
-    </table>
-    <p style="margin-top:16px;font-size:14px">Si ya coordinaste el pago o seguís interesada, escribile al negocio: puede reactivar tu reserva. Si no, podés reservar de nuevo cuando quieras.</p>
-    ${footer(data.businessName)}
-  `)
+  return expiredCustomerHtml(data, MANUAL_EXPIRED_MOTIVO, MANUAL_EXPIRED_CONSEJO)
 }
 
 export function manualHoldExpiredCustomerText(data: BankTransferVerifyCustomerEmailData): string {
-  return `Hola ${data.customerName}, tu reserva en ${data.businessName} (${data.serviceName}, ${fmtDate(data.startDateTime, data.businessTimezone)}) expiró porque no se llegó a coordinar el abono a tiempo. Si ya coordinaste el pago o seguís interesada, escribile al negocio: puede reactivar tu reserva.`
+  return expiredCustomerText(data, MANUAL_EXPIRED_MOTIVO, MANUAL_EXPIRED_CONSEJO)
 }
 
 export function newBookingBusinessText(data: NewBookingBusinessEmailData): string {

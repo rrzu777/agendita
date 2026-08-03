@@ -100,7 +100,9 @@ describe('expireStaleHolds', () => {
   // confirmó a tiempo. A ella hay que avisarle; el sweep de MP sigue mudo.
   it('avisa a la clienta de coordinación manual cuando su ventana expira', async () => {
     const db = makeDb({
-      findMany: [{ id: 'b1', businessId: 'biz-1' }],
+      // paymentMethod viaja en el select de candidatos: es lo que decide si
+      // la query de avisos manuales corre siquiera.
+      findMany: [{ id: 'b1', businessId: 'biz-1', paymentMethod: 'manual' }],
       updateMany: { count: 1 },
       manualFindMany: [{
         id: 'b1',

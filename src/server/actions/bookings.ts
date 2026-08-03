@@ -275,8 +275,23 @@ async function _createBooking(data: {
     }
   }
 
-  // Cuánto vive el hold de esta reserva. Se calcula acá arriba porque lo usan
-  // los dos caminos: la creación y el reintento que renueva el hold.
+  // Vía 3 de vinculación (leer sesión ANTES de la tx: toca Supabase/cookies).
+  // Remoto (getUser) porque el link exige el email_confirmed_at confiable.
+  //
+  // En paralelo va la disponibilidad de pago online, que sólo hace falta en la
+  // rama abono-sin-transferencia: en serie le sumaba un round-trip de DB al
+  // camino MP mayoritario sólo para confirmar el default de 15 minutos.
+  const [sessionUser, onlineAvailability] = await Promise.all([
+    getConfirmedSessionUser(),
+    depositRequired > 0 && !bankTransferAccount
+      ? resolveOnlinePaymentAvailabilityForBusiness(businessId)
+      : Promise.resolve(null),
+  ])
+
+  // Cuánto vive el hold y cómo queda marcada la reserva — UNA decisión de tres
+  // vías, para que el plazo y el marcador no puedan divergir. Se calcula acá
+  // arriba porque el hold lo usan los dos caminos: la creación y el reintento
+  // que lo renueva.
   //
   // Coordinación manual: con abono requerido pero sin checkout online NI
   // transferencia, la clienta no puede pagar dentro de la ventana del funnel —
@@ -285,22 +300,14 @@ async function _createBooking(data: {
   // checkout abierto. La decisión es del servidor (resolve...ForBusiness), no
   // del navegador: el mismo criterio que decide qué pantalla ve la clienta.
   let holdMinutes = DEFAULT_HOLD_MINUTES
-  let coordinacionManual = false
-  if (depositRequired > 0) {
-    if (bankTransferAccount) {
-      holdMinutes = bankTransferAccount.holdHours * 60
-    } else {
-      const online = await resolveOnlinePaymentAvailabilityForBusiness(businessId)
-      if (!online.available) {
-        coordinacionManual = true
-        holdMinutes = business.manualHoldHours * 60
-      }
-    }
+  let metodoDePago: string | null = null
+  if (bankTransferAccount && depositRequired > 0) {
+    holdMinutes = bankTransferAccount.holdHours * 60
+    metodoDePago = BANK_TRANSFER_METHOD
+  } else if (onlineAvailability && !onlineAvailability.available) {
+    holdMinutes = business.manualHoldHours * 60
+    metodoDePago = MANUAL_COORDINATION_METHOD
   }
-
-  // Vía 3 de vinculación (leer sesión ANTES de la tx: toca Supabase/cookies).
-  // Remoto (getUser) porque el link exige el email_confirmed_at confiable.
-  const sessionUser = await getConfirmedSessionUser()
 
   // Las dos puertas a "esta key ya se usó" —el fast path de acá abajo y el P2002
   // del catch— pasan por el mismo resume con este contexto.
@@ -406,10 +413,7 @@ async function _createBooking(data: {
           serviceAddress,
           meetingUrl,
           holdExpiresAt,
-          paymentMethod:
-            bankTransferAccount && depositRequired > 0 ? BANK_TRANSFER_METHOD
-            : coordinacionManual ? MANUAL_COORDINATION_METHOD
-            : null,
+          paymentMethod: metodoDePago,
           idempotencyKey: data.idempotencyKey || null,
           bookingNumber,
         },

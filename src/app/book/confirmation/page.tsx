@@ -12,6 +12,7 @@ import { formatMoney } from '@/lib/money'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD, BT_DECLARED_PREFIX } from '@/lib/bank-transfer/declared'
 import { MANUAL_COORDINATION_METHOD } from '@/lib/bookings/hold'
+import { getLocalDateStr } from '@/lib/availability/timezone'
 import { TransferPanel } from './transfer-panel'
 import { AccountCta } from '@/components/booking/account-cta'
 import { AddToCalendar } from '@/components/booking/add-to-calendar'
@@ -82,9 +83,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
     if (!booking.holdExpiresAt || booking.holdExpiresAt <= now) return null
     const tz = booking.business.timezone
     const { date, time } = formatConfirmationDateTime(booking.holdExpiresAt, tz)
-    const esHoy =
-      booking.holdExpiresAt.toLocaleDateString('es-CL', { timeZone: tz }) ===
-      now.toLocaleDateString('es-CL', { timeZone: tz })
+    const esHoy = getLocalDateStr(booking.holdExpiresAt, tz) === getLocalDateStr(now, tz)
     return esHoy ? `las ${time}` : `el ${date} a las ${time}`
   })()
 
@@ -189,7 +188,11 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
       iconColor: 'text-muted-foreground',
       iconBg: 'bg-muted',
       title: 'Tu reserva expiró',
-      message: 'No se completó el pago a tiempo y el horario se liberó. Podés reservar de nuevo.',
+      // Manual: acá nadie podía "completar" un pago — el negocio no confirmó
+      // el abono dentro de la ventana. Mismo motivo que el email del cron.
+      message: booking.paymentMethod === MANUAL_COORDINATION_METHOD
+        ? 'No se llegó a coordinar el abono a tiempo y el horario se liberó. Podés reservar de nuevo.'
+        : 'No se completó el pago a tiempo y el horario se liberó. Podés reservar de nuevo.',
     },
     cancelled: {
       icon: XCircle,

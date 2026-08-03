@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db'
-import { BookingStatus, type PrismaClient } from '@prisma/client'
+import { BookingStatus, type Prisma, type PrismaClient } from '@prisma/client'
 import { releaseRedemptionsOfExpiredBookings } from '@/lib/promotions/release'
 import { declaredTransferPaymentWhere, declaredPkgTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 import {
@@ -28,6 +28,55 @@ interface ExpireHoldsDeps {
 
 /** Motivo que ve la clienta cuando el negocio dejó vencer su solicitud. */
 const UNANSWERED_REASON = 'El negocio no alcanzó a confirmar la reserva a tiempo'
+
+/**
+ * Aviso best-effort a las clientas de un lote de reservas expiradas: carga las
+ * filas, resuelve un reply-to por negocio (cacheado entre lotes de la misma
+ * corrida) y dispara los mails en paralelo. Los dos mails de expiración
+ * (transferencia declarada y coordinación manual) comparten el payload, así
+ * que el armado vive una sola vez acá.
+ */
+async function notifyExpiredCustomers(
+  db: Pick<PrismaClient, 'booking'>,
+  args: {
+    where: Prisma.BookingWhereInput
+    label: string
+    send: typeof sendBankTransferExpiredToCustomer
+    replyToCache: Map<string, string | null>
+  },
+): Promise<void> {
+  const toNotify = await db.booking.findMany({
+    where: args.where,
+    include: { customer: true, service: true, business: true },
+  })
+  if (toNotify.length === 0) return
+
+  await Promise.all(
+    [...new Set(toNotify.map((b) => b.businessId))]
+      .filter((bizId) => !args.replyToCache.has(bizId))
+      .map(async (bizId) => {
+        args.replyToCache.set(bizId, await getBusinessReplyToEmail(bizId))
+      }),
+  )
+  await Promise.all(
+    toNotify
+      .filter((b) => b.customer?.email)
+      .map((b) =>
+        sendNotificationSafely(args.label, () =>
+          args.send({
+            businessName: b.business.name,
+            businessTimezone: b.business.timezone || 'America/Santiago',
+            businessReplyToEmail: args.replyToCache.get(b.businessId) ?? null,
+            customerName: b.customer!.name,
+            customerEmail: b.customer!.email!,
+            serviceName: b.service?.name ?? 'servicio',
+            startDateTime: b.startDateTime,
+            bookingNumber: b.bookingNumber,
+          }),
+        ),
+      ),
+  )
+}
 
 /**
  * Expira las solicitudes (`pending_confirmation`) que nadie respondió antes de
@@ -172,7 +221,9 @@ export async function expireStaleHolds(
       holdExpiresAt: { lt: now },
       paymentStatus: 'unpaid',
     },
-    select: { id: true, businessId: true },
+    // paymentMethod: para saltear la query de avisos manuales cuando ningún
+    // candidato es de coordinación manual (hoy, casi todas las corridas).
+    select: { id: true, businessId: true, paymentMethod: true },
   })
 
   if (expiredBookings.length === 0) {
@@ -226,78 +277,40 @@ export async function expireStaleHolds(
     return { count: res.count, declaredBookingIds }
   })
 
-  // Emails best-effort para las transferencias declaradas expiradas (post-tx).
-  // Un cron procesa lotes: resolvemos el reply-to una vez por negocio y mandamos
-  // los emails en paralelo (sendNotificationSafely traga sus propios errores).
+  // Emails best-effort post-tx, ambos por el mismo helper (un reply-to por
+  // negocio, compartido entre lotes; los envíos en paralelo y tragándose sus
+  // errores vía sendNotificationSafely):
+  //
+  // - Transferencias declaradas expiradas: la clienta dijo "ya transferí" y la
+  //   plata pudo haber salido — el mail le dice qué hacer.
+  // - Coordinación manual expirada: acá la clienta no abandonó un checkout — el
+  //   negocio no confirmó el abono dentro de la ventana. Sin el aviso se queda
+  //   esperando un contacto que ya no va a llegar. (El sweep de MP sigue
+  //   silencioso a propósito: esa clienta cerró el checkout sabiendo los 15
+  //   minutos.)
+  const replyToCache = new Map<string, string | null>()
   if (declaredBookingIds.length > 0) {
-    const toNotify = await prisma.booking.findMany({
+    await notifyExpiredCustomers(db, {
       where: { id: { in: declaredBookingIds } },
-      include: { customer: true, service: true, business: true },
+      label: 'bank transfer expired',
+      send: deps.sendExpiredEmail,
+      replyToCache,
     })
-    const replyToByBiz = new Map<string, string | null>()
-    await Promise.all(
-      [...new Set(toNotify.map((b) => b.businessId))].map(async (bizId) => {
-        replyToByBiz.set(bizId, await getBusinessReplyToEmail(bizId))
-      })
-    )
-    await Promise.all(
-      toNotify
-        .filter((b) => b.customer?.email)
-        .map((b) =>
-          sendNotificationSafely('bank transfer expired', () =>
-            deps.sendExpiredEmail({
-              businessName: b.business.name,
-              businessTimezone: b.business.timezone || 'America/Santiago',
-              businessReplyToEmail: replyToByBiz.get(b.businessId) ?? null,
-              customerName: b.customer!.name,
-              customerEmail: b.customer!.email!,
-              serviceName: b.service?.name ?? 'servicio',
-              startDateTime: b.startDateTime,
-              bookingNumber: b.bookingNumber,
-            })
-          )
-        )
-    )
   }
-
-  // Coordinación manual expirada: acá la clienta no abandonó un checkout — el
-  // negocio no confirmó el abono dentro de la ventana. Sin este aviso se queda
-  // esperando un contacto que ya no va a llegar, con la pantalla prometiendo
-  // "el negocio te va a contactar". (El sweep de MP sigue silencioso a
-  // propósito: esa clienta cerró el checkout sabiendo los 15 minutos.)
-  const manualExpired = await db.booking.findMany({
-    where: {
-      id: { in: expiredIds },
-      status: BookingStatus.expired,
-      paymentMethod: MANUAL_COORDINATION_METHOD,
-    },
-    include: { customer: true, service: true, business: true },
-  })
-  if (manualExpired.length > 0) {
-    const replyToByBiz = new Map<string, string | null>()
-    await Promise.all(
-      [...new Set(manualExpired.map((b) => b.businessId))].map(async (bizId) => {
-        replyToByBiz.set(bizId, await getBusinessReplyToEmail(bizId))
-      })
-    )
-    await Promise.all(
-      manualExpired
-        .filter((b) => b.customer?.email)
-        .map((b) =>
-          sendNotificationSafely('manual hold expired', () =>
-            deps.sendManualExpiredEmail({
-              businessName: b.business.name,
-              businessTimezone: b.business.timezone || 'America/Santiago',
-              businessReplyToEmail: replyToByBiz.get(b.businessId) ?? null,
-              customerName: b.customer!.name,
-              customerEmail: b.customer!.email!,
-              serviceName: b.service?.name ?? 'servicio',
-              startDateTime: b.startDateTime,
-              bookingNumber: b.bookingNumber,
-            })
-          )
-        )
-    )
+  // El if evita una query con tres joins por corrida cuando ningún candidato
+  // era de coordinación manual; el where de adentro re-verifica contra la fila
+  // real (status expired) para no avisarle a quien ganó la carrera del pago.
+  if (expiredBookings.some((b) => b.paymentMethod === MANUAL_COORDINATION_METHOD)) {
+    await notifyExpiredCustomers(db, {
+      where: {
+        id: { in: expiredIds },
+        status: BookingStatus.expired,
+        paymentMethod: MANUAL_COORDINATION_METHOD,
+      },
+      label: 'manual hold expired',
+      send: deps.sendManualExpiredEmail,
+      replyToCache,
+    })
   }
 
   // Solo revalidar los negocios cuyas reservas REALMENTE se actualizaron.

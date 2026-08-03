@@ -6,6 +6,9 @@ import { ServiceModality } from '@prisma/client'
 import {
   bookingConfirmationCustomerHtml,
   bookingConfirmationCustomerText,
+  bookingReceivedCustomerText,
+  manualHoldExpiredCustomerText,
+  bankTransferExpiredCustomerText,
   newBookingBusinessHtml,
   newBookingBusinessText,
   bookingCancelledCustomerHtml,
@@ -212,6 +215,45 @@ describe('templates: newBookingBusinessText', () => {
     expect(text).toContain('Maria')
     expect(text).toContain('Manicure semipermanente')
     expect(text).toContain('dashboard/bookings')
+  })
+})
+
+// Coordinación manual: el mail de "recibida" no puede insinuar que la clienta
+// debe pagar algo que no tiene cómo pagar, y el de expiración no puede
+// echarle la culpa (el que no llegó a tiempo fue el negocio).
+describe('templates: coordinación manual', () => {
+  it('la recibida dice que el negocio coordina y hasta cuándo se guarda el horario', () => {
+    const text = bookingReceivedCustomerText({
+      ...sampleBookingData,
+      manualCoordination: { deadline: new Date('2026-06-14T18:00:00Z') },
+    })
+    expect(text).toContain('coordina el abono directamente contigo')
+    expect(text).toContain('Te guardamos el horario hasta el')
+    expect(text).not.toContain('Está pendiente de pago')
+    expect(text).not.toContain('Recibirás una confirmación cuando el pago sea registrado')
+  })
+
+  it('sin coordinación manual la recibida sigue pidiendo el pago', () => {
+    const text = bookingReceivedCustomerText(sampleBookingData)
+    expect(text).toContain('Está pendiente de pago')
+  })
+
+  it('la expiración manual no habla de transferencias ni culpa a la clienta', () => {
+    const data = {
+      businessName: 'Nails by Ana',
+      businessTimezone: 'America/Santiago',
+      businessReplyToEmail: null,
+      customerName: 'Maria',
+      customerEmail: 'maria@example.com',
+      serviceName: 'Manicure',
+      startDateTime: new Date('2026-06-15T18:00:00Z'),
+      bookingNumber: 4738,
+    }
+    const manual = manualHoldExpiredCustomerText(data)
+    expect(manual).toContain('no se llegó a coordinar el abono a tiempo')
+    expect(manual).not.toContain('transferiste')
+    // La de transferencia conserva su copy propio.
+    expect(bankTransferExpiredCustomerText(data)).toContain('Si transferiste')
   })
 })
 

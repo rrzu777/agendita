@@ -16,6 +16,8 @@ import { BookingStatus } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
+import { MANUAL_COORDINATION_METHOD } from '@/lib/bookings/hold'
+import { fmtDate } from '@/lib/notifications/templates'
 import { bookingInvite } from '@/lib/calendar/booking-invite'
 import { type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import type { BookingEmailData } from '@/lib/notifications/types'
@@ -88,6 +90,14 @@ export async function fireBookingNotifications(
     }
   }
 
+  // Coordinación manual: el mismo email es la fuente durable de la promesa
+  // ("el negocio te contacta") y del plazo — sin esto le insinuaba a la
+  // clienta que ELLA debía pagar algo que no tiene cómo pagar.
+  const manualCoordination =
+    booking.paymentMethod === MANUAL_COORDINATION_METHOD
+      ? { deadline: booking.holdExpiresAt }
+      : undefined
+
   const domain = process.env.NEXT_PUBLIC_APP_DOMAIN || process.env.APP_DOMAIN || 'localhost:3000'
   const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '')
   const protocol = cleanDomain.startsWith('localhost') || cleanDomain.endsWith('.localhost') || cleanDomain.startsWith('127.0.0.1') ? 'http' : 'https'
@@ -128,6 +138,7 @@ export async function fireBookingNotifications(
           depositPaid: booking.depositPaid,
           remainingBalance: booking.remainingBalance,
           bankTransfer,
+          manualCoordination,
           awaitingApproval,
         }),
       ),
@@ -157,9 +168,14 @@ export async function fireBookingNotifications(
         remainingBalance: booking.remainingBalance,
         dashboardLink,
         awaitingApproval,
+        // La reserva manual necesita que la dueña ACTÚE dentro de la ventana:
+        // sin esta línea el aviso era idéntico al de un checkout MP que se
+        // expira solo, y nadie le pedía que confirmara nada.
         paymentNote: booking.paymentMethod === BANK_TRANSFER_METHOD
           ? `${vocabulary.TheClient} eligió pagar el abono por transferencia. Te va a llegar otro aviso cuando declare que transfirió.`
-          : undefined,
+          : booking.paymentMethod === MANUAL_COORDINATION_METHOD
+            ? `No tenés pago online configurado, así que el abono lo coordinás directamente con ${vocabulary.theClient}. Confirmá la reserva antes de que venza${booking.holdExpiresAt ? ` (el horario queda guardado hasta el ${fmtDate(booking.holdExpiresAt, businessTimezone)})` : ''}, o expira sola.`
+            : undefined,
       }),
     ),
   )

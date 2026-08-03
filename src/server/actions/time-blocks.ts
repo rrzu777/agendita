@@ -19,6 +19,7 @@ import { planSeriesUpdate } from '@/lib/calendar/series-update-plan'
 import { timeToMinutes } from '@/lib/availability/time-range'
 import { OCCUPYING_STATUSES } from '@/lib/bookings/approval'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
+import { MANUAL_COORDINATION_METHOD } from '@/lib/bookings/hold'
 import { formatInTimeZone } from 'date-fns-tz'
 
 const MAX_BLOCK_DURATION_MS = 32 * 24 * 60 * 60 * 1000 // 32 dias
@@ -61,7 +62,10 @@ function overlappingActiveBookingsWhere(
         OR: [
           ...holdAliveOr,
           { paymentStatus: { not: BookingPaymentStatus.unpaid } },
-          { paymentMethod: BANK_TRANSFER_METHOD },
+          // Transferencia y coordinación manual siguen bloqueando con el hold
+          // muerto: su email de expiración promete que el negocio puede
+          // reactivarlas, y un bloqueo encima haría chocar ese revive.
+          { paymentMethod: { in: [BANK_TRANSFER_METHOD, MANUAL_COORDINATION_METHOD] } },
         ],
       },
     ],
