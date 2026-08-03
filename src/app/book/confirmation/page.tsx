@@ -69,13 +69,19 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
 
   const state = deriveConfirmationState(booking)
 
+  const holdVivo = booking.holdExpiresAt != null && booking.holdExpiresAt > new Date()
+
   // Superficie activa: la clienta que eligió transferencia y cerró la pestaña
   // del wizard puede ver los datos y declarar desde acá (mientras el hold viva).
-  const canDeclare =
-    booking.paymentMethod === BANK_TRANSFER_METHOD &&
-    state === 'pending' &&
-    booking.holdExpiresAt != null &&
-    booking.holdExpiresAt > new Date()
+  const canDeclare = booking.paymentMethod === BANK_TRANSFER_METHOD && state === 'pending' && holdVivo
+
+  // Hasta qué hora le guardamos el horario, para decírselo en vez de que lo
+  // descubra cuando expire. Sólo con el hold vivo: vencido, `state` ya salió
+  // 'expired' de deriveConfirmationState y estos mensajes no se muestran.
+  const holdDeadline =
+    holdVivo && booking.holdExpiresAt
+      ? formatConfirmationDateTime(booking.holdExpiresAt, booking.business.timezone).time
+      : null
   const balance = deriveBalanceState(booking)
   // La clienta ya adjuntó el comprobante del ABONO (proofKey en R2): cerramos el
   // loop en la pantalla de verificación para que no vuelva a subirlo ni dude.
@@ -135,7 +141,9 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
       iconColor: 'text-destructive',
       iconBg: 'bg-destructive/10',
       title: 'Pago no aprobado',
-      message: 'El pago no pudo ser procesado. Tu reserva quedó pendiente.',
+      message: holdDeadline
+        ? `El pago no pudo ser procesado. Tu horario sigue guardado hasta las ${holdDeadline}: podés intentar de nuevo.`
+        : 'El pago no pudo ser procesado. Tu reserva quedó pendiente.',
     },
     pending: {
       icon: Clock,
@@ -144,7 +152,9 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
       title: 'Reserva pendiente de pago',
       message: booking.paymentMethod === BANK_TRANSFER_METHOD
         ? 'Transferí el abono y avisanos con el botón de abajo para confirmar tu reserva.'
-        : 'Completa el pago del abono para confirmar tu reserva.',
+        : holdDeadline
+          ? `Completá el pago del abono para confirmar tu reserva. Tu horario queda guardado hasta las ${holdDeadline}; después se libera.`
+          : 'Completa el pago del abono para confirmar tu reserva.',
     },
     // La plata entró pero la reserva no quedó en pie (ver `paid_unconfirmed`): esta
     // pantalla es la URL de retorno de Mercado Pago, así que es lo primero que ve la

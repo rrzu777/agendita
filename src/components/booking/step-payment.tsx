@@ -11,6 +11,7 @@ import { usePackageAvailability } from '@/lib/packages/use-package-availability'
 import { initiatePayment, verifyAndConfirmPayment, getOnlinePaymentAvailability } from '@/server/actions/payments'
 import { getBankTransferInfo, declareBankTransfer } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
+import { DEFAULT_HOLD_MINUTES } from '@/lib/bookings/hold'
 import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { TransferDetails } from './transfer-details'
 import { formatMoney } from '@/lib/money'
@@ -766,6 +767,14 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
           <LegalAcceptanceLabel />
         </label>
       </div>
+
+      {/* Sólo el camino online: la transferencia tiene su ventana larga y la
+          muestra con hora exacta en la pantalla siguiente (TransferDetails). */}
+      {!(bankInfo && method === 'transfer') && (
+        <p className="mb-4 text-sm text-muted-foreground">
+          Al pagar, tu horario queda guardado por {DEFAULT_HOLD_MINUTES} minutos. Si el pago no se completa en ese tiempo, se libera.
+        </p>
+      )}
 
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
