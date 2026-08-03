@@ -106,6 +106,24 @@ describe('cancelMyBooking', () => {
     expect(mockRevalidateBusinessPublicPaths).toHaveBeenCalledWith('b1')
   })
 
+  // El include se asserta directo: con Prisma mockeado, mirar el aviso de
+  // salida no prueba que la consulta haya pedido la relación.
+  it('el aviso a la dueña dice a quién se le libera la hora', async () => {
+    mockFindFirstBooking.mockResolvedValue(makeBooking({ professional: { name: 'Juan Pérez' } }))
+    const { cancelMyBooking } = await import('@/server/actions/my-bookings')
+
+    await cancelMyBooking('bk-1')
+
+    expect(mockFindFirstBooking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({ professional: { select: { name: true } } }),
+      }),
+    )
+    expect(mockSendOwnerBookingChangedNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ professionalName: 'Juan Pérez' }),
+    )
+  })
+
   it('ownership ajeno: findFirst no encuentra reserva de otro usuario', async () => {
     mockFindFirstBooking.mockResolvedValue(null)
     const { cancelMyBooking } = await import('@/server/actions/my-bookings')

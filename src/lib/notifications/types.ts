@@ -21,6 +21,9 @@ export interface BookingEmailData {
   customerEmail?: string | null
   customerPhone: string
   serviceName: string
+  /** Quién atiende la cita. Ausente/null = reserva sin persona asignada
+   *  (negocio sin equipo, o anterior al track 5): la fila no se muestra. */
+  professionalName?: string | null
   startDateTime: Date
   totalPrice: number
   discountAmount?: number
@@ -127,6 +130,9 @@ export interface RescheduledEmailData {
   customerEmail?: string | null
   customerPhone: string
   serviceName: string
+  /** Quién atiende la cita (reprogramar la conserva). Ausente/null = sin
+   *  persona asignada: la fila no se muestra. */
+  professionalName?: string | null
   previousStartDateTime: Date
   newStartDateTime: Date
 }
@@ -155,6 +161,9 @@ export interface NewBookingBusinessEmailData {
   customerPhone: string
   customerEmail?: string | null
   serviceName: string
+  /** Quién la atiende: con equipo, es lo primero que la dueña necesita saber
+   *  para repartir el día. Ausente/null = sin persona, la fila no se muestra. */
+  professionalName?: string | null
   startDateTime: Date
   businessTimezone: string
   businessCurrency: string
@@ -252,6 +261,9 @@ export interface OwnerBookingChangedData {
   businessTimezone: string
   customerName: string
   serviceName: string
+  /** Quién atendía la cita: dice a quién se le libera (o se le mueve) la hora.
+   *  Ausente/null = sin persona asignada, la fila no se muestra. */
+  professionalName?: string | null
   bookingNumber: number | null
   change:
     | { kind: 'cancelled' }
@@ -381,6 +393,9 @@ export interface ReminderEmailData {
   customerName: string
   customerEmail: string
   serviceName: string
+  /** Quién atiende la cita. Ausente/null = sin persona asignada: la línea no
+   *  se muestra. */
+  professionalName?: string | null
   startDateTime: Date
   businessTimezone: string
   businessWhatsapp?: string | null

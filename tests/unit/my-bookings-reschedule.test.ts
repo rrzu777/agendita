@@ -116,6 +116,28 @@ describe('rescheduleMyBooking', () => {
     expect(mockRevalidateBusinessPublicPaths).toHaveBeenCalledWith('b1')
   })
 
+  // El include se asserta directo: con Prisma mockeado, mirar los avisos no
+  // prueba que la consulta haya pedido la relación. Reprogramar conserva a la
+  // persona: el nombre leído antes de la tx es el que atiende.
+  it('la persona viaja en el aviso a la dueña y en el email a la clienta', async () => {
+    mockFindFirstBooking.mockResolvedValue(makeBooking({ professional: { name: 'Juan Pérez' } }))
+    const { rescheduleMyBooking } = await import('@/server/actions/my-bookings')
+
+    await rescheduleMyBooking('bk-1', new Date(NOW.getTime() + 72 * 3_600_000))
+
+    expect(mockFindFirstBooking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({ professional: { select: { name: true } } }),
+      }),
+    )
+    expect(mockSendOwnerBookingChangedNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ professionalName: 'Juan Pérez' }),
+    )
+    expect(mockSendBookingRescheduledNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ professionalName: 'Juan Pérez' }),
+    )
+  })
+
   it('ventana sobre horario ACTUAL: rechaza aunque el nuevo slot esté lejos', async () => {
     const booking = makeBooking({ startDateTime: new Date(NOW.getTime() + 2 * 3_600_000) })
     mockFindFirstBooking.mockResolvedValue(booking)

@@ -191,6 +191,37 @@ describe('sendBookingConfirmedNotification', () => {
     expect(call.html).toContain('/api/bookings/booking-1/calendar')
   })
 
+  // El include se asserta directo: con Prisma mockeado, verificar el email de
+  // salida no prueba nada sobre la consulta (el mock devuelve la relación
+  // aunque nadie la haya pedido).
+  it('pide a la persona en la consulta, y su nombre entra al email y al .ics', async () => {
+    mockResendSend.mockResolvedValue({ data: { id: 'msg_prof' }, error: null })
+    const { prisma } = await import('@/lib/db')
+    const findFirst = prisma.booking.findFirst as ReturnType<typeof vi.fn>
+    const base = await (findFirst as unknown as () => Promise<Record<string, unknown>>)()
+    findFirst.mockResolvedValueOnce({ ...base, professional: { name: 'Juan Pérez' } })
+
+    await sendBookingConfirmedNotification('booking-1', 'biz-1')
+
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({ professional: { select: { name: true } } }),
+      }),
+    )
+    const call = mockResendSend.mock.calls[0][0]
+    expect(call.html).toContain('Te atiende')
+    expect(call.html).toContain('Juan Pérez')
+    expect(call.attachments[0].content.toString('utf8')).toContain('Te atiende: Juan Pérez')
+  })
+
+  it('sin persona asignada el email no dice "Te atiende"', async () => {
+    mockResendSend.mockResolvedValue({ data: { id: 'msg_sin' }, error: null })
+
+    await sendBookingConfirmedNotification('booking-1', 'biz-1')
+
+    expect(mockResendSend.mock.calls[0][0].html).not.toContain('Te atiende')
+  })
+
   it('returns graceful result when booking is not found', async () => {
     const { prisma } = await import('@/lib/db')
     ;(prisma.booking.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null)
@@ -223,6 +254,26 @@ describe('sendBookingReminderNotification', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockResendSend.mockReset()
+  })
+
+  // Mismo criterio que en la confirmación: el include se asserta directo.
+  it('pide a la persona en la consulta y el recordatorio dice quién atiende', async () => {
+    mockResendSend.mockResolvedValue({ data: { id: 'msg_reminder_prof' }, error: null })
+    const { prisma } = await import('@/lib/db')
+    const findFirst = prisma.booking.findFirst as ReturnType<typeof vi.fn>
+    const base = await (findFirst as unknown as () => Promise<Record<string, unknown>>)()
+    findFirst.mockResolvedValueOnce({ ...base, professional: { name: 'Juan Pérez' } })
+
+    await sendBookingReminderNotification('booking-1', 'biz-1')
+
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({ professional: { select: { name: true } } }),
+      }),
+    )
+    const call = mockResendSend.mock.calls[0][0]
+    expect(call.html).toContain('Te atiende')
+    expect(call.html).toContain('Juan Pérez')
   })
 
   it('calls Resend with reminder template', async () => {

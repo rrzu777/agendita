@@ -18,6 +18,7 @@ const reserva = {
   serviceAddress: null,
   meetingUrl: null,
   service: { name: 'Corte de pelo' },
+  professional: null,
   business: { name: 'Barbería Carlos', slug: 'barberia-carlos', subdomain: null, addressText: 'Santa Isabel 0120' },
 }
 
@@ -34,6 +35,23 @@ describe('loadBookingInvite', () => {
     expect(encontrada?.invite?.filename).toBe('reserva-4738.ics')
     expect(encontrada?.invite?.ics).toContain('BEGIN:VEVENT')
     expect(encontrada?.invite?.url).toBe('http://localhost:3000/api/bookings/clbooking123/calendar')
+  })
+
+  // El select se asserta directo: con Prisma mockeado, mirar el `.ics` de
+  // salida no prueba que la consulta haya pedido la relación — y sin ella el
+  // adjunto de una reprogramación y el archivo de la ruta perderían el "Te
+  // atiende" en silencio.
+  it('pide a la persona en el select y la descripción dice quién atiende', async () => {
+    findUnique.mockResolvedValue({ ...reserva, professional: { name: 'Juan Pérez' } })
+
+    const encontrada = await loadBookingInvite('clbooking123')
+
+    expect(findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ professional: { select: { name: true } } }),
+      }),
+    )
+    expect(encontrada?.invite?.ics).toContain('Te atiende: Juan Pérez')
   })
 
   it('no existe la reserva: null', async () => {

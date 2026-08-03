@@ -428,6 +428,7 @@ async function _createBooking(data: {
     const bookingForNotification = booking as Booking & {
       service: { name: string }
       customer: { name: string; phone: string; email: string | null }
+      professional: { name: string } | null
     }
 
     await fireBookingNotifications(business, bookingForNotification, service.name, bankTransferAccount)
@@ -1086,7 +1087,7 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
 
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, businessId },
-    include: { service: true, customer: true },
+    include: { service: true, customer: true, professional: { select: { name: true } } },
   })
 
   if (!booking) {
@@ -1131,6 +1132,9 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
         customerEmail: booking.customer!.email,
         customerPhone: booking.customer!.phone,
         serviceName: service.name,
+        // Reprogramar conserva la persona, así que el nombre leído antes de la
+        // tx sigue siendo el que atiende.
+        professionalName: booking.professional?.name,
         previousStartDateTime,
         newStartDateTime,
       }),
