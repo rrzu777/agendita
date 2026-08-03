@@ -13,12 +13,31 @@ import { prisma } from '@/lib/db'
 import { getBookingCalendarUrl, getBookingConfirmationUrl } from '@/lib/business/urls'
 import {
   buildBookingCalendarEvent,
+  buildBookingCancelledEvent,
   bookingIcsFilename,
   deservesCalendarEvent,
   type BookingCalendarEvent,
   type BookingEventSource,
 } from './booking-event'
 import { buildIcs } from './ics'
+
+/** Los campos de `BookingEventSource`, en forma de select de Prisma: lo
+ *  comparten las dos cargas de este módulo para que ninguna se quede corta. */
+const EVENT_SOURCE_SELECT = {
+  id: true,
+  bookingNumber: true,
+  status: true,
+  startDateTime: true,
+  endDateTime: true,
+  createdAt: true,
+  updatedAt: true,
+  modality: true,
+  serviceAddress: true,
+  meetingUrl: true,
+  service: { select: { name: true } },
+  professional: { select: { name: true } },
+  business: { select: { name: true, slug: true, subdomain: true, addressText: true } },
+} as const
 
 export interface BookingCalendarInvite {
   event: BookingCalendarEvent
@@ -60,26 +79,44 @@ export interface BookingInviteLookup {
 export async function loadBookingInvite(bookingId: string): Promise<BookingInviteLookup | null> {
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
-    select: {
-      id: true,
-      bookingNumber: true,
-      status: true,
-      startDateTime: true,
-      endDateTime: true,
-      createdAt: true,
-      updatedAt: true,
-      modality: true,
-      serviceAddress: true,
-      meetingUrl: true,
-      service: { select: { name: true } },
-      professional: { select: { name: true } },
-      business: { select: { name: true, slug: true, subdomain: true, addressText: true } },
-    },
+    select: EVENT_SOURCE_SELECT,
   })
 
   if (!booking) return null
   return {
     invite: bookingInvite(booking),
     confirmationUrl: getBookingConfirmationUrl(booking.business, booking.id),
+  }
+}
+
+/** El adjunto que marca el evento como cancelado. Sin `url`: no hay botón de
+ *  "agregar" para una cita que se cayó, sólo el archivo en el mail. */
+export type BookingCancelNotice = Pick<BookingCalendarInvite, 'filename' | 'ics'>
+
+/**
+ * El aviso de cancelación para el calendario de la clienta, o `null` si no hay
+ * nada que borrar.
+ *
+ * El gate va por el status PREVIO al cambio, que sólo lo conoce el caller (acá
+ * la fila ya dice `cancelled`): si la reserva nunca estuvo confirmada, nunca se
+ * le mandó un `.ics`, y adjuntarle una cancelación a quien no tiene el evento
+ * es ruido. Lee la fila fresca a propósito — la cancelación acaba de mover
+ * `updatedAt`, y de ahí sale el SEQUENCE que pisa a la versión vigente.
+ */
+export async function loadBookingCancelNotice(
+  bookingId: string,
+  previousStatus: BookingStatus,
+): Promise<BookingCancelNotice | null> {
+  if (!deservesCalendarEvent(previousStatus)) return null
+
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    select: EVENT_SOURCE_SELECT,
+  })
+  if (!booking) return null
+
+  return {
+    filename: bookingIcsFilename(booking),
+    ics: buildIcs(buildBookingCancelledEvent(booking)),
   }
 }

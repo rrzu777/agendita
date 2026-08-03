@@ -87,6 +87,9 @@ async function expireUnansweredRequests(
             startDateTime: b.startDateTime,
             businessTimezone: b.business.timezone || 'America/Santiago',
             reason: UNANSWERED_REASON,
+            // Una solicitud nunca estuvo confirmada: no se le mandó `.ics`,
+            // no hay evento que borrar.
+            calendar: null,
           }),
         ),
       ),

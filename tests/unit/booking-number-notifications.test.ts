@@ -47,6 +47,7 @@ const businessBase = {
 }
 
 const reminderBase = {
+  calendar: null,
   businessName: 'Biz', businessCategory: 'nails' as const,
   customerName: 'Ana',
   customerEmail: 'ana@test.com',

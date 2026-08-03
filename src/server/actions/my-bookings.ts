@@ -19,7 +19,7 @@ import {
 } from '@/lib/notifications'
 import { revalidateBusinessPublicPaths } from '@/server/actions/revalidate-business'
 import { action, UserError } from '@/lib/actions/result'
-import { loadBookingInvite } from '@/lib/calendar/booking-invite'
+import { loadBookingInvite, loadBookingCancelNotice } from '@/lib/calendar/booking-invite'
 
 async function _cancelMyBooking(bookingId: string) {
   const user = await requireUser()
@@ -70,17 +70,23 @@ async function _cancelMyBooking(bookingId: string) {
   )
 
   if (booking.customer.email) {
-    await sendNotificationSafely('self-service cancel (customer)', async () =>
-      sendBookingCancelledNotification({
+    await sendNotificationSafely('self-service cancel (customer)', async () => {
+      // Las dos lecturas en paralelo; el `calendar` sale del status PREVIO.
+      const [businessReplyToEmail, calendar] = await Promise.all([
+        getBusinessReplyToEmail(booking.business.id),
+        loadBookingCancelNotice(bookingId, booking.status),
+      ])
+      return sendBookingCancelledNotification({
         businessName: booking.business.name,
-        businessReplyToEmail: await getBusinessReplyToEmail(booking.business.id),
+        businessReplyToEmail,
         customerName: booking.customer.name,
         customerEmail: booking.customer.email!,
         serviceName: booking.service.name,
         startDateTime: booking.startDateTime,
         businessTimezone: booking.business.timezone || 'America/Santiago',
-      }),
-    )
+        calendar,
+      })
+    })
   }
 
   revalidatePath('/dashboard/bookings')

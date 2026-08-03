@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
-  mockRequireUser, mockCheckRateLimit, mockFindFirstBooking, mockTx,
+  mockRequireUser, mockCheckRateLimit, mockFindFirstBooking, mockFindUniqueBooking, mockTx,
   mockCancelBookingInTx, mockSendNotificationSafely, mockSendMultiNotificationSafely,
   mockSendBookingCancelledNotification, mockSendOwnerBookingChangedNotification,
   mockGetBusinessReplyToEmail, mockRevalidatePath, mockRevalidateBusinessPublicPaths,
@@ -9,6 +9,7 @@ const {
   mockRequireUser: vi.fn(),
   mockCheckRateLimit: vi.fn(),
   mockFindFirstBooking: vi.fn(),
+  mockFindUniqueBooking: vi.fn(),
   mockTx: vi.fn(),
   mockCancelBookingInTx: vi.fn(),
   mockSendNotificationSafely: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
@@ -26,7 +27,9 @@ vi.mock('@/lib/auth/server', async (importOriginal) => {
 })
 vi.mock('@/lib/db', () => ({
   prisma: {
-    booking: { findFirst: mockFindFirstBooking },
+    // findUnique: la relee loadBookingCancelNotice para armar el .ics de
+    // cancelación; null = reserva sin evento que borrar (camino simple).
+    booking: { findFirst: mockFindFirstBooking, findUnique: mockFindUniqueBooking },
     $transaction: mockTx,
   },
 }))
@@ -70,6 +73,7 @@ describe('cancelMyBooking', () => {
     vi.setSystemTime(new Date('2026-07-11T12:00:00Z'))
     mockRequireUser.mockResolvedValue({ id: 'u1' })
     mockCheckRateLimit.mockResolvedValue({ success: true })
+    mockFindUniqueBooking.mockResolvedValue(null)
     mockTx.mockImplementation(async (fn: (tx: unknown) => Promise<void>) => fn({}))
     mockGetBusinessReplyToEmail.mockResolvedValue(null)
     mockSendBookingCancelledNotification.mockResolvedValue({ success: true })

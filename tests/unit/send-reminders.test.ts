@@ -31,10 +31,20 @@ function makeBooking(overrides: Record<string, unknown> = {}) {
   return {
     id: 'b1',
     businessId: 'biz-1',
+    bookingNumber: 4738,
     totalPrice: 10000,
     remainingBalance: 5000,
     depositPaid: 5000,
     startDateTime: new Date('2026-05-21T14:00:00Z'),
+    // Los campos del evento de calendario: el cron arma el `.ics` con la fila
+    // que ya trajo (bookingInvite), sin volver a la base.
+    endDateTime: new Date('2026-05-21T15:00:00Z'),
+    createdAt: new Date('2026-05-01T10:00:00Z'),
+    updatedAt: new Date('2026-05-01T10:00:00Z'),
+    modality: 'on_site',
+    serviceAddress: null,
+    meetingUrl: null,
+    professional: null,
     status: BookingStatus.confirmed,
     service: { name: 'Manicure' },
     customer: { name: 'Ana', phone: '+56912345678', email: 'ana@test.com' },
@@ -74,6 +84,21 @@ describe('sendReminders', () => {
       where: { id: 'b1', reminderSentAt: null },
       data: { reminderSentAt: expect.any(Date) },
     })
+  })
+
+  // El recordatorio es la segunda chance de agendar la cita: lleva el MISMO
+  // evento que el mail de confirmación (UID estable), así quien ya lo agregó
+  // no lo duplica y quien no, lo agrega desde acá.
+  it('adjunta el .ics de la cita con el mismo UID que la confirmación', async () => {
+    mockPrisma.booking.findMany.mockResolvedValue([makeBooking()])
+
+    await sendReminders(new Date('2026-05-20T12:00:00Z'))
+
+    const data = mockSendReminderEmail.mock.calls[0][0]
+    expect(data.calendar).not.toBeNull()
+    expect(data.calendar.filename).toBe('reserva-4738.ics')
+    expect(data.calendar.ics).toContain('UID:b1@agendita.cl')
+    expect(data.calendar.ics).toContain('STATUS:CONFIRMED')
   })
 
   // El include se asserta directo: con Prisma mockeado, mirar el email de

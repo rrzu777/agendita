@@ -1,5 +1,5 @@
 import type { BusinessCategory, ServiceModality } from '@prisma/client'
-import type { BookingCalendarInvite } from '@/lib/calendar/booking-invite'
+import type { BookingCalendarInvite, BookingCancelNotice } from '@/lib/calendar/booking-invite'
 import type { BookingWhere } from '@/lib/services/modality'
 
 export interface EmailResult {
@@ -117,6 +117,12 @@ export interface CancellationEmailData {
    *  solicitud o al cancelar; el sweep de solicitudes sin responder manda el
    *  suyo. Sin motivo el email queda igual que siempre. */
   reason?: string | null
+  /** El `.ics` que marca el evento como cancelado en el calendario de la
+   *  clienta (`loadBookingCancelNotice`). REQUERIDO a propósito — mismo
+   *  argumento que `professionalName`: opcional, el próximo emisor lo olvida
+   *  sin error de compilación y a la clienta le queda la cita viva en el
+   *  teléfono. `null` = nunca recibió el evento, nada que borrar. */
+  calendar: BookingCancelNotice | null
 }
 
 /** El "dónde" viene de `BookingWhere` (modalidad OBLIGATORIA): este mail llama
@@ -394,6 +400,11 @@ export interface NotificationResult {
 
 export interface ReminderEmailData {
   businessName: string
+  /** El mismo `.ics` del mail de confirmación (`bookingInvite`): el recordatorio
+   *  es la segunda chance de agendarla para quien no tocó el primero, y con el
+   *  UID estable quien ya la tiene no la duplica. REQUERIDO a propósito, ver
+   *  `CancellationEmailData.calendar`. */
+  calendar: BookingCalendarInvite | null
   bookingNumber?: number | null
   businessReplyToEmail?: string | null
   customerName: string
