@@ -29,9 +29,10 @@ const MAX_BLOCK_DURATION_MS = 32 * 24 * 60 * 60 * 1000 // 32 dias
  * Filtro de reservas activas que solapan [start, end]. Es `occupiesSlot`
  * (lib/bookings/approval.ts) escrito como where de Prisma — un where no puede
  * llamar a una función, así que la regla vive dos veces y ese módulo es la fuente:
- * un hold vencido libera el cupo, salvo los que ningún sweep va a barrer (con
- * plata encima o con transferencia bancaria de por medio), que siguen tapando
- * porque para el EXCLUDE `Booking_no_overlap` siguen ocupando el horario.
+ * un hold DE PAGO vencido libera el cupo, salvo los que ningún sweep va a barrer
+ * (con plata encima o con transferencia bancaria de por medio), que siguen tapando
+ * porque para el EXCLUDE `Booking_no_overlap` siguen ocupando el horario. Los
+ * demás estados activos tapan siempre y salen de `OCCUPYING_STATUSES`.
  *
  * `professionalId` es de QUIÉN es el bloqueo que se está creando, no de la reserva:
  * un bloqueo del salón choca contra todas las citas, y el de una persona sólo contra
@@ -55,13 +56,7 @@ function overlappingActiveBookingsWhere(
     startDateTime: { lt: end },
     endDateTime: { gt: start },
     OR: [
-      // `pending_confirmation` va acá y no con los holds: desde la migración
-      // `booking_overlap_solicitudes` una solicitud tapa el horario con el hold
-      // vivo o muerto, hasta que el cron la expire. Esta lista y `occupiesSlot`
-      // son las dos mitades de la misma decisión y tienen que decir lo mismo — si
-      // divergen, se puede crear un bloqueo encima de una hora que la agenda
-      // considera tomada, y una aprobación posterior mete la cita bajo el bloqueo.
-      { status: { in: [...OCCUPYING_STATUSES, BookingStatus.pending_confirmation] } },
+      { status: { in: [...OCCUPYING_STATUSES] } },
       {
         status: BookingStatus.pending_payment,
         OR: [

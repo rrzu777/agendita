@@ -6,7 +6,7 @@
 --
 -- A diferencia de `booking_overlap_por_persona`, que sólo RELAJABA y sobre los datos
 -- existentes era un no-op exacto, este cambio APRIETA: agrega un status al WHERE, así
--- que puede fallar sobre filas que ya existen. De ahí el guard de más abajo.
+-- que puede fallar sobre filas que ya existen. De ahí el mensaje traducido de abajo.
 --
 -- **Va pegado a un cambio de comportamiento en la app** (`occupiesSlot`, en
 -- src/lib/bookings/approval.ts): hasta hoy una solicitud con el hold vencido liberaba
@@ -19,50 +19,36 @@
 -- archivo es la única definición, y su única red es
 -- tests/integration/booking-overlap-constraint.test.ts.
 
--- Guard. Si hay solicitudes vencidas solapando una reserva activa, el ADD CONSTRAINT
--- de abajo falla con un mensaje de Postgres que no dice qué hacer ni con cuál fila.
--- Preferimos frenar acá y decirlo.
+ALTER TABLE "Booking" DROP CONSTRAINT IF EXISTS "Booking_no_overlap";
+
+-- El ADD va envuelto para poder traducir el error, NO para pre-chequear. Un
+-- pre-chequeo con su propio self-join tendría que repetir el predicado de acá abajo
+-- —COALESCE, tsrange y la lista de estados— y dos copias que se pueden separar en
+-- silencio es exactamente el modo de falla que ya nos pasó con este constraint: si
+-- divergen, el guard dice "cero conflictos" y el ALTER revienta igual. Dejamos que
+-- Postgres evalúe el predicado UNA vez y sólo le ponemos un mensaje útil encima.
 --
--- No las expiramos desde el SQL a propósito: expirar una reserva también libera sus
+-- Por qué no reparamos los datos desde el SQL: expirar una reserva también libera sus
 -- canjes de promoción (`releaseRedemptionsOfExpiredBookings`), y esa lógica —grants,
 -- forfeitOnNoShow, contadores de la promo— vive en TypeScript. Media expiración hecha
 -- a mano en SQL deja una promo contada de más y nadie se entera nunca.
 --
--- Es auto-reparable: las filas que pueden estar acá son exactamente las que el cron
--- `expire-holds` barre cada hora (una solicitud con el hold vivo no puede solapar
--- nada, la capa lógica ya lo impide). Si esto llega a frenar un deploy, el deploy
--- siguiente pasa solo.
+-- Las únicas filas que pueden hacer fallar esto son solicitudes con el hold ya vencido
+-- que el cron todavía no barrió (con el hold vivo, la capa lógica ya impide el
+-- solape). Verificado contra producción antes de escribir la migración: cero.
 DO $$
-DECLARE
-  conflictivas int;
 BEGIN
-  SELECT count(*) INTO conflictivas
-  FROM "Booking" a
-  JOIN "Booking" b
-    ON a."businessId" = b."businessId"
-   AND a.id <> b.id
-   AND COALESCE(a."professionalId", '') = COALESCE(b."professionalId", '')
-   AND tsrange(a."startDateTime", a."endDateTime", '[)')
-       && tsrange(b."startDateTime", b."endDateTime", '[)')
-  WHERE a.status = 'pending_confirmation'
-    AND b.status IN ('pending_payment', 'pending_confirmation', 'confirmed', 'completed');
-
-  IF conflictivas > 0 THEN
-    RAISE EXCEPTION
-      'Hay % solicitudes (pending_confirmation) solapando otra reserva activa; el EXCLUDE no se puede crear', conflictivas
-      USING HINT = 'Corré el cron de expiracion (/api/cron/expire-holds) para que las solicitudes vencidas se expiren por la app —liberando sus canjes— y reintentá el deploy.';
-  END IF;
+  ALTER TABLE "Booking"
+  ADD CONSTRAINT "Booking_no_overlap"
+  EXCLUDE USING gist (
+    "businessId" WITH =,
+    (COALESCE("professionalId", '')) WITH =,
+    tsrange("startDateTime", "endDateTime", '[)') WITH &&
+  )
+  WHERE (
+    status IN ('pending_payment', 'pending_confirmation', 'confirmed', 'completed')
+  );
+EXCEPTION WHEN exclusion_violation THEN
+  RAISE EXCEPTION 'No se puede crear Booking_no_overlap con pending_confirmation adentro: hay reservas activas encimadas (%)', SQLERRM
+    USING HINT = 'Son solicitudes vencidas que el cron todavía no barrió. 1) Corré /api/cron/expire-holds para que se expiren por la app y liberen sus canjes. 2) Destrabá el pipeline con `prisma migrate resolve --rolled-back 20260803210000_booking_overlap_solicitudes` — sin eso Prisma deja la migración marcada como fallida y TODO migrate deploy posterior aborta con P3009. 3) Reintentá el deploy.';
 END $$;
-
-ALTER TABLE "Booking" DROP CONSTRAINT IF EXISTS "Booking_no_overlap";
-
-ALTER TABLE "Booking"
-ADD CONSTRAINT "Booking_no_overlap"
-EXCLUDE USING gist (
-  "businessId" WITH =,
-  (COALESCE("professionalId", '')) WITH =,
-  tsrange("startDateTime", "endDateTime", '[)') WITH &&
-)
-WHERE (
-  status IN ('pending_payment', 'pending_confirmation', 'confirmed', 'completed')
-);

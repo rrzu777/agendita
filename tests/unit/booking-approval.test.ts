@@ -3,11 +3,13 @@ import { addHours, addMinutes } from 'date-fns'
 import {
   initialPublicBookingStatus,
   approvalHoldExpiresAt,
-  isHeldStatus,
+  hasExpirableHold,
   occupiesSlot,
   isSweepableExpiredHold,
   APPROVAL_WINDOW_HOURS,
-  HELD_STATUSES,
+  STATUSES_WITH_HOLD,
+  OCCUPYING_STATUSES,
+  NO_OVERLAP_STATUSES,
 } from '@/lib/bookings/approval'
 import { recomputeBookingAmountsAfterDiscount } from '@/lib/bookings/recompute'
 import { generateSlots } from '@/lib/availability/slots'
@@ -44,11 +46,23 @@ describe('approvalHoldExpiresAt', () => {
   })
 })
 
-describe('isHeldStatus', () => {
-  it('cubre los dos estados que ocupan cupo sólo mientras el hold viva', () => {
-    expect(HELD_STATUSES).toEqual(['pending_payment', 'pending_confirmation'])
-    expect(isHeldStatus('pending_confirmation')).toBe(true)
-    expect(isHeldStatus('confirmed')).toBe(false)
+describe('las listas de estados', () => {
+  it('tener hold y ocupar el cupo son dos preguntas distintas', () => {
+    expect(STATUSES_WITH_HOLD).toEqual(['pending_payment', 'pending_confirmation'])
+    expect(hasExpirableHold('pending_confirmation')).toBe(true)
+    expect(hasExpirableHold('confirmed')).toBe(false)
+    // El solapado a propósito: tiene hold que vence Y tapa siempre. Es lo que le
+    // deja a /mi decir "Expirada" sin que la agenda ceda el horario.
+    expect(OCCUPYING_STATUSES).toContain('pending_confirmation')
+  })
+
+  // La copia TS del WHERE del EXCLUDE. Contra la definición REAL de Postgres la
+  // compara el test de integración booking-overlap-constraint; acá sólo fijamos
+  // que sean los cuatro activos y ninguno más.
+  it('NO_OVERLAP_STATUSES son los cuatro estados activos', () => {
+    expect([...NO_OVERLAP_STATUSES].sort()).toEqual(
+      ['completed', 'confirmed', 'pending_confirmation', 'pending_payment'],
+    )
   })
 })
 

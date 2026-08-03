@@ -196,12 +196,9 @@ describe('createTimeBlock', () => {
       { paymentMethod: { in: ['bank_transfer', 'manual'] } },
     ])
     // Una solicitud NO se libera por hold vencido: tapa hasta que el cron la
-    // expire, igual que en `occupiesSlot`. Por eso no tiene cláusula propia — va
-    // en el `in` incondicional junto a confirmed y completed.
+    // expire, igual que en `occupiesSlot`. Por eso no tiene cláusula propia — el
+    // test hermano de arriba fija que va en el `in` incondicional.
     expect(findClause('pending_confirmation')).toBeUndefined()
-    expect(findManyCall.where.OR[0]).toEqual({
-      status: { in: ['confirmed', 'completed', 'pending_confirmation'] },
-    })
   })
 
   it('appends the service-fit warning to the confirmation message when a service would fit nowhere', async () => {

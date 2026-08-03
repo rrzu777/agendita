@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import type { BookingStatus } from '@prisma/client'
+import { BookingStatus } from '@prisma/client'
+import { NO_OVERLAP_STATUSES } from '@/lib/bookings/approval'
 import { addMinutes } from 'date-fns'
 import { prisma } from '@/lib/db'
 import { requireTestDatabase } from './setup'
@@ -168,5 +169,33 @@ describe('Booking_no_overlap cubre las solicitudes', () => {
   it('una solicitud ya expirada deja pasar la cita nueva', async () => {
     await reservar(ana, 'expired')
     await expect(reservar(ana, 'confirmed')).resolves.toMatchObject({ status: 'confirmed' })
+  })
+
+  /**
+   * La lista de estados vive DOS veces: en el WHERE del EXCLUDE (SQL crudo, que desde
+   * TypeScript no se puede importar) y en `NO_OVERLAP_STATUSES`. Los casos de arriba
+   * prueban comportamiento estado por estado; esto prueba LA LISTA, que es lo que se
+   * desincroniza cuando alguien agrega el quinto valor al enum.
+   *
+   * Lee la definición real que tiene Postgres, no el .sql: si una migración futura la
+   * recrea, el test sigue mirando lo que está aplicado de verdad.
+   */
+  it('el WHERE del constraint dice exactamente lo mismo que NO_OVERLAP_STATUSES', async () => {
+    const [row] = (await prisma.$queryRaw`
+      SELECT pg_get_constraintdef(oid) AS def
+      FROM pg_constraint
+      WHERE conname = 'Booking_no_overlap'
+    `) as { def: string }[]
+    expect(row?.def).toBeDefined()
+
+    // Filtramos los literales del texto contra los valores del enum en vez de
+    // atarnos a cómo Postgres renderiza el cast: el `'[)'` del tsrange y el `''`
+    // del COALESCE también son literales del mismo texto, y el formato de
+    // `pg_get_constraintdef` no es contrato de nada.
+    const todos = Object.values(BookingStatus) as string[]
+    const enLaBase = [...row.def.matchAll(/'([a-z_]+)'/g)]
+      .map((m) => m[1])
+      .filter((s) => todos.includes(s))
+    expect(new Set(enLaBase)).toEqual(new Set(NO_OVERLAP_STATUSES))
   })
 })

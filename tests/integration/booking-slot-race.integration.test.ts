@@ -109,12 +109,11 @@ describe('pago que llega y la reserva no queda confirmada', () => {
   function crearReservaGanadora() {
     return prisma.booking.create({ data: {
       businessId: BIZ, serviceId, customerId,
-      // Sin persona a propósito: es lo que la deja convivir con la pendiente de Ana
-      // en la base, y lo que hace que para la app le tape la hora igual.
       professionalId: null,
       startDateTime: START, endDateTime: END,
       status: BookingStatus.pending_confirmation,
-      // Hold vivo: así el SQL de solape la cuenta como ocupando el horario.
+      // Hold vivo: es la solicitud "en pie", el caso que le interesa al test. Con el
+      // hold vencido taparía igual — está en el EXCLUDE — pero sería otro escenario.
       holdExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       totalPrice: 10000, depositRequired: 5000, depositPaid: 0,
       remainingBalance: 10000, finalAmount: 10000,
@@ -122,8 +121,7 @@ describe('pago que llega y la reserva no queda confirmada', () => {
     } })
   }
 
-  /** La reserva que está esperando el pago, con el hold ya vencido. Va a nombre de
-   *  Ana para que la ganadora sin dueño pueda coexistir con ella en la base. */
+  /** La reserva que está esperando el pago, con el hold ya vencido. */
   function crearReservaPendiente() {
     return prisma.booking.create({ data: {
       businessId: BIZ, serviceId, customerId,
