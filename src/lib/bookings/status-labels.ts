@@ -18,3 +18,20 @@ export const bookingStatusLabels: Record<BookingStatus, string> = {
 export function bookingStatusLabel(status: string): string {
   return (bookingStatusLabels as Partial<Record<string, string>>)[status] ?? status
 }
+
+/**
+ * Los estados de los que una reserva ya no sale: no se reprograma, no se
+ * reasigna, no se cancela "de nuevo". FUENTE ÚNICA compartida UI ↔ server —
+ * este literal estaba copiado en siete lugares y una copia del lado del
+ * navegador que quede más permisiva que el server no falla: deja un botón que
+ * ofrece lo que el server va a rechazar.
+ *
+ * `expired` es terminal PARA ESTOS caminos; su única salida es reviveBooking,
+ * que re-valida cupo aparte.
+ */
+export const TERMINAL_BOOKING_STATUSES = ['completed', 'cancelled', 'no_show', 'expired'] as const satisfies readonly BookingStatus[]
+
+/** El chequeo en versión string, para payloads del navegador (CalendarBooking). */
+export function isTerminalBookingStatus(status: string): boolean {
+  return (TERMINAL_BOOKING_STATUSES as readonly string[]).includes(status)
+}

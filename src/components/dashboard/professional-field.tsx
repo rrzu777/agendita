@@ -10,8 +10,10 @@ import { ANYONE_LABEL, type ProfessionalChoice, type ProfessionalPick } from '@/
  * `professionalFields`, no esto); con dos o más pregunta, y "Cualquiera
  * disponible" va primera, como en el funnel.
  *
- * Componente propio del panel (no de una ruta): la reserva manual lo usa hoy y
- * reasignar es su segundo consumidor natural.
+ * Componente propio del panel (no de una ruta). Reasignar NO pasa por acá a
+ * propósito: este selector habla `ProfessionalChoice`/`ProfessionalPick` y
+ * ofrece "Cualquiera disponible", y reasignar exige elegir a alguien concreto
+ * sobre una lista que se trae bajo demanda (`ReassignControl`).
  */
 export function ProfessionalField({
   choice,
