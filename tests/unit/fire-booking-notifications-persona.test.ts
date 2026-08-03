@@ -84,11 +84,11 @@ describe('fireBookingNotifications y la persona', () => {
     await fireBookingNotifications(business, makeBooking(null), 'Corte de pelo', null)
 
     expect(mockReceived).toHaveBeenCalledWith(
-      expect.objectContaining({ professionalName: undefined }),
+      expect.objectContaining({ professionalName: null }),
     )
     expect(mockBusinessNotif).toHaveBeenCalledWith(
       'biz-1',
-      expect.objectContaining({ professionalName: undefined }),
+      expect.objectContaining({ professionalName: null }),
     )
     const { calendar } = mockReceived.mock.calls[0][0] as { calendar: { ics: string } }
     expect(calendar.ics).not.toContain('Te atiende')

@@ -101,7 +101,7 @@ describe('sendReminders', () => {
     await sendReminders(new Date('2026-05-20T12:00:00Z'))
 
     expect(mockSendReminderEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ professionalName: undefined }),
+      expect.objectContaining({ professionalName: null }),
     )
   })
 

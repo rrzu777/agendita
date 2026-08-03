@@ -62,7 +62,7 @@ async function _cancelMyBooking(bookingId: string) {
       businessTimezone: booking.business.timezone || 'America/Santiago',
       customerName: booking.customer.name,
       serviceName: booking.service.name,
-      professionalName: booking.professional?.name,
+      professionalName: booking.professional?.name ?? null,
       bookingNumber: booking.bookingNumber,
       change: { kind: 'cancelled' },
       startDateTime: booking.startDateTime,
@@ -161,7 +161,7 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
       businessTimezone: booking.business.timezone || 'America/Santiago',
       customerName: booking.customer.name,
       serviceName: booking.service.name,
-      professionalName: booking.professional?.name,
+      professionalName: booking.professional?.name ?? null,
       bookingNumber: booking.bookingNumber,
       change: { kind: 'rescheduled', previousStartDateTime, newStartDateTime },
       startDateTime: previousStartDateTime,
@@ -186,7 +186,7 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
         serviceName: booking.service.name,
         // Reprogramar conserva la persona: el nombre leído antes de la tx
         // sigue siendo el que atiende.
-        professionalName: booking.professional?.name,
+        professionalName: booking.professional?.name ?? null,
         previousStartDateTime,
         newStartDateTime,
       }),

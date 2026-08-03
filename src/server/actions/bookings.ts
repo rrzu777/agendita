@@ -1134,7 +1134,7 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
         serviceName: service.name,
         // Reprogramar conserva la persona, así que el nombre leído antes de la
         // tx sigue siendo el que atiende.
-        professionalName: booking.professional?.name,
+        professionalName: booking.professional?.name ?? null,
         previousStartDateTime,
         newStartDateTime,
       }),

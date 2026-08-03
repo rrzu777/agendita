@@ -1160,8 +1160,10 @@ export function bookingReminderHtml(data: ReminderEmailData): string {
     <div style="background:#f9f9f9;border-radius:12px;padding:20px;margin:16px 0">
       <p style="font-size:18px;font-weight:600;color:#1a1a2e;margin:0">${dateStr}</p>
       <p style="font-size:14px;color:#666;margin:8px 0 0">${escapeHtml(data.businessName)}</p>
-      ${data.professionalName ? `<p style="font-size:13px;color:#999;margin:4px 0 0">Te atiende: ${escapeHtml(data.professionalName)}</p>` : ''}
-      ${whereRows(data).map(({ label, value }) => `<p style="font-size:13px;color:#999;margin:4px 0 0">${escapeHtml(label)}: ${escapeHtml(value)}</p>`).join('')}
+      ${[
+        ...(data.professionalName ? [{ label: 'Te atiende', value: data.professionalName }] : []),
+        ...whereRows(data),
+      ].map(({ label, value }) => `<p style="font-size:13px;color:#999;margin:4px 0 0">${escapeHtml(label)}: ${escapeHtml(value)}</p>`).join('')}
     </div>
     <p style="font-size:14px;color:#666">Total: ${fmtCurrency(data.totalPrice, data.businessCurrency)} | Abonado: ${fmtCurrency(data.depositPaid, data.businessCurrency)}</p>
     ${balanceLine}

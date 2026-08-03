@@ -3,39 +3,43 @@ import { BookingStatus } from '@prisma/client'
 
 // ── Mock external dependencies ───────────────────────────────────────────────
 
+// vi.hoisted: la fixture queda visible para los tests (que la extienden con
+// `professional`) además de para la factory del mock. `status` va como literal
+// porque el hoisting corre antes de que exista el import de BookingStatus.
+const mockBooking = vi.hoisted(() => ({
+  id: 'booking-1',
+  businessId: 'biz-1',
+  customerId: 'cust-1',
+  status: 'confirmed',
+  bookingNumber: 4738,
+  startDateTime: new Date('2026-06-15T18:00:00Z'),
+  // El evento de calendario sale de esta misma fila: cuándo termina, qué
+  // versión es (updatedAt - createdAt) y dónde se atiende.
+  endDateTime: new Date('2026-06-15T19:00:00Z'),
+  createdAt: new Date('2026-06-01T12:00:00Z'),
+  updatedAt: new Date('2026-06-01T12:00:00Z'),
+  modality: 'on_site',
+  serviceAddress: null,
+  meetingUrl: null,
+  totalPrice: 25000,
+  depositRequired: 5000,
+  depositPaid: 5000,
+  remainingBalance: 20000,
+  service: { name: 'Manicure semipermanente' },
+  customer: { name: 'Maria', phone: '+56987654321', email: 'maria@example.com' },
+  business: {
+    name: 'Nails by Ana',
+    slug: 'nails-by-ana',
+    subdomain: null,
+    timezone: 'America/Santiago',
+    whatsapp: '+56912345678',
+    addressText: 'Av. Siempre Viva 742',
+    currency: 'CLP',
+    cancellationPolicy: 'Cancela con 24h.',
+  },
+}))
+
 vi.mock('@/lib/db', () => {
-  const mockBooking = {
-    id: 'booking-1',
-    businessId: 'biz-1',
-    customerId: 'cust-1',
-    status: BookingStatus.confirmed,
-    bookingNumber: 4738,
-    startDateTime: new Date('2026-06-15T18:00:00Z'),
-    // El evento de calendario sale de esta misma fila: cuándo termina, qué
-    // versión es (updatedAt - createdAt) y dónde se atiende.
-    endDateTime: new Date('2026-06-15T19:00:00Z'),
-    createdAt: new Date('2026-06-01T12:00:00Z'),
-    updatedAt: new Date('2026-06-01T12:00:00Z'),
-    modality: 'on_site',
-    serviceAddress: null,
-    meetingUrl: null,
-    totalPrice: 25000,
-    depositRequired: 5000,
-    depositPaid: 5000,
-    remainingBalance: 20000,
-    service: { name: 'Manicure semipermanente' },
-    customer: { name: 'Maria', phone: '+56987654321', email: 'maria@example.com' },
-    business: {
-      name: 'Nails by Ana',
-      slug: 'nails-by-ana',
-      subdomain: null,
-      timezone: 'America/Santiago',
-      whatsapp: '+56912345678',
-      addressText: 'Av. Siempre Viva 742',
-      currency: 'CLP',
-      cancellationPolicy: 'Cancela con 24h.',
-    },
-  }
   return {
     prisma: {
       booking: {
@@ -198,8 +202,7 @@ describe('sendBookingConfirmedNotification', () => {
     mockResendSend.mockResolvedValue({ data: { id: 'msg_prof' }, error: null })
     const { prisma } = await import('@/lib/db')
     const findFirst = prisma.booking.findFirst as ReturnType<typeof vi.fn>
-    const base = await (findFirst as unknown as () => Promise<Record<string, unknown>>)()
-    findFirst.mockResolvedValueOnce({ ...base, professional: { name: 'Juan Pérez' } })
+    findFirst.mockResolvedValueOnce({ ...mockBooking, professional: { name: 'Juan Pérez' } })
 
     await sendBookingConfirmedNotification('booking-1', 'biz-1')
 
@@ -261,8 +264,7 @@ describe('sendBookingReminderNotification', () => {
     mockResendSend.mockResolvedValue({ data: { id: 'msg_reminder_prof' }, error: null })
     const { prisma } = await import('@/lib/db')
     const findFirst = prisma.booking.findFirst as ReturnType<typeof vi.fn>
-    const base = await (findFirst as unknown as () => Promise<Record<string, unknown>>)()
-    findFirst.mockResolvedValueOnce({ ...base, professional: { name: 'Juan Pérez' } })
+    findFirst.mockResolvedValueOnce({ ...mockBooking, professional: { name: 'Juan Pérez' } })
 
     await sendBookingReminderNotification('booking-1', 'biz-1')
 

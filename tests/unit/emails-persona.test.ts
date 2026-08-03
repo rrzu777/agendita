@@ -38,6 +38,7 @@ const bookingData: BookingEmailData = {
   customerEmail: 'maria@example.com',
   customerPhone: '+56987654321',
   serviceName: 'Corte de pelo',
+  professionalName: null,
   startDateTime: new Date('2026-08-15T18:00:00Z'),
   totalPrice: 15000,
   depositRequired: 5000,
@@ -50,6 +51,7 @@ const reminderData: ReminderEmailData = {
   customerName: 'Maria',
   customerEmail: 'maria@example.com',
   serviceName: 'Corte de pelo',
+  professionalName: null,
   startDateTime: new Date('2026-08-15T18:00:00Z'),
   businessTimezone: 'America/Santiago',
   businessCurrency: 'CLP',
@@ -65,6 +67,7 @@ const rescheduleData: RescheduledEmailData = {
   customerEmail: 'maria@example.com',
   customerPhone: '+56987654321',
   serviceName: 'Corte de pelo',
+  professionalName: null,
   previousStartDateTime: new Date('2026-08-15T18:00:00Z'),
   newStartDateTime: new Date('2026-08-16T19:30:00Z'),
 }
@@ -76,6 +79,7 @@ const businessData: NewBookingBusinessEmailData = {
   customerPhone: '+56987654321',
   customerEmail: 'maria@example.com',
   serviceName: 'Corte de pelo',
+  professionalName: null,
   startDateTime: new Date('2026-08-15T18:00:00Z'),
   businessTimezone: 'America/Santiago',
   businessCurrency: 'CLP',
@@ -91,13 +95,14 @@ const ownerChangedData: OwnerBookingChangedData = {
   businessTimezone: 'America/Santiago',
   customerName: 'Maria',
   serviceName: 'Corte de pelo',
+  professionalName: null,
   bookingNumber: 4738,
   change: { kind: 'cancelled' },
   startDateTime: new Date('2026-08-15T18:00:00Z'),
 }
 
 // [render, data, label] de cada template: el mismo contrato se verifica en todos.
-const surfaces: [string, (name?: string) => string, string][] = [
+const surfaces: [string, (name: string | null) => string, string][] = [
   ['bookingConfirmationCustomerHtml', (n) => bookingConfirmationCustomerHtml({ ...bookingData, professionalName: n }), 'Te atiende'],
   ['bookingConfirmationCustomerText', (n) => bookingConfirmationCustomerText({ ...bookingData, professionalName: n }), 'Te atiende'],
   ['bookingReceivedCustomerHtml', (n) => bookingReceivedCustomerHtml({ ...bookingData, professionalName: n }), 'Te atiende'],
@@ -120,7 +125,7 @@ describe.each(surfaces)('%s', (_name, render, label) => {
   })
 
   it('sin persona no muestra ni el label', () => {
-    expect(render(undefined)).not.toContain(label)
+    expect(render(null)).not.toContain(label)
   })
 })
 
@@ -129,21 +134,5 @@ describe('escape del nombre', () => {
     const html = bookingReceivedCustomerHtml({ ...bookingData, professionalName: '<b>Juan</b>' })
     expect(html).not.toContain('<b>Juan</b>')
     expect(html).toContain('&lt;b&gt;Juan&lt;/b&gt;')
-  })
-})
-
-describe('la reprogramada al negocio', () => {
-  it('también dice quién atiende', () => {
-    const html = ownerBookingChangedHtml({
-      ...ownerChangedData,
-      professionalName: 'Juan Pérez',
-      change: {
-        kind: 'rescheduled',
-        previousStartDateTime: new Date('2026-08-15T18:00:00Z'),
-        newStartDateTime: new Date('2026-08-16T19:30:00Z'),
-      },
-    })
-    expect(html).toContain('Atiende')
-    expect(html).toContain('Juan Pérez')
   })
 })

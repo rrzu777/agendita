@@ -13,6 +13,7 @@ const base = {
   customerName: 'Ana',
   customerPhone: '56911100001',
   serviceName: 'Corte',
+  professionalName: null,
   startDateTime: new Date('2026-08-01T15:00:00Z'),
   totalPrice: 20000,
   depositRequired: 5000,

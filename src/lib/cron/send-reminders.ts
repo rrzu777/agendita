@@ -74,7 +74,7 @@ export async function sendReminders(now: Date = new Date()): Promise<SendReminde
         customerName: booking.customer!.name,
         customerEmail: booking.customer!.email!,
         serviceName: booking.service?.name ?? 'Servicio',
-        professionalName: booking.professional?.name,
+        professionalName: booking.professional?.name ?? null,
         startDateTime: booking.startDateTime,
         businessTimezone: booking.business.timezone || 'America/Santiago',
         businessWhatsapp: booking.business.whatsapp,
