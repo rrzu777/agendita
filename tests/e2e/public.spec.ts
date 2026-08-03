@@ -168,7 +168,9 @@ test.describe('dashboard (e2e auth bypass)', () => {
     await page.goto('/dashboard/customers')
     await page.waitForLoadState('networkidle')
     expect(page.url()).toContain('/dashboard/customers')
-    await expect(page.getByRole('heading', { name: 'Clientes', exact: true })).toBeVisible()
+    // "Clientas" o "Clientes" según el rubro del negocio del bypass (el título
+    // ahora sale del léxico por rubro).
+    await expect(page.getByRole('heading', { name: /^Client[ea]s$/ })).toBeVisible()
     await expect(page.getByText('Historial y datos de contacto')).toBeVisible()
   })
 
