@@ -398,23 +398,26 @@ describe('updateTimeBlockSeries', () => {
   })
 
   // La tercera capa del bug de la ocurrencia movida (las otras dos, #133): el
-  // reset de excepciones clasificaba por `occurrenceDate` (el día ORIGINAL), así
-  // que una ocurrencia de ayer movida a la semana que viene contaba como pasado
-  // y sobrevivía al reset con el horario viejo — y el rescate de #133 la seguía
-  // materializando después del split. "Futuro" se mide por dónde cae la
-  // ocurrencia de verdad: `startDateTime` si la movieron, `occurrenceDate` si es
-  // salteada (no tiene horario propio).
-  describe('reset de excepciones por su día EFECTIVO, no el original', () => {
+  // reset de excepciones clasificaba SOLO por `occurrenceDate` (el día
+  // ORIGINAL). El corte correcto exige LAS DOS fechas en el dominio del reset:
+  // - `occurrenceDate >= hoy`: una excepción con origen en la mitad pasada
+  //   pertenece a la serie vieja; borrarla en el split haría que esa serie
+  //   REGENERE el bloqueo default en su día original (un bloqueo apareciendo en
+  //   el pasado) y mataría el override que el rescate de #133 muestra a propósito.
+  // - `startDateTime >= hoy` (si la movieron): la movida a ayer ya ocurrió;
+  //   resetearla "des-ocurre" un bloqueo real.
+  describe('reset de excepciones: las dos fechas en el dominio del reset', () => {
     const anchorToday = fromZonedTime(`${formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd')} 00:00:00`, TZ)
     const resetEsperado = {
       seriesId: 'series-1',
+      occurrenceDate: { gte: anchorToday },
       OR: [
+        { startDateTime: null },
         { startDateTime: { gte: anchorToday } },
-        { startDateTime: null, occurrenceDate: { gte: anchorToday } },
       ],
     }
 
-    it('el split borra las excepciones cuya ocurrencia real cae de hoy en adelante', async () => {
+    it('el split borra sólo las excepciones con origen Y ocurrencia real de hoy en adelante', async () => {
       await updateTimeBlockSeries('series-1', { startTime: '13:00', endTime: '15:00' })
 
       expect(mockPrisma.timeBlockSeries.create).toHaveBeenCalledTimes(1)

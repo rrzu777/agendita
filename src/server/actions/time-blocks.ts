@@ -580,19 +580,29 @@ async function _updateTimeBlockSeries(
   const untilStr = existing.until ? getLocalDateStr(existing.until, timezone) : null
   const { mode, hasFuture } = planSeriesUpdate(anchorStr, untilStr, todayStr, yesterdayStr)
 
-  // Qué excepciones restablece el horario nuevo: las de ocurrencias que todavía
-  // no pasaron. "No pasó" se mide por dónde cae la ocurrencia DE VERDAD, no por
-  // su día original (`occurrenceDate`, el RECURRENCE-ID): una ocurrencia de ayer
-  // movida a la semana que viene es futuro, y clasificarla por el día original
-  // la dejaba viva con el horario viejo después del reset — es la tercera capa
-  // del bug de la ocurrencia movida (las otras dos, expandSeries y la query de
-  // getEffectiveBlocks, en #133). La salteada no tiene horario propio
-  // (startDateTime null): su día efectivo sigue siendo el original.
+  // Qué excepciones restablece el horario nuevo. Hacen falta LAS DOS condiciones,
+  // porque una excepción vive a caballo de dos fechas (su día original —el
+  // RECURRENCE-ID— y el día al que la movieron), y el reset sólo corresponde si
+  // las dos caen de hoy en adelante:
+  //
+  // - `occurrenceDate >= hoy`: el día ORIGINAL tiene que estar en el dominio del
+  //   reset. Una excepción cuyo origen quedó en la mitad pasada pertenece a la
+  //   serie vieja aunque la hayan movido al futuro: borrarla haría que la serie
+  //   vieja REGENERE el bloqueo default en su día original — un bloqueo
+  //   apareciendo en el pasado donde no había nada (y el override explícito de
+  //   la dueña, que el rescate de #133 sigue mostrando a propósito, se pierde).
+  // - `startDateTime >= hoy` (si la movieron): la ocurrencia REAL tampoco puede
+  //   haber pasado ya. La movida a ayer ya ocurrió tal como el calendario la
+  //   mostró; resetearla "des-ocurre" un bloqueo real — es la tercera capa del
+  //   bug de la ocurrencia movida (las otras dos, expandSeries y la query de
+  //   getEffectiveBlocks, en #133). La salteada no tiene horario propio
+  //   (startDateTime null): su día efectivo es el original, ya cubierto arriba.
   const excepcionesFuturas = {
     seriesId,
+    occurrenceDate: { gte: anchorToday },
     OR: [
+      { startDateTime: null },
       { startDateTime: { gte: anchorToday } },
-      { startDateTime: null, occurrenceDate: { gte: anchorToday } },
     ],
   }
 
@@ -652,11 +662,13 @@ async function _updateTimeBlockSeries(
   // CONSERVA el patrón de días y la fecha de fin (until) originales — el diálogo de
   // edición solo cambia hora/motivo.
   //
-  // Las excepciones futuras se BORRAN, no basta con que el `until` nuevo las tape:
-  // el rescate de #133 (getEffectiveBlocks trae la serie si una excepción movida
-  // cae en el rango, y expandSeries la materializa) le pasa por encima al until,
-  // así que una ocurrencia movida al futuro seguía apareciendo con el horario
-  // viejo después del split — un fantasma que ningún reset alcanzaba.
+  // El reset de las ocurrencias futuras acá es implícito: la nueva serie genera
+  // sus días con el horario nuevo, y las excepciones con origen >= hoy quedan
+  // colgadas de la vieja, cuyo `until = ayer` las deja fuera de la regla (el
+  // rescate de #133 tampoco las materializa: agrega el día original como
+  // candidato, pero `esDiaDeLaRegla` lo rechaza contra el until). El deleteMany
+  // borra esas filas ya inertes para que ningún cambio futuro del rescate las
+  // resucite — mismo criterio que el in-place, a propósito.
   const [, , newSeries] = await prisma.$transaction([
     prisma.timeBlockException.deleteMany({ where: excepcionesFuturas }),
     prisma.timeBlockSeries.update({ where: { id: seriesId }, data: { until: oldUntil, isActive: existing.anchorDate <= oldUntil } }),
