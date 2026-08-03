@@ -11,6 +11,7 @@ import { usePackageAvailability } from '@/lib/packages/use-package-availability'
 import { initiatePayment, verifyAndConfirmPayment, getOnlinePaymentAvailability } from '@/server/actions/payments'
 import { getBankTransferInfo, declareBankTransfer } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
+import { DEFAULT_HOLD_MINUTES } from '@/lib/bookings/hold'
 import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { TransferDetails } from './transfer-details'
 import { formatMoney } from '@/lib/money'
@@ -703,6 +704,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     )
   }
 
+  const eligeTransferencia = Boolean(bankInfo) && method === 'transfer'
+
   return (
     <div>
       <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Pago de abono</h2>
@@ -767,9 +770,17 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         </label>
       </div>
 
+      {/* Sólo el camino online: la transferencia tiene su ventana larga y la
+          muestra con hora exacta en la pantalla siguiente (TransferDetails). */}
+      {!eligeTransferencia && (
+        <p className="mb-4 text-sm text-muted-foreground">
+          Al pagar, tu horario queda guardado por {DEFAULT_HOLD_MINUTES} minutos. Si el pago no se completa en ese tiempo, se libera.
+        </p>
+      )}
+
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
-        {bankInfo && method === 'transfer' ? (
+        {eligeTransferencia ? (
           <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleTransferBooking} disabled={loading || !acceptedTerms}>
             {loading ? 'Procesando...' : 'Continuar con transferencia'}
           </Button>

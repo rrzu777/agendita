@@ -15,11 +15,13 @@ describe('deriveConfirmationState', () => {
     depositRequired?: number
     depositPaid?: number
     paymentStatus?: string
+    holdExpiresAt?: Date | null
   }) {
     return {
       depositRequired: 5000,
       depositPaid: 0,
       paymentStatus: 'unpaid',
+      holdExpiresAt: null,
       ...over,
     }
   }
@@ -237,6 +239,96 @@ describe('deriveConfirmationState', () => {
           }),
         ),
       ).toBe('verifying')
+    })
+  })
+
+  describe('hold vencido que el cron todavía no barrió', () => {
+    // La pantalla es la URL de retorno de MP: entre que el hold vence y el cron
+    // pasa (hasta una hora), "completá el pago" mandaba a pagar un horario que ya
+    // se estaba liberando. El adelanto espeja las condiciones EXACTAS del barrido
+    // (pending_payment + unpaid + hold < now): lo que el cron no va a expirar,
+    // esto tampoco lo da por muerto.
+    const now = new Date('2026-08-03T15:00:00Z')
+    const vencido = new Date('2026-08-03T14:30:00Z')
+    const vivo = new Date('2026-08-03T15:10:00Z')
+    const bt = (status: string) => ({ status, provider: 'manual', providerPaymentId: 'bt-declared:abc' })
+
+    it('pending con hold vencido → expired (sin pagos)', () => {
+      expect(
+        deriveConfirmationState(booking({ status: 'pending_payment', payments: [], holdExpiresAt: vencido }), now),
+      ).toBe('expired')
+    })
+
+    it('rejected con hold vencido → expired ("intentá de nuevo" ya no es cierto)', () => {
+      expect(
+        deriveConfirmationState(
+          booking({ status: 'pending_payment', payments: [mp('rejected')], holdExpiresAt: vencido }),
+          now,
+        ),
+      ).toBe('expired')
+    })
+
+    it('con el hold vivo no cambia nada', () => {
+      expect(
+        deriveConfirmationState(booking({ status: 'pending_payment', payments: [], holdExpiresAt: vivo }), now),
+      ).toBe('pending')
+      expect(
+        deriveConfirmationState(
+          booking({ status: 'pending_payment', payments: [mp('rejected')], holdExpiresAt: vivo }),
+          now,
+        ),
+      ).toBe('rejected')
+    })
+
+    it('un pago en vuelo gana: verifying aunque el hold haya vencido', () => {
+      // El pago puede aterrizar y confirmar después del vencimiento; esa carrera
+      // la arbitra el guard de solape del webhook, no esta pantalla.
+      expect(
+        deriveConfirmationState(
+          booking({ status: 'pending_payment', payments: [mp('in_process')], holdExpiresAt: vencido }),
+          now,
+        ),
+      ).toBe('verifying')
+    })
+
+    it('la transferencia declarada no se da por muerta', () => {
+      expect(
+        deriveConfirmationState(
+          booking({ status: 'pending_payment', payments: [bt('pending')], holdExpiresAt: vencido }),
+          now,
+        ),
+      ).toBe('verifying_transfer')
+    })
+
+    it('plata parcial adentro (no unpaid) no se adelanta: el cron tampoco la barre', () => {
+      expect(
+        deriveConfirmationState(
+          booking({
+            status: 'pending_payment',
+            depositRequired: 5000,
+            depositPaid: 2000,
+            paymentStatus: 'deposit_paid',
+            payments: [mp('approved')],
+            holdExpiresAt: vencido,
+          }),
+          now,
+        ),
+      ).toBe('pending')
+    })
+
+    it('una solicitud por confirmar (pending_confirmation) no entra: su hold es de aprobación', () => {
+      expect(
+        deriveConfirmationState(
+          booking({ status: 'pending_confirmation', payments: [], holdExpiresAt: vencido }),
+          now,
+        ),
+      ).toBe('pending')
+    })
+
+    it('con holdExpiresAt null (reserva sin hold) se comporta como siempre', () => {
+      expect(
+        deriveConfirmationState(booking({ status: 'pending_payment', payments: [], holdExpiresAt: null }), now),
+      ).toBe('pending')
     })
   })
 })

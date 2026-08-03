@@ -67,15 +67,23 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
   const profileHref = tenant ? '/' : `/b/${booking.business.slug}`
   const bookHref = tenant ? '/book' : `/book/${booking.business.slug}`
 
-  const state = deriveConfirmationState(booking)
+  // Un solo `now` para el estado y el deadline: dos relojes distintos podrían
+  // afirmar "expiró" y a la vez formatear una hora límite todavía viva.
+  const now = new Date()
+  const state = deriveConfirmationState(booking, now)
+
+  // Hasta qué hora le guardamos el horario, para decírselo en vez de que lo
+  // descubra cuando expire. Sólo con el hold vivo: vencido, `state` ya salió
+  // 'expired' de deriveConfirmationState y el aviso no se muestra.
+  const holdDeadline =
+    booking.holdExpiresAt && booking.holdExpiresAt > now
+      ? formatConfirmationDateTime(booking.holdExpiresAt, booking.business.timezone).time
+      : null
 
   // Superficie activa: la clienta que eligió transferencia y cerró la pestaña
   // del wizard puede ver los datos y declarar desde acá (mientras el hold viva).
   const canDeclare =
-    booking.paymentMethod === BANK_TRANSFER_METHOD &&
-    state === 'pending' &&
-    booking.holdExpiresAt != null &&
-    booking.holdExpiresAt > new Date()
+    booking.paymentMethod === BANK_TRANSFER_METHOD && state === 'pending' && holdDeadline !== null
   const balance = deriveBalanceState(booking)
   // La clienta ya adjuntó el comprobante del ABONO (proofKey en R2): cerramos el
   // loop en la pantalla de verificación para que no vuelva a subirlo ni dude.
@@ -202,6 +210,14 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           </div>
           <h1 className="mb-3 text-3xl font-semibold tracking-normal text-primary">{config.title}</h1>
           <p className="text-base leading-relaxed text-muted-foreground">{config.message}</p>
+          {/* Los dos estados que piden plata dicen hasta cuándo hay tiempo. La
+              transferencia no: su deadline lo muestra el TransferPanel con fecha
+              completa, y dos relojes en la misma pantalla confunden. */}
+          {holdDeadline && (state === 'rejected' || (state === 'pending' && booking.paymentMethod !== BANK_TRANSFER_METHOD)) && (
+            <p className="mt-3 text-sm font-medium text-muted-foreground">
+              Tu horario queda guardado hasta las {holdDeadline}; después se libera.
+            </p>
+          )}
           {state === 'verifying_transfer' && depositProofAttached && (
             <p className="mt-3 text-sm font-medium text-green-700">Comprobante adjuntado ✓</p>
           )}

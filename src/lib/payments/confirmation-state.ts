@@ -18,7 +18,33 @@ interface DeriveInput {
   depositPaid: number
   /** El marcador de la reserva, no el del pago: `refunded` sobrevive a la reversión. */
   paymentStatus: string
+  /** Para adelantar el "expiró" al hold vencido que el cron todavía no barrió.
+   *  Requerido a propósito: el caller que no lo pase estaría mostrando
+   *  "completá el pago" sobre un horario que ya se libera. `null` = sin hold. */
+  holdExpiresAt: Date | null
   payments: { status: string; provider: string; providerPaymentId?: string | null }[]
+}
+
+/**
+ * El hold venció y el cron todavía no pasó: la reserva VA a expirar, solo falta
+ * que alguien lo asiente. Espeja exactamente las condiciones del CRON
+ * (`expireStaleHolds`): `pending_payment` + `unpaid` + hold vencido. El `unpaid`
+ * importa — una reserva con plata parcial adentro no se barre, así que tampoco
+ * hay que darla por muerta acá.
+ *
+ * NO es `isSweepableExpiredHold` (approval.ts) a propósito: ése describe el
+ * barrido perezoso, que excluye transferencias porque no puede mandar el mail.
+ * El cron sí las expira, y una transferencia NO declarada con hold vencido
+ * también está condenada — la declarada nunca llega acá (corta antes en
+ * `verifying_transfer`).
+ */
+function isDoomedHold(input: DeriveInput, now: Date): boolean {
+  return (
+    input.status === 'pending_payment' &&
+    input.paymentStatus === 'unpaid' &&
+    input.holdExpiresAt != null &&
+    input.holdExpiresAt < now
+  )
 }
 
 /**
@@ -52,7 +78,7 @@ function isPaidButUnconfirmed(input: DeriveInput): boolean {
   )
 }
 
-export function deriveConfirmationState(input: DeriveInput): ConfirmationState {
+export function deriveConfirmationState(input: DeriveInput, now = new Date()): ConfirmationState {
   if (input.status === 'confirmed' || input.status === 'completed') {
     return 'confirmed'
   }
@@ -77,15 +103,21 @@ export function deriveConfirmationState(input: DeriveInput): ConfirmationState {
   // debiendo, y eso cae solo en el `pending` del final.
   const mpPayments = input.payments.filter(p => p.provider === 'mercado_pago')
 
-  if (mpPayments.length === 0) {
-    return 'pending'
-  }
-
   const hasPending = mpPayments.some(
     p => p.status === 'pending' || p.status === 'in_process',
   )
   if (hasPending) {
     return 'verifying'
+  }
+
+  // De acá para abajo el resultado sólo puede ser 'pending' o 'rejected' — los
+  // dos que le piden a la clienta que pague. Con el hold ya vencido eso es
+  // mandarla a pagar un horario que se está liberando: mejor adelantarle el
+  // "expiró" que el cron va a asentar de todas formas. Va DESPUÉS de
+  // 'verifying': un pago en vuelo puede aterrizar y confirmar aunque el hold
+  // haya vencido (esa carrera la arbitra el guard de solape del webhook).
+  if (isDoomedHold(input, now)) {
+    return 'expired'
   }
 
   const hasFailed = mpPayments.some(
