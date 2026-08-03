@@ -171,6 +171,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
                 customerName: booking.customer?.name || '',
                 customerPhone: booking.customer?.phone || null,
                 serviceName: booking.service?.name || '',
+                professionalName: booking.professional?.name ?? null,
                 startDateTime: booking.startDateTime,
                 businessTimezone,
                 businessCurrency,

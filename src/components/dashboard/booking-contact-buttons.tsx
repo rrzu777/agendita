@@ -19,6 +19,8 @@ export interface BookingContactData extends BookingWhere {
   customerName: string
   customerPhone: string | null
   serviceName: string
+  /** Requerido como en `BookingWhatsappData`: opcional, el próximo caller lo olvida. */
+  professionalName: string | null
   startDateTime: Date | string
   businessTimezone: string
   businessCurrency: string

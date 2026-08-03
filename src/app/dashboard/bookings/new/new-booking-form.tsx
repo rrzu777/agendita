@@ -16,6 +16,14 @@ import { formatDuration } from '@/lib/format-duration'
 import { MODALITY_LABELS, sortModalities, requiresServiceAddress } from '@/lib/services/modality'
 import { ServiceModality } from '@prisma/client'
 import { getLocalDateStr, localDateTimeToUtc } from '@/lib/availability/timezone'
+import {
+  effectiveDashboardPick,
+  professionalChoice,
+  professionalFields,
+  type FunnelProfessional,
+  type ProfessionalPick,
+} from '@/lib/professionals/eligible'
+import { ProfessionalField } from '@/components/dashboard/professional-field'
 import { formatMoney } from '@/lib/money'
 import { CalendarCheck2, User, Search, X } from 'lucide-react'
 import type { Service } from '@prisma/client'
@@ -24,10 +32,12 @@ import { useVocabulary } from '@/components/vocabulary-provider'
 
 interface NewBookingFormProps {
   services: Service[]
+  professionals: FunnelProfessional[]
   businessId: string
   timezone: string
   currency: string
 }
+
 
 type PaymentMode = 'none' | 'deposit_paid' | 'full_paid'
 type PaymentMethod = 'cash' | 'transfer' | 'external_card' | 'other'
@@ -39,7 +49,7 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   other: 'Otro',
 }
 
-export function NewBookingForm({ services, businessId, timezone, currency }: NewBookingFormProps) {
+export function NewBookingForm({ services, professionals, businessId, timezone, currency }: NewBookingFormProps) {
   const vocabulary = useVocabulary()
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -59,6 +69,9 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
   const [customerBirthDate, setCustomerBirthDate] = useState('')
+  // "Cualquiera" y no "sin persona" como arranque: si hay equipo elegible el
+  // servidor reparte, y sin equipo `professionalFields` lo colapsa solo a nada.
+  const [pick, setPick] = useState<ProfessionalPick>({ kind: 'anyone' })
   const [date, setDate] = useState('')
   const [time, setTime] = useState('')
   const [internalNotes, setInternalNotes] = useState('')
@@ -195,6 +208,10 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
     setPromoError(null)
   }
 
+  const choice = professionalChoice(professionals, serviceId || null, effectiveModality)
+  const effectivePick = effectiveDashboardPick(choice, pick)
+  const { professional, professionalName } = professionalFields(choice, effectivePick)
+
   const summary = useMemo(() => {
     if (!selectedService) return null
     const deposit = selectedService.depositAmount
@@ -286,6 +303,7 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
         skipPackage: !usePackage,
         modality: effectiveModality ?? undefined,
         serviceAddress: serviceAddress || undefined,
+        professional,
       })
       if (!res.ok) {
         setError(res.error)
@@ -363,6 +381,7 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
                   </select>
                 </div>
               )}
+              <ProfessionalField choice={choice} pick={effectivePick} onChange={setPick} />
               {effectiveModality != null && requiresServiceAddress(effectiveModality) && (
                 <div className="space-y-2">
                   <Label htmlFor="serviceAddress">Dirección *</Label>
@@ -598,6 +617,12 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
                   <span className="text-muted-foreground">Servicio</span>
                   <span className="font-medium">{summary.serviceName} ({formatDuration(summary.duration)})</span>
                 </div>
+                {professionalName && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Atiende</span>
+                    <span className="font-medium">{professionalName}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Precio</span>
                   <span className="font-medium">{formatMoney(summary.price, currency)}</span>

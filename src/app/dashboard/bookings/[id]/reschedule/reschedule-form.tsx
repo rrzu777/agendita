@@ -20,6 +20,8 @@ interface RescheduleFormProps {
   customerName: string
   customerPhone: string
   serviceName: string
+  /** Requerido como en `BookingWhatsappData`; reprogramar conserva la persona. */
+  professionalName: string | null
   currentDate: string
   currentTime: string
   timezone: string
@@ -33,6 +35,7 @@ export function RescheduleForm({
   customerName,
   customerPhone,
   serviceName,
+  professionalName,
   currentDate,
   currentTime,
   timezone,
@@ -113,6 +116,7 @@ export function RescheduleForm({
         ? buildBookingRescheduledWhatsappUrl(customerPhone, {
             customerName,
             serviceName,
+            professionalName,
             previousStartDateTime: localDateTimeToUtc(currentDate, currentTime, timezone),
             newStartDateTime: selectedSlot.start,
             businessTimezone: timezone,

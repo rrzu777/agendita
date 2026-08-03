@@ -393,6 +393,7 @@ const sampleWhatsappData = {
   modality: ServiceModality.on_site,
   customerName: 'Maria',
   customerPhone: '+56987654321',
+  professionalName: null,
   serviceName: 'Manicure semipermanente',
   startDateTime: new Date('2026-06-15T18:00:00Z'),
   businessTimezone: 'America/Santiago',

@@ -12,7 +12,7 @@ import {
 import { resolveBookingModality } from '@/lib/services/modality'
 import {
   eligibleProfessionals,
-  funnelProfessionalsQuery,
+  funnelProfessionalsQueryFor,
   professionalChoice,
   toFunnelProfessionals,
 } from '@/lib/professionals/eligible'
@@ -79,14 +79,7 @@ export async function getTeamAvailableSlots({
   const [equipo, reglas, bloqueos, reservas] = await Promise.all([
     // La MISMA query que sirve la pantalla de reservar, no una parecida: las dos
     // tienen que devolver el mismo equipo (ver `funnelProfessionalsQuery`).
-    //
-    // El `businessId` se agrega ACÁ y no viaja en el fragmento compartido porque allá
-    // la query cuelga de un `include` del negocio y Prisma la acota sola. Suelta, sin
-    // esta línea, `findMany` devuelve a la gente activa de TODOS los negocios.
-    prisma.professional.findMany({
-      ...funnelProfessionalsQuery,
-      where: { ...funnelProfessionalsQuery.where, businessId },
-    }),
+    prisma.professional.findMany(funnelProfessionalsQueryFor(businessId)),
     // Sin `isActive` y sin filtrar por persona: la herencia se decide por la
     // EXISTENCIA de filas propias (ver `rulesForProfessional`), así que filtrar acá
     // dejaría a alguien con la semana cerrada heredando el horario del salón.

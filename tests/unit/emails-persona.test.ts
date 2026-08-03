@@ -63,6 +63,7 @@ const reminderData: ReminderEmailData = {
 const rescheduleData: RescheduledEmailData = {
   businessName: 'Barbería Carlos',
   businessTimezone: 'America/Santiago',
+  modality: 'on_site',
   customerName: 'Maria',
   customerEmail: 'maria@example.com',
   customerPhone: '+56987654321',
