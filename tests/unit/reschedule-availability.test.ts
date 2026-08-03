@@ -45,11 +45,13 @@ vi.mock('@/lib/availability/slots', () => ({
   generateSlots: (...args: unknown[]) => mockGenerateSlots(...args),
 }))
 
-vi.mock('@/lib/availability/validation', () => ({
+// Spread del módulo real y sólo el assert mockeado (mismo patrón que
+// bookings-idempotency): `SLOT_UNAVAILABLE_MESSAGE` es el mensaje que la action
+// le pone al rechazo del EXCLUDE, así que tiene que salir del módulo — una copia
+// del texto acá dejaría el test verde aunque la traducción no existiera.
+vi.mock('@/lib/availability/validation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/availability/validation')>()),
   assertSlotIsAvailable: (...args: unknown[]) => mockAssertSlotIsAvailable(...args),
-  // El mensaje real: es el que la action le pone al rechazo del EXCLUDE, así que
-  // mockearlo `undefined` haría pasar el test sin que la traducción exista.
-  SLOT_UNAVAILABLE_MESSAGE: 'Ese horario ya no está disponible. Por favor selecciona otro.',
 }))
 
 vi.mock('@/lib/notifications', () => ({
@@ -61,6 +63,7 @@ vi.mock('@/lib/notifications', () => ({
 
 const { getAvailableSlotsForReschedule } = await import('@/server/actions/availability')
 const { rescheduleBooking } = await import('@/server/actions/bookings')
+const { SLOT_UNAVAILABLE_MESSAGE } = await import('@/lib/availability/validation')
 
 const businessId = 'biz-1'
 const booking = {
@@ -259,7 +262,7 @@ describe('rescheduleBooking terminal states and availability', () => {
 
     const result = await rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z'))
     expect(result.ok).toBe(false)
-    expect(!result.ok && result.error).toBe('Ese horario ya no está disponible. Por favor selecciona otro.')
+    expect(!result.ok && result.error).toBe(SLOT_UNAVAILABLE_MESSAGE)
   })
 
   it('does not update if booking became terminal during the transaction', async () => {

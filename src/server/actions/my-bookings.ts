@@ -11,6 +11,7 @@ import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
 import { computeRescheduleSlots } from '@/lib/availability/reschedule-slots'
 import { SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
 import { isNoOverlapViolation } from '@/lib/db/no-overlap'
+import { logger } from '@/lib/logger'
 import {
   sendNotificationSafely,
   sendMultiNotificationSafely,
@@ -162,13 +163,17 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
       })
     })
   } catch (error) {
-    // El EXCLUDE rechazó el update: para quien reprograma es la MISMA condición
-    // que detecta el chequeo de solape, así que le damos el mismo mensaje. La
-    // traducción va acá y no adentro de `rescheduleBookingInTx` porque un 23P01
-    // aborta la transacción entera y no se puede atajar adentro. Ver
-    // `isNoOverlapViolation`: llega sin `.code`, así que sin este caso la clienta
-    // lee "Ocurrió un error inesperado" sobre un horario que la pantalla le ofrecía.
-    if (isNoOverlapViolation(error)) throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
+    // Gemelo del path de la dueña en `bookings.ts`, log incluido: acá la discrepancia
+    // entre el chequeo de solape y el EXCLUDE es MÁS probable que en el panel —es
+    // tráfico público— y traducirla a UserError la saca del console.error del wrapper.
+    if (isNoOverlapViolation(error)) {
+      const msg = error instanceof Error ? error.message : String(error)
+      logger.error('booking.error', `Booking_no_overlap rejected rescheduleMyBooking: ${msg}`, {
+        businessId: booking.business.id,
+        metadata: { error: msg, bookingId },
+      })
+      throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
+    }
     throw error
   }
 

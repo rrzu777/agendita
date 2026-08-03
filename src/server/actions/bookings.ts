@@ -1195,11 +1195,21 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
       })
     })
   } catch (error) {
-    // Mismo cerrojo final que crear, revivir y reasignar: el EXCLUDE rechazó el
-    // update y para quien reprograma es la misma condición que ya detecta el
-    // chequeo de solape, así que sale con su mismo mensaje. Va afuera del
-    // $transaction a propósito — un 23P01 aborta la tx y no se ataja adentro.
-    if (isNoOverlapViolation(error)) throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
+    // Cerrojo final del chequeo de solape, como crear/revivir/reasignar: para quien
+    // reprograma es la misma condición, así que sale con el mismo mensaje. Por qué
+    // acá y no adentro del helper: ver `isNoOverlapViolation`.
+    if (isNoOverlapViolation(error)) {
+      // Y queda logueado, igual que en createBooking: que el chequeo de solape y el
+      // EXCLUDE hayan discrepado es justo lo que uno quiere poder mirar después.
+      // Traducirlo a UserError lo saca del console.error del wrapper `action()`, así
+      // que sin esta línea la discrepancia sería muda.
+      const msg = error instanceof Error ? error.message : String(error)
+      logger.error('booking.error', `Booking_no_overlap rejected rescheduleBooking: ${msg}`, {
+        businessId,
+        metadata: { error: msg, bookingId },
+      })
+      throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
+    }
     throw error
   }
 

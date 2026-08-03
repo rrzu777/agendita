@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { BookingStatus } from '@prisma/client'
 import { NO_OVERLAP_STATUSES } from '@/lib/bookings/approval'
+import { isNoOverlapViolation } from '@/lib/db/no-overlap'
 import { addMinutes } from 'date-fns'
 import { prisma } from '@/lib/db'
 import { requireTestDatabase } from './setup'
@@ -197,5 +198,27 @@ describe('Booking_no_overlap cubre las solicitudes', () => {
       .map((m) => m[1])
       .filter((s) => todos.includes(s))
     expect(new Set(enLaBase)).toEqual(new Set(NO_OVERLAP_STATUSES))
+  })
+})
+
+/**
+ * `isNoOverlapViolation` es de lo que cuelgan las CINCO traducciones del rechazo
+ * (crear, revivir, reasignar y las dos de reprogramar): sin ella, el 23P01 llega sin
+ * `.code` y sale como "Ocurrió un error inesperado". Y es un match de substring sobre
+ * el mensaje/`meta` de Prisma, o sea que depende de dónde Prisma ponga el nombre del
+ * constraint — un detalle que no es contrato de nadie.
+ *
+ * Los tests de unidad de las actions le pasan un Error fabricado a mano, así que
+ * verifican que la action traduce lo que el propio test inventó. Esto la ata al
+ * rechazo REAL de Postgres: si Prisma cambia dónde expone el nombre, las cinco
+ * traducciones vuelven al mensaje genérico y sólo esto lo ve.
+ */
+describe('isNoOverlapViolation reconoce el rechazo de verdad', () => {
+  it('el error que tira Postgres al encimar dos citas pasa el detector', async () => {
+    await reservar(ana)
+    const error = await reservar(ana).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(Error)
+    expect(isNoOverlapViolation(error)).toBe(true)
   })
 })

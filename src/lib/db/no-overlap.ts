@@ -22,6 +22,17 @@
  * mapea a un código conocido — llega como `PrismaClientUnknownRequestError`, que
  * ni siquiera tiene `.code`, así que cualquier catch que filtre por código lo deja
  * pasar como "error inesperado".
+ *
+ * El catch va SIEMPRE afuera del `$transaction`: después de un 23P01 la transacción
+ * queda abortada y no se puede seguir usando (mismo mecanismo que el P2002). Atajarlo
+ * adentro de un helper `*InTx` "funciona" sólo mientras ese helper no tenga nada
+ * después del write — y eso no es una garantía que un helper compartido pueda dar: el
+ * día que un caller le componga trabajo adentro de la misma tx, la query siguiente
+ * muere con "current transaction is aborted".
+ *
+ * Y el mensaje es de la OPERACIÓN, no del constraint: el mismo rechazo sale como
+ * "elegí otra hora" al reservar o reprogramar, y como "esa persona está ocupada" al
+ * reasignar. Por eso la traducción vive en cada action y no en un wrapper común.
  */
 export function isNoOverlapViolation(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e)
