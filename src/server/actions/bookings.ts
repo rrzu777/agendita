@@ -638,19 +638,25 @@ async function _updateBookingStatus(id: string, status: BookingStatus) {
   }
 
   if (status === BookingStatus.cancelled && existing.customer.email) {
-    await sendNotificationSafely('cancellation', async () =>
-      sendBookingCancelledNotification({
+    await sendNotificationSafely('cancellation', async () => {
+      // Las dos lecturas van juntas: en serie le sumaban dos round-trips a la
+      // respuesta de cada cancelación. El `calendar` sale del status PREVIO,
+      // que es lo que decide si hay evento que borrar del calendario.
+      const [businessReplyToEmail, calendar] = await Promise.all([
+        getBusinessReplyToEmail(businessId),
+        loadBookingCancelNotice(id, existing.status),
+      ])
+      return sendBookingCancelledNotification({
         businessName: existing.business.name,
-        businessReplyToEmail: await getBusinessReplyToEmail(businessId),
+        businessReplyToEmail,
         customerName: existing.customer.name,
         customerEmail: existing.customer.email,
         serviceName: existing.service.name,
         startDateTime: existing.startDateTime,
         businessTimezone: existing.business.timezone || 'America/Santiago',
-        // El status PREVIO decide si hay evento que borrar del calendario.
-        calendar: await loadBookingCancelNotice(id, existing.status),
-      }),
-    )
+        calendar,
+      })
+    })
   }
 
   const updated = await prisma.booking.findUnique({ where: { id } })
@@ -1094,10 +1100,15 @@ async function _cancelBooking(bookingId: string, reason?: string) {
   })
 
   if (booking.customer?.email) {
-    await sendNotificationSafely('booking cancelled', async () =>
-      sendBookingCancelledNotification({
+    await sendNotificationSafely('booking cancelled', async () => {
+      // Las dos lecturas en paralelo; el `calendar` sale del status PREVIO.
+      const [businessReplyToEmail, calendar] = await Promise.all([
+        getBusinessReplyToEmail(businessId),
+        loadBookingCancelNotice(bookingId, booking.status),
+      ])
+      return sendBookingCancelledNotification({
         businessName: business.name,
-        businessReplyToEmail: await getBusinessReplyToEmail(businessId),
+        businessReplyToEmail,
         customerName: booking.customer!.name,
         customerEmail: booking.customer!.email,
         serviceName: booking.service!.name,
@@ -1107,10 +1118,9 @@ async function _cancelBooking(bookingId: string, reason?: string) {
         // recibía "tu reserva fue cancelada" a secas y el motivo se quedaba en
         // las notas internas de la dueña.
         reason,
-        // El status PREVIO decide si hay evento que borrar del calendario.
-        calendar: await loadBookingCancelNotice(bookingId, booking.status),
-      }),
-    )
+        calendar,
+      })
+    })
   }
 
   revalidatePath('/dashboard/bookings')

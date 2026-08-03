@@ -70,19 +70,23 @@ async function _cancelMyBooking(bookingId: string) {
   )
 
   if (booking.customer.email) {
-    await sendNotificationSafely('self-service cancel (customer)', async () =>
-      sendBookingCancelledNotification({
+    await sendNotificationSafely('self-service cancel (customer)', async () => {
+      // Las dos lecturas en paralelo; el `calendar` sale del status PREVIO.
+      const [businessReplyToEmail, calendar] = await Promise.all([
+        getBusinessReplyToEmail(booking.business.id),
+        loadBookingCancelNotice(bookingId, booking.status),
+      ])
+      return sendBookingCancelledNotification({
         businessName: booking.business.name,
-        businessReplyToEmail: await getBusinessReplyToEmail(booking.business.id),
+        businessReplyToEmail,
         customerName: booking.customer.name,
         customerEmail: booking.customer.email!,
         serviceName: booking.service.name,
         startDateTime: booking.startDateTime,
         businessTimezone: booking.business.timezone || 'America/Santiago',
-        // El status PREVIO decide si hay evento que borrar del calendario.
-        calendar: await loadBookingCancelNotice(bookingId, booking.status),
-      }),
-    )
+        calendar,
+      })
+    })
   }
 
   revalidatePath('/dashboard/bookings')

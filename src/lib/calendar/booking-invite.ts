@@ -91,10 +91,7 @@ export async function loadBookingInvite(bookingId: string): Promise<BookingInvit
 
 /** El adjunto que marca el evento como cancelado. Sin `url`: no hay botón de
  *  "agregar" para una cita que se cayó, sólo el archivo en el mail. */
-export interface BookingCancelNotice {
-  filename: string
-  ics: string
-}
+export type BookingCancelNotice = Pick<BookingCalendarInvite, 'filename' | 'ics'>
 
 /**
  * El aviso de cancelación para el calendario de la clienta, o `null` si no hay
