@@ -86,10 +86,15 @@ export function BookingRowActions({
       pendingLabel="Completando…"
       errorLabel="Error al completar"
     />
-  ) : (
+  ) : canPay ? (
     <Button type="button" size="sm" variant="outline" onClick={() => setPayOpen(true)}>
       Cobrar
     </Button>
+  ) : (
+    // Sin `canPay` el diálogo ni se monta más abajo, así que este botón abría la
+    // nada. Pasaba con saldo cero, y ahora también con el hold vencido, que es
+    // el caso frecuente. Sin botón principal queda el menú, que ofrece cancelar.
+    null
   )
 
   return (

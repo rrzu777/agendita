@@ -47,6 +47,7 @@ function makeBooking(professional: { name: string } | null) {
     service: { name: 'Corte' },
     professional,
     customer: { name: 'Maria', phone: '+56911111111', email: null },
+    holdExpiresAt: null,
     payments: [],
   }
 }

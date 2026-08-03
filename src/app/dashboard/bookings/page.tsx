@@ -19,6 +19,7 @@ import { formatMoney } from '@/lib/money'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
+import { effectiveBookingStatus } from '@/lib/bookings/status-labels'
 import { PaymentRevertedBadge } from '@/components/dashboard/payment-reverted-badge'
 import { BookingRowActions } from '@/components/dashboard/booking-row-actions'
 import { ReviveBookingButton } from '@/components/dashboard/revive-booking-dialog'
@@ -60,6 +61,8 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
     totalPrice: number
     remainingBalance: number
     paymentMethod?: string | null
+    /** Requerido: gobierna el badge y el botón de cobro (ver BookingRowActions). */
+    holdExpiresAt: Date | null
     modality: ServiceModality
     serviceAddress?: string | null
     meetingUrl?: string | null
@@ -92,7 +95,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           {isPendingTransfer ? (
             <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>
           ) : (
-            <StatusBadge status={booking.status} />
+            <StatusBadge status={effectiveBookingStatus(booking)} />
           )}
           {isPendingBalanceTransfer && (
             <span className={PENDING_BALANCE_BADGE_CLASS}>Saldo por verificar</span>
@@ -297,11 +300,15 @@ export default async function BookingsPage() {
     ? !!(await getBankTransferInfo(userData.business.id))
     : false
 
+  // Los dos contadores de espera van por el status EFECTIVO, igual que los
+  // badges de abajo: si no, la tarjeta dice "3 pendientes de pago" y la tabla
+  // muestra dos, porque la tercera ya se está expirando.
+  const effectiveStatuses = bookings.map(b => effectiveBookingStatus(b))
   const confirmedCount = bookings.filter(b => b.status === 'confirmed').length
-  const pendingCount = bookings.filter(b => b.status === 'pending_payment').length
+  const pendingCount = effectiveStatuses.filter(s => s === 'pending_payment').length
   // Solicitudes esperando respuesta. La tarjeta sólo aparece si hay alguna: un
   // negocio sin confirmación manual nunca ve un contador que siempre marca 0.
-  const requestCount = bookings.filter(b => b.status === 'pending_confirmation').length
+  const requestCount = effectiveStatuses.filter(s => s === 'pending_confirmation').length
 
   // Race orphans (spec §5): una reserva cancelada/expirada puede haber quedado
   // con un Payment pending sin barrer; no la mostramos como "por verificar".
@@ -411,7 +418,7 @@ export default async function BookingsPage() {
                           {hasPendingDeclaredTransfer(booking) ? (
                             <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>
                           ) : (
-                            <StatusBadge status={booking.status} />
+                            <StatusBadge status={effectiveBookingStatus(booking)} />
                           )}
                           {hasPendingBalanceTransfer(booking) && (
                             <span className={PENDING_BALANCE_BADGE_CLASS}>Saldo por verificar</span>

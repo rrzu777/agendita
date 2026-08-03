@@ -24,7 +24,7 @@ import { formatManualPaymentMoney, isManualPaymentAllowed } from './manual-payme
 import { PaymentRevertedBadge } from './payment-reverted-badge'
 import { CustomerPhotos } from './customer-photos'
 import { ReassignControl } from './reassign-control'
-import { bookingStatusLabel, isTerminalBookingStatus } from '@/lib/bookings/status-labels'
+import { bookingStatusLabel, effectiveBookingStatus, isTerminalBookingStatus } from '@/lib/bookings/status-labels'
 import { bookingWhere } from '@/lib/services/modality'
 import { useVocabulary } from '@/components/vocabulary-provider'
 
@@ -70,8 +70,12 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
   const isMobile = useIsMobile()
 
   const start = new Date(booking.startDateTime)
+  // Con el hold vencido la reserva ya está condenada: mostrar "Expirada" acá y
+  // en la tabla es la misma decisión (ver `effectiveBookingStatus`).
+  const effectiveStatus = effectiveBookingStatus(booking)
   // En un estado terminal no hay nada que reasignar (el server también lo
-  // rechaza; esto sólo evita ofrecer un botón que va a fallar).
+  // rechaza; esto sólo evita ofrecer un botón que va a fallar). Va por el status
+  // CRUDO: reasignar sigue siendo válido mientras la base no la haya expirado.
   const reassignable = hasTeam && !isTerminalBookingStatus(booking.status)
 
   return (
@@ -87,8 +91,8 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
         <div className="space-y-4 overflow-y-auto p-4">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Estado</span>
-            <Badge className={statusBadgeClasses[booking.status] || ''}>
-              {bookingStatusLabel(booking.status)}
+            <Badge className={statusBadgeClasses[effectiveStatus] || ''}>
+              {bookingStatusLabel(effectiveStatus)}
             </Badge>
           </div>
 

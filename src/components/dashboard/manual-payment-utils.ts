@@ -18,6 +18,11 @@ export type ManualPaymentBooking = {
   depositRequired: number
   finalAmount: number
   remainingBalance: number
+  /** Requerido a propósito (mismo criterio que `professional` en
+   *  CalendarBooking): opcional, la consulta que se olvide de traerlo compila
+   *  igual y el botón vuelve a ofrecer un cobro que el server rechaza. `null` =
+   *  sin hold; `string` es el payload serializado del calendario. */
+  holdExpiresAt: Date | string | null
   service: { name: string } | null
   customer: { name: string } | null
   // Opcional: solo lo traen los llamadores que ya consultan `payments`
@@ -26,10 +31,22 @@ export type ManualPaymentBooking = {
   payments?: Array<{ providerPaymentId?: string | null }>
 }
 
-export function isManualPaymentAllowed(booking: Pick<ManualPaymentBooking, 'status' | 'remainingBalance'>) {
+export function isManualPaymentAllowed(
+  booking: Pick<ManualPaymentBooking, 'status' | 'remainingBalance' | 'holdExpiresAt'>,
+  now: Date = new Date(),
+) {
   // Estados desde la fuente única compartida con assertBookingPayable (server);
   // el gate de monto (saldo > 0) es propio de esta superficie.
-  return booking.remainingBalance > 0 && isManuallyPayableStatus(booking.status)
+  if (booking.remainingBalance <= 0 || !isManuallyPayableStatus(booking.status)) return false
+  // Segundo guard de assertBookingPayable, espejado acá: con el hold vencido el
+  // server tira "El tiempo para pagar esta reserva ha expirado". Sin esto el
+  // panel ofrecía "Cobrar" y el clic terminaba en un error que no explicaba
+  // nada — el botón prometía algo que ya no existía.
+  return !(
+    booking.status === 'pending_payment' &&
+    booking.holdExpiresAt != null &&
+    new Date(booking.holdExpiresAt) < now
+  )
 }
 
 export function calculateManualPaymentAmount({

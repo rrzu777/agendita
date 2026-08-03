@@ -18,6 +18,9 @@ export type CalendarBooking = {
   finalAmount: number
   remainingBalance: number
   paymentStatus: string
+  /** Requerido por el mismo motivo que `professional`: el drawer decide con
+   *  esto qué estado mostrar y si ofrece cobrar. `null` = sin hold. */
+  holdExpiresAt: Date | null
   customerNotes?: string | null
   internalNotes?: string | null
   modality: ServiceModality

@@ -23,6 +23,7 @@ function makeBooking(bookingNumber: number | null) {
     service: { name: 'Corte' },
     professional: null,
     customer: { name: 'Ana', phone: '+56911111111' },
+    holdExpiresAt: null,
     payments: [],
   }
 }

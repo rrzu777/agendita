@@ -135,6 +135,10 @@ export async function getBookings() {
       totalPrice: true,
       remainingBalance: true,
       paymentMethod: true,
+      // El plazo decide QUÉ estado mostrar y si se puede cobrar: con el hold
+      // vencido la reserva ya está condenada aunque el cron todavía no la haya
+      // asentado (ver `effectiveBookingStatus` / `isManualPaymentAllowed`).
+      holdExpiresAt: true,
       modality: true,
       serviceAddress: true,
       meetingUrl: true,
