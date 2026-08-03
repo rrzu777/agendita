@@ -19,6 +19,7 @@ const mockPrisma = {
   },
   timeBlockException: {
     upsert: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   service: {
     findMany: vi.fn().mockResolvedValue([]),
@@ -394,6 +395,52 @@ describe('updateTimeBlockSeries', () => {
 
     expect(result).toEqual({ ok: true, data: { series: expect.objectContaining({ id: 'series-2' }) } })
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
+  })
+
+  // La tercera capa del bug de la ocurrencia movida (las otras dos, #133): el
+  // reset de excepciones clasificaba SOLO por `occurrenceDate` (el día
+  // ORIGINAL). El corte correcto exige LAS DOS fechas en el dominio del reset:
+  // - `occurrenceDate >= hoy`: una excepción con origen en la mitad pasada
+  //   pertenece a la serie vieja; borrarla en el split haría que esa serie
+  //   REGENERE el bloqueo default en su día original (un bloqueo apareciendo en
+  //   el pasado) y mataría el override que el rescate de #133 muestra a propósito.
+  // - `startDateTime >= hoy` (si la movieron): la movida a ayer ya ocurrió;
+  //   resetearla "des-ocurre" un bloqueo real.
+  describe('reset de excepciones: las dos fechas en el dominio del reset', () => {
+    const anchorToday = fromZonedTime(`${formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd')} 00:00:00`, TZ)
+    const resetEsperado = {
+      seriesId: 'series-1',
+      occurrenceDate: { gte: anchorToday },
+      OR: [
+        { startDateTime: null },
+        { startDateTime: { gte: anchorToday } },
+      ],
+    }
+
+    it('el split borra sólo las excepciones con origen Y ocurrencia real de hoy en adelante', async () => {
+      await updateTimeBlockSeries('series-1', { startTime: '13:00', endTime: '15:00' })
+
+      expect(mockPrisma.timeBlockSeries.create).toHaveBeenCalledTimes(1)
+      expect(mockPrisma.timeBlockException.deleteMany).toHaveBeenCalledWith({ where: resetEsperado })
+    })
+
+    it('el modo in-place (serie solo-futura) usa el mismo criterio', async () => {
+      const mananaStr = formatInTimeZone(addDays(new Date(), 1), TZ, 'yyyy-MM-dd')
+      mockPrisma.timeBlockSeries.findFirst.mockResolvedValue({
+        ...existingSeries,
+        anchorDate: fromZonedTime(`${mananaStr} 00:00:00`, TZ),
+      })
+
+      await updateTimeBlockSeries('series-1', { startTime: '13:00', endTime: '15:00' })
+
+      // Solo-futura: edita el registro, no crea serie nueva.
+      expect(mockPrisma.timeBlockSeries.create).not.toHaveBeenCalled()
+      expect(mockPrisma.timeBlockSeries.update).toHaveBeenCalledWith({
+        where: { id: 'series-1' },
+        data: { startTime: '13:00', endTime: '15:00', reason: null },
+      })
+      expect(mockPrisma.timeBlockException.deleteMany).toHaveBeenCalledWith({ where: resetEsperado })
+    })
   })
 })
 
