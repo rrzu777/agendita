@@ -16,6 +16,14 @@ import { formatDuration } from '@/lib/format-duration'
 import { MODALITY_LABELS, sortModalities, requiresServiceAddress } from '@/lib/services/modality'
 import { ServiceModality } from '@prisma/client'
 import { getLocalDateStr, localDateTimeToUtc } from '@/lib/availability/timezone'
+import {
+  ANYONE_LABEL,
+  professionalChoice,
+  professionalFields,
+  type FunnelProfessional,
+  type ProfessionalChoice,
+  type ProfessionalPick,
+} from '@/lib/professionals/eligible'
 import { formatMoney } from '@/lib/money'
 import { CalendarCheck2, User, Search, X } from 'lucide-react'
 import type { Service } from '@prisma/client'
@@ -24,9 +32,66 @@ import { useVocabulary } from '@/components/vocabulary-provider'
 
 interface NewBookingFormProps {
   services: Service[]
+  professionals: FunnelProfessional[]
   businessId: string
   timezone: string
   currency: string
+}
+
+/**
+ * El estado puede quedar apuntando a alguien que dejó de ser elegible (cambió el
+ * servicio o la modalidad). En el panel eso vuelve a "cualquiera", nunca a "sin
+ * persona": una reserva sin persona con equipo elegible choca contra TODOS
+ * (`bookingBlocksProfessional`) y come la hora del equipo entero. Es distinto
+ * del funnel a propósito — allá `ask` + sin elección frena el paso; acá no hay
+ * paso que frenar y el default útil es que el servidor reparta.
+ *
+ * Exportada para poder verificarla sin montar el formulario, que necesita
+ * interacción para llegar a este estado.
+ */
+export function effectiveDashboardPick(choice: ProfessionalChoice, pick: ProfessionalPick): ProfessionalPick {
+  return pick.kind === 'person' && choice.kind === 'ask' && !choice.options.some((p) => p.id === pick.id)
+    ? { kind: 'anyone' }
+    : pick
+}
+
+/**
+ * El selector de quién atiende, con la MISMA regla del funnel (`professionalChoice`):
+ * sin equipo elegible no aparece; con una sola persona no pregunta pero la reserva
+ * igual queda a su nombre (eso lo colapsa `professionalFields`, no esto); con dos o
+ * más pregunta, y "Cualquiera disponible" va primera, como en el funnel.
+ *
+ * Componente aparte y exportado para poder verificar los tres casos sin montar el
+ * formulario entero, que necesita interacción para llegar a este estado.
+ */
+export function ProfessionalField({
+  choice,
+  pick,
+  onChange,
+}: {
+  choice: ProfessionalChoice
+  pick: ProfessionalPick
+  onChange: (pick: ProfessionalPick) => void
+}) {
+  if (choice.kind !== 'ask') return null
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="professional">¿Quién atiende? *</Label>
+      <select
+        id="professional"
+        value={pick.kind === 'person' ? pick.id : 'anyone'}
+        onChange={(e) =>
+          onChange(e.target.value === 'anyone' ? { kind: 'anyone' } : { kind: 'person', id: e.target.value })
+        }
+        className="studio-input w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
+      >
+        <option value="anyone">{ANYONE_LABEL}</option>
+        {choice.options.map((p) => (
+          <option key={p.id} value={p.id}>{p.name}</option>
+        ))}
+      </select>
+    </div>
+  )
 }
 
 type PaymentMode = 'none' | 'deposit_paid' | 'full_paid'
@@ -39,7 +104,7 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   other: 'Otro',
 }
 
-export function NewBookingForm({ services, businessId, timezone, currency }: NewBookingFormProps) {
+export function NewBookingForm({ services, professionals, businessId, timezone, currency }: NewBookingFormProps) {
   const vocabulary = useVocabulary()
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -59,6 +124,9 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
   const [customerBirthDate, setCustomerBirthDate] = useState('')
+  // "Cualquiera" y no "sin persona" como arranque: si hay equipo elegible el
+  // servidor reparte, y sin equipo `professionalFields` lo colapsa solo a nada.
+  const [pick, setPick] = useState<ProfessionalPick>({ kind: 'anyone' })
   const [date, setDate] = useState('')
   const [time, setTime] = useState('')
   const [internalNotes, setInternalNotes] = useState('')
@@ -195,6 +263,10 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
     setPromoError(null)
   }
 
+  const choice = professionalChoice(professionals, serviceId || null, effectiveModality)
+  const effectivePick = effectiveDashboardPick(choice, pick)
+  const { professional, professionalName } = professionalFields(choice, effectivePick)
+
   const summary = useMemo(() => {
     if (!selectedService) return null
     const deposit = selectedService.depositAmount
@@ -286,6 +358,7 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
         skipPackage: !usePackage,
         modality: effectiveModality ?? undefined,
         serviceAddress: serviceAddress || undefined,
+        professional,
       })
       if (!res.ok) {
         setError(res.error)
@@ -363,6 +436,7 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
                   </select>
                 </div>
               )}
+              <ProfessionalField choice={choice} pick={effectivePick} onChange={setPick} />
               {effectiveModality != null && requiresServiceAddress(effectiveModality) && (
                 <div className="space-y-2">
                   <Label htmlFor="serviceAddress">Dirección *</Label>
@@ -598,6 +672,12 @@ export function NewBookingForm({ services, businessId, timezone, currency }: New
                   <span className="text-muted-foreground">Servicio</span>
                   <span className="font-medium">{summary.serviceName} ({formatDuration(summary.duration)})</span>
                 </div>
+                {professionalName && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Atiende</span>
+                    <span className="font-medium">{professionalName}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Precio</span>
                   <span className="font-medium">{formatMoney(summary.price, currency)}</span>

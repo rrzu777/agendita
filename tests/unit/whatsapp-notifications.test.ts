@@ -13,6 +13,7 @@ const baseData = {
   customerName: 'Maria',
   customerPhone: '56912345678',
   serviceName: 'Manicure',
+  professionalName: null,
   startDateTime: new Date('2026-06-15T14:00:00-04:00'),
   businessTimezone: 'America/Santiago',
   businessCurrency: 'CLP',
@@ -177,6 +178,7 @@ describe('buildBookingRescheduledWhatsappUrl', () => {
     const url = buildBookingRescheduledWhatsappUrl('56912345678', {
       customerName: 'Maria',
       serviceName: 'Manicure',
+      professionalName: null,
       previousStartDateTime: new Date('2026-06-15T14:00:00-04:00'),
       newStartDateTime: new Date('2026-06-16T15:30:00-04:00'),
       businessTimezone: 'America/Santiago',
@@ -199,6 +201,7 @@ describe('buildBookingRescheduledWhatsappMessage', () => {
     const message = buildBookingRescheduledWhatsappMessage({
       customerName: 'Maria',
       serviceName: 'Manicure',
+      professionalName: null,
       previousStartDateTime: new Date('2026-06-15T14:00:00-04:00'),
       newStartDateTime: new Date('2026-06-16T15:30:00-04:00'),
       businessTimezone: 'America/Santiago',
@@ -223,5 +226,42 @@ describe('buildBookingRescheduledWhatsappMessage', () => {
 
     expect(message).toContain('Los Olmos 12')
     expect(message).not.toContain('Av. Principal 123')
+  })
+})
+
+// El nombre del fixture NO es substring de ningún otro dato del mensaje
+// (aprendido en el PR H: 'Juan' matcheaba 'ClientaDeJuan' y el test no podía
+// fallar). "atiende" tampoco aparece en ninguna otra línea de los builders.
+describe('quién atiende en los mensajes de whatsapp', () => {
+  const conPersona = { ...baseData, professionalName: 'RaulBarbero' }
+
+  it.each([
+    ['confirmación', buildBookingConfirmationWhatsappMessage, 'Te atiende: RaulBarbero'],
+    ['recordatorio', buildWhatsappReminderMessage, 'Te atiende: RaulBarbero'],
+    ['resumen para el negocio', buildWhatsappBookingSummaryText, 'Atiende: RaulBarbero'],
+  ])('%s nombra a la persona cuando la reserva la tiene', (_name, builder, expected) => {
+    expect(builder(conPersona)).toContain(expected)
+  })
+
+  it.each([
+    ['confirmación', buildBookingConfirmationWhatsappMessage],
+    ['recordatorio', buildWhatsappReminderMessage],
+    ['resumen para el negocio', buildWhatsappBookingSummaryText],
+  ])('%s no dibuja la línea sin persona', (_name, builder) => {
+    expect(builder(baseData)).not.toContain('atiende')
+  })
+
+  it('la reprogramación nombra a la persona, que se conserva al mover la hora', () => {
+    const message = buildBookingRescheduledWhatsappMessage({
+      customerName: 'Maria',
+      serviceName: 'Manicure',
+      professionalName: 'RaulBarbero',
+      previousStartDateTime: new Date('2026-06-15T14:00:00-04:00'),
+      newStartDateTime: new Date('2026-06-16T15:30:00-04:00'),
+      businessTimezone: 'America/Santiago',
+      businessAddress: null,
+    })
+
+    expect(message).toContain('Te atiende: RaulBarbero')
   })
 })

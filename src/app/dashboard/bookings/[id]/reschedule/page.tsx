@@ -24,7 +24,7 @@ export default async function ReschedulePage({ params }: ReschedulePageProps) {
 
   const booking = await prisma.booking.findFirst({
     where: { id, businessId: userData.business.id },
-    include: { service: true, customer: true },
+    include: { service: true, customer: true, professional: { select: { name: true } } },
   })
 
   if (!booking) {
@@ -46,6 +46,7 @@ export default async function ReschedulePage({ params }: ReschedulePageProps) {
           customerName={booking.customer?.name || ''}
           customerPhone={booking.customer?.phone || ''}
           serviceName={booking.service?.name || ''}
+          professionalName={booking.professional?.name ?? null}
           currentDate={formatInTimeZone(booking.startDateTime, timezone, 'yyyy-MM-dd')}
           currentTime={formatInTimeZone(booking.startDateTime, timezone, 'HH:mm')}
           timezone={timezone}

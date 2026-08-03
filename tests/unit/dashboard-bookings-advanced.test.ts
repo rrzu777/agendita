@@ -4,7 +4,8 @@ import { BookingPaymentStatus, BookingStatus, PaymentType } from '@prisma/client
 import { UserError } from '@/lib/actions/result'
 
 const mockApplyApprovedPayment = vi.fn()
-const mockAssertSlotIsAvailable = vi.fn()
+const mockAssertSlotAndResolveProfessional = vi.fn()
+const mockAssertProfessionalOffersService = vi.fn()
 
 const mockPrisma = {
   service: { findFirst: vi.fn() },
@@ -41,8 +42,16 @@ vi.mock('@/server/actions/revalidate-business', () => ({
   revalidateBusinessPublicPaths: vi.fn().mockResolvedValue(undefined),
 }))
 
-vi.mock('@/lib/availability/validation', () => ({
-  assertSlotIsAvailable: (...args: unknown[]) => mockAssertSlotIsAvailable(...args),
+// El camino del dashboard valida el slot Y resuelve la persona en el mismo
+// helper del flujo público. Mockear el módulo entero (y no las dos mitades de
+// validation) evita la trampa documentada de mockear una sola mitad.
+vi.mock('@/lib/professionals/assign', () => ({
+  assertSlotAndResolveProfessional: (...args: unknown[]) => mockAssertSlotAndResolveProfessional(...args),
+}))
+
+vi.mock('@/lib/professionals/ownership', () => ({
+  assertProfessionalOffersService: (...args: unknown[]) => mockAssertProfessionalOffersService(...args),
+  activeProfessionalWhere: (businessId: string) => ({ businessId, isActive: true }),
 }))
 
 vi.mock('@/server/services/finance', () => ({
@@ -152,7 +161,7 @@ describe('createBookingFromDashboard advanced payment modes', () => {
     setupBooking()
     mockPrisma.payment.create.mockResolvedValue({ id: 'payment-1' })
     mockApplyApprovedPayment.mockResolvedValue({ booking: { id: 'booking-1' }, wasConfirmed: true })
-    mockAssertSlotIsAvailable.mockResolvedValue(undefined)
+    mockAssertSlotAndResolveProfessional.mockResolvedValue(null)
   })
 
   it('paymentMode none with deposit creates pending_payment without Payment', async () => {
@@ -242,9 +251,9 @@ describe('createBookingFromDashboard advanced payment modes', () => {
   })
 
   it('fails when slot is occupied', async () => {
-    // UserError: refleja el throw real de assertSlotIsAvailable (validation.ts,
-    // ya migrado) — un Error plano acá se volvería el mensaje genérico del wrapper.
-    mockAssertSlotIsAvailable.mockRejectedValue(new UserError('Ese horario ya no está disponible'))
+    // UserError: refleja el throw real del helper de validación — un Error
+    // plano acá se volvería el mensaje genérico del wrapper.
+    mockAssertSlotAndResolveProfessional.mockRejectedValue(new UserError('Ese horario ya no está disponible'))
 
     const result = await createBookingFromDashboard({ ...baseInput, paymentMode: 'none' })
     expect(result.ok).toBe(false)
@@ -268,7 +277,7 @@ describe('createBookingFromDashboard promo discount (money path)', () => {
     setupBooking()
     mockPrisma.payment.create.mockResolvedValue({ id: 'payment-1' })
     mockApplyApprovedPayment.mockResolvedValue({ booking: { id: 'booking-1' }, wasConfirmed: true })
-    mockAssertSlotIsAvailable.mockResolvedValue(undefined)
+    mockAssertSlotAndResolveProfessional.mockResolvedValue(null)
   })
 
   it('discounted deposit charges the discounted amount, not the full price', async () => {
@@ -343,7 +352,7 @@ describe('createBookingFromDashboard customer reuse', () => {
     setupTx()
     setupService(20000, 0)
     setupBooking()
-    mockAssertSlotIsAvailable.mockResolvedValue(undefined)
+    mockAssertSlotAndResolveProfessional.mockResolvedValue(null)
   })
 
   it('reuses existing customer by normalized phone', async () => {
@@ -368,6 +377,96 @@ describe('createBookingFromDashboard customer reuse', () => {
         businessId,
         phone: '56912345678',
       }),
+    })
+  })
+})
+
+describe('createBookingFromDashboard con persona', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupTx()
+    setupService(20000, 0)
+    setupCustomer()
+    setupBooking()
+    mockAssertProfessionalOffersService.mockResolvedValue(undefined)
+    mockAssertSlotAndResolveProfessional.mockResolvedValue(null)
+  })
+
+  it('persona elegida: se autoriza contra el servicio y la reserva queda a su nombre', async () => {
+    mockAssertSlotAndResolveProfessional.mockResolvedValue('prof-1')
+
+    const result = await createBookingFromDashboard({
+      ...baseInput,
+      professional: { kind: 'person', id: 'prof-1' },
+    })
+
+    expect(result.ok).toBe(true)
+    // La autorización corre con la modalidad RESUELTA, no la pedida.
+    expect(mockAssertProfessionalOffersService).toHaveBeenCalledWith(
+      expect.anything(), businessId, 'prof-1', 'svc-1', 'on_site',
+    )
+    // El pick viaja entero al resolver, con lead time 0 (walk-ins) sin re-default.
+    expect(mockAssertSlotAndResolveProfessional).toHaveBeenCalledWith(
+      expect.objectContaining({
+        professional: { kind: 'person', id: 'prof-1' },
+        modality: 'on_site',
+        leadTimeMinutes: 0,
+      }),
+    )
+    const createArgs = mockPrisma.booking.create.mock.calls[0][0]
+    expect(createArgs.data.professionalId).toBe('prof-1')
+    // Assertear el include PEDIDO: el mock devuelve relaciones aunque nadie las pida.
+    expect(createArgs.include).toEqual({
+      service: true,
+      customer: true,
+      professional: { select: { name: true } },
+    })
+  })
+
+  it('"cualquiera": no hay a quién autorizar antes y decide el resolver adentro de la tx', async () => {
+    mockAssertSlotAndResolveProfessional.mockResolvedValue('prof-2')
+
+    const result = await createBookingFromDashboard({
+      ...baseInput,
+      professional: { kind: 'anyone' },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(mockAssertProfessionalOffersService).not.toHaveBeenCalled()
+    expect(mockAssertSlotAndResolveProfessional).toHaveBeenCalledWith(
+      expect.objectContaining({ professional: { kind: 'anyone' } }),
+    )
+    expect(mockPrisma.booking.create.mock.calls[0][0].data.professionalId).toBe('prof-2')
+  })
+
+  it('sin professional: va como none y la reserva queda sin persona', async () => {
+    const result = await createBookingFromDashboard({ ...baseInput })
+
+    expect(result.ok).toBe(true)
+    expect(mockAssertProfessionalOffersService).not.toHaveBeenCalled()
+    expect(mockAssertSlotAndResolveProfessional).toHaveBeenCalledWith(
+      expect.objectContaining({ professional: { kind: 'none' } }),
+    )
+    expect(mockPrisma.booking.create.mock.calls[0][0].data.professionalId).toBeNull()
+  })
+
+  it('con código de descuento, el update que se devuelve también pide la persona', async () => {
+    // Camino común (paquete/código): lo que se devuelve es el update de después
+    // del descuento; sin la relación ahí la persona desaparece de la respuesta.
+    setupPromo()
+    mockAssertSlotAndResolveProfessional.mockResolvedValue('prof-1')
+
+    const result = await createBookingFromDashboard({
+      ...baseInput,
+      professional: { kind: 'person', id: 'prof-1' },
+      promotionCode: 'V20',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(mockPrisma.booking.update.mock.calls[0][0].include).toEqual({
+      service: true,
+      customer: true,
+      professional: { select: { name: true } },
     })
   })
 })

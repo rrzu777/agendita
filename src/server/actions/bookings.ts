@@ -13,7 +13,7 @@ import { getConfirmedSessionUser } from '@/lib/auth/user'
 import { findOrCreateCustomerInTx } from '@/lib/customers/find-or-create'
 import { logger } from '@/lib/logger'
 
-import { assertSlotIsAvailable, SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
+import { SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
 import { assertProfessionalOffersService } from '@/lib/professionals/ownership'
 import { assertSlotAndResolveProfessional } from '@/lib/professionals/assign'
 import { NO_PROFESSIONAL, type ProfessionalPick } from '@/lib/professionals/eligible'
@@ -50,6 +50,16 @@ import {
   getBusinessReplyToEmail,
 } from '@/lib/notifications'
 
+// La forma con la que un ProfessionalPick cruza el borde, compartida entre los
+// dos formularios que crean reservas (el público y el del panel): más estricta
+// que `parseProfessionalPick` a propósito — lo que viene malformado se rechaza
+// en vez de degradar a "sin persona".
+const professionalPickSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('none') }),
+  z.object({ kind: z.literal('anyone') }),
+  z.object({ kind: z.literal('person'), id: z.string().min(1).max(64) }),
+])
+
 const createBookingSchema = z.object({
   serviceId: z.string().min(1),
   customerName: z.string().min(1).max(100),
@@ -67,16 +77,10 @@ const createBookingSchema = z.object({
   // del servicio (resolveBookingModality) antes de persistirla.
   modality: z.nativeEnum(ServiceModality).optional(),
   serviceAddress: z.string().trim().max(300, 'La dirección es demasiado larga').optional(),
-  // Con quién se atiende. Ausente = sin persona, que es el funnel de siempre y lo
-  // que manda el panel. La procedencia se verifica abajo, con la modalidad ya
-  // resuelta; a quién le toca en `anyone` lo decide el servidor adentro de la tx.
-  professional: z
-    .discriminatedUnion('kind', [
-      z.object({ kind: z.literal('none') }),
-      z.object({ kind: z.literal('anyone') }),
-      z.object({ kind: z.literal('person'), id: z.string().min(1).max(64) }),
-    ])
-    .optional(),
+  // Con quién se atiende. Ausente = sin persona, que es el funnel de siempre.
+  // La procedencia se verifica abajo, con la modalidad ya resuelta; a quién le
+  // toca en `anyone` lo decide el servidor adentro de la tx.
+  professional: professionalPickSchema.optional(),
 })
 
 const confirmPaymentSchema = z.object({
@@ -773,6 +777,9 @@ const createBookingFromDashboardSchema = z.object({
   skipPackage: z.boolean().optional(),
   modality: z.nativeEnum(ServiceModality).optional(),
   serviceAddress: z.string().trim().max(300, 'La dirección es demasiado larga').optional(),
+  // Quién atiende, con la misma semántica del funnel: `anyone` lo resuelve el
+  // servidor adentro de la tx. Ausente = sin persona (negocio sin equipo).
+  professional: professionalPickSchema.optional(),
 })
 
 const PAYMENT_METHOD_MAP: Record<string, string> = {
@@ -798,6 +805,7 @@ async function _createBookingFromDashboard(data: {
   skipPackage?: boolean
   modality?: ServiceModality
   serviceAddress?: string
+  professional?: ProfessionalPick
 }) {
   const { user, business, businessId } = await requireBusinessRole(['owner', 'admin'])
 
@@ -821,6 +829,14 @@ async function _createBookingFromDashboard(data: {
       serviceAddress: data.serviceAddress,
       defaultMeetingUrl: business.defaultMeetingUrl,
     })
+
+  // Igual que en el flujo público: sólo la elección explícita se autoriza acá.
+  // "Cualquiera disponible" no tiene a quién autorizar todavía — la persona no
+  // existe hasta que la transacción la elija, con este mismo filtro.
+  const professional = data.professional ?? NO_PROFESSIONAL
+  if (professional.kind === 'person') {
+    await assertProfessionalOffersService(prisma, businessId, professional.id, data.serviceId, modality)
+  }
 
   // Derive payment mode: new explicit mode takes precedence, fallback to legacy markDepositPaid
   const rawPaymentMode = data.paymentMode
@@ -854,16 +870,18 @@ async function _createBookingFromDashboard(data: {
     : BookingPaymentStatus.unpaid
 
   const booking = await prisma.$transaction(async (tx) => {
-    await assertSlotIsAvailable({
+    // Valida el horario y de paso resuelve quién atiende (con `anyone` prueba a
+    // los candidatos en orden de carga). El lead time va en 0 y la resolución no
+    // re-aplica el default: la dueña anota walk-ins que empiezan ahora mismo.
+    const professionalId = await assertSlotAndResolveProfessional({
       tx,
       businessId,
       serviceId: data.serviceId,
       startDateTime: data.startDateTime,
       endDateTime,
       timezone: business.timezone || 'America/Santiago',
-      // Sin persona: la reserva manual del panel todavía no pregunta con quién.
-      professionalId: null,
-      // La dueña puede anotar walk-ins que empiezan ahora mismo
+      professional,
+      modality,
       leadTimeMinutes: 0,
     })
 
@@ -895,6 +913,7 @@ async function _createBookingFromDashboard(data: {
         businessId,
         serviceId: data.serviceId,
         customerId: customer.id,
+        professionalId,
         startDateTime: data.startDateTime,
         endDateTime,
         status,
@@ -911,7 +930,7 @@ async function _createBookingFromDashboard(data: {
         holdExpiresAt: status === BookingStatus.pending_payment ? addMinutes(new Date(), DASHBOARD_HOLD_MINUTES) : null,
         bookingNumber,
       },
-      include: { service: true, customer: true },
+      include: { service: true, customer: true, professional: { select: { name: true } } },
     })
 
     // Paquete o código, dentro de la misma tx: un código inválido/agotado lanza y
@@ -957,7 +976,10 @@ async function _createBookingFromDashboard(data: {
           paymentStatus: effPaymentStatus,
           holdExpiresAt: effHold,
         },
-        include: { service: true, customer: true },
+        // También acá: con paquete o código lo que se devuelve es ESTE update,
+        // y sin la relación la persona desaparece del camino común (mismas
+        // cuatro salidas que createBooking).
+        include: { service: true, customer: true, professional: { select: { name: true } } },
       })
     }
 
