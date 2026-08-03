@@ -619,7 +619,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
             {!availabilityError && (
               <p className="mt-1">
                 Tu reserva quedará pendiente hasta que el negocio confirme el abono.
-                Te guardamos el horario por {manualHoldHours} horas.
+                Te guardamos el horario hasta {manualHoldHours} horas, o hasta tu cita si es antes.
               </p>
             )}
           </div>

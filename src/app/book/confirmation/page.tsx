@@ -11,7 +11,7 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 import { formatMoney } from '@/lib/money'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD, BT_DECLARED_PREFIX } from '@/lib/bank-transfer/declared'
-import { MANUAL_COORDINATION_METHOD } from '@/lib/bookings/hold'
+import { MANUAL_COORDINATION_METHOD, promisableHoldDeadline } from '@/lib/bookings/hold'
 import { getLocalDateStr } from '@/lib/availability/timezone'
 import { TransferPanel } from './transfer-panel'
 import { AccountCta } from '@/components/booking/account-cta'
@@ -79,11 +79,15 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
   // 'expired' de deriveConfirmationState y el aviso no se muestra. Con la
   // ventana larga de coordinación manual el límite puede caer otro día:
   // "hasta las 14:30" a secas mentiría el día, así que lleva la fecha.
+  const deadlineDate = promisableHoldDeadline(booking, now)
   const holdDeadline = (() => {
-    if (!booking.holdExpiresAt || booking.holdExpiresAt <= now) return null
+    if (!deadlineDate) return null
+    // El techo es la cita, no la ventana: decir la hora sería repetirle la hora
+    // que ya está leyendo dos párrafos más abajo. En palabras se entiende.
+    if (deadlineDate.getTime() === booking.endDateTime.getTime()) return 'tu cita'
     const tz = booking.business.timezone
-    const { date, time } = formatConfirmationDateTime(booking.holdExpiresAt, tz)
-    const esHoy = getLocalDateStr(booking.holdExpiresAt, tz) === getLocalDateStr(now, tz)
+    const { date, time } = formatConfirmationDateTime(deadlineDate, tz)
+    const esHoy = getLocalDateStr(deadlineDate, tz) === getLocalDateStr(now, tz)
     return esHoy ? `las ${time}` : `el ${date} a las ${time}`
   })()
 
@@ -326,7 +330,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
             bank={bankInfo}
             amount={Math.min(booking.depositRequired, booking.remainingBalance)}
             currency={currency}
-            deadline={booking.holdExpiresAt}
+            deadline={deadlineDate}
             timezone={booking.business.timezone}
             bookingId={booking.id}
           />
