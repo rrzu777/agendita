@@ -106,10 +106,18 @@ export function occupiesSlot(b: SlotOccupancyFields, now: Date): boolean {
   if (isHeldStatus(b.status)) {
     // Sin vencimiento tapa hasta que alguien la resuelva a mano.
     if (!b.holdExpiresAt || b.holdExpiresAt > now) return true
-    // Una solicitud vencida siempre libera: no está en la lista de estados del
-    // EXCLUDE, así que tratarla como libre no puede hacer fallar un insert, y el
-    // sweep de solicitudes del cron la barre sin condiciones de pago.
-    if (b.status === BookingStatus.pending_confirmation) return false
+    // Una solicitud vencida NO libera acá: sigue tapando hasta que el cron la
+    // expire. Antes liberaba al instante y era legal porque `pending_confirmation`
+    // no estaba en el EXCLUDE; desde la migración `booking_overlap_solicitudes` sí
+    // está, y liberarla haría que la pantalla ofrezca una hora que el insert
+    // rechaza con un 23P01. Tampoco alcanza con barrerla dentro de la transacción
+    // de la otra reserva, como sí se hace con los holds de pago abandonados:
+    // expirar una solicitud le manda un mail a la clienta
+    // (`expireUnansweredRequests`), así que barrerla en silencio le saca la hora
+    // sin avisarle — el mismo motivo por el que la transferencia bancaria y la
+    // coordinación manual quedan afuera de `isSweepableExpiredHold`. Lo que cuesta
+    // es que el horario quede tomado hasta el próximo cron; para una cita a menos
+    // de 24h eso es cero, porque la solicitud vence recién a la hora de la cita.
     return !isSweepableExpiredHold(b, now)
   }
   // Estado nuevo del enum que nadie clasificó: tapar es el error reversible.

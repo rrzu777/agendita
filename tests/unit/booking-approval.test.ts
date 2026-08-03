@@ -109,9 +109,13 @@ describe('occupiesSlot / isSweepableExpiredHold', () => {
     expect(isSweepableExpiredHold(sinCampo, NOW)).toBe(false)
   })
 
-  it('una solicitud vencida libera igual, y no es asunto del sweep de pagos', () => {
+  // Antes liberaba al instante. Desde `booking_overlap_solicitudes` el EXCLUDE
+  // cubre `pending_confirmation`, así que darla por libre acá ofrecería una hora
+  // que el insert rechaza. Y no es asunto del sweep de pagos: expirarla le manda
+  // un mail a la clienta, y de eso se encarga el cron.
+  it('una solicitud vencida sigue tapando hasta que el cron la expire', () => {
     const solicitud = { status: 'pending_confirmation', holdExpiresAt: VENCIDO }
-    expect(occupiesSlot(solicitud, NOW)).toBe(false)
+    expect(occupiesSlot(solicitud, NOW)).toBe(true)
     expect(isSweepableExpiredHold(solicitud, NOW)).toBe(false)
   })
 
@@ -175,10 +179,22 @@ describe('generateSlots + solicitudes pendientes', () => {
     expect(slots.some((s) => s.start.getTime() === bookingStart.getTime())).toBe(false)
   })
 
-  it('una solicitud con el hold vencido libera el horario aunque el cron no haya corrido', () => {
+  // La agenda no puede ofrecer un horario que el EXCLUDE va a rechazar, y desde
+  // `booking_overlap_solicitudes` la fila sigue contando mientras diga
+  // `pending_confirmation`. El horario se libera cuando el cron la expira —y de
+  // paso le avisa por mail a la clienta que nadie le respondió.
+  it('una solicitud con el hold vencido no libera el horario hasta que corre el cron', () => {
     const slots = generateSlots(day, 60, rules, [], [{
       startDateTime: bookingStart, endDateTime: bookingEnd,
       status: 'pending_confirmation', holdExpiresAt: new Date('2028-02-27T12:00:00Z'),
+    }], opts)
+    expect(slots.some((s) => s.start.getTime() === bookingStart.getTime())).toBe(false)
+  })
+
+  it('una solicitud ya expirada por el cron sí libera el horario', () => {
+    const slots = generateSlots(day, 60, rules, [], [{
+      startDateTime: bookingStart, endDateTime: bookingEnd,
+      status: 'expired', holdExpiresAt: new Date('2028-02-27T12:00:00Z'),
     }], opts)
     expect(slots.some((s) => s.start.getTime() === bookingStart.getTime())).toBe(true)
   })
