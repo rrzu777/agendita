@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
+import { ServiceModality } from '@prisma/client'
 import {
+  buildBookingConfirmationWhatsappMessage,
   buildBookingRescheduledWhatsappMessage,
   buildBookingRescheduledWhatsappUrl,
+  buildWhatsappBookingSummaryText,
   buildWhatsappReminderMessage,
   buildWhatsappReminderUrl,
 } from '@/lib/notifications/whatsapp'
@@ -16,6 +19,7 @@ const baseData = {
   totalPrice: 20000,
   depositPaid: 5000,
   remainingBalance: 15000,
+  modality: ServiceModality.on_site,
   businessAddress: 'Av. Principal 123',
 }
 
@@ -68,6 +72,69 @@ describe('buildWhatsappReminderMessage', () => {
   })
 })
 
+// El bug que cierra este archivo: los mensajes imprimían la dirección del LOCAL
+// también en citas a domicilio u online. El "dónde" ahora sale de whereRows —
+// las mismas filas que el mail y las pantallas de confirmación.
+describe('el dónde según la modalidad (whereRows, no la dirección plana)', () => {
+  const domicilio = {
+    ...baseData,
+    modality: ServiceModality.at_home,
+    serviceAddress: 'Los Olmos 12',
+  }
+  const online = {
+    ...baseData,
+    modality: ServiceModality.online,
+    meetingUrl: 'https://meet.example/sala',
+  }
+
+  it('a domicilio: la dirección de la clienta, nunca la del local', () => {
+    for (const build of [buildWhatsappReminderMessage, buildBookingConfirmationWhatsappMessage]) {
+      const msg = build(domicilio)
+      expect(msg).toContain('A domicilio')
+      expect(msg).toContain('Los Olmos 12')
+      expect(msg).not.toContain('Av. Principal 123')
+    }
+  })
+
+  it('online: el link, nunca la dirección del local', () => {
+    for (const build of [buildWhatsappReminderMessage, buildBookingConfirmationWhatsappMessage]) {
+      const msg = build(online)
+      expect(msg).toContain('Online')
+      expect(msg).toContain('https://meet.example/sala')
+      expect(msg).not.toContain('Av. Principal 123')
+    }
+  })
+
+  it('online sin link fijo: avisa que se lo mandamos antes de la cita', () => {
+    const msg = buildWhatsappReminderMessage({ ...online, meetingUrl: null })
+    expect(msg).toContain('Te lo enviamos antes de la cita')
+    expect(msg).not.toContain('Av. Principal 123')
+  })
+
+  it('en el local: la dirección del negocio, como siempre', () => {
+    const msg = buildBookingConfirmationWhatsappMessage(baseData)
+    expect(msg).toContain('Dirección: Av. Principal 123')
+  })
+})
+
+describe('buildWhatsappBookingSummaryText (resumen para la dueña)', () => {
+  it('a domicilio dice a dónde va: la dirección de la clienta', () => {
+    const txt = buildWhatsappBookingSummaryText({
+      ...baseData,
+      modality: ServiceModality.at_home,
+      serviceAddress: 'Los Olmos 12',
+    })
+    expect(txt).toContain('A domicilio: Los Olmos 12')
+    expect(txt).not.toContain('Av. Principal 123')
+  })
+
+  it('en el local no repite su propia dirección', () => {
+    const txt = buildWhatsappBookingSummaryText(baseData)
+    expect(txt).not.toContain('Av. Principal 123')
+    expect(txt).toContain('Reserva creada para Maria')
+  })
+})
+
 describe('buildWhatsappReminderUrl', () => {
   it('generates valid wa.me URL', () => {
     const url = buildWhatsappReminderUrl('56912345678', baseData)
@@ -113,6 +180,7 @@ describe('buildBookingRescheduledWhatsappUrl', () => {
       previousStartDateTime: new Date('2026-06-15T14:00:00-04:00'),
       newStartDateTime: new Date('2026-06-16T15:30:00-04:00'),
       businessTimezone: 'America/Santiago',
+      modality: ServiceModality.on_site,
       businessAddress: 'Av. Principal 123',
     })
 
@@ -134,9 +202,26 @@ describe('buildBookingRescheduledWhatsappMessage', () => {
       previousStartDateTime: new Date('2026-06-15T14:00:00-04:00'),
       newStartDateTime: new Date('2026-06-16T15:30:00-04:00'),
       businessTimezone: 'America/Santiago',
+      modality: ServiceModality.on_site,
       businessAddress: null,
     })
 
     expect(message).not.toContain('Dirección')
+  })
+
+  it('a domicilio manda la dirección de la clienta, no la del local', () => {
+    const message = buildBookingRescheduledWhatsappMessage({
+      customerName: 'Maria',
+      serviceName: 'Manicure',
+      previousStartDateTime: new Date('2026-06-15T14:00:00-04:00'),
+      newStartDateTime: new Date('2026-06-16T15:30:00-04:00'),
+      businessTimezone: 'America/Santiago',
+      modality: ServiceModality.at_home,
+      serviceAddress: 'Los Olmos 12',
+      businessAddress: 'Av. Principal 123',
+    })
+
+    expect(message).toContain('Los Olmos 12')
+    expect(message).not.toContain('Av. Principal 123')
   })
 })

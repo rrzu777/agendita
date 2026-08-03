@@ -52,22 +52,40 @@ describe('resolveServiceAddress', () => {
 })
 
 describe('bookingWhere', () => {
-  it('en el local no repite la dirección del negocio', () => {
+  it('en el local no repite la dirección del negocio (listas del dashboard)', () => {
     expect(bookingWhere({ modality: on_site })).toEqual({
-      label: 'En el local', detail: null, isLink: false,
+      label: 'En el local', detail: null, href: null,
     })
   })
 
-  it('a domicilio muestra la dirección de la clienta', () => {
+  it('en el local con businessAddress la muestra, con link al mapa (/mi)', () => {
+    const where = bookingWhere({ modality: on_site }, { businessAddress: 'Av. Matta 456' })
+    expect(where.label).toBe('En el local')
+    expect(where.detail).toBe('Av. Matta 456')
+    expect(where.href).toContain('google.com/maps')
+    expect(where.href).toContain(encodeURIComponent('Av. Matta 456'))
+  })
+
+  it('a domicilio muestra la dirección de la clienta, sin link', () => {
     expect(bookingWhere({ modality: at_home, serviceAddress: 'Los Olmos 12' })).toEqual({
-      label: 'A domicilio', detail: 'Los Olmos 12', isLink: false,
+      label: 'A domicilio', detail: 'Los Olmos 12', href: null,
     })
   })
 
-  it('online muestra el link y lo marca como tal', () => {
+  it('online muestra el link ya resuelto como href', () => {
     expect(bookingWhere({ modality: online, meetingUrl: 'https://meet.example/x' })).toEqual({
-      label: 'Online', detail: 'https://meet.example/x', isLink: true,
+      label: 'Online', detail: 'https://meet.example/x', href: 'https://meet.example/x',
     })
+  })
+
+  it('online con un link no navegable lo deja como texto (href null)', () => {
+    // Segundo cerrojo del XSS de `javascript:` — el mismo criterio de
+    // linkNavegable que usan whereRows y el .ics.
+    for (const url of ['javascript:alert(1)', 'https://sala\r\nX-EVIL:1']) {
+      const where = bookingWhere({ modality: online, meetingUrl: url })
+      expect(where.detail).toBe(url)
+      expect(where.href).toBeNull()
+    }
   })
 
   it('sólo domicilio y online valen la pena en una lista', () => {

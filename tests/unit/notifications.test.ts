@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ServiceModality } from '@prisma/client'
 
 // ── Templates ──────────────────────────────────────────────────────────────
 
@@ -369,6 +370,7 @@ import {
 } from '@/lib/notifications/whatsapp'
 
 const sampleWhatsappData = {
+  modality: ServiceModality.on_site,
   customerName: 'Maria',
   customerPhone: '+56987654321',
   serviceName: 'Manicure semipermanente',

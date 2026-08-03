@@ -122,8 +122,8 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
                   {where.label}
                   {where.detail && (
                     <span className="mt-0.5 block break-words text-xs font-normal text-muted-foreground">
-                      {where.isLink ? (
-                        <a href={where.detail} target="_blank" rel="noopener noreferrer" className="underline">
+                      {where.href ? (
+                        <a href={where.href} target="_blank" rel="noopener noreferrer" className="underline">
                           {where.detail}
                         </a>
                       ) : where.detail}
@@ -168,6 +168,9 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
                 totalPrice: booking.totalPrice || 0,
                 depositPaid: booking.depositPaid || 0,
                 remainingBalance: booking.remainingBalance || 0,
+                modality: booking.modality,
+                serviceAddress: booking.serviceAddress,
+                meetingUrl: booking.meetingUrl,
                 businessAddress,
               }}
             />

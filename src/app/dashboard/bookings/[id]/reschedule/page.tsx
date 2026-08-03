@@ -49,7 +49,12 @@ export default async function ReschedulePage({ params }: ReschedulePageProps) {
           currentDate={formatInTimeZone(booking.startDateTime, timezone, 'yyyy-MM-dd')}
           currentTime={formatInTimeZone(booking.startDateTime, timezone, 'HH:mm')}
           timezone={timezone}
-          businessAddress={userData.business.addressText}
+          where={{
+            modality: booking.modality,
+            businessAddress: userData.business.addressText,
+            serviceAddress: booking.serviceAddress,
+            meetingUrl: booking.meetingUrl,
+          }}
         />
       </div>
     </div>

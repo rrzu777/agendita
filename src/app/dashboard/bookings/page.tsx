@@ -151,6 +151,9 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
             totalPrice: booking.totalPrice ?? 0,
             depositPaid: booking.depositPaid,
             remainingBalance: booking.remainingBalance ?? 0,
+            modality: booking.modality,
+            serviceAddress: booking.serviceAddress,
+            meetingUrl: booking.meetingUrl,
             businessAddress,
           }}
         />
@@ -425,6 +428,9 @@ export default async function BookingsPage() {
                                 totalPrice: booking.totalPrice,
                                 depositPaid: booking.depositPaid,
                                 remainingBalance: booking.remainingBalance,
+                                modality: booking.modality,
+                                serviceAddress: booking.serviceAddress,
+                                meetingUrl: booking.meetingUrl,
                                 businessAddress,
                               }}
                             />

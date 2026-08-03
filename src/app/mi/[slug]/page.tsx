@@ -57,6 +57,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
     where: { slug },
     select: {
       id: true, name: true, slug: true, subdomain: true, logoUrl: true, category: true, selfServiceCutoffHours: true,
+      addressText: true,
       loyaltyConfig: { select: { isActive: true, programName: true, pointsLabel: true, cardMessage: true } },
     },
   })
@@ -118,21 +119,27 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
               <li key={b.id} className="rounded-lg border border-gray-100 px-3 py-2 text-sm">
                 <div className="font-medium">{b.service?.name}</div>
                 <div className="text-gray-500">{formatShortDate(b.startDateTime)} · {statusLabel(b)} · {formatBookingNumber(b.bookingNumber, b.id)}</div>
-                {isNotableModality(b.modality) && (
-                  <div className="text-gray-500">
-                    {bookingWhere(b).label}
-                    {bookingWhere(b).detail && (
-                      <>
-                        {' · '}
-                        {bookingWhere(b).isLink ? (
-                          <a href={bookingWhere(b).detail!} target="_blank" rel="noopener noreferrer" className="underline">
-                            Entrar a la videollamada
-                          </a>
-                        ) : bookingWhere(b).detail}
-                      </>
-                    )}
-                  </div>
-                )}
+                {(() => {
+                  // También en el local: quien mira es la clienta y "¿dónde
+                  // era?" merece la dirección, no sólo las modalidades notables.
+                  const where = bookingWhere(b, { businessAddress: business.addressText })
+                  if (!isNotableModality(b.modality) && !where.detail) return null
+                  return (
+                    <div className="text-gray-500">
+                      {where.label}
+                      {where.detail && (
+                        <>
+                          {' · '}
+                          {where.href ? (
+                            <a href={where.href} target="_blank" rel="noopener noreferrer" className="underline">
+                              {b.modality === 'online' ? 'Entrar a la videollamada' : where.detail}
+                            </a>
+                          ) : where.detail}
+                        </>
+                      )}
+                    </div>
+                  )
+                })()}
                 <BookingActions
                   bookingId={b.id}
                   slug={business.slug}

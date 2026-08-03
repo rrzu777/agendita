@@ -168,24 +168,36 @@ export function whereRows(data: WhereFields): WhereRow[] {
 /**
  * Qué mostrar de "dónde" en una reserva ya creada (dashboard, /mi).
  *
- * `detail` es null en el local: en una LISTA de reservas la dirección del negocio
- * es la misma en todas las filas y sólo hace ruido. Esa es la división real con
- * `whereRows` (acá arriba) —lista vs. una reserva sola, no negocio vs. clienta—:
- * `whereRows` es para cuando la reserva se mira sin nada alrededor (el mail, la
- * confirmación) y ahí la dirección tiene que estar sí o sí.
+ * `detail` es null en el local salvo que el caller pase `businessAddress`: en la
+ * LISTA del dashboard la dirección del negocio es la misma en todas las filas y
+ * sólo hace ruido, pero en /mi quien mira es la clienta y "¿dónde era?" merece
+ * respuesta. Esa es la división real con `whereRows` (acá arriba) —lista vs. una
+ * reserva sola, no negocio vs. clienta—: `whereRows` es para cuando la reserva
+ * se mira sin nada alrededor (el mail, la confirmación) y ahí la dirección tiene
+ * que estar sí o sí.
+ *
+ * `href` sale resuelto de acá (mismo criterio que `whereRows`): el link online
+ * lo escribe la dueña y termina como href en /mi, así que pasa por
+ * `linkNavegable` — el segundo cerrojo del XSS de `javascript:`; un link no
+ * navegable se muestra como texto y no se clickea.
  */
-export function bookingWhere(booking: {
-  modality: ServiceModality
-  serviceAddress?: string | null
-  meetingUrl?: string | null
-}): { label: string; detail: string | null; isLink: boolean } {
+export function bookingWhere(
+  booking: {
+    modality: ServiceModality
+    serviceAddress?: string | null
+    meetingUrl?: string | null
+  },
+  opts?: { businessAddress?: string | null },
+): { label: string; detail: string | null; href: string | null } {
   if (booking.modality === ServiceModality.at_home) {
-    return { label: MODALITY_LABELS.at_home, detail: booking.serviceAddress ?? null, isLink: false }
+    return { label: MODALITY_LABELS.at_home, detail: booking.serviceAddress ?? null, href: null }
   }
   if (booking.modality === ServiceModality.online) {
-    return { label: MODALITY_LABELS.online, detail: booking.meetingUrl ?? null, isLink: true }
+    const url = booking.meetingUrl ?? null
+    return { label: MODALITY_LABELS.online, detail: url, href: url ? linkNavegable(url) : null }
   }
-  return { label: MODALITY_LABELS.on_site, detail: null, isLink: false }
+  const address = opts?.businessAddress ?? null
+  return { label: MODALITY_LABELS.on_site, detail: address, href: address ? mapsHref(address) : null }
 }
 
 /** True cuando vale la pena mostrar la modalidad: en el local es el default y no

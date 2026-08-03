@@ -9,6 +9,7 @@ import {
   buildWhatsappBookingSummaryText,
   buildWhatsappReminderMessage,
 } from '@/lib/notifications'
+import type { ServiceModality } from '@prisma/client'
 
 export interface BookingContactData {
   bookingNumber?: number | null
@@ -21,6 +22,11 @@ export interface BookingContactData {
   totalPrice: number
   depositPaid: number
   remainingBalance: number
+  /** El "dónde" completo, no una dirección suelta: los mensajes imprimían la
+   *  dirección del local también en citas a domicilio u online. */
+  modality: ServiceModality
+  serviceAddress?: string | null
+  meetingUrl?: string | null
   businessAddress?: string | null
   businessName?: string | null
 }
@@ -52,6 +58,9 @@ export function BookingContactButtons({ booking, variant = 'default', showRemind
     totalPrice: booking.totalPrice || 0,
     depositPaid: booking.depositPaid || 0,
     remainingBalance: booking.remainingBalance || 0,
+    modality: booking.modality,
+    serviceAddress: booking.serviceAddress || null,
+    meetingUrl: booking.meetingUrl || null,
     businessAddress: booking.businessAddress || null,
   }
 

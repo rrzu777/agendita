@@ -1,8 +1,10 @@
 import { formatInTimeZone } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
+import type { ServiceModality } from '@prisma/client'
 import { formatMoney } from '@/lib/money'
+import { bookingWhere, isNotableModality, whereRows, type WhereFields } from '@/lib/services/modality'
 
-export interface BookingWhatsappData {
+export interface BookingWhatsappData extends WhereFields {
   bookingNumber?: number | null
   customerName: string
   customerPhone: string
@@ -15,7 +17,10 @@ export interface BookingWhatsappData {
   finalAmount?: number
   depositPaid: number
   remainingBalance: number
-  businessAddress?: string | null
+  /** Requerida a propósito (WhereFields la deja opcional): sin la modalidad,
+   *  estos mensajes volvían a imprimir la dirección del local en una cita a
+   *  domicilio u online — el bug que este dato vino a cerrar. */
+  modality: ServiceModality
   loyaltyCardLink?: string
 }
 
@@ -26,13 +31,21 @@ export interface ReviewRequestWhatsappData {
   loyaltyCardLink?: string
 }
 
-export interface BookingRescheduledWhatsappData {
+export interface BookingRescheduledWhatsappData extends WhereFields {
   customerName: string
   serviceName: string
   previousStartDateTime: Date
   newStartDateTime: Date
   businessTimezone: string
-  businessAddress?: string | null
+  modality: ServiceModality
+}
+
+/** Las filas de "dónde" como líneas de mensaje a la clienta: las mismas que el
+ *  mail y las pantallas de confirmación (`whereRows`), para que el WhatsApp no
+ *  cuente otra cosa. En el local: la dirección del negocio; a domicilio: la de
+ *  la clienta; online: el link (o que se lo mandamos antes). */
+function whereLines(data: WhereFields): string[] {
+  return whereRows(data).map((r) => `📍 ${r.label}: ${r.value}`)
 }
 
 function fmtDate(date: Date, timezone: string): string {
@@ -79,10 +92,8 @@ export function buildBookingConfirmationWhatsappMessage(data: BookingWhatsappDat
     ...(data.bookingNumber != null ? [`🔖 Reserva #${data.bookingNumber}`] : []),
     `📋 Servicio: ${data.serviceName}`,
     `📅 Fecha y hora: ${dateStr}`,
+    ...whereLines(data),
   ]
-  if (data.businessAddress) {
-    lines.push(`📍 Dirección: ${data.businessAddress}`)
-  }
   lines.push(
     ``,
     `💰 Precio total: ${total}`,
@@ -128,8 +139,13 @@ export function buildWhatsappBookingSummaryText(data: BookingWhatsappData): stri
     `Total: ${fmtCurrency(data.totalPrice, data.businessCurrency)}`,
     `Teléfono: ${data.customerPhone}`,
   ]
-  if (data.businessAddress) {
-    parts.push(`Dirección: ${data.businessAddress}`)
+  // El resumen es para la dueña, no para la clienta: en el local su propia
+  // dirección es ruido, pero a domicilio el dato clave es A DÓNDE va (la
+  // dirección de la clienta) y online, el link. Antes imprimía la dirección del
+  // local en los tres casos.
+  if (isNotableModality(data.modality)) {
+    const where = bookingWhere(data)
+    parts.push(where.detail ? `${where.label}: ${where.detail}` : where.label)
   }
   return parts.join(' | ')
 }
@@ -147,10 +163,8 @@ export function buildWhatsappReminderMessage(data: BookingWhatsappData): string 
     ...(data.bookingNumber != null ? [`🔖 Reserva #${data.bookingNumber}`] : []),
     `📋 Servicio: ${data.serviceName}`,
     `📅 Fecha y hora: ${dateStr}`,
+    ...whereLines(data),
   ]
-  if (data.businessAddress) {
-    lines.push(`📍 Dirección: ${data.businessAddress}`)
-  }
   lines.push(
     ``,
     `💰 Precio total: ${total}`,
@@ -182,8 +196,9 @@ export function buildBookingRescheduledWhatsappMessage(data: BookingRescheduledW
     `Servicio: ${data.serviceName}`,
     `Horario anterior: ${previousDateStr}`,
     `Nuevo horario: ${newDateStr}`,
+    // Este mensaje va sin emojis; las mismas filas que el resto, en plano.
+    ...whereRows(data).map((r) => `${r.label}: ${r.value}`),
   ]
-  if (data.businessAddress) lines.push(`Dirección: ${data.businessAddress}`)
   lines.push(``, `Si este nuevo horario no te acomoda, respondeme por aquí.`)
 
   return lines.join('\n')
