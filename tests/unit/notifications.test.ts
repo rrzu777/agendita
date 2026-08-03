@@ -53,6 +53,7 @@ const sampleBusinessData = {
 }
 
 const sampleCancellationData = {
+  calendar: null,
   businessName: 'Nails by Ana',
   businessReplyToEmail: 'owner@nails.com',
   customerName: 'Maria',
@@ -677,7 +678,25 @@ describe('email-provider: sendBookingCancelledNotification', () => {
         subject: 'Reserva cancelada - Nails by Ana',
       })
     )
+    // Sin evento que borrar (calendar null) el mail va sin adjunto.
+    expect(mockResendSend.mock.calls[0][0].attachments).toBeUndefined()
     expect(result.success).toBe(true)
+  })
+
+  it('adjunta el .ics de cancelación cuando la reserva tenía evento', async () => {
+    vi.stubEnv('RESEND_API_KEY', 're_test_123')
+    vi.stubEnv('FROM_EMAIL', 'Agendita <no-reply@agendita.cl>')
+    mockResendSend.mockResolvedValue({ data: { id: 'msg_457' }, error: null })
+
+    await sendBookingCancelledNotification({
+      ...sampleCancellationData,
+      calendar: { filename: 'reserva-4738.ics', ics: 'BEGIN:VCALENDAR\r\nSTATUS:CANCELLED\r\nEND:VCALENDAR\r\n' },
+    })
+
+    const call = mockResendSend.mock.calls[0][0]
+    expect(call.attachments).toHaveLength(1)
+    expect(call.attachments[0].filename).toBe('reserva-4738.ics')
+    expect(call.attachments[0].content.toString('utf8')).toContain('STATUS:CANCELLED')
   })
 })
 

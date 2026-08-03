@@ -80,9 +80,10 @@ export function buildIcs(event: BookingCalendarEvent): string {
     `DTSTART:${utcStamp(event.start)}`,
     `DTEND:${utcStamp(event.end)}`,
     `SEQUENCE:${event.sequence}`,
-    // Fijo: sólo se emite el evento de una reserva confirmada. Ver
-    // `deservesCalendarEvent`.
-    'STATUS:CONFIRMED',
+    // CONFIRMED mientras la reserva está en pie (sólo las confirmadas emiten
+    // evento, ver `deservesCalendarEvent`); CANCELLED es la versión que la
+    // cancelación manda para pisar a la vigente por UID + SEQUENCE.
+    `STATUS:${event.status}`,
     `SUMMARY:${escapeText(event.title)}`,
     `DESCRIPTION:${escapeText(event.description)}`,
     ...(event.location ? [`LOCATION:${escapeText(event.location)}`] : []),

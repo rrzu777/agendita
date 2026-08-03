@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { BookingStatus } from '@prisma/client'
+import { bookingInvite } from '@/lib/calendar/booking-invite'
 import {
   getBusinessReplyToEmail,
   sendReminderEmail,
@@ -69,6 +70,9 @@ export async function sendReminders(now: Date = new Date()): Promise<SendReminde
     try {
       const result = await sendReminderEmail({
         businessName: booking.business.name,
+        // La segunda chance de agendarla: mismo UID que el del mail de
+        // confirmación, así quien ya la tiene no la duplica.
+        calendar: bookingInvite(booking),
         bookingNumber: booking.bookingNumber,
         businessReplyToEmail: await getBusinessReplyToEmail(booking.business.id),
         customerName: booking.customer!.name,

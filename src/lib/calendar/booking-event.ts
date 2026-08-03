@@ -38,6 +38,9 @@ export function deservesCalendarEvent(status: BookingStatus): boolean {
 
 export interface BookingCalendarEvent {
   uid: string
+  /** STATUS del VEVENT. CANCELLED es la versión que pisa al evento vigente
+   *  cuando la reserva se cae — ver `buildBookingCancelledEvent`. */
+  status: 'CONFIRMED' | 'CANCELLED'
   title: string
   start: Date
   end: Date
@@ -120,6 +123,7 @@ export function buildBookingCalendarEvent(booking: BookingEventSource): BookingC
 
   return {
     uid: `${booking.id}@${UID_DOMAIN}`,
+    status: 'CONFIRMED',
     title: titleOf(booking),
     start: booking.startDateTime,
     end: booking.endDateTime,
@@ -128,6 +132,30 @@ export function buildBookingCalendarEvent(booking: BookingEventSource): BookingC
     description,
     sequence: sequenceOf(booking),
     stamp: booking.updatedAt,
+  }
+}
+
+/**
+ * La versión "cancelada" del mismo evento, para adjuntar al mail de cancelación.
+ *
+ * Pisa por el mismo mecanismo que una reprogramación: mismo UID y un SEQUENCE
+ * más alto (la cancelación acaba de mover `updatedAt`, así que crece solo) —
+ * el cliente de calendario que agregó el `.ics` original matchea y marca la
+ * cita como cancelada. Sin `METHOD:CANCEL` a propósito: es iTIP, y RFC 5546
+ * exige `ORGANIZER` — la misma trampa de Outlook por la que el `.ics` original
+ * va sin METHOD (ver `ics.ts`).
+ *
+ * El prefijo en el título es para el cliente que NO matchea por UID (el evento
+ * agregado desde el link de Google tiene UID propio): si el archivo termina
+ * como un evento aparte, mejor uno que grita "cancelada" que uno que parece
+ * vigente.
+ */
+export function buildBookingCancelledEvent(booking: BookingEventSource): BookingCalendarEvent {
+  const event = buildBookingCalendarEvent(booking)
+  return {
+    ...event,
+    status: 'CANCELLED',
+    title: `Cancelada: ${event.title}`,
   }
 }
 

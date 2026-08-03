@@ -19,7 +19,7 @@ import {
 } from '@/lib/notifications'
 import { revalidateBusinessPublicPaths } from '@/server/actions/revalidate-business'
 import { action, UserError } from '@/lib/actions/result'
-import { loadBookingInvite } from '@/lib/calendar/booking-invite'
+import { loadBookingInvite, loadBookingCancelNotice } from '@/lib/calendar/booking-invite'
 
 async function _cancelMyBooking(bookingId: string) {
   const user = await requireUser()
@@ -79,6 +79,8 @@ async function _cancelMyBooking(bookingId: string) {
         serviceName: booking.service.name,
         startDateTime: booking.startDateTime,
         businessTimezone: booking.business.timezone || 'America/Santiago',
+        // El status PREVIO decide si hay evento que borrar del calendario.
+        calendar: await loadBookingCancelNotice(bookingId, booking.status),
       }),
     )
   }

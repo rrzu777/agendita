@@ -42,7 +42,7 @@ import { BANK_TRANSFER_METHOD, anyDeclaredTransferWhere } from '@/lib/bank-trans
 import { fireBookingNotifications } from '@/lib/bookings/notifications'
 import { resolveBookingDraft } from '@/lib/bookings/draft'
 import { applyBookingDiscountInTx } from '@/lib/bookings/discount'
-import { loadBookingInvite } from '@/lib/calendar/booking-invite'
+import { loadBookingInvite, loadBookingCancelNotice } from '@/lib/calendar/booking-invite'
 import {
   sendBookingCancelledNotification,
   sendBookingConfirmedNotification,
@@ -647,6 +647,8 @@ async function _updateBookingStatus(id: string, status: BookingStatus) {
         serviceName: existing.service.name,
         startDateTime: existing.startDateTime,
         businessTimezone: existing.business.timezone || 'America/Santiago',
+        // El status PREVIO decide si hay evento que borrar del calendario.
+        calendar: await loadBookingCancelNotice(id, existing.status),
       }),
     )
   }
@@ -1105,6 +1107,8 @@ async function _cancelBooking(bookingId: string, reason?: string) {
         // recibía "tu reserva fue cancelada" a secas y el motivo se quedaba en
         // las notas internas de la dueña.
         reason,
+        // El status PREVIO decide si hay evento que borrar del calendario.
+        calendar: await loadBookingCancelNotice(bookingId, booking.status),
       }),
     )
   }

@@ -47,6 +47,7 @@ const bookingData: BookingEmailData = {
 }
 
 const reminderData: ReminderEmailData = {
+  calendar: null,
   businessName: 'Barbería Carlos',
   customerName: 'Maria',
   customerEmail: 'maria@example.com',

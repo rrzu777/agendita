@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ServiceModality } from '@prisma/client'
-import { buildBookingCalendarEvent, bookingIcsFilename, type BookingEventSource } from '@/lib/calendar/booking-event'
+import { buildBookingCalendarEvent, buildBookingCancelledEvent, bookingIcsFilename, type BookingEventSource } from '@/lib/calendar/booking-event'
 import { buildIcs, buildGoogleCalendarUrl } from '@/lib/calendar/ics'
 
 const base: BookingEventSource = {
@@ -132,6 +132,36 @@ describe('el .ics de una reserva', () => {
   it('el nombre del archivo lleva el número de reserva sin el #', () => {
     expect(bookingIcsFilename(base)).toBe('reserva-4738.ics')
     expect(bookingIcsFilename({ id: 'clbooking123', bookingNumber: null })).toBe('reserva-clbookin.ics')
+  })
+})
+
+// La cancelación pisa por el mismo mecanismo que una reprogramación: mismo
+// UID + SEQUENCE más alto. Sin METHOD:CANCEL a propósito (iTIP exige ORGANIZER
+// y Outlook lo hace cumplir — la trampa 1 del archivo original).
+describe('el .ics de una cancelación', () => {
+  function cancelIcs(overrides: Partial<BookingEventSource> = {}): string[] {
+    return unfold(buildIcs(buildBookingCancelledEvent({ ...base, ...overrides })))
+  }
+
+  it('mismo UID que el evento vigente, STATUS:CANCELLED y sin METHOD', () => {
+    const lines = cancelIcs()
+    expect(lines).toContain('UID:clbooking123@agendita.cl')
+    expect(lines).toContain('STATUS:CANCELLED')
+    expect(lines.some((l) => l.startsWith('METHOD'))).toBe(false)
+  })
+
+  it('el SEQUENCE creció con la cancelación (updatedAt se movió)', () => {
+    // La cancelación mueve updatedAt: la versión cancelada siempre es más nueva.
+    const lines = cancelIcs({ updatedAt: new Date('2026-07-20T10:01:40Z') })
+    expect(lines).toContain('SEQUENCE:100')
+  })
+
+  it('el título grita cancelada, para el cliente que no matchea por UID', () => {
+    expect(cancelIcs()).toContain('SUMMARY:Cancelada: Corte de pelo en Barbería Carlos')
+  })
+
+  it('el evento vigente sigue saliendo CONFIRMED', () => {
+    expect(unfold(ics())).toContain('STATUS:CONFIRMED')
   })
 })
 

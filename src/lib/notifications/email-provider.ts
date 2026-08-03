@@ -213,7 +213,7 @@ function buildDashboardLink(): string {
  * esto Resend lo deduce del nombre, que hoy funciona pero no es nuestro.
  */
 function icsAttachments(
-  invite: BookingCalendarInvite | null | undefined,
+  invite: Pick<BookingCalendarInvite, 'filename' | 'ics'> | null | undefined,
 ): { filename: string; content: Buffer; contentType: string }[] {
   return invite
     ? [{ filename: invite.filename, content: Buffer.from(invite.ics, 'utf8'), contentType: 'text/calendar; charset=utf-8' }]
@@ -506,7 +506,7 @@ export async function sendBookingCancelledNotification(data: CancellationEmailDa
     `Reserva cancelada - ${data.businessName}`,
     html,
     text,
-    { replyTo: data.businessReplyToEmail },
+    { replyTo: data.businessReplyToEmail, attachments: icsAttachments(data.calendar) },
   )
 }
 
@@ -916,6 +916,7 @@ export async function sendReminderEmail(data: ReminderEmailData): Promise<EmailR
   const text = bookingReminderText(data)
   return sendEmail(data.customerEmail, 'Recordatorio de tu cita - Agendita', html, text, {
     replyTo: data.businessReplyToEmail,
+    attachments: icsAttachments(data.calendar),
   })
 }
 
