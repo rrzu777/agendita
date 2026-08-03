@@ -86,7 +86,7 @@ async function _sellPackage(data: unknown) {
     prisma.customer.findFirst({ where: { id: d.customerId, businessId }, select: { id: true } }),
   ])
   if (!product) throw new UserError('Paquete no disponible')
-  if (!customer) throw new ForbiddenError(`${getVocabulary(business.category).Client} no encontrada`)
+  if (!customer) throw new ForbiddenError(getVocabulary(business.category).clientNotFound)
 
   const now = new Date()
   const expiresAt = product.expiryDays ? addDays(now, product.expiryDays) : null

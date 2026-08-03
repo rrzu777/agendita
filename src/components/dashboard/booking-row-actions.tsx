@@ -53,7 +53,7 @@ export function BookingRowActions({
         <ReviveBookingButton
           bookingId={booking.id}
           serviceName={booking.service?.name || 'Servicio'}
-          customerName={booking.customer?.name || 'Cliente'}
+          customerName={booking.customer?.name}
           customerHasEmail={!!booking.customer?.email}
           canReopen={canReopen}
           reopenDisabledReason={reason}

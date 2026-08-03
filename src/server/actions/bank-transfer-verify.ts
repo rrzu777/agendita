@@ -30,6 +30,7 @@ import {
   getBusinessReplyToEmail,
 } from '@/lib/notifications'
 import { action, UserError } from '@/lib/actions/result'
+import { getVocabulary } from '@/lib/vocabulary'
 
 // Carga y valida que el Payment sea una declaración de transferencia del negocio
 // pendiente de verificar. Guard compartido por confirmar y rechazar (mismos dos
@@ -185,7 +186,7 @@ async function _confirmBankTransfer(
         businessName: business.name,
         businessTimezone: business.timezone || 'America/Santiago',
         businessReplyToEmail: replyTo,
-        customerName: bv.customerName ?? 'Cliente',
+        customerName: bv.customerName ?? getVocabulary(business.category).Client,
         customerEmail: bv.customerEmail!,
         serviceName: bv.serviceName,
         startDateTime: bv.startDateTime,

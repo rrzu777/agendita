@@ -4,6 +4,7 @@ import { NewBookingForm } from './new-booking-form'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { prisma } from '@/lib/db'
 import { funnelProfessionalsQueryFor, toFunnelProfessionals } from '@/lib/professionals/eligible'
+import { getVocabulary } from '@/lib/vocabulary'
 
 export default async function NewBookingPage() {
   const userData = await getCurrentUserWithBusiness()
@@ -27,7 +28,7 @@ export default async function NewBookingPage() {
 
   return (
     <div>
-      <DashboardHeader title="Nueva reserva" subtitle="Crea una reserva manual para tus clientes" />
+      <DashboardHeader title="Nueva reserva" subtitle={`Crea una reserva manual para tus ${getVocabulary(userData.business.category).clients}`} />
       <div className="p-5 md:p-10">
         <NewBookingForm services={services} professionals={toFunnelProfessionals(team)} businessId={userData.business.id} timezone={userData.business.timezone || 'America/Santiago'} currency={userData.business.currency || 'CLP'} />
       </div>

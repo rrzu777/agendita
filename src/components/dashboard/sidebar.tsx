@@ -44,7 +44,7 @@ function buildNavItems(v: Vocabulary) {
     { href: '/dashboard/services', label: 'Servicios', icon: Scissors },
     { href: '/dashboard/equipo', label: v.Professionals, icon: UsersRound },
     { href: '/dashboard/availability', label: 'Horarios', icon: Clock3 },
-    { href: '/dashboard/customers', label: 'Clientes', icon: Users },
+    { href: '/dashboard/customers', label: v.Clients, icon: Users },
     { href: '/dashboard/payments', label: 'Pagos', icon: CreditCard },
     { href: '/dashboard/promociones', label: 'Promociones', icon: Ticket },
     { href: '/dashboard/fidelizacion', label: 'Fidelización', icon: Sparkles },

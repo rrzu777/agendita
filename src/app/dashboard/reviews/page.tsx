@@ -6,6 +6,7 @@ import {
   getCompletedBookingsWithoutReview,
 } from '@/server/actions/reviews'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
+import { getVocabulary } from '@/lib/vocabulary'
 import { ReviewsClient } from './reviews-client'
 
 export default async function ReviewsPage() {
@@ -34,7 +35,7 @@ export default async function ReviewsPage() {
 
   return (
     <div>
-      <DashboardHeader title="Reseñas" subtitle="Modera y administra las reseñas de tus clientes." />
+      <DashboardHeader title="Reseñas" subtitle={`Modera y administra las reseñas de tus ${getVocabulary(userData.business.category).clients}.`} />
       <div className="p-5 md:p-10">
         <ReviewsClient
           reviews={reviews}

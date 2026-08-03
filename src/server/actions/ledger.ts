@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { startOfLocalMonth, getBusinessDayRange } from '@/lib/availability/timezone'
+import { getVocabulary } from '@/lib/vocabulary'
 
 const createLedgerEntrySchema = z.object({
   bookingId: z.string().min(1).nullable(),
@@ -34,7 +35,7 @@ export async function getLedgerEntries() {
 }
 
 export async function createLedgerEntry(data: Omit<LedgerEntry, 'id' | 'createdAt' | 'businessId' | 'createdByUserId'>) {
-  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, user, business } = await requireBusinessRole(['owner', 'admin'])
   const limit = await checkRateLimit('create-ledger-entry', 30, 60000)
   if (!limit.success) {
     throw new Error('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
@@ -61,7 +62,7 @@ export async function createLedgerEntry(data: Omit<LedgerEntry, 'id' | 'createdA
     const customer = await prisma.customer.findFirst({
       where: { id: data.customerId, businessId },
     })
-    if (!customer) throw new ForbiddenError('Cliente no encontrado')
+    if (!customer) throw new ForbiddenError(getVocabulary(business.category).clientNotFound)
   }
 
   const entry = await prisma.ledgerEntry.create({

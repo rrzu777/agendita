@@ -204,8 +204,9 @@ async function openCustomerByName(page: Page, name: string): Promise<void> {
   // (la página de detalle hace reconcile + varias queries y puede tardar en "load").
   await page.goto(href ?? '/dashboard/customers')
   await page.waitForLoadState('domcontentloaded')
-  // Confirmar que estamos en el detalle (el header muestra "Detalle de cliente").
-  await expect(page.getByText(/detalle de cliente/i).first()).toBeVisible({ timeout: 25_000 })
+  // Confirmar que estamos en el detalle (el header muestra "Detalle de cliente" o
+  // "Detalle de clienta" según el rubro del negocio del seed).
+  await expect(page.getByText(/detalle de client[ea]/i).first()).toBeVisible({ timeout: 25_000 })
 }
 
 /**

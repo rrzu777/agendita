@@ -16,6 +16,8 @@ import { getPhotos } from '@/server/actions/customer-photos'
 import { CustomerPhotos } from '@/components/dashboard/customer-photos'
 import { isObjectStorageAvailable } from '@/lib/storage/r2'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
+import { ForbiddenError } from '@/lib/auth/server'
+import { getVocabulary } from '@/lib/vocabulary'
 import { normalizePhone } from '@/lib/customers/phone'
 import { CustomerEditForm } from './edit-form'
 import { MarketingOptOutToggle } from './marketing-optout-toggle'
@@ -59,29 +61,33 @@ export default async function CustomerDetailPage({ params }: Props) {
 
   const { id } = await params
   const businessTimezone = userData.business.timezone || 'America/Santiago'
+  const v = getVocabulary(userData.business.category)
 
   let customer
   let error: string | null = null
   try {
     customer = await getCustomerDetail(id)
   } catch (err) {
-    if (err instanceof Error && err.message === 'Cliente no encontrado') {
+    // Sólo not-found/ownership → 404; un error real (DB caída, etc.) muestra la
+    // card de error. Mismo patrón que campanas/[id]; el mensaje ahora depende
+    // del rubro, así que la clase es el identificador, no el string.
+    if (err instanceof ForbiddenError) {
       notFound()
     }
-    error = err instanceof Error ? err.message : 'Error al cargar el cliente'
+    error = err instanceof Error ? err.message : `Error al cargar ${v.theClient}`
   }
 
   if (error || !customer) {
     return (
       <div>
-        <DashboardHeader title="Cliente" subtitle="Detalle de cliente" />
+        <DashboardHeader title={v.Client} subtitle={`Detalle de ${v.client}`} />
         <div className="p-5 md:p-10">
           <div className="studio-card flex min-h-[320px] flex-col items-center justify-center p-8 text-center">
             <h2 className="text-xl font-semibold text-primary">Error al cargar</h2>
             <p className="mt-2 max-w-md text-muted-foreground">{error || 'No encontrada'}</p>
             <Link href="/dashboard/customers">
               <Button className="mt-6" variant="outline">
-                Volver a clientes
+                Volver a {v.clients}
               </Button>
             </Link>
           </div>
@@ -116,7 +122,7 @@ export default async function CustomerDetailPage({ params }: Props) {
 
   return (
     <div>
-      <DashboardHeader title={customer.name} subtitle="Detalle de cliente" />
+      <DashboardHeader title={customer.name} subtitle={`Detalle de ${v.client}`} />
       <div className="p-5 md:p-10">
         {/* Back + actions */}
         <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -216,7 +222,7 @@ export default async function CustomerDetailPage({ params }: Props) {
             <div className="studio-card p-4">
               <h3 className="mb-3 text-lg font-semibold text-primary">Notas internas</h3>
               <p className="mb-3 text-xs text-muted-foreground">
-                Solo visibles para ti y tu equipo. El cliente no puede ver estas notas.
+                Solo visibles para ti y tu equipo. {v.TheClient} no puede ver estas notas.
               </p>
               <CustomerNotesForm customerId={customer.id} initialNotes={customer.notes} />
             </div>

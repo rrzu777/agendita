@@ -10,6 +10,7 @@ import { PaymentStatus, BookingStatus } from '@prisma/client'
 import { updateCustomerSchema, updateCustomerNotesSchema } from '@/lib/customers/schema'
 import { normalizePhone } from '@/lib/customers/phone'
 import { setMarketingOptOut } from '@/lib/campaigns/optout'
+import { getVocabulary } from '@/lib/vocabulary'
 
 export type CustomerListItem = {
   id: string
@@ -177,14 +178,14 @@ export type CustomerDetail = {
 }
 
 export async function getCustomerDetail(customerId: string): Promise<CustomerDetail> {
-  const { businessId } = await requireBusiness()
+  const { businessId, business } = await requireBusiness()
 
   const customer = await prisma.customer.findFirst({
     where: { id: customerId, businessId },
   })
 
   if (!customer) {
-    throw new ForbiddenError('Cliente no encontrado')
+    throw new ForbiddenError(getVocabulary(business.category).clientNotFound)
   }
 
   const [bookings, payments, paymentSum, bookingStats, pendingBalanceSum] = await Promise.all([
@@ -294,7 +295,7 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
 }
 
 async function _updateCustomer(customerId: string, data: unknown) {
-  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
 
   const limit = await checkRateLimit('update-customer', 20, 60000)
   if (!limit.success) {
@@ -310,7 +311,7 @@ async function _updateCustomer(customerId: string, data: unknown) {
     where: { id: customerId, businessId },
   })
   if (!existing) {
-    throw new ForbiddenError('Cliente no encontrado')
+    throw new ForbiddenError(getVocabulary(business.category).clientNotFound)
   }
 
   const emailClean = (parsed.data.email === '' || parsed.data.email === null) ? null : parsed.data.email
@@ -336,7 +337,7 @@ async function _updateCustomer(customerId: string, data: unknown) {
 export const updateCustomer = action(_updateCustomer)
 
 async function _updateCustomerNotes(customerId: string, data: unknown) {
-  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
 
   const limit = await checkRateLimit('update-customer-notes', 20, 60000)
   if (!limit.success) {
@@ -352,7 +353,7 @@ async function _updateCustomerNotes(customerId: string, data: unknown) {
     where: { id: customerId, businessId },
   })
   if (!existing) {
-    throw new ForbiddenError('Cliente no encontrado')
+    throw new ForbiddenError(getVocabulary(business.category).clientNotFound)
   }
 
   const notesClean = parsed.data.notes === '' ? null : (parsed.data.notes ?? undefined)
@@ -370,7 +371,7 @@ async function _updateCustomerNotes(customerId: string, data: unknown) {
 export const updateCustomerNotes = action(_updateCustomerNotes)
 
 async function _setCustomerMarketingOptOut(customerId: string, optedOut: boolean) {
-  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
 
   const limit = await checkRateLimit('update-customer', 20, 60000)
   if (!limit.success) {
@@ -383,7 +384,7 @@ async function _setCustomerMarketingOptOut(customerId: string, optedOut: boolean
     select: { id: true },
   })
   if (!existing) {
-    throw new ForbiddenError('Cliente no encontrado')
+    throw new ForbiddenError(getVocabulary(business.category).clientNotFound)
   }
 
   await setMarketingOptOut(prisma, customerId, optedOut)

@@ -20,7 +20,8 @@ export function ReviveBookingDialog({
 }: {
   bookingId: string
   serviceName: string
-  customerName: string
+  /** Sin nombre, el fallback ("Clienta" | "Cliente") sale del léxico de acá adentro. */
+  customerName?: string
   customerHasEmail: boolean
   /** true solo si turno futuro + paymentMethod bank_transfer + cuenta habilitada (el server re-valida igual). */
   canReopen: boolean
@@ -58,7 +59,7 @@ export function ReviveBookingDialog({
             Revivir reserva
           </DialogTitle>
           <DialogDescription>
-            {serviceName} — {customerName}. Elegí cómo reactivarla; el horario se vuelve a chequear.
+            {serviceName} — {customerName || vocabulary.Client}. Elegí cómo reactivarla; el horario se vuelve a chequear.
           </DialogDescription>
         </DialogHeader>
 

@@ -264,7 +264,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           <ReviveBookingButton
             bookingId={booking.id}
             serviceName={booking.service?.name || 'Servicio'}
-            customerName={booking.customer?.name || 'Cliente'}
+            customerName={booking.customer?.name}
             customerHasEmail={!!booking.customer?.email}
             canReopen={reviveState.canReopen}
             reopenDisabledReason={reviveState.reason}
@@ -313,7 +313,7 @@ export default async function BookingsPage() {
         .map((p) => ({
           paymentId: p.id,
           bookingId: b.id,
-          customerName: b.customer?.name || 'Sin cliente',
+          customerName: b.customer?.name || `Sin ${vocabulary.client}`,
           customerPhone: b.customer?.phone ?? null,
           serviceName: b.service?.name || 'Servicio',
           startDateTime: b.startDateTime,
