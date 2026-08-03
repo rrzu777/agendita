@@ -55,8 +55,13 @@ function overlappingActiveBookingsWhere(
     startDateTime: { lt: end },
     endDateTime: { gt: start },
     OR: [
-      { status: { in: [...OCCUPYING_STATUSES] } },
-      { status: BookingStatus.pending_confirmation, OR: holdAliveOr },
+      // `pending_confirmation` va acá y no con los holds: desde la migración
+      // `booking_overlap_solicitudes` una solicitud tapa el horario con el hold
+      // vivo o muerto, hasta que el cron la expire. Esta lista y `occupiesSlot`
+      // son las dos mitades de la misma decisión y tienen que decir lo mismo — si
+      // divergen, se puede crear un bloqueo encima de una hora que la agenda
+      // considera tomada, y una aprobación posterior mete la cita bajo el bloqueo.
+      { status: { in: [...OCCUPYING_STATUSES, BookingStatus.pending_confirmation] } },
       {
         status: BookingStatus.pending_payment,
         OR: [

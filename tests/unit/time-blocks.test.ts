@@ -165,8 +165,7 @@ describe('createTimeBlock', () => {
     const findManyCall = mockPrisma.booking.findMany.mock.calls[0][0]
     expect(findManyCall.where.businessId).toBe('biz-1')
     expect(findManyCall.where.OR).toEqual([
-      { status: { in: ['confirmed', 'completed'] } },
-      expect.objectContaining({ status: 'pending_confirmation' }),
+      { status: { in: ['confirmed', 'completed', 'pending_confirmation'] } },
       expect.objectContaining({ status: 'pending_payment' }),
     ])
   })
@@ -196,11 +195,13 @@ describe('createTimeBlock', () => {
       { paymentStatus: { not: 'unpaid' } },
       { paymentMethod: { in: ['bank_transfer', 'manual'] } },
     ])
-    // Una solicitud vencida sí libera sin condiciones: la barre el cron siempre.
-    expect(findClause('pending_confirmation').OR).toEqual([
-      { holdExpiresAt: null },
-      { holdExpiresAt: { gt: expect.any(Date) } },
-    ])
+    // Una solicitud NO se libera por hold vencido: tapa hasta que el cron la
+    // expire, igual que en `occupiesSlot`. Por eso no tiene cláusula propia — va
+    // en el `in` incondicional junto a confirmed y completed.
+    expect(findClause('pending_confirmation')).toBeUndefined()
+    expect(findManyCall.where.OR[0]).toEqual({
+      status: { in: ['confirmed', 'completed', 'pending_confirmation'] },
+    })
   })
 
   it('appends the service-fit warning to the confirmation message when a service would fit nowhere', async () => {
@@ -306,17 +307,13 @@ describe('createTimeBlockSeries', () => {
     expect(mockPrisma.timeBlockSeries.create).toHaveBeenCalledTimes(1)
   })
 
-  it('overlap query excludes expired holds (pago y confirmación)', async () => {
+  it('overlap query excludes expired holds de pago, pero no las solicitudes', async () => {
     await createTimeBlockSeries(seriesInput)
 
     const findManyCall = mockPrisma.booking.findMany.mock.calls[0][0]
     expect(findManyCall.where.businessId).toBe('biz-1')
     expect(findManyCall.where.OR).toEqual([
-      { status: { in: ['confirmed', 'completed'] } },
-      {
-        status: 'pending_confirmation',
-        OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: expect.any(Date) } }],
-      },
+      { status: { in: ['confirmed', 'completed', 'pending_confirmation'] } },
       {
         status: 'pending_payment',
         OR: [
