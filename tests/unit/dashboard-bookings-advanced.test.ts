@@ -51,7 +51,6 @@ vi.mock('@/lib/professionals/assign', () => ({
 
 vi.mock('@/lib/professionals/ownership', () => ({
   assertProfessionalOffersService: (...args: unknown[]) => mockAssertProfessionalOffersService(...args),
-  activeProfessionalWhere: (businessId: string) => ({ businessId, isActive: true }),
 }))
 
 vi.mock('@/server/services/finance', () => ({

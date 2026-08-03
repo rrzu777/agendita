@@ -50,6 +50,12 @@ import {
   getBusinessReplyToEmail,
 } from '@/lib/notifications'
 
+// Lo que pide TODA salida que devuelve una reserva con sus nombres (las cuatro
+// de createBooking y las dos del camino del dashboard). Constante y no literal
+// repetido: sin la relación en UNA salida, la persona desaparece de la
+// respuesta sin error de compilación — pasó con las salidas de paquete/código.
+const BOOKING_RESULT_INCLUDE = { service: true, customer: true, professional: { select: { name: true } } } as const
+
 // La forma con la que un ProfessionalPick cruza el borde, compartida entre los
 // dos formularios que crean reservas (el público y el del panel): más estricta
 // que `parseProfessionalPick` a propósito — lo que viene malformado se rechaza
@@ -296,7 +302,7 @@ async function _createBooking(data: {
           idempotencyKey: data.idempotencyKey,
         },
       },
-      include: { service: true, customer: true, professional: { select: { name: true } } },
+      include: BOOKING_RESULT_INCLUDE,
     })
     // `null` = la reserva guardada ya no está en pie y el resume le soltó la key:
     // seguimos al camino de creación normal, que ahora la puede volver a usar.
@@ -424,7 +430,7 @@ async function _createBooking(data: {
         // un código deja la reserva sin `professional` en la respuesta y la
         // confirmación se queda sin poder decir quién atiende — justo en el camino
         // más común, porque el paquete se usa por default cuando la clienta tiene.
-        include: { service: true, customer: true, professional: { select: { name: true } } },
+        include: BOOKING_RESULT_INCLUDE,
       })
       return updated
       // 15s: la tx hace lock de slot + upsert de cliente + creación de reserva +
@@ -467,7 +473,7 @@ async function _createBooking(data: {
         },
         // Con la persona, por el mismo motivo que las otras dos lecturas de esta
         // key: lo que se devuelve acá es lo que va a leer la confirmación.
-        include: { service: true, customer: true, professional: { select: { name: true } } },
+        include: BOOKING_RESULT_INCLUDE,
       })
       // Acá `null` no debería pasar: la reserva que ganó la carrera nació hace
       // milisegundos. Si pasara, cae al manejo de error de abajo con el P2002.
@@ -930,7 +936,7 @@ async function _createBookingFromDashboard(data: {
         holdExpiresAt: status === BookingStatus.pending_payment ? addMinutes(new Date(), DASHBOARD_HOLD_MINUTES) : null,
         bookingNumber,
       },
-      include: { service: true, customer: true, professional: { select: { name: true } } },
+      include: BOOKING_RESULT_INCLUDE,
     })
 
     // Paquete o código, dentro de la misma tx: un código inválido/agotado lanza y
@@ -979,7 +985,7 @@ async function _createBookingFromDashboard(data: {
         // También acá: con paquete o código lo que se devuelve es ESTE update,
         // y sin la relación la persona desaparece del camino común (mismas
         // cuatro salidas que createBooking).
-        include: { service: true, customer: true, professional: { select: { name: true } } },
+        include: BOOKING_RESULT_INCLUDE,
       })
     }
 
@@ -1116,7 +1122,7 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
 
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, businessId },
-    include: { service: true, customer: true, professional: { select: { name: true } } },
+    include: BOOKING_RESULT_INCLUDE,
   })
 
   if (!booking) {

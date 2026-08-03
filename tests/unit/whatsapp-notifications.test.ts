@@ -216,6 +216,7 @@ describe('buildBookingRescheduledWhatsappMessage', () => {
     const message = buildBookingRescheduledWhatsappMessage({
       customerName: 'Maria',
       serviceName: 'Manicure',
+      professionalName: null,
       previousStartDateTime: new Date('2026-06-15T14:00:00-04:00'),
       newStartDateTime: new Date('2026-06-16T15:30:00-04:00'),
       businessTimezone: 'America/Santiago',
@@ -259,6 +260,7 @@ describe('quién atiende en los mensajes de whatsapp', () => {
       previousStartDateTime: new Date('2026-06-15T14:00:00-04:00'),
       newStartDateTime: new Date('2026-06-16T15:30:00-04:00'),
       businessTimezone: 'America/Santiago',
+      modality: ServiceModality.on_site,
       businessAddress: null,
     })
 

@@ -48,6 +48,13 @@ function whereLines(data: BookingWhere): string[] {
   return whereText(data).map((line) => `📍 ${line}`)
 }
 
+/** Sin nombre no hay línea — la regla de `attendsRowText` (templates.ts),
+ *  reescrita acá porque aquel módulo es server-side y éste viaja al navegador.
+ *  El prefijo trae el label: "Te atiende" a la clienta, "Atiende" al negocio. */
+function attendsLine(name: string | null | undefined, prefix: string): string[] {
+  return name ? [`${prefix}${name}`] : []
+}
+
 function fmtDate(date: Date, timezone: string): string {
   return formatInTimeZone(date, timezone, "EEEE d 'de' MMMM 'de' yyyy, HH:mm", { locale: es })
 }
@@ -91,7 +98,7 @@ export function buildBookingConfirmationWhatsappMessage(data: BookingWhatsappDat
     ``,
     ...(data.bookingNumber != null ? [`🔖 Reserva #${data.bookingNumber}`] : []),
     `📋 Servicio: ${data.serviceName}`,
-    ...(data.professionalName ? [`👤 Te atiende: ${data.professionalName}`] : []),
+    ...attendsLine(data.professionalName, '👤 Te atiende: '),
     `📅 Fecha y hora: ${dateStr}`,
     ...whereLines(data),
   ]
@@ -137,7 +144,7 @@ export function buildWhatsappBookingSummaryText(data: BookingWhatsappData): stri
     `Reserva creada para ${data.customerName}`,
     `Servicio: ${data.serviceName}`,
     // "Atiende" a secas: este resumen lo lee el negocio, no la clienta.
-    ...(data.professionalName ? [`Atiende: ${data.professionalName}`] : []),
+    ...attendsLine(data.professionalName, 'Atiende: '),
     `Fecha: ${fmtDate(data.startDateTime, data.businessTimezone)}`,
     `Total: ${fmtCurrency(data.totalPrice, data.businessCurrency)}`,
     `Teléfono: ${data.customerPhone}`,
@@ -165,7 +172,7 @@ export function buildWhatsappReminderMessage(data: BookingWhatsappData): string 
     ``,
     ...(data.bookingNumber != null ? [`🔖 Reserva #${data.bookingNumber}`] : []),
     `📋 Servicio: ${data.serviceName}`,
-    ...(data.professionalName ? [`👤 Te atiende: ${data.professionalName}`] : []),
+    ...attendsLine(data.professionalName, '👤 Te atiende: '),
     `📅 Fecha y hora: ${dateStr}`,
     ...whereLines(data),
   ]
@@ -198,7 +205,7 @@ export function buildBookingRescheduledWhatsappMessage(data: BookingRescheduledW
     `Hola ${data.customerName}, te avisamos que tu reserva fue reprogramada:`,
     ``,
     `Servicio: ${data.serviceName}`,
-    ...(data.professionalName ? [`Te atiende: ${data.professionalName}`] : []),
+    ...attendsLine(data.professionalName, 'Te atiende: '),
     `Horario anterior: ${previousDateStr}`,
     `Nuevo horario: ${newDateStr}`,
     // Este mensaje va sin emojis; las mismas filas que el resto, en plano.

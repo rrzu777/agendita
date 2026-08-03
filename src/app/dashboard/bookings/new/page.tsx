@@ -3,7 +3,7 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { NewBookingForm } from './new-booking-form'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { prisma } from '@/lib/db'
-import { funnelProfessionalsQuery, toFunnelProfessionals } from '@/lib/professionals/eligible'
+import { funnelProfessionalsQueryFor, toFunnelProfessionals } from '@/lib/professionals/eligible'
 
 export default async function NewBookingPage() {
   const userData = await getCurrentUserWithBusiness()
@@ -21,12 +21,8 @@ export default async function NewBookingPage() {
       where: { businessId: userData.business.id, isActive: true },
       orderBy: { sortOrder: 'asc' },
     }),
-    // El MISMO equipo que ve el funnel público. La query compartida no trae
-    // businessId (cuelga de un include allá): acá, suelta, hay que agregarlo.
-    prisma.professional.findMany({
-      ...funnelProfessionalsQuery,
-      where: { businessId: userData.business.id, ...funnelProfessionalsQuery.where },
-    }),
+    // El MISMO equipo que ve el funnel público.
+    prisma.professional.findMany(funnelProfessionalsQueryFor(userData.business.id)),
   ])
 
   return (

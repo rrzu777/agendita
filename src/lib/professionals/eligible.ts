@@ -52,6 +52,19 @@ export const funnelProfessionalsQuery = {
 } satisfies { where: Prisma.ProfessionalWhereInput; orderBy: Prisma.ProfessionalOrderByWithRelationInput; select: Prisma.ProfessionalSelect }
 
 /**
+ * La misma query, para usarla SUELTA en un `findMany`: acá el `businessId` es
+ * obligatorio por firma, no por comentario. Sin él, un `findMany` suelto
+ * devuelve a la gente activa de TODOS los negocios — y eso ya se escribió a
+ * mano (con su advertencia al lado) en dos call sites antes de este helper.
+ */
+export function funnelProfessionalsQueryFor(businessId: string) {
+  return {
+    ...funnelProfessionalsQuery,
+    where: { ...funnelProfessionalsQuery.where, businessId },
+  }
+}
+
+/**
  * Aplana la relación de Prisma: al funnel le sirve la lista de ids, no el anidado.
  *
  * El tipo de entrada se DERIVA del select de arriba en vez de repetirlo: si mañana
@@ -231,6 +244,23 @@ export function pickCacheKey(pick: ProfessionalPick): string {
 export function samePick(a: ProfessionalPick, b: ProfessionalPick): boolean {
   if (a.kind !== b.kind) return false
   return a.kind === 'person' && b.kind === 'person' ? a.id === b.id : true
+}
+
+/**
+ * La política del PANEL para una elección que quedó vieja: si la persona dejó
+ * de ser elegible (cambió el servicio o la modalidad), se vuelve a "cualquiera",
+ * **nunca a "sin persona"** — una reserva sin persona con equipo elegible choca
+ * contra TODOS (`bookingBlocksProfessional`) y come la hora del equipo entero.
+ *
+ * Es deliberadamente distinta de la política del funnel que aplica
+ * `professionalFields` (allá stale → `none`, porque el paso frena y vuelve a
+ * preguntar; en el panel no hay paso que frenar y el default útil es que el
+ * servidor reparta). Vive acá, junto a sus pares, porque es política pura de
+ * `ProfessionalPick` y la van a compartir las superficies del panel.
+ */
+export function effectiveDashboardPick(choice: ProfessionalChoice, previa: ProfessionalPick): ProfessionalPick {
+  if (previa.kind !== 'person' || choice.kind !== 'ask') return previa
+  return choice.options.some((p) => p.id === previa.id) ? previa : { kind: 'anyone' }
 }
 
 /**

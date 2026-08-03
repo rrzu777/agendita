@@ -1,26 +1,22 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 /**
- * El selector de persona de la reserva manual del panel. El formulario entero
- * necesita interacción para llegar a cada estado, así que acá se verifican las
- * dos piezas puras que lo gobiernan:
+ * Las dos piezas puras que gobiernan el selector de persona de la reserva
+ * manual del panel (el formulario entero necesita interacción para llegar a
+ * cada estado):
  *
  * - `ProfessionalField`: los tres casos de `professionalChoice` (sin equipo /
  *   una sola / dos o más), y que "Cualquiera disponible" va PRIMERA como en el
- *   funnel.
+ *   funnel. Los colapsos de `professionalFields` ya los cubre
+ *   `professional-choice.test.ts` — acá sólo lo propio del panel.
  * - `effectiveDashboardPick`: la elección vieja de alguien que dejó de ser
  *   elegible vuelve a "cualquiera", nunca a "sin persona" — sin persona con
  *   equipo elegible chocaría contra el equipo entero.
  */
 
-vi.mock('next/navigation', () => ({
-  redirect: vi.fn(),
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
-}))
-
-import { effectiveDashboardPick, ProfessionalField } from '@/app/dashboard/bookings/new/new-booking-form'
-import { professionalChoice, professionalFields, type FunnelProfessional } from '@/lib/professionals/eligible'
+import { ProfessionalField } from '@/components/dashboard/professional-field'
+import { effectiveDashboardPick, professionalChoice, type FunnelProfessional } from '@/lib/professionals/eligible'
 
 function persona(id: string, name: string, serviceIds: string[] = ['svc-1']): FunnelProfessional {
   return { id, name, bio: null, modalities: ['on_site'], serviceIds }
@@ -50,35 +46,25 @@ describe('ProfessionalField', () => {
       <ProfessionalField choice={choice} pick={{ kind: 'person', id: 'prof-2' }} onChange={() => {}} />,
     )
 
-    expect(html).toContain('selected')
     expect(html.match(/<option[^>]*selected[^>]*>SofiBarbera/)).toBeTruthy()
   })
 
-  it('con una sola persona elegible no pregunta (la asignación la colapsa professionalFields)', () => {
+  it('con una sola persona elegible no pregunta', () => {
     const choice = professionalChoice([RAUL], 'svc-1', 'on_site')
     const html = renderToStaticMarkup(
       <ProfessionalField choice={choice} pick={{ kind: 'anyone' }} onChange={() => {}} />,
     )
 
     expect(html).toBe('')
-    // ...pero la reserva igual queda a su nombre:
-    expect(professionalFields(choice, { kind: 'anyone' })).toEqual({
-      professional: { kind: 'person', id: 'prof-1' },
-      professionalName: 'RaulBarbero',
-    })
   })
 
-  it('sin equipo elegible no aparece y la reserva va sin persona', () => {
+  it('sin equipo elegible no aparece', () => {
     const choice = professionalChoice([], 'svc-1', 'on_site')
     const html = renderToStaticMarkup(
       <ProfessionalField choice={choice} pick={{ kind: 'anyone' }} onChange={() => {}} />,
     )
 
     expect(html).toBe('')
-    expect(professionalFields(choice, { kind: 'anyone' })).toEqual({
-      professional: { kind: 'none' },
-      professionalName: '',
-    })
   })
 })
 
