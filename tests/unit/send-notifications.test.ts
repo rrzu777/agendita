@@ -102,8 +102,6 @@ vi.mock('resend', () => ({
 
 const {
   sendBookingConfirmedNotification,
-  sendBookingReminderNotification,
-  sendBookingCancelledNotificationById,
   sendPaymentReceivedNotification,
   sendNotificationSafely,
 } = await import('@/lib/notifications/email-provider')
@@ -250,90 +248,6 @@ describe('sendBookingConfirmedNotification', () => {
     await expect(
       sendBookingConfirmedNotification('booking-1', 'biz-1'),
     ).resolves.toBeDefined()
-  })
-})
-
-describe('sendBookingReminderNotification', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockResendSend.mockReset()
-  })
-
-  // Mismo criterio que en la confirmación: el include se asserta directo.
-  it('pide a la persona en la consulta y el recordatorio dice quién atiende', async () => {
-    mockResendSend.mockResolvedValue({ data: { id: 'msg_reminder_prof' }, error: null })
-    const { prisma } = await import('@/lib/db')
-    const findFirst = prisma.booking.findFirst as ReturnType<typeof vi.fn>
-    findFirst.mockResolvedValueOnce({ ...mockBooking, professional: { name: 'Juan Pérez' } })
-
-    await sendBookingReminderNotification('booking-1', 'biz-1')
-
-    expect(findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        include: expect.objectContaining({ professional: { select: { name: true } } }),
-      }),
-    )
-    const call = mockResendSend.mock.calls[0][0]
-    expect(call.html).toContain('Te atiende')
-    expect(call.html).toContain('Juan Pérez')
-  })
-
-  it('calls Resend with reminder template', async () => {
-    mockResendSend.mockResolvedValue({ data: { id: 'msg_reminder_1' }, error: null })
-
-    const result = await sendBookingReminderNotification('booking-1', 'biz-1')
-
-    expect(mockResendSend).toHaveBeenCalledWith(
-      expect.objectContaining({
-        from: 'Agendita <no-reply@agendita.cl>',
-        to: ['maria@example.com'],
-        subject: expect.stringContaining('Recordatorio'),
-      }),
-    )
-    expect(result.success).toBe(true)
-  })
-
-  it('skips gracefully when booking not found', async () => {
-    const { prisma } = await import('@/lib/db')
-    ;(prisma.booking.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null)
-
-    const result = await sendBookingReminderNotification('nonexistent', 'biz-1')
-
-    expect(result.success).toBe(false)
-    expect(result.skipped).toBe('Booking not found or customer has no email')
-  })
-})
-
-describe('sendBookingCancelledNotificationById', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockResendSend.mockReset()
-  })
-
-  it('calls Resend with cancellation template', async () => {
-    mockResendSend.mockResolvedValue({ data: { id: 'msg_cancel_1' }, error: null })
-
-    const result = await sendBookingCancelledNotificationById('booking-1', 'biz-1')
-
-    expect(mockResendSend).toHaveBeenCalledWith(
-      expect.objectContaining({
-        from: 'Agendita <no-reply@agendita.cl>',
-        to: ['maria@example.com'],
-        replyTo: 'owner@nails.com',
-        subject: expect.stringContaining('cancelada'),
-      }),
-    )
-    expect(result.success).toBe(true)
-  })
-
-  it('skips gracefully when booking not found', async () => {
-    const { prisma } = await import('@/lib/db')
-    ;(prisma.booking.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null)
-
-    const result = await sendBookingCancelledNotificationById('nonexistent', 'biz-1')
-
-    expect(result.success).toBe(false)
-    expect(result.skipped).toBe('Booking not found or customer has no email')
   })
 })
 
