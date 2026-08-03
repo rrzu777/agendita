@@ -1205,8 +1205,11 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
       // que sin esta línea la discrepancia sería muda.
       const msg = error instanceof Error ? error.message : String(error)
       logger.error('booking.error', `Booking_no_overlap rejected rescheduleBooking: ${msg}`, {
+        // `bookingId` de primer nivel, no adentro de metadata (misma forma que
+        // lib/errors.ts): es un campo estructurado del log y es por el que se filtra.
+        bookingId,
         businessId,
-        metadata: { error: msg, bookingId },
+        metadata: { error: msg },
       })
       throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
     }

@@ -169,8 +169,9 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
     if (isNoOverlapViolation(error)) {
       const msg = error instanceof Error ? error.message : String(error)
       logger.error('booking.error', `Booking_no_overlap rejected rescheduleMyBooking: ${msg}`, {
+        bookingId,
         businessId: booking.business.id,
-        metadata: { error: msg, bookingId },
+        metadata: { error: msg },
       })
       throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
     }
