@@ -17,6 +17,7 @@ import { assertSlotFreeOfConflicts } from '@/lib/availability/validation'
 import { isNoOverlapViolation } from '@/lib/db/no-overlap'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
+import { promisableHoldDeadline } from '@/lib/bookings/hold'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import { PaymentStatus, type BankTransferAccount } from '@prisma/client'
 import {
@@ -36,6 +37,8 @@ type ReviveResult =
       booking: {
         id: string
         bookingNumber: number | null
+        /** Techo del plazo que promete el mail: ver `promisableHoldDeadline`. */
+        endDateTime: Date
         depositRequired: number
         remainingBalance: number
         customer: { name: string; email: string | null } | null
@@ -171,8 +174,14 @@ async function _reviveBooking(bookingId: string, mode: 'confirm' | 'reopen'): Pr
           bookingNumber: revived.bookingNumber,
           depositAmount: Math.min(revived.depositRequired, revived.remainingBalance),
           businessCurrency: business.currency || 'CLP',
-          // deadline = el holdExpiresAt escrito en la tx — NO recalcular.
-          bankTransfer: toBankTransferEmailInfo(account, holdExpiresAt, getBookingConfirmationUrl(business, bookingId)),
+          // deadline = el holdExpiresAt escrito en la tx — NO recalcular. Sí
+          // topado con la cita: dar "nuevo plazo" con 48h configuradas sobre un
+          // turno de mañana prometía por mail una fecha posterior a la cita.
+          bankTransfer: toBankTransferEmailInfo(
+            account,
+            promisableHoldDeadline({ endDateTime: revived.endDateTime, holdExpiresAt }),
+            getBookingConfirmationUrl(business, bookingId),
+          ),
         }),
       )
     }

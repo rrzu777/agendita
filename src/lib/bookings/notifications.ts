@@ -16,7 +16,7 @@ import { BookingStatus } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
-import { MANUAL_COORDINATION_METHOD } from '@/lib/bookings/hold'
+import { MANUAL_COORDINATION_METHOD, promisableHoldDeadline } from '@/lib/bookings/hold'
 import { fmtDate } from '@/lib/notifications/templates'
 import { bookingInvite } from '@/lib/calendar/booking-invite'
 import { type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
@@ -45,7 +45,8 @@ export async function fireBookingNotifications(
   booking: {
     customer: { name: string; phone: string; email: string | null }
     // Los tres son para el evento de calendario: cuándo termina la cita y qué
-    // versión del evento es (ver `sequenceOf`).
+    // versión del evento es (ver `sequenceOf`). `endDateTime` además es el techo
+    // de cualquier plazo que este mail prometa (ver `promisableHoldDeadline`).
     endDateTime: Date
     createdAt: Date
     updatedAt: Date
@@ -79,13 +80,19 @@ export async function fireBookingNotifications(
   // verdad, no lo que la config decía al empezar.
   const awaitingApproval = booking.status === BookingStatus.pending_confirmation
 
+  // Un solo plazo para los tres textos que lo mencionan (datos bancarios,
+  // coordinación manual y el aviso a la dueña). Topado con la cita: prometer
+  // "te guardamos el horario hasta mañana" sobre una cita de hoy es una frase
+  // sin sentido, y este mail es la copia durable de esa promesa.
+  const promisedDeadline = promisableHoldDeadline(booking)
+
   // Reserva con transferencia: el email de "reserva recibida" ES la fuente
   // durable de los datos bancarios (la pestaña del wizard es efímera).
   let bankTransfer: BookingEmailData['bankTransfer'] | undefined
   if (booking.paymentMethod === BANK_TRANSFER_METHOD && bankTransferAccount) {
     bankTransfer = {
       ...bankTransferAccount,
-      deadline: booking.holdExpiresAt,
+      deadline: promisedDeadline,
       confirmationUrl: getBookingConfirmationUrl({ slug: business.slug, subdomain: business.subdomain }, booking.id),
     }
   }
@@ -95,7 +102,7 @@ export async function fireBookingNotifications(
   // clienta que ELLA debía pagar algo que no tiene cómo pagar.
   const manualCoordination =
     booking.paymentMethod === MANUAL_COORDINATION_METHOD
-      ? { deadline: booking.holdExpiresAt }
+      ? { deadline: promisedDeadline }
       : undefined
 
   const domain = process.env.NEXT_PUBLIC_APP_DOMAIN || process.env.APP_DOMAIN || 'localhost:3000'
@@ -174,7 +181,7 @@ export async function fireBookingNotifications(
         paymentNote: booking.paymentMethod === BANK_TRANSFER_METHOD
           ? `${vocabulary.TheClient} eligió pagar el abono por transferencia. Te va a llegar otro aviso cuando declare que transfirió.`
           : booking.paymentMethod === MANUAL_COORDINATION_METHOD
-            ? `No tenés pago online configurado, así que el abono lo coordinás directamente con ${vocabulary.theClient}. Confirmá la reserva antes de que venza${booking.holdExpiresAt ? ` (el horario queda guardado hasta el ${fmtDate(booking.holdExpiresAt, businessTimezone)})` : ''}, o expira sola.`
+            ? `No tenés pago online configurado, así que el abono lo coordinás directamente con ${vocabulary.theClient}. Confirmá la reserva antes de que venza${promisedDeadline ? ` (el horario queda guardado hasta el ${fmtDate(promisedDeadline, businessTimezone)})` : ''}, o expira sola.`
             : undefined,
       }),
     ),

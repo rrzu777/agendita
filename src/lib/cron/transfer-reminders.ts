@@ -14,6 +14,7 @@ import {
 import { getBookingConfirmationUrl, getPackageConfirmationUrl } from '@/lib/business/urls'
 import { getVocabulary } from '@/lib/vocabulary'
 import { toBankTransferEmailInfo } from '@/lib/notifications/types'
+import { promisableHoldDeadline } from '@/lib/bookings/hold'
 import { logger } from '@/lib/logger'
 
 // Ventanas del recordatorio (no son 'use server', pueden ser constantes del módulo).
@@ -141,7 +142,9 @@ export async function sendTransferReminders(
             serviceName: b.service?.name ?? 'servicio',
             depositAmount: Math.min(b.depositRequired, b.remainingBalance),
             businessCurrency: b.business.currency || 'CLP',
-            bankTransfer: toBankTransferEmailInfo(acct, b.holdExpiresAt!, getBookingConfirmationUrl(b.business, b.id)),
+            // El plazo que se le promete va topado con la cita: el recordatorio
+            // sale hasta 3h antes del hold, que con una cita cercana ya pasó.
+            bankTransfer: toBankTransferEmailInfo(acct, promisableHoldDeadline(b, now), getBookingConfirmationUrl(b.business, b.id)),
             bookingNumber: b.bookingNumber,
             customerEmail: b.customer!.email!,
             businessReplyToEmail: replyToByBiz.get(b.business.id) ?? null,

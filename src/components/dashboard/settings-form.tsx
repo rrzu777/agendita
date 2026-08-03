@@ -256,7 +256,7 @@ export function SettingsForm({ business }: { business: Business }) {
               aria-invalid={!!errors.manualHoldHours}
             />
             <p className="text-xs text-muted-foreground">
-              Si no tenés pago online ni transferencia configurados, cuántas horas se guarda el horario mientras coordinás el abono. Pasado el plazo, la reserva expira sola.
+              Si no tenés pago online ni transferencia configurados, cuántas horas se guarda el horario mientras coordinás el abono. Pasado el plazo, la reserva expira sola. A quien reserve le prometemos este plazo o su cita, lo que pase antes.
             </p>
             {errors.manualHoldHours && <p className="text-sm text-destructive">{errors.manualHoldHours.message}</p>}
           </div>
