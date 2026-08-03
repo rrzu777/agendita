@@ -72,11 +72,26 @@ describe('assertSlotFreeOfConflicts', () => {
     ).rejects.toThrow('Ese horario ya no está disponible')
   })
 
-  it('una solicitud con el hold vencido libera el cupo aunque el cron no haya corrido', async () => {
+  // El hold vencido NO libera: desde `booking_overlap_solicitudes` el EXCLUDE cubre
+  // `pending_confirmation`, así que darla por libre acá haría que la app ofrezca un
+  // horario que el insert rechaza con 23P01. Se libera cuando el cron la expira, que
+  // es además el único que le avisa a la clienta que nadie le respondió.
+  it('una solicitud con el hold vencido sigue ocupando el cupo hasta que corre el cron', async () => {
     const s = slot(5, 15)
     await seedConfirmedBooking({
       businessId: BT_VERIFY_BIZ, serviceId: BT_VERIFY_SVC, ...s,
       status: 'pending_confirmation', holdExpiresAt: addMinutes(new Date(), -60),
+    })
+    await expect(
+      assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, professionalId: null, ...s }),
+    ).rejects.toThrow('Ese horario ya no está disponible')
+  })
+
+  it('una solicitud ya expirada por el cron sí libera el cupo', async () => {
+    const s = slot(6, 15)
+    await seedConfirmedBooking({
+      businessId: BT_VERIFY_BIZ, serviceId: BT_VERIFY_SVC, ...s,
+      status: 'expired', holdExpiresAt: addMinutes(new Date(), -60),
     })
     await expect(
       assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, professionalId: null, ...s }),
