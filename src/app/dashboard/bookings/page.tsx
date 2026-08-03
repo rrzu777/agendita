@@ -118,17 +118,20 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           </span>
           <PaymentRevertedBadge paymentStatus={booking.paymentStatus} />
         </div>
-        {isNotableModality(booking.modality) && (
-          <div className="flex items-start gap-3 text-sm">
-            <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 text-primary">
-              {bookingWhere(booking).label}
-              {bookingWhere(booking).detail && (
-                <span className="block break-words text-xs text-muted-foreground">{bookingWhere(booking).detail}</span>
-              )}
-            </span>
-          </div>
-        )}
+        {isNotableModality(booking.modality) && (() => {
+          const where = bookingWhere(booking)
+          return (
+            <div className="flex items-start gap-3 text-sm">
+              <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 text-primary">
+                {where.label}
+                {where.detail && (
+                  <span className="block break-words text-xs text-muted-foreground">{where.detail}</span>
+                )}
+              </span>
+            </div>
+          )
+        })()}
         {booking.customer?.phone && (
           <div className="flex items-center gap-3 text-sm">
             <Phone className="size-4 text-muted-foreground" />

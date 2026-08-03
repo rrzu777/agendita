@@ -1,5 +1,6 @@
 import type { BusinessCategory, ServiceModality } from '@prisma/client'
 import type { BookingCalendarInvite } from '@/lib/calendar/booking-invite'
+import type { BookingWhere } from '@/lib/services/modality'
 
 export interface EmailResult {
   success: boolean
@@ -112,7 +113,10 @@ export interface CancellationEmailData {
   reason?: string | null
 }
 
-export interface RescheduledEmailData {
+/** El "dónde" viene de `BookingWhere` (modalidad OBLIGATORIA): este mail llama
+ *  a `whereRows`, y con la modalidad opcional un emisor que la omitía compilaba
+ *  igual y el mail imprimía la dirección del local en una cita a domicilio. */
+export interface RescheduledEmailData extends BookingWhere {
   businessName: string
   /** Ver `BookingEmailData.calendar`: el `.ics` del nuevo horario viaja con el
    *  mismo UID que el anterior, así que en el calendario pisa al viejo en vez de
@@ -121,7 +125,6 @@ export interface RescheduledEmailData {
   bookingNumber?: number | null
   businessReplyToEmail?: string | null
   businessWhatsapp?: string | null
-  businessAddress?: string | null
   businessTimezone: string
   customerName: string
   customerEmail?: string | null

@@ -1,10 +1,9 @@
 import { formatInTimeZone } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
-import type { ServiceModality } from '@prisma/client'
 import { formatMoney } from '@/lib/money'
-import { bookingWhere, isNotableModality, whereRows, type WhereFields } from '@/lib/services/modality'
+import { bookingWhere, isNotableModality, whereText, type BookingWhere } from '@/lib/services/modality'
 
-export interface BookingWhatsappData extends WhereFields {
+export interface BookingWhatsappData extends BookingWhere {
   bookingNumber?: number | null
   customerName: string
   customerPhone: string
@@ -17,10 +16,6 @@ export interface BookingWhatsappData extends WhereFields {
   finalAmount?: number
   depositPaid: number
   remainingBalance: number
-  /** Requerida a propósito (WhereFields la deja opcional): sin la modalidad,
-   *  estos mensajes volvían a imprimir la dirección del local en una cita a
-   *  domicilio u online — el bug que este dato vino a cerrar. */
-  modality: ServiceModality
   loyaltyCardLink?: string
 }
 
@@ -31,21 +26,18 @@ export interface ReviewRequestWhatsappData {
   loyaltyCardLink?: string
 }
 
-export interface BookingRescheduledWhatsappData extends WhereFields {
+export interface BookingRescheduledWhatsappData extends BookingWhere {
   customerName: string
   serviceName: string
   previousStartDateTime: Date
   newStartDateTime: Date
   businessTimezone: string
-  modality: ServiceModality
 }
 
-/** Las filas de "dónde" como líneas de mensaje a la clienta: las mismas que el
- *  mail y las pantallas de confirmación (`whereRows`), para que el WhatsApp no
- *  cuente otra cosa. En el local: la dirección del negocio; a domicilio: la de
- *  la clienta; online: el link (o que se lo mandamos antes). */
-function whereLines(data: WhereFields): string[] {
-  return whereRows(data).map((r) => `📍 ${r.label}: ${r.value}`)
+/** El "dónde" con el 📍 de estos mensajes; el texto es el compartido
+ *  (`whereText`), para que el WhatsApp no cuente otra cosa que el mail. */
+function whereLines(data: BookingWhere): string[] {
+  return whereText(data).map((line) => `📍 ${line}`)
 }
 
 function fmtDate(date: Date, timezone: string): string {
@@ -197,7 +189,7 @@ export function buildBookingRescheduledWhatsappMessage(data: BookingRescheduledW
     `Horario anterior: ${previousDateStr}`,
     `Nuevo horario: ${newDateStr}`,
     // Este mensaje va sin emojis; las mismas filas que el resto, en plano.
-    ...whereRows(data).map((r) => `${r.label}: ${r.value}`),
+    ...whereText(data),
   ]
   lines.push(``, `Si este nuevo horario no te acomoda, respondeme por aquí.`)
 

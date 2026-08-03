@@ -14,7 +14,7 @@ import { formatShortDate } from '@/lib/format-date'
 import { declaredTransferPaymentWhere } from '@/lib/bank-transfer/declared'
 import { canSelfManage } from '@/lib/bookings/self-service'
 import { BookingActions } from './booking-actions'
-import type { BookingStatus } from '@prisma/client'
+import { ServiceModality, type BookingStatus } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
 
 const UPCOMING_STATUSES = ['pending_payment', 'pending_confirmation', 'confirmed'] as const
@@ -115,31 +115,29 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
           <p className="text-sm text-gray-400">No tienes reservas próximas.</p>
         ) : (
           <ul className="space-y-2">
-            {upcoming.map((b) => (
+            {upcoming.map((b) => {
+              // También en el local: quien mira es la clienta y "¿dónde era?"
+              // merece la dirección, no sólo las modalidades notables.
+              const where = bookingWhere(b, { businessAddress: business.addressText })
+              return (
               <li key={b.id} className="rounded-lg border border-gray-100 px-3 py-2 text-sm">
                 <div className="font-medium">{b.service?.name}</div>
                 <div className="text-gray-500">{formatShortDate(b.startDateTime)} · {statusLabel(b)} · {formatBookingNumber(b.bookingNumber, b.id)}</div>
-                {(() => {
-                  // También en el local: quien mira es la clienta y "¿dónde
-                  // era?" merece la dirección, no sólo las modalidades notables.
-                  const where = bookingWhere(b, { businessAddress: business.addressText })
-                  if (!isNotableModality(b.modality) && !where.detail) return null
-                  return (
-                    <div className="text-gray-500">
-                      {where.label}
-                      {where.detail && (
-                        <>
-                          {' · '}
-                          {where.href ? (
-                            <a href={where.href} target="_blank" rel="noopener noreferrer" className="underline">
-                              {b.modality === 'online' ? 'Entrar a la videollamada' : where.detail}
-                            </a>
-                          ) : where.detail}
-                        </>
-                      )}
-                    </div>
-                  )
-                })()}
+                {(isNotableModality(b.modality) || where.detail) && (
+                  <div className="text-gray-500">
+                    {where.label}
+                    {where.detail && (
+                      <>
+                        {' · '}
+                        {where.href ? (
+                          <a href={where.href} target="_blank" rel="noopener noreferrer" className="underline">
+                            {b.modality === ServiceModality.online ? 'Entrar a la videollamada' : where.detail}
+                          </a>
+                        ) : where.detail}
+                      </>
+                    )}
+                  </div>
+                )}
                 <BookingActions
                   bookingId={b.id}
                   slug={business.slug}
@@ -147,7 +145,8 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
                   cutoffHours={business.selfServiceCutoffHours}
                 />
               </li>
-            ))}
+              )
+            })}
           </ul>
         )}
         <a

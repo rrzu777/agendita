@@ -9,9 +9,12 @@ import {
   buildWhatsappBookingSummaryText,
   buildWhatsappReminderMessage,
 } from '@/lib/notifications'
-import type { ServiceModality } from '@prisma/client'
+import type { BookingWhere } from '@/lib/services/modality'
 
-export interface BookingContactData {
+/** `BookingWhere` trae el "dónde" completo, no una dirección suelta: los
+ *  mensajes imprimían la dirección del local también en citas a domicilio u
+ *  online, y la modalidad obligatoria es lo que impide repetirlo callado. */
+export interface BookingContactData extends BookingWhere {
   bookingNumber?: number | null
   customerName: string
   customerPhone: string | null
@@ -22,12 +25,6 @@ export interface BookingContactData {
   totalPrice: number
   depositPaid: number
   remainingBalance: number
-  /** El "dónde" completo, no una dirección suelta: los mensajes imprimían la
-   *  dirección del local también en citas a domicilio u online. */
-  modality: ServiceModality
-  serviceAddress?: string | null
-  meetingUrl?: string | null
-  businessAddress?: string | null
   businessName?: string | null
 }
 
@@ -48,20 +45,12 @@ export function BookingContactButtons({ booking, variant = 'default', showRemind
     : booking.startDateTime
 
   const bookingData = {
-    bookingNumber: booking.bookingNumber ?? null,
-    customerName: booking.customerName,
+    ...booking,
     customerPhone: phone,
-    serviceName: booking.serviceName,
     startDateTime: start,
-    businessTimezone: booking.businessTimezone,
-    businessCurrency: booking.businessCurrency,
     totalPrice: booking.totalPrice || 0,
     depositPaid: booking.depositPaid || 0,
     remainingBalance: booking.remainingBalance || 0,
-    modality: booking.modality,
-    serviceAddress: booking.serviceAddress || null,
-    meetingUrl: booking.meetingUrl || null,
-    businessAddress: booking.businessAddress || null,
   }
 
   const summaryText = buildWhatsappBookingSummaryText(bookingData)

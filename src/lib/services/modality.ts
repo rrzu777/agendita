@@ -96,6 +96,15 @@ export interface WhereFields {
   meetingUrl?: string | null
 }
 
+/**
+ * `WhereFields` con la modalidad OBLIGATORIA. Es el tipo del "dónde" en todo
+ * payload que termina renderizando `whereRows` (mails, WhatsApp): con la
+ * modalidad opcional, un caller que la omite compila igual y `whereRows` cae al
+ * default `on_site` — o sea, vuelve a imprimir la dirección del local en una
+ * cita a domicilio, callado. Que no compile es el punto.
+ */
+export type BookingWhere = WhereFields & { modality: ServiceModality }
+
 /** Una fila de "dónde", con el link ya resuelto: `href` null = no se clickea. */
 export interface WhereRow {
   label: string
@@ -163,6 +172,13 @@ export function whereRows(data: WhereFields): WhereRow[] {
   return data.businessAddress
     ? [{ label: 'Dirección', value: data.businessAddress, href: mapsHref(data.businessAddress) }]
     : []
+}
+
+/** Las mismas filas, como líneas de texto plano ("label: valor"). Es LA
+ *  proyección a texto: la usan los mails y los WhatsApp — si cada canal arma la
+ *  suya, terminan contando el dónde con palabras distintas. */
+export function whereText(data: WhereFields): string[] {
+  return whereRows(data).map(({ label, value }) => `${label}: ${value}`)
 }
 
 /**

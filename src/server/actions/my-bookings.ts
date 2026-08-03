@@ -175,6 +175,11 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
         businessReplyToEmail: await getBusinessReplyToEmail(booking.business.id),
         businessWhatsapp: booking.business.whatsapp,
         businessAddress: booking.business.addressText,
+        // El dónde completo: sin la modalidad, whereRows caía al default y el
+        // mail imprimía la dirección del local en una cita a domicilio u online.
+        modality: booking.modality,
+        serviceAddress: booking.serviceAddress,
+        meetingUrl: booking.meetingUrl,
         businessTimezone: booking.business.timezone || 'America/Santiago',
         customerName: booking.customer.name,
         customerEmail: booking.customer.email!,

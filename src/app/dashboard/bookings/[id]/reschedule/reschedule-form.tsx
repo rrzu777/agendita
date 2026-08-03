@@ -13,8 +13,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { localDateTimeToUtc, startOfLocalDay } from '@/lib/availability/timezone'
 import { buildBookingRescheduledWhatsappUrl } from '@/lib/notifications/whatsapp'
 import { useVocabulary } from '@/components/vocabulary-provider'
-import type { WhereFields } from '@/lib/services/modality'
-import type { ServiceModality } from '@prisma/client'
+import type { BookingWhere } from '@/lib/services/modality'
 
 interface RescheduleFormProps {
   bookingId: string
@@ -26,7 +25,7 @@ interface RescheduleFormProps {
   timezone: string
   /** El "dónde" completo de la reserva: el aviso de WhatsApp imprimía la
    *  dirección del local también en citas a domicilio u online. */
-  where: WhereFields & { modality: ServiceModality }
+  where: BookingWhere
 }
 
 export function RescheduleForm({
