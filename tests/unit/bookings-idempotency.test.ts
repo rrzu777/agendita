@@ -75,6 +75,15 @@ vi.mock('@/lib/notifications', () => ({
   sendMultiNotificationSafely: vi.fn().mockResolvedValue([]),
 }))
 
+// El resolver de pago online decide el largo del hold (15 min con checkout,
+// la ventana de coordinación manual sin él). Default: disponible, que es el
+// escenario que estos tests siempre asumieron.
+const mockResolveOnline = vi.fn()
+vi.mock('@/lib/payments/factory', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/payments/factory')>()),
+  resolveOnlinePaymentAvailabilityForBusiness: (...args: unknown[]) => mockResolveOnline(...args),
+}))
+
 const mockAssertSlotFreeOfConflicts = vi.fn().mockResolvedValue(undefined)
 
 // Sólo los dos asserts se mockean: `SLOT_UNAVAILABLE_MESSAGE` sale del módulo real,
@@ -110,6 +119,7 @@ describe('createBooking idempotency', () => {
     vi.clearAllMocks()
     vi.stubEnv('RESEND_API_KEY', '')
     vi.stubEnv('FROM_EMAIL', '')
+    mockResolveOnline.mockResolvedValue({ available: true, provider: 'mercado_pago', isMock: false })
     mockPrisma.business.findUnique.mockResolvedValue({
       id: 'biz-1',
       timezone: 'America/Santiago',
@@ -120,6 +130,7 @@ describe('createBooking idempotency', () => {
       cancellationPolicy: null,
       slug: 'test-biz',
       subdomain: null,
+      manualHoldHours: 24,
     })
     mockPrisma.service.findFirst.mockResolvedValue({
       id: 'svc-1',
@@ -436,6 +447,7 @@ describe('createBooking acceptedTerms enforcement', () => {
     vi.clearAllMocks()
     vi.stubEnv('RESEND_API_KEY', '')
     vi.stubEnv('FROM_EMAIL', '')
+    mockResolveOnline.mockResolvedValue({ available: true, provider: 'mercado_pago', isMock: false })
     mockPrisma.business.findUnique.mockResolvedValue({
       id: 'biz-1',
       timezone: 'America/Santiago',
@@ -447,6 +459,7 @@ describe('createBooking acceptedTerms enforcement', () => {
       slug: 'test',
       subdomain: 'test',
       subscriptionStatus: 'trialing',
+      manualHoldHours: 24,
     })
     mockPrisma.service.findFirst.mockResolvedValue({
       id: 'svc-1',
@@ -511,5 +524,73 @@ describe('createBooking acceptedTerms enforcement', () => {
     const result = await createBooking({ ...baseInput, acceptedTerms: true }, 'biz-1')
 
     expect(result).toEqual({ ok: true, data: createdBooking })
+  })
+
+  // Coordinación manual: con abono requerido pero sin checkout online ni
+  // transferencia, la clienta no puede pagar en 15 minutos — el hold dura la
+  // ventana configurada y la reserva queda marcada para el cron y el panel.
+  describe('coordinación manual del abono', () => {
+    function txConCreate() {
+      const createSpy = vi.fn().mockResolvedValue({
+        id: 'booking-manual',
+        service: { name: 'Manicure' },
+        customer: { name: 'Juan', phone: '+56912345678', email: null },
+        professional: null,
+      })
+      mockPrisma.customer.findFirst.mockResolvedValue(null)
+      mockPrisma.customer.create.mockResolvedValue({ id: 'cust-1' })
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
+        fn({ ...mockPrisma, booking: { ...mockPrisma.booking, create: createSpy } }),
+      )
+      return createSpy
+    }
+
+    it('sin pago online: hold = manualHoldHours y paymentMethod manual', async () => {
+      mockResolveOnline.mockResolvedValue({ available: false, provider: null, isMock: false, reason: 'coordina' })
+      mockPrisma.business.findUnique.mockResolvedValue({
+        id: 'biz-1', timezone: 'America/Santiago', name: 'Test Business',
+        whatsapp: null, addressText: null, currency: 'CLP', cancellationPolicy: null,
+        slug: 'test', subdomain: 'test', subscriptionStatus: 'trialing',
+        manualHoldHours: 48,
+      })
+      const createSpy = txConCreate()
+      const antes = Date.now()
+
+      const result = await createBooking({ ...baseInput, acceptedTerms: true }, 'biz-1')
+
+      expect(result.ok).toBe(true)
+      const data = createSpy.mock.calls[0][0].data
+      expect(data.paymentMethod).toBe('manual')
+      const horas = (data.holdExpiresAt.getTime() - antes) / 3_600_000
+      expect(horas).toBeGreaterThan(47.9)
+      expect(horas).toBeLessThan(48.1)
+    })
+
+    it('con checkout online disponible: hold corto y sin marcador', async () => {
+      const createSpy = txConCreate()
+      const antes = Date.now()
+
+      const result = await createBooking({ ...baseInput, acceptedTerms: true }, 'biz-1')
+
+      expect(result.ok).toBe(true)
+      const data = createSpy.mock.calls[0][0].data
+      expect(data.paymentMethod).toBeNull()
+      const minutos = (data.holdExpiresAt.getTime() - antes) / 60_000
+      expect(minutos).toBeGreaterThan(DEFAULT_HOLD_MINUTES - 1)
+      expect(minutos).toBeLessThan(DEFAULT_HOLD_MINUTES + 1)
+    })
+
+    it('sin abono requerido ni siquiera consulta la disponibilidad', async () => {
+      mockPrisma.service.findFirst.mockResolvedValue({
+        id: 'svc-1', businessId: 'biz-1', isActive: true, durationMinutes: 60,
+        price: 10000, depositAmount: 0, modalities: ['on_site'],
+      })
+      txConCreate()
+
+      const result = await createBooking({ ...baseInput, acceptedTerms: true }, 'biz-1')
+
+      expect(result.ok).toBe(true)
+      expect(mockResolveOnline).not.toHaveBeenCalled()
+    })
   })
 })

@@ -12,6 +12,7 @@ export {
   sendBookingConfirmedNotification,
   sendBankTransferRejectedToCustomer,
   sendBankTransferExpiredToCustomer,
+  sendManualHoldExpiredToCustomer,
   sendTransferReminderToCustomer,
   sendTransferReactivatedToCustomer,
   sendTransferReminderToBusiness,

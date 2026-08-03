@@ -1,6 +1,18 @@
 import { describe, it, expect, vi } from 'vitest'
-import { expireStaleHolds } from '@/lib/cron/expire-holds'
 import { BookingStatus } from '@prisma/client'
+
+// El reply-to sale de una query REAL sobre el prisma global (no el db
+// inyectado); sin este mock, el aviso de coordinación manual pegaría contra
+// la base en un test unitario.
+vi.mock('@/lib/notifications', () => ({
+  getBusinessReplyToEmail: vi.fn().mockResolvedValue(null),
+  sendNotificationSafely: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
+  sendBankTransferExpiredToCustomer: vi.fn(),
+  sendManualHoldExpiredToCustomer: vi.fn(),
+  sendBookingCancelledNotification: vi.fn(),
+}))
+
+const { expireStaleHolds } = await import('@/lib/cron/expire-holds')
 
 describe('expireStaleHolds', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,7 +45,11 @@ describe('expireStaleHolds', () => {
         findMany: vi.fn().mockImplementation(async (args: any) =>
           args?.where?.status === BookingStatus.pending_confirmation
             ? (overrides.requestsFindMany ?? [])
-            : (overrides.findMany ?? []),
+            // El aviso post-sweep a las reservas de coordinación manual filtra
+            // por paymentMethod: 'manual'.
+            : args?.where?.paymentMethod === 'manual'
+              ? (overrides.manualFindMany ?? [])
+              : (overrides.findMany ?? []),
         ),
         // Exposed so assertions can target the booking.updateMany inside the tx.
         updateMany,
@@ -78,6 +94,58 @@ describe('expireStaleHolds', () => {
       },
       data: { status: BookingStatus.expired },
     })
+  })
+
+  // Coordinación manual: la clienta no abandonó un checkout — el negocio no
+  // confirmó a tiempo. A ella hay que avisarle; el sweep de MP sigue mudo.
+  it('avisa a la clienta de coordinación manual cuando su ventana expira', async () => {
+    const db = makeDb({
+      findMany: [{ id: 'b1', businessId: 'biz-1' }],
+      updateMany: { count: 1 },
+      manualFindMany: [{
+        id: 'b1',
+        businessId: 'biz-1',
+        bookingNumber: 4738,
+        startDateTime: new Date('2026-08-10T14:00:00Z'),
+        customer: { name: 'Ana', email: 'ana@test.com' },
+        service: { name: 'Manicure' },
+        business: { name: 'Mimos Nails', timezone: 'America/Santiago' },
+      }],
+    })
+    const deps = {
+      sendExpiredEmail: vi.fn().mockResolvedValue({ success: true }),
+      sendManualExpiredEmail: vi.fn().mockResolvedValue({ success: true }),
+      sendCancelledEmail: vi.fn().mockResolvedValue({ success: true }),
+    }
+
+    await expireStaleHolds(new Date('2026-08-03T12:00:00Z'), db, deps)
+
+    expect(deps.sendManualExpiredEmail).toHaveBeenCalledTimes(1)
+    expect(deps.sendManualExpiredEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerEmail: 'ana@test.com',
+        businessName: 'Mimos Nails',
+        serviceName: 'Manicure',
+        bookingNumber: 4738,
+      }),
+    )
+    expect(deps.sendExpiredEmail).not.toHaveBeenCalled()
+  })
+
+  it('sin reservas de coordinación manual no manda nada', async () => {
+    const db = makeDb({
+      findMany: [{ id: 'b1', businessId: 'biz-1' }],
+      updateMany: { count: 1 },
+    })
+    const deps = {
+      sendExpiredEmail: vi.fn().mockResolvedValue({ success: true }),
+      sendManualExpiredEmail: vi.fn().mockResolvedValue({ success: true }),
+      sendCancelledEmail: vi.fn().mockResolvedValue({ success: true }),
+    }
+
+    await expireStaleHolds(new Date(), db, deps)
+
+    expect(deps.sendManualExpiredEmail).not.toHaveBeenCalled()
   })
 
   it('reports lower count if a race occurred (payment processed between find and update)', async () => {

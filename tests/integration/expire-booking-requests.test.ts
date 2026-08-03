@@ -27,6 +27,7 @@ function slot(day: number, hourUtc: number) {
 function deps() {
   return {
     sendExpiredEmail: vi.fn().mockResolvedValue({ success: true }),
+    sendManualExpiredEmail: vi.fn().mockResolvedValue({ success: true }),
     sendCancelledEmail: vi.fn().mockResolvedValue({ success: true }),
   }
 }

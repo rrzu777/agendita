@@ -52,6 +52,8 @@ import {
   bankTransferRejectedCustomerText,
   bankTransferExpiredCustomerHtml,
   bankTransferExpiredCustomerText,
+  manualHoldExpiredCustomerHtml,
+  manualHoldExpiredCustomerText,
   balanceTransferDeclaredBusinessHtml,
   balanceTransferDeclaredBusinessText,
   balanceTransferVerifiedCustomerHtml,
@@ -372,6 +374,20 @@ export async function sendBankTransferExpiredToCustomer(data: BankTransferVerify
     `Tu reserva expiró - ${data.businessName}`,
     bankTransferExpiredCustomerHtml(data),
     bankTransferExpiredCustomerText(data),
+    { replyTo: data.businessReplyToEmail },
+  )
+}
+
+/** La expiración de una reserva de coordinación manual: la ventana venció sin
+ *  que el negocio confirmara el abono. Mismo payload que la de transferencia
+ *  (los datos son los de la reserva), copy propio (acá nadie debía transferir). */
+export async function sendManualHoldExpiredToCustomer(data: BankTransferVerifyCustomerEmailData): Promise<EmailResult> {
+  if (!data.customerEmail) return { success: false, skipped: 'Cliente sin email' }
+  return sendEmail(
+    data.customerEmail,
+    `Tu reserva expiró - ${data.businessName}`,
+    manualHoldExpiredCustomerHtml(data),
+    manualHoldExpiredCustomerText(data),
     { replyTo: data.businessReplyToEmail },
   )
 }

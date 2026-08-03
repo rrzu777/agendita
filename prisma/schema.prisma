@@ -73,6 +73,7 @@ model Business {
   bookingWindowDays      Int                @default(90)
   slotStepMinutes        Int?               @default(30) // cada cuántos min ofrecer inicios de hora; null = duración del servicio
   selfServiceCutoffHours Int                @default(24) // ventana para cancelar/reprogramar self-service; 0 = sin límite (se usa en D1-b)
+  manualHoldHours        Int                @default(24) // cuánto se guarda el horario cuando el negocio coordina el abono a mano (sin MP ni transferencia); el funnel con pago online usa 15 min
   bookingNumberSeq       Int                @default(1000)
   requireTransferProof   Boolean            @default(false)
   // Confirmación manual: las reservas que hoy se auto-confirmarían quedan

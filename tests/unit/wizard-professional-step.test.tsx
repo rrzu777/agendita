@@ -53,6 +53,7 @@ describe('el wizard con equipo', () => {
     act(() => {
       root?.render(
         <BookingWizard
+          manualHoldHours={24}
           businessId="biz-1"
           slug="test-biz"
           business={{ name: 'Barbería', addressText: null, whatsapp: null }}

@@ -12,3 +12,13 @@ export const DEFAULT_HOLD_MINUTES = 15
  *  de un checkout abierto. Vive acá al lado del otro para que se lea como una
  *  política distinta y no como un número que alguien se olvidó de nombrar. */
 export const DASHBOARD_HOLD_MINUTES = 60
+
+/** Marcador de `Booking.paymentMethod` para el camino donde el negocio coordina
+ *  el abono a mano: el servicio pide abono pero no hay checkout online ni
+ *  transferencia configurados, así que la clienta no PUEDE pagar dentro de la
+ *  ventana del funnel. Lo escribe createBooking (la decisión es del servidor,
+ *  no del navegador) y lo leen el cron —para avisarle a la clienta si la
+ *  ventana se vence— y la pantalla de confirmación —para no pedirle que
+ *  "complete el pago" que no existe. La ventana la configura la dueña en
+ *  `Business.manualHoldHours`. */
+export const MANUAL_COORDINATION_METHOD = 'manual'

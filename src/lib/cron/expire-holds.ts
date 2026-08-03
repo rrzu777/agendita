@@ -5,9 +5,11 @@ import { declaredTransferPaymentWhere, declaredPkgTransferPaymentWhere } from '@
 import {
   sendNotificationSafely,
   sendBankTransferExpiredToCustomer,
+  sendManualHoldExpiredToCustomer,
   sendBookingCancelledNotification,
   getBusinessReplyToEmail,
 } from '@/lib/notifications'
+import { MANUAL_COORDINATION_METHOD } from '@/lib/bookings/hold'
 
 export interface ExpireHoldsResult {
   expired: number
@@ -20,6 +22,7 @@ export interface ExpireHoldsResult {
 
 interface ExpireHoldsDeps {
   sendExpiredEmail: typeof sendBankTransferExpiredToCustomer
+  sendManualExpiredEmail: typeof sendManualHoldExpiredToCustomer
   sendCancelledEmail: typeof sendBookingCancelledNotification
 }
 
@@ -111,6 +114,7 @@ export async function expireStaleHolds(
   db: Pick<PrismaClient, 'booking' | 'payment' | '$transaction' | 'packagePurchase'> = prisma,
   deps: ExpireHoldsDeps = {
     sendExpiredEmail: sendBankTransferExpiredToCustomer,
+    sendManualExpiredEmail: sendManualHoldExpiredToCustomer,
     sendCancelledEmail: sendBookingCancelledNotification,
   }
 ): Promise<ExpireHoldsResult> {
@@ -242,6 +246,46 @@ export async function expireStaleHolds(
         .map((b) =>
           sendNotificationSafely('bank transfer expired', () =>
             deps.sendExpiredEmail({
+              businessName: b.business.name,
+              businessTimezone: b.business.timezone || 'America/Santiago',
+              businessReplyToEmail: replyToByBiz.get(b.businessId) ?? null,
+              customerName: b.customer!.name,
+              customerEmail: b.customer!.email!,
+              serviceName: b.service?.name ?? 'servicio',
+              startDateTime: b.startDateTime,
+              bookingNumber: b.bookingNumber,
+            })
+          )
+        )
+    )
+  }
+
+  // Coordinación manual expirada: acá la clienta no abandonó un checkout — el
+  // negocio no confirmó el abono dentro de la ventana. Sin este aviso se queda
+  // esperando un contacto que ya no va a llegar, con la pantalla prometiendo
+  // "el negocio te va a contactar". (El sweep de MP sigue silencioso a
+  // propósito: esa clienta cerró el checkout sabiendo los 15 minutos.)
+  const manualExpired = await db.booking.findMany({
+    where: {
+      id: { in: expiredIds },
+      status: BookingStatus.expired,
+      paymentMethod: MANUAL_COORDINATION_METHOD,
+    },
+    include: { customer: true, service: true, business: true },
+  })
+  if (manualExpired.length > 0) {
+    const replyToByBiz = new Map<string, string | null>()
+    await Promise.all(
+      [...new Set(manualExpired.map((b) => b.businessId))].map(async (bizId) => {
+        replyToByBiz.set(bizId, await getBusinessReplyToEmail(bizId))
+      })
+    )
+    await Promise.all(
+      manualExpired
+        .filter((b) => b.customer?.email)
+        .map((b) =>
+          sendNotificationSafely('manual hold expired', () =>
+            deps.sendManualExpiredEmail({
               businessName: b.business.name,
               businessTimezone: b.business.timezone || 'America/Santiago',
               businessReplyToEmail: replyToByBiz.get(b.businessId) ?? null,

@@ -11,6 +11,7 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 import { formatMoney } from '@/lib/money'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD, BT_DECLARED_PREFIX } from '@/lib/bank-transfer/declared'
+import { MANUAL_COORDINATION_METHOD } from '@/lib/bookings/hold'
 import { TransferPanel } from './transfer-panel'
 import { AccountCta } from '@/components/booking/account-cta'
 import { AddToCalendar } from '@/components/booking/add-to-calendar'
@@ -74,11 +75,18 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
 
   // Hasta qué hora le guardamos el horario, para decírselo en vez de que lo
   // descubra cuando expire. Sólo con el hold vivo: vencido, `state` ya salió
-  // 'expired' de deriveConfirmationState y el aviso no se muestra.
-  const holdDeadline =
-    booking.holdExpiresAt && booking.holdExpiresAt > now
-      ? formatConfirmationDateTime(booking.holdExpiresAt, booking.business.timezone).time
-      : null
+  // 'expired' de deriveConfirmationState y el aviso no se muestra. Con la
+  // ventana larga de coordinación manual el límite puede caer otro día:
+  // "hasta las 14:30" a secas mentiría el día, así que lleva la fecha.
+  const holdDeadline = (() => {
+    if (!booking.holdExpiresAt || booking.holdExpiresAt <= now) return null
+    const tz = booking.business.timezone
+    const { date, time } = formatConfirmationDateTime(booking.holdExpiresAt, tz)
+    const esHoy =
+      booking.holdExpiresAt.toLocaleDateString('es-CL', { timeZone: tz }) ===
+      now.toLocaleDateString('es-CL', { timeZone: tz })
+    return esHoy ? `las ${time}` : `el ${date} a las ${time}`
+  })()
 
   // Superficie activa: la clienta que eligió transferencia y cerró la pestaña
   // del wizard puede ver los datos y declarar desde acá (mientras el hold viva).
@@ -152,7 +160,11 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
       title: 'Reserva pendiente de pago',
       message: booking.paymentMethod === BANK_TRANSFER_METHOD
         ? 'Transferí el abono y avisanos con el botón de abajo para confirmar tu reserva.'
-        : 'Completa el pago del abono para confirmar tu reserva.',
+        // Coordinación manual: no hay checkout que "completar" — pedírselo la
+        // mandaría a buscar un botón de pago que no existe.
+        : booking.paymentMethod === MANUAL_COORDINATION_METHOD
+          ? `${booking.business.name} coordina el abono directamente contigo y va a confirmar tu reserva.`
+          : 'Completa el pago del abono para confirmar tu reserva.',
     },
     // La plata entró pero la reserva no quedó en pie (ver `paid_unconfirmed`): esta
     // pantalla es la URL de retorno de Mercado Pago, así que es lo primero que ve la
@@ -215,7 +227,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
               completa, y dos relojes en la misma pantalla confunden. */}
           {holdDeadline && (state === 'rejected' || (state === 'pending' && booking.paymentMethod !== BANK_TRANSFER_METHOD)) && (
             <p className="mt-3 text-sm font-medium text-muted-foreground">
-              Tu horario queda guardado hasta las {holdDeadline}; después se libera.
+              Tu horario queda guardado hasta {holdDeadline}; después se libera.
             </p>
           )}
           {state === 'verifying_transfer' && depositProofAttached && (
@@ -371,7 +383,9 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
             </Button>
             {booking.depositPaid === 0 && state === 'pending' && (
               <p className="text-center text-sm text-muted-foreground">
-                Al completar el pago, recibirás una confirmación por WhatsApp.
+                {booking.paymentMethod === MANUAL_COORDINATION_METHOD
+                  ? 'Cuando el negocio confirme el abono, te llega la confirmación.'
+                  : 'Al completar el pago, recibirás una confirmación por WhatsApp.'}
               </p>
             )}
           </div>
