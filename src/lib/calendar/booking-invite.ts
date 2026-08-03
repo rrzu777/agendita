@@ -72,6 +72,7 @@ export async function loadBookingInvite(bookingId: string): Promise<BookingInvit
       serviceAddress: true,
       meetingUrl: true,
       service: { select: { name: true } },
+      professional: { select: { name: true } },
       business: { select: { name: true, slug: true, subdomain: true, addressText: true } },
     },
   })

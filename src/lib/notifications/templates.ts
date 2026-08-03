@@ -87,6 +87,23 @@ function whereRowsText(data: WhereFields): string[] {
   return whereRows(data).map(({ label, value }) => `${label}: ${value}`)
 }
 
+/**
+ * La fila "con quién es la cita". "Te atiende" en los mails a la clienta,
+ * "Atiende" en los avisos al negocio — las dos formas son invariables, así que
+ * no pasan por el vocabulario (misma decisión que la fila de la pantalla de
+ * confirmación). Sin nombre no hay fila: la reserva no tiene persona asignada
+ * (negocio sin equipo, o anterior al track 5) y no hay nada honesto que poner.
+ */
+function attendsRowHtml(name: string | null | undefined, label: string): string {
+  return name
+    ? `<tr><td style="padding:8px 0;color:#666">${escapeHtml(label)}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(name)}</td></tr>`
+    : ''
+}
+
+function attendsRowText(name: string | null | undefined, label: string): string[] {
+  return name ? [`${label}: ${name}`] : []
+}
+
 /** Un link suelto en el cuerpo de un mail, con el color y el peso de siempre. */
 function emailLinkHtml(href: string, label: string, style = 'color:#e91e63;text-decoration:none;font-weight:600'): string {
   return `<a href="${escapeHtml(href)}" style="${style}">${label}</a>`
@@ -231,6 +248,7 @@ export function bookingConfirmationCustomerHtml(data: BookingEmailData): string 
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
       ${bookingNumberRowHtml(data.bookingNumber)}
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
+      ${attendsRowHtml(data.professionalName, 'Te atiende')}
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${dateStr}</td></tr>
       ${whereRowsHtml(data)}
       <tr><td style="padding:8px 0;color:#666">Precio total</td><td style="padding:8px 0;font-weight:600">${total}</td></tr>
@@ -256,6 +274,7 @@ export function bookingConfirmationCustomerText(data: BookingEmailData): string 
     ``,
     ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
     `Servicio: ${data.serviceName}`,
+    ...attendsRowText(data.professionalName, 'Te atiende'),
     `Fecha y hora: ${dateStr}`,
   ]
   lines.push(...whereRowsText(data))
@@ -307,6 +326,7 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
       ${bookingNumberRowHtml(data.bookingNumber)}
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
+      ${attendsRowHtml(data.professionalName, 'Te atiende')}
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${dateStr}</td></tr>
       ${whereRowsHtml(data)}
       <tr><td style="padding:8px 0;color:#666">Precio total</td><td style="padding:8px 0;font-weight:600">${total}</td></tr>
@@ -339,6 +359,7 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
     ``,
     ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
     `Servicio: ${data.serviceName}`,
+    ...attendsRowText(data.professionalName, 'Te atiende'),
     `Fecha y hora: ${dateStr}`,
   ]
   lines.push(...whereRowsText(data))
@@ -387,6 +408,7 @@ export function newBookingBusinessHtml(data: NewBookingBusinessEmailData): strin
       <tr><td style="padding:8px 0;color:#666">Teléfono</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerPhone)}</td></tr>
       ${data.customerEmail ? `<tr><td style="padding:8px 0;color:#666">Email</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerEmail)}</td></tr>` : ''}
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
+      ${attendsRowHtml(data.professionalName, 'Atiende')}
       <tr><td style="padding:8px 0;color:#666">Fecha y hora</td><td style="padding:8px 0;font-weight:600">${dateStr}</td></tr>
       ${whereRowsHtml({ ...data, businessAddress: null })}
       <tr><td style="padding:8px 0;color:#666">Abono</td><td style="padding:8px 0;font-weight:600">${deposit}</td></tr>
@@ -427,6 +449,7 @@ export function ownerBookingChangedHtml(data: OwnerBookingChangedData): string {
       ${bookingNumberRowHtml(data.bookingNumber)}
       <tr><td style="padding:8px 0;color:#666">${escapeHtml(clientLabelOf(data))}</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.customerName)}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
+      ${attendsRowHtml(data.professionalName, 'Atiende')}
       ${scheduleRows}
     </table>
     ${footer(data.businessName)}
@@ -447,6 +470,7 @@ export function ownerBookingChangedText(data: OwnerBookingChangedData): string {
     ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
     `${clientLabelOf(data)}: ${data.customerName}`,
     `Servicio: ${data.serviceName}`,
+    ...attendsRowText(data.professionalName, 'Atiende'),
   ]
 
   if (data.change.kind === 'cancelled') {
@@ -609,6 +633,7 @@ export function newBookingBusinessText(data: NewBookingBusinessEmailData): strin
   if (data.customerEmail) lines.push(`Email: ${data.customerEmail}`)
   lines.push(
     `Servicio: ${data.serviceName}`,
+    ...attendsRowText(data.professionalName, 'Atiende'),
     `Fecha y hora: ${dateStr}`,
     // businessAddress en null: al negocio no le sirve que le repitan su propia
     // dirección; lo que necesita saber es si tiene que ir a algún lado.
@@ -674,6 +699,7 @@ export function bookingRescheduledCustomerHtml(data: RescheduledEmailData): stri
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:14px">
       ${bookingNumberRowHtml(data.bookingNumber)}
       <tr><td style="padding:8px 0;color:#666">Servicio</td><td style="padding:8px 0;font-weight:600">${escapeHtml(data.serviceName)}</td></tr>
+      ${attendsRowHtml(data.professionalName, 'Te atiende')}
       <tr><td style="padding:8px 0;color:#666">Horario anterior</td><td style="padding:8px 0;font-weight:600">${previousDateStr}</td></tr>
       <tr><td style="padding:8px 0;color:#666">Nuevo horario</td><td style="padding:8px 0;font-weight:600">${newDateStr}</td></tr>
       ${whereRowsHtml(data)}
@@ -697,6 +723,7 @@ export function bookingRescheduledCustomerText(data: RescheduledEmailData): stri
     ``,
     ...(data.bookingNumber != null ? [`Reserva: #${data.bookingNumber}`] : []),
     `Servicio: ${data.serviceName}`,
+    ...attendsRowText(data.professionalName, 'Te atiende'),
     `Horario anterior: ${previousDateStr}`,
     `Nuevo horario: ${newDateStr}`,
   ]
@@ -1133,7 +1160,10 @@ export function bookingReminderHtml(data: ReminderEmailData): string {
     <div style="background:#f9f9f9;border-radius:12px;padding:20px;margin:16px 0">
       <p style="font-size:18px;font-weight:600;color:#1a1a2e;margin:0">${dateStr}</p>
       <p style="font-size:14px;color:#666;margin:8px 0 0">${escapeHtml(data.businessName)}</p>
-      ${whereRows(data).map(({ label, value }) => `<p style="font-size:13px;color:#999;margin:4px 0 0">${escapeHtml(label)}: ${escapeHtml(value)}</p>`).join('')}
+      ${[
+        ...(data.professionalName ? [{ label: 'Te atiende', value: data.professionalName }] : []),
+        ...whereRows(data),
+      ].map(({ label, value }) => `<p style="font-size:13px;color:#999;margin:4px 0 0">${escapeHtml(label)}: ${escapeHtml(value)}</p>`).join('')}
     </div>
     <p style="font-size:14px;color:#666">Total: ${fmtCurrency(data.totalPrice, data.businessCurrency)} | Abonado: ${fmtCurrency(data.depositPaid, data.businessCurrency)}</p>
     ${balanceLine}
@@ -1158,6 +1188,7 @@ export function bookingReminderText(data: ReminderEmailData): string {
     ``,
     `${dateStr}`,
     `${data.businessName}`,
+    ...attendsRowText(data.professionalName, 'Te atiende'),
     ...whereRowsText(data),
     ``,
     `Total: ${data.businessCurrency} ${data.totalPrice} | Abonado: ${data.businessCurrency} ${data.depositPaid}`,

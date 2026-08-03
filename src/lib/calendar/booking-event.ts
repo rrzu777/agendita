@@ -66,6 +66,12 @@ export interface BookingEventSource {
   serviceAddress: string | null
   meetingUrl: string | null
   service: { name: string }
+  /** Quién atiende, para la descripción del evento. Requerido a propósito:
+   *  si fuera opcional, la misma reserva daría un `.ics` distinto según qué
+   *  caller lo armó (la ruta que sirve el archivo vs. el adjunto del mail), y
+   *  este módulo existe para que digan exactamente lo mismo. `null` = sin
+   *  persona asignada. */
+  professional: { name: string } | null
   business: { name: string; slug: string; subdomain: string | null; addressText: string | null }
 }
 
@@ -107,6 +113,7 @@ export function buildBookingCalendarEvent(booking: BookingEventSource): BookingC
 
   const description = [
     `Reserva ${formatBookingNumber(booking.bookingNumber, booking.id)} en ${booking.business.name}.`,
+    ...(booking.professional ? [`Te atiende: ${booking.professional.name}`] : []),
     ...(meetingUrl ? [`Videollamada: ${meetingUrl}`] : []),
     `Ver tu reserva: ${confirmationUrl}`,
   ].join('\n')

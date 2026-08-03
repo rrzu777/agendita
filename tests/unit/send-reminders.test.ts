@@ -76,6 +76,35 @@ describe('sendReminders', () => {
     })
   })
 
+  // El include se asserta directo: con Prisma mockeado, mirar el email de
+  // salida no prueba que la consulta haya pedido la relación.
+  it('pide a la persona en la consulta y su nombre viaja en el recordatorio', async () => {
+    mockPrisma.booking.findMany.mockResolvedValue([
+      makeBooking({ professional: { name: 'Juan Pérez' } }),
+    ])
+
+    await sendReminders(new Date('2026-05-20T12:00:00Z'))
+
+    expect(mockPrisma.booking.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({ professional: { select: { name: true } } }),
+      }),
+    )
+    expect(mockSendReminderEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ professionalName: 'Juan Pérez' }),
+    )
+  })
+
+  it('sin persona asignada el recordatorio va sin nombre', async () => {
+    mockPrisma.booking.findMany.mockResolvedValue([makeBooking({ professional: null })])
+
+    await sendReminders(new Date('2026-05-20T12:00:00Z'))
+
+    expect(mockSendReminderEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ professionalName: null }),
+    )
+  })
+
   it('skips a booking already claimed by a concurrent run (claim count 0)', async () => {
     mockPrisma.booking.findMany.mockResolvedValue([makeBooking()])
     mockPrisma.booking.updateMany.mockResolvedValue({ count: 0 })

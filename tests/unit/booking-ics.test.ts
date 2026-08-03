@@ -15,6 +15,7 @@ const base: BookingEventSource = {
   serviceAddress: null,
   meetingUrl: null,
   service: { name: 'Corte de pelo' },
+  professional: null,
   business: { name: 'Barbería Carlos', slug: 'barberia-carlos', subdomain: null, addressText: 'Santa Isabel 0120, Providencia' },
 }
 
@@ -63,6 +64,17 @@ describe('el .ics de una reserva', () => {
   it('escapa los tres cortes de línea del texto', () => {
     const lines = unfold(ics({ serviceAddress: 'Los Leones 55\rdpto 3', modality: ServiceModality.at_home }))
     expect(lines).toContain('LOCATION:Los Leones 55\\ndpto 3')
+  })
+
+  it('la descripción dice quién atiende cuando la reserva tiene persona', () => {
+    const lines = unfold(ics({ professional: { name: 'Juan Pérez' } }))
+    const description = lines.find((l) => l.startsWith('DESCRIPTION:'))
+    expect(description).toContain('Te atiende: Juan Pérez')
+  })
+
+  it('sin persona asignada la descripción no menciona a nadie', () => {
+    const description = unfold(ics()).find((l) => l.startsWith('DESCRIPTION:'))
+    expect(description).not.toContain('Te atiende')
   })
 
   it('escapa las comas, los punto y coma y las barras del texto', () => {

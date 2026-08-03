@@ -24,6 +24,7 @@ export async function sendReminders(now: Date = new Date()): Promise<SendReminde
     },
     include: {
       service: { select: { name: true } },
+      professional: { select: { name: true } },
       customer: { select: { name: true, phone: true, email: true } },
       business: {
         select: {
@@ -73,6 +74,7 @@ export async function sendReminders(now: Date = new Date()): Promise<SendReminde
         customerName: booking.customer!.name,
         customerEmail: booking.customer!.email!,
         serviceName: booking.service?.name ?? 'Servicio',
+        professionalName: booking.professional?.name ?? null,
         startDateTime: booking.startDateTime,
         businessTimezone: booking.business.timezone || 'America/Santiago',
         businessWhatsapp: booking.business.whatsapp,

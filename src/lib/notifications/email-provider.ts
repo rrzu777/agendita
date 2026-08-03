@@ -428,6 +428,7 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
     where: { id: bookingId, businessId, status: BookingStatus.confirmed },
     include: {
       service: { select: { name: true } },
+      professional: { select: { name: true } },
       customer: { select: { id: true, name: true, phone: true, email: true, loyaltyToken: true } },
       business: {
         select: {
@@ -482,6 +483,7 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
     customerEmail: booking.customer.email,
     customerPhone: booking.customer.phone,
     serviceName: booking.service.name,
+    professionalName: booking.professional?.name ?? null,
     startDateTime: booking.startDateTime,
     totalPrice: booking.totalPrice,
     depositRequired: booking.depositRequired,
@@ -861,6 +863,7 @@ export async function sendBookingReminderNotification(
     where: { id: bookingId, businessId },
     include: {
       service: { select: { name: true } },
+      professional: { select: { name: true } },
       customer: { select: { name: true, phone: true, email: true } },
       business: {
         select: {
@@ -899,6 +902,7 @@ export async function sendBookingReminderNotification(
     customerName: booking.customer.name,
     customerEmail: booking.customer.email,
     serviceName: booking.service.name,
+    professionalName: booking.professional?.name ?? null,
     startDateTime: booking.startDateTime,
     totalPrice: booking.totalPrice,
     remainingBalance: booking.remainingBalance,

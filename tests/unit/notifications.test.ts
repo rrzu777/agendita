@@ -27,6 +27,7 @@ const sampleBookingData = {
   customerEmail: 'maria@example.com',
   customerPhone: '+56987654321',
   serviceName: 'Manicure semipermanente',
+  professionalName: null,
   startDateTime: new Date('2026-06-15T18:00:00Z'),
   totalPrice: 25000,
   depositRequired: 5000,
@@ -41,6 +42,7 @@ const sampleBusinessData = {
   customerPhone: '+56987654321',
   customerEmail: 'maria@example.com',
   serviceName: 'Manicure semipermanente',
+  professionalName: null,
   startDateTime: new Date('2026-06-15T18:00:00Z'),
   businessTimezone: 'America/Santiago',
   businessCurrency: 'CLP',
@@ -69,6 +71,7 @@ const sampleRescheduleData = {
   customerEmail: 'maria@example.com',
   customerPhone: '+56987654321',
   serviceName: 'Manicure semipermanente',
+  professionalName: null,
   previousStartDateTime: new Date('2026-06-15T18:00:00Z'),
   newStartDateTime: new Date('2026-06-16T19:30:00Z'),
 }

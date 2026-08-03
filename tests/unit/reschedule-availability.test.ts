@@ -216,6 +216,25 @@ describe('rescheduleBooking terminal states and availability', () => {
     }))
   })
 
+  // El include se asserta directo (con Prisma mockeado, mirar el email no
+  // prueba que la consulta haya pedido la relación); reprogramar conserva a la
+  // persona, así que el nombre leído antes de la tx es el que atiende.
+  it('pide a la persona en la consulta y el email dice quién atiende', async () => {
+    mockPrisma.booking.findFirst.mockResolvedValueOnce({
+      ...booking,
+      professional: { name: 'Juan Pérez' },
+    })
+
+    await rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z'))
+
+    expect(mockPrisma.booking.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({ professional: { select: { name: true } } }),
+    }))
+    expect(mockSendBookingRescheduledNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ professionalName: 'Juan Pérez' }),
+    )
+  })
+
   it('fails when target slot is occupied at confirmation time', async () => {
     // UserError: refleja el throw real de assertSlotIsAvailable (validation.ts,
     // ya migrado) — un Error plano acá se volvería el mensaje genérico del wrapper.

@@ -60,6 +60,8 @@ export async function fireBookingNotifications(
     modality: ServiceModality
     serviceAddress: string | null
     meetingUrl: string | null
+    // Quién atiende: va en los dos emails y en el evento de calendario.
+    professional: { name: string } | null
   } & { id: string; businessId: string; bookingNumber: number | null },
   serviceName: string,
   // La cuenta ya la leyó createBooking antes de la tx; se pasa para no
@@ -117,6 +119,7 @@ export async function fireBookingNotifications(
           customerEmail,
           customerPhone: booking.customer.phone,
           serviceName,
+          professionalName: booking.professional?.name ?? null,
           startDateTime: booking.startDateTime,
           totalPrice: booking.totalPrice,
           discountAmount: booking.discountAmount,
@@ -141,6 +144,7 @@ export async function fireBookingNotifications(
         customerPhone: booking.customer.phone,
         customerEmail: customerEmail || null,
         serviceName,
+        professionalName: booking.professional?.name ?? null,
         startDateTime: booking.startDateTime,
         businessTimezone,
         businessCurrency,

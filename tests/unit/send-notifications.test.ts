@@ -3,39 +3,43 @@ import { BookingStatus } from '@prisma/client'
 
 // ── Mock external dependencies ───────────────────────────────────────────────
 
+// vi.hoisted: la fixture queda visible para los tests (que la extienden con
+// `professional`) además de para la factory del mock. `status` va como literal
+// porque el hoisting corre antes de que exista el import de BookingStatus.
+const mockBooking = vi.hoisted(() => ({
+  id: 'booking-1',
+  businessId: 'biz-1',
+  customerId: 'cust-1',
+  status: 'confirmed',
+  bookingNumber: 4738,
+  startDateTime: new Date('2026-06-15T18:00:00Z'),
+  // El evento de calendario sale de esta misma fila: cuándo termina, qué
+  // versión es (updatedAt - createdAt) y dónde se atiende.
+  endDateTime: new Date('2026-06-15T19:00:00Z'),
+  createdAt: new Date('2026-06-01T12:00:00Z'),
+  updatedAt: new Date('2026-06-01T12:00:00Z'),
+  modality: 'on_site',
+  serviceAddress: null,
+  meetingUrl: null,
+  totalPrice: 25000,
+  depositRequired: 5000,
+  depositPaid: 5000,
+  remainingBalance: 20000,
+  service: { name: 'Manicure semipermanente' },
+  customer: { name: 'Maria', phone: '+56987654321', email: 'maria@example.com' },
+  business: {
+    name: 'Nails by Ana',
+    slug: 'nails-by-ana',
+    subdomain: null,
+    timezone: 'America/Santiago',
+    whatsapp: '+56912345678',
+    addressText: 'Av. Siempre Viva 742',
+    currency: 'CLP',
+    cancellationPolicy: 'Cancela con 24h.',
+  },
+}))
+
 vi.mock('@/lib/db', () => {
-  const mockBooking = {
-    id: 'booking-1',
-    businessId: 'biz-1',
-    customerId: 'cust-1',
-    status: BookingStatus.confirmed,
-    bookingNumber: 4738,
-    startDateTime: new Date('2026-06-15T18:00:00Z'),
-    // El evento de calendario sale de esta misma fila: cuándo termina, qué
-    // versión es (updatedAt - createdAt) y dónde se atiende.
-    endDateTime: new Date('2026-06-15T19:00:00Z'),
-    createdAt: new Date('2026-06-01T12:00:00Z'),
-    updatedAt: new Date('2026-06-01T12:00:00Z'),
-    modality: 'on_site',
-    serviceAddress: null,
-    meetingUrl: null,
-    totalPrice: 25000,
-    depositRequired: 5000,
-    depositPaid: 5000,
-    remainingBalance: 20000,
-    service: { name: 'Manicure semipermanente' },
-    customer: { name: 'Maria', phone: '+56987654321', email: 'maria@example.com' },
-    business: {
-      name: 'Nails by Ana',
-      slug: 'nails-by-ana',
-      subdomain: null,
-      timezone: 'America/Santiago',
-      whatsapp: '+56912345678',
-      addressText: 'Av. Siempre Viva 742',
-      currency: 'CLP',
-      cancellationPolicy: 'Cancela con 24h.',
-    },
-  }
   return {
     prisma: {
       booking: {
@@ -191,6 +195,36 @@ describe('sendBookingConfirmedNotification', () => {
     expect(call.html).toContain('/api/bookings/booking-1/calendar')
   })
 
+  // El include se asserta directo: con Prisma mockeado, verificar el email de
+  // salida no prueba nada sobre la consulta (el mock devuelve la relación
+  // aunque nadie la haya pedido).
+  it('pide a la persona en la consulta, y su nombre entra al email y al .ics', async () => {
+    mockResendSend.mockResolvedValue({ data: { id: 'msg_prof' }, error: null })
+    const { prisma } = await import('@/lib/db')
+    const findFirst = prisma.booking.findFirst as ReturnType<typeof vi.fn>
+    findFirst.mockResolvedValueOnce({ ...mockBooking, professional: { name: 'Juan Pérez' } })
+
+    await sendBookingConfirmedNotification('booking-1', 'biz-1')
+
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({ professional: { select: { name: true } } }),
+      }),
+    )
+    const call = mockResendSend.mock.calls[0][0]
+    expect(call.html).toContain('Te atiende')
+    expect(call.html).toContain('Juan Pérez')
+    expect(call.attachments[0].content.toString('utf8')).toContain('Te atiende: Juan Pérez')
+  })
+
+  it('sin persona asignada el email no dice "Te atiende"', async () => {
+    mockResendSend.mockResolvedValue({ data: { id: 'msg_sin' }, error: null })
+
+    await sendBookingConfirmedNotification('booking-1', 'biz-1')
+
+    expect(mockResendSend.mock.calls[0][0].html).not.toContain('Te atiende')
+  })
+
   it('returns graceful result when booking is not found', async () => {
     const { prisma } = await import('@/lib/db')
     ;(prisma.booking.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null)
@@ -223,6 +257,25 @@ describe('sendBookingReminderNotification', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockResendSend.mockReset()
+  })
+
+  // Mismo criterio que en la confirmación: el include se asserta directo.
+  it('pide a la persona en la consulta y el recordatorio dice quién atiende', async () => {
+    mockResendSend.mockResolvedValue({ data: { id: 'msg_reminder_prof' }, error: null })
+    const { prisma } = await import('@/lib/db')
+    const findFirst = prisma.booking.findFirst as ReturnType<typeof vi.fn>
+    findFirst.mockResolvedValueOnce({ ...mockBooking, professional: { name: 'Juan Pérez' } })
+
+    await sendBookingReminderNotification('booking-1', 'biz-1')
+
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({ professional: { select: { name: true } } }),
+      }),
+    )
+    const call = mockResendSend.mock.calls[0][0]
+    expect(call.html).toContain('Te atiende')
+    expect(call.html).toContain('Juan Pérez')
   })
 
   it('calls Resend with reminder template', async () => {

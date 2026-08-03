@@ -32,6 +32,7 @@ const baseData = {
   businessTimezone: 'America/Santiago',
   customerName: 'Maria',
   serviceName: 'Manicure semipermanente',
+  professionalName: null,
   bookingNumber: 4738 as number | null,
   startDateTime: new Date('2026-08-01T15:00:00Z'),
 }
