@@ -12,6 +12,7 @@ import { isManualPaymentAllowed, type ManualPaymentBooking } from './manual-paym
 import { ReviveBookingButton } from './revive-booking-dialog'
 import { getReviveReopenState } from './revive-utils'
 import { BookingStatusButton } from './booking-status-button'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 type RowBooking = ManualPaymentBooking & {
   startDateTime: Date | string
@@ -30,6 +31,7 @@ export function BookingRowActions({
   contact?: React.ReactNode
   transferEnabled?: boolean
 }) {
+  const v = useVocabulary()
   const [cancelOpen, setCancelOpen] = useState(false)
   const [payOpen, setPayOpen] = useState(false)
 
@@ -53,7 +55,7 @@ export function BookingRowActions({
         <ReviveBookingButton
           bookingId={booking.id}
           serviceName={booking.service?.name || 'Servicio'}
-          customerName={booking.customer?.name || 'Cliente'}
+          customerName={booking.customer?.name || v.Client}
           customerHasEmail={!!booking.customer?.email}
           canReopen={canReopen}
           reopenDisabledReason={reason}

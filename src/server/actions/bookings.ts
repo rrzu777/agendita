@@ -33,6 +33,7 @@ import { resumeBookingForRetry } from '@/lib/bookings/retry'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { cancelBookingInTx, reassignBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
 import { isTerminalBookingStatus } from '@/lib/bookings/status-labels'
+import { getVocabulary } from '@/lib/vocabulary'
 import { creditVisitPoints } from '@/lib/loyalty/credit'
 import { emitAutomaticRewardsOnCompletion } from '@/lib/loyalty/on-booking-completed'
 import { captureReferral } from '@/lib/loyalty/referral'
@@ -899,7 +900,7 @@ async function _createBookingFromDashboard(data: {
         where: { id: data.customerId, businessId },
       })
       if (!existing) {
-        throw new UserError('Cliente no encontrado')
+        throw new UserError(getVocabulary(business.category).clientNotFound)
       }
       customer = existing
     } else {

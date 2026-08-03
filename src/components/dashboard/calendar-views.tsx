@@ -38,6 +38,7 @@ import {
 } from '@/lib/calendar/timeline'
 import { bookingAppearance, type StatusIcon } from '@/lib/calendar/booking-appearance'
 import { bookingStatusLabel } from '@/lib/bookings/status-labels'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 export type CalendarView = 'day' | 'week' | 'month'
 
@@ -543,8 +544,9 @@ function BookingBlock({
   const Icon = statusIcons[appearance.icon]
   const start = localTime(b.startDateTime, timezone)
   const strike = appearance.strikeThrough ? 'line-through' : ''
+  const v = useVocabulary()
   const statusLabel = bookingStatusLabel(b.status)
-  const ariaLabel = `${statusLabel} — ${b.customer?.name || 'Cliente'} — ${start}`
+  const ariaLabel = `${statusLabel} — ${b.customer?.name || v.Client} — ${start}`
 
   return (
     <button
@@ -571,7 +573,7 @@ function BookingBlock({
         <Icon className="size-2 text-white" strokeWidth={3} />
       </span>
       <div className={`font-semibold ${strike}`}>{start}</div>
-      <div className={`truncate ${strike}`}>{b.customer?.name || 'Cliente'}</div>
+      <div className={`truncate ${strike}`}>{b.customer?.name || v.Client}</div>
       {p.heightMin >= 45 && b.service?.name && <div className="truncate">{b.service.name}</div>}
       {/* Quién atiende, si el chip tiene alto para una línea más. Con el filtro
           en "todo el equipo" es lo que distingue dos citas a la misma hora. */}

@@ -199,7 +199,7 @@ export function ReviewsClient({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por cliente, comentario o servicio..."
+            placeholder={`Buscar por ${vocabulary.client}, comentario o servicio...`}
             className="w-full rounded-2xl border border-border bg-card py-2.5 pl-10 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
           {search && (

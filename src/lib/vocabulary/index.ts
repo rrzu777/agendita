@@ -22,6 +22,12 @@ export interface Vocabulary extends ProfessionalWords {
   clients: string
   /** "Clienta" | "Cliente" — encabezado de tabla y etiqueta de email */
   Client: string
+  /** "Clientas" | "Clientes" — título de sección e ítem de navegación */
+  Clients: string
+  /** "Las clientas" | "Los clientes" — arranque de oración */
+  TheClients: string
+  /** "Clienta no encontrada" | "Cliente no encontrado" — el participio concuerda */
+  clientNotFound: string
   /** "la clienta" | "el cliente" */
   theClient: string
   /** "La clienta" | "El cliente" — arranque de oración */
@@ -188,6 +194,9 @@ const FEMININE: Vocabulary = {
   client: 'clienta',
   clients: 'clientas',
   Client: 'Clienta',
+  Clients: 'Clientas',
+  TheClients: 'Las clientas',
+  clientNotFound: 'Clienta no encontrada',
   theClient: 'la clienta',
   TheClient: 'La clienta',
   aClient: 'una clienta',
@@ -218,6 +227,9 @@ const NEUTRAL: Vocabulary = {
   client: 'cliente',
   clients: 'clientes',
   Client: 'Cliente',
+  Clients: 'Clientes',
+  TheClients: 'Los clientes',
+  clientNotFound: 'Cliente no encontrado',
   theClient: 'el cliente',
   TheClient: 'El cliente',
   aClient: 'un cliente',

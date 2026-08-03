@@ -102,8 +102,8 @@ describe('customers actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCheckRateLimit.mockResolvedValue({ success: true })
-    mockRequireBusiness.mockResolvedValue({ businessId })
-    mockRequireBusinessRole.mockResolvedValue({ businessId })
+    mockRequireBusiness.mockResolvedValue({ businessId, business: { category: 'other' } })
+    mockRequireBusinessRole.mockResolvedValue({ businessId, business: { category: 'other' } })
   })
 
   describe('getCustomers', () => {
@@ -125,7 +125,7 @@ describe('customers actions', () => {
     })
 
     it('uses businessId from session, not from input', async () => {
-      mockRequireBusiness.mockResolvedValue({ businessId: 'session-biz-999' })
+      mockRequireBusiness.mockResolvedValue({ businessId: 'session-biz-999', business: { category: 'other' } })
       mockPrisma.customer.findMany.mockResolvedValue([])
 
       await getCustomers()
@@ -259,7 +259,7 @@ describe('customers actions', () => {
     })
 
     it('does not sum bookings from another business', async () => {
-      mockRequireBusiness.mockResolvedValue({ businessId: 'my-biz' })
+      mockRequireBusiness.mockResolvedValue({ businessId: 'my-biz', business: { category: 'other' } })
 
       await getCustomers()
 
@@ -335,8 +335,17 @@ describe('customers actions', () => {
       await expect(getCustomerDetail('cust-1')).rejects.toThrow('Cliente no encontrado')
     })
 
+    // El mensaje nombra a la clientela, así que sigue el rubro: participio
+    // incluido ("no encontradA"), no sólo el sustantivo.
+    it('el error de no-encontrado habla en el género del rubro', async () => {
+      mockRequireBusiness.mockResolvedValue({ businessId, business: { category: 'nails' } })
+      mockPrisma.customer.findFirst.mockResolvedValue(null)
+
+      await expect(getCustomerDetail('cust-1')).rejects.toThrow('Clienta no encontrada')
+    })
+
     it('validates ownership with businessId from session', async () => {
-      mockRequireBusiness.mockResolvedValue({ businessId: 'other-biz' })
+      mockRequireBusiness.mockResolvedValue({ businessId: 'other-biz', business: { category: 'other' } })
       mockPrisma.customer.findFirst.mockResolvedValue(null)
 
       await expect(getCustomerDetail('cust-1')).rejects.toThrow('Cliente no encontrado')
@@ -476,7 +485,7 @@ describe('customers actions', () => {
     })
 
     it('does not sum bookings from another business in aggregates', async () => {
-      mockRequireBusiness.mockResolvedValue({ businessId: 'my-biz' })
+      mockRequireBusiness.mockResolvedValue({ businessId: 'my-biz', business: { category: 'other' } })
       mockPrisma.customer.findFirst.mockResolvedValue(mockCustomers[0])
 
       await getCustomerDetail('cust-1')
@@ -616,7 +625,7 @@ describe('customers actions', () => {
     })
 
     it('checks ownership with businessId from session', async () => {
-      mockRequireBusinessRole.mockResolvedValue({ businessId: 'real-biz' })
+      mockRequireBusinessRole.mockResolvedValue({ businessId: 'real-biz', business: { category: 'other' } })
       mockPrisma.customer.findFirst.mockResolvedValue(null)
 
       const result = await updateCustomer('cust-1', validUpdate)

@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react'
 import { formatMoney } from '@/lib/money'
+import { useVocabulary } from '@/components/vocabulary-provider'
 
 const RECENT_DAYS = 30
 
@@ -32,6 +33,7 @@ interface CustomerListProps {
 }
 
 export function CustomerList({ customers, error, currency }: CustomerListProps) {
+  const v = useVocabulary()
   const [search, setSearch] = useState('')
   const [showPendingOnly, setShowPendingOnly] = useState(false)
   const [showFrequentOnly, setShowFrequentOnly] = useState(false)
@@ -93,9 +95,9 @@ export function CustomerList({ customers, error, currency }: CustomerListProps) 
         <div className="mb-5 flex size-16 items-center justify-center rounded-2xl bg-secondary text-primary">
           <Users className="size-8" />
         </div>
-        <h2 className="text-xl font-semibold text-primary">Sin clientes</h2>
+        <h2 className="text-xl font-semibold text-primary">{`Sin ${v.clients}`}</h2>
         <p className="mt-2 max-w-md text-muted-foreground">
-          Los clientes aparecerán aquí cuando realicen su primera reserva.
+          {`${v.TheClients} aparecerán aquí cuando realicen su primera reserva.`}
         </p>
       </div>
     )
@@ -199,10 +201,10 @@ export function CustomerList({ customers, error, currency }: CustomerListProps) 
         <div className="studio-card flex min-h-[200px] flex-col items-center justify-center p-8 text-center">
           <p className="text-muted-foreground">
             {activeFilters > 0
-              ? 'No hay clientes con estos filtros.'
+              ? `No hay ${v.clients} con estos filtros.`
               : search
-              ? 'No se encontraron clientes con esa búsqueda.'
-              : 'No hay clientes todavía.'}
+              ? `No se encontraron ${v.clients} con esa búsqueda.`
+              : `No hay ${v.clients} todavía.`}
           </p>
         </div>
       ) : (
@@ -372,8 +374,8 @@ export function CustomerList({ customers, error, currency }: CustomerListProps) 
           </div>
 
           <p className="mt-2 text-xs text-muted-foreground">
-            {filtered.length} de {customers.length} clientes
-            {activeFilters > 0 && ' (filtradas)'}
+            {filtered.length} de {customers.length} {v.clients}
+            {activeFilters > 0 && ' (con filtros)'}
           </p>
         </>
       )}

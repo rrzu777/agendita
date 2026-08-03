@@ -59,6 +59,7 @@ describe('BookingCard (móvil) y la persona', () => {
         businessCurrency="CLP"
         businessTimezone="America/Santiago"
         businessAddress={null}
+        clientLabel="Cliente"
       />,
     )
     expect(html).toContain('Atiende:')
@@ -72,6 +73,7 @@ describe('BookingCard (móvil) y la persona', () => {
         businessCurrency="CLP"
         businessTimezone="America/Santiago"
         businessAddress={null}
+        clientLabel="Cliente"
       />,
     )
     expect(html).not.toContain('Atiende')

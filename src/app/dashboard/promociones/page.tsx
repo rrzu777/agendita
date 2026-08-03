@@ -10,6 +10,7 @@ import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { listPromotions } from '@/server/actions/promotions'
 import { getServices } from '@/server/actions/services'
 import { formatMoney } from '@/lib/money'
+import { getVocabulary } from '@/lib/vocabulary'
 import { PromotionForm, type EditPromo } from './promotion-form'
 import { PromotionRowActions } from './promotion-row-actions'
 
@@ -106,7 +107,7 @@ export default async function PromocionesPage() {
     <div>
       <DashboardHeader
         title="Promociones"
-        subtitle="Crea y administra códigos de descuento para tus clientes."
+        subtitle={`Crea y administra códigos de descuento para tus ${getVocabulary(userData.business.category).clients}.`}
       />
       <div className="p-5 md:p-10">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

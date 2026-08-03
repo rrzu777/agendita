@@ -16,6 +16,7 @@ import { PendingTransfersBanner } from '@/components/dashboard/pending-transfers
 import { PendingPackageTransfersBanner } from '@/components/dashboard/pending-package-transfers-banner'
 import { hasPendingBalanceTransfer, hasPendingDeclaredTransfer, pendingPackageTransferWhere } from '@/lib/bank-transfer/declared'
 import { businessScheduleWhere } from '@/lib/availability/scope'
+import { getVocabulary } from '@/lib/vocabulary'
 import { CalendarCheck2, CreditCard, ExternalLink, TrendingUp, Users } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -34,6 +35,7 @@ export default async function DashboardPage() {
   }
 
   const business = userData.business
+  const v = getVocabulary(business.category)
   const [bookings, summary, servicesCount, availabilityCount, connectedPaymentAccounts, pendingPackageTransfersCount] = await Promise.all([
     getBookingsSummary(),
     getFinancialSummary(),
@@ -98,7 +100,7 @@ export default async function DashboardPage() {
               <div>
                 <h3 className="mb-1 text-lg font-semibold text-primary">Tu perfil público</h3>
                 <p className="text-sm text-muted-foreground">
-                  Comparte este link con tus clientes para que reserven
+                  {`Comparte este link con tus ${v.clients} para que reserven`}
                 </p>
                 <code className="mt-3 inline-block max-w-full rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm text-primary">
                   {publicUrl}
@@ -168,7 +170,7 @@ export default async function DashboardPage() {
               </div>
               <h3 className="mb-2 text-lg font-semibold text-primary">No tienes reservas próximas</h3>
               <p className="text-sm text-muted-foreground">
-                Comparte tu perfil público para recibir reservas de tus clientes.
+                {`Comparte tu perfil público para recibir reservas de tus ${v.clients}.`}
               </p>
               <code className="mt-3 inline-block rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm text-primary">
                 {publicUrl}
@@ -185,7 +187,7 @@ export default async function DashboardPage() {
                       </span>
                     </div>
                     <div>
-                      <h3 className="text-xl font-semibold text-primary">{booking.customer?.name || 'Cliente'}</h3>
+                      <h3 className="text-xl font-semibold text-primary">{booking.customer?.name || v.Client}</h3>
                       <p className="text-sm font-semibold uppercase tracking-[0.1em] text-muted-foreground">{booking.service?.name || 'Servicio'}</p>
                     </div>
                   </div>
