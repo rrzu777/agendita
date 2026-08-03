@@ -19,23 +19,50 @@ import { MANUAL_COORDINATION_METHOD } from '@/lib/bookings/hold'
 export const APPROVAL_WINDOW_HOURS = 24
 
 /**
- * Estados que ocupan el cupo SÓLO mientras su hold siga vivo. Vencido el hold la
- * agenda se libera aunque el cron todavía no los haya marcado `expired` — con
- * las excepciones que documenta `occupiesSlot`.
+ * Estados con un hold con fecha de vencimiento.
  *
- * FUENTE ÚNICA de los dos lugares que deciden si una reserva tapa un slot:
- * `occupiesSlot` (en memoria — la usan `generateSlots` y el chequeo de solape de
- * `findSlotConflict`) y `overlappingActiveBookingsWhere` (un where de Prisma, que
- * no puede llamar a una función). Si agregás un estado, tocá los dos; el test de
- * integración `pending_confirmation ocupa el cupo` es la red.
+ * **No dice si ocupan el cupo**: `pending_confirmation` tiene hold Y ocupa
+ * siempre (está también en `OCCUPYING_STATUSES`). Lo que dice es que hay un
+ * vencimiento que alguien puede ver morir — lo consume la pantalla de la
+ * clienta, que con el hold pasado muestra "Expirada" en vez del estado crudo.
  */
-export const HELD_STATUSES = [
+export const STATUSES_WITH_HOLD = [
   BookingStatus.pending_payment,
   BookingStatus.pending_confirmation,
 ] as const
 
-/** Estados que ocupan el cupo siempre, sin importar el hold. */
-export const OCCUPYING_STATUSES = [BookingStatus.confirmed, BookingStatus.completed] as const
+/**
+ * Estados que ocupan el cupo SIEMPRE, sin importar el hold.
+ *
+ * FUENTE ÚNICA de los dos lugares que deciden si una reserva tapa un slot:
+ * `occupiesSlot` (en memoria — la usan `generateSlots` y el chequeo de solape de
+ * `findSlotConflict`) y `overlappingActiveBookingsWhere` (un where de Prisma, que
+ * no puede llamar a una función). Si agregás un estado, alcanza con tocar acá.
+ *
+ * `pending_confirmation` entró con la migración `booking_overlap_solicitudes`:
+ * desde que el EXCLUDE lo cubre, darlo por libre —con el hold vivo o vencido—
+ * ofrecería una hora que el insert rechaza. Lo libera el cron al expirarlo, que
+ * es además el único que le avisa por mail a la clienta que nadie le respondió;
+ * barrerlo dentro de la transacción de otra reserva, como sí se hace con los
+ * holds de pago abandonados, le sacaría la hora en silencio.
+ */
+export const OCCUPYING_STATUSES = [
+  BookingStatus.confirmed,
+  BookingStatus.completed,
+  BookingStatus.pending_confirmation,
+] as const
+
+/**
+ * Los cuatro estados que mira el EXCLUDE `Booking_no_overlap`. Es la copia en TS
+ * de un WHERE que vive en SQL crudo y que desde acá no se puede importar; el test
+ * de integración `booking-overlap-constraint` lee la definición real con
+ * `pg_get_constraintdef` y la compara contra esta lista, así que la copia está
+ * verificada y no sostenida por memoria.
+ */
+export const NO_OVERLAP_STATUSES = [
+  BookingStatus.pending_payment,
+  ...OCCUPYING_STATUSES,
+] as const
 
 /** Estados que NO ocupan cupo: la reserva ya no está en pie. Sirve además para no
  *  traer esas filas cuando lo único que se va a hacer con ellas es descartarlas. */
@@ -45,9 +72,9 @@ export const RELEASED_STATUSES = [
   BookingStatus.expired,
 ] as const
 
-/** True si el estado sólo ocupa el cupo mientras el hold no venza. */
-export function isHeldStatus(status: string): boolean {
-  return (HELD_STATUSES as readonly string[]).includes(status)
+/** True si el estado tiene un hold que puede vencer. Ver `STATUSES_WITH_HOLD`. */
+export function hasExpirableHold(status: string): boolean {
+  return (STATUSES_WITH_HOLD as readonly string[]).includes(status)
 }
 
 /** Lo mínimo de una reserva para decidir si tapa su horario. */
@@ -63,7 +90,7 @@ export interface SlotOccupancyFields {
  * ¿Este hold vencido lo puede marcar `expired` un sweep, acá y ahora, sin
  * avisarle a nadie?
  *
- * Importa porque el EXCLUDE `Booking_no_overlap` (migración `init`, invisible en
+ * Importa porque el EXCLUDE `Booking_no_overlap` (invisible en
  * schema.prisma) mira el status y NADA MÁS: mientras la fila siga en
  * `pending_payment`, Postgres rechaza toda reserva que la solape, hold vencido o
  * no. Tratar el horario como libre sólo es honesto si en la misma transacción lo
@@ -103,13 +130,12 @@ export function isSweepableExpiredHold(b: SlotOccupancyFields, now: Date): boole
 export function occupiesSlot(b: SlotOccupancyFields, now: Date): boolean {
   if ((RELEASED_STATUSES as readonly string[]).includes(b.status)) return false
   if ((OCCUPYING_STATUSES as readonly string[]).includes(b.status)) return true
-  if (isHeldStatus(b.status)) {
+  // El único estado cuyo hold vencido puede liberar el horario. Las solicitudes
+  // salieron de acá con `booking_overlap_solicitudes` — el porqué está en
+  // `OCCUPYING_STATUSES`.
+  if (b.status === BookingStatus.pending_payment) {
     // Sin vencimiento tapa hasta que alguien la resuelva a mano.
     if (!b.holdExpiresAt || b.holdExpiresAt > now) return true
-    // Una solicitud vencida siempre libera: no está en la lista de estados del
-    // EXCLUDE, así que tratarla como libre no puede hacer fallar un insert, y el
-    // sweep de solicitudes del cron la barre sin condiciones de pago.
-    if (b.status === BookingStatus.pending_confirmation) return false
     return !isSweepableExpiredHold(b, now)
   }
   // Estado nuevo del enum que nadie clasificó: tapar es el error reversible.

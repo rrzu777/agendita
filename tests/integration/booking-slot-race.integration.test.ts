@@ -13,12 +13,14 @@ const USER = 'slotrace-user-1'
 // instante, sin esperar al cron—, algo se lleva el horario, y DESPUÉS llega el pago
 // de la primera. Antes el flip a `confirmed` no miraba el horario.
 //
-// Cuánto de esto tapaba ya la DB: la constraint de exclusión `Booking_no_overlap`
-// cubre `pending_payment/confirmed/completed`, así que en ESOS estados dos reservas
-// solapadas no se pueden ni crear (primer caso de abajo). Lo que queda descubierto y
-// este guard ataja: los bloqueos de la dueña (`TimeBlock`, que la constraint no mira)
-// y `pending_confirmation` (que se agregó al enum después y nunca entró a la
-// constraint).
+// Cuánto de esto tapa ya la DB: la constraint de exclusión `Booking_no_overlap` cubre
+// los cuatro estados activos —`pending_payment/pending_confirmation/confirmed/
+// completed`— así que entre reservas de la MISMA persona (o las dos sin persona) el
+// solape no se puede ni crear (primer caso de abajo). Lo que queda descubierto y este
+// guard ataja son las dos cosas que un EXCLUDE no puede expresar: los bloqueos de la
+// dueña (`TimeBlock`, que la constraint no mira) y el caso mixto de persona —una cita
+// sin dueño ocupa la hora para todo el equipo, pero para Postgres `''` y `'ana'` son
+// valores distintos y no chocan.
 //
 // La segunda mitad del archivo cubre el otro motivo por el que un pago real puede no
 // dejar la reserva en pie: cuando llega, la reserva ya NO está vigente (venció y el
@@ -30,6 +32,7 @@ describe('pago que llega y la reserva no queda confirmada', () => {
   let prisma: PrismaClient
   let serviceId: string
   let customerId: string
+  let anaId: string
 
   // Un martes futuro a las 15:00 UTC (12:00 en Santiago): dentro de la regla de
   // disponibilidad y lejos del lead time, para que nada más que el solape pueda
@@ -53,6 +56,11 @@ describe('pago que llega y la reserva no queda confirmada', () => {
       depositAmount: 5000, pastelColor: '#FFD700',
     } })
     serviceId = service.id
+    // Existe sólo para poder armar el caso mixto de persona, que es la única forma
+    // que queda de tener dos reservas activas encimadas en la base. Ver
+    // `crearReservaGanadora`.
+    const ana = await prisma.professional.create({ data: { businessId: BIZ, name: 'Ana Race' } })
+    anaId = ana.id
   })
 
   afterAll(async () => {
@@ -60,6 +68,9 @@ describe('pago que llega y la reserva no queda confirmada', () => {
     await prisma.payment.deleteMany({ where: { businessId: BIZ } })
     await prisma.booking.deleteMany({ where: { businessId: BIZ } })
     await prisma.timeBlock.deleteMany({ where: { businessId: BIZ } })
+    // Después de las reservas: la FK Booking→Professional es NO ACTION y una reserva
+    // viva haría fallar el borrado de la persona.
+    await prisma.professional.deleteMany({ where: { businessId: BIZ } })
     await prisma.service.deleteMany({ where: { businessId: BIZ } })
     await prisma.customer.deleteMany({ where: { businessId: BIZ } })
     await prisma.business.deleteMany({ where: { id: BIZ } })
@@ -79,25 +90,30 @@ describe('pago que llega y la reserva no queda confirmada', () => {
   /**
    * La reserva que se lleva el horario mientras la otra espera el pago.
    *
-   * Va como `pending_confirmation` y NO como `confirmed` por una razón de fondo, no
-   * por comodidad del test: la DB tiene una constraint de exclusión
-   * (`Booking_no_overlap`, en la migración `init`) que prohíbe dos reservas solapadas
-   * del mismo negocio **mientras su status esté en
-   * `('pending_payment','confirmed','completed')`**. Crear una `confirmed` encima de
-   * nuestra `pending_payment` es literalmente imposible: Postgres tira 23P01.
+   * **Armarla es más difícil de lo que parece, y el cómo es la mitad del test.** La
+   * DB tiene una constraint de exclusión (`Booking_no_overlap`) que prohíbe dos
+   * reservas solapadas del mismo negocio en los estados activos: crear una `confirmed`
+   * encima de nuestra `pending_payment` es literalmente imposible, Postgres tira
+   * 23P01. Antes la escotilla era `pending_confirmation`, que estaba en el enum pero
+   * no en la constraint; la migración `booking_overlap_solicitudes` la cerró.
    *
-   * `pending_confirmation` —una solicitud esperando el visto bueno del negocio— se
-   * agregó al enum en `20260729180000_booking_manual_approval` y **nunca se agregó a
-   * la constraint**. Así que es un estado real, alcanzable, que la DB no cubre y que
-   * el SQL de solape de la app SÍ cuenta como ocupado mientras su hold viva. Es el
-   * agujero que este guard tapa.
+   * La que queda —y no es un truco, es EL agujero que este guard existe para tapar—
+   * es el **caso mixto de persona**. La constraint separa por
+   * `COALESCE("professionalId", '')`, así que una cita SIN dueño (`''`) y una CON
+   * dueño (`'ana'`) son valores distintos y **no chocan para Postgres**. Pero la regla
+   * de negocio dice lo contrario: una cita sin dueño ocupa la hora para todo el
+   * equipo (`bookingBlocksProfessional`). Esa asimetría no se puede expresar en un
+   * EXCLUDE, así que la sostiene sólo la app — y esto es lo que pasa si no la
+   * sostiene.
    */
   function crearReservaGanadora() {
     return prisma.booking.create({ data: {
       businessId: BIZ, serviceId, customerId,
+      professionalId: null,
       startDateTime: START, endDateTime: END,
       status: BookingStatus.pending_confirmation,
-      // Hold vivo: así el SQL de solape la cuenta como ocupando el horario.
+      // Hold vivo: es la solicitud "en pie", el caso que le interesa al test. Con el
+      // hold vencido taparía igual — está en el EXCLUDE — pero sería otro escenario.
       holdExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       totalPrice: 10000, depositRequired: 5000, depositPaid: 0,
       remainingBalance: 10000, finalAmount: 10000,
@@ -109,6 +125,7 @@ describe('pago que llega y la reserva no queda confirmada', () => {
   function crearReservaPendiente() {
     return prisma.booking.create({ data: {
       businessId: BIZ, serviceId, customerId,
+      professionalId: anaId,
       startDateTime: START, endDateTime: END,
       status: BookingStatus.pending_payment,
       // Vencido: es justo lo que deja de bloquear el horario y abre la carrera.
@@ -140,14 +157,16 @@ describe('pago que llega y la reserva no queda confirmada', () => {
     expect(after!.status).toBe(BookingStatus.confirmed)
   })
 
-  it('la DB ya impide dos reservas solapadas en los estados que cubre la constraint', async () => {
+  it('la DB ya impide dos reservas solapadas de la misma persona', async () => {
     await crearReservaPendiente()
 
-    // Este es el backstop real para `pending_payment/confirmed/completed`, y por eso
-    // el caso de abajo usa `pending_confirmation`: acá no hay carrera que ganar, la
-    // segunda reserva no se puede ni crear.
+    // El backstop real: acá no hay carrera que ganar, la segunda reserva no se puede
+    // ni crear. Va a nombre de Ana igual que la pendiente — con la persona adentro del
+    // EXCLUDE, dos reservas de personas distintas SÍ pueden convivir, que es justo la
+    // capacidad del multi-profesional.
     await expect(prisma.booking.create({ data: {
       businessId: BIZ, serviceId, customerId,
+      professionalId: anaId,
       startDateTime: START, endDateTime: END,
       status: BookingStatus.confirmed,
       totalPrice: 10000, depositRequired: 5000, depositPaid: 5000,

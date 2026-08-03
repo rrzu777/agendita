@@ -1,9 +1,13 @@
 /**
  * `Booking_no_overlap` es un EXCLUDE parcial de Postgres definido a mano en el SQL
- * de la migración `init` — no se puede expresar en schema.prisma, así que no
- * aparece en el modelo y es fácil olvidarse de que existe. Prohíbe dos reservas
- * del mismo negocio con horarios que se toquen, mirando SÓLO el status
- * (`pending_payment`, `confirmed`, `completed`).
+ * de las migraciones — no se puede expresar en schema.prisma, así que no aparece
+ * en el modelo y es fácil olvidarse de que existe. Prohíbe dos reservas del mismo
+ * negocio Y de la misma persona con horarios que se toquen, mirando SÓLO el status
+ * (`pending_payment`, `pending_confirmation`, `confirmed`, `completed`).
+ *
+ * Su definición vigente está en `booking_overlap_solicitudes`, no en `init`: cada
+ * cambio la recrea entera, así que la última migración que la nombra es la única
+ * que vale.
  *
  * Mirar sólo el status es lo que lo hace más estricto que la app: para el
  * constraint un hold vencido sigue ocupando el horario. `occupiesSlot` y

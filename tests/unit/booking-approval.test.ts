@@ -3,11 +3,13 @@ import { addHours, addMinutes } from 'date-fns'
 import {
   initialPublicBookingStatus,
   approvalHoldExpiresAt,
-  isHeldStatus,
+  hasExpirableHold,
   occupiesSlot,
   isSweepableExpiredHold,
   APPROVAL_WINDOW_HOURS,
-  HELD_STATUSES,
+  STATUSES_WITH_HOLD,
+  OCCUPYING_STATUSES,
+  NO_OVERLAP_STATUSES,
 } from '@/lib/bookings/approval'
 import { recomputeBookingAmountsAfterDiscount } from '@/lib/bookings/recompute'
 import { generateSlots } from '@/lib/availability/slots'
@@ -44,11 +46,23 @@ describe('approvalHoldExpiresAt', () => {
   })
 })
 
-describe('isHeldStatus', () => {
-  it('cubre los dos estados que ocupan cupo sólo mientras el hold viva', () => {
-    expect(HELD_STATUSES).toEqual(['pending_payment', 'pending_confirmation'])
-    expect(isHeldStatus('pending_confirmation')).toBe(true)
-    expect(isHeldStatus('confirmed')).toBe(false)
+describe('las listas de estados', () => {
+  it('tener hold y ocupar el cupo son dos preguntas distintas', () => {
+    expect(STATUSES_WITH_HOLD).toEqual(['pending_payment', 'pending_confirmation'])
+    expect(hasExpirableHold('pending_confirmation')).toBe(true)
+    expect(hasExpirableHold('confirmed')).toBe(false)
+    // El solapado a propósito: tiene hold que vence Y tapa siempre. Es lo que le
+    // deja a /mi decir "Expirada" sin que la agenda ceda el horario.
+    expect(OCCUPYING_STATUSES).toContain('pending_confirmation')
+  })
+
+  // La copia TS del WHERE del EXCLUDE. Contra la definición REAL de Postgres la
+  // compara el test de integración booking-overlap-constraint; acá sólo fijamos
+  // que sean los cuatro activos y ninguno más.
+  it('NO_OVERLAP_STATUSES son los cuatro estados activos', () => {
+    expect([...NO_OVERLAP_STATUSES].sort()).toEqual(
+      ['completed', 'confirmed', 'pending_confirmation', 'pending_payment'],
+    )
   })
 })
 
@@ -109,9 +123,13 @@ describe('occupiesSlot / isSweepableExpiredHold', () => {
     expect(isSweepableExpiredHold(sinCampo, NOW)).toBe(false)
   })
 
-  it('una solicitud vencida libera igual, y no es asunto del sweep de pagos', () => {
+  // Antes liberaba al instante. Desde `booking_overlap_solicitudes` el EXCLUDE
+  // cubre `pending_confirmation`, así que darla por libre acá ofrecería una hora
+  // que el insert rechaza. Y no es asunto del sweep de pagos: expirarla le manda
+  // un mail a la clienta, y de eso se encarga el cron.
+  it('una solicitud vencida sigue tapando hasta que el cron la expire', () => {
     const solicitud = { status: 'pending_confirmation', holdExpiresAt: VENCIDO }
-    expect(occupiesSlot(solicitud, NOW)).toBe(false)
+    expect(occupiesSlot(solicitud, NOW)).toBe(true)
     expect(isSweepableExpiredHold(solicitud, NOW)).toBe(false)
   })
 
@@ -175,10 +193,22 @@ describe('generateSlots + solicitudes pendientes', () => {
     expect(slots.some((s) => s.start.getTime() === bookingStart.getTime())).toBe(false)
   })
 
-  it('una solicitud con el hold vencido libera el horario aunque el cron no haya corrido', () => {
+  // La agenda no puede ofrecer un horario que el EXCLUDE va a rechazar, y desde
+  // `booking_overlap_solicitudes` la fila sigue contando mientras diga
+  // `pending_confirmation`. El horario se libera cuando el cron la expira —y de
+  // paso le avisa por mail a la clienta que nadie le respondió.
+  it('una solicitud con el hold vencido no libera el horario hasta que corre el cron', () => {
     const slots = generateSlots(day, 60, rules, [], [{
       startDateTime: bookingStart, endDateTime: bookingEnd,
       status: 'pending_confirmation', holdExpiresAt: new Date('2028-02-27T12:00:00Z'),
+    }], opts)
+    expect(slots.some((s) => s.start.getTime() === bookingStart.getTime())).toBe(false)
+  })
+
+  it('una solicitud ya expirada por el cron sí libera el horario', () => {
+    const slots = generateSlots(day, 60, rules, [], [{
+      startDateTime: bookingStart, endDateTime: bookingEnd,
+      status: 'expired', holdExpiresAt: new Date('2028-02-27T12:00:00Z'),
     }], opts)
     expect(slots.some((s) => s.start.getTime() === bookingStart.getTime())).toBe(true)
   })

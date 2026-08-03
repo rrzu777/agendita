@@ -151,11 +151,11 @@ export function bookingScopeCondition(professionalId: string | null): Prisma.Boo
  * escrita a mano en cuatro lugares: los dos lectores de horarios, el de reprogramar y
  * el reparto de "cualquiera disponible".
  *
- * Vale la pena tenerla junta porque **la lista de estados no está cerrada**:
- * `pending_confirmation` ocupa cupo para la app aunque el EXCLUDE de la base lo ignore,
- * y el día que eso se acomode hay que tocar un solo lugar. Con cuatro copias, olvidarse
- * de una hace que la pantalla ofrezca una hora que la escritura rechaza — o que el
- * reparto cuente una carga distinta de la que se mostró.
+ * Vale la pena tenerla junta porque la lista de estados se movió: `pending_confirmation`
+ * ocupaba cupo para la app mientras el EXCLUDE de la base lo ignoraba, y la migración
+ * `booking_overlap_solicitudes` lo acomodó tocando un solo lugar. Con cuatro copias,
+ * olvidarse de una hace que la pantalla ofrezca una hora que la escritura rechaza — o
+ * que el reparto cuente una carga distinta de la que se mostró.
  *
  * El rango es por SOLAPE con el día, no por fecha de creación: una cita que empieza
  * antes y termina adentro cuenta.

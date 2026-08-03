@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import { BookingStatus } from '@prisma/client'
+import { NO_OVERLAP_STATUSES } from '@/lib/bookings/approval'
 import { addMinutes } from 'date-fns'
 import { prisma } from '@/lib/db'
 import { requireTestDatabase } from './setup'
@@ -76,7 +78,7 @@ afterAll(async () => {
 
 let telefono = 0
 
-async function reservar(professionalId: string | null) {
+async function reservar(professionalId: string | null, status: BookingStatus = 'confirmed') {
   telefono += 1
   const customer = await prisma.customer.create({
     data: { businessId: BIZ, name: `Clienta ${telefono}`, phone: `+5691188000${telefono}` },
@@ -89,7 +91,7 @@ async function reservar(professionalId: string | null) {
       professionalId,
       startDateTime: START,
       endDateTime: END,
-      status: 'confirmed',
+      status,
       paymentStatus: 'unpaid',
       totalPrice: 10000,
       depositRequired: 0,
@@ -133,5 +135,67 @@ describe('Booking_no_overlap con la persona adentro', () => {
   it('el constraint por sí solo no separa una cita sin dueño de una con dueño', async () => {
     await reservar(null)
     await expect(reservar(ana)).resolves.toMatchObject({ professionalId: ana })
+  })
+})
+
+/**
+ * Lo que agrega `booking_overlap_solicitudes`. Hasta esa migración una solicitud
+ * esperando el visto bueno podía solapar cualquier cosa: el WHERE del EXCLUDE no la
+ * miraba. El 23P01 no aparecía al crearla sino al APROBARLA —recién ahí el status pasa
+ * a `confirmed`— o sea adentro de la action de aprobación y sobre una reserva que la
+ * dueña acababa de aceptar.
+ *
+ * Que un test de unidad "ya cubra" esto es la trampa: la lista de estados vive en DOS
+ * lugares (este WHERE y `occupiesSlot`) y sólo un test contra la base ve el primero.
+ */
+describe('Booking_no_overlap cubre las solicitudes', () => {
+  it('una solicitud no puede encimarse sobre una cita confirmada', async () => {
+    await reservar(ana, 'confirmed')
+    await expect(reservar(ana, 'pending_confirmation')).rejects.toThrow()
+  })
+
+  it('una cita confirmada no puede encimarse sobre una solicitud', async () => {
+    await reservar(ana, 'pending_confirmation')
+    await expect(reservar(ana, 'confirmed')).rejects.toThrow()
+  })
+
+  it('dos solicitudes por el mismo horario tampoco conviven', async () => {
+    await reservar(ana, 'pending_confirmation')
+    await expect(reservar(ana, 'pending_confirmation')).rejects.toThrow()
+  })
+
+  // El otro lado de la moneda: una solicitud que el cron ya expiró NO retiene nada.
+  // Si esto fallara, el horario quedaría muerto para siempre.
+  it('una solicitud ya expirada deja pasar la cita nueva', async () => {
+    await reservar(ana, 'expired')
+    await expect(reservar(ana, 'confirmed')).resolves.toMatchObject({ status: 'confirmed' })
+  })
+
+  /**
+   * La lista de estados vive DOS veces: en el WHERE del EXCLUDE (SQL crudo, que desde
+   * TypeScript no se puede importar) y en `NO_OVERLAP_STATUSES`. Los casos de arriba
+   * prueban comportamiento estado por estado; esto prueba LA LISTA, que es lo que se
+   * desincroniza cuando alguien agrega el quinto valor al enum.
+   *
+   * Lee la definición real que tiene Postgres, no el .sql: si una migración futura la
+   * recrea, el test sigue mirando lo que está aplicado de verdad.
+   */
+  it('el WHERE del constraint dice exactamente lo mismo que NO_OVERLAP_STATUSES', async () => {
+    const [row] = (await prisma.$queryRaw`
+      SELECT pg_get_constraintdef(oid) AS def
+      FROM pg_constraint
+      WHERE conname = 'Booking_no_overlap'
+    `) as { def: string }[]
+    expect(row?.def).toBeDefined()
+
+    // Filtramos los literales del texto contra los valores del enum en vez de
+    // atarnos a cómo Postgres renderiza el cast: el `'[)'` del tsrange y el `''`
+    // del COALESCE también son literales del mismo texto, y el formato de
+    // `pg_get_constraintdef` no es contrato de nada.
+    const todos = Object.values(BookingStatus) as string[]
+    const enLaBase = [...row.def.matchAll(/'([a-z_]+)'/g)]
+      .map((m) => m[1])
+      .filter((s) => todos.includes(s))
+    expect(new Set(enLaBase)).toEqual(new Set(NO_OVERLAP_STATUSES))
   })
 })

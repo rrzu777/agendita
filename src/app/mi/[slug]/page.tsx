@@ -13,7 +13,7 @@ import { bookingWhere, isNotableModality } from '@/lib/services/modality'
 import { formatShortDate } from '@/lib/format-date'
 import { declaredTransferPaymentWhere, isDeclaredTransferPayment } from '@/lib/bank-transfer/declared'
 import { isDoomedHold } from '@/lib/payments/confirmation-state'
-import { isHeldStatus } from '@/lib/bookings/approval'
+import { hasExpirableHold } from '@/lib/bookings/approval'
 import { canSelfManage } from '@/lib/bookings/self-service'
 import { BookingActions } from './booking-actions'
 import { PaymentStatus, ServiceModality, type BookingStatus, type Prisma } from '@prisma/client'
@@ -60,7 +60,7 @@ function statusLabel(
   },
   now: Date,
 ) {
-  if (isHeldStatus(b.status)) {
+  if (hasExpirableHold(b.status)) {
     if (b.payments.some(isDeclaredTransferPayment)) return 'Transferencia en verificación'
     if (b.payments.some((p) => p.provider === 'mercado_pago')) return 'Verificando tu pago'
     if (isDoomedHold(b, now)) return bookingStatusLabels.expired

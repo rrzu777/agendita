@@ -132,9 +132,9 @@ async function findBookingOverlap(input: AssertConflictInput): Promise<SlotConfl
   //
   // Sigue crudo por el `FOR UPDATE`, que Prisma no expone: es lo que mantiene
   // válido el resultado —y lockeadas las filas que el sweep va a tocar— hasta el
-  // fin de la transacción. Los estados son los que mira el EXCLUDE
-  // `Booking_no_overlap`, más `pending_confirmation`, que ocupa cupo para la app
-  // aunque el constraint lo ignore.
+  // fin de la transacción. Los estados son exactamente los que mira el EXCLUDE
+  // `Booking_no_overlap` desde la migración `booking_overlap_solicitudes`, que
+  // sumó `pending_confirmation`: las dos listas tienen que decir lo mismo.
   //
   // La query NO filtra por persona, y es a propósito: el EXCLUDE de la base es por
   // NEGOCIO y no sabe de personas, así que el sweep de holds abandonados tiene que
