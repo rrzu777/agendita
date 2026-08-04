@@ -803,6 +803,14 @@ export async function getBookingsByRange(start: Date, end: Date) {
       // `professionalId` escalar (que el include trae solo) alimenta el filtro
       // por persona de la página.
       professional: { select: { name: true } },
+      // Lo mínimo para la precedencia de `displayedBookingStatus`: sin esto el
+      // chip le diría "Plazo vencido" a quien transfirió en fecha. Mismo `where`
+      // que getBookings (abono Y saldo) para que los dos predicados de
+      // declared.ts se comporten igual sobre los dos payloads del panel.
+      payments: {
+        where: anyDeclaredTransferWhere,
+        select: { providerPaymentId: true },
+      },
     },
   })
 }

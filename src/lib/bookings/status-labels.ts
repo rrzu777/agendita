@@ -1,4 +1,5 @@
 import type { BookingStatus } from '@prisma/client'
+import { hasPendingDeclaredTransfer } from '@/lib/bank-transfer/declared'
 import { isDoomedHold } from '@/lib/payments/confirmation-state'
 
 /** Etiquetas en español de los estados de reserva. Fuente única compartida
@@ -14,12 +15,6 @@ export const bookingStatusLabels: Record<BookingStatus, string> = {
   expired: 'Expirada',
 }
 
-/** Lookup tolerante para payloads donde `status` viene tipado como string
- *  (p. ej. CalendarBooking). Cae al status crudo si no hay etiqueta. */
-export function bookingStatusLabel(status: string): string {
-  return (bookingStatusLabels as Partial<Record<string, string>>)[status] ?? status
-}
-
 /**
  * Estado DERIVADO, no asentado: el plazo para pagar venció y la reserva sigue
  * en `pending_payment` porque el cron todavía no pasó (corre cada hora, y
@@ -32,6 +27,27 @@ export function bookingStatusLabel(status: string): string {
  * está prometía una acción que no aparece.
  */
 export const HOLD_EXPIRED_STATUS = 'hold_expired'
+
+/** La palabra. Vive acá y no adentro del mapa del badge porque hay dos
+ *  superficies con mapas de color distintos (la tabla y el chip del
+ *  calendario) que tienen que decir exactamente lo MISMO — y algo que no sea
+ *  "Expirada", por lo que explica HOLD_EXPIRED_STATUS. */
+export const HOLD_EXPIRED_LABEL = 'Plazo vencido'
+
+/** Las etiquetas de los estados ASENTADOS más las de los derivados. Es lo que
+ *  tiene que mirar cualquier lookup por string: `bookingStatusLabel` cae al
+ *  status crudo cuando no lo encuentra, así que una clave que falte acá no
+ *  rompe nada — imprime `hold_expired` en la pantalla. */
+const displayableStatusLabels: Record<string, string> = {
+  ...bookingStatusLabels,
+  [HOLD_EXPIRED_STATUS]: HOLD_EXPIRED_LABEL,
+}
+
+/** Lookup tolerante para payloads donde `status` viene tipado como string
+ *  (p. ej. CalendarBooking). Cae al status crudo si no hay etiqueta. */
+export function bookingStatusLabel(status: string): string {
+  return displayableStatusLabels[status] ?? status
+}
 
 /**
  * El status que hay que MOSTRAR, que no siempre es el que la base tiene
@@ -46,12 +62,11 @@ export const HOLD_EXPIRED_STATUS = 'hold_expired'
  * Rotularla "Expirada" al lado de un botón "Aceptar" que funciona la haría
  * abandonar una reserva que estaba a un clic de salvarse.
  *
- * OJO — el llamador tiene que respetar la precedencia que documenta
- * `isDoomedHold`: una transferencia declarada o un pago en vuelo GANAN sobre el
- * plazo vencido. La tabla y la card cortan antes con `hasPendingDeclaredTransfer`;
- * una superficie que no pueda evaluar esa precedencia (porque su consulta no
- * trae `payments`) NO debe llamar a esta función, o le va a decir "vencido" a
- * quien pagó en fecha.
+ * OJO — NO aplica la precedencia que documenta `isDoomedHold` (una
+ * transferencia declarada gana sobre el plazo vencido). Llamala directo sólo si
+ * cortás vos antes, como hace la tabla de Reservas para pintar su badge propio
+ * de "Transferencia por verificar"; el resto de las superficies quiere
+ * `displayedBookingStatus`.
  */
 export function effectiveBookingStatus(
   booking: { status: string; paymentStatus: string; holdExpiresAt: Date | null },
@@ -59,6 +74,31 @@ export function effectiveBookingStatus(
 ): string {
   if (booking.status !== 'pending_payment') return booking.status
   return isDoomedHold(booking, now) ? HOLD_EXPIRED_STATUS : booking.status
+}
+
+/**
+ * El status a MOSTRAR, con la precedencia de pagos ya aplicada: la versión que
+ * se puede llamar sin acordarse de la regla.
+ *
+ * Pide `payments` en el tipo A PROPÓSITO, y ése es medio punto del helper: la
+ * precedencia vivía en prosa arriba de `effectiveBookingStatus`, así que una
+ * superficie cuya consulta no traía los pagos podía llamarlo igual y decirle
+ * "Plazo vencido" a quien había transferido en fecha. Ahora no compila.
+ */
+export function displayedBookingStatus(
+  booking: {
+    status: string
+    paymentStatus: string
+    holdExpiresAt: Date | null
+    payments: Array<{ providerPaymentId?: string | null }>
+  },
+  now: Date = new Date(),
+): string {
+  // La declaración pendiente gana: la plata pudo salir en fecha y lo que falta
+  // es que la dueña la verifique, no que la clienta pague. El cron tampoco la
+  // barre en el camino perezoso (ver `isSweepableExpiredHold`).
+  if (hasPendingDeclaredTransfer(booking)) return booking.status
+  return effectiveBookingStatus(booking, now)
 }
 
 /**

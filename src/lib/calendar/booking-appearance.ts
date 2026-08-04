@@ -1,3 +1,4 @@
+import { HOLD_EXPIRED_STATUS } from '@/lib/bookings/status-labels'
 import {
   DEFAULT_SERVICE_COLOR,
   readableTextColor,
@@ -33,6 +34,12 @@ const STATUS_META: Record<string, StatusMeta> = {
   cancelled: { kind: 'negative', dotColor: '#ef4444', icon: 'x' },
   no_show: { kind: 'negative', dotColor: '#dc2626', icon: 'x' },
   expired: { kind: 'negative', dotColor: '#6b7280', icon: 'dash' },
+  // Estado DERIVADO (ver HOLD_EXPIRED_STATUS): el plazo venció y el cron todavía
+  // no la asentó. Se dibuja igual que `expired` a propósito — el horario ya
+  // volvió a estar disponible (`validateSlot` barre el hold muerto al vender
+  // encima), así que atenuarlo y tacharlo es lo que la agenda de verdad ofrece.
+  // La palabra sí es otra, y de eso se encarga `bookingStatusLabel`.
+  [HOLD_EXPIRED_STATUS]: { kind: 'negative', dotColor: '#6b7280', icon: 'dash' },
 }
 
 const FALLBACK_META: StatusMeta = { kind: 'active', dotColor: '#6b7280', icon: 'dash' }

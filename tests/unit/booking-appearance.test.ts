@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { bookingAppearance } from '@/lib/calendar/booking-appearance'
 import { DEFAULT_SERVICE_COLOR } from '@/lib/calendar/color'
+import { HOLD_EXPIRED_STATUS } from '@/lib/bookings/status-labels'
 
 describe('bookingAppearance', () => {
   it('confirmada: relleno = color de servicio, opacidad plena, sin tachado', () => {
@@ -34,6 +35,16 @@ describe('bookingAppearance', () => {
     expect(a.strikeThrough).toBe(true)
     expect(a.icon).toBe('dash')
   })
+  it('plazo vencido: se dibuja como expirada (el horario ya volvió a estar libre)', () => {
+    const a = bookingAppearance('#FFB3BA', HOLD_EXPIRED_STATUS)
+    expect(a.opacity).toBe(0.55)
+    expect(a.strikeThrough).toBe(true)
+    expect(a.icon).toBe('dash')
+    // Sin la entrada en STATUS_META caía en el fallback, que es opacidad plena
+    // y sin tachado: el chip quedaba idéntico a una reserva sana.
+    expect(a.opacity).not.toBe(1)
+  })
+
   it('estado desconocido: fallback seguro (plena, sin tachado)', () => {
     const a = bookingAppearance('#FFB3BA', 'weird_status')
     expect(a.opacity).toBe(1)

@@ -37,7 +37,7 @@ import {
   type PositionedItem,
 } from '@/lib/calendar/timeline'
 import { bookingAppearance, type StatusIcon } from '@/lib/calendar/booking-appearance'
-import { bookingStatusLabel } from '@/lib/bookings/status-labels'
+import { bookingStatusLabel, displayedBookingStatus } from '@/lib/bookings/status-labels'
 import { useVocabulary } from '@/components/vocabulary-provider'
 
 export type CalendarView = 'day' | 'week' | 'month'
@@ -381,7 +381,7 @@ function MonthView({
               </span>
               <div className="pointer-events-none relative mt-1 space-y-0.5 overflow-hidden">
                 {dayBookings.slice(0, 3).map((b) => {
-                  const appearance = bookingAppearance(b.service?.pastelColor, b.status)
+                  const appearance = bookingAppearance(b.service?.pastelColor, displayedBookingStatus(b))
                   const bookingLabel = `${b.customer?.name || b.service?.name || 'Reserva'} — ${localTime(b.startDateTime, timezone)}`
                   return (
                     <button
@@ -540,12 +540,16 @@ function BookingBlock({
   const b = p.item
   const widthPct = 100 / p.lanes
   const leftPct = p.lane * widthPct
-  const appearance = bookingAppearance(b.service?.pastelColor, b.status)
+  // El chip habla del estado DERIVADO (ver displayedBookingStatus): con el
+  // plazo vencido el horario ya volvió a estar libre, y dibujarlo en naranja de
+  // "pendiente de pago" le esconde a la dueña un hueco que sí puede vender.
+  const shownStatus = displayedBookingStatus(b)
+  const appearance = bookingAppearance(b.service?.pastelColor, shownStatus)
   const Icon = statusIcons[appearance.icon]
   const start = localTime(b.startDateTime, timezone)
   const strike = appearance.strikeThrough ? 'line-through' : ''
   const v = useVocabulary()
-  const statusLabel = bookingStatusLabel(b.status)
+  const statusLabel = bookingStatusLabel(shownStatus)
   const ariaLabel = `${statusLabel} — ${b.customer?.name || v.Client} — ${start}`
 
   return (

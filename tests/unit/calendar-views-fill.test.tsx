@@ -33,6 +33,12 @@ const booking = {
   customer: { name: 'Ana' },
   service: { name: 'Corte', pastelColor: '#FFB3BA' },
   professional: null,
+  // Los tres que mira `displayedBookingStatus`. Con `confirmed` no llega a
+  // leerlos, pero un fixture al que le falte `payments` revienta el render en
+  // cuanto alguien lo copie con status `pending_payment`.
+  paymentStatus: 'unpaid',
+  holdExpiresAt: null,
+  payments: [],
 }
 
 describe('CalendarViews — relleno de color (día)', () => {

@@ -48,6 +48,10 @@ function booking(id: string, customerName: string, professionalId: string | null
     finalAmount: 10000,
     remainingBalance: 10000,
     paymentStatus: 'none',
+    // Lo que mira `displayedBookingStatus` para el chip; sin `payments` el
+    // render revienta apenas el fixture pase a `pending_payment`.
+    holdExpiresAt: null,
+    payments: [],
     modality: 'on_site',
     service: { name: 'Corte' },
     customer: { name: customerName, phone: '+56911111111', email: null },
