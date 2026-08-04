@@ -7,6 +7,7 @@ import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
 import { assertProfessionalIsFree, assertSlotIsAvailable } from '@/lib/availability/validation'
 import { rescheduleBlockedReason, type RescheduleAudience } from '@/lib/bookings/hold'
+import { approvalHoldExpiresAt } from '@/lib/bookings/approval'
 // UserError: estos mensajes son user-facing y deben sobrevivir al wrapper
 // action(); para callers sin wrapper (bookings.ts dueña) es un Error normal
 // (extends Error).
@@ -48,6 +49,42 @@ export async function cancelBookingInTx(
   })
 }
 
+/**
+ * Qué hay que reescribirle al plazo cuando la cita se mueve. `{}` = nada.
+ *
+ * De los dos plazos que viven en `holdExpiresAt`, sólo UNO depende de la cita:
+ *
+ * - **El de la solicitud sin responder** (`pending_confirmation`) lo escribe
+ *   `approvalHoldExpiresAt` como `min(nacimiento + ventana, la cita)`, o sea que
+ *   la cita está PERSISTIDA adentro del plazo. Mover la cita y dejar el plazo
+ *   quieto rompía ese dato en las dos direcciones: para adelante, el plazo se
+ *   quedaba en la cita vieja y `expireUnansweredRequests` mataba la solicitud
+ *   —con un mail que le decía a la clienta "el negocio no alcanzó a
+ *   confirmar"— cuando a la dueña todavía le sobraban días; para atrás, el
+ *   plazo quedaba DESPUÉS de la cita y la solicitud seguía ocupando el horario
+ *   pasada su propia hora, justo lo que ese tope existe para evitar.
+ *
+ *   Se recalcula llamando a la MISMA función que lo escribió (ver
+ *   `approvalHoldExpiresAt`, que explica de dónde sale cada término), y por eso
+ *   la ventana no se estira: reprogramar N veces siempre da lo mismo.
+ *
+ * - **El de la clienta para pagar** (`pending_payment`) NO se toca, y no es un
+ *   olvido: ése cuenta desde que se abrió el checkout y no sabe nada del turno
+ *   (ver `holdDeadlinePromise`). Mover la cita no compra más tiempo para pagar.
+ *
+ * Devuelve algo para esparcir y no un `Date | undefined` a propósito: con
+ * `holdExpiresAt: undefined` adentro del `data` Prisma tampoco tocaría la
+ * columna, pero "no lo toca" dejaría de ser OBSERVABLE —ni desde un test ni
+ * leyendo el objeto— y pasaría a depender de una regla silenciosa.
+ */
+function rescheduledHoldPatch(
+  booking: { status: BookingStatus; createdAt: Date },
+  newStartDateTime: Date,
+): { holdExpiresAt?: Date } {
+  if (booking.status !== BookingStatus.pending_confirmation) return {}
+  return { holdExpiresAt: approvalHoldExpiresAt(newStartDateTime, booking.createdAt) }
+}
+
 /** Core tx-aware de reprogramación (SIN auth). assertSlotIsAvailable cubre
  *  bloqueos (getEffectiveBlocks) + anti-doble-booking; el updateMany guardado
  *  por status evita la carrera con complete/cancel concurrente.
@@ -68,6 +105,10 @@ export async function rescheduleBookingInTx(
        *  al lado de `status` hay OTRO status (el del Payment) que encajaría sin
        *  chistar y apagaría el guard. */
       status: BookingStatus; paymentStatus: BookingPaymentStatus; holdExpiresAt: Date | null
+      /** Cuándo nació la solicitud, que es desde cuándo corre la ventana de
+       *  respuesta. Requerido para poder RECALCULAR el plazo al mover la cita
+       *  sin regalarle a la dueña una ventana nueva. */
+      createdAt: Date
     }
     newStartDateTime: Date
     durationMinutes: number
@@ -79,19 +120,9 @@ export async function rescheduleBookingInTx(
   const { booking, newStartDateTime, durationMinutes, timezone, leadTimeMinutes, rescheduledBy } = input
   const endDateTime = addMinutes(newStartDateTime, durationMinutes)
 
-  // Mover la cita no le devuelve la vida: acá abajo NO se escribe
-  // `holdExpiresAt`, así que el cron la barre igual. Sin este guard la
-  // reprogramación salía bien, avisaba a las dos partes, y después la reserva no
-  // estaba.
-  //
-  // Corta el plazo YA VENCIDO, que es el que miente en la pantalla. NO cubre el
-  // que vence dentro de un rato: ése sigue saliendo bien y muriéndose después, y
-  // en `pending_confirmation` es peor que un descuido —`approvalHoldExpiresAt`
-  // topa el plazo en el startDateTime VIEJO, así que mover la cita para adelante
-  // deja un plazo que mata la solicitud antes de que la dueña haya tenido su
-  // ventana—. Arreglarlo es recalcular el hold acá, y eso pide decidir política
-  // de ventanas (`DEFAULT_HOLD_MINUTES` / `holdHours` / `manualHoldHours` /
-  // `APPROVAL_WINDOW_HOURS`, ninguna de las cuales llega a esta función).
+  // Mover la cita no resucita a la que ya está condenada: el cron la barre
+  // igual. Sin este guard la reprogramación salía bien, avisaba a las dos
+  // partes, y después la reserva no estaba.
   const blockedReason = rescheduleBlockedReason(booking, rescheduledBy, new Date())
   if (blockedReason) {
     throw new UserError(blockedReason)
@@ -114,16 +145,28 @@ export async function rescheduleBookingInTx(
   // Fecha en la TZ del negocio (no la del server): con UTC en Vercel una hora local
   // nocturna quedaba anotada con el día equivocado.
   const historyNote = `[REPROGRAMADA de ${formatBookingDateTime(booking.startDateTime, timezone)}]`
+  const holdPatch = rescheduledHoldPatch(booking, newStartDateTime)
   const updateResult = await tx.booking.updateMany({
     where: {
       id: booking.id,
       businessId: booking.businessId,
-      status: { notIn: [...TERMINAL_BOOKING_STATUSES] },
+      // Cuando el patch escribe un plazo, la fila tiene que seguir siendo la que
+      // lo justifica. El status se leyó FUERA de la tx: si la dueña aceptó la
+      // solicitud en el medio (que la deja `confirmed` y con el plazo en `null`),
+      // el update de acá pasaba igual —`confirmed` no es terminal— y le dejaba a
+      // una reserva confirmada un plazo futuro, un estado que no produce nada más
+      // en la app. Hoy no miente en ninguna pantalla porque todo lo que lee el
+      // plazo filtra por status; es basura, no una mentira. Pero cuesta esta
+      // línea, y de paso el update queda pegado a la rama que lo generó.
+      status: holdPatch.holdExpiresAt
+        ? BookingStatus.pending_confirmation
+        : { notIn: [...TERMINAL_BOOKING_STATUSES] },
     },
     data: {
       startDateTime: newStartDateTime,
       endDateTime,
       internalNotes: booking.internalNotes ? `${booking.internalNotes}\n${historyNote}` : historyNote,
+      ...holdPatch,
     },
   })
   if (updateResult.count === 0) {

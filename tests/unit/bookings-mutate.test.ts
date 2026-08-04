@@ -66,6 +66,7 @@ describe('rescheduleBookingInTx', () => {
       status: BookingStatus.confirmed,
       paymentStatus: BookingPaymentStatus.deposit_paid,
       holdExpiresAt: null as Date | null,
+      createdAt: new Date('2026-07-19T12:00:00Z'),
     },
     newStartDateTime: new Date('2026-07-21T15:00:00Z'),
     durationMinutes: 60,
@@ -184,6 +185,100 @@ describe('rescheduleBookingInTx', () => {
         booking: { ...condenada, holdExpiresAt: new Date(Date.now() + 60 * 60_000) },
       })
       expect(tx.booking.updateMany).toHaveBeenCalled()
+    })
+  })
+
+  // De los dos plazos que viven en `holdExpiresAt`, sólo el de la solicitud sin
+  // responder tiene la cita adentro (`approvalHoldExpiresAt` topa al ESCRIBIR).
+  // Moverla y dejar el plazo quieto rompía ese dato en las dos direcciones.
+  describe('recálculo del plazo de la solicitud', () => {
+    // Relativas al reloj real a propósito: el guard de "plazo vencido" corre
+    // antes que esto y con fechas fijas en el pasado tumbaría el caso entero.
+    const h = (horas: number) => new Date(Date.now() + horas * 3_600_000)
+    const NACIMIENTO = h(-1)
+    const CITA_VIEJA = h(5)
+    const solicitud = {
+      ...baseInput.booking,
+      status: BookingStatus.pending_confirmation,
+      paymentStatus: BookingPaymentStatus.fully_paid,
+      // Nació para una cita cercana, así que el tope se lo puso la CITA (5 h,
+      // menos que las 24 de la ventana de respuesta).
+      holdExpiresAt: CITA_VIEJA as Date | null,
+      createdAt: NACIMIENTO,
+      startDateTime: CITA_VIEJA,
+    }
+
+    async function reprogramarA(newStartDateTime: Date) {
+      const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
+      await rescheduleBookingInTx(tx as never, { ...baseInput, booking: solicitud, newStartDateTime })
+      return tx.booking.updateMany.mock.calls[0][0].data.holdExpiresAt
+    }
+
+    // Antes: el plazo se quedaba en la cita VIEJA y `expireUnansweredRequests`
+    // mataba la solicitud esa tarde —con un mail diciéndole a la clienta "el
+    // negocio no alcanzó a confirmar"— por una cita a dos semanas.
+    it('con la cita lejos, el tope pasa a ser la ventana contada desde que nació', async () => {
+      const hold = await reprogramarA(h(24 * 15))
+      // 24 h desde el NACIMIENTO (o sea h(23)), no desde ahora: reprogramar no
+      // le regala a la dueña una ventana nueva por cada movida.
+      expect(hold).toEqual(new Date(NACIMIENTO.getTime() + 24 * 3_600_000))
+    })
+
+    // Mover para adelante NO significa "ventana entera": sigue siendo un min().
+    // Con la cita todavía adentro de la ventana, el tope se lo lleva la cita.
+    it('mover para adelante pero dentro de la ventana sigue topando en la cita', async () => {
+      const nuevaCita = h(8)
+      expect(await reprogramarA(nuevaCita)).toEqual(nuevaCita)
+    })
+
+    // Antes: el plazo quedaba DESPUÉS de la cita y la solicitud seguía ocupando
+    // el horario pasada su propia hora — justo lo que el tope existe para evitar.
+    it('mover para atrás vuelve a topar en la cita', async () => {
+      const nuevaCita = h(2)
+      expect(await reprogramarA(nuevaCita)).toEqual(nuevaCita)
+    })
+
+    // El plazo de la clienta cuenta desde que se abrió el checkout y no sabe
+    // nada del turno: mover la cita no compra más tiempo para pagar.
+    it('el plazo para PAGAR no se toca', async () => {
+      const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
+      await rescheduleBookingInTx(tx as never, {
+        ...baseInput,
+        booking: {
+          ...solicitud,
+          status: BookingStatus.pending_payment,
+          paymentStatus: BookingPaymentStatus.unpaid,
+          holdExpiresAt: h(0.25),
+        },
+        newStartDateTime: h(24 * 15),
+      })
+      expect(tx.booking.updateMany.mock.calls[0][0].data).not.toHaveProperty('holdExpiresAt')
+    })
+
+    it('una reserva confirmada tampoco estrena plazo', async () => {
+      const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
+      await rescheduleBookingInTx(tx as never, { ...baseInput, leadTimeMinutes: 0 })
+      expect(tx.booking.updateMany.mock.calls[0][0].data).not.toHaveProperty('holdExpiresAt')
+    })
+
+    // El status se leyó FUERA de la tx. Si la dueña acepta la solicitud en el
+    // medio queda `confirmed` y con el plazo en `null`; sin fijar el status, el
+    // update pasaba igual (confirmed no es terminal) y le devolvía un plazo
+    // futuro a una reserva ya confirmada.
+    it('el update queda fijado al status del que cuelga el plazo', async () => {
+      const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
+      await rescheduleBookingInTx(tx as never, {
+        ...baseInput, booking: solicitud, newStartDateTime: h(24 * 15),
+      })
+      expect(tx.booking.updateMany.mock.calls[0][0].where.status).toBe('pending_confirmation')
+    })
+
+    it('sin plazo que escribir, el update conserva el guard ancho de siempre', async () => {
+      const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
+      await rescheduleBookingInTx(tx as never, { ...baseInput, leadTimeMinutes: 0 })
+      expect(tx.booking.updateMany.mock.calls[0][0].where.status).toEqual({
+        notIn: ['completed', 'cancelled', 'no_show', 'expired'],
+      })
     })
   })
 })
