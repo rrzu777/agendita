@@ -8,7 +8,7 @@ import { TableActions } from '@/components/ui/table-actions'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { CancelBookingButton } from './cancel-booking-button'
 import { ManualPaymentDialog } from './manual-payment-dialog'
-import { isManualPaymentAllowed, type ManualPaymentBooking } from './manual-payment-utils'
+import { isManualPaymentAllowed, manualPaymentBlockedReason, type ManualPaymentBooking } from './manual-payment-utils'
 import { ReviveBookingButton } from './revive-booking-dialog'
 import { getReviveReopenState } from './revive-utils'
 import { BookingStatusButton } from './booking-status-button'
@@ -34,6 +34,7 @@ export function BookingRowActions({
   const [payOpen, setPayOpen] = useState(false)
 
   const canPay = isManualPaymentAllowed(booking)
+  const blockedReason = manualPaymentBlockedReason(booking)
   const isConfirmed = booking.status === 'confirmed'
   const isPending = booking.status === 'pending_payment'
   // Solicitud esperando el visto bueno del negocio (confirmación manual).
@@ -86,11 +87,19 @@ export function BookingRowActions({
       pendingLabel="Completando…"
       errorLabel="Error al completar"
     />
-  ) : (
+  ) : canPay ? (
     <Button type="button" size="sm" variant="outline" onClick={() => setPayOpen(true)}>
       Cobrar
     </Button>
-  )
+  ) : blockedReason ? (
+    // Deshabilitado y NO ausente: el server rechaza este cobro, pero si el botón
+    // simplemente desaparece la dueña no distingue eso de una app rota. El
+    // motivo va en el title —la fila no tiene lugar para un párrafo—; la card
+    // móvil, que sí lo tiene, lo muestra escrito.
+    <Button type="button" size="sm" variant="outline" disabled title={blockedReason}>
+      Cobrar
+    </Button>
+  ) : null
 
   return (
     <>

@@ -18,6 +18,11 @@ export type ManualPaymentBooking = {
   depositRequired: number
   finalAmount: number
   remainingBalance: number
+  /** Requerido a propósito (mismo criterio que `professional` en
+   *  CalendarBooking): opcional, la consulta que se olvide de traerlo compila
+   *  igual y el botón vuelve a ofrecer un cobro que el server rechaza. `null` =
+   *  sin hold. */
+  holdExpiresAt: Date | null
   service: { name: string } | null
   customer: { name: string } | null
   // Opcional: solo lo traen los llamadores que ya consultan `payments`
@@ -26,10 +31,48 @@ export type ManualPaymentBooking = {
   payments?: Array<{ providerPaymentId?: string | null }>
 }
 
-export function isManualPaymentAllowed(booking: Pick<ManualPaymentBooking, 'status' | 'remainingBalance'>) {
+export function isManualPaymentAllowed(
+  booking: Pick<ManualPaymentBooking, 'status' | 'remainingBalance' | 'holdExpiresAt'>,
+  now: Date = new Date(),
+) {
   // Estados desde la fuente única compartida con assertBookingPayable (server);
   // el gate de monto (saldo > 0) es propio de esta superficie.
-  return booking.remainingBalance > 0 && isManuallyPayableStatus(booking.status)
+  if (booking.remainingBalance <= 0 || !isManuallyPayableStatus(booking.status)) return false
+  // Segundo guard de assertBookingPayable, espejado acá: con el plazo vencido el
+  // server tira "El tiempo para pagar esta reserva ha expirado". Sin esto el
+  // panel ofrecía "Cobrar" y el clic terminaba en ese error, que no le dice a la
+  // dueña qué hacer. Ojo: quien esconda el botón por esto tiene que poner el
+  // motivo en su lugar — ver `manualPaymentBlockedReason`.
+  if (isPaymentHoldExpired(booking, now)) return false
+  return true
+}
+
+/** El plazo para pagar venció. Aislado porque lo miran dos cosas: si se ofrece
+ *  el cobro y qué explicación se muestra cuando no. */
+function isPaymentHoldExpired(
+  booking: Pick<ManualPaymentBooking, 'status' | 'holdExpiresAt'>,
+  now: Date,
+): boolean {
+  return booking.status === 'pending_payment' && booking.holdExpiresAt != null && booking.holdExpiresAt < now
+}
+
+/**
+ * Por qué no se puede cobrar, en palabras que le sirvan a la dueña. `null` = se
+ * puede, o el motivo es obvio mirando la fila (saldo cero, reserva cancelada).
+ *
+ * El plazo vencido es el único caso que merece explicación: la reserva se ve
+ * viva, la clienta puede estar llamando con la plata, y la salida existe pero
+ * no está a la vista — hay que esperar a que el cron la expire para que
+ * aparezca "Revivir". Sin este texto, el botón que desaparece es indistinguible
+ * de una app rota.
+ */
+export function manualPaymentBlockedReason(
+  booking: Pick<ManualPaymentBooking, 'status' | 'remainingBalance' | 'holdExpiresAt'>,
+  now: Date = new Date(),
+): string | null {
+  if (booking.remainingBalance <= 0 || !isManuallyPayableStatus(booking.status)) return null
+  if (!isPaymentHoldExpired(booking, now)) return null
+  return 'Venció el plazo para pagar, así que el cobro está cerrado. Si quiere pagar igual, esperá a que la reserva quede Expirada y usá Revivir.'
 }
 
 export function calculateManualPaymentAmount({

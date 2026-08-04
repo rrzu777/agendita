@@ -48,9 +48,14 @@ function rowBooking(overrides: Record<string, unknown> = {}) {
     id: 'b1', bookingNumber: 4738, status: 'confirmed',
     depositPaid: 15000, depositRequired: 15000, finalAmount: 45000,
     remainingBalance: 30000, service: { name: 'Manicura' }, customer: { name: 'Ana' },
+    // Requerido por ManualPaymentBooking. Sin esto el fixture no es una reserva
+    // que la app produzca, y el guard del plazo no se ejercita nunca.
+    holdExpiresAt: null,
     ...overrides,
   }
 }
+
+const HORA = 60 * 60 * 1000
 
 // The conditional kebab items (Reprogramar / Registrar pago) aren't asserted here:
 // Radix DropdownMenuContent renders into a portal that renderToStaticMarkup doesn't
@@ -65,6 +70,27 @@ describe('BookingRowActions', () => {
   it('shows Cobrar as primary for a pending_payment booking', () => {
     const html = renderToStaticMarkup(<BookingRowActions booking={rowBooking({ status: 'pending_payment' }) as never} businessCurrency="CLP" />)
     expect(html).toContain('Cobrar')
+  })
+
+  // OJO: buscar 'disabled' pelado no sirve — las clases de Tailwind traen
+  // `disabled:opacity-50` en TODOS los botones. La propiedad real es `disabled=""`.
+  it('con el plazo vivo el Cobrar sigue habilitado', () => {
+    const booking = rowBooking({ status: 'pending_payment', holdExpiresAt: new Date(Date.now() + HORA) })
+    const html = renderToStaticMarkup(<BookingRowActions booking={booking as never} businessCurrency="CLP" />)
+    expect(html).toContain('Cobrar')
+    expect(html).not.toContain('disabled=""')
+  })
+
+  it('con el plazo vencido deshabilita Cobrar y explica por qué', () => {
+    // El server rechaza este cobro (assertBookingPayable). Antes el botón estaba
+    // habilitado y el clic moría en un error; que ahora DESAPAREZCA sin decir
+    // nada sería igual de malo, así que queda deshabilitado con el motivo.
+    const booking = rowBooking({ status: 'pending_payment', holdExpiresAt: new Date(Date.now() - HORA) })
+    const html = renderToStaticMarkup(<BookingRowActions booking={booking as never} businessCurrency="CLP" />)
+    expect(html).toContain('disabled=""')
+    expect(html).toContain('Revivir')
+    // Cancelar sigue disponible en el menú: la fila nunca queda muda.
+    expect(html).toContain('Más acciones')
   })
 
   it('renders nothing actionable for a terminal booking', () => {

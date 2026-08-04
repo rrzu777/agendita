@@ -58,7 +58,10 @@ export function ManualPaymentDialog({
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  const payableBookings = useMemo(() => bookings.filter(isManualPaymentAllowed), [bookings])
+  // Lambda y no point-free: `filter` pasa el índice como 2º argumento, que acá
+  // es el `now` del predicado. Cada reserva se compararía contra el epoch, o
+  // sea contra un plazo que nunca vence, y el gate no filtraría nada.
+  const payableBookings = useMemo(() => bookings.filter((b) => isManualPaymentAllowed(b)), [bookings])
   const selectedBooking = payableBookings.find((booking) => booking.id === bookingId) || null
   const suggestion = selectedBooking ? getManualPaymentSuggestion(selectedBooking) : null
   // Aviso informativo, no bloqueante: si ya hay una transferencia del saldo
