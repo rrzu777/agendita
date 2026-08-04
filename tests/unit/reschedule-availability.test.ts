@@ -45,7 +45,12 @@ vi.mock('@/lib/availability/slots', () => ({
   generateSlots: (...args: unknown[]) => mockGenerateSlots(...args),
 }))
 
-vi.mock('@/lib/availability/validation', () => ({
+// Spread del módulo real y sólo el assert mockeado (mismo patrón que
+// bookings-idempotency): `SLOT_UNAVAILABLE_MESSAGE` es el mensaje que la action
+// le pone al rechazo del EXCLUDE, así que tiene que salir del módulo — una copia
+// del texto acá dejaría el test verde aunque la traducción no existiera.
+vi.mock('@/lib/availability/validation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/availability/validation')>()),
   assertSlotIsAvailable: (...args: unknown[]) => mockAssertSlotIsAvailable(...args),
 }))
 
@@ -58,6 +63,7 @@ vi.mock('@/lib/notifications', () => ({
 
 const { getAvailableSlotsForReschedule } = await import('@/server/actions/availability')
 const { rescheduleBooking } = await import('@/server/actions/bookings')
+const { SLOT_UNAVAILABLE_MESSAGE } = await import('@/lib/availability/validation')
 
 const businessId = 'biz-1'
 const booking = {
@@ -243,6 +249,20 @@ describe('rescheduleBooking terminal states and availability', () => {
     const result = await rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z'))
     expect(result.ok).toBe(false)
     expect(!result.ok && result.error).toMatch(/horario ya no está disponible/)
+  })
+
+  // El chequeo de arriba y el EXCLUDE de la base son dos predicados distintos
+  // sobre la misma pregunta; cuando difieren gana la base. Sin traducir su
+  // rechazo, la dueña lee el genérico "Ocurrió un error inesperado" sobre un
+  // horario que la pantalla le seguía ofreciendo.
+  it('el rechazo del EXCLUDE (23P01) sale con el mismo mensaje que el chequeo de solape', async () => {
+    mockPrisma.booking.updateMany.mockRejectedValue(
+      new Error('conflicting key value violates exclusion constraint "Booking_no_overlap"'),
+    )
+
+    const result = await rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z'))
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toBe(SLOT_UNAVAILABLE_MESSAGE)
   })
 
   it('does not update if booking became terminal during the transaction', async () => {

@@ -1183,16 +1183,38 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
 
   const previousStartDateTime = booking.startDateTime
 
-  await prisma.$transaction(async (tx) => {
-    await rescheduleBookingInTx(tx, {
-      booking,
-      newStartDateTime,
-      durationMinutes: service.durationMinutes,
-      timezone: business.timezone || 'America/Santiago',
-      // Reagendar desde el dashboard no exige anticipación (la dueña manda)
-      leadTimeMinutes: 0,
+  try {
+    await prisma.$transaction(async (tx) => {
+      await rescheduleBookingInTx(tx, {
+        booking,
+        newStartDateTime,
+        durationMinutes: service.durationMinutes,
+        timezone: business.timezone || 'America/Santiago',
+        // Reagendar desde el dashboard no exige anticipación (la dueña manda)
+        leadTimeMinutes: 0,
+      })
     })
-  })
+  } catch (error) {
+    // Cerrojo final del chequeo de solape, como crear/revivir/reasignar: para quien
+    // reprograma es la misma condición, así que sale con el mismo mensaje. Por qué
+    // acá y no adentro del helper: ver `isNoOverlapViolation`.
+    if (isNoOverlapViolation(error)) {
+      // Y queda logueado, igual que en createBooking: que el chequeo de solape y el
+      // EXCLUDE hayan discrepado es justo lo que uno quiere poder mirar después.
+      // Traducirlo a UserError lo saca del console.error del wrapper `action()`, así
+      // que sin esta línea la discrepancia sería muda.
+      const msg = error instanceof Error ? error.message : String(error)
+      logger.error('booking.error', `Booking_no_overlap rejected rescheduleBooking: ${msg}`, {
+        // `bookingId` de primer nivel, no adentro de metadata (misma forma que
+        // lib/errors.ts): es un campo estructurado del log y es por el que se filtra.
+        bookingId,
+        businessId,
+        metadata: { error: msg },
+      })
+      throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
+    }
+    throw error
+  }
 
   if (booking.customer?.email) {
     await sendNotificationSafely('booking rescheduled', async () =>

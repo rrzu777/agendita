@@ -9,6 +9,9 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { canSelfManage, ownedManageableBookingWhere, selfServiceBlockedMessage } from '@/lib/bookings/self-service'
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
 import { computeRescheduleSlots } from '@/lib/availability/reschedule-slots'
+import { SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
+import { isNoOverlapViolation } from '@/lib/db/no-overlap'
+import { logger } from '@/lib/logger'
 import {
   sendNotificationSafely,
   sendMultiNotificationSafely,
@@ -149,15 +152,31 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
 
   const previousStartDateTime = booking.startDateTime
 
-  await prisma.$transaction(async (tx) => {
-    await rescheduleBookingInTx(tx, {
-      booking,
-      newStartDateTime,
-      durationMinutes: booking.service.durationMinutes,
-      timezone: booking.business.timezone || 'America/Santiago',
-      // sin leadTimeMinutes → default del funnel público
+  try {
+    await prisma.$transaction(async (tx) => {
+      await rescheduleBookingInTx(tx, {
+        booking,
+        newStartDateTime,
+        durationMinutes: booking.service.durationMinutes,
+        timezone: booking.business.timezone || 'America/Santiago',
+        // sin leadTimeMinutes → default del funnel público
+      })
     })
-  })
+  } catch (error) {
+    // Gemelo del path de la dueña en `bookings.ts`, log incluido: acá la discrepancia
+    // entre el chequeo de solape y el EXCLUDE es MÁS probable que en el panel —es
+    // tráfico público— y traducirla a UserError la saca del console.error del wrapper.
+    if (isNoOverlapViolation(error)) {
+      const msg = error instanceof Error ? error.message : String(error)
+      logger.error('booking.error', `Booking_no_overlap rejected rescheduleMyBooking: ${msg}`, {
+        bookingId,
+        businessId: booking.business.id,
+        metadata: { error: msg },
+      })
+      throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
+    }
+    throw error
+  }
 
   await sendMultiNotificationSafely('self-service reschedule (owner)', () =>
     sendOwnerBookingChangedNotification({

@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+// Del módulo real (acá no se mockea): el assert tiene que comparar contra el
+// mensaje que la action realmente usa, no contra una copia del texto.
+import { SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
 
 const {
   mockRequireUser, mockCheckRateLimit, mockFindFirstBooking, mockTx,
@@ -164,6 +167,22 @@ describe('rescheduleMyBooking', () => {
     expect(result.ok).toBe(false)
     expect(!result.ok && result.error).toMatch(/no está aceptando reservas/)
     expect(mockRescheduleBookingInTx).not.toHaveBeenCalled()
+  })
+
+  // Gemelo del test de la dueña en reschedule-availability: el EXCLUDE es la
+  // otra mitad del chequeo de solape y su rechazo llega sin `.code`, así que sin
+  // traducirlo la clienta lee el genérico sobre un horario que se le ofreció.
+  it('el rechazo del EXCLUDE (23P01) sale con el mismo mensaje que el chequeo de solape', async () => {
+    mockFindFirstBooking.mockResolvedValue(makeBooking())
+    mockRescheduleBookingInTx.mockRejectedValue(
+      new Error('conflicting key value violates exclusion constraint "Booking_no_overlap"'),
+    )
+
+    const { rescheduleMyBooking } = await import('@/server/actions/my-bookings')
+    const result = await rescheduleMyBooking('bk-1', new Date(NOW.getTime() + 72 * 3_600_000))
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toBe(SLOT_UNAVAILABLE_MESSAGE)
   })
 
   it('ownership ajeno: booking no encontrado', async () => {
