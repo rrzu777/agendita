@@ -9,6 +9,9 @@ vi.mock('@/lib/notifications', () => ({ buildWhatsappUrl: () => 'https://wa.me/x
 
 import { PendingTransfersSection } from '@/components/dashboard/pending-transfers-section'
 
+// El reloj del servidor: la sección lo pide para no leer `Date.now()` adentro.
+const NOW = new Date('2026-08-01T12:00:00Z')
+
 const base = {
   paymentId: 'p1',
   bookingId: 'b1',
@@ -32,6 +35,7 @@ describe('PendingTransfersSection con kinds', () => {
         ]}
         businessCurrency="CLP"
         businessTimezone="America/Santiago"
+        now={NOW}
       />,
     )
     expect(html).toContain('Abono')
@@ -47,9 +51,29 @@ describe('PendingTransfersSection con kinds', () => {
         items={[{ ...base, kind: 'balance' }]}
         businessCurrency="CLP"
         businessTimezone="America/Santiago"
+        now={NOW}
       />,
     )
     expect(html).toContain('Rechazar')
     expect(html).toContain('Saldo')
+  })
+
+  /**
+   * El "hace N min" sale del reloj que le pasan y no de `Date.now()`. Importa
+   * porque esto lo renderiza el servidor y lo hidrata el navegador: con un
+   * reloj propio, basta que cambie el minuto entre las dos cosas para que el
+   * HTML y la hidratación difieran — hydration mismatch (React #418), que
+   * tumba la página de Reservas entera, no esta línea.
+   */
+  it('el "declarado hace…" lo mide el reloj que recibe, no el de la máquina', () => {
+    const html = renderToStaticMarkup(
+      <PendingTransfersSection
+        items={[{ ...base, kind: 'deposit' }]}
+        businessCurrency="CLP"
+        businessTimezone="America/Santiago"
+        now={new Date('2026-08-01T10:30:00Z')}
+      />,
+    )
+    expect(html).toContain('declarado hace 30 min')
   })
 })

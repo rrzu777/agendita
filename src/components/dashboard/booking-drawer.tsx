@@ -53,9 +53,14 @@ interface BookingDrawerProps {
    *  control de reasignar, y opcional lo dejaría siempre apagado sin error de
    *  compilación (mismo argumento que `professional` en CalendarBooking). */
   hasTeam: boolean
+  /** El reloj del SERVIDOR, el mismo que pintó el chip desde el que se abre
+   *  este drawer (ver `now` en `CalendarViewsProps`). Requerido a propósito:
+   *  con un `new Date()` propio, en una pestaña abierta hace rato el chip y el
+   *  detalle contarían distinto sobre el mismo plazo. */
+  now: Date
 }
 
-export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, businessTimezone, businessAddress, photoUploadEnabled, hasTeam }: BookingDrawerProps) {
+export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, businessTimezone, businessAddress, photoUploadEnabled, hasTeam, now }: BookingDrawerProps) {
   const vocabulary = useVocabulary()
   const isMobile = useIsMobile()
 
@@ -63,7 +68,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
   // En un estado terminal no hay nada que reasignar (el server también lo
   // rechaza; esto sólo evita ofrecer un botón que va a fallar).
   const reassignable = hasTeam && !isTerminalBookingStatus(booking.status)
-  const paymentBlockedReason = manualPaymentBlockedReason(booking)
+  const paymentBlockedReason = manualPaymentBlockedReason(booking, now)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -83,7 +88,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
                 pago" arriba lo contradice. Las DECISIONES (reasignar,
                 cancelar, aceptar) siguen mirando el asentado, que es contra el
                 que decide el server. */}
-            <StatusBadge status={displayedBookingStatus(booking)} />
+            <StatusBadge status={displayedBookingStatus(booking, now)} />
           </div>
 
           <div className="flex items-center justify-between">
@@ -203,11 +208,12 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
             )}
           </div>
 
-          {isManualPaymentAllowed(booking) ? (
+          {isManualPaymentAllowed(booking, now) ? (
             <div className="space-y-3 rounded-xl border border-border/60 p-3">
               <h4 className="text-sm font-semibold">Registrar pago</h4>
               <ManualPaymentDialog
                 bookings={[booking]}
+                now={now}
                 businessCurrency={businessCurrency || 'CLP'}
                 defaultBookingId={booking.id}
                 triggerClassName="w-full"

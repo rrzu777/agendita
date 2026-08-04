@@ -63,10 +63,18 @@ export function bookingStatusLabel(status: string): string {
  * Sin la precedencia de pagos: casi siempre querés `displayedBookingStatus`.
  * Directo sólo si cortás vos antes, como la tabla de Reservas, que pinta su
  * badge propio de "Transferencia por verificar".
+ *
+ * `now` es OBLIGATORIO, igual que en `isDoomedHold`, el que decide abajo. El
+ * default `new Date()` que tenía era una trampa: adentro de un componente
+ * cliente el servidor lo evaluaba en un instante y el navegador en otro al
+ * hidratar, y una reserva cuyo plazo vencía en ese hueco salía con un estado
+ * distinto de cada lado — hydration mismatch (React #418), que tumba la página
+ * entera, no ese badge. Pedirlo obliga a que cada pantalla diga de qué reloj
+ * sale; las que renderiza el server pasan el suyo y lo bajan como prop.
  */
 export function effectiveBookingStatus(
   booking: { status: string; paymentStatus: string; holdExpiresAt: Date | null },
-  now: Date = new Date(),
+  now: Date,
 ): string {
   if (booking.status !== 'pending_payment') return booking.status
   return isDoomedHold(booking, now) ? HOLD_EXPIRED_STATUS : booking.status
@@ -98,7 +106,7 @@ export function displayedBookingStatus(
     holdExpiresAt: Date | null
     payments: Array<{ providerPaymentId?: string | null }>
   },
-  now: Date = new Date(),
+  now: Date,
 ): string {
   // La declaración pendiente gana: la plata pudo salir en fecha y lo que falta
   // es que la dueña la verifique, no que la clienta pague. OJO — el cron SÍ la

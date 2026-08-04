@@ -22,12 +22,18 @@ function serverAllows(
   }
 }
 
+// El reloj de la UI. Capturado una vez y no por llamada: el server (`assert‐
+// BookingPayable`) usa el suyo, así que los dos tienen que mirar el mismo
+// instante para que la comparación signifique algo. Los plazos de abajo se
+// arman contra ÉL.
+const NOW = new Date()
+
 function uiAllows(
   status: BookingStatus,
   holdExpiresAt: Date | null,
   paymentStatus: BookingPaymentStatus,
 ): boolean {
-  return isManualPaymentAllowed({ status, holdExpiresAt, paymentStatus, remainingBalance: 8000 })
+  return isManualPaymentAllowed({ status, holdExpiresAt, paymentStatus, remainingBalance: 8000 }, NOW)
 }
 
 // El barrido cubre las tres dimensiones que leen los dos guards. El eje de
@@ -55,7 +61,7 @@ const CASOS = PLAZOS.flatMap(([plazo, offset]) =>
 
 describe('estados pagables — UI y server no driftean', () => {
   it.each(CASOS)('%s, %s + %s: UI y server coinciden', (_plazo, status, paymentStatus, offset) => {
-    const holdExpiresAt = offset == null ? null : new Date(Date.now() + offset)
+    const holdExpiresAt = offset == null ? null : new Date(NOW.getTime() + offset)
     expect(uiAllows(status, holdExpiresAt, paymentStatus))
       .toBe(serverAllows(status, holdExpiresAt, paymentStatus))
   })

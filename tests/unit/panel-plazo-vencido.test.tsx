@@ -7,6 +7,9 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: 
 import { BookingCard } from '@/app/dashboard/bookings/page'
 
 const HORA = 60 * 60 * 1000
+// El reloj con el que la página deriva el estado. Uno solo para todos los
+// casos: los plazos de abajo se arman contra ÉL, no contra `Date.now()`.
+const NOW = new Date()
 
 function makeBooking(holdExpiresAt: Date | null) {
   return {
@@ -36,6 +39,7 @@ function render(holdExpiresAt: Date | null) {
       businessCurrency="CLP"
       businessTimezone="America/Santiago"
       businessAddress={null}
+      now={NOW}
     />,
   )
 }
@@ -44,14 +48,14 @@ function render(holdExpiresAt: Date | null) {
 // verifica del lado de la clienta.
 describe('BookingCard y el plazo vencido', () => {
   it('con el plazo vivo sigue diciendo Pendiente de pago y deja cobrar', () => {
-    const html = render(new Date(Date.now() + HORA))
+    const html = render(new Date(NOW.getTime() + HORA))
     expect(html).toContain('Pendiente de pago')
     expect(html).not.toContain('Plazo vencido')
     expect(html).toContain('Registrar pago')
   })
 
   it('con el plazo vencido cambia el badge, saca el cobro y explica la salida', () => {
-    const html = render(new Date(Date.now() - HORA))
+    const html = render(new Date(NOW.getTime() - HORA))
     expect(html).toContain('Plazo vencido')
     expect(html).not.toContain('Pendiente de pago')
     expect(html).not.toContain('Registrar pago')
@@ -61,7 +65,7 @@ describe('BookingCard y el plazo vencido', () => {
   it('no dice "Expirada": ese estado en el panel viene con su propio botón', () => {
     // Reusar la palabra haría que dos cosas opuestas se vean iguales — una
     // expirada de verdad ofrece Revivir en la misma fila; ésta todavía no.
-    const html = render(new Date(Date.now() - HORA))
+    const html = render(new Date(NOW.getTime() - HORA))
     expect(html).not.toContain('>Expirada<')
   })
 

@@ -40,7 +40,17 @@ type PayabilityFields = Pick<
   'status' | 'remainingBalance' | 'holdExpiresAt' | 'paymentStatus'
 >
 
-export function isManualPaymentAllowed(booking: PayabilityFields, now: Date = new Date()) {
+/**
+ * `now` es OBLIGATORIO por el mismo motivo que en `effectiveBookingStatus`: las
+ * dos las llaman componentes `'use client'` que el servidor renderiza a HTML
+ * (la fila de la tabla de Reservas), y con un default `new Date()` el servidor
+ * y el navegador deciden con relojes distintos — una reserva cuyo plazo vence
+ * en ese hueco sale con "Cobrar" de un lado y sin él del otro, que es un
+ * hydration mismatch (React #418) y tumba la página entera. De paso mata el
+ * footgun que documenta `manual-payment-dialog`: en un `filter(isManualPayment‐
+ * Allowed)` point-free el segundo argumento es el ÍNDICE, no un reloj.
+ */
+export function isManualPaymentAllowed(booking: PayabilityFields, now: Date) {
   // Estados desde la fuente única compartida con assertBookingPayable (server);
   // el gate de monto (saldo > 0) es propio de esta superficie.
   if (booking.remainingBalance <= 0 || !isManuallyPayableStatus(booking.status)) return false
@@ -76,7 +86,7 @@ export function isManualPaymentAllowed(booking: PayabilityFields, now: Date = ne
  */
 export function manualPaymentBlockedReason(
   booking: PayabilityFields,
-  now: Date = new Date(),
+  now: Date,
 ): string | null {
   if (booking.remainingBalance <= 0 || !isManuallyPayableStatus(booking.status)) return null
   if (!isDoomedHold(booking, now)) return null

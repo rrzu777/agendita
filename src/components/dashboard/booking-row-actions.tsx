@@ -24,17 +24,23 @@ export function BookingRowActions({
   businessCurrency,
   contact,
   transferEnabled,
+  now,
 }: {
   booking: RowBooking
   businessCurrency: string
   contact?: React.ReactNode
   transferEnabled?: boolean
+  /** El reloj del SERVIDOR de este render. Requerido: este componente es
+   *  cliente y sale en el HTML de la tabla, así que con un reloj propio el
+   *  botón de cobro y el de Revivir se deciden distinto en el servidor y al
+   *  hidratar — React #418, que voltea la página. Ver `isManualPaymentAllowed`. */
+  now: Date
 }) {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [payOpen, setPayOpen] = useState(false)
 
-  const canPay = isManualPaymentAllowed(booking)
-  const blockedReason = manualPaymentBlockedReason(booking)
+  const canPay = isManualPaymentAllowed(booking, now)
+  const blockedReason = manualPaymentBlockedReason(booking, now)
   const isConfirmed = booking.status === 'confirmed'
   const isPending = booking.status === 'pending_payment'
   // Solicitud esperando el visto bueno del negocio (confirmación manual).
@@ -47,7 +53,7 @@ export function BookingRowActions({
   const isCompletedWithBalance = booking.status === 'completed' && canPay
 
   if (isExpired) {
-    const { canReopen, reason } = getReviveReopenState(booking, !!transferEnabled)
+    const { canReopen, reason } = getReviveReopenState(booking, !!transferEnabled, now)
     return (
       <div className="flex items-center justify-end gap-2">
         {contact}
@@ -136,6 +142,7 @@ export function BookingRowActions({
       {canPay && (
         <ManualPaymentDialog
           bookings={[booking]}
+          now={now}
           businessCurrency={businessCurrency}
           defaultBookingId={booking.id}
           hideTrigger

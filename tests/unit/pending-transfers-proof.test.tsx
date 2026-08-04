@@ -7,6 +7,9 @@ vi.mock('@/lib/notifications', () => ({ buildWhatsappUrl: () => 'https://wa.me/x
 
 import { PendingTransfersSection } from '@/components/dashboard/pending-transfers-section'
 
+// El reloj del servidor: la sección lo pide para no leer `Date.now()` adentro.
+const NOW = new Date('2026-08-01T12:00:00Z')
+
 const base = {
   paymentId: 'pay-123',
   bookingId: 'b1',
@@ -28,6 +31,7 @@ describe('PendingTransfersSection · Ver comprobante', () => {
         items={[{ ...base, proofKey: 'proofs/b/pay-123/deposit', proofContentType: 'image/png' }]}
         businessCurrency="CLP"
         businessTimezone="America/Santiago"
+        now={NOW}
       />,
     )
     expect(html).toContain('Ver comprobante')
@@ -40,6 +44,7 @@ describe('PendingTransfersSection · Ver comprobante', () => {
         items={[{ ...base, proofKey: null, proofContentType: null }]}
         businessCurrency="CLP"
         businessTimezone="America/Santiago"
+        now={NOW}
       />,
     )
     expect(html).not.toContain('Ver comprobante')

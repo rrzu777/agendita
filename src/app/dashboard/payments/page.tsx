@@ -24,6 +24,10 @@ export default async function PaymentsPage() {
   const summary = await getFinancialSummary()
   const entries = await getLedgerEntries()
   const bookings = await getBookings()
+  // Un solo reloj para el render: el diálogo de cobro es un componente cliente
+  // y filtra por plazo vencido, así que el instante lo fija el servidor (ver
+  // `isManualPaymentAllowed`).
+  const now = new Date()
 
   return (
     <div>
@@ -40,7 +44,7 @@ export default async function PaymentsPage() {
             <p className="text-sm text-muted-foreground">Ingresos, abonos y ajustes registrados.</p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <PaymentForm bookings={bookings} />
+            <PaymentForm bookings={bookings} now={now} />
             <ExportCSVButton />
           </div>
         </div>
