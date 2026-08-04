@@ -4,7 +4,7 @@ import { bankTransferBlockHtml, bankTransferBlockText } from '@/lib/notification
 const bt = {
   accountHolder: 'Ana Díaz', rut: '11.111.111-1', bankName: 'Banco X', accountType: 'corriente',
   accountNumber: '123456', email: 'ana@x.cl', instructions: 'Poné tu nombre',
-  deadline: { cap: 'window' as const, at: new Date('2026-07-15T18:00:00Z') }, confirmationUrl: 'https://bella.agendita.cl/book/confirmation?bookingId=b1',
+  deadline: { kind: 'window' as const, at: new Date('2026-07-15T18:00:00Z') }, confirmationUrl: 'https://bella.agendita.cl/book/confirmation?bookingId=b1',
 }
 
 describe('bankTransferBlock', () => {
@@ -22,7 +22,7 @@ describe('bankTransferBlock', () => {
   // que el mismo email cuenta arriba: imprimirla le da a la clienta un dato
   // nuevo que en realidad ya leyó. Las palabras se entienden solas.
   it('cuando el techo es la cita lo dice así, sin repetir la fecha del turno', () => {
-    const cita = { ...bt, deadline: { cap: 'appointment' as const } }
+    const cita = { ...bt, deadline: { kind: 'appointment' as const } }
     const html = bankTransferBlockHtml(cita, '$8.000 CLP', 'America/Santiago')
     const text = bankTransferBlockText(cita, '$8.000 CLP', 'America/Santiago').join('\n')
     expect(html).toContain('tenés hasta tu cita para transferir')

@@ -126,7 +126,7 @@ describe('fireBookingNotifications y la coordinación manual', () => {
 
     expect(mockReceived).toHaveBeenCalledWith(
       expect.objectContaining({
-        manualCoordination: { deadline: { cap: 'window', at: new Date('2026-08-04T12:00:00Z') } },
+        manualCoordination: { deadline: { kind: 'window', at: new Date('2026-08-04T12:00:00Z') } },
       }),
     )
     const { paymentNote } = mockBusinessNotif.mock.calls[0][1] as { paymentNote: string }
@@ -145,7 +145,7 @@ describe('fireBookingNotifications y la coordinación manual', () => {
     )
 
     expect(mockReceived).toHaveBeenCalledWith(
-      expect.objectContaining({ manualCoordination: { deadline: { cap: 'appointment' } } }),
+      expect.objectContaining({ manualCoordination: { deadline: { kind: 'appointment' } } }),
     )
     const { paymentNote } = mockBusinessNotif.mock.calls[0][1] as { paymentNote: string }
     expect(paymentNote).toContain('el horario queda guardado hasta la cita')

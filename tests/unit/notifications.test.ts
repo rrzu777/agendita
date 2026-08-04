@@ -226,7 +226,7 @@ describe('templates: coordinación manual', () => {
   it('la recibida dice que el negocio coordina y hasta cuándo se guarda el horario', () => {
     const text = bookingReceivedCustomerText({
       ...sampleBookingData,
-      manualCoordination: { deadline: { cap: 'window', at: new Date('2026-06-14T18:00:00Z') } },
+      manualCoordination: { deadline: { kind: 'window', at: new Date('2026-06-14T18:00:00Z') } },
     })
     expect(text).toContain('coordina el abono directamente contigo')
     expect(text).toContain('Te guardamos el horario hasta el')
@@ -240,7 +240,7 @@ describe('templates: coordinación manual', () => {
     // la misma hora que la reserva de arriba con otro nombre.
     const text = bookingReceivedCustomerText({
       ...sampleBookingData,
-      manualCoordination: { deadline: { cap: 'appointment' } },
+      manualCoordination: { deadline: { kind: 'appointment' } },
     })
     expect(text).toContain('Te guardamos el horario hasta tu cita.')
   })

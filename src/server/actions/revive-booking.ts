@@ -37,7 +37,7 @@ type ReviveResult =
       booking: {
         id: string
         bookingNumber: number | null
-        /** Techo del plazo que promete el mail: ver `promisableHoldDeadline`. */
+        /** Techo del plazo que promete el mail: ver `holdDeadlinePromise`. */
         endDateTime: Date
         depositRequired: number
         remainingBalance: number

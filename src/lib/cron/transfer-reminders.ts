@@ -281,9 +281,15 @@ export async function sendTransferReminders(
             productName: p.product.name,
             amount: p.pricePaid,
             businessCurrency: p.business.currency || 'CLP',
-            // Un paquete no tiene cita, así que su plazo nunca tiene más techo
-            // que su propia ventana: siempre `window`, nunca "hasta tu cita".
-            bankTransfer: toBankTransferEmailInfo(acct, { cap: 'window', at: p.holdExpiresAt! }, getPackageConfirmationUrl(p.business, p.id)),
+            // Un paquete no tiene cita (`endDateTime: null`), así que su plazo
+            // nunca tiene más techo que su propia ventana. Pasa por el mismo
+            // helper igual: los "no prometas nada" los decide un solo lugar y
+            // no el `where` de la query de arriba.
+            bankTransfer: toBankTransferEmailInfo(
+              acct,
+              holdDeadlinePromise({ holdExpiresAt: p.holdExpiresAt, endDateTime: null }, now),
+              getPackageConfirmationUrl(p.business, p.id),
+            ),
             customerEmail: p.customer.email!,
             businessReplyToEmail: replyToByBiz.get(p.business.id) ?? null,
           }),

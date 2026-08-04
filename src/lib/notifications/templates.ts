@@ -65,7 +65,7 @@ export function fmtDeadlinePromise(
   timezone: string,
   laCita: string = 'tu cita',
 ): string {
-  return deadline.cap === 'appointment' ? laCita : `el ${fmtDate(deadline.at, timezone)}`
+  return deadline.kind === 'appointment' ? laCita : `el ${fmtDate(deadline.at, timezone)}`
 }
 
 /**

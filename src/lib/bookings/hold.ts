@@ -42,43 +42,31 @@ export const DASHBOARD_HOLD_MINUTES = 60
  * - **la cita ya pasó**: "te guardamos el horario" dejó de significar algo,
  *   aunque el hold siga vivo en la base.
  *
- * Si el valor devuelto es `endDateTime`, el techo es la cita y no la ventana —
- * el caller que quiera decirlo con palabras ("hasta tu cita") lo sabe
- * comparando.
- */
-export function promisableHoldDeadline(
-  booking: { holdExpiresAt: Date | null; endDateTime: Date },
-  now: Date = new Date(),
-): Date | null {
-  if (booking.holdExpiresAt == null || booking.holdExpiresAt <= now) return null
-  if (booking.endDateTime <= now) return null
-  return booking.holdExpiresAt < booking.endDateTime ? booking.holdExpiresAt : booking.endDateTime
-}
-
-/**
- * El plazo prometido con **quién le puso el techo** adentro, para los casos en
- * que la promesa viaja lejos de la reserva.
+ * Y devuelve **quién puso el techo**, no una fecha: `'window'` es el plazo de
+ * verdad, con la suya; `'appointment'` es "hasta la cita" y no lleva ninguna a
+ * propósito, porque esa fecha es el final del propio turno que la pantalla o el
+ * mail ya están contando y repetirla se lee como un dato nuevo. Que el dato
+ * viaje en el tipo es lo que hace que las plantillas de email puedan decirlo en
+ * palabras: allá la reserva ya no está a mano y un `Date` pelado no se puede
+ * comparar contra nada. Cada superficie pone las suyas — la clienta lee "tu
+ * cita" y la dueña "la cita".
  *
- * `promisableHoldDeadline` devuelve un `Date` y el caller que lo tenga a mano
- * puede comparar contra `endDateTime` para saber si el techo fue la cita. Las
- * plantillas de email no lo tienen a mano: reciben su data ya armada, y ahí un
- * `Date` pelado ya perdió el dato. Por eso el borde lleva esto y no una fecha.
- *
- * `'window'` es el plazo de verdad, con su fecha. `'appointment'` es "hasta la
- * cita" y **no lleva fecha a propósito**: esa fecha es el final del propio turno
- * que el mail ya está contando arriba, así que imprimirla es repetir un dato
- * cambiado de nombre. Cada superficie pone las palabras que le sirven — la
- * clienta lee "tu cita" y la dueña "la cita".
+ * `endDateTime` va en `null` para lo que no es una cita —una compra de paquete
+ * tiene hold pero no turno—: ahí el único techo posible es la ventana. Pasa por
+ * acá igual para que los tres casos de "no prometas nada" tengan un solo dueño.
  */
-export type HoldDeadlinePromise = { cap: 'window'; at: Date } | { cap: 'appointment' }
+export type HoldDeadlinePromise = { kind: 'window'; at: Date } | { kind: 'appointment' }
 
 export function holdDeadlinePromise(
-  booking: { holdExpiresAt: Date | null; endDateTime: Date },
+  booking: { holdExpiresAt: Date | null; endDateTime: Date | null },
   now: Date = new Date(),
 ): HoldDeadlinePromise | null {
-  const deadline = promisableHoldDeadline(booking, now)
-  if (!deadline) return null
-  return deadline.getTime() === booking.endDateTime.getTime() ? { cap: 'appointment' } : { cap: 'window', at: deadline }
+  if (booking.holdExpiresAt == null || booking.holdExpiresAt <= now) return null
+  if (booking.endDateTime == null) return { kind: 'window', at: booking.holdExpiresAt }
+  if (booking.endDateTime <= now) return null
+  return booking.holdExpiresAt < booking.endDateTime
+    ? { kind: 'window', at: booking.holdExpiresAt }
+    : { kind: 'appointment' }
 }
 
 /**
@@ -92,8 +80,8 @@ export function holdDeadlinePromise(
  * arma su propia frase desde la misma promesa (ver `fmtDeadlinePromise` en
  * `lib/notifications/templates.ts`).
  *
- * Devuelve `null` en los mismos tres casos que `promisableHoldDeadline`, así
- * que el caller muestra la frase o no muestra nada.
+ * Devuelve `null` en los mismos tres casos que `holdDeadlinePromise`, así que
+ * el caller muestra la frase o no muestra nada.
  *
  * El `now` se puede pasar, y la pantalla de confirmación lo hace: deriva el
  * estado y el plazo del MISMO instante, porque dos relojes con milisegundos
@@ -106,7 +94,7 @@ export function holdDeadlinePhrase(
 ): string | null {
   const promise = holdDeadlinePromise(booking, now)
   if (!promise) return null
-  if (promise.cap === 'appointment') return 'tu cita'
+  if (promise.kind === 'appointment') return 'tu cita'
   const { date, time } = formatConfirmationDateTime(promise.at, timezone)
   const esHoy = getLocalDateStr(promise.at, timezone) === getLocalDateStr(now, timezone)
   return esHoy ? `las ${time}` : `el ${date} a las ${time}`

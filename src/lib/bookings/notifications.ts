@@ -46,7 +46,7 @@ export async function fireBookingNotifications(
     customer: { name: string; phone: string; email: string | null }
     // Los tres son para el evento de calendario: cuándo termina la cita y qué
     // versión del evento es (ver `sequenceOf`). `endDateTime` además es el techo
-    // de cualquier plazo que este mail prometa (ver `promisableHoldDeadline`).
+    // de cualquier plazo que este mail prometa (ver `holdDeadlinePromise`).
     endDateTime: Date
     createdAt: Date
     updatedAt: Date
