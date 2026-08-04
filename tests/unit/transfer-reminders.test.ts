@@ -19,7 +19,7 @@ function custBooking() {
   return {
     id: 'bk1', bookingNumber: 4738, depositRequired: 10000, remainingBalance: 20000,
     holdExpiresAt: new Date('2026-07-11T14:00:00Z'),
-    // La cita, techo del plazo que promete el mail (promisableHoldDeadline).
+    // La cita, techo del plazo que promete el mail (holdDeadlinePromise).
     // Acá queda DESPUÉS del hold: este caso mide la ventana, no el tope.
     endDateTime: new Date('2026-07-12T18:00:00Z'),
     customer: { name: 'Ana', email: 'ana@x.cl' },
@@ -92,7 +92,7 @@ describe('sendTransferReminders', () => {
     expect(arg.businessCurrency).toBe('CLP')
     expect(arg.bankTransfer.accountNumber).toBe('123')
     expect(arg.bankTransfer.confirmationUrl).toContain('/book/confirmation?bookingId=bk1')
-    expect(arg.bankTransfer.deadline).toEqual(new Date('2026-07-11T14:00:00Z'))
+    expect(arg.bankTransfer.deadline).toEqual({ kind: 'window', at: new Date('2026-07-11T14:00:00Z') })
     expect(arg.customerEmail).toBe('ana@x.cl')
   })
 

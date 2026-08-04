@@ -14,7 +14,7 @@ import {
 import { getBookingConfirmationUrl, getPackageConfirmationUrl } from '@/lib/business/urls'
 import { getVocabulary } from '@/lib/vocabulary'
 import { toBankTransferEmailInfo } from '@/lib/notifications/types'
-import { promisableHoldDeadline } from '@/lib/bookings/hold'
+import { holdDeadlinePromise } from '@/lib/bookings/hold'
 import { logger } from '@/lib/logger'
 
 // Ventanas del recordatorio (no son 'use server', pueden ser constantes del módulo).
@@ -144,7 +144,7 @@ export async function sendTransferReminders(
             businessCurrency: b.business.currency || 'CLP',
             // El plazo que se le promete va topado con la cita: el recordatorio
             // sale hasta 3h antes del hold, que con una cita cercana ya pasó.
-            bankTransfer: toBankTransferEmailInfo(acct, promisableHoldDeadline(b, now), getBookingConfirmationUrl(b.business, b.id)),
+            bankTransfer: toBankTransferEmailInfo(acct, holdDeadlinePromise(b, now), getBookingConfirmationUrl(b.business, b.id)),
             bookingNumber: b.bookingNumber,
             customerEmail: b.customer!.email!,
             businessReplyToEmail: replyToByBiz.get(b.business.id) ?? null,
@@ -281,7 +281,15 @@ export async function sendTransferReminders(
             productName: p.product.name,
             amount: p.pricePaid,
             businessCurrency: p.business.currency || 'CLP',
-            bankTransfer: toBankTransferEmailInfo(acct, p.holdExpiresAt!, getPackageConfirmationUrl(p.business, p.id)),
+            // Un paquete no tiene cita (`endDateTime: null`), así que su plazo
+            // nunca tiene más techo que su propia ventana. Pasa por el mismo
+            // helper igual: los "no prometas nada" los decide un solo lugar y
+            // no el `where` de la query de arriba.
+            bankTransfer: toBankTransferEmailInfo(
+              acct,
+              holdDeadlinePromise({ holdExpiresAt: p.holdExpiresAt, endDateTime: null }, now),
+              getPackageConfirmationUrl(p.business, p.id),
+            ),
             customerEmail: p.customer.email!,
             businessReplyToEmail: replyToByBiz.get(p.business.id) ?? null,
           }),

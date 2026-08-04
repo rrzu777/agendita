@@ -66,7 +66,7 @@ describe('/book/confirmation — CTA de cuenta', () => {
       status: 'pending',
       paymentMethod: 'bank_transfer',
       // Futuro relativo en las DOS: declarar exige plazo vivo, y desde
-      // promisableHoldDeadline el plazo tampoco sobrevive a la cita.
+      // holdDeadlinePromise el plazo tampoco sobrevive a la cita.
       startDateTime: new Date(Date.now() + 3_600_000),
       endDateTime: new Date(Date.now() + 7_200_000),
       holdExpiresAt: new Date(Date.now() + 3_600_000),

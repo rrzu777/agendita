@@ -9,7 +9,7 @@ import {
 const bankTransfer = {
   accountHolder: 'Estudio Luna', rut: '11.111.111-1', bankName: 'Banco Estado', accountType: 'corriente',
   accountNumber: '123456', email: null, instructions: null,
-  deadline: new Date('2026-07-18T12:00:00Z'), confirmationUrl: 'https://luna.agendita.cl/paquetes/confirmation?purchaseId=pp1',
+  deadline: { kind: 'window' as const, at: new Date('2026-07-18T12:00:00Z') }, confirmationUrl: 'https://luna.agendita.cl/paquetes/confirmation?purchaseId=pp1',
 }
 const customerData = {
   businessName: 'Estudio Luna', businessTimezone: 'America/Santiago', customerName: 'Ana',

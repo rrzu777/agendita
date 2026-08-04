@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { BookingStatus, ServiceModality } from '@prisma/client'
 
 /**
@@ -102,7 +102,14 @@ describe('fireBookingNotifications y la coordinación manual', () => {
   beforeEach(() => {
     mockReceived.mockClear()
     mockBusinessNotif.mockClear()
+    // El plazo se mide contra AHORA y contra la cita, así que sin un reloj fijo
+    // estos casos dependen del día en que corra la suite: con el reloj real, un
+    // `holdExpiresAt` de agosto deja de prometer nada en septiembre y el mail
+    // pasa a mandar `deadline: null` sin que nadie haya tocado el código.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-03T12:00:00Z'))
   })
+  afterEach(() => { vi.useRealTimers() })
 
   function manualBooking() {
     return {
@@ -119,12 +126,30 @@ describe('fireBookingNotifications y la coordinación manual', () => {
 
     expect(mockReceived).toHaveBeenCalledWith(
       expect.objectContaining({
-        manualCoordination: { deadline: new Date('2026-08-04T12:00:00Z') },
+        manualCoordination: { deadline: { kind: 'window', at: new Date('2026-08-04T12:00:00Z') } },
       }),
     )
     const { paymentNote } = mockBusinessNotif.mock.calls[0][1] as { paymentNote: string }
     expect(paymentNote).toContain('coordinás directamente')
     expect(paymentNote).toContain('Confirmá la reserva antes de que venza')
+  })
+
+  it('con el plazo topado por la cita, a la dueña se le dice "la cita" y no "tu cita"', async () => {
+    // La ventana de 24h cae después del turno, así que el techo es la cita. El
+    // aviso va AL NEGOCIO: es la cita de otra persona.
+    await fireBookingNotifications(
+      business,
+      { ...manualBooking(), holdExpiresAt: new Date('2026-08-16T12:00:00Z') },
+      'Corte de pelo',
+      null,
+    )
+
+    expect(mockReceived).toHaveBeenCalledWith(
+      expect.objectContaining({ manualCoordination: { deadline: { kind: 'appointment' } } }),
+    )
+    const { paymentNote } = mockBusinessNotif.mock.calls[0][1] as { paymentNote: string }
+    expect(paymentNote).toContain('el horario queda guardado hasta la cita')
+    expect(paymentNote).not.toContain('tu cita')
   })
 
   it('una reserva común no lleva nada de coordinación manual', async () => {

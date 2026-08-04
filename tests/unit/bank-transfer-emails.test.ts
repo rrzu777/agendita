@@ -33,7 +33,7 @@ describe('emails de transferencia', () => {
       bankTransfer: {
         accountHolder: 'María P', rut: '1-9', bankName: 'BancoEstado', accountType: 'vista',
         accountNumber: '12345678', email: 'm@e.cl', instructions: 'poné tu nombre',
-        deadline: new Date('2026-07-11T15:00:00Z'),
+        deadline: { kind: 'window' as const, at: new Date('2026-07-11T15:00:00Z') },
         confirmationUrl: 'https://x.agendita.cl/book/confirmation?bookingId=abc',
       },
     }
