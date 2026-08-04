@@ -30,16 +30,13 @@ function clickPorTexto(container: HTMLElement, texto: string) {
   el.click()
 }
 
-let container: HTMLElement
-let root: ReturnType<typeof createRoot>
-
+// El mismo idioma que los otros tests de interacción del repo.
 beforeAll(() => {
-  container = document.createElement('div')
-  document.body.appendChild(container)
+  ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 })
 
 afterAll(() => {
-  container.remove()
+  delete (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT
 })
 
 /**
@@ -53,7 +50,9 @@ afterAll(() => {
 describe('PackageCheckout — el paso se lleva sus datos', () => {
   it('elegir transferencia lleva a las instrucciones, no de vuelta al formulario', async () => {
     mockCreatePurchase.mockResolvedValue({ ok: true, data: { purchaseId: 'pp-1' } })
-    root = createRoot(container)
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
 
     await act(async () => {
       root.render(
@@ -84,5 +83,6 @@ describe('PackageCheckout — el paso se lleva sus datos', () => {
     expect(container.textContent).not.toContain('Acepto los términos')
 
     await act(async () => root.unmount())
+    container.remove()
   })
-}, 20_000)
+})

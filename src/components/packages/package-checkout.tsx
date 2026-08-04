@@ -20,17 +20,6 @@ interface PackageCheckoutProps {
   transferInfo: BankTransferPublicInfo | null
 }
 
-/**
- * En qué pantalla está la compra, CON los datos que esa pantalla necesita
- * adentro. Antes el paso era un string suelto y los datos vivían en props y
- * estados aparte, así que la pantalla de transferencia se elegía con
- * `step === 'transfer' && transferInfo && purchaseId`: si alguno de esos dos
- * faltaba, la clienta caía en el formulario de una compra que YA existía y la
- * volvía a crear. Con los datos adentro del paso eso no se puede escribir mal
- * — no hay estado 'transfer' sin la cuenta bancaria y sin el id de la compra.
- *
- * Es la misma forma que tomó `step-payment.tsx` en el #163.
- */
 /** El encabezado que repiten las tres pantallas: volver, nombre y precio. */
 function Encabezado({
   onBack,
@@ -54,6 +43,17 @@ function Encabezado({
   )
 }
 
+/**
+ * En qué pantalla está la compra, CON los datos que esa pantalla necesita
+ * adentro. Antes el paso era un string suelto y los datos vivían en props y
+ * estados aparte, así que la pantalla de transferencia se elegía con
+ * `step === 'transfer' && transferInfo && purchaseId`: si alguno de esos dos
+ * faltaba, la clienta caía en el formulario de una compra que YA existía y la
+ * volvía a crear. Con los datos adentro del paso eso no se puede escribir mal
+ * — no hay estado 'transfer' sin la cuenta bancaria y sin el id de la compra.
+ *
+ * Es la misma forma que tomó `step-payment.tsx` en el #163.
+ */
 type Paso =
   | { k: 'form' }
   | { k: 'method'; bank: BankTransferPublicInfo }
@@ -158,14 +158,7 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
     void startMp()
   }
 
-  const encabezado = (onBack: () => void, backLabel: string) => (
-    <Encabezado
-      onBack={onBack}
-      backLabel={backLabel}
-      title={product.name}
-      subtitle={`${total} sesiones · ${formatMoney(product.price, currency)}`}
-    />
-  )
+  const subtitulo = `${total} sesiones · ${formatMoney(product.price, currency)}`
 
   /** El error de la action, con el mismo formato en las tres pantallas. */
   const errorLine = error && (
@@ -175,63 +168,69 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
     </p>
   )
 
-  if (paso.k === 'transfer') {
-    return (
-      <div className="studio-card p-5">
-        {encabezado(onCancel, '← Volver al catálogo')}
-        <div className="mt-4">
-          <PackageTransferInstructions
-            transferInfo={paso.bank}
-            amount={product.price}
-            currency={currency}
-            declaring={loading}
-            onDeclare={() => void handleDeclare(paso.purchaseId)}
-          />
+  switch (paso.k) {
+    case 'transfer':
+      return (
+        <div className="studio-card p-5">
+          <Encabezado onBack={onCancel} backLabel="← Volver al catálogo" title={product.name} subtitle={subtitulo} />
+          <div className="mt-4">
+            <PackageTransferInstructions
+              transferInfo={paso.bank}
+              amount={product.price}
+              currency={currency}
+              declaring={loading}
+              onDeclare={() => void handleDeclare(paso.purchaseId)}
+            />
+          </div>
+          {errorLine}
         </div>
-        {errorLine}
-      </div>
-    )
-  }
+      )
 
-  if (paso.k === 'method') {
-    return (
-      <div className="studio-card p-5">
-        {encabezado(() => setPaso({ k: 'form' }), '← Volver')}
+    case 'method':
+      return (
+        <div className="studio-card p-5">
+          <Encabezado onBack={() => setPaso({ k: 'form' })} backLabel="← Volver" title={product.name} subtitle={subtitulo} />
 
-        <div className="mt-4 space-y-3">
-          <Button className="h-12 w-full rounded-full" onClick={() => void startMp()} disabled={loading}>
-            {loading ? (
-              <>
-                <Loader2 className="mr-2 size-4 animate-spin" />
-                Procesando…
-              </>
-            ) : (
-              'Pagar con Mercado Pago'
-            )}
-          </Button>
-          <Button
-            variant="outline"
-            className="h-12 w-full rounded-full"
-            onClick={() => void startTransfer(paso.bank)}
-            disabled={loading}
-          >
-            Transferencia bancaria
-          </Button>
+          <div className="mt-4 space-y-3">
+            <Button className="h-12 w-full rounded-full" onClick={() => void startMp()} disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Procesando…
+                </>
+              ) : (
+                'Pagar con Mercado Pago'
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              className="h-12 w-full rounded-full"
+              onClick={() => void startTransfer(paso.bank)}
+              disabled={loading}
+            >
+              Transferencia bancaria
+            </Button>
+          </div>
+
+          {errorLine}
         </div>
+      )
 
-        {errorLine}
-      </div>
-    )
+    // El único sin pantalla propia acá: es el formulario de abajo.
+    case 'form':
+      break
+
+    // Un paso nuevo sin rama acá NO COMPILA. En runtime es inalcanzable —`paso`
+    // sólo lo escribe `setPaso` con literales—, así que cae al formulario en vez
+    // de tirar abajo la página: no hay error boundary bajo /paquetes.
+    default:
+      paso satisfies never
+      break
   }
-
-  // El formulario. `paso.k` sólo puede ser 'form' acá; si mañana aparece un
-  // paso nuevo, esta línea deja de compilar en vez de mostrarle el formulario
-  // de una compra que quizá ya existe.
-  paso.k satisfies 'form'
 
   return (
     <div className="studio-card p-5">
-      {encabezado(onCancel, '← Volver al catálogo')}
+      <Encabezado onBack={onCancel} backLabel="← Volver al catálogo" title={product.name} subtitle={subtitulo} />
 
       <div className="mt-4 space-y-3">
         <div>
