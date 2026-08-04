@@ -99,31 +99,28 @@ function toIntOrNull(v: string): number | null {
 }
 
 /**
- * Crear o editar, con la promoción que se edita ADENTRO del modo.
+ * Crear o editar. El modo se DERIVA de la promoción: sin promoción, es nueva.
  *
- * Eran dos props sueltas (`mode: 'create' | 'edit'` y `promo?: EditPromo`), o
- * sea que `mode="edit"` sin `promo` compilaba. En ese estado el diálogo decía
- * "Editar promoción" y el botón "Guardar cambios", pero el submit caía en el
- * `: createPromotion(payload)` del ternario: la dueña apretaba Editar, no veía
- * ningún error, y se creaba una promoción DUPLICADA. Los dos call sites de hoy
- * están bien; lo que se cierra es que exista un tercero mal.
+ * Antes eran dos props independientes —`mode: 'create' | 'edit'` y
+ * `promo?: EditPromo`—, o sea que `mode="edit"` sin `promo` compilaba. En ese
+ * estado el diálogo decía "Editar promoción" y el botón "Guardar cambios", pero
+ * el submit caía en el `: createPromotion(payload)` del ternario: la dueña
+ * apretaba Editar, no veía ningún error, y se creaba una promoción DUPLICADA.
  *
- * Adentro se colapsa a un solo discriminante (`editing`), que es la forma que
- * ya usan `professional-form` y `service-form`.
+ * La cura no es correlacionar las dos props: es que la segunda no exista. Un
+ * solo dato no se puede contradecir consigo mismo. Es lo que ya hacen
+ * `professional-form` y `service-form`.
  */
-type PromotionFormProps = {
+export function PromotionForm({
+  services,
+  currency,
+  promo: editing = null,
+}: {
   services: ServiceOption[]
   currency: string
-} & (
-  | { mode: 'create'; promo?: never }
-  | { mode: 'edit'; promo: EditPromo }
-)
-
-export function PromotionForm(props: PromotionFormProps) {
-  const { services, currency } = props
-  /** La promoción que se está editando, o `null` si es una nueva. UN dato en vez
-   *  de dos que se pueden contradecir. */
-  const editing = props.mode === 'edit' ? props.promo : null
+  /** La promoción que se edita; ausente = una nueva. */
+  promo?: EditPromo | null
+}) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()

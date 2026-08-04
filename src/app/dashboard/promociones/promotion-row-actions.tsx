@@ -46,7 +46,7 @@ export function PromotionRowActions({
       <div className="flex flex-col items-end gap-1">
         <TableActions
           primary={
-            <PromotionForm mode="edit" services={services} currency={currency} promo={promo} />
+            <PromotionForm services={services} currency={currency} promo={promo} />
           }
         >
           <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setRedemptionsOpen(true) }}>

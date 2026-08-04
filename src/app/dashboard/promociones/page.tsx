@@ -115,7 +115,7 @@ export default async function PromocionesPage() {
             <h2 className="font-heading text-2xl font-semibold tracking-tight text-primary">Tus promociones</h2>
             <p className="text-sm text-muted-foreground">Descuentos por código, vigencias y límites de uso.</p>
           </div>
-          <PromotionForm mode="create" services={serviceOptions} currency={currency} />
+          <PromotionForm services={serviceOptions} currency={currency} />
         </div>
 
         {promos.length === 0 ? (

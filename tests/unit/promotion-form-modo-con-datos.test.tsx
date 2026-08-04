@@ -31,6 +31,7 @@ const promo = {
   maxRedemptions: null,
   maxPerCustomer: null,
   redemptionCount: 0,
+  isActive: true,
 }
 
 function clickPorTexto(container: HTMLElement, texto: string) {
@@ -63,16 +64,16 @@ afterAll(() => {
 })
 
 /**
- * El modo y la promoción que se edita eran dos props sueltas, así que
- * `mode="edit"` sin `promo` compilaba: el diálogo decía "Editar promoción" y el
- * submit caía en `createPromotion`. La dueña apretaba Editar, no veía ningún
- * error, y quedaba una promoción DUPLICADA.
+ * El modo y la promoción eran dos props independientes, así que `mode="edit"`
+ * sin `promo` compilaba: el diálogo decía "Editar promoción" y el submit caía en
+ * `createPromotion`. La dueña apretaba Editar, no veía ningún error, y quedaba
+ * una promoción DUPLICADA.
  *
- * Eso ahora no compila (ver `PromotionFormProps`). Lo que este test cuida es lo
- * otro: que adentro haya UN solo discriminante y que los dos modos sigan
- * llamando a la action que corresponde.
+ * Ese estado ya no se puede escribir: `mode` no existe, se deriva de `promo`.
+ * Lo que este test cuida es lo otro — que cada uno siga llamando a la action que
+ * le toca.
  */
-describe('PromotionForm — el modo se lleva su promoción adentro', () => {
+describe('PromotionForm — el modo sale de la promoción', () => {
   it('editar llama a updatePromotion con el id, y no crea una nueva', async () => {
     mockUpdate.mockResolvedValue({ ok: true, data: {} })
     const container = document.createElement('div')
@@ -80,7 +81,7 @@ describe('PromotionForm — el modo se lleva su promoción adentro', () => {
     const root = createRoot(container)
 
     await act(async () => {
-      root.render(<PromotionForm mode="edit" promo={promo} services={services} currency="CLP" />)
+      root.render(<PromotionForm promo={promo} services={services} currency="CLP" />)
     })
     await act(async () => { clickPorTexto(container, 'Editar') })
 
@@ -95,7 +96,7 @@ describe('PromotionForm — el modo se lleva su promoción adentro', () => {
 
     await act(async () => root.unmount())
     container.remove()
-  }, 20_000)
+  })
 
   it('crear llama a createPromotion', async () => {
     mockCreate.mockResolvedValue({ ok: true, data: {} })
@@ -105,7 +106,7 @@ describe('PromotionForm — el modo se lleva su promoción adentro', () => {
     const root = createRoot(container)
 
     await act(async () => {
-      root.render(<PromotionForm mode="create" services={services} currency="CLP" />)
+      root.render(<PromotionForm services={services} currency="CLP" />)
     })
     await act(async () => { clickPorTexto(container, 'Nueva promoción') })
 
@@ -124,5 +125,5 @@ describe('PromotionForm — el modo se lleva su promoción adentro', () => {
 
     await act(async () => root.unmount())
     container.remove()
-  }, 20_000)
+  })
 })
