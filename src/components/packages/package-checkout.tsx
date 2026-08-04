@@ -20,10 +20,48 @@ interface PackageCheckoutProps {
   transferInfo: BankTransferPublicInfo | null
 }
 
+/**
+ * En qué pantalla está la compra, CON los datos que esa pantalla necesita
+ * adentro. Antes el paso era un string suelto y los datos vivían en props y
+ * estados aparte, así que la pantalla de transferencia se elegía con
+ * `step === 'transfer' && transferInfo && purchaseId`: si alguno de esos dos
+ * faltaba, la clienta caía en el formulario de una compra que YA existía y la
+ * volvía a crear. Con los datos adentro del paso eso no se puede escribir mal
+ * — no hay estado 'transfer' sin la cuenta bancaria y sin el id de la compra.
+ *
+ * Es la misma forma que tomó `step-payment.tsx` en el #163.
+ */
+/** El encabezado que repiten las tres pantallas: volver, nombre y precio. */
+function Encabezado({
+  onBack,
+  backLabel,
+  title,
+  subtitle,
+}: {
+  onBack: () => void
+  backLabel: string
+  title: string
+  subtitle: string
+}) {
+  return (
+    <>
+      <button onClick={onBack} className="mb-4 text-sm font-semibold text-primary underline">
+        {backLabel}
+      </button>
+      <h3 className="text-lg font-semibold text-primary">{title}</h3>
+      <p className="text-sm text-muted-foreground">{subtitle}</p>
+    </>
+  )
+}
+
+type Paso =
+  | { k: 'form' }
+  | { k: 'method'; bank: BankTransferPublicInfo }
+  | { k: 'transfer'; bank: BankTransferPublicInfo; purchaseId: string }
+
 export function PackageCheckout({ product, currency, prefill, onCancel, transferInfo }: PackageCheckoutProps) {
   const router = useRouter()
-  const [step, setStep] = useState<'form' | 'method' | 'transfer'>('form')
-  const [purchaseId, setPurchaseId] = useState<string | null>(null)
+  const [paso, setPaso] = useState<Paso>({ k: 'form' })
   const [name, setName] = useState(prefill.name)
   const [phone, setPhone] = useState(prefill.phone)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
@@ -84,7 +122,7 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
     window.location.href = `/paquetes/confirmation?purchaseId=${purchaseId}`
   }
 
-  async function startTransfer() {
+  async function startTransfer(bank: BankTransferPublicInfo) {
     setError('')
     setLoading(true)
     const res = await createPurchase('transfer')
@@ -93,13 +131,11 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
       setLoading(false)
       return
     }
-    setPurchaseId(res.data.purchaseId)
-    setStep('transfer')
+    setPaso({ k: 'transfer', bank, purchaseId: res.data.purchaseId })
     setLoading(false)
   }
 
-  async function handleDeclare() {
-    if (!purchaseId) return
+  async function handleDeclare(purchaseId: string) {
     setError('')
     setLoading(true)
     const res = await declarePackageTransfer({ purchaseId })
@@ -116,47 +152,51 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
   function handleFormSubmit() {
     if (!validateForm()) return
     if (transferInfo) {
-      setStep('method')
+      setPaso({ k: 'method', bank: transferInfo })
       return
     }
     void startMp()
   }
 
-  if (step === 'transfer' && transferInfo && purchaseId) {
+  const encabezado = (onBack: () => void, backLabel: string) => (
+    <Encabezado
+      onBack={onBack}
+      backLabel={backLabel}
+      title={product.name}
+      subtitle={`${total} sesiones · ${formatMoney(product.price, currency)}`}
+    />
+  )
+
+  /** El error de la action, con el mismo formato en las tres pantallas. */
+  const errorLine = error && (
+    <p className="mt-3 flex items-center gap-2 text-sm text-destructive">
+      <AlertCircle className="size-4" />
+      {error}
+    </p>
+  )
+
+  if (paso.k === 'transfer') {
     return (
       <div className="studio-card p-5">
-        <button onClick={onCancel} className="mb-4 text-sm font-semibold text-primary underline">
-          ← Volver al catálogo
-        </button>
-        <h3 className="text-lg font-semibold text-primary">{product.name}</h3>
-        <p className="text-sm text-muted-foreground">{total} sesiones · {formatMoney(product.price, currency)}</p>
+        {encabezado(onCancel, '← Volver al catálogo')}
         <div className="mt-4">
           <PackageTransferInstructions
-            transferInfo={transferInfo}
+            transferInfo={paso.bank}
             amount={product.price}
             currency={currency}
             declaring={loading}
-            onDeclare={handleDeclare}
+            onDeclare={() => void handleDeclare(paso.purchaseId)}
           />
         </div>
-        {error && (
-          <p className="mt-3 flex items-center gap-2 text-sm text-destructive">
-            <AlertCircle className="size-4" />
-            {error}
-          </p>
-        )}
+        {errorLine}
       </div>
     )
   }
 
-  if (step === 'method' && transferInfo) {
+  if (paso.k === 'method') {
     return (
       <div className="studio-card p-5">
-        <button onClick={() => setStep('form')} className="mb-4 text-sm font-semibold text-primary underline">
-          ← Volver
-        </button>
-        <h3 className="text-lg font-semibold text-primary">{product.name}</h3>
-        <p className="text-sm text-muted-foreground">{total} sesiones · {formatMoney(product.price, currency)}</p>
+        {encabezado(() => setPaso({ k: 'form' }), '← Volver')}
 
         <div className="mt-4 space-y-3">
           <Button className="h-12 w-full rounded-full" onClick={() => void startMp()} disabled={loading}>
@@ -172,30 +212,26 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
           <Button
             variant="outline"
             className="h-12 w-full rounded-full"
-            onClick={() => void startTransfer()}
+            onClick={() => void startTransfer(paso.bank)}
             disabled={loading}
           >
             Transferencia bancaria
           </Button>
         </div>
 
-        {error && (
-          <p className="mt-3 flex items-center gap-2 text-sm text-destructive">
-            <AlertCircle className="size-4" />
-            {error}
-          </p>
-        )}
+        {errorLine}
       </div>
     )
   }
 
+  // El formulario. `paso.k` sólo puede ser 'form' acá; si mañana aparece un
+  // paso nuevo, esta línea deja de compilar en vez de mostrarle el formulario
+  // de una compra que quizá ya existe.
+  paso.k satisfies 'form'
+
   return (
     <div className="studio-card p-5">
-      <button onClick={onCancel} className="mb-4 text-sm font-semibold text-primary underline">
-        ← Volver al catálogo
-      </button>
-      <h3 className="text-lg font-semibold text-primary">{product.name}</h3>
-      <p className="text-sm text-muted-foreground">{total} sesiones · {formatMoney(product.price, currency)}</p>
+      {encabezado(onCancel, '← Volver al catálogo')}
 
       <div className="mt-4 space-y-3">
         <div>
@@ -221,12 +257,7 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
         </label>
       </div>
 
-      {error && (
-        <p className="mt-3 flex items-center gap-2 text-sm text-destructive">
-          <AlertCircle className="size-4" />
-          {error}
-        </p>
-      )}
+      {errorLine}
 
       <Button className="mt-4 h-12 w-full rounded-full" onClick={handleFormSubmit} disabled={loading}>
         {loading ? (
