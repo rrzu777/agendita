@@ -60,11 +60,6 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
   const isMobile = useIsMobile()
 
   const start = new Date(booking.startDateTime)
-  // El badge, con la precedencia de pagos ya aplicada. Va por el status
-  // DERIVADO y no por el crudo: el bloque de cobro de más abajo ya dice "venció
-  // el plazo", y un badge naranja de "Pendiente de pago" arriba de esa línea la
-  // contradice. Las decisiones (reasignar, cancelar) siguen mirando el status
-  // asentado, que es contra el que decide el server.
   // En un estado terminal no hay nada que reasignar (el server también lo
   // rechaza; esto sólo evita ofrecer un botón que va a fallar).
   const reassignable = hasTeam && !isTerminalBookingStatus(booking.status)
@@ -83,6 +78,11 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
         <div className="space-y-4 overflow-y-auto p-4">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Estado</span>
+            {/* Status DERIVADO, no el crudo: el bloque de cobro de más abajo
+                dice "venció el plazo", y un badge naranja de "Pendiente de
+                pago" arriba lo contradice. Las DECISIONES (reasignar,
+                cancelar, aceptar) siguen mirando el asentado, que es contra el
+                que decide el server. */}
             <StatusBadge status={displayedBookingStatus(booking)} />
           </div>
 
@@ -215,9 +215,12 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
               />
             </div>
           ) : paymentBlockedReason ? (
-            // El bloque no desaparece: dice por qué. El badge de arriba ya dice
-            // "Plazo vencido"; esta línea es la que nombra la SALIDA (esperar al
-            // cron y usar Revivir), que un badge no puede explicar.
+            // El bloque no desaparece: dice por qué. Y no sobra con el badge de
+            // arriba — éste espeja el guard del server (`assertBookingPayable`,
+            // que no mira los pagos), así que con una transferencia declarada
+            // el badge sigue diciendo "Pendiente de pago" y esta línea es lo
+            // único que avisa. Además nombra la SALIDA (esperar al cron y usar
+            // Revivir), que un badge no puede explicar.
             <div className="space-y-1 rounded-xl border border-border/60 p-3">
               <h4 className="text-sm font-semibold">Registrar pago</h4>
               <p className="text-sm text-muted-foreground">{paymentBlockedReason}</p>

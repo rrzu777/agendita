@@ -35,13 +35,15 @@ describe('bookingAppearance', () => {
     expect(a.strikeThrough).toBe(true)
     expect(a.icon).toBe('dash')
   })
-  it('plazo vencido: se dibuja como expirada (el horario ya volvió a estar libre)', () => {
+  it('plazo vencido: atenuada pero SIN tachar — todavía puede estar tapando el horario', () => {
     const a = bookingAppearance('#FFB3BA', HOLD_EXPIRED_STATUS)
-    expect(a.opacity).toBe(0.55)
-    expect(a.strikeThrough).toBe(true)
+    expect(a.opacity).toBe(0.7)
     expect(a.icon).toBe('dash')
-    // Sin la entrada en STATUS_META caía en el fallback, que es opacidad plena
-    // y sin tachado: el chip quedaba idéntico a una reserva sana.
+    // El assert que importa. Tachado es el lenguaje de `expired`/`cancelled`, y
+    // ahí el hueco SÍ está libre; con transferencia o coordinación manual
+    // `occupiesSlot` sigue tapando hasta que pasa el cron.
+    expect(a.strikeThrough).toBe(false)
+    // Y tampoco es el fallback, que la dejaría idéntica a una reserva sana.
     expect(a.opacity).not.toBe(1)
   })
 

@@ -28,10 +28,8 @@ export const bookingStatusLabels: Record<BookingStatus, string> = {
  */
 export const HOLD_EXPIRED_STATUS = 'hold_expired'
 
-/** La palabra. Vive acá y no adentro del mapa del badge porque hay dos
- *  superficies con mapas de color distintos (la tabla y el chip del
- *  calendario) que tienen que decir exactamente lo MISMO — y algo que no sea
- *  "Expirada", por lo que explica HOLD_EXPIRED_STATUS. */
+/** La palabra. Afuera del mapa del badge porque las dos superficies que la
+ *  dicen (la tabla y el chip) tienen mapas de color distintos. */
 export const HOLD_EXPIRED_LABEL = 'Plazo vencido'
 
 /** Las etiquetas de los estados ASENTADOS más las de los derivados. Es lo que
@@ -62,11 +60,9 @@ export function bookingStatusLabel(status: string): string {
  * Rotularla "Expirada" al lado de un botón "Aceptar" que funciona la haría
  * abandonar una reserva que estaba a un clic de salvarse.
  *
- * OJO — NO aplica la precedencia que documenta `isDoomedHold` (una
- * transferencia declarada gana sobre el plazo vencido). Llamala directo sólo si
- * cortás vos antes, como hace la tabla de Reservas para pintar su badge propio
- * de "Transferencia por verificar"; el resto de las superficies quiere
- * `displayedBookingStatus`.
+ * Sin la precedencia de pagos: casi siempre querés `displayedBookingStatus`.
+ * Directo sólo si cortás vos antes, como la tabla de Reservas, que pinta su
+ * badge propio de "Transferencia por verificar".
  */
 export function effectiveBookingStatus(
   booking: { status: string; paymentStatus: string; holdExpiresAt: Date | null },
@@ -80,10 +76,20 @@ export function effectiveBookingStatus(
  * El status a MOSTRAR, con la precedencia de pagos ya aplicada: la versión que
  * se puede llamar sin acordarse de la regla.
  *
- * Pide `payments` en el tipo A PROPÓSITO, y ése es medio punto del helper: la
- * precedencia vivía en prosa arriba de `effectiveBookingStatus`, así que una
- * superficie cuya consulta no traía los pagos podía llamarlo igual y decirle
- * "Plazo vencido" a quien había transferido en fecha. Ahora no compila.
+ * Pide `payments` en el tipo A PROPÓSITO: la precedencia vivía en prosa, así
+ * que una superficie cuya consulta no traía los pagos podía derivar igual y
+ * decirle "Plazo vencido" a quien había transferido en fecha. Ahora no compila.
+ * (El tipo asegura el CAMPO, no que venga filtrado por
+ * `anyDeclaredTransferWhere`; lo que salva de un `payments: true` pelado es el
+ * guard por prefijo de `hasPendingDeclaredTransfer`, no el compilador.)
+ *
+ * LO QUE NO CUBRE: `isDoomedHold` nombra DOS cosas que ganan sobre el plazo
+ * vencido, la transferencia declarada y un pago de MP en vuelo. Acá sólo está
+ * la primera, porque la segunda ni siquiera se puede evaluar — el `where` de
+ * las consultas del panel es `anyDeclaredTransferWhere`, que es
+ * `provider: 'manual'`. Con un pago de MP pendiente y el plazo vencido, /mi
+ * dice "Verificando" y el panel dice "Plazo vencido". Cerrarlo pide ensanchar
+ * las consultas, no tocar esta función.
  */
 export function displayedBookingStatus(
   booking: {
@@ -95,8 +101,11 @@ export function displayedBookingStatus(
   now: Date = new Date(),
 ): string {
   // La declaración pendiente gana: la plata pudo salir en fecha y lo que falta
-  // es que la dueña la verifique, no que la clienta pague. El cron tampoco la
-  // barre en el camino perezoso (ver `isSweepableExpiredHold`).
+  // es que la dueña la verifique, no que la clienta pague. OJO — el cron SÍ la
+  // expira (`expireStaleHolds` no filtra por pagos declarados), así que acá se
+  // muestra sana a propósito: `confirmBankTransfer` todavía la salva y decirle
+  // "vencida" haría que la dueña la abandone. Es la misma decisión que toma la
+  // tabla de Reservas con su badge "Transferencia por verificar".
   if (hasPendingDeclaredTransfer(booking)) return booking.status
   return effectiveBookingStatus(booking, now)
 }

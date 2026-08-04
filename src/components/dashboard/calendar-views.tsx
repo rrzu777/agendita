@@ -541,8 +541,9 @@ function BookingBlock({
   const widthPct = 100 / p.lanes
   const leftPct = p.lane * widthPct
   // El chip habla del estado DERIVADO (ver displayedBookingStatus): con el
-  // plazo vencido el horario ya volvió a estar libre, y dibujarlo en naranja de
-  // "pendiente de pago" le esconde a la dueña un hueco que sí puede vender.
+  // plazo vencido, el naranja de "pendiente de pago" le hace guardar una hora
+  // que el cron va a soltar dentro de la hora. Atenuado, no tachado — el
+  // porqué está en `booking-appearance`.
   const shownStatus = displayedBookingStatus(b)
   const appearance = bookingAppearance(b.service?.pastelColor, shownStatus)
   const Icon = statusIcons[appearance.icon]

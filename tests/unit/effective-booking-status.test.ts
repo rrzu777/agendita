@@ -89,7 +89,6 @@ describe('bookingStatusLabel', () => {
     // El lookup cae al status crudo si no encuentra la clave, así que olvidarla
     // no rompe nada: imprime "hold_expired" en la pantalla de la dueña.
     expect(bookingStatusLabel(HOLD_EXPIRED_STATUS)).toBe(HOLD_EXPIRED_LABEL)
-    expect(bookingStatusLabel(HOLD_EXPIRED_STATUS)).not.toContain('_')
   })
 
   it('sigue cayendo al crudo con un status desconocido', () => {
