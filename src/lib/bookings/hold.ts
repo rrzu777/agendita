@@ -66,13 +66,12 @@ export function promisableHoldDeadline(
  * a 10:30 se lee como un dato nuevo en vez de como lo que es. En palabras se
  * entiende sola. Y para el plazo de hoy la fecha sobra: alcanza la hora.
  *
- * Devuelve `null` exactamente cuando no hay nada que prometer (los tres casos
- * de `promisableHoldDeadline`), así que el caller muestra la frase o no muestra
- * nada — no hay estado intermedio que decidir.
+ * Devuelve `null` en los mismos tres casos que `promisableHoldDeadline`, así
+ * que el caller muestra la frase o no muestra nada.
  *
- * El `now` se pasa a propósito: la pantalla de confirmación deriva el estado y
- * el plazo del MISMO instante, y dos relojes con milisegundos distintos pueden
- * contradecirse.
+ * El `now` se puede pasar, y la pantalla de confirmación lo hace: deriva el
+ * estado y el plazo del MISMO instante, porque dos relojes con milisegundos
+ * distintos pueden contradecirse.
  */
 export function holdDeadlinePhrase(
   booking: { holdExpiresAt: Date | null; endDateTime: Date },

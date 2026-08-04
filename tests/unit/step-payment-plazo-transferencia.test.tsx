@@ -58,7 +58,7 @@ const bookingData = {
   idempotencyKey: null,
 }
 
-/** Click de verdad sobre el elemento cuyo texto matchea. */
+/** Click de verdad sobre el botón cuyo texto matchea. */
 function clickPorTexto(container: HTMLElement, texto: string) {
   const el = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes(texto))
   if (!el) throw new Error(`No encontré el botón "${texto}"`)
@@ -73,7 +73,9 @@ function clickPorTexto(container: HTMLElement, texto: string) {
 describe('StepPayment — el plazo que promete la pantalla de transferencia', () => {
   beforeAll(() => {
     ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-    vi.useFakeTimers({ shouldAdvanceTime: true })
+    // Sólo el reloj: `toFake: ['Date']` deja andar los timers de verdad, que es
+    // de lo que dependen los efectos del wizard para resolver.
+    vi.useFakeTimers({ toFake: ['Date'] })
     // Dos horas antes de la cita: el hold de 24 h se pasa de largo.
     vi.setSystemTime(new Date('2026-08-03T12:00:00Z'))
   })
@@ -115,13 +117,13 @@ describe('StepPayment — el plazo que promete la pantalla de transferencia', ()
     })
     // Sin pago online y con cuenta bancaria configurada la pantalla ya está en
     // el camino de transferencia: no hay selector que elegir.
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    await act(async () => {})
     await act(async () => {
       const check = container.querySelector<HTMLInputElement>('#accept-terms')!
       check.click()
     })
     await act(async () => { clickPorTexto(container, 'Continuar con transferencia') })
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    await act(async () => {})
 
     // Que la pantalla haya avanzado no es decorado: sin esto la reserva se crea
     // igual —hold corriendo, mail saliendo— y la clienta se queda mirando el

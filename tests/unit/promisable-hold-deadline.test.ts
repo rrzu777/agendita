@@ -3,6 +3,9 @@ import { addHours } from 'date-fns'
 import { holdDeadlinePhrase, promisableHoldDeadline } from '@/lib/bookings/hold'
 
 const NOW = new Date('2026-08-03T12:00:00Z')
+// NOW son las 08:00 en Santiago (UTC-4 en agosto), así que "hoy" local y "hoy"
+// UTC coinciden y las horas del día se leen sin hacer la cuenta.
+const TZ = 'America/Santiago'
 
 /** Una cita de una hora que arranca dentro de `horas`. */
 function cita(horas: number) {
@@ -49,10 +52,6 @@ describe('promisableHoldDeadline', () => {
     expect(suelta!.getTime()).not.toBe(endDateTime.getTime())
   })
 })
-
-// NOW son las 08:00 en Santiago (UTC-4 en agosto), así que "hoy" local y "hoy"
-// UTC coinciden y las horas del día se leen sin hacer la cuenta.
-const TZ = 'America/Santiago'
 
 describe('holdDeadlinePhrase', () => {
   it('cuando el techo es la cita lo dice en palabras, no con la hora del turno', () => {
