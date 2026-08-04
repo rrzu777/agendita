@@ -40,12 +40,13 @@ afterAll(() => {
 })
 
 /**
- * La pantalla de transferencia se elegía con
- * `step === 'transfer' && transferInfo && purchaseId`: una rama por ESTADO y
- * dos por DATOS en la misma condición. Si alguno de los datos faltaba, la
- * clienta no se quedaba trabada — caía en el formulario de una compra que YA
- * estaba creada, lista para crearla de nuevo. Ahora el id y la cuenta viven
- * adentro del paso, así que la pantalla no puede quedarse sin ellos.
+ * Lo que sostiene la garantía —que no exista el paso de transferencia sin la
+ * compra ni la cuenta— es el TIPO, y por eso este test no reproduce ningún bug:
+ * con el código viejo pasaba igual, porque en este componente la condición
+ * mezclada nunca llegó a fallar. Lo que cuida es el camino de verdad
+ * (formulario → método → transferencia), que ahora depende de que el dato viaje
+ * adentro del paso: si mañana alguien lo saca de ahí, el fallback no es una
+ * pantalla vacía sino el formulario de una compra que ya existe.
  */
 describe('PackageCheckout — el paso se lleva sus datos', () => {
   it('elegir transferencia lleva a las instrucciones, no de vuelta al formulario', async () => {

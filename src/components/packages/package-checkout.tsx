@@ -45,14 +45,21 @@ function Encabezado({
 
 /**
  * En qué pantalla está la compra, CON los datos que esa pantalla necesita
- * adentro. Antes el paso era un string suelto y los datos vivían en props y
- * estados aparte, así que la pantalla de transferencia se elegía con
- * `step === 'transfer' && transferInfo && purchaseId`: si alguno de esos dos
- * faltaba, la clienta caía en el formulario de una compra que YA existía y la
- * volvía a crear. Con los datos adentro del paso eso no se puede escribir mal
- * — no hay estado 'transfer' sin la cuenta bancaria y sin el id de la compra.
+ * adentro.
  *
- * Es la misma forma que tomó `step-payment.tsx` en el #163.
+ * Antes el paso era un string suelto y los datos vivían en props y estados
+ * aparte, así que la pantalla de transferencia se elegía con
+ * `step === 'transfer' && transferInfo && purchaseId`. OJO con el tiempo
+ * verbal: eso NO se rompió acá — `purchaseId` se seteaba en la línea de arriba
+ * del `setStep` y `transferInfo` es un prop que no cambia, así que el guard
+ * nunca falló. Lo que importa es la FORMA, que sí se rompió en el #159 un
+ * archivo más allá: cuando el guard de datos falla, el fallback no es una
+ * pantalla vacía sino el formulario de una compra que ya existe, listo para
+ * cobrarla de nuevo.
+ *
+ * Con los datos adentro del paso eso deja de ser escribible: no hay estado
+ * 'transfer' sin la cuenta bancaria y sin el id de la compra. Es la misma forma
+ * que tomó `step-payment.tsx` en el #163.
  */
 type Paso =
   | { k: 'form' }
