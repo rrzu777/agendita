@@ -11,7 +11,7 @@ import { usePackageAvailability } from '@/lib/packages/use-package-availability'
 import { initiatePayment, verifyAndConfirmPayment, getOnlinePaymentAvailability } from '@/server/actions/payments'
 import { getBankTransferInfo, declareBankTransfer } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
-import { DEFAULT_HOLD_MINUTES } from '@/lib/bookings/hold'
+import { DEFAULT_HOLD_MINUTES, holdDeadlinePhrase } from '@/lib/bookings/hold'
 import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { TransferDetails } from './transfer-details'
 import { formatMoney } from '@/lib/money'
@@ -94,7 +94,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error' | 'transfer-details' | 'transfer-declared'>('review')
   const [bankInfo, setBankInfo] = useState<BankTransferPublicInfo | null>(null)
   const [method, setMethod] = useState<'online' | 'transfer'>('online')
-  const [transferBooking, setTransferBooking] = useState<{ id: string; bookingNumber: number | null; deadline: Date | null } | null>(null)
+  const [transferBooking, setTransferBooking] = useState<{ id: string; bookingNumber: number | null; holdExpiresAt: Date | null; endDateTime: Date } | null>(null)
   const [declaring, setDeclaring] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [availabilityError, setAvailabilityError] = useState('')
@@ -347,7 +347,13 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       setTransferBooking({
         id: booking.id,
         bookingNumber: booking.bookingNumber ?? null,
-        deadline: booking.holdExpiresAt ? new Date(booking.holdExpiresAt) : null,
+        // Las dos fechas, no la frase ya armada: la frase se deriva al
+        // renderizar, como en todas las otras superficies. Congelarla acá se
+        // pasa de lista — la ventana de la transferencia son 24 h, así que una
+        // pestaña abierta que cruza la medianoche seguiría diciendo "las 08:00"
+        // cuando ya tendría que decir el día.
+        holdExpiresAt: booking.holdExpiresAt ? new Date(booking.holdExpiresAt) : null,
+        endDateTime: new Date(booking.endDateTime),
       })
       setStep('transfer-details')
     } catch (err) {
@@ -529,6 +535,45 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     )
   }
 
+  /* Las pantallas que manda el `step` van TODAS antes que las que dependen de
+     los datos. Estas dos estaban debajo de la rama "no hay pago online", que
+     sólo mira `availability`, y al negocio que cobra SÓLO por transferencia esa
+     rama le ganaba siempre: la reserva se creaba de verdad y la pantalla no se
+     movía. Lo cuida `step-payment-plazo-transferencia.test.tsx`. */
+  if (step === 'transfer-details' && bankInfo && transferBooking) {
+    return (
+      <div>
+        <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Transferí el abono</h2>
+        <p className="mb-6 text-lg text-muted-foreground">Tu horario queda reservado mientras transferís</p>
+        {errorMessage && <p className="mb-4 text-sm text-destructive">{errorMessage}</p>}
+        <TransferDetails bank={bankInfo} amount={effectiveDeposit} currency={currency} deadlinePhrase={holdDeadlinePhrase(transferBooking, timezone)} declaring={declaring} onDeclare={handleDeclare} bookingId={transferBooking.id} />
+        <p className="mt-4 text-sm text-muted-foreground">
+          También podés avisar más tarde desde{' '}
+          <Link className="font-semibold text-primary underline" href={`/book/confirmation?bookingId=${transferBooking.id}`}>tu página de reserva</Link>
+          {' '}(te mandamos los datos por email si dejaste uno).
+        </p>
+      </div>
+    )
+  }
+
+  if (step === 'transfer-declared' && transferBooking) {
+    return (
+      <div className="py-10 text-center">
+        <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-amber-50">
+          <Clock className="size-8 text-amber-500" />
+        </div>
+        <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">Transferencia en verificación</h2>
+        <p className="mb-2 text-muted-foreground">Avisamos al negocio. Te confirmaremos cuando verifique el pago.</p>
+        {transferBooking.bookingNumber != null && (
+          <p className="mb-5 text-sm text-muted-foreground">Tu código de reserva: <span className="font-mono font-semibold text-primary">#{transferBooking.bookingNumber}</span></p>
+        )}
+        <Button asChild className="h-12 rounded-full px-6">
+          <Link href={`/book/confirmation?bookingId=${transferBooking.id}`}>Ver el estado de mi reserva</Link>
+        </Button>
+      </div>
+    )
+  }
+
   if (noDepositNeeded) {
     return (
       <div>
@@ -664,40 +709,6 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     )
   }
 
-  if (step === 'transfer-details' && bankInfo && transferBooking) {
-    return (
-      <div>
-        <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Transferí el abono</h2>
-        <p className="mb-6 text-lg text-muted-foreground">Tu horario queda reservado mientras transferís</p>
-        {errorMessage && <p className="mb-4 text-sm text-destructive">{errorMessage}</p>}
-        <TransferDetails bank={bankInfo} amount={effectiveDeposit} currency={currency} deadline={transferBooking.deadline} timezone={timezone} declaring={declaring} onDeclare={handleDeclare} bookingId={transferBooking.id} />
-        <p className="mt-4 text-sm text-muted-foreground">
-          También podés avisar más tarde desde{' '}
-          <Link className="font-semibold text-primary underline" href={`/book/confirmation?bookingId=${transferBooking.id}`}>tu página de reserva</Link>
-          {' '}(te mandamos los datos por email si dejaste uno).
-        </p>
-      </div>
-    )
-  }
-
-  if (step === 'transfer-declared' && transferBooking) {
-    return (
-      <div className="py-10 text-center">
-        <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-amber-50">
-          <Clock className="size-8 text-amber-500" />
-        </div>
-        <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">Transferencia en verificación</h2>
-        <p className="mb-2 text-muted-foreground">Avisamos al negocio. Te confirmaremos cuando verifique el pago.</p>
-        {transferBooking.bookingNumber != null && (
-          <p className="mb-5 text-sm text-muted-foreground">Tu código de reserva: <span className="font-mono font-semibold text-primary">#{transferBooking.bookingNumber}</span></p>
-        )}
-        <Button asChild className="h-12 rounded-full px-6">
-          <Link href={`/book/confirmation?bookingId=${transferBooking.id}`}>Ver el estado de mi reserva</Link>
-        </Button>
-      </div>
-    )
-  }
-
   if (availability === null) {
     return (
       <div className="py-14 text-center">
@@ -774,7 +785,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       </div>
 
       {/* Sólo el camino online: la transferencia tiene su ventana larga y la
-          muestra con hora exacta en la pantalla siguiente (TransferDetails). */}
+          dice en la pantalla siguiente (TransferDetails), ya topada contra la
+          cita — acá serían dos plazos distintos en la misma pantalla. */}
       {!eligeTransferencia && (
         <p className="mb-4 text-sm text-muted-foreground">
           Al pagar, tu horario queda guardado por {DEFAULT_HOLD_MINUTES} minutos. Si el pago no se completa en ese tiempo, se libera.

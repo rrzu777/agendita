@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatMoney } from '@/lib/money'
-import { formatBookingDateTime } from '@/lib/bookings/format-booking-datetime'
 import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { isAllowedProofType, PROOF_MAX_BYTES } from '@/lib/storage/proof'
 import { createProofUploadUrl } from '@/server/actions/bank-transfer-public'
@@ -15,8 +14,7 @@ export function TransferDetails({
   bank,
   amount,
   currency,
-  deadline,
-  timezone,
+  deadlinePhrase,
   declaring,
   onDeclare,
   bookingId,
@@ -25,12 +23,14 @@ export function TransferDetails({
   bank: BankTransferPublicInfo
   amount: number
   currency: string
-  deadline: Date | null
-  timezone: string
+  /** Ya en palabras ("tu cita", "las 14:30"): el plazo lo topa y lo redacta
+   *  `holdDeadlinePhrase`, que necesita el `now` de quien renderiza. `null` =
+   *  no hay nada que prometer y la línea no se muestra. */
+  deadlinePhrase: string | null
   declaring: boolean
   onDeclare: (proof: { proofKey: string; proofContentType: string } | null) => void
   bookingId: string
-  /** 'balance' = saldo restante: cambia el label del monto (sin plazo — deadline ya es null en ese caso). */
+  /** 'balance' = saldo restante: cambia el label del monto (sin plazo — deadlinePhrase ya es null en ese caso). */
   kind?: 'deposit' | 'balance'
 }) {
   const [selectedError, setSelectedError] = useState<string | null>(null)
@@ -106,9 +106,9 @@ export function TransferDetails({
         )}
       </div>
 
-      {deadline && (
+      {deadlinePhrase && (
         <p className="text-sm text-muted-foreground">
-          Tenés hasta el <span className="font-semibold text-primary">{formatBookingDateTime(deadline, timezone)}</span> para
+          Tenés hasta <span className="font-semibold text-primary">{deadlinePhrase}</span> para
           transferir y avisarnos. Después de eso el horario se libera.
         </p>
       )}
