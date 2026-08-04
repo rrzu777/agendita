@@ -13,7 +13,7 @@ import {
   SheetFooter,
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { StatusBadge } from '@/components/ui/status-badge'
 import type { CalendarBooking } from './booking-card'
 import { BookingContactButtons } from './booking-contact-buttons'
 import { CancelBookingButton } from './cancel-booking-button'
@@ -24,7 +24,7 @@ import { formatManualPaymentMoney, isManualPaymentAllowed, manualPaymentBlockedR
 import { PaymentRevertedBadge } from './payment-reverted-badge'
 import { CustomerPhotos } from './customer-photos'
 import { ReassignControl } from './reassign-control'
-import { bookingStatusLabel, isTerminalBookingStatus } from '@/lib/bookings/status-labels'
+import { displayedBookingStatus, isTerminalBookingStatus } from '@/lib/bookings/status-labels'
 import { bookingWhere } from '@/lib/services/modality'
 import { useVocabulary } from '@/components/vocabulary-provider'
 
@@ -39,16 +39,6 @@ function useIsMobile() {
     return () => mql.removeEventListener('change', handler)
   }, [])
   return isMobile
-}
-
-const statusBadgeClasses: Record<string, string> = {
-  pending_payment: 'bg-orange-100 text-orange-800',
-  pending_confirmation: 'bg-amber-100 text-amber-900',
-  confirmed: 'bg-green-100 text-green-800',
-  completed: 'bg-secondary text-secondary-foreground',
-  cancelled: 'bg-muted text-muted-foreground',
-  no_show: 'bg-destructive/10 text-destructive',
-  expired: 'bg-muted text-muted-foreground',
 }
 
 interface BookingDrawerProps {
@@ -70,12 +60,6 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
   const isMobile = useIsMobile()
 
   const start = new Date(booking.startDateTime)
-  // El badge va por el status CRUDO, a diferencia de la tabla de Reservas: acá
-  // no se puede aplicar la precedencia que exige `effectiveBookingStatus` —
-  // `CalendarBooking` no trae `payments`, así que una transferencia declarada
-  // en fecha se vería "Plazo vencido" y la dueña le diría a alguien que pagó
-  // que perdió la hora. El botón de cobro sí se gatea (el server lo rechaza
-  // igual, con o sin transferencia declarada).
   // En un estado terminal no hay nada que reasignar (el server también lo
   // rechaza; esto sólo evita ofrecer un botón que va a fallar).
   const reassignable = hasTeam && !isTerminalBookingStatus(booking.status)
@@ -94,9 +78,12 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
         <div className="space-y-4 overflow-y-auto p-4">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Estado</span>
-            <Badge className={statusBadgeClasses[booking.status] || ''}>
-              {bookingStatusLabel(booking.status)}
-            </Badge>
+            {/* Status DERIVADO, no el crudo: el bloque de cobro de más abajo
+                dice "venció el plazo", y un badge naranja de "Pendiente de
+                pago" arriba lo contradice. Las DECISIONES (reasignar,
+                cancelar, aceptar) siguen mirando el asentado, que es contra el
+                que decide el server. */}
+            <StatusBadge status={displayedBookingStatus(booking)} />
           </div>
 
           <div className="flex items-center justify-between">
@@ -228,9 +215,12 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
               />
             </div>
           ) : paymentBlockedReason ? (
-            // El bloque no desaparece: dice por qué. Acá el badge sigue en crudo
-            // (no hay `payments` para la precedencia), así que esta línea es lo
-            // ÚNICO que le avisa a la dueña que el plazo se venció.
+            // El bloque no desaparece: dice por qué. Y no sobra con el badge de
+            // arriba — éste espeja el guard del server (`assertBookingPayable`,
+            // que no mira los pagos), así que con una transferencia declarada
+            // el badge sigue diciendo "Pendiente de pago" y esta línea es lo
+            // único que avisa. Además nombra la SALIDA (esperar al cron y usar
+            // Revivir), que un badge no puede explicar.
             <div className="space-y-1 rounded-xl border border-border/60 p-3">
               <h4 className="text-sm font-semibold">Registrar pago</h4>
               <p className="text-sm text-muted-foreground">{paymentBlockedReason}</p>

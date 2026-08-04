@@ -21,6 +21,10 @@ export type CalendarBooking = {
   /** Requerido por el mismo motivo que `professional`: el drawer decide con
    *  esto qué estado mostrar y si ofrece cobrar. `null` = sin hold. */
   holdExpiresAt: Date | null
+  /** Sólo las transferencias declaradas sin verificar (el `where` lo pone
+   *  `getBookingsByRange`). Vacío = no hay ninguna. Es lo que le da a
+   *  `displayedBookingStatus` la precedencia sobre el plazo vencido. */
+  payments: { providerPaymentId?: string | null }[]
   customerNotes?: string | null
   internalNotes?: string | null
   modality: ServiceModality

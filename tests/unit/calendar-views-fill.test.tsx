@@ -13,6 +13,7 @@ vi.mock('@/components/dashboard/edit-block-dialog', () => ({
 vi.mock('@/components/dashboard/edit-series-occurrence-dialog', () => ({ EditSeriesOccurrenceDialog: () => null }))
 
 import { CalendarViews } from '@/components/dashboard/calendar-views'
+import { btDeclaredId } from '@/lib/bank-transfer/declared'
 
 const baseProps = {
   timeBlocks: [],
@@ -33,6 +34,12 @@ const booking = {
   customer: { name: 'Ana' },
   service: { name: 'Corte', pastelColor: '#FFB3BA' },
   professional: null,
+  // Los tres que mira `displayedBookingStatus` para decidir el estado del chip
+  // (los ejerce `chipConPlazo`, más abajo). Sin `payments` el render revienta
+  // apenas el fixture pase a `pending_payment`.
+  paymentStatus: 'unpaid',
+  holdExpiresAt: null,
+  payments: [],
 }
 
 describe('CalendarViews — relleno de color (día)', () => {
@@ -133,5 +140,47 @@ describe('CalendarViews — reserva clicable en vista de mes (stretched link)', 
     expect(html).toContain('pointer-events-none')
     expect(html).toContain('pointer-events-auto')
     expect(html).toContain('aria-label="Ana —')
+  })
+})
+
+const HORA = 60 * 60 * 1000
+
+// El chip del calendario, espejo de lo que panel-plazo-vencido.test.tsx verifica
+// en la tabla de Reservas. Vive acá para reusar los mocks y el fixture: el
+// arnés de CalendarViews ya se mantiene en un solo lugar.
+function chipConPlazo(
+  holdExpiresAt: Date | null,
+  payments: Array<{ providerPaymentId?: string | null }> = [],
+) {
+  const impaga = { ...booking, status: 'pending_payment', holdExpiresAt, payments }
+  return renderToStaticMarkup(
+    // @ts-expect-error props mínimos de prueba
+    <CalendarViews {...baseProps} view="day" date="2026-06-30" bookings={[impaga]} />,
+  )
+}
+
+describe('CalendarViews — el chip y el plazo vencido', () => {
+  it('con el plazo vivo el chip sigue entero', () => {
+    const html = chipConPlazo(new Date(Date.now() + HORA))
+    expect(html).toContain('Pendiente de pago')
+    expect(html).not.toContain('Plazo vencido')
+    expect(html).not.toContain('opacity:0.7')
+  })
+
+  it('con el plazo vencido lo dice y lo atenúa, sin darlo por muerto', () => {
+    const html = chipConPlazo(new Date(Date.now() - HORA))
+    expect(html).toContain('Plazo vencido')
+    expect(html).not.toContain('Pendiente de pago')
+    expect(html).toContain('opacity:0.7')
+    // Tachado prometería que el horario ya se puede vender; no siempre es cierto.
+    expect(html).not.toContain('line-through')
+    // Si faltara la etiqueta del estado derivado, acá aparecería la clave cruda.
+    expect(html).not.toContain('hold_expired')
+  })
+
+  it('la transferencia declarada mantiene el chip entero aunque el plazo haya vencido', () => {
+    const html = chipConPlazo(new Date(Date.now() - HORA), [{ providerPaymentId: btDeclaredId('b1') }])
+    expect(html).toContain('Pendiente de pago')
+    expect(html).not.toContain('Plazo vencido')
   })
 })

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getBookingsByRange } from '@/server/actions/bookings'
+import { anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
 
 const mockRequireBusiness = vi.fn().mockResolvedValue({ businessId: 'biz-1' })
 const mockFindMany = vi.fn().mockResolvedValue([])
@@ -43,6 +44,12 @@ describe('getBookingsByRange', () => {
         service: true,
         customer: true,
         professional: { select: { name: true } },
+        // El chip del calendario necesita saber si hay una transferencia
+        // declarada sin verificar antes de darle el plazo por vencido.
+        payments: {
+          where: anyDeclaredTransferWhere,
+          select: { providerPaymentId: true },
+        },
       },
     })
   })

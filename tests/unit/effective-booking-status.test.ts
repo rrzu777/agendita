@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { effectiveBookingStatus, HOLD_EXPIRED_STATUS } from '@/lib/bookings/status-labels'
+import {
+  bookingStatusLabel,
+  displayedBookingStatus,
+  effectiveBookingStatus,
+  HOLD_EXPIRED_LABEL,
+  HOLD_EXPIRED_STATUS,
+} from '@/lib/bookings/status-labels'
+import { btBalanceId, btDeclaredId } from '@/lib/bank-transfer/declared'
 
 const NOW = new Date('2026-08-03T12:00:00Z')
 const VIVO = new Date('2026-08-03T18:00:00Z')
@@ -44,5 +51,47 @@ describe('effectiveBookingStatus', () => {
   it('sin plazo devuelve el status crudo', () => {
     expect(effectiveBookingStatus({ status: 'pending_payment', paymentStatus: 'unpaid', holdExpiresAt: null }, NOW))
       .toBe('pending_payment')
+  })
+})
+
+describe('displayedBookingStatus', () => {
+  const vencida = (payments: Array<{ providerPaymentId?: string | null }>) => ({
+    status: 'pending_payment',
+    paymentStatus: 'unpaid',
+    holdExpiresAt: MUERTO,
+    payments,
+  })
+
+  it('sin pagos declarados se comporta como effectiveBookingStatus', () => {
+    expect(displayedBookingStatus(vencida([]), NOW)).toBe(HOLD_EXPIRED_STATUS)
+  })
+
+  it('la transferencia declarada GANA sobre el plazo vencido', () => {
+    // La plata pudo salir en fecha; lo que falta es que la dueña verifique. Sin
+    // esta precedencia el panel le decía "perdiste la hora" a quien ya pagó.
+    expect(displayedBookingStatus(vencida([{ providerPaymentId: btDeclaredId('bk-1') }]), NOW))
+      .toBe('pending_payment')
+  })
+
+  it('un pago de OTRA familia no la salva: el prefijo discrimina', () => {
+    // bt-balance es el saldo de una reserva ya firme, no el abono de ésta.
+    expect(displayedBookingStatus(vencida([{ providerPaymentId: btBalanceId('bk-1') }]), NOW))
+      .toBe(HOLD_EXPIRED_STATUS)
+  })
+
+  it('con el plazo vivo no mira los pagos', () => {
+    expect(displayedBookingStatus({ ...vencida([]), holdExpiresAt: VIVO }, NOW)).toBe('pending_payment')
+  })
+})
+
+describe('bookingStatusLabel', () => {
+  it('sabe nombrar el estado derivado', () => {
+    // El lookup cae al status crudo si no encuentra la clave, así que olvidarla
+    // no rompe nada: imprime "hold_expired" en la pantalla de la dueña.
+    expect(bookingStatusLabel(HOLD_EXPIRED_STATUS)).toBe(HOLD_EXPIRED_LABEL)
+  })
+
+  it('sigue cayendo al crudo con un status desconocido', () => {
+    expect(bookingStatusLabel('marciano')).toBe('marciano')
   })
 })

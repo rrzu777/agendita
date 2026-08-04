@@ -19,7 +19,7 @@ import { formatMoney } from '@/lib/money'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
-import { effectiveBookingStatus } from '@/lib/bookings/status-labels'
+import { displayedBookingStatus, effectiveBookingStatus } from '@/lib/bookings/status-labels'
 import { PaymentRevertedBadge } from '@/components/dashboard/payment-reverted-badge'
 import { BookingRowActions } from '@/components/dashboard/booking-row-actions'
 import { ReviveBookingButton } from '@/components/dashboard/revive-booking-dialog'
@@ -307,10 +307,13 @@ export default async function BookingsPage() {
     : false
 
   const confirmedCount = bookings.filter(b => b.status === 'confirmed').length
-  // Por status EFECTIVO, igual que los badges de abajo: si no, la tarjeta dice
+  // Por status MOSTRADO, igual que los badges de abajo: si no, la tarjeta dice
   // "3 pendientes de pago" y la tabla muestra dos, porque a la tercera ya se le
-  // venció el plazo.
-  const pendingCount = bookings.filter(b => effectiveBookingStatus(b) === 'pending_payment').length
+  // venció el plazo. Con la precedencia incluida (displayedBookingStatus, no
+  // effectiveBookingStatus): dos filas con el badge "Transferencia por
+  // verificar" tienen que contar igual, y con el crudo la del plazo vencido
+  // se caía del conteo mientras la otra sumaba.
+  const pendingCount = bookings.filter(b => displayedBookingStatus(b) === 'pending_payment').length
   // Solicitudes esperando respuesta. La tarjeta sólo aparece si hay alguna: un
   // negocio sin confirmación manual nunca ve un contador que siempre marca 0.
   // Va por el status CRUDO a propósito: la dueña puede aceptar una solicitud con
