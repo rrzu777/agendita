@@ -1,4 +1,5 @@
 import { isManuallyPayableStatus } from '@/lib/bookings/payable-statuses'
+import { isDoomedHold } from '@/lib/payments/confirmation-state'
 import type { Vocabulary } from '@/lib/vocabulary'
 
 export type ManualPaymentMode = 'fixed' | 'percentage'
@@ -18,11 +19,12 @@ export type ManualPaymentBooking = {
   depositRequired: number
   finalAmount: number
   remainingBalance: number
-  /** Requerido a propósito (mismo criterio que `professional` en
-   *  CalendarBooking): opcional, la consulta que se olvide de traerlo compila
-   *  igual y el botón vuelve a ofrecer un cobro que el server rechaza. `null` =
-   *  sin hold. */
+  /** Requeridos a propósito (mismo criterio que `professional` en
+   *  CalendarBooking): opcionales, la consulta que se olvide de traerlos compila
+   *  igual y el botón vuelve a desalinearse del server. `holdExpiresAt: null` =
+   *  sin hold; van juntos porque el guard los lee a los dos. */
   holdExpiresAt: Date | null
+  paymentStatus: string
   service: { name: string } | null
   customer: { name: string } | null
   // Opcional: solo lo traen los llamadores que ya consultan `payments`
@@ -31,29 +33,25 @@ export type ManualPaymentBooking = {
   payments?: Array<{ providerPaymentId?: string | null }>
 }
 
-export function isManualPaymentAllowed(
-  booking: Pick<ManualPaymentBooking, 'status' | 'remainingBalance' | 'holdExpiresAt'>,
-  now: Date = new Date(),
-) {
+/** Los campos que deciden si se puede cobrar. Nombrarlos una vez evita que las
+ *  dos funciones que TIENEN que coincidir se separen por un `Pick` de menos. */
+type PayabilityFields = Pick<
+  ManualPaymentBooking,
+  'status' | 'remainingBalance' | 'holdExpiresAt' | 'paymentStatus'
+>
+
+export function isManualPaymentAllowed(booking: PayabilityFields, now: Date = new Date()) {
   // Estados desde la fuente única compartida con assertBookingPayable (server);
   // el gate de monto (saldo > 0) es propio de esta superficie.
   if (booking.remainingBalance <= 0 || !isManuallyPayableStatus(booking.status)) return false
-  // Segundo guard de assertBookingPayable, espejado acá: con el plazo vencido el
-  // server tira "El tiempo para pagar esta reserva ha expirado". Sin esto el
-  // panel ofrecía "Cobrar" y el clic terminaba en ese error, que no le dice a la
-  // dueña qué hacer. Ojo: quien esconda el botón por esto tiene que poner el
-  // motivo en su lugar — ver `manualPaymentBlockedReason`.
-  if (isPaymentHoldExpired(booking, now)) return false
+  // Segundo guard de assertBookingPayable, espejado acá con SU MISMO predicado:
+  // el server tira "El tiempo para pagar esta reserva ha expirado" exactamente
+  // cuando el cron va a barrer la reserva. Sin esto el panel ofrecía "Cobrar" y
+  // el clic terminaba en ese error, que no le dice a la dueña qué hacer. Ojo:
+  // quien esconda el botón por esto tiene que poner el motivo en su lugar — ver
+  // `manualPaymentBlockedReason`.
+  if (isDoomedHold(booking, now)) return false
   return true
-}
-
-/** El plazo para pagar venció. Aislado porque lo miran dos cosas: si se ofrece
- *  el cobro y qué explicación se muestra cuando no. */
-function isPaymentHoldExpired(
-  booking: Pick<ManualPaymentBooking, 'status' | 'holdExpiresAt'>,
-  now: Date,
-): boolean {
-  return booking.status === 'pending_payment' && booking.holdExpiresAt != null && booking.holdExpiresAt < now
 }
 
 /**
@@ -65,13 +63,23 @@ function isPaymentHoldExpired(
  * no está a la vista — hay que esperar a que el cron la expire para que
  * aparezca "Revivir". Sin este texto, el botón que desaparece es indistinguible
  * de una app rota.
+ *
+ * Que la condición sea `isDoomedHold` y no "el plazo pasó" es lo que hace que la
+ * salida que promete EXISTA: sobre una reserva con plata adentro el cron no pasa
+ * nunca, así que "esperá a que quede Expirada" era mandarla a esperar sentada.
+ * Ese caso ya no llega acá — se puede cobrar.
+ *
+ * El `isDoomedHold` va explícito y no como `!isManualPaymentAllowed(...)`, que
+ * ahorraría la línea repetida de arriba: el texto habla del PLAZO, así que tiene
+ * que colgar de la condición del plazo. Derivarlo del "no se puede" haría que un
+ * bloqueo futuro por otro motivo saliera con esta explicación, que sería falsa.
  */
 export function manualPaymentBlockedReason(
-  booking: Pick<ManualPaymentBooking, 'status' | 'remainingBalance' | 'holdExpiresAt'>,
+  booking: PayabilityFields,
   now: Date = new Date(),
 ): string | null {
   if (booking.remainingBalance <= 0 || !isManuallyPayableStatus(booking.status)) return null
-  if (!isPaymentHoldExpired(booking, now)) return null
+  if (!isDoomedHold(booking, now)) return null
   return 'Venció el plazo para pagar, así que el cobro está cerrado. Si quiere pagar igual, esperá a que la reserva quede Expirada y usá Revivir.'
 }
 
