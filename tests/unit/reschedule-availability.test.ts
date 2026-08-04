@@ -64,6 +64,9 @@ vi.mock('@/lib/notifications', () => ({
 const { getAvailableSlotsForReschedule } = await import('@/server/actions/availability')
 const { rescheduleBooking } = await import('@/server/actions/bookings')
 const { SLOT_UNAVAILABLE_MESSAGE } = await import('@/lib/availability/validation')
+// Del módulo real, mismo criterio: comparar contra el mensaje que la action usa
+// de verdad y no contra una copia del texto que puede quedar vieja.
+const { rescheduleBlockedReason } = await import('@/lib/bookings/hold')
 
 const businessId = 'biz-1'
 const booking = {
@@ -77,6 +80,10 @@ const booking = {
   // negocio. Sin este campo el alcance quedaba "de una persona sin id", que en un
   // `where` de Prisma no filtra nada.
   professionalId: null,
+  // Los dos que mira el guard del plazo. Una confirmada no tiene plazo que
+  // pueda estar vencido; el caso condenado los pisa abajo.
+  paymentStatus: 'deposit_paid',
+  holdExpiresAt: null,
   service: { id: 'svc-1', durationMinutes: 60, name: 'Manicure', isActive: true },
   customer: { name: 'Maria', email: 'maria@example.com', phone: '+56912345678' },
   bookingNumber: 42,
@@ -280,5 +287,31 @@ describe('rescheduleBooking terminal states and availability', () => {
       expect(result.ok).toBe(false)
       expect(!result.ok && result.error).toMatch(/No se puede reprogramar/)
     }
+  })
+
+  // `expired` ya estaba cubierto arriba; el que faltaba es el ANTERIOR: la
+  // reserva que el cron todavía no asentó. Se veía viva, se dejaba mover, y el
+  // sweep la mataba dentro de la hora con la dueña convencida de haberla salvado.
+  it('no reprograma un plazo vencido que el cron todavía no barrió, y nombra Revivir', async () => {
+    mockPrisma.booking.findFirst.mockResolvedValue({
+      ...booking,
+      status: 'pending_payment',
+      paymentStatus: 'unpaid',
+      holdExpiresAt: new Date('2026-06-15T10:00:00Z'),
+    })
+
+    const result = await rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z'))
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toBe(
+      rescheduleBlockedReason(
+        { status: 'pending_payment', paymentStatus: 'unpaid', holdExpiresAt: new Date('2026-06-15T10:00:00Z') },
+        'owner',
+        new Date(),
+      ),
+    )
+    // La salida tiene que estar escrita: un "no" sin salida es una app rota.
+    expect(!result.ok && result.error).toMatch(/Revivir/)
+    expect(mockPrisma.booking.updateMany).not.toHaveBeenCalled()
   })
 })

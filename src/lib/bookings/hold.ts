@@ -1,5 +1,6 @@
 import { getLocalDateStr } from '@/lib/availability/timezone'
 import { formatConfirmationDateTime } from '@/lib/bookings/format-confirmation-datetime'
+import { isDoomedHold } from '@/lib/payments/confirmation-state'
 
 /** Cuánto se le guarda el horario a una reserva que todavía no pagó.
  *
@@ -98,6 +99,88 @@ export function holdDeadlinePhrase(
   const { date, time } = formatConfirmationDateTime(promise.at, timezone)
   const esHoy = getLocalDateStr(promise.at, timezone) === getLocalDateStr(now, timezone)
   return esHoy ? `las ${time}` : `el ${date} a las ${time}`
+}
+
+/** Quién está reprogramando. El core decide que una reserva condenada no se
+ *  mueve; qué SALIDA nombrarle sólo lo sabe el caller, y es distinta de cada
+ *  lado. Viaja como esta unión y no como un string con el texto ya puesto: así
+ *  el error que este cambio teme —pasarle a la clienta el mensaje de la dueña—
+ *  deja de compilar en vez de necesitar un test que lo vigile. */
+export type RescheduleAudience = 'owner' | 'customer'
+
+/**
+ * Los cuatro textos del "no se puede reprogramar". Dos ejes, y los dos importan:
+ *
+ * - **Quién lee.** Cada mensaje nombra la salida de SU lado, que es lo que hace
+ *   la diferencia entre un "no" y una app rota. La clienta no tiene ninguna —el
+ *   plazo pasó—, así que lo único honesto es mandarla al negocio.
+ * - **Qué plazo venció.** `isDoomedHold` da por muerta a la reserva sin pagar
+ *   *y* a la solicitud sin responder, y son dos historias distintas: la segunda
+ *   la puede salvar la dueña ahora mismo con **Aceptar**, que además limpia el
+ *   plazo (el argumento entero está en `effectiveBookingStatus`, que por eso
+ *   deriva sólo `pending_payment`; acá no se repite para que no envejezca en dos
+ *   lados). Mandarla a esperar el Revivir sería nombrarle la salida equivocada.
+ *   Y del lado de la clienta ese plazo no era suyo: una solicitud sobre un
+ *   servicio gratis nace `fully_paid`.
+ *
+ * El mensaje de la clienta no dice "para pagar" ni siquiera en la rama del pago,
+ * y no es un olvido: el cron barre también la transferencia YA DECLARADA (sólo
+ * el barrido perezoso de `approval.ts` la exime), así que este texto le puede
+ * caer a alguien que transfirió en fecha y que arriba, en la misma pantalla, ve
+ * "Transferencia en verificación". El bloqueo es correcto; la acusación no. Con
+ * un pago de Mercado Pago en vuelo pasa lo mismo y es más incómodo —la fila dice
+ * "Verificando tu pago"— pero el cron tampoco lo exime: ese pago puede aterrizar
+ * y confirmar, y hasta que aterrice moverla no la salva.
+ */
+const HOLD_EXPIRED_RESCHEDULE = {
+  owner: {
+    payment:
+      'Venció el plazo de esta reserva, así que reprogramarla no la mantendría viva. Esperá a que quede Expirada y usá Revivir, o verificá la transferencia si la clienta ya avisó.',
+    confirmation:
+      'Venció el plazo para responder esta solicitud, así que moverla no la mantendría viva. Si todavía la querés tomar, aceptala: al aceptarla el plazo desaparece.',
+  },
+  customer: {
+    payment:
+      'Venció el plazo de esta reserva, así que ya no se puede reprogramar. Contactá al negocio para coordinar.',
+    confirmation:
+      'El negocio no respondió esta solicitud a tiempo, así que ya no se puede reprogramar. Contactá al negocio para coordinar.',
+  },
+} as const satisfies Record<RescheduleAudience, { payment: string; confirmation: string }>
+
+/**
+ * Por qué no se puede reprogramar, en palabras que le sirvan a quien mira, o
+ * `null` si sí se puede.
+ *
+ * Gemelo de `manualPaymentBlockedReason`, y por el mismo motivo: la condición y
+ * el texto que la explica tienen que viajar juntos. Las CINCO superficies que
+ * esconden el botón hacían el mismo par a mano —chequear `isDoomedHold`, después
+ * elegir el mensaje—, y una copia que se quede con un predicado más flojo no
+ * falla: deja un "no" con la explicación de otro caso.
+ *
+ * Recibe la reserva entera y no el status suelto: al lado del status de la
+ * reserva hay OTRO status (el del Payment: approved/pending/rejected) que
+ * encajaría sin chistar y apagaría el guard. Pidiendo los tres campos que lee
+ * `isDoomedHold`, ese error no se puede escribir.
+ *
+ * `now` es OBLIGATORIO, igual que en `manualPaymentBlockedReason` y por los dos
+ * motivos juntos: la etiqueta de estado y este bloqueo tienen que salir del
+ * MISMO instante —si no, la fila dice "Expirada" y abajo ofrece Reprogramar, que
+ * es exactamente lo que esto vino a sacar— y además lo llama un componente
+ * `'use client'` que el servidor renderiza a HTML, donde un default `new Date()`
+ * hace que servidor y navegador decidan con relojes distintos (hydration
+ * mismatch, React #418, tumba la página entera).
+ */
+export function rescheduleBlockedReason(
+  booking: { status: string; paymentStatus: string; holdExpiresAt: Date | null },
+  audience: RescheduleAudience,
+  now: Date,
+): string | null {
+  if (!isDoomedHold(booking, now)) return null
+  // Cae a la rama del pago por default a propósito: `isDoomedHold` sólo condena
+  // esos dos status, y si mañana suma uno, el texto genérico ("venció el plazo
+  // de esta reserva") sigue siendo cierto — el de la solicitud no lo sería.
+  const textos = HOLD_EXPIRED_RESCHEDULE[audience]
+  return booking.status === 'pending_confirmation' ? textos.confirmation : textos.payment
 }
 
 /** Marcador de `Booking.paymentMethod` para el camino donde el negocio coordina

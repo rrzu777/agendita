@@ -139,5 +139,62 @@ describe('/mi/[slug]', () => {
       expect(html).toContain('Por confirmar')
       expect(html).not.toContain('Expirada')
     })
+
+    // Los casos de arriba salen por el early-return de `canSelfManage` (la cita
+    // está a 24 h justas y el cutoff es 24), así que ninguno llega a las
+    // acciones. Con la cita a tres días sí, y ahí es donde la pantalla se
+    // contradecía: la etiqueta decía "Expirada" y abajo había un "Reprogramar"
+    // que ADEMÁS funcionaba.
+    describe('acciones (cita lejos, dentro de la ventana de autogestión)', () => {
+      const enTresDias = new Date(Date.now() + 72 * 3_600_000)
+
+      it('hold vencido: se va el link de Reprogramar y queda el motivo', async () => {
+        const html = await renderConUpcoming({
+          startDateTime: enTresDias,
+          holdExpiresAt: new Date(Date.now() - 60000),
+        })
+        expect(html).toContain('Expirada')
+        expect(html).not.toContain('/reprogramar')
+        expect(html.toLowerCase()).toContain('venció el plazo')
+        // Cancelar se queda: libera el horario sin esperar al cron.
+        expect(html).toContain('Cancelar reserva')
+      })
+
+      it('hold vivo: el link sigue ahí', async () => {
+        const html = await renderConUpcoming({
+          startDateTime: enTresDias,
+          holdExpiresAt: new Date(Date.now() + 600000),
+        })
+        expect(html).toContain('/reprogramar')
+        expect(html.toLowerCase()).not.toContain('venció el plazo')
+      })
+
+      // La transferencia declarada gana en la ETIQUETA (arriba dice "en
+      // verificación") pero no salva del cron, así que el bloqueo se queda. Lo
+      // que no puede pasar es que el motivo la acuse de no haber pagado.
+      it('con transferencia declarada bloquea igual, pero sin acusarla', async () => {
+        const html = await renderConUpcoming({
+          startDateTime: enTresDias,
+          holdExpiresAt: new Date(Date.now() - 60000),
+          payments: [{ id: 'p1', provider: 'manual', status: 'pending', providerPaymentId: 'bt-declared:bk1' }],
+        })
+        expect(html).toContain('Transferencia en verificación')
+        expect(html).not.toContain('/reprogramar')
+        expect(html).not.toContain('para pagar')
+      })
+
+      // El plazo que venció no era de la clienta: la solicitud la tenía que
+      // responder el negocio, y sobre un servicio gratis nace `fully_paid`.
+      it('solicitud vencida: el motivo no le echa la culpa del pago', async () => {
+        const html = await renderConUpcoming({
+          startDateTime: enTresDias,
+          status: 'pending_confirmation',
+          paymentStatus: 'fully_paid',
+          holdExpiresAt: new Date(Date.now() - 60000),
+        })
+        expect(html).not.toContain('/reprogramar')
+        expect(html).toContain('El negocio no respondió esta solicitud a tiempo')
+      })
+    })
   })
 })

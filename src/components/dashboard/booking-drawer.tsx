@@ -25,6 +25,7 @@ import { PaymentRevertedBadge } from './payment-reverted-badge'
 import { CustomerPhotos } from './customer-photos'
 import { ReassignControl } from './reassign-control'
 import { displayedBookingStatus, isTerminalBookingStatus } from '@/lib/bookings/status-labels'
+import { rescheduleBlockedReason } from '@/lib/bookings/hold'
 import { bookingWhere } from '@/lib/services/modality'
 import { useVocabulary } from '@/components/vocabulary-provider'
 
@@ -69,6 +70,16 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
   // rechaza; esto sólo evita ofrecer un botón que va a fallar).
   const reassignable = hasTeam && !isTerminalBookingStatus(booking.status)
   const paymentBlockedReason = manualPaymentBlockedReason(booking, now)
+  // Espejo del guard de `rescheduleBookingInTx`, con el MISMO reloj que el badge
+  // y que el cobro: son tres lecturas del mismo plazo y con relojes distintos el
+  // drawer puede tachar arriba lo que sigue ofreciendo abajo.
+  //
+  // Cuelga de `isDoomedHold` y NO de `displayedBookingStatus`: sobre una
+  // transferencia declarada el badge la muestra sana a propósito
+  // (`confirmBankTransfer` todavía la salva), pero el cron la barre igual, así
+  // que moverla sigue sin servir de nada. Si acá se usara el status mostrado, el
+  // botón aparecería y el clic moriría en el UserError del server.
+  const blockedRescheduleReason = rescheduleBlockedReason(booking, 'owner', now)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -258,16 +269,30 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
             <div className="space-y-2 rounded-xl border border-border/60 p-3">
               <h4 className="text-sm font-semibold">Acciones</h4>
               <div className="flex gap-2">
-                <Link href={`/dashboard/bookings/${booking.id}/reschedule`} className="flex-1">
-                  <Button type="button" variant="outline" size="sm" className="w-full">
-                    <RefreshCw className="mr-1 size-3" />
-                    Reprogramar
-                  </Button>
-                </Link>
+                {!blockedRescheduleReason && (
+                  <Link href={`/dashboard/bookings/${booking.id}/reschedule`} className="flex-1">
+                    <Button type="button" variant="outline" size="sm" className="w-full">
+                      <RefreshCw className="mr-1 size-3" />
+                      Reprogramar
+                    </Button>
+                  </Link>
+                )}
                 <div className="flex-1">
+                  {/* Cancelar SÍ queda: es la única acción que sobre una reserva
+                      condenada hace lo que promete —libera el horario ya, sin
+                      esperar al cron— y deja a la clienta avisada. */}
                   <CancelBookingButton bookingId={booking.id} size="sm" />
                 </div>
               </div>
+              {/* El botón que desaparece sin motivo es indistinguible de una app
+                  rota, y acá encima el estado de al lado puede decir
+                  "Transferencia por verificar" y no explicar nada. Convive con
+                  el motivo del cobro de más arriba a propósito: cada uno explica
+                  SU control faltante, y esconder el segundo porque el primero ya
+                  habló del plazo deja al botón de Reprogramar sin dueño. */}
+              {blockedRescheduleReason && (
+                <p className="text-xs text-muted-foreground">{blockedRescheduleReason}</p>
+              )}
             </div>
           )}
         </div>

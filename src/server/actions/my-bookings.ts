@@ -160,6 +160,7 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
         durationMinutes: booking.service.durationMinutes,
         timezone: booking.business.timezone || 'America/Santiago',
         // sin leadTimeMinutes → default del funnel público
+        rescheduledBy: 'customer',
       })
     })
   } catch (error) {
