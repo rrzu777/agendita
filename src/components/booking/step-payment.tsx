@@ -89,6 +89,31 @@ function BusinessCancellationPolicy({ policy }: { policy?: string | null }) {
   )
 }
 
+/**
+ * Cuál de las pantallas que eligen los DATOS corresponde, cuando el `step` no
+ * mandó ninguna.
+ *
+ * Vive afuera del componente y devuelve un nombre en vez de JSX por un motivo:
+ * la precedencia entre estas cuatro **es cargante y no se ve**. Que
+ * `noDepositNeeded` vaya primero no es una preferencia de orden — el efecto de
+ * disponibilidad hace early-return en ese caso, así que `availability` se queda
+ * en `null` PARA SIEMPRE, y cualquier rama que mire el `null` antes deja al
+ * servicio sin abono girando "Verificando disponibilidad de pago..." sin salida.
+ * Escrito como una cadena de `if` eso es una trampa invisible, que es la misma
+ * clase que #159 un piso más abajo. Acá se lee de una y la cuida un test.
+ */
+export function pantallaDeDatos({
+  noDepositNeeded,
+  availability,
+}: {
+  noDepositNeeded: boolean
+  availability: { available: boolean } | null
+}): 'sin-abono' | 'verificando' | 'sin-pago-online' | 'cobrar' {
+  if (noDepositNeeded) return 'sin-abono'
+  if (availability === null) return 'verificando'
+  return availability.available ? 'cobrar' : 'sin-pago-online'
+}
+
 export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, manualHoldHours, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; manualHoldHours: number; referralToken?: string; onSuccess: (result: BookingCreated) => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error' | 'transfer-details' | 'transfer-declared'>('review')
@@ -517,15 +542,19 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
      le ganaba siempre: la reserva se creaba de verdad y la pantalla no se movía
      (#159). Un `if` encadenado no puede impedir que vuelva a pasar —el orden es
      invisible— así que el `switch` es exhaustivo: un `step` nuevo sin rama acá
-     no compila. Lo de afuera son las pantallas que eligen los DATOS.
-     Lo cuida `step-payment-pantalla-por-step.test.tsx`. */
+     no compila. Lo de afuera son las pantallas que eligen los DATOS, que tienen
+     su propia regla (`pantallaDeDatos`).
+     El caso de #159 lo cuida `step-payment-plazo-transferencia.test.tsx`, que
+     entra de verdad al camino de transferencia; el de `'success'`,
+     `step-payment-pantalla-por-step.test.tsx`. */
   switch (step) {
+    // `'success'` comparte pantalla con `'processing'`: no tiene una propia
+    // porque `onSuccess()` hace que el padre saque este paso del medio en el
+    // mismo tick, así que en la práctica no llega a verse. Comparte el spinner
+    // y no hace `break` a propósito — si algún día el padre tardara, lo que
+    // tiene que verse es "esperá", no el formulario de pago de una reserva que
+    // YA se creó (con `break` volvía justo a eso).
     case 'processing':
-    // `'success'` no tiene pantalla propia porque `onSuccess()` hace que el
-    // padre desmonte este paso en el mismo tick: la exhaustividad la garantiza
-    // el PADRE, no este componente. Cae en el spinner y no en un `break` a
-    // propósito — si algún día el padre tardara, lo que tiene que verse es
-    // "esperá", no el formulario de pago de una reserva que YA se creó.
     case 'success':
       return (
         <div className="py-14 text-center">
@@ -550,7 +579,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
     // Los dos pasos de transferencia necesitan datos que llegan por separado
     // (la cuenta la trae un efecto, la reserva la devuelve la action). Sin
-    // ellos no hay nada que mostrar y sigue de largo, igual que antes.
+    // ellos no hay nada que mostrar: caen en las pantallas de datos de abajo,
+    // que es lo que hacían antes.
     case 'transfer-details':
       if (bankInfo && transferBooking) {
         return (
@@ -593,13 +623,21 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     case 'review':
       break
 
-    default: {
-      const sinPantalla: never = step
-      throw new Error(`step sin pantalla: ${String(sinPantalla)}`)
-    }
+    // Un `step` nuevo sin rama acá NO COMPILA, y eso es todo lo que hace este
+    // bloque. En runtime es inalcanzable —`step` sólo lo escribe `setStep` con
+    // literales—, así que degrada a las pantallas de datos en vez de tirar
+    // abajo el wizard: no hay error boundary bajo `/book`.
+    default:
+      step satisfies never
+      break
   }
 
-  if (noDepositNeeded) {
+  /* De acá para abajo la pantalla la eligen los DATOS. Cada rama pregunta por
+     un valor distinto de `pantallaDeDatos`, así que reordenarlas no cambia nada:
+     la precedencia —lo único delicado— vive allá arriba, sola y testeada. */
+  const pantalla = pantallaDeDatos({ noDepositNeeded, availability })
+
+  if (pantalla === 'sin-abono') {
     return (
       <div>
         <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Confirmar reserva</h2>
@@ -657,7 +695,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     )
   }
 
-  if (availability && !availability.available) {
+  if (pantalla === 'sin-pago-online') {
     return (
       <div>
         <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Confirmar reserva</h2>
@@ -734,7 +772,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     )
   }
 
-  if (availability === null) {
+  if (pantalla === 'verificando') {
     return (
       <div className="py-14 text-center">
         <Loader2 className="mx-auto mb-4 size-8 animate-spin text-primary" />
@@ -788,7 +826,11 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         </div>
       )}
 
-      {availability.isMock && (
+      {/* `?.` y no `!`: acá `availability` está cargado por construcción (es lo
+          que decidió `pantallaDeDatos`), pero eso ya no lo sabe el tipo. Si un
+          día no lo estuviera, el aviso de entorno de prueba no aparece — y no
+          se cae la pantalla de pago entera. */}
+      {availability?.isMock && (
         <div className="mb-4 rounded-xl border border-border/70 bg-secondary/40 px-4 py-3 text-sm text-primary">
           <p>Entorno de prueba: los pagos se procesan de forma simulada.</p>
         </div>

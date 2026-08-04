@@ -6,6 +6,9 @@ const mockCreateBooking = vi.hoisted(() => vi.fn())
 const mockGetBankTransferInfo = vi.hoisted(() => vi.fn())
 
 vi.mock('@/server/actions/bookings', () => ({ createBooking: mockCreateBooking }))
+// Sin esto se carga el módulo `'use server'` de verdad con su cadena entera
+// (Prisma, next/cache, auth): cientos de ms que se pagan por nada.
+vi.mock('@/server/actions/promotions', () => ({ previewPromotion: vi.fn() }))
 vi.mock('@/server/actions/payments', () => ({
   initiatePayment: vi.fn(),
   verifyAndConfirmPayment: vi.fn(),
@@ -135,5 +138,7 @@ describe('StepPayment — el plazo que promete la pantalla de transferencia', ()
     expect(container.textContent).not.toContain('04-08-2026')
 
     await act(async () => { root.unmount() })
-  })
+    // Timeout propio: montar el wizard entero se come varios segundos y el
+    // default de 5 s de la suite lo vuelve un dado bajo carga.
+  }, 20_000)
 })

@@ -5,6 +5,10 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 const mockCreateBooking = vi.hoisted(() => vi.fn())
 
 vi.mock('@/server/actions/bookings', () => ({ createBooking: mockCreateBooking }))
+// Sin este mock se carga el módulo `'use server'` de verdad, con su cadena
+// entera (Prisma, next/cache, auth): son cientos de ms por archivo, y con el
+// pool de workers peleado es la diferencia con el timeout de 5 s.
+vi.mock('@/server/actions/promotions', () => ({ previewPromotion: vi.fn() }))
 vi.mock('@/server/actions/payments', () => ({
   initiatePayment: vi.fn(),
   verifyAndConfirmPayment: vi.fn(),
@@ -126,5 +130,8 @@ describe('StepPayment — la pantalla la manda el step', () => {
     expect(container.textContent).toContain('Procesando tu reserva')
 
     await act(async () => { root.unmount() })
-  })
+    // Timeout propio: montar el wizard entero con `createRoot` se come varios
+    // segundos, y con el pool de workers peleado el default de 5 s de la suite
+    // convierte este test en un dado. No es lentitud del caso, es el arranque.
+  }, 20_000)
 })
