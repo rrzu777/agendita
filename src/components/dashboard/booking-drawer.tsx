@@ -20,11 +20,11 @@ import { CancelBookingButton } from './cancel-booking-button'
 import { BookingStatusButton } from './booking-status-button'
 import { RefreshCw } from 'lucide-react'
 import { ManualPaymentDialog } from './manual-payment-dialog'
-import { formatManualPaymentMoney, isManualPaymentAllowed } from './manual-payment-utils'
+import { formatManualPaymentMoney, isManualPaymentAllowed, manualPaymentBlockedReason } from './manual-payment-utils'
 import { PaymentRevertedBadge } from './payment-reverted-badge'
 import { CustomerPhotos } from './customer-photos'
 import { ReassignControl } from './reassign-control'
-import { bookingStatusLabel, effectiveBookingStatus, isTerminalBookingStatus } from '@/lib/bookings/status-labels'
+import { bookingStatusLabel, isTerminalBookingStatus } from '@/lib/bookings/status-labels'
 import { bookingWhere } from '@/lib/services/modality'
 import { useVocabulary } from '@/components/vocabulary-provider'
 
@@ -70,13 +70,16 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
   const isMobile = useIsMobile()
 
   const start = new Date(booking.startDateTime)
-  // Con el hold vencido la reserva ya está condenada: mostrar "Expirada" acá y
-  // en la tabla es la misma decisión (ver `effectiveBookingStatus`).
-  const effectiveStatus = effectiveBookingStatus(booking)
+  // El badge va por el status CRUDO, a diferencia de la tabla de Reservas: acá
+  // no se puede aplicar la precedencia que exige `effectiveBookingStatus` —
+  // `CalendarBooking` no trae `payments`, así que una transferencia declarada
+  // en fecha se vería "Plazo vencido" y la dueña le diría a alguien que pagó
+  // que perdió la hora. El botón de cobro sí se gatea (el server lo rechaza
+  // igual, con o sin transferencia declarada).
   // En un estado terminal no hay nada que reasignar (el server también lo
-  // rechaza; esto sólo evita ofrecer un botón que va a fallar). Va por el status
-  // CRUDO: reasignar sigue siendo válido mientras la base no la haya expirado.
+  // rechaza; esto sólo evita ofrecer un botón que va a fallar).
   const reassignable = hasTeam && !isTerminalBookingStatus(booking.status)
+  const paymentBlockedReason = manualPaymentBlockedReason(booking)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -91,8 +94,8 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
         <div className="space-y-4 overflow-y-auto p-4">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Estado</span>
-            <Badge className={statusBadgeClasses[effectiveStatus] || ''}>
-              {bookingStatusLabel(effectiveStatus)}
+            <Badge className={statusBadgeClasses[booking.status] || ''}>
+              {bookingStatusLabel(booking.status)}
             </Badge>
           </div>
 
@@ -213,7 +216,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
             )}
           </div>
 
-          {isManualPaymentAllowed(booking) && (
+          {isManualPaymentAllowed(booking) ? (
             <div className="space-y-3 rounded-xl border border-border/60 p-3">
               <h4 className="text-sm font-semibold">Registrar pago</h4>
               <ManualPaymentDialog
@@ -224,7 +227,15 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
                 triggerLabel="Abrir modal de pago"
               />
             </div>
-          )}
+          ) : paymentBlockedReason ? (
+            // El bloque no desaparece: dice por qué. Acá el badge sigue en crudo
+            // (no hay `payments` para la precedencia), así que esta línea es lo
+            // ÚNICO que le avisa a la dueña que el plazo se venció.
+            <div className="space-y-1 rounded-xl border border-border/60 p-3">
+              <h4 className="text-sm font-semibold">Registrar pago</h4>
+              <p className="text-sm text-muted-foreground">{paymentBlockedReason}</p>
+            </div>
+          ) : null}
 
           {booking.status === 'pending_confirmation' && (
             <div className="space-y-2 rounded-xl border border-border/60 p-3">

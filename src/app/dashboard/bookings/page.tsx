@@ -11,7 +11,7 @@ import { CalendarDays, Clock, User, UserCheck, CreditCard, MapPin, Phone, Plus, 
 import { BookingContactButtons } from '@/components/dashboard/booking-contact-buttons'
 import { CancelBookingButton } from '@/components/dashboard/cancel-booking-button'
 import { ManualPaymentDialog } from '@/components/dashboard/manual-payment-dialog'
-import { isManualPaymentAllowed } from '@/components/dashboard/manual-payment-utils'
+import { isManualPaymentAllowed, manualPaymentBlockedReason } from '@/components/dashboard/manual-payment-utils'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { bookingWhere, isNotableModality } from '@/lib/services/modality'
 import type { ServiceModality } from '@prisma/client'
@@ -78,6 +78,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
   transferEnabled?: boolean
 }) {
   const canRegisterPayment = isManualPaymentAllowed(booking)
+  const paymentBlockedReason = manualPaymentBlockedReason(booking)
   const isPendingTransfer = hasPendingDeclaredTransfer(booking)
   const isPendingBalanceTransfer = hasPendingBalanceTransfer(booking)
   const reviveState = booking.status === 'expired'
@@ -234,19 +235,24 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
         </div>
       )}
       {booking.status === 'pending_payment' && (
-        <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
-          {canRegisterPayment && (
-            <ManualPaymentDialog
-              bookings={[booking]}
-              businessCurrency={businessCurrency}
-              defaultBookingId={booking.id}
-              triggerVariant="outline"
-              triggerClassName="flex-1 h-10 text-sm font-semibold"
-            />
+        <div className="mt-4 border-t border-border/50 pt-4">
+          {/* El motivo va escrito y no en un title: acá hay ancho, y es táctil —
+              en un teléfono nadie descubre un tooltip. */}
+          {paymentBlockedReason && (
+            <p className="mb-3 text-sm text-muted-foreground">{paymentBlockedReason}</p>
           )}
-          {booking.status === 'pending_payment' && (
+          <div className="flex gap-2">
+            {canRegisterPayment && (
+              <ManualPaymentDialog
+                bookings={[booking]}
+                businessCurrency={businessCurrency}
+                defaultBookingId={booking.id}
+                triggerVariant="outline"
+                triggerClassName="flex-1 h-10 text-sm font-semibold"
+              />
+            )}
             <CancelBookingButton bookingId={booking.id} size="default" />
-          )}
+          </div>
         </div>
       )}
       {booking.status === 'completed' && canRegisterPayment && (
@@ -300,15 +306,17 @@ export default async function BookingsPage() {
     ? !!(await getBankTransferInfo(userData.business.id))
     : false
 
-  // Los dos contadores de espera van por el status EFECTIVO, igual que los
-  // badges de abajo: si no, la tarjeta dice "3 pendientes de pago" y la tabla
-  // muestra dos, porque la tercera ya se está expirando.
-  const effectiveStatuses = bookings.map(b => effectiveBookingStatus(b))
   const confirmedCount = bookings.filter(b => b.status === 'confirmed').length
-  const pendingCount = effectiveStatuses.filter(s => s === 'pending_payment').length
+  // Por status EFECTIVO, igual que los badges de abajo: si no, la tarjeta dice
+  // "3 pendientes de pago" y la tabla muestra dos, porque a la tercera ya se le
+  // venció el plazo.
+  const pendingCount = bookings.filter(b => effectiveBookingStatus(b) === 'pending_payment').length
   // Solicitudes esperando respuesta. La tarjeta sólo aparece si hay alguna: un
   // negocio sin confirmación manual nunca ve un contador que siempre marca 0.
-  const requestCount = effectiveStatuses.filter(s => s === 'pending_confirmation').length
+  // Va por el status CRUDO a propósito: la dueña puede aceptar una solicitud con
+  // el plazo vencido, así que esconderle la tarjeta le sacaría el punto de
+  // entrada a algo que todavía puede resolver.
+  const requestCount = bookings.filter(b => b.status === 'pending_confirmation').length
 
   // Race orphans (spec §5): una reserva cancelada/expirada puede haber quedado
   // con un Payment pending sin barrer; no la mostramos como "por verificar".

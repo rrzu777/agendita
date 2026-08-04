@@ -21,31 +21,44 @@ export function bookingStatusLabel(status: string): string {
 }
 
 /**
+ * Estado DERIVADO, no asentado: el plazo para pagar venció y la reserva sigue
+ * en `pending_payment` porque el cron todavía no pasó (corre cada hora, y
+ * GitHub puede atrasarlo ~15 min más). Hasta entonces el panel mostraba
+ * "Pendiente de pago" en naranja sobre algo que el server ya no deja cobrar.
+ *
+ * NO reusa la clave `expired`, y eso importa: en este panel `expired` es un
+ * estado asentado y ACCIONABLE — tiene "Revivir" al lado, que exige
+ * `status: 'expired'` en la base. Pintar de "Expirada" algo que todavía no lo
+ * está prometía una acción que no aparece.
+ */
+export const HOLD_EXPIRED_STATUS = 'hold_expired'
+
+/**
  * El status que hay que MOSTRAR, que no siempre es el que la base tiene
- * asentado: con el hold vencido la reserva ya está condenada y sólo falta que
- * el cron —que corre cada hora— lo escriba. Hasta entonces el panel mostraba
- * "Pendiente de pago" en naranja sobre algo que nadie va a pagar, y al lado
- * ofrecía "Cobrar" (ver `isManualPaymentAllowed`, que ahora mira lo mismo).
+ * asentado. Devuelve un status y no una etiqueta a propósito: el badge deriva
+ * de la clave el TEXTO y el COLOR, así que se arreglan los dos de una vez.
  *
- * Devuelve un status y no una etiqueta a propósito: el badge deriva de la clave
- * el TEXTO y el COLOR, así que topar acá arregla los dos de una vez, en las
- * tres superficies del panel (tabla, card móvil, drawer del calendario).
+ * SÓLO deriva `pending_payment`. `isDoomedHold` también da por muerta a la
+ * solicitud sin responder, y para la CLIENTA está bien (ver el `statusLabel` de
+ * /mi) — pero acá la que mira es la dueña, y ella todavía puede aceptarla:
+ * `VALID_STATUS_TRANSITIONS` permite `pending_confirmation → confirmed` sin
+ * mirar el hold, y `_updateBookingStatus` hasta limpia el plazo al aprobar.
+ * Rotularla "Expirada" al lado de un botón "Aceptar" que funciona la haría
+ * abandonar una reserva que estaba a un clic de salvarse.
  *
- * `isDoomedHold` espeja las condiciones de los sweeps del cron — o sea, esto
- * adelanta exactamente lo que el sistema va a hacer, no una opinión. Es el
- * mismo criterio con el que /mi le habla a la clienta (ver su `statusLabel`),
- * con UNA divergencia deliberada: /mi también deja ganar a un pago de Mercado
- * Pago en vuelo, porque a ella se le está pidiendo que pague. El panel no
- * consulta esos pagos y no debería: el cron tampoco los mira antes de expirar.
+ * OJO — el llamador tiene que respetar la precedencia que documenta
+ * `isDoomedHold`: una transferencia declarada o un pago en vuelo GANAN sobre el
+ * plazo vencido. La tabla y la card cortan antes con `hasPendingDeclaredTransfer`;
+ * una superficie que no pueda evaluar esa precedencia (porque su consulta no
+ * trae `payments`) NO debe llamar a esta función, o le va a decir "vencido" a
+ * quien pagó en fecha.
  */
 export function effectiveBookingStatus(
-  // `string` además de `Date` por el payload serializado del calendario, mismo
-  // criterio que `getReviveReopenState`.
-  booking: { status: string; paymentStatus: string; holdExpiresAt: Date | string | null },
+  booking: { status: string; paymentStatus: string; holdExpiresAt: Date | null },
   now: Date = new Date(),
 ): string {
-  const holdExpiresAt = booking.holdExpiresAt == null ? null : new Date(booking.holdExpiresAt)
-  return isDoomedHold({ ...booking, holdExpiresAt }, now) ? 'expired' : booking.status
+  if (booking.status !== 'pending_payment') return booking.status
+  return isDoomedHold(booking, now) ? HOLD_EXPIRED_STATUS : booking.status
 }
 
 /**

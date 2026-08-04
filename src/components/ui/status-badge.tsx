@@ -1,6 +1,6 @@
 import { Badge } from './badge'
 import { cn } from '@/lib/utils'
-import { bookingStatusLabels } from '@/lib/bookings/status-labels'
+import { bookingStatusLabels, HOLD_EXPIRED_STATUS } from '@/lib/bookings/status-labels'
 
 type StatusEntry = { label: string; className: string }
 
@@ -15,6 +15,11 @@ const BOOKING_STATUS: Record<string, StatusEntry> = {
   cancelled: { label: bookingStatusLabels.cancelled, className: 'bg-muted text-muted-foreground' },
   no_show: { label: bookingStatusLabels.no_show, className: 'bg-destructive/10 text-destructive dark:bg-destructive/20' },
   expired: { label: bookingStatusLabels.expired, className: 'bg-muted text-muted-foreground' },
+  // Estado derivado, no asentado (ver HOLD_EXPIRED_STATUS): el plazo venció y el
+  // cron todavía no pasó. Gris como `expired` porque ya no hay nada que cobrar,
+  // pero con OTRA palabra: "Expirada" en esta tabla viene con "Revivir" al lado,
+  // y ese botón todavía no existe para esta fila.
+  [HOLD_EXPIRED_STATUS]: { label: 'Plazo vencido', className: 'bg-muted text-muted-foreground' },
 }
 
 const SERVICE_STATUS: Record<string, StatusEntry> = {
