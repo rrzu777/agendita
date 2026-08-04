@@ -89,6 +89,31 @@ function BusinessCancellationPolicy({ policy }: { policy?: string | null }) {
   )
 }
 
+/**
+ * Cuál de las pantallas que eligen los DATOS corresponde, cuando el `step` no
+ * mandó ninguna.
+ *
+ * Vive afuera del componente y devuelve un nombre en vez de JSX por un motivo:
+ * la precedencia entre estas cuatro **es cargante y no se ve**. Que
+ * `noDepositNeeded` vaya primero no es una preferencia de orden — el efecto de
+ * disponibilidad hace early-return en ese caso, así que `availability` se queda
+ * en `null` PARA SIEMPRE, y cualquier rama que mire el `null` antes deja al
+ * servicio sin abono girando "Verificando disponibilidad de pago..." sin salida.
+ * Escrito como una cadena de `if` eso es una trampa invisible, que es la misma
+ * clase que #159 un piso más abajo. Acá se lee de una y la cuida un test.
+ */
+export function pantallaDeDatos({
+  noDepositNeeded,
+  availability,
+}: {
+  noDepositNeeded: boolean
+  availability: { available: boolean } | null
+}): 'sin-abono' | 'verificando' | 'sin-pago-online' | 'cobrar' {
+  if (noDepositNeeded) return 'sin-abono'
+  if (availability === null) return 'verificando'
+  return availability.available ? 'cobrar' : 'sin-pago-online'
+}
+
 export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, manualHoldHours, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; manualHoldHours: number; referralToken?: string; onSuccess: (result: BookingCreated) => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error' | 'transfer-details' | 'transfer-declared'>('review')
@@ -511,70 +536,108 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     }
   }
 
-  if (step === 'processing') {
-    return (
-      <div className="py-14 text-center">
-        <Loader2 className="mx-auto mb-4 size-8 animate-spin text-primary" />
-        <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">Procesando tu reserva...</h2>
-        <p className="text-muted-foreground">Por favor no cierres esta ventana</p>
-      </div>
-    )
-  }
-
-  if (step === 'error') {
-    return (
-      <div className="py-12 text-center">
-        <AlertCircle className="mx-auto mb-4 size-9 text-destructive" />
-        <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">Error en el pago</h2>
-        <p className="mb-5 text-muted-foreground">{errorMessage || 'No se pudo procesar el pago'}</p>
-        <div className="flex justify-center gap-3">
-          <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
-          <Button className="h-12 rounded-full px-6" onClick={() => setStep('review')}>Intentar de nuevo</Button>
+  /* Qué se ve lo decide PRIMERO el `step` y recién después los datos.
+     `transfer-details` vivía debajo de la rama "no hay pago online", que sólo
+     mira `availability`, y al negocio que cobra SÓLO por transferencia esa rama
+     le ganaba siempre: la reserva se creaba de verdad y la pantalla no se movía
+     (#159). Un `if` encadenado no puede impedir que vuelva a pasar —el orden es
+     invisible— así que el `switch` es exhaustivo: un `step` nuevo sin rama acá
+     no compila. Lo de afuera son las pantallas que eligen los DATOS, que tienen
+     su propia regla (`pantallaDeDatos`).
+     El caso de #159 lo cuida `step-payment-plazo-transferencia.test.tsx`, que
+     entra de verdad al camino de transferencia; el de `'success'`,
+     `step-payment-pantalla-por-step.test.tsx`. */
+  switch (step) {
+    // `'success'` comparte pantalla con `'processing'`: no tiene una propia
+    // porque `onSuccess()` hace que el padre saque este paso del medio en el
+    // mismo tick, así que en la práctica no llega a verse. Comparte el spinner
+    // y no hace `break` a propósito — si algún día el padre tardara, lo que
+    // tiene que verse es "esperá", no el formulario de pago de una reserva que
+    // YA se creó (con `break` volvía justo a eso).
+    case 'processing':
+    case 'success':
+      return (
+        <div className="py-14 text-center">
+          <Loader2 className="mx-auto mb-4 size-8 animate-spin text-primary" />
+          <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">Procesando tu reserva...</h2>
+          <p className="text-muted-foreground">Por favor no cierres esta ventana</p>
         </div>
-      </div>
-    )
-  }
+      )
 
-  /* Las pantallas que manda el `step` van TODAS antes que las que dependen de
-     los datos. Estas dos estaban debajo de la rama "no hay pago online", que
-     sólo mira `availability`, y al negocio que cobra SÓLO por transferencia esa
-     rama le ganaba siempre: la reserva se creaba de verdad y la pantalla no se
-     movía. Lo cuida `step-payment-plazo-transferencia.test.tsx`. */
-  if (step === 'transfer-details' && bankInfo && transferBooking) {
-    return (
-      <div>
-        <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Transferí el abono</h2>
-        <p className="mb-6 text-lg text-muted-foreground">Tu horario queda reservado mientras transferís</p>
-        {errorMessage && <p className="mb-4 text-sm text-destructive">{errorMessage}</p>}
-        <TransferDetails bank={bankInfo} amount={effectiveDeposit} currency={currency} deadlinePhrase={holdDeadlinePhrase(transferBooking, timezone)} declaring={declaring} onDeclare={handleDeclare} bookingId={transferBooking.id} />
-        <p className="mt-4 text-sm text-muted-foreground">
-          También podés avisar más tarde desde{' '}
-          <Link className="font-semibold text-primary underline" href={`/book/confirmation?bookingId=${transferBooking.id}`}>tu página de reserva</Link>
-          {' '}(te mandamos los datos por email si dejaste uno).
-        </p>
-      </div>
-    )
-  }
-
-  if (step === 'transfer-declared' && transferBooking) {
-    return (
-      <div className="py-10 text-center">
-        <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-amber-50">
-          <Clock className="size-8 text-amber-500" />
+    case 'error':
+      return (
+        <div className="py-12 text-center">
+          <AlertCircle className="mx-auto mb-4 size-9 text-destructive" />
+          <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">Error en el pago</h2>
+          <p className="mb-5 text-muted-foreground">{errorMessage || 'No se pudo procesar el pago'}</p>
+          <div className="flex justify-center gap-3">
+            <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
+            <Button className="h-12 rounded-full px-6" onClick={() => setStep('review')}>Intentar de nuevo</Button>
+          </div>
         </div>
-        <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">Transferencia en verificación</h2>
-        <p className="mb-2 text-muted-foreground">Avisamos al negocio. Te confirmaremos cuando verifique el pago.</p>
-        {transferBooking.bookingNumber != null && (
-          <p className="mb-5 text-sm text-muted-foreground">Tu código de reserva: <span className="font-mono font-semibold text-primary">#{transferBooking.bookingNumber}</span></p>
-        )}
-        <Button asChild className="h-12 rounded-full px-6">
-          <Link href={`/book/confirmation?bookingId=${transferBooking.id}`}>Ver el estado de mi reserva</Link>
-        </Button>
-      </div>
-    )
+      )
+
+    // Los dos pasos de transferencia necesitan datos que llegan por separado
+    // (la cuenta la trae un efecto, la reserva la devuelve la action). Sin
+    // ellos no hay nada que mostrar: caen en las pantallas de datos de abajo,
+    // que es lo que hacían antes.
+    case 'transfer-details':
+      if (bankInfo && transferBooking) {
+        return (
+          <div>
+            <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Transferí el abono</h2>
+            <p className="mb-6 text-lg text-muted-foreground">Tu horario queda reservado mientras transferís</p>
+            {errorMessage && <p className="mb-4 text-sm text-destructive">{errorMessage}</p>}
+            <TransferDetails bank={bankInfo} amount={effectiveDeposit} currency={currency} deadlinePhrase={holdDeadlinePhrase(transferBooking, timezone)} declaring={declaring} onDeclare={handleDeclare} bookingId={transferBooking.id} />
+            <p className="mt-4 text-sm text-muted-foreground">
+              También podés avisar más tarde desde{' '}
+              <Link className="font-semibold text-primary underline" href={`/book/confirmation?bookingId=${transferBooking.id}`}>tu página de reserva</Link>
+              {' '}(te mandamos los datos por email si dejaste uno).
+            </p>
+          </div>
+        )
+      }
+      break
+
+    case 'transfer-declared':
+      if (transferBooking) {
+        return (
+          <div className="py-10 text-center">
+            <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-amber-50">
+              <Clock className="size-8 text-amber-500" />
+            </div>
+            <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">Transferencia en verificación</h2>
+            <p className="mb-2 text-muted-foreground">Avisamos al negocio. Te confirmaremos cuando verifique el pago.</p>
+            {transferBooking.bookingNumber != null && (
+              <p className="mb-5 text-sm text-muted-foreground">Tu código de reserva: <span className="font-mono font-semibold text-primary">#{transferBooking.bookingNumber}</span></p>
+            )}
+            <Button asChild className="h-12 rounded-full px-6">
+              <Link href={`/book/confirmation?bookingId=${transferBooking.id}`}>Ver el estado de mi reserva</Link>
+            </Button>
+          </div>
+        )
+      }
+      break
+
+    // El único que a propósito no tiene pantalla acá: la elige la data.
+    case 'review':
+      break
+
+    // Un `step` nuevo sin rama acá NO COMPILA, y eso es todo lo que hace este
+    // bloque. En runtime es inalcanzable —`step` sólo lo escribe `setStep` con
+    // literales—, así que degrada a las pantallas de datos en vez de tirar
+    // abajo el wizard: no hay error boundary bajo `/book`.
+    default:
+      step satisfies never
+      break
   }
 
-  if (noDepositNeeded) {
+  /* De acá para abajo la pantalla la eligen los DATOS. Cada rama pregunta por
+     un valor distinto de `pantallaDeDatos`, así que reordenarlas no cambia nada:
+     la precedencia —lo único delicado— vive allá arriba, sola y testeada. */
+  const pantalla = pantallaDeDatos({ noDepositNeeded, availability })
+
+  if (pantalla === 'sin-abono') {
     return (
       <div>
         <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Confirmar reserva</h2>
@@ -632,7 +695,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     )
   }
 
-  if (availability && !availability.available) {
+  if (pantalla === 'sin-pago-online') {
     return (
       <div>
         <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Confirmar reserva</h2>
@@ -709,7 +772,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     )
   }
 
-  if (availability === null) {
+  if (pantalla === 'verificando') {
     return (
       <div className="py-14 text-center">
         <Loader2 className="mx-auto mb-4 size-8 animate-spin text-primary" />
@@ -763,7 +826,11 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         </div>
       )}
 
-      {availability.isMock && (
+      {/* `?.` y no `!`: acá `availability` está cargado por construcción (es lo
+          que decidió `pantallaDeDatos`), pero eso ya no lo sabe el tipo. Si un
+          día no lo estuviera, el aviso de entorno de prueba no aparece — y no
+          se cae la pantalla de pago entera. */}
+      {availability?.isMock && (
         <div className="mb-4 rounded-xl border border-border/70 bg-secondary/40 px-4 py-3 text-sm text-primary">
           <p>Entorno de prueba: los pagos se procesan de forma simulada.</p>
         </div>

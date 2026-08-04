@@ -3,11 +3,11 @@ import { createRoot } from 'react-dom/client'
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 
 const mockCreateBooking = vi.hoisted(() => vi.fn())
-const mockGetBankTransferInfo = vi.hoisted(() => vi.fn())
 
 vi.mock('@/server/actions/bookings', () => ({ createBooking: mockCreateBooking }))
-// Sin esto se carga el módulo `'use server'` de verdad con su cadena entera
-// (Prisma, next/cache, auth): cientos de ms que se pagan por nada.
+// Sin este mock se carga el módulo `'use server'` de verdad, con su cadena
+// entera (Prisma, next/cache, auth): son cientos de ms por archivo, y con el
+// pool de workers peleado es la diferencia con el timeout de 5 s.
 vi.mock('@/server/actions/promotions', () => ({ previewPromotion: vi.fn() }))
 vi.mock('@/server/actions/payments', () => ({
   initiatePayment: vi.fn(),
@@ -18,34 +18,23 @@ vi.mock('@/server/actions/packages', () => ({
   getActivePackagesForCustomer: vi.fn().mockResolvedValue({ ok: true, data: { remaining: 0 } }),
 }))
 vi.mock('@/server/actions/bank-transfer-public', () => ({
-  getBankTransferInfo: mockGetBankTransferInfo,
+  getBankTransferInfo: vi.fn().mockResolvedValue(null),
   declareBankTransfer: vi.fn(),
   createProofUploadUrl: vi.fn(),
 }))
 
 const TZ = 'America/Santiago'
-// La cita: hoy a las 10:00 hora de Santiago, de una hora.
 const INICIO = new Date('2026-08-03T14:00:00Z')
 const FIN = new Date('2026-08-03T15:00:00Z')
 
-const bank = {
-  accountHolder: 'María P',
-  rut: '1-9',
-  bankName: 'BancoEstado',
-  accountType: 'vista',
-  accountNumber: '12345678',
-  email: null,
-  instructions: null,
-  holdHours: 24,
-  requireProof: false,
-}
-
+/** Sin abono: la pantalla que se ve es "Confirmar reserva" y el botón crea la
+ *  reserva de una, sin pasar por ningún checkout. */
 const bookingData = {
   serviceId: 'svc-1',
   serviceName: 'Manicure',
   servicePrice: 20000,
   serviceDuration: 60,
-  serviceDeposit: 5000,
+  serviceDeposit: 0,
   serviceColor: '',
   serviceModalities: ['on_site' as const],
   serviceModality: 'on_site' as const,
@@ -61,7 +50,6 @@ const bookingData = {
   idempotencyKey: null,
 }
 
-/** Click de verdad sobre el botón cuyo texto matchea. */
 function clickPorTexto(container: HTMLElement, texto: string) {
   const el = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes(texto))
   if (!el) throw new Error(`No encontré el botón "${texto}"`)
@@ -69,41 +57,47 @@ function clickPorTexto(container: HTMLElement, texto: string) {
 }
 
 /**
- * La ventana de la transferencia son HORAS (24 por default), así que contra una
- * cita cercana el plazo cae después de la cita. Esta pantalla es la que se lo
- * promete a la clienta, y prometía la fecha cruda del hold.
+ * El componente elige pantalla por `step` primero y por los datos después. La
+ * clase de bug que eso evita ya pasó una vez (#159): una rama que sólo miraba
+ * los datos tapaba a una que miraba el `step`, y la reserva se creaba mientras
+ * la pantalla no se movía.
+ *
+ * `'success'` era el siguiente caso de la misma clase y no lo cubría nadie: no
+ * tenía rama propia, así que caía en la pantalla de los datos —el formulario de
+ * una reserva que YA existe—. Hoy no se ve porque `onSuccess()` desmonta el
+ * paso en el mismo tick, o sea que la garantía la pone el PADRE. Acá el padre
+ * no desmonta nada a propósito: es la única forma de mirar lo que este
+ * componente decide solo.
  */
-describe('StepPayment — el plazo que promete la pantalla de transferencia', () => {
+describe('StepPayment — la pantalla la manda el step', () => {
   beforeAll(() => {
     ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-    // Sólo el reloj: `toFake: ['Date']` deja andar los timers de verdad, que es
-    // de lo que dependen los efectos del wizard para resolver.
-    vi.useFakeTimers({ toFake: ['Date'] })
-    // Dos horas antes de la cita: el hold de 24 h se pasa de largo.
-    vi.setSystemTime(new Date('2026-08-03T12:00:00Z'))
   })
 
   afterAll(() => {
-    vi.useRealTimers()
     delete (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT
   })
 
-  it('no se pasa de la cita: dice "tu cita", no el día siguiente', async () => {
+  it('con la reserva ya creada no vuelve a ofrecer el formulario', async () => {
     const { StepPayment } = await import('@/components/booking/step-payment')
-    mockGetBankTransferInfo.mockResolvedValue(bank)
     mockCreateBooking.mockResolvedValue({
       ok: true,
       data: {
         id: 'b1',
         bookingNumber: 7,
-        // Lo que escribe createBooking: ahora + holdHours, sin mirar la cita.
-        holdExpiresAt: new Date('2026-08-04T12:00:00Z'),
-        endDateTime: FIN,
+        status: 'confirmed',
+        modality: 'on_site',
+        serviceAddress: null,
+        meetingUrl: null,
+        professional: null,
       },
     })
 
     const container = document.createElement('div')
     const root = createRoot(container)
+    // Un padre que NO desmonta: si la exhaustividad dependiera sólo de él, acá
+    // reaparecería el botón de confirmar sobre una reserva que ya se creó.
+    const onSuccess = vi.fn()
     await act(async () => {
       root.render(
         <StepPayment
@@ -113,32 +107,31 @@ describe('StepPayment — el plazo que promete la pantalla de transferencia', ()
           manualHoldHours={24}
           timezone={TZ}
           currency="CLP"
-          onSuccess={vi.fn()}
+          onSuccess={onSuccess}
           onBack={vi.fn()}
         />,
       )
     })
-    // Sin pago online y con cuenta bancaria configurada la pantalla ya está en
-    // el camino de transferencia: no hay selector que elegir.
-    await act(async () => {})
-    await act(async () => {
-      const check = container.querySelector<HTMLInputElement>('#accept-terms')!
-      check.click()
-    })
-    await act(async () => { clickPorTexto(container, 'Continuar con transferencia') })
     await act(async () => {})
 
-    // Que la pantalla haya avanzado no es decorado: sin esto la reserva se crea
-    // igual —hold corriendo, mail saliendo— y la clienta se queda mirando el
-    // mismo botón.
-    expect(container.textContent).toContain('BancoEstado')
-    expect(container.textContent).toContain('Tenés hasta tu cita')
-    // El día siguiente es lo que decía antes, y es justamente lo que no puede decir.
-    expect(container.textContent).not.toContain('4 de agosto')
-    expect(container.textContent).not.toContain('04-08-2026')
+    expect(container.textContent).toContain('Confirmar reserva')
+
+    await act(async () => {
+      container.querySelector<HTMLInputElement>('#accept-terms')!.click()
+    })
+    await act(async () => { clickPorTexto(container, 'Confirmar reserva') })
+    await act(async () => {})
+
+    expect(onSuccess).toHaveBeenCalledTimes(1)
+    expect(mockCreateBooking).toHaveBeenCalledTimes(1)
+    // La reserva ya existe: ofrecer "Confirmar reserva" otra vez es ofrecer una
+    // segunda reserva del mismo horario.
+    expect(container.textContent).not.toContain('Confirmar reserva')
+    expect(container.textContent).toContain('Procesando tu reserva')
 
     await act(async () => { root.unmount() })
-    // Timeout propio: montar el wizard entero se come varios segundos y el
-    // default de 5 s de la suite lo vuelve un dado bajo carga.
+    // Timeout propio: montar el wizard entero con `createRoot` se come varios
+    // segundos, y con el pool de workers peleado el default de 5 s de la suite
+    // convierte este test en un dado. No es lentitud del caso, es el arranque.
   }, 20_000)
 })
