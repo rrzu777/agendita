@@ -7,6 +7,12 @@ import { CancelBookingButton } from '@/components/dashboard/cancel-booking-butto
 import { ManualPaymentDialog } from '@/components/dashboard/manual-payment-dialog'
 import { BookingRowActions } from '@/components/dashboard/booking-row-actions'
 
+// El reloj lo pone quien renderiza: estos componentes son cliente y salen en
+// el HTML del servidor (ver `isManualPaymentAllowed`). Los plazos de los casos
+// se arman contra ÉL — con `Date.now()` medirían contra otro reloj que el que
+// recibe el componente, que es justo lo que este PR vino a impedir.
+const NOW = new Date('2026-08-01T12:00:00Z')
+
 describe('CancelBookingButton controlled mode', () => {
   it('renders no trigger button when hideTrigger is set', () => {
     const html = renderToStaticMarkup(
@@ -36,7 +42,7 @@ const payableBooking = {
 describe('ManualPaymentDialog controlled mode', () => {
   it('renders no trigger button when hideTrigger is set', () => {
     const html = renderToStaticMarkup(
-      <ManualPaymentDialog bookings={[payableBooking as never]} defaultBookingId="b1" hideTrigger open={false} onOpenChange={() => {}} />,
+      <ManualPaymentDialog bookings={[payableBooking as never]} now={NOW} defaultBookingId="b1" hideTrigger open={false} onOpenChange={() => {}} />,
     )
     expect(html).not.toContain('Registrar pago')
     expect(html).not.toContain('Cobrar')
@@ -65,21 +71,21 @@ const HORA = 60 * 60 * 1000
 // emit, so these tests cover the primary action + kebab trigger only, on purpose.
 describe('BookingRowActions', () => {
   it('shows Completar as primary + kebab for a confirmed booking', () => {
-    const html = renderToStaticMarkup(<BookingRowActions booking={rowBooking() as never} businessCurrency="CLP" />)
+    const html = renderToStaticMarkup(<BookingRowActions booking={rowBooking() as never} businessCurrency="CLP" now={NOW} />)
     expect(html).toContain('Completar')
     expect(html).toContain('Más acciones')
   })
 
   it('shows Cobrar as primary for a pending_payment booking', () => {
-    const html = renderToStaticMarkup(<BookingRowActions booking={rowBooking({ status: 'pending_payment' }) as never} businessCurrency="CLP" />)
+    const html = renderToStaticMarkup(<BookingRowActions booking={rowBooking({ status: 'pending_payment' }) as never} businessCurrency="CLP" now={NOW} />)
     expect(html).toContain('Cobrar')
   })
 
   // OJO: buscar 'disabled' pelado no sirve — las clases de Tailwind traen
   // `disabled:opacity-50` en TODOS los botones. La propiedad real es `disabled=""`.
   it('con el plazo vivo el Cobrar sigue habilitado', () => {
-    const booking = rowBooking({ status: 'pending_payment', holdExpiresAt: new Date(Date.now() + HORA) })
-    const html = renderToStaticMarkup(<BookingRowActions booking={booking as never} businessCurrency="CLP" />)
+    const booking = rowBooking({ status: 'pending_payment', holdExpiresAt: new Date(NOW.getTime() + HORA) })
+    const html = renderToStaticMarkup(<BookingRowActions booking={booking as never} businessCurrency="CLP" now={NOW} />)
     expect(html).toContain('Cobrar')
     expect(html).not.toContain('disabled=""')
   })
@@ -88,8 +94,8 @@ describe('BookingRowActions', () => {
     // El server rechaza este cobro (assertBookingPayable). Antes el botón estaba
     // habilitado y el clic moría en un error; que ahora DESAPAREZCA sin decir
     // nada sería igual de malo, así que queda deshabilitado con el motivo.
-    const booking = rowBooking({ status: 'pending_payment', holdExpiresAt: new Date(Date.now() - HORA) })
-    const html = renderToStaticMarkup(<BookingRowActions booking={booking as never} businessCurrency="CLP" />)
+    const booking = rowBooking({ status: 'pending_payment', holdExpiresAt: new Date(NOW.getTime() - HORA) })
+    const html = renderToStaticMarkup(<BookingRowActions booking={booking as never} businessCurrency="CLP" now={NOW} />)
     expect(html).toContain('disabled=""')
     expect(html).toContain('Revivir')
     // Cancelar sigue disponible en el menú: la fila nunca queda muda.
@@ -102,16 +108,16 @@ describe('BookingRowActions', () => {
     // dejaba sin salida: ni cobrar, ni el Expirada que habilita Revivir.
     const booking = rowBooking({
       status: 'pending_payment',
-      holdExpiresAt: new Date(Date.now() - HORA),
+      holdExpiresAt: new Date(NOW.getTime() - HORA),
       paymentStatus: 'deposit_paid',
     })
-    const html = renderToStaticMarkup(<BookingRowActions booking={booking as never} businessCurrency="CLP" />)
+    const html = renderToStaticMarkup(<BookingRowActions booking={booking as never} businessCurrency="CLP" now={NOW} />)
     expect(html).toContain('Cobrar')
     expect(html).not.toContain('disabled=""')
   })
 
   it('renders nothing actionable for a terminal booking', () => {
-    const html = renderToStaticMarkup(<BookingRowActions booking={rowBooking({ status: 'completed', remainingBalance: 0 }) as never} businessCurrency="CLP" />)
+    const html = renderToStaticMarkup(<BookingRowActions booking={rowBooking({ status: 'completed', remainingBalance: 0 }) as never} businessCurrency="CLP" now={NOW} />)
     expect(html).not.toContain('Completar')
     expect(html).not.toContain('Cobrar')
     expect(html).not.toContain('Más acciones')

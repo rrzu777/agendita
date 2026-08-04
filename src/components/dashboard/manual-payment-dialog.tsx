@@ -33,6 +33,7 @@ export function ManualPaymentDialog({
   open: controlledOpen,
   onOpenChange,
   hideTrigger = false,
+  now,
 }: {
   bookings: ManualPaymentBooking[]
   businessCurrency?: string
@@ -44,6 +45,8 @@ export function ManualPaymentDialog({
   open?: boolean
   onOpenChange?: (open: boolean) => void
   hideTrigger?: boolean
+  /** El reloj del SERVIDOR de este render: ver `isManualPaymentAllowed`. */
+  now: Date
 }) {
   const router = useRouter()
   const isControlled = controlledOpen !== undefined
@@ -60,8 +63,9 @@ export function ManualPaymentDialog({
 
   // Lambda y no point-free: `filter` pasa el índice como 2º argumento, que acá
   // es el `now` del predicado. Cada reserva se compararía contra el epoch, o
-  // sea contra un plazo que nunca vence, y el gate no filtraría nada.
-  const payableBookings = useMemo(() => bookings.filter((b) => isManualPaymentAllowed(b)), [bookings])
+  // sea contra un plazo que nunca vence, y el gate no filtraría nada. (Desde
+  // que `now` es requerido, escribirlo mal tampoco compila.)
+  const payableBookings = useMemo(() => bookings.filter((b) => isManualPaymentAllowed(b, now)), [bookings, now])
   const selectedBooking = payableBookings.find((booking) => booking.id === bookingId) || null
   const suggestion = selectedBooking ? getManualPaymentSuggestion(selectedBooking) : null
   // Aviso informativo, no bloqueante: si ya hay una transferencia del saldo

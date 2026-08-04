@@ -48,7 +48,7 @@ function EmptyState() {
   )
 }
 
-export function BookingCard({ booking, businessCurrency, businessTimezone, businessAddress, transferEnabled }: {
+export function BookingCard({ booking, businessCurrency, businessTimezone, businessAddress, transferEnabled, now }: {
   booking: {
     id: string
     bookingNumber: number | null
@@ -76,13 +76,17 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
   businessTimezone: string
   businessAddress: string | null
   transferEnabled?: boolean
+  /** El reloj de este render. Lo baja la página para que la tarjeta, la fila de
+   *  la tabla y el contador de "Pendientes de pago" midan el mismo plazo contra
+   *  el mismo instante. */
+  now: Date
 }) {
-  const canRegisterPayment = isManualPaymentAllowed(booking)
-  const paymentBlockedReason = manualPaymentBlockedReason(booking)
+  const canRegisterPayment = isManualPaymentAllowed(booking, now)
+  const paymentBlockedReason = manualPaymentBlockedReason(booking, now)
   const isPendingTransfer = hasPendingDeclaredTransfer(booking)
   const isPendingBalanceTransfer = hasPendingBalanceTransfer(booking)
   const reviveState = booking.status === 'expired'
-    ? getReviveReopenState({ startDateTime: booking.startDateTime, paymentMethod: booking.paymentMethod ?? null }, !!transferEnabled)
+    ? getReviveReopenState({ startDateTime: booking.startDateTime, paymentMethod: booking.paymentMethod ?? null }, !!transferEnabled, now)
     : null
 
   return (
@@ -96,7 +100,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           {isPendingTransfer ? (
             <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>
           ) : (
-            <StatusBadge status={effectiveBookingStatus(booking)} />
+            <StatusBadge status={effectiveBookingStatus(booking, now)} />
           )}
           {isPendingBalanceTransfer && (
             <span className={PENDING_BALANCE_BADGE_CLASS}>Saldo por verificar</span>
@@ -208,6 +212,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           {canRegisterPayment && (
             <ManualPaymentDialog
               bookings={[booking]}
+              now={now}
               businessCurrency={businessCurrency}
               defaultBookingId={booking.id}
               triggerVariant="outline"
@@ -245,6 +250,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
             {canRegisterPayment && (
               <ManualPaymentDialog
                 bookings={[booking]}
+                now={now}
                 businessCurrency={businessCurrency}
                 defaultBookingId={booking.id}
                 triggerVariant="outline"
@@ -261,6 +267,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
         <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
           <ManualPaymentDialog
             bookings={[booking]}
+            now={now}
             businessCurrency={businessCurrency}
             defaultBookingId={booking.id}
             triggerVariant="outline"
@@ -298,6 +305,11 @@ export default async function BookingsPage() {
   }
 
   const bookings = await getBookings()
+  // Un solo reloj para toda la página: el badge de la tabla, el de la tarjeta
+  // móvil y el contador de arriba derivan el mismo "plazo vencido", y con un
+  // `new Date()` por llamada una reserva que vence entre medio los deja
+  // discrepando entre sí.
+  const now = new Date()
   const businessCurrency = userData.business.currency || 'CLP'
   const businessTimezone = userData.business.timezone || 'America/Santiago'
   const businessAddress = userData.business.addressText || null
@@ -313,7 +325,7 @@ export default async function BookingsPage() {
   // effectiveBookingStatus): dos filas con el badge "Transferencia por
   // verificar" tienen que contar igual, y con el crudo la del plazo vencido
   // se caía del conteo mientras la otra sumaba.
-  const pendingCount = bookings.filter(b => displayedBookingStatus(b) === 'pending_payment').length
+  const pendingCount = bookings.filter(b => displayedBookingStatus(b, now) === 'pending_payment').length
   // Solicitudes esperando respuesta. La tarjeta sólo aparece si hay alguna: un
   // negocio sin confirmación manual nunca ve un contador que siempre marca 0.
   // Va por el status CRUDO a propósito: la dueña puede aceptar una solicitud con
@@ -381,6 +393,7 @@ export default async function BookingsPage() {
           items={pendingTransfers}
           businessCurrency={businessCurrency}
           businessTimezone={businessTimezone}
+          now={now}
         />
 
         {bookings.length === 0 ? (
@@ -429,7 +442,7 @@ export default async function BookingsPage() {
                           {hasPendingDeclaredTransfer(booking) ? (
                             <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>
                           ) : (
-                            <StatusBadge status={effectiveBookingStatus(booking)} />
+                            <StatusBadge status={effectiveBookingStatus(booking, now)} />
                           )}
                           {hasPendingBalanceTransfer(booking) && (
                             <span className={PENDING_BALANCE_BADGE_CLASS}>Saldo por verificar</span>
@@ -450,6 +463,7 @@ export default async function BookingsPage() {
                       <TableCell className={`${TABLE_COL.actions} text-right`}>
                         <BookingRowActions
                           booking={booking}
+                          now={now}
                           businessCurrency={businessCurrency}
                           transferEnabled={transferEnabled}
                           contact={
@@ -491,6 +505,7 @@ export default async function BookingsPage() {
                   businessTimezone={businessTimezone}
                   businessAddress={businessAddress}
                   transferEnabled={transferEnabled}
+                  now={now}
                 />
               ))}
             </div>

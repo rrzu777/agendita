@@ -14,6 +14,7 @@ import {
   endOfMonth,
 } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
+import { localDayKey } from '@/lib/calendar/timeline'
 import { endOfLocalDay, startOfLocalDay } from '@/lib/availability/timezone'
 import { blockAppliesToProfessional, bookingBlocksProfessional } from '@/lib/availability/scope'
 import { SCOPE_PARAM, resolveScheduleScope } from '@/components/dashboard/schedule-scope-picker'
@@ -80,8 +81,12 @@ export default async function CalendarPage({
   const params = await searchParams
   const view = parseView(params.view)
 
+  // El reloj de ESTE render. Baja entero al calendario porque es un componente
+  // cliente: todo lo que dependa del tiempo tiene que salir de un solo instante
+  // fijado en el servidor, o el HTML y la hidratación no coinciden.
+  const now = new Date()
   // Día enfocado (yyyy-MM-dd). Default: hoy en la zona del negocio.
-  const todayStr = formatInTimeZone(new Date(), timezone, 'yyyy-MM-dd')
+  const todayStr = localDayKey(now, timezone)
   const dateStr = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : todayStr
   // parseISO con mediodía evita corrimientos de día al hacer aritmética de fechas.
   const focusLocalDate = parseISO(`${dateStr}T12:00:00Z`)
@@ -141,7 +146,7 @@ export default async function CalendarPage({
           }))}
           view={view}
           date={dateStr}
-          todayKey={todayStr}
+          now={now}
           timezone={timezone}
           businessCurrency={business.currency}
           businessAddress={business.addressText}

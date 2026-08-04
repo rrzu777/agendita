@@ -15,10 +15,19 @@ vi.mock('@/components/dashboard/edit-series-occurrence-dialog', () => ({ EditSer
 import { CalendarViews } from '@/components/dashboard/calendar-views'
 import { btDeclaredId } from '@/lib/bank-transfer/declared'
 
+/**
+ * El reloj del SERVIDOR para estos renders: 14:00 del 30 de junio de 2026 en
+ * Santiago, el mismo día que enfocan los casos (`date="2026-06-30"`). Fijo y no
+ * `Date.now()` a propósito — de él sale también el "hoy" que resalta el
+ * calendario, así que un reloj real haría que el día enfocado dejara de ser hoy
+ * apenas pase esa fecha.
+ */
+const NOW = new Date('2026-06-30T18:00:00.000Z')
+
 const baseProps = {
   timeBlocks: [],
   selectedProfessionalId: null,
-  todayKey: '2026-06-30',
+  now: NOW,
   timezone: 'America/Santiago',
   businessCurrency: 'CLP',
   businessAddress: null,
@@ -151,24 +160,30 @@ const HORA = 60 * 60 * 1000
 function chipConPlazo(
   holdExpiresAt: Date | null,
   payments: Array<{ providerPaymentId?: string | null }> = [],
+  now: Date = NOW,
 ) {
   const impaga = { ...booking, status: 'pending_payment', holdExpiresAt, payments }
   return renderToStaticMarkup(
     // @ts-expect-error props mínimos de prueba
-    <CalendarViews {...baseProps} view="day" date="2026-06-30" bookings={[impaga]} />,
+    <CalendarViews {...baseProps} now={now} view="day" date="2026-06-30" bookings={[impaga]} />,
   )
+}
+
+/** Un plazo a N horas de `NOW` (negativo = ya vencido). */
+function plazo(horas: number): Date {
+  return new Date(NOW.getTime() + horas * HORA)
 }
 
 describe('CalendarViews — el chip y el plazo vencido', () => {
   it('con el plazo vivo el chip sigue entero', () => {
-    const html = chipConPlazo(new Date(Date.now() + HORA))
+    const html = chipConPlazo(plazo(1))
     expect(html).toContain('Pendiente de pago')
     expect(html).not.toContain('Plazo vencido')
     expect(html).not.toContain('opacity:0.7')
   })
 
   it('con el plazo vencido lo dice y lo atenúa, sin darlo por muerto', () => {
-    const html = chipConPlazo(new Date(Date.now() - HORA))
+    const html = chipConPlazo(plazo(-1))
     expect(html).toContain('Plazo vencido')
     expect(html).not.toContain('Pendiente de pago')
     expect(html).toContain('opacity:0.7')
@@ -178,8 +193,27 @@ describe('CalendarViews — el chip y el plazo vencido', () => {
     expect(html).not.toContain('hold_expired')
   })
 
+  /**
+   * Este componente es cliente: el servidor lo renderiza a HTML y el navegador
+   * lo hidrata después. Si el estado del chip saliera de un `new Date()` de
+   * adentro, los dos lados evalúan instantes distintos y una reserva cuyo plazo
+   * vence en el medio se pinta diferente en cada uno — hydration mismatch
+   * (React #418), que voltea la página entera del calendario, no ese chip.
+   * Pasó de verdad y lo agarró el e2e de `dashboard calendar page loads`.
+   */
+  it('el estado del chip lo decide el reloj del SERVIDOR, no el del navegador', () => {
+    // Un plazo vencido contra el reloj de la pared (NOW)...
+    const vencido = plazo(-1)
+    // ...pero vivo en el instante en que el servidor armó este HTML. Gana el
+    // servidor: es lo que impide que el navegador pinte otra cosa al hidratar.
+    const relojDelServidor = plazo(-2)
+    const html = chipConPlazo(vencido, [], relojDelServidor)
+    expect(html).toContain('Pendiente de pago')
+    expect(html).not.toContain('Plazo vencido')
+  })
+
   it('la transferencia declarada mantiene el chip entero aunque el plazo haya vencido', () => {
-    const html = chipConPlazo(new Date(Date.now() - HORA), [{ providerPaymentId: btDeclaredId('b1') }])
+    const html = chipConPlazo(plazo(-1), [{ providerPaymentId: btDeclaredId('b1') }])
     expect(html).toContain('Pendiente de pago')
     expect(html).not.toContain('Plazo vencido')
   })

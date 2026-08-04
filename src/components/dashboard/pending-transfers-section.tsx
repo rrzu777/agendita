@@ -44,8 +44,15 @@ function KindBadge({ kind }: { kind: PendingTransferKind }) {
   )
 }
 
-function timeAgo(declaredAt: Date): string {
-  const diffMs = Date.now() - new Date(declaredAt).getTime()
+/**
+ * `now` viene de afuera y no de `Date.now()` — el mecanismo está en
+ * `effectiveBookingStatus`. Acá es el caso MÁS expuesto de la pantalla: la
+ * granularidad es el minuto, así que alcanza con que el minuto cambie entre el
+ * HTML del servidor y la hidratación para que uno diga "hace 3 min" y el otro
+ * "hace 4 min", y la página de Reservas entera se cae.
+ */
+function timeAgo(declaredAt: Date, now: Date): string {
+  const diffMs = now.getTime() - declaredAt.getTime()
   const minutes = Math.max(0, Math.floor(diffMs / 60_000))
   if (minutes < 60) return `hace ${minutes} min`
   const hours = Math.floor(minutes / 60)
@@ -58,10 +65,12 @@ function PendingTransferRow({
   item,
   businessCurrency,
   businessTimezone,
+  now,
 }: {
   item: PendingTransferItem
   businessCurrency: string
   businessTimezone: string
+  now: Date
 }) {
   const vocabulary = useVocabulary()
   const router = useRouter()
@@ -115,7 +124,7 @@ function PendingTransferRow({
         </p>
         <p className="mt-1 text-sm">
           <span className="font-semibold text-primary">{formatMoney(item.amount, businessCurrency)}</span>
-          <span className="text-muted-foreground"> · declarado {timeAgo(item.declaredAt)}</span>
+          <span className="text-muted-foreground"> · declarado {timeAgo(item.declaredAt, now)}</span>
         </p>
       </div>
 
@@ -179,10 +188,13 @@ export function PendingTransfersSection({
   items,
   businessCurrency,
   businessTimezone,
+  now,
 }: {
   items: PendingTransferItem[]
   businessCurrency: string
   businessTimezone: string
+  /** El reloj del SERVIDOR para este render: ver `timeAgo`. */
+  now: Date
 }) {
   if (items.length === 0) return null
 
@@ -202,6 +214,7 @@ export function PendingTransfersSection({
             item={item}
             businessCurrency={businessCurrency}
             businessTimezone={businessTimezone}
+            now={now}
           />
         ))}
       </div>

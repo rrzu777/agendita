@@ -9,6 +9,9 @@ vi.mock('@/server/actions/bank-transfer-verify', () => ({
 
 import { PendingTransfersSection } from '@/components/dashboard/pending-transfers-section'
 
+// El reloj del servidor: la sección lo pide para no leer `Date.now()` adentro.
+const NOW = new Date('2026-07-15T12:00:00Z')
+
 const row = {
   paymentId: 'p1',
   bookingId: 'b1',
@@ -17,7 +20,7 @@ const row = {
   serviceName: 'Corte',
   startDateTime: new Date('2026-07-15T14:00:00Z'),
   amount: 8000,
-  declaredAt: new Date(Date.now() - 3 * 3600_000),
+  declaredAt: new Date('2026-07-15T09:00:00Z'),
   kind: 'deposit' as const,
   proofKey: null,
   proofContentType: null,
@@ -26,7 +29,7 @@ const row = {
 describe('PendingTransfersSection', () => {
   it('renders a pending transfer row with wa.me and actions', () => {
     const html = renderToStaticMarkup(
-      <PendingTransfersSection items={[row]} businessCurrency="CLP" businessTimezone="America/Santiago" />,
+      <PendingTransfersSection items={[row]} businessCurrency="CLP" businessTimezone="America/Santiago" now={NOW} />,
     )
     expect(html).toContain('Ana')
     expect(html).toContain('wa.me/')
@@ -36,7 +39,7 @@ describe('PendingTransfersSection', () => {
 
   it('renders nothing when empty', () => {
     const html = renderToStaticMarkup(
-      <PendingTransfersSection items={[]} businessCurrency="CLP" businessTimezone="America/Santiago" />,
+      <PendingTransfersSection items={[]} businessCurrency="CLP" businessTimezone="America/Santiago" now={NOW} />,
     )
     expect(html).toBe('')
   })

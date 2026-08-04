@@ -52,8 +52,15 @@ interface CalendarViewsProps {
   view: CalendarView
   /** Día enfocado en formato yyyy-MM-dd */
   date: string
-  /** Hoy en la zona del negocio (yyyy-MM-dd), calculado en el servidor para evitar hydration mismatch */
-  todayKey: string
+  /**
+   * El reloj del SERVIDOR para este render — el porqué está en
+   * `effectiveBookingStatus`. Acá gobierna DOS cosas: el día resaltado ("hoy")
+   * y el estado derivado del chip. Es un solo prop y no también el `todayKey`
+   * que había: dos props que tienen que ser el mismo instante son una
+   * invariante que nadie chequea, y el fixture de los tests ya la violaba. El
+   * día se deriva de acá con `localDayKey`.
+   */
+  now: Date
   timezone: string
   businessCurrency: string
   businessAddress: string | null
@@ -97,7 +104,7 @@ export function CalendarViews({
   timeBlocks,
   view,
   date,
-  todayKey,
+  now,
   timezone,
   businessCurrency,
   businessAddress,
@@ -105,6 +112,7 @@ export function CalendarViews({
   professionals,
   selectedProfessionalId,
 }: CalendarViewsProps) {
+  const todayKey = localDayKey(now, timezone)
   const focus = parseISO(`${date}T12:00:00`)
   const [activeBooking, setActiveBooking] = useState<TimelineBooking | null>(null)
   const [activeBlock, setActiveBlock] = useState<CalendarTimeBlock | null>(null)
@@ -181,7 +189,7 @@ export function CalendarViews({
           bookings={bookings}
           focus={focus}
           timezone={timezone}
-          todayKey={todayKey}
+          now={now}
           personaId={selectedProfessionalId}
           onBookingClick={setActiveBooking}
         />
@@ -195,7 +203,7 @@ export function CalendarViews({
           bookings={bookings}
           timeBlocks={timeBlocks}
           timezone={timezone}
-          todayKey={todayKey}
+          now={now}
           personaId={selectedProfessionalId}
           onBookingClick={setActiveBooking}
           onBlockClick={setActiveBlock}
@@ -207,7 +215,7 @@ export function CalendarViews({
           bookings={bookings}
           timeBlocks={timeBlocks}
           timezone={timezone}
-          todayKey={todayKey}
+          now={now}
           personaId={selectedProfessionalId}
           onBookingClick={setActiveBooking}
           onBlockClick={setActiveBlock}
@@ -224,6 +232,8 @@ export function CalendarViews({
           businessAddress={businessAddress}
           photoUploadEnabled={photoUploadEnabled}
           hasTeam={professionals.length > 0}
+          // El MISMO reloj que el chip desde el que se abre (ver #160).
+          now={now}
         />
       )}
 
@@ -318,17 +328,19 @@ function MonthView({
   bookings,
   focus,
   timezone,
-  todayKey,
+  now,
   personaId,
   onBookingClick,
 }: {
   bookings: TimelineBooking[]
   focus: Date
   timezone: string
-  todayKey: string
+  now: Date
   personaId: string | null
   onBookingClick: (b: TimelineBooking) => void
 }) {
+  // Del mismo reloj, no de un prop aparte: ver `now` en `CalendarViewsProps`.
+  const todayKey = localDayKey(now, timezone)
   const monthStart = startOfMonth(focus)
   const monthEnd = endOfMonth(monthStart)
   const days = eachDayOfInterval({
@@ -381,7 +393,7 @@ function MonthView({
               </span>
               <div className="pointer-events-none relative mt-1 space-y-0.5 overflow-hidden">
                 {dayBookings.slice(0, 3).map((b) => {
-                  const appearance = bookingAppearance(b.service?.pastelColor, displayedBookingStatus(b))
+                  const appearance = bookingAppearance(b.service?.pastelColor, displayedBookingStatus(b, now))
                   const bookingLabel = `${b.customer?.name || b.service?.name || 'Reserva'} — ${localTime(b.startDateTime, timezone)}`
                   return (
                     <button
@@ -429,7 +441,7 @@ function TimelineView({
   bookings,
   timeBlocks,
   timezone,
-  todayKey,
+  now,
   personaId,
   onBookingClick,
   onBlockClick,
@@ -438,11 +450,13 @@ function TimelineView({
   bookings: TimelineBooking[]
   timeBlocks: CalendarTimeBlock[]
   timezone: string
-  todayKey: string
+  now: Date
   personaId: string | null
   onBookingClick: (b: TimelineBooking) => void
   onBlockClick: (b: CalendarTimeBlock) => void
 }) {
+  // Del mismo reloj, no de un prop aparte: ver `now` en `CalendarViewsProps`.
+  const todayKey = localDayKey(now, timezone)
   const allItems = [...bookings, ...timeBlocks]
   const { startHour, endHour } = computeHourRange(allItems, timezone)
   const hours = Array.from({ length: endHour - startHour }, (_, i) => startHour + i)
@@ -515,6 +529,7 @@ function TimelineView({
                       key={p.item.id}
                       p={p}
                       timezone={timezone}
+                      now={now}
                       onClick={() => onBookingClick(p.item)}
                     />
                   ))}
@@ -531,10 +546,13 @@ function TimelineView({
 function BookingBlock({
   p,
   timezone,
+  now,
   onClick,
 }: {
   p: PositionedItem<TimelineBooking>
   timezone: string
+  /** El reloj del servidor: ver `now` en `CalendarViewsProps`. */
+  now: Date
   onClick: () => void
 }) {
   const b = p.item
@@ -544,7 +562,7 @@ function BookingBlock({
   // plazo vencido, el naranja de "pendiente de pago" le hace guardar una hora
   // que el cron va a soltar dentro de la hora. Atenuado, no tachado — el
   // porqué está en `booking-appearance`.
-  const shownStatus = displayedBookingStatus(b)
+  const shownStatus = displayedBookingStatus(b, now)
   const appearance = bookingAppearance(b.service?.pastelColor, shownStatus)
   const Icon = statusIcons[appearance.icon]
   const start = localTime(b.startDateTime, timezone)
