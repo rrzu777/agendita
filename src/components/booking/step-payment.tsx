@@ -389,12 +389,11 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     }
   }
 
-  async function handleTransferBooking() {
-    // El guard va ACÁ y no al renderizar: sin la cuenta bancaria no hay nada
-    // que mostrarle después, así que tampoco hay que crearle la reserva. (En la
-    // práctica no pasa: los dos botones que llaman acá viven detrás de
-    // `bankInfo`. El punto es que si pasara, no se pierde una reserva.)
-    if (!bankInfo) return
+  /** La cuenta llega por parámetro y no del estado: los dos botones que llaman
+   *  acá ya la tienen en la mano, así que no hace falta un guard que se defienda
+   *  de un caso imposible — y un guard silencioso sería un botón que no hace
+   *  nada, que es el síntoma exacto del #159. */
+  async function handleTransferBooking(bank: BankTransferPublicInfo) {
     setLoading(true)
     setPaso({ k: 'processing' })
     setErrorMessage('')
@@ -408,7 +407,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       const booking = res.data
       setPaso({
         k: 'transfer-details',
-        bank: bankInfo,
+        bank,
         reserva: {
           id: booking.id,
           bookingNumber: booking.bookingNumber ?? null,
@@ -619,8 +618,6 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         </div>
       )
 
-    // Los dos pasos de transferencia se llevan sus datos adentro (ver `Paso`),
-    // así que acá no hay nada que chequear: no existe el paso sin ellos.
     case 'transfer-details':
       return (
         <div>
@@ -793,7 +790,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         <div className="flex gap-3">
           <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack} disabled={loading}>Atrás</Button>
           {bankInfo ? (
-            <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleTransferBooking} disabled={loading || !acceptedTerms}>
+            <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={() => void handleTransferBooking(bankInfo)} disabled={loading || !acceptedTerms}>
               {loading ? 'Creando reserva...' : 'Continuar con transferencia'}
             </Button>
           ) : (
@@ -815,7 +812,10 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     )
   }
 
-  const eligeTransferencia = Boolean(bankInfo) && method === 'transfer'
+  /** La cuenta con la que se va a pagar, o `null` si no es por transferencia.
+   *  El objeto y no un booleano: un `Boolean(bankInfo) && …` tira justo el dato
+   *  que el handler de abajo necesita y obliga a volver a buscarlo. */
+  const bancoElegido = method === 'transfer' ? bankInfo : null
 
   return (
     <div>
@@ -888,7 +888,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       {/* Sólo el camino online: la transferencia tiene su ventana larga y la
           dice en la pantalla siguiente (TransferDetails), ya topada contra la
           cita — acá serían dos plazos distintos en la misma pantalla. */}
-      {!eligeTransferencia && (
+      {!bancoElegido && (
         <p className="mb-4 text-sm text-muted-foreground">
           Al pagar, tu horario queda guardado por {DEFAULT_HOLD_MINUTES} minutos. Si el pago no se completa en ese tiempo, se libera.
         </p>
@@ -896,8 +896,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
-        {eligeTransferencia ? (
-          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleTransferBooking} disabled={loading || !acceptedTerms}>
+        {bancoElegido ? (
+          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={() => void handleTransferBooking(bancoElegido)} disabled={loading || !acceptedTerms}>
             {loading ? 'Procesando...' : 'Continuar con transferencia'}
           </Button>
         ) : (
