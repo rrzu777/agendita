@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // Del módulo real (acá no se mockea): el assert tiene que comparar contra el
 // mensaje que la action realmente usa, no contra una copia del texto.
 import { SLOT_UNAVAILABLE_MESSAGE } from '@/lib/availability/validation'
+import { rescheduleBlockedReason } from '@/lib/bookings/hold'
 
 const {
   mockRequireUser, mockCheckRateLimit, mockFindFirstBooking, mockTx,
@@ -139,6 +140,22 @@ describe('rescheduleMyBooking', () => {
     expect(mockSendBookingRescheduledNotification).toHaveBeenCalledWith(
       expect.objectContaining({ professionalName: 'Juan Pérez' }),
     )
+  })
+
+  // El guard vive en el core (`rescheduleBookingInTx`), pero QUÉ salida se le
+  // nombra a quien reprograma lo elige el caller — y acá la clienta no tiene
+  // ninguna, así que el mensaje la manda al negocio. Declararse 'owner' desde
+  // esta action no rompería ningún test del core y le hablaría a la clienta de un
+  // botón del panel que nunca vio.
+  it('se declara ante el core como la CLIENTA, no como la dueña', async () => {
+    const { rescheduleMyBooking } = await import('@/server/actions/my-bookings')
+
+    await rescheduleMyBooking('bk-1', new Date(NOW.getTime() + 72 * 3_600_000))
+
+    const arg = mockRescheduleBookingInTx.mock.calls[0][1]
+    expect(arg.rescheduledBy).toBe('customer')
+    const condenada = { status: 'pending_payment', paymentStatus: 'unpaid', holdExpiresAt: new Date(Date.now() - 60_000) }
+    expect(rescheduleBlockedReason(condenada, arg.rescheduledBy, new Date())).not.toContain('Revivir')
   })
 
   it('ventana sobre horario ACTUAL: rechaza aunque el nuevo slot esté lejos', async () => {

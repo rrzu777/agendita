@@ -59,13 +59,48 @@ describe('/mi/[slug]/reservas/[bookingId]/reprogramar', () => {
 
   it('reserva propia dentro de ventana → renderiza el formulario', async () => {
     mockGetCurrentUser.mockResolvedValue({ id: 'u1' })
-    mockBookingFindFirst.mockResolvedValue({
-      id: 'bk1',
-      startDateTime: new Date(Date.now() + 72 * 3_600_000), // en 72h
-      service: { name: 'Manicura' },
-      business: { slug: 'salon-ana', name: 'Salón Ana', timezone: 'America/Santiago', selfServiceCutoffHours: 24 },
-    })
+    mockBookingFindFirst.mockResolvedValue(dentroDeVentana())
     const html = renderToStaticMarkup(await ReprogramarPage({ params }))
     expect(html).toContain('Manicura')
   })
+
+  // A esta página se llega por URL directa, por un marcador o con el botón Atrás
+  // después de que el plazo venciera: la lista ya no ofrece el link. Sin el corte
+  // la clienta elegía un horario nuevo para que la action lo rechazara al final.
+  it('plazo vencido → mensaje, sin selector de horarios', async () => {
+    mockGetCurrentUser.mockResolvedValue({ id: 'u1' })
+    mockBookingFindFirst.mockResolvedValue(
+      dentroDeVentana({ holdExpiresAt: new Date(Date.now() - 60_000) }),
+    )
+    const html = renderToStaticMarkup(await ReprogramarPage({ params }))
+    expect(html.toLowerCase()).toContain('venció el plazo')
+    expect(html).not.toContain('<form')
+    // El texto es el de la clienta: nada de Revivir ni de acusarla de no pagar.
+    expect(html).not.toContain('para pagar')
+  })
+
+  // Con plata adentro el cron no barre nada, así que el plazo vencido no condena
+  // a esta reserva y el formulario tiene que seguir apareciendo.
+  it('plazo vencido pero con abono pagado → sigue el formulario', async () => {
+    mockGetCurrentUser.mockResolvedValue({ id: 'u1' })
+    mockBookingFindFirst.mockResolvedValue(
+      dentroDeVentana({ paymentStatus: 'deposit_paid', holdExpiresAt: new Date(Date.now() - 60_000) }),
+    )
+    const html = renderToStaticMarkup(await ReprogramarPage({ params }))
+    expect(html).toContain('Manicura')
+    expect(html.toLowerCase()).not.toContain('venció el plazo')
+  })
 })
+
+function dentroDeVentana(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'bk1',
+    startDateTime: new Date(Date.now() + 72 * 3_600_000), // en 72h
+    status: 'pending_payment',
+    paymentStatus: 'unpaid',
+    holdExpiresAt: null,
+    service: { name: 'Manicura' },
+    business: { slug: 'salon-ana', name: 'Salón Ana', timezone: 'America/Santiago', selfServiceCutoffHours: 24 },
+    ...overrides,
+  }
+}

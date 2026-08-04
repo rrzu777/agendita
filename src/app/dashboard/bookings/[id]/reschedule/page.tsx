@@ -6,6 +6,7 @@ import { RescheduleForm } from './reschedule-form'
 import { formatInTimeZone } from 'date-fns-tz'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { isTerminalBookingStatus } from '@/lib/bookings/status-labels'
+import { rescheduleBlockedReason } from '@/lib/bookings/hold'
 
 interface ReschedulePageProps {
   params: Promise<{ id: string }>
@@ -36,28 +37,42 @@ export default async function ReschedulePage({ params }: ReschedulePageProps) {
     redirect(`/dashboard/bookings`)
   }
 
+  const subtitle = `${booking.service?.name || 'Servicio'} · ${formatBookingNumber(booking.bookingNumber, booking.id)}`
+
   const timezone = userData.business.timezone || 'America/Santiago'
+  // El drawer ya esconde el botón, pero acá se llega igual: por URL directa, por
+  // un marcador o con el botón Atrás después de que el plazo venciera. Sin este
+  // corte la dueña recorría el selector de horarios entero para que el "no"
+  // apareciera recién al enviar. Y no es un redirect a la lista: ahí el motivo se
+  // pierde y la reserva se ve viva.
+  const blockedRescheduleReason = rescheduleBlockedReason(booking, 'owner', new Date())
 
   return (
     <div>
-      <DashboardHeader title="Reprogramar reserva" subtitle={`${booking.service?.name || 'Servicio'} · ${formatBookingNumber(booking.bookingNumber, booking.id)}`} />
+      <DashboardHeader title="Reprogramar reserva" subtitle={subtitle} />
       <div className="p-5 md:p-10">
-        <RescheduleForm
-          bookingId={booking.id}
-          customerName={booking.customer?.name || ''}
-          customerPhone={booking.customer?.phone || ''}
-          serviceName={booking.service?.name || ''}
-          professionalName={booking.professional?.name ?? null}
-          currentDate={formatInTimeZone(booking.startDateTime, timezone, 'yyyy-MM-dd')}
-          currentTime={formatInTimeZone(booking.startDateTime, timezone, 'HH:mm')}
-          timezone={timezone}
-          where={{
-            modality: booking.modality,
-            businessAddress: userData.business.addressText,
-            serviceAddress: booking.serviceAddress,
-            meetingUrl: booking.meetingUrl,
-          }}
-        />
+        {blockedRescheduleReason ? (
+          // Sin PageMessage: ése trae su propio <main> y el layout del panel ya
+          // tiene uno.
+          <p className="max-w-prose text-sm text-muted-foreground">{blockedRescheduleReason}</p>
+        ) : (
+          <RescheduleForm
+            bookingId={booking.id}
+            customerName={booking.customer?.name || ''}
+            customerPhone={booking.customer?.phone || ''}
+            serviceName={booking.service?.name || ''}
+            professionalName={booking.professional?.name ?? null}
+            currentDate={formatInTimeZone(booking.startDateTime, timezone, 'yyyy-MM-dd')}
+            currentTime={formatInTimeZone(booking.startDateTime, timezone, 'HH:mm')}
+            timezone={timezone}
+            where={{
+              modality: booking.modality,
+              businessAddress: userData.business.addressText,
+              serviceAddress: booking.serviceAddress,
+              meetingUrl: booking.meetingUrl,
+            }}
+          />
+        )}
       </div>
     </div>
   )

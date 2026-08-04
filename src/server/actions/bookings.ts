@@ -1204,6 +1204,7 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
         timezone: business.timezone || 'America/Santiago',
         // Reagendar desde el dashboard no exige anticipación (la dueña manda)
         leadTimeMinutes: 0,
+        rescheduledBy: 'owner',
       })
     })
   } catch (error) {

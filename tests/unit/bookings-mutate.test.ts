@@ -6,6 +6,7 @@ vi.mock('@/lib/promotions/release', () => ({ releaseRedemptionForBooking: mockRe
 const { mockAssertSlot } = vi.hoisted(() => ({ mockAssertSlot: vi.fn() }))
 vi.mock('@/lib/availability/validation', () => ({ assertSlotIsAvailable: mockAssertSlot }))
 
+import { BookingPaymentStatus, BookingStatus } from '@prisma/client'
 import { cancelBookingInTx, rescheduleBookingInTx } from '@/lib/bookings/mutate'
 import { anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
 
@@ -58,10 +59,18 @@ describe('rescheduleBookingInTx', () => {
     booking: {
       id: 'b1', businessId: 'biz1', serviceId: 's1',
       startDateTime: new Date('2026-07-20T15:00:00Z'), internalNotes: null, professionalId: null,
+      // Una reserva confirmada: sin plazo que pueda estar vencido. Los casos del
+      // plazo lo pisan — ver el describe de abajo. Con los enums de Prisma y no
+      // con literales sueltos: el tipo del core los exige, y un `as never` acá
+      // apagaría el guard sin que el compilador chiste (ya pasó dos veces).
+      status: BookingStatus.confirmed,
+      paymentStatus: BookingPaymentStatus.deposit_paid,
+      holdExpiresAt: null as Date | null,
     },
     newStartDateTime: new Date('2026-07-21T15:00:00Z'),
     durationMinutes: 60,
     timezone: 'America/Santiago',
+    rescheduledBy: 'owner' as const,
   }
 
   it('valida slot y actualiza con guard de status', async () => {
@@ -99,5 +108,82 @@ describe('rescheduleBookingInTx', () => {
     expect(tx.booking.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ internalNotes: '[REPROGRAMADA de 20-07-2026 22:00]' }),
     }))
+  })
+
+  // Mover la cita no reescribe `holdExpiresAt`, así que el cron la barre igual:
+  // la reprogramación salía bien, avisaba a las dos partes, y una hora después
+  // la reserva no estaba.
+  describe('plazo vencido', () => {
+    const condenada = {
+      ...baseInput.booking,
+      status: BookingStatus.pending_payment,
+      paymentStatus: BookingPaymentStatus.unpaid,
+      holdExpiresAt: new Date(Date.now() - 60_000) as Date | null,
+    }
+
+    it('no reprograma una reserva que el cron va a barrer, y ni siquiera mira el cupo', async () => {
+      const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
+      await expect(
+        rescheduleBookingInTx(tx as never, { ...baseInput, booking: condenada }),
+      ).rejects.toThrow('Venció el plazo de esta reserva')
+      // Corta ANTES del cupo: sin esto la reserva se movía de verdad.
+      expect(mockAssertSlot).not.toHaveBeenCalled()
+      expect(tx.booking.updateMany).not.toHaveBeenCalled()
+    })
+
+    it('el mensaje es el de la audiencia: la clienta no tiene Revivir', async () => {
+      const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
+      await expect(
+        rescheduleBookingInTx(tx as never, {
+          ...baseInput, booking: condenada, rescheduledBy: 'customer',
+        }),
+      ).rejects.toThrow('Contactá al negocio')
+    })
+
+    // La solicitud sin responder también la barre el cron, pero por el OTRO
+    // sweep: ahí la dueña todavía puede Aceptar —y aceptar limpia el plazo—, así
+    // que mandarla a esperar el Revivir sería nombrarle una salida que no es.
+    it('la solicitud sin responder nombra Aceptar, no Revivir', async () => {
+      const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
+      await expect(
+        rescheduleBookingInTx(tx as never, {
+          ...baseInput,
+          booking: { ...condenada, status: BookingStatus.pending_confirmation, paymentStatus: BookingPaymentStatus.fully_paid },
+        }),
+      ).rejects.toThrow(/aceptala/i)
+    })
+
+    // Y del lado de la clienta ese plazo NO era suyo: una solicitud sobre un
+    // servicio gratis nace `fully_paid` y acusarla de no haber pagado es falso.
+    it('a la clienta, la solicitud vencida no le echa la culpa del pago', async () => {
+      const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
+      await expect(
+        rescheduleBookingInTx(tx as never, {
+          ...baseInput,
+          booking: { ...condenada, status: BookingStatus.pending_confirmation, paymentStatus: BookingPaymentStatus.fully_paid },
+          rescheduledBy: 'customer',
+        }),
+      ).rejects.toThrow('El negocio no respondió esta solicitud a tiempo')
+    })
+
+    it('con plata adentro NO bloquea: el cron tampoco la barre', async () => {
+      // Mismo criterio que `assertBookingPayable`: el plazo vencido sólo condena
+      // a la reserva que el sweep va a matar, y ésa filtra `unpaid`.
+      const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
+      await rescheduleBookingInTx(tx as never, {
+        ...baseInput,
+        booking: { ...condenada, paymentStatus: BookingPaymentStatus.deposit_paid },
+      })
+      expect(tx.booking.updateMany).toHaveBeenCalled()
+    })
+
+    it('con el plazo vivo reprograma normal', async () => {
+      const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
+      await rescheduleBookingInTx(tx as never, {
+        ...baseInput,
+        booking: { ...condenada, holdExpiresAt: new Date(Date.now() + 60 * 60_000) },
+      })
+      expect(tx.booking.updateMany).toHaveBeenCalled()
+    })
   })
 })

@@ -14,6 +14,7 @@ import { formatShortDate } from '@/lib/format-date'
 import { declaredTransferPaymentWhere, isDeclaredTransferPayment } from '@/lib/bank-transfer/declared'
 import { isDoomedHold } from '@/lib/payments/confirmation-state'
 import { hasExpirableHold } from '@/lib/bookings/approval'
+import { rescheduleBlockedReason } from '@/lib/bookings/hold'
 import { canSelfManage } from '@/lib/bookings/self-service'
 import { BookingActions } from './booking-actions'
 import { PaymentStatus, ServiceModality, type BookingStatus, type Prisma } from '@prisma/client'
@@ -176,8 +177,13 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
                 <BookingActions
                   bookingId={b.id}
                   slug={business.slug}
-                  canManage={canSelfManage(b.startDateTime, business.selfServiceCutoffHours)}
+                  // El MISMO `now` que la etiqueta de arriba, en los dos gates:
+                  // si cada uno mirara su propio reloj, la fila podría decir
+                  // "Expirada" y seguir ofreciendo Reprogramar, que es
+                  // exactamente lo que este cambio viene a sacar.
+                  canManage={canSelfManage(b.startDateTime, business.selfServiceCutoffHours, now)}
                   cutoffHours={business.selfServiceCutoffHours}
+                  rescheduleBlockedReason={rescheduleBlockedReason(b, 'customer', now)}
                 />
               </li>
               )
