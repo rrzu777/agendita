@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 
 const mockCreateBooking = vi.hoisted(() => vi.fn())
 const mockGetBankTransferInfo = vi.hoisted(() => vi.fn())
+const mockDeclareBankTransfer = vi.hoisted(() => vi.fn())
 
 vi.mock('@/server/actions/bookings', () => ({ createBooking: mockCreateBooking }))
 // Sin esto se carga el módulo `'use server'` de verdad con su cadena entera
@@ -19,7 +20,7 @@ vi.mock('@/server/actions/packages', () => ({
 }))
 vi.mock('@/server/actions/bank-transfer-public', () => ({
   getBankTransferInfo: mockGetBankTransferInfo,
-  declareBankTransfer: vi.fn(),
+  declareBankTransfer: mockDeclareBankTransfer,
   createProofUploadUrl: vi.fn(),
 }))
 
@@ -140,5 +141,63 @@ describe('StepPayment — el plazo que promete la pantalla de transferencia', ()
     await act(async () => { root.unmount() })
     // Timeout propio: montar el wizard entero se come varios segundos y el
     // default de 5 s de la suite lo vuelve un dado bajo carga.
+  }, 20_000)
+
+  /**
+   * El paso de transferencia se lleva la reserva ADENTRO (ver `Paso`). Antes
+   * vivía en un `useState` aparte y la pantalla la pedía al renderizar
+   * (`if (bankInfo && transferBooking)`), así que un paso sin sus datos caía al
+   * FORMULARIO DE PAGO de una reserva ya creada, con el horario ya tomado.
+   *
+   * Lo que sostiene eso hoy es el tipo, así que este caso no reproduce ningún
+   * bug: con el código viejo pasaba igual. Lo que cuida es que el camino de
+   * verdad siga llegando a donde tiene que llegar ahora que la reserva viaja
+   * por parámetro y no por estado — el sabotaje que lo demuestra es cambiar el
+   * `setPaso({k:'transfer-declared'})` por cualquier otro paso: lo que aparece
+   * es literalmente "Confirmar reserva / Resumen de tu reserva".
+   */
+  it('avisar la transferencia lleva a "en verificación" con el código de ESA reserva', async () => {
+    const { StepPayment } = await import('@/components/booking/step-payment')
+    mockGetBankTransferInfo.mockResolvedValue(bank)
+    mockCreateBooking.mockResolvedValue({
+      ok: true,
+      data: { id: 'b-42', bookingNumber: 7, holdExpiresAt: null, endDateTime: FIN },
+    })
+    mockDeclareBankTransfer.mockResolvedValue({ ok: true, data: {} })
+
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    await act(async () => {
+      root.render(
+        <StepPayment
+          data={bookingData}
+          updateData={vi.fn()}
+          businessId="biz-1"
+          manualHoldHours={24}
+          timezone={TZ}
+          currency="CLP"
+          onSuccess={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      )
+    })
+    await act(async () => {})
+    await act(async () => {
+      container.querySelector<HTMLInputElement>('#accept-terms')!.click()
+    })
+    await act(async () => { clickPorTexto(container, 'Continuar con transferencia') })
+    await act(async () => {})
+    expect(container.textContent).toContain('BancoEstado')
+
+    await act(async () => { clickPorTexto(container, 'Ya transferí') })
+    await act(async () => {})
+
+    expect(mockDeclareBankTransfer).toHaveBeenCalledWith('b-42', {})
+    expect(container.textContent).toContain('Transferencia en verificación')
+    expect(container.textContent).toContain('#7')
+    // Y NO el formulario de pago: esa reserva ya existe y ya tiene el horario.
+    expect(container.textContent).not.toContain('Continuar con transferencia')
+
+    await act(async () => { root.unmount() })
   }, 20_000)
 })

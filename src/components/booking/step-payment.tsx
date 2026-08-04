@@ -114,12 +114,44 @@ export function pantallaDeDatos({
   return availability.available ? 'cobrar' : 'sin-pago-online'
 }
 
+/** Lo que la pantalla de transferencia necesita saber de la reserva recién
+ *  creada. Las dos fechas y no la frase ya armada: ver `handleTransferBooking`. */
+type ReservaEnTransferencia = {
+  id: string
+  bookingNumber: number | null
+  holdExpiresAt: Date | null
+  endDateTime: Date
+}
+
+/**
+ * En qué pantalla está el paso de pago, CON los datos que esa pantalla
+ * necesita adentro.
+ *
+ * El #163 arregló la PRECEDENCIA (qué rama gana) pero no la REPRESENTACIÓN: el
+ * `step` seguía siendo un string suelto y los datos vivían en estados aparte,
+ * así que `'transfer-details'` era escribible sin la cuenta bancaria y sin la
+ * reserva. Cuando eso pasaba, el `break` caía a las pantallas de datos — o sea
+ * al formulario de pago de una reserva QUE YA EXISTE y ya tiene el horario
+ * tomado. Y no era simétrico: `reserva` se setea en la línea de arriba del
+ * cambio de pantalla, pero `bankInfo` lo escribe un efecto cuyo `catch` lo
+ * pone en `null` sin mirar en qué pantalla estamos.
+ *
+ * Con los datos adentro no hay nada que chequear al renderizar: el guard se
+ * corrió a ANTES de crear la reserva, que es donde sirve.
+ */
+type Paso =
+  | { k: 'review' }
+  | { k: 'processing' }
+  | { k: 'success' }
+  | { k: 'error' }
+  | { k: 'transfer-details'; bank: BankTransferPublicInfo; reserva: ReservaEnTransferencia }
+  | { k: 'transfer-declared'; reserva: ReservaEnTransferencia }
+
 export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, manualHoldHours, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; manualHoldHours: number; referralToken?: string; onSuccess: (result: BookingCreated) => void; onBack: () => void }) {
   const [loading, setLoading] = useState(false)
-  const [step, setStep] = useState<'review' | 'processing' | 'success' | 'error' | 'transfer-details' | 'transfer-declared'>('review')
+  const [paso, setPaso] = useState<Paso>({ k: 'review' })
   const [bankInfo, setBankInfo] = useState<BankTransferPublicInfo | null>(null)
   const [method, setMethod] = useState<'online' | 'transfer'>('online')
-  const [transferBooking, setTransferBooking] = useState<{ id: string; bookingNumber: number | null; holdExpiresAt: Date | null; endDateTime: Date } | null>(null)
   const [declaring, setDeclaring] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [availabilityError, setAvailabilityError] = useState('')
@@ -357,50 +389,59 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     }
   }
 
-  async function handleTransferBooking() {
+  /** La cuenta llega por parámetro y no del estado: los dos botones que llaman
+   *  acá ya la tienen en la mano, así que no hace falta un guard que se defienda
+   *  de un caso imposible — y un guard silencioso sería un botón que no hace
+   *  nada, que es el síntoma exacto del #159. */
+  async function handleTransferBooking(bank: BankTransferPublicInfo) {
     setLoading(true)
-    setStep('processing')
+    setPaso({ k: 'processing' })
     setErrorMessage('')
     try {
       const res = await createBooking(bookingInput({ paymentMethod: BANK_TRANSFER_METHOD }), businessId)
       if (!res.ok) {
         setErrorMessage(res.error)
-        setStep('error')
+        setPaso({ k: 'error' })
         return
       }
       const booking = res.data
-      setTransferBooking({
-        id: booking.id,
-        bookingNumber: booking.bookingNumber ?? null,
-        // Las dos fechas, no la frase ya armada: la frase se deriva al
-        // renderizar, como en todas las otras superficies. Congelarla acá se
-        // pasa de lista — la ventana de la transferencia son 24 h, así que una
-        // pestaña abierta que cruza la medianoche seguiría diciendo "las 08:00"
-        // cuando ya tendría que decir el día.
-        holdExpiresAt: booking.holdExpiresAt ? new Date(booking.holdExpiresAt) : null,
-        endDateTime: new Date(booking.endDateTime),
+      setPaso({
+        k: 'transfer-details',
+        bank,
+        reserva: {
+          id: booking.id,
+          bookingNumber: booking.bookingNumber ?? null,
+          // Las dos fechas, no la frase ya armada: la frase se deriva al
+          // renderizar, como en todas las otras superficies. Congelarla acá se
+          // pasa de lista — la ventana de la transferencia son 24 h, así que una
+          // pestaña abierta que cruza la medianoche seguiría diciendo "las 08:00"
+          // cuando ya tendría que decir el día.
+          holdExpiresAt: booking.holdExpiresAt ? new Date(booking.holdExpiresAt) : null,
+          endDateTime: new Date(booking.endDateTime),
+        },
       })
-      setStep('transfer-details')
     } catch (err) {
       console.error('Transfer booking error:', err)
       setErrorMessage('Error al crear la reserva')
-      setStep('error')
+      setPaso({ k: 'error' })
     } finally {
       setLoading(false)
     }
   }
 
-  async function handleDeclare(proof: { proofKey: string; proofContentType: string } | null) {
-    if (!transferBooking) return
+  async function handleDeclare(
+    reserva: ReservaEnTransferencia,
+    proof: { proofKey: string; proofContentType: string } | null,
+  ) {
     setDeclaring(true)
     setErrorMessage('')
     try {
-      const res = await declareBankTransfer(transferBooking.id, proof ?? {})
+      const res = await declareBankTransfer(reserva.id, proof ?? {})
       if (!res.ok) {
         setErrorMessage(res.error)
         return
       }
-      setStep('transfer-declared')
+      setPaso({ k: 'transfer-declared', reserva })
     } catch {
       setErrorMessage('No se pudo procesar. Intenta nuevamente.')
     } finally {
@@ -434,19 +475,19 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
   async function handleManualBooking() {
     setLoading(true)
-    setStep('processing')
+    setPaso({ k: 'processing' })
     setErrorMessage('')
 
     try {
       const res = await createBooking(bookingInput(), businessId)
       if (!res.ok) {
         setErrorMessage(res.error)
-        setStep('error')
+        setPaso({ k: 'error' })
         return
       }
       const booking = res.data
 
-      setStep('success')
+      setPaso({ k: 'success' })
       const mode = noDepositNeeded ? 'paid' as const : 'pending' as const
       // Sin abono que pagar la reserva nace confirmada, salvo que el negocio
       // confirme a mano: ahí queda esperando y todavía no hay nada que agendar.
@@ -454,7 +495,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     } catch (err) {
       console.error('Booking error:', err)
       setErrorMessage('Error al crear la reserva')
-      setStep('error')
+      setPaso({ k: 'error' })
     } finally {
       setLoading(false)
     }
@@ -462,7 +503,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
   async function handlePayment() {
     setLoading(true)
-    setStep('processing')
+    setPaso({ k: 'processing' })
     setErrorMessage('')
 
     if (effectiveDeposit <= 0) {
@@ -474,7 +515,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       const res = await createBooking(bookingInput(), businessId)
       if (!res.ok) {
         setErrorMessage(res.error)
-        setStep('error')
+        setPaso({ k: 'error' })
         return
       }
       const booking = res.data
@@ -487,7 +528,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       })
       if (!paymentRes.ok) {
         setErrorMessage(paymentRes.error)
-        setStep('error')
+        setPaso({ k: 'error' })
         return
       }
       const paymentResult = paymentRes.data
@@ -509,7 +550,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       const verifyRes = await Promise.race([verifyPromise, timeoutPromise])
       if (!verifyRes.ok) {
         setErrorMessage(verifyRes.error)
-        setStep('error')
+        setPaso({ k: 'error' })
         return
       }
 
@@ -519,18 +560,18 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       // caía en la pantalla de éxito: la clienta se iba creyendo que tenía su hora.
       if (!verifyRes.data.success) {
         setErrorMessage(verifyRes.data.message ?? 'No se pudo confirmar tu reserva')
-        setStep('error')
+        setPaso({ k: 'error' })
         return
       }
 
-      setStep('success')
+      setPaso({ k: 'success' })
       // `verifyRes.data.success` es la reserva ya confirmada server-side; la fila
       // `booking` de acá se leyó antes de cobrar y todavía dice pendiente.
       onSuccess(resultado(booking, 'paid', true))
     } catch (err) {
       console.error('Payment error:', err)
       setErrorMessage('Error al procesar el pago')
-      setStep('error')
+      setPaso({ k: 'error' })
     } finally {
       setLoading(false)
     }
@@ -541,13 +582,13 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
      mira `availability`, y al negocio que cobra SÓLO por transferencia esa rama
      le ganaba siempre: la reserva se creaba de verdad y la pantalla no se movía
      (#159). Un `if` encadenado no puede impedir que vuelva a pasar —el orden es
-     invisible— así que el `switch` es exhaustivo: un `step` nuevo sin rama acá
+     invisible— así que el `switch` es exhaustivo: un paso nuevo sin rama acá
      no compila. Lo de afuera son las pantallas que eligen los DATOS, que tienen
      su propia regla (`pantallaDeDatos`).
      El caso de #159 lo cuida `step-payment-plazo-transferencia.test.tsx`, que
      entra de verdad al camino de transferencia; el de `'success'`,
      `step-payment-pantalla-por-step.test.tsx`. */
-  switch (step) {
+  switch (paso.k) {
     // `'success'` comparte pantalla con `'processing'`: no tiene una propia
     // porque `onSuccess()` hace que el padre saque este paso del medio en el
     // mismo tick, así que en la práctica no llega a verse. Comparte el spinner
@@ -572,63 +613,53 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
           <p className="mb-5 text-muted-foreground">{errorMessage || 'No se pudo procesar el pago'}</p>
           <div className="flex justify-center gap-3">
             <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
-            <Button className="h-12 rounded-full px-6" onClick={() => setStep('review')}>Intentar de nuevo</Button>
+            <Button className="h-12 rounded-full px-6" onClick={() => setPaso({ k: 'review' })}>Intentar de nuevo</Button>
           </div>
         </div>
       )
 
-    // Los dos pasos de transferencia necesitan datos que llegan por separado
-    // (la cuenta la trae un efecto, la reserva la devuelve la action). Sin
-    // ellos no hay nada que mostrar: caen en las pantallas de datos de abajo,
-    // que es lo que hacían antes.
     case 'transfer-details':
-      if (bankInfo && transferBooking) {
-        return (
-          <div>
-            <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Transferí el abono</h2>
-            <p className="mb-6 text-lg text-muted-foreground">Tu horario queda reservado mientras transferís</p>
-            {errorMessage && <p className="mb-4 text-sm text-destructive">{errorMessage}</p>}
-            <TransferDetails bank={bankInfo} amount={effectiveDeposit} currency={currency} deadlinePhrase={holdDeadlinePhrase(transferBooking, timezone)} declaring={declaring} onDeclare={handleDeclare} bookingId={transferBooking.id} />
-            <p className="mt-4 text-sm text-muted-foreground">
-              También podés avisar más tarde desde{' '}
-              <Link className="font-semibold text-primary underline" href={`/book/confirmation?bookingId=${transferBooking.id}`}>tu página de reserva</Link>
-              {' '}(te mandamos los datos por email si dejaste uno).
-            </p>
-          </div>
-        )
-      }
-      break
+      return (
+        <div>
+          <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Transferí el abono</h2>
+          <p className="mb-6 text-lg text-muted-foreground">Tu horario queda reservado mientras transferís</p>
+          {errorMessage && <p className="mb-4 text-sm text-destructive">{errorMessage}</p>}
+          <TransferDetails bank={paso.bank} amount={effectiveDeposit} currency={currency} deadlinePhrase={holdDeadlinePhrase(paso.reserva, timezone)} declaring={declaring} onDeclare={(proof) => handleDeclare(paso.reserva, proof)} bookingId={paso.reserva.id} />
+          <p className="mt-4 text-sm text-muted-foreground">
+            También podés avisar más tarde desde{' '}
+            <Link className="font-semibold text-primary underline" href={`/book/confirmation?bookingId=${paso.reserva.id}`}>tu página de reserva</Link>
+            {' '}(te mandamos los datos por email si dejaste uno).
+          </p>
+        </div>
+      )
 
     case 'transfer-declared':
-      if (transferBooking) {
-        return (
-          <div className="py-10 text-center">
-            <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-amber-50">
-              <Clock className="size-8 text-amber-500" />
-            </div>
-            <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">Transferencia en verificación</h2>
-            <p className="mb-2 text-muted-foreground">Avisamos al negocio. Te confirmaremos cuando verifique el pago.</p>
-            {transferBooking.bookingNumber != null && (
-              <p className="mb-5 text-sm text-muted-foreground">Tu código de reserva: <span className="font-mono font-semibold text-primary">#{transferBooking.bookingNumber}</span></p>
-            )}
-            <Button asChild className="h-12 rounded-full px-6">
-              <Link href={`/book/confirmation?bookingId=${transferBooking.id}`}>Ver el estado de mi reserva</Link>
-            </Button>
+      return (
+        <div className="py-10 text-center">
+          <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-amber-50">
+            <Clock className="size-8 text-amber-500" />
           </div>
-        )
-      }
-      break
+          <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">Transferencia en verificación</h2>
+          <p className="mb-2 text-muted-foreground">Avisamos al negocio. Te confirmaremos cuando verifique el pago.</p>
+          {paso.reserva.bookingNumber != null && (
+            <p className="mb-5 text-sm text-muted-foreground">Tu código de reserva: <span className="font-mono font-semibold text-primary">#{paso.reserva.bookingNumber}</span></p>
+          )}
+          <Button asChild className="h-12 rounded-full px-6">
+            <Link href={`/book/confirmation?bookingId=${paso.reserva.id}`}>Ver el estado de mi reserva</Link>
+          </Button>
+        </div>
+      )
 
     // El único que a propósito no tiene pantalla acá: la elige la data.
     case 'review':
       break
 
-    // Un `step` nuevo sin rama acá NO COMPILA, y eso es todo lo que hace este
-    // bloque. En runtime es inalcanzable —`step` sólo lo escribe `setStep` con
+    // Un paso nuevo sin rama acá NO COMPILA, y eso es todo lo que hace este
+    // bloque. En runtime es inalcanzable —`paso` sólo lo escribe `setPaso` con
     // literales—, así que degrada a las pantallas de datos en vez de tirar
     // abajo el wizard: no hay error boundary bajo `/book`.
     default:
-      step satisfies never
+      paso satisfies never
       break
   }
 
@@ -759,7 +790,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         <div className="flex gap-3">
           <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack} disabled={loading}>Atrás</Button>
           {bankInfo ? (
-            <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleTransferBooking} disabled={loading || !acceptedTerms}>
+            <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={() => void handleTransferBooking(bankInfo)} disabled={loading || !acceptedTerms}>
               {loading ? 'Creando reserva...' : 'Continuar con transferencia'}
             </Button>
           ) : (
@@ -781,7 +812,10 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     )
   }
 
-  const eligeTransferencia = Boolean(bankInfo) && method === 'transfer'
+  /** La cuenta con la que se va a pagar, o `null` si no es por transferencia.
+   *  El objeto y no un booleano: un `Boolean(bankInfo) && …` tira justo el dato
+   *  que el handler de abajo necesita y obliga a volver a buscarlo. */
+  const bancoElegido = method === 'transfer' ? bankInfo : null
 
   return (
     <div>
@@ -854,7 +888,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       {/* Sólo el camino online: la transferencia tiene su ventana larga y la
           dice en la pantalla siguiente (TransferDetails), ya topada contra la
           cita — acá serían dos plazos distintos en la misma pantalla. */}
-      {!eligeTransferencia && (
+      {!bancoElegido && (
         <p className="mb-4 text-sm text-muted-foreground">
           Al pagar, tu horario queda guardado por {DEFAULT_HOLD_MINUTES} minutos. Si el pago no se completa en ese tiempo, se libera.
         </p>
@@ -862,8 +896,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
       <div className="flex gap-3">
         <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
-        {eligeTransferencia ? (
-          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleTransferBooking} disabled={loading || !acceptedTerms}>
+        {bancoElegido ? (
+          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={() => void handleTransferBooking(bancoElegido)} disabled={loading || !acceptedTerms}>
             {loading ? 'Procesando...' : 'Continuar con transferencia'}
           </Button>
         ) : (

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { StepService } from './step-service'
 import { StepProfessional } from './step-professional'
 import { StepDate } from './step-date'
@@ -281,8 +282,24 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
             <button onClick={() => setCurrentStep('service')} className="font-semibold text-primary underline">Volver al inicio</button>
           </div>
         )}
-        {currentStep === 'confirmation' && (
-          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={reserva?.id ?? null} bookingNumber={reserva?.bookingNumber ?? null} mode={reserva?.mode ?? 'paid'} promo={reserva?.promo ?? null} sessionEmail={session?.email ?? null} business={business} where={reserva?.where ?? {}} confirmed={reserva?.confirmed ?? false} professionalName={reserva?.professionalName ?? ''} />
+        {/* La confirmación pide la reserva de verdad. Antes entraba igual con
+            nueve `?? default` tapando el objeto ausente, y esos defaults no son
+            neutros: `mode: 'paid'` + `confirmed: false` le dicen a la clienta
+            "Reserva recibida, ya pagaste" sobre una reserva que no existe. El
+            resto del archivo ya resuelve así los pasos que dependen de un dato
+            (ver 'time', 'customer' y 'payment' acá arriba). */}
+        {currentStep === 'confirmation' && reserva && (
+          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={reserva.id} bookingNumber={reserva.bookingNumber} mode={reserva.mode} promo={reserva.promo} sessionEmail={session?.email ?? null} business={business} where={reserva.where} confirmed={reserva.confirmed} professionalName={reserva.professionalName} />
+        )}
+        {currentStep === 'confirmation' && !reserva && (
+          /* Hoy no se llega: a 'confirmation' sólo se entra desde el `onSuccess`
+             del paso de pago, que trae la reserva. La salida NO es "empezá de
+             nuevo" —si la reserva sí existió, eso la haría reservar dos veces—
+             sino mandarla a mirar sus reservas. */
+          <div className="text-center py-8">
+            <p className="text-muted-foreground mb-4">No pudimos mostrar los datos de tu reserva. Si llegaste hasta el pago, revisá tus reservas antes de volver a intentar.</p>
+            <Link href={`/mi/${slug}`} className="font-semibold text-primary underline">Ver mis reservas</Link>
+          </div>
         )}
       </section>
     </div>
