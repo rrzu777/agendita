@@ -298,7 +298,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
              sino mandarla a mirar sus reservas. */
           <div className="text-center py-8">
             <p className="text-muted-foreground mb-4">No pudimos mostrar los datos de tu reserva. Si llegaste hasta el pago, revisá tus reservas antes de volver a intentar.</p>
-            <Link href={`/mi/${slug}/reservas`} className="font-semibold text-primary underline">Ver mis reservas</Link>
+            <Link href={`/mi/${slug}`} className="font-semibold text-primary underline">Ver mis reservas</Link>
           </div>
         )}
       </section>
