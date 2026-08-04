@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { BookingPaymentStatus } from '@prisma/client'
 import { isManualPaymentAllowed, manualPaymentBlockedReason } from '@/components/dashboard/manual-payment-utils'
 
 const NOW = new Date('2026-08-03T12:00:00Z')
@@ -49,7 +50,9 @@ describe('isManualPaymentAllowed', () => {
   // con plata adentro. El cron NO la barre (filtra `unpaid`), así que el plazo
   // vencido no la condena a nada — cerrarle el cobro dejaba a la clienta con el
   // efectivo en la mano y a la dueña sin dónde asentarlo.
-  it.each(['deposit_paid', 'fully_paid', 'refunded', 'failed'])(
+  // Derivado del enum a propósito: un valor nuevo entra solo y hay que
+  // decidirlo, en vez de quedar sin cubrir en silencio.
+  it.each(Object.values(BookingPaymentStatus).filter((s) => s !== BookingPaymentStatus.unpaid))(
     'con plazo vencido pero paymentStatus %s SÍ ofrece cobrar: el cron nunca la va a expirar',
     (paymentStatus) => {
       expect(isManualPaymentAllowed(reserva({ status: 'pending_payment', remainingBalance: 8000, holdExpiresAt: MUERTO, paymentStatus }), NOW)).toBe(true)

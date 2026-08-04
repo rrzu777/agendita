@@ -1,12 +1,22 @@
 import { describe, it, expect } from 'vitest'
 import { assertBookingPayable, BookingNotPayableError } from '@/lib/bookings/payments'
-import { BookingStatus } from '@prisma/client'
+import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 
 /** `unpaid` por default: es el único caso que el cron barre, o sea el único en
  *  el que el plazo vencido cierra el cobro. Los casos con plata adentro lo pisan. */
-function reserva(fields: { status: BookingStatus; holdExpiresAt: Date | null; paymentStatus?: string }) {
-  return { paymentStatus: 'unpaid', ...fields }
+function reserva(fields: {
+  status: BookingStatus
+  holdExpiresAt: Date | null
+  paymentStatus?: BookingPaymentStatus
+}) {
+  return { paymentStatus: BookingPaymentStatus.unpaid, ...fields }
 }
+
+/** Todo lo que NO barre el cron. Derivado del enum a propósito: un valor nuevo
+ *  entra solo y hay que decidirlo, en vez de quedar sin cubrir en silencio. */
+const CON_PLATA_ADENTRO = Object.values(BookingPaymentStatus).filter(
+  (s) => s !== BookingPaymentStatus.unpaid,
+)
 
 describe('assertBookingPayable', () => {
   it('allows pending_payment with future hold', () => {
@@ -38,7 +48,7 @@ describe('assertBookingPayable', () => {
   // plata adentro el cron la saltea (`paymentStatus: 'unpaid'` en su where), así
   // que el motivo desaparece y el cobro tiene que seguir abierto: si no, la
   // reserva que pagó tarde y perdió el horario queda sin ninguna salida.
-  it.each(['deposit_paid', 'fully_paid', 'refunded', 'failed'])(
+  it.each(CON_PLATA_ADENTRO)(
     'permite el plazo vencido cuando paymentStatus es %s: el cron no la va a barrer',
     (paymentStatus) => {
       const booking = reserva({

@@ -68,6 +68,11 @@ export function isManualPaymentAllowed(booking: PayabilityFields, now: Date = ne
  * salida que promete EXISTA: sobre una reserva con plata adentro el cron no pasa
  * nunca, así que "esperá a que quede Expirada" era mandarla a esperar sentada.
  * Ese caso ya no llega acá — se puede cobrar.
+ *
+ * El `isDoomedHold` va explícito y no como `!isManualPaymentAllowed(...)`, que
+ * ahorraría la línea repetida de arriba: el texto habla del PLAZO, así que tiene
+ * que colgar de la condición del plazo. Derivarlo del "no se puede" haría que un
+ * bloqueo futuro por otro motivo saliera con esta explicación, que sería falsa.
  */
 export function manualPaymentBlockedReason(
   booking: PayabilityFields,
