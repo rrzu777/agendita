@@ -31,7 +31,10 @@ export const DASHBOARD_HOLD_MINUTES = 60
  * El tope va acá, **al mostrar**, y no al escribir el hold. Escribirlo topado
  * destruye la ventana real y no sobrevive a que la cita se mueva: una reserva
  * creada para dentro de una hora quedaría con el plazo achicado para siempre, y
- * al reprogramarla a la semana siguiente moriría con la cita a siete días. Peor
+ * al reprogramarla a la semana siguiente moriría con la cita a siete días.
+ * (`approvalHoldExpiresAt` sí topa al escribir, y paga exactamente ese precio:
+ * necesita que reprogramar RECALCULE el plazo — ver `rescheduledHoldPatch`. No
+ * es imposible sostenerlo, es más caro.) Peor
  * todavía, truncaría el plazo de `declareBankTransfer`, que ya no mide cuánto le
  * guardamos el horario a alguien que no pagó sino cuánto tiene la dueña para
  * verificar plata declarada.

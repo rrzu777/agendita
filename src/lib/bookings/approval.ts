@@ -165,6 +165,14 @@ export function initialPublicBookingStatus(args: {
  * para mañana a las 10 no puede seguir "esperando confirmación" a las 11. Se
  * guarda en `holdExpiresAt` (el campo y su índice `[status, holdExpiresAt]` ya
  * existen, y todo lo que lo lee filtra además por status).
+ *
+ * Como el tope se aplica **al escribir**, la hora de la cita queda persistida
+ * adentro del plazo — y por eso **mover la cita obliga a recalcularlo**.
+ * `rescheduledHoldPatch` (mutate.ts) vuelve a llamar acá con la cita nueva y el
+ * `createdAt` de la reserva: es el único caller que pasa un `now` del PASADO, y
+ * justamente por eso reproduce el plazo que se habría guardado si la reserva
+ * hubiera nacido con ese horario, en vez de estrenarle una ventana. Si algún día
+ * el tope se mueve al leer (como en `holdDeadlinePromise`), ese recálculo sobra.
  */
 export function approvalHoldExpiresAt(startDateTime: Date, now = new Date()): Date {
   const window = addHours(now, APPROVAL_WINDOW_HOURS)
