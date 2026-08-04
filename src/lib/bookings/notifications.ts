@@ -16,8 +16,8 @@ import { BookingStatus } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
-import { MANUAL_COORDINATION_METHOD, promisableHoldDeadline } from '@/lib/bookings/hold'
-import { fmtDate } from '@/lib/notifications/templates'
+import { MANUAL_COORDINATION_METHOD, holdDeadlinePromise } from '@/lib/bookings/hold'
+import { fmtDeadlinePromise } from '@/lib/notifications/templates'
 import { bookingInvite } from '@/lib/calendar/booking-invite'
 import { type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import type { BookingEmailData } from '@/lib/notifications/types'
@@ -84,7 +84,7 @@ export async function fireBookingNotifications(
   // coordinación manual y el aviso a la dueña). Topado con la cita: prometer
   // "te guardamos el horario hasta mañana" sobre una cita de hoy es una frase
   // sin sentido, y este mail es la copia durable de esa promesa.
-  const promisedDeadline = promisableHoldDeadline(booking)
+  const promisedDeadline = holdDeadlinePromise(booking)
 
   // Reserva con transferencia: el email de "reserva recibida" ES la fuente
   // durable de los datos bancarios (la pestaña del wizard es efímera).
@@ -181,7 +181,7 @@ export async function fireBookingNotifications(
         paymentNote: booking.paymentMethod === BANK_TRANSFER_METHOD
           ? `${vocabulary.TheClient} eligió pagar el abono por transferencia. Te va a llegar otro aviso cuando declare que transfirió.`
           : booking.paymentMethod === MANUAL_COORDINATION_METHOD
-            ? `No tenés pago online configurado, así que el abono lo coordinás directamente con ${vocabulary.theClient}. Confirmá la reserva antes de que venza${promisedDeadline ? ` (el horario queda guardado hasta el ${fmtDate(promisedDeadline, businessTimezone)})` : ''}, o expira sola.`
+            ? `No tenés pago online configurado, así que el abono lo coordinás directamente con ${vocabulary.theClient}. Confirmá la reserva antes de que venza${promisedDeadline ? ` (el horario queda guardado hasta ${fmtDeadlinePromise(promisedDeadline, businessTimezone, 'la cita')})` : ''}, o expira sola.`
             : undefined,
       }),
     ),

@@ -226,12 +226,23 @@ describe('templates: coordinación manual', () => {
   it('la recibida dice que el negocio coordina y hasta cuándo se guarda el horario', () => {
     const text = bookingReceivedCustomerText({
       ...sampleBookingData,
-      manualCoordination: { deadline: new Date('2026-06-14T18:00:00Z') },
+      manualCoordination: { deadline: { cap: 'window', at: new Date('2026-06-14T18:00:00Z') } },
     })
     expect(text).toContain('coordina el abono directamente contigo')
     expect(text).toContain('Te guardamos el horario hasta el')
     expect(text).not.toContain('Está pendiente de pago')
     expect(text).not.toContain('Recibirás una confirmación cuando el pago sea registrado')
+  })
+
+  it('con el plazo topado por la cita, la promesa va en palabras', () => {
+    // 24h de ventana sobre un turno de hoy: el plazo topado es el final de la
+    // cita, y "te guardamos el horario hasta el domingo 14 de junio, 14:30" es
+    // la misma hora que la reserva de arriba con otro nombre.
+    const text = bookingReceivedCustomerText({
+      ...sampleBookingData,
+      manualCoordination: { deadline: { cap: 'appointment' } },
+    })
+    expect(text).toContain('Te guardamos el horario hasta tu cita.')
   })
 
   it('sin coordinación manual la recibida sigue pidiendo el pago', () => {

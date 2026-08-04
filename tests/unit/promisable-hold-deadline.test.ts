@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { addHours } from 'date-fns'
-import { holdDeadlinePhrase, promisableHoldDeadline } from '@/lib/bookings/hold'
+import { holdDeadlinePhrase, holdDeadlinePromise, promisableHoldDeadline } from '@/lib/bookings/hold'
 
 const NOW = new Date('2026-08-03T12:00:00Z')
 // NOW son las 08:00 en Santiago (UTC-4 en agosto), así que "hoy" local y "hoy"
@@ -50,6 +50,22 @@ describe('promisableHoldDeadline', () => {
     const suelta = promisableHoldDeadline({ holdExpiresAt: addHours(NOW, 1), endDateTime }, NOW)
     expect(topada!.getTime()).toBe(endDateTime.getTime())
     expect(suelta!.getTime()).not.toBe(endDateTime.getTime())
+  })
+})
+
+describe('holdDeadlinePromise', () => {
+  it('la ventana viaja con su fecha; el techo de la cita viaja sin ninguna', () => {
+    // El dato que se pierde al mandar un Date pelado a una plantilla de email:
+    // allá la reserva ya no está a mano y no hay contra qué comparar.
+    const holdExpiresAt = addHours(NOW, 24)
+    expect(holdDeadlinePromise({ holdExpiresAt, endDateTime: cita(72) }, NOW)).toEqual({ cap: 'window', at: holdExpiresAt })
+    expect(holdDeadlinePromise({ holdExpiresAt, endDateTime: cita(2) }, NOW)).toEqual({ cap: 'appointment' })
+  })
+
+  it('no promete nada donde promisableHoldDeadline no promete nada', () => {
+    expect(holdDeadlinePromise({ holdExpiresAt: null, endDateTime: cita(72) }, NOW)).toBeNull()
+    expect(holdDeadlinePromise({ holdExpiresAt: addHours(NOW, -1), endDateTime: cita(72) }, NOW)).toBeNull()
+    expect(holdDeadlinePromise({ holdExpiresAt: addHours(NOW, 20), endDateTime: addHours(NOW, -1) }, NOW)).toBeNull()
   })
 })
 

@@ -92,7 +92,7 @@ describe('sendTransferReminders', () => {
     expect(arg.businessCurrency).toBe('CLP')
     expect(arg.bankTransfer.accountNumber).toBe('123')
     expect(arg.bankTransfer.confirmationUrl).toContain('/book/confirmation?bookingId=bk1')
-    expect(arg.bankTransfer.deadline).toEqual(new Date('2026-07-11T14:00:00Z'))
+    expect(arg.bankTransfer.deadline).toEqual({ cap: 'window', at: new Date('2026-07-11T14:00:00Z') })
     expect(arg.customerEmail).toBe('ana@x.cl')
   })
 

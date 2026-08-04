@@ -56,15 +56,41 @@ export function promisableHoldDeadline(
 }
 
 /**
- * El plazo YA DICHO en palabras, para meter en una frase: "tu horario queda
- * guardado hasta {esto}".
+ * El plazo prometido con **quién le puso el techo** adentro, para los casos en
+ * que la promesa viaja lejos de la reserva.
  *
- * Existe porque el `Date` que devuelve `promisableHoldDeadline` no se puede
- * imprimir crudo en los tres casos. Cuando el techo es la cita —lo normal con
- * una ventana larga y un turno cercano— la fecha exacta es la del final del
- * propio turno, y "tenés hasta el 04-08-2026 10:30" cuando la cita es de 10:00
- * a 10:30 se lee como un dato nuevo en vez de como lo que es. En palabras se
- * entiende sola. Y para el plazo de hoy la fecha sobra: alcanza la hora.
+ * `promisableHoldDeadline` devuelve un `Date` y el caller que lo tenga a mano
+ * puede comparar contra `endDateTime` para saber si el techo fue la cita. Las
+ * plantillas de email no lo tienen a mano: reciben su data ya armada, y ahí un
+ * `Date` pelado ya perdió el dato. Por eso el borde lleva esto y no una fecha.
+ *
+ * `'window'` es el plazo de verdad, con su fecha. `'appointment'` es "hasta la
+ * cita" y **no lleva fecha a propósito**: esa fecha es el final del propio turno
+ * que el mail ya está contando arriba, así que imprimirla es repetir un dato
+ * cambiado de nombre. Cada superficie pone las palabras que le sirven — la
+ * clienta lee "tu cita" y la dueña "la cita".
+ */
+export type HoldDeadlinePromise = { cap: 'window'; at: Date } | { cap: 'appointment' }
+
+export function holdDeadlinePromise(
+  booking: { holdExpiresAt: Date | null; endDateTime: Date },
+  now: Date = new Date(),
+): HoldDeadlinePromise | null {
+  const deadline = promisableHoldDeadline(booking, now)
+  if (!deadline) return null
+  return deadline.getTime() === booking.endDateTime.getTime() ? { cap: 'appointment' } : { cap: 'window', at: deadline }
+}
+
+/**
+ * El plazo YA DICHO en palabras **para una pantalla**, para meter en una frase:
+ * "tu horario queda guardado hasta {esto}".
+ *
+ * Es `HoldDeadlinePromise` con las palabras de una pantalla puestas: "tu cita"
+ * cuando el techo es la cita, y para el plazo de hoy la fecha sobra —alcanza la
+ * hora—. **Ese atajo es lo que no comparte con el email**: un mail se lee
+ * cuando el destinatario quiere, y "las 14:30" leído mañana miente. El mail
+ * arma su propia frase desde la misma promesa (ver `fmtDeadlinePromise` en
+ * `lib/notifications/templates.ts`).
  *
  * Devuelve `null` en los mismos tres casos que `promisableHoldDeadline`, así
  * que el caller muestra la frase o no muestra nada.
@@ -78,11 +104,11 @@ export function holdDeadlinePhrase(
   timezone: string,
   now: Date = new Date(),
 ): string | null {
-  const deadline = promisableHoldDeadline(booking, now)
-  if (!deadline) return null
-  if (deadline.getTime() === booking.endDateTime.getTime()) return 'tu cita'
-  const { date, time } = formatConfirmationDateTime(deadline, timezone)
-  const esHoy = getLocalDateStr(deadline, timezone) === getLocalDateStr(now, timezone)
+  const promise = holdDeadlinePromise(booking, now)
+  if (!promise) return null
+  if (promise.cap === 'appointment') return 'tu cita'
+  const { date, time } = formatConfirmationDateTime(promise.at, timezone)
+  const esHoy = getLocalDateStr(promise.at, timezone) === getLocalDateStr(now, timezone)
   return esHoy ? `las ${time}` : `el ${date} a las ${time}`
 }
 

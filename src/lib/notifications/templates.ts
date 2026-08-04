@@ -4,6 +4,7 @@ import { unsubscribeFooterHtml, unsubscribeFooterText } from './marketing-email'
 import { formatMoney } from '@/lib/money'
 import { getVocabulary } from '@/lib/vocabulary'
 import { whereRows, whereText, type WhereFields } from '@/lib/services/modality'
+import type { HoldDeadlinePromise } from '@/lib/bookings/hold'
 import type { BusinessCategory } from '@prisma/client'
 import type {
   BookingEmailData,
@@ -39,11 +40,32 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;')
 }
 
-/** Exportado: los compositores (p. ej. el paymentNote de coordinación manual
- *  en `fireBookingNotifications`) formatean el plazo con el mismo formato que
- *  el resto del email. */
-export function fmtDate(date: Date, timezone: string): string {
+function fmtDate(date: Date, timezone: string): string {
   return formatInTimeZone(date, timezone, "EEEE d 'de' MMMM 'de' yyyy, HH:mm", { locale: es })
+}
+
+/**
+ * El plazo del hold en palabras, ya listo para ir atrás de un "hasta".
+ *
+ * Cuando el techo lo puso la cita no se imprime la fecha: es la del final del
+ * mismo turno que el email cuenta más arriba, así que "tenés hasta el lunes 4
+ * de agosto de 2026, 10:30" sobre una cita de 10:00 a 10:30 se lee como un dato
+ * nuevo. `laCita` es cómo nombrarla en ESE email: "tu cita" en los que van a la
+ * clienta, "la cita" en los que van al negocio.
+ *
+ * Nada de "hoy" ni "en 2 horas" acá, a diferencia de la pantalla
+ * (`holdDeadlinePhrase`): un email se lee cuando el destinatario quiere.
+ *
+ * Exportado porque el `paymentNote` de coordinación manual lo arma el
+ * compositor (`fireBookingNotifications`) y tiene que decir el plazo igual que
+ * las plantillas.
+ */
+export function fmtDeadlinePromise(
+  deadline: HoldDeadlinePromise,
+  timezone: string,
+  laCita: string = 'tu cita',
+): string {
+  return deadline.cap === 'appointment' ? laCita : `el ${fmtDate(deadline.at, timezone)}`
 }
 
 /**
@@ -148,7 +170,7 @@ export function bankTransferBlockHtml(
           ${bt.email ? `<tr><td style="padding:2px 12px 2px 0;color:#666">Email</td><td>${escapeHtml(bt.email)}</td></tr>` : ''}
         </table>
         ${bt.instructions ? `<p style="font-size:13px;color:#666;margin:8px 0 0">${escapeHtml(bt.instructions)}</p>` : ''}
-        ${bt.deadline ? `<p style="font-size:13px;margin:8px 0 0"><strong>Plazo:</strong> tenés hasta el ${fmtDate(bt.deadline, timezone)} para transferir y avisarnos.</p>` : ''}
+        ${bt.deadline ? `<p style="font-size:13px;margin:8px 0 0"><strong>Plazo:</strong> tenés hasta ${fmtDeadlinePromise(bt.deadline, timezone)} para transferir y avisarnos.</p>` : ''}
         <p style="margin:12px 0 0"><a href="${escapeHtml(bt.confirmationUrl)}" style="color:#e91e63;text-decoration:none;font-weight:600">Cuando transfieras, avisá con el botón "Ya transferí" acá →</a></p>
       </div>`
 }
@@ -167,7 +189,7 @@ export function bankTransferBlockText(
   ]
   if (bt.email) lines.push(`Email: ${bt.email}`)
   if (bt.instructions) lines.push(bt.instructions)
-  if (bt.deadline) lines.push(`Plazo: hasta ${fmtDate(bt.deadline, timezone)}`)
+  if (bt.deadline) lines.push(`Plazo: hasta ${fmtDeadlinePromise(bt.deadline, timezone)}`)
   lines.push(`Cuando transfieras, avisá con "Ya transferí" acá: ${bt.confirmationUrl}`)
   return lines
 }
@@ -303,7 +325,7 @@ function manualCoordinationNote(
   timezone: string,
 ): string {
   return manual.deadline
-    ? `El negocio te va a contactar para coordinar el abono. Te guardamos el horario hasta el ${fmtDate(manual.deadline, timezone)}.`
+    ? `El negocio te va a contactar para coordinar el abono. Te guardamos el horario hasta ${fmtDeadlinePromise(manual.deadline, timezone)}.`
     : 'El negocio te va a contactar para coordinar el abono y confirmar tu reserva.'
 }
 

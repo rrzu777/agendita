@@ -1,5 +1,6 @@
 import type { BusinessCategory, ServiceModality } from '@prisma/client'
 import type { BookingCalendarInvite, BookingCancelNotice } from '@/lib/calendar/booking-invite'
+import type { HoldDeadlinePromise } from '@/lib/bookings/hold'
 import type { BookingWhere } from '@/lib/services/modality'
 
 export interface EmailResult {
@@ -66,7 +67,7 @@ export interface BookingEmailData {
    *  que el NEGOCIO la contacta — sin esto insinuaba que ella debía pagar algo
    *  que no tiene cómo pagar — y hasta cuándo se le guarda el horario. */
   manualCoordination?: {
-    deadline: Date | null
+    deadline: HoldDeadlinePromise | null
   }
   /** Presente cuando la reserva eligió transferencia bancaria: el email de
    *  "reserva recibida" incluye los datos, el plazo y el link para declarar. */
@@ -78,7 +79,7 @@ export interface BookingEmailData {
     accountNumber: string
     email?: string | null
     instructions?: string | null
-    deadline: Date | null
+    deadline: HoldDeadlinePromise | null
     confirmationUrl: string
   }
 }
@@ -96,7 +97,7 @@ export function toBankTransferEmailInfo(
     email: string | null
     instructions: string | null
   },
-  deadline: Date | null,
+  deadline: HoldDeadlinePromise | null,
   confirmationUrl: string,
 ): NonNullable<BookingEmailData['bankTransfer']> {
   return {

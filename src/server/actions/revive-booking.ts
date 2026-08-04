@@ -17,7 +17,7 @@ import { assertSlotFreeOfConflicts } from '@/lib/availability/validation'
 import { isNoOverlapViolation } from '@/lib/db/no-overlap'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
-import { promisableHoldDeadline } from '@/lib/bookings/hold'
+import { holdDeadlinePromise } from '@/lib/bookings/hold'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import { PaymentStatus, type BankTransferAccount } from '@prisma/client'
 import {
@@ -179,7 +179,7 @@ async function _reviveBooking(bookingId: string, mode: 'confirm' | 'reopen'): Pr
           // turno de mañana prometía por mail una fecha posterior a la cita.
           bankTransfer: toBankTransferEmailInfo(
             account,
-            promisableHoldDeadline({ endDateTime: revived.endDateTime, holdExpiresAt }),
+            holdDeadlinePromise({ endDateTime: revived.endDateTime, holdExpiresAt }),
             getBookingConfirmationUrl(business, bookingId),
           ),
         }),
