@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { addHours } from 'date-fns'
-import { promisableHoldDeadline } from '@/lib/bookings/hold'
+import { holdDeadlinePhrase, promisableHoldDeadline } from '@/lib/bookings/hold'
 
 const NOW = new Date('2026-08-03T12:00:00Z')
 
@@ -47,5 +47,41 @@ describe('promisableHoldDeadline', () => {
     const suelta = promisableHoldDeadline({ holdExpiresAt: addHours(NOW, 1), endDateTime }, NOW)
     expect(topada!.getTime()).toBe(endDateTime.getTime())
     expect(suelta!.getTime()).not.toBe(endDateTime.getTime())
+  })
+})
+
+// NOW son las 08:00 en Santiago (UTC-4 en agosto), así que "hoy" local y "hoy"
+// UTC coinciden y las horas del día se leen sin hacer la cuenta.
+const TZ = 'America/Santiago'
+
+describe('holdDeadlinePhrase', () => {
+  it('cuando el techo es la cita lo dice en palabras, no con la hora del turno', () => {
+    // Lo que veía la clienta antes: "hasta el 03-08-2026 14:00", que es el
+    // final de su propia cita y se lee como un dato nuevo.
+    expect(holdDeadlinePhrase({ holdExpiresAt: addHours(NOW, 24), endDateTime: cita(1) }, TZ, NOW)).toBe('tu cita')
+  })
+
+  it('un plazo de hoy va sin fecha: alcanza la hora', () => {
+    // El formato es el de la confirmación: 12h es-CL ("10:00 a. m.").
+    expect(holdDeadlinePhrase({ holdExpiresAt: addHours(NOW, 2), endDateTime: cita(72) }, TZ, NOW)).toMatch(/^las 10:00/)
+  })
+
+  it('un plazo de otro día lleva la fecha, o mentiría el día', () => {
+    const frase = holdDeadlinePhrase({ holdExpiresAt: addHours(NOW, 24), endDateTime: cita(72) }, TZ, NOW)
+    expect(frase).toContain('martes')
+    expect(frase).toContain('4 de agosto')
+    expect(frase).toContain('08:00')
+  })
+
+  it('sin nada que prometer no hay frase', () => {
+    expect(holdDeadlinePhrase({ holdExpiresAt: null, endDateTime: cita(72) }, TZ, NOW)).toBeNull()
+    expect(holdDeadlinePhrase({ holdExpiresAt: addHours(NOW, -1), endDateTime: cita(72) }, TZ, NOW)).toBeNull()
+    expect(holdDeadlinePhrase({ holdExpiresAt: addHours(NOW, 20), endDateTime: addHours(NOW, -1) }, TZ, NOW)).toBeNull()
+  })
+
+  it('la hora es la del negocio, no la del server', () => {
+    // Mismo instante, dos husos: si esto se rompiera, el plazo saldría con la
+    // hora de Vercel (UTC) y la clienta leería tres horas de más.
+    expect(holdDeadlinePhrase({ holdExpiresAt: addHours(NOW, 2), endDateTime: cita(72) }, 'UTC', NOW)).toMatch(/^las 02:00 p/)
   })
 })

@@ -1,3 +1,6 @@
+import { getLocalDateStr } from '@/lib/availability/timezone'
+import { formatConfirmationDateTime } from '@/lib/bookings/format-confirmation-datetime'
+
 /** Cuánto se le guarda el horario a una reserva que todavía no pagó.
  *
  *  Es el default del funnel (pago online): la clienta tiene esta ventana para
@@ -50,6 +53,38 @@ export function promisableHoldDeadline(
   if (booking.holdExpiresAt == null || booking.holdExpiresAt <= now) return null
   if (booking.endDateTime <= now) return null
   return booking.holdExpiresAt < booking.endDateTime ? booking.holdExpiresAt : booking.endDateTime
+}
+
+/**
+ * El plazo YA DICHO en palabras, para meter en una frase: "tu horario queda
+ * guardado hasta {esto}".
+ *
+ * Existe porque el `Date` que devuelve `promisableHoldDeadline` no se puede
+ * imprimir crudo en los tres casos. Cuando el techo es la cita —lo normal con
+ * una ventana larga y un turno cercano— la fecha exacta es la del final del
+ * propio turno, y "tenés hasta el 04-08-2026 10:30" cuando la cita es de 10:00
+ * a 10:30 se lee como un dato nuevo en vez de como lo que es. En palabras se
+ * entiende sola. Y para el plazo de hoy la fecha sobra: alcanza la hora.
+ *
+ * Devuelve `null` exactamente cuando no hay nada que prometer (los tres casos
+ * de `promisableHoldDeadline`), así que el caller muestra la frase o no muestra
+ * nada — no hay estado intermedio que decidir.
+ *
+ * El `now` se pasa a propósito: la pantalla de confirmación deriva el estado y
+ * el plazo del MISMO instante, y dos relojes con milisegundos distintos pueden
+ * contradecirse.
+ */
+export function holdDeadlinePhrase(
+  booking: { holdExpiresAt: Date | null; endDateTime: Date },
+  timezone: string,
+  now: Date = new Date(),
+): string | null {
+  const deadline = promisableHoldDeadline(booking, now)
+  if (!deadline) return null
+  if (deadline.getTime() === booking.endDateTime.getTime()) return 'tu cita'
+  const { date, time } = formatConfirmationDateTime(deadline, timezone)
+  const esHoy = getLocalDateStr(deadline, timezone) === getLocalDateStr(now, timezone)
+  return esHoy ? `las ${time}` : `el ${date} a las ${time}`
 }
 
 /** Marcador de `Booking.paymentMethod` para el camino donde el negocio coordina

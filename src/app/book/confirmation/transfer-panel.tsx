@@ -9,12 +9,13 @@ import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 /** Superficie ACTIVA de /book/confirmation: la clienta que cerró la pestaña
  *  del wizard puede ver los datos bancarios y declarar desde acá.
  *  kind='balance' reusa el mismo panel para el saldo restante (feature #3). */
-export function TransferPanel({ bank, amount, currency, deadline, timezone, bookingId, kind = 'deposit' }: {
+export function TransferPanel({ bank, amount, currency, deadlinePhrase, bookingId, kind = 'deposit' }: {
   bank: BankTransferPublicInfo
   amount: number
   currency: string
-  deadline: Date | null
-  timezone: string
+  /** El plazo ya redactado por la página, que lo deriva del mismo `now` con el
+   *  que decide qué estado mostrar (ver `holdDeadlinePhrase`). */
+  deadlinePhrase: string | null
   bookingId: string
   kind?: 'deposit' | 'balance'
 }) {
@@ -41,7 +42,7 @@ export function TransferPanel({ bank, amount, currency, deadline, timezone, book
 
   return (
     <div className="mb-8">
-      <TransferDetails bank={bank} amount={amount} currency={currency} deadline={deadline} timezone={timezone} declaring={declaring} onDeclare={handleDeclare} kind={kind} bookingId={bookingId} />
+      <TransferDetails bank={bank} amount={amount} currency={currency} deadlinePhrase={deadlinePhrase} declaring={declaring} onDeclare={handleDeclare} kind={kind} bookingId={bookingId} />
       {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
     </div>
   )

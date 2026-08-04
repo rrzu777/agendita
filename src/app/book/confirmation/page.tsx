@@ -11,13 +11,12 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 import { formatMoney } from '@/lib/money'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD, BT_DECLARED_PREFIX } from '@/lib/bank-transfer/declared'
-import { MANUAL_COORDINATION_METHOD, promisableHoldDeadline } from '@/lib/bookings/hold'
-import { getLocalDateStr } from '@/lib/availability/timezone'
+import { MANUAL_COORDINATION_METHOD, holdDeadlinePhrase } from '@/lib/bookings/hold'
 import { TransferPanel } from './transfer-panel'
 import { AccountCta } from '@/components/booking/account-cta'
 import { AddToCalendar } from '@/components/booking/add-to-calendar'
 import { deservesCalendarEvent } from '@/lib/calendar/booking-event'
-import { formatConfirmationDateTime } from './format-datetime'
+import { formatConfirmationDateTime } from '@/lib/bookings/format-confirmation-datetime'
 import { whereRows } from '@/lib/services/modality'
 import { buildBookingHelpWhatsappUrl } from '@/lib/notifications/whatsapp'
 import { WhatsappHelpLine, WhereRowValue } from '@/components/booking/where-row-value'
@@ -79,17 +78,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
   // 'expired' de deriveConfirmationState y el aviso no se muestra. Con la
   // ventana larga de coordinación manual el límite puede caer otro día:
   // "hasta las 14:30" a secas mentiría el día, así que lleva la fecha.
-  const deadlineDate = promisableHoldDeadline(booking, now)
-  const holdDeadline = (() => {
-    if (!deadlineDate) return null
-    // El techo es la cita, no la ventana: decir la hora sería repetirle la hora
-    // que ya está leyendo dos párrafos más abajo. En palabras se entiende.
-    if (deadlineDate.getTime() === booking.endDateTime.getTime()) return 'tu cita'
-    const tz = booking.business.timezone
-    const { date, time } = formatConfirmationDateTime(deadlineDate, tz)
-    const esHoy = getLocalDateStr(deadlineDate, tz) === getLocalDateStr(now, tz)
-    return esHoy ? `las ${time}` : `el ${date} a las ${time}`
-  })()
+  const holdDeadline = holdDeadlinePhrase(booking, booking.business.timezone, now)
 
   // Superficie activa: la clienta que eligió transferencia y cerró la pestaña
   // del wizard puede ver los datos y declarar desde acá (mientras el hold viva).
@@ -230,8 +219,9 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           <h1 className="mb-3 text-3xl font-semibold tracking-normal text-primary">{config.title}</h1>
           <p className="text-base leading-relaxed text-muted-foreground">{config.message}</p>
           {/* Los dos estados que piden plata dicen hasta cuándo hay tiempo. La
-              transferencia no: su deadline lo muestra el TransferPanel con fecha
-              completa, y dos relojes en la misma pantalla confunden. */}
+              transferencia no: el mismo plazo, con las mismas palabras, ya lo
+              dice el TransferPanel al lado de los datos bancarios, que es donde
+              hace falta — repetirlo acá arriba sería decirlo dos veces. */}
           {holdDeadline && (state === 'rejected' || (state === 'pending' && booking.paymentMethod !== BANK_TRANSFER_METHOD)) && (
             <p className="mt-3 text-sm font-medium text-muted-foreground">
               Tu horario queda guardado hasta {holdDeadline}; después se libera.
@@ -330,8 +320,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
             bank={bankInfo}
             amount={Math.min(booking.depositRequired, booking.remainingBalance)}
             currency={currency}
-            deadline={deadlineDate}
-            timezone={booking.business.timezone}
+            deadlinePhrase={holdDeadline}
             bookingId={booking.id}
           />
         )}
@@ -347,8 +336,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
             bank={bankInfo}
             amount={booking.remainingBalance}
             currency={currency}
-            deadline={null}
-            timezone={booking.business.timezone}
+            deadlinePhrase={null}
             bookingId={booking.id}
             kind="balance"
           />

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatConfirmationDateTime } from '@/app/book/confirmation/format-datetime'
+import { formatConfirmationDateTime } from '@/lib/bookings/format-confirmation-datetime'
 
 // Instante UTC = 2026-07-20T00:30:00Z. En America/Santiago (UTC-4 en julio) eso
 // es el domingo 19 de julio, 20:30 hora local. En UTC (Vercel) es el lunes 20,

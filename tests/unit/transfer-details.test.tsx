@@ -19,7 +19,7 @@ const bank = {
 describe('TransferDetails', () => {
   it('muestra datos, monto y botón declarar', () => {
     const html = renderToStaticMarkup(
-      <TransferDetails bank={bank} amount={5000} currency="CLP" deadline={new Date('2026-08-01T15:00:00Z')} timezone="America/Santiago" declaring={false} onDeclare={() => {}} bookingId="b1" />,
+      <TransferDetails bank={bank} amount={5000} currency="CLP" deadlinePhrase="las 15:00" declaring={false} onDeclare={() => {}} bookingId="b1" />,
     )
     expect(html).toContain('BancoEstado')
     expect(html).toContain('12345678')
@@ -27,11 +27,22 @@ describe('TransferDetails', () => {
     expect(html).toContain('Ya transferí')
     expect(html).toContain('5.000')
     expect(html).toContain('Tenés hasta')
+    expect(html).toContain('las 15:00')
+  })
+
+  // El plazo llega redactado, no como fecha: cuando el techo es la cita la
+  // frase es "tu cita" y la pantalla la tiene que poder decir tal cual.
+  it('dice el plazo con las palabras que le pasan, sin re-formatear', () => {
+    const html = renderToStaticMarkup(
+      <TransferDetails bank={bank} amount={5000} currency="CLP" deadlinePhrase="tu cita" declaring={false} onDeclare={() => {}} bookingId="b1" />,
+    )
+    expect(html).toContain('Tenés hasta')
+    expect(html).toContain('tu cita')
   })
 
   it('sin deadline no muestra plazo y el botón declara ocupado', () => {
     const html = renderToStaticMarkup(
-      <TransferDetails bank={bank} amount={5000} currency="CLP" deadline={null} timezone="America/Santiago" declaring={true} onDeclare={() => {}} bookingId="b1" />,
+      <TransferDetails bank={bank} amount={5000} currency="CLP" deadlinePhrase={null} declaring={true} onDeclare={() => {}} bookingId="b1" />,
     )
     expect(html).not.toContain('Tenés hasta')
     expect(html).toContain('Avisando')
