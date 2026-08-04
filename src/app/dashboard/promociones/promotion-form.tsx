@@ -98,25 +98,40 @@ function toIntOrNull(v: string): number | null {
   return Number.isFinite(n) ? Math.trunc(n) : null
 }
 
-export function PromotionForm({
-  mode,
-  services,
-  currency,
-  promo,
-}: {
-  mode: 'create' | 'edit'
+/**
+ * Crear o editar, con la promoción que se edita ADENTRO del modo.
+ *
+ * Eran dos props sueltas (`mode: 'create' | 'edit'` y `promo?: EditPromo`), o
+ * sea que `mode="edit"` sin `promo` compilaba. En ese estado el diálogo decía
+ * "Editar promoción" y el botón "Guardar cambios", pero el submit caía en el
+ * `: createPromotion(payload)` del ternario: la dueña apretaba Editar, no veía
+ * ningún error, y se creaba una promoción DUPLICADA. Los dos call sites de hoy
+ * están bien; lo que se cierra es que exista un tercero mal.
+ *
+ * Adentro se colapsa a un solo discriminante (`editing`), que es la forma que
+ * ya usan `professional-form` y `service-form`.
+ */
+type PromotionFormProps = {
   services: ServiceOption[]
   currency: string
-  promo?: EditPromo
-}) {
+} & (
+  | { mode: 'create'; promo?: never }
+  | { mode: 'edit'; promo: EditPromo }
+)
+
+export function PromotionForm(props: PromotionFormProps) {
+  const { services, currency } = props
+  /** La promoción que se está editando, o `null` si es una nueva. UN dato en vez
+   *  de dos que se pueden contradecir. */
+  const editing = props.mode === 'edit' ? props.promo : null
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
-  const [form, setForm] = useState<FormState>(() => (promo ? stateFromPromo(promo) : emptyState()))
+  const [form, setForm] = useState<FormState>(() => (editing ? stateFromPromo(editing) : emptyState()))
   const [sample, setSample] = useState('20000')
 
-  const codeLocked = mode === 'edit' && (promo?.redemptionCount ?? 0) > 0
+  const codeLocked = editing !== null && editing.redemptionCount > 0
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -166,12 +181,12 @@ export function PromotionForm({
 
     startTransition(async () => {
       try {
-        const res = mode === 'edit' && promo
-          ? await updatePromotion(promo.id, payload)
+        const res = editing
+          ? await updatePromotion(editing.id, payload)
           : await createPromotion(payload)
         if (!res.ok) { setError(res.error); return }
         setOpen(false)
-        if (mode === 'create') setForm(emptyState())
+        if (!editing) setForm(emptyState())
         router.refresh()
       } catch {
         setError('No se pudo guardar la promoción')
@@ -182,7 +197,7 @@ export function PromotionForm({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        {mode === 'create' ? (
+        {!editing ? (
           <Button className="h-11 font-semibold">
             <Plus className="mr-2 size-4" />
             Nueva promoción
@@ -197,7 +212,7 @@ export function PromotionForm({
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="font-heading text-2xl font-semibold tracking-tight text-primary">
-            {mode === 'edit' ? 'Editar promoción' : 'Nueva promoción'}
+            {editing ? 'Editar promoción' : 'Nueva promoción'}
           </DialogTitle>
         </DialogHeader>
 
@@ -348,7 +363,7 @@ export function PromotionForm({
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <Button type="submit" className="h-12 w-full font-semibold" disabled={isPending}>
-            {isPending ? 'Guardando…' : mode === 'edit' ? 'Guardar cambios' : 'Crear promoción'}
+            {isPending ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear promoción'}
           </Button>
         </form>
       </DialogContent>
