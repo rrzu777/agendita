@@ -1,5 +1,6 @@
 import { BookingStatus } from '@prisma/client'
 import { isManuallyPayableStatus } from '@/lib/bookings/payable-statuses'
+import { isDoomedHold } from '@/lib/payments/confirmation-state'
 
 export class BookingNotPayableError extends Error {
   constructor(message: string) {
@@ -11,6 +12,19 @@ export class BookingNotPayableError extends Error {
 /**
  * Verifica que una reserva esté en estado pagable y que su hold no haya expirado.
  * Lanza BookingNotPayableError si no es pagable.
+ *
+ * El plazo vencido cierra el cobro por un motivo PRESTADO: no es que la plata
+ * moleste, es que el cron va a expirar la reserva y asentarla sería asentarla
+ * sobre algo que en minutos es `expired`. Por eso el chequeo no es "el plazo
+ * pasó" sino `isDoomedHold`, que espeja las condiciones del sweep — y el sweep
+ * NO toca una reserva con plata adentro (filtra `paymentStatus: 'unpaid'`).
+ *
+ * La diferencia no era teórica. `pending_payment` + `deposit_paid` + plazo
+ * vencido —lo que deja la rama `slotConflict` de `recalcBookingFromPayments`
+ * cuando el pago llega y el horario ya se lo llevó otra persona— era un callejón
+ * sin salida: acá se rechazaba el cobro, el panel mandaba a esperar el estado
+ * `Expirada`, y ese estado no llegaba nunca porque el cron la saltea. La clienta
+ * con el efectivo en la mano y ningún lugar donde asentarlo.
  *
  * `allowExpiredHold`: salta SOLO el chequeo de hold vencido (no revive estados
  * terminales). Lo usa el verificador de transferencia, que ya re-validó el cupo
@@ -26,6 +40,10 @@ export class BookingNotPayableError extends Error {
 export function assertBookingPayable(
   booking: {
     status: BookingStatus
+    /** Requerido a propósito: es lo único que distingue la reserva que el cron
+     *  va a barrer de la que tiene plata adentro y ningún sweep va a tocar. Un
+     *  caller que no lo traiga le cierra el cobro para siempre. */
+    paymentStatus: string
     holdExpiresAt: Date | null
   },
   opts?: { allowExpiredHold?: boolean; allowCompleted?: boolean },
@@ -41,12 +59,7 @@ export function assertBookingPayable(
     throw new BookingNotPayableError('No se puede procesar pago para esta reserva')
   }
 
-  if (
-    !opts?.allowExpiredHold &&
-    booking.status === BookingStatus.pending_payment &&
-    booking.holdExpiresAt &&
-    booking.holdExpiresAt < new Date()
-  ) {
+  if (!opts?.allowExpiredHold && isDoomedHold(booking, new Date())) {
     throw new BookingNotPayableError('El tiempo para pagar esta reserva ha expirado')
   }
 }

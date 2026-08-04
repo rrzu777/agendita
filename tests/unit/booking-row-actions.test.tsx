@@ -48,9 +48,12 @@ function rowBooking(overrides: Record<string, unknown> = {}) {
     id: 'b1', bookingNumber: 4738, status: 'confirmed',
     depositPaid: 15000, depositRequired: 15000, finalAmount: 45000,
     remainingBalance: 30000, service: { name: 'Manicura' }, customer: { name: 'Ana' },
-    // Requerido por ManualPaymentBooking. Sin esto el fixture no es una reserva
-    // que la app produzca, y el guard del plazo no se ejercita nunca.
+    // Requeridos por ManualPaymentBooking. Sin esto el fixture no es una reserva
+    // que la app produzca, y el guard del plazo no se ejercita nunca. El `as
+    // never` de los callers apaga el chequeo del compilador, así que acá no hay
+    // más red que acordarse: los dos campos los lee el MISMO guard.
     holdExpiresAt: null,
+    paymentStatus: 'unpaid',
     ...overrides,
   }
 }
@@ -91,6 +94,20 @@ describe('BookingRowActions', () => {
     expect(html).toContain('Revivir')
     // Cancelar sigue disponible en el menú: la fila nunca queda muda.
     expect(html).toContain('Más acciones')
+  })
+
+  it('con el plazo vencido pero el abono adentro, Cobrar sigue habilitado', () => {
+    // El plazo vencido cierra el cobro porque el cron va a expirar la reserva.
+    // Con plata adentro el cron la saltea, así que deshabilitar el botón la
+    // dejaba sin salida: ni cobrar, ni el Expirada que habilita Revivir.
+    const booking = rowBooking({
+      status: 'pending_payment',
+      holdExpiresAt: new Date(Date.now() - HORA),
+      paymentStatus: 'deposit_paid',
+    })
+    const html = renderToStaticMarkup(<BookingRowActions booking={booking as never} businessCurrency="CLP" />)
+    expect(html).toContain('Cobrar')
+    expect(html).not.toContain('disabled=""')
   })
 
   it('renders nothing actionable for a terminal booking', () => {
