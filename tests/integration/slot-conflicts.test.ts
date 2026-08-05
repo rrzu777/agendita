@@ -61,26 +61,26 @@ describe('assertSlotFreeOfConflicts', () => {
   // `occupiesSlot` en memoria. Estos dos casos son la red de esa costura — si el
   // status llegara con otro nombre, o `holdExpiresAt` como string en vez de Date,
   // el predicado dejaría de distinguir hold vivo de hold vencido y acá se cae.
-  it('una solicitud por confirmar con hold vivo ocupa el cupo', async () => {
+  it('una solicitud por confirmar con plazo de aprobación vivo ocupa el cupo', async () => {
     const s = slot(4, 15)
     await seedConfirmedBooking({
       businessId: BT_VERIFY_BIZ, serviceId: BT_VERIFY_SVC, ...s,
-      status: 'pending_confirmation', holdExpiresAt: addMinutes(new Date(), 60),
+      status: 'pending_confirmation', approvalExpiresAt: addMinutes(new Date(), 60),
     })
     await expect(
       assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, professionalId: null, ...s }),
     ).rejects.toThrow('Ese horario ya no está disponible')
   })
 
-  // El hold vencido NO libera: desde `booking_overlap_solicitudes` el EXCLUDE cubre
+  // El plazo vencido NO libera: desde `booking_overlap_solicitudes` el EXCLUDE cubre
   // `pending_confirmation`, así que darla por libre acá haría que la app ofrezca un
   // horario que el insert rechaza con 23P01. Se libera cuando el cron la expira, que
   // es además el único que le avisa a la clienta que nadie le respondió.
-  it('una solicitud con el hold vencido sigue ocupando el cupo hasta que corre el cron', async () => {
+  it('una solicitud con el plazo vencido sigue ocupando el cupo hasta que corre el cron', async () => {
     const s = slot(5, 15)
     await seedConfirmedBooking({
       businessId: BT_VERIFY_BIZ, serviceId: BT_VERIFY_SVC, ...s,
-      status: 'pending_confirmation', holdExpiresAt: addMinutes(new Date(), -60),
+      status: 'pending_confirmation', approvalExpiresAt: addMinutes(new Date(), -60),
     })
     await expect(
       assertSlotFreeOfConflicts({ tx: prisma, businessId: BT_VERIFY_BIZ, timezone: TZ, professionalId: null, ...s }),

@@ -76,7 +76,7 @@ describe('/mi/[slug]', () => {
       mockBookingFindMany
         .mockResolvedValueOnce([{
           id: 'bk1', bookingNumber: 4738, startDateTime: new Date(Date.now() + 86400000),
-          status: 'pending_payment', paymentStatus: 'unpaid', holdExpiresAt: null,
+          status: 'pending_payment', paymentStatus: 'unpaid', holdExpiresAt: null, approvalExpiresAt: null,
           service: { name: 'Manicura' }, payments: [],
           ...booking,
         }])
@@ -120,21 +120,21 @@ describe('/mi/[slug]', () => {
 
     // La solicitud sin responder también vence (expireUnansweredRequests), y
     // sin filtro de pago: decía "Por confirmar" sobre una respuesta muerta.
-    it('solicitud con hold vencido → Expirada, no "Por confirmar"', async () => {
+    it('solicitud con plazo vencido → Expirada, no "Por confirmar"', async () => {
       const html = await renderConUpcoming({
         status: 'pending_confirmation',
         paymentStatus: 'fully_paid',
-        holdExpiresAt: new Date(Date.now() - 60000),
+        approvalExpiresAt: new Date(Date.now() - 60000),
       })
       expect(html).toContain('Expirada')
       expect(html).not.toContain('Por confirmar')
     })
 
-    it('solicitud con hold vivo sigue "Por confirmar"', async () => {
+    it('solicitud con plazo vivo sigue "Por confirmar"', async () => {
       const html = await renderConUpcoming({
         status: 'pending_confirmation',
         paymentStatus: 'fully_paid',
-        holdExpiresAt: new Date(Date.now() + 600000),
+        approvalExpiresAt: new Date(Date.now() + 600000),
       })
       expect(html).toContain('Por confirmar')
       expect(html).not.toContain('Expirada')
@@ -190,7 +190,7 @@ describe('/mi/[slug]', () => {
           startDateTime: enTresDias,
           status: 'pending_confirmation',
           paymentStatus: 'fully_paid',
-          holdExpiresAt: new Date(Date.now() - 60000),
+          approvalExpiresAt: new Date(Date.now() - 60000),
         })
         expect(html).not.toContain('/reprogramar')
         expect(html).toContain('El negocio no respondió esta solicitud a tiempo')

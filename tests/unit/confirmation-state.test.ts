@@ -16,12 +16,14 @@ describe('deriveConfirmationState', () => {
     depositPaid?: number
     paymentStatus?: string
     holdExpiresAt?: Date | null
+    approvalExpiresAt?: Date | null
   }) {
     return {
       depositRequired: 5000,
       depositPaid: 0,
       paymentStatus: 'unpaid',
       holdExpiresAt: null,
+      approvalExpiresAt: null,
       ...over,
     }
   }
@@ -318,19 +320,34 @@ describe('deriveConfirmationState', () => {
 
     // La solicitud sin responder también muere sola (`expireUnansweredRequests`),
     // y ese sweep NO filtra por pago: una solicitud gratis nace `fully_paid`.
-    it('una solicitud por confirmar con el hold vencido también está condenada', () => {
+    it('una solicitud por confirmar con el plazo de aprobación vencido también está condenada', () => {
       expect(
         deriveConfirmationState(
-          booking({ status: 'pending_confirmation', payments: [], holdExpiresAt: vencido, paymentStatus: 'fully_paid' }),
+          booking({ status: 'pending_confirmation', payments: [], approvalExpiresAt: vencido, paymentStatus: 'fully_paid' }),
           now,
         ),
       ).toBe('expired')
     })
 
-    it('la solicitud con el hold vivo sigue esperando respuesta', () => {
+    it('la solicitud con el plazo de aprobación vivo sigue esperando respuesta', () => {
       expect(
         deriveConfirmationState(
-          booking({ status: 'pending_confirmation', payments: [], holdExpiresAt: vivo }),
+          booking({ status: 'pending_confirmation', payments: [], approvalExpiresAt: vivo }),
+          now,
+        ),
+      ).toBe('pending')
+    })
+
+    it('cada status ignora la columna del otro plazo', () => {
+      expect(
+        deriveConfirmationState(
+          booking({ status: 'pending_confirmation', payments: [], holdExpiresAt: vencido }),
+          now,
+        ),
+      ).toBe('pending')
+      expect(
+        deriveConfirmationState(
+          booking({ status: 'pending_payment', payments: [], approvalExpiresAt: vencido }),
           now,
         ),
       ).toBe('pending')

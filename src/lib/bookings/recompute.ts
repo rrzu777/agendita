@@ -1,6 +1,6 @@
 import { addMinutes } from 'date-fns'
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
-import { initialPublicBookingStatus, approvalHoldExpiresAt } from '@/lib/bookings/approval'
+import { initialPublicBookingStatus, calculateApprovalExpiresAt } from '@/lib/bookings/approval'
 import { DEFAULT_HOLD_MINUTES } from '@/lib/bookings/hold'
 
 /** Recomputa montos/estado de una reserva tras aplicar un descuento (código o paquete).
@@ -18,7 +18,10 @@ export function recomputeBookingAmountsAfterDiscount(args: {
   approval?: { requireBookingApproval: boolean; startDateTime: Date }
 }): {
   discountAmount: number; finalAmount: number; depositRequired: number; remainingBalance: number
-  status: BookingStatus; holdExpiresAt: Date | null; paymentStatus: BookingPaymentStatus
+  status: BookingStatus
+  holdExpiresAt: Date | null
+  approvalExpiresAt: Date | null
+  paymentStatus: BookingPaymentStatus
 } {
   const now = args.now ?? new Date()
   const discountedFinal = args.price - args.discountAmount
@@ -36,8 +39,10 @@ export function recomputeBookingAmountsAfterDiscount(args: {
     status,
     holdExpiresAt:
       status === BookingStatus.pending_payment ? addMinutes(now, args.holdMinutes ?? DEFAULT_HOLD_MINUTES)
-      : status === BookingStatus.pending_confirmation && args.approval
-        ? approvalHoldExpiresAt(args.approval.startDateTime, now)
+      : null,
+    approvalExpiresAt:
+      status === BookingStatus.pending_confirmation && args.approval
+        ? calculateApprovalExpiresAt(args.approval.startDateTime, now)
         : null,
     paymentStatus: free ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid,
   }

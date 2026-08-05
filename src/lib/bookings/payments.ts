@@ -1,6 +1,6 @@
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 import { isManuallyPayableStatus } from '@/lib/bookings/payable-statuses'
-import { isDoomedHold } from '@/lib/payments/confirmation-state'
+import { isExpiredPaymentHold } from '@/lib/payments/confirmation-state'
 
 export class BookingNotPayableError extends Error {
   constructor(message: string) {
@@ -14,7 +14,7 @@ export class BookingNotPayableError extends Error {
  * Lanza BookingNotPayableError si no es pagable.
  *
  * El plazo vencido cierra el cobro por un motivo PRESTADO —el cron va a expirar
- * la reserva— y por eso el chequeo es `isDoomedHold`, que espeja las condiciones
+ * la reserva— y por eso el chequeo es `isExpiredPaymentHold`, que espeja las condiciones
  * de los sweeps; el porqué de cada una vive en su docblock.
  *
  * El caso que costó: `pending_payment` + `deposit_paid` + plazo vencido, lo que
@@ -58,7 +58,7 @@ export function assertBookingPayable(
     throw new BookingNotPayableError('No se puede procesar pago para esta reserva')
   }
 
-  if (!opts?.allowExpiredHold && isDoomedHold(booking, new Date())) {
+  if (!opts?.allowExpiredHold && isExpiredPaymentHold(booking, new Date())) {
     throw new BookingNotPayableError('El tiempo para pagar esta reserva ha expirado')
   }
 }

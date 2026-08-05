@@ -154,7 +154,12 @@ describe('rescheduleMyBooking', () => {
 
     const arg = mockRescheduleBookingInTx.mock.calls[0][1]
     expect(arg.rescheduledBy).toBe('customer')
-    const condenada = { status: 'pending_payment', paymentStatus: 'unpaid', holdExpiresAt: new Date(Date.now() - 60_000) }
+    const condenada = {
+      status: 'pending_payment',
+      paymentStatus: 'unpaid',
+      holdExpiresAt: new Date(Date.now() - 60_000),
+      approvalExpiresAt: null,
+    }
     expect(rescheduleBlockedReason(condenada, arg.rescheduledBy, new Date())).not.toContain('Revivir')
   })
 

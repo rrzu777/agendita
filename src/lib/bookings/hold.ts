@@ -1,6 +1,6 @@
 import { getLocalDateStr } from '@/lib/availability/timezone'
 import { formatConfirmationDateTime } from '@/lib/bookings/format-confirmation-datetime'
-import { isDoomedHold } from '@/lib/payments/confirmation-state'
+import { isDoomedBooking } from '@/lib/payments/confirmation-state'
 
 /** Cuánto se le guarda el horario a una reserva que todavía no pagó.
  *
@@ -32,8 +32,8 @@ export const DASHBOARD_HOLD_MINUTES = 60
  * destruye la ventana real y no sobrevive a que la cita se mueva: una reserva
  * creada para dentro de una hora quedaría con el plazo achicado para siempre, y
  * al reprogramarla a la semana siguiente moriría con la cita a siete días.
- * (`approvalHoldExpiresAt` sí topa al escribir, y paga exactamente ese precio:
- * necesita que reprogramar RECALCULE el plazo — ver `rescheduledHoldPatch`. No
+ * (`calculateApprovalExpiresAt` sí topa al escribir, y paga exactamente ese precio:
+ * necesita que reprogramar RECALCULE el plazo — ver `rescheduledApprovalPatch`. No
  * es imposible sostenerlo, es más caro.) Peor
  * todavía, truncaría el plazo de `declareBankTransfer`, que ya no mide cuánto le
  * guardamos el horario a alguien que no pagó sino cuánto tiene la dueña para
@@ -117,7 +117,7 @@ export type RescheduleAudience = 'owner' | 'customer'
  * - **Quién lee.** Cada mensaje nombra la salida de SU lado, que es lo que hace
  *   la diferencia entre un "no" y una app rota. La clienta no tiene ninguna —el
  *   plazo pasó—, así que lo único honesto es mandarla al negocio.
- * - **Qué plazo venció.** `isDoomedHold` da por muerta a la reserva sin pagar
+ * - **Qué plazo venció.** `isDoomedBooking` da por muerta a la reserva sin pagar
  *   *y* a la solicitud sin responder, y son dos historias distintas: la segunda
  *   la puede salvar la dueña ahora mismo con **Aceptar**, que además limpia el
  *   plazo (el argumento entero está en `effectiveBookingStatus`, que por eso
@@ -156,14 +156,14 @@ const HOLD_EXPIRED_RESCHEDULE = {
  *
  * Gemelo de `manualPaymentBlockedReason`, y por el mismo motivo: la condición y
  * el texto que la explica tienen que viajar juntos. Las CINCO superficies que
- * esconden el botón hacían el mismo par a mano —chequear `isDoomedHold`, después
+ * esconden el botón hacían el mismo par a mano —chequear `isDoomedBooking`, después
  * elegir el mensaje—, y una copia que se quede con un predicado más flojo no
  * falla: deja un "no" con la explicación de otro caso.
  *
  * Recibe la reserva entera y no el status suelto: al lado del status de la
  * reserva hay OTRO status (el del Payment: approved/pending/rejected) que
- * encajaría sin chistar y apagaría el guard. Pidiendo los tres campos que lee
- * `isDoomedHold`, ese error no se puede escribir.
+ * encajaría sin chistar y apagaría el guard. Pidiendo los cuatro campos que lee
+ * `isDoomedBooking`, ese error no se puede escribir.
  *
  * `now` es OBLIGATORIO, igual que en `manualPaymentBlockedReason` y por los dos
  * motivos juntos: la etiqueta de estado y este bloqueo tienen que salir del
@@ -174,12 +174,17 @@ const HOLD_EXPIRED_RESCHEDULE = {
  * mismatch, React #418, tumba la página entera).
  */
 export function rescheduleBlockedReason(
-  booking: { status: string; paymentStatus: string; holdExpiresAt: Date | null },
+  booking: {
+    status: string
+    paymentStatus: string
+    holdExpiresAt: Date | null
+    approvalExpiresAt: Date | null
+  },
   audience: RescheduleAudience,
   now: Date,
 ): string | null {
-  if (!isDoomedHold(booking, now)) return null
-  // Cae a la rama del pago por default a propósito: `isDoomedHold` sólo condena
+  if (!isDoomedBooking(booking, now)) return null
+  // Cae a la rama del pago por default a propósito: `isDoomedBooking` sólo condena
   // esos dos status, y si mañana suma uno, el texto genérico ("venció el plazo
   // de esta reserva") sigue siendo cierto — el de la solicitud no lo sería.
   const textos = HOLD_EXPIRED_RESCHEDULE[audience]

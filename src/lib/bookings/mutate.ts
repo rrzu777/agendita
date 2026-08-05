@@ -7,7 +7,7 @@ import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
 import { assertProfessionalIsFree, assertSlotIsAvailable } from '@/lib/availability/validation'
 import { rescheduleBlockedReason, type RescheduleAudience } from '@/lib/bookings/hold'
-import { approvalHoldExpiresAt } from '@/lib/bookings/approval'
+import { calculateApprovalExpiresAt } from '@/lib/bookings/approval'
 // UserError: estos mensajes son user-facing y deben sobrevivir al wrapper
 // action(); para callers sin wrapper (bookings.ts dueña) es un Error normal
 // (extends Error).
@@ -50,39 +50,39 @@ export async function cancelBookingInTx(
 }
 
 /**
- * Qué hay que reescribirle al plazo cuando la cita se mueve. `{}` = nada.
+ * Qué hay que reescribirle al plazo de aprobación cuando la cita se mueve.
+ * `{}` = nada.
  *
- * De los dos plazos que viven en `holdExpiresAt`, sólo UNO depende de la cita:
+ * La solicitud sin responder (`pending_confirmation`) guarda su plazo en
+ * `approvalExpiresAt`. Lo escribe `calculateApprovalExpiresAt` como
+ * `min(nacimiento + ventana, la cita)`, o sea que la cita está PERSISTIDA
+ * adentro del plazo. Mover la cita y dejar el plazo quieto rompía ese dato en
+ * las dos direcciones: para adelante, el plazo se quedaba en la cita vieja y
+ * `expireUnansweredRequests` mataba la solicitud —con un mail que le decía a la
+ * clienta "el negocio no alcanzó a confirmar"— cuando a la dueña todavía le
+ * sobraban días; para atrás, el plazo quedaba DESPUÉS de la cita y la solicitud
+ * seguía ocupando el horario pasada su propia hora, justo lo que ese tope existe
+ * para evitar.
  *
- * - **El de la solicitud sin responder** (`pending_confirmation`) lo escribe
- *   `approvalHoldExpiresAt` como `min(nacimiento + ventana, la cita)`, o sea que
- *   la cita está PERSISTIDA adentro del plazo. Mover la cita y dejar el plazo
- *   quieto rompía ese dato en las dos direcciones: para adelante, el plazo se
- *   quedaba en la cita vieja y `expireUnansweredRequests` mataba la solicitud
- *   —con un mail que le decía a la clienta "el negocio no alcanzó a
- *   confirmar"— cuando a la dueña todavía le sobraban días; para atrás, el
- *   plazo quedaba DESPUÉS de la cita y la solicitud seguía ocupando el horario
- *   pasada su propia hora, justo lo que ese tope existe para evitar.
+ * Se recalcula llamando a la MISMA función que lo escribió (ver
+ * `calculateApprovalExpiresAt`, que explica de dónde sale cada término), y por
+ * eso la ventana no se estira: reprogramar N veces siempre da lo mismo.
  *
- *   Se recalcula llamando a la MISMA función que lo escribió (ver
- *   `approvalHoldExpiresAt`, que explica de dónde sale cada término), y por eso
- *   la ventana no se estira: reprogramar N veces siempre da lo mismo.
- *
- * - **El de la clienta para pagar** (`pending_payment`) NO se toca, y no es un
- *   olvido: ése cuenta desde que se abrió el checkout y no sabe nada del turno
- *   (ver `holdDeadlinePromise`). Mover la cita no compra más tiempo para pagar.
+ * El hold de pago (`holdExpiresAt`) NO se toca, y no es un olvido: cuenta desde
+ * que se abrió el checkout y no sabe nada del turno (ver `holdDeadlinePromise`).
+ * Mover la cita no compra más tiempo para pagar.
  *
  * Devuelve algo para esparcir y no un `Date | undefined` a propósito: con
- * `holdExpiresAt: undefined` adentro del `data` Prisma tampoco tocaría la
+ * `approvalExpiresAt: undefined` adentro del `data` Prisma tampoco tocaría la
  * columna, pero "no lo toca" dejaría de ser OBSERVABLE —ni desde un test ni
  * leyendo el objeto— y pasaría a depender de una regla silenciosa.
  */
-function rescheduledHoldPatch(
+function rescheduledApprovalPatch(
   booking: { status: BookingStatus; createdAt: Date },
   newStartDateTime: Date,
-): { holdExpiresAt?: Date } {
+): { approvalExpiresAt?: Date } {
   if (booking.status !== BookingStatus.pending_confirmation) return {}
-  return { holdExpiresAt: approvalHoldExpiresAt(newStartDateTime, booking.createdAt) }
+  return { approvalExpiresAt: calculateApprovalExpiresAt(newStartDateTime, booking.createdAt) }
 }
 
 /** Core tx-aware de reprogramación (SIN auth). assertSlotIsAvailable cubre
@@ -99,12 +99,15 @@ export async function rescheduleBookingInTx(
     booking: {
       id: string; businessId: string; serviceId: string; startDateTime: Date
       internalNotes: string | null; professionalId: string | null
-      /** Los tres que decide `isDoomedHold`. Requeridos por el mismo motivo que
+      /** Los cuatro que decide `isDoomedBooking`. Requeridos por el mismo motivo que
        *  en `assertBookingPayable`: sin ellos el guard no existe y la reserva se
        *  mueve para morirse igual. Con los enums de Prisma y no con `string`:
        *  al lado de `status` hay OTRO status (el del Payment) que encajaría sin
        *  chistar y apagaría el guard. */
-      status: BookingStatus; paymentStatus: BookingPaymentStatus; holdExpiresAt: Date | null
+      status: BookingStatus
+      paymentStatus: BookingPaymentStatus
+      holdExpiresAt: Date | null
+      approvalExpiresAt: Date | null
       /** Cuándo nació la solicitud, que es desde cuándo corre la ventana de
        *  respuesta. Requerido para poder RECALCULAR el plazo al mover la cita
        *  sin regalarle a la dueña una ventana nueva. */
@@ -145,7 +148,7 @@ export async function rescheduleBookingInTx(
   // Fecha en la TZ del negocio (no la del server): con UTC en Vercel una hora local
   // nocturna quedaba anotada con el día equivocado.
   const historyNote = `[REPROGRAMADA de ${formatBookingDateTime(booking.startDateTime, timezone)}]`
-  const holdPatch = rescheduledHoldPatch(booking, newStartDateTime)
+  const approvalPatch = rescheduledApprovalPatch(booking, newStartDateTime)
   const updateResult = await tx.booking.updateMany({
     where: {
       id: booking.id,
@@ -158,7 +161,7 @@ export async function rescheduleBookingInTx(
       // en la app. Hoy no miente en ninguna pantalla porque todo lo que lee el
       // plazo filtra por status; es basura, no una mentira. Pero cuesta esta
       // línea, y de paso el update queda pegado a la rama que lo generó.
-      status: holdPatch.holdExpiresAt
+      status: approvalPatch.approvalExpiresAt
         ? BookingStatus.pending_confirmation
         : { notIn: [...TERMINAL_BOOKING_STATUSES] },
     },
@@ -166,7 +169,7 @@ export async function rescheduleBookingInTx(
       startDateTime: newStartDateTime,
       endDateTime,
       internalNotes: booking.internalNotes ? `${booking.internalNotes}\n${historyNote}` : historyNote,
-      ...holdPatch,
+      ...approvalPatch,
     },
   })
   if (updateResult.count === 0) {

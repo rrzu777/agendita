@@ -80,7 +80,7 @@ async function notifyExpiredCustomers(
 
 /**
  * Expira las solicitudes (`pending_confirmation`) que nadie respondió antes de
- * `holdExpiresAt`, libera sus canjes y avisa a la clienta.
+ * `approvalExpiresAt`, libera sus canjes y avisa a la clienta.
  *
  * A diferencia del sweep de holds de pago, NO filtra por `paymentStatus`: una
  * solicitud sobre un servicio gratis nace `fully_paid`, y filtrar por `unpaid`
@@ -94,7 +94,7 @@ async function expireUnansweredRequests(
   const candidates = await db.booking.findMany({
     where: {
       status: BookingStatus.pending_confirmation,
-      holdExpiresAt: { lt: now },
+      approvalExpiresAt: { lt: now },
     },
     select: { id: true, businessId: true },
   })
@@ -106,7 +106,7 @@ async function expireUnansweredRequests(
       // Repetir las condiciones dentro de la tx: una aprobación que entra entre
       // el findMany y este update no debe expirarse (mismo patrón que el sweep
       // de holds de pago).
-      where: { id: { in: ids }, status: BookingStatus.pending_confirmation, holdExpiresAt: { lt: now } },
+      where: { id: { in: ids }, status: BookingStatus.pending_confirmation, approvalExpiresAt: { lt: now } },
       data: { status: BookingStatus.expired },
     })
     await releaseRedemptionsOfExpiredBookings(tx, ids)

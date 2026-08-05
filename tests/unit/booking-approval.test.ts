@@ -2,12 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { addHours, addMinutes } from 'date-fns'
 import {
   initialPublicBookingStatus,
-  approvalHoldExpiresAt,
-  hasExpirableHold,
+  calculateApprovalExpiresAt,
   occupiesSlot,
   isSweepableExpiredHold,
   APPROVAL_WINDOW_HOURS,
-  STATUSES_WITH_HOLD,
   OCCUPYING_STATUSES,
   NO_OVERLAP_STATUSES,
 } from '@/lib/bookings/approval'
@@ -34,25 +32,20 @@ describe('initialPublicBookingStatus', () => {
   })
 })
 
-describe('approvalHoldExpiresAt', () => {
+describe('calculateApprovalExpiresAt', () => {
   it('usa la ventana de respuesta cuando la cita es lejana', () => {
     const start = addHours(NOW, 72)
-    expect(approvalHoldExpiresAt(start, NOW)).toEqual(addHours(NOW, APPROVAL_WINDOW_HOURS))
+    expect(calculateApprovalExpiresAt(start, NOW)).toEqual(addHours(NOW, APPROVAL_WINDOW_HOURS))
   })
 
   it('no pasa de la hora de la cita: una solicitud no sigue viva después de la cita', () => {
     const start = addHours(NOW, 3)
-    expect(approvalHoldExpiresAt(start, NOW)).toEqual(start)
+    expect(calculateApprovalExpiresAt(start, NOW)).toEqual(start)
   })
 })
 
 describe('las listas de estados', () => {
-  it('tener hold y ocupar el cupo son dos preguntas distintas', () => {
-    expect(STATUSES_WITH_HOLD).toEqual(['pending_payment', 'pending_confirmation'])
-    expect(hasExpirableHold('pending_confirmation')).toBe(true)
-    expect(hasExpirableHold('confirmed')).toBe(false)
-    // El solapado a propósito: tiene hold que vence Y tapa siempre. Es lo que le
-    // deja a /mi decir "Expirada" sin que la agenda ceda el horario.
+  it('una solicitud ocupa el cupo hasta que el cron asienta su expiración', () => {
     expect(OCCUPYING_STATUSES).toContain('pending_confirmation')
   })
 
@@ -128,7 +121,7 @@ describe('occupiesSlot / isSweepableExpiredHold', () => {
   // que el insert rechaza. Y no es asunto del sweep de pagos: expirarla le manda
   // un mail a la clienta, y de eso se encarga el cron.
   it('una solicitud vencida sigue tapando hasta que el cron la expire', () => {
-    const solicitud = { status: 'pending_confirmation', holdExpiresAt: VENCIDO }
+    const solicitud = { status: 'pending_confirmation', approvalExpiresAt: VENCIDO }
     expect(occupiesSlot(solicitud, NOW)).toBe(true)
     expect(isSweepableExpiredHold(solicitud, NOW)).toBe(false)
   })
@@ -154,7 +147,8 @@ describe('recomputeBookingAmountsAfterDiscount + confirmación manual', () => {
       approval: { requireBookingApproval: true, startDateTime: start },
     })
     expect(result.status).toBe('pending_confirmation')
-    expect(result.holdExpiresAt).toEqual(addHours(NOW, APPROVAL_WINDOW_HOURS))
+    expect(result.holdExpiresAt).toBeNull()
+    expect(result.approvalExpiresAt).toEqual(addHours(NOW, APPROVAL_WINDOW_HOURS))
     // El monto sigue derivándose igual: gratis se marca pagado.
     expect(result.paymentStatus).toBe('fully_paid')
   })
@@ -165,6 +159,7 @@ describe('recomputeBookingAmountsAfterDiscount + confirmación manual', () => {
     })
     expect(result.status).toBe('confirmed')
     expect(result.holdExpiresAt).toBeNull()
+    expect(result.approvalExpiresAt).toBeNull()
   })
 
   it('si queda abono, la reserva sigue yendo a cobro y conserva su ventana larga', () => {
@@ -174,6 +169,7 @@ describe('recomputeBookingAmountsAfterDiscount + confirmación manual', () => {
     })
     expect(result.status).toBe('pending_payment')
     expect(result.holdExpiresAt).toEqual(addMinutes(NOW, 1440))
+    expect(result.approvalExpiresAt).toBeNull()
   })
 })
 
@@ -185,10 +181,10 @@ describe('generateSlots + solicitudes pendientes', () => {
   const bookingEnd = new Date('2028-03-01T14:00:00Z')
   const opts = { timezone: 'America/Santiago', now: new Date('2028-02-28T12:00:00Z'), leadTimeMinutes: 0 }
 
-  it('una solicitud con hold vivo tapa el horario', () => {
+  it('una solicitud con plazo de aprobación vivo tapa el horario', () => {
     const slots = generateSlots(day, 60, rules, [], [{
       startDateTime: bookingStart, endDateTime: bookingEnd,
-      status: 'pending_confirmation', holdExpiresAt: new Date('2028-03-01T11:00:00Z'),
+      status: 'pending_confirmation', approvalExpiresAt: new Date('2028-03-01T11:00:00Z'),
     }], opts)
     expect(slots.some((s) => s.start.getTime() === bookingStart.getTime())).toBe(false)
   })
@@ -197,10 +193,10 @@ describe('generateSlots + solicitudes pendientes', () => {
   // `booking_overlap_solicitudes` la fila sigue contando mientras diga
   // `pending_confirmation`. El horario se libera cuando el cron la expira —y de
   // paso le avisa por mail a la clienta que nadie le respondió.
-  it('una solicitud con el hold vencido no libera el horario hasta que corre el cron', () => {
+  it('una solicitud con el plazo vencido no libera el horario hasta que corre el cron', () => {
     const slots = generateSlots(day, 60, rules, [], [{
       startDateTime: bookingStart, endDateTime: bookingEnd,
-      status: 'pending_confirmation', holdExpiresAt: new Date('2028-02-27T12:00:00Z'),
+      status: 'pending_confirmation', approvalExpiresAt: new Date('2028-02-27T12:00:00Z'),
     }], opts)
     expect(slots.some((s) => s.start.getTime() === bookingStart.getTime())).toBe(false)
   })

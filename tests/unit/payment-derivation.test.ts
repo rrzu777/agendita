@@ -65,7 +65,13 @@ describe('deriveManualPaymentType', () => {
 describe('deriveConfirmationState with manual payments', () => {
   // Reserva que todavía debe el abono: los montos son parte de la entrada desde que
   // un pago aprobado dejó de alcanzar para dar la reserva por confirmada.
-  const debiendo = { depositRequired: 5000, depositPaid: 0, paymentStatus: 'unpaid', holdExpiresAt: null }
+  const debiendo = {
+    depositRequired: 5000,
+    depositPaid: 0,
+    paymentStatus: 'unpaid',
+    holdExpiresAt: null,
+    approvalExpiresAt: null,
+  }
 
   it('returns confirmed for confirmed status regardless of payments', () => {
     expect(deriveConfirmationState({ ...debiendo, status: 'confirmed', payments: [] })).toBe('confirmed')

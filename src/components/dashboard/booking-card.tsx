@@ -21,6 +21,9 @@ export type CalendarBooking = {
   /** Requerido por el mismo motivo que `professional`: el drawer decide con
    *  esto qué estado mostrar y si ofrece cobrar. `null` = sin hold. */
   holdExpiresAt: Date | null
+  /** Plazo para responder una solicitud. El drawer lo necesita para no ofrecer
+   *  una reprogramación que el cron va a borrar igualmente. */
+  approvalExpiresAt: Date | null
   /** Sólo las transferencias declaradas sin verificar (el `where` lo pone
    *  `getBookingsByRange`). Vacío = no hay ninguna. Es lo que le da a
    *  `displayedBookingStatus` la precedencia sobre el plazo vencido. */

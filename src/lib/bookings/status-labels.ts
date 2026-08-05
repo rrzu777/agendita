@@ -1,6 +1,6 @@
 import type { BookingStatus } from '@prisma/client'
 import { hasPendingDeclaredTransfer } from '@/lib/bank-transfer/declared'
-import { isDoomedHold } from '@/lib/payments/confirmation-state'
+import { isExpiredPaymentHold } from '@/lib/payments/confirmation-state'
 
 /** Etiquetas en español de los estados de reserva. Fuente única compartida
  *  para /mi y el dashboard (status-badge, booking-drawer, calendar-views,
@@ -52,7 +52,7 @@ export function bookingStatusLabel(status: string): string {
  * asentado. Devuelve un status y no una etiqueta a propósito: el badge deriva
  * de la clave el TEXTO y el COLOR, así que se arreglan los dos de una vez.
  *
- * SÓLO deriva `pending_payment`. `isDoomedHold` también da por muerta a la
+ * SÓLO deriva `pending_payment`. `isDoomedBooking` también da por muerta a la
  * solicitud sin responder, y para la CLIENTA está bien (ver el `statusLabel` de
  * /mi) — pero acá la que mira es la dueña, y ella todavía puede aceptarla:
  * `VALID_STATUS_TRANSITIONS` permite `pending_confirmation → confirmed` sin
@@ -64,7 +64,7 @@ export function bookingStatusLabel(status: string): string {
  * Directo sólo si cortás vos antes, como la tabla de Reservas, que pinta su
  * badge propio de "Transferencia por verificar".
  *
- * `now` es OBLIGATORIO, igual que en `isDoomedHold`, el que decide abajo. El
+ * `now` es OBLIGATORIO, igual que en `isExpiredPaymentHold`, el que decide abajo. El
  * default `new Date()` que tenía era una trampa: adentro de un componente
  * cliente el servidor lo evaluaba en un instante y el navegador en otro al
  * hidratar, y una reserva cuyo plazo vencía en ese hueco salía con un estado
@@ -77,7 +77,7 @@ export function effectiveBookingStatus(
   now: Date,
 ): string {
   if (booking.status !== 'pending_payment') return booking.status
-  return isDoomedHold(booking, now) ? HOLD_EXPIRED_STATUS : booking.status
+  return isExpiredPaymentHold(booking, now) ? HOLD_EXPIRED_STATUS : booking.status
 }
 
 /**
@@ -91,7 +91,7 @@ export function effectiveBookingStatus(
  * `anyDeclaredTransferWhere`; lo que salva de un `payments: true` pelado es el
  * guard por prefijo de `hasPendingDeclaredTransfer`, no el compilador.)
  *
- * LO QUE NO CUBRE: `isDoomedHold` nombra DOS cosas que ganan sobre el plazo
+ * LO QUE NO CUBRE: `isDoomedBooking` nombra DOS cosas que ganan sobre el plazo
  * vencido, la transferencia declarada y un pago de MP en vuelo. Acá sólo está
  * la primera, porque la segunda ni siquiera se puede evaluar — el `where` de
  * las consultas del panel es `anyDeclaredTransferWhere`, que es

@@ -27,7 +27,7 @@ import { recomputeBookingAmountsAfterDiscount } from '@/lib/bookings/recompute'
 import { assertBookingPayable } from '@/lib/bookings/payments'
 import { applyApprovedPayment } from '@/server/services/finance'
 import { firePaymentNotConfirmedNotification } from '@/lib/bookings/notify-payment-not-confirmed'
-import { initialPublicBookingStatus, approvalHoldExpiresAt } from '@/lib/bookings/approval'
+import { initialPublicBookingStatus, calculateApprovalExpiresAt } from '@/lib/bookings/approval'
 import { DEFAULT_HOLD_MINUTES, DASHBOARD_HOLD_MINUTES, MANUAL_COORDINATION_METHOD } from '@/lib/bookings/hold'
 import { resolveOnlinePaymentAvailabilityForBusiness } from '@/lib/payments/factory'
 import { resumeBookingForRetry } from '@/lib/bookings/retry'
@@ -392,9 +392,9 @@ async function _createBooking(data: {
         requireBookingApproval: business.requireBookingApproval,
       })
       const holdExpiresAt =
-        status === BookingStatus.pending_payment ? addMinutes(new Date(), holdMinutes)
-        : status === BookingStatus.pending_confirmation ? approvalHoldExpiresAt(data.startDateTime)
-        : null
+        status === BookingStatus.pending_payment ? addMinutes(new Date(), holdMinutes) : null
+      const approvalExpiresAt =
+        status === BookingStatus.pending_confirmation ? calculateApprovalExpiresAt(data.startDateTime) : null
       const bookingPaymentStatus = isFreeService ? BookingPaymentStatus.fully_paid : BookingPaymentStatus.unpaid
 
       const bookingNumber = await assignBookingNumber(tx, businessId)
@@ -418,6 +418,7 @@ async function _createBooking(data: {
           serviceAddress,
           meetingUrl,
           holdExpiresAt,
+          approvalExpiresAt,
           paymentMethod: metodoDePago,
           idempotencyKey: data.idempotencyKey || null,
           bookingNumber,
@@ -572,12 +573,12 @@ async function _updateBookingStatus(id: string, status: BookingStatus) {
     ? { reviewToken: crypto.randomUUID(), reviewTokenCreatedAt: new Date() }
     : {}
 
-  // Aceptar una solicitud: el hold era la fecha límite para responder y ya no
-  // aplica. Sin limpiarlo, el sweep de solicitudes vencidas no la toca (filtra
-  // por status) pero la reserva queda con una fecha muerta que confunde al leerla.
+  // Aceptar una solicitud: la fecha límite para responder ya no aplica. Sin
+  // limpiarla, el sweep no la toca (filtra por status) pero la reserva queda con
+  // una fecha muerta que confunde al leerla.
   const approving =
     existing.status === BookingStatus.pending_confirmation && status === BookingStatus.confirmed
-  const approvalData = approving ? { holdExpiresAt: null } : {}
+  const approvalData = approving ? { approvalExpiresAt: null } : {}
 
   // Config de fidelización (puede ser null si el negocio no la activó nunca).
   const loyaltyConfig =

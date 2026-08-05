@@ -157,11 +157,12 @@ describe('updateBookingStatus — aceptar una solicitud (confirmación manual)',
     return {
       ...makeBooking('unpaid'),
       status: BookingStatus.pending_confirmation,
-      holdExpiresAt: new Date('2026-07-19T15:00:00Z'),
+      holdExpiresAt: null,
+      approvalExpiresAt: new Date('2026-07-19T15:00:00Z'),
     }
   }
 
-  it('aceptar limpia el hold y le manda el email de confirmación a la clienta', async () => {
+  it('aceptar limpia el plazo de aprobación y le manda el email de confirmación a la clienta', async () => {
     const booking = makeRequest()
     mockPrisma.booking.findFirst.mockResolvedValue(booking)
     mockPrisma.booking.findUnique.mockResolvedValue({ ...booking, status: BookingStatus.confirmed })
@@ -171,7 +172,7 @@ describe('updateBookingStatus — aceptar una solicitud (confirmación manual)',
     expect(mockPrisma.booking.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       // El where filtra por el status leído: si otra request ya la movió, count 0.
       where: expect.objectContaining({ status: BookingStatus.pending_confirmation }),
-      data: expect.objectContaining({ status: BookingStatus.confirmed, holdExpiresAt: null }),
+      data: expect.objectContaining({ status: BookingStatus.confirmed, approvalExpiresAt: null }),
     }))
     expect(sendBookingConfirmedNotification).toHaveBeenCalledWith('bk-1', 'biz-1')
   })
