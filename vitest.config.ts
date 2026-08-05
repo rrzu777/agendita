@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    setupFiles: ['./tests/helpers/react-dom.tsx'],
     exclude: [
       '**/node_modules/**',
       '**/dist/**',

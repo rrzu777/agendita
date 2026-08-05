@@ -1,6 +1,6 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 const mockGetOnlinePaymentAvailability = vi.hoisted(() => vi.fn())
@@ -46,14 +46,6 @@ const bookingData = {
 }
 
 describe('booking legal UI', () => {
-  beforeAll(() => {
-    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-  })
-
-  afterAll(() => {
-    delete (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT
-  })
-
   beforeEach(() => {
     mockGetOnlinePaymentAvailability.mockResolvedValue({ available: false, provider: null, isMock: false })
   })
