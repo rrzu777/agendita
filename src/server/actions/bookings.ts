@@ -1207,8 +1207,41 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
 
   try {
     await prisma.$transaction(async (tx) => {
+      // La consulta de autorización vive afuera de la tx porque trae las
+      // relaciones que necesita el mail. No sirve, sin embargo, para decidir si
+      // el plazo sigue vivo: un pago puede haber aterrizado entre esa lectura y
+      // este callback. Releer los cuatro campos del guard dentro de la tx evita
+      // bloquear una reserva que ya quedó pagada usando un snapshot obsoleto.
+      const freshState = await tx.booking.findFirst({
+        where: { id: bookingId, businessId },
+        select: {
+          status: true,
+          paymentStatus: true,
+          holdExpiresAt: true,
+          approvalExpiresAt: true,
+          createdAt: true,
+        },
+      })
+      if (!freshState) {
+        throw new UserError('No se puede reprogramar una reserva en este estado')
+      }
+      if (isTerminalBookingStatus(freshState.status)) {
+        throw new UserError('No se puede reprogramar una reserva en este estado')
+      }
+
+      // El horario/notas y las relaciones siguen siendo los de la lectura
+      // autorizada. Sólo el estado que gobierna el guard se sustituye por la
+      // lectura transaccional; así este follow-up no cambia el contrato de
+      // notificaciones ni empieza a resolver carreras de reprogramación ajenas.
       await rescheduleBookingInTx(tx, {
-        booking,
+        booking: {
+          ...booking,
+          status: freshState.status,
+          paymentStatus: freshState.paymentStatus,
+          holdExpiresAt: freshState.holdExpiresAt,
+          approvalExpiresAt: freshState.approvalExpiresAt,
+          createdAt: freshState.createdAt,
+        },
         newStartDateTime,
         durationMinutes: service.durationMinutes,
         timezone: business.timezone || 'America/Santiago',

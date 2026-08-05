@@ -191,7 +191,10 @@ describe('rescheduleBooking terminal states and availability', () => {
     mockSendNotificationSafely.mockImplementation(async (_label, fn) => fn())
     mockSendBookingRescheduledNotification.mockResolvedValue({ success: true })
     mockPrisma.$transaction.mockImplementation(async (fn) => fn({
-      booking: { updateMany: mockPrisma.booking.updateMany },
+      booking: {
+        findFirst: mockPrisma.booking.findFirst,
+        updateMany: mockPrisma.booking.updateMany,
+      },
     }))
     mockAssertSlotIsAvailable.mockResolvedValue(undefined)
   })
@@ -318,5 +321,29 @@ describe('rescheduleBooking terminal states and availability', () => {
     // La salida tiene que estar escrita: un "no" sin salida es una app rota.
     expect(!result.ok && result.error).toMatch(/Revivir/)
     expect(mockPrisma.booking.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('usa el estado fresco de pago dentro de la tx y no bloquea un pago que aterrizó entre lecturas', async () => {
+    const expiredSnapshot = {
+      ...booking,
+      status: 'pending_payment',
+      paymentStatus: 'unpaid',
+      holdExpiresAt: new Date('2026-06-15T10:00:00Z'),
+      approvalExpiresAt: null,
+      createdAt: new Date('2026-06-01T10:00:00Z'),
+    }
+    const paidInTransaction = {
+      ...expiredSnapshot,
+      paymentStatus: 'deposit_paid',
+    }
+    mockPrisma.booking.findFirst
+      .mockResolvedValueOnce(expiredSnapshot)
+      .mockResolvedValueOnce(paidInTransaction)
+
+    const result = await rescheduleBooking('booking-1', new Date('2026-06-16T14:00:00Z'))
+
+    expect(result.ok).toBe(true)
+    expect(mockAssertSlotIsAvailable).toHaveBeenCalled()
+    expect(mockPrisma.booking.updateMany).toHaveBeenCalled()
   })
 })
