@@ -1,7 +1,8 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterAll, beforeAll, beforeEach, describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { clickButton, flushPromises } from '../helpers/react-dom'
 
 const mockOverrideSeriesOccurrence = vi.hoisted(() => vi.fn())
 const mockUpdateTimeBlockSeries = vi.hoisted(() => vi.fn())
@@ -28,14 +29,6 @@ const block = {
 }
 
 describe('EditSeriesOccurrenceDialog', () => {
-  beforeAll(() => {
-    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-  })
-
-  afterAll(() => {
-    delete (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT
-  })
-
   beforeEach(() => {
     mockOverrideSeriesOccurrence.mockReset()
     mockUpdateTimeBlockSeries.mockReset()
@@ -142,19 +135,4 @@ async function renderDialog() {
       container.remove()
     },
   }
-}
-
-async function clickButton(root: ParentNode, name: string) {
-  const button = Array.from(root.querySelectorAll('button')).find((el) => el.textContent?.trim() === name)
-  if (!button) throw new Error(`Button not found: ${name}`)
-
-  await act(async () => {
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  })
-}
-
-async function flushPromises() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  })
 }

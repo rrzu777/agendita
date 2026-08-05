@@ -1,6 +1,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import { clickButton } from '../helpers/react-dom'
 
 const mockCreateBooking = vi.hoisted(() => vi.fn())
 const mockGetBankTransferInfo = vi.hoisted(() => vi.fn())
@@ -62,13 +63,6 @@ const bookingData = {
   idempotencyKey: null,
 }
 
-/** Click de verdad sobre el botón cuyo texto matchea. */
-function clickPorTexto(container: HTMLElement, texto: string) {
-  const el = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes(texto))
-  if (!el) throw new Error(`No encontré el botón "${texto}"`)
-  el.click()
-}
-
 /**
  * La ventana de la transferencia son HORAS (24 por default), así que contra una
  * cita cercana el plazo cae después de la cita. Esta pantalla es la que se lo
@@ -76,7 +70,6 @@ function clickPorTexto(container: HTMLElement, texto: string) {
  */
 describe('StepPayment — el plazo que promete la pantalla de transferencia', () => {
   beforeAll(() => {
-    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
     // Sólo el reloj: `toFake: ['Date']` deja andar los timers de verdad, que es
     // de lo que dependen los efectos del wizard para resolver.
     vi.useFakeTimers({ toFake: ['Date'] })
@@ -86,7 +79,6 @@ describe('StepPayment — el plazo que promete la pantalla de transferencia', ()
 
   afterAll(() => {
     vi.useRealTimers()
-    delete (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT
   })
 
   it('no se pasa de la cita: dice "tu cita", no el día siguiente', async () => {
@@ -126,7 +118,7 @@ describe('StepPayment — el plazo que promete la pantalla de transferencia', ()
       const check = container.querySelector<HTMLInputElement>('#accept-terms')!
       check.click()
     })
-    await act(async () => { clickPorTexto(container, 'Continuar con transferencia') })
+    await clickButton(container, 'Continuar con transferencia', { match: 'contains' })
     await act(async () => {})
 
     // Que la pantalla haya avanzado no es decorado: sin esto la reserva se crea
@@ -185,11 +177,11 @@ describe('StepPayment — el plazo que promete la pantalla de transferencia', ()
     await act(async () => {
       container.querySelector<HTMLInputElement>('#accept-terms')!.click()
     })
-    await act(async () => { clickPorTexto(container, 'Continuar con transferencia') })
+    await clickButton(container, 'Continuar con transferencia', { match: 'contains' })
     await act(async () => {})
     expect(container.textContent).toContain('BancoEstado')
 
-    await act(async () => { clickPorTexto(container, 'Ya transferí') })
+    await clickButton(container, 'Ya transferí', { match: 'contains' })
     await act(async () => {})
 
     expect(mockDeclareBankTransfer).toHaveBeenCalledWith('b-42', {})

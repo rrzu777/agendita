@@ -3,6 +3,7 @@ import { act } from 'react'
 import type { ComponentProps } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { TimeInput } from '@/components/ui/time-input'
+import { clickButton } from '../helpers/react-dom'
 
 let root: Root | null = null
 
@@ -108,13 +109,4 @@ function renderTimeInput(props: ComponentProps<typeof TimeInput>) {
 
 function findButton(rootNode: ParentNode, name: string) {
   return Array.from(rootNode.querySelectorAll('button')).find((button) => button.textContent?.trim() === name) ?? null
-}
-
-async function clickButton(rootNode: ParentNode, name: string) {
-  const button = findButton(rootNode, name)
-  if (!button) throw new Error(`Button not found: ${name}`)
-  await act(async () => {
-    button.click()
-    await Promise.resolve()
-  })
 }

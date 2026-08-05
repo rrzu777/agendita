@@ -1,7 +1,8 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterAll, beforeAll, beforeEach, describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { clickButton, flushPromises } from '../helpers/react-dom'
 
 const mockCreateTimeBlock = vi.hoisted(() => vi.fn())
 const mockCreateTimeBlockSeries = vi.hoisted(() => vi.fn())
@@ -20,14 +21,6 @@ vi.mock('@/server/actions/time-blocks', () => ({
 import { BlockTimeModal } from '@/components/dashboard/block-time-modal'
 
 describe('BlockTimeModal', () => {
-  beforeAll(() => {
-    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-  })
-
-  afterAll(() => {
-    delete (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT
-  })
-
   beforeEach(() => {
     mockCreateTimeBlock.mockReset()
     mockCreateTimeBlockSeries.mockReset()
@@ -204,15 +197,6 @@ async function renderBlockTimeModal(
   }
 }
 
-async function clickButton(root: ParentNode, name: string) {
-  const button = Array.from(root.querySelectorAll('button')).find((el) => el.textContent?.trim() === name)
-  if (!button) throw new Error(`Button not found: ${name}`)
-
-  await act(async () => {
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  })
-}
-
 async function changeCheckbox(root: ParentNode, id: string, checked: boolean) {
   const checkbox = root.querySelector<HTMLInputElement>(`#${id}`)
   if (!checkbox) throw new Error(`Checkbox not found: ${id}`)
@@ -221,11 +205,5 @@ async function changeCheckbox(root: ParentNode, id: string, checked: boolean) {
 
   await act(async () => {
     checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  })
-}
-
-async function flushPromises() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 }

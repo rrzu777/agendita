@@ -1,6 +1,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import { clickButton } from '../helpers/react-dom'
 
 const mockCreate = vi.hoisted(() => vi.fn())
 const mockUpdate = vi.hoisted(() => vi.fn())
@@ -34,12 +35,6 @@ const promo = {
   isActive: true,
 }
 
-function clickPorTexto(container: HTMLElement, texto: string) {
-  const el = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes(texto))
-  if (!el) throw new Error(`No encontré el botón "${texto}"`)
-  el.click()
-}
-
 /** Escribe en un input controlado por React: hay que pasar por el setter nativo
  *  para que el evento que ve React traiga el valor nuevo. */
 function escribir(input: HTMLInputElement, value: string) {
@@ -47,21 +42,6 @@ function escribir(input: HTMLInputElement, value: string) {
   setter.call(input, value)
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
-
-beforeAll(() => {
-  ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-  // jsdom no lo trae y los primitivos de Radix que usa el formulario (el switch
-  // de "aplica a todos") lo miden al montar.
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  } as unknown as typeof ResizeObserver
-})
-
-afterAll(() => {
-  delete (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT
-})
 
 /**
  * El modo y la promoción eran dos props independientes, así que `mode="edit"`
@@ -83,13 +63,13 @@ describe('PromotionForm — el modo sale de la promoción', () => {
     await act(async () => {
       root.render(<PromotionForm promo={promo} services={services} currency="CLP" />)
     })
-    await act(async () => { clickPorTexto(container, 'Editar') })
+    await clickButton(container, 'Editar', { match: 'contains' })
 
     // El diálogo abierto: título de edición y el nombre ya prellenado.
     expect(document.body.textContent).toContain('Editar promoción')
     expect([...document.querySelectorAll('input')].some((i) => i.value === 'Promo de invierno')).toBe(true)
 
-    await act(async () => { clickPorTexto(document.body, 'Guardar cambios') })
+    await clickButton(document.body, 'Guardar cambios', { match: 'contains' })
 
     expect(mockUpdate).toHaveBeenCalledWith('promo-1', expect.objectContaining({ name: 'Promo de invierno' }))
     expect(mockCreate).not.toHaveBeenCalled()
@@ -108,7 +88,7 @@ describe('PromotionForm — el modo sale de la promoción', () => {
     await act(async () => {
       root.render(<PromotionForm services={services} currency="CLP" />)
     })
-    await act(async () => { clickPorTexto(container, 'Nueva promoción') })
+    await clickButton(container, 'Nueva promoción', { match: 'contains' })
 
     // El formulario tiene campos `required` (nombre y valor del premio): sin
     // llenarlos el navegador no manda nada y el test estaría verificando la
@@ -118,7 +98,7 @@ describe('PromotionForm — el modo sale de la promoción', () => {
       for (const input of requeridos) escribir(input, input.type === 'number' ? '20' : 'Promo nueva')
     })
 
-    await act(async () => { clickPorTexto(document.body, 'Crear promoción') })
+    await clickButton(document.body, 'Crear promoción', { match: 'contains' })
 
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ name: 'Promo nueva' }))
     expect(mockUpdate).not.toHaveBeenCalled()

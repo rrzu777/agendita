@@ -1,6 +1,6 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockSignIn = vi.hoisted(() => vi.fn())
 const mockSignUp = vi.hoisted(() => vi.fn())
@@ -11,14 +11,6 @@ vi.mock('@/lib/auth/actions', () => ({
 }))
 
 describe('auth loading UI', () => {
-  beforeAll(() => {
-    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-  })
-
-  afterAll(() => {
-    delete (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT
-  })
-
   beforeEach(() => {
     vi.clearAllMocks()
   })

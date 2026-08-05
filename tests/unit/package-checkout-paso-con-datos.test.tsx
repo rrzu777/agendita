@@ -1,6 +1,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import { clickButton } from '../helpers/react-dom'
 
 const mockCreatePurchase = vi.hoisted(() => vi.fn())
 
@@ -23,21 +24,6 @@ const transferInfo = {
   accountNumber: '12345678', email: null, instructions: 'nombre en el asunto',
   holdHours: 48, requireProof: false,
 }
-
-function clickPorTexto(container: HTMLElement, texto: string) {
-  const el = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes(texto))
-  if (!el) throw new Error(`No encontré el botón "${texto}"`)
-  el.click()
-}
-
-// El mismo idioma que los otros tests de interacción del repo.
-beforeAll(() => {
-  ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-})
-
-afterAll(() => {
-  delete (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT
-})
 
 /**
  * Lo que sostiene la garantía —que no exista el paso de transferencia sin la
@@ -72,10 +58,10 @@ describe('PackageCheckout — el paso se lleva sus datos', () => {
       const checkbox = container.querySelector('input[type="checkbox"]') as HTMLInputElement
       checkbox.click()
     })
-    await act(async () => clickPorTexto(container, 'Continuar'))
+    await clickButton(container, 'Continuar', { match: 'contains' })
     expect(container.textContent).toContain('Pagar con Mercado Pago')
 
-    await act(async () => clickPorTexto(container, 'Transferencia bancaria'))
+    await clickButton(container, 'Transferencia bancaria', { match: 'contains' })
 
     // La compra ya existe: lo que se ve son las instrucciones, con la cuenta.
     expect(container.textContent).toContain('BancoEstado')

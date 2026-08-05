@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { clickButton } from '../helpers/react-dom'
 
 const mockSetWeeklyScheduleDay = vi.fn()
 const mockResetProfessionalSchedule = vi.fn()
@@ -290,7 +291,7 @@ describe('AvailabilityEditor', () => {
       await Promise.resolve()
     })
     if (value.hour) await clickButton(document.body, value.hour)
-    if (value.minute) await clickLastButton(document.body, value.minute)
+    if (value.minute) await clickButton(document.body, value.minute, { occurrence: 'last' })
     await clickButton(document.body, 'Aplicar')
     // Al cerrar, el FocusScope de Radix devuelve el foco al trigger dentro de un
     // setTimeout(0). Si ese timer dispara con el SIGUIENTE popover ya abierto, el
@@ -298,28 +299,6 @@ describe('AvailabilityEditor', () => {
     // haciendo flaky la segunda apertura. Drenamos el timer acá, dentro de act.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
-    })
-  }
-
-  function findButtons(rootNode: ParentNode, name: string) {
-    return Array.from(rootNode.querySelectorAll('button')).filter((button) => button.textContent?.trim() === name)
-  }
-
-  async function clickButton(rootNode: ParentNode, name: string) {
-    const button = findButtons(rootNode, name)[0]
-    if (!button) throw new Error(`Button not found: ${name}`)
-    await act(async () => {
-      button.click()
-      await Promise.resolve()
-    })
-  }
-
-  async function clickLastButton(rootNode: ParentNode, name: string) {
-    const button = findButtons(rootNode, name).at(-1)
-    if (!button) throw new Error(`Button not found: ${name}`)
-    await act(async () => {
-      button.click()
-      await Promise.resolve()
     })
   }
 

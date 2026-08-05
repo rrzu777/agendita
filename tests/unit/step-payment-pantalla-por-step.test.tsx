@@ -1,6 +1,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import { clickButton } from '../helpers/react-dom'
 
 const mockCreateBooking = vi.hoisted(() => vi.fn())
 
@@ -50,12 +51,6 @@ const bookingData = {
   idempotencyKey: null,
 }
 
-function clickPorTexto(container: HTMLElement, texto: string) {
-  const el = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes(texto))
-  if (!el) throw new Error(`No encontré el botón "${texto}"`)
-  el.click()
-}
-
 /**
  * El componente elige pantalla por `step` primero y por los datos después. La
  * clase de bug que eso evita ya pasó una vez (#159): una rama que sólo miraba
@@ -70,14 +65,6 @@ function clickPorTexto(container: HTMLElement, texto: string) {
  * componente decide solo.
  */
 describe('StepPayment — la pantalla la manda el step', () => {
-  beforeAll(() => {
-    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-  })
-
-  afterAll(() => {
-    delete (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT
-  })
-
   it('con la reserva ya creada no vuelve a ofrecer el formulario', async () => {
     const { StepPayment } = await import('@/components/booking/step-payment')
     mockCreateBooking.mockResolvedValue({
@@ -119,7 +106,7 @@ describe('StepPayment — la pantalla la manda el step', () => {
     await act(async () => {
       container.querySelector<HTMLInputElement>('#accept-terms')!.click()
     })
-    await act(async () => { clickPorTexto(container, 'Confirmar reserva') })
+    await clickButton(container, 'Confirmar reserva', { match: 'contains' })
     await act(async () => {})
 
     expect(onSuccess).toHaveBeenCalledTimes(1)
