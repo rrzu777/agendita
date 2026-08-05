@@ -97,7 +97,7 @@ export function manualPaymentBlockedReason(
   if (!isExpiredPaymentHold(booking, now)) return null
   if (
     booking.payments &&
-    hasPendingMercadoPagoPayment({ status: booking.status, payments: booking.payments })
+    hasPendingMercadoPagoPayment({ payments: booking.payments })
   ) {
     return 'Mercado Pago está procesando este pago. Esperá el resultado antes de registrar otro cobro.'
   }
