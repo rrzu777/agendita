@@ -119,7 +119,6 @@ type Paso =
   | { k: 'transfer-declared'; reserva: ReservaEnTransferencia }
 
 export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, manualHoldHours, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; manualHoldHours: number; referralToken?: string; onSuccess: (result: BookingCreated) => void; onBack: () => void }) {
-  const [loading, setLoading] = useState(false)
   const [paso, setPaso] = useState<Paso>({ k: 'review' })
   const [bankInfo, setBankInfo] = useState<BankTransferPublicInfo | null>(null)
   const [method, setMethod] = useState<'online' | 'transfer'>('online')
@@ -236,7 +235,6 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
             <button
               type="button"
               onClick={handleRemovePromo}
-              disabled={loading}
               className="font-semibold text-primary underline"
             >
               Quitar
@@ -365,7 +363,6 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
    *  de un caso imposible — y un guard silencioso sería un botón que no hace
    *  nada, que es el síntoma exacto del #159. */
   async function handleTransferBooking(bank: BankTransferPublicInfo) {
-    setLoading(true)
     setPaso({ k: 'processing' })
     setErrorMessage('')
     try {
@@ -395,8 +392,6 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       console.error('Transfer booking error:', err)
       setErrorMessage('Error al crear la reserva')
       setPaso({ k: 'error' })
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -445,7 +440,6 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
   }
 
   async function handleManualBooking() {
-    setLoading(true)
     setPaso({ k: 'processing' })
     setErrorMessage('')
 
@@ -467,13 +461,10 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       console.error('Booking error:', err)
       setErrorMessage('Error al crear la reserva')
       setPaso({ k: 'error' })
-    } finally {
-      setLoading(false)
     }
   }
 
   async function handlePayment() {
-    setLoading(true)
     setPaso({ k: 'processing' })
     setErrorMessage('')
 
@@ -543,8 +534,6 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       console.error('Payment error:', err)
       setErrorMessage('Error al procesar el pago')
       setPaso({ k: 'error' })
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -677,9 +666,9 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         />
 
         <div className="flex gap-3">
-          <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack} disabled={loading}>Atrás</Button>
-          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleManualBooking} disabled={loading || !acceptedTerms}>
-            {loading ? 'Confirmando...' : 'Confirmar reserva'}
+          <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
+          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleManualBooking} disabled={!acceptedTerms}>
+            Confirmar reserva
           </Button>
         </div>
       </div>
@@ -736,14 +725,14 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         />
 
         <div className="flex gap-3">
-          <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack} disabled={loading}>Atrás</Button>
+          <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
           {bankInfo ? (
-            <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={() => void handleTransferBooking(bankInfo)} disabled={loading || !acceptedTerms}>
-              {loading ? 'Creando reserva...' : 'Continuar con transferencia'}
+            <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={() => void handleTransferBooking(bankInfo)} disabled={!acceptedTerms}>
+              Continuar con transferencia
             </Button>
           ) : (
-            <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleManualBooking} disabled={loading || !acceptedTerms}>
-              {loading ? 'Creando reserva...' : 'Confirmar reserva'}
+            <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handleManualBooking} disabled={!acceptedTerms}>
+              Confirmar reserva
             </Button>
           )}
         </div>
@@ -832,14 +821,14 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       )}
 
       <div className="flex gap-3">
-        <Button variant="outline" onClick={onBack} disabled={loading}>Atrás</Button>
+        <Button variant="outline" onClick={onBack}>Atrás</Button>
         {bancoElegido ? (
-          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={() => void handleTransferBooking(bancoElegido)} disabled={loading || !acceptedTerms}>
-            {loading ? 'Procesando...' : 'Continuar con transferencia'}
+          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={() => void handleTransferBooking(bancoElegido)} disabled={!acceptedTerms}>
+            Continuar con transferencia
           </Button>
         ) : (
-          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handlePayment} disabled={loading || !acceptedTerms}>
-            {loading ? 'Procesando...' : `Pagar abono ${formatMoney(effectiveDeposit, currency)}`}
+          <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={handlePayment} disabled={!acceptedTerms}>
+            Pagar abono {formatMoney(effectiveDeposit, currency)}
           </Button>
         )}
       </div>
