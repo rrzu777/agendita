@@ -38,9 +38,9 @@
 ## Track C — fresh transaction state for rescheduling
 
 1. Add a regression in `tests/unit/reschedule-availability.test.ts` that makes
-   the outer `findFirst` return a still-payable booking, then makes the tx
-   booking read return an expired/unpaid booking before the core runs. Assert
-   that the action rejects with the owner `Revivir` message and does not update.
+   the outer `findFirst` return an expired/unpaid snapshot, then makes the tx
+   booking read return the same booking after payment landed. Assert that the
+   action proceeds and updates instead of blocking the already-paid reservation.
 2. Run the focused test and prove it fails with the current stale snapshot.
 3. In `_rescheduleBooking`, read the authoritative booking state through the
    transaction before calling `rescheduleBookingInTx`; preserve authorization
