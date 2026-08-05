@@ -55,7 +55,11 @@ describe('effectiveBookingStatus', () => {
 })
 
 describe('displayedBookingStatus', () => {
-  const vencida = (payments: Array<{ providerPaymentId?: string | null }>) => ({
+  const vencida = (payments: Array<{
+    provider: string
+    status: string
+    providerPaymentId?: string | null
+  }>) => ({
     status: 'pending_payment',
     paymentStatus: 'unpaid',
     holdExpiresAt: MUERTO,
@@ -69,13 +73,37 @@ describe('displayedBookingStatus', () => {
   it('la transferencia declarada GANA sobre el plazo vencido', () => {
     // La plata pudo salir en fecha; lo que falta es que la dueña verifique. Sin
     // esta precedencia el panel le decía "perdiste la hora" a quien ya pagó.
-    expect(displayedBookingStatus(vencida([{ providerPaymentId: btDeclaredId('bk-1') }]), NOW))
+    expect(displayedBookingStatus(vencida([{
+      provider: 'manual',
+      status: 'pending',
+      providerPaymentId: btDeclaredId('bk-1'),
+    }]), NOW))
       .toBe('pending_payment')
+  })
+
+  it('un pago de Mercado Pago en vuelo GANA sobre el plazo vencido', () => {
+    expect(displayedBookingStatus(vencida([{
+      provider: 'mercado_pago',
+      status: 'pending',
+      providerPaymentId: 'mp-1',
+    }]), NOW)).toBe('pending_payment')
+  })
+
+  it('un pago de Mercado Pago fallido NO tapa el plazo vencido', () => {
+    expect(displayedBookingStatus(vencida([{
+      provider: 'mercado_pago',
+      status: 'failed',
+      providerPaymentId: 'mp-1',
+    }]), NOW)).toBe(HOLD_EXPIRED_STATUS)
   })
 
   it('un pago de OTRA familia no la salva: el prefijo discrimina', () => {
     // bt-balance es el saldo de una reserva ya firme, no el abono de ésta.
-    expect(displayedBookingStatus(vencida([{ providerPaymentId: btBalanceId('bk-1') }]), NOW))
+    expect(displayedBookingStatus(vencida([{
+      provider: 'manual',
+      status: 'pending',
+      providerPaymentId: btBalanceId('bk-1'),
+    }]), NOW))
       .toBe(HOLD_EXPIRED_STATUS)
   })
 

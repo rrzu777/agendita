@@ -159,7 +159,11 @@ const HORA = 60 * 60 * 1000
 // arnés de CalendarViews ya se mantiene en un solo lugar.
 function chipConPlazo(
   holdExpiresAt: Date | null,
-  payments: Array<{ providerPaymentId?: string | null }> = [],
+  payments: Array<{
+    provider: string
+    status: string
+    providerPaymentId?: string | null
+  }> = [],
   now: Date = NOW,
 ) {
   const impaga = { ...booking, status: 'pending_payment', holdExpiresAt, payments }
@@ -213,7 +217,21 @@ describe('CalendarViews — el chip y el plazo vencido', () => {
   })
 
   it('la transferencia declarada mantiene el chip entero aunque el plazo haya vencido', () => {
-    const html = chipConPlazo(plazo(-1), [{ providerPaymentId: btDeclaredId('b1') }])
+    const html = chipConPlazo(plazo(-1), [{
+      provider: 'manual',
+      status: 'pending',
+      providerPaymentId: btDeclaredId('b1'),
+    }])
+    expect(html).toContain('Pendiente de pago')
+    expect(html).not.toContain('Plazo vencido')
+  })
+
+  it('un pago de Mercado Pago en vuelo mantiene el chip entero aunque el plazo haya vencido', () => {
+    const html = chipConPlazo(plazo(-1), [{
+      provider: 'mercado_pago',
+      status: 'pending',
+      providerPaymentId: 'mp-1',
+    }])
     expect(html).toContain('Pendiente de pago')
     expect(html).not.toContain('Plazo vencido')
   })

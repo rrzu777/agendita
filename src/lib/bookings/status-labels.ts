@@ -1,6 +1,6 @@
 import type { BookingStatus } from '@prisma/client'
-import { hasPendingDeclaredTransfer } from '@/lib/bank-transfer/declared'
 import { isExpiredPaymentHold } from '@/lib/payments/confirmation-state'
+import { hasPaymentThatOverridesExpiredHold } from '@/lib/payments/hold-precedence'
 
 /** Etiquetas en español de los estados de reserva. Fuente única compartida
  *  para /mi y el dashboard (status-badge, booking-drawer, calendar-views,
@@ -84,37 +84,30 @@ export function effectiveBookingStatus(
  * El status a MOSTRAR, con la precedencia de pagos ya aplicada: la versión que
  * se puede llamar sin acordarse de la regla.
  *
- * Pide `payments` en el tipo A PROPÓSITO: la precedencia vivía en prosa, así
- * que una superficie cuya consulta no traía los pagos podía derivar igual y
- * decirle "Plazo vencido" a quien había transferido en fecha. Ahora no compila.
- * (El tipo asegura el CAMPO, no que venga filtrado por
- * `anyDeclaredTransferWhere`; lo que salva de un `payments: true` pelado es el
- * guard por prefijo de `hasPendingDeclaredTransfer`, no el compilador.)
- *
- * LO QUE NO CUBRE: `isDoomedBooking` nombra DOS cosas que ganan sobre el plazo
- * vencido, la transferencia declarada y un pago de MP en vuelo. Acá sólo está
- * la primera, porque la segunda ni siquiera se puede evaluar — el `where` de
- * las consultas del panel es `anyDeclaredTransferWhere`, que es
- * `provider: 'manual'`. Con un pago de MP pendiente y el plazo vencido, /mi
- * dice "Verificando" y el panel dice "Plazo vencido". Cerrarlo pide ensanchar
- * las consultas, no tocar esta función.
+ * Pide `payments` con provider/status en el tipo A PROPÓSITO: la precedencia
+ * vivía en prosa, así que una superficie cuya consulta sólo traía
+ * transferencias podía derivar igual y decirle "Plazo vencido" a quien tenía
+ * un pago de Mercado Pago en vuelo. Ahora no compila si olvida esos campos.
+ * El `where` compartido que alimenta este contrato es
+ * `holdPrecedencePaymentWhere`.
  */
 export function displayedBookingStatus(
   booking: {
     status: string
     paymentStatus: string
     holdExpiresAt: Date | null
-    payments: Array<{ providerPaymentId?: string | null }>
+    payments: Array<{
+      provider: string
+      status: string
+      providerPaymentId?: string | null
+    }>
   },
   now: Date,
 ): string {
-  // La declaración pendiente gana: la plata pudo salir en fecha y lo que falta
-  // es que la dueña la verifique, no que la clienta pague. OJO — el cron SÍ la
-  // expira (`expireStaleHolds` no filtra por pagos declarados), así que acá se
-  // muestra sana a propósito: `confirmBankTransfer` todavía la salva y decirle
-  // "vencida" haría que la dueña la abandone. Es la misma decisión que toma la
-  // tabla de Reservas con su badge "Transferencia por verificar".
-  if (hasPendingDeclaredTransfer(booking)) return booking.status
+  // La transferencia declarada y el pago MP en vuelo ganan: ambos todavía
+  // pueden confirmar la reserva. El cron puede barrerla entretanto, pero
+  // mostrarla vencida haría que la dueña abandone un pago que sigue resolviendo.
+  if (hasPaymentThatOverridesExpiredHold(booking)) return booking.status
   return effectiveBookingStatus(booking, now)
 }
 

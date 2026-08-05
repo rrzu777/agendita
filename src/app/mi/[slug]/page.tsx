@@ -11,12 +11,16 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 import { bookingStatusLabels } from '@/lib/bookings/status-labels'
 import { bookingWhere, isNotableModality } from '@/lib/services/modality'
 import { formatShortDate } from '@/lib/format-date'
-import { declaredTransferPaymentWhere, isDeclaredTransferPayment } from '@/lib/bank-transfer/declared'
+import { isDeclaredTransferPayment } from '@/lib/bank-transfer/declared'
 import { isDoomedBooking } from '@/lib/payments/confirmation-state'
+import {
+  hasPendingMercadoPagoPayment,
+  holdPrecedencePaymentWhere,
+} from '@/lib/payments/hold-precedence'
 import { rescheduleBlockedReason } from '@/lib/bookings/hold'
 import { canSelfManage } from '@/lib/bookings/self-service'
 import { BookingActions } from './booking-actions'
-import { PaymentStatus, ServiceModality, type BookingStatus, type Prisma } from '@prisma/client'
+import { ServiceModality, type BookingStatus, type Prisma } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
 
 const UPCOMING_STATUSES = ['pending_payment', 'pending_confirmation', 'confirmed'] as const
@@ -27,14 +31,7 @@ const UPCOMING_STATUSES = ['pending_payment', 'pending_confirmation', 'confirmed
 // /book/confirmation mostraba como "Verificando tu pago" — y ese pago todavía
 // puede aterrizar y confirmarla.
 const PAGOS_QUE_PISAN_EL_HOLD = {
-  where: {
-    OR: [
-      declaredTransferPaymentWhere,
-      // Sólo `pending`: el enum PaymentStatus de la base no tiene `in_process`
-      // (eso es de la API de MP y se normaliza al guardar).
-      { provider: 'mercado_pago', status: PaymentStatus.pending },
-    ],
-  },
+  where: holdPrecedencePaymentWhere,
   select: { id: true, provider: true, status: true, providerPaymentId: true },
 } satisfies Prisma.Booking$paymentsArgs
 
@@ -63,7 +60,7 @@ function statusLabel(
 ) {
   if (b.status === 'pending_payment' || b.status === 'pending_confirmation') {
     if (b.payments.some(isDeclaredTransferPayment)) return 'Transferencia en verificación'
-    if (b.payments.some((p) => p.provider === 'mercado_pago')) return 'Verificando tu pago'
+    if (hasPendingMercadoPagoPayment(b)) return 'Verificando tu pago'
     if (isDoomedBooking(b, now)) return bookingStatusLabels.expired
   }
   return bookingStatusLabels[b.status]

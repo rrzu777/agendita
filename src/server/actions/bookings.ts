@@ -41,6 +41,7 @@ import { captureReferral } from '@/lib/loyalty/referral'
 import { type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD, anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
+import { holdPrecedencePaymentWhere } from '@/lib/payments/hold-precedence'
 import { fireBookingNotifications } from '@/lib/bookings/notifications'
 import { resolveBookingDraft } from '@/lib/bookings/draft'
 import { applyBookingDiscountInTx } from '@/lib/bookings/discount'
@@ -147,14 +148,22 @@ export async function getBookings() {
       // sin persona asignada (negocio sin equipo o reserva anterior al track 5).
       professional: { select: { name: true } },
       customer: { select: { name: true, phone: true, email: true } },
-      // Declaración de transferencia pendiente de verificar, sea abono
-      // (bt-declared) o saldo (bt-balance). El array queda vacío salvo que
-      // haya una por verificar → deriva los badges y la sección de la página
-      // de Reservas sin segunda query (el `kind` se distingue en el llamador
-      // por el prefijo de providerPaymentId, ver BT_BALANCE_PREFIX).
+      // Pagos que ganan visualmente sobre un hold vencido: transferencia
+      // declarada o Mercado Pago en vuelo. Las transferencias siguen
+      // alimentando su sección sin una segunda query; el llamador filtra por
+      // sus prefijos antes de construir los items.
       payments: {
-        where: anyDeclaredTransferWhere,
-        select: { id: true, amount: true, createdAt: true, providerPaymentId: true, proofKey: true, proofContentType: true },
+        where: holdPrecedencePaymentWhere,
+        select: {
+          id: true,
+          amount: true,
+          createdAt: true,
+          provider: true,
+          status: true,
+          providerPaymentId: true,
+          proofKey: true,
+          proofContentType: true,
+        },
       },
     },
   })
@@ -178,7 +187,7 @@ export async function getBookingsSummary() {
       customer: { select: { name: true } },
       payments: {
         where: anyDeclaredTransferWhere,
-        select: { providerPaymentId: true },
+        select: { provider: true, status: true, providerPaymentId: true },
       },
     },
   })
@@ -805,12 +814,12 @@ export async function getBookingsByRange(start: Date, end: Date) {
       // por persona de la página.
       professional: { select: { name: true } },
       // Lo mínimo para la precedencia de `displayedBookingStatus`: sin esto el
-      // chip le diría "Plazo vencido" a quien transfirió en fecha. Mismo `where`
-      // que getBookings (abono Y saldo) para que los dos predicados de
-      // declared.ts se comporten igual sobre los dos payloads del panel.
+      // chip le diría "Plazo vencido" a quien transfirió o tiene un pago MP en
+      // vuelo. Mismo `where` que getBookings para que calendario y Reservas
+      // decidan igual.
       payments: {
-        where: anyDeclaredTransferWhere,
-        select: { providerPaymentId: true },
+        where: holdPrecedencePaymentWhere,
+        select: { provider: true, status: true, providerPaymentId: true },
       },
     },
   })
