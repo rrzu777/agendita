@@ -38,6 +38,8 @@ describe('TransferDetails', () => {
     )
     expect(html).toContain('Tenés hasta')
     expect(html).toContain('tu cita')
+    expect(html).toContain('Si no recibimos el pago, la reserva puede vencer.')
+    expect(html).not.toContain('Después de eso el horario se libera.')
   })
 
   it('sin deadline no muestra plazo y el botón declara ocupado', () => {

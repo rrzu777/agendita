@@ -109,7 +109,7 @@ export function TransferDetails({
       {deadlinePhrase && (
         <p className="text-sm text-muted-foreground">
           Tenés hasta <span className="font-semibold text-primary">{deadlinePhrase}</span> para
-          transferir y avisarnos. Después de eso el horario se libera.
+          transferir y avisarnos. Si no recibimos el pago, la reserva puede vencer.
         </p>
       )}
 
