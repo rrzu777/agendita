@@ -13,6 +13,7 @@ function reserva(fields: {
   remainingBalance: number
   holdExpiresAt: Date | null
   paymentStatus?: string
+  payments?: Array<{ provider: string; status: string; providerPaymentId?: string | null }>
 }) {
   return { paymentStatus: 'unpaid', ...fields }
 }
@@ -66,6 +67,17 @@ describe('manualPaymentBlockedReason', () => {
     // salida (esperar al cron y usar Revivir) no está a la vista en ningún lado.
     const reason = manualPaymentBlockedReason(reserva({ status: 'pending_payment', remainingBalance: 8000, holdExpiresAt: MUERTO }), NOW)
     expect(reason).toContain('Revivir')
+  })
+
+  it('con Mercado Pago en vuelo explica la verificación, no un vencimiento definitivo', () => {
+    const reason = manualPaymentBlockedReason(reserva({
+      status: 'pending_payment',
+      remainingBalance: 8000,
+      holdExpiresAt: MUERTO,
+      payments: [{ provider: 'mercado_pago', status: 'pending' }],
+    }), NOW)
+    expect(reason).toContain('Mercado Pago está procesando')
+    expect(reason).not.toContain('Revivir')
   })
 
   it('no manda a esperar un Expirada que no va a llegar', () => {

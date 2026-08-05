@@ -24,10 +24,14 @@ export type CalendarBooking = {
   /** Plazo para responder una solicitud. El drawer lo necesita para no ofrecer
    *  una reprogramación que el cron va a borrar igualmente. */
   approvalExpiresAt: Date | null
-  /** Sólo las transferencias declaradas sin verificar (el `where` lo pone
-   *  `getBookingsByRange`). Vacío = no hay ninguna. Es lo que le da a
-   *  `displayedBookingStatus` la precedencia sobre el plazo vencido. */
-  payments: { providerPaymentId?: string | null }[]
+  /** Pagos que ganan visualmente sobre el plazo vencido (transferencia
+   *  declarada o Mercado Pago pendiente). El `where` compartido lo pone
+   *  `getBookingsByRange`; vacío = no hay ninguno. */
+  payments: {
+    provider: string
+    status: string
+    providerPaymentId?: string | null
+  }[]
   customerNotes?: string | null
   internalNotes?: string | null
   modality: ServiceModality

@@ -19,13 +19,19 @@ import { formatMoney } from '@/lib/money'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
-import { displayedBookingStatus, effectiveBookingStatus } from '@/lib/bookings/status-labels'
+import { displayedBookingStatus } from '@/lib/bookings/status-labels'
 import { PaymentRevertedBadge } from '@/components/dashboard/payment-reverted-badge'
 import { BookingRowActions } from '@/components/dashboard/booking-row-actions'
 import { ReviveBookingButton } from '@/components/dashboard/revive-booking-dialog'
 import { getReviveReopenState } from '@/components/dashboard/revive-utils'
 import { PendingTransfersSection, type PendingTransferItem } from '@/components/dashboard/pending-transfers-section'
-import { BT_BALANCE_PREFIX, hasPendingBalanceTransfer, hasPendingDeclaredTransfer } from '@/lib/bank-transfer/declared'
+import {
+  BT_BALANCE_PREFIX,
+  hasPendingBalanceTransfer,
+  hasPendingDeclaredTransfer,
+  isDeclaredBalancePayment,
+  isDeclaredTransferPayment,
+} from '@/lib/bank-transfer/declared'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
 
 const PENDING_TRANSFER_BADGE_CLASS =
@@ -70,7 +76,12 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
     /** Quién atiende; null = sin persona asignada, no se muestra la fila. */
     professional: { name: string } | null
     customer: { name: string; phone: string | null; email?: string | null } | null
-    payments: { id: string; providerPaymentId?: string | null }[]
+    payments: {
+      id: string
+      provider: string
+      status: string
+      providerPaymentId?: string | null
+    }[]
   }
   businessCurrency: string
   businessTimezone: string
@@ -100,7 +111,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           {isPendingTransfer ? (
             <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>
           ) : (
-            <StatusBadge status={effectiveBookingStatus(booking, now)} />
+            <StatusBadge status={displayedBookingStatus(booking, now)} />
           )}
           {isPendingBalanceTransfer && (
             <span className={PENDING_BALANCE_BADGE_CLASS}>Saldo por verificar</span>
@@ -339,7 +350,10 @@ export default async function BookingsPage() {
     .filter((b) => !['cancelled', 'expired'].includes(b.status))
     .flatMap((b) =>
       b.payments
-        .filter((p) => p.providerPaymentId != null)
+        .filter(
+          (p) =>
+            isDeclaredTransferPayment(p) || isDeclaredBalancePayment(p),
+        )
         .map((p) => ({
           paymentId: p.id,
           bookingId: b.id,
@@ -442,7 +456,7 @@ export default async function BookingsPage() {
                           {hasPendingDeclaredTransfer(booking) ? (
                             <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>
                           ) : (
-                            <StatusBadge status={effectiveBookingStatus(booking, now)} />
+                            <StatusBadge status={displayedBookingStatus(booking, now)} />
                           )}
                           {hasPendingBalanceTransfer(booking) && (
                             <span className={PENDING_BALANCE_BADGE_CLASS}>Saldo por verificar</span>

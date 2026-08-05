@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getBookingsByRange } from '@/server/actions/bookings'
-import { anyDeclaredTransferWhere } from '@/lib/bank-transfer/declared'
+import { getBookings, getBookingsByRange } from '@/server/actions/bookings'
+import { holdPrecedencePaymentWhere } from '@/lib/payments/hold-precedence'
 
 const mockRequireBusiness = vi.fn().mockResolvedValue({ businessId: 'biz-1' })
 const mockFindMany = vi.fn().mockResolvedValue([])
@@ -44,11 +44,11 @@ describe('getBookingsByRange', () => {
         service: true,
         customer: true,
         professional: { select: { name: true } },
-        // El chip del calendario necesita saber si hay una transferencia
-        // declarada sin verificar antes de darle el plazo por vencido.
+        // El chip necesita saber si hay una transferencia declarada o un pago
+        // MP en vuelo antes de darle el plazo por vencido.
         payments: {
-          where: anyDeclaredTransferWhere,
-          select: { providerPaymentId: true },
+          where: holdPrecedencePaymentWhere,
+          select: { provider: true, status: true, providerPaymentId: true },
         },
       },
     })
@@ -72,5 +72,30 @@ describe('getBookingsByRange', () => {
     await expect(
       getBookingsByRange(new Date('invalid'), new Date('2026-05-31'))
     ).rejects.toThrow('Rango de fechas inválido')
+  })
+})
+
+describe('consultas de reservas y la precedencia de pagos', () => {
+  beforeEach(() => {
+    mockFindMany.mockClear()
+  })
+
+  it('getBookings carga MP pendiente además de las transferencias declaradas', async () => {
+    await getBookings()
+
+    expect(mockFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          payments: {
+            where: holdPrecedencePaymentWhere,
+            select: expect.objectContaining({
+              provider: true,
+              status: true,
+              providerPaymentId: true,
+            }),
+          },
+        }),
+      }),
+    )
   })
 })

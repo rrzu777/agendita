@@ -59,11 +59,11 @@ export const {
 // tolera arrays mixtos (getBookings trae abono Y saldo vía
 // `anyDeclaredTransferWhere`): agarra solo los abonos sobre pending_payment.
 export function hasPendingDeclaredTransfer(
-  booking: { status: string; payments: Array<{ providerPaymentId?: string | null }> },
+  booking: { status: string; payments: DeclaredPaymentLike[] },
 ): boolean {
   return (
     booking.status === 'pending_payment' &&
-    booking.payments.some((p) => p.providerPaymentId?.startsWith(BT_DECLARED_PREFIX))
+    booking.payments.some(isDeclaredTransferPayment)
   )
 }
 
@@ -101,11 +101,11 @@ export const anyDeclaredTransferWhere = {
 // "Reserva firme con transferencia del SALDO pendiente de verificar."
 // Badge ADICIONAL en el dashboard (no reemplaza Confirmada/Completada).
 export function hasPendingBalanceTransfer(
-  booking: { status: string; payments: Array<{ providerPaymentId?: string | null }> },
+  booking: { status: string; payments: DeclaredPaymentLike[] },
 ): boolean {
   return (
     isFirmBooking(booking.status) &&
-    booking.payments.some((p) => p.providerPaymentId?.startsWith(BT_BALANCE_PREFIX))
+    booking.payments.some(isDeclaredBalancePayment)
   )
 }
 

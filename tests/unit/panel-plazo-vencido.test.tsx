@@ -11,7 +11,15 @@ const HORA = 60 * 60 * 1000
 // casos: los plazos de abajo se arman contra ÉL, no contra `Date.now()`.
 const NOW = new Date()
 
-function makeBooking(holdExpiresAt: Date | null) {
+function makeBooking(
+  holdExpiresAt: Date | null,
+  payments: Array<{
+    id: string
+    provider: string
+    status: string
+    providerPaymentId?: string | null
+  }> = [],
+) {
   return {
     id: 'bk-1',
     bookingNumber: 4738,
@@ -28,14 +36,22 @@ function makeBooking(holdExpiresAt: Date | null) {
     service: { name: 'Corte' },
     professional: null,
     customer: { name: 'Ana', phone: '+56911111111', email: null },
-    payments: [],
+    payments,
   }
 }
 
-function render(holdExpiresAt: Date | null) {
+function render(
+  holdExpiresAt: Date | null,
+  payments: Array<{
+    id: string
+    provider: string
+    status: string
+    providerPaymentId?: string | null
+  }> = [],
+) {
   return renderToStaticMarkup(
     <BookingCard
-      booking={makeBooking(holdExpiresAt)}
+      booking={makeBooking(holdExpiresAt, payments)}
       businessCurrency="CLP"
       businessTimezone="America/Santiago"
       businessAddress={null}
@@ -71,6 +87,17 @@ describe('BookingCard y el plazo vencido', () => {
 
   it('sin plazo no inventa nada', () => {
     const html = render(null)
+    expect(html).toContain('Pendiente de pago')
+    expect(html).not.toContain('Plazo vencido')
+  })
+
+  it('con Mercado Pago en vuelo no muestra el hold muerto como estado', () => {
+    const html = render(new Date(NOW.getTime() - HORA), [{
+      id: 'pay-mp-1',
+      provider: 'mercado_pago',
+      status: 'pending',
+      providerPaymentId: 'mp-1',
+    }])
     expect(html).toContain('Pendiente de pago')
     expect(html).not.toContain('Plazo vencido')
   })

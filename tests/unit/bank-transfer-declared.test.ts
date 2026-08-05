@@ -29,6 +29,14 @@ describe('bt-balance helpers', () => {
     expect(hasPendingDeclaredTransfer(pending)).toBe(true)
     expect(hasPendingBalanceTransfer(pending)).toBe(false)
     expect(hasPendingDeclaredTransfer({ status: 'pending_payment', payments: [balPending, depPending] })).toBe(true)
+    expect(hasPendingDeclaredTransfer({
+      status: 'pending_payment',
+      payments: [{ ...depPending, provider: 'mercado_pago' }],
+    })).toBe(false)
+    expect(hasPendingBalanceTransfer({
+      status: 'confirmed',
+      payments: [{ ...balPending, provider: 'mercado_pago' }],
+    })).toBe(false)
   })
   it('declaredBalancePaymentWhere filtra manual+pending por prefijo de saldo', () => {
     expect(declaredBalancePaymentWhere.provider).toBe('manual')

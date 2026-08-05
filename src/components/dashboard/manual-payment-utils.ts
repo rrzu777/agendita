@@ -1,5 +1,6 @@
 import { isManuallyPayableStatus } from '@/lib/bookings/payable-statuses'
 import { isExpiredPaymentHold } from '@/lib/payments/confirmation-state'
+import { hasPendingMercadoPagoPayment } from '@/lib/payments/hold-precedence'
 import type { Vocabulary } from '@/lib/vocabulary'
 
 export type ManualPaymentMode = 'fixed' | 'percentage'
@@ -30,14 +31,18 @@ export type ManualPaymentBooking = {
   // Opcional: solo lo traen los llamadores que ya consultan `payments`
   // (getBookings). Habilita el aviso de "saldo por verificar" en el diálogo
   // sin forzar a los demás llamadores a agregar la relación.
-  payments?: Array<{ providerPaymentId?: string | null }>
+  payments?: Array<{
+    provider: string
+    status: string
+    providerPaymentId?: string | null
+  }>
 }
 
 /** Los campos que deciden si se puede cobrar. Nombrarlos una vez evita que las
  *  dos funciones que TIENEN que coincidir se separen por un `Pick` de menos. */
 type PayabilityFields = Pick<
   ManualPaymentBooking,
-  'status' | 'remainingBalance' | 'holdExpiresAt' | 'paymentStatus'
+  'status' | 'remainingBalance' | 'holdExpiresAt' | 'paymentStatus' | 'payments'
 >
 
 /**
@@ -90,6 +95,12 @@ export function manualPaymentBlockedReason(
 ): string | null {
   if (booking.remainingBalance <= 0 || !isManuallyPayableStatus(booking.status)) return null
   if (!isExpiredPaymentHold(booking, now)) return null
+  if (
+    booking.payments &&
+    hasPendingMercadoPagoPayment({ status: booking.status, payments: booking.payments })
+  ) {
+    return 'Mercado Pago está procesando este pago. Esperá el resultado antes de registrar otro cobro.'
+  }
   return 'Venció el plazo para pagar, así que el cobro está cerrado. Si quiere pagar igual, esperá a que la reserva quede Expirada y usá Revivir.'
 }
 
