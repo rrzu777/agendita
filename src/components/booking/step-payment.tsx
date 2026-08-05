@@ -16,9 +16,10 @@ import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { TransferDetails } from './transfer-details'
 import { formatMoney } from '@/lib/money'
 import { AlertCircle, Clock, Loader2 } from 'lucide-react'
-import { formatBookingDateTime } from '@/lib/bookings/format-booking-datetime'
 import type { WhereFields } from '@/lib/services/modality'
 import type { ServiceModality } from '@prisma/client'
+import { BookingSummary } from './booking-summary'
+import { BookingLegalAcceptance } from './booking-legal-acceptance'
 
 /**
  * Lo que el paso de pago le pasa a la confirmación: la reserva tal como quedó
@@ -57,36 +58,6 @@ function generateIdempotencyKey(): string {
   }
   // Fallback para entornos sin crypto.randomUUID (muy poco probable en navegadores modernos)
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
-
-function LegalAcceptanceLabel() {
-  return (
-    <span>
-      Acepto la{' '}
-      <a href="/refund-policy" target="_blank" className="font-semibold text-primary underline">
-        política de cancelación y reembolso
-      </a>{' '}
-      del negocio, la{' '}
-      <a href="/privacy" target="_blank" className="font-semibold text-primary underline">
-        Política de Privacidad
-      </a>{' '}
-      y los{' '}
-      <a href="/terms" target="_blank" className="font-semibold text-primary underline">
-        Términos y Condiciones
-      </a>{' '}
-      de Agendita
-    </span>
-  )
-}
-
-function BusinessCancellationPolicy({ policy }: { policy?: string | null }) {
-  if (!policy) return null
-  return (
-    <div className="mb-4 rounded-xl border border-border/70 bg-muted/40 p-4 text-sm text-muted-foreground">
-      <p className="font-semibold text-primary">Política de cancelación del negocio</p>
-      <p className="mt-1 whitespace-pre-line">{policy}</p>
-    </div>
-  )
 }
 
 /**
@@ -674,17 +645,15 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Confirmar reserva</h2>
         <p className="mb-8 text-lg text-muted-foreground">Resumen de tu reserva</p>
 
-        <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5">
-          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
-          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.timeSlot ? formatBookingDateTime(data.timeSlot.start, timezone) : ''}</span></div>
-          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice, currency)}</span></div>
-          {appliedPromo && (
-            <>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount, currency)}</span></div>
-              <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinalPrice, currency)}</span></div>
-            </>
-          )}
-        </div>
+        <BookingSummary
+          serviceName={data.serviceName}
+          startsAt={data.timeSlot?.start}
+          timezone={timezone}
+          price={data.servicePrice}
+          currency={currency}
+          promotion={appliedPromo ? { discount: appliedPromo.discount, finalPrice: effectiveFinalPrice } : undefined}
+          emphasizeFinalPrice
+        />
 
         {packageSection}
         {!packageCovers && promoSection}
@@ -701,20 +670,11 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
           </div>
         )}
 
-        <BusinessCancellationPolicy policy={cancellationPolicy} />
-
-        <div className="mb-4 flex items-start gap-3">
-          <input
-            type="checkbox"
-            id="accept-terms"
-            checked={acceptedTerms}
-            onChange={(e) => setAcceptedTerms(e.target.checked)}
-            className="mt-0.5 size-4 rounded border-border accent-primary"
-          />
-          <label htmlFor="accept-terms" className="text-sm text-muted-foreground">
-            <LegalAcceptanceLabel />
-          </label>
-        </div>
+        <BookingLegalAcceptance
+          policy={cancellationPolicy}
+          accepted={acceptedTerms}
+          onAcceptedChange={setAcceptedTerms}
+        />
 
         <div className="flex gap-3">
           <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack} disabled={loading}>Atrás</Button>
@@ -732,18 +692,15 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Confirmar reserva</h2>
         <p className="mb-8 text-lg text-muted-foreground">Resumen de tu reserva</p>
 
-        <div className="mb-6 space-y-3 rounded-2xl bg-muted/55 p-5">
-          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
-          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.timeSlot ? formatBookingDateTime(data.timeSlot.start, timezone) : ''}</span></div>
-          <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice, currency)}</span></div>
-          {appliedPromo && (
-            <>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount, currency)}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinalPrice, currency)}</span></div>
-            </>
-          )}
-          <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono requerido</span><span className="font-semibold text-primary">{formatMoney(effectiveDeposit, currency)}</span></div>
-        </div>
+        <BookingSummary
+          serviceName={data.serviceName}
+          startsAt={data.timeSlot?.start}
+          timezone={timezone}
+          price={data.servicePrice}
+          currency={currency}
+          promotion={appliedPromo ? { discount: appliedPromo.discount, finalPrice: effectiveFinalPrice } : undefined}
+          deposit={{ label: 'Abono requerido', amount: effectiveDeposit }}
+        />
 
         {packageSection}
         {!packageCovers && promoSection}
@@ -772,20 +729,11 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
           </div>
         )}
 
-        <BusinessCancellationPolicy policy={cancellationPolicy} />
-
-        <div className="mb-4 flex items-start gap-3">
-          <input
-            type="checkbox"
-            id="accept-terms"
-            checked={acceptedTerms}
-            onChange={(e) => setAcceptedTerms(e.target.checked)}
-            className="mt-0.5 size-4 rounded border-border accent-primary"
-          />
-          <label htmlFor="accept-terms" className="text-sm text-muted-foreground">
-            <LegalAcceptanceLabel />
-          </label>
-        </div>
+        <BookingLegalAcceptance
+          policy={cancellationPolicy}
+          accepted={acceptedTerms}
+          onAcceptedChange={setAcceptedTerms}
+        />
 
         <div className="flex gap-3">
           <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack} disabled={loading}>Atrás</Button>
@@ -822,18 +770,16 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Pago de abono</h2>
       <p className="mb-8 text-lg text-muted-foreground">Resumen de tu reserva</p>
 
-      <div className="mb-6 space-y-3 rounded-xl bg-muted/55 p-5">
-        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Servicio</span><span className="font-semibold text-primary">{data.serviceName}</span></div>
-        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Fecha y hora</span><span className="font-semibold text-primary">{data.timeSlot ? formatBookingDateTime(data.timeSlot.start, timezone) : ''}</span></div>
-        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice, currency)}</span></div>
-        {appliedPromo && (
-          <>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(appliedPromo.discount, currency)}</span></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinalPrice, currency)}</span></div>
-          </>
-        )}
-        <div className="flex justify-between gap-4 border-t border-border/60 pt-3"><span className="text-muted-foreground">Abono a pagar</span><span className="font-semibold text-primary">{formatMoney(effectiveDeposit, currency)}</span></div>
-      </div>
+      <BookingSummary
+        serviceName={data.serviceName}
+        startsAt={data.timeSlot?.start}
+        timezone={timezone}
+        price={data.servicePrice}
+        currency={currency}
+        promotion={appliedPromo ? { discount: appliedPromo.discount, finalPrice: effectiveFinalPrice } : undefined}
+        deposit={{ label: 'Abono a pagar', amount: effectiveDeposit }}
+        shape="xl"
+      />
 
       {packageSection}
       {!packageCovers && promoSection}
@@ -870,20 +816,11 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         </div>
       )}
 
-      <BusinessCancellationPolicy policy={cancellationPolicy} />
-
-      <div className="mb-4 flex items-start gap-3">
-        <input
-          type="checkbox"
-          id="accept-terms"
-          checked={acceptedTerms}
-          onChange={(e) => setAcceptedTerms(e.target.checked)}
-          className="mt-0.5 size-4 rounded border-border accent-primary"
-        />
-        <label htmlFor="accept-terms" className="text-sm text-muted-foreground">
-          <LegalAcceptanceLabel />
-        </label>
-      </div>
+      <BookingLegalAcceptance
+        policy={cancellationPolicy}
+        accepted={acceptedTerms}
+        onAcceptedChange={setAcceptedTerms}
+      />
 
       {/* Sólo el camino online: la transferencia tiene su ventana larga y la
           dice en la pantalla siguiente (TransferDetails), ya topada contra la
