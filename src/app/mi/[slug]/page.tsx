@@ -12,8 +12,7 @@ import { bookingStatusLabels } from '@/lib/bookings/status-labels'
 import { bookingWhere, isNotableModality } from '@/lib/services/modality'
 import { formatShortDate } from '@/lib/format-date'
 import { declaredTransferPaymentWhere, isDeclaredTransferPayment } from '@/lib/bank-transfer/declared'
-import { isDoomedHold } from '@/lib/payments/confirmation-state'
-import { hasExpirableHold } from '@/lib/bookings/approval'
+import { isDoomedBooking } from '@/lib/payments/confirmation-state'
 import { rescheduleBlockedReason } from '@/lib/bookings/hold'
 import { canSelfManage } from '@/lib/bookings/self-service'
 import { BookingActions } from './booking-actions'
@@ -57,14 +56,15 @@ function statusLabel(
     status: BookingStatus
     paymentStatus: string
     holdExpiresAt: Date | null
+    approvalExpiresAt: Date | null
     payments: PagoQuePisa[]
   },
   now: Date,
 ) {
-  if (hasExpirableHold(b.status)) {
+  if (b.status === 'pending_payment' || b.status === 'pending_confirmation') {
     if (b.payments.some(isDeclaredTransferPayment)) return 'Transferencia en verificación'
     if (b.payments.some((p) => p.provider === 'mercado_pago')) return 'Verificando tu pago'
-    if (isDoomedHold(b, now)) return bookingStatusLabels.expired
+    if (isDoomedBooking(b, now)) return bookingStatusLabels.expired
   }
   return bookingStatusLabels[b.status]
 }
@@ -119,13 +119,13 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
     prisma.booking.findMany({
       where: { customerId: { in: customerIds }, startDateTime: { gte: now }, status: { in: [...UPCOMING_STATUSES] } },
       orderBy: { startDateTime: 'asc' },
-      select: { id: true, bookingNumber: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true, modality: true, serviceAddress: true, meetingUrl: true, service: { select: { name: true } }, payments: PAGOS_QUE_PISAN_EL_HOLD },
+      select: { id: true, bookingNumber: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true, approvalExpiresAt: true, modality: true, serviceAddress: true, meetingUrl: true, service: { select: { name: true } }, payments: PAGOS_QUE_PISAN_EL_HOLD },
     }),
     prisma.booking.findMany({
       where: { customerId: { in: customerIds }, OR: [{ startDateTime: { lt: now } }, { status: { notIn: [...UPCOMING_STATUSES] } }] },
       orderBy: { startDateTime: 'desc' },
       take: 20,
-      select: { id: true, bookingNumber: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true, service: { select: { name: true } }, payments: PAGOS_QUE_PISAN_EL_HOLD },
+      select: { id: true, bookingNumber: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true, approvalExpiresAt: true, service: { select: { name: true } }, payments: PAGOS_QUE_PISAN_EL_HOLD },
     }),
   ])
 

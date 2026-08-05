@@ -71,10 +71,10 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
   const reassignable = hasTeam && !isTerminalBookingStatus(booking.status)
   const paymentBlockedReason = manualPaymentBlockedReason(booking, now)
   // Espejo del guard de `rescheduleBookingInTx`, con el MISMO reloj que el badge
-  // y que el cobro: son tres lecturas del mismo plazo y con relojes distintos el
-  // drawer puede tachar arriba lo que sigue ofreciendo abajo.
+  // y que el cobro: son tres lecturas del plazo que corresponde al status, y con
+  // relojes distintos el drawer puede tachar arriba lo que sigue ofreciendo abajo.
   //
-  // Cuelga de `isDoomedHold` y NO de `displayedBookingStatus`: sobre una
+  // Cuelga de `isDoomedBooking` y NO de `displayedBookingStatus`: sobre una
   // transferencia declarada el badge la muestra sana a propósito
   // (`confirmBankTransfer` todavía la salva), pero el cron la barre igual, así
   // que moverla sigue sin servir de nada. Si acá se usara el status mostrado, el

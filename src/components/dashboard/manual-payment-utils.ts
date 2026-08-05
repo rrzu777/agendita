@@ -1,5 +1,5 @@
 import { isManuallyPayableStatus } from '@/lib/bookings/payable-statuses'
-import { isDoomedHold } from '@/lib/payments/confirmation-state'
+import { isExpiredPaymentHold } from '@/lib/payments/confirmation-state'
 import type { Vocabulary } from '@/lib/vocabulary'
 
 export type ManualPaymentMode = 'fixed' | 'percentage'
@@ -60,7 +60,7 @@ export function isManualPaymentAllowed(booking: PayabilityFields, now: Date) {
   // el clic terminaba en ese error, que no le dice a la dueña qué hacer. Ojo:
   // quien esconda el botón por esto tiene que poner el motivo en su lugar — ver
   // `manualPaymentBlockedReason`.
-  if (isDoomedHold(booking, now)) return false
+  if (isExpiredPaymentHold(booking, now)) return false
   return true
 }
 
@@ -74,12 +74,12 @@ export function isManualPaymentAllowed(booking: PayabilityFields, now: Date) {
  * aparezca "Revivir". Sin este texto, el botón que desaparece es indistinguible
  * de una app rota.
  *
- * Que la condición sea `isDoomedHold` y no "el plazo pasó" es lo que hace que la
+ * Que la condición sea `isExpiredPaymentHold` y no "el plazo pasó" es lo que hace que la
  * salida que promete EXISTA: sobre una reserva con plata adentro el cron no pasa
  * nunca, así que "esperá a que quede Expirada" era mandarla a esperar sentada.
  * Ese caso ya no llega acá — se puede cobrar.
  *
- * El `isDoomedHold` va explícito y no como `!isManualPaymentAllowed(...)`, que
+ * El `isExpiredPaymentHold` va explícito y no como `!isManualPaymentAllowed(...)`, que
  * ahorraría la línea repetida de arriba: el texto habla del PLAZO, así que tiene
  * que colgar de la condición del plazo. Derivarlo del "no se puede" haría que un
  * bloqueo futuro por otro motivo saliera con esta explicación, que sería falsa.
@@ -89,7 +89,7 @@ export function manualPaymentBlockedReason(
   now: Date,
 ): string | null {
   if (booking.remainingBalance <= 0 || !isManuallyPayableStatus(booking.status)) return null
-  if (!isDoomedHold(booking, now)) return null
+  if (!isExpiredPaymentHold(booking, now)) return null
   return 'Venció el plazo para pagar, así que el cobro está cerrado. Si quiere pagar igual, esperá a que la reserva quede Expirada y usá Revivir.'
 }
 

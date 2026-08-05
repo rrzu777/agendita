@@ -22,40 +22,48 @@ interface DeriveInput {
    *  Requerido a propósito: el caller que no lo pase estaría mostrando
    *  "completá el pago" sobre un horario que ya se libera. `null` = sin hold. */
   holdExpiresAt: Date | null
+  /** Ventana del negocio para responder una solicitud. Separada del hold de
+   * pago para que cada status lea exclusivamente el reloj que le pertenece. */
+  approvalExpiresAt: Date | null
   payments: { status: string; provider: string; providerPaymentId?: string | null }[]
 }
 
-/**
- * El hold venció y el cron todavía no pasó: la reserva VA a expirar, solo falta
- * que alguien lo asiente. Espeja exactamente las condiciones de los DOS sweeps
- * del CRON (`expire-holds.ts`):
- *
- * - `pending_payment` + `unpaid` + hold vencido (`expireStaleHolds`). El
- *   `unpaid` importa — una reserva con plata parcial adentro no se barre, así
- *   que tampoco hay que darla por muerta acá.
- * - `pending_confirmation` + hold vencido (`expireUnansweredRequests`), SIN
- *   filtro de pago: una solicitud gratis nace `fully_paid` y también vence.
- *   Sin esta rama, /mi decía "Por confirmar" sobre una respuesta que ya no
- *   iba a llegar — la misma mentira, un status al lado.
- *
- * NO es `isSweepableExpiredHold` (approval.ts) a propósito: ése describe el
- * barrido perezoso, que excluye transferencias porque no puede mandar el mail.
- * El cron sí las expira, y una transferencia NO declarada con hold vencido
- * también está condenada — la declarada nunca llega acá (corta antes en
- * `verifying_transfer`).
- *
- * Exportado con firma angosta: /mi lo usa para la etiqueta de estado, que no
- * tiene (ni necesita) montos. OJO: la etiqueta que lo use tiene que respetar el
- * MISMO orden que deriveConfirmationState — un pago en vuelo o una declaración
- * pendiente ganan sobre el hold muerto, o las dos pantallas se contradicen.
- */
-export function isDoomedHold(
+/** Espejo exacto del sweep de `pending_payment`: sólo un hold vencido y todavía
+ * `unpaid` está condenado. La plata parcial gana porque el cron tampoco la barre. */
+export function isExpiredPaymentHold(
   input: Pick<DeriveInput, 'status' | 'paymentStatus' | 'holdExpiresAt'>,
   now: Date,
 ): boolean {
-  if (input.holdExpiresAt == null || input.holdExpiresAt >= now) return false
-  if (input.status === 'pending_payment') return input.paymentStatus === 'unpaid'
-  return input.status === 'pending_confirmation'
+  return (
+    input.status === 'pending_payment' &&
+    input.paymentStatus === 'unpaid' &&
+    input.holdExpiresAt != null &&
+    input.holdExpiresAt < now
+  )
+}
+
+/**
+ * El plazo que corresponde al status venció y alguno de los dos sweeps del cron
+ * va a expirar esta reserva. Conserva una sola autoridad para la decisión
+ * combinada, pero cada rama lee su propia columna y espeja sólo su sweep:
+ *
+ * - `pending_payment` + `unpaid` + `holdExpiresAt` vencido.
+ * - `pending_confirmation` + `approvalExpiresAt` vencido, sin filtro de pago.
+ *
+ * OJO: las etiquetas que lo usen respetan el mismo orden que
+ * `deriveConfirmationState`: una transferencia declarada o un pago en vuelo
+ * ganan visualmente sobre el plazo vencido aunque el cron aún pueda barrerlos.
+ */
+export function isDoomedBooking(
+  input: Pick<DeriveInput, 'status' | 'paymentStatus' | 'holdExpiresAt' | 'approvalExpiresAt'>,
+  now: Date,
+): boolean {
+  if (input.status === 'pending_payment') return isExpiredPaymentHold(input, now)
+  return (
+    input.status === 'pending_confirmation' &&
+    input.approvalExpiresAt != null &&
+    input.approvalExpiresAt < now
+  )
 }
 
 /**
@@ -127,7 +135,7 @@ export function deriveConfirmationState(input: DeriveInput, now = new Date()): C
   // "expiró" que el cron va a asentar de todas formas. Va DESPUÉS de
   // 'verifying': un pago en vuelo puede aterrizar y confirmar aunque el hold
   // haya vencido (esa carrera la arbitra el guard de solape del webhook).
-  if (isDoomedHold(input, now)) {
+  if (isDoomedBooking(input, now)) {
     return 'expired'
   }
 

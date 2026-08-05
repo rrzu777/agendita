@@ -47,7 +47,12 @@ describe('BookingActions', () => {
         canManage
         cutoffHours={24}
         rescheduleBlockedReason={rescheduleBlockedReason(
-          { status: 'pending_payment', paymentStatus: 'unpaid', holdExpiresAt: new Date(Date.now() - 60_000) },
+          {
+            status: 'pending_payment',
+            paymentStatus: 'unpaid',
+            holdExpiresAt: new Date(Date.now() - 60_000),
+            approvalExpiresAt: null,
+          },
           'customer',
           new Date(),
         )}

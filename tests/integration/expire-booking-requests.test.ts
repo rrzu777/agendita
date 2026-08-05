@@ -37,7 +37,7 @@ describe('expireStaleHolds + solicitudes sin responder', () => {
     const { bookingId } = await seedConfirmedBooking({
       businessId: BT_VERIFY_BIZ, serviceId: BT_VERIFY_SVC, ...slot(1, 15),
       status: 'pending_confirmation',
-      holdExpiresAt: addMinutes(new Date(), -60),
+      approvalExpiresAt: addMinutes(new Date(), -60),
       customerEmail: 'sol@x.com',
     })
     const d = deps()
@@ -55,11 +55,11 @@ describe('expireStaleHolds + solicitudes sin responder', () => {
     )
   })
 
-  it('no toca una solicitud con el hold todavía vivo', async () => {
+  it('no toca una solicitud con el plazo de aprobación todavía vivo', async () => {
     const { bookingId } = await seedConfirmedBooking({
       businessId: BT_VERIFY_BIZ, serviceId: BT_VERIFY_SVC, ...slot(2, 15),
       status: 'pending_confirmation',
-      holdExpiresAt: addMinutes(new Date(), 60),
+      approvalExpiresAt: addMinutes(new Date(), 60),
       customerEmail: 'viva@x.com',
     })
     await expireStaleHolds(new Date(), prisma, deps())
@@ -75,7 +75,7 @@ describe('expireStaleHolds + solicitudes sin responder', () => {
     const { bookingId } = await seedConfirmedBooking({
       businessId: BT_VERIFY_BIZ, serviceId: BT_VERIFY_SVC, ...slot(3, 15),
       status: 'pending_confirmation',
-      holdExpiresAt: addMinutes(new Date(), -60),
+      approvalExpiresAt: addMinutes(new Date(), -60),
     })
     await prisma.booking.update({
       where: { id: bookingId },
@@ -91,7 +91,7 @@ describe('expireStaleHolds + solicitudes sin responder', () => {
     await seedConfirmedBooking({
       businessId: BT_VERIFY_BIZ, serviceId: BT_VERIFY_SVC, ...slot(4, 15),
       status: 'pending_confirmation',
-      holdExpiresAt: addMinutes(new Date(), -60),
+      approvalExpiresAt: addMinutes(new Date(), -60),
     })
     const d = deps()
     await expireStaleHolds(new Date(), prisma, d)

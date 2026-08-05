@@ -27,6 +27,7 @@ export default async function ReprogramarPage({
       status: true,
       paymentStatus: true,
       holdExpiresAt: true,
+      approvalExpiresAt: true,
       service: { select: { name: true } },
       business: { select: { slug: true, name: true, timezone: true, selfServiceCutoffHours: true } },
     },

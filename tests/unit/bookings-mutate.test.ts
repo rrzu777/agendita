@@ -66,6 +66,7 @@ describe('rescheduleBookingInTx', () => {
       status: BookingStatus.confirmed,
       paymentStatus: BookingPaymentStatus.deposit_paid,
       holdExpiresAt: null as Date | null,
+      approvalExpiresAt: null as Date | null,
       createdAt: new Date('2026-07-19T12:00:00Z'),
     },
     newStartDateTime: new Date('2026-07-21T15:00:00Z'),
@@ -149,7 +150,13 @@ describe('rescheduleBookingInTx', () => {
       await expect(
         rescheduleBookingInTx(tx as never, {
           ...baseInput,
-          booking: { ...condenada, status: BookingStatus.pending_confirmation, paymentStatus: BookingPaymentStatus.fully_paid },
+          booking: {
+            ...condenada,
+            status: BookingStatus.pending_confirmation,
+            paymentStatus: BookingPaymentStatus.fully_paid,
+            holdExpiresAt: null,
+            approvalExpiresAt: condenada.holdExpiresAt,
+          },
         }),
       ).rejects.toThrow(/aceptala/i)
     })
@@ -161,7 +168,13 @@ describe('rescheduleBookingInTx', () => {
       await expect(
         rescheduleBookingInTx(tx as never, {
           ...baseInput,
-          booking: { ...condenada, status: BookingStatus.pending_confirmation, paymentStatus: BookingPaymentStatus.fully_paid },
+          booking: {
+            ...condenada,
+            status: BookingStatus.pending_confirmation,
+            paymentStatus: BookingPaymentStatus.fully_paid,
+            holdExpiresAt: null,
+            approvalExpiresAt: condenada.holdExpiresAt,
+          },
           rescheduledBy: 'customer',
         }),
       ).rejects.toThrow('El negocio no respondió esta solicitud a tiempo')
@@ -188,8 +201,8 @@ describe('rescheduleBookingInTx', () => {
     })
   })
 
-  // De los dos plazos que viven en `holdExpiresAt`, sólo el de la solicitud sin
-  // responder tiene la cita adentro (`approvalHoldExpiresAt` topa al ESCRIBIR).
+  // El plazo propio de la solicitud tiene la cita adentro
+  // (`calculateApprovalExpiresAt` topa al ESCRIBIR).
   // Moverla y dejar el plazo quieto rompía ese dato en las dos direcciones.
   describe('recálculo del plazo de la solicitud', () => {
     // Relativas al reloj real a propósito: el guard de "plazo vencido" corre
@@ -203,7 +216,8 @@ describe('rescheduleBookingInTx', () => {
       paymentStatus: BookingPaymentStatus.fully_paid,
       // Nació para una cita cercana, así que el tope se lo puso la CITA (5 h,
       // menos que las 24 de la ventana de respuesta).
-      holdExpiresAt: CITA_VIEJA as Date | null,
+      holdExpiresAt: null,
+      approvalExpiresAt: CITA_VIEJA as Date | null,
       createdAt: NACIMIENTO,
       startDateTime: CITA_VIEJA,
     }
@@ -211,7 +225,7 @@ describe('rescheduleBookingInTx', () => {
     async function reprogramarA(newStartDateTime: Date) {
       const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
       await rescheduleBookingInTx(tx as never, { ...baseInput, booking: solicitud, newStartDateTime })
-      return tx.booking.updateMany.mock.calls[0][0].data.holdExpiresAt
+      return tx.booking.updateMany.mock.calls[0][0].data.approvalExpiresAt
     }
 
     // Antes: el plazo se quedaba en la cita VIEJA y `expireUnansweredRequests`
@@ -249,16 +263,18 @@ describe('rescheduleBookingInTx', () => {
           status: BookingStatus.pending_payment,
           paymentStatus: BookingPaymentStatus.unpaid,
           holdExpiresAt: h(0.25),
+          approvalExpiresAt: null,
         },
         newStartDateTime: h(24 * 15),
       })
       expect(tx.booking.updateMany.mock.calls[0][0].data).not.toHaveProperty('holdExpiresAt')
+      expect(tx.booking.updateMany.mock.calls[0][0].data).not.toHaveProperty('approvalExpiresAt')
     })
 
     it('una reserva confirmada tampoco estrena plazo', async () => {
       const tx = { booking: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } }
       await rescheduleBookingInTx(tx as never, { ...baseInput, leadTimeMinutes: 0 })
-      expect(tx.booking.updateMany.mock.calls[0][0].data).not.toHaveProperty('holdExpiresAt')
+      expect(tx.booking.updateMany.mock.calls[0][0].data).not.toHaveProperty('approvalExpiresAt')
     })
 
     // El status se leyó FUERA de la tx. Si la dueña acepta la solicitud en el

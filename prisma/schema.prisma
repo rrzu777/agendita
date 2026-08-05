@@ -503,14 +503,19 @@ model Booking {
   /// si el negocio cambia de sala, las citas ya avisadas conservan la que se mandó.
   meetingUrl     String?
 
-  customerNotes  String?
-  internalNotes  String?
-  holdExpiresAt  DateTime?
-  paymentMethod  String? // 'bank_transfer' si la clienta eligió transferencia; null = flujo actual/MP
-  idempotencyKey String?
-  bookingNumber  Int?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  customerNotes     String?
+  internalNotes     String?
+  /// Vencimiento del plazo para pagar una reserva `pending_payment`.
+  holdExpiresAt     DateTime?
+  /// Vencimiento del plazo del negocio para responder una solicitud
+  /// `pending_confirmation`. Vive separado del hold de pago porque nacen,
+  /// vencen y se recalculan por reglas distintas.
+  approvalExpiresAt DateTime?
+  paymentMethod     String? // 'bank_transfer' si la clienta eligió transferencia; null = flujo actual/MP
+  idempotencyKey    String?
+  bookingNumber     Int?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   business                       Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
   service                        Service              @relation(fields: [serviceId], references: [id], onDelete: Cascade)
@@ -549,6 +554,8 @@ model Booking {
   // Sweep cross-business de holds vencidos (cron expire-holds + transfer-reminders):
   // filtran por status + holdExpiresAt sin businessId, ningún índice actual sirve.
   @@index([status, holdExpiresAt])
+  // Sweep cross-business de solicitudes sin responder.
+  @@index([status, approvalExpiresAt])
   // Sweep cross-business de recordatorios (cron send-reminders): status + rango.
   @@index([status, startDateTime])
   // Las citas de una persona: el filtro del calendario y el chequeo de si se

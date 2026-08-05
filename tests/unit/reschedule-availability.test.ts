@@ -305,7 +305,12 @@ describe('rescheduleBooking terminal states and availability', () => {
     expect(result.ok).toBe(false)
     expect(!result.ok && result.error).toBe(
       rescheduleBlockedReason(
-        { status: 'pending_payment', paymentStatus: 'unpaid', holdExpiresAt: new Date('2026-06-15T10:00:00Z') },
+        {
+          status: 'pending_payment',
+          paymentStatus: 'unpaid',
+          holdExpiresAt: new Date('2026-06-15T10:00:00Z'),
+          approvalExpiresAt: null,
+        },
         'owner',
         new Date(),
       ),

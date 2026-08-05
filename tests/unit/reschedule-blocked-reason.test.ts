@@ -5,8 +5,20 @@ const AHORA = new Date('2026-08-04T12:00:00Z')
 const vencido = new Date(AHORA.getTime() - 60_000)
 const vivo = new Date(AHORA.getTime() + 60 * 60_000)
 
-function reserva(over: Partial<{ status: string; paymentStatus: string; holdExpiresAt: Date | null }> = {}) {
-  return { status: 'pending_payment', paymentStatus: 'unpaid', holdExpiresAt: vencido, ...over }
+function reserva(over: Partial<{
+  status: string
+  paymentStatus: string
+  holdExpiresAt: Date | null
+  approvalExpiresAt: Date | null
+}> = {}) {
+  const status = over.status ?? 'pending_payment'
+  return {
+    status,
+    paymentStatus: 'unpaid',
+    holdExpiresAt: status === 'pending_payment' ? vencido : null,
+    approvalExpiresAt: status === 'pending_confirmation' ? vencido : null,
+    ...over,
+  }
 }
 
 describe('rescheduleBlockedReason', () => {
@@ -47,7 +59,7 @@ describe('rescheduleBlockedReason', () => {
       expect(msg).toContain('verificá la transferencia')
     })
 
-    // Aceptar limpia el hold, así que la solicitud está a un clic de salvarse:
+    // Aceptar limpia el plazo, así que la solicitud está a un clic de salvarse:
     // mandarla a esperar el Revivir sería nombrarle una salida que ni aparece.
     it('a la dueña, sobre una solicitud sin responder, le nombra Aceptar', () => {
       const msg = rescheduleBlockedReason(
@@ -77,7 +89,7 @@ describe('rescheduleBlockedReason', () => {
       ).toContain('El negocio no respondió esta solicitud a tiempo')
     })
 
-    // `isDoomedHold` sólo condena esos dos status, pero si mañana suma uno, el
+    // `isDoomedBooking` sólo condena esos dos status, pero si mañana suma uno, el
     // texto genérico sigue siendo cierto y el de la solicitud no lo sería.
     it('un status inesperado caería en el texto genérico, no en el de la solicitud', () => {
       // (Hoy no llega ninguno: se fuerza el mensaje con un hold vencido y un

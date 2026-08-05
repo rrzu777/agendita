@@ -215,6 +215,7 @@ export async function seedConfirmedBooking({
   endDateTime,
   status = 'confirmed',
   holdExpiresAt = null,
+  approvalExpiresAt = null,
   customerEmail = null,
 }: {
   businessId: string
@@ -224,6 +225,7 @@ export async function seedConfirmedBooking({
   /** Para probar los estados que ocupan cupo sólo mientras vive el hold. */
   status?: BookingStatus
   holdExpiresAt?: Date | null
+  approvalExpiresAt?: Date | null
   customerEmail?: string | null
 }): Promise<{ bookingId: string; customerId: string }> {
   const customer = await prisma.customer.create({
@@ -243,6 +245,7 @@ export async function seedConfirmedBooking({
       endDateTime,
       status,
       holdExpiresAt,
+      approvalExpiresAt,
       totalPrice: 20000,
       depositRequired: 10000,
       depositPaid: 10000,

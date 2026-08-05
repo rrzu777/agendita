@@ -19,19 +19,6 @@ import { MANUAL_COORDINATION_METHOD } from '@/lib/bookings/hold'
 export const APPROVAL_WINDOW_HOURS = 24
 
 /**
- * Estados con un hold con fecha de vencimiento.
- *
- * **No dice si ocupan el cupo**: `pending_confirmation` tiene hold Y ocupa
- * siempre (está también en `OCCUPYING_STATUSES`). Lo que dice es que hay un
- * vencimiento que alguien puede ver morir — lo consume la pantalla de la
- * clienta, que con el hold pasado muestra "Expirada" en vez del estado crudo.
- */
-export const STATUSES_WITH_HOLD = [
-  BookingStatus.pending_payment,
-  BookingStatus.pending_confirmation,
-] as const
-
-/**
  * Estados que ocupan el cupo SIEMPRE, sin importar el hold.
  *
  * FUENTE ÚNICA de los dos lugares que deciden si una reserva tapa un slot:
@@ -72,15 +59,11 @@ export const RELEASED_STATUSES = [
   BookingStatus.expired,
 ] as const
 
-/** True si el estado tiene un hold que puede vencer. Ver `STATUSES_WITH_HOLD`. */
-export function hasExpirableHold(status: string): boolean {
-  return (STATUSES_WITH_HOLD as readonly string[]).includes(status)
-}
-
 /** Lo mínimo de una reserva para decidir si tapa su horario. */
 export interface SlotOccupancyFields {
   status: string
   holdExpiresAt?: Date | null
+  approvalExpiresAt?: Date | null
   /** Ausente cuenta como "no sé, entonces tapa": ver `isSweepableExpiredHold`. */
   paymentStatus?: string | null
   paymentMethod?: string | null
@@ -163,18 +146,18 @@ export function initialPublicBookingStatus(args: {
  *
  * Es el mínimo entre la ventana de respuesta y la hora de la cita: una solicitud
  * para mañana a las 10 no puede seguir "esperando confirmación" a las 11. Se
- * guarda en `holdExpiresAt` (el campo y su índice `[status, holdExpiresAt]` ya
- * existen, y todo lo que lo lee filtra además por status).
+ * Se guarda en `approvalExpiresAt`, separado del hold de pago: los dos plazos
+ * nacen, vencen y se recalculan por reglas distintas.
  *
  * Como el tope se aplica **al escribir**, la hora de la cita queda persistida
  * adentro del plazo — y por eso **mover la cita obliga a recalcularlo**.
- * `rescheduledHoldPatch` (mutate.ts) vuelve a llamar acá con la cita nueva y el
+ * `rescheduledApprovalPatch` (mutate.ts) vuelve a llamar acá con la cita nueva y el
  * `createdAt` de la reserva: es el único caller que pasa un `now` del PASADO, y
  * justamente por eso reproduce el plazo que se habría guardado si la reserva
  * hubiera nacido con ese horario, en vez de estrenarle una ventana. Si algún día
  * el tope se mueve al leer (como en `holdDeadlinePromise`), ese recálculo sobra.
  */
-export function approvalHoldExpiresAt(startDateTime: Date, now = new Date()): Date {
+export function calculateApprovalExpiresAt(startDateTime: Date, now = new Date()): Date {
   const window = addHours(now, APPROVAL_WINDOW_HOURS)
   return window < startDateTime ? window : startDateTime
 }
