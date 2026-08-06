@@ -1,4 +1,7 @@
-import { executeUpstashCommand } from '@/lib/upstash-rest'
+import {
+  executeUpstashCommand,
+  UpstashCommandError,
+} from '@/lib/upstash-rest'
 
 export type DependencyStatus = 'up' | 'down' | 'not_configured' | 'not_required'
 export type ConfiguredDependencyStatus = Exclude<DependencyStatus, 'not_required'>
@@ -6,6 +9,22 @@ export type ConfiguredDependencyStatus = Exclude<DependencyStatus, 'not_required
 export const DEPENDENCY_TIMEOUT_MS = 3_000
 
 const REDIS_HEALTH_SCRIPT = 'return redis.call("PING")'
+
+type RedisHealthFailure =
+  | 'partial_configuration'
+  | 'timeout_or_network'
+  | 'http_status'
+  | 'invalid_response'
+
+function logRedisHealthFailure(
+  reason: RedisHealthFailure,
+  status?: number,
+): void {
+  console.error(
+    '[Health] Redis check failed',
+    status === undefined ? { reason } : { reason, status },
+  )
+}
 
 function timeoutSignal(): AbortSignal {
   return AbortSignal.timeout(DEPENDENCY_TIMEOUT_MS)
@@ -26,7 +45,11 @@ export function isDependencyReady(
 export async function probeRedis(): Promise<ConfiguredDependencyStatus> {
   const restUrl = process.env.UPSTASH_REDIS_REST_URL
   const restToken = process.env.UPSTASH_REDIS_REST_TOKEN
-  if (!restUrl || !restToken) return 'not_configured'
+  if (!restUrl && !restToken) return 'not_configured'
+  if (!restUrl || !restToken) {
+    logRedisHealthFailure('partial_configuration')
+    return 'down'
+  }
 
   try {
     const result = await executeUpstashCommand({
@@ -36,8 +59,15 @@ export async function probeRedis(): Promise<ConfiguredDependencyStatus> {
       args: [REDIS_HEALTH_SCRIPT, 0],
       signal: timeoutSignal(),
     })
-    return result === 'PONG' ? 'up' : 'down'
-  } catch {
+    if (result === 'PONG') return 'up'
+    logRedisHealthFailure('invalid_response')
+    return 'down'
+  } catch (error) {
+    if (error instanceof UpstashCommandError) {
+      logRedisHealthFailure(error.reason, error.status)
+    } else {
+      logRedisHealthFailure('timeout_or_network')
+    }
     return 'down'
   }
 }

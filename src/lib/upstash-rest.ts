@@ -6,6 +6,24 @@ export interface UpstashCommandInput {
   signal?: AbortSignal
 }
 
+export type UpstashCommandFailureReason = 'http_status' | 'invalid_response'
+
+export class UpstashCommandError extends Error {
+  readonly reason: UpstashCommandFailureReason
+  readonly status?: number
+
+  constructor(reason: UpstashCommandFailureReason, status?: number) {
+    super(
+      reason === 'http_status'
+        ? `Upstash Redis request failed with status ${status}`
+        : 'Upstash Redis invalid response',
+    )
+    this.name = 'UpstashCommandError'
+    this.reason = reason
+    this.status = status
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
@@ -35,18 +53,23 @@ export async function executeUpstashCommand({
   })
 
   if (!response.ok) {
-    throw new Error(`Upstash Redis request failed with status ${response.status}`)
+    throw new UpstashCommandError('http_status', response.status)
   }
 
-  const payload: unknown = await response.json()
+  let payload: unknown
+  try {
+    payload = await response.json()
+  } catch {
+    throw new UpstashCommandError('invalid_response')
+  }
   if (!isRecord(payload)) {
-    throw new Error('Upstash Redis invalid response')
+    throw new UpstashCommandError('invalid_response')
   }
   if ('error' in payload) {
-    throw new Error('Upstash Redis command failed')
+    throw new UpstashCommandError('invalid_response')
   }
   if (!('result' in payload)) {
-    throw new Error('Upstash Redis invalid response')
+    throw new UpstashCommandError('invalid_response')
   }
 
   return payload.result

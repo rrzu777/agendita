@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { executeUpstashCommand } from '@/lib/upstash-rest'
+import {
+  executeUpstashCommand,
+  UpstashCommandError,
+} from '@/lib/upstash-rest'
 
 describe('executeUpstashCommand', () => {
   afterEach(() => {
@@ -47,6 +50,8 @@ describe('executeUpstashCommand', () => {
     if (!(error instanceof Error)) {
       throw new TypeError('Expected executeUpstashCommand to reject with Error')
     }
+    expect(error).toBeInstanceOf(UpstashCommandError)
+    expect(error).toMatchObject({ reason: 'http_status', status: 401 })
     expect(error.message).toContain('status 401')
     expect(error.message).not.toContain('leaked-provider-body')
   })
@@ -69,6 +74,8 @@ describe('executeUpstashCommand', () => {
     if (!(error instanceof Error)) {
       throw new TypeError('Expected executeUpstashCommand to reject with Error')
     }
+    expect(error).toBeInstanceOf(UpstashCommandError)
+    expect(error).toMatchObject({ reason: 'invalid_response' })
     expect(error.message).not.toContain('leaked-provider-body')
   })
 

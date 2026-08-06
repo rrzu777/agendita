@@ -14,11 +14,24 @@ describe('dependency health probes', () => {
   })
 
   describe('probeRedis', () => {
-    it('returns not_configured unless both REST credentials exist', async () => {
-      vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://redis.example.com')
+    it('returns not_configured when both REST credentials are absent', async () => {
+      vi.stubEnv('UPSTASH_REDIS_REST_URL', '')
       vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', '')
 
       await expect(probeRedis()).resolves.toBe('not_configured')
+    })
+
+    it('marks partial configuration down without fetching', async () => {
+      vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://redis.example.com')
+      vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', '')
+      const fetchMock = vi.spyOn(global, 'fetch')
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+      await expect(probeRedis()).resolves.toBe('down')
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(errorSpy).toHaveBeenCalledWith('[Health] Redis check failed', {
+        reason: 'partial_configuration',
+      })
     })
 
     it('marks Redis up only when no-write EVAL returns PONG', async () => {
@@ -49,8 +62,12 @@ describe('dependency health probes', () => {
       vi.spyOn(global, 'fetch').mockResolvedValue(
         new Response(JSON.stringify({ result }), { status: 200 }),
       )
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
       await expect(probeRedis()).resolves.toBe('down')
+      expect(errorSpy).toHaveBeenCalledWith('[Health] Redis check failed', {
+        reason: 'invalid_response',
+      })
     })
 
     it('marks an HTTP rejection down', async () => {
@@ -59,8 +76,31 @@ describe('dependency health probes', () => {
       vi.spyOn(global, 'fetch').mockResolvedValue(
         new Response('private-provider-detail', { status: 401 }),
       )
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
       await expect(probeRedis()).resolves.toBe('down')
+      expect(errorSpy).toHaveBeenCalledWith('[Health] Redis check failed', {
+        reason: 'http_status',
+        status: 401,
+      })
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('redis-token')
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('redis.example.com')
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('private-provider-detail')
+    })
+
+    it('logs a sanitized category when the request rejects', async () => {
+      vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://redis.example.com')
+      vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'redis-token')
+      vi.spyOn(global, 'fetch').mockRejectedValue(
+        new DOMException('private-network-detail', 'AbortError'),
+      )
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+      await expect(probeRedis()).resolves.toBe('down')
+      expect(errorSpy).toHaveBeenCalledWith('[Health] Redis check failed', {
+        reason: 'timeout_or_network',
+      })
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('private-network-detail')
     })
   })
 
