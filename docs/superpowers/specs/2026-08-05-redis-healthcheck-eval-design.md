@@ -1,6 +1,6 @@
 # Redis health check con EVAL no mutante
 
-**Fecha:** 2026-08-05  
+**Fecha:** 2026-08-05
 **Estado:** diseño aprobado
 
 ## Contexto
