@@ -78,6 +78,9 @@ no demuestra entrega.
 
 `mercadoPago: up` sólo valida el token global usado por el lookup inicial del
 webhook. No prueba tokens OAuth de negocios, cobro, webhook ni settlement.
+Ese token global también es requerido cuando se usa OAuth por negocio sin
+`PAYMENT_PROVIDER` explícito, porque el webhook todavía lo necesita para descubrir
+el `external_reference` antes de conocer el negocio.
 
 ## 6. Smoke posterior a la recuperación
 

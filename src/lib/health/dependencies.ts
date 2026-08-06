@@ -119,8 +119,19 @@ export async function probeResend(): Promise<ConfiguredDependencyStatus> {
   }
 }
 
+export function isMercadoPagoRequired(): boolean {
+  if (process.env.PAYMENT_PROVIDER === 'mercado_pago') return true
+  if (process.env.PAYMENT_PROVIDER) return false
+
+  return Boolean(
+    process.env.MERCADO_PAGO_CLIENT_ID
+    && process.env.MERCADO_PAGO_CLIENT_SECRET
+    && process.env.MERCADO_PAGO_REDIRECT_URI,
+  )
+}
+
 export async function probeMercadoPago(): Promise<DependencyStatus> {
-  if (process.env.PAYMENT_PROVIDER !== 'mercado_pago') {
+  if (!isMercadoPagoRequired()) {
     return 'not_required'
   }
 

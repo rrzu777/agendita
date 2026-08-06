@@ -92,17 +92,21 @@ El endpoint ejecutará en paralelo y con timeout de tres segundos:
 - `GET https://api.resend.com/domains`, sólo si `RESEND_API_KEY` está configurada;
   exige HTTP exitoso y al menos el contrato JSON esperado. Esto valida la llave,
   no la entrega de un email.
-- `GET https://api.mercadopago.com/users/me` con el token global, sólo cuando
-  `PAYMENT_PROVIDER=mercado_pago`; valida la credencial que el webhook usa para su
-  lookup inicial, no los tokens OAuth de cada negocio ni un pago completo.
+- `GET https://api.mercadopago.com/users/me` con el token global cuando
+  `PAYMENT_PROVIDER=mercado_pago` o cuando el modo OAuth por negocio está completo
+  sin provider explícito; valida la credencial que el webhook usa para su lookup
+  inicial, no los tokens OAuth de cada negocio ni un pago completo.
 
 La respuesta autenticada contiene únicamente estados `up`, `down`,
 `not_configured` o `not_required`. Un request sin secreto válido recibe `401` sin
 revelar si el secreto está configurado.
 
-En producción, Upstash y Resend son requeridos. Mercado Pago es requerido sólo
-cuando `PAYMENT_PROVIDER=mercado_pago`; con `manual` queda `not_required`. Cualquier
-dependencia requerida que no esté `up` produce HTTP `503`.
+En producción, Upstash y Resend son requeridos. Mercado Pago es requerido cuando
+`PAYMENT_PROVIDER=mercado_pago` o cuando están completos
+`MERCADO_PAGO_CLIENT_ID`, `MERCADO_PAGO_CLIENT_SECRET` y
+`MERCADO_PAGO_REDIRECT_URI` sin provider explícito; con `manual` queda
+`not_required`. Cualquier dependencia requerida que no esté `up` produce HTTP
+`503`.
 
 ### 3. Monitor independiente en GitHub Actions
 
@@ -147,8 +151,8 @@ El documento sólo enumerará nombres de variables y verificaciones; nunca valor
   o resultado inesperado producen Redis `down` y HTTP `503`; una dependencia
   requerida ausente conserva `not_configured` en el detalle pero degrada producción.
 - Health profundo: auth fail-closed; probes paralelos; Resend inválido y token
-  global MP inválido producen `503`; MP manual produce `not_required`; nunca se
-  filtra el cuerpo de error del proveedor.
+  global MP inválido producen `503`, incluido el modo OAuth sin provider; MP
+  manual produce `not_required`; nunca se filtra el cuerpo de error del proveedor.
 - Workflow: revisión de sintaxis y ejecución manual tras el deploy de `main`;
   reintentos acotados y failure visible sin tocar `Scheduled crons`.
 - Validación final focalizada, lint, typecheck/build y `git diff --check`.

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { hasValidBearerSecret } from '@/lib/auth/bearer-secret'
 import {
   isDependencyReady,
+  isMercadoPagoRequired,
   probeMercadoPago,
   probeRedis,
   probeResend,
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
     && isDependencyReady(checks.resend, production)
     && isDependencyReady(
       checks.mercadoPago,
-      process.env.PAYMENT_PROVIDER === 'mercado_pago',
+      isMercadoPagoRequired(),
     )
   const status: DependencyHealthResponse['status'] = healthy ? 'ok' : 'degraded'
 

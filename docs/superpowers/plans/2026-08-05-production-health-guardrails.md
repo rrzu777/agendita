@@ -13,7 +13,7 @@
 - Leer y respetar `node_modules/next/dist/docs/01-app/01-getting-started/15-route-handlers.md` antes de modificar Route Handlers.
 - Cada request externo tiene timeout de `3_000` ms y `cache: 'no-store'`.
 - El probe de Redis usa `EVAL` con un script sin escrituras que retorna `redis.call("PING")`; sólo `PONG` significa `up`.
-- En producción Redis, Supabase y Resend son requeridos; Mercado Pago es requerido sólo cuando `PAYMENT_PROVIDER=mercado_pago`.
+- En producción Redis, Supabase y Resend son requeridos; Mercado Pago es requerido con `PAYMENT_PROVIDER=mercado_pago` o con OAuth completo sin provider explícito.
 - Los endpoints nunca devuelven URLs, tokens, cuerpos de error ni mensajes crudos de proveedores.
 - El endpoint profundo reutiliza `CRON_SECRET` con `hasValidBearerSecret` y falla cerrado con HTTP 401.
 - El workflow de salud es independiente de `.github/workflows/cron.yml` y no modifica ni serializa los crons existentes.
@@ -393,8 +393,18 @@ En el mismo módulo, implementar exactamente los otros tres probes:
       }
     }
 
+    export function isMercadoPagoRequired(): boolean {
+      if (process.env.PAYMENT_PROVIDER === 'mercado_pago') return true
+      if (process.env.PAYMENT_PROVIDER) return false
+      return Boolean(
+        process.env.MERCADO_PAGO_CLIENT_ID
+        && process.env.MERCADO_PAGO_CLIENT_SECRET
+        && process.env.MERCADO_PAGO_REDIRECT_URI
+      )
+    }
+
     export async function probeMercadoPago(): Promise<DependencyStatus> {
-      if (process.env.PAYMENT_PROVIDER !== 'mercado_pago') return 'not_required'
+      if (!isMercadoPagoRequired()) return 'not_required'
       const token = process.env.MERCADO_PAGO_ACCESS_TOKEN
       if (!token) return 'not_configured'
 
@@ -660,6 +670,7 @@ import { NextResponse } from 'next/server'
 import { hasValidBearerSecret } from '@/lib/auth/bearer-secret'
 import {
   isDependencyReady,
+  isMercadoPagoRequired,
   probeMercadoPago,
   probeRedis,
   probeResend,
@@ -692,7 +703,7 @@ export async function GET(request: Request) {
   const production = process.env.NODE_ENV === 'production'
   const healthy = isDependencyReady(redis, production)
     && isDependencyReady(resend, production)
-    && isDependencyReady(mercadoPago, process.env.PAYMENT_PROVIDER === 'mercado_pago')
+    && isDependencyReady(mercadoPago, isMercadoPagoRequired())
   const status: DependencyHealthResponse['status'] = healthy ? 'ok' : 'degraded'
 
   return NextResponse.json(
@@ -891,7 +902,8 @@ Confirmar manualmente:
 - El rate limiter mantiene Lua/contadores/fail-closed y agrega timeout 3s.
 - Todos los probes capturan errores y nunca incluyen cuerpos externos.
 - Auth inválida no ejecuta probes y responde 401 uniforme.
-- Producción degrada `not_configured`; MP manual queda `not_required`.
+- Producción degrada `not_configured`; MP manual queda `not_required` y OAuth
+  completo sin provider sigue exigiendo el token global del webhook.
 - El workflow tiene tres intentos, corre cada 15 minutos y no toca `cron.yml`.
 - El runbook diferencia credencial sana de entrega/pago real.
 

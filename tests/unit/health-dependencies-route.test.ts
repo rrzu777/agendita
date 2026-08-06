@@ -152,4 +152,23 @@ describe('GET /api/health/dependencies', () => {
     expect(body.status).toBe('degraded')
     expect(body.checks[checkKey]).toBe('not_configured')
   })
+
+  it('degrades OAuth-only Mercado Pago mode without the required global token', async () => {
+    setRequiredEnv()
+    vi.stubEnv('PAYMENT_PROVIDER', '')
+    vi.stubEnv('MERCADO_PAGO_CLIENT_ID', 'client-id')
+    vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
+    vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://app.example.com/callback')
+    vi.stubEnv('MERCADO_PAGO_ACCESS_TOKEN', '')
+    mockProviders()
+
+    const response = await GET(request('expected'))
+    const body = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(body).toMatchObject({
+      status: 'degraded',
+      checks: { mercadoPago: 'not_configured' },
+    })
+  })
 })

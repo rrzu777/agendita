@@ -197,6 +197,25 @@ describe('dependency health probes', () => {
       await expect(probeMercadoPago()).resolves.toBe('not_configured')
     })
 
+    it('requires the global token in OAuth-only Mercado Pago mode', async () => {
+      vi.stubEnv('PAYMENT_PROVIDER', '')
+      vi.stubEnv('MERCADO_PAGO_CLIENT_ID', 'client-id')
+      vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
+      vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://app.example.com/callback')
+      vi.stubEnv('MERCADO_PAGO_ACCESS_TOKEN', '')
+
+      await expect(probeMercadoPago()).resolves.toBe('not_configured')
+    })
+
+    it('keeps manual payments not_required even when OAuth credentials exist', async () => {
+      vi.stubEnv('PAYMENT_PROVIDER', 'manual')
+      vi.stubEnv('MERCADO_PAGO_CLIENT_ID', 'client-id')
+      vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
+      vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://app.example.com/callback')
+
+      await expect(probeMercadoPago()).resolves.toBe('not_required')
+    })
+
     it('requires a successful identity payload', async () => {
       vi.stubEnv('PAYMENT_PROVIDER', 'mercado_pago')
       vi.stubEnv('MERCADO_PAGO_ACCESS_TOKEN', 'mp-token')
