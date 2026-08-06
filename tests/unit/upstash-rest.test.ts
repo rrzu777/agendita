@@ -44,6 +44,9 @@ describe('executeUpstashCommand', () => {
     }).catch(value => value)
 
     expect(error).toBeInstanceOf(Error)
+    if (!(error instanceof Error)) {
+      throw new TypeError('Expected executeUpstashCommand to reject with Error')
+    }
     expect(error.message).toContain('status 401')
     expect(error.message).not.toContain('leaked-provider-body')
   })
@@ -63,6 +66,9 @@ describe('executeUpstashCommand', () => {
     }).catch(value => value)
 
     expect(error).toBeInstanceOf(Error)
+    if (!(error instanceof Error)) {
+      throw new TypeError('Expected executeUpstashCommand to reject with Error')
+    }
     expect(error.message).not.toContain('leaked-provider-body')
   })
 
