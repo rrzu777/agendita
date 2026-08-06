@@ -225,6 +225,22 @@ describe('RateLimiter', () => {
   })
 
   describe('RedisRateLimiter', () => {
+    it('bounds the Upstash request to three seconds', async () => {
+      const controller = new AbortController()
+      const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal)
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ result: [1, 9, 60] }),
+      } as Response)
+
+      const { RedisRateLimiter } = await import('@/lib/rate-limit')
+      await new RedisRateLimiter('https://test.upstash.io', 'token')
+        .check('create-booking', 10, 60_000, { ip: '1.2.3.4' })
+
+      expect(timeoutSpy).toHaveBeenCalledWith(3_000)
+      expect(fetchMock.mock.calls[0][1]?.signal).toBe(controller.signal)
+    })
+
     it('allows request when Redis returns allowed', async () => {
       const { RedisRateLimiter } = await import('@/lib/rate-limit')
       const limiter = new RedisRateLimiter('https://test.upstash.io', 'token')

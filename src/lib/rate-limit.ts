@@ -12,6 +12,7 @@
  */
 
 import { headers as nextHeaders } from 'next/headers'
+import { executeUpstashCommand } from '@/lib/upstash-rest'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -196,8 +197,8 @@ export class MemoryRateLimiter implements RateLimiter {
  * Upstash Redis REST API rate limiter.
  * Uses the Upstash REST API (HTTP) — compatible with serverless.
  *
- * API endpoint: POST /v1/eval
- * Docs: https://upstash.com/docs/redis/overall/getstarted
+ * API endpoint: POST to the REST base URL with a flat command array.
+ * Docs: https://upstash.com/docs/redis/features/restapi
  *
  * Fails closed if Redis is unreachable (returns blocked).
  * Logs all Redis errors for observability.
@@ -209,32 +210,6 @@ export class RedisRateLimiter implements RateLimiter {
   constructor(restUrl: string, restToken: string) {
     this.restUrl = restUrl.replace(/\/$/, '')
     this.restToken = restToken
-  }
-
-  private async redisCommand(
-    command: string,
-    args: (string | number)[]
-  ): Promise<unknown> {
-    // Upstash REST API: a single command is POSTed to the base URL as a flat
-    // JSON array ["CMD", arg1, ...] and returns { result } (or { error }).
-    // (The previous "/v1/commands" path doesn't exist → every call 404'd, which
-    // tripped the fail-closed branch and blocked all rate-limited mutations.)
-    const res = await fetch(this.restUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.restToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify([command, ...args]),
-    })
-    if (!res.ok) {
-      throw new Error(`Upstash Redis error: ${res.status} ${res.statusText}`)
-    }
-    const json = await res.json()
-    if (json.error) {
-      throw new Error(`Upstash Redis error: ${json.error}`)
-    }
-    return json.result
   }
 
   async check(
@@ -277,13 +252,13 @@ export class RedisRateLimiter implements RateLimiter {
     `
 
     try {
-      const result = await this.redisCommand('EVAL', [
-        script,
-        1,
-        key,
-        maxRequests,
-        windowSec,
-      ]) as [number, number, number]
+      const result = await executeUpstashCommand({
+        restUrl: this.restUrl,
+        restToken: this.restToken,
+        command: 'EVAL',
+        args: [script, 1, key, maxRequests, windowSec],
+        signal: AbortSignal.timeout(3_000),
+      }) as [number, number, number]
 
       const [allowed, remaining, ttlSec] = result
       const resetAt = now + Math.max(0, ttlSec) * 1000
