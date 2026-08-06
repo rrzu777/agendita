@@ -60,10 +60,12 @@ function validate() {
     !!getEnv('MERCADO_PAGO_REDIRECT_URI')
 
   if (!provider && !hasMpOAuth) {
-    console.warn('⚠  PAYMENT_PROVIDER not configured. Online payments disabled. Set to manual for dashboard-only reservations.')
+    console.warn(
+      '⚠  PAYMENT_PROVIDER not configured. Online payments disabled. Set to manual for dashboard-only reservations.',
+    )
   } else if (provider && !VALID_PAYMENT_PROVIDERS.includes(provider)) {
     errors.push(
-      `Invalid PAYMENT_PROVIDER: "${provider}". Must be one of: ${VALID_PAYMENT_PROVIDERS.join(', ')}`
+      `Invalid PAYMENT_PROVIDER: "${provider}". Must be one of: ${VALID_PAYMENT_PROVIDERS.join(', ')}`,
     )
   }
 
@@ -75,7 +77,9 @@ function validate() {
 
   const pubAppDomain = getEnv('NEXT_PUBLIC_APP_DOMAIN')
   if (pubAppDomain && hasPath(pubAppDomain)) {
-    errors.push('NEXT_PUBLIC_APP_DOMAIN must not contain a path. Use hostname only.')
+    errors.push(
+      'NEXT_PUBLIC_APP_DOMAIN must not contain a path. Use hostname only.',
+    )
   }
 
   // ── NEXT_PUBLIC_SUPABASE_URL format ───────────────────────────────────
@@ -96,54 +100,66 @@ function validate() {
     const allowMock = getEnv('ALLOW_MOCK_PAYMENTS_IN_PRODUCTION')
     if (!allowMock || !isStrictBoolean(allowMock)) {
       errors.push(
-        'ALLOW_MOCK_PAYMENTS_IN_PRODUCTION must be "true" or "false" in production when PAYMENT_PROVIDER=mock.'
+        'ALLOW_MOCK_PAYMENTS_IN_PRODUCTION must be "true" or "false" in production when PAYMENT_PROVIDER=mock.',
       )
     } else if (allowMock.toLowerCase() !== 'true') {
       errors.push(
-        'PAYMENT_PROVIDER=mock in production requires ALLOW_MOCK_PAYMENTS_IN_PRODUCTION=true.'
+        'PAYMENT_PROVIDER=mock in production requires ALLOW_MOCK_PAYMENTS_IN_PRODUCTION=true.',
       )
     }
   }
 
   // ── Mercado Pago in production ─────────────────────────────────────────
-  if (isProduction && provider === 'mercado_pago') {
-    if (!hasMpOAuth && !getEnv('MERCADO_PAGO_ACCESS_TOKEN')) {
-      errors.push('MISSING: MERCADO_PAGO_ACCESS_TOKEN (required in production with Mercado Pago, or configure OAuth)')
+  // OAuth enables per-business checkout, but the webhook still needs the
+  // global token for its initial payment lookup before the business is known.
+  const mercadoPagoEnabled =
+    provider === 'mercado_pago' || (!provider && hasMpOAuth)
+  if (isProduction && mercadoPagoEnabled) {
+    if (!getEnv('MERCADO_PAGO_ACCESS_TOKEN')) {
+      errors.push(
+        'MISSING: MERCADO_PAGO_ACCESS_TOKEN (required for the initial webhook payment lookup)',
+      )
     }
     if (!getEnv('MERCADO_PAGO_WEBHOOK_SECRET')) {
-      errors.push('MISSING: MERCADO_PAGO_WEBHOOK_SECRET (required in production with Mercado Pago)')
+      errors.push(
+        'MISSING: MERCADO_PAGO_WEBHOOK_SECRET (required in production with Mercado Pago)',
+      )
     }
     if (!getEnv('ENCRYPTION_KEY')) {
-      errors.push('MISSING: ENCRYPTION_KEY (required in production with Mercado Pago for token encryption)')
-    }
-  } else if (isProduction && hasMpOAuth && !provider) {
-    if (!getEnv('MERCADO_PAGO_WEBHOOK_SECRET')) {
-      errors.push('MISSING: MERCADO_PAGO_WEBHOOK_SECRET (required in production with Mercado Pago OAuth)')
-    }
-    if (!getEnv('ENCRYPTION_KEY')) {
-      errors.push('MISSING: ENCRYPTION_KEY (required in production with Mercado Pago for token encryption)')
+      errors.push(
+        'MISSING: ENCRYPTION_KEY (required in production with Mercado Pago for token encryption)',
+      )
     }
   }
 
   // ── Upstash Redis — REQUIRED in production (rate limiting fails closed) ─
   if (isProduction) {
-    if (!getEnv('UPSTASH_REDIS_REST_URL') || !getEnv('UPSTASH_REDIS_REST_TOKEN')) {
-      errors.push('MISSING: UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN (required in production — rate limiting fails closed without a distributed store)')
+    if (
+      !getEnv('UPSTASH_REDIS_REST_URL') ||
+      !getEnv('UPSTASH_REDIS_REST_TOKEN')
+    ) {
+      errors.push(
+        'MISSING: UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN (required in production — rate limiting fails closed without a distributed store)',
+      )
     }
   }
 
   // ── ALLOW_MOCK_PAYMENTS_IN_PRODUCTION format ───────────────────────────
   const allowMock = getEnv('ALLOW_MOCK_PAYMENTS_IN_PRODUCTION')
-  if (allowMock !== undefined && allowMock !== '' && !isStrictBoolean(allowMock)) {
+  if (
+    allowMock !== undefined &&
+    allowMock !== '' &&
+    !isStrictBoolean(allowMock)
+  ) {
     errors.push(
-      `ALLOW_MOCK_PAYMENTS_IN_PRODUCTION="${allowMock}" must be "true" or "false".`
+      `ALLOW_MOCK_PAYMENTS_IN_PRODUCTION="${allowMock}" must be "true" or "false".`,
     )
   }
 
   // ── Result ────────────────────────────────────────────────────────────
   if (errors.length) {
     console.error('\n❌ Environment validation failed:\n')
-    errors.forEach(e => console.error(`  - ${e}`))
+    errors.forEach((e) => console.error(`  - ${e}`))
     console.error('\n')
     process.exit(1)
   }

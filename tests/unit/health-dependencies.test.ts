@@ -34,13 +34,13 @@ describe('dependency health probes', () => {
       })
     })
 
-    it('marks Redis up only when no-write EVAL returns PONG', async () => {
+    it('marks Redis up only when no-write EVAL returns 1', async () => {
       vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://redis.example.com')
       vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'redis-token')
       const controller = new AbortController()
       const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal)
       const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(
-        new Response(JSON.stringify({ result: 'PONG' }), { status: 200 }),
+        new Response(JSON.stringify({ result: 1 }), { status: 200 }),
       )
 
       await expect(probeRedis()).resolves.toBe('up')
@@ -49,7 +49,7 @@ describe('dependency health probes', () => {
       expect(url).toBe('https://redis.example.com')
       expect(JSON.parse(init.body as string)).toEqual([
         'EVAL',
-        'return redis.call("PING")',
+        'return 1',
         0,
       ])
       expect(timeoutSpy).toHaveBeenCalledWith(3_000)
@@ -149,25 +149,31 @@ describe('dependency health probes', () => {
       await expect(probeResend()).resolves.toBe('not_configured')
     })
 
-    it('validates the list-domains contract', async () => {
+    it('authenticates a sending-only key without sending an email', async () => {
       vi.stubEnv('RESEND_API_KEY', 'resend-token')
       const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(
-        new Response(JSON.stringify({ object: 'list', data: [] }), { status: 200 }),
+        new Response(JSON.stringify({ name: 'missing_required_field' }), { status: 422 }),
       )
 
       await expect(probeResend()).resolves.toBe('up')
       expect(fetchMock).toHaveBeenCalledWith(
-        'https://api.resend.com/domains',
+        'https://api.resend.com/emails',
         expect.objectContaining({
-          headers: { Authorization: 'Bearer resend-token' },
+          method: 'POST',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer resend-token',
+            'Content-Type': 'application/json',
+            'User-Agent': 'agendita-health/1.0',
+          }),
+          body: '{}',
           cache: 'no-store',
         }),
       )
     })
 
     it.each([
-      new Response('private-provider-detail', { status: 401 }),
-      new Response(JSON.stringify({ object: 'list', data: null }), { status: 200 }),
+      new Response('private-provider-detail', { status: 403 }),
+      new Response(JSON.stringify({ name: 'validation_error' }), { status: 422 }),
     ])('marks an invalid provider response down', async response => {
       vi.stubEnv('RESEND_API_KEY', 'resend-token')
       vi.spyOn(global, 'fetch').mockResolvedValue(response)

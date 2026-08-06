@@ -26,11 +26,11 @@ type ProviderOverrides = {
 function providerResponse(url: string, overrides: ProviderOverrides = {}): Response {
   if (url.includes('redis.example.com')) {
     return overrides.redis
-      ?? new Response(JSON.stringify({ result: 'PONG' }), { status: 200 })
+      ?? new Response(JSON.stringify({ result: 1 }), { status: 200 })
   }
   if (url.includes('resend.com')) {
     return overrides.resend
-      ?? new Response(JSON.stringify({ object: 'list', data: [] }), { status: 200 })
+      ?? new Response(JSON.stringify({ name: 'missing_required_field' }), { status: 422 })
   }
   if (url.includes('mercadopago.com')) {
     return overrides.mercadoPago
