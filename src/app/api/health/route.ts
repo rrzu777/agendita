@@ -13,6 +13,19 @@ type HealthCheck = {
   timestamp: string
 }
 
+type RedisHealthFailure =
+  | 'partial_configuration'
+  | 'timeout_or_network'
+  | 'http_status'
+  | 'invalid_response'
+
+function logRedisHealthFailure(reason: RedisHealthFailure, status?: number): void {
+  console.error(
+    '[Health] Redis check failed',
+    status === undefined ? { reason } : { reason, status }
+  )
+}
+
 export async function GET(): Promise<NextResponse<HealthCheck>> {
   const checks: HealthCheck['checks'] = {
     db: 'down',
@@ -30,15 +43,46 @@ export async function GET(): Promise<NextResponse<HealthCheck>> {
 
   // Check Redis (Upstash) if configured
   const redisUrl = process.env.UPSTASH_REDIS_REST_URL
-  if (redisUrl) {
-    try {
-      const response = await fetch(`${redisUrl}/`, {
-        headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN ?? ''}` },
-        signal: AbortSignal.timeout(3000),
-      })
-      checks.redis = response.ok ? 'up' : 'down'
-    } catch {
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN
+  if (redisUrl || redisToken) {
+    if (!redisUrl || !redisToken) {
       checks.redis = 'down'
+      logRedisHealthFailure('partial_configuration')
+    } else {
+      try {
+        const response = await fetch(redisUrl.replace(/\/$/, ''), {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${redisToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(['EVAL', 'return 1', 0]),
+          signal: AbortSignal.timeout(3000),
+        })
+
+        if (!response.ok) {
+          checks.redis = 'down'
+          logRedisHealthFailure('http_status', response.status)
+        } else {
+          const payload: unknown = await response.json()
+          checks.redis =
+            typeof payload === 'object' &&
+            payload !== null &&
+            'result' in payload &&
+            payload.result === 1
+              ? 'up'
+              : 'down'
+
+          if (checks.redis === 'down') {
+            logRedisHealthFailure('invalid_response')
+          }
+        }
+      } catch (error) {
+        checks.redis = 'down'
+        logRedisHealthFailure(
+          error instanceof SyntaxError ? 'invalid_response' : 'timeout_or_network'
+        )
+      }
     }
   }
 
@@ -60,13 +104,12 @@ export async function GET(): Promise<NextResponse<HealthCheck>> {
     }
   }
 
-  const allUp = checks.db === 'up' && checks.redis === 'not_configured' && checks.supabase === 'not_configured'
   const status: HealthCheck['status'] =
-    checks.db === 'up' && (checks.redis === 'up' || checks.redis === 'not_configured') && (checks.supabase === 'up' || checks.supabase === 'not_configured')
+    checks.db === 'up' &&
+    (checks.redis === 'up' || checks.redis === 'not_configured') &&
+    (checks.supabase === 'up' || checks.supabase === 'not_configured')
       ? 'ok'
-      : checks.db === 'up'
-        ? 'degraded'
-        : 'degraded'
+      : 'degraded'
 
   return NextResponse.json(
     { status, checks, timestamp: new Date().toISOString() },
