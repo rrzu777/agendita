@@ -20,7 +20,7 @@ El script no lee ni escribe claves. Redis se considerará `up` únicamente cuand
 
 La URL se normalizará eliminando un slash final, igual que `RedisRateLimiter`. Si faltan tanto URL como token, Redis seguirá como `not_configured`; si sólo existe una de las dos variables, quedará `down` sin hacer una petición incompleta. Cualquier error de red, timeout, HTTP no exitoso, JSON inválido o resultado inesperado conservará el estado `down` y el endpoint responderá `503`.
 
-Los fallos registrarán server-side sólo una categoría segura (`timeout_or_network`, `http_status` o `invalid_response`). No se incluirán URL, token ni body remoto.
+Los fallos registrarán server-side sólo una categoría segura (`partial_configuration`, `timeout_or_network`, `http_status` o `invalid_response`). No se incluirán URL, token ni body remoto.
 
 ## Alcance
 
