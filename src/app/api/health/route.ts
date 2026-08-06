@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { probeDatabase } from '@/lib/health/database'
 import {
   isDependencyReady,
   probeRedis,
@@ -19,15 +19,6 @@ type HealthCheck = {
   timestamp: string
 }
 
-async function probeDatabase(): Promise<'up' | 'down'> {
-  try {
-    await prisma.$queryRaw`SELECT 1`
-    return 'up'
-  } catch {
-    return 'down'
-  }
-}
-
 export async function GET(): Promise<NextResponse<HealthCheck>> {
   const [db, redis, supabase] = await Promise.all([
     probeDatabase(),
@@ -36,13 +27,14 @@ export async function GET(): Promise<NextResponse<HealthCheck>> {
   ])
   const checks: HealthCheck['checks'] = { db, redis, supabase }
   const required = process.env.NODE_ENV === 'production'
-  const healthy = checks.db === 'up'
-    && isDependencyReady(checks.redis, required)
-    && isDependencyReady(checks.supabase, required)
+  const healthy =
+    checks.db === 'up' &&
+    isDependencyReady(checks.redis, required) &&
+    isDependencyReady(checks.supabase, required)
   const status: HealthCheck['status'] = healthy ? 'ok' : 'degraded'
 
   return NextResponse.json(
     { status, checks, timestamp: new Date().toISOString() },
-    { status: status === 'ok' ? 200 : 503 }
+    { status: status === 'ok' ? 200 : 503 },
   )
 }

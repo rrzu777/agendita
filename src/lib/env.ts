@@ -14,8 +14,13 @@ export type EnvValidationResult = {
   warnings: EnvValidationError[]
 }
 
-const VALID_PAYMENT_PROVIDERS = ['mock', 'manual', 'mercado_pago', 'webpay'] as const
-export type PaymentProvider = typeof VALID_PAYMENT_PROVIDERS[number]
+const VALID_PAYMENT_PROVIDERS = [
+  'mock',
+  'manual',
+  'mercado_pago',
+  'webpay',
+] as const
+export type PaymentProvider = (typeof VALID_PAYMENT_PROVIDERS)[number]
 
 function isValidUrl(value: string): boolean {
   try {
@@ -56,7 +61,9 @@ export function getOptionalEnvBoolean(key: string): boolean | undefined {
   const raw = optionalString(process.env[key])
   if (!raw) return undefined
   if (!isStrictBoolean(raw)) {
-    throw new Error(`Invalid boolean value for ${key}: "${raw}". Expected "true" or "false".`)
+    throw new Error(
+      `Invalid boolean value for ${key}: "${raw}". Expected "true" or "false".`,
+    )
   }
   return raw.toLowerCase() === 'true'
 }
@@ -101,12 +108,14 @@ export function validateEnv(): EnvValidationResult {
       // flows are undefined otherwise.
       errors.push({
         key: 'PAYMENT_PROVIDER',
-        message: 'PAYMENT_PROVIDER is required in production. Set it to manual for dashboard-only reservations, or configure Mercado Pago OAuth for multi-tenant online payments.',
+        message:
+          'PAYMENT_PROVIDER is required in production. Set it to manual for dashboard-only reservations, or configure Mercado Pago OAuth for multi-tenant online payments.',
       })
     } else {
       warnings.push({
         key: 'PAYMENT_PROVIDER',
-        message: 'PAYMENT_PROVIDER is not configured. Set it to manual for dashboard-only reservations, or configure Mercado Pago OAuth for multi-tenant online payments.',
+        message:
+          'PAYMENT_PROVIDER is not configured. Set it to manual for dashboard-only reservations, or configure Mercado Pago OAuth for multi-tenant online payments.',
       })
     }
   }
@@ -140,7 +149,10 @@ export function validateEnv(): EnvValidationResult {
 
   // --- PAYMENT_PROVIDER enum ---
   const configured = process.env.PAYMENT_PROVIDER
-  if (configured && !VALID_PAYMENT_PROVIDERS.includes(configured as PaymentProvider)) {
+  if (
+    configured &&
+    !VALID_PAYMENT_PROVIDERS.includes(configured as PaymentProvider)
+  ) {
     errors.push({
       key: 'PAYMENT_PROVIDER',
       message: `PAYMENT_PROVIDER="${configured}" is invalid. Must be one of: ${VALID_PAYMENT_PROVIDERS.join(', ')}`,
@@ -151,7 +163,8 @@ export function validateEnv(): EnvValidationResult {
   if (isProduction && !configured && !hasMpOAuth) {
     warnings.push({
       key: 'PAYMENT_PROVIDER',
-      message: 'PAYMENT_PROVIDER is not configured. Online payments disabled. Set to manual for dashboard-only reservations.',
+      message:
+        'PAYMENT_PROVIDER is not configured. Online payments disabled. Set to manual for dashboard-only reservations.',
     })
   }
 
@@ -161,7 +174,8 @@ export function validateEnv(): EnvValidationResult {
     if (!allowMock || !isStrictBoolean(allowMock)) {
       errors.push({
         key: 'ALLOW_MOCK_PAYMENTS_IN_PRODUCTION',
-        message: 'Mock payments are not allowed in production. Set ALLOW_MOCK_PAYMENTS_IN_PRODUCTION=true to override.',
+        message:
+          'Mock payments are not allowed in production. Set ALLOW_MOCK_PAYMENTS_IN_PRODUCTION=true to override.',
       })
     } else if (allowMock.toLowerCase() !== 'true') {
       errors.push({
@@ -181,36 +195,30 @@ export function validateEnv(): EnvValidationResult {
   }
 
   // --- Mercado Pago in production ---
-  if (isProduction && configured === 'mercado_pago') {
-    if (!hasMpOAuth && !process.env.MERCADO_PAGO_ACCESS_TOKEN) {
+  // OAuth enables per-business checkout, but the webhook still needs the global
+  // token for its initial payment lookup before the business is known.
+  const mercadoPagoEnabled =
+    configured === 'mercado_pago' || (!configured && hasMpOAuth)
+  if (isProduction && mercadoPagoEnabled) {
+    if (!process.env.MERCADO_PAGO_ACCESS_TOKEN) {
       errors.push({
         key: 'MERCADO_PAGO_ACCESS_TOKEN',
-        message: 'MERCADO_PAGO_ACCESS_TOKEN is required in production with Mercado Pago (or configure OAuth: CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)',
+        message:
+          'MERCADO_PAGO_ACCESS_TOKEN is required in production for the initial webhook payment lookup',
       })
     }
     if (!process.env.MERCADO_PAGO_WEBHOOK_SECRET) {
       errors.push({
         key: 'MERCADO_PAGO_WEBHOOK_SECRET',
-        message: 'MERCADO_PAGO_WEBHOOK_SECRET is required in production with Mercado Pago',
+        message:
+          'MERCADO_PAGO_WEBHOOK_SECRET is required in production with Mercado Pago',
       })
     }
     if (!process.env.ENCRYPTION_KEY) {
       errors.push({
         key: 'ENCRYPTION_KEY',
-        message: 'ENCRYPTION_KEY is required in production with Mercado Pago for per-business token encryption',
-      })
-    }
-  } else if (isProduction && hasMpOAuth && !configured) {
-    if (!process.env.MERCADO_PAGO_WEBHOOK_SECRET) {
-      errors.push({
-        key: 'MERCADO_PAGO_WEBHOOK_SECRET',
-        message: 'MERCADO_PAGO_WEBHOOK_SECRET is required in production with Mercado Pago OAuth',
-      })
-    }
-    if (!process.env.ENCRYPTION_KEY) {
-      errors.push({
-        key: 'ENCRYPTION_KEY',
-        message: 'ENCRYPTION_KEY is required in production with Mercado Pago for per-business token encryption',
+        message:
+          'ENCRYPTION_KEY is required in production with Mercado Pago for per-business token encryption',
       })
     }
   }
@@ -223,7 +231,8 @@ export function validateEnv(): EnvValidationResult {
       if (!hasFromEmail) {
         warnings.push({
           key: 'FROM_EMAIL',
-          message: 'FROM_EMAIL is not set. Transactional emails may not include a valid sender.',
+          message:
+            'FROM_EMAIL is not set. Transactional emails may not include a valid sender.',
         })
       }
       if (!hasResendKey) {
@@ -239,7 +248,12 @@ export function validateEnv(): EnvValidationResult {
   // Opcional: la feature se auto-deshabilita si falta config (getObjectStorage
   // devuelve null). Warning pareado sólo si hay config parcial (probable error
   // de config), mirror del bloque Resend/FROM_EMAIL de arriba.
-  const r2Keys = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET']
+  const r2Keys = [
+    'R2_ACCOUNT_ID',
+    'R2_ACCESS_KEY_ID',
+    'R2_SECRET_ACCESS_KEY',
+    'R2_BUCKET',
+  ]
   const r2Present = r2Keys.filter((k) => !!process.env[k])
   if (r2Present.length > 0 && r2Present.length < r2Keys.length) {
     warnings.push({
@@ -261,7 +275,8 @@ export function validateEnv(): EnvValidationResult {
     if (!hasUpstashUrl || !hasUpstashToken) {
       errors.push({
         key: 'UPSTASH_REDIS_REST_URL',
-        message: 'UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required in production. Rate limiting fails closed without a distributed store.',
+        message:
+          'UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required in production. Rate limiting fails closed without a distributed store.',
       })
     }
   }
@@ -270,7 +285,8 @@ export function validateEnv(): EnvValidationResult {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     warnings.push({
       key: 'SUPABASE_SERVICE_ROLE_KEY',
-      message: 'SUPABASE_SERVICE_ROLE_KEY is not set. Server-side Supabase operations may fail.',
+      message:
+        'SUPABASE_SERVICE_ROLE_KEY is not set. Server-side Supabase operations may fail.',
     })
   }
 
@@ -285,9 +301,9 @@ export function validateEnv(): EnvValidationResult {
 export function assertValidEnv(): void {
   const { errors } = validateEnv()
   if (errors.length > 0) {
-    const messages = errors.map(e => `  - ${e.key}: ${e.message}`).join('\n')
+    const messages = errors.map((e) => `  - ${e.key}: ${e.message}`).join('\n')
     throw new Error(
-      `Environment validation failed:\n${messages}\n\nFix these environment issues before starting the server.`
+      `Environment validation failed:\n${messages}\n\nFix these environment issues before starting the server.`,
     )
   }
 }
@@ -297,7 +313,10 @@ export function assertValidEnv(): void {
  */
 
 export function getPublicAppDomain(): string {
-  const raw = process.env.NEXT_PUBLIC_APP_DOMAIN || process.env.APP_DOMAIN || 'localhost:3000'
+  const raw =
+    process.env.NEXT_PUBLIC_APP_DOMAIN ||
+    process.env.APP_DOMAIN ||
+    'localhost:3000'
   return raw.replace(/^https?:\/\//, '').replace(/\/$/, '')
 }
 

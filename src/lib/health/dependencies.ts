@@ -8,7 +8,7 @@ export type ConfiguredDependencyStatus = Exclude<DependencyStatus, 'not_required
 
 export const DEPENDENCY_TIMEOUT_MS = 3_000
 
-const REDIS_HEALTH_SCRIPT = 'return redis.call("PING")'
+const REDIS_HEALTH_SCRIPT = 'return 1'
 
 type RedisHealthFailure =
   | 'partial_configuration'
@@ -59,7 +59,7 @@ export async function probeRedis(): Promise<ConfiguredDependencyStatus> {
       args: [REDIS_HEALTH_SCRIPT, 0],
       signal: timeoutSignal(),
     })
-    if (result === 'PONG') return 'up'
+    if (result === 1) return 'up'
     logRedisHealthFailure('invalid_response')
     return 'down'
   } catch (error) {
@@ -101,17 +101,23 @@ export async function probeResend(): Promise<ConfiguredDependencyStatus> {
   if (!key) return 'not_configured'
 
   try {
-    const response = await fetch('https://api.resend.com/domains', {
-      headers: { Authorization: `Bearer ${key}` },
+    // A valid sending_access key reaches payload validation. The empty body is
+    // guaranteed not to enqueue an email, while an invalid key fails auth first.
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'agendita-health/1.0',
+      },
+      body: '{}',
       cache: 'no-store',
       signal: timeoutSignal(),
     })
-    if (!response.ok) return 'down'
+    if (response.status !== 422) return 'down'
 
     const payload: unknown = await response.json()
-    return isRecord(payload)
-      && payload.object === 'list'
-      && Array.isArray(payload.data)
+    return isRecord(payload) && payload.name === 'missing_required_field'
       ? 'up'
       : 'down'
   } catch {

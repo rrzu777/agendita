@@ -52,7 +52,9 @@ describe('env validation', () => {
       const { validateEnv } = await import('@/lib/env')
       const { errors, warnings } = validateEnv()
       expect(errors).toHaveLength(0)
-      const serviceRoleWarning = warnings.find((w) => w.key === 'SUPABASE_SERVICE_ROLE_KEY')
+      const serviceRoleWarning = warnings.find(
+        (w) => w.key === 'SUPABASE_SERVICE_ROLE_KEY',
+      )
       expect(serviceRoleWarning).toBeDefined()
     })
 
@@ -115,7 +117,9 @@ describe('env validation', () => {
       const { warnings } = validateEnv()
       const paymentWarning = warnings.find((e) => e.key === 'PAYMENT_PROVIDER')
       expect(paymentWarning).toBeDefined()
-      expect(paymentWarning!.message).toContain('PAYMENT_PROVIDER is not configured')
+      expect(paymentWarning!.message).toContain(
+        'PAYMENT_PROVIDER is not configured',
+      )
     })
 
     it('requires PAYMENT_PROVIDER in production', async () => {
@@ -136,6 +140,33 @@ describe('env validation', () => {
       expect(paymentError!.message).toContain('required')
     })
 
+    it('requires the global Mercado Pago token for OAuth-only webhooks in production', async () => {
+      setEnv({
+        NODE_ENV: 'production',
+        DATABASE_URL: 'postgresql://db/test',
+        DIRECT_URL: 'postgresql://db/test',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+        APP_DOMAIN: 'app.agendita.com',
+        NEXT_PUBLIC_APP_DOMAIN: 'app.agendita.com',
+        PAYMENT_PROVIDER: undefined,
+        MERCADO_PAGO_CLIENT_ID: 'client-id',
+        MERCADO_PAGO_CLIENT_SECRET: 'client-secret',
+        MERCADO_PAGO_REDIRECT_URI: 'https://app.agendita.com/callback',
+        MERCADO_PAGO_ACCESS_TOKEN: undefined,
+        MERCADO_PAGO_WEBHOOK_SECRET: 'webhook-secret',
+        ENCRYPTION_KEY: 'encryption-key',
+      })
+      const { validateEnv } = await import('@/lib/env')
+      const { errors } = validateEnv()
+
+      expect(errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ key: 'MERCADO_PAGO_ACCESS_TOKEN' }),
+        ]),
+      )
+    })
+
     it('mock blocked in production without ALLOW_MOCK override', async () => {
       setEnv({
         NODE_ENV: 'production',
@@ -151,7 +182,9 @@ describe('env validation', () => {
       const { validateEnv } = await import('@/lib/env')
       const { errors } = validateEnv()
       // When ALLOW_MOCK is not a strict boolean, mock is blocked
-      const mockError = errors.find((e) => e.key === 'ALLOW_MOCK_PAYMENTS_IN_PRODUCTION')
+      const mockError = errors.find(
+        (e) => e.key === 'ALLOW_MOCK_PAYMENTS_IN_PRODUCTION',
+      )
       expect(mockError).toBeDefined()
     })
   })
@@ -184,7 +217,9 @@ describe('env validation', () => {
     it('throws on invalid value', async () => {
       setEnv({ TEST_BOOL: 'invalid' })
       const { getOptionalEnvBoolean } = await import('@/lib/env')
-      expect(() => getOptionalEnvBoolean('TEST_BOOL')).toThrow(/Invalid boolean/)
+      expect(() => getOptionalEnvBoolean('TEST_BOOL')).toThrow(
+        /Invalid boolean/,
+      )
     })
   })
 

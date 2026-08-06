@@ -2,7 +2,7 @@ name: Production health
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -20,33 +20,6 @@ jobs:
       BASE_URL: ${{ vars.APP_BASE_URL || 'https://www.agendita.cl' }}
       CRON_SECRET: ${{ secrets.CRON_SECRET }}
     steps:
-      - name: Check protected dependency health
-        shell: bash
-        run: |
-          body_file="$(mktemp)"
-          base_url="${BASE_URL%/}"
-          trap 'rm -f "$body_file"' EXIT
-
-          for attempt in 1 2 3; do
-            : > "$body_file"
-            http_code="$(curl --silent --show-error \
-              --output "$body_file" \
-              --write-out '%{http_code}' \
-              --max-time 15 \
-              --header "Authorization: Bearer $CRON_SECRET" \
-              "$base_url/api/health/dependencies")" || http_code="000"
-
-            if [[ "$http_code" == "200" ]] \
-              && jq --exit-status '.status == "ok"' "$body_file" >/dev/null; then
-              jq . "$body_file"
-              exit 0
-            fi
-
-            if [[ "$attempt" -lt 3 ]]; then
-              sleep 10
-            fi
-          done
-
-          echo "::error::Production health degraded (HTTP $http_code)"
-          jq . "$body_file" || true
-          exit 1
+      - uses: actions/checkout@v4
+      - name: Check public and protected production health
+        run: node scripts/check-production-health.cjs

@@ -41,32 +41,37 @@ estar bloqueadas a propósito por la política fail-closed.
 1. Genera un token Standard nuevo para la base correcta.
 2. Actualiza juntos `UPSTASH_REDIS_REST_URL` y
    `UPSTASH_REDIS_REST_TOKEN` en el entorno Production de Vercel.
-3. Revoca el token anterior y crea un nuevo deploy.
+3. Crea un nuevo deploy y confirma que es el deploy activo.
 4. Exige `redis: up` en el health público y el profundo.
 5. Ejecuta una acción rate-limited controlada y confirma que no queda bloqueada
    por error.
+6. Revoca el token anterior sólo después de esas verificaciones.
 
-El probe ejecuta un `EVAL` sin escrituras que retorna `PING`. Esto valida la
+El probe ejecuta un `EVAL` sin escrituras que retorna `1`. Esto valida la
 familia de comando del rate limiter sin crear claves; no valida por sí solo el
 contador completo.
 
 ## 4. Recuperar Resend
 
-1. Crea una API key nueva con acceso al proyecto correcto.
-2. Actualiza `RESEND_API_KEY` en Production, revoca la anterior y redeploya.
+1. Crea una API key nueva con `sending_access` para preservar mínimo privilegio.
+2. Actualiza `RESEND_API_KEY` en Production y crea un nuevo deploy.
 3. Exige `resend: up` en el health profundo.
-4. Confirma que el dominio remitente siga verificado.
+4. Confirma que el dominio remitente siga verificado desde el dashboard de
+   Resend.
 5. Envía un correo a una casilla QA controlada y sigue el evento hasta
    `Delivered` o un estado terminal explícito.
+6. Revoca la llave anterior sólo después de confirmar el deploy y la entrega.
 
-`resend: up` sólo valida la credencial y el contrato List Domains. Un HTTP 200
-no demuestra entrega.
+El probe envía un body vacío a Send Email: una llave `sending_access` válida
+llega a `missing_required_field`, pero el request nunca puede crear un email.
+Esto valida la credencial sin ampliar permisos ni consumir cuota. No prueba
+dominio o entrega; esa evidencia sigue siendo el envío controlado y su evento.
 
 ## 5. Recuperar Mercado Pago
 
 1. Mantén `PAYMENT_PROVIDER=manual` durante la reparación.
-2. Rota `MERCADO_PAGO_ACCESS_TOKEN`, actualízalo en Production, revoca el
-   anterior y redeploya.
+2. Crea un token nuevo, actualiza `MERCADO_PAGO_ACCESS_TOKEN` en Production y
+   crea un nuevo deploy sin revocar todavía el anterior.
 3. Configura `PAYMENT_PROVIDER=mercado_pago` únicamente en un entorno de QA y
    exige `mercadoPago: up`.
 4. Completa un pago sandbox usando un negocio OAuth distinto de la cuenta dueña
@@ -75,12 +80,11 @@ no demuestra entrega.
    idempotencia ante entrega repetida.
 6. Recién entonces reactiva Mercado Pago en Production y repite los health
    checks.
+7. Revoca el token anterior sólo con el nuevo deploy activo y el ciclo sandbox
+   verificado.
 
 `mercadoPago: up` sólo valida el token global usado por el lookup inicial del
 webhook. No prueba tokens OAuth de negocios, cobro, webhook ni settlement.
-Ese token global también es requerido cuando se usa OAuth por negocio sin
-`PAYMENT_PROVIDER` explícito, porque el webhook todavía lo necesita para descubrir
-el `external_reference` antes de conocer el negocio.
 
 ## 6. Smoke posterior a la recuperación
 

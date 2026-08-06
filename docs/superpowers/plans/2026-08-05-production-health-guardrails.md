@@ -2,18 +2,20 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Detectar en menos de 15 minutos credenciales rotas o dependencias externas degradadas sin exponer secretos ni cambiar el comportamiento funcional de reservas, pagos o rate limits.
+**Goal:** Detectar en un ciclo best-effort de aproximadamente 15 minutos credenciales rotas o dependencias externas degradadas sin exponer secretos ni cambiar el comportamiento funcional de reservas, pagos o rate limits.
 
-**Architecture:** Un transporte REST pequeño concentra el contrato de Upstash y es compartido por el rate limiter y los probes. Un módulo de probes traduce respuestas externas a cuatro estados sanitizados; los Route Handlers público y autenticado sólo agregan esos estados y calculan HTTP 200/503. Un workflow independiente consulta el health profundo y un runbook documenta la recuperación humana.
+**Architecture:** Un transporte REST pequeño concentra el contrato de Upstash y es compartido por el rate limiter y los probes. Un módulo de probes traduce respuestas externas a cuatro estados sanitizados; los Route Handlers público y autenticado sólo agregan esos estados y calculan HTTP 200/503. Un workflow independiente consulta ambos health checks y un runbook documenta la recuperación humana.
 
 **Tech Stack:** Next.js 16 Route Handlers, TypeScript, Vitest, Prisma, Upstash Redis REST, Resend REST, Mercado Pago REST, GitHub Actions.
+
+> **Ajustes durante revisión:** el código de ejemplo posterior conserva el plan original como registro, pero la implementación final lo supera en cuatro puntos: DB reparte un presupuesto total de 3 segundos entre espera y transacción Prisma cancelable; Mercado Pago también es requerido en modo OAuth-only y exige el token global del webhook; Resend prueba una llave `sending_access` con un request inválido que no crea emails porque List Domains exigiría `full_access`; y el monitor prueba los endpoints público y profundo. El schedule de GitHub es best-effort, no un SLA menor a 15 minutos.
 
 ## Global Constraints
 
 - Leer y respetar `node_modules/next/dist/docs/01-app/01-getting-started/15-route-handlers.md` antes de modificar Route Handlers.
 - Cada request externo tiene timeout de `3_000` ms y `cache: 'no-store'`.
-- El probe de Redis usa `EVAL` con un script sin escrituras que retorna `redis.call("PING")`; sólo `PONG` significa `up`.
-- En producción Redis, Supabase y Resend son requeridos; Mercado Pago es requerido con `PAYMENT_PROVIDER=mercado_pago` o con OAuth completo sin provider explícito.
+- El probe de Redis usa `EVAL` con el script sin escrituras `return 1`; sólo `1` significa `up`.
+- En producción Redis, Supabase y Resend son requeridos; Mercado Pago es requerido explícitamente o por OAuth completo. Resend se valida sin ampliar `sending_access` ni crear emails.
 - Los endpoints nunca devuelven URLs, tokens, cuerpos de error ni mensajes crudos de proveedores.
 - El endpoint profundo reutiliza `CRON_SECRET` con `hasValidBearerSecret` y falla cerrado con HTTP 401.
 - El workflow de salud es independiente de `.github/workflows/cron.yml` y no modifica ni serializa los crons existentes.
@@ -224,17 +226,17 @@ git commit -m "fix: acotar transporte de rate limiting"
 Crear `tests/unit/health-dependencies.test.ts` con `afterEach` que restaura mocks y envs, y estos escenarios observables:
 
 ```ts
-it('marks Redis up only when no-write EVAL returns PONG', async () => {
+it('marks Redis up only when no-write EVAL returns 1', async () => {
   vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://redis.example.com')
   vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'redis-token')
   const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(
-    new Response(JSON.stringify({ result: 'PONG' }), { status: 200 }),
+    new Response(JSON.stringify({ result: 1 }), { status: 200 }),
   )
 
   await expect(probeRedis()).resolves.toBe('up')
   expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string)).toEqual([
     'EVAL',
-    'return redis.call("PING")',
+    'return 1',
     0,
   ])
 })
@@ -341,10 +343,10 @@ export async function probeRedis(): Promise<DependencyStatus> {
       restUrl,
       restToken,
       command: 'EVAL',
-      args: ['return redis.call("PING")', 0],
+      args: ['return 1', 0],
       signal: timeoutSignal(),
     })
-    return result === 'PONG' ? 'up' : 'down'
+    return result === 1 ? 'up' : 'down'
   } catch {
     return 'down'
   }
@@ -393,18 +395,8 @@ En el mismo módulo, implementar exactamente los otros tres probes:
       }
     }
 
-    export function isMercadoPagoRequired(): boolean {
-      if (process.env.PAYMENT_PROVIDER === 'mercado_pago') return true
-      if (process.env.PAYMENT_PROVIDER) return false
-      return Boolean(
-        process.env.MERCADO_PAGO_CLIENT_ID
-        && process.env.MERCADO_PAGO_CLIENT_SECRET
-        && process.env.MERCADO_PAGO_REDIRECT_URI
-      )
-    }
-
     export async function probeMercadoPago(): Promise<DependencyStatus> {
-      if (!isMercadoPagoRequired()) return 'not_required'
+      if (process.env.PAYMENT_PROVIDER !== 'mercado_pago') return 'not_required'
       const token = process.env.MERCADO_PAGO_ACCESS_TOKEN
       if (!token) return 'not_configured'
 
@@ -448,7 +440,7 @@ it('returns 200 when all production dependencies are operational', async () => {
   vi.spyOn(global, 'fetch').mockImplementation(async input => {
     const url = String(input)
     if (url.includes('redis.example.com')) {
-      return new Response(JSON.stringify({ result: 'PONG' }), { status: 200 })
+      return new Response(JSON.stringify({ result: 1 }), { status: 200 })
     }
     return new Response('{}', { status: 200 })
   })
@@ -492,7 +484,7 @@ Añadir los casos negativos y sus helpers con estas salidas exactas:
       })
     }
 
-    it('degrades when EVAL does not return PONG', async () => {
+    it('degrades when EVAL does not return 1', async () => {
       setProductionDependencyEnv()
       vi.mocked(prisma.$queryRaw).mockResolvedValue([{ value: 1 }])
       mockHealthFetch('NOPE')
@@ -507,7 +499,7 @@ Añadir los casos negativos y sus helpers con estas salidas exactas:
     it('degrades without serializing a database error', async () => {
       setProductionDependencyEnv()
       vi.mocked(prisma.$queryRaw).mockRejectedValue(new Error('private-db-detail'))
-      mockHealthFetch('PONG')
+      mockHealthFetch(1)
       const response = await GET()
       const body = await response.text()
       expect(response.status).toBe(503)
@@ -581,7 +573,7 @@ function mockProviders(options?: { resend?: Response }) {
   return vi.spyOn(global, 'fetch').mockImplementation(async input => {
     const url = String(input)
     if (url.includes('redis.example.com')) {
-      return new Response(JSON.stringify({ result: 'PONG' }), { status: 200 })
+      return new Response(JSON.stringify({ result: 1 }), { status: 200 })
     }
     if (url.includes('resend.com')) {
       return options?.resend
@@ -670,7 +662,6 @@ import { NextResponse } from 'next/server'
 import { hasValidBearerSecret } from '@/lib/auth/bearer-secret'
 import {
   isDependencyReady,
-  isMercadoPagoRequired,
   probeMercadoPago,
   probeRedis,
   probeResend,
@@ -703,7 +694,7 @@ export async function GET(request: Request) {
   const production = process.env.NODE_ENV === 'production'
   const healthy = isDependencyReady(redis, production)
     && isDependencyReady(resend, production)
-    && isDependencyReady(mercadoPago, isMercadoPagoRequired())
+    && isDependencyReady(mercadoPago, process.env.PAYMENT_PROVIDER === 'mercado_pago')
   const status: DependencyHealthResponse['status'] = healthy ? 'ok' : 'degraded'
 
   return NextResponse.json(
@@ -898,12 +889,11 @@ Expected: `git diff --check` exit 0 y sólo cambios intencionales/commits de est
 
 Confirmar manualmente:
 
-- Redis health hace `EVAL` sin escritura y exige `PONG`.
+- Redis health hace `EVAL` sin escritura y exige `1`.
 - El rate limiter mantiene Lua/contadores/fail-closed y agrega timeout 3s.
 - Todos los probes capturan errores y nunca incluyen cuerpos externos.
 - Auth inválida no ejecuta probes y responde 401 uniforme.
-- Producción degrada `not_configured`; MP manual queda `not_required` y OAuth
-  completo sin provider sigue exigiendo el token global del webhook.
+- Producción degrada `not_configured`; MP manual queda `not_required`.
 - El workflow tiene tres intentos, corre cada 15 minutos y no toca `cron.yml`.
 - El runbook diferencia credencial sana de entrega/pago real.
 

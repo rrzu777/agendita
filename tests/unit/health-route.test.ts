@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { queryRawMock } = vi.hoisted(() => ({
+const { queryRawMock, transactionMock } = vi.hoisted(() => ({
   queryRawMock: vi.fn(),
+  transactionMock: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({
   prisma: {
-    $queryRaw: queryRawMock,
+    $transaction: transactionMock,
   },
 }))
 
@@ -28,7 +29,7 @@ function unsetExternalDependencyEnv() {
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', '')
 }
 
-function mockHealthFetch(redisResult: unknown = 'PONG') {
+function mockHealthFetch(redisResult: unknown = 1) {
   return vi.spyOn(global, 'fetch').mockImplementation(async input => {
     const url = String(input)
     if (url.includes('redis.example.com')) {
@@ -45,6 +46,10 @@ describe('GET /api/health', () => {
   beforeEach(() => {
     queryRawMock.mockReset()
     queryRawMock.mockResolvedValue([{ value: 1 }])
+    transactionMock.mockReset()
+    transactionMock.mockImplementation(async callback => (
+      callback({ $queryRaw: queryRawMock })
+    ))
   })
 
   afterEach(() => {
@@ -102,7 +107,7 @@ describe('GET /api/health', () => {
     })
   })
 
-  it('degrades when EVAL does not return PONG', async () => {
+  it('degrades when EVAL does not return 1', async () => {
     setProductionDependencyEnv()
     mockHealthFetch('NOPE')
 
