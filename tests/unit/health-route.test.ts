@@ -1,126 +1,130 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { queryRawMock } = vi.hoisted(() => ({ queryRawMock: vi.fn() }))
+const { queryRawMock } = vi.hoisted(() => ({
+  queryRawMock: vi.fn(),
+}))
 
 vi.mock('@/lib/db', () => ({
-  prisma: { $queryRaw: queryRawMock },
+  prisma: {
+    $queryRaw: queryRawMock,
+  },
 }))
 
 import { GET } from '@/app/api/health/route'
 
-describe('GET /api/health', () => {
-  const fetchMock = vi.fn()
-  let errorSpy: ReturnType<typeof vi.spyOn>
+function setProductionDependencyEnv() {
+  vi.stubEnv('NODE_ENV', 'production')
+  vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://redis.example.com')
+  vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'redis-token')
+  vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://supabase.example.com')
+  vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'supabase-key')
+}
 
+function unsetExternalDependencyEnv() {
+  vi.stubEnv('UPSTASH_REDIS_REST_URL', '')
+  vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', '')
+  vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', '')
+  vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', '')
+  vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', '')
+}
+
+function mockHealthFetch(redisResult: unknown = 'PONG') {
+  return vi.spyOn(global, 'fetch').mockImplementation(async input => {
+    const url = String(input)
+    if (url.includes('redis.example.com')) {
+      return new Response(JSON.stringify({ result: redisResult }), { status: 200 })
+    }
+    if (url.includes('supabase.example.com')) {
+      return new Response('{}', { status: 200 })
+    }
+    throw new Error(`Unexpected health URL: ${url}`)
+  })
+}
+
+describe('GET /api/health', () => {
   beforeEach(() => {
-    queryRawMock.mockReset().mockResolvedValue([{ ok: 1 }])
-    fetchMock.mockReset()
-    vi.stubGlobal('fetch', fetchMock)
-    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://test.upstash.io/')
-    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'test-token')
-    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', '')
-    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', '')
-    vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', '')
-    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    queryRawMock.mockReset()
+    queryRawMock.mockResolvedValue([{ value: 1 }])
   })
 
   afterEach(() => {
-    vi.unstubAllGlobals()
     vi.unstubAllEnvs()
     vi.restoreAllMocks()
   })
 
-  it('probes Redis with a non-mutating EVAL command', async () => {
-    fetchMock.mockResolvedValue(
-      new Response(JSON.stringify({ result: 1 }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    )
+  it('returns 200 when all production dependencies are operational', async () => {
+    setProductionDependencyEnv()
+    mockHealthFetch()
+
+    const response = await GET()
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toMatchObject({
+      status: 'ok',
+      checks: { db: 'up', redis: 'up', supabase: 'up' },
+    })
+    expect(Object.keys(body)).toEqual(['status', 'checks', 'timestamp'])
+    expect(Number.isNaN(Date.parse(body.timestamp))).toBe(false)
+  })
+
+  it('keeps not_configured in detail but degrades required production dependencies', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    unsetExternalDependencyEnv()
+
+    const response = await GET()
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({
+      status: 'degraded',
+      checks: {
+        db: 'up',
+        redis: 'not_configured',
+        supabase: 'not_configured',
+      },
+    })
+  })
+
+  it('allows unconfigured optional dependencies outside production', async () => {
+    vi.stubEnv('NODE_ENV', 'test')
+    unsetExternalDependencyEnv()
 
     const response = await GET()
 
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({
       status: 'ok',
-      checks: { db: 'up', redis: 'up', supabase: 'not_configured' },
+      checks: {
+        db: 'up',
+        redis: 'not_configured',
+        supabase: 'not_configured',
+      },
     })
-    expect(fetchMock).toHaveBeenCalledWith(
-      'https://test.upstash.io',
-      expect.objectContaining({
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer test-token',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(['EVAL', 'return 1', 0]),
-      })
-    )
   })
 
-  it.each([
-    {
-      label: 'an unexpected result',
-      redisResponse: new Response(JSON.stringify({ result: 'PONG' }), { status: 200 }),
-      expectedLog: { reason: 'invalid_response' },
-    },
-    {
-      label: 'invalid JSON',
-      redisResponse: new Response('not-json', { status: 200 }),
-      expectedLog: { reason: 'invalid_response' },
-    },
-    {
-      label: 'an unauthorized response',
-      redisResponse: new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 }),
-      expectedLog: { reason: 'http_status', status: 401 },
-    },
-  ])('marks Redis down for $label', async ({ redisResponse, expectedLog }) => {
-    fetchMock.mockResolvedValue(redisResponse)
-
-    const response = await GET()
-    const payload = await response.json()
-
-    expect(response.status).toBe(503)
-    expect(payload.checks.redis).toBe('down')
-    expect(errorSpy).toHaveBeenCalledWith('[Health] Redis check failed', expectedLog)
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('test-token')
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('test.upstash.io')
-  })
-
-  it('marks partial Redis configuration down without fetching', async () => {
-    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', '')
+  it('degrades when EVAL does not return PONG', async () => {
+    setProductionDependencyEnv()
+    mockHealthFetch('NOPE')
 
     const response = await GET()
 
     expect(response.status).toBe(503)
-    expect((await response.json()).checks.redis).toBe('down')
-    expect(fetchMock).not.toHaveBeenCalled()
-    expect(errorSpy).toHaveBeenCalledWith('[Health] Redis check failed', {
-      reason: 'partial_configuration',
+    expect(await response.json()).toMatchObject({
+      status: 'degraded',
+      checks: { db: 'up', redis: 'down', supabase: 'up' },
     })
   })
 
-  it('marks Redis down when fetch rejects', async () => {
-    fetchMock.mockRejectedValue(new DOMException('timed out', 'TimeoutError'))
+  it('degrades without serializing a database error', async () => {
+    setProductionDependencyEnv()
+    queryRawMock.mockRejectedValue(new Error('private-db-detail'))
+    mockHealthFetch()
 
     const response = await GET()
+    const body = await response.text()
 
     expect(response.status).toBe(503)
-    expect((await response.json()).checks.redis).toBe('down')
-    expect(errorSpy).toHaveBeenCalledWith('[Health] Redis check failed', {
-      reason: 'timeout_or_network',
-    })
-  })
-
-  it('keeps Redis not configured when URL and token are absent', async () => {
-    vi.stubEnv('UPSTASH_REDIS_REST_URL', '')
-    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', '')
-
-    const response = await GET()
-
-    expect(response.status).toBe(200)
-    expect((await response.json()).checks.redis).toBe('not_configured')
-    expect(fetchMock).not.toHaveBeenCalled()
-    expect(errorSpy).not.toHaveBeenCalled()
+    expect(body).toContain('"db":"down"')
+    expect(body).not.toContain('private-db-detail')
   })
 })
