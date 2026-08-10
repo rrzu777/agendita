@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { NextRequest } from 'next/server'
 
 const mockPrisma = {
   $queryRaw: vi.fn(),
@@ -12,7 +13,7 @@ const SECRET = 'secret123'
 // emisión setean el secret (beforeEach) y mandan el Bearer válido para pasar el
 // guard y llegar a gatherMetrics.
 const authed = () =>
-  new Request('http://localhost:3000/api/metrics', {
+  new NextRequest('http://localhost:3000/api/metrics', {
     headers: { authorization: `Bearer ${SECRET}` },
   })
 
@@ -30,8 +31,8 @@ describe('GET /api/metrics', () => {
   it('emits agendita_bookings_total metric', async () => {
     mockPrisma.$queryRaw
       .mockResolvedValueOnce([
-        { businessId: 'biz-1', status: 'confirmed', count: 5n },
-        { businessId: 'biz-1', status: 'pending', count: 2n },
+        { businessId: 'biz-1', status: 'confirmed', count: BigInt(5) },
+        { businessId: 'biz-1', status: 'pending', count: BigInt(2) },
       ])
       .mockResolvedValue([]) // payments empty
       .mockResolvedValue([]) // webhooks empty
@@ -49,8 +50,8 @@ describe('GET /api/metrics', () => {
     mockPrisma.$queryRaw
       .mockResolvedValueOnce([]) // bookings empty
       .mockResolvedValueOnce([
-        { businessId: 'biz-1', status: 'approved', count: 3n },
-        { businessId: 'biz-2', status: 'pending', count: 1n },
+        { businessId: 'biz-1', status: 'approved', count: BigInt(3) },
+        { businessId: 'biz-2', status: 'pending', count: BigInt(1) },
       ])
       .mockResolvedValueOnce([]) // webhooks empty
 
@@ -65,7 +66,7 @@ describe('GET /api/metrics', () => {
 
   it('returns 401 when Authorization header is missing', async () => {
     const { GET } = await import('@/app/api/metrics/route')
-    const request = new Request('http://localhost:3000/api/metrics')
+    const request = new NextRequest('http://localhost:3000/api/metrics')
     const res = await GET(request)
 
     expect(res.status).toBe(401)
@@ -73,7 +74,7 @@ describe('GET /api/metrics', () => {
 
   it('returns 401 when token is wrong', async () => {
     const { GET } = await import('@/app/api/metrics/route')
-    const request = new Request('http://localhost:3000/api/metrics', {
+    const request = new NextRequest('http://localhost:3000/api/metrics', {
       headers: { authorization: 'Bearer wrong-token' },
     })
     const res = await GET(request)
@@ -95,7 +96,7 @@ describe('GET /api/metrics', () => {
     mockPrisma.$queryRaw.mockResolvedValue([])
 
     const { GET } = await import('@/app/api/metrics/route')
-    const request = new Request('http://localhost:3000/api/metrics')
+    const request = new NextRequest('http://localhost:3000/api/metrics')
     const res = await GET(request)
 
     // Sin secret configurado el endpoint NO sirve métricas por-tenant a un
@@ -108,8 +109,8 @@ describe('GET /api/metrics', () => {
       .mockResolvedValueOnce([]) // bookings empty
       .mockResolvedValueOnce([]) // payments empty
       .mockResolvedValueOnce([
-        { provider: 'mercado_pago', status: 'approved', count: 10n },
-        { provider: 'mercado_pago', status: 'pending', count: 2n },
+        { provider: 'mercado_pago', status: 'approved', count: BigInt(10) },
+        { provider: 'mercado_pago', status: 'pending', count: BigInt(2) },
       ])
 
     const { GET } = await import('@/app/api/metrics/route')

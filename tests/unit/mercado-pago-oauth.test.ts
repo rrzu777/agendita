@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createHmac } from 'crypto'
 
+type AuthMiddlewareModule = typeof import('@/lib/auth/middleware')
+type CreateClientResult = Awaited<ReturnType<AuthMiddlewareModule['createClient']>>
+
 const mockMpFetch = vi.fn()
 vi.stubGlobal('fetch', mockMpFetch)
 
@@ -129,7 +132,7 @@ describe('Mercado Pago OAuth', () => {
       const { createClient } = await import('@/lib/auth/middleware')
       vi.mocked(createClient).mockResolvedValue({
         auth: mockSupabaseAuth,
-      })
+      } as unknown as CreateClientResult)
       if (enableVerifyMock) {
         const { verifyStateSignature } = await import('@/lib/payments/oauth-state')
         vi.mocked(verifyStateSignature).mockReturnValue(true)

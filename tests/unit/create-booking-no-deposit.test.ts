@@ -5,6 +5,7 @@ import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 const mockPrisma = {
   business: { findUnique: vi.fn() },
   service: { findFirst: vi.fn() },
+  timeBlock: { findMany: vi.fn().mockResolvedValue([]) },
   booking: {
     findUnique: vi.fn().mockResolvedValue(null),
     create: vi.fn(),
@@ -112,7 +113,7 @@ function setupMocks(depositAmount: number, servicePrice: number) {
         create: mockPrisma.customer.create,
       },
       promotionGrant: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
-      timeBlock: { findMany: mockPrisma.timeBlock?.findMany || vi.fn().mockResolvedValue([]) },
+      timeBlock: { findMany: mockPrisma.timeBlock.findMany },
       availabilityRule: {
         findFirst: vi.fn().mockResolvedValue({
           startTime: '08:00',
