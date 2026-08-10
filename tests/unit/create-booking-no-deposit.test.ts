@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ForbiddenError } from '../helpers/auth-errors'
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 
+process.env.ENCRYPTION_KEY = 'create-booking-push-grant-test-key'
+
 const mockPrisma = {
   business: { findUnique: vi.fn() },
   service: { findFirst: vi.fn() },
@@ -100,7 +102,13 @@ function setupMocks(depositAmount: number, servicePrice: number) {
   })
   const createBookingResult = {
     id: 'booking-created',
-    customer: { name: 'Juan', phone: '+56912345678', email: null },
+    businessId: 'biz-1',
+    customerId: 'cust-1',
+    cancellationCutoffHours: 24,
+    cancellationPolicySnapshot: 'Condiciones originales',
+    depositRequired: Math.min(depositAmount, servicePrice),
+    depositPaid: 0,
+    customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
     service: { name: 'Manicure' },
   }
   mockPrisma.booking.create.mockResolvedValue(createBookingResult)
@@ -171,6 +179,21 @@ describe('createBooking - no deposit / free service', () => {
     )
   })
 
+  it('returns a signed push grant bound to the persisted booking relations', async () => {
+    setupMocks(0, 20000)
+
+    const result = await createBooking(baseInput, 'biz-1')
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const { verifyPushGrant } = await import('@/lib/push/grant')
+    expect(verifyPushGrant(result.data.pushGrant)).toMatchObject({
+      bookingId: 'booking-created',
+      customerId: 'cust-1',
+      businessId: 'biz-1',
+    })
+  })
+
   it('creates confirmed + fully_paid + hold null when service is free', async () => {
     setupMocks(0, 0)
 
@@ -233,6 +256,8 @@ describe('createBooking - no deposit / free service', () => {
     // (eso es sólo para las que siguen esperando el pago).
     const existingBooking = {
       id: 'booking-existing',
+      businessId: 'biz-1',
+      customerId: 'cust-1',
       serviceId: baseInput.serviceId,
       startDateTime: baseInput.startDateTime,
       // Explícito y no ausente: el resume compara los tres campos que definen la
@@ -244,17 +269,25 @@ describe('createBooking - no deposit / free service', () => {
       cancellationCutoffHours: 48,
       cancellationPolicySnapshot: 'Condiciones guardadas anteriormente',
       service: { name: 'Manicure' },
-      customer: { name: 'Juan', phone: '+56912345678', email: null },
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
     }
     mockPrisma.booking.findUnique.mockResolvedValueOnce(existingBooking)
 
     const result = await createBooking({ ...baseInput, idempotencyKey: 'key-1' }, 'biz-1')
 
-    expect(result).toEqual({ ok: true, data: existingBooking })
+    expect(result).toMatchObject({ ok: true, data: existingBooking })
     expect(result.ok && result.data).toMatchObject({
       cancellationCutoffHours: 48,
       cancellationPolicySnapshot: 'Condiciones guardadas anteriormente',
     })
+    if (result.ok) {
+      const { verifyPushGrant } = await import('@/lib/push/grant')
+      expect(verifyPushGrant(result.data.pushGrant)).toMatchObject({
+        bookingId: 'booking-existing',
+        customerId: 'cust-1',
+        businessId: 'biz-1',
+      })
+    }
     expect(mockPrisma.booking.create).not.toHaveBeenCalled()
   })
 })

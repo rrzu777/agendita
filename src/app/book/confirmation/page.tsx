@@ -21,6 +21,8 @@ import { whereRows } from '@/lib/services/modality'
 import { buildBookingHelpWhatsappUrl } from '@/lib/notifications/whatsapp'
 import { WhatsappHelpLine, WhereRowValue } from '@/components/booking/where-row-value'
 import { cancellationWarningText, resolveCancellationPolicy } from '@/lib/bookings/cancellation-policy'
+import { GuestPushLink } from '@/components/push/guest-push-link'
+import { getAppUrl } from '@/lib/business/urls'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
@@ -402,7 +404,10 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
 
         {/* El CTA de cuenta nunca compite con la acción de declarar transferencia. */}
         {!canDeclare && (
-          <AccountCta sessionActive={sessionUser !== null} customerEmail={customerEmail} className="mt-4" />
+          <>
+            <GuestPushLink bookingId={booking.id} canonicalOrigin={getAppUrl('')} className="mt-4" />
+            <AccountCta sessionActive={sessionUser !== null} customerEmail={customerEmail} className="mt-4" />
+          </>
         )}
       </section>
     </main>

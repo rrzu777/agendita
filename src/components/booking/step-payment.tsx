@@ -20,6 +20,7 @@ import type { WhereFields } from '@/lib/services/modality'
 import type { ServiceModality } from '@prisma/client'
 import { BookingSummary } from './booking-summary'
 import { BookingLegalAcceptance } from './booking-legal-acceptance'
+import { guestPushGrantSessionKey } from '@/components/push/guest-push-link'
 
 /**
  * Lo que el paso de pago le pasa a la confirmación: la reserva tal como quedó
@@ -54,6 +55,7 @@ export interface BookingCreated {
   cancellationPolicySnapshot: string | null
   depositRequired: number
   depositPaid: number
+  pushGrant: string
 }
 
 function generateIdempotencyKey(): string {
@@ -377,6 +379,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         return
       }
       const booking = res.data
+      retainPushGrant(booking)
       setPaso({
         k: 'transfer-details',
         bank,
@@ -432,6 +435,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       cancellationPolicySnapshot: string | null
       depositRequired: number
       depositPaid: number
+      pushGrant: string
     },
     mode: 'paid' | 'pending',
     confirmed: boolean,
@@ -450,6 +454,16 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       cancellationPolicySnapshot: booking.cancellationPolicySnapshot,
       depositRequired: booking.depositRequired,
       depositPaid: booking.depositPaid,
+      pushGrant: booking.pushGrant,
+    }
+  }
+
+  function retainPushGrant(booking: { id: string; pushGrant: string }) {
+    try {
+      sessionStorage.setItem(guestPushGrantSessionKey(booking.id), booking.pushGrant)
+    } catch {
+      // Storage can be unavailable in restricted browsing modes. The direct
+      // confirmation path still carries the grant in BookingCreated.
     }
   }
 
@@ -465,6 +479,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         return
       }
       const booking = res.data
+
+      retainPushGrant(booking)
 
       setPaso({ k: 'success' })
       const mode = noDepositNeeded ? 'paid' as const : 'pending' as const
@@ -495,6 +511,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         return
       }
       const booking = res.data
+
+      retainPushGrant(booking)
 
       const paymentRes = await initiatePayment({
         bookingId: booking.id,

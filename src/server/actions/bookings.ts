@@ -44,6 +44,7 @@ import { BANK_TRANSFER_METHOD, anyDeclaredTransferWhere } from '@/lib/bank-trans
 import { holdPrecedencePaymentWhere } from '@/lib/payments/hold-precedence'
 import { fireBookingNotifications } from '@/lib/bookings/notifications'
 import { resolveBookingDraft } from '@/lib/bookings/draft'
+import { issuePushGrant } from '@/lib/push/grant'
 import { applyBookingDiscountInTx } from '@/lib/bookings/discount'
 import { loadBookingInvite, loadBookingCancelNotice } from '@/lib/calendar/booking-invite'
 import {
@@ -59,6 +60,20 @@ import {
 // repetido: sin la relación en UNA salida, la persona desaparece de la
 // respuesta sin error de compilación — pasó con las salidas de paquete/código.
 const BOOKING_RESULT_INCLUDE = { service: true, customer: true, professional: { select: { name: true } } } as const
+
+function withPushGrant<T extends { id: string; customer: { id: string } }>(
+  booking: T,
+  businessId: string,
+) {
+  return {
+    ...booking,
+    pushGrant: issuePushGrant({
+      bookingId: booking.id,
+      customerId: booking.customer.id,
+      businessId,
+    }),
+  }
+}
 
 // La forma con la que un ProfessionalPick cruza el borde, compartida entre los
 // dos formularios que crean reservas (el público y el del panel): más estricta
@@ -351,7 +366,7 @@ async function _createBooking(data: {
     // seguimos al camino de creación normal, que ahora la puede volver a usar.
     if (existing) {
       const resumida = await resumeBookingForRetry(existing, retryCtx)
-      if (resumida) return resumida
+      if (resumida) return withPushGrant(resumida, business.id)
     }
   }
 
@@ -496,7 +511,7 @@ async function _createBooking(data: {
 
     revalidatePath('/dashboard/bookings')
     await revalidateBusinessPublicPaths(businessId)
-    return booking
+    return withPushGrant(booking, business.id)
   } catch (e: unknown) {
     // Race: otro request creó la misma idempotencyKey entre el findUnique y el create.
     // El unique constraint de DB lo detecta y devolvemos la reserva existente — por
@@ -525,7 +540,7 @@ async function _createBooking(data: {
       // milisegundos. Si pasara, cae al manejo de error de abajo con el P2002.
       if (existing) {
         const resumida = await resumeBookingForRetry(existing, retryCtx)
-        if (resumida) return resumida
+        if (resumida) return withPushGrant(resumida, business.id)
       }
     }
     // Safe error handling: log internal error, return generic message

@@ -15,6 +15,8 @@ import type { ProfessionalWords } from '@/lib/vocabulary'
 import { NO_PROFESSIONAL, professionalChoice, professionalFields, samePick, type FunnelProfessional, type ProfessionalPick } from '@/lib/professionals/eligible'
 import { entryStepAfterRestore, stepAfter, stepBefore, stepsFor, type StepKey, type WizardStep } from '@/lib/bookings/wizard-steps'
 import { restoreWizardState, serializeWizardState, wizardStorageKey } from '@/lib/bookings/wizard-storage'
+import { GuestPushLink } from '@/components/push/guest-push-link'
+import { getAppUrl } from '@/lib/business/urls'
 
 type WizardSession = Pick<FunnelSession, 'email' | 'name' | 'phone'> | null
 
@@ -290,7 +292,10 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
             resto del archivo ya resuelve así los pasos que dependen de un dato
             (ver 'time', 'customer' y 'payment' acá arriba). */}
         {currentStep === 'confirmation' && reserva && (
-          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={reserva.id} bookingNumber={reserva.bookingNumber} mode={reserva.mode} promo={reserva.promo} sessionEmail={session?.email ?? null} business={business} where={reserva.where} confirmed={reserva.confirmed} professionalName={reserva.professionalName} cancellationCutoffHours={reserva.cancellationCutoffHours} depositRequired={reserva.depositRequired} depositPaid={reserva.depositPaid} />
+          <>
+            <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={reserva.id} bookingNumber={reserva.bookingNumber} mode={reserva.mode} promo={reserva.promo} sessionEmail={session?.email ?? null} business={business} where={reserva.where} confirmed={reserva.confirmed} professionalName={reserva.professionalName} cancellationCutoffHours={reserva.cancellationCutoffHours} depositRequired={reserva.depositRequired} depositPaid={reserva.depositPaid} />
+            <GuestPushLink bookingId={reserva.id} pushGrant={reserva.pushGrant} canonicalOrigin={getAppUrl('')} className="mt-4" />
+          </>
         )}
         {currentStep === 'confirmation' && !reserva && (
           /* Hoy no se llega: a 'confirmation' sólo se entra desde el `onSuccess`
