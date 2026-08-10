@@ -1,6 +1,6 @@
 # Web Push para aviso de cancelación — Diseño
 
-**Estado:** aprobado en conversación el 2026-08-09.
+**Estado:** aprobado en conversación y corregido tras gap review el 2026-08-09.
 
 ## Objetivo
 
@@ -14,9 +14,16 @@ ningún canal y no agrega navegación offline.
 
 ## Decisiones de producto
 
-- `Business.selfServiceCutoffHours` es la única fuente de las **X horas**. No se
-  crea otra configuración capaz de contradecir la regla que ya aplica el
-  servidor al cancelar y reprogramar.
+- `Business.selfServiceCutoffHours` es la única configuración de las **X horas**.
+  Al crear la reserva se copia a `Booking.cancellationCutoffHours`; ese snapshot
+  es la fuente contractual para cancelar, reprogramar, renderizar y notificar
+  esa reserva. Cambiar la configuración sólo afecta reservas nuevas.
+- `Business.cancellationPolicy` se copia a
+  `Booking.cancellationPolicySnapshot`. Las superficies posteriores muestran el
+  texto aceptado, no una política editada después. En Settings se relabela como
+  “Condiciones adicionales” y se aclara que no debe repetir ni contradecir el
+  plazo estructurado; el aviso generado por el sistema aparece primero y manda
+  sobre texto histórico contradictorio.
 - Se agrega `Business.cancellationReminderEnabled Boolean @default(true)` para
   que cada negocio pueda apagar únicamente el push. La política visible en
   checkout, confirmación y email no se oculta con este toggle.
@@ -27,56 +34,75 @@ ningún canal y no agrega navegación offline.
   cierre, el próximo cron envía el aviso. Si el cierre ya pasó, no se envía un
   mensaje que sugiera que todavía puede cancelar.
 - Sólo son elegibles reservas confirmadas, futuras y con un abono efectivamente
-  pagado (`depositPaid > 0`). `selfServiceCutoffHours === 0` no genera este
-  recordatorio porque no existe una ventana de pérdida del abono.
+  pagado (`depositPaid > 0`). Un snapshot de cero horas no genera recordatorio
+  porque no existe una ventana de pérdida del abono.
 - No se implementa devolución automática. El copy no la promete: “Podés
   cancelar o reprogramar hasta X horas antes. Con menos anticipación, el abono
-  no es reembolsable. Para gestionar una devolución anterior al límite,
-  contactá al negocio.”
+  no se devuelve. Para cancelaciones anteriores aplica la política del
+  negocio.”
 
 ## Experiencia de la clienta
 
 ### Al reservar
 
-El checkout sigue mostrando la política antes de aceptar. La pantalla final y
+El checkout muestra la política vigente antes de aceptar. La pantalla final y
 el email de reserva recibida/confirmada agregan el aviso estándar cuando la
-reserva requiere o ya recibió un abono. La política libre del negocio permanece
-como texto complementario, no como fuente del número de horas.
+reserva requiere o ya recibió un abono. La política libre permanece como texto
+complementario, no como fuente del número de horas.
 
-La pantalla final ofrece un botón explícito **“Activar recordatorios”**. El
-permiso del navegador sólo se solicita después de ese gesto; nunca al cargar la
-página. Los estados visibles son: disponible, activando, activo, rechazado/no
-disponible y error recuperable.
+La pantalla final ofrece **“Activar recordatorios”**. El botón lleva a la página
+canónica `https://www.agendita.cl/notificaciones` —o al host de `getAppUrl`— con
+el grant en `#grant=...`. El fragmento no llega al servidor, logs ni `Referer`;
+la página lo lee, ejecuta `history.replaceState` para retirarlo de la barra y
+recién muestra el segundo botón que dispara el permiso del navegador. El permiso
+nunca se pide al cargar una página.
+
+Centralizar el alta evita una suscripción y un permiso distintos por cada
+`negocio.agendita.cl`. `sw.js`, `PushManager` y la administración en `/mi`
+viven siempre en el origen canónico. Los estados visibles son: disponible,
+activando, activo, rechazado/no disponible y error recuperable.
 
 En iOS se explica que Web Push requiere instalar Agendita en la pantalla de
 inicio. No se promete soporte cuando el navegador no expone `PushManager`.
 
 ### En `/mi`
 
-Una clienta autenticada puede activar o desactivar recordatorios desde su
-superficie de reservas. Desactivar revoca la suscripción local y marca las
-filas correspondientes como revocadas en el servidor.
+Una clienta autenticada activa o desactiva recordatorios desde su superficie de
+reservas, navegando al mismo origen canónico. Desactivar llama
+`PushSubscription.unsubscribe()` y envía el `endpointHash` al servidor. Con
+sesión se revocan todas las filas de ese endpoint pertenecientes a Customers de
+la usuaria; con grant de invitada, sólo la fila del customer/business autorizado.
 
 ### Al recibir el push
 
 El título identifica al negocio. El cuerpo recuerda las X horas y la regla del
-abono. Al tocarlo se abre la URL de confirmación de esa reserva. El service
-worker sólo implementa `push` y `notificationclick`; no registra un handler de
-`fetch`, cachés ni una página offline.
+abono, pero no expone nombre de la clienta, servicio, monto ni notas en la
+pantalla bloqueada. Al tocarlo se abre una URL canónica `/mi/<slug>` para una
+clienta autenticada o la confirmación pública del tenant para una invitada. La
+URL viene construida por el servidor; el worker rechaza destinos que no sean
+HTTPS y que no pertenezcan al apex configurado o sus subdominios.
+
+El service worker sólo implementa `push` y `notificationclick`; no registra un
+handler de `fetch`, cachés ni una página offline. Se sirve con
+`Cache-Control: no-cache` para recibir actualizaciones sin fijar una versión
+vieja en CDN.
 
 ## Autorización para invitadas
 
-`createBooking` y cada transición server-side que devuelve una confirmación al
-navegador emiten un grant firmado con `bookingId`, `customerId`, `businessId` y
-expiración de 24 horas. El endpoint de alta valida firma, expiración y que esos
-tres valores sigan perteneciendo a la misma reserva. Un `bookingId` aislado
-nunca autoriza una suscripción.
+`createBooking` emite un grant firmado y domain-separated con `bookingId`,
+`customerId`, `businessId`, nonce y expiración de 24 horas. El endpoint de alta
+valida firma, expiración y que esos tres valores sigan perteneciendo a la misma
+reserva. Un `bookingId` aislado nunca autoriza una suscripción. Reintentar
+idempotentemente la misma creación puede emitir un grant nuevo sin crear otra
+reserva.
 
-El grant se conserva sólo en memoria/sessionStorage hasta completar el alta; no
-se agrega a URLs, emails, logs ni a la base. Si una invitada recarga o abre luego
-el link del email, deberá iniciar sesión para activar push. Esta limitación es
-preferible a convertir la URL pública de confirmación en autorización de una
-capability de notificaciones.
+El wizard guarda el grant en `sessionStorage` del tenant antes de cualquier
+redirect a Mercado Pago. Al volver a `/book/confirmation`, un componente cliente
+lo recupera y arma el enlace canónico con `#grant=...`. El grant sólo aparece en
+ese fragmento transitorio; no entra en query strings, emails, logs ni base. Si
+una invitada recarga sin ese estado o abre luego el link del email, deberá
+iniciar sesión para activar push. Esta limitación evita convertir la URL pública
+de confirmación en autorización de notificaciones.
 
 Las clientas autenticadas usan su sesión y ownership de `Customer.userId`; no
 necesitan el grant de invitada.
@@ -85,67 +111,82 @@ necesitan el grant de invitada.
 
 Se agrega `PushSubscription` con:
 
-- `id`, `businessId`, `customerId` y `userId?`;
+- `id`, `businessId` y `customerId`; la cuenta se deriva de
+  `Customer.userId` para que vincular una clienta después no deje dos fuentes de
+  ownership;
 - `endpointHash` para búsqueda/deduplicación sin exponer la capability URL;
-- payload de suscripción cifrado (`endpoint`, `p256dh`, `auth`);
-- `createdAt`, `updatedAt`, `lastSuccessAt`, `revokedAt` y `failureCount`;
+- payload cifrado (`endpoint`, `p256dh`, `auth`);
+- `createdAt`, `updatedAt`, `lastSuccessAt`, `revokedAt`, `failureCount` y
+  `lastFailureAt`;
 - unicidad por `(customerId, endpointHash)`.
 
 El cifrado reutiliza la infraestructura de `ENCRYPTION_KEY`. Las claves VAPID
 entran por `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y
-`VAPID_SUBJECT`; ningún secreto se devuelve al cliente ni se registra en logs.
-Los endpoints validan tamaños y forma del payload y aplican rate limiting.
+`VAPID_SUBJECT` (`mailto:soporte@agendita.cl` en producción); ningún secreto se
+devuelve al cliente ni se registra. La validación de entorno exige las tres
+variables VAPID juntas y exige `ENCRYPTION_KEY` cuando push está configurado,
+aunque Mercado Pago esté apagado. Los endpoints validan tamaños y forma del
+payload, verifican `Origin` canónico y aplican rate limiting.
 
-Una respuesta Web Push `404` o `410` revoca la suscripción. Los demás fallos
-incrementan `failureCount`; después de fallos permanentes consecutivos se deja
-de intentar hasta una nueva suscripción.
+Una respuesta Web Push `404` o `410` revoca inmediatamente. `400`, `401` o `403`
+incrementan `failureCount` y revocan al tercer fallo consecutivo. `429`, `5xx` y
+errores de red son transitorios: registran el fallo pero no revocan. Un envío
+exitoso reinicia `failureCount`.
 
 ## Programación e idempotencia
 
-Se agrega `Booking.cancellationReminderSentAt DateTime?`. Un core separado
-`sendCancellationWarnings` busca en lotes reservas que cumplan:
+Se agregan `Booking.cancellationReminderClaimedAt DateTime?` y
+`Booking.cancellationReminderSentAt DateTime?`. `sendCancellationWarnings`
+busca en lotes reservas que cumplan:
 
 - `status === confirmed`;
 - `depositPaid > 0`;
-- negocio con recordatorio habilitado y cutoff mayor que cero;
+- negocio con recordatorio habilitado y snapshot de cutoff mayor que cero;
 - `cancellationReminderSentAt IS NULL`;
-- `now >= startDateTime - cutoffHours - 2h`;
-- `now < startDateTime - cutoffHours`.
+- claim nulo o anterior a `now - 10 minutos`;
+- `now >= startDateTime - cancellationCutoffHours - 2h`;
+- `now < startDateTime - cancellationCutoffHours`.
 
-Antes de tocar Web Push, un `updateMany` condicionado por
-`cancellationReminderSentAt: null` reclama atómicamente la reserva. Si no hay
-ninguna suscripción activa, o todos los envíos fallan, el claim se libera para
-permitir retry. Un éxito en al menos un dispositivo conserva el timestamp y
-evita duplicados del cron at-least-once.
+Antes de tocar Web Push, un `updateMany` condicionado por `SentAt: null` y claim
+nulo/vencido escribe `ClaimedAt = now`. Si el proceso muere, otro run recupera
+el lease después de diez minutos. Si no hay suscripción activa o todos los
+envíos fallan, el claim se libera. Un éxito en al menos un dispositivo escribe
+`SentAt = now` y limpia `ClaimedAt`; ese criterio deliberado evita repetir el
+aviso a dispositivos que ya lo recibieron.
 
-El endpoint `/api/cron/cancellation-warnings` usa el mismo bearer
-`CRON_SECRET`. `.github/workflows/cron.yml` lo invoca cada hora y valida tanto
-el HTTP como el JSON: cualquier `errors > 0` falla el step. La misma validación
-se aplica a los cuatro crons existentes, cerrando el gap operativo ya detectado.
+`/api/cron/cancellation-warnings` usa el mismo bearer `CRON_SECRET`. Un workflow
+propio lo invoca cada 15 minutos; la entrega esperada queda entre 1 h 45 min y
+2 h antes del cierre, más cualquier retraso de GitHub Actions. El workflow
+valida HTTP y JSON: cualquier `errors > 0` falla. El mismo helper de shell se
+aplica a los cuatro crons existentes, cerrando el gap operativo sin ejecutarlos
+todos cada 15 minutos.
 
-## Cambios de horario y estado
+## Cambios de horario, estado y configuración
 
-- Reprogramar una reserva limpia `cancellationReminderSentAt`; el nuevo horario
-  genera un recordatorio nuevo si corresponde.
-- Cancelar, completar, expirar o marcar no-show la vuelve inelegible por status.
-- Cambiar el cutoff o apagar el toggle afecta ejecuciones futuras; no intenta
-  retirar pushes ya entregados.
+- Reprogramar limpia ambos timestamps; conserva los snapshots contractuales y
+  el cron reevalúa el nuevo horario con las mismas condiciones de elegibilidad;
+  si ya pasó el objetivo pero el cutoff sigue abierto, el próximo run lo envía.
+- Cancelar, completar, expirar o marcar no-show vuelve la reserva inelegible.
+- Cambiar el cutoff sólo afecta reservas nuevas. Apagar el toggle detiene
+  ejecuciones futuras del negocio; ninguna opción retira pushes ya entregados.
 - Confirmaciones que ocurren después del objetivo son elegibles sólo si aún no
   cerró la ventana.
+- Reservas anteriores a la migración usan el cutoff y política actuales como
+  fallback, sin intentar reconstruir históricamente algo que no fue guardado.
 
 ## Pruebas
 
-- Unitarias del cálculo de objetivo, límites estrictos y copy en 0/1/N horas.
+- Unitarias del snapshot contractual, cálculo de objetivo, límites estrictos y
+  copy en 0/1/N horas.
 - Unitarias de pantalla final, email y estados del botón de suscripción.
-- Unitarias de grant: firma, expiración, reserva/customer/business cruzados y
-  sesión autenticada.
-- Unitarias del cifrado, deduplicación, revocación `404/410` y retry.
-- Unitarias del cron: elegibilidad, claim atómico, concurrencia, éxito parcial,
-  liberación del claim y reprogramación.
-- Test del service worker para payload y URL permitida; la URL se construye en
-  servidor y el worker sólo acepta rutas same-origin.
-- Test del workflow para asegurar que un JSON con `errors > 0` devuelve exit no
-  cero.
+- Unitarias del grant: domain separation, firma, expiración,
+  reserva/customer/business cruzados, fragment cleanup y sesión autenticada.
+- Unitarias del cifrado, deduplicación, revocación por código HTTP, fallos
+  transitorios y unsubscribe multi-negocio.
+- Unitarias del cron: elegibilidad, claim atómico, recuperación del lease,
+  concurrencia, éxito parcial, liberación del claim y reprogramación.
+- Test del service worker para payload privado, cache headers y allowlist de URL.
+- Test de los workflows para `errors > 0` y cadencia de 15 minutos.
 - Verificación final: suite focalizada, suite completa, ESLint, `tsc --noEmit`,
   build y prueba manual real en Chromium y una PWA instalada en iOS 16.4+.
 
@@ -155,12 +196,15 @@ se aplica a los cuatro crons existentes, cerrando el gap operativo ya detectado.
 - Reembolso automático de abonos por Mercado Pago o transferencia.
 - Campañas promocionales por push.
 - Push a dueñas/administradoras; esta entrega es para clientas.
+- Corrección de los errores TypeScript preexistentes: se entrega en un PR previo
+  separado para no contaminar la revisión de Web Push.
 
 ## Despliegue
 
-La migración y el código pueden desplegarse con las claves VAPID ausentes: la
-UI debe declarar push no disponible y el cron omitir envíos sin fallar reservas.
-La activación real requiere configurar VAPID en Vercel, ejecutar la migración,
-probar subscribe/unsubscribe y verificar un push real antes y después del cutoff
-con una reserva de prueba. El rollout empieza con un negocio y se amplía después
-de confirmar entrega y ausencia de duplicados.
+La migración y el código pueden desplegarse con las claves VAPID totalmente
+ausentes: la UI declara push no disponible y el cron omite envíos sin fallar
+reservas. Una configuración VAPID parcial impide el build/deploy. La activación
+real exige configurar VAPID en Vercel, ejecutar la migración, probar
+subscribe/unsubscribe y verificar un push real antes y después del cutoff con
+una reserva de prueba. El rollout empieza con un negocio y se amplía después de
+confirmar entrega y ausencia de duplicados.
