@@ -65,13 +65,20 @@ function withPushGrant<T extends { id: string; customer: { id: string } }>(
   booking: T,
   businessId: string,
 ) {
+  // Push is optional infrastructure. An absent key means the feature is
+  // disabled and must never turn a committed booking into an action error.
+  // Once configured, signing errors still propagate instead of being hidden.
+  const pushGrant = process.env.ENCRYPTION_KEY
+    ? issuePushGrant({
+        bookingId: booking.id,
+        customerId: booking.customer.id,
+        businessId,
+      })
+    : null
+
   return {
     ...booking,
-    pushGrant: issuePushGrant({
-      bookingId: booking.id,
-      customerId: booking.customer.id,
-      businessId,
-    }),
+    pushGrant,
   }
 }
 

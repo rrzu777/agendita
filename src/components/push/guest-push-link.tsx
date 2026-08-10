@@ -10,7 +10,7 @@ export function guestPushGrantSessionKey(bookingId: string): string {
 export function GuestPushLink({
   bookingId,
   canonicalOrigin,
-  pushGrant = null,
+  pushGrant,
   className,
 }: {
   bookingId: string
@@ -18,18 +18,37 @@ export function GuestPushLink({
   pushGrant?: string | null
   className?: string
 }) {
-  const [grant, setGrant] = useState<string | null>(pushGrant)
+  const [storedGrant, setStoredGrant] = useState<{ bookingId: string; grant: string } | null>(null)
 
   useEffect(() => {
     const key = guestPushGrantSessionKey(bookingId)
-    const stored = sessionStorage.getItem(key)
-    sessionStorage.removeItem(key)
-    if (!pushGrant && stored) {
-      // One-time hydration from the tenant origin after a payment redirect.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setGrant(stored)
+    let stored: string | null = null
+    try {
+      stored = sessionStorage.getItem(key)
+      sessionStorage.removeItem(key)
+    } catch {
+      // Some privacy modes expose sessionStorage but throw SecurityError on
+      // access. Do not expose a value we could not consume one-time; a direct
+      // action result remains usable without storage.
+      stored = null
     }
+
+    // `undefined` means this is the redirect confirmation surface and may
+    // consume session state. Explicit `null` means push is disabled.
+    const next = pushGrant === undefined && stored
+      ? { bookingId, grant: stored }
+      : null
+    // The bookingId carried in state prevents an old identity from rendering
+    // during a prop transition before this effect runs.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setStoredGrant(next)
   }, [bookingId, pushGrant])
+
+  const grant = typeof pushGrant === 'string'
+    ? pushGrant
+    : pushGrant === undefined && storedGrant?.bookingId === bookingId
+      ? storedGrant.grant
+      : null
 
   if (!grant) return null
 

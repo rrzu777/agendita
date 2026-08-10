@@ -320,6 +320,17 @@ describe('createBooking idempotency', () => {
       expect(mockPrisma.$transaction).not.toHaveBeenCalled()
       expect(mockPrisma.booking.updateMany).not.toHaveBeenCalled()
     })
+
+    it('returns the idempotent booking with push disabled when ENCRYPTION_KEY is absent', async () => {
+      vi.stubEnv('ENCRYPTION_KEY', '')
+      const confirmada = reservaGuardada({ status: BookingStatus.confirmed, holdExpiresAt: null })
+      mockPrisma.booking.findUnique.mockResolvedValue(confirmada)
+
+      const result = await createBooking(input, 'biz-1')
+
+      expect(result).toMatchObject({ ok: true, data: { ...confirmada, pushGrant: null } })
+      expect(mockPrisma.booking.create).not.toHaveBeenCalled()
+    })
   })
 
   it('creates new booking when idempotencyKey is new', async () => {
@@ -369,6 +380,41 @@ describe('createBooking idempotency', () => {
     })
   })
 
+  it('does not fail a newly persisted booking when push signing is disabled', async () => {
+    vi.stubEnv('ENCRYPTION_KEY', '')
+    mockPrisma.booking.findUnique.mockResolvedValue(null)
+    const createdBooking = {
+      id: 'booking-no-push',
+      businessId: 'biz-1',
+      serviceId: 'svc-1',
+      customerId: 'cust-1',
+      status: BookingStatus.pending_payment,
+      totalPrice: 10000,
+      depositRequired: 5000,
+      depositPaid: 0,
+      remainingBalance: 10000,
+      finalAmount: 10000,
+      paymentStatus: BookingPaymentStatus.unpaid,
+      cancellationCutoffHours: 24,
+      cancellationPolicySnapshot: null,
+      startDateTime: baseInput.startDateTime,
+      endDateTime: new Date('2026-05-20T15:00:00Z'),
+      service: { name: 'Manicure' },
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
+    }
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
+      const tx = {
+        ...mockPrisma,
+        booking: { ...mockPrisma.booking, create: vi.fn().mockResolvedValue(createdBooking) },
+      }
+      return fn(tx)
+    })
+
+    const result = await createBooking(baseInput, 'biz-1')
+
+    expect(result).toMatchObject({ ok: true, data: { ...createdBooking, pushGrant: null } })
+  })
+
   it('handles race condition by returning existing booking on P2002', async () => {
     // Dos envíos concurrentes con la misma key: el perdedor no encuentra nada en
     // el fast path, choca contra el unique constraint y recupera la reserva del
@@ -402,6 +448,36 @@ describe('createBooking idempotency', () => {
 
     expect(result.ok).toBe(true)
     expect(result.ok && result.data.id).toBe('booking-race')
+  })
+
+  it('recovers a P2002 booking with push disabled when ENCRYPTION_KEY is absent', async () => {
+    vi.stubEnv('ENCRYPTION_KEY', '')
+    const enUnaSemana = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    mockPrisma.booking.findUnique.mockResolvedValueOnce(null)
+    const existingBooking = {
+      id: 'booking-race-no-push',
+      businessId: 'biz-1',
+      serviceId: 'svc-1',
+      status: BookingStatus.pending_payment,
+      startDateTime: enUnaSemana,
+      endDateTime: new Date(enUnaSemana.getTime() + 60 * 60 * 1000),
+      professionalId: null,
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
+      discountAmount: 0,
+      holdExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    }
+    mockPrisma.booking.findUnique.mockResolvedValueOnce(existingBooking)
+    const p2002Error = Object.assign(new Error('Unique constraint failed'), {
+      code: 'P2002',
+      meta: { target: ['businessId_idempotencyKey'] },
+    })
+    mockPrisma.$transaction.mockRejectedValueOnce(p2002Error)
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(mockPrisma))
+    mockPrisma.booking.updateMany.mockResolvedValue({ count: 1 })
+
+    const result = await createBooking({ ...baseInput, startDateTime: enUnaSemana }, 'biz-1')
+
+    expect(result).toMatchObject({ ok: true, data: { id: 'booking-race-no-push', pushGrant: null } })
   })
 
   it('re-throws non-idempotency errors as safe generic message', async () => {

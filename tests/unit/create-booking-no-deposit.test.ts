@@ -186,6 +186,8 @@ describe('createBooking - no deposit / free service', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
+    expect(result.data.pushGrant).toEqual(expect.any(String))
+    if (!result.data.pushGrant) throw new Error('Expected push grant with ENCRYPTION_KEY configured')
     const { verifyPushGrant } = await import('@/lib/push/grant')
     expect(verifyPushGrant(result.data.pushGrant)).toMatchObject({
       bookingId: 'booking-created',
@@ -281,6 +283,8 @@ describe('createBooking - no deposit / free service', () => {
       cancellationPolicySnapshot: 'Condiciones guardadas anteriormente',
     })
     if (result.ok) {
+      expect(result.data.pushGrant).toEqual(expect.any(String))
+      if (!result.data.pushGrant) throw new Error('Expected push grant with ENCRYPTION_KEY configured')
       const { verifyPushGrant } = await import('@/lib/push/grant')
       expect(verifyPushGrant(result.data.pushGrant)).toMatchObject({
         bookingId: 'booking-existing',

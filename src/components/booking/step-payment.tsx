@@ -55,7 +55,7 @@ export interface BookingCreated {
   cancellationPolicySnapshot: string | null
   depositRequired: number
   depositPaid: number
-  pushGrant: string
+  pushGrant: string | null
 }
 
 function generateIdempotencyKey(): string {
@@ -435,7 +435,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       cancellationPolicySnapshot: string | null
       depositRequired: number
       depositPaid: number
-      pushGrant: string
+      pushGrant: string | null
     },
     mode: 'paid' | 'pending',
     confirmed: boolean,
@@ -458,7 +458,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     }
   }
 
-  function retainPushGrant(booking: { id: string; pushGrant: string }) {
+  function retainPushGrant(booking: { id: string; pushGrant: string | null }) {
+    if (!booking.pushGrant) return
     try {
       sessionStorage.setItem(guestPushGrantSessionKey(booking.id), booking.pushGrant)
     } catch {

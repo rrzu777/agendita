@@ -100,4 +100,56 @@ describe('StepPayment push grant redirect handoff', () => {
 
     await act(async () => root.unmount())
   }, 20_000)
+
+  it('continues to Mercado Pago without persisting a disabled null grant', async () => {
+    const { StepPayment } = await import('@/components/booking/step-payment')
+    mockCreateBooking.mockResolvedValue({
+      ok: true,
+      data: {
+        id: 'booking-without-push',
+        pushGrant: null,
+        bookingNumber: 8,
+        status: 'pending_payment',
+        modality: 'on_site',
+        serviceAddress: null,
+        meetingUrl: null,
+        professional: null,
+        cancellationCutoffHours: 24,
+        cancellationPolicySnapshot: null,
+        depositRequired: 5_000,
+        depositPaid: 0,
+      },
+    })
+    mockInitiatePayment.mockResolvedValue({
+      ok: true,
+      data: { paymentId: 'payment-2', redirectUrl: '#mercado-pago-without-push' },
+    })
+
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    await act(async () => {
+      root.render(
+        <StepPayment
+          data={bookingData}
+          updateData={vi.fn()}
+          businessId="business-1"
+          selfServiceCutoffHours={24}
+          manualHoldHours={24}
+          timezone="America/Santiago"
+          currency="CLP"
+          onSuccess={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      )
+    })
+    await act(async () => {})
+    await act(async () => container.querySelector<HTMLInputElement>('#accept-terms')!.click())
+    await clickButton(container, 'Pagar abono', { match: 'contains' })
+
+    expect(mockInitiatePayment).toHaveBeenCalledTimes(1)
+    expect(sessionStorage.getItem('agendita:push-grant:booking-without-push')).toBeNull()
+    expect(window.location.hash).toBe('#mercado-pago-without-push')
+
+    await act(async () => root.unmount())
+  }, 20_000)
 })
