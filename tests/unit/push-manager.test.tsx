@@ -70,7 +70,9 @@ describe('PushManager', () => {
     const root = createRoot(container)
 
     await act(async () => root.render(
-      <PushManager vapidPublicKey={TEST_VAPID_PUBLIC_KEY} canonicalOrigin="https://www.agendita.cl" />,
+      <StrictMode>
+        <PushManager vapidPublicKey={TEST_VAPID_PUBLIC_KEY} canonicalOrigin="https://www.agendita.cl" />
+      </StrictMode>,
     ))
 
     expect(window.location.hash).toBe('')
@@ -78,6 +80,7 @@ describe('PushManager', () => {
     expect(navigationMocks.replaceBrowserLocation).toHaveBeenCalledWith(
       'https://www.agendita.cl/notificaciones#grant=signed%20grant',
     )
+    expect(navigationMocks.replaceBrowserLocation).toHaveBeenCalledTimes(1)
     expect(replaceState.mock.invocationCallOrder[0])
       .toBeLessThan(navigationMocks.replaceBrowserLocation.mock.invocationCallOrder[0])
     expect(container.querySelector('button')).toBeNull()

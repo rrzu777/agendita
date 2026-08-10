@@ -1,7 +1,7 @@
 // This CommonJS module is shared by the TypeScript runtime validator and the
 // pre-build Node script, so both deployment gates enforce identical key rules.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { createECDH, ECDH } = require('crypto')
+const { createECDH, ECDH, timingSafeEqual } = require('crypto')
 
 /**
  * @param {unknown} value
@@ -41,8 +41,36 @@ function isValidVapidPrivateKey(value) {
   }
 }
 
+/**
+ * This module is consumed only by server validation/storage code and the
+ * standalone build gate. Never import it from a Client Component.
+ * @param {unknown} publicKey
+ * @param {unknown} privateKey
+ */
+function isMatchingVapidKeyPair(publicKey, privateKey) {
+  const decodedPublicKey = decodeCanonicalBase64Url(publicKey)
+  const decodedPrivateKey = decodeCanonicalBase64Url(privateKey)
+  if (
+    !decodedPublicKey
+    || !decodedPrivateKey
+    || !isValidVapidPublicKey(publicKey)
+    || !isValidVapidPrivateKey(privateKey)
+  ) return false
+
+  try {
+    const ecdh = createECDH('prime256v1')
+    ecdh.setPrivateKey(decodedPrivateKey)
+    const derivedPublicKey = ecdh.getPublicKey(undefined, 'uncompressed')
+    return derivedPublicKey.length === decodedPublicKey.length
+      && timingSafeEqual(derivedPublicKey, decodedPublicKey)
+  } catch {
+    return false
+  }
+}
+
 module.exports = {
   decodeCanonicalBase64Url,
+  isMatchingVapidKeyPair,
   isValidVapidPrivateKey,
   isValidVapidPublicKey,
 }

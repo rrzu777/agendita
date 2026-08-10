@@ -48,6 +48,7 @@ export function PushManager({
   const [interactionStatus, setInteractionStatus] = useState<ManagerStatus | null>(null)
   const [retryAction, setRetryAction] = useState<'activate' | 'deactivate'>('activate')
   const grantRef = useRef<string | null>(null)
+  const redirectStartedRef = useRef(false)
   const subscriptionRef = useRef<PushSubscription | null>(null)
 
   useEffect(() => {
@@ -59,13 +60,16 @@ export function PushManager({
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
     }
 
+    // Preserve the fragment value before the tenant redirect branch. Strict
+    // Mode replays this effect after the fragment has already been cleared.
+    if (grant !== null) grantRef.current = grant
+
     if (!isCanonicalBrowserOrigin(canonicalOrigin)) {
-      replaceBrowserLocation(canonicalNotificationDestination(canonicalOrigin, grant))
+      if (redirectStartedRef.current) return
+      redirectStartedRef.current = true
+      replaceBrowserLocation(canonicalNotificationDestination(canonicalOrigin, grantRef.current))
       return
     }
-    // React Strict Mode replays effects in development after the fragment was
-    // already cleared. Preserve the grant captured by the first pass.
-    if (grant !== null) grantRef.current = grant
   }, [canonicalOrigin])
 
   const availableStatus: ManagerStatus = !browserReady

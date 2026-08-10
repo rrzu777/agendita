@@ -1,7 +1,11 @@
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { TEST_VAPID_PRIVATE_KEY, TEST_VAPID_PUBLIC_KEY } from '../helpers/push-fixtures'
+import {
+  OTHER_VAPID_PUBLIC_KEY,
+  TEST_VAPID_PRIVATE_KEY,
+  TEST_VAPID_PUBLIC_KEY,
+} from '../helpers/push-fixtures'
 
 const scriptPath = resolve(process.cwd(), 'scripts/validate-env.js')
 
@@ -62,6 +66,36 @@ describe('build environment validation', () => {
 
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('VAPID_SUBJECT')
+  })
+
+  it('accepts a complete configuration with a matching VAPID key pair', () => {
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: validBuildEnv({
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: TEST_VAPID_PUBLIC_KEY,
+        VAPID_PRIVATE_KEY: TEST_VAPID_PRIVATE_KEY,
+        VAPID_SUBJECT: 'mailto:push@agendita.cl',
+        ENCRYPTION_KEY: 'encryption-key',
+      }),
+      encoding: 'utf8',
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('Environment validation passed')
+  })
+
+  it('blocks the build when valid VAPID keys do not form a pair', () => {
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: validBuildEnv({
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: OTHER_VAPID_PUBLIC_KEY,
+        VAPID_PRIVATE_KEY: TEST_VAPID_PRIVATE_KEY,
+        VAPID_SUBJECT: 'mailto:push@agendita.cl',
+        ENCRYPTION_KEY: 'encryption-key',
+      }),
+      encoding: 'utf8',
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('matching P-256 key pair')
   })
 
   it.each([

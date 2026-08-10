@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { TEST_VAPID_PRIVATE_KEY, TEST_VAPID_PUBLIC_KEY } from '../helpers/push-fixtures'
+import {
+  OTHER_VAPID_PUBLIC_KEY,
+  TEST_VAPID_PRIVATE_KEY,
+  TEST_VAPID_PUBLIC_KEY,
+} from '../helpers/push-fixtures'
 
 const originalEnv = { ...process.env }
 
@@ -97,9 +101,33 @@ describe('env validation', () => {
 
         const { errors } = validateEnv()
 
-        expect(errors.filter((error) => ['NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'VAPID_SUBJECT', 'ENCRYPTION_KEY'].includes(error.key))).toEqual([])
+        expect(errors.filter((error) => [
+          'NEXT_PUBLIC_VAPID_PUBLIC_KEY',
+          'VAPID_PRIVATE_KEY',
+          'VAPID_SUBJECT',
+          'ENCRYPTION_KEY',
+        ].includes(error.key))).toEqual([])
       },
     )
+
+    it('rejects individually valid VAPID keys that do not form a pair', async () => {
+      setEnv({
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: OTHER_VAPID_PUBLIC_KEY,
+        VAPID_PRIVATE_KEY: TEST_VAPID_PRIVATE_KEY,
+        VAPID_SUBJECT: 'mailto:push@agendita.cl',
+        ENCRYPTION_KEY: 'encryption-key',
+      })
+      const { validateEnv } = await import('@/lib/env')
+
+      const { errors } = validateEnv()
+
+      expect(errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          key: 'VAPID_PRIVATE_KEY',
+          message: expect.stringContaining('matching P-256 key pair'),
+        }),
+      ]))
+    })
 
     it.each([
       ['NEXT_PUBLIC_VAPID_PUBLIC_KEY', `${TEST_VAPID_PUBLIC_KEY}=`],

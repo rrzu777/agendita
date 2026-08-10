@@ -4,7 +4,11 @@
  * Do NOT import this from client components - it reads secrets.
  */
 
-import { isValidVapidPrivateKey, isValidVapidPublicKey } from '@/lib/push/vapid-validation'
+import {
+  isMatchingVapidKeyPair,
+  isValidVapidPrivateKey,
+  isValidVapidPublicKey,
+} from '@/lib/push/vapid-validation'
 
 export type EnvValidationError = {
   key: string
@@ -285,16 +289,31 @@ export function validateEnv(): EnvValidationResult {
       })
     }
 
-    if (!isValidVapidPublicKey(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY)) {
+    const validVapidPublicKey = isValidVapidPublicKey(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY)
+    const validVapidPrivateKey = isValidVapidPrivateKey(process.env.VAPID_PRIVATE_KEY)
+    if (!validVapidPublicKey) {
       errors.push({
         key: 'NEXT_PUBLIC_VAPID_PUBLIC_KEY',
         message: 'NEXT_PUBLIC_VAPID_PUBLIC_KEY must be a canonical base64url uncompressed P-256 public key',
       })
     }
-    if (!isValidVapidPrivateKey(process.env.VAPID_PRIVATE_KEY)) {
+    if (!validVapidPrivateKey) {
       errors.push({
         key: 'VAPID_PRIVATE_KEY',
         message: 'VAPID_PRIVATE_KEY must be a canonical base64url P-256 private key',
+      })
+    }
+    if (
+      validVapidPublicKey
+      && validVapidPrivateKey
+      && !isMatchingVapidKeyPair(
+        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+        process.env.VAPID_PRIVATE_KEY,
+      )
+    ) {
+      errors.push({
+        key: 'VAPID_PRIVATE_KEY',
+        message: 'NEXT_PUBLIC_VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must form a matching P-256 key pair',
       })
     }
 
