@@ -1,6 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import type { LoyaltyRewardEmailData, EmailResult } from '@/lib/notifications/types'
 
-const sendLoyaltyRewardNotification = vi.hoisted(() => vi.fn(async () => ({ success: true })))
+const sendLoyaltyRewardNotification = vi.hoisted(() =>
+  vi.fn<(data: LoyaltyRewardEmailData) => Promise<EmailResult>>(
+    async () => ({ success: true }),
+  ),
+)
 vi.mock('@/lib/notifications', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/notifications')>()
   return {
