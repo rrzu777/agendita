@@ -132,6 +132,35 @@ function validate() {
     }
   }
 
+  // ── Web Push — optional, but the VAPID trio is atomic ──────────────────
+  // Read secret names directly. Falling back to NEXT_PUBLIC_* for private
+  // credentials would make an accidentally exposed secret look valid.
+  const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || ''
+  const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || ''
+  const vapidSubject = process.env.VAPID_SUBJECT || ''
+  const vapidPresent = [vapidPublicKey, vapidPrivateKey, vapidSubject].filter(Boolean)
+  if (vapidPresent.length > 0 && vapidPresent.length < 3) {
+    errors.push(
+      `Web Push configuration is incomplete (${vapidPresent.length}/3). Configure all VAPID variables together or remove all of them.`,
+    )
+  }
+  if (vapidPresent.length === 3) {
+    if (!process.env.ENCRYPTION_KEY) {
+      errors.push('MISSING: ENCRYPTION_KEY (required when Web Push is enabled)')
+    }
+    const validMailto = /^mailto:[^@\s]+@[^@\s]+$/i.test(vapidSubject)
+    let validHttps = false
+    try {
+      const subjectUrl = new URL(vapidSubject)
+      validHttps = subjectUrl.protocol === 'https:' && subjectUrl.hostname.length > 0
+    } catch {
+      validHttps = false
+    }
+    if (!validMailto && !validHttps) {
+      errors.push('VAPID_SUBJECT must be a mailto: address or an HTTPS URL')
+    }
+  }
+
   // ── Upstash Redis — REQUIRED in production (rate limiting fails closed) ─
   if (isProduction) {
     if (

@@ -5,6 +5,64 @@ import { describe, expect, it } from 'vitest'
 const scriptPath = resolve(process.cwd(), 'scripts/validate-env.js')
 
 describe('build environment validation', () => {
+  function validBuildEnv(overrides = {}) {
+    return {
+      ...process.env,
+      NODE_ENV: 'development',
+      DATABASE_URL: 'postgresql://localhost/test',
+      DIRECT_URL: 'postgresql://localhost/test',
+      NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+      APP_DOMAIN: 'app.agendita.com',
+      NEXT_PUBLIC_APP_DOMAIN: 'app.agendita.com',
+      PAYMENT_PROVIDER: 'manual',
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: '',
+      VAPID_PRIVATE_KEY: '',
+      VAPID_SUBJECT: '',
+      ENCRYPTION_KEY: '',
+      ...overrides,
+    }
+  }
+
+  it('blocks the build when VAPID configuration is partial', () => {
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: validBuildEnv({ NEXT_PUBLIC_VAPID_PUBLIC_KEY: 'public-vapid' }),
+      encoding: 'utf8',
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('Web Push configuration is incomplete')
+  })
+
+  it('blocks the build when Web Push is enabled without encryption', () => {
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: validBuildEnv({
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: 'public-vapid',
+        VAPID_PRIVATE_KEY: 'private-vapid',
+        VAPID_SUBJECT: 'mailto:push@agendita.cl',
+      }),
+      encoding: 'utf8',
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('ENCRYPTION_KEY')
+  })
+
+  it('blocks the build for a non-mailto, non-HTTPS VAPID subject', () => {
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: validBuildEnv({
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: 'public-vapid',
+        VAPID_PRIVATE_KEY: 'private-vapid',
+        VAPID_SUBJECT: 'http://agendita.cl',
+        ENCRYPTION_KEY: 'encryption-key',
+      }),
+      encoding: 'utf8',
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('VAPID_SUBJECT')
+  })
+
   it('rejects OAuth-only Mercado Pago without the global webhook lookup token', () => {
     const env = {
       ...process.env,

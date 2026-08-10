@@ -262,6 +262,44 @@ export function validateEnv(): EnvValidationResult {
     })
   }
 
+  // --- Web Push (optional, but atomic) ---
+  const vapidKeys = [
+    'NEXT_PUBLIC_VAPID_PUBLIC_KEY',
+    'VAPID_PRIVATE_KEY',
+    'VAPID_SUBJECT',
+  ]
+  const vapidPresent = vapidKeys.filter((key) => !!process.env[key])
+  if (vapidPresent.length > 0 && vapidPresent.length < vapidKeys.length) {
+    errors.push({
+      key: 'NEXT_PUBLIC_VAPID_PUBLIC_KEY',
+      message: `Web Push configuration is incomplete (${vapidPresent.length}/${vapidKeys.length}). Configure all VAPID variables together or remove all of them.`,
+    })
+  }
+  if (vapidPresent.length === vapidKeys.length) {
+    if (!process.env.ENCRYPTION_KEY) {
+      errors.push({
+        key: 'ENCRYPTION_KEY',
+        message: 'ENCRYPTION_KEY is required when Web Push is enabled',
+      })
+    }
+
+    const subject = process.env.VAPID_SUBJECT!
+    const validMailto = /^mailto:[^@\s]+@[^@\s]+$/i.test(subject)
+    let validHttps = false
+    try {
+      const subjectUrl = new URL(subject)
+      validHttps = subjectUrl.protocol === 'https:' && subjectUrl.hostname.length > 0
+    } catch {
+      validHttps = false
+    }
+    if (!validMailto && !validHttps) {
+      errors.push({
+        key: 'VAPID_SUBJECT',
+        message: 'VAPID_SUBJECT must be a mailto: address or an HTTPS URL',
+      })
+    }
+  }
+
   // --- Upstash Redis — REQUIRED in production ---
   // The in-memory limiter is per-isolate and provides no real protection on
   // serverless. In production we fail closed without a distributed store, so a
