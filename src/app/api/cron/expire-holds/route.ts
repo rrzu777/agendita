@@ -26,7 +26,7 @@ async function handler(request: NextRequest) {
 
   console.log(`[cron:expire-holds] Expired ${result.expired} bookings at ${new Date().toISOString()}`)
 
-  return NextResponse.json({ expired: result.expired })
+  return NextResponse.json({ expired: result.expired, errors: 0 })
 }
 
 export const GET = handler

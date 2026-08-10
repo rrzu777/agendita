@@ -1,0 +1,22 @@
+name: Cancellation warnings
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: cancellation-warnings
+  cancel-in-progress: false
+
+jobs:
+  send-cancellation-warnings:
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: ${{ vars.APP_BASE_URL || 'https://www.agendita.cl' }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Send cancellation warnings
+        run: scripts/run-json-cron.sh "$BASE_URL/api/cron/cancellation-warnings"
