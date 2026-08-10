@@ -57,6 +57,16 @@ describe('resolveCancellationPolicy', () => {
       /cancellationCutoffHours/,
     )
   })
+
+  it('falla cerrado si una reserva no legacy omite el snapshot de política', () => {
+    const incomplete = {
+      cancellationCutoffHours: 24,
+    } as unknown as Parameters<typeof resolveCancellationPolicy>[0]
+
+    expect(() => resolveCancellationPolicy(incomplete, business)).toThrow(
+      /cancellationPolicySnapshot/,
+    )
+  })
 })
 
 describe('cancellationWarningText', () => {

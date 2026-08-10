@@ -31,6 +31,10 @@ export function resolveCancellationPolicy(
     }
   }
 
+  if (booking.cancellationPolicySnapshot === undefined) {
+    throw new Error('Booking projection missing cancellationPolicySnapshot')
+  }
+
   return {
     cutoffHours: booking.cancellationCutoffHours,
     additionalPolicy: booking.cancellationPolicySnapshot,
