@@ -4,8 +4,9 @@ import { TEST_PUSH_AUTH, TEST_VAPID_PUBLIC_KEY } from '../helpers/push-fixtures'
 
 const {
   mockBookingFindMany,
-  mockBookingFindUnique,
+  mockBookingFindFirst,
   mockBookingUpdateMany,
+  mockTransaction,
   mockSubscriptionFindMany,
   mockSubscriptionUpdate,
   mockSubscriptionUpdateMany,
@@ -14,8 +15,9 @@ const {
   mockLogger,
 } = vi.hoisted(() => ({
   mockBookingFindMany: vi.fn(),
-  mockBookingFindUnique: vi.fn(),
+  mockBookingFindFirst: vi.fn(),
   mockBookingUpdateMany: vi.fn(),
+  mockTransaction: vi.fn(),
   mockSubscriptionFindMany: vi.fn(),
   mockSubscriptionUpdate: vi.fn(),
   mockSubscriptionUpdateMany: vi.fn(),
@@ -26,9 +28,10 @@ const {
 
 vi.mock('@/lib/db', () => ({
   prisma: {
+    $transaction: mockTransaction,
     booking: {
       findMany: mockBookingFindMany,
-      findUnique: mockBookingFindUnique,
+      findFirst: mockBookingFindFirst,
       updateMany: mockBookingUpdateMany,
     },
     pushSubscription: {
@@ -106,11 +109,19 @@ function simulateSubscriptionPersistence(initial: SimulatedSubscriptionRow) {
     where: Record<string, unknown>
     data: Record<string, unknown>
   }) => {
+    const expectedFailureCount = where.failureCount as
+      | number
+      | { gte?: number }
+      | undefined
     if (
       where.id !== row.id
       || ('subscriptionEncrypted' in where
         && where.subscriptionEncrypted !== row.subscriptionEncrypted)
-      || ('failureCount' in where && where.failureCount !== row.failureCount)
+      || (typeof expectedFailureCount === 'number'
+        && expectedFailureCount !== row.failureCount)
+      || (typeof expectedFailureCount === 'object'
+        && expectedFailureCount.gte !== undefined
+        && row.failureCount < expectedFailureCount.gte)
       || (where.revokedAt === null && row.revokedAt !== null)
     ) {
       return { count: 0 }
@@ -170,15 +181,15 @@ describe('sendCancellationWarnings', () => {
     vi.stubEnv('VAPID_SUBJECT', 'mailto:test@agendita.cl')
     vi.stubEnv('ENCRYPTION_KEY', 'encryption-test-key')
     mockBookingFindMany.mockResolvedValue([makeBooking()])
-    mockBookingFindUnique.mockResolvedValue({
-      cancellationCutoffHours: null,
+    mockBookingFindFirst.mockResolvedValue({
+      cancellationCutoffHours: 24,
       startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
-      business: {
-        selfServiceCutoffHours: 24,
-        cancellationReminderEnabled: true,
-      },
+      business: { selfServiceCutoffHours: 24 },
     })
     mockBookingUpdateMany.mockResolvedValue({ count: 1 })
+    mockTransaction.mockImplementation(async (callback) => callback({
+      pushSubscription: { updateMany: mockSubscriptionUpdateMany },
+    }))
     mockSubscriptionFindMany.mockResolvedValue([makeSubscription()])
     mockSubscriptionUpdate.mockResolvedValue({ failureCount: 1 })
     mockSubscriptionUpdateMany.mockResolvedValue({ count: 1 })
@@ -255,6 +266,22 @@ describe('sendCancellationWarnings', () => {
     const result = await sendCancellationWarnings(NOW)
 
     expect(result).toEqual({ sent: 1, skipped: 0, errors: 0 })
+    expect(mockBookingFindFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'booking-1',
+        cancellationReminderClaimedAt: NOW,
+        cancellationReminderSentAt: null,
+        status: BookingStatus.confirmed,
+        depositPaid: { gt: 0 },
+        startDateTime: { gt: NOW },
+        business: { cancellationReminderEnabled: true },
+      },
+      select: {
+        cancellationCutoffHours: true,
+        startDateTime: true,
+        business: { select: { selfServiceCutoffHours: true } },
+      },
+    })
     expect(mockSendWebPush).toHaveBeenCalledTimes(1)
   })
 
@@ -311,29 +338,29 @@ describe('sendCancellationWarnings', () => {
       mockBookingFindMany.mockResolvedValue([
         makeBooking({ cancellationCutoffHours: null }),
       ])
-      mockBookingFindUnique.mockResolvedValue({
+      mockBookingFindFirst.mockResolvedValue({
         cancellationCutoffHours: null,
         startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
-        business: {
-          selfServiceCutoffHours: currentCutoffHours,
-          cancellationReminderEnabled: true,
-        },
+        business: { selfServiceCutoffHours: currentCutoffHours },
       })
 
       const result = await sendCancellationWarnings(NOW)
 
       expect(result).toEqual({ sent: 0, skipped: 1, errors: 0 })
-      expect(mockBookingFindUnique).toHaveBeenCalledWith({
-        where: { id: 'booking-1' },
+      expect(mockBookingFindFirst).toHaveBeenCalledWith({
+        where: {
+          id: 'booking-1',
+          cancellationReminderClaimedAt: NOW,
+          cancellationReminderSentAt: null,
+          status: BookingStatus.confirmed,
+          depositPaid: { gt: 0 },
+          startDateTime: { gt: NOW },
+          business: { cancellationReminderEnabled: true },
+        },
         select: {
           cancellationCutoffHours: true,
           startDateTime: true,
-          business: {
-            select: {
-              selfServiceCutoffHours: true,
-              cancellationReminderEnabled: true,
-            },
-          },
+          business: { select: { selfServiceCutoffHours: true } },
         },
       })
       expect(mockSubscriptionFindMany).not.toHaveBeenCalled()
@@ -349,6 +376,75 @@ describe('sendCancellationWarnings', () => {
       })
     },
   )
+
+  it('no toca Web Push si una reprogramación limpia el claim mientras revalida', async () => {
+    let finishRevalidation!: (value: null) => void
+    mockBookingFindFirst.mockReturnValue(new Promise((resolve) => {
+      finishRevalidation = resolve
+    }))
+
+    const running = sendCancellationWarnings(NOW)
+    await vi.waitFor(() => expect(mockBookingFindFirst).toHaveBeenCalledTimes(1))
+    expect(mockSubscriptionFindMany).not.toHaveBeenCalled()
+
+    finishRevalidation(null)
+    const result = await running
+
+    expect(result).toEqual({ sent: 0, skipped: 1, errors: 0 })
+    expect(mockDecryptSecret).not.toHaveBeenCalled()
+    expect(mockSendWebPush).not.toHaveBeenCalled()
+    expect(mockBookingUpdateMany).toHaveBeenLastCalledWith({
+      where: {
+        id: 'booking-1',
+        cancellationReminderClaimedAt: NOW,
+        cancellationReminderSentAt: null,
+      },
+      data: { cancellationReminderClaimedAt: null },
+    })
+  })
+
+  it.each([
+    ['cancelada', { status: BookingStatus.cancelled, depositPaid: 5_000 }],
+    ['sin abono', { status: BookingStatus.confirmed, depositPaid: 0 }],
+  ])(
+    'no toca Web Push si la reserva queda %s después del claim',
+    async (_case, changedRow) => {
+      mockBookingFindFirst.mockImplementation(async ({ where }) => {
+        if (where.status !== undefined && changedRow.status !== where.status) return null
+        if (
+          where.depositPaid?.gt !== undefined
+          && changedRow.depositPaid <= where.depositPaid.gt
+        ) return null
+        return {
+          cancellationCutoffHours: 24,
+          startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
+          business: { selfServiceCutoffHours: 24 },
+        }
+      })
+
+      const result = await sendCancellationWarnings(NOW)
+
+      expect(result).toEqual({ sent: 0, skipped: 1, errors: 0 })
+      expect(mockSubscriptionFindMany).not.toHaveBeenCalled()
+      expect(mockDecryptSecret).not.toHaveBeenCalled()
+      expect(mockSendWebPush).not.toHaveBeenCalled()
+    },
+  )
+
+  it('no toca Web Push si el horario actual queda fuera de ventana después del claim', async () => {
+    mockBookingFindFirst.mockResolvedValue({
+      cancellationCutoffHours: 24,
+      startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS + 1),
+      business: { selfServiceCutoffHours: 24 },
+    })
+
+    const result = await sendCancellationWarnings(NOW)
+
+    expect(result).toEqual({ sent: 0, skipped: 1, errors: 0 })
+    expect(mockSubscriptionFindMany).not.toHaveBeenCalled()
+    expect(mockDecryptSecret).not.toHaveBeenCalled()
+    expect(mockSendWebPush).not.toHaveBeenCalled()
+  })
 
   it('el query excluye status incorrecto, abono cero y negocio deshabilitado', async () => {
     mockBookingFindMany.mockResolvedValue([])
@@ -509,21 +605,22 @@ describe('sendCancellationWarnings', () => {
       mockSubscriptionFindMany.mockResolvedValue([
         makeSubscription({ failureCount: 1 }),
       ])
-      mockSubscriptionUpdate.mockResolvedValue({ failureCount: 2 })
+      const simulated = simulateSubscriptionPersistence({
+        ...makeSubscription({ failureCount: 1 }),
+        revokedAt: null,
+        lastFailureAt: null,
+        lastSuccessAt: null,
+      })
       mockSendWebPush.mockResolvedValue({ ok: false, statusCode })
 
       await sendCancellationWarnings(NOW)
 
-      expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
-        where: {
-          id: 'subscription-1',
-          subscriptionEncrypted: PUSH_JSON,
-          revokedAt: null,
-          failureCount: 1,
-        },
-        data: { failureCount: { increment: 1 }, lastFailureAt: NOW },
+      expect(simulated.read()).toMatchObject({
+        failureCount: 2,
+        revokedAt: null,
+        lastFailureAt: NOW,
       })
-      expect(mockSubscriptionUpdate).not.toHaveBeenCalled()
+      expect(mockTransaction).toHaveBeenCalledTimes(1)
     },
   )
 
@@ -531,23 +628,60 @@ describe('sendCancellationWarnings', () => {
     mockSubscriptionFindMany.mockResolvedValue([
       makeSubscription({ failureCount: 2 }),
     ])
-    mockSubscriptionUpdate.mockResolvedValue({ failureCount: 3 })
+    const simulated = simulateSubscriptionPersistence({
+      ...makeSubscription({ failureCount: 2 }),
+      revokedAt: null,
+      lastFailureAt: null,
+      lastSuccessAt: null,
+    })
     mockSendWebPush.mockResolvedValue({ ok: false, statusCode })
 
     await sendCancellationWarnings(NOW)
 
-    expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
-      where: {
-        id: 'subscription-1',
-        subscriptionEncrypted: PUSH_JSON,
-        revokedAt: null,
-        failureCount: 2,
-      },
-      data: {
-        failureCount: { increment: 1 },
-        lastFailureAt: NOW,
-        revokedAt: NOW,
-      },
+    expect(simulated.read()).toMatchObject({
+      failureCount: 3,
+      revokedAt: NOW,
+      lastFailureAt: NOW,
+    })
+  })
+
+  it('cuenta dos fallos permanentes concurrentes de la misma generación y revoca al tercero', async () => {
+    mockBookingFindMany
+      .mockResolvedValueOnce([makeBooking({ id: 'booking-1' })])
+      .mockResolvedValueOnce([makeBooking({ id: 'booking-2' })])
+    mockSubscriptionFindMany.mockResolvedValue([
+      makeSubscription({ failureCount: 1 }),
+    ])
+    const simulated = simulateSubscriptionPersistence({
+      ...makeSubscription({ failureCount: 1 }),
+      revokedAt: null,
+      lastFailureAt: null,
+      lastSuccessAt: null,
+    })
+    let deliveryCount = 0
+    let releaseDeliveries!: () => void
+    const deliveryBarrier = new Promise<void>((resolve) => {
+      releaseDeliveries = resolve
+    })
+    mockSendWebPush.mockImplementation(async () => {
+      deliveryCount++
+      if (deliveryCount === 2) releaseDeliveries()
+      await deliveryBarrier
+      return { ok: false, statusCode: 400 }
+    })
+
+    const [first, second] = await Promise.all([
+      sendCancellationWarnings(NOW),
+      sendCancellationWarnings(NOW),
+    ])
+
+    expect(first).toEqual({ sent: 0, skipped: 0, errors: 1 })
+    expect(second).toEqual({ sent: 0, skipped: 0, errors: 1 })
+    expect(simulated.read()).toMatchObject({
+      subscriptionEncrypted: PUSH_JSON,
+      failureCount: 3,
+      revokedAt: NOW,
+      lastFailureAt: NOW,
     })
   })
 

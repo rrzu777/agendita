@@ -85,24 +85,27 @@ function isCutoffInsideWarningWindow(
   return nowMs >= targetAt.getTime() && nowMs < closesAt.getTime()
 }
 
-async function revalidateLegacyCutoff(
-  candidate: Candidate,
+async function revalidateClaimedCandidate(
+  bookingId: string,
   now: Date,
 ): Promise<number | null> {
-  const current = await prisma.booking.findUnique({
-    where: { id: candidate.id },
+  const current = await prisma.booking.findFirst({
+    where: {
+      id: bookingId,
+      cancellationReminderClaimedAt: now,
+      cancellationReminderSentAt: null,
+      status: BookingStatus.confirmed,
+      depositPaid: { gt: 0 },
+      startDateTime: { gt: now },
+      business: { cancellationReminderEnabled: true },
+    },
     select: {
       cancellationCutoffHours: true,
       startDateTime: true,
-      business: {
-        select: {
-          selfServiceCutoffHours: true,
-          cancellationReminderEnabled: true,
-        },
-      },
+      business: { select: { selfServiceCutoffHours: true } },
     },
   })
-  if (!current?.business.cancellationReminderEnabled) return null
+  if (!current) return null
 
   const cutoffHours = current.cancellationCutoffHours
     ?? current.business.selfServiceCutoffHours
@@ -226,16 +229,26 @@ async function persistDisposition(disposition: DeliveryDisposition, now: Date): 
   }
 
   if (disposition.kind === 'permanent') {
-    await prisma.pushSubscription.updateMany({
-      where: {
-        ...deliveredGeneration,
-        failureCount: subscription.failureCount,
-      },
-      data: {
-        failureCount: { increment: 1 },
-        lastFailureAt: now,
-        ...(subscription.failureCount >= 2 ? { revokedAt: now } : {}),
-      },
+    await prisma.$transaction(async (tx) => {
+      const incremented = await tx.pushSubscription.updateMany({
+        where: deliveredGeneration,
+        data: {
+          failureCount: { increment: 1 },
+          lastFailureAt: now,
+        },
+      })
+      if (incremented.count === 0) return
+
+      // This second statement observes the increment in the same transaction.
+      // Concurrent workers serialize on the row, while a re-subscribe changes
+      // the ciphertext and makes both generation guards no-ops.
+      await tx.pushSubscription.updateMany({
+        where: {
+          ...deliveredGeneration,
+          failureCount: { gte: 3 },
+        },
+        data: { revokedAt: now },
+      })
     })
     return
   }
@@ -284,17 +297,16 @@ async function processCandidate(
     if (claim.count === 0) return 'skipped'
     claimOpen = true
 
-    let cutoffHours = candidateCutoffHours(candidate)
-    if (candidate.cancellationCutoffHours === null) {
-      const currentCutoffHours = await revalidateLegacyCutoff(candidate, now)
-      if (currentCutoffHours === null) {
-        await releaseClaim(candidate.id, now)
-        claimOpen = false
-        return 'skipped'
-      }
-      cutoffHours = currentCutoffHours
+    const cutoffHours = await revalidateClaimedCandidate(candidate.id, now)
+    if (cutoffHours === null) {
+      await releaseClaim(candidate.id, now)
+      claimOpen = false
+      return 'skipped'
     }
 
+    // This is the last database eligibility/ownership read before the external
+    // effect. A status change after this point is the unavoidable provider
+    // exactly-once boundary described by the recoverable booking lease.
     const subscriptions = await loadActiveSubscriptions(candidate)
     if (subscriptions.length === 0) {
       await releaseClaim(candidate.id, now)
