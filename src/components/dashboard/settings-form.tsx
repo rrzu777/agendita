@@ -323,7 +323,7 @@ export function SettingsForm({ business }: { business: Business }) {
             <Label htmlFor="cancellationPolicy">Condiciones adicionales</Label>
             <Textarea id="cancellationPolicy" {...register('cancellationPolicy')} rows={3} />
             <p className="text-xs text-muted-foreground">
-              Complementan la política. El límite estructurado de horas configurado arriba tiene prioridad.
+              Complementan la política y no deben repetir ni contradecir el límite estructurado de horas, que tiene prioridad.
             </p>
           </div>
           <div className="space-y-2">

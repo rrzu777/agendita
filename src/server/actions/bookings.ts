@@ -996,6 +996,8 @@ async function _createBookingFromDashboard(data: {
         meetingUrl,
         internalNotes: data.internalNotes || null,
         holdExpiresAt: status === BookingStatus.pending_payment ? addMinutes(new Date(), DASHBOARD_HOLD_MINUTES) : null,
+        cancellationCutoffHours: business.selfServiceCutoffHours,
+        cancellationPolicySnapshot: business.cancellationPolicy,
         bookingNumber,
       },
       include: BOOKING_RESULT_INCLUDE,

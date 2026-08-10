@@ -241,6 +241,8 @@ describe('createBooking - no deposit / free service', () => {
       // reintento por una diferencia que no existe.
       professionalId: null,
       status: BookingStatus.confirmed,
+      cancellationCutoffHours: 48,
+      cancellationPolicySnapshot: 'Condiciones guardadas anteriormente',
       service: { name: 'Manicure' },
       customer: { name: 'Juan', phone: '+56912345678', email: null },
     }
@@ -249,6 +251,10 @@ describe('createBooking - no deposit / free service', () => {
     const result = await createBooking({ ...baseInput, idempotencyKey: 'key-1' }, 'biz-1')
 
     expect(result).toEqual({ ok: true, data: existingBooking })
+    expect(result.ok && result.data).toMatchObject({
+      cancellationCutoffHours: 48,
+      cancellationPolicySnapshot: 'Condiciones guardadas anteriormente',
+    })
     expect(mockPrisma.booking.create).not.toHaveBeenCalled()
   })
 })
