@@ -8,6 +8,7 @@
     "vercel-build": "node scripts/validate-env.js && prisma migrate deploy && prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit --pretty false",
     "test": "vitest --run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
