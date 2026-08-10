@@ -1,6 +1,7 @@
 import { createHash } from 'crypto'
 import { prisma } from '@/lib/db'
 import { encryptSecret } from '@/lib/payments/encryption'
+import { decodeCanonicalBase64Url, isValidVapidPublicKey } from './vapid-validation'
 
 const MAX_ENDPOINT_LENGTH = 4096
 const MAX_KEY_LENGTH = 1024
@@ -8,7 +9,7 @@ const EXACT_PUSH_HOSTS = new Set([
   'fcm.googleapis.com',
   'updates.push.services.mozilla.com',
   'push.services.mozilla.com',
-  'web.push.apple.com',
+  'push.apple.com',
 ])
 
 export type NormalizedPushSubscription = {
@@ -23,17 +24,44 @@ function boundedString(value: unknown, maxLength: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength
 }
 
+function isAllowedPushHost(hostname: string): boolean {
+  return EXACT_PUSH_HOSTS.has(hostname)
+    || hostname.endsWith('.notify.windows.com')
+    || hostname.endsWith('.push.apple.com')
+}
+
+export function canonicalizeWebPushEndpoint(value: string): string {
+  if (!boundedString(value, MAX_ENDPOINT_LENGTH)) {
+    throw new Error('Invalid push subscription')
+  }
+
+  let endpoint: URL
+  try {
+    endpoint = new URL(value)
+  } catch {
+    throw new Error('Invalid push subscription')
+  }
+  const hostname = endpoint.hostname.toLowerCase()
+  if (
+    endpoint.protocol !== 'https:'
+    || endpoint.port
+    || endpoint.username
+    || endpoint.password
+    || endpoint.hash
+    || !isAllowedPushHost(hostname)
+  ) {
+    throw new Error('Invalid push subscription')
+  }
+
+  return endpoint.href
+}
+
 export function isAllowedWebPushEndpoint(value: string): boolean {
   try {
-    const endpoint = new URL(value)
-    const hostname = endpoint.hostname.toLowerCase()
     // The endpoint is later fetched by the server. Limiting it to browser push
     // providers prevents an authenticated client from turning delivery into SSRF.
-    return endpoint.protocol === 'https:'
-      && !endpoint.port
-      && !endpoint.username
-      && !endpoint.password
-      && (EXACT_PUSH_HOSTS.has(hostname) || hostname.endsWith('.notify.windows.com'))
+    canonicalizeWebPushEndpoint(value)
+    return true
   } catch {
     return false
   }
@@ -59,12 +87,20 @@ export function normalizePushSubscription(value: unknown): NormalizedPushSubscri
     throw new Error('Invalid push subscription')
   }
 
-  if (!isAllowedWebPushEndpoint(candidate.endpoint)) {
+  const p256dh = decodeCanonicalBase64Url(keyRecord.p256dh)
+  const auth = decodeCanonicalBase64Url(keyRecord.auth)
+  if (
+    !isValidVapidPublicKey(keyRecord.p256dh)
+    || !p256dh
+    || p256dh.length !== 65
+    || !auth
+    || auth.length !== 16
+  ) {
     throw new Error('Invalid push subscription')
   }
 
   return {
-    endpoint: candidate.endpoint,
+    endpoint: canonicalizeWebPushEndpoint(candidate.endpoint),
     keys: {
       p256dh: keyRecord.p256dh,
       auth: keyRecord.auth,
@@ -73,7 +109,7 @@ export function normalizePushSubscription(value: unknown): NormalizedPushSubscri
 }
 
 export function hashPushEndpoint(endpoint: string): string {
-  return createHash('sha256').update(endpoint, 'utf8').digest('hex')
+  return createHash('sha256').update(canonicalizeWebPushEndpoint(endpoint), 'utf8').digest('hex')
 }
 
 export async function storePushSubscription({

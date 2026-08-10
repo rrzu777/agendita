@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  TEST_PUSH_AUTH,
+  TEST_VAPID_PRIVATE_KEY,
+  TEST_VAPID_PUBLIC_KEY,
+} from '../helpers/push-fixtures'
 
 const mocks = vi.hoisted(() => ({
   encryptSecret: vi.fn(() => 'ciphertext-only'),
@@ -30,8 +35,8 @@ const validSubscription = {
   endpoint: 'https://fcm.googleapis.com/fcm/send/subscription-1',
   expirationTime: null,
   keys: {
-    p256dh: 'p256dh-value',
-    auth: 'auth-value',
+    p256dh: TEST_VAPID_PUBLIC_KEY,
+    auth: TEST_PUSH_AUTH,
   },
 }
 
@@ -46,7 +51,7 @@ describe('push subscription storage', () => {
 
     expect(normalizePushSubscription(validSubscription)).toEqual({
       endpoint: 'https://fcm.googleapis.com/fcm/send/subscription-1',
-      keys: { p256dh: 'p256dh-value', auth: 'auth-value' },
+      keys: { p256dh: TEST_VAPID_PUBLIC_KEY, auth: TEST_PUSH_AUTH },
     })
   })
 
@@ -54,6 +59,8 @@ describe('push subscription storage', () => {
     'https://updates.push.services.mozilla.com/wpush/v2/subscription-1',
     'https://push.services.mozilla.com/wpush/v2/subscription-1',
     'https://web.push.apple.com/QH123',
+    'https://push.apple.com/QH123',
+    'https://regional.push.apple.com/QH123',
     'https://wns2-by3p.notify.windows.com/w/?token=subscription-1',
   ])('accepts a known browser push service endpoint: %s', async (endpoint) => {
     const { normalizePushSubscription } = await import('@/lib/push/subscription')
@@ -64,12 +71,20 @@ describe('push subscription storage', () => {
   it.each([
     null,
     {},
+    { ...validSubscription, endpoint: 'not a URL' },
     { ...validSubscription, endpoint: 'http://fcm.googleapis.com/fcm/send/subscription-1' },
     { ...validSubscription, endpoint: 'https://internal.example.test/subscription-1' },
     { ...validSubscription, endpoint: 'https://fcm.googleapis.com.evil.test/subscription-1' },
+    { ...validSubscription, endpoint: 'https://evilpush.apple.com/subscription-1' },
+    { ...validSubscription, endpoint: 'https://fcm.googleapis.com/fcm/send/subscription-1#fragment' },
     { ...validSubscription, endpoint: `https://fcm.googleapis.com/${'x'.repeat(4097)}` },
     { ...validSubscription, keys: { ...validSubscription.keys, p256dh: 'x'.repeat(1025) } },
+    { ...validSubscription, keys: { ...validSubscription.keys, p256dh: `${TEST_VAPID_PUBLIC_KEY}=` } },
+    { ...validSubscription, keys: { ...validSubscription.keys, p256dh: Buffer.alloc(64, 4).toString('base64url') } },
+    { ...validSubscription, keys: { ...validSubscription.keys, p256dh: Buffer.alloc(65, 3).toString('base64url') } },
     { ...validSubscription, keys: { ...validSubscription.keys, auth: '' } },
+    { ...validSubscription, keys: { ...validSubscription.keys, auth: `${TEST_PUSH_AUTH}=` } },
+    { ...validSubscription, keys: { ...validSubscription.keys, auth: Buffer.alloc(15, 7).toString('base64url') } },
   ])('rejects malformed or oversized subscription input', async (input) => {
     const { normalizePushSubscription } = await import('@/lib/push/subscription')
 
@@ -84,6 +99,20 @@ describe('push subscription storage', () => {
     )
   })
 
+  it('canonicalizes equivalent endpoint spellings before hashing and storage', async () => {
+    const { hashPushEndpoint, normalizePushSubscription } = await import('@/lib/push/subscription')
+    const variant = 'https://FCM.GOOGLEAPIS.COM:443/fcm/send/subscription-1'
+    const queryVariant = `${variant}?token=A%2FB&attempt=1`
+    const canonicalQuery = `${validSubscription.endpoint}?token=A%2FB&attempt=1`
+
+    expect(normalizePushSubscription({ ...validSubscription, endpoint: variant }).endpoint)
+      .toBe(validSubscription.endpoint)
+    expect(hashPushEndpoint(variant)).toBe(hashPushEndpoint(validSubscription.endpoint))
+    expect(normalizePushSubscription({ ...validSubscription, endpoint: queryVariant }).endpoint)
+      .toBe(canonicalQuery)
+    expect(hashPushEndpoint(queryVariant)).toBe(hashPushEndpoint(canonicalQuery))
+  })
+
   it('encrypts only normalized JSON and resets revocation state on safe upsert', async () => {
     const { storePushSubscription } = await import('@/lib/push/subscription')
 
@@ -95,7 +124,7 @@ describe('push subscription storage', () => {
 
     expect(mocks.encryptSecret).toHaveBeenCalledWith(JSON.stringify({
       endpoint: 'https://fcm.googleapis.com/fcm/send/subscription-1',
-      keys: { p256dh: 'p256dh-value', auth: 'auth-value' },
+      keys: { p256dh: TEST_VAPID_PUBLIC_KEY, auth: TEST_PUSH_AUTH },
     }))
     expect(mocks.upsert).toHaveBeenCalledWith({
       where: {
@@ -141,8 +170,8 @@ describe('web push sender', () => {
   })
 
   it('sends a JSON payload with configured VAPID credentials', async () => {
-    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'public-vapid')
-    vi.stubEnv('VAPID_PRIVATE_KEY', 'private-vapid')
+    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', TEST_VAPID_PUBLIC_KEY)
+    vi.stubEnv('VAPID_PRIVATE_KEY', TEST_VAPID_PRIVATE_KEY)
     vi.stubEnv('VAPID_SUBJECT', 'mailto:soporte@agendita.cl')
     mocks.sendNotification.mockResolvedValue({ statusCode: 201 })
     const { sendWebPush } = await import('@/lib/push/web-push')
@@ -155,18 +184,19 @@ describe('web push sender', () => {
     await expect(sendWebPush(validSubscription, payload)).resolves.toEqual({ ok: true, statusCode: 201 })
     expect(mocks.setVapidDetails).toHaveBeenCalledWith(
       'mailto:soporte@agendita.cl',
-      'public-vapid',
-      'private-vapid',
+      TEST_VAPID_PUBLIC_KEY,
+      TEST_VAPID_PRIVATE_KEY,
     )
     expect(mocks.sendNotification).toHaveBeenCalledWith(
       validSubscription,
       JSON.stringify(payload),
+      { TTL: 0, timeout: 10_000 },
     )
   })
 
   it('returns the provider status without leaking the thrown response', async () => {
-    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'public-vapid')
-    vi.stubEnv('VAPID_PRIVATE_KEY', 'private-vapid')
+    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', TEST_VAPID_PUBLIC_KEY)
+    vi.stubEnv('VAPID_PRIVATE_KEY', TEST_VAPID_PRIVATE_KEY)
     vi.stubEnv('VAPID_SUBJECT', 'https://www.agendita.cl')
     mocks.sendNotification.mockRejectedValue({ statusCode: 410, body: 'secret provider body' })
     const { sendWebPush } = await import('@/lib/push/web-push')

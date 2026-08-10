@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { TEST_VAPID_PRIVATE_KEY, TEST_VAPID_PUBLIC_KEY } from '../helpers/push-fixtures'
 
 const scriptPath = resolve(process.cwd(), 'scripts/validate-env.js')
 
@@ -37,8 +38,8 @@ describe('build environment validation', () => {
   it('blocks the build when Web Push is enabled without encryption', () => {
     const result = spawnSync(process.execPath, [scriptPath], {
       env: validBuildEnv({
-        NEXT_PUBLIC_VAPID_PUBLIC_KEY: 'public-vapid',
-        VAPID_PRIVATE_KEY: 'private-vapid',
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: TEST_VAPID_PUBLIC_KEY,
+        VAPID_PRIVATE_KEY: TEST_VAPID_PRIVATE_KEY,
         VAPID_SUBJECT: 'mailto:push@agendita.cl',
       }),
       encoding: 'utf8',
@@ -51,8 +52,8 @@ describe('build environment validation', () => {
   it('blocks the build for a non-mailto, non-HTTPS VAPID subject', () => {
     const result = spawnSync(process.execPath, [scriptPath], {
       env: validBuildEnv({
-        NEXT_PUBLIC_VAPID_PUBLIC_KEY: 'public-vapid',
-        VAPID_PRIVATE_KEY: 'private-vapid',
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: TEST_VAPID_PUBLIC_KEY,
+        VAPID_PRIVATE_KEY: TEST_VAPID_PRIVATE_KEY,
         VAPID_SUBJECT: 'http://agendita.cl',
         ENCRYPTION_KEY: 'encryption-key',
       }),
@@ -61,6 +62,27 @@ describe('build environment validation', () => {
 
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('VAPID_SUBJECT')
+  })
+
+  it.each([
+    ['NEXT_PUBLIC_VAPID_PUBLIC_KEY', `${TEST_VAPID_PUBLIC_KEY}=`],
+    ['NEXT_PUBLIC_VAPID_PUBLIC_KEY', Buffer.alloc(65, 3).toString('base64url')],
+    ['VAPID_PRIVATE_KEY', Buffer.alloc(31, 9).toString('base64url')],
+    ['VAPID_PRIVATE_KEY', Buffer.alloc(32).toString('base64url')],
+  ])('blocks the build for malformed %s key material', (key, malformed) => {
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: validBuildEnv({
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: TEST_VAPID_PUBLIC_KEY,
+        VAPID_PRIVATE_KEY: TEST_VAPID_PRIVATE_KEY,
+        VAPID_SUBJECT: 'mailto:push@agendita.cl',
+        ENCRYPTION_KEY: 'encryption-key',
+        [key]: malformed,
+      }),
+      encoding: 'utf8',
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(key)
   })
 
   it('rejects OAuth-only Mercado Pago without the global webhook lookup token', () => {

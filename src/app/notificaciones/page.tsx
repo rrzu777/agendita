@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { PushManager } from '@/components/push/push-manager'
+import { getAppUrl } from '@/lib/business/urls'
 
 export const metadata: Metadata = {
   title: 'Recordatorios | Agendita',
@@ -17,7 +18,10 @@ export default function NotificationsPage() {
             El navegador te pedirá permiso sólo cuando pulses el botón.
           </p>
         </div>
-        <PushManager vapidPublicKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || null} />
+        <PushManager
+          vapidPublicKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || null}
+          canonicalOrigin={getAppUrl('')}
+        />
       </section>
     </main>
   )

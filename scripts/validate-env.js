@@ -12,6 +12,8 @@
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { loadEnvConfig } = require('@next/env')
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { isValidVapidPrivateKey, isValidVapidPublicKey } = require('../src/lib/push/vapid-validation')
 
 // Load .env.local just like Next.js does during build
 loadEnvConfig(process.cwd())
@@ -147,6 +149,12 @@ function validate() {
   if (vapidPresent.length === 3) {
     if (!process.env.ENCRYPTION_KEY) {
       errors.push('MISSING: ENCRYPTION_KEY (required when Web Push is enabled)')
+    }
+    if (!isValidVapidPublicKey(vapidPublicKey)) {
+      errors.push('NEXT_PUBLIC_VAPID_PUBLIC_KEY must be a canonical base64url uncompressed P-256 public key')
+    }
+    if (!isValidVapidPrivateKey(vapidPrivateKey)) {
+      errors.push('VAPID_PRIVATE_KEY must be a canonical base64url P-256 private key')
     }
     const validMailto = /^mailto:[^@\s]+@[^@\s]+$/i.test(vapidSubject)
     let validHttps = false

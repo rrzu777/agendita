@@ -1,4 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  TEST_PUSH_AUTH,
+  TEST_VAPID_PRIVATE_KEY,
+  TEST_VAPID_PUBLIC_KEY,
+} from '../helpers/push-fixtures'
 
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
@@ -8,7 +13,6 @@ const mocks = vi.hoisted(() => ({
   customerFindMany: vi.fn(),
   updateMany: vi.fn(),
   storePushSubscription: vi.fn(),
-  hashPushEndpoint: vi.fn(() => 'endpoint-sha256'),
 }))
 
 vi.mock('@/lib/auth/user', () => ({ getCurrentUser: mocks.getCurrentUser }))
@@ -17,7 +21,6 @@ vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }))
 vi.mock('@/lib/push/subscription', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/push/subscription')>()),
   storePushSubscription: mocks.storePushSubscription,
-  hashPushEndpoint: mocks.hashPushEndpoint,
 }))
 vi.mock('@/lib/db', () => ({
   prisma: {
@@ -30,7 +33,7 @@ vi.mock('@/lib/db', () => ({
 const canonicalOrigin = 'https://www.agendita.cl'
 const subscription = {
   endpoint: 'https://fcm.googleapis.com/fcm/send/subscription-1',
-  keys: { p256dh: 'p256dh-value', auth: 'auth-value' },
+  keys: { p256dh: TEST_VAPID_PUBLIC_KEY, auth: TEST_PUSH_AUTH },
 }
 
 function pushRequest(path: string, body: unknown, origin = canonicalOrigin, extraHeaders?: HeadersInit) {
@@ -47,8 +50,8 @@ describe('push subscription routes', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-10T12:00:00.000Z'))
     vi.stubEnv('NEXT_PUBLIC_APP_DOMAIN', 'www.agendita.cl')
-    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'public-vapid')
-    vi.stubEnv('VAPID_PRIVATE_KEY', 'private-vapid')
+    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', TEST_VAPID_PUBLIC_KEY)
+    vi.stubEnv('VAPID_PRIVATE_KEY', TEST_VAPID_PRIVATE_KEY)
     vi.stubEnv('VAPID_SUBJECT', 'mailto:soporte@agendita.cl')
     vi.stubEnv('ENCRYPTION_KEY', 'encryption-key')
     mocks.checkRateLimit.mockResolvedValue({ success: true, remaining: 9, resetAt: 0 })
@@ -106,6 +109,23 @@ describe('push subscription routes', () => {
 
     expect(response.status).toBe(400)
     expect(mocks.verifyPushGrant).not.toHaveBeenCalled()
+  })
+
+  it('rejects a non-canonical browser key without reporting a subscription', async () => {
+    mocks.getCurrentUser.mockResolvedValue({ id: 'user-1' })
+    const { POST } = await import('@/app/api/push/subscribe/route')
+
+    const response = await POST(pushRequest('/api/push/subscribe', {
+      subscription: {
+        ...subscription,
+        keys: { ...subscription.keys, p256dh: `${TEST_VAPID_PUBLIC_KEY}=` },
+      },
+    }))
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'Solicitud inválida' })
+    expect(mocks.customerFindMany).not.toHaveBeenCalled()
+    expect(mocks.storePushSubscription).not.toHaveBeenCalled()
   })
 
   it('rechecks all guest grant ownership fields before storing one target', async () => {
@@ -203,12 +223,28 @@ describe('push subscription routes', () => {
     await expect(response.json()).resolves.toEqual({ unsubscribed: 2 })
     expect(mocks.updateMany).toHaveBeenCalledWith({
       where: {
-        endpointHash: 'endpoint-sha256',
+        endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
         revokedAt: null,
         customer: { userId: 'user-1' },
       },
       data: { revokedAt: new Date('2026-08-10T12:00:00.000Z') },
     })
+  })
+
+  it('canonicalizes equivalent endpoint spellings before authenticated unsubscribe', async () => {
+    mocks.getCurrentUser.mockResolvedValue({ id: 'user-1' })
+    const { POST } = await import('@/app/api/push/unsubscribe/route')
+
+    const response = await POST(pushRequest('/api/push/unsubscribe', {
+      endpoint: 'https://FCM.GOOGLEAPIS.COM:443/fcm/send/subscription-1',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
+      }),
+    }))
   })
 
   it('scopes guest unsubscribe to the reverified customer and business', async () => {
@@ -230,7 +266,7 @@ describe('push subscription routes', () => {
     await expect(response.json()).resolves.toEqual({ unsubscribed: 1 })
     expect(mocks.updateMany).toHaveBeenCalledWith({
       where: {
-        endpointHash: 'endpoint-sha256',
+        endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
         customerId: 'customer-1',
         businessId: 'business-1',
         revokedAt: null,

@@ -2,6 +2,11 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Button } from '@/components/ui/button'
+import {
+  canonicalNotificationDestination,
+  isCanonicalBrowserOrigin,
+  replaceBrowserLocation,
+} from '@/lib/push/canonical-client'
 
 type ManagerStatus = 'checking' | 'available' | 'activating' | 'active' | 'denied' | 'unsupported' | 'disabled' | 'error'
 
@@ -18,9 +23,27 @@ function isIos() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent)
 }
 
+function sameApplicationServerKey(
+  existing: BufferSource | null | undefined,
+  configured: Uint8Array<ArrayBuffer>,
+): boolean {
+  if (!existing) return false
+  const bytes = ArrayBuffer.isView(existing)
+    ? new Uint8Array(existing.buffer, existing.byteOffset, existing.byteLength)
+    : new Uint8Array(existing)
+  return bytes.length === configured.length
+    && bytes.every((value, index) => value === configured[index])
+}
+
 const subscribeToBrowserReady = () => () => undefined
 
-export function PushManager({ vapidPublicKey }: { vapidPublicKey: string | null }) {
+export function PushManager({
+  vapidPublicKey,
+  canonicalOrigin,
+}: {
+  vapidPublicKey: string | null
+  canonicalOrigin: string
+}) {
   const browserReady = useSyncExternalStore(subscribeToBrowserReady, () => true, () => false)
   const [interactionStatus, setInteractionStatus] = useState<ManagerStatus | null>(null)
   const [retryAction, setRetryAction] = useState<'activate' | 'deactivate'>('activate')
@@ -29,16 +52,26 @@ export function PushManager({ vapidPublicKey }: { vapidPublicKey: string | null 
 
   useEffect(() => {
     const hash = window.location.hash
+    let grant: string | null = null
     if (hash) {
-      const grant = new URLSearchParams(hash.slice(1)).get('grant')
-      if (grant && grant.length <= 4096) grantRef.current = grant
+      const candidate = new URLSearchParams(hash.slice(1)).get('grant')
+      if (candidate && candidate.length <= 4096) grant = candidate
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
     }
 
-  }, [])
+    if (!isCanonicalBrowserOrigin(canonicalOrigin)) {
+      replaceBrowserLocation(canonicalNotificationDestination(canonicalOrigin, grant))
+      return
+    }
+    // React Strict Mode replays effects in development after the fragment was
+    // already cleared. Preserve the grant captured by the first pass.
+    if (grant !== null) grantRef.current = grant
+  }, [canonicalOrigin])
 
   const availableStatus: ManagerStatus = !browserReady
     ? 'checking'
+    : !isCanonicalBrowserOrigin(canonicalOrigin)
+      ? 'checking'
     : !vapidPublicKey
       ? 'disabled'
       : !('serviceWorker' in navigator) || !('Notification' in window) || typeof window.PushManager === 'undefined'
@@ -49,15 +82,19 @@ export function PushManager({ vapidPublicKey }: { vapidPublicKey: string | null 
   const status = interactionStatus ?? availableStatus
 
   async function activate() {
-    if (!vapidPublicKey) return
+    if (!vapidPublicKey || !isCanonicalBrowserOrigin(canonicalOrigin)) return
     setRetryAction('activate')
     setInteractionStatus('activating')
     try {
       const permission = Notification.permission === 'granted'
         ? 'granted'
         : await Notification.requestPermission()
-      if (permission !== 'granted') {
+      if (permission === 'denied') {
         setInteractionStatus('denied')
+        return
+      }
+      if (permission !== 'granted') {
+        setInteractionStatus('available')
         return
       }
 
@@ -66,10 +103,17 @@ export function PushManager({ vapidPublicKey }: { vapidPublicKey: string | null 
         updateViaCache: 'none',
       })
       const existing = await registration.pushManager.getSubscription()
-      const subscription = existing ?? await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: applicationServerKey(vapidPublicKey),
-      })
+      const configuredApplicationServerKey = applicationServerKey(vapidPublicKey)
+      let subscription: PushSubscription
+      if (existing && sameApplicationServerKey(existing.options?.applicationServerKey, configuredApplicationServerKey)) {
+        subscription = existing
+      } else {
+        if (existing) await existing.unsubscribe()
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: configuredApplicationServerKey,
+        })
+      }
       const serialized = subscription.toJSON()
       const grant = grantRef.current
       const response = await fetch('/api/push/subscribe', {

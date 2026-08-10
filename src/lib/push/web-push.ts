@@ -35,7 +35,10 @@ export async function sendWebPush(
 
   try {
     webPush.setVapidDetails(config.subject, config.publicKey, config.privateKey)
-    const response = await webPush.sendNotification(subscription, JSON.stringify(payload))
+    const response = await webPush.sendNotification(subscription, JSON.stringify(payload), {
+      TTL: 0,
+      timeout: 10_000,
+    })
     return response.statusCode === undefined
       ? { ok: true }
       : { ok: true, statusCode: response.statusCode }

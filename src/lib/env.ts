@@ -4,6 +4,8 @@
  * Do NOT import this from client components - it reads secrets.
  */
 
+import { isValidVapidPrivateKey, isValidVapidPublicKey } from '@/lib/push/vapid-validation'
+
 export type EnvValidationError = {
   key: string
   message: string
@@ -280,6 +282,19 @@ export function validateEnv(): EnvValidationResult {
       errors.push({
         key: 'ENCRYPTION_KEY',
         message: 'ENCRYPTION_KEY is required when Web Push is enabled',
+      })
+    }
+
+    if (!isValidVapidPublicKey(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY)) {
+      errors.push({
+        key: 'NEXT_PUBLIC_VAPID_PUBLIC_KEY',
+        message: 'NEXT_PUBLIC_VAPID_PUBLIC_KEY must be a canonical base64url uncompressed P-256 public key',
+      })
+    }
+    if (!isValidVapidPrivateKey(process.env.VAPID_PRIVATE_KEY)) {
+      errors.push({
+        key: 'VAPID_PRIVATE_KEY',
+        message: 'VAPID_PRIVATE_KEY must be a canonical base64url P-256 private key',
       })
     }
 
