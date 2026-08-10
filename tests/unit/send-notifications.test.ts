@@ -25,6 +25,8 @@ const mockBooking = vi.hoisted(() => ({
   depositRequired: 5000,
   depositPaid: 5000,
   remainingBalance: 20000,
+  cancellationCutoffHours: 24,
+  cancellationPolicySnapshot: 'Condiciones aceptadas',
   service: { name: 'Manicure semipermanente' },
   customer: { name: 'Maria', phone: '+56987654321', email: 'maria@example.com' },
   business: {
@@ -35,7 +37,8 @@ const mockBooking = vi.hoisted(() => ({
     whatsapp: '+56912345678',
     addressText: 'Av. Siempre Viva 742',
     currency: 'CLP',
-    cancellationPolicy: 'Cancela con 24h.',
+    selfServiceCutoffHours: 72,
+    cancellationPolicy: 'Condiciones actuales',
   },
 }))
 
@@ -178,6 +181,9 @@ describe('sendBookingConfirmedNotification', () => {
     expect(call.html).toContain('Manicure semipermanente')
     expect(call.text).toContain('Maria')
     expect(call.text).toContain('Manicure semipermanente')
+    expect(call.html).toContain('hasta 24 horas antes')
+    expect(call.html).toContain('Condiciones aceptadas')
+    expect(call.html).not.toContain('Condiciones actuales')
   })
 
   // Lo que hace que la cita exista en el teléfono sin que la clienta haga nada.

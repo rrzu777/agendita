@@ -12,6 +12,7 @@ import { buildBookingHelpWhatsappUrl } from '@/lib/notifications/whatsapp'
 import { AccountCta } from './account-cta'
 import { AddToCalendar } from './add-to-calendar'
 import { WhatsappHelpLine, WhereRowValue } from './where-row-value'
+import { cancellationWarningText } from '@/lib/bookings/cancellation-policy'
 
 /** El negocio, en lo que la reserva no trae. La modalidad, la dirección de la
  *  clienta y el link de la videollamada NO van acá: los resuelve el servidor al
@@ -22,7 +23,7 @@ export interface ConfirmationBusiness {
   whatsapp: string | null
 }
 
-export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail, business, where, confirmed, professionalName }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields; confirmed: boolean; professionalName: string }) {
+export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail, business, where, confirmed, professionalName, cancellationCutoffHours = 0, depositRequired, depositPaid = 0 }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields; confirmed: boolean; professionalName: string; cancellationCutoffHours?: number; depositRequired?: number; depositPaid?: number }) {
   const isPending = mode === 'pending'
   const isFree = data.servicePrice <= 0
   const noDeposit = data.serviceDeposit <= 0
@@ -47,6 +48,12 @@ export function StepConfirmation({ data, timezone, currency, bookingId, bookingN
   // "Precio total" sigue mostrando el precio original (pre-descuento).
   const hasDiscount = promo != null && promo.discountAmount > 0
   const effectiveFinal = hasDiscount ? promo!.finalAmount : data.servicePrice
+  // En producción llegan los montos persistidos con `BookingCreated`. El
+  // fallback mantiene compatibles usos aislados del componente (stories/tests).
+  const hasPersistedDeposit = (depositRequired ?? data.serviceDeposit) > 0 || depositPaid > 0
+  const cancellationWarning = hasPersistedDeposit
+    ? cancellationWarningText(cancellationCutoffHours)
+    : null
 
   return (
     <div className="text-center">
@@ -111,6 +118,13 @@ export function StepConfirmation({ data, timezone, currency, bookingId, bookingN
       </div>
 
       <p className="mb-6 text-sm text-muted-foreground">Número de reserva: {formatBookingNumber(bookingNumber, bookingId)}</p>
+
+      {cancellationWarning && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-900">
+          <p className="font-semibold">Importante sobre tu abono</p>
+          <p className="mt-1">{cancellationWarning}</p>
+        </div>
+      )}
 
       {/* Sólo con la reserva confirmada: una cita que todavía puede caerse no va
           al calendario de nadie. Ver `loadBookingInvite`, que aplica el mismo

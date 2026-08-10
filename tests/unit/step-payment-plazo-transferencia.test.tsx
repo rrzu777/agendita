@@ -103,6 +103,7 @@ describe('StepPayment — el plazo que promete la pantalla de transferencia', ()
           data={bookingData}
           updateData={vi.fn()}
           businessId="biz-1"
+          selfServiceCutoffHours={24}
           manualHoldHours={24}
           timezone={TZ}
           currency="CLP"
@@ -165,6 +166,7 @@ describe('StepPayment — el plazo que promete la pantalla de transferencia', ()
           data={bookingData}
           updateData={vi.fn()}
           businessId="biz-1"
+          selfServiceCutoffHours={24}
           manualHoldHours={24}
           timezone={TZ}
           currency="CLP"

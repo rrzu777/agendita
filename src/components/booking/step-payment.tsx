@@ -50,6 +50,10 @@ export interface BookingCreated {
   /** Con quién quedó. Vacío si la reserva no tiene persona. Con "Cualquiera
    *  disponible" es lo ÚNICO que sabe quién atiende: lo eligió el servidor. */
   professionalName: string
+  cancellationCutoffHours: number
+  cancellationPolicySnapshot: string | null
+  depositRequired: number
+  depositPaid: number
 }
 
 function generateIdempotencyKey(): string {
@@ -118,7 +122,7 @@ type Paso =
   | { k: 'transfer-details'; bank: BankTransferPublicInfo; reserva: ReservaEnTransferencia }
   | { k: 'transfer-declared'; reserva: ReservaEnTransferencia }
 
-export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, manualHoldHours, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; manualHoldHours: number; referralToken?: string; onSuccess: (result: BookingCreated) => void; onBack: () => void }) {
+export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, selfServiceCutoffHours, manualHoldHours, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; selfServiceCutoffHours: number; manualHoldHours: number; referralToken?: string; onSuccess: (result: BookingCreated) => void; onBack: () => void }) {
   const [paso, setPaso] = useState<Paso>({ k: 'review' })
   const [bankInfo, setBankInfo] = useState<BankTransferPublicInfo | null>(null)
   const [method, setMethod] = useState<'online' | 'transfer'>('online')
@@ -424,6 +428,10 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       serviceAddress: string | null
       meetingUrl: string | null
       professional?: { name: string } | null
+      cancellationCutoffHours: number | null
+      cancellationPolicySnapshot: string | null
+      depositRequired: number
+      depositPaid: number
     },
     mode: 'paid' | 'pending',
     confirmed: boolean,
@@ -436,6 +444,12 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       where: { modality: booking.modality, serviceAddress: booking.serviceAddress, meetingUrl: booking.meetingUrl },
       confirmed,
       professionalName: booking.professional?.name ?? '',
+      // Las reservas nuevas siempre traen snapshot; el fallback sólo protege
+      // una respuesta legacy sin ese campo durante un despliegue escalonado.
+      cancellationCutoffHours: booking.cancellationCutoffHours ?? selfServiceCutoffHours,
+      cancellationPolicySnapshot: booking.cancellationPolicySnapshot,
+      depositRequired: booking.depositRequired,
+      depositPaid: booking.depositPaid,
     }
   }
 

@@ -91,6 +91,7 @@ describe('StepPayment — la pantalla la manda el step', () => {
           data={bookingData}
           updateData={vi.fn()}
           businessId="biz-1"
+          selfServiceCutoffHours={24}
           manualHoldHours={24}
           timezone={TZ}
           currency="CLP"

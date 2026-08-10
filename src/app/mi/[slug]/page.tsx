@@ -22,6 +22,7 @@ import { canSelfManage } from '@/lib/bookings/self-service'
 import { BookingActions } from './booking-actions'
 import { ServiceModality, type BookingStatus, type Prisma } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
+import { resolveCancellationPolicy } from '@/lib/bookings/cancellation-policy'
 
 const UPCOMING_STATUSES = ['pending_payment', 'pending_confirmation', 'confirmed'] as const
 
@@ -90,6 +91,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
     where: { slug },
     select: {
       id: true, name: true, slug: true, subdomain: true, logoUrl: true, category: true, selfServiceCutoffHours: true,
+      cancellationPolicy: true,
       addressText: true,
       loyaltyConfig: { select: { isActive: true, programName: true, pointsLabel: true, cardMessage: true } },
     },
@@ -116,7 +118,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
     prisma.booking.findMany({
       where: { customerId: { in: customerIds }, startDateTime: { gte: now }, status: { in: [...UPCOMING_STATUSES] } },
       orderBy: { startDateTime: 'asc' },
-      select: { id: true, bookingNumber: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true, approvalExpiresAt: true, modality: true, serviceAddress: true, meetingUrl: true, service: { select: { name: true } }, payments: PAGOS_QUE_PISAN_EL_HOLD },
+      select: { id: true, bookingNumber: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true, approvalExpiresAt: true, cancellationCutoffHours: true, cancellationPolicySnapshot: true, modality: true, serviceAddress: true, meetingUrl: true, service: { select: { name: true } }, payments: PAGOS_QUE_PISAN_EL_HOLD },
     }),
     prisma.booking.findMany({
       where: { customerId: { in: customerIds }, OR: [{ startDateTime: { lt: now } }, { status: { notIn: [...UPCOMING_STATUSES] } }] },
@@ -152,6 +154,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
               // También en el local: quien mira es la clienta y "¿dónde era?"
               // merece la dirección, no sólo las modalidades notables.
               const where = bookingWhere(b, { businessAddress: business.addressText })
+              const { cutoffHours } = resolveCancellationPolicy(b, business)
               return (
               <li key={b.id} className="rounded-lg border border-gray-100 px-3 py-2 text-sm">
                 <div className="font-medium">{b.service?.name}</div>
@@ -178,8 +181,8 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
                   // si cada uno mirara su propio reloj, la fila podría decir
                   // "Expirada" y seguir ofreciendo Reprogramar, que es
                   // exactamente lo que este cambio viene a sacar.
-                  canManage={canSelfManage(b.startDateTime, business.selfServiceCutoffHours, now)}
-                  cutoffHours={business.selfServiceCutoffHours}
+                  canManage={canSelfManage(b.startDateTime, cutoffHours, now)}
+                  cutoffHours={cutoffHours}
                   rescheduleBlockedReason={rescheduleBlockedReason(b, 'customer', now)}
                 />
               </li>

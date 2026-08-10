@@ -34,6 +34,7 @@ const bookingData: BookingEmailData = {
   businessName: 'Barbería Carlos',
   businessTimezone: 'America/Santiago',
   businessCurrency: 'CLP',
+  cancellationCutoffHours: 24,
   customerName: 'Maria',
   customerEmail: 'maria@example.com',
   customerPhone: '+56987654321',
