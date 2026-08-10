@@ -90,7 +90,7 @@ vieja en CDN.
 ## Autorización para invitadas
 
 `createBooking` emite un grant firmado y domain-separated con `bookingId`,
-`customerId`, `businessId`, nonce y expiración de 24 horas. El endpoint de alta
+`customerId`, `businessId` y expiración de 24 horas. El endpoint de alta
 valida firma, expiración y que esos tres valores sigan perteneciendo a la misma
 reserva. Un `bookingId` aislado nunca autoriza una suscripción. Reintentar
 idempotentemente la misma creación puede emitir un grant nuevo sin crear otra
