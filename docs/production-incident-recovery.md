@@ -101,7 +101,7 @@ respuesta inválida dejan el run rojo. Para una ejecución manual controlada, co
 las variables ya cargadas sin imprimirlas:
 
 ```bash
-scripts/run-json-cron.sh "$BASE_URL/api/cron/cancellation-warnings"
+scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/cancellation-warnings"
 ```
 
 Si las tres variables VAPID no están configuradas, el endpoint de advertencias

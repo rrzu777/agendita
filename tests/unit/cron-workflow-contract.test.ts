@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -16,13 +16,15 @@ const requests: Array<{ path: string; method?: string; authorization?: string }>
 let server: Server
 let baseUrl: string
 
-type WorkflowStep = { uses?: string; run?: string }
+type WorkflowStep = { uses?: string; run?: string; env?: Record<string, string> }
 type WorkflowJob = {
   env?: Record<string, string>
+  'timeout-minutes'?: number
   steps: WorkflowStep[]
 }
 type Workflow = {
   on: { schedule: Array<{ cron: string }>; workflow_dispatch?: unknown }
+  permissions?: { contents: string }
   concurrency?: { group: string; 'cancel-in-progress': boolean }
   jobs: Record<string, WorkflowJob>
 }
@@ -37,6 +39,23 @@ function runnableSteps(workflow: Workflow): string[] {
   return Object.values(workflow.jobs)
     .flatMap((job) => job.steps)
     .flatMap((step) => (step.run ? [step.run] : []))
+}
+
+function runSteps(workflow: Workflow): WorkflowStep[] {
+  return Object.values(workflow.jobs)
+    .flatMap((job) => job.steps)
+    .filter((step) => Boolean(step.run))
+}
+
+function resolveWorkflowUrl(run: string, baseUrl: string): string {
+  return execFileSync(
+    'bash',
+    [
+      '-c',
+      `function scripts/run-json-cron.sh() { printf '%s\\n' "$1"; }\n${run}`,
+    ],
+    { encoding: 'utf8', env: { ...process.env, BASE_URL: baseUrl } },
+  ).trim()
 }
 
 function executeHelper(path: string, secret = 'fixture-cron-secret') {
@@ -137,8 +156,13 @@ describe('cron workflow contract', () => {
 
     expect(jobs).toHaveLength(1)
     expect(jobs[0].env?.BASE_URL).toBeTruthy()
-    expect(jobs[0].env?.CRON_SECRET).toBe('${{ secrets.CRON_SECRET }}')
+    expect(jobs[0].env?.CRON_SECRET).toBeUndefined()
+    expect(workflow.permissions).toEqual({ contents: 'read' })
+    expect(jobs[0]['timeout-minutes']).toBe(6)
     expect(jobs[0].steps.some((step) => step.uses === 'actions/checkout@v4')).toBe(true)
+    expect(runSteps(workflow).every(
+      (step) => step.env?.CRON_SECRET === '${{ secrets.CRON_SECRET }}',
+    )).toBe(true)
     expect(runs).toHaveLength(4)
     expect(runs.every((run) => run.includes('scripts/run-json-cron.sh'))).toBe(true)
     expect(runs.join('\n')).not.toContain('curl ')
@@ -162,12 +186,32 @@ describe('cron workflow contract', () => {
       group: 'cancellation-warnings',
       'cancel-in-progress': false,
     })
+    expect(workflow.permissions).toEqual({ contents: 'read' })
+    expect(jobs).toHaveLength(1)
+    expect(jobs[0]['timeout-minutes']).toBe(3)
+    expect(jobs[0].env?.CRON_SECRET).toBeUndefined()
     expect(jobs.flatMap((job) => job.steps).some((step) => step.uses === 'actions/checkout@v4')).toBe(true)
-    expect(jobs.some((job) => job.env?.CRON_SECRET === '${{ secrets.CRON_SECRET }}')).toBe(true)
+    expect(runSteps(workflow).every(
+      (step) => step.env?.CRON_SECRET === '${{ secrets.CRON_SECRET }}',
+    )).toBe(true)
     expect(jobs.some((job) => Boolean(job.env?.BASE_URL))).toBe(true)
     expect(runs).toHaveLength(1)
     expect(runs[0]).toContain('scripts/run-json-cron.sh')
     expect(runs[0]).toContain('/api/cron/cancellation-warnings')
     expect(runs[0].match(/\/api\/cron\//g)).toHaveLength(1)
   })
+
+  it.each(['https://cron.example.test', 'https://cron.example.test/'])(
+    'normalizes BASE_URL=%s without corrupting the https origin',
+    (baseUrl) => {
+      for (const filename of ['cron.yml', 'cancellation-warnings.yml']) {
+        for (const run of runnableSteps(loadWorkflow(filename))) {
+          const resolvedUrl = resolveWorkflowUrl(run, baseUrl)
+
+          expect(resolvedUrl).toMatch(/^https:\/\/cron\.example\.test\/api\/cron\//)
+          expect(resolvedUrl).not.toContain('//api/')
+        }
+      }
+    },
+  )
 })
