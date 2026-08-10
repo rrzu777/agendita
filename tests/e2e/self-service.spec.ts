@@ -251,3 +251,98 @@ test.describe('self-service (/mi): cancelación', () => {
     // tests/integration/self-service-bookings.test.ts.
   })
 })
+
+test.describe('self-service: recordatorios push', () => {
+  test('espera el click y envía el grant sólo en el body de suscripción', async ({ page }) => {
+    const subscribeRequests: Array<{ url: string; body: unknown }> = []
+    await page.route('**/api/push/subscribe', async (route) => {
+      subscribeRequests.push({
+        url: route.request().url(),
+        body: route.request().postDataJSON(),
+      })
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ subscribed: 1 }),
+      })
+    })
+    await page.addInitScript(() => {
+      const state = { permissionRequests: 0, registerCalls: 0, subscribeCalls: 0 }
+      Object.defineProperty(window, '__pushE2E', { configurable: true, value: state })
+      Object.defineProperty(window, 'Notification', {
+        configurable: true,
+        value: {
+          permission: 'default',
+          requestPermission: async () => {
+            state.permissionRequests += 1
+            return 'granted'
+          },
+        },
+      })
+      Object.defineProperty(window, 'PushManager', {
+        configurable: true,
+        value: class MockPushManager {},
+      })
+
+      const subscription = {
+        endpoint: 'https://push.example.test/e2e-subscription',
+        options: { applicationServerKey: null },
+        unsubscribe: async () => true,
+        toJSON: () => ({
+          endpoint: 'https://push.example.test/e2e-subscription',
+          keys: {
+            p256dh: 'BAmuMRGniKzfw0ZShPIqYtZrZM8Ilz2YJYG3eS8T9rXcK3BEMp4ckNkh5EywptWzWaDLfHmcfWXKixB0ghV1HPI',
+            auth: 'BwcHBwcHBwcHBwcHBwcHBw',
+          },
+        }),
+      }
+      Object.defineProperty(navigator, 'serviceWorker', {
+        configurable: true,
+        value: {
+          register: async () => {
+            state.registerCalls += 1
+            return {
+              pushManager: {
+                getSubscription: async () => null,
+                subscribe: async () => {
+                  state.subscribeCalls += 1
+                  return subscription
+                },
+              },
+            }
+          },
+        },
+      })
+    })
+
+    await gotoStable(page, '/notificaciones#grant=e2e%20guest%20grant%2F%2B')
+    const activate = page.getByRole('button', { name: 'Activar recordatorios' })
+    await expect(activate).toBeVisible()
+
+    const stateBeforeClick = await page.evaluate(() => (
+      window as unknown as { __pushE2E: { permissionRequests: number; registerCalls: number; subscribeCalls: number } }
+    ).__pushE2E)
+    expect(stateBeforeClick).toEqual({ permissionRequests: 0, registerCalls: 0, subscribeCalls: 0 })
+    expect(new URL(page.url()).hash).toBe('')
+
+    await activate.click()
+    await expect(page.getByText('Recordatorios activos')).toBeVisible()
+
+    const stateAfterClick = await page.evaluate(() => (
+      window as unknown as { __pushE2E: { permissionRequests: number; registerCalls: number; subscribeCalls: number } }
+    ).__pushE2E)
+    expect(stateAfterClick).toEqual({ permissionRequests: 1, registerCalls: 1, subscribeCalls: 1 })
+    expect(subscribeRequests).toHaveLength(1)
+    expect(new URL(subscribeRequests[0].url).search).toBe('')
+    expect(subscribeRequests[0].body).toEqual({
+      subscription: {
+        endpoint: 'https://push.example.test/e2e-subscription',
+        keys: {
+          p256dh: 'BAmuMRGniKzfw0ZShPIqYtZrZM8Ilz2YJYG3eS8T9rXcK3BEMp4ckNkh5EywptWzWaDLfHmcfWXKixB0ghV1HPI',
+          auth: 'BwcHBwcHBwcHBwcHBwcHBw',
+        },
+      },
+      grant: 'e2e guest grant/+',
+    })
+  })
+})

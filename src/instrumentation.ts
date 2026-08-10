@@ -8,12 +8,14 @@
  * In development: runs once at `next dev` startup.
  */
 
-import { assertValidEnv } from '@/lib/env'
-
 export async function register() {
   // Only validate in Node.js runtime (not Edge), and only in production.
   // Skip validation in test/development to avoid coupling tests to env setup.
   if (process.env.NEXT_RUNTIME === 'nodejs' && process.env.NODE_ENV === 'production') {
+    // Keep the Node-only VAPID validation (node:crypto) out of the Edge bundle.
+    // Next.js invokes this file in both runtimes, so the runtime guard must also
+    // guard the import itself.
+    const { assertValidEnv } = await import('@/lib/env')
     assertValidEnv()
   }
 }

@@ -23,6 +23,7 @@ import { BookingActions } from './booking-actions'
 import { ServiceModality, type BookingStatus, type Prisma } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
 import { resolveCancellationPolicy } from '@/lib/bookings/cancellation-policy'
+import { AccountPushLink } from '@/components/push/account-push-link'
 
 const UPCOMING_STATUSES = ['pending_payment', 'pending_confirmation', 'confirmed'] as const
 
@@ -190,6 +191,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
             })}
           </ul>
         )}
+        {upcoming.length > 0 && <AccountPushLink />}
         <a
           href={getBookingFunnelUrl({ slug: business.slug, subdomain: business.subdomain })}
           className="mt-3 inline-block rounded-full bg-pink-600 px-4 py-2 text-sm font-semibold text-white"
