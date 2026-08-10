@@ -70,6 +70,7 @@ export function SettingsForm({ business }: { business: Business }) {
       timezone: business.timezone,
       slotStepMinutes: business.slotStepMinutes == null ? 'service' : String(business.slotStepMinutes) as FormData['slotStepMinutes'],
       selfServiceCutoffHours: business.selfServiceCutoffHours,
+      cancellationReminderEnabled: business.cancellationReminderEnabled,
       manualHoldHours: business.manualHoldHours,
       requireBookingApproval: business.requireBookingApproval,
       defaultMeetingUrl: business.defaultMeetingUrl || '',
@@ -262,6 +263,19 @@ export function SettingsForm({ business }: { business: Business }) {
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="cancellationReminderEnabled">Avisar antes del límite de cancelación</Label>
+              <Switch
+                id="cancellationReminderEnabled"
+                checked={!!watchedValues.cancellationReminderEnabled}
+                onCheckedChange={(val) => setValue('cancellationReminderEnabled', val)}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Envía una notificación antes de que venza la ventana para cancelar o reprogramar.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-4">
               <Label htmlFor="requireBookingApproval">Confirmar cada reserva a mano</Label>
               <Switch
                 id="requireBookingApproval"
@@ -306,8 +320,11 @@ export function SettingsForm({ business }: { business: Business }) {
         <section className="space-y-4">
           <h3 className="text-lg font-semibold text-primary">Políticas</h3>
           <div className="space-y-2">
-            <Label htmlFor="cancellationPolicy">Política de cancelación</Label>
+            <Label htmlFor="cancellationPolicy">Condiciones adicionales</Label>
             <Textarea id="cancellationPolicy" {...register('cancellationPolicy')} rows={3} />
+            <p className="text-xs text-muted-foreground">
+              Complementan la política. El límite estructurado de horas configurado arriba tiene prioridad.
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="bookingPolicy">Política de reserva</Label>

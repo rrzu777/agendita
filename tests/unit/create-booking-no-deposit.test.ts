@@ -83,7 +83,8 @@ function setupMocks(depositAmount: number, servicePrice: number) {
     whatsapp: '+56987654321',
     addressText: 'Test Address',
     currency: 'CLP',
-    cancellationPolicy: null,
+    selfServiceCutoffHours: 24,
+    cancellationPolicy: 'Condiciones originales',
     slug: 'test-biz',
     subdomain: null,
     subscriptionStatus: 'active',
@@ -153,6 +154,21 @@ describe('createBooking - no deposit / free service', () => {
     expect(data.depositPaid).toBe(0)
     expect(data.remainingBalance).toBe(20000)
     expect(data.finalAmount).toBe(20000)
+  })
+
+  it('snapshots the cancellation cutoff and additional policy at creation', async () => {
+    setupMocks(0, 20000)
+
+    await createBooking(baseInput, 'biz-1')
+
+    expect(mockPrisma.booking.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          cancellationCutoffHours: 24,
+          cancellationPolicySnapshot: 'Condiciones originales',
+        }),
+      })
+    )
   })
 
   it('creates confirmed + fully_paid + hold null when service is free', async () => {

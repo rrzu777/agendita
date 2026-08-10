@@ -73,6 +73,7 @@ model Business {
   bookingWindowDays      Int                @default(90)
   slotStepMinutes        Int?               @default(30) // cada cuántos min ofrecer inicios de hora; null = duración del servicio
   selfServiceCutoffHours Int                @default(24) // ventana para cancelar/reprogramar self-service; 0 = sin límite (se usa en D1-b)
+  cancellationReminderEnabled Boolean       @default(true)
   manualHoldHours        Int                @default(24) // cuánto se guarda el horario cuando el negocio coordina el abono a mano (sin MP ni transferencia); el funnel con pago online usa 15 min
   bookingNumberSeq       Int                @default(1000)
   requireTransferProof   Boolean            @default(false)
@@ -122,6 +123,7 @@ model Business {
   campaigns            Campaign[]
   customerPhotos       CustomerPhoto[]
   professionals        Professional[]
+  pushSubscriptions    PushSubscription[]
 }
 
 enum PaymentAccountStatus {
@@ -452,6 +454,7 @@ model Customer {
   packagePurchases   PackagePurchase[]
   campaignRecipients CampaignRecipient[]
   photos             CustomerPhoto[]
+  pushSubscriptions PushSubscription[]
 
   // Una ficha por (negocio, teléfono). Es la misma clave con la que
   // findOrCreateCustomerInTx resuelve la Customer, y reemplaza al índice no-único
@@ -511,6 +514,10 @@ model Booking {
   /// `pending_confirmation`. Vive separado del hold de pago porque nacen,
   /// vencen y se recalculan por reglas distintas.
   approvalExpiresAt DateTime?
+  cancellationCutoffHours       Int?
+  cancellationPolicySnapshot    String?
+  cancellationReminderClaimedAt DateTime?
+  cancellationReminderSentAt    DateTime?
   paymentMethod     String? // 'bank_transfer' si la clienta eligió transferencia; null = flujo actual/MP
   idempotencyKey    String?
   bookingNumber     Int?
@@ -558,9 +565,30 @@ model Booking {
   @@index([status, approvalExpiresAt])
   // Sweep cross-business de recordatorios (cron send-reminders): status + rango.
   @@index([status, startDateTime])
+  @@index([status, cancellationReminderSentAt, startDateTime])
   // Las citas de una persona: el filtro del calendario y el chequeo de si se
   // la puede borrar.
   @@index([professionalId])
+}
+
+model PushSubscription {
+  id                    String    @id @default(cuid())
+  businessId            String
+  customerId            String
+  endpointHash          String
+  subscriptionEncrypted String
+  failureCount          Int       @default(0)
+  lastFailureAt         DateTime?
+  lastSuccessAt         DateTime?
+  revokedAt             DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  business              Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer              Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, endpointHash])
+  @@index([businessId, revokedAt])
+  @@index([endpointHash, revokedAt])
 }
 
 enum BookingStatus {

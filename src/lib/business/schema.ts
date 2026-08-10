@@ -21,6 +21,7 @@ export const updateBusinessSchema = z.object({
     (v) => (v === '' || v == null ? undefined : v),
     z.coerce.number().int().min(0).max(720).default(24),
   ),
+  cancellationReminderEnabled: z.boolean().default(true),
   // Cuántas horas se le guarda el horario a una reserva cuando el negocio
   // coordina el abono a mano (sin pago online ni transferencia). Mínimo 1: un
   // hold de 0 horas nacería vencido. Vacío → default 24, mismo criterio que
