@@ -61,6 +61,14 @@ function candidateCutoffHours(candidate: Candidate): number {
 
 function isInsideWarningWindow(candidate: Candidate, now: Date): boolean {
   const cutoffHours = candidateCutoffHours(candidate)
+  return isCutoffInsideWarningWindow(candidate.startDateTime, cutoffHours, now)
+}
+
+function isCutoffInsideWarningWindow(
+  startDateTime: Date,
+  cutoffHours: number,
+  now: Date,
+): boolean {
   if (
     !Number.isSafeInteger(cutoffHours)
     || cutoffHours <= 0
@@ -70,11 +78,37 @@ function isInsideWarningWindow(candidate: Candidate, now: Date): boolean {
   }
 
   const { targetAt, closesAt } = cancellationWarningWindow(
-    candidate.startDateTime,
+    startDateTime,
     cutoffHours,
   )
   const nowMs = now.getTime()
   return nowMs >= targetAt.getTime() && nowMs < closesAt.getTime()
+}
+
+async function revalidateLegacyCutoff(
+  candidate: Candidate,
+  now: Date,
+): Promise<number | null> {
+  const current = await prisma.booking.findUnique({
+    where: { id: candidate.id },
+    select: {
+      cancellationCutoffHours: true,
+      startDateTime: true,
+      business: {
+        select: {
+          selfServiceCutoffHours: true,
+          cancellationReminderEnabled: true,
+        },
+      },
+    },
+  })
+  if (!current?.business.cancellationReminderEnabled) return null
+
+  const cutoffHours = current.cancellationCutoffHours
+    ?? current.business.selfServiceCutoffHours
+  return isCutoffInsideWarningWindow(current.startDateTime, cutoffHours, now)
+    ? cutoffHours
+    : null
 }
 
 function candidateWhere(now: Date) {
@@ -162,9 +196,14 @@ function classifyDelivery(
 
 async function persistDisposition(disposition: DeliveryDisposition, now: Date): Promise<void> {
   const { subscription } = disposition
+  const deliveredGeneration = {
+    id: subscription.id,
+    subscriptionEncrypted: subscription.subscriptionEncrypted,
+    revokedAt: null,
+  }
   if (disposition.kind === 'success') {
     await prisma.pushSubscription.updateMany({
-      where: { id: subscription.id, revokedAt: null },
+      where: deliveredGeneration,
       data: {
         failureCount: 0,
         lastFailureAt: null,
@@ -176,7 +215,7 @@ async function persistDisposition(disposition: DeliveryDisposition, now: Date): 
 
   if (disposition.kind === 'gone') {
     await prisma.pushSubscription.updateMany({
-      where: { id: subscription.id, revokedAt: null },
+      where: deliveredGeneration,
       data: {
         revokedAt: now,
         lastFailureAt: now,
@@ -187,22 +226,22 @@ async function persistDisposition(disposition: DeliveryDisposition, now: Date): 
   }
 
   if (disposition.kind === 'permanent') {
-    const updated = await prisma.pushSubscription.update({
-      where: { id: subscription.id },
-      data: { failureCount: { increment: 1 }, lastFailureAt: now },
-      select: { failureCount: true },
+    await prisma.pushSubscription.updateMany({
+      where: {
+        ...deliveredGeneration,
+        failureCount: subscription.failureCount,
+      },
+      data: {
+        failureCount: { increment: 1 },
+        lastFailureAt: now,
+        ...(subscription.failureCount >= 2 ? { revokedAt: now } : {}),
+      },
     })
-    if (updated.failureCount >= 3) {
-      await prisma.pushSubscription.updateMany({
-        where: { id: subscription.id, revokedAt: null },
-        data: { revokedAt: now },
-      })
-    }
     return
   }
 
   await prisma.pushSubscription.updateMany({
-    where: { id: subscription.id, revokedAt: null },
+    where: deliveredGeneration,
     data: { lastFailureAt: now },
   })
 }
@@ -245,6 +284,17 @@ async function processCandidate(
     if (claim.count === 0) return 'skipped'
     claimOpen = true
 
+    let cutoffHours = candidateCutoffHours(candidate)
+    if (candidate.cancellationCutoffHours === null) {
+      const currentCutoffHours = await revalidateLegacyCutoff(candidate, now)
+      if (currentCutoffHours === null) {
+        await releaseClaim(candidate.id, now)
+        claimOpen = false
+        return 'skipped'
+      }
+      cutoffHours = currentCutoffHours
+    }
+
     const subscriptions = await loadActiveSubscriptions(candidate)
     if (subscriptions.length === 0) {
       await releaseClaim(candidate.id, now)
@@ -252,7 +302,6 @@ async function processCandidate(
       return 'skipped'
     }
 
-    const cutoffHours = candidateCutoffHours(candidate)
     const body = cancellationWarningText(cutoffHours)
     if (!body) {
       await releaseClaim(candidate.id, now)

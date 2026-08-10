@@ -4,6 +4,7 @@ import { TEST_PUSH_AUTH, TEST_VAPID_PUBLIC_KEY } from '../helpers/push-fixtures'
 
 const {
   mockBookingFindMany,
+  mockBookingFindUnique,
   mockBookingUpdateMany,
   mockSubscriptionFindMany,
   mockSubscriptionUpdate,
@@ -13,6 +14,7 @@ const {
   mockLogger,
 } = vi.hoisted(() => ({
   mockBookingFindMany: vi.fn(),
+  mockBookingFindUnique: vi.fn(),
   mockBookingUpdateMany: vi.fn(),
   mockSubscriptionFindMany: vi.fn(),
   mockSubscriptionUpdate: vi.fn(),
@@ -26,6 +28,7 @@ vi.mock('@/lib/db', () => ({
   prisma: {
     booking: {
       findMany: mockBookingFindMany,
+      findUnique: mockBookingFindUnique,
       updateMany: mockBookingUpdateMany,
     },
     pushSubscription: {
@@ -82,6 +85,61 @@ function makeSubscription(overrides: Record<string, unknown> = {}) {
   }
 }
 
+type SimulatedSubscriptionRow = ReturnType<typeof makeSubscription> & {
+  revokedAt: Date | null
+  lastFailureAt: Date | null
+  lastSuccessAt: Date | null
+}
+
+function simulateSubscriptionPersistence(initial: SimulatedSubscriptionRow) {
+  let row = { ...initial }
+
+  mockSubscriptionUpdate.mockImplementation(async ({ data }: {
+    data: Record<string, unknown>
+  }) => {
+    const increment = data.failureCount as { increment?: number } | undefined
+    if (increment?.increment) row.failureCount += increment.increment
+    if ('lastFailureAt' in data) row.lastFailureAt = data.lastFailureAt as Date | null
+    return { failureCount: row.failureCount }
+  })
+  mockSubscriptionUpdateMany.mockImplementation(async ({ where, data }: {
+    where: Record<string, unknown>
+    data: Record<string, unknown>
+  }) => {
+    if (
+      where.id !== row.id
+      || ('subscriptionEncrypted' in where
+        && where.subscriptionEncrypted !== row.subscriptionEncrypted)
+      || ('failureCount' in where && where.failureCount !== row.failureCount)
+      || (where.revokedAt === null && row.revokedAt !== null)
+    ) {
+      return { count: 0 }
+    }
+
+    const increment = data.failureCount as { increment?: number } | undefined
+    if (increment?.increment) row.failureCount += increment.increment
+    else if (typeof data.failureCount === 'number') row.failureCount = data.failureCount
+    if ('revokedAt' in data) row.revokedAt = data.revokedAt as Date | null
+    if ('lastFailureAt' in data) row.lastFailureAt = data.lastFailureAt as Date | null
+    if ('lastSuccessAt' in data) row.lastSuccessAt = data.lastSuccessAt as Date | null
+    return { count: 1 }
+  })
+
+  return {
+    replaceWithFreshGeneration() {
+      row = {
+        ...row,
+        subscriptionEncrypted: 'fresh-ciphertext',
+        failureCount: 0,
+        revokedAt: null,
+        lastFailureAt: null,
+        lastSuccessAt: null,
+      }
+    },
+    read: () => row,
+  }
+}
+
 describe('cancellationWarningWindow', () => {
   it('calcula el objetivo dos horas antes del cierre con milisegundos enteros', () => {
     const result = cancellationWarningWindow(
@@ -112,6 +170,14 @@ describe('sendCancellationWarnings', () => {
     vi.stubEnv('VAPID_SUBJECT', 'mailto:test@agendita.cl')
     vi.stubEnv('ENCRYPTION_KEY', 'encryption-test-key')
     mockBookingFindMany.mockResolvedValue([makeBooking()])
+    mockBookingFindUnique.mockResolvedValue({
+      cancellationCutoffHours: null,
+      startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
+      business: {
+        selfServiceCutoffHours: 24,
+        cancellationReminderEnabled: true,
+      },
+    })
     mockBookingUpdateMany.mockResolvedValue({ count: 1 })
     mockSubscriptionFindMany.mockResolvedValue([makeSubscription()])
     mockSubscriptionUpdate.mockResolvedValue({ failureCount: 1 })
@@ -153,6 +219,36 @@ describe('sendCancellationWarnings', () => {
       }),
       take: expect.any(Number),
     }))
+  })
+
+  it('pagina un lote exacto de 100 y uno parcial sin duplicar ni omitir reservas', async () => {
+    const bookings = Array.from({ length: 102 }, (_, index) => makeBooking({
+      id: `booking-${String(index + 1).padStart(3, '0')}`,
+    }))
+    mockBookingFindMany
+      .mockResolvedValueOnce(bookings.slice(0, 100))
+      .mockResolvedValueOnce(bookings.slice(100))
+    mockSubscriptionFindMany.mockResolvedValue([])
+
+    const result = await sendCancellationWarnings(NOW)
+
+    expect(result).toEqual({ sent: 0, skipped: 102, errors: 0 })
+    expect(mockBookingFindMany).toHaveBeenCalledTimes(2)
+    const firstQuery = mockBookingFindMany.mock.calls[0][0]
+    const secondQuery = mockBookingFindMany.mock.calls[1][0]
+    expect(firstQuery).toMatchObject({ orderBy: { id: 'asc' }, take: 100 })
+    expect(firstQuery).not.toHaveProperty('cursor')
+    expect(firstQuery).not.toHaveProperty('skip')
+    expect(secondQuery).toMatchObject({
+      orderBy: { id: 'asc' },
+      take: 100,
+      cursor: { id: 'booking-100' },
+      skip: 1,
+    })
+    const claimedIds = mockBookingUpdateMany.mock.calls
+      .filter(([{ data }]) => data.cancellationReminderClaimedAt === NOW)
+      .map(([{ where }]) => where.id)
+    expect(claimedIds).toEqual(bookings.map(({ id }) => id))
   })
 
   it('envía exactamente desde targetAt', async () => {
@@ -205,6 +301,54 @@ describe('sendCancellationWarnings', () => {
     expect(result.sent).toBe(1)
     expect(mockSendWebPush).toHaveBeenCalledTimes(1)
   })
+
+  it.each([
+    ['cero', 0],
+    ['fuera de ventana', 23],
+  ])(
+    'una reserva legacy revalida el cutoff actual %s después del claim',
+    async (_case, currentCutoffHours) => {
+      mockBookingFindMany.mockResolvedValue([
+        makeBooking({ cancellationCutoffHours: null }),
+      ])
+      mockBookingFindUnique.mockResolvedValue({
+        cancellationCutoffHours: null,
+        startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
+        business: {
+          selfServiceCutoffHours: currentCutoffHours,
+          cancellationReminderEnabled: true,
+        },
+      })
+
+      const result = await sendCancellationWarnings(NOW)
+
+      expect(result).toEqual({ sent: 0, skipped: 1, errors: 0 })
+      expect(mockBookingFindUnique).toHaveBeenCalledWith({
+        where: { id: 'booking-1' },
+        select: {
+          cancellationCutoffHours: true,
+          startDateTime: true,
+          business: {
+            select: {
+              selfServiceCutoffHours: true,
+              cancellationReminderEnabled: true,
+            },
+          },
+        },
+      })
+      expect(mockSubscriptionFindMany).not.toHaveBeenCalled()
+      expect(mockDecryptSecret).not.toHaveBeenCalled()
+      expect(mockSendWebPush).not.toHaveBeenCalled()
+      expect(mockBookingUpdateMany).toHaveBeenLastCalledWith({
+        where: {
+          id: 'booking-1',
+          cancellationReminderClaimedAt: NOW,
+          cancellationReminderSentAt: null,
+        },
+        data: { cancellationReminderClaimedAt: null },
+      })
+    },
+  )
 
   it('el query excluye status incorrecto, abono cero y negocio deshabilitado', async () => {
     mockBookingFindMany.mockResolvedValue([])
@@ -295,7 +439,11 @@ describe('sendCancellationWarnings', () => {
 
     expect(result).toEqual({ sent: 1, skipped: 0, errors: 0 })
     expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
-      where: { id: 'subscription-2', revokedAt: null },
+      where: {
+        id: 'subscription-2',
+        subscriptionEncrypted: PUSH_JSON,
+        revokedAt: null,
+      },
       data: expect.objectContaining({ revokedAt: NOW, lastFailureAt: NOW }),
     })
     expect(mockBookingUpdateMany).toHaveBeenLastCalledWith({
@@ -317,7 +465,11 @@ describe('sendCancellationWarnings', () => {
     await sendCancellationWarnings(NOW)
 
     expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
-      where: { id: 'subscription-1', revokedAt: null },
+      where: {
+        id: 'subscription-1',
+        subscriptionEncrypted: PUSH_JSON,
+        revokedAt: null,
+      },
       data: expect.objectContaining({
         revokedAt: NOW,
         lastFailureAt: NOW,
@@ -325,6 +477,31 @@ describe('sendCancellationWarnings', () => {
       }),
     })
   })
+
+  it.each([404, 410])(
+    'un HTTP %s del envío viejo no revoca una re-suscripción concurrente',
+    async (statusCode) => {
+      const simulated = simulateSubscriptionPersistence({
+        ...makeSubscription(),
+        revokedAt: null,
+        lastFailureAt: null,
+        lastSuccessAt: null,
+      })
+      mockSendWebPush.mockImplementation(async () => {
+        simulated.replaceWithFreshGeneration()
+        return { ok: false, statusCode }
+      })
+
+      await sendCancellationWarnings(NOW)
+
+      expect(simulated.read()).toMatchObject({
+        subscriptionEncrypted: 'fresh-ciphertext',
+        failureCount: 0,
+        revokedAt: null,
+        lastFailureAt: null,
+      })
+    },
+  )
 
   it.each([400, 401, 403])(
     'HTTP %s incrementa un fallo permanente pero no revoca antes del tercero',
@@ -337,14 +514,16 @@ describe('sendCancellationWarnings', () => {
 
       await sendCancellationWarnings(NOW)
 
-      expect(mockSubscriptionUpdate).toHaveBeenCalledWith({
-        where: { id: 'subscription-1' },
+      expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'subscription-1',
+          subscriptionEncrypted: PUSH_JSON,
+          revokedAt: null,
+          failureCount: 1,
+        },
         data: { failureCount: { increment: 1 }, lastFailureAt: NOW },
-        select: { failureCount: true },
       })
-      expect(mockSubscriptionUpdateMany).not.toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ revokedAt: NOW }) }),
-      )
+      expect(mockSubscriptionUpdate).not.toHaveBeenCalled()
     },
   )
 
@@ -358,10 +537,47 @@ describe('sendCancellationWarnings', () => {
     await sendCancellationWarnings(NOW)
 
     expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
-      where: { id: 'subscription-1', revokedAt: null },
-      data: { revokedAt: NOW },
+      where: {
+        id: 'subscription-1',
+        subscriptionEncrypted: PUSH_JSON,
+        revokedAt: null,
+        failureCount: 2,
+      },
+      data: {
+        failureCount: { increment: 1 },
+        lastFailureAt: NOW,
+        revokedAt: NOW,
+      },
     })
   })
+
+  it.each([400, 401, 403])(
+    'el tercer HTTP %s del envío viejo no incrementa ni revoca una re-suscripción concurrente',
+    async (statusCode) => {
+      mockSubscriptionFindMany.mockResolvedValue([
+        makeSubscription({ failureCount: 2 }),
+      ])
+      const simulated = simulateSubscriptionPersistence({
+        ...makeSubscription({ failureCount: 2 }),
+        revokedAt: null,
+        lastFailureAt: null,
+        lastSuccessAt: null,
+      })
+      mockSendWebPush.mockImplementation(async () => {
+        simulated.replaceWithFreshGeneration()
+        return { ok: false, statusCode }
+      })
+
+      await sendCancellationWarnings(NOW)
+
+      expect(simulated.read()).toMatchObject({
+        subscriptionEncrypted: 'fresh-ciphertext',
+        failureCount: 0,
+        revokedAt: null,
+        lastFailureAt: null,
+      })
+    },
+  )
 
   it.each([
     ['rate limit', { ok: false, statusCode: 429 }],
@@ -372,7 +588,11 @@ describe('sendCancellationWarnings', () => {
     await sendCancellationWarnings(NOW)
 
     expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
-      where: { id: 'subscription-1', revokedAt: null },
+      where: {
+        id: 'subscription-1',
+        subscriptionEncrypted: PUSH_JSON,
+        revokedAt: null,
+      },
       data: { lastFailureAt: NOW },
     })
     expect(mockSubscriptionUpdate).not.toHaveBeenCalled()
@@ -385,7 +605,11 @@ describe('sendCancellationWarnings', () => {
 
     expect(result).toEqual({ sent: 0, skipped: 0, errors: 1 })
     expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
-      where: { id: 'subscription-1', revokedAt: null },
+      where: {
+        id: 'subscription-1',
+        subscriptionEncrypted: PUSH_JSON,
+        revokedAt: null,
+      },
       data: { lastFailureAt: NOW },
     })
     expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain('endpoint capability')
@@ -415,7 +639,11 @@ describe('sendCancellationWarnings', () => {
     await sendCancellationWarnings(NOW)
 
     expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
-      where: { id: 'subscription-1', revokedAt: null },
+      where: {
+        id: 'subscription-1',
+        subscriptionEncrypted: PUSH_JSON,
+        revokedAt: null,
+      },
       data: {
         failureCount: 0,
         lastFailureAt: null,
@@ -433,6 +661,33 @@ describe('sendCancellationWarnings', () => {
     const payload = JSON.stringify(mockSendWebPush.mock.calls[0][1])
     expect(payload).not.toContain('customer-1')
     expect(payload).not.toContain('5000')
+  })
+
+  it('un éxito del envío viejo no reinicia el estado de una re-suscripción concurrente', async () => {
+    const freshSuccessAt = new Date('2026-08-10T11:59:00.000Z')
+    const simulated = simulateSubscriptionPersistence({
+      ...makeSubscription({ failureCount: 2 }),
+      revokedAt: null,
+      lastFailureAt: new Date('2026-08-10T11:00:00.000Z'),
+      lastSuccessAt: null,
+    })
+    mockSendWebPush.mockImplementation(async () => {
+      simulated.replaceWithFreshGeneration()
+      const row = simulated.read()
+      row.failureCount = 1
+      row.lastFailureAt = new Date('2026-08-10T11:58:00.000Z')
+      row.lastSuccessAt = freshSuccessAt
+      return { ok: true, statusCode: 201 }
+    })
+
+    await sendCancellationWarnings(NOW)
+
+    expect(simulated.read()).toMatchObject({
+      subscriptionEncrypted: 'fresh-ciphertext',
+      failureCount: 1,
+      lastFailureAt: new Date('2026-08-10T11:58:00.000Z'),
+      lastSuccessAt: freshSuccessAt,
+    })
   })
 
   it('para invitada abre la confirmación pública del tenant', async () => {
