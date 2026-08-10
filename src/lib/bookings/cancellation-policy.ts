@@ -20,7 +20,11 @@ export function resolveCancellationPolicy(
   booking: CancellationPolicyBookingSnapshot,
   business: CancellationPolicyBusinessFallback,
 ): { cutoffHours: number; additionalPolicy: string | null } {
-  if (typeof booking.cancellationCutoffHours !== 'number') {
+  if (booking.cancellationCutoffHours === undefined) {
+    throw new Error('Booking projection missing cancellationCutoffHours')
+  }
+
+  if (booking.cancellationCutoffHours === null) {
     return {
       cutoffHours: business.selfServiceCutoffHours,
       additionalPolicy: business.cancellationPolicy,

@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   cancellationWarningText,
   resolveCancellationPolicy,
+  type CancellationPolicyBookingSnapshot,
 } from '@/lib/bookings/cancellation-policy'
 
 describe('resolveCancellationPolicy', () => {
@@ -9,6 +10,13 @@ describe('resolveCancellationPolicy', () => {
     selfServiceCutoffHours: 24,
     cancellationPolicy: 'Política actual',
   }
+
+  it('requiere el cutoff en la proyección tipada', () => {
+    type RequiresCutoff = CancellationPolicyBookingSnapshot extends {
+      cancellationCutoffHours: number | null
+    } ? true : false
+    expectTypeOf<RequiresCutoff>().toEqualTypeOf<true>()
+  })
 
   it('usa el snapshot de la reserva aunque la configuración cambie después', () => {
     expect(resolveCancellationPolicy({
@@ -38,6 +46,16 @@ describe('resolveCancellationPolicy', () => {
       cutoffHours: 24,
       additionalPolicy: 'Política actual',
     })
+  })
+
+  it('no confunde una proyección incompleta con una reserva legacy', () => {
+    const incomplete = {
+      cancellationPolicySnapshot: null,
+    } as unknown as Parameters<typeof resolveCancellationPolicy>[0]
+
+    expect(() => resolveCancellationPolicy(incomplete, business)).toThrow(
+      /cancellationCutoffHours/,
+    )
   })
 })
 

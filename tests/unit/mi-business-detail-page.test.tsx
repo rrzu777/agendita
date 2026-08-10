@@ -27,6 +27,7 @@ import MiBusinessPage from '@/app/mi/[slug]/page'
 
 const business = {
   id: 'b1', name: 'Mimos Nails', slug: 'mimosnails', subdomain: 'mimosnails', logoUrl: null, selfServiceCutoffHours: 24,
+  cancellationPolicy: null,
   loyaltyConfig: { isActive: true, programName: 'Club', pointsLabel: 'mimos', cardMessage: null },
 }
 const cardData = {
@@ -55,7 +56,7 @@ describe('/mi/[slug]', () => {
     const future = new Date(Date.now() + 86400000)
     mockBookingFindMany
       .mockResolvedValueOnce([
-        { id: 'bk1', bookingNumber: 4738, startDateTime: future, status: 'confirmed', service: { name: 'Manicura' } },
+        { id: 'bk1', bookingNumber: 4738, startDateTime: future, status: 'confirmed', cancellationCutoffHours: 24, cancellationPolicySnapshot: null, service: { name: 'Manicura' } },
       ])
       .mockResolvedValueOnce([])
     const html = renderToStaticMarkup(await MiBusinessPage({ params: Promise.resolve({ slug: 'mimosnails' }) }))
@@ -77,6 +78,7 @@ describe('/mi/[slug]', () => {
         .mockResolvedValueOnce([{
           id: 'bk1', bookingNumber: 4738, startDateTime: new Date(Date.now() + 86400000),
           status: 'pending_payment', paymentStatus: 'unpaid', holdExpiresAt: null, approvalExpiresAt: null,
+          cancellationCutoffHours: 24, cancellationPolicySnapshot: null,
           service: { name: 'Manicura' }, payments: [],
           ...booking,
         }])

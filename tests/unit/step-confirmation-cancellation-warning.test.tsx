@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { StepConfirmation } from '@/components/booking/step-confirmation'
 import type { BookingData } from '@/components/booking/wizard'
+import type { ComponentProps } from 'react'
 
 const base = {
   serviceId: 's1',
@@ -32,6 +33,16 @@ const common = {
 }
 
 describe('StepConfirmation cancellation warning', () => {
+  it('requiere los tres valores autoritativos en su contrato', () => {
+    type Props = ComponentProps<typeof StepConfirmation>
+    type RequiresAuthoritativeValues = Props extends Record<
+      'cancellationCutoffHours' | 'depositRequired' | 'depositPaid',
+      number
+    > ? true : false
+
+    expectTypeOf<RequiresAuthoritativeValues>().toEqualTypeOf<true>()
+  })
+
   it('muestra un aviso amber para una reserva con abono y cutoff positivo', () => {
     const html = renderToStaticMarkup(
       <StepConfirmation {...common} data={base} cancellationCutoffHours={24} depositRequired={5_000} depositPaid={0} />,

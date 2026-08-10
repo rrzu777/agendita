@@ -23,7 +23,7 @@ export interface ConfirmationBusiness {
   whatsapp: string | null
 }
 
-export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail, business, where, confirmed, professionalName, cancellationCutoffHours = 0, depositRequired, depositPaid = 0 }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields; confirmed: boolean; professionalName: string; cancellationCutoffHours?: number; depositRequired?: number; depositPaid?: number }) {
+export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail, business, where, confirmed, professionalName, cancellationCutoffHours, depositRequired, depositPaid }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields; confirmed: boolean; professionalName: string; cancellationCutoffHours: number; depositRequired: number; depositPaid: number }) {
   const isPending = mode === 'pending'
   const isFree = data.servicePrice <= 0
   const noDeposit = data.serviceDeposit <= 0
@@ -48,9 +48,7 @@ export function StepConfirmation({ data, timezone, currency, bookingId, bookingN
   // "Precio total" sigue mostrando el precio original (pre-descuento).
   const hasDiscount = promo != null && promo.discountAmount > 0
   const effectiveFinal = hasDiscount ? promo!.finalAmount : data.servicePrice
-  // En producción llegan los montos persistidos con `BookingCreated`. El
-  // fallback mantiene compatibles usos aislados del componente (stories/tests).
-  const hasPersistedDeposit = (depositRequired ?? data.serviceDeposit) > 0 || depositPaid > 0
+  const hasPersistedDeposit = depositRequired > 0 || depositPaid > 0
   const cancellationWarning = hasPersistedDeposit
     ? cancellationWarningText(cancellationCutoffHours)
     : null
