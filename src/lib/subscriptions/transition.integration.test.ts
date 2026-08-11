@@ -416,6 +416,19 @@ describe('applySubscriptionTransition', () => {
     })).resolves.toMatchObject({ status: 'active', lastPaidAt: manualPaidAt })
   })
 
+  it('encola un pago manual temprano con paidAt como evento, fecha efectiva y disponibilidad', async () => {
+    const paidAt = new Date('2026-08-05T09:30:00.000Z')
+    await applySubscriptionTransition(prisma, {
+      subscriptionId: SUBSCRIPTION,
+      command: { type: 'admin_record_payment', amount: 14990, paidAt },
+    })
+    await expect(prisma.subscriptionNotificationDelivery.findFirst({
+      where: { subscriptionId: SUBSCRIPTION, kind: 'subscription_recovered' },
+      orderBy: { createdAt: 'desc' },
+      select: { eventAt: true, effectiveDate: true, availableAt: true, eventId: true },
+    })).resolves.toEqual({ eventAt: paidAt, effectiveDate: paidAt, availableAt: paidAt, eventId: expect.any(String) })
+  })
+
   it('la cobertura manual no queda oculta por un approved externo con paidAt mayor', async () => {
     const manualPaidAt = new Date('2026-09-15T12:00:00.000Z')
     await applySubscriptionTransition(prisma, {

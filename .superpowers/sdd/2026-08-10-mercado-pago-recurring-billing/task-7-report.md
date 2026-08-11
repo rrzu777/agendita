@@ -32,3 +32,4 @@ No existe actualmente un escritor que cambie `PaymentAccount` a `expired` (el ú
 ## Fix round 2
 
 - `admin_record_payment` ahora usa `paidAt` como `eventAt`, `effectiveDate` y disponibilidad inmediata. Nueva migración forward-only backfillea intentos históricos y terminaliza sanitariamente los ya fuera de ventana; intentos cero no se tocan.
+- PostgreSQL fresh: el test de pago manual temprano verifica `eventAt/effectiveDate/availableAt=paidAt` y evento durable; transición integración 23/23 y typecheck OK.
