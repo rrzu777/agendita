@@ -263,7 +263,7 @@ async function processClaimedSubscription(input: {
       try {
         const delivery = await (dependencies.sendSubscriptionNotification ?? sendSubscriptionNotification)(
           notification.kind,
-          notification,
+          { ...notification, billingLeaseUntil: leaseUntil },
         )
         if (delivery.status === 'sent') result.notified++
       } catch {

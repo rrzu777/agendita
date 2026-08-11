@@ -21,7 +21,7 @@ import {
   runSubscriptionBillingCron,
   type SubscriptionBillingCronDependencies,
 } from './subscription-billing'
-import { retrySubscriptionNotifications } from '@/lib/notifications/subscriptions'
+import { retrySubscriptionNotifications, sendSubscriptionNotification } from '@/lib/notifications/subscriptions'
 
 requireTestDatabase()
 
@@ -464,5 +464,76 @@ describe('subscription billing cancellation interleaving', () => {
       select: { status: true, nextAttemptAt: true, lastErrorCode: true },
     })).resolves.toEqual({ status: 'suppressed', nextAttemptAt: null, lastErrorCode: 'billing_disabled' })
     expect(sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('holds the billing lease through scheduled email and permits disable only after release', async () => {
+    const effectiveDate = new Date(NOW.getTime() + 7 * 86_400_000)
+    await prisma.subscriptionNotificationDelivery.create({ data: {
+      businessId: BUSINESS_ID, subscriptionId: SUBSCRIPTION_ID,
+      kind: 'subscription_due_7_days', effectiveDate, eventAt: NOW,
+      availableAt: NOW,
+      dedupeKey: `${SUBSCRIPTION_ID}:subscription_due_7_days:${effectiveDate.toISOString()}`,
+      status: 'pending', nextAttemptAt: NOW,
+      recipientEmails: ['owner@example.test'], businessNameSnapshot: 'Billing Race Business',
+    } })
+    let releaseEmail!: () => void
+    let emailStarted!: () => void
+    const started = new Promise<void>((resolve) => { emailStarted = resolve })
+    const blocked = new Promise<void>((resolve) => { releaseEmail = resolve })
+    const sendEmail = vi.fn(async () => {
+      emailStarted()
+      await blocked
+      return { success: true as const }
+    })
+    const send = sendSubscriptionNotification('subscription_due_7_days', {
+      businessId: BUSINESS_ID, subscriptionId: SUBSCRIPTION_ID,
+      effectiveDate,
+    }, { prisma, sendEmail, now: () => NOW })
+    await started
+
+    const disableWhileClaimed = await prisma.businessSubscription.updateMany({
+      where: {
+        id: SUBSCRIPTION_ID,
+        OR: [{ billingCronClaimedUntil: null }, { billingCronClaimedUntil: { lte: NOW } }],
+      },
+      data: { billingEnabled: false },
+    })
+    expect(disableWhileClaimed.count).toBe(0)
+
+    releaseEmail()
+    await expect(send).resolves.toEqual({ status: 'sent' })
+    const disableAfterRelease = await prisma.businessSubscription.updateMany({
+      where: {
+        id: SUBSCRIPTION_ID,
+        OR: [{ billingCronClaimedUntil: null }, { billingCronClaimedUntil: { lte: NOW } }],
+      },
+      data: { billingEnabled: false },
+    })
+    expect(disableAfterRelease.count).toBe(1)
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+  })
+
+  it('recovers an expired billing lease for a scheduled retry', async () => {
+    const effectiveDate = new Date(NOW.getTime() + 3 * 86_400_000)
+    await prisma.businessSubscription.update({
+      where: { id: SUBSCRIPTION_ID },
+      data: { billingCronClaimedUntil: new Date(NOW.getTime() - 1) },
+    })
+    await prisma.subscriptionNotificationDelivery.create({ data: {
+      businessId: BUSINESS_ID, subscriptionId: SUBSCRIPTION_ID,
+      kind: 'subscription_due_3_days', effectiveDate, eventAt: NOW,
+      availableAt: NOW,
+      dedupeKey: `${SUBSCRIPTION_ID}:subscription_due_3_days:${effectiveDate.toISOString()}`,
+      status: 'failed', nextAttemptAt: NOW,
+      recipientEmails: ['owner@example.test'], businessNameSnapshot: 'Billing Race Business',
+    } })
+    const sendEmail = vi.fn().mockResolvedValue({ success: true })
+    await expect(sendSubscriptionNotification('subscription_due_3_days', {
+      businessId: BUSINESS_ID, subscriptionId: SUBSCRIPTION_ID,
+      effectiveDate,
+    }, { prisma, sendEmail, now: () => NOW })).resolves.toEqual({ status: 'sent' })
+    await expect(prisma.businessSubscription.findUniqueOrThrow({
+      where: { id: SUBSCRIPTION_ID }, select: { billingCronClaimedUntil: true },
+    })).resolves.toEqual({ billingCronClaimedUntil: null })
   })
 })

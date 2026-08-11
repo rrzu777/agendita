@@ -34,6 +34,8 @@ export interface SubscriptionNotificationData {
   availableAt?: Date
   eventId?: string
   businessName?: string
+  /** Internal durable lease already owned by the billing cron. */
+  billingLeaseUntil?: Date
 }
 
 export interface BookingEmailData {

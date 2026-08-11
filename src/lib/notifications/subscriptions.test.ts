@@ -24,6 +24,9 @@ function createDependencies(): SubscriptionNotificationDependencies {
   const deliveries = new Set<string>()
   return {
     prisma: {
+      businessSubscription: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       subscriptionNotificationDelivery: {
         createMany: vi.fn(async ({ data }) => {
           const key = data[0].dedupeKey

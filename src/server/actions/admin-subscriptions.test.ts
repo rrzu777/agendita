@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   tx: {
     plan: { findUnique: vi.fn() },
-    businessSubscription: { findFirst: vi.fn(), updateMany: vi.fn() },
+    businessSubscription: { findFirst: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
     business: { update: vi.fn(), findUnique: vi.fn() },
     subscriptionLog: { create: vi.fn() },
   },
@@ -183,6 +183,18 @@ describe('adminConfigureBilling', () => {
       planId: 'plan-pro', trialDays: 30, graceDays: 7, billingEnabled: true,
     })).rejects.toThrow(/plan contratado/i)
     expect(mocks.tx.businessSubscription.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('rejects disabling while the billing lease is active', async () => {
+    mocks.tx.businessSubscription.updateMany.mockResolvedValue({ count: 0 })
+    mocks.tx.businessSubscription.findUnique.mockResolvedValue({
+      billingCronClaimedUntil: new Date(Date.now() + 60_000),
+    })
+    const { adminConfigureBilling } = await import('./admin')
+    await expect(adminConfigureBilling('biz-1', {
+      planId: 'plan-pro', trialDays: 30, graceDays: 7, billingEnabled: false,
+    })).rejects.toThrow(/procesando/i)
+    expect(mocks.tx.business.update).not.toHaveBeenCalled()
   })
 })
 

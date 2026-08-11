@@ -7,6 +7,7 @@ import { applySubscriptionTransition } from '@/lib/subscriptions/transition'
 import { reconcileSubscription } from '@/lib/subscriptions/reconciliation'
 import { revalidatePath } from 'next/cache'
 import { formatInTimeZone } from 'date-fns-tz'
+import { UserError } from '@/lib/actions/result'
 
 function actor(user: { id: string; email?: string | null }, notes: string) {
   return {
@@ -176,6 +177,7 @@ export async function adminConfigureBilling(businessId: string, configuration: B
   assertIntegerRange(configuration.graceDays, 0, 30, 'Los días de gracia')
   if (!configuration.planId?.trim()) throw new Error('El plan es obligatorio')
 
+  const now = new Date()
   const plan = await prisma.$transaction(async (tx) => {
     const selectedPlan = await tx.plan.findUnique({ where: { id: configuration.planId } })
     if (!selectedPlan) throw new Error('El plan no existe')
@@ -188,7 +190,16 @@ export async function adminConfigureBilling(businessId: string, configuration: B
       throw new Error('No se puede cambiar el plan contratado mientras exista una autorización externa')
     }
     const updated = await tx.businessSubscription.updateMany({
-      where: { id: subscription.id, updatedAt: subscription.updatedAt },
+      where: {
+        id: subscription.id,
+        updatedAt: subscription.updatedAt,
+        ...(!configuration.billingEnabled ? {
+          OR: [
+            { billingCronClaimedUntil: null },
+            { billingCronClaimedUntil: { lte: now } },
+          ],
+        } : {}),
+      },
       data: {
         planId: selectedPlan.id,
         amount: selectedPlan.priceMonthly,
@@ -197,7 +208,17 @@ export async function adminConfigureBilling(businessId: string, configuration: B
         billingEnabled: configuration.billingEnabled,
       },
     })
-    if (updated.count !== 1) throw new Error('La suscripción cambió; recarga e intenta nuevamente')
+    if (updated.count !== 1) {
+      if (!configuration.billingEnabled) {
+        const current = await tx.businessSubscription.findUnique({
+          where: { id: subscription.id }, select: { billingCronClaimedUntil: true },
+        })
+        if (current?.billingCronClaimedUntil && current.billingCronClaimedUntil > now) {
+          throw new UserError('La facturación está procesando este negocio; espera unos segundos e intenta nuevamente')
+        }
+      }
+      throw new Error('La suscripción cambió; recarga e intenta nuevamente')
+    }
     await tx.business.update({ where: { id: businessId }, data: { planId: selectedPlan.id } })
     await tx.subscriptionLog.create({
       data: {

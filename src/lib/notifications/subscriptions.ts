@@ -151,7 +151,7 @@ async function markDelivery(
  * Resend. Si la respuesta se pierde tras el envío, el reintento es seguro para
  * el proveedor y nunca se reenvía una entrega ya marcada como `sent`.
  */
-export async function sendSubscriptionNotification(
+async function sendSubscriptionNotificationUnderLease(
   kind: SubscriptionNotificationKind,
   data: SubscriptionNotificationData,
   dependencies: SubscriptionNotificationDependencies = runtimeDependencies(),
@@ -177,7 +177,12 @@ export async function sendSubscriptionNotification(
   const claim = await dependencies.prisma.subscriptionNotificationDelivery.updateMany({
     where: {
       dedupeKey,
-      ...(scheduled ? { subscription: { billingEnabled: true } } : {}),
+      ...(scheduled ? {
+        subscription: {
+          billingEnabled: true,
+          billingCronClaimedUntil: data.billingLeaseUntil,
+        },
+      } : {}),
       OR: [
         { status: 'pending', OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
         { status: 'failed', nextAttemptAt: { lte: now } },
@@ -222,6 +227,53 @@ export async function sendSubscriptionNotification(
 
   await markDelivery(dependencies, { dedupeKey, leaseUntil, status: 'sent', now })
   return { status: 'sent' }
+}
+
+/** Scheduled 7/3/1 notices share the subscription billing lease with the cron.
+ * Lifecycle/financial receipts deliberately bypass it: their event is already
+ * committed and revoking rollout must not erase required delivery. */
+export async function sendSubscriptionNotification(
+  kind: SubscriptionNotificationKind,
+  data: SubscriptionNotificationData,
+  dependencies: SubscriptionNotificationDependencies = runtimeDependencies(),
+): Promise<SubscriptionNotificationResult> {
+  if (!scheduledBillingKindSet.has(kind) || data.billingLeaseUntil) {
+    return sendSubscriptionNotificationUnderLease(kind, data, dependencies)
+  }
+
+  const now = dependencies.now()
+  const leaseUntil = new Date(now.getTime() + DELIVERY_LEASE_MS)
+  const lease = await dependencies.prisma.businessSubscription.updateMany({
+    where: {
+      id: data.subscriptionId,
+      billingEnabled: true,
+      OR: [
+        { billingCronClaimedUntil: null },
+        { billingCronClaimedUntil: { lte: now } },
+      ],
+    },
+    data: { billingCronClaimedUntil: leaseUntil },
+  })
+  if (lease.count !== 1) {
+    const dedupeKey = subscriptionNotificationDedupeKey(data.subscriptionId, kind, data.effectiveDate, data.eventId)
+    await dependencies.prisma.subscriptionNotificationDelivery.updateMany({
+      where: { dedupeKey, status: { in: ['pending', 'failed'] } },
+      data: { nextAttemptAt: new Date(now.getTime() + RETRY_DELAY_MS) },
+    })
+    return { status: 'skipped' }
+  }
+
+  try {
+    return await sendSubscriptionNotificationUnderLease(kind, {
+      ...data,
+      billingLeaseUntil: leaseUntil,
+    }, dependencies)
+  } finally {
+    await dependencies.prisma.businessSubscription.updateMany({
+      where: { id: data.subscriptionId, billingCronClaimedUntil: leaseUntil },
+      data: { billingCronClaimedUntil: null },
+    })
+  }
 }
 
 export async function retrySubscriptionNotifications(
