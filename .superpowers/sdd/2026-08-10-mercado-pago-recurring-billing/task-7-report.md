@@ -21,3 +21,9 @@
 ### Límite explícito
 
 No existe actualmente un escritor que cambie `PaymentAccount` a `expired` (el único consumidor detectado sólo lee ese estado). La plantilla/outbox `subscription_oauth_expired` queda disponible para el futuro writer; conectarla a un lector repetiría avisos y no sería un evento de lifecycle durable.
+
+## Fix round 1
+
+- Nueva migración forward-only separa `eventAt`, `effectiveDate`, `availableAt`, primer intento de proveedor y `manualReviewAt`. Transiciones usan el ID durable de su log como identidad de evento; cancelación se encola al solicitarse y conserva el cierre de período sólo para el copy.
+- La ventana de 23 h comienza en `firstProviderAttemptAt`; un aviso nunca intentado sigue disponible aunque sea antiguo. Intentos ambiguos vencidos e idempotency conflicts pasan a `manual_review` sanitario, sin reenvío.
+- `npm test -- src/lib/notifications/subscriptions.test.ts src/lib/cron/subscription-billing.test.ts` — 33/33; `npm run typecheck` — OK.

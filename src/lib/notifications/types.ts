@@ -30,6 +30,9 @@ export interface SubscriptionNotificationData {
   businessId: string
   subscriptionId: string
   effectiveDate: Date
+  eventAt?: Date
+  availableAt?: Date
+  eventId?: string
   businessName?: string
 }
 

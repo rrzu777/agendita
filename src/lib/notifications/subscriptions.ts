@@ -55,8 +55,9 @@ export function subscriptionNotificationDedupeKey(
   subscriptionId: string,
   kind: SubscriptionNotificationKind,
   effectiveDate: Date,
+  eventId?: string,
 ): string {
-  return `${subscriptionId}:${kind}:${effectiveDate.toISOString()}`
+  return `${subscriptionId}:${kind}:${eventId ?? effectiveDate.toISOString()}`
 }
 
 export function buildSubscriptionNotification(
@@ -76,6 +77,8 @@ export async function queueSubscriptionNotification(
   dependencies: Pick<SubscriptionNotificationDependencies, 'prisma' | 'now'> = runtimeDependencies(),
 ): Promise<void> {
   const now = dependencies.now()
+  const eventAt = data.eventAt ?? now
+  const availableAt = data.availableAt ?? now
   const business = await dependencies.prisma.business.findUnique({
     where: { id: data.businessId },
     select: {
@@ -92,8 +95,11 @@ export async function queueSubscriptionNotification(
       subscriptionId: data.subscriptionId,
       kind,
       effectiveDate: data.effectiveDate,
-      dedupeKey: subscriptionNotificationDedupeKey(data.subscriptionId, kind, data.effectiveDate),
-      nextAttemptAt: now,
+      eventAt,
+      availableAt,
+      eventId: data.eventId,
+      dedupeKey: subscriptionNotificationDedupeKey(data.subscriptionId, kind, data.effectiveDate, data.eventId),
+      nextAttemptAt: availableAt,
       recipientEmails,
       businessNameSnapshot: data.businessName ?? business.name,
     }],
@@ -110,7 +116,7 @@ async function markDelivery(
   input: {
     dedupeKey: string
     leaseUntil: Date
-    status: 'sent' | 'failed'
+    status: 'sent' | 'failed' | 'manual_review'
     now: Date
     errorCode?: string
     terminal?: boolean
@@ -124,6 +130,8 @@ async function markDelivery(
     },
     data: input.status === 'sent'
       ? { status: 'sent', sentAt: input.now, nextAttemptAt: null, lastErrorCode: null }
+      : input.status === 'manual_review'
+        ? { status: 'manual_review', manualReviewAt: input.now, nextAttemptAt: null, lastErrorCode: input.errorCode ?? 'manual_review' }
       : {
           status: 'failed',
           nextAttemptAt: input.terminal ? null : new Date(input.now.getTime() + RETRY_DELAY_MS),
@@ -143,14 +151,25 @@ export async function sendSubscriptionNotification(
   dependencies: SubscriptionNotificationDependencies = runtimeDependencies(),
 ): Promise<SubscriptionNotificationResult> {
   const now = dependencies.now()
-  const dedupeKey = subscriptionNotificationDedupeKey(data.subscriptionId, kind, data.effectiveDate)
+  const dedupeKey = subscriptionNotificationDedupeKey(data.subscriptionId, kind, data.effectiveDate, data.eventId)
   await queueSubscriptionNotification(kind, data, dependencies)
+
+  const before = await dependencies.prisma.subscriptionNotificationDelivery.findUnique({
+    where: { dedupeKey },
+    select: { firstProviderAttemptAt: true },
+  })
+  if (before?.firstProviderAttemptAt && now.getTime() - before.firstProviderAttemptAt.getTime() >= RESEND_IDEMPOTENCY_WINDOW_MS) {
+    await dependencies.prisma.subscriptionNotificationDelivery.updateMany({
+      where: { dedupeKey, status: { in: ['pending', 'failed'] } },
+      data: { status: 'manual_review', manualReviewAt: now, nextAttemptAt: null, lastErrorCode: 'idempotency_window_elapsed' },
+    })
+    return { status: 'skipped' }
+  }
 
   const leaseUntil = new Date(now.getTime() + DELIVERY_LEASE_MS)
   const claim = await dependencies.prisma.subscriptionNotificationDelivery.updateMany({
     where: {
       dedupeKey,
-      createdAt: { gte: new Date(now.getTime() - RESEND_IDEMPOTENCY_WINDOW_MS) },
       OR: [
         { status: 'pending', OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
         { status: 'failed', nextAttemptAt: { lte: now } },
@@ -160,6 +179,7 @@ export async function sendSubscriptionNotification(
       status: 'pending',
       attempts: { increment: 1 },
       nextAttemptAt: leaseUntil,
+      firstProviderAttemptAt: before?.firstProviderAttemptAt ?? now,
     },
   })
   if (claim.count !== 1) return { status: 'skipped' }
@@ -185,7 +205,7 @@ export async function sendSubscriptionNotification(
     await markDelivery(dependencies, {
       dedupeKey,
       leaseUntil,
-      status: 'failed',
+      status: terminalIdempotencyFailure ? 'manual_review' : 'failed',
       now,
       ...(terminalIdempotencyFailure ? { errorCode: 'idempotency_conflict', terminal: true } : {}),
     })
@@ -204,16 +224,19 @@ export async function retrySubscriptionNotifications(
     where: {
       status: { in: ['failed', 'pending'] },
       nextAttemptAt: { lte: input.now },
-      createdAt: { gte: new Date(input.now.getTime() - RESEND_IDEMPOTENCY_WINDOW_MS) },
+      availableAt: { lte: input.now },
     },
     orderBy: [{ nextAttemptAt: 'asc' }, { id: 'asc' }],
     take: RETRY_PAGE_SIZE,
-    select: { businessId: true, subscriptionId: true, kind: true, effectiveDate: true },
+    select: { businessId: true, subscriptionId: true, kind: true, effectiveDate: true, eventAt: true, availableAt: true, eventId: true },
   })
   const results: SubscriptionNotificationResult[] = []
   for (const delivery of deliveries) {
     if (!isSubscriptionNotificationKind(delivery.kind)) continue
-    results.push(await sendSubscriptionNotification(delivery.kind, delivery, dependencies))
+    results.push(await sendSubscriptionNotification(delivery.kind, {
+      ...delivery,
+      eventId: delivery.eventId ?? undefined,
+    }, dependencies))
   }
   return results
 }

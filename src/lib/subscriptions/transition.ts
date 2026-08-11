@@ -95,7 +95,7 @@ function lifecycleNotification(input: {
   subscription: { businessId: string; id: string; status: PrismaSubscriptionStatus; currentPeriodEnd: Date }
   derived: DerivedSubscriptionTransition
   command: SubscriptionCommand | AdminSubscriptionCommand
-}): { kind: SubscriptionNotificationKind; effectiveDate: Date } | null {
+}): { kind: SubscriptionNotificationKind; effectiveDate: Date; eventAt: Date } | null {
   const { subscription, derived, command } = input
   const kind: SubscriptionNotificationKind | null = derived.auditAction === 'invoice_approved'
     ? subscription.status === 'trialing' ? 'subscription_activated' : 'subscription_payment_approved'
@@ -123,6 +123,7 @@ function lifecycleNotification(input: {
   return {
     kind,
     effectiveDate: kind === 'subscription_cancellation_requested' ? subscription.currentPeriodEnd : occurredAt,
+    eventAt: occurredAt,
   }
 }
 
@@ -703,7 +704,7 @@ export async function applySubscriptionTransition(
       })
     }
 
-    await tx.subscriptionLog.create({
+    const log = await tx.subscriptionLog.create({
       data: {
         businessId: subscription.businessId,
         action: derived.auditAction ?? 'subscription_transitioned',
@@ -723,7 +724,10 @@ export async function applySubscriptionTransition(
         businessId: subscription.businessId,
         subscriptionId: subscription.id,
         effectiveDate: notification.effectiveDate,
-      }, { prisma: tx, now: () => notification.effectiveDate })
+        eventAt: notification.eventAt,
+        availableAt: notification.eventAt,
+        eventId: log.id,
+      }, { prisma: tx, now: () => notification.eventAt })
     }
 
     return { applied: true, status: derived.nextStatus }

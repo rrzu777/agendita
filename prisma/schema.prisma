@@ -347,12 +347,17 @@ model SubscriptionNotificationDelivery {
   subscriptionId String
   kind           String
   effectiveDate  DateTime
+  eventAt        DateTime
+  availableAt    DateTime
+  eventId        String?
   dedupeKey      String    @unique
   status         String    @default("pending")
   attempts       Int       @default(0)
   sentAt         DateTime?
   nextAttemptAt  DateTime?
   lastErrorCode  String?
+  firstProviderAttemptAt DateTime?
+  manualReviewAt DateTime?
   recipientEmails String[] @default([])
   businessNameSnapshot String
   createdAt      DateTime  @default(now())

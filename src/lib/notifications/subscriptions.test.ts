@@ -16,8 +16,9 @@ const SAFE_DATA = {
 }
 
 function createDependencies(): SubscriptionNotificationDependencies {
-  let status: 'pending' | 'sent' | 'failed' = 'pending'
+  let status: 'pending' | 'sent' | 'failed' | 'manual_review' = 'pending'
   let nextAttemptAt: Date | null = null
+  let firstProviderAttemptAt: Date | null = null
   let createdAt = NOW
   const deliveries = new Set<string>()
   return {
@@ -30,12 +31,11 @@ function createDependencies(): SubscriptionNotificationDependencies {
           createdAt = NOW
           return { count: 1 }
         }),
-        findUnique: vi.fn().mockResolvedValue({
-          recipientEmails: ['owner@example.test'],
-          businessNameSnapshot: 'Salón Seguro',
-        }),
+        findUnique: vi.fn().mockImplementation(async ({ select }) => select.firstProviderAttemptAt
+          ? { firstProviderAttemptAt }
+          : { recipientEmails: ['owner@example.test'], businessNameSnapshot: 'Salón Seguro' }),
         updateMany: vi.fn(async ({ where, data }) => {
-          if (data.status === 'sent' || data.status === 'failed') {
+          if (data.status === 'sent' || data.status === 'failed' || data.status === 'manual_review') {
             status = data.status
             nextAttemptAt = data.nextAttemptAt
             return { count: 1 }
@@ -50,6 +50,7 @@ function createDependencies(): SubscriptionNotificationDependencies {
           if (data.status === 'pending' && data.nextAttemptAt instanceof Date) {
             status = 'pending'
             nextAttemptAt = data.nextAttemptAt
+            firstProviderAttemptAt = data.firstProviderAttemptAt ?? firstProviderAttemptAt
           }
           return { count: 1 }
         }),
@@ -176,10 +177,10 @@ describe('subscription notifications', () => {
 
     expect(dependencies.sendEmail).toHaveBeenCalledTimes(1)
     const failedUpdate = (dependencies.prisma.subscriptionNotificationDelivery.updateMany as ReturnType<typeof vi.fn>)
-      .mock.calls.find(([input]) => input.data.status === 'failed')
+      .mock.calls.find(([input]) => input.data.status === 'manual_review')
     expect(failedUpdate).toEqual([{
       where: expect.objectContaining({ status: 'pending' }),
-      data: expect.objectContaining({ status: 'failed', nextAttemptAt: null, lastErrorCode: 'idempotency_conflict' }),
+      data: expect.objectContaining({ status: 'manual_review', nextAttemptAt: null, lastErrorCode: 'idempotency_conflict' }),
     }])
   })
 
