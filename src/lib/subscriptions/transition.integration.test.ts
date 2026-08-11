@@ -642,6 +642,53 @@ describe('applySubscriptionTransition', () => {
       .resolves.toMatchObject({ action: 'complimentary_period_set', adminUserId: 'admin-1' })
   })
 
+  it('rechaza exención manual con cancelación pendiente sin mutación ni auditoría', async () => {
+    const requestedAt = new Date('2026-08-10T00:00:00.000Z')
+    await prisma.businessSubscription.update({ where: { id: SUBSCRIPTION }, data: {
+      provider: 'manual', environment: null, providerPlanId: null, providerSubscriptionId: null,
+      cancelAtPeriodEnd: true, cancellationRequestedAt: requestedAt,
+    } })
+
+    await expect(applySubscriptionTransition(prisma, {
+      subscriptionId: SUBSCRIPTION,
+      command: {
+        type: 'admin_set_complimentary',
+        complimentaryUntil: new Date('2027-01-15T23:59:59.999Z'),
+        reason: 'family',
+      },
+    })).rejects.toThrow(/cancelación/)
+
+    await expect(prisma.businessSubscription.findUniqueOrThrow({ where: { id: SUBSCRIPTION } }))
+      .resolves.toMatchObject({
+        status: 'past_due', cancelAtPeriodEnd: true,
+        cancellationRequestedAt: requestedAt, complimentaryUntil: null,
+      })
+    await expect(prisma.subscriptionLog.count({ where: { businessId: BUSINESS } })).resolves.toBe(0)
+  })
+
+  it('rechaza exención provider-backed cancelada sin normalizar historial', async () => {
+    const cancelledAt = new Date('2026-08-10T00:00:00.000Z')
+    await prisma.businessSubscription.update({ where: { id: SUBSCRIPTION }, data: {
+      status: 'cancelled', cancelledAt,
+    } })
+    await prisma.business.update({ where: { id: BUSINESS }, data: { subscriptionStatus: 'cancelled' } })
+
+    await expect(applySubscriptionTransition(prisma, {
+      subscriptionId: SUBSCRIPTION,
+      command: {
+        type: 'admin_set_complimentary',
+        complimentaryUntil: new Date('2027-01-15T23:59:59.999Z'),
+        reason: 'family',
+      },
+    })).rejects.toThrow(/cancelada/)
+
+    await expect(prisma.businessSubscription.findUniqueOrThrow({ where: { id: SUBSCRIPTION } }))
+      .resolves.toMatchObject({ status: 'cancelled', cancelledAt, complimentaryUntil: null })
+    await expect(prisma.business.findUniqueOrThrow({ where: { id: BUSINESS } }))
+      .resolves.toMatchObject({ subscriptionStatus: 'cancelled' })
+    await expect(prisma.subscriptionLog.count({ where: { businessId: BUSINESS } })).resolves.toBe(0)
+  })
+
   it('rechaza también comandos admin sobre una suscripción no mensual', async () => {
     await prisma.businessSubscription.update({
       where: { id: SUBSCRIPTION },

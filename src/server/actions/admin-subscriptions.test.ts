@@ -99,6 +99,7 @@ describe('adminSetComplimentaryPeriod', () => {
   it.each([
     ['2027-01-15', '2027-01-16T02:59:59.999Z'],
     ['2027-07-15', '2027-07-16T03:59:59.999Z'],
+    ['2026-09-05', '2026-09-06T03:59:59.999Z'],
   ])('resolves Chilean date-only %s to local end-of-day across DST', async (dateOnly, expected) => {
     const { adminSetComplimentaryPeriod } = await import('./admin')
     await adminSetComplimentaryPeriod('biz-1', dateOnly, 'Family & friends')

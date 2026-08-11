@@ -244,6 +244,51 @@ describe('adminSetComplimentaryPeriod entitlement', () => {
       data: expect.objectContaining({ subscriptionStatus: 'trialing' }),
     })
   })
+
+  it.each([
+    ['manual pending cancellation', {
+      provider: 'manual' as const,
+      providerSubscriptionId: null,
+      cancelAtPeriodEnd: true,
+      cancellationRequestedAt: new Date('2026-08-10T00:00:00.000Z'),
+    }],
+    ['provider-backed cancelled', {
+      provider: 'mercado_pago' as const,
+      environment: 'sandbox' as const,
+      providerSubscriptionId: 'provider-sub-1',
+      status: 'cancelled' as const,
+      cancelledAt: new Date('2026-08-10T00:00:00.000Z'),
+    }],
+    ['inconsistent cancelledAt', {
+      provider: 'manual' as const,
+      providerSubscriptionId: null,
+      status: 'active' as const,
+      cancelledAt: new Date('2026-08-10T00:00:00.000Z'),
+    }],
+  ])('rejects complimentary assignment for %s without mutation or audit', async (_label, overrides) => {
+    mockPrisma.business.findUnique.mockResolvedValueOnce({ timezone: 'America/Santiago' })
+    mockBusinessSubscription.findFirst.mockResolvedValue(subscriptionFixture(overrides))
+    const { adminSetComplimentaryPeriod } = await import('@/server/actions/admin')
+
+    await expect(adminSetComplimentaryPeriod('biz-1', '2027-01-15', 'family'))
+      .rejects.toThrow(/cancelación|cancelada/i)
+    expect(mockBusinessSubscription.updateMany).not.toHaveBeenCalled()
+    expect(mockPrisma.subscriptionLog.create).not.toHaveBeenCalled()
+  })
+
+  it('does not let clear reopen a complimentary subscription with cancellation pending', async () => {
+    mockBusinessSubscription.findFirst.mockResolvedValue(subscriptionFixture({
+      complimentaryUntil: new Date('2027-01-15T00:00:00.000Z'),
+      complimentaryReason: 'family',
+      cancelAtPeriodEnd: true,
+      cancellationRequestedAt: new Date('2026-08-10T00:00:00.000Z'),
+    }))
+    const { adminClearComplimentaryPeriod } = await import('@/server/actions/admin')
+    await expect(adminClearComplimentaryPeriod('biz-1', 'remove'))
+      .rejects.toThrow(/cancelación/i)
+    expect(mockBusinessSubscription.updateMany).not.toHaveBeenCalled()
+    expect(mockPrisma.subscriptionLog.create).not.toHaveBeenCalled()
+  })
 })
 
 describe('adminRecordSubscriptionPayment creates records', () => {

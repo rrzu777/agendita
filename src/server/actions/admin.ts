@@ -6,7 +6,7 @@ import { requirePlatformAdminUser } from '@/lib/auth/user'
 import { applySubscriptionTransition } from '@/lib/subscriptions/transition'
 import { reconcileSubscription } from '@/lib/subscriptions/reconciliation'
 import { revalidatePath } from 'next/cache'
-import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { formatInTimeZone } from 'date-fns-tz'
 
 function actor(user: { id: string; email?: string | null }, notes: string) {
   return {
@@ -60,8 +60,36 @@ function endOfBusinessDate(dateOnly: string, timezone: string): Date {
     throw new Error('La fecha no es válida')
   }
   civilDate.setUTCDate(civilDate.getUTCDate() + 1)
-  const nextDateOnly = civilDate.toISOString().slice(0, 10)
-  return new Date(fromZonedTime(`${nextDateOnly}T00:00:00.000`, timezone).getTime() - 1)
+  const anchor = civilDate.getTime()
+  const formattedDate = (instant: number) =>
+    formatInTimeZone(new Date(instant), timezone, 'yyyy-MM-dd')
+
+  let lower: number
+  let upper: number
+  let step = 1
+  if (formattedDate(anchor) > dateOnly) {
+    upper = anchor
+    lower = anchor - step
+    while (formattedDate(lower) > dateOnly) {
+      upper = lower
+      step *= 2
+      lower = anchor - step
+    }
+  } else {
+    lower = anchor
+    upper = anchor + step
+    while (formattedDate(upper) <= dateOnly) {
+      lower = upper
+      step *= 2
+      upper = anchor + step
+    }
+  }
+  while (upper - lower > 1) {
+    const middle = lower + Math.floor((upper - lower) / 2)
+    if (formattedDate(middle) > dateOnly) upper = middle
+    else lower = middle
+  }
+  return new Date(upper - 1)
 }
 
 async function auditedSubscriptionUpdate(input: {

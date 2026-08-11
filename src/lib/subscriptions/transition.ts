@@ -298,6 +298,14 @@ function adminTransition(
       }
     case 'admin_clear_complimentary': {
       if (
+        subscription.status === 'cancelled' ||
+        subscription.cancelAtPeriodEnd ||
+        subscription.cancellationRequestedAt ||
+        subscription.cancelledAt
+      ) {
+        throw new Error('No se puede modificar una exención con cancelación pendiente o efectiva')
+      }
+      if (
         !subscription.complimentaryUntil ||
         subscription.complimentaryUntil.getTime() <= command.occurredAt.getTime()
       ) {
@@ -350,6 +358,14 @@ function adminTransition(
       }
     }
     case 'admin_set_complimentary':
+      if (
+        subscription.status === 'cancelled' ||
+        subscription.cancelAtPeriodEnd ||
+        subscription.cancellationRequestedAt ||
+        subscription.cancelledAt
+      ) {
+        throw new Error('No se puede asignar una exención a una suscripción cancelada o con cancelación pendiente')
+      }
       if (subscription.providerSubscriptionId) {
         throw new Error('Primero cancela y confirma la autorización externa antes de asignar una exención')
       }

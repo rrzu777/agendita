@@ -63,3 +63,11 @@ Advertencias observadas y preexistentes: `DEP0205`, `localStorage` experimental 
 - La UI envía una fecha civil `YYYY-MM-DD`; el servidor valida fecha y zona IANA del negocio, exige un día local estrictamente futuro y calcula el fin del día como el siguiente midnight local menos 1 ms usando `date-fns-tz`. Regresiones Chile verifican UTC-3 de verano y UTC-4 de invierno.
 - RED: 8 fallos focalizados antes de implementar (servicio de clear ausente, conversión UTC incorrecta y audit posterior a red).
 - GREEN final: focalizados 74/74; PostgreSQL 16 temporal fresh con 45/45 migraciones y `transition.integration` 27/27; typecheck, eslint quiet, build Next 16 de 48 rutas y `git diff --check` pasan.
+
+## Fix round 2
+
+- El fin de día civil ya no interpreta un midnight inexistente. Tras validar fecha y timezone, parte del UTC del día siguiente, busca exponencialmente en ambas direcciones hasta encerrar el primer instante cuya fecha formateada en la zona del negocio es posterior a la elegida, y hace binary search al milisegundo exacto; el resultado es ese instante menos 1 ms. No supone offsets ni horas de transición.
+- Regresiones de `America/Santiago`: verano UTC-3, invierno UTC-4 y salto de primavera del 5 de septiembre de 2026, cuyo día termina en `2026-09-06T03:59:59.999Z` porque el día siguiente comienza localmente a la 01:00.
+- `admin_set_complimentary` y el clear adyacente rechazan antes de escribir si la suscripción está `cancelled`, `cancelAtPeriodEnd`, tiene `cancellationRequestedAt` o un `cancelledAt` inconsistente. Esto impide reabrir acceso o normalizar historial monetario; aplica a manual y provider-backed.
+- RED: 5 fallos demostraron el cierre civil una hora prematuro en primavera y la reapertura de canceladas/cancelación pendiente.
+- GREEN: admin unitario 44/44; PostgreSQL 16 temporal fresh con 45/45 migraciones y transición 29/29, incluyendo ausencia de mutación/auditoría en rechazos.
