@@ -3,7 +3,6 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
 import { applyApprovedPayment, applyApprovedPackagePayment, describeUnexpectedPackagePayment } from '@/server/services/finance'
 import { firePaymentNotConfirmedNotification } from '@/lib/bookings/notify-payment-not-confirmed'
-import { createHmac, timingSafeEqual } from 'crypto'
 import {
   sendBookingConfirmedNotification,
   sendNotificationSafely,
@@ -25,6 +24,7 @@ import { reverseBookingPaymentInTx } from '@/lib/bookings/reverse-payment'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { getVocabulary } from '@/lib/vocabulary'
 import type { Prisma } from '@prisma/client'
+import { verifyMercadoPagoSignature } from '@/lib/payments/mercado-pago-signature'
 
 function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
   return fetch(`https://api.mercadopago.com${path}`, {
@@ -81,62 +81,6 @@ interface MpPayment {
   date_created: string
   external_reference: string | null
   metadata: Record<string, string> | null
-}
-
-/**
- * Replay protection: reject signatures whose timestamp is outside the allowed
- * window. OPT-IN — only enforced when MERCADO_PAGO_WEBHOOK_TOLERANCE_SECONDS is
- * set, so we never risk rejecting a legitimate (possibly delayed/retried) MP
- * webhook unless the operator deliberately opts into a tolerance. Idempotency
- * already prevents double money-movement; this is defense-in-depth.
- */
-function isTimestampFresh(ts: string): boolean {
-  const toleranceRaw = process.env.MERCADO_PAGO_WEBHOOK_TOLERANCE_SECONDS
-  if (!toleranceRaw) return true
-  const tolerance = Number(toleranceRaw)
-  if (!Number.isFinite(tolerance) || tolerance <= 0) return true
-
-  const tsNum = Number(ts)
-  if (!Number.isFinite(tsNum)) return false
-  // MP sends ts in seconds; tolerate millisecond timestamps just in case.
-  const tsSeconds = tsNum > 1e12 ? Math.floor(tsNum / 1000) : tsNum
-  const nowSeconds = Math.floor(Date.now() / 1000)
-  return Math.abs(nowSeconds - tsSeconds) <= tolerance
-}
-
-// Mercado Pago webhook signature validation
-// Format: x-signature = "ts={timestamp},v1={hmac_sha256_hex}"
-// HMAC input: "id:{data.id};request-id:{x-request-id};ts:{ts};"
-function verifyMercadoPagoSignature(
-  mpPaymentId: string | undefined,
-  requestId: string | null,
-  signatureHeader: string | null,
-  secret: string,
-): boolean {
-  if (!mpPaymentId || !signatureHeader) return false
-
-  const parts = signatureHeader.split(',')
-  let ts = ''
-  let v1 = ''
-
-  for (const part of parts) {
-    const [key, ...valueParts] = part.split('=')
-    const value = valueParts.join('=')
-    if (key.trim() === 'ts') ts = value.trim()
-    if (key.trim() === 'v1') v1 = value.trim()
-  }
-
-  if (!ts || !v1) return false
-  if (!isTimestampFresh(ts)) return false
-
-  const manifest = `id:${mpPaymentId};request-id:${requestId ?? ''};ts:${ts};`
-  const expected = createHmac('sha256', secret).update(manifest).digest('hex')
-
-  try {
-    return timingSafeEqual(Buffer.from(expected), Buffer.from(v1))
-  } catch {
-    return false
-  }
 }
 
 export async function POST(request: NextRequest) {
@@ -197,7 +141,12 @@ export async function POST(request: NextRequest) {
     if (mpSecret) {
       const signatureHeader = request.headers.get('x-signature')
       const reqId = request.headers.get('x-request-id')
-      if (!verifyMercadoPagoSignature(mpPaymentId, reqId, signatureHeader, mpSecret)) {
+      if (!verifyMercadoPagoSignature({
+        resourceId: mpPaymentId,
+        requestId: reqId,
+        signatureHeader,
+        secret: mpSecret,
+      })) {
         logger.webhook.rejected('mercado_pago', 'Invalid signature', requestId)
         return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
       }

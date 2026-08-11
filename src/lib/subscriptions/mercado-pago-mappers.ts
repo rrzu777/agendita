@@ -20,6 +20,7 @@ export type MpSubscription = {
   id: string
   status: MpSubscriptionStatus
   providerStatus: string | null
+  collectorId: string | null
   planId: string | null
   externalReference: string | null
   checkoutUrl: string | null
@@ -28,15 +29,22 @@ export type MpSubscription = {
   frequency: 1
   frequencyType: 'months'
   nextPaymentAt: Date | null
+  updatedAt: Date | null
 }
 
 export type MpInvoice = {
   id: string
   subscriptionId: string | null
   status: MpInvoiceStatus
+  providerPaymentId: string | null
+  providerStatus: string | null
   amount: number
   currency: 'CLP'
+  externalReference: string | null
   approvedAt: Date | null
+  createdAt: Date | null
+  updatedAt: Date | null
+  debitAt: Date | null
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -57,6 +65,11 @@ function optionalString(value: unknown): string | null {
   if (value === undefined || value === null) return null
   if (typeof value !== 'string') throw new MercadoPagoSubscriptionContractError()
   return value
+}
+
+function optionalId(value: unknown): string | null {
+  if (value === undefined || value === null) return null
+  return requiredId(value)
 }
 
 function optionalDate(value: unknown): Date | null {
@@ -170,11 +183,13 @@ export function normalizeMpSubscription(response: unknown): MpSubscription {
     id: requiredId(raw.id),
     status,
     providerStatus: typeof raw.status === 'string' ? raw.status : null,
+    collectorId: optionalId(raw.collector_id),
     planId: optionalString(raw.preapproval_plan_id),
     externalReference: optionalString(raw.external_reference),
     checkoutUrl: optionalHostedCheckoutUrl(raw.init_point),
     ...monthlyClp(raw),
     nextPaymentAt: optionalDate(raw.next_payment_date),
+    updatedAt: optionalDate(raw.last_modified),
   }
 }
 
@@ -192,7 +207,15 @@ export function normalizeMpInvoice(response: unknown): MpInvoice {
     id: requiredId(raw.id),
     subscriptionId: optionalString(raw.preapproval_id),
     status,
+    providerPaymentId: optionalId(payment?.id),
+    providerStatus: typeof providerStatus === 'string' ? providerStatus : null,
     ...invoiceAmount(raw),
-    approvedAt: optionalDate(raw.date_approved),
+    externalReference: optionalString(raw.external_reference),
+    approvedAt: optionalDate(
+      payment?.date_approved ?? raw.date_approved ?? (status === 'approved' ? raw.last_modified : null),
+    ),
+    createdAt: optionalDate(raw.date_created),
+    updatedAt: optionalDate(raw.last_modified),
+    debitAt: optionalDate(raw.debit_date),
   }
 }

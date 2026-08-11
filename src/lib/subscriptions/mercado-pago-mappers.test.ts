@@ -12,6 +12,7 @@ describe('Mercado Pago subscription mappers', () => {
       id: 'preapproval-1',
       status: 'authorized',
       preapproval_plan_id: 'provider-plan-1',
+      collector_id: 998877,
       external_reference: 'local-operation-opaque',
       init_point: 'https://www.mercadopago.cl/subscriptions/checkout',
       auto_recurring: {
@@ -21,6 +22,7 @@ describe('Mercado Pago subscription mappers', () => {
         frequency_type: 'months',
       },
       next_payment_date: '2026-09-11T00:00:00.000Z',
+      last_modified: '2026-08-11T12:01:00.000Z',
     }
 
     expect(normalizeMpSubscription(raw)).toMatchObject({
@@ -28,12 +30,14 @@ describe('Mercado Pago subscription mappers', () => {
       status: 'active',
       providerStatus: 'authorized',
       planId: 'provider-plan-1',
+      collectorId: '998877',
       externalReference: 'local-operation-opaque',
       checkoutUrl: 'https://www.mercadopago.cl/subscriptions/checkout',
       amount: 12000,
       currency: 'CLP',
       frequency: 1,
       frequencyType: 'months',
+      updatedAt: new Date('2026-08-11T12:01:00.000Z'),
     })
     expect(normalizeMpSubscription(raw)).not.toHaveProperty('raw')
   })
@@ -115,11 +119,24 @@ describe('Mercado Pago subscription mappers', () => {
         id: 'invoice-authorized-payment',
         status: 'scheduled',
         preapproval_id: 'preapproval-1',
+        external_reference: 'local-operation-opaque',
         transaction_amount: '12000',
         currency_id: 'CLP',
-        payment: { status: 'approved' },
+        date_created: '2026-08-11T11:59:00.000Z',
+        last_modified: '2026-08-11T12:00:00.000Z',
+        debit_date: '2026-08-11T12:00:00.000Z',
+        payment: { id: 778899, status: 'approved' },
       }),
-    ).toMatchObject({ amount: 12000, status: 'approved' })
+    ).toMatchObject({
+      amount: 12000,
+      status: 'approved',
+      providerPaymentId: '778899',
+      providerStatus: 'approved',
+      externalReference: 'local-operation-opaque',
+      createdAt: new Date('2026-08-11T11:59:00.000Z'),
+      updatedAt: new Date('2026-08-11T12:00:00.000Z'),
+      debitAt: new Date('2026-08-11T12:00:00.000Z'),
+    })
   })
 
   it.each([
