@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   buildSubscriptionNotification,
   sendSubscriptionNotification,
+  retrySubscriptionNotifications,
   subscriptionNotificationDedupeKey,
   type SubscriptionNotificationDependencies,
   type SubscriptionNotificationKind,
@@ -54,6 +55,7 @@ function createDependencies(): SubscriptionNotificationDependencies {
           }
           return { count: 1 }
         }),
+        findMany: vi.fn().mockResolvedValue([]),
       },
       business: {
         findUnique: vi.fn().mockResolvedValue({
@@ -68,6 +70,29 @@ function createDependencies(): SubscriptionNotificationDependencies {
 }
 
 describe('subscription notifications', () => {
+  it('terminalizes scheduled retries after billing rollout is disabled', async () => {
+    const dependencies = createDependencies()
+    await expect(retrySubscriptionNotifications({ now: NOW }, dependencies)).resolves.toEqual([])
+
+    expect(dependencies.prisma.subscriptionNotificationDelivery.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        kind: { in: ['subscription_due_7_days', 'subscription_due_3_days', 'subscription_due_1_day'] },
+        subscription: { billingEnabled: false },
+      }),
+      data: expect.objectContaining({ status: 'suppressed', nextAttemptAt: null, lastErrorCode: 'billing_disabled' }),
+    })
+    expect(dependencies.sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('does not apply the rollout gate to an already committed payment receipt', async () => {
+    const dependencies = createDependencies()
+    await expect(sendSubscriptionNotification('subscription_payment_approved', SAFE_DATA, dependencies))
+      .resolves.toEqual({ status: 'sent' })
+    const claim = (dependencies.prisma.subscriptionNotificationDelivery.updateMany as ReturnType<typeof vi.fn>)
+      .mock.calls.find(([input]) => input.data?.attempts)?.[0]
+    expect(JSON.stringify(claim)).not.toContain('billingEnabled')
+    expect(dependencies.sendEmail).toHaveBeenCalledTimes(1)
+  })
   it.each<SubscriptionNotificationKind>([
     'subscription_due_7_days',
     'subscription_due_3_days',

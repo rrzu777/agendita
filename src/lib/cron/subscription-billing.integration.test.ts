@@ -21,6 +21,7 @@ import {
   runSubscriptionBillingCron,
   type SubscriptionBillingCronDependencies,
 } from './subscription-billing'
+import { retrySubscriptionNotifications } from '@/lib/notifications/subscriptions'
 
 requireTestDatabase()
 
@@ -390,5 +391,78 @@ describe('subscription billing cancellation interleaving', () => {
       lastReconciledAt: NOW,
     })
     expect(providerSnapshot.status).toBe('canceled')
+  })
+
+  it('does not claim or effect a subscription disabled before selection', async () => {
+    await prisma.businessSubscription.update({
+      where: { id: SUBSCRIPTION_ID },
+      data: { billingEnabled: false },
+    })
+    const reconcile = vi.fn()
+    const applyTransition = vi.fn()
+    const send = vi.fn()
+    await expect(runSubscriptionBillingCron({ now: NOW }, {
+      prisma, reconcile, applyTransition, enforcementEnabled: () => true,
+      retrySubscriptionNotifications: vi.fn().mockResolvedValue([]),
+      queueSubscriptionNotification: vi.fn(), sendSubscriptionNotification: send,
+    })).resolves.toMatchObject({ processed: 0, reconciled: 0, notified: 0, suspended: 0 })
+    expect(reconcile).not.toHaveBeenCalled()
+    expect(applyTransition).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('revalidates billing enrollment after claim before provider or local effects', async () => {
+    const businessSubscription = {
+      findMany: prisma.businessSubscription.findMany.bind(prisma.businessSubscription),
+      updateMany: prisma.businessSubscription.updateMany.bind(prisma.businessSubscription),
+      findUnique: prisma.businessSubscription.findUnique.bind(prisma.businessSubscription),
+      findFirst: vi.fn(async (args: Parameters<typeof prisma.businessSubscription.findFirst>[0]) => {
+        await prisma.businessSubscription.update({
+          where: { id: SUBSCRIPTION_ID },
+          data: { billingEnabled: false },
+        })
+        return prisma.businessSubscription.findFirst(args)
+      }),
+    }
+    const reconcile = vi.fn()
+    const applyTransition = vi.fn()
+    const send = vi.fn()
+    await expect(runSubscriptionBillingCron({ now: NOW }, {
+      prisma: { businessSubscription } as unknown as PrismaClient,
+      reconcile, applyTransition, enforcementEnabled: () => true,
+      retrySubscriptionNotifications: vi.fn().mockResolvedValue([]),
+      queueSubscriptionNotification: vi.fn(), sendSubscriptionNotification: send,
+    })).resolves.toMatchObject({ processed: 1, reconciled: 0, notified: 0, suspended: 0 })
+    expect(reconcile).not.toHaveBeenCalled()
+    expect(applyTransition).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('terminalizes a scheduled outbox retry disabled before delivery', async () => {
+    await prisma.subscriptionNotificationDelivery.create({ data: {
+      businessId: BUSINESS_ID,
+      subscriptionId: SUBSCRIPTION_ID,
+      kind: 'subscription_due_1_day',
+      effectiveDate: NOW,
+      eventAt: NOW,
+      availableAt: NOW,
+      dedupeKey: 'billing-disabled-pending-notice',
+      status: 'failed',
+      nextAttemptAt: NOW,
+      recipientEmails: ['owner@example.test'],
+      businessNameSnapshot: 'Billing Race Business',
+    } })
+    await prisma.businessSubscription.update({
+      where: { id: SUBSCRIPTION_ID }, data: { billingEnabled: false },
+    })
+    const sendEmail = vi.fn()
+    await expect(retrySubscriptionNotifications({ now: NOW }, {
+      prisma, sendEmail, now: () => NOW,
+    })).resolves.toEqual([])
+    await expect(prisma.subscriptionNotificationDelivery.findUniqueOrThrow({
+      where: { dedupeKey: 'billing-disabled-pending-notice' },
+      select: { status: true, nextAttemptAt: true, lastErrorCode: true },
+    })).resolves.toEqual({ status: 'suppressed', nextAttemptAt: null, lastErrorCode: 'billing_disabled' })
+    expect(sendEmail).not.toHaveBeenCalled()
   })
 })

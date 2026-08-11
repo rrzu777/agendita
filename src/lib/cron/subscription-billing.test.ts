@@ -36,6 +36,7 @@ function candidate(overrides: Record<string, unknown> = {}) {
     providerSubscriptionId: null,
     lastReconciledAt: null,
     billingCronClaimedUntil: null,
+    billingEnabled: true,
     updatedAt: new Date('2026-08-10T12:00:00.000Z'),
     ...overrides,
   }
@@ -62,6 +63,9 @@ function createDependencies(rows: ReturnType<typeof candidate>[], enforcementEna
           return { count: 1 }
         }),
         findUnique: vi.fn(async ({ where }) => rows.find((row) => row.id === where.id) ?? null),
+        findFirst: vi.fn(async ({ where }) => rows.find((row) =>
+          row.id === where.id && row.billingEnabled === where.billingEnabled,
+        ) ?? null),
       },
       subscriptionNotificationDelivery: {
         createMany: vi.fn(async ({ data }) => {
@@ -97,6 +101,31 @@ function createDependencies(rows: ReturnType<typeof candidate>[], enforcementEna
 }
 
 describe('runSubscriptionBillingCron', () => {
+  it('excludes subscriptions outside the billing rollout before any effect', async () => {
+    const row = candidate({ billingEnabled: false, provider: 'mercado_pago', environment: 'sandbox', providerSubscriptionId: 'remote-1' })
+    const { dependencies, applyTransition } = createDependencies([])
+    ;(dependencies.prisma.businessSubscription.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+
+    await expect(runSubscriptionBillingCron({ now: NOW }, dependencies)).resolves.toMatchObject({ processed: 0, reconciled: 0, notified: 0, suspended: 0 })
+    expect(dependencies.prisma.businessSubscription.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ billingEnabled: true }),
+    }))
+    expect(dependencies.reconcile).not.toHaveBeenCalled()
+    expect(applyTransition).not.toHaveBeenCalled()
+    expect(dependencies.sendSubscriptionNotification).not.toHaveBeenCalled()
+    expect(row.billingEnabled).toBe(false)
+  })
+
+  it('drops a claimed candidate when billing is disabled before processing', async () => {
+    const row = candidate({ provider: 'mercado_pago', environment: 'sandbox', providerSubscriptionId: 'remote-1' })
+    const { dependencies, applyTransition } = createDependencies([row])
+    ;(dependencies.prisma.businessSubscription.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+
+    await expect(runSubscriptionBillingCron({ now: NOW }, dependencies)).resolves.toMatchObject({ processed: 1, reconciled: 0, notified: 0, suspended: 0 })
+    expect(dependencies.reconcile).not.toHaveBeenCalled()
+    expect(applyTransition).not.toHaveBeenCalled()
+    expect(dependencies.sendSubscriptionNotification).not.toHaveBeenCalled()
+  })
   it('reintenta entregas fallidas y no vuelve a tocar las ya enviadas', async () => {
     const { dependencies } = createDependencies([])
     ;(dependencies.retrySubscriptionNotifications as ReturnType<typeof vi.fn>).mockResolvedValue([

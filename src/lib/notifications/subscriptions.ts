@@ -30,6 +30,12 @@ const notificationKinds = new Set<SubscriptionNotificationKind>([
   'subscription_cancelled',
   'subscription_oauth_expired',
 ])
+const scheduledBillingKinds = [
+  'subscription_due_7_days',
+  'subscription_due_3_days',
+  'subscription_due_1_day',
+] as const satisfies readonly SubscriptionNotificationKind[]
+const scheduledBillingKindSet = new Set<SubscriptionNotificationKind>(scheduledBillingKinds)
 
 export type SubscriptionNotificationDependencies = {
   prisma: PrismaClient | Prisma.TransactionClient
@@ -167,9 +173,11 @@ export async function sendSubscriptionNotification(
   }
 
   const leaseUntil = new Date(now.getTime() + DELIVERY_LEASE_MS)
+  const scheduled = scheduledBillingKindSet.has(kind)
   const claim = await dependencies.prisma.subscriptionNotificationDelivery.updateMany({
     where: {
       dedupeKey,
+      ...(scheduled ? { subscription: { billingEnabled: true } } : {}),
       OR: [
         { status: 'pending', OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
         { status: 'failed', nextAttemptAt: { lte: now } },
@@ -220,11 +228,27 @@ export async function retrySubscriptionNotifications(
   input: { now: Date },
   dependencies: SubscriptionNotificationDependencies = runtimeDependencies(),
 ): Promise<SubscriptionNotificationResult[]> {
+  await dependencies.prisma.subscriptionNotificationDelivery.updateMany({
+    where: {
+      kind: { in: [...scheduledBillingKinds] },
+      status: { in: ['failed', 'pending'] },
+      subscription: { billingEnabled: false },
+    },
+    data: {
+      status: 'suppressed',
+      nextAttemptAt: null,
+      lastErrorCode: 'billing_disabled',
+    },
+  })
   const deliveries = await dependencies.prisma.subscriptionNotificationDelivery.findMany({
     where: {
       status: { in: ['failed', 'pending'] },
       nextAttemptAt: { lte: input.now },
       availableAt: { lte: input.now },
+      OR: [
+        { kind: { notIn: [...scheduledBillingKinds] } },
+        { subscription: { billingEnabled: true } },
+      ],
     },
     orderBy: [{ nextAttemptAt: 'asc' }, { id: 'asc' }],
     take: RETRY_PAGE_SIZE,

@@ -51,6 +51,7 @@ const subscriptionSelect = {
   providerSubscriptionId: true,
   lastReconciledAt: true,
   billingCronClaimedUntil: true,
+  billingEnabled: true,
   updatedAt: true,
 } satisfies Prisma.BusinessSubscriptionSelect
 
@@ -147,6 +148,7 @@ async function claimSubscription(
       status: subscription.status,
       updatedAt: subscription.updatedAt,
       billingCronClaimedUntil: subscription.billingCronClaimedUntil,
+      billingEnabled: true,
       OR: [
         { billingCronClaimedUntil: null },
         { billingCronClaimedUntil: { lte: now } },
@@ -182,6 +184,12 @@ async function processClaimedSubscription(input: {
   let expectedCancellationProviderSnapshot:
     ApplySubscriptionTransitionCommand['expectedCancellationProviderSnapshot']
   try {
+    const enrolled = await dependencies.prisma.businessSubscription.findFirst({
+      where: { id: candidate.id, billingEnabled: true, billingCronClaimedUntil: leaseUntil },
+      select: subscriptionSelect,
+    })
+    if (!enrolled) return
+    current = enrolled
     if (
       candidate.provider === 'mercado_pago' &&
       candidate.environment &&
@@ -293,6 +301,7 @@ export async function runSubscriptionBillingCron(
   }
   const subscriptions = await dependencies.prisma.businessSubscription.findMany({
     where: {
+      billingEnabled: true,
       status: { not: 'cancelled' },
       OR: [
         { billingCronClaimedUntil: null },
