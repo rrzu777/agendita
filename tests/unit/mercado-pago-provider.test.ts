@@ -73,6 +73,7 @@ describe('mercadoPagoPaymentProvider', () => {
 
       const fetchCall = mockFetch.mock.calls[0] as [string, RequestInit]
       const body = JSON.parse(fetchCall[1].body as string)
+      expect((fetchCall[1].headers as Record<string, string>)['X-Idempotency-Key']).toBe('pay-local-1')
 
       expect(body.external_reference).toBe('pay-local-1')
       expect(body.items[0].unit_price).toBe(10000)

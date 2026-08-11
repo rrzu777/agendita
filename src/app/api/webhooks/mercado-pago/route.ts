@@ -16,7 +16,7 @@ import {
 } from '@/lib/notifications'
 import type { EmailResult } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
-import { decryptSecret } from '@/lib/payments/encryption'
+import { getValidBusinessAccessTokenForAccount } from '@/lib/payments/mercado-pago-oauth'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { clawbackLoyaltyForBooking } from '@/lib/loyalty/clawback'
 import { reversePackagePurchaseInTx } from '@/lib/packages/reverse'
@@ -82,6 +82,41 @@ interface MpPayment {
   external_reference: string | null
   collector_id: number | string | null
   metadata: Record<string, string> | null
+}
+
+const MP_PAYMENT_STATUSES = new Set(['approved', 'pending', 'in_process', 'rejected', 'cancelled', 'refunded', 'charged_back'])
+
+function parseMpPayment(value: unknown): MpPayment | null {
+  if (!value || typeof value !== 'object') return null
+  const v = value as Record<string, unknown>
+  if ((typeof v.id !== 'string' && typeof v.id !== 'number') ||
+      typeof v.status !== 'string' || !MP_PAYMENT_STATUSES.has(v.status) ||
+      typeof v.transaction_amount !== 'number' || !Number.isFinite(v.transaction_amount) ||
+      typeof v.currency_id !== 'string' ||
+      (typeof v.collector_id !== 'string' && typeof v.collector_id !== 'number')) return null
+  const rawMetadata = v.metadata
+  const metadata = rawMetadata && typeof rawMetadata === 'object' && !Array.isArray(rawMetadata)
+    ? Object.fromEntries(Object.entries(rawMetadata).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+    : null
+  return {
+    id: String(v.id), status: v.status, transaction_amount: v.transaction_amount,
+    currency_id: v.currency_id, collector_id: v.collector_id,
+    status_detail: typeof v.status_detail === 'string' ? v.status_detail : null,
+    date_approved: typeof v.date_approved === 'string' ? v.date_approved : null,
+    date_created: typeof v.date_created === 'string' ? v.date_created : '',
+    external_reference: typeof v.external_reference === 'string' ? v.external_reference : null,
+    metadata,
+  }
+}
+
+function sanitaryPaymentPayload(payment: MpPayment): Prisma.InputJsonObject {
+  return {
+    id: String(payment.id), status: payment.status, statusDetail: payment.status_detail,
+    transactionAmount: payment.transaction_amount, currencyId: payment.currency_id,
+    dateApproved: payment.date_approved, dateCreated: payment.date_created,
+    externalReference: payment.external_reference,
+    collectorId: payment.collector_id === null ? null : String(payment.collector_id),
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -195,6 +230,10 @@ export async function POST(request: NextRequest) {
       logger.webhook.rejected('mercado_pago', 'Business mismatch payment vs package purchase', requestId)
       return NextResponse.json({ error: 'Business mismatch' }, { status: 403 })
     }
+    if (Boolean(payment.bookingId) === Boolean(payment.packagePurchaseId)) {
+      logger.webhook.rejected('mercado_pago', 'Payment ownership type is ambiguous', requestId)
+      return NextResponse.json({ error: 'Payment ownership type is ambiguous' }, { status: 400 })
+    }
 
     const paymentAccount = await prisma.paymentAccount.findFirst({
       where: {
@@ -211,15 +250,20 @@ export async function POST(request: NextRequest) {
 
     let businessToken: string
     try {
-      businessToken = decryptSecret(paymentAccount.accessTokenEncrypted)
+      businessToken = await getValidBusinessAccessTokenForAccount(
+        paymentAccount.id, payment.businessId, payment.providerEnvironment,
+      )
     } catch {
-      logger.webhook.rejected('mercado_pago', 'Failed to decrypt business token', requestId)
+      logger.webhook.rejected('mercado_pago', 'Failed to resolve valid business token', requestId)
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
     }
 
     let mpPayment: MpPayment
     try {
-      mpPayment = await mpFetchWithToken<MpPayment>(`/v1/payments/${mpPaymentId}`, businessToken)
+      const providerPayload = await mpFetchWithToken<unknown>(`/v1/payments/${mpPaymentId}`, businessToken)
+      const parsedPayment = parseMpPayment(providerPayload)
+      if (!parsedPayment) throw new Error('Invalid Mercado Pago payment response')
+      mpPayment = parsedPayment
     } catch (e) {
       logger.webhook.rejected(
         'mercado_pago',
@@ -243,12 +287,12 @@ export async function POST(request: NextRequest) {
     }
 
     const mpStatus = mpPayment.status
+    const safeRawPayload = sanitaryPaymentPayload(mpPayment)
 
-    // Para approvals, la metadata completa es una prueba adicional obligatoria.
-    // Otros estados siguen sujetos a ID, external_reference, seller, amount y currency.
+    // Toda transición exige metadata de ownership completa y específica del tipo.
     const metadata = mpPayment.metadata ?? {}
 
-    if (mpStatus === 'approved') {
+    {
       // Rama paquete (B4b-2): un pago sin bookingId con packagePurchaseId set es
       // una compra de paquete online; su metadata requerida difiere (packagePurchaseId
       // en vez de bookingId).
@@ -278,6 +322,7 @@ export async function POST(request: NextRequest) {
 
       // Solo el id de referencia difiere por tipo; el resto de checks son comunes.
       if (isPackagePayment) {
+        if (metadata.bookingId) return NextResponse.json({ error: 'Unexpected bookingId metadata' }, { status: 400 })
         if (metadata.packagePurchaseId !== payment.packagePurchaseId) {
           console.error('[MP Webhook] packagePurchaseId mismatch', {
             metadata: metadata.packagePurchaseId,
@@ -286,6 +331,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'packagePurchaseId mismatch' }, { status: 400 })
         }
       } else {
+        if (metadata.packagePurchaseId) return NextResponse.json({ error: 'Unexpected packagePurchaseId metadata' }, { status: 400 })
         if (metadata.bookingId !== payment.bookingId) {
           console.error('[MP Webhook] bookingId mismatch', {
             metadata: metadata.bookingId,
@@ -350,7 +396,7 @@ export async function POST(request: NextRequest) {
         await prisma.$transaction(async (tx) => {
           await tx.payment.update({
             where: { id: payment.id },
-            data: { status: 'refunded', providerPaymentId: mpPayment.id, rawPayload: mpPayment as unknown as Prisma.InputJsonValue },
+            data: { status: 'refunded', providerPaymentId: mpPayment.id, rawPayload: safeRawPayload },
           })
           await reversePackagePurchaseInTx(tx, purchase, {
             mode: reverseMode,
@@ -403,7 +449,7 @@ export async function POST(request: NextRequest) {
           currency: payment.currency,
           mode,
           now: new Date(),
-          flipData: { providerPaymentId: mpPayment.id, rawPayload: mpPayment as unknown as Prisma.InputJsonValue },
+          flipData: { providerPaymentId: mpPayment.id, rawPayload: safeRawPayload },
         }),
       )
       if (reversed && mode === 'chargeback') {
@@ -446,6 +492,9 @@ export async function POST(request: NextRequest) {
 
     // Ya está approved → idempotente, 200 sin side effects
     if (payment.status === 'approved') {
+      if (payment.providerPaymentId && payment.providerPaymentId !== mpPayment.id) {
+        return NextResponse.json({ error: 'ProviderPaymentId conflict' }, { status: 409 })
+      }
       return NextResponse.json({
         success: true,
         message: 'Payment already approved',
@@ -472,7 +521,7 @@ export async function POST(request: NextRequest) {
             where: { id: payment.id },
             data: {
               providerPaymentId: mpPayment.id,
-              rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+              rawPayload: safeRawPayload,
             },
           })
 
@@ -486,7 +535,7 @@ export async function POST(request: NextRequest) {
             providerPaymentId: mpPayment.id,
             paymentType: payment.paymentType,
             paymentMethod: payment.paymentMethod,
-            rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+            rawPayload: safeRawPayload,
             paymentId: payment.id,
             // El cobro YA ocurrió y del otro lado no hay nadie a quien decirle
             // "no": si esto lanzara (reserva vencida por el cron, cancelada, hold
@@ -583,7 +632,7 @@ export async function POST(request: NextRequest) {
           where: { id: payment.id },
           data: {
             providerPaymentId: mpPayment.id,
-            rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+            rawPayload: safeRawPayload,
           },
         })
 
@@ -597,7 +646,7 @@ export async function POST(request: NextRequest) {
           providerPaymentId: mpPayment.id,
           paymentType: payment.paymentType,
           paymentMethod: payment.paymentMethod,
-          rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+          rawPayload: safeRawPayload,
           paymentId: payment.id,
         })
       })
@@ -669,7 +718,7 @@ export async function POST(request: NextRequest) {
           where: { id: payment.id },
           data: {
             providerPaymentId: mpPayment.id,
-            rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+            rawPayload: safeRawPayload,
           },
         })
       }
@@ -715,7 +764,7 @@ export async function POST(request: NextRequest) {
           data: {
             status: finalStatus,
             providerPaymentId: mpPayment.id,
-            rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+            rawPayload: safeRawPayload,
           },
         })
         if (finalStatus === 'refunded' && payment.bookingId) {

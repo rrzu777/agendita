@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createHmac } from 'crypto'
 
 const mockMpFetch = vi.fn()
+const mockGetValidBusinessAccessTokenForAccount = vi.fn()
 vi.stubGlobal('fetch', mockMpFetch)
+vi.mock('@/lib/payments/mercado-pago-oauth', () => ({
+  getValidBusinessAccessTokenForAccount: (...args: unknown[]) => mockGetValidBusinessAccessTokenForAccount(...args),
+}))
 
 const mockPrisma = {
   payment: {
@@ -163,6 +167,7 @@ describe('Mercado Pago webhook', () => {
     })
     vi.clearAllMocks()
     mockMpFetch.mockReset()
+    mockGetValidBusinessAccessTokenForAccount.mockReset().mockResolvedValue('test-access-token')
 
     mockPrisma.paymentAccount.findFirst.mockReset().mockResolvedValue({
       id: 'pa-1',
@@ -589,6 +594,7 @@ describe('Mercado Pago webhook', () => {
             status: 'pending',
             date_approved: null,
             external_reference: 'pay-local-002',
+            metadata: { ...baseMpPayment.metadata, localPaymentId: 'pay-local-002' },
           }),
       })
 
@@ -623,6 +629,7 @@ describe('Mercado Pago webhook', () => {
             status: 'rejected',
             date_approved: null,
             external_reference: 'pay-local-003',
+            metadata: { ...baseMpPayment.metadata, localPaymentId: 'pay-local-003' },
           }),
       })
 
@@ -667,6 +674,7 @@ describe('Mercado Pago webhook', () => {
             status: 'rejected',
             date_approved: null,
             external_reference: 'pay-local-004',
+            metadata: { ...baseMpPayment.metadata, localPaymentId: 'pay-local-004' },
           }),
       })
 
@@ -1069,10 +1077,7 @@ describe('Mercado Pago webhook', () => {
         accessTokenEncrypted: 'invalid-ciphertext',
       })
 
-      const { decryptSecret } = await import('@/lib/payments/encryption')
-      vi.mocked(decryptSecret).mockImplementationOnce(() => {
-        throw new Error('Decrypt failed')
-      })
+      mockGetValidBusinessAccessTokenForAccount.mockRejectedValueOnce(new Error('Decrypt failed'))
 
       const req = makeRequest(approvedPaymentBody, {}, 'pay-local-fc')
       const res = await POST(req)

@@ -258,6 +258,7 @@ async function _initiatePackagePayment(input: { purchaseId: string }): Promise<
       status: PaymentStatus.pending,
       provider: provider.name as PaymentProvider,
       providerEnvironment,
+      providerPreferenceId: null,
     },
   })
 

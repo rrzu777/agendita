@@ -126,6 +126,7 @@ async function _initiatePayment(data: {
         paymentType: PaymentType.deposit,
         provider: 'mercado_pago',
         providerEnvironment,
+        providerPreferenceId: null,
         status: 'pending',
       },
     })

@@ -124,6 +124,7 @@ export function createMercadoPagoProvider(accessToken: string): PaymentProvider 
       }>('/checkout/preferences', {
         method: 'POST',
         body: JSON.stringify(preferencePayload),
+        headers: { 'X-Idempotency-Key': paymentId },
       })
 
       return {

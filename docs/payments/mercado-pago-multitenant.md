@@ -89,6 +89,22 @@ Unique constraint: `[businessId, provider, environment]`
 9. Si approved: `applyApprovedPayment` vía servicio financiero central
 10. Si ya approved: retornar 200 idempotentemente
 
+### Preferencias legacy sin locator
+
+Las preferencias emitidas antes del despliegue de `local_payment_id` no pueden
+resolverse de forma segura desde una notificación estándar de pago: Mercado Pago
+no incluye un preference ID autoritativo en ese webhook. No se hace lookup global.
+Un nuevo intento crea otro `Payment` local y una preferencia nueva; la preferencia
+anterior no se reutiliza. Si un pago/refund/chargeback legacy llega tarde, el webhook
+falla cerrado y se deriva a reconciliación operativa acotada usando el
+`providerPreferenceId`, negocio y ambiente ya persistidos, siempre con la cuenta
+vendedora conocida. Nunca se prueba tokens de otros negocios para descubrirlo.
+
+Cada creación usa `Payment.id` como idempotency key. El `providerPreferenceId` se
+persiste por CAS y jamás se sobrescribe; una respuesta distinta para el mismo intento
+queda en reconciliación manual. Los payloads persistidos son proyecciones sanitarias:
+no incluyen payer, tarjeta, identificación, tokens, email, URLs ni objetos anidados.
+
 ## Desconexión
 
 - Botón "Desconectar" en `/dashboard/settings/payments`

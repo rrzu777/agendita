@@ -3,6 +3,9 @@ import { createHmac } from 'crypto'
 
 const mockMpFetch = vi.fn()
 vi.stubGlobal('fetch', mockMpFetch)
+vi.mock('@/lib/payments/mercado-pago-oauth', () => ({
+  getValidBusinessAccessTokenForAccount: vi.fn().mockResolvedValue('test-access-token'),
+}))
 
 // Solo los modelos que las ramas testeadas tocan de verdad: el núcleo de
 // reversión y las notifs están mockeados por módulo, así que ledger/loyalty/
@@ -117,6 +120,7 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
       bookingId: 'bk-1',
       businessId: 'biz-1',
       localPaymentId: 'pay-bk-001',
+      paymentType: 'deposit',
     },
   }
 
@@ -282,7 +286,13 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
   it('payment de PAQUETE con charged_back: va a reversePackagePurchaseInTx, nunca al núcleo de reservas', async () => {
     mockMpFetch.mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ ...baseMpPayment, id: 'mp-pkg-001', external_reference: 'pay-pkg-001' }),
+      json: () => Promise.resolve({
+        ...baseMpPayment, id: 'mp-pkg-001', external_reference: 'pay-pkg-001',
+        metadata: {
+          localPaymentId: 'pay-pkg-001', packagePurchaseId: 'pp-1',
+          businessId: 'biz-1', paymentType: 'package_purchase',
+        },
+      }),
     })
     mockPrisma.payment.findUnique.mockResolvedValue({
       ...approvedBookingPayment,
@@ -292,6 +302,7 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
       packagePurchaseId: 'pp-1',
       packagePurchase: { customerId: 'cust-1', businessId: 'biz-1' },
       providerPaymentId: 'mp-pkg-001',
+      paymentType: 'package_purchase',
     })
     mockPrisma.packagePurchase.findUnique.mockResolvedValue({
       id: 'pp-1', businessId: 'biz-1', customerId: 'cust-1', status: 'active',

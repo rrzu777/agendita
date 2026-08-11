@@ -41,14 +41,22 @@ export async function createMpPreferenceForPayment(
       result.rawResponse && typeof result.rawResponse === 'object' && 'preferenceId' in result.rawResponse
         ? String(result.rawResponse.preferenceId)
         : null
-    await prisma.payment.update({
-      where: { id: input.localPaymentId },
+    const persisted = await prisma.payment.updateMany({
+      where: { id: input.localPaymentId, providerPreferenceId: null },
       data: {
-        rawPayload: result.rawResponse as Prisma.InputJsonValue,
+        rawPayload: providerPreferenceId ? ({ preferenceId: providerPreferenceId } satisfies Prisma.InputJsonObject) : undefined,
         providerPreferenceId,
         providerEnvironment: providerPreferenceId ? requireMercadoPagoEnvironment() : null,
       },
     })
+    if (persisted.count !== 1) {
+      const current = await prisma.payment.findUnique({
+        where: { id: input.localPaymentId }, select: { providerPreferenceId: true },
+      })
+      if (!providerPreferenceId || current?.providerPreferenceId !== providerPreferenceId) {
+        throw new Error('Mercado Pago preference conflict requires manual reconciliation.')
+      }
+    }
   }
   return result
 }

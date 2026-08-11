@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const update = vi.fn()
-vi.mock('@/lib/db', () => ({ prisma: { payment: { update: (...a: unknown[]) => update(...a) } } }))
+const updateMany = vi.fn()
+const findUnique = vi.fn()
+vi.mock('@/lib/db', () => ({ prisma: { payment: {
+  update: (...a: unknown[]) => update(...a),
+  updateMany: (...a: unknown[]) => updateMany(...a),
+  findUnique: (...a: unknown[]) => findUnique(...a),
+} } }))
 
 import { createMpPreferenceForPayment } from './create-preference'
 import type { PaymentProvider } from './types'
@@ -33,6 +39,8 @@ function capturingProvider(capture: (input: Parameters<PaymentProvider['createPa
 describe('createMpPreferenceForPayment', () => {
   beforeEach(() => {
     update.mockReset()
+    updateMany.mockReset().mockResolvedValue({ count: 1 })
+    findUnique.mockReset()
     process.env.MERCADO_PAGO_ENVIRONMENT = 'sandbox'
   })
 
@@ -45,10 +53,10 @@ describe('createMpPreferenceForPayment', () => {
       metadata: { packagePurchaseId: 'pp1', businessId: 'b1', paymentType: 'package_purchase', localPaymentId: 'pay1' },
     })
     expect(res.redirectUrl).toBe('https://mp/redirect')
-    expect(update).toHaveBeenCalledWith({
-      where: { id: 'pay1' },
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: 'pay1', providerPreferenceId: null },
       data: {
-        rawPayload: { preferenceId: 'pref1', init_point: 'https://mp/redirect' },
+        rawPayload: { preferenceId: 'pref1' },
         providerPreferenceId: 'pref1',
         providerEnvironment: 'sandbox',
       },
@@ -61,7 +69,7 @@ describe('createMpPreferenceForPayment', () => {
       amount: 1, currency: 'CLP', bookingId: '', description: 'x',
       returnUrl: 'r', webhookUrl: 'w',
     })
-    expect(update).not.toHaveBeenCalled()
+    expect(updateMany).not.toHaveBeenCalled()
   })
 
   it('passes the local payment locator to Mercado Pago without making it authoritative', async () => {
@@ -78,5 +86,23 @@ describe('createMpPreferenceForPayment', () => {
     expect(captured?.webhookUrl).toBe(
       'https://agendita.cl/api/webhooks/mercado-pago?local_payment_id=pay%2Fwith+spaces',
     )
+  })
+
+  it('accepts a concurrent replay only when Mercado Pago returned the same preference', async () => {
+    updateMany.mockResolvedValue({ count: 0 })
+    findUnique.mockResolvedValue({ providerPreferenceId: 'pref1' })
+    await expect(createMpPreferenceForPayment(fakeProvider(), {
+      amount: 1, currency: 'CLP', description: 'x', returnUrl: 'https://x/r',
+      webhookUrl: 'https://x/w', localPaymentId: 'pay1',
+    })).resolves.toMatchObject({ paymentId: 'pay1' })
+  })
+
+  it('never overwrites a different preference on the same local payment', async () => {
+    updateMany.mockResolvedValue({ count: 0 })
+    findUnique.mockResolvedValue({ providerPreferenceId: 'pref-other' })
+    await expect(createMpPreferenceForPayment(fakeProvider(), {
+      amount: 1, currency: 'CLP', description: 'x', returnUrl: 'https://x/r',
+      webhookUrl: 'https://x/w', localPaymentId: 'pay1',
+    })).rejects.toThrow(/manual reconciliation/i)
   })
 })

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const { prismaMock, decryptSecret, fetchMock } = vi.hoisted(() => ({
+const { prismaMock, decryptSecret, fetchMock, getValidBusinessAccessTokenForAccount } = vi.hoisted(() => ({
   prismaMock: {
     payment: { findUnique: vi.fn(), update: vi.fn() },
     paymentAccount: { findFirst: vi.fn() },
@@ -11,10 +11,12 @@ const { prismaMock, decryptSecret, fetchMock } = vi.hoisted(() => ({
   },
   decryptSecret: vi.fn(),
   fetchMock: vi.fn(),
+  getValidBusinessAccessTokenForAccount: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({ prisma: prismaMock }))
 vi.mock('@/lib/payments/encryption', () => ({ decryptSecret }))
+vi.mock('@/lib/payments/mercado-pago-oauth', () => ({ getValidBusinessAccessTokenForAccount }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/logger', () => ({
   logger: {
@@ -87,6 +89,7 @@ describe('Mercado Pago tenant webhook resolution', () => {
       providerAccountId: '12345', accessTokenEncrypted: 'encrypted-a',
     })
     decryptSecret.mockReturnValue('seller-token-a')
+    getValidBusinessAccessTokenForAccount.mockResolvedValue('seller-token-a')
     fetchMock.mockResolvedValue(new Response(JSON.stringify(providerPayment()), { status: 200 }))
     prismaMock.payment.update.mockResolvedValue(payment)
   })
@@ -182,5 +185,21 @@ describe('Mercado Pago tenant webhook resolution', () => {
     expect(second.status).toBe(200)
     expect(prismaMock.payment.update).not.toHaveBeenCalled()
     expect(prismaMock.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('projects hostile provider payloads before persistence', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(providerPayment({
+      payer: { email: 'sentinel@example.com', identification: { number: 'SECRET' } },
+      card: { first_six_digits: '123456' }, token: 'SENTINEL_TOKEN',
+      transaction_details: { external_resource_url: 'https://secret.example' },
+    })), { status: 200 }))
+
+    const response = await POST(request())
+    expect(response.status).toBe(200)
+    const persisted = prismaMock.payment.update.mock.calls[0][0].data.rawPayload
+    expect(JSON.stringify(persisted)).not.toMatch(/sentinel|secret|123456/i)
+    expect(persisted).toEqual(expect.objectContaining({
+      id: 'provider-payment-1', status: 'pending', collectorId: '12345',
+    }))
   })
 })

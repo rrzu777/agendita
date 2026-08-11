@@ -446,6 +446,19 @@ export async function getValidBusinessAccessToken(
   })
 }
 
+export async function getValidBusinessAccessTokenForAccount(
+  accountId: string, businessId: string, environment: MercadoPagoEnvironment,
+  dependencies: { repository?: MercadoPagoOAuthRepository; fetch?: OAuthFetch; now?: () => Date } = {},
+): Promise<string> {
+  const repository = dependencies.repository ?? runtimeRepository()
+  const account = await repository.findConnectedAccount({ accountId, environment })
+  if (!account || account.businessId !== businessId) throw new Error('Este negocio no tiene Mercado Pago conectado.')
+  if (!hasCanonicalProviderAccountId(account)) throw new MercadoPagoOAuthExpiredError()
+  const now = dependencies.now?.() ?? new Date()
+  if (tokenIsFresh(account, now)) return decryptSecret(account.accessTokenEncrypted)
+  return refreshBusinessAccessToken(account, { repository, fetch: dependencies.fetch, now: dependencies.now })
+}
+
 export function encryptOAuthTokenResponse(token: TokenResponse) {
   return {
     providerAccountId: token.providerAccountId,
