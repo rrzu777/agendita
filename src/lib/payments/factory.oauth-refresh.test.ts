@@ -142,6 +142,16 @@ describe('business OAuth token refresh', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('fails closed for an invalid stored seller even when the cached access token is fresh', async () => {
+    const repo = repository(account({
+      providerAccountId: 'seller-12', expiresAt: new Date('2026-08-11T14:00:00.000Z'),
+    }))
+    await expect(getValidBusinessAccessToken('business-1', 'sandbox', {
+      repository: repo, fetch: vi.fn(), now: () => NOW,
+    })).rejects.toThrow('La conexión con Mercado Pago expiró. Reconecta tu cuenta.')
+    expect(repo.claimRefresh).not.toHaveBeenCalled()
+  })
+
   it('marks invalid_grant expired once and queues a durable reconnect notice', async () => {
     const repo = repository(account({ expiresAt: new Date('2026-08-11T12:01:00.000Z') }))
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'invalid_grant' }), {

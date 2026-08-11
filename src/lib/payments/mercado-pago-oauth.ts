@@ -35,8 +35,8 @@ export interface MercadoPagoOAuthRepository {
   findConnectedAccount(input: { businessId?: string; accountId?: string; environment: MercadoPagoEnvironment }): Promise<BusinessOAuthAccount | null>
   claimRefresh(account: BusinessOAuthAccount, claimToken: string, now: Date, leaseExpiresAt: Date): Promise<boolean>
   releaseRefreshClaim(account: BusinessOAuthAccount, claimToken: string): Promise<void>
-  replaceTokens(account: BusinessOAuthAccount, claimToken: string, update: TokenUpdate): Promise<boolean>
-  expireClaimAndQueue(account: BusinessOAuthAccount, claimToken: string, effectiveDate: Date): Promise<boolean>
+  replaceTokens(account: BusinessOAuthAccount, claimToken: string, update: TokenUpdate, finalizationNow: Date): Promise<boolean>
+  expireClaimAndQueue(account: BusinessOAuthAccount, claimToken: string, effectiveDate: Date, finalizationNow: Date): Promise<boolean>
 }
 
 type OAuthFetch = typeof fetch
@@ -278,12 +278,13 @@ function runtimeRepository(client: PrismaClient | Prisma.TransactionClient = pri
         data: { refreshLeaseToken: null, refreshLeaseExpiresAt: null },
       })
     },
-    async replaceTokens(account, claimToken, update) {
+    async replaceTokens(account, claimToken, update, finalizationNow) {
       const result = await client.paymentAccount.updateMany({
         where: {
           id: account.id, provider: 'mercado_pago', environment: account.environment,
           status: 'connected', providerAccountId: account.providerAccountId,
           tokenVersion: account.tokenVersion, refreshLeaseToken: claimToken,
+          refreshLeaseExpiresAt: { gt: finalizationNow },
         },
         data: {
           ...update, tokenVersion: { increment: 1 },
@@ -292,7 +293,7 @@ function runtimeRepository(client: PrismaClient | Prisma.TransactionClient = pri
       })
       return result.count === 1
     },
-    async expireClaimAndQueue(account, claimToken, effectiveDate) {
+    async expireClaimAndQueue(account, claimToken, effectiveDate, finalizationNow) {
       if (!('$transaction' in client)) throw new Error('OAuth expiration requires a transaction-capable repository.')
       const { queueSubscriptionNotification } = await import('@/lib/notifications/subscriptions')
       return (client as PrismaClient).$transaction(async (tx) => {
@@ -301,6 +302,7 @@ function runtimeRepository(client: PrismaClient | Prisma.TransactionClient = pri
             id: account.id, provider: 'mercado_pago', environment: account.environment,
             status: 'connected', providerAccountId: account.providerAccountId,
             tokenVersion: account.tokenVersion, refreshLeaseToken: claimToken,
+            refreshLeaseExpiresAt: { gt: finalizationNow },
           },
           data: {
             status: 'expired', refreshLeaseToken: null, refreshLeaseExpiresAt: null,
@@ -328,6 +330,12 @@ function tokenIsFresh(account: BusinessOAuthAccount, now: Date): boolean {
   return account.expiresAt !== null && account.expiresAt.getTime() - now.getTime() > REFRESH_SKEW_MS
 }
 
+function hasCanonicalProviderAccountId(account: BusinessOAuthAccount): boolean {
+  if (!account.providerAccountId || !/^[1-9][0-9]*$/.test(account.providerAccountId)) return false
+  const numeric = Number(account.providerAccountId)
+  return Number.isSafeInteger(numeric) && String(numeric) === account.providerAccountId
+}
+
 export async function refreshBusinessAccessToken(
   account: BusinessOAuthAccount,
   dependencies: {
@@ -347,7 +355,7 @@ export async function refreshBusinessAccessToken(
   if (!clientId || !clientSecret) throw new Error('Mercado Pago OAuth is not configured.')
   let current = account
   for (let attempt = 0; attempt <= REFRESH_WAIT_MS.length; attempt += 1) {
-    if (!current.providerAccountId || !/^[1-9][0-9]*$/.test(current.providerAccountId)) {
+    if (!hasCanonicalProviderAccountId(current)) {
       throw new MercadoPagoOAuthExpiredError()
     }
     const now = getNow()
@@ -374,7 +382,7 @@ export async function refreshBusinessAccessToken(
         if (!response.ok) {
           const code = json && typeof json === 'object' ? (json as Record<string, unknown>).error : null
           if (response.status === 400 && code === 'invalid_grant') {
-            const expired = await repository.expireClaimAndQueue(current, claimToken, now)
+            const expired = await repository.expireClaimAndQueue(current, claimToken, now, getNow())
             if (expired) throw new MercadoPagoOAuthExpiredError()
             const winner = await repository.findConnectedAccount({ accountId: current.id, environment: current.environment })
             if (winner && tokenIsFresh(winner, getNow())) return decryptSecret(winner.accessTokenEncrypted)
@@ -396,7 +404,7 @@ export async function refreshBusinessAccessToken(
           accessTokenEncrypted: encryptSecret(token.accessToken),
           refreshTokenEncrypted: encryptSecret(token.refreshToken),
           expiresAt: token.expiresAt, lastRefreshAt: now,
-        })
+        }, getNow())
         if (updated) return token.accessToken
         const winner = await repository.findConnectedAccount({ accountId: current.id, environment: current.environment })
         if (winner && tokenIsFresh(winner, getNow())) return decryptSecret(winner.accessTokenEncrypted)
@@ -430,6 +438,7 @@ export async function getValidBusinessAccessToken(
   const now = dependencies.now?.() ?? new Date()
   const account = await repository.findConnectedAccount({ businessId, environment })
   if (!account) throw new Error('Este negocio no tiene Mercado Pago conectado.')
+  if (!hasCanonicalProviderAccountId(account)) throw new MercadoPagoOAuthExpiredError()
   if (tokenIsFresh(account, now)) return decryptSecret(account.accessTokenEncrypted)
 
   return refreshBusinessAccessToken(account, {

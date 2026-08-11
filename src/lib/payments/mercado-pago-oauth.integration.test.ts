@@ -66,6 +66,12 @@ afterAll(async () => {
 })
 
 describe('Mercado Pago OAuth refresh locking', () => {
+  it.each([null, '', 'seller-12'])('rejects connected Mercado Pago rows with invalid seller %s at the database boundary', async (providerAccountId) => {
+    await expect(prisma.paymentAccount.update({
+      where: { id: ACCOUNT_ID }, data: { providerAccountId },
+    })).rejects.toThrow()
+  })
+
   it('serializes refresh across concurrent PostgreSQL transactions and preserves the rotated pair', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       access_token: 'rotated-access', refresh_token: 'rotated-refresh', expires_in: 3600,
@@ -169,6 +175,47 @@ describe('Mercado Pago OAuth refresh locking', () => {
     const stored = await prisma.paymentAccount.findUniqueOrThrow({ where: { id: ACCOUNT_ID } })
     expect(stored.status).toBe('connected')
     expect(decryptSecret(stored.accessTokenEncrypted)).toBe('reconnected-access')
+  })
+
+  it('does not finalize a successful refresh at the lease-expiry boundary and allows recovery', async () => {
+    let clock = NOW
+    let release!: (response: Response) => void
+    const fetch = vi.fn()
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { release = resolve }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: 'recovered-access', refresh_token: 'recovered-refresh', expires_in: 3600, user_id: 12,
+      }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    const pending = getValidBusinessAccessToken(BUSINESS_ID, 'sandbox', { fetch, now: () => clock })
+    while (fetch.mock.calls.length === 0) await new Promise((resolve) => setTimeout(resolve, 5))
+    clock = new Date(NOW.getTime() + 10_000)
+    release(new Response(JSON.stringify({
+      access_token: 'late-access', refresh_token: 'late-refresh', expires_in: 3600, user_id: 12,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    await expect(pending).rejects.toThrow(/conflicted|in progress/)
+    expect(decryptSecret((await prisma.paymentAccount.findUniqueOrThrow({ where: { id: ACCOUNT_ID } })).accessTokenEncrypted)).toBe('old-access')
+    await expect(getValidBusinessAccessToken(BUSINESS_ID, 'sandbox', { fetch, now: () => clock }))
+      .resolves.toBe('recovered-access')
+  })
+
+  it('does not apply late invalid_grant at the lease-expiry boundary and allows recovery', async () => {
+    let clock = NOW
+    let release!: (response: Response) => void
+    const fetch = vi.fn()
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { release = resolve }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: 'recovered-access', refresh_token: 'recovered-refresh', expires_in: 3600, user_id: 12,
+      }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    const pending = getValidBusinessAccessToken(BUSINESS_ID, 'sandbox', { fetch, now: () => clock })
+    while (fetch.mock.calls.length === 0) await new Promise((resolve) => setTimeout(resolve, 5))
+    clock = new Date(NOW.getTime() + 10_000)
+    release(new Response(JSON.stringify({ error: 'invalid_grant' }), {
+      status: 400, headers: { 'content-type': 'application/json' },
+    }))
+    await expect(pending).rejects.toThrow(/conflicted|in progress/)
+    expect((await prisma.paymentAccount.findUniqueOrThrow({ where: { id: ACCOUNT_ID } })).status).toBe('connected')
+    expect(await prisma.subscriptionNotificationDelivery.count({ where: { businessId: BUSINESS_ID } })).toBe(0)
+    await expect(getValidBusinessAccessToken(BUSINESS_ID, 'sandbox', { fetch, now: () => clock }))
+      .resolves.toBe('recovered-access')
   })
 })
 
