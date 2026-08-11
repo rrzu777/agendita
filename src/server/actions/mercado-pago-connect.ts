@@ -4,10 +4,13 @@ import { prisma } from '@/lib/db'
 import { requireBusiness } from '@/lib/auth/server'
 import { randomBytes } from 'crypto'
 import { redirect } from 'next/navigation'
-import { cookies } from 'next/headers'
 import { action, UserError } from '@/lib/actions/result'
 import { requireMercadoPagoEnvironment } from '@/lib/payments/mercado-pago-environment'
-import { createMercadoPagoOAuthState, createPkcePair, MP_OAUTH_PKCE_COOKIE } from '@/lib/payments/mercado-pago-oauth'
+import {
+  createMercadoPagoOAuthState,
+  createPkcePair,
+  persistMercadoPagoOAuthAttempt,
+} from '@/lib/payments/mercado-pago-oauth'
 
 const MP_AUTH_URL = 'https://auth.mercadopago.cl/authorization'
 
@@ -20,7 +23,7 @@ export async function startMercadoPagoConnect() {
 }
 
 export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string }> {
-  const { businessId } = await requireBusiness()
+  const { businessId, user } = await requireBusiness()
   const environment = requireMercadoPagoEnvironment()
 
   const clientId = process.env.MERCADO_PAGO_CLIENT_ID
@@ -38,13 +41,8 @@ export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string 
   let state: string
   try {
     state = createMercadoPagoOAuthState({ businessId, environment, nonce, expiresAt })
-    const cookieStore = await cookies()
-    cookieStore.set(MP_OAUTH_PKCE_COOKIE, Buffer.from(JSON.stringify({ nonce, verifier })).toString('base64url'), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/api/mercado-pago/callback',
-      expires: expiresAt,
+    await persistMercadoPagoOAuthAttempt({
+      businessId, environment, nonce, verifier, userId: user.id, expiresAt,
     })
   } catch {
     throw new Error('ENCRYPTION_KEY must be configured for Mercado Pago OAuth')

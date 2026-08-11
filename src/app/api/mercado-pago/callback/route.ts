@@ -4,31 +4,13 @@ import { createClient } from '@/lib/auth/middleware'
 import { getMercadoPagoEnvironment } from '@/lib/payments/mercado-pago-environment'
 import {
   encryptOAuthTokenResponse,
+  consumeMercadoPagoOAuthAttempt,
   exchangeAuthorizationCode,
-  MP_OAUTH_PKCE_COOKIE,
   verifyMercadoPagoOAuthState,
 } from '@/lib/payments/mercado-pago-oauth'
 
 function redirectWithResult(request: NextRequest, query: string) {
-  const response = NextResponse.redirect(new URL(`/dashboard/settings/payments?${query}`, request.url))
-  response.cookies.set(MP_OAUTH_PKCE_COOKIE, '', {
-    httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax',
-    path: '/api/mercado-pago/callback', maxAge: 0,
-  })
-  return response
-}
-
-function readPkceCookie(request: NextRequest): { nonce: string; verifier: string } | null {
-  const raw = request.cookies.get(MP_OAUTH_PKCE_COOKIE)?.value
-  if (!raw) return null
-  try {
-    const value = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as Record<string, unknown>
-    return typeof value.nonce === 'string' && typeof value.verifier === 'string'
-      ? { nonce: value.nonce, verifier: value.verifier }
-      : null
-  } catch {
-    return null
-  }
+  return NextResponse.redirect(new URL(`/dashboard/settings/payments?${query}`, request.url))
 }
 
 export async function GET(request: NextRequest) {
@@ -47,8 +29,7 @@ export async function GET(request: NextRequest) {
 
   const environment = getMercadoPagoEnvironment()
   const verifiedState = environment ? verifyMercadoPagoOAuthState(state, environment) : null
-  const pkce = readPkceCookie(request)
-  if (!verifiedState || !pkce || pkce.nonce !== verifiedState.nonce) {
+  if (!verifiedState) {
     return redirectWithResult(request, 'error=invalid_state')
   }
   const { businessId } = verifiedState
@@ -86,8 +67,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const codeVerifier = await consumeMercadoPagoOAuthAttempt({
+      businessId, environment, nonce: verifiedState.nonce, userId: user.id,
+    })
+    if (!codeVerifier) return redirectWithResult(request, 'error=invalid_state')
     const tokenData = await exchangeAuthorizationCode({
-      environment, clientId, clientSecret, redirectUri, code, codeVerifier: pkce.verifier,
+      environment, clientId, clientSecret, redirectUri, code, codeVerifier,
     })
     const encrypted = encryptOAuthTokenResponse(tokenData)
 
@@ -112,6 +97,9 @@ export async function GET(request: NextRequest) {
         status: 'connected',
         connectedAt: new Date(),
         disconnectedAt: null,
+        refreshLeaseToken: null,
+        refreshLeaseExpiresAt: null,
+        tokenVersion: { increment: 1 },
       },
     })
 

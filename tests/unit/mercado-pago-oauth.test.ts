@@ -16,12 +16,17 @@ const mockPrisma = {
   },
   businessUser: { findFirst: vi.fn() },
   business: { findUnique: vi.fn() },
+  mercadoPagoOAuthAttempt: {
+    create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn(),
+  },
+  $queryRaw: vi.fn(),
+  $transaction: vi.fn(),
 }
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 
 vi.mock('@/lib/auth/server', () => ({
   requireUser: vi.fn().mockResolvedValue({ id: 'user-1' }),
-  requireBusiness: vi.fn().mockResolvedValue({ userId: 'user-1', businessId: 'biz-1' }),
+  requireBusiness: vi.fn().mockResolvedValue({ user: { id: 'user-1' }, businessId: 'biz-1' }),
 }))
 
 vi.mock('@/lib/payments/encryption', () => ({
@@ -79,6 +84,14 @@ describe('Mercado Pago OAuth', () => {
       MERCADO_PAGO_ENVIRONMENT: 'sandbox',
     })
     vi.clearAllMocks()
+    mockPrisma.mercadoPagoOAuthAttempt.create.mockResolvedValue({ id: 'attempt-1' })
+    mockPrisma.mercadoPagoOAuthAttempt.findMany.mockResolvedValue([])
+    mockPrisma.mercadoPagoOAuthAttempt.deleteMany.mockResolvedValue({ count: 0 })
+    mockPrisma.mercadoPagoOAuthAttempt.findFirst.mockResolvedValue({
+      id: 'attempt-1', verifierEncrypted: 'encrypted-token',
+    })
+    mockPrisma.mercadoPagoOAuthAttempt.updateMany.mockResolvedValue({ count: 1 })
+    mockPrisma.$transaction.mockImplementation(async (operation) => operation(mockPrisma))
   })
 
   afterEach(() => {

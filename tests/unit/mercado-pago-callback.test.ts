@@ -11,6 +11,8 @@ const mockPrisma = {
   businessUser: { findFirst: vi.fn() },
   business: { findUnique: vi.fn() },
   paymentAccount: { upsert: vi.fn() },
+  mercadoPagoOAuthAttempt: { findFirst: vi.fn(), updateMany: vi.fn() },
+  $transaction: vi.fn(),
 }
 
 const mockSupabaseAuth = {
@@ -20,7 +22,7 @@ const mockSupabaseAuth = {
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 vi.mock('@/lib/payments/encryption', () => ({
   encryptSecret: vi.fn().mockReturnValue('encrypted-token'),
-  decryptSecret: vi.fn(),
+  decryptSecret: vi.fn().mockReturnValue('verifier'),
 }))
 
 vi.mock('@/lib/auth/middleware', () => ({
@@ -71,6 +73,11 @@ describe('Mercado Pago OAuth callback', () => {
     })
 
     vi.clearAllMocks()
+    mockPrisma.mercadoPagoOAuthAttempt.findFirst.mockResolvedValue({
+      id: 'attempt-1', verifierEncrypted: 'encrypted-verifier',
+    })
+    mockPrisma.mercadoPagoOAuthAttempt.updateMany.mockResolvedValue({ count: 1 })
+    mockPrisma.$transaction.mockImplementation(async (operation) => operation(mockPrisma))
     mockMpFetch.mockReset()
     vi.resetModules()
 

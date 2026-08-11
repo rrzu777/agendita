@@ -126,6 +126,7 @@ model Business {
   subscriptionNotificationDeliveries SubscriptionNotificationDelivery[]
   subscriptionCheckoutAttempts       SubscriptionCheckoutAttempt[]
   paymentAccounts                    PaymentAccount[]
+  mercadoPagoOAuthAttempts           MercadoPagoOAuthAttempt[]
   bankTransferAccount                BankTransferAccount?
   promotions                         Promotion[]
   loyaltyConfig                      LoyaltyConfig?
@@ -164,6 +165,9 @@ model PaymentAccount {
   connectedAt           DateTime?
   disconnectedAt        DateTime?
   lastRefreshAt         DateTime?
+  refreshLeaseToken     String?
+  refreshLeaseExpiresAt DateTime?
+  tokenVersion          Int                     @default(0)
   rawMetadata           Json?
   createdAt             DateTime                @default(now())
   updatedAt             DateTime                @updatedAt
@@ -171,6 +175,25 @@ model PaymentAccount {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, provider, environment])
+  @@index([refreshLeaseExpiresAt])
+}
+
+/// Intento OAuth corto y de un solo uso. Sólo se persiste el hash del nonce;
+/// el verifier PKCE permanece cifrado y se elimina lógicamente al consumir.
+model MercadoPagoOAuthAttempt {
+  id                String                  @id @default(cuid())
+  businessId        String
+  environment       MercadoPagoEnvironment
+  nonceHash         String                  @unique
+  verifierEncrypted String
+  createdByUserId   String
+  expiresAt         DateTime
+  consumedAt        DateTime?
+  createdAt         DateTime                @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, environment, expiresAt])
 }
 
 // Datos bancarios del negocio para abonos por transferencia (spec 2026-07-10).

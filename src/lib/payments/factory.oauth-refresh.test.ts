@@ -24,6 +24,8 @@ const NOW = new Date('2026-08-11T12:00:00.000Z')
 function account(overrides: Partial<BusinessOAuthAccount> = {}): BusinessOAuthAccount {
   return {
     id: 'account-1', businessId: 'business-1', environment: 'sandbox', status: 'connected',
+    providerAccountId: '12', tokenVersion: 0,
+    refreshLeaseToken: null, refreshLeaseExpiresAt: null,
     accessTokenEncrypted: encryptSecret('old-access'),
     refreshTokenEncrypted: encryptSecret('old-refresh'),
     expiresAt: new Date('2026-08-11T14:00:00.000Z'),
@@ -33,29 +35,38 @@ function account(overrides: Partial<BusinessOAuthAccount> = {}): BusinessOAuthAc
 
 function repository(initial: BusinessOAuthAccount) {
   let current = initial
-  let chain = Promise.resolve()
   const repo: MercadoPagoOAuthRepository = {
     findConnectedAccount: vi.fn(async ({ businessId, accountId, environment }) =>
       (!businessId || current.businessId === businessId) && (!accountId || current.id === accountId) &&
       current.environment === environment && current.status === 'connected'
         ? current : null),
-    withAccountLock: vi.fn(async (_id, operation) => {
-      const previous = chain
-      let release!: () => void
-      chain = new Promise<void>((resolve) => { release = resolve })
-      await previous
-      try { return await operation(repo) } finally { release() }
-    }),
-    replaceTokens: vi.fn(async (_id, update) => {
-      current = { ...current, ...update, status: 'connected' }
+    claimRefresh: vi.fn(async (candidate, claimToken, now, leaseExpiresAt) => {
+      if (current.tokenVersion !== candidate.tokenVersion || current.status !== 'connected') return false
+      if (current.refreshLeaseToken && current.refreshLeaseExpiresAt && current.refreshLeaseExpiresAt > now) return false
+      current = { ...current, refreshLeaseToken: claimToken, refreshLeaseExpiresAt: leaseExpiresAt }
       return true
     }),
-    expireAccount: vi.fn(async () => {
-      if (current.status !== 'connected') return false
-      current = { ...current, status: 'expired' }
+    releaseRefreshClaim: vi.fn(async (candidate, claimToken) => {
+      if (current.tokenVersion === candidate.tokenVersion && current.refreshLeaseToken === claimToken) {
+        current = { ...current, refreshLeaseToken: null, refreshLeaseExpiresAt: null }
+      }
+    }),
+    replaceTokens: vi.fn(async (candidate, claimToken, update) => {
+      if (current.tokenVersion !== candidate.tokenVersion || current.refreshLeaseToken !== claimToken) return false
+      current = {
+        ...current, ...update, status: 'connected', tokenVersion: current.tokenVersion + 1,
+        refreshLeaseToken: null, refreshLeaseExpiresAt: null,
+      }
       return true
     }),
-    queueExpiredNotification: vi.fn(async () => undefined),
+    expireClaimAndQueue: vi.fn(async (candidate, claimToken) => {
+      if (current.status !== 'connected' || current.tokenVersion !== candidate.tokenVersion || current.refreshLeaseToken !== claimToken) return false
+      current = {
+        ...current, status: 'expired', tokenVersion: current.tokenVersion + 1,
+        refreshLeaseToken: null, refreshLeaseExpiresAt: null,
+      }
+      return true
+    }),
   }
   return repo
 }
@@ -82,6 +93,7 @@ describe('business OAuth token refresh', () => {
     const repo = repository(account({ expiresAt: new Date('2026-08-11T12:01:00.000Z') }))
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       access_token: 'new-access', refresh_token: 'new-refresh', expires_in: 3600,
+      user_id: 12,
     }), { status: 200, headers: { 'content-type': 'application/json' } }))
 
     const values = await Promise.all([
@@ -104,7 +116,30 @@ describe('business OAuth token refresh', () => {
     await expect(getValidBusinessAccessToken('business-1', 'sandbox', { repository: repo, fetch, now: () => NOW }))
       .rejects.toThrow('Mercado Pago OAuth returned an invalid token response.')
     expect(repo.replaceTokens).not.toHaveBeenCalled()
-    expect(repo.expireAccount).not.toHaveBeenCalled()
+    expect(repo.expireClaimAndQueue).not.toHaveBeenCalled()
+  })
+
+  it('rejects a refresh seller mismatch without rotating or expiring the account', async () => {
+    const repo = repository(account({
+      providerAccountId: '12', expiresAt: new Date('2026-08-11T12:01:00.000Z'),
+    }))
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      access_token: 'attacker-access', refresh_token: 'attacker-refresh', expires_in: 3600, user_id: 99,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    await expect(getValidBusinessAccessToken('business-1', 'sandbox', { repository: repo, fetch, now: () => NOW }))
+      .rejects.toThrow('Mercado Pago OAuth seller mismatch.')
+    expect(repo.replaceTokens).not.toHaveBeenCalled()
+    expect(repo.expireClaimAndQueue).not.toHaveBeenCalled()
+  })
+
+  it('fails legacy rows without seller ownership closed and requires reconnect', async () => {
+    const repo = repository(account({
+      providerAccountId: null, expiresAt: new Date('2026-08-11T12:01:00.000Z'),
+    }))
+    const fetch = vi.fn()
+    await expect(getValidBusinessAccessToken('business-1', 'sandbox', { repository: repo, fetch, now: () => NOW }))
+      .rejects.toThrow('La conexión con Mercado Pago expiró. Reconecta tu cuenta.')
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('marks invalid_grant expired once and queues a durable reconnect notice', async () => {
@@ -114,8 +149,7 @@ describe('business OAuth token refresh', () => {
     }))
     await expect(getValidBusinessAccessToken('business-1', 'sandbox', { repository: repo, fetch, now: () => NOW }))
       .rejects.toThrow('La conexión con Mercado Pago expiró. Reconecta tu cuenta.')
-    expect(repo.expireAccount).toHaveBeenCalledTimes(1)
-    expect(repo.queueExpiredNotification).toHaveBeenCalledTimes(1)
+    expect(repo.expireClaimAndQueue).toHaveBeenCalledTimes(1)
   })
 
   it('never selects a sandbox account for a production provider', async () => {
