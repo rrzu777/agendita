@@ -1,4 +1,6 @@
--- Prisma cannot represent partial indexes in the schema. PostgreSQL unique
+BEGIN;
+
+-- Prisma declares these full compound unique indexes. PostgreSQL unique
 -- indexes already allow multiple rows containing NULL, so removing the WHERE
 -- clauses preserves the intended nullable-ID behavior while eliminating schema
 -- drift for deploy/diagnostic tooling.
@@ -18,3 +20,5 @@ CREATE UNIQUE INDEX "SubscriptionPayment_provider_environment_invoice_key"
 DROP INDEX "PaymentProviderIncident_environment_providerPaymentId_key";
 CREATE UNIQUE INDEX "PaymentProviderIncident_environment_providerPaymentId_key"
   ON "PaymentProviderIncident"("environment", "providerPaymentId");
+
+COMMIT;

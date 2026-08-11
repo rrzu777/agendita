@@ -299,8 +299,8 @@ model BusinessSubscription {
   notificationDeliveries SubscriptionNotificationDelivery[]
   checkoutAttempts       SubscriptionCheckoutAttempt[]
 
-  // PostgreSQL migration owns the partial WHERE providerSubscriptionId IS NOT NULL;
-  // this declaration retains Prisma's compound unique selector for typed callers.
+  // PostgreSQL full compound uniqueness matches this Prisma declaration. Rows
+  // with NULL external IDs remain repeatable under PostgreSQL NULL semantics.
   @@unique([provider, environment, providerSubscriptionId], map: "BusinessSubscription_provider_env_subscription_key")
   @@index([businessId])
   @@index([billingCronClaimedUntil], map: "BusinessSubscription_billingCronClaimedUntil_idx")
@@ -357,8 +357,8 @@ model SubscriptionPayment {
   business     Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
   subscription BusinessSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
-  // PostgreSQL owns these partial nullable-ID indexes. Prisma cannot express
-  // their WHERE clauses; declarations retain the typed compound selectors.
+  // PostgreSQL full compound uniqueness matches these Prisma declarations.
+  // Manual/legacy rows with NULL external IDs remain repeatable.
   @@unique([provider, environment, providerPaymentId], map: "SubscriptionPayment_provider_environment_payment_key")
   @@unique([provider, environment, providerInvoiceId], map: "SubscriptionPayment_provider_environment_invoice_key")
   @@index([businessId])
