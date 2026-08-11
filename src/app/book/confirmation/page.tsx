@@ -109,7 +109,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
   )
   const remainingBalance = booking.finalAmount - booking.depositPaid
   const currency = booking.business.currency || 'CLP'
-  const { cutoffHours } = resolveCancellationPolicy(booking, booking.business)
+  const { cutoffHours, additionalPolicy } = resolveCancellationPolicy(booking, booking.business)
   const cancellationWarning = (booking.depositRequired > 0 || booking.depositPaid > 0)
     ? cancellationWarningText(cutoffHours)
     : null
@@ -245,6 +245,13 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
             <p className="font-semibold">Importante sobre tu abono</p>
             <p className="mt-1">{cancellationWarning}</p>
+          </div>
+        )}
+
+        {additionalPolicy && (
+          <div className="mb-8 rounded-xl border border-border/70 bg-muted/40 p-4 text-sm text-muted-foreground">
+            <p className="font-semibold text-primary">Condiciones adicionales</p>
+            <p className="mt-1 whitespace-pre-line">{additionalPolicy}</p>
           </div>
         )}
 

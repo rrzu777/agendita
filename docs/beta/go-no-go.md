@@ -22,7 +22,7 @@
 | Calendario dashboard | ✅ GO | Vista mensual + DayPanel con bookings y TimeBlocks |
 | No doble-booking | ✅ GO | Advisory lock + EXCLUDE constraint + assertSlotIsAvailable |
 | TimeBlocks | ✅ GO | Crear, listar, eliminar; presets (Almuerzo, Tarde libre, Día completo) |
-| Holds expiran | ✅ GO | Cron cada 5min, idempotente, CRON_SECRET protegido |
+| Holds expiran | ✅ GO | Workflow horario, idempotente, protegido con CRON_SECRET; GitHub puede retrasar la ejecución |
 | Cancelación | ✅ GO | Dashboard: completar, cancelar (con email) |
 | Reprogramación | ✅ GO | Dashboard: nueva fecha/hora con validación, excluye slot propio |
 
@@ -89,7 +89,7 @@
 | Vercel deploy | ✅ GO | Build exitoso con `npm run build` |
 | Cron expire-holds | ✅ GO | `/api/cron/expire-holds` con CRON_SECRET |
 | Cron reminders | ✅ GO | `/api/cron/send-reminders` con CRON_SECRET + dedupe |
-| Migraciones | ✅ GO | 6 migraciones incrementales, db up to date |
+| Migraciones | ✅ GO | Migraciones incrementales; validar el estado actual con `prisma migrate status` |
 | Rollback | ⚠️ PLAN | Desactivar MP por negocio, pasar a manual, revertir deploy |
 | Monitoreo | ⚠️ PLAN | Logs en Vercel, revisión diaria |
 
@@ -122,9 +122,9 @@
 - Legal publicado (términos, privacidad, reembolsos)
 - Onboarding checklist en dashboard
 - WhatsApp manual (confirmación + copiar resumen)
-- Tests: 722 tests pasan
+- Tests: ejecutar las suites actuales; el output del comando es la fuente de verdad para el conteo
 - Env: PAYMENT_PROVIDER=manual válido; production con OAuth válido sin access token global
-- Lint: 3 errores preexistentes (no-explicit-any en tests), 0 errores nuevos
+- Lint: ejecutar `npm run lint` y resolver cualquier error; no conservar conteos copiados
 
 **GO para Mercado Pago sandbox:**
 - Infraestructura multi-tenant lista (PaymentAccount, OAuth, webhook fail-closed)

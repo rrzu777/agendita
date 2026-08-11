@@ -53,6 +53,11 @@ export default defineConfig({
       E2E_AUTH_BYPASS_SECRET: E2E_AUTH_SECRET,
       NEXT_PUBLIC_E2E_AUTH_BYPASS_SECRET: E2E_AUTH_SECRET,
       PAYMENT_PROVIDER: 'mock',
+      // Public pages that detect an optional session still construct the
+      // Supabase SSR client. Placeholders keep guest-only E2E self-contained;
+      // no auth request is sent when the browser has no session cookie.
+      NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://test.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'anon-key-for-tests',
       NEXT_PUBLIC_VAPID_PUBLIC_KEY: E2E_VAPID_PUBLIC_KEY,
       VAPID_PRIVATE_KEY: E2E_VAPID_PRIVATE_KEY,
       VAPID_SUBJECT: 'mailto:e2e@agendita.test',

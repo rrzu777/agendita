@@ -73,8 +73,12 @@ describe('/book/confirmation cancellation warning', () => {
     mockFindUnique.mockResolvedValue(booking())
     const html = renderToStaticMarkup(await BookingConfirmationPage({ searchParams }))
 
-    expect(html).toContain('hasta 24 horas antes')
+    const warning = 'Podés cancelar o reprogramar hasta 24 horas antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.'
+    expect(html).toContain(warning)
     expect(html).not.toContain('hasta 72 horas antes')
+    expect(html).toContain('Condiciones aceptadas')
+    expect(html.indexOf(warning)).toBeLessThan(html.indexOf('Condiciones aceptadas'))
+    expect(html).not.toContain('Condiciones actuales')
   })
 
   it('una reserva legacy con cutoff null usa la configuración actual', async () => {
@@ -82,6 +86,8 @@ describe('/book/confirmation cancellation warning', () => {
     const html = renderToStaticMarkup(await BookingConfirmationPage({ searchParams }))
 
     expect(html).toContain('hasta 72 horas antes')
+    expect(html).toContain('Condiciones actuales')
+    expect(html).not.toContain('Condiciones aceptadas')
   })
 
   it('sin abono requerido ni pagado no muestra el warning', async () => {
@@ -89,6 +95,7 @@ describe('/book/confirmation cancellation warning', () => {
     const html = renderToStaticMarkup(await BookingConfirmationPage({ searchParams }))
 
     expect(html).not.toContain('el abono no se devuelve')
+    expect(html).toContain('Condiciones aceptadas')
   })
 
   it('con cutoff cero no muestra el warning', async () => {

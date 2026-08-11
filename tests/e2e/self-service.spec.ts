@@ -345,4 +345,129 @@ test.describe('self-service: recordatorios push', () => {
       grant: 'e2e guest grant/+',
     })
   })
+
+  test('sin grant, sesión ni suscripción explica cómo habilitar y no ofrece activar', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'Notification', {
+        configurable: true,
+        value: { permission: 'default', requestPermission: async () => 'granted' },
+      })
+      Object.defineProperty(window, 'PushManager', {
+        configurable: true,
+        value: class MockPushManager {},
+      })
+      Object.defineProperty(navigator, 'serviceWorker', {
+        configurable: true,
+        value: {
+          getRegistration: async () => undefined,
+          register: async () => { throw new Error('must not register without authorization') },
+        },
+      })
+    })
+
+    await gotoStable(page, '/notificaciones')
+
+    await expect(page.getByText(/iniciá sesión/)).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Iniciar sesión' })).toHaveAttribute(
+      'href',
+      '/ingresar?next=/notificaciones',
+    )
+    await expect(page.getByRole('button', { name: 'Activar recordatorios' })).toHaveCount(0)
+  })
+
+  test('tras recargar descubre la suscripción y una invitada puede desactivarla por posesión', async ({ page }) => {
+    const unsubscribeBodies: unknown[] = []
+    await page.route('**/api/push/subscribe', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ subscribed: 1 }),
+      })
+    })
+    await page.route('**/api/push/unsubscribe', async (route) => {
+      unsubscribeBodies.push(route.request().postDataJSON())
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ unsubscribed: true }),
+      })
+    })
+    await page.addInitScript(() => {
+      const counters = { permissionRequests: 0, unsubscribeCalls: 0 }
+      Object.defineProperty(window, '__pushReloadE2E', { configurable: true, value: counters })
+      Object.defineProperty(window, 'Notification', {
+        configurable: true,
+        value: {
+          permission: sessionStorage.getItem('__pushE2EActive') === '1' ? 'granted' : 'default',
+          requestPermission: async () => {
+            counters.permissionRequests += 1
+            return 'granted'
+          },
+        },
+      })
+      Object.defineProperty(window, 'PushManager', {
+        configurable: true,
+        value: class MockPushManager {},
+      })
+
+      const subscription = {
+        endpoint: 'https://push.example.test/e2e-reload-subscription',
+        options: { applicationServerKey: null },
+        unsubscribe: async () => {
+          counters.unsubscribeCalls += 1
+          sessionStorage.removeItem('__pushE2EActive')
+          return true
+        },
+        toJSON: () => ({
+          endpoint: 'https://push.example.test/e2e-reload-subscription',
+          keys: {
+            p256dh: 'BAmuMRGniKzfw0ZShPIqYtZrZM8Ilz2YJYG3eS8T9rXcK3BEMp4ckNkh5EywptWzWaDLfHmcfWXKixB0ghV1HPI',
+            auth: 'BwcHBwcHBwcHBwcHBwcHBw',
+          },
+        }),
+      }
+      const registration = {
+        pushManager: {
+          getSubscription: async () => sessionStorage.getItem('__pushE2EActive') === '1'
+            ? subscription
+            : null,
+          subscribe: async () => {
+            sessionStorage.setItem('__pushE2EActive', '1')
+            return subscription
+          },
+        },
+      }
+      Object.defineProperty(navigator, 'serviceWorker', {
+        configurable: true,
+        value: {
+          getRegistration: async () => sessionStorage.getItem('__pushE2EActive') === '1'
+            ? registration
+            : undefined,
+          register: async () => registration,
+        },
+      })
+    })
+
+    await gotoStable(page, '/notificaciones#grant=e2e-reload-grant')
+    await page.getByRole('button', { name: 'Activar recordatorios' }).click()
+    await expect(page.getByText('Recordatorios activos')).toBeVisible()
+
+    await page.reload()
+    await expect(page.getByText('Recordatorios activos')).toBeVisible()
+    const afterReload = await page.evaluate(() => (
+      window as unknown as { __pushReloadE2E: { permissionRequests: number } }
+    ).__pushReloadE2E.permissionRequests)
+    expect(afterReload).toBe(0)
+
+    await page.getByRole('button', { name: 'Desactivar recordatorios' }).click()
+    await expect(page.getByText(/iniciá sesión/)).toBeVisible()
+
+    const afterDeactivate = await page.evaluate(() => (
+      window as unknown as { __pushReloadE2E: { unsubscribeCalls: number } }
+    ).__pushReloadE2E.unsubscribeCalls)
+    expect(afterDeactivate).toBe(1)
+    expect(unsubscribeBodies).toEqual([
+      { endpoint: 'https://push.example.test/e2e-reload-subscription' },
+    ])
+  })
 })

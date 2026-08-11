@@ -33,6 +33,7 @@ export type PushUnsubscribeScope =
       target: { businessId: string; customerId: string; bookingId: string }
     }
   | { kind: 'user'; userId: string }
+  | { kind: 'endpoint' }
 
 export class PushDeviceLimitError extends Error {
   constructor() {
@@ -215,6 +216,10 @@ function authorizationLockKey(userId: string, endpointHash: string): string {
   return `push-authorization:${userId}:${endpointHash}`
 }
 
+function endpointLockKey(endpointHash: string): string {
+  return `push-endpoint:${endpointHash}`
+}
+
 async function storePushSubscriptionInTx({
   tx,
   businessId,
@@ -355,6 +360,10 @@ export async function storePushSubscription({
   const now = new Date()
 
   return prisma.$transaction(async (tx) => {
+    // Possession-based cleanup uses the same first lock, so once it returns no
+    // concurrent guest/account subscribe that began earlier can reauthorize
+    // this browser endpoint behind it.
+    await acquireAdvisoryXactLock(tx, endpointLockKey(prepared.endpointHash))
     if (authorization.kind === 'user') {
       await acquireAdvisoryXactLock(
         tx,
@@ -387,6 +396,7 @@ export async function storeAuthenticatedPushSubscriptions({
   const prepared = preparePushSubscription(subscription)
 
   return prisma.$transaction(async (tx) => {
+    await acquireAdvisoryXactLock(tx, endpointLockKey(prepared.endpointHash))
     await acquireAdvisoryXactLock(tx, authorizationLockKey(userId, prepared.endpointHash))
 
     // Resolve the eligible set only after serializing this user/endpoint. That
@@ -451,6 +461,25 @@ export async function unsubscribePushSubscription({
   const endpointHash = hashPushEndpoint(endpoint)
 
   return prisma.$transaction(async (tx) => {
+    if (scope.kind === 'endpoint') {
+      await acquireAdvisoryXactLock(tx, endpointLockKey(endpointHash))
+      const subscriptions = await tx.pushSubscription.findMany({
+        where: { endpointHash },
+        select: { id: true, customerId: true },
+      })
+      const ids = subscriptions.map(({ id }) => id)
+      if (ids.length === 0) return 0
+
+      await tx.pushSubscriptionBooking.deleteMany({
+        where: { subscriptionId: { in: ids } },
+      })
+      const revoked = await tx.pushSubscription.updateMany({
+        where: { id: { in: ids } },
+        data: { authorizedUserId: null, revokedAt: now },
+      })
+      return revoked.count
+    }
+
     if (scope.kind === 'guest') {
       const { target } = scope
       await acquireAdvisoryXactLock(tx, `push-subscription:${target.customerId}`)

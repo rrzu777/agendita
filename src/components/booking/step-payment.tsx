@@ -694,6 +694,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
         <BookingLegalAcceptance
           policy={cancellationPolicy}
+          cutoffHours={selfServiceCutoffHours}
+          hasDeposit={effectiveDeposit > 0}
           accepted={acceptedTerms}
           onAcceptedChange={setAcceptedTerms}
         />
@@ -753,6 +755,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
         <BookingLegalAcceptance
           policy={cancellationPolicy}
+          cutoffHours={selfServiceCutoffHours}
+          hasDeposit={effectiveDeposit > 0}
           accepted={acceptedTerms}
           onAcceptedChange={setAcceptedTerms}
         />
@@ -840,6 +844,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
       <BookingLegalAcceptance
         policy={cancellationPolicy}
+        cutoffHours={selfServiceCutoffHours}
+        hasDeposit={effectiveDeposit > 0}
         accepted={acceptedTerms}
         onAcceptedChange={setAcceptedTerms}
       />

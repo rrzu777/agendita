@@ -35,6 +35,7 @@ function render(where: WhereFields = enElLocal, biz: ConfirmationBusiness = busi
       bookingNumber={4738} mode="paid" promo={null} sessionEmail={null} business={biz} where={where}
       confirmed={confirmed} professionalName=""
       cancellationCutoffHours={24} depositRequired={0} depositPaid={0}
+      cancellationPolicySnapshot={null}
     />,
   )
 }

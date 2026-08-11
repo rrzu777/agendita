@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BookingStatus } from '@prisma/client'
-import { TEST_PUSH_AUTH, TEST_VAPID_PUBLIC_KEY } from '../helpers/push-fixtures'
+import {
+  TEST_PUSH_AUTH,
+  TEST_VAPID_PRIVATE_KEY,
+  TEST_VAPID_PUBLIC_KEY,
+} from '../helpers/push-fixtures'
 
 const {
   mockBookingFindMany,
@@ -191,8 +195,8 @@ describe('sendCancellationWarnings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('NEXT_PUBLIC_APP_DOMAIN', 'www.agendita.cl')
-    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'public-test-key')
-    vi.stubEnv('VAPID_PRIVATE_KEY', 'private-test-key')
+    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', TEST_VAPID_PUBLIC_KEY)
+    vi.stubEnv('VAPID_PRIVATE_KEY', TEST_VAPID_PRIVATE_KEY)
     vi.stubEnv('VAPID_SUBJECT', 'mailto:test@agendita.cl')
     vi.stubEnv('ENCRYPTION_KEY', 'encryption-test-key')
     mockBookingFindMany.mockResolvedValue([makeBooking()])

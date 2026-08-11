@@ -2,7 +2,9 @@ import { getCurrentUser } from '@/lib/auth/user'
 import { getAppUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
 import { verifyPushGrant } from '@/lib/push/grant'
+import { hasUsablePushConfig } from '@/lib/push/config'
 import {
+  hashPushEndpoint,
   isAllowedWebPushEndpoint,
   type PushSubscriptionAuthorization,
   type PushUnsubscribeScope,
@@ -23,12 +25,7 @@ export type PushSubscribeScope =
   | { kind: 'user'; userId: string }
 
 export function hasCompletePushConfig(): boolean {
-  return Boolean(
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-    && process.env.VAPID_PRIVATE_KEY
-    && process.env.VAPID_SUBJECT
-    && process.env.ENCRYPTION_KEY,
-  )
+  return hasUsablePushConfig()
 }
 
 export function hasCanonicalOrigin(request: Request): boolean {
@@ -52,10 +49,34 @@ export async function readBoundedJson(request: Request): Promise<Record<string, 
       throw new Error('Invalid body')
     }
   }
-  const text = await request.text()
-  if (text.length === 0 || Buffer.byteLength(text, 'utf8') > MAX_BODY_BYTES) {
+  if (!request.body) throw new Error('Invalid body')
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let totalBytes = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      totalBytes += value.byteLength
+      if (totalBytes > MAX_BODY_BYTES) {
+        await reader.cancel()
+        throw new Error('Invalid body')
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  if (totalBytes === 0) {
     throw new Error('Invalid body')
   }
+  const bytes = new Uint8Array(totalBytes)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   const value: unknown = JSON.parse(text)
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error('Invalid body')
@@ -112,7 +133,7 @@ export async function resolvePushUnsubscribeScope(grant: unknown): Promise<PushU
   }
 
   const user = await getCurrentUser()
-  return user ? { kind: 'user', userId: user.id } : null
+  return user ? { kind: 'user', userId: user.id } : { kind: 'endpoint' }
 }
 
 export function pushTargetRateLimitContext(scope: PushSubscribeScope): {
@@ -130,10 +151,14 @@ export function pushTargetRateLimitContext(scope: PushSubscribeScope): {
       }
 }
 
-export function pushUnsubscribeRateLimitContext(scope: PushUnsubscribeScope): {
+export function pushUnsubscribeRateLimitContext(scope: PushUnsubscribeScope, endpoint?: string): {
   keyMode: 'target'
   targetId: string
 } {
+  if (scope.kind === 'endpoint') {
+    if (!endpoint) throw new Error('Endpoint is required for possession cleanup')
+    return { keyMode: 'target', targetId: `endpoint:${hashPushEndpoint(endpoint)}` }
+  }
   return scope.kind === 'user'
     ? { keyMode: 'target', targetId: `user:${scope.userId}` }
     : {

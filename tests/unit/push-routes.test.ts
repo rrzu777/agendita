@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'crypto'
 import {
   TEST_PUSH_AUTH,
   TEST_VAPID_PRIVATE_KEY,
@@ -114,6 +115,32 @@ describe('push subscription routes', () => {
     expect(mocks.verifyPushGrant).not.toHaveBeenCalled()
   })
 
+  it('cancels an oversized streamed body without Content-Length before fully buffering it', async () => {
+    let sent = false
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (!sent) {
+          sent = true
+          controller.enqueue(new Uint8Array(17 * 1024))
+          return
+        }
+        return new Promise<void>(() => undefined)
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+    const request = {
+      headers: new Headers({ 'content-type': 'application/json', origin: canonicalOrigin }),
+      body,
+    } as Request
+    const { readBoundedJson } = await import('@/lib/push/routes')
+
+    await expect(readBoundedJson(request)).rejects.toThrow('Invalid body')
+    expect(cancelled).toBe(true)
+  })
+
   it('rejects a non-canonical browser key without reporting a subscription', async () => {
     mocks.getCurrentUser.mockResolvedValue({ id: 'user-1' })
     const { POST } = await import('@/app/api/push/subscribe/route')
@@ -129,6 +156,15 @@ describe('push subscription routes', () => {
     await expect(response.json()).resolves.toEqual({ error: 'Solicitud inválida' })
     expect(mocks.customerFindMany).not.toHaveBeenCalled()
     expect(mocks.storePushSubscription).not.toHaveBeenCalled()
+  })
+
+  it('treats a complete-looking but invalid VAPID configuration as disabled', async () => {
+    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'malformed-public')
+    vi.stubEnv('VAPID_PRIVATE_KEY', 'malformed-private')
+    vi.stubEnv('VAPID_SUBJECT', 'mailto:soporte@agendita.cl')
+    const { hasCompletePushConfig } = await import('@/lib/push/routes')
+
+    expect(hasCompletePushConfig()).toBe(false)
   })
 
   it('rechecks all guest grant ownership fields before storing one target', async () => {
@@ -297,6 +333,33 @@ describe('push subscription routes', () => {
     expect(response.status).toBe(401)
     await expect(response.json()).resolves.toEqual({ error: 'Solicitud no autorizada' })
     expect(mocks.unsubscribePushSubscription).not.toHaveBeenCalled()
+  })
+
+  it('accepts endpoint possession cleanup without a grant or session and reveals no row count', async () => {
+    mocks.getCurrentUser.mockResolvedValue(null)
+    mocks.unsubscribePushSubscription.mockResolvedValue(7)
+    const { POST } = await import('@/app/api/push/unsubscribe/route')
+
+    const response = await POST(pushRequest('/api/push/unsubscribe', {
+      endpoint: subscription.endpoint,
+    }))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ unsubscribed: true })
+    expect(mocks.unsubscribePushSubscription).toHaveBeenCalledWith({
+      endpoint: subscription.endpoint,
+      scope: { kind: 'endpoint' },
+      now: new Date('2026-08-10T12:00:00.000Z'),
+    })
+    const endpointHash = createHash('sha256').update(subscription.endpoint).digest('hex')
+    expect(mocks.checkRateLimit).toHaveBeenNthCalledWith(
+      2,
+      'push-unsubscribe-target',
+      10,
+      60_000,
+      { keyMode: 'target', targetId: `endpoint:${endpointHash}` },
+    )
+    expect(JSON.stringify(mocks.checkRateLimit.mock.calls[1])).not.toContain(subscription.endpoint)
   })
 
   it('applies a second rate limit keyed to the exact guest target', async () => {

@@ -222,6 +222,10 @@ describe('push subscription storage', () => {
     expect(mocks.customerFindFirst).not.toHaveBeenCalled()
     expect(result).toEqual({ id: 'push-1' })
     expect(JSON.stringify(result)).not.toContain('must-not-return')
+    expect(mocks.advisoryLock.mock.calls.map(([, key]) => key)).toEqual([
+      'push-endpoint:b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
+      'push-subscription:customer-1',
+    ])
   })
 
   it('persists authenticated authorization explicitly and creates no guest entitlement', async () => {
@@ -274,6 +278,7 @@ describe('push subscription storage', () => {
       orderBy: { id: 'asc' },
     })
     expect(mocks.advisoryLock.mock.calls.map(([, key]) => key)).toEqual([
+      'push-endpoint:b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
       'push-authorization:user-1:b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
       'push-subscription:customer-1',
       'push-subscription:customer-2',
@@ -491,6 +496,32 @@ describe('push subscription storage', () => {
         bookingEntitlements: { none: {} },
       },
       data: { revokedAt: new Date('2026-08-10T12:00:00.000Z') },
+    })
+  })
+
+  it('endpoint possession revokes every matching generation and removes all booking entitlements', async () => {
+    const { unsubscribePushSubscription } = await import('@/lib/push/subscription')
+    mocks.subscriptionFindMany.mockResolvedValue([
+      { id: 'push-1', customerId: 'customer-1' },
+      { id: 'push-2', customerId: 'customer-2' },
+    ])
+    mocks.updateMany.mockResolvedValue({ count: 2 })
+
+    await expect(unsubscribePushSubscription({
+      endpoint: validSubscription.endpoint,
+      scope: { kind: 'endpoint' },
+      now: new Date('2026-08-10T12:00:00.000Z'),
+    })).resolves.toBe(2)
+
+    expect(mocks.entitlementDeleteMany).toHaveBeenCalledWith({
+      where: { subscriptionId: { in: ['push-1', 'push-2'] } },
+    })
+    expect(mocks.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['push-1', 'push-2'] } },
+      data: {
+        authorizedUserId: null,
+        revokedAt: new Date('2026-08-10T12:00:00.000Z'),
+      },
     })
   })
 

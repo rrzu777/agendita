@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ForbiddenError } from '../helpers/auth-errors'
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
+import { TEST_VAPID_PRIVATE_KEY, TEST_VAPID_PUBLIC_KEY } from '../helpers/push-fixtures'
 
 process.env.ENCRYPTION_KEY = 'create-booking-push-grant-test-key'
+process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = TEST_VAPID_PUBLIC_KEY
+process.env.VAPID_PRIVATE_KEY = TEST_VAPID_PRIVATE_KEY
+process.env.VAPID_SUBJECT = 'mailto:soporte@agendita.cl'
 
 const mockPrisma = {
   business: { findUnique: vi.fn() },
@@ -86,6 +90,7 @@ function setupMocks(depositAmount: number, servicePrice: number) {
     addressText: 'Test Address',
     currency: 'CLP',
     selfServiceCutoffHours: 24,
+    cancellationReminderEnabled: true,
     cancellationPolicy: 'Condiciones originales',
     slug: 'test-biz',
     subdomain: null,
@@ -111,7 +116,13 @@ function setupMocks(depositAmount: number, servicePrice: number) {
     customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
     service: { name: 'Manicure' },
   }
-  mockPrisma.booking.create.mockResolvedValue(createBookingResult)
+  mockPrisma.booking.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+    ...createBookingResult,
+    cancellationCutoffHours: data.cancellationCutoffHours,
+    cancellationPolicySnapshot: data.cancellationPolicySnapshot,
+    depositRequired: data.depositRequired,
+    depositPaid: data.depositPaid,
+  }))
   mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
     const tx = {
       business: { findUnique: mockPrisma.business.findUnique, update: vi.fn().mockResolvedValue({ bookingNumberSeq: 4242 }) },
@@ -179,21 +190,14 @@ describe('createBooking - no deposit / free service', () => {
     )
   })
 
-  it('returns a signed push grant bound to the persisted booking relations', async () => {
+  it('does not issue a push grant when the persisted booking has no deposit', async () => {
     setupMocks(0, 20000)
 
     const result = await createBooking(baseInput, 'biz-1')
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.data.pushGrant).toEqual(expect.any(String))
-    if (!result.data.pushGrant) throw new Error('Expected push grant with ENCRYPTION_KEY configured')
-    const { verifyPushGrant } = await import('@/lib/push/grant')
-    expect(verifyPushGrant(result.data.pushGrant)).toMatchObject({
-      bookingId: 'booking-created',
-      customerId: 'cust-1',
-      businessId: 'biz-1',
-    })
+    expect(result.data.pushGrant).toBeNull()
   })
 
   it('creates confirmed + fully_paid + hold null when service is free', async () => {
@@ -213,7 +217,7 @@ describe('createBooking - no deposit / free service', () => {
   it('creates pending_payment + unpaid + hold set when depositRequired>0', async () => {
     setupMocks(5000, 20000)
 
-    await createBooking(baseInput, 'biz-1')
+    const result = await createBooking(baseInput, 'biz-1')
 
     const createCall = mockPrisma.booking.create.mock.calls[0]?.[0] as Record<string, unknown>
     const data = createCall?.data as Record<string, unknown>
@@ -221,6 +225,34 @@ describe('createBooking - no deposit / free service', () => {
     expect(data.paymentStatus).toBe(BookingPaymentStatus.unpaid)
     expect(data.holdExpiresAt).not.toBeNull()
     expect(data.depositRequired).toBe(5000)
+    expect(result.ok && result.data.pushGrant).toEqual(expect.any(String))
+  })
+
+  it.each([
+    { label: 'business reminders disabled', business: { cancellationReminderEnabled: false } },
+    { label: 'zero cancellation cutoff', business: { selfServiceCutoffHours: 0 } },
+  ])('does not issue a grant with $label', async ({ business }) => {
+    setupMocks(5_000, 20_000)
+    mockPrisma.business.findUnique.mockResolvedValue({
+      ...(await mockPrisma.business.findUnique()),
+      ...business,
+    })
+
+    const result = await createBooking(baseInput, 'biz-1')
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data.pushGrant).toBeNull()
+  })
+
+  it('keeps the booking successful and omits the grant when runtime VAPID is invalid', async () => {
+    setupMocks(5_000, 20_000)
+    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'malformed-public')
+    vi.stubEnv('VAPID_PRIVATE_KEY', 'malformed-private')
+
+    const result = await createBooking(baseInput, 'biz-1')
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data.pushGrant).toBeNull()
   })
 
   it('rejects when acceptedTerms is false', async () => {
@@ -283,14 +315,7 @@ describe('createBooking - no deposit / free service', () => {
       cancellationPolicySnapshot: 'Condiciones guardadas anteriormente',
     })
     if (result.ok) {
-      expect(result.data.pushGrant).toEqual(expect.any(String))
-      if (!result.data.pushGrant) throw new Error('Expected push grant with ENCRYPTION_KEY configured')
-      const { verifyPushGrant } = await import('@/lib/push/grant')
-      expect(verifyPushGrant(result.data.pushGrant)).toMatchObject({
-        bookingId: 'booking-existing',
-        customerId: 'cust-1',
-        businessId: 'biz-1',
-      })
+      expect(result.data.pushGrant).toBeNull()
     }
     expect(mockPrisma.booking.create).not.toHaveBeenCalled()
   })

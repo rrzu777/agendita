@@ -16,7 +16,7 @@ This checklist confirms stabilization work complete and the app ready to run in 
 | 04 | Rate limiter hardening with Upstash | ✅ Done — block list, per-action limits, fail-closed |
 | 05 | QA functional plan | ✅ Done — `docs/testing-qa-plan.md` |
 | 06 | Mercado Pago sandbox QA | ⏳ PENDING — `docs/payments/mercado-pago-qa.md` created, sandbox not yet executed |
-| 07 | Critical unit/integration/E2E tests | ✅ Done — 37 test files, 660 tests, all passing |
+| 07 | Critical unit/integration/E2E tests | ✅ Done — run the current suites; do not rely on a copied test count |
 | 08 | Production hardening + Vercel checklist | ✅ Done |
 | 09 | UX polish | ✅ Done |
 
@@ -26,7 +26,7 @@ This checklist confirms stabilization work complete and the app ready to run in 
 
 ```bash
 npm run test:unit
-# 37 test files | 660 tests | ALL PASSING
+# The command output is the source of truth for the current test count.
 
 npm run test:integration
 # (requires local DB) — integration tests exist in tests/integration/
@@ -65,6 +65,8 @@ npm run test:e2e
 
 ### Web Push cancellation reminders
 - [x] Permission requested only after an explicit customer click
+- [x] Activation requires an authenticated session or an eligible booking grant
+- [x] Existing browser subscriptions are detected after reload and can always be deactivated locally
 - [x] Canonical `/notificaciones` origin for guest and authenticated customers
 - [x] Guest grant transferred in a URL fragment and removed immediately
 - [x] Subscription payload encrypted at rest; endpoint stored only as a hash for lookup
@@ -121,7 +123,7 @@ Before going live, the following must be configured **outside the codebase** (in
 
 1. [ ] Configure all environment variables in Vercel project settings
 2. [ ] Run `prisma migrate deploy` against production database
-3. [ ] Add cron job for `/api/cron/expire-holds` (every 5 minutes)
+3. [x] Keep `/api/cron/expire-holds` in the hourly `Scheduled crons` workflow; GitHub scheduling is best-effort and may be delayed
 4. [ ] Register Mercado Pago webhook URL: `https://yourdomain.com/api/webhooks/mercado-pago`
 5. [ ] Verify Resend domain ownership for `FROM_EMAIL`
 6. [ ] Trigger first deployment from `main` branch

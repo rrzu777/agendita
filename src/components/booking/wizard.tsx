@@ -293,7 +293,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
             (ver 'time', 'customer' y 'payment' acá arriba). */}
         {currentStep === 'confirmation' && reserva && (
           <>
-            <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={reserva.id} bookingNumber={reserva.bookingNumber} mode={reserva.mode} promo={reserva.promo} sessionEmail={session?.email ?? null} business={business} where={reserva.where} confirmed={reserva.confirmed} professionalName={reserva.professionalName} cancellationCutoffHours={reserva.cancellationCutoffHours} depositRequired={reserva.depositRequired} depositPaid={reserva.depositPaid} />
+            <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={reserva.id} bookingNumber={reserva.bookingNumber} mode={reserva.mode} promo={reserva.promo} sessionEmail={session?.email ?? null} business={business} where={reserva.where} confirmed={reserva.confirmed} professionalName={reserva.professionalName} cancellationCutoffHours={reserva.cancellationCutoffHours} cancellationPolicySnapshot={reserva.cancellationPolicySnapshot} depositRequired={reserva.depositRequired} depositPaid={reserva.depositPaid} />
             <GuestPushLink bookingId={reserva.id} pushGrant={reserva.pushGrant} canonicalOrigin={getAppUrl('')} className="mt-4" />
           </>
         )}

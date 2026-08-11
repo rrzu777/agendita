@@ -3,6 +3,7 @@ import { ForbiddenError } from '../helpers/auth-errors'
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 import { UserError } from '@/lib/actions/result'
 import { DEFAULT_HOLD_MINUTES } from '@/lib/bookings/hold'
+import { TEST_VAPID_PRIVATE_KEY, TEST_VAPID_PUBLIC_KEY } from '../helpers/push-fixtures'
 
 // Mocks de dependencias server-only
 const mockPrisma = {
@@ -118,6 +119,9 @@ describe('createBooking idempotency', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('ENCRYPTION_KEY', 'bookings-idempotency-push-grant-key')
+    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', TEST_VAPID_PUBLIC_KEY)
+    vi.stubEnv('VAPID_PRIVATE_KEY', TEST_VAPID_PRIVATE_KEY)
+    vi.stubEnv('VAPID_SUBJECT', 'mailto:soporte@agendita.cl')
     vi.stubEnv('RESEND_API_KEY', '')
     vi.stubEnv('FROM_EMAIL', '')
     mockResolveOnline.mockResolvedValue({ available: true, provider: 'mercado_pago', isMock: false })
@@ -129,6 +133,7 @@ describe('createBooking idempotency', () => {
       addressText: 'Test Address',
       currency: 'CLP',
       selfServiceCutoffHours: 24,
+      cancellationReminderEnabled: true,
       cancellationPolicy: null,
       slug: 'test-biz',
       subdomain: null,
@@ -171,6 +176,10 @@ describe('createBooking idempotency', () => {
         customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
         discountAmount: 0,
         holdExpiresAt: new Date(Date.now() - 60 * 60 * 1000), // vencido hace rato
+        cancellationCutoffHours: 24,
+        cancellationPolicySnapshot: null,
+        depositRequired: 5_000,
+        depositPaid: 0,
         ...over,
       }
     }
@@ -535,6 +544,9 @@ describe('createBooking acceptedTerms enforcement', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('ENCRYPTION_KEY', 'bookings-terms-push-grant-key')
+    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', TEST_VAPID_PUBLIC_KEY)
+    vi.stubEnv('VAPID_PRIVATE_KEY', TEST_VAPID_PRIVATE_KEY)
+    vi.stubEnv('VAPID_SUBJECT', 'mailto:soporte@agendita.cl')
     vi.stubEnv('RESEND_API_KEY', '')
     vi.stubEnv('FROM_EMAIL', '')
     mockResolveOnline.mockResolvedValue({ available: true, provider: 'mercado_pago', isMock: false })
@@ -546,6 +558,7 @@ describe('createBooking acceptedTerms enforcement', () => {
       addressText: 'Test Address',
       currency: 'CLP',
       selfServiceCutoffHours: 24,
+      cancellationReminderEnabled: true,
       cancellationPolicy: null,
       slug: 'test',
       subdomain: 'test',

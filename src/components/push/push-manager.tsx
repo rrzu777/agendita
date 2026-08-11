@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import {
   canonicalNotificationDestination,
@@ -8,7 +9,7 @@ import {
   replaceBrowserLocation,
 } from '@/lib/push/canonical-client'
 
-type ManagerStatus = 'checking' | 'available' | 'activating' | 'active' | 'denied' | 'unsupported' | 'disabled' | 'error'
+type ManagerStatus = 'checking' | 'available' | 'activating' | 'active' | 'denied' | 'unsupported' | 'disabled' | 'missing-scope' | 'association-error' | 'cleanup-error' | 'error'
 
 function applicationServerKey(value: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (value.length % 4)) % 4)
@@ -21,6 +22,7 @@ function applicationServerKey(value: string): Uint8Array<ArrayBuffer> {
 
 function isIos() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
 }
 
 function sameApplicationServerKey(
@@ -40,16 +42,21 @@ const subscribeToBrowserReady = () => () => undefined
 export function PushManager({
   vapidPublicKey,
   canonicalOrigin,
+  isAuthenticated,
 }: {
   vapidPublicKey: string | null
   canonicalOrigin: string
+  isAuthenticated: boolean
 }) {
   const browserReady = useSyncExternalStore(subscribeToBrowserReady, () => true, () => false)
   const [interactionStatus, setInteractionStatus] = useState<ManagerStatus | null>(null)
+  const [scopeStatus, setScopeStatus] = useState<'checking' | 'allowed' | 'missing'>('checking')
+  const [discoveryComplete, setDiscoveryComplete] = useState(false)
   const [retryAction, setRetryAction] = useState<'activate' | 'deactivate'>('activate')
   const grantRef = useRef<string | null>(null)
   const redirectStartedRef = useRef(false)
   const subscriptionRef = useRef<PushSubscription | null>(null)
+  const cleanupEndpointRef = useRef<string | null>(null)
 
   useEffect(() => {
     const hash = window.location.hash
@@ -70,9 +77,43 @@ export function PushManager({
       replaceBrowserLocation(canonicalNotificationDestination(canonicalOrigin, grantRef.current))
       return
     }
-  }, [canonicalOrigin])
 
-  const availableStatus: ManagerStatus = !browserReady
+    setScopeStatus(isAuthenticated || grantRef.current !== null ? 'allowed' : 'missing')
+
+    let cancelled = false
+    async function discoverExistingSubscription() {
+      if (
+        !('serviceWorker' in navigator)
+        || !('Notification' in window)
+        || typeof window.PushManager === 'undefined'
+      ) {
+        if (!cancelled) setDiscoveryComplete(true)
+        return
+      }
+
+      try {
+        const serviceWorker = navigator.serviceWorker
+        const registration = typeof serviceWorker.getRegistration === 'function'
+          ? await serviceWorker.getRegistration('/')
+          : undefined
+        const existing = await registration?.pushManager.getSubscription()
+        if (!cancelled && existing) {
+          subscriptionRef.current = existing
+          setInteractionStatus('active')
+        }
+      } catch {
+        // Discovery is best effort. It never registers a worker or asks for
+        // permission; the explicit activation path remains available.
+      } finally {
+        if (!cancelled) setDiscoveryComplete(true)
+      }
+    }
+    void discoverExistingSubscription()
+
+    return () => { cancelled = true }
+  }, [canonicalOrigin, isAuthenticated])
+
+  const availableStatus: ManagerStatus = !browserReady || !discoveryComplete || scopeStatus === 'checking'
     ? 'checking'
     : !isCanonicalBrowserOrigin(canonicalOrigin)
       ? 'checking'
@@ -82,11 +123,13 @@ export function PushManager({
         ? 'unsupported'
         : Notification.permission === 'denied'
           ? 'denied'
-          : 'available'
+          : scopeStatus === 'missing'
+            ? 'missing-scope'
+            : 'available'
   const status = interactionStatus ?? availableStatus
 
   async function activate() {
-    if (!vapidPublicKey || !isCanonicalBrowserOrigin(canonicalOrigin)) return
+    if (!vapidPublicKey || scopeStatus !== 'allowed' || !isCanonicalBrowserOrigin(canonicalOrigin)) return
     setRetryAction('activate')
     setInteractionStatus('activating')
     try {
@@ -118,6 +161,10 @@ export function PushManager({
           applicationServerKey: configuredApplicationServerKey,
         })
       }
+      // Browser subscription creation is an external effect. Keep possession
+      // immediately so a failed/zero-target server association can still be
+      // cleaned up without forcing a page reload.
+      subscriptionRef.current = subscription
       const serialized = subscription.toJSON()
       const grant = grantRef.current
       const response = await fetch('/api/push/subscribe', {
@@ -134,10 +181,19 @@ export function PushManager({
         || (result as { subscribed: number }).subscribed < 1) {
         throw new Error('Subscription was not associated')
       }
-      subscriptionRef.current = subscription
       setInteractionStatus('active')
     } catch {
-      setInteractionStatus('error')
+      if (subscriptionRef.current) {
+        // A rejected/expired grant would make every cleanup retry return 401.
+        // Once association failed, cleanup falls back to endpoint possession;
+        // an authenticated session remains independently eligible to retry.
+        grantRef.current = null
+        setScopeStatus(isAuthenticated ? 'allowed' : 'missing')
+        setRetryAction('deactivate')
+        setInteractionStatus('association-error')
+      } else {
+        setInteractionStatus('error')
+      }
     }
   }
 
@@ -146,20 +202,60 @@ export function PushManager({
     if (!subscription) return
     setRetryAction('deactivate')
     setInteractionStatus('activating')
+    const endpoint = subscription.endpoint
+    const grant = grantRef.current
+    let serverCleaned = false
+    let locallyUnsubscribed = false
     try {
-      const endpoint = subscription.endpoint
-      const grant = grantRef.current
       const response = await fetch('/api/push/unsubscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ endpoint, ...(grant ? { grant } : {}) }),
       })
-      if (!response.ok) throw new Error('Unsubscribe failed')
-      await subscription.unsubscribe()
-      subscriptionRef.current = null
-      setInteractionStatus('available')
+      serverCleaned = response.ok
     } catch {
+      serverCleaned = false
+    }
+
+    try {
+      locallyUnsubscribed = await subscription.unsubscribe()
+    } catch {
+      locallyUnsubscribed = false
+    }
+
+    if (locallyUnsubscribed) {
+      subscriptionRef.current = null
+    }
+    if (!locallyUnsubscribed) {
       setInteractionStatus('error')
+      return
+    }
+    if (!serverCleaned) {
+      cleanupEndpointRef.current = endpoint
+      setInteractionStatus('cleanup-error')
+      return
+    }
+
+    cleanupEndpointRef.current = null
+    setInteractionStatus(scopeStatus === 'allowed' ? 'available' : 'missing-scope')
+  }
+
+  async function retryCleanup() {
+    const endpoint = cleanupEndpointRef.current
+    if (!endpoint) return
+    setInteractionStatus('activating')
+    const grant = grantRef.current
+    try {
+      const response = await fetch('/api/push/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint, ...(grant ? { grant } : {}) }),
+      })
+      if (!response.ok) throw new Error('Cleanup failed')
+      cleanupEndpointRef.current = null
+      setInteractionStatus(scopeStatus === 'allowed' ? 'available' : 'missing-scope')
+    } catch {
+      setInteractionStatus('cleanup-error')
     }
   }
 
@@ -172,6 +268,32 @@ export function PushManager({
   }
   if (status === 'denied') {
     return <p>El permiso fue rechazado. Podés habilitar las notificaciones desde la configuración del navegador.</p>
+  }
+  if (status === 'missing-scope') {
+    return (
+      <div className="space-y-3">
+        <p>Para activar recordatorios, iniciá sesión o volvé desde la confirmación de una reserva elegible.</p>
+        <Link href="/ingresar?next=/notificaciones" className="font-semibold text-primary underline">
+          Iniciar sesión
+        </Link>
+      </div>
+    )
+  }
+  if (status === 'association-error') {
+    return (
+      <div className="space-y-3">
+        <p>El navegador creó la suscripción, pero no pudimos completar la activación en el servidor. Desactivala para limpiar el intento antes de volver a probar.</p>
+        <Button type="button" variant="outline" onClick={deactivate}>Desactivar suscripción</Button>
+      </div>
+    )
+  }
+  if (status === 'cleanup-error') {
+    return (
+      <div className="space-y-3">
+        <p>Los recordatorios quedaron desactivados en este navegador, pero no pudimos limpiar el registro del servidor.</p>
+        <Button type="button" variant="outline" onClick={retryCleanup}>Reintentar limpieza</Button>
+      </div>
+    )
   }
   if (status === 'error') {
     return (

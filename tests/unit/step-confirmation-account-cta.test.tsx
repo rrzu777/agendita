@@ -16,6 +16,7 @@ const props = {
   timezone: 'America/Santiago', currency: 'CLP', bookingId: 'b1', bookingNumber: 4738,
   mode: 'paid' as const, confirmed: true, professionalName: '',
   cancellationCutoffHours: 24, depositRequired: 0, depositPaid: 0,
+  cancellationPolicySnapshot: null,
 }
 
 const business = { name: 'Negocio', addressText: null, whatsapp: null }

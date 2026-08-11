@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       'push-unsubscribe-target',
       10,
       60_000,
-      pushUnsubscribeRateLimitContext(scope),
+      pushUnsubscribeRateLimitContext(scope, body.endpoint),
     )
     if (!targetLimit.success) {
       return Response.json({ error: 'Demasiadas solicitudes' }, { status: 429, headers: JSON_HEADERS })
@@ -46,7 +46,10 @@ export async function POST(request: Request) {
       now: new Date(),
     })
 
-    return Response.json({ unsubscribed: count }, { headers: JSON_HEADERS })
+    return Response.json(
+      scope.kind === 'endpoint' ? { unsubscribed: true } : { unsubscribed: count },
+      { headers: JSON_HEADERS },
+    )
   } catch {
     return Response.json({ error: 'Solicitud inválida' }, { status: 400, headers: JSON_HEADERS })
   }

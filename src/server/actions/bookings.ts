@@ -45,6 +45,7 @@ import { holdPrecedencePaymentWhere } from '@/lib/payments/hold-precedence'
 import { fireBookingNotifications } from '@/lib/bookings/notifications'
 import { resolveBookingDraft } from '@/lib/bookings/draft'
 import { issuePushGrant } from '@/lib/push/grant'
+import { hasUsablePushConfig } from '@/lib/push/config'
 import { applyBookingDiscountInTx } from '@/lib/bookings/discount'
 import { loadBookingInvite, loadBookingCancelNotice } from '@/lib/calendar/booking-invite'
 import {
@@ -61,18 +62,26 @@ import {
 // respuesta sin error de compilación — pasó con las salidas de paquete/código.
 const BOOKING_RESULT_INCLUDE = { service: true, customer: true, professional: { select: { name: true } } } as const
 
-function withPushGrant<T extends { id: string; customer: { id: string } }>(
+function withPushGrant<T extends {
+  id: string
+  customer: { id: string }
+  cancellationCutoffHours: number | null
+  depositRequired: number
+  depositPaid: number
+}>(
   booking: T,
-  businessId: string,
+  business: { id: string; cancellationReminderEnabled: boolean },
 ) {
-  // Push is optional infrastructure. An absent key means the feature is
-  // disabled and must never turn a committed booking into an action error.
-  // Once configured, signing errors still propagate instead of being hidden.
-  const pushGrant = process.env.ENCRYPTION_KEY
+  const eligible = business.cancellationReminderEnabled
+    && booking.cancellationCutoffHours !== null
+    && booking.cancellationCutoffHours > 0
+    && (booking.depositRequired > 0 || booking.depositPaid > 0)
+    && hasUsablePushConfig()
+  const pushGrant = eligible
     ? issuePushGrant({
         bookingId: booking.id,
         customerId: booking.customer.id,
-        businessId,
+        businessId: business.id,
       })
     : null
 
@@ -265,6 +274,7 @@ async function _createBooking(data: {
       defaultMeetingUrl: true,
       subscriptionStatus: true,
       manualHoldHours: true,
+      cancellationReminderEnabled: true,
     },
   })
   if (!business) {
@@ -373,7 +383,7 @@ async function _createBooking(data: {
     // seguimos al camino de creación normal, que ahora la puede volver a usar.
     if (existing) {
       const resumida = await resumeBookingForRetry(existing, retryCtx)
-      if (resumida) return withPushGrant(resumida, business.id)
+      if (resumida) return withPushGrant(resumida, business)
     }
   }
 
@@ -518,7 +528,7 @@ async function _createBooking(data: {
 
     revalidatePath('/dashboard/bookings')
     await revalidateBusinessPublicPaths(businessId)
-    return withPushGrant(booking, business.id)
+    return withPushGrant(booking, business)
   } catch (e: unknown) {
     // Race: otro request creó la misma idempotencyKey entre el findUnique y el create.
     // El unique constraint de DB lo detecta y devolvemos la reserva existente — por
@@ -547,7 +557,7 @@ async function _createBooking(data: {
       // milisegundos. Si pasara, cae al manejo de error de abajo con el P2002.
       if (existing) {
         const resumida = await resumeBookingForRetry(existing, retryCtx)
-        if (resumida) return withPushGrant(resumida, business.id)
+        if (resumida) return withPushGrant(resumida, business)
       }
     }
     // Safe error handling: log internal error, return generic message

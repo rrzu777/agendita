@@ -30,15 +30,18 @@ const common = {
   where: {},
   confirmed: true,
   professionalName: '',
+  cancellationPolicySnapshot: 'No llegar más de 10 minutos tarde.',
 }
 
 describe('StepConfirmation cancellation warning', () => {
   it('requiere los tres valores autoritativos en su contrato', () => {
     type Props = ComponentProps<typeof StepConfirmation>
-    type RequiresAuthoritativeValues = Props extends Record<
-      'cancellationCutoffHours' | 'depositRequired' | 'depositPaid',
-      number
-    > ? true : false
+    type RequiresAuthoritativeValues = Props extends {
+      cancellationCutoffHours: number
+      cancellationPolicySnapshot: string | null
+      depositRequired: number
+      depositPaid: number
+    } ? true : false
 
     expectTypeOf<RequiresAuthoritativeValues>().toEqualTypeOf<true>()
   })
@@ -48,9 +51,10 @@ describe('StepConfirmation cancellation warning', () => {
       <StepConfirmation {...common} data={base} cancellationCutoffHours={24} depositRequired={5_000} depositPaid={0} />,
     )
 
-    expect(html).toContain('Podés cancelar o reprogramar hasta 24 horas antes.')
-    expect(html).toContain('el abono no se devuelve')
+    const warning = 'Podés cancelar o reprogramar hasta 24 horas antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.'
+    expect(html).toContain(warning)
     expect(html).toContain('bg-amber')
+    expect(html.indexOf(warning)).toBeLessThan(html.indexOf('No llegar más de 10 minutos tarde.'))
   })
 
   it('usa singular para cutoff de una hora', () => {
@@ -65,6 +69,7 @@ describe('StepConfirmation cancellation warning', () => {
       <StepConfirmation {...common} data={{ ...base, serviceDeposit: 5_000 }} cancellationCutoffHours={24} depositRequired={0} depositPaid={0} />,
     )
     expect(html).not.toContain('el abono no se devuelve')
+    expect(html).toContain('No llegar más de 10 minutos tarde.')
   })
 
   it('omite el aviso con cutoff cero', () => {

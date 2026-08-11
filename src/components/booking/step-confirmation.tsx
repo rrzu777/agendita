@@ -23,7 +23,7 @@ export interface ConfirmationBusiness {
   whatsapp: string | null
 }
 
-export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail, business, where, confirmed, professionalName, cancellationCutoffHours, depositRequired, depositPaid }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields; confirmed: boolean; professionalName: string; cancellationCutoffHours: number; depositRequired: number; depositPaid: number }) {
+export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail, business, where, confirmed, professionalName, cancellationCutoffHours, cancellationPolicySnapshot, depositRequired, depositPaid }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields; confirmed: boolean; professionalName: string; cancellationCutoffHours: number; cancellationPolicySnapshot: string | null; depositRequired: number; depositPaid: number }) {
   const isPending = mode === 'pending'
   const isFree = data.servicePrice <= 0
   const noDeposit = data.serviceDeposit <= 0
@@ -121,6 +121,13 @@ export function StepConfirmation({ data, timezone, currency, bookingId, bookingN
         <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-900">
           <p className="font-semibold">Importante sobre tu abono</p>
           <p className="mt-1">{cancellationWarning}</p>
+        </div>
+      )}
+
+      {cancellationPolicySnapshot && (
+        <div className="mb-6 rounded-xl border border-border/70 bg-muted/40 p-4 text-left text-sm text-muted-foreground">
+          <p className="font-semibold text-primary">Condiciones adicionales</p>
+          <p className="mt-1 whitespace-pre-line">{cancellationPolicySnapshot}</p>
         </div>
       )}
 
