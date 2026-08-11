@@ -12,11 +12,7 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { formatMoney } from '@/lib/money'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
-import { Button } from '@/components/ui/button'
-import {
-  requestSubscriptionCancellation,
-  startSubscriptionCheckout,
-} from '@/server/actions/subscription-billing'
+import { SubscriptionActions } from './subscription-actions'
 
 const statusIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   trialing: Clock,
@@ -79,10 +75,11 @@ export default async function BillingPage({
   const StatusIcon = statusIcons[status] ?? CircleAlert
   const plan = subscription.plan
   const now = new Date()
+  const complimentaryActive = !!subscription.complimentaryUntil && subscription.complimentaryUntil > now
   const checkoutAvailable =
     subscription.billingEnabled &&
-    !subscription.providerSubscriptionId &&
-    (!subscription.complimentaryUntil || subscription.complimentaryUntil <= now) &&
+    !subscription.hasProviderSubscription &&
+    !complimentaryActive &&
     (subscription.status === 'past_due' || (
       subscription.status === 'trialing' &&
       !!subscription.trialEndAt &&
@@ -126,7 +123,6 @@ export default async function BillingPage({
                     {plan && (
                       <p className="text-sm text-muted-foreground">
                         {formatMoney(plan.priceMonthly, 'CLP')} CLP / mes
-                        {plan.priceYearly > 0 && ` · ${formatMoney(plan.priceYearly, 'CLP')} CLP / año`}
                       </p>
                     )}
                   </div>
@@ -161,6 +157,22 @@ export default async function BillingPage({
                       {subscription.interval === 'monthly' ? 'Mensual' : 'Anual'}
                     </p>
                   </div>
+                  {subscription.nextBillingAt && !subscription.cancelAtPeriodEnd && (
+                    <div className="rounded-lg border border-border bg-muted/30 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Próximo cobro</p>
+                      <p className="mt-1 text-sm font-semibold text-primary">
+                        {subscription.nextBillingAt.toLocaleDateString('es-CL')}
+                      </p>
+                    </div>
+                  )}
+                  {subscription.graceEndsAt && subscription.status === 'past_due' && (
+                    <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-yellow-700">Período de gracia hasta</p>
+                      <p className="mt-1 text-sm font-semibold text-yellow-800">
+                        {subscription.graceEndsAt.toLocaleDateString('es-CL')}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -236,34 +248,43 @@ export default async function BillingPage({
               <CardHeader>
                 <CardTitle>Pago de suscripción</CardTitle>
                 <CardDescription>
-                  {subscription.billingEnabled
-                    ? 'Autoriza la mensualidad en el checkout alojado de Mercado Pago'
-                    : 'La suscripción se gestiona manualmente durante el rollout'}
+                  {subscription.hasProviderSubscription
+                    ? 'Tu medio de pago está autorizado para la mensualidad automática'
+                    : subscription.billingEnabled
+                      ? 'Activa la mensualidad en el checkout alojado de Mercado Pago'
+                      : 'La facturación automática aún no está habilitada para este negocio'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 text-sm text-muted-foreground">
-                {checkoutAvailable && (
-                  <form action={startSubscriptionCheckout}>
-                    <Button type="submit" className="w-full">Autorizar pago automático</Button>
-                  </form>
+                <SubscriptionActions
+                  canStartCheckout={checkoutAvailable}
+                  canCancel={subscription.hasProviderSubscription && !subscription.cancelAtPeriodEnd && subscription.status !== 'cancelled'}
+                />
+                {subscription.hasProviderSubscription && !subscription.cancelAtPeriodEnd && (
+                  <p><strong className="text-primary">Mensualidad automática activa.</strong> Mercado Pago realizará los cobros mensuales según la fecha indicada.</p>
                 )}
-                {subscription.providerSubscriptionId && !subscription.cancelAtPeriodEnd && (
-                  <form action={requestSubscriptionCancellation}>
-                    <Button type="submit" variant="outline" className="w-full">
-                      Cancelar al final del período
-                    </Button>
-                  </form>
+                {checkoutAvailable && subscription.status === 'trialing' && subscription.trialEndAt && (
+                  <p>El primer cobro se realizará al terminar tu prueba, el {subscription.trialEndAt.toLocaleDateString('es-CL')}.</p>
+                )}
+                {checkoutAvailable && subscription.status === 'past_due' && (
+                  <p><strong className="text-primary">Activación requerida.</strong> Mercado Pago te pedirá autorizar los cobros mensuales; no realizamos cargos retroactivos.</p>
+                )}
+                {complimentaryActive && (
+                  <p><strong className="text-primary">Exención activa.</strong> No necesitas registrar un medio de pago ni se generarán cobros hasta el {subscription.complimentaryUntil!.toLocaleDateString('es-CL')}.</p>
                 )}
                 {subscription.cancelAtPeriodEnd && (
-                  <p>La renovación está cancelada. Mantendrás acceso hasta el cierre del período actual.</p>
+                  <p><strong className="text-primary">Cancelación programada.</strong> Mantendrás acceso hasta el {subscription.currentPeriodEnd.toLocaleDateString('es-CL')}. No se renovará ni se generará un reembolso automático.</p>
                 )}
                 {!subscription.billingEnabled && supportEmail ? (
                   <p className="text-xs">
                     Contacto para pagos: <a href={`mailto:${supportEmail}`} className="font-semibold text-primary underline">{supportEmail}</a>
                   </p>
                 ) : null}
-                {subscription.billingEnabled && !checkoutAvailable && !subscription.providerSubscriptionId && (
+                {subscription.billingEnabled && !checkoutAvailable && !subscription.hasProviderSubscription && !complimentaryActive && subscription.status === 'trialing' && (
                   <p>El checkout estará disponible cuando se acerque el fin de tu prueba o si necesitas regularizar un pago.</p>
+                )}
+                {subscription.status === 'cancelled' && (
+                  <p><strong className="text-primary">Suscripción cancelada.</strong> La mensualidad automática terminó y no se realizarán nuevos cobros.</p>
                 )}
               </CardContent>
             </Card>
@@ -293,7 +314,10 @@ export default async function BillingPage({
                     <div>
                       <p className="font-semibold text-yellow-800">Pago pendiente</p>
                       <p className="text-sm text-yellow-600">
-                        Tu suscripción tiene un pago pendiente. Regulariza tu pago pronto para evitar interrupciones.
+                        Tu suscripción tiene un pago pendiente.
+                        {subscription.graceEndsAt
+                          ? ` Tu período de gracia termina el ${subscription.graceEndsAt.toLocaleDateString('es-CL')}.`
+                          : ' Regulariza tu pago pronto para evitar interrupciones.'}
                       </p>
                       {supportEmail && (
                         <p className="mt-1 text-sm text-yellow-700">
@@ -314,9 +338,9 @@ export default async function BillingPage({
                     <div>
                       <p className="font-semibold text-red-800">Cuenta suspendida</p>
                       <p className="text-sm text-red-600">
-                        Tu cuenta ha sido suspendida.
+                        Tu cuenta ha sido suspendida. Contacta a soporte para revisar la reactivación.
                         {supportEmail && (
-                          <> Contacta a <a href={`mailto:${supportEmail}`} className="font-semibold underline">{supportEmail}</a> para reactivar.</>
+                          <> Escríbenos a <a href={`mailto:${supportEmail}`} className="font-semibold underline">{supportEmail}</a>.</>
                         )}
                       </p>
                     </div>

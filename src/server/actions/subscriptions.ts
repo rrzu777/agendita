@@ -14,15 +14,55 @@ export async function getCurrentSubscription() {
   const [subscription, payments] = await Promise.all([
     prisma.businessSubscription.findFirst({
       where: { businessId },
-      include: { plan: true },
+      select: {
+        id: true,
+        status: true,
+        interval: true,
+        currentPeriodStart: true,
+        currentPeriodEnd: true,
+        trialStartAt: true,
+        trialEndAt: true,
+        nextBillingAt: true,
+        pastDueAt: true,
+        graceEndsAt: true,
+        cancelAtPeriodEnd: true,
+        complimentaryUntil: true,
+        billingEnabled: true,
+        providerSubscriptionId: true,
+        plan: {
+          select: {
+            name: true,
+            priceMonthly: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     }),
     prisma.subscriptionPayment.findMany({
       where: { businessId },
+      select: {
+        id: true,
+        amount: true,
+        currency: true,
+        status: true,
+        paymentMethod: true,
+        notes: true,
+        paidAt: true,
+        createdAt: true,
+      },
       orderBy: { createdAt: 'desc' },
       take: 20,
     }),
   ])
 
-  return { subscription, payments }
+  if (!subscription) return { subscription: null, payments }
+
+  const { providerSubscriptionId, ...safeSubscription } = subscription
+  return {
+    subscription: {
+      ...safeSubscription,
+      hasProviderSubscription: providerSubscriptionId !== null,
+    },
+    payments,
+  }
 }

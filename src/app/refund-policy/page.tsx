@@ -31,13 +31,18 @@ export default function RefundPolicyPage() {
             La suscripción de Agendita se cobra al Negocio profesional, no a las Clientes.
           </p>
           <p className="mt-2">
-            Durante la beta, los pagos de suscripción se gestionan de forma manual. No se realizan
-            cobros automáticos recurrentes. Los Negocios pueden cancelar su suscripción en cualquier
-            momento contactando a soporte.
+            Cuando el Negocio activa la mensualidad automática, autoriza cobros recurrentes mensuales
+            mediante Mercado Pago. El primer cobro se realiza al terminar el período de prueba; una
+            exención vigente no solicita un medio de pago ni genera cobros.
           </p>
           <p className="mt-2">
             Los pagos de suscripción ya procesados no son reembolsables, salvo que la ley aplicable
-            disponga lo contrario. Los períodos de prueba gratuita no generan cargos.
+            disponga lo contrario. La cancelación detiene la renovación al final del período ya pagado
+            y no genera un reembolso automático. Los períodos de prueba y exención no generan cargos.
+          </p>
+          <p className="mt-2">
+            Si un cobro falla, Agendita puede otorgar un período de gracia antes de suspender nuevas
+            reservas. La fecha aplicable se informa en la sección Facturación del Negocio.
           </p>
         </section>
 
@@ -60,7 +65,7 @@ export default function RefundPolicyPage() {
         </section>
 
         <p className="mt-10 text-xs text-muted-foreground">
-          Última actualización: Mayo 2026. Versión borrador para revisión legal.
+          Última actualización: Agosto 2026. Versión borrador para revisión legal.
         </p>
       </div>
     </div>
