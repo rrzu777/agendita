@@ -98,6 +98,53 @@ describe('env validation', () => {
           ]),
         )
       })
+
+      it('accepts only the selected production credentials when subscriptions are enabled', async () => {
+        setEnv({
+          ...subscriptionEnv,
+          NODE_ENV: 'production',
+          MP_SUBSCRIPTIONS_ENABLED: 'true',
+          MERCADO_PAGO_ENVIRONMENT: 'production',
+          MERCADO_PAGO_PRODUCTION_ACCESS_TOKEN: 'production-token',
+          MERCADO_PAGO_PRODUCTION_WEBHOOK_SECRET: 'production-webhook-secret',
+          MERCADO_PAGO_PRODUCTION_SUBSCRIPTIONS_CALLBACK_URL:
+            'https://app.agendita.com/api/webhooks/mercado-pago/subscriptions',
+          UPSTASH_REDIS_REST_URL: 'https://redis.example.com',
+          UPSTASH_REDIS_REST_TOKEN: 'redis-token',
+        })
+        const { validateEnv } = await import('@/lib/env')
+
+        expect(validateEnv().errors).toEqual([])
+      })
+    })
+
+    describe('subscription enforcement', () => {
+      it('fails closed to false when enforcement is absent', async () => {
+        setEnv({ SUBSCRIPTION_ENFORCEMENT_ENABLED: undefined })
+        const { getSubscriptionEnforcementEnabled } = await import('@/lib/env')
+        expect(getSubscriptionEnforcementEnabled()).toBe(false)
+      })
+
+      it.each([
+        ['true', true],
+        ['false', false],
+      ] as const)('reads the strict enforcement flag %s', async (configured, expected) => {
+        setEnv({ SUBSCRIPTION_ENFORCEMENT_ENABLED: configured })
+        const { getSubscriptionEnforcementEnabled } = await import('@/lib/env')
+        expect(getSubscriptionEnforcementEnabled()).toBe(expected)
+      })
+
+      it('rejects a malformed enforcement flag independently from subscriptions transport', async () => {
+        setEnv({ SUBSCRIPTION_ENFORCEMENT_ENABLED: 'enabled' })
+        const { getSubscriptionEnforcementEnabled, validateEnv } = await import('@/lib/env')
+
+        expect(() => getSubscriptionEnforcementEnabled()).toThrow(/SUBSCRIPTION_ENFORCEMENT_ENABLED/)
+        expect(validateEnv().errors).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ key: 'SUBSCRIPTION_ENFORCEMENT_ENABLED' }),
+          ]),
+        )
+      })
     })
 
     it('returns empty errors and warnings when all required envs are set', async () => {

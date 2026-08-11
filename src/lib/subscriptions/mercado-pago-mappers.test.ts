@@ -7,7 +7,7 @@ import {
 } from './mercado-pago-mappers'
 
 describe('Mercado Pago subscription mappers', () => {
-  it('normalizes a hosted monthly CLP subscription while preserving the raw provider response', () => {
+  it('normalizes a hosted monthly CLP subscription without leaking the raw provider response', () => {
     const raw = {
       id: 'preapproval-1',
       status: 'authorized',
@@ -31,8 +31,8 @@ describe('Mercado Pago subscription mappers', () => {
       currency: 'CLP',
       frequency: 1,
       frequencyType: 'months',
-      raw,
     })
+    expect(normalizeMpSubscription(raw)).not.toHaveProperty('raw')
   })
 
   it('maps an unknown subscription status to ignored', () => {
@@ -48,6 +48,21 @@ describe('Mercado Pago subscription mappers', () => {
         },
       }).status,
     ).toBe('ignored')
+  })
+
+  it('maps Mercado Pago canceled subscriptions using the provider spelling', () => {
+    expect(
+      normalizeMpSubscription({
+        id: 'preapproval-canceled',
+        status: 'canceled',
+        auto_recurring: {
+          transaction_amount: 12000,
+          currency_id: 'CLP',
+          frequency: 1,
+          frequency_type: 'months',
+        },
+      }).status,
+    ).toBe('canceled')
   })
 
   it('accepts Mercado Pago integer amounts serialized as strings', () => {
@@ -81,8 +96,8 @@ describe('Mercado Pago subscription mappers', () => {
       status: 'approved',
       amount: 12000,
       currency: 'CLP',
-      raw,
     })
+    expect(normalizeMpInvoice(raw)).not.toHaveProperty('raw')
     expect(
       normalizeMpInvoice({
         ...raw,
@@ -122,7 +137,7 @@ describe('Mercado Pago subscription mappers', () => {
     ).toThrow(MercadoPagoSubscriptionContractError)
   })
 
-  it('rejects an invalid provider date before a local transition can be attempted', () => {
+  it.each(['not-a-date', '2026-02-30T12:00:00.000Z'])('rejects an impossible provider date: %s', (dateApproved) => {
     expect(() =>
       normalizeMpInvoice({
         id: 'invoice-invalid-date',
@@ -130,8 +145,21 @@ describe('Mercado Pago subscription mappers', () => {
         preapproval_id: 'preapproval-1',
         transaction_amount: 12000,
         currency_id: 'CLP',
-        date_approved: 'not-a-date',
+        date_approved: dateApproved,
       }),
     ).toThrow(MercadoPagoSubscriptionContractError)
+  })
+
+  it('accepts calendar-valid end-of-month dates and numeric offsets', () => {
+    expect(
+      normalizeMpInvoice({
+        id: 'invoice-valid-date',
+        status: 'approved',
+        preapproval_id: 'preapproval-1',
+        transaction_amount: 12000,
+        currency_id: 'CLP',
+        date_approved: '2028-02-29T23:59:59.123-03:00',
+      }).approvedAt?.toISOString(),
+    ).toBe('2028-03-01T02:59:59.123Z')
   })
 })

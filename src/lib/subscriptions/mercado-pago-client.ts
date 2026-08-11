@@ -9,7 +9,7 @@ import {
 } from './mercado-pago-mappers'
 
 const MP_API_BASE = 'https://api.mercadopago.com'
-const REQUEST_TIMEOUT_MS = 5_000
+export const MP_SUBSCRIPTION_REQUEST_TIMEOUT_MS = 5_000
 
 export type MpSubscriptionsEnvironment = 'sandbox' | 'production'
 
@@ -35,7 +35,6 @@ export type CreateSubscriptionInput = {
 export type MpPlan = {
   id: string
   status: string | null
-  raw: Record<string, unknown>
 }
 
 export type MpSubscriptionClient = {
@@ -101,16 +100,15 @@ function normalizePlan(response: unknown): MpPlan {
   return {
     id: String(id),
     status: typeof raw.status === 'string' ? raw.status : null,
-    raw,
   }
 }
 
 function timeoutSignal(): AbortSignal {
   if (typeof AbortSignal.timeout === 'function') {
-    return AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    return AbortSignal.timeout(MP_SUBSCRIPTION_REQUEST_TIMEOUT_MS)
   }
   const controller = new AbortController()
-  setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  setTimeout(() => controller.abort(), MP_SUBSCRIPTION_REQUEST_TIMEOUT_MS)
   return controller.signal
 }
 
@@ -203,7 +201,7 @@ export function createMpSubscriptionClient(
       return normalizeMpSubscription(
         await request(`/preapproval/${encodeURIComponent(requiredString(id, 'Subscription id'))}`, {
           method: 'PUT',
-          body: JSON.stringify({ status: 'cancelled' }),
+          body: JSON.stringify({ status: 'canceled' }),
         }),
       )
     },

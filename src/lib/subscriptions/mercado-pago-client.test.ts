@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createMpSubscriptionClient,
   MercadoPagoSubscriptionTransportError,
+  MP_SUBSCRIPTION_REQUEST_TIMEOUT_MS,
 } from './mercado-pago-client'
 
 const config = {
@@ -20,7 +21,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 beforeEach(() => vi.stubGlobal('window', undefined))
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
 
 describe('createMpSubscriptionClient', () => {
   it('creates a monthly CLP plan using the selected hosted-checkout transport', async () => {
@@ -74,9 +78,9 @@ describe('createMpSubscriptionClient', () => {
   it('uses documented endpoints for plan and subscription lifecycle operations', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ id: 'plan-1', status: 'active', auto_recurring: { transaction_amount: 12000, currency_id: 'CLP', frequency: 1, frequency_type: 'months' } }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'preapproval-1', status: 'pending', auto_recurring: { transaction_amount: 12000, currency_id: 'CLP', frequency: 1, frequency_type: 'months' }, init_point: 'https://mp.example/checkout' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'preapproval-1', status: 'pending', auto_recurring: { transaction_amount: 12000, currency_id: 'CLP', frequency: 1, frequency_type: 'months' }, init_point: 'https://www.mercadopago.cl/checkout' }))
       .mockResolvedValueOnce(jsonResponse({ id: 'preapproval-1', status: 'authorized', auto_recurring: { transaction_amount: 12000, currency_id: 'CLP', frequency: 1, frequency_type: 'months' } }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'preapproval-1', status: 'cancelled', auto_recurring: { transaction_amount: 12000, currency_id: 'CLP', frequency: 1, frequency_type: 'months' } }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'preapproval-1', status: 'canceled', auto_recurring: { transaction_amount: 12000, currency_id: 'CLP', frequency: 1, frequency_type: 'months' } }))
     vi.stubGlobal('fetch', fetchMock)
     const client = createMpSubscriptionClient(config)
 
@@ -101,7 +105,41 @@ describe('createMpSubscriptionClient', () => {
       payer_email: 'payer@example.com',
       back_url: config.callbackUrl,
     })
-    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ status: 'cancelled' })
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ status: 'canceled' })
+  })
+
+  it.each([
+    'http://www.mercadopago.cl/checkout',
+    'javascript:alert(1)',
+    'https://mercadopago.cl@evil.example/checkout',
+    'https://merchant.example/checkout',
+    'https://user@www.mercadopago.cl/checkout',
+  ])('rejects an unsafe hosted checkout URL: %s', async (initPoint) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          id: 'preapproval-unsafe-checkout',
+          status: 'pending',
+          init_point: initPoint,
+          auto_recurring: {
+            transaction_amount: 12000,
+            currency_id: 'CLP',
+            frequency: 1,
+            frequency_type: 'months',
+          },
+        }),
+      ),
+    )
+
+    await expect(
+      createMpSubscriptionClient(config).createSubscription({
+        planId: 'plan-1',
+        externalReference: 'local-op-unsafe-checkout',
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining({ name: 'MercadoPagoSubscriptionContractError' }),
+    )
   })
 
   it('fails the create operation when Mercado Pago does not return hosted checkout', async () => {
@@ -172,5 +210,29 @@ describe('createMpSubscriptionClient', () => {
     await expect(createMpSubscriptionClient(config).getPlan('plan-1')).rejects.toBeInstanceOf(
       MercadoPagoSubscriptionTransportError,
     )
+  })
+
+  it('bounds every provider request with the fixed five-second timeout', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          id: 'plan-1',
+          status: 'active',
+          auto_recurring: {
+            transaction_amount: 12000,
+            currency_id: 'CLP',
+            frequency: 1,
+            frequency_type: 'months',
+          },
+        }),
+      ),
+    )
+
+    await createMpSubscriptionClient(config).getPlan('plan-1')
+
+    expect(MP_SUBSCRIPTION_REQUEST_TIMEOUT_MS).toBe(5_000)
+    expect(timeout).toHaveBeenCalledWith(MP_SUBSCRIPTION_REQUEST_TIMEOUT_MS)
   })
 })

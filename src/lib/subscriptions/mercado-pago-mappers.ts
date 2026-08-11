@@ -1,3 +1,5 @@
+import 'server-only'
+
 export class MercadoPagoSubscriptionContractError extends Error {
   constructor(message = 'Mercado Pago subscriptions response violates the expected contract.') {
     super(message)
@@ -9,7 +11,7 @@ export type MpSubscriptionStatus =
   | 'active'
   | 'pending'
   | 'suspended'
-  | 'cancelled'
+  | 'canceled'
   | 'ignored'
 
 export type MpInvoiceStatus = 'approved' | 'pending' | 'failed' | 'ignored'
@@ -24,7 +26,6 @@ export type MpSubscription = {
   frequency: 1
   frequencyType: 'months'
   nextPaymentAt: Date | null
-  raw: Record<string, unknown>
 }
 
 export type MpInvoice = {
@@ -34,7 +35,6 @@ export type MpInvoice = {
   amount: number
   currency: 'CLP'
   approvedAt: Date | null
-  raw: Record<string, unknown>
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -60,11 +60,51 @@ function optionalString(value: unknown): string | null {
 function optionalDate(value: unknown): Date | null {
   if (value === undefined || value === null || value === '') return null
   if (typeof value !== 'string') throw new MercadoPagoSubscriptionContractError()
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-]\d{2}:\d{2})$/.exec(value)
+  if (!match) throw new MercadoPagoSubscriptionContractError()
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, , offset] = match
+  const year = Number(yearText)
+  const month = Number(monthText)
+  const day = Number(dayText)
+  const hour = Number(hourText)
+  const minute = Number(minuteText)
+  const second = Number(secondText)
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const offsetIsValid = offset === 'Z' || (
+    Number(offset.slice(1, 3)) <= 23 && Number(offset.slice(4, 6)) <= 59
+  )
+  if (
+    month < 1 || month > 12 || day < 1 || day > daysInMonth ||
+    hour > 23 || minute > 59 || second > 59 || !offsetIsValid
+  ) {
     throw new MercadoPagoSubscriptionContractError()
   }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) throw new MercadoPagoSubscriptionContractError()
   return date
+}
+
+function optionalHostedCheckoutUrl(value: unknown): string | null {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string') throw new MercadoPagoSubscriptionContractError()
+  try {
+    const url = new URL(value)
+    const host = url.hostname.toLowerCase()
+    if (
+      url.protocol !== 'https:' ||
+      url.username ||
+      url.password ||
+      (host !== 'mercadopago.cl' && !host.endsWith('.mercadopago.cl'))
+    ) {
+      throw new MercadoPagoSubscriptionContractError()
+    }
+    return url.toString()
+  } catch (error) {
+    if (error instanceof MercadoPagoSubscriptionContractError) throw error
+    throw new MercadoPagoSubscriptionContractError()
+  }
 }
 
 function positiveClpInteger(value: unknown): number {
@@ -108,7 +148,7 @@ const SUBSCRIPTION_STATUS: Record<string, MpSubscriptionStatus> = {
   active: 'active',
   pending: 'pending',
   paused: 'suspended',
-  cancelled: 'cancelled',
+  canceled: 'canceled',
 }
 
 const INVOICE_STATUS: Record<string, MpInvoiceStatus> = {
@@ -128,10 +168,9 @@ export function normalizeMpSubscription(response: unknown): MpSubscription {
     id: requiredId(raw.id),
     status,
     externalReference: optionalString(raw.external_reference),
-    checkoutUrl: optionalString(raw.init_point),
+    checkoutUrl: optionalHostedCheckoutUrl(raw.init_point),
     ...monthlyClp(raw),
     nextPaymentAt: optionalDate(raw.next_payment_date),
-    raw,
   }
 }
 
@@ -151,6 +190,5 @@ export function normalizeMpInvoice(response: unknown): MpInvoice {
     status,
     ...invoiceAmount(raw),
     approvedAt: optionalDate(raw.date_approved),
-    raw,
   }
 }

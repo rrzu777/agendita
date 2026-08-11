@@ -72,6 +72,11 @@ export function getOptionalEnvBoolean(key: string): boolean | undefined {
   return raw.toLowerCase() === 'true'
 }
 
+export function getSubscriptionEnforcementEnabled(): boolean {
+  const configured = getOptionalEnvBoolean('SUBSCRIPTION_ENFORCEMENT_ENABLED')
+  return configured ?? false
+}
+
 /**
  * Validates required environment variables.
  * Returns { errors, warnings } — never throws, never logs to console.
@@ -237,6 +242,18 @@ export function validateEnv(): EnvValidationResult {
       key: 'MP_SUBSCRIPTIONS_ENABLED',
       message:
         'MP_SUBSCRIPTIONS_ENABLED must be "true" or "false" when configured.',
+    })
+  }
+
+  const subscriptionEnforcement = process.env.SUBSCRIPTION_ENFORCEMENT_ENABLED
+  if (
+    subscriptionEnforcement !== undefined &&
+    !isStrictBoolean(subscriptionEnforcement)
+  ) {
+    errors.push({
+      key: 'SUBSCRIPTION_ENFORCEMENT_ENABLED',
+      message:
+        'SUBSCRIPTION_ENFORCEMENT_ENABLED must be "true" or "false" when configured.',
     })
   }
 

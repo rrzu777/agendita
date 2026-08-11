@@ -92,6 +92,60 @@ describe('build environment validation', () => {
     expect(result.stderr).toContain('MERCADO_PAGO_ENVIRONMENT')
   })
 
+  it('accepts complete production subscriptions credentials and a false enforcement flag', () => {
+    const env = {
+      ...process.env,
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgresql://localhost/test',
+      DIRECT_URL: 'postgresql://localhost/test',
+      NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+      APP_DOMAIN: 'app.agendita.com',
+      NEXT_PUBLIC_APP_DOMAIN: 'app.agendita.com',
+      PAYMENT_PROVIDER: 'manual',
+      UPSTASH_REDIS_REST_URL: 'https://redis.example.com',
+      UPSTASH_REDIS_REST_TOKEN: 'redis-token',
+      MP_SUBSCRIPTIONS_ENABLED: 'true',
+      MERCADO_PAGO_ENVIRONMENT: 'production',
+      MERCADO_PAGO_PRODUCTION_ACCESS_TOKEN: 'production-token',
+      MERCADO_PAGO_PRODUCTION_WEBHOOK_SECRET: 'production-webhook-secret',
+      MERCADO_PAGO_PRODUCTION_SUBSCRIPTIONS_CALLBACK_URL:
+        'https://app.agendita.com/api/webhooks/mercado-pago/subscriptions',
+      SUBSCRIPTION_ENFORCEMENT_ENABLED: 'false',
+    }
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env,
+      encoding: 'utf8',
+    })
+
+    expect(result.status).toBe(0)
+  })
+
+  it('rejects a malformed enforcement flag even when subscriptions are disabled', () => {
+    const env = {
+      ...process.env,
+      NODE_ENV: 'development',
+      DATABASE_URL: 'postgresql://localhost/test',
+      DIRECT_URL: 'postgresql://localhost/test',
+      NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+      APP_DOMAIN: 'app.agendita.com',
+      NEXT_PUBLIC_APP_DOMAIN: 'app.agendita.com',
+      PAYMENT_PROVIDER: 'manual',
+      MP_SUBSCRIPTIONS_ENABLED: 'false',
+      SUBSCRIPTION_ENFORCEMENT_ENABLED: 'yes',
+    }
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env,
+      encoding: 'utf8',
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('SUBSCRIPTION_ENFORCEMENT_ENABLED')
+  })
+
   it('rejects OAuth-only Mercado Pago without the global webhook lookup token', () => {
     const env = {
       ...process.env,

@@ -144,6 +144,12 @@ function validate() {
   if (subscriptionsEnabled && !isStrictBoolean(subscriptionsEnabled)) {
     errors.push('MP_SUBSCRIPTIONS_ENABLED must be "true" or "false" when configured.')
   }
+  const subscriptionEnforcement = getServerEnv('SUBSCRIPTION_ENFORCEMENT_ENABLED')
+  if (subscriptionEnforcement && !isStrictBoolean(subscriptionEnforcement)) {
+    errors.push(
+      'SUBSCRIPTION_ENFORCEMENT_ENABLED must be "true" or "false" when configured.',
+    )
+  }
   const subscriptionsEnvironment = getServerEnv('MERCADO_PAGO_ENVIRONMENT')
   const hasValidSubscriptionsEnvironment = MP_SUBSCRIPTIONS_ENVIRONMENTS.includes(
     subscriptionsEnvironment,
