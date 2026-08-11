@@ -353,6 +353,8 @@ model SubscriptionNotificationDelivery {
   sentAt         DateTime?
   nextAttemptAt  DateTime?
   lastErrorCode  String?
+  recipientEmails String[] @default([])
+  businessNameSnapshot String
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

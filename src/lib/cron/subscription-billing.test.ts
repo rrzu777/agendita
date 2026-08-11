@@ -83,12 +83,53 @@ function createDependencies(rows: ReturnType<typeof candidate>[], enforcementEna
       providerTerminalCanceled: false,
     }),
     applyTransition,
+    sendSubscriptionNotification: vi.fn(async (kind, data) => {
+      const key = `${data.subscriptionId}:${kind}:${data.effectiveDate.toISOString()}`
+      if (deliveries.has(key)) return { status: 'skipped' }
+      deliveries.add(key)
+      return { status: 'sent' }
+    }),
+    retrySubscriptionNotifications: vi.fn().mockResolvedValue([]),
+    queueSubscriptionNotification: vi.fn().mockResolvedValue(undefined),
     enforcementEnabled: () => enforcementEnabled,
   } as unknown as SubscriptionBillingCronDependencies
   return { dependencies, applyTransition }
 }
 
 describe('runSubscriptionBillingCron', () => {
+  it('reintenta entregas fallidas y no vuelve a tocar las ya enviadas', async () => {
+    const { dependencies } = createDependencies([])
+    ;(dependencies.retrySubscriptionNotifications as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { status: 'sent' },
+      { status: 'skipped' },
+    ])
+
+    await expect(runSubscriptionBillingCron({ now: NOW }, dependencies)).resolves.toMatchObject({
+      notified: 1,
+      errors: 0,
+    })
+    expect(dependencies.retrySubscriptionNotifications).toHaveBeenCalledWith({ now: NOW })
+  })
+
+  it('continúa la transición financiera cuando falla la entrega del aviso', async () => {
+    const row = candidate({ trialEndAt: new Date(NOW.getTime() + 7 * DAY) })
+    const { dependencies, applyTransition } = createDependencies([row])
+    ;(dependencies.sendSubscriptionNotification as ReturnType<typeof vi.fn>)
+      .mockResolvedValue({ status: 'failed' })
+
+    await expect(runSubscriptionBillingCron({ now: NOW }, dependencies)).resolves.toMatchObject({
+      processed: 1,
+      errors: 0,
+    })
+    expect(dependencies.sendSubscriptionNotification).toHaveBeenCalledWith(
+      'subscription_due_7_days',
+      expect.objectContaining({ subscriptionId: row.id, effectiveDate: row.trialEndAt }),
+    )
+    expect(applyTransition).toHaveBeenCalledTimes(1)
+    expect(applyTransition.mock.invocationCallOrder[0])
+      .toBeLessThan((dependencies.sendSubscriptionNotification as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
+  })
+
   it('crea una sola entrega idempotente para cada aviso de 7, 3 y 1 días', async () => {
     const rows = [7, 3, 1].map((days) => candidate({
       id: `subscription-${days}`,
@@ -104,9 +145,9 @@ describe('runSubscriptionBillingCron', () => {
     })
     await runSubscriptionBillingCron({ now: NOW }, dependencies)
 
-    expect(dependencies.prisma.subscriptionNotificationDelivery.createMany).toHaveBeenCalledTimes(3)
-    const kinds = (dependencies.prisma.subscriptionNotificationDelivery.createMany as ReturnType<typeof vi.fn>)
-      .mock.calls.flatMap(([input]) => input.data.map((item: { kind: string }) => item.kind))
+    expect(dependencies.sendSubscriptionNotification).toHaveBeenCalledTimes(3)
+    const kinds = (dependencies.sendSubscriptionNotification as ReturnType<typeof vi.fn>)
+      .mock.calls.slice(0, 3).map(([kind]) => kind)
     expect(kinds).toEqual([
       'subscription_due_7_days',
       'subscription_due_3_days',
@@ -128,13 +169,13 @@ describe('runSubscriptionBillingCron', () => {
     await expect(runSubscriptionBillingCron({ now: NOW }, dependencies)).resolves.toMatchObject({
       notified: 1,
     })
-    expect(dependencies.prisma.subscriptionNotificationDelivery.createMany).toHaveBeenCalledWith({
-      data: [expect.objectContaining({
+    expect(dependencies.sendSubscriptionNotification).toHaveBeenCalledWith(
+      'subscription_due_7_days',
+      expect.objectContaining({
         kind: 'subscription_due_7_days',
         effectiveDate: row.complimentaryUntil,
-      })],
-      skipDuplicates: true,
-    })
+      }),
+    )
   })
 
   it.each([

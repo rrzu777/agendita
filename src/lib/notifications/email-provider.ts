@@ -122,7 +122,7 @@ type SendEmailOptions = {
 }
 
 async function sendEmail(
-  to: string,
+  to: string | string[],
   subject: string,
   html: string,
   text: string,
@@ -148,7 +148,7 @@ async function sendEmail(
   try {
     const { data, error } = await resend.emails.send({
       from,
-      to: [to],
+      to: Array.isArray(to) ? to : [to],
       subject,
       html,
       text,
@@ -174,6 +174,36 @@ async function sendEmail(
       metadata: { to, subject, reason: message },
     })
     return { success: false, error: message }
+  }
+}
+
+/** Entrega de ciclo de suscripción: un único request a Resend para que una
+ * misma clave idempotente proteja también la ambigüedad post-envío. */
+export async function sendSubscriptionEmail(input: {
+  to: string[]
+  subject: string
+  html: string
+  text: string
+  idempotencyKey: string
+}): Promise<EmailResult> {
+  const resend = getResend()
+  const from = getFromEmail()
+  if (!resend) return { success: false, skipped: 'RESEND_API_KEY no configurada' }
+  if (!from) return { success: false, skipped: 'FROM_EMAIL no configurado' }
+  try {
+    const { error } = await resend.batch.send(
+      input.to.map((to) => ({ from, to, subject: input.subject, html: input.html, text: input.text })),
+      { idempotencyKey: input.idempotencyKey },
+    )
+    if (error) {
+      logger.error('subscription_notification.email.failed', 'Subscription email delivery failed.')
+      return { success: false, error: error.message, errorCode: error.name }
+    }
+    logger.info('subscription_notification.email.sent', 'Subscription email delivery sent.')
+    return { success: true }
+  } catch {
+    logger.error('subscription_notification.email.failed', 'Subscription email delivery failed.')
+    return { success: false, error: 'provider_unavailable', errorCode: 'application_error' }
   }
 }
 

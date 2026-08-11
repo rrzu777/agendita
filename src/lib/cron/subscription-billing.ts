@@ -3,6 +3,14 @@ import { prisma } from '@/lib/db'
 import { getSubscriptionEnforcementEnabled } from '@/lib/env'
 import { logger } from '@/lib/logger'
 import {
+  retrySubscriptionNotifications,
+  queueSubscriptionNotification,
+  sendSubscriptionNotification,
+  type SubscriptionNotificationData,
+  type SubscriptionNotificationKind,
+  type SubscriptionNotificationResult,
+} from '@/lib/notifications/subscriptions'
+import {
   reconcileSubscription,
   type SubscriptionReconciliationResult,
 } from '@/lib/subscriptions/reconciliation'
@@ -66,6 +74,15 @@ export type SubscriptionBillingCronDependencies = {
     input: ApplySubscriptionTransitionCommand,
   ): Promise<{ applied: boolean; status: string }>
   enforcementEnabled(): boolean
+  sendSubscriptionNotification?(
+    kind: SubscriptionNotificationKind,
+    data: SubscriptionNotificationData,
+  ): Promise<SubscriptionNotificationResult>
+  retrySubscriptionNotifications?(input: { now: Date }): Promise<SubscriptionNotificationResult[]>
+  queueSubscriptionNotification?(
+    kind: SubscriptionNotificationKind,
+    data: SubscriptionNotificationData,
+  ): Promise<void>
   recordError?(): void
 }
 
@@ -75,6 +92,9 @@ function runtimeDependencies(): SubscriptionBillingCronDependencies {
     reconcile: (id) => reconcileSubscription(id),
     applyTransition: applySubscriptionTransition,
     enforcementEnabled: getSubscriptionEnforcementEnabled,
+    sendSubscriptionNotification,
+    retrySubscriptionNotifications,
+    queueSubscriptionNotification,
     recordError: () => logger.error(
       'subscription_billing_cron.item_failed',
       'Subscription billing cron item failed.',
@@ -82,7 +102,10 @@ function runtimeDependencies(): SubscriptionBillingCronDependencies {
   }
 }
 
-function dueNotification(subscription: CronSubscription, now: Date) {
+function dueNotification(subscription: CronSubscription, now: Date): (SubscriptionNotificationData & {
+  kind: SubscriptionNotificationKind
+  dedupeKey: string
+}) | null {
   if (subscription.cancelAtPeriodEnd) return null
   const effectiveDate = subscription.complimentaryUntil &&
     subscription.complimentaryUntil.getTime() > now.getTime()
@@ -98,7 +121,11 @@ function dueNotification(subscription: CronSubscription, now: Date) {
   if (remaining <= 0) return null
   const days = Math.ceil(remaining / DAY_IN_MS)
   if (days !== 7 && days !== 3 && days !== 1) return null
-  const kind = days === 1 ? 'subscription_due_1_day' : `subscription_due_${days}_days`
+  const kind: SubscriptionNotificationKind = days === 1
+    ? 'subscription_due_1_day'
+    : days === 3
+      ? 'subscription_due_3_days'
+      : 'subscription_due_7_days'
   return {
     businessId: subscription.businessId,
     subscriptionId: subscription.id,
@@ -195,11 +222,10 @@ async function processClaimedSubscription(input: {
     const notification = dueNotification(current, now)
     if (notification) {
       try {
-        const created = await dependencies.prisma.subscriptionNotificationDelivery.createMany({
-          data: [notification],
-          skipDuplicates: true,
-        })
-        result.notified += created.count
+        await (dependencies.queueSubscriptionNotification ?? queueSubscriptionNotification)(
+          notification.kind,
+          notification,
+        )
       } catch {
         result.errors++
         dependencies.recordError?.()
@@ -224,6 +250,19 @@ async function processClaimedSubscription(input: {
       result.errors++
       dependencies.recordError?.()
     }
+
+    if (notification) {
+      try {
+        const delivery = await (dependencies.sendSubscriptionNotification ?? sendSubscriptionNotification)(
+          notification.kind,
+          notification,
+        )
+        if (delivery.status === 'sent') result.notified++
+      } catch {
+        result.errors++
+        dependencies.recordError?.()
+      }
+    }
   } finally {
     try {
       await releaseClaim(dependencies, candidate.id, leaseUntil)
@@ -244,6 +283,13 @@ export async function runSubscriptionBillingCron(
     notified: 0,
     suspended: 0,
     errors: 0,
+  }
+  try {
+    const retries = await (dependencies.retrySubscriptionNotifications ?? retrySubscriptionNotifications)({ now: input.now })
+    result.notified += retries.filter((delivery) => delivery.status === 'sent').length
+  } catch {
+    result.errors++
+    dependencies.recordError?.()
   }
   const subscriptions = await dependencies.prisma.businessSubscription.findMany({
     where: {

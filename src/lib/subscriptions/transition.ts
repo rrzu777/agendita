@@ -6,6 +6,7 @@ import {
   type SubscriptionStatus as PrismaSubscriptionStatus,
 } from '@prisma/client'
 import { randomUUID } from 'node:crypto'
+import { queueSubscriptionNotification, type SubscriptionNotificationKind } from '@/lib/notifications/subscriptions'
 import {
   deriveSubscriptionTransition,
   type DerivedSubscriptionTransition,
@@ -87,6 +88,41 @@ export class SubscriptionProviderPaymentOwnershipConflictError extends Error {
   constructor() {
     super('El pago externo ya pertenece a otra suscripción')
     this.name = 'SubscriptionProviderPaymentOwnershipConflictError'
+  }
+}
+
+function lifecycleNotification(input: {
+  subscription: { businessId: string; id: string; status: PrismaSubscriptionStatus; currentPeriodEnd: Date }
+  derived: DerivedSubscriptionTransition
+  command: SubscriptionCommand | AdminSubscriptionCommand
+}): { kind: SubscriptionNotificationKind; effectiveDate: Date } | null {
+  const { subscription, derived, command } = input
+  const kind: SubscriptionNotificationKind | null = derived.auditAction === 'invoice_approved'
+    ? subscription.status === 'trialing' ? 'subscription_activated' : 'subscription_payment_approved'
+    : derived.auditAction === 'subscription_recovered' ? 'subscription_recovered'
+      : derived.auditAction === 'invoice_failed' || derived.auditAction === 'marked_past_due_by_admin'
+        ? 'subscription_payment_failed'
+        : derived.auditAction === 'subscription_suspended' || derived.auditAction === 'business_suspended_by_admin'
+          ? 'subscription_suspended'
+          : derived.auditAction === 'business_activated_by_admin' ? 'subscription_activated'
+            : derived.auditAction?.startsWith('subscription_cancellation_requested')
+              ? 'subscription_cancellation_requested'
+              : derived.auditAction === 'subscription_cancelled_at_period_end'
+                ? 'subscription_cancelled'
+                : derived.auditAction === 'payment_recorded_by_admin'
+                  ? subscription.status === 'past_due' ? 'subscription_recovered' : 'subscription_payment_approved'
+                  : null
+  if (!kind) return null
+  const occurredAt = command.type === 'invoice_approved' ? command.paidAt
+    : command.type === 'invoice_failed' ? command.occurredAt
+      : command.type === 'time_elapsed' ? command.at
+        : command.type === 'cancel_at_period_end' ? command.requestedAt
+          : command.type === 'provider_cancelled' ? command.occurredAt
+            : 'occurredAt' in command ? command.occurredAt
+              : subscription.currentPeriodEnd
+  return {
+    kind,
+    effectiveDate: kind === 'subscription_cancellation_requested' ? subscription.currentPeriodEnd : occurredAt,
   }
 }
 
@@ -680,6 +716,15 @@ export async function applySubscriptionTransition(
         notes: input.actor?.notes,
       },
     })
+
+    const notification = lifecycleNotification({ subscription, derived, command: transitionCommand })
+    if (notification) {
+      await queueSubscriptionNotification(notification.kind, {
+        businessId: subscription.businessId,
+        subscriptionId: subscription.id,
+        effectiveDate: notification.effectiveDate,
+      }, { prisma: tx, now: () => notification.effectiveDate })
+    }
 
     return { applied: true, status: derived.nextStatus }
   })
