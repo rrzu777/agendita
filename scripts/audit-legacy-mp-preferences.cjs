@@ -8,9 +8,10 @@ const { PrismaClient } = require('@prisma/client')
 const MAX_LIMIT = 100
 
 function classifyLegacyPayment(payment) {
-  const exactlyOneOwner = Boolean(payment.bookingId) !== Boolean(payment.packagePurchaseId)
-  if (!exactlyOneOwner || !payment.accountConnected) return 'manual_review'
-  if (payment.status === 'pending' && !payment.providerPaymentId) return 'reissue'
+  // providerPreferenceId/environment/account state are not evidence that an
+  // old POST was never emitted. Any pending legacy row can still represent a
+  // payable preference and therefore requires operator reconciliation.
+  if (payment.status === 'pending') return 'manual_review'
   return 'no_action'
 }
 
@@ -41,7 +42,6 @@ async function auditLegacyPreferences(prisma, options) {
   const rows = await prisma.payment.findMany({
     where: {
       provider: 'mercado_pago',
-      providerPreferenceId: { not: null },
       createdAt: { lt: options.before },
       ...(options.environment ? { providerEnvironment: options.environment } : {}),
       providerIncidents: { none: { kind: { in: ['legacy_preference_reissue', 'legacy_preference_manual_review'] } } },
@@ -75,46 +75,21 @@ async function auditLegacyPreferences(prisma, options) {
 
   if (options.apply) {
     for (const item of classified) {
-      if (item.classification === 'no_action' || !item.row.providerEnvironment) continue
+      if (item.classification === 'no_action') continue
       await prisma.$transaction(async (tx) => {
-        const kind = item.classification === 'reissue'
-          ? 'legacy_preference_reissue'
-          : 'legacy_preference_manual_review'
-        if (item.classification === 'reissue') {
-          const cancelled = await tx.payment.updateMany({
-            where: { id: item.row.id, status: 'pending', providerPaymentId: null },
-            data: { status: 'cancelled' },
-          })
-          if (cancelled.count !== 1) return
-          await tx.payment.create({
-            data: {
-              businessId: item.row.businessId,
-              bookingId: item.row.bookingId,
-              packagePurchaseId: item.row.packagePurchaseId,
-              customerId: item.row.customerId,
-              provider: 'mercado_pago',
-              providerEnvironment: item.row.providerEnvironment,
-              amount: item.row.amount,
-              currency: item.row.currency,
-              status: 'pending',
-              paymentType: item.row.paymentType,
-              paymentMethod: item.row.paymentMethod,
-            },
-          })
-        }
+        const kind = 'legacy_preference_manual_review'
         const incidentData = {
-            paymentId: item.row.id,
-            dedupeKey: `${kind}:${item.row.id}`,
-            environment: item.row.providerEnvironment,
-            kind,
-            status: item.classification === 'reissue' ? 'resolved' : 'manual_review',
-            resolvedAt: item.classification === 'reissue' ? new Date() : null,
-            payload: { classification: item.classification },
+          paymentId: item.row.id,
+          dedupeKey: `${kind}:${item.row.id}`,
+          environment: item.row.providerEnvironment,
+          kind,
+          status: 'manual_review',
+          resolvedAt: null,
+          payload: { classification: item.classification },
         }
-        await tx.paymentProviderIncident.upsert({
-          where: { dedupeKey: incidentData.dedupeKey },
-          update: {},
-          create: incidentData,
+        await tx.paymentProviderIncident.createMany({
+          data: incidentData,
+          skipDuplicates: true,
         })
       })
     }

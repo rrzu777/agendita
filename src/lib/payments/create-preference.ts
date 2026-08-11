@@ -30,6 +30,27 @@ export async function createMpPreferenceForPayment(
   provider: PaymentProvider,
   input: CreatePaymentInput,
 ): Promise<CreatePaymentResult> {
+  const isMercadoPago = provider.name === 'mercado_pago'
+  const environment = isMercadoPago ? requireMercadoPagoEnvironment() : null
+  const creationDedupeKey = input.localPaymentId && isMercadoPago
+    ? `preference_creation:${input.localPaymentId}`
+    : null
+  if (input.localPaymentId && creationDedupeKey) {
+    try {
+      await prisma.paymentProviderIncident.create({
+        data: {
+          paymentId: input.localPaymentId,
+          dedupeKey: creationDedupeKey,
+          environment: environment!,
+          kind: 'preference_creation',
+          status: 'in_progress',
+          payload: { phase: 'provider_post' },
+        },
+      })
+    } catch {
+      throw new Error('Mercado Pago preference creation is already in progress or requires manual reconciliation.')
+    }
+  }
   const providerInput = input.localPaymentId && provider.name === 'mercado_pago'
     ? {
         ...input,
@@ -44,19 +65,28 @@ export async function createMpPreferenceForPayment(
       ? error.outcome === 'ambiguous'
       : error instanceof Error && error.name === 'MercadoPagoAmbiguousPreferenceError'
     if (input.localPaymentId && ambiguous) {
-      await prisma.paymentProviderIncident.upsert({
-        where: { dedupeKey: `preference_creation:${input.localPaymentId}` },
-        update: {},
-        create: {
-          paymentId: input.localPaymentId,
-          dedupeKey: `preference_creation:${input.localPaymentId}`,
-          environment: requireMercadoPagoEnvironment(),
+      await prisma.paymentProviderIncident.update({
+        where: { dedupeKey: creationDedupeKey! },
+        data: {
           kind: 'preference_creation_ambiguous',
           status: 'manual_review',
           payload: { outcome: 'ambiguous' },
         },
       })
       throw new Error('Mercado Pago preference creation requires manual reconciliation.')
+    }
+    if (creationDedupeKey) {
+      if (error instanceof MercadoPagoPreferenceCreationError && error.outcome === 'definitive_rejection') {
+        await prisma.paymentProviderIncident.delete({ where: { dedupeKey: creationDedupeKey } })
+      } else {
+        await prisma.paymentProviderIncident.update({
+          where: { dedupeKey: creationDedupeKey },
+          data: {
+            kind: 'preference_creation_ambiguous', status: 'manual_review',
+            payload: { outcome: 'unknown' },
+          },
+        })
+      }
     }
     throw error
   }
@@ -70,7 +100,7 @@ export async function createMpPreferenceForPayment(
       data: {
         rawPayload: providerPreferenceId ? ({ preferenceId: providerPreferenceId } satisfies Prisma.InputJsonObject) : undefined,
         providerPreferenceId,
-        providerEnvironment: providerPreferenceId ? requireMercadoPagoEnvironment() : null,
+        providerEnvironment: providerPreferenceId ? environment! : null,
       },
     })
     if (persisted.count !== 1) {
@@ -84,7 +114,7 @@ export async function createMpPreferenceForPayment(
           create: {
             paymentId: input.localPaymentId,
             dedupeKey: `preference_conflict:${input.localPaymentId}`,
-            environment: requireMercadoPagoEnvironment(),
+            environment: environment!,
             providerPaymentId: null,
             kind: 'preference_conflict',
             status: 'manual_review',
@@ -93,6 +123,12 @@ export async function createMpPreferenceForPayment(
         })
         throw new Error('Mercado Pago preference conflict requires manual reconciliation.')
       }
+    }
+    if (creationDedupeKey) {
+      await prisma.paymentProviderIncident.update({
+        where: { dedupeKey: creationDedupeKey },
+        data: { status: 'resolved', resolvedAt: new Date(), payload: { outcome: 'created' } },
+      })
     }
   }
   return result

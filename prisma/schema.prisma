@@ -791,7 +791,7 @@ model PaymentProviderIncident {
   id                String                  @id @default(cuid())
   paymentId         String
   dedupeKey         String                  @unique
-  environment       MercadoPagoEnvironment
+  environment       MercadoPagoEnvironment?
   providerPaymentId String?
   kind              String
   status            String                  @default("manual_review")

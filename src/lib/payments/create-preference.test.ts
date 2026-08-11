@@ -4,14 +4,22 @@ const update = vi.fn()
 const updateMany = vi.fn()
 const findUnique = vi.fn()
 const incidentUpsert = vi.fn()
+const incidentCreate = vi.fn()
+const incidentUpdate = vi.fn()
+const incidentDelete = vi.fn()
 vi.mock('@/lib/db', () => ({ prisma: { payment: {
   update: (...a: unknown[]) => update(...a),
   updateMany: (...a: unknown[]) => updateMany(...a),
   findUnique: (...a: unknown[]) => findUnique(...a),
-}, paymentProviderIncident: { upsert: (...a: unknown[]) => incidentUpsert(...a) } } }))
+}, paymentProviderIncident: {
+  upsert: (...a: unknown[]) => incidentUpsert(...a),
+  create: (...a: unknown[]) => incidentCreate(...a),
+  update: (...a: unknown[]) => incidentUpdate(...a),
+  delete: (...a: unknown[]) => incidentDelete(...a),
+} } }))
 
 import { createMpPreferenceForPayment } from './create-preference'
-import type { PaymentProvider } from './types'
+import type { CreatePaymentResult, PaymentProvider } from './types'
 
 function fakeProvider(): PaymentProvider {
   return {
@@ -43,6 +51,9 @@ describe('createMpPreferenceForPayment', () => {
     updateMany.mockReset().mockResolvedValue({ count: 1 })
     findUnique.mockReset()
     incidentUpsert.mockReset()
+    incidentCreate.mockReset().mockResolvedValue({ id: 'lease-1' })
+    incidentUpdate.mockReset().mockResolvedValue({ id: 'lease-1' })
+    incidentDelete.mockReset().mockResolvedValue({ id: 'lease-1' })
     process.env.MERCADO_PAGO_ENVIRONMENT = 'sandbox'
   })
 
@@ -122,10 +133,34 @@ describe('createMpPreferenceForPayment', () => {
       webhookUrl: 'https://x/w', localPaymentId: 'pay1',
     })).rejects.toThrow(/manual reconciliation/i)
 
-    expect(incidentUpsert).toHaveBeenCalledWith(expect.objectContaining({
-      create: expect.objectContaining({
-        paymentId: 'pay1', kind: 'preference_creation_ambiguous', status: 'manual_review',
-      }),
+    expect(incidentUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { dedupeKey: 'preference_creation:pay1' },
+      data: expect.objectContaining({ kind: 'preference_creation_ambiguous', status: 'manual_review' }),
     }))
+  })
+
+  it('allows only one provider POST for concurrent calls on the same local Payment', async () => {
+    const provider = fakeProvider()
+    let release!: () => void
+    provider.createPayment = vi.fn(() => new Promise<CreatePaymentResult>((resolve) => {
+      release = () => resolve({
+        paymentId: 'pay1', providerPaymentId: null, redirectUrl: 'https://mp/redirect',
+        status: 'pending', rawResponse: { preferenceId: 'pref1' },
+      })
+    }))
+    incidentCreate
+      .mockResolvedValueOnce({ id: 'lease-1' })
+      .mockRejectedValueOnce(Object.assign(new Error('unique'), { code: 'P2002' }))
+    const input = {
+      amount: 1, currency: 'CLP', description: 'x', returnUrl: 'https://x/r',
+      webhookUrl: 'https://x/w', localPaymentId: 'pay1',
+    }
+
+    const first = createMpPreferenceForPayment(provider, input)
+    await vi.waitFor(() => expect(provider.createPayment).toHaveBeenCalledTimes(1))
+    await expect(createMpPreferenceForPayment(provider, input)).rejects.toThrow(/already|reconciliation|progreso/i)
+    expect(provider.createPayment).toHaveBeenCalledTimes(1)
+    release()
+    await expect(first).resolves.toMatchObject({ paymentId: 'pay1' })
   })
 })

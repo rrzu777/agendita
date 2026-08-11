@@ -106,8 +106,10 @@ queda en reconciliación manual. Los payloads persistidos son proyecciones sanit
 no incluyen payer, tarjeta, identificación, tokens, email, URLs ni objetos anidados.
 
 Checkout Preferences no garantiza idempotencia para su `POST`. Por eso Agendita no
-envía ni confía en `X-Idempotency-Key`: timeout o 5xx dejan el intento en
-`manual_review`, lo excluyen de reuso y no disparan un retry automático.
+envía ni confía en `X-Idempotency-Key`. Antes del POST toma un lease durable por
+`Payment.id`: dos requests concurrentes jamás emiten dos preferencias para el mismo
+intento. Timeout, 5xx o respuesta 2xx inválida dejan el lease en `manual_review`,
+excluyen ese `Payment` del reuso y un nuevo click explícito crea otro intento local.
 
 El inventario legacy es ejecutable, acotado y sólo consulta DB por defecto:
 
@@ -115,11 +117,13 @@ El inventario legacy es ejecutable, acotado y sólo consulta DB por defecto:
 npm run payments:audit-legacy-mp -- --before 2026-08-11T00:00:00Z --limit 50
 ```
 
-El resultado expone únicamente conteos `reissue`, `manual_review` y `no_action`.
-Tras revisar esos conteos, `--apply` cancela por CAS sólo pendientes atribuibles,
-crea un intento local nuevo sin contactar Mercado Pago y deja el resto en revisión
-manual. El checkout normal posterior emite la preferencia con la credencial del
-negocio. El script no lee `MERCADO_PAGO_ACCESS_TOKEN`, no prueba tokens y no usa red.
+El resultado expone únicamente conteos `reissue`, `manual_review` y `no_action`
+(`reissue` permanece en cero con la evidencia disponible). Ni un
+`providerPreferenceId`/ambiente nulo ni una cuenta vendedora ausente o expirada
+demuestran que el POST nunca ocurrió: todo pago legacy pendiente se clasifica de
+forma conservadora como `manual_review`. Tras revisar los conteos, `--apply` sólo
+persiste incidentes idempotentes; no cancela pagos, no crea intentos, no lee
+`MERCADO_PAGO_ACCESS_TOKEN`, no prueba tokens y no usa red.
 
 ## Desconexión
 

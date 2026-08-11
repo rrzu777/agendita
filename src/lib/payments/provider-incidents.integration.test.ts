@@ -59,7 +59,19 @@ describe('approved provider payment claim (PostgreSQL)', () => {
     expect(rows.map((row) => row.indexname)).toEqual(expect.arrayContaining([
       'PaymentProviderIncident_dedupeKey_key',
       'PaymentProviderIncident_paymentId_status_createdAt_idx',
+      'PaymentProviderIncident_unknownEnv_providerPaymentId_key',
     ]))
+  })
+
+  it('keeps provider-payment uniqueness when a legacy incident environment is unknown', async () => {
+    await prisma.paymentProviderIncident.create({ data: {
+      paymentId: PAYMENT_ID, dedupeKey: 'unknown-env-a', environment: null,
+      providerPaymentId: 'unknown-env-provider-payment', kind: 'legacy', payload: {},
+    } })
+    await expect(prisma.paymentProviderIncident.create({ data: {
+      paymentId: PAYMENT_ID, dedupeKey: 'unknown-env-b', environment: null,
+      providerPaymentId: 'unknown-env-provider-payment', kind: 'legacy', payload: {},
+    } })).rejects.toMatchObject({ code: 'P2002' })
   })
 
   it('serializes distinct concurrent approvals and retains the loser for manual review', async () => {

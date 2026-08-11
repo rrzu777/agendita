@@ -120,6 +120,24 @@ describe('initiatePackagePayment', () => {
     expect(createMpPreferenceForPayment.mock.calls[0][1].localPaymentId).toBe('payProductionExisting')
   })
 
+  it('never reuses a Payment whose preference POST is open or ambiguous', async () => {
+    prismaMock.payment.findFirst.mockImplementation(({ where }) => {
+      expect(where.providerIncidents).toEqual({
+        none: {
+          kind: { in: ['preference_creation', 'preference_creation_ambiguous'] },
+          status: { in: ['in_progress', 'manual_review'] },
+        },
+      })
+      return null
+    })
+    prismaMock.payment.create.mockResolvedValue({ id: 'payFreshAfterAmbiguous' })
+
+    await initiatePackagePayment({ purchaseId: 'pp1' })
+
+    expect(createMpPreferenceForPayment).toHaveBeenCalledTimes(1)
+    expect(createMpPreferenceForPayment.mock.calls[0][1].localPaymentId).toBe('payFreshAfterAmbiguous')
+  })
+
   it('fails closed before pending lookup when Mercado Pago environment is missing', async () => {
     delete process.env.MERCADO_PAGO_ENVIRONMENT
 

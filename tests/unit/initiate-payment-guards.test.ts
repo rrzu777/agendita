@@ -208,6 +208,25 @@ describe('initiatePayment - amount guards', () => {
     expect(createMpPreferenceForPayment.mock.calls[0][1].localPaymentId).toBe('pay-production-existing')
   })
 
+  it('never reuses a Payment whose preference POST is open or ambiguous', async () => {
+    setPayableMercadoPagoBooking()
+    mockPrisma.payment.findFirst.mockImplementation(({ where }) => {
+      expect(where.providerIncidents).toEqual({
+        none: {
+          kind: { in: ['preference_creation', 'preference_creation_ambiguous'] },
+          status: { in: ['in_progress', 'manual_review'] },
+        },
+      })
+      return null
+    })
+    mockPrisma.payment.create.mockResolvedValue({ id: 'pay-fresh-after-ambiguous' })
+
+    await initiatePayment({ bookingId: 'booking-mp' })
+
+    expect(createMpPreferenceForPayment).toHaveBeenCalledTimes(1)
+    expect(createMpPreferenceForPayment.mock.calls[0][1].localPaymentId).toBe('pay-fresh-after-ambiguous')
+  })
+
   it('fails closed before pending lookup when Mercado Pago environment is missing', async () => {
     setPayableMercadoPagoBooking()
     delete process.env.MERCADO_PAGO_ENVIRONMENT

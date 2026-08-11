@@ -259,7 +259,12 @@ async function _initiatePackagePayment(input: { purchaseId: string }): Promise<
       provider: provider.name as PaymentProvider,
       providerEnvironment,
       providerPreferenceId: null,
-      providerIncidents: { none: { status: 'manual_review' } },
+      providerIncidents: {
+        none: {
+          kind: { in: ['preference_creation', 'preference_creation_ambiguous'] },
+          status: { in: ['in_progress', 'manual_review'] },
+        },
+      },
     },
   })
 

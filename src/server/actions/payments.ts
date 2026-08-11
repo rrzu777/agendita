@@ -128,7 +128,12 @@ async function _initiatePayment(data: {
         providerEnvironment,
         providerPreferenceId: null,
         status: 'pending',
-        providerIncidents: { none: { status: 'manual_review' } },
+        providerIncidents: {
+          none: {
+            kind: { in: ['preference_creation', 'preference_creation_ambiguous'] },
+            status: { in: ['in_progress', 'manual_review'] },
+          },
+        },
       },
     })
 
