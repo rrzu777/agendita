@@ -14,7 +14,7 @@ const mockPrisma = {
   $transaction: vi.fn(),
   businessSubscription: mockBusinessSubscription,
   business: { update: vi.fn() },
-  subscriptionPayment: { create: vi.fn() },
+  subscriptionPayment: { create: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() },
   subscriptionLog: { create: vi.fn() },
 }
 
@@ -24,6 +24,7 @@ vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 vi.mock('@/lib/auth/user', () => ({ requirePlatformAdminUser }))
 
 function setupTxMock() {
+  mockBusinessSubscription.updateMany.mockResolvedValue({ count: 1 })
   vi.mocked(mockPrisma.$transaction).mockImplementation(async (operations) => {
     if (Array.isArray(operations)) {
       return operations.map((op) => {
@@ -98,6 +99,7 @@ describe('adminRecordSubscriptionPayment creates records', () => {
       businessId: 'biz-1',
       status: 'trialing',
       planId: 'plan-beta',
+      currency: 'CLP',
     })
 
     const { adminRecordSubscriptionPayment } = await import('@/server/actions/admin')

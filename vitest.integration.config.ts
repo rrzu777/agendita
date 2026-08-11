@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     name: 'integration',
-    include: ['tests/integration/**/*.test.ts'],
+    include: ['tests/integration/**/*.test.ts', 'src/**/*.integration.test.ts'],
     environment: 'node',
     globals: true,
     fileParallelism: false,
