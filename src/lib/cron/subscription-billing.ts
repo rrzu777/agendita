@@ -2,7 +2,10 @@ import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { getSubscriptionEnforcementEnabled } from '@/lib/env'
 import { logger } from '@/lib/logger'
-import { reconcileSubscription } from '@/lib/subscriptions/reconciliation'
+import {
+  reconcileSubscription,
+  type SubscriptionReconciliationResult,
+} from '@/lib/subscriptions/reconciliation'
 import {
   applySubscriptionTransition,
   type ApplySubscriptionTransitionCommand,
@@ -57,7 +60,7 @@ export type SubscriptionBillingCronResult = {
 
 export type SubscriptionBillingCronDependencies = {
   prisma: PrismaClient
-  reconcile(id: string): Promise<unknown>
+  reconcile(id: string): Promise<SubscriptionReconciliationResult>
   applyTransition(
     prisma: PrismaClient,
     input: ApplySubscriptionTransitionCommand,
@@ -148,6 +151,9 @@ async function processClaimedSubscription(input: {
 }) {
   const { dependencies, candidate, leaseUntil, now, enforcementEnabled, result } = input
   let current = candidate
+  let providerCancellationConfirmed = false
+  let expectedCancellationProviderSnapshot:
+    ApplySubscriptionTransitionCommand['expectedCancellationProviderSnapshot']
   try {
     if (
       candidate.provider === 'mercado_pago' &&
@@ -155,7 +161,7 @@ async function processClaimedSubscription(input: {
       candidate.providerSubscriptionId
     ) {
       try {
-        await dependencies.reconcile(candidate.id)
+        const reconciliation = await dependencies.reconcile(candidate.id)
         result.reconciled++
         const refreshed = await dependencies.prisma.businessSubscription.findUnique({
           where: { id: candidate.id },
@@ -163,6 +169,22 @@ async function processClaimedSubscription(input: {
         })
         if (!refreshed) throw new Error('Subscription disappeared during reconciliation.')
         current = refreshed
+        providerCancellationConfirmed = reconciliation.providerTerminalCanceled &&
+          refreshed.provider === candidate.provider &&
+          refreshed.environment === candidate.environment &&
+          refreshed.providerSubscriptionId === candidate.providerSubscriptionId
+        if (
+          providerCancellationConfirmed &&
+          refreshed.provider === 'mercado_pago' &&
+          refreshed.environment &&
+          refreshed.providerSubscriptionId
+        ) {
+          expectedCancellationProviderSnapshot = {
+            provider: refreshed.provider,
+            environment: refreshed.environment,
+            providerSubscriptionId: refreshed.providerSubscriptionId,
+          }
+        }
       } catch {
         result.errors++
         dependencies.recordError?.()
@@ -187,7 +209,15 @@ async function processClaimedSubscription(input: {
     try {
       const transition = await dependencies.applyTransition(dependencies.prisma, {
         subscriptionId: current.id,
-        command: { type: 'time_elapsed', at: now, enforcementEnabled },
+        ...(expectedCancellationProviderSnapshot
+          ? { expectedCancellationProviderSnapshot }
+          : {}),
+        command: {
+          type: 'time_elapsed',
+          at: now,
+          enforcementEnabled,
+          providerCancellationConfirmed,
+        },
       })
       if (transition.applied && transition.status === 'suspended') result.suspended++
     } catch {

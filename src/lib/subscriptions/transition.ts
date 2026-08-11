@@ -51,6 +51,11 @@ export type ApplySubscriptionTransitionCommand = {
     amount: number
     currency: string
   }
+  expectedCancellationProviderSnapshot?: {
+    provider: 'mercado_pago'
+    environment: MercadoPagoEnvironment
+    providerSubscriptionId: string
+  }
   recoveryAdoption?: {
     attemptId: string
     businessId: string
@@ -139,6 +144,7 @@ export async function findExistingProviderPaymentClaim(
 
 function toState(subscription: {
   status: PrismaSubscriptionStatus
+  provider: SubscriptionProvider
   interval: 'monthly' | 'yearly'
   currentPeriodStart: Date
   currentPeriodEnd: Date
@@ -572,15 +578,32 @@ export async function applySubscriptionTransition(
       }
     }
 
+    let transitionCommand = input.command
+    if (input.command.type === 'time_elapsed') {
+      const cancellationSnapshot = input.expectedCancellationProviderSnapshot
+      let providerCancellationConfirmed = false
+      if (cancellationSnapshot) {
+        if (
+          subscription.provider !== cancellationSnapshot.provider ||
+          subscription.environment !== cancellationSnapshot.environment ||
+          subscription.providerSubscriptionId !== cancellationSnapshot.providerSubscriptionId
+        ) {
+          throw new SubscriptionProviderSnapshotMismatchError()
+        }
+        providerCancellationConfirmed = true
+      }
+      transitionCommand = { ...input.command, providerCancellationConfirmed }
+    }
+
     const before = toState(subscription)
     const derived: DerivedSubscriptionTransition & {
       subscriptionData?: Prisma.BusinessSubscriptionUncheckedUpdateManyInput
       businessData?: Prisma.BusinessUncheckedUpdateInput
-    } = isAdminCommand(input.command)
-      ? adminTransition(before, input.command)
+    } = isAdminCommand(transitionCommand)
+      ? adminTransition(before, transitionCommand)
       : deriveSubscriptionTransition({
           subscription: before,
-          command: input.command,
+          command: transitionCommand,
           paymentAlreadyApplied: false,
         })
 

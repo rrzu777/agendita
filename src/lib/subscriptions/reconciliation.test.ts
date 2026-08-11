@@ -20,9 +20,12 @@ const localSubscription = {
   providerPlanId: 'provider-plan',
   amount: 15_000,
   currency: 'CLP',
+  currentPeriodStart: new Date('2026-05-11T10:00:00.000Z'),
   currentPeriodEnd: new Date('2026-06-11T10:00:00.000Z'),
   lastPaidAt: null,
   cancelAtPeriodEnd: false,
+  cancellationRequestedAt: null,
+  updatedAt: new Date('2026-08-10T12:00:00.000Z'),
 }
 const providerSubscription: MpSubscription = {
   id: 'provider-subscription',
@@ -144,7 +147,7 @@ describe('reconcileSubscription', () => {
     })
 
     await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toEqual({
-      outcome: 'reconciled', invoices: 2, applied: 2,
+      outcome: 'reconciled', invoices: 2, applied: 2, providerTerminalCanceled: false,
     })
     expect(process.mock.calls.map(([event]) => event.resourceId)).toEqual([
       JUNE_APPROVED.id,
@@ -293,15 +296,27 @@ describe('reconcileSubscription', () => {
     expect(client.cancelSubscription).not.toHaveBeenCalled()
     expectNoSuccessfulReconciliation(dependencies)
 
-    await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toMatchObject({
-      outcome: 'reconciled', invoices: 3, applied: 0,
-    })
+    await expect(reconcileSubscription(localSubscription.id, dependencies))
+      .rejects.toMatchObject({ name: 'SubscriptionReconciliationPartialError' })
     expect(process).toHaveBeenCalledTimes(3)
+    expect(client.cancelSubscription).toHaveBeenCalledTimes(1)
+    expectNoSuccessfulReconciliation(dependencies)
+
+    client.getSubscription.mockResolvedValue({
+      ...providerSubscription,
+      status: 'canceled',
+      providerStatus: 'canceled',
+      nextPaymentAt: null,
+    })
+    await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toMatchObject({
+      outcome: 'reconciled', invoices: 3, applied: 1, providerTerminalCanceled: true,
+    })
+    expect(process).toHaveBeenCalledTimes(4)
     expect(client.cancelSubscription).toHaveBeenCalledTimes(1)
     expect(dependencies.prisma.businessSubscription.updateMany).toHaveBeenCalledTimes(1)
   })
 
-  it('reintenta cancelar renovaciones aun si el approved exacto no requiere refetch', async () => {
+  it('un cancel remoto exitoso exige follow-up antes de sellar reconciliación', async () => {
     const { dependencies, client, process } = createDependencies({
       local: { ...localSubscription, cancelAtPeriodEnd: true },
       invoices: [JULY_APPROVED],
@@ -317,20 +332,87 @@ describe('reconcileSubscription', () => {
         providerPaymentId: JULY_APPROVED.providerPaymentId,
         providerInvoiceId: JULY_APPROVED.id,
       }])
-    client.cancelSubscription
-      .mockRejectedValueOnce(new Error('ambiguous cancellation'))
-
     await expect(reconcileSubscription(localSubscription.id, dependencies))
-      .rejects.toThrow('ambiguous cancellation')
+      .rejects.toMatchObject({ name: 'SubscriptionReconciliationPartialError' })
     expect(process).not.toHaveBeenCalled()
     expectNoSuccessfulReconciliation(dependencies)
 
-    await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toMatchObject({
-      outcome: 'reconciled', invoices: 1, applied: 0,
+    client.getSubscription.mockResolvedValue({
+      ...providerSubscription,
+      status: 'canceled',
+      providerStatus: 'canceled',
+      nextPaymentAt: null,
     })
-    expect(client.cancelSubscription).toHaveBeenCalledTimes(2)
-    expect(process).not.toHaveBeenCalled()
+    await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toMatchObject({
+      outcome: 'reconciled', invoices: 1, providerTerminalCanceled: true,
+    })
+    expect(client.cancelSubscription).toHaveBeenCalledTimes(1)
+    expect(process).toHaveBeenCalledTimes(1)
     expect(dependencies.prisma.businessSubscription.updateMany).toHaveBeenCalledTimes(1)
+  })
+
+  it('una respuesta perdida tras cancelar converge sin repetir el side effect remoto', async () => {
+    let snapshot = providerSubscription
+    const { dependencies, client } = createDependencies({
+      local: { ...localSubscription, cancelAtPeriodEnd: true },
+      invoices: [],
+    })
+    client.getSubscription.mockImplementation(async () => snapshot)
+    client.cancelSubscription.mockImplementationOnce(async () => {
+      snapshot = {
+        ...providerSubscription,
+        status: 'canceled',
+        providerStatus: 'canceled',
+        nextPaymentAt: null,
+      }
+      throw new Error('ambiguous cancellation response')
+    })
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies))
+      .rejects.toThrow('ambiguous cancellation response')
+    expectNoSuccessfulReconciliation(dependencies)
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toMatchObject({
+      providerTerminalCanceled: true,
+    })
+    expect(client.cancelSubscription).toHaveBeenCalledTimes(1)
+    expect(dependencies.prisma.businessSubscription.updateMany).toHaveBeenCalledTimes(1)
+  })
+
+  it('si cambia la intención durante la red aborta antes de cancelar o sellar', async () => {
+    const changed = {
+      ...localSubscription,
+      cancelAtPeriodEnd: true,
+      cancellationRequestedAt: new Date('2026-08-11T11:59:00.000Z'),
+      updatedAt: new Date('2026-08-11T11:59:00.000Z'),
+    }
+    const { dependencies, client } = createDependencies({ invoices: [] })
+    ;(dependencies.prisma.businessSubscription.findUnique as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(localSubscription)
+      .mockResolvedValueOnce(changed)
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies))
+      .rejects.toMatchObject({ name: 'SubscriptionReconciliationValidationError' })
+    expect(client.cancelSubscription).not.toHaveBeenCalled()
+    expectNoSuccessfulReconciliation(dependencies)
+  })
+
+  it('si cambia la identidad financiera durante la red no adopta el snapshot nuevo', async () => {
+    const changed = {
+      ...localSubscription,
+      planId: 'plan-concurrent-change',
+      providerPlanId: 'provider-plan-concurrent-change',
+      amount: 20_000,
+      updatedAt: new Date('2026-08-11T11:59:00.000Z'),
+    }
+    const { dependencies } = createDependencies({ invoices: [] })
+    ;(dependencies.prisma.businessSubscription.findUnique as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(localSubscription)
+      .mockResolvedValueOnce(changed)
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies))
+      .rejects.toMatchObject({ name: 'SubscriptionReconciliationValidationError' })
+    expectNoSuccessfulReconciliation(dependencies)
   })
 
   it('permite cerrar canceled sin nextPaymentAt sólo si el último approved ya es duplicate', async () => {
@@ -348,7 +430,7 @@ describe('reconcileSubscription', () => {
       .mockResolvedValueOnce({ outcome: 'applied', status: 'active' })
 
     await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toEqual({
-      outcome: 'reconciled', invoices: 1, applied: 1,
+      outcome: 'reconciled', invoices: 1, applied: 1, providerTerminalCanceled: true,
     })
     expect(process.mock.calls[0]?.[0]).toMatchObject({
       resourceId: JULY_APPROVED.id,
@@ -418,7 +500,7 @@ describe('reconcileSubscription', () => {
     const { dependencies, client } = createDependencies({ invoices: [] })
 
     await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toEqual({
-      outcome: 'reconciled', invoices: 0, applied: 0,
+      outcome: 'reconciled', invoices: 0, applied: 0, providerTerminalCanceled: false,
     })
     expect(client.getCurrentAccountId).toHaveBeenCalledTimes(1)
     expect(dependencies.prisma.businessSubscription.updateMany).toHaveBeenCalledWith({
@@ -433,6 +515,12 @@ describe('reconcileSubscription', () => {
         providerPlanId: localSubscription.providerPlanId,
         amount: localSubscription.amount,
         currency: localSubscription.currency,
+        status: localSubscription.status,
+        currentPeriodStart: localSubscription.currentPeriodStart,
+        currentPeriodEnd: localSubscription.currentPeriodEnd,
+        cancelAtPeriodEnd: localSubscription.cancelAtPeriodEnd,
+        cancellationRequestedAt: localSubscription.cancellationRequestedAt,
+        updatedAt: localSubscription.updatedAt,
       },
       data: { lastReconciledAt: NOW },
     })

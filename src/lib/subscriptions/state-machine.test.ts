@@ -17,6 +17,7 @@ type TestSubscriptionState = SubscriptionState & {
 function state(overrides: Partial<TestSubscriptionState> = {}): TestSubscriptionState {
   return {
     status: 'trialing',
+    provider: 'manual',
     interval: 'monthly',
     currentPeriodStart: new Date('2026-08-01T00:00:00.000Z'),
     currentPeriodEnd: new Date('2026-09-01T00:00:00.000Z'),
@@ -130,6 +131,63 @@ describe('deriveSubscriptionTransition', () => {
         type: 'time_elapsed',
         at: new Date('2026-09-01T00:00:00.000Z'),
         enforcementEnabled: true,
+        providerCancellationConfirmed: true,
+      } as const,
+      expected: 'cancelled',
+    },
+    {
+      name: 'cancelAtPeriodEnd manual sin provider ID se valida en el estado actual',
+      subscription: state({ status: 'active', cancelAtPeriodEnd: true }),
+      command: {
+        type: 'time_elapsed',
+        at: new Date('2026-09-01T00:00:00.000Z'),
+        enforcementEnabled: true,
+        providerCancellationConfirmed: false,
+      } as const,
+      expected: 'cancelled',
+    },
+    {
+      name: 'cancelAtPeriodEnd MP sin provider ID no usa la excepción manual',
+      subscription: state({
+        status: 'active',
+        provider: 'mercado_pago',
+        cancelAtPeriodEnd: true,
+      }),
+      command: {
+        type: 'time_elapsed',
+        at: new Date('2026-09-01T00:00:00.000Z'),
+        enforcementEnabled: true,
+        providerCancellationConfirmed: false,
+      } as const,
+      expected: 'active',
+    },
+    {
+      name: 'cancelAtPeriodEnd MP sin confirmación remota al cierre',
+      subscription: state({
+        status: 'active',
+        cancelAtPeriodEnd: true,
+        providerSubscriptionId: 'provider-subscription',
+      }),
+      command: {
+        type: 'time_elapsed',
+        at: new Date('2026-09-01T00:00:00.000Z'),
+        enforcementEnabled: true,
+        providerCancellationConfirmed: false,
+      } as const,
+      expected: 'active',
+    },
+    {
+      name: 'cancelAtPeriodEnd MP confirmado al cierre',
+      subscription: state({
+        status: 'active',
+        cancelAtPeriodEnd: true,
+        providerSubscriptionId: 'provider-subscription',
+      }),
+      command: {
+        type: 'time_elapsed',
+        at: new Date('2026-09-01T00:00:00.000Z'),
+        enforcementEnabled: true,
+        providerCancellationConfirmed: true,
       } as const,
       expected: 'cancelled',
     },

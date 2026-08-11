@@ -76,7 +76,12 @@ function createDependencies(rows: ReturnType<typeof candidate>[], enforcementEna
         }),
       },
     },
-    reconcile: vi.fn().mockResolvedValue({ outcome: 'reconciled', invoices: 0, applied: 0 }),
+    reconcile: vi.fn().mockResolvedValue({
+      outcome: 'reconciled',
+      invoices: 0,
+      applied: 0,
+      providerTerminalCanceled: false,
+    }),
     applyTransition,
     enforcementEnabled: () => enforcementEnabled,
   } as unknown as SubscriptionBillingCronDependencies
@@ -146,7 +151,12 @@ describe('runSubscriptionBillingCron', () => {
 
     expect(applyTransition).toHaveBeenCalledWith(dependencies.prisma, {
       subscriptionId: row.id,
-      command: { type: 'time_elapsed', at: NOW, enforcementEnabled: enforcement },
+      command: {
+        type: 'time_elapsed',
+        at: NOW,
+        enforcementEnabled: enforcement,
+        providerCancellationConfirmed: false,
+      },
     })
     expect((await applyTransition.mock.results[0].value).status).toBe(expected)
     expect(result.suspended).toBe(expected === 'suspended' ? 1 : 0)
@@ -174,6 +184,58 @@ describe('runSubscriptionBillingCron', () => {
       errors: 0,
     })
     expect(dependencies.reconcile).toHaveBeenCalledWith(stale.id)
+  })
+
+  it('sólo permite cancelación local MP con evidencia terminal de esta corrida', async () => {
+    const row = candidate({
+      status: 'active',
+      cancelAtPeriodEnd: true,
+      currentPeriodEnd: NOW,
+      provider: 'mercado_pago',
+      environment: 'sandbox',
+      providerSubscriptionId: 'provider-subscription',
+    })
+    const { dependencies, applyTransition } = createDependencies([row])
+
+    await runSubscriptionBillingCron({ now: NOW }, dependencies)
+    expect(applyTransition).toHaveBeenLastCalledWith(dependencies.prisma, {
+      subscriptionId: row.id,
+      command: {
+        type: 'time_elapsed',
+        at: NOW,
+        enforcementEnabled: true,
+        providerCancellationConfirmed: false,
+      },
+    })
+    expect((await applyTransition.mock.results[0].value).status).toBe('active')
+
+    dependencies.reconcile = vi.fn().mockResolvedValue({
+      outcome: 'reconciled',
+      invoices: 0,
+      applied: 0,
+      providerTerminalCanceled: true,
+    })
+    ;(dependencies.prisma.businessSubscription.findMany as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([row])
+    ;(dependencies.prisma.businessSubscription.updateMany as ReturnType<typeof vi.fn>)
+      .mockResolvedValue({ count: 1 })
+
+    await runSubscriptionBillingCron({ now: NOW }, dependencies)
+    expect(applyTransition).toHaveBeenLastCalledWith(dependencies.prisma, {
+      subscriptionId: row.id,
+      expectedCancellationProviderSnapshot: {
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        providerSubscriptionId: 'provider-subscription',
+      },
+      command: {
+        type: 'time_elapsed',
+        at: NOW,
+        enforcementEnabled: true,
+        providerCancellationConfirmed: true,
+      },
+    })
+    expect((await applyTransition.mock.results[1].value).status).toBe('cancelled')
   })
 
   it('si la reconciliación externa es ambigua no degrada el estado con reglas temporales', async () => {

@@ -14,12 +14,18 @@ export type SubscriptionCommand =
       periodEnd: Date
     }
   | { type: 'invoice_failed'; occurredAt: Date }
-  | { type: 'time_elapsed'; at: Date; enforcementEnabled: boolean }
+  | {
+      type: 'time_elapsed'
+      at: Date
+      enforcementEnabled: boolean
+      providerCancellationConfirmed?: boolean
+    }
   | { type: 'cancel_at_period_end'; requestedAt: Date }
   | { type: 'provider_cancelled'; occurredAt: Date }
 
 export type SubscriptionState = {
   status: SubscriptionStatus
+  provider: 'manual' | 'mercado_pago'
   interval: 'monthly' | 'yearly'
   currentPeriodStart: Date
   currentPeriodEnd: Date
@@ -211,7 +217,14 @@ export function deriveSubscriptionTransition(
 
   if (
     subscription.cancelAtPeriodEnd &&
-    at.getTime() >= subscription.currentPeriodEnd.getTime()
+    at.getTime() >= subscription.currentPeriodEnd.getTime() &&
+    (
+      command.providerCancellationConfirmed === true ||
+      (
+        subscription.provider === 'manual' &&
+        subscription.providerSubscriptionId === null
+      )
+    )
   ) {
     return {
       nextStatus: 'cancelled',

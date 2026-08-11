@@ -1,0 +1,394 @@
+import { createHash } from 'node:crypto'
+import type { PrismaClient } from '@prisma/client'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { prisma } from '@/lib/db'
+import { requireTestDatabase } from '../../../tests/integration/setup'
+import type { MpSubscriptionClient } from '@/lib/subscriptions/mercado-pago-client'
+import type { MpSubscription } from '@/lib/subscriptions/mercado-pago-mappers'
+import {
+  reconcileSubscription,
+  type ReconciliationDependencies,
+} from '@/lib/subscriptions/reconciliation'
+import {
+  applySubscriptionTransition,
+  type ApplySubscriptionTransitionCommand,
+} from '@/lib/subscriptions/transition'
+import {
+  processSubscriptionWebhook,
+  type SubscriptionWebhookDependencies,
+} from '@/lib/subscriptions/webhook'
+import {
+  runSubscriptionBillingCron,
+  type SubscriptionBillingCronDependencies,
+} from './subscription-billing'
+
+requireTestDatabase()
+
+const PLAN_ID = 'billing-race-plan'
+const ALT_PLAN_ID = 'billing-race-alt-plan'
+const BUSINESS_ID = 'billing-race-business'
+const SUBSCRIPTION_ID = 'billing-race-subscription'
+const ATTEMPT_ID = 'billing-race-attempt'
+const PROVIDER_SUBSCRIPTION_ID = 'billing-race-provider-subscription'
+const PROVIDER_PLAN_ID = 'billing-race-provider-plan'
+const REFERENCE = 'billing-race-reference'
+const NOW = new Date('2026-08-11T12:00:00.000Z')
+
+async function cleanup() {
+  await prisma.subscriptionLog.deleteMany({ where: { businessId: BUSINESS_ID } })
+  await prisma.subscriptionPayment.deleteMany({ where: { businessId: BUSINESS_ID } })
+  await prisma.subscriptionCheckoutAttempt.deleteMany({ where: { businessId: BUSINESS_ID } })
+  await prisma.businessSubscription.deleteMany({ where: { businessId: BUSINESS_ID } })
+  await prisma.business.deleteMany({ where: { id: BUSINESS_ID } })
+  await prisma.plan.deleteMany({ where: { id: { in: [PLAN_ID, ALT_PLAN_ID] } } })
+}
+
+async function resetFixture() {
+  await cleanup()
+  await prisma.plan.create({
+    data: { id: PLAN_ID, name: PLAN_ID, priceMonthly: 15_000, priceYearly: 150_000 },
+  })
+  await prisma.plan.create({
+    data: { id: ALT_PLAN_ID, name: ALT_PLAN_ID, priceMonthly: 20_000, priceYearly: 200_000 },
+  })
+  await prisma.business.create({
+    data: {
+      id: BUSINESS_ID,
+      name: 'Billing Race Business',
+      slug: BUSINESS_ID,
+      subdomain: BUSINESS_ID,
+      ownerUserId: 'billing-race-owner',
+      city: 'Santiago',
+      planId: PLAN_ID,
+      subscriptionStatus: 'active',
+    },
+  })
+  await prisma.businessSubscription.create({
+    data: {
+      id: SUBSCRIPTION_ID,
+      businessId: BUSINESS_ID,
+      planId: PLAN_ID,
+      status: 'active',
+      interval: 'monthly',
+      currentPeriodStart: new Date('2026-07-11T12:00:00.000Z'),
+      currentPeriodEnd: NOW,
+      amount: 15_000,
+      currency: 'CLP',
+      provider: 'mercado_pago',
+      environment: 'sandbox',
+      providerPlanId: PROVIDER_PLAN_ID,
+      providerSubscriptionId: PROVIDER_SUBSCRIPTION_ID,
+      nextBillingAt: NOW,
+      billingEnabled: true,
+    },
+  })
+  await prisma.subscriptionCheckoutAttempt.create({
+    data: {
+      id: ATTEMPT_ID,
+      businessId: BUSINESS_ID,
+      subscriptionId: SUBSCRIPTION_ID,
+      environment: 'sandbox',
+      referenceHash: createHash('sha256').update(REFERENCE).digest('hex'),
+      providerSubscriptionId: PROVIDER_SUBSCRIPTION_ID,
+      providerPlanId: PROVIDER_PLAN_ID,
+      planId: PLAN_ID,
+      amount: 15_000,
+      currency: 'CLP',
+      expiresAt: new Date('2026-08-11T13:00:00.000Z'),
+      invalidatedAt: NOW,
+    },
+  })
+}
+
+beforeAll(resetFixture)
+beforeEach(resetFixture)
+afterAll(async () => {
+  await cleanup()
+  await prisma.$disconnect()
+})
+
+describe('subscription billing cancellation interleaving', () => {
+  it('no reutiliza evidencia terminal MP si cambia el provider ID antes de la transición', async () => {
+    await prisma.businessSubscription.update({
+      where: { id: SUBSCRIPTION_ID },
+      data: {
+        cancelAtPeriodEnd: true,
+        cancellationRequestedAt: new Date('2026-08-11T11:00:00.000Z'),
+      },
+    })
+    const replacementProviderId = 'billing-race-provider-replacement'
+    let replaced = false
+    const applyAfterProviderReplacement = vi.fn(async (
+      db: PrismaClient,
+      input: ApplySubscriptionTransitionCommand,
+    ) => {
+      if (!replaced) {
+        replaced = true
+        await db.businessSubscription.update({
+          where: { id: SUBSCRIPTION_ID },
+          data: { providerSubscriptionId: replacementProviderId },
+        })
+      }
+      return applySubscriptionTransition(db, input)
+    })
+    const dependencies = {
+      prisma,
+      reconcile: vi.fn().mockResolvedValue({
+        outcome: 'reconciled',
+        invoices: 0,
+        applied: 0,
+        providerTerminalCanceled: true,
+      }),
+      applyTransition: applyAfterProviderReplacement,
+      enforcementEnabled: () => true,
+      recordError: vi.fn(),
+    } as SubscriptionBillingCronDependencies
+
+    await expect(runSubscriptionBillingCron({ now: NOW }, dependencies))
+      .resolves.toMatchObject({ processed: 1, reconciled: 1, errors: 1 })
+    await expect(prisma.businessSubscription.findUnique({
+      where: { id: SUBSCRIPTION_ID },
+      select: { status: true, providerSubscriptionId: true },
+    })).resolves.toEqual({
+      status: 'active',
+      providerSubscriptionId: replacementProviderId,
+    })
+  })
+
+  it('no usa evidencia manual obsoleta si MP se adopta antes de la transición', async () => {
+    await prisma.businessSubscription.update({
+      where: { id: SUBSCRIPTION_ID },
+      data: {
+        provider: 'manual',
+        environment: null,
+        providerPlanId: null,
+        providerSubscriptionId: null,
+        cancelAtPeriodEnd: true,
+        cancellationRequestedAt: new Date('2026-08-11T11:00:00.000Z'),
+      },
+    })
+    let adopted = false
+    const applyWithConcurrentAdoption = vi.fn(async (
+      db: PrismaClient,
+      input: ApplySubscriptionTransitionCommand,
+    ) => {
+      if (!adopted) {
+        adopted = true
+        await db.businessSubscription.update({
+          where: { id: SUBSCRIPTION_ID },
+          data: {
+            provider: 'mercado_pago',
+            environment: 'sandbox',
+            providerPlanId: PROVIDER_PLAN_ID,
+            providerSubscriptionId: PROVIDER_SUBSCRIPTION_ID,
+          },
+        })
+      }
+      return applySubscriptionTransition(db, input)
+    })
+    const reconciliation = vi.fn()
+    const dependencies = {
+      prisma,
+      reconcile: reconciliation,
+      applyTransition: applyWithConcurrentAdoption,
+      enforcementEnabled: () => true,
+      recordError: vi.fn(),
+    } as SubscriptionBillingCronDependencies
+
+    await expect(runSubscriptionBillingCron({ now: NOW }, dependencies))
+      .resolves.toMatchObject({ processed: 1, reconciled: 0, errors: 0 })
+    expect(reconciliation).not.toHaveBeenCalled()
+    await expect(prisma.businessSubscription.findUnique({
+      where: { id: SUBSCRIPTION_ID },
+      select: { status: true, provider: true, providerSubscriptionId: true },
+    })).resolves.toEqual({
+      status: 'active',
+      provider: 'mercado_pago',
+      providerSubscriptionId: PROVIDER_SUBSCRIPTION_ID,
+    })
+  })
+
+  it('rechaza una identidad financiera cambiada después del GET remoto', async () => {
+    let releaseSearch!: () => void
+    let observeGet!: () => void
+    const getObserved = new Promise<void>((resolve) => { observeGet = resolve })
+    const searchPending = new Promise<void>((resolve) => { releaseSearch = resolve })
+    const candidate: MpSubscription = {
+      id: PROVIDER_SUBSCRIPTION_ID,
+      status: 'active',
+      providerStatus: 'authorized',
+      collectorId: 'billing-race-account',
+      planId: PROVIDER_PLAN_ID,
+      externalReference: REFERENCE,
+      checkoutUrl: null,
+      amount: 15_000,
+      currency: 'CLP',
+      frequency: 1,
+      frequencyType: 'months',
+      nextPaymentAt: new Date('2026-09-11T12:00:00.000Z'),
+      updatedAt: NOW,
+    }
+    const client = {
+      getSubscription: vi.fn(async () => {
+        observeGet()
+        return candidate
+      }),
+      searchInvoices: vi.fn(async () => {
+        await searchPending
+        return []
+      }),
+      getCurrentAccountId: vi.fn().mockResolvedValue('billing-race-account'),
+      cancelSubscription: vi.fn(),
+    }
+    const reconciliationDependencies: ReconciliationDependencies = {
+      prisma,
+      getProcessor: () => ({
+        client,
+        process: vi.fn().mockResolvedValue({ outcome: 'applied', status: 'active' }),
+      }),
+      now: () => NOW,
+    }
+    const cronTransition = vi.fn(applySubscriptionTransition)
+    const cronDependencies: SubscriptionBillingCronDependencies = {
+      prisma,
+      reconcile: (id) => reconcileSubscription(id, reconciliationDependencies),
+      applyTransition: cronTransition,
+      enforcementEnabled: () => true,
+      recordError: vi.fn(),
+    }
+
+    const run = runSubscriptionBillingCron({ now: NOW }, cronDependencies)
+    await getObserved
+    await applySubscriptionTransition(prisma, {
+      subscriptionId: SUBSCRIPTION_ID,
+      command: { type: 'admin_change_plan', planId: ALT_PLAN_ID },
+    })
+    releaseSearch()
+
+    await expect(run).resolves.toMatchObject({ reconciled: 0, errors: 1 })
+    expect(cronTransition).not.toHaveBeenCalled()
+    await expect(prisma.businessSubscription.findUnique({
+      where: { id: SUBSCRIPTION_ID },
+      select: { planId: true, lastReconciledAt: true, status: true },
+    })).resolves.toEqual({
+      planId: ALT_PLAN_ID,
+      lastReconciledAt: null,
+      status: 'active',
+    })
+  })
+
+  it('observa el intent concurrente, cancela remoto una vez y recién luego cancela local', async () => {
+    let providerSnapshot: MpSubscription = {
+      id: PROVIDER_SUBSCRIPTION_ID,
+      status: 'active',
+      providerStatus: 'authorized',
+      collectorId: 'billing-race-account',
+      planId: PROVIDER_PLAN_ID,
+      externalReference: REFERENCE,
+      checkoutUrl: null,
+      amount: 15_000,
+      currency: 'CLP',
+      frequency: 1,
+      frequencyType: 'months',
+      nextPaymentAt: new Date('2026-09-11T12:00:00.000Z'),
+      updatedAt: NOW,
+    }
+    let releaseFirstSearch!: () => void
+    let observeFirstGet!: () => void
+    const firstGetObserved = new Promise<void>((resolve) => { observeFirstGet = resolve })
+    const firstSearchPending = new Promise<void>((resolve) => { releaseFirstSearch = resolve })
+    let blockFirstSearch = true
+    const cancelSubscription = vi.fn(async () => {
+      providerSnapshot = {
+        ...providerSnapshot,
+        status: 'canceled',
+        providerStatus: 'canceled',
+        nextPaymentAt: null,
+        updatedAt: new Date('2026-08-11T12:01:00.000Z'),
+      }
+      return providerSnapshot
+    })
+    const client = {
+      getSubscription: vi.fn(async () => {
+        observeFirstGet()
+        return providerSnapshot
+      }),
+      searchInvoices: vi.fn(async () => {
+        if (blockFirstSearch) {
+          blockFirstSearch = false
+          await firstSearchPending
+        }
+        return []
+      }),
+      getCurrentAccountId: vi.fn().mockResolvedValue('billing-race-account'),
+      cancelSubscription,
+      getInvoice: vi.fn(),
+      createPlan: vi.fn(),
+      getPlan: vi.fn(),
+      createSubscription: vi.fn(),
+    } as unknown as MpSubscriptionClient
+    const webhookDependencies: SubscriptionWebhookDependencies = {
+      prisma,
+      client,
+      environment: 'sandbox',
+      applyTransition: applySubscriptionTransition,
+      adoptCandidate: vi.fn(),
+      now: () => NOW,
+    }
+    const reconciliationDependencies: ReconciliationDependencies = {
+      prisma,
+      getProcessor: () => ({
+        client,
+        process: (event) => processSubscriptionWebhook(event, webhookDependencies),
+      }),
+      now: () => NOW,
+    }
+    const cronDependencies: SubscriptionBillingCronDependencies = {
+      prisma,
+      reconcile: (id) => reconcileSubscription(id, reconciliationDependencies),
+      applyTransition: applySubscriptionTransition,
+      enforcementEnabled: () => true,
+      recordError: vi.fn(),
+    }
+
+    const firstRun = runSubscriptionBillingCron({ now: NOW }, cronDependencies)
+    await firstGetObserved
+    await applySubscriptionTransition(prisma, {
+      subscriptionId: SUBSCRIPTION_ID,
+      command: { type: 'admin_cancel', occurredAt: new Date('2026-08-11T12:00:30.000Z') },
+    })
+    releaseFirstSearch()
+
+    await expect(firstRun).resolves.toMatchObject({ reconciled: 0, errors: 1 })
+    expect(cancelSubscription).not.toHaveBeenCalled()
+    await expect(prisma.businessSubscription.findUnique({
+      where: { id: SUBSCRIPTION_ID },
+      select: { status: true, cancelAtPeriodEnd: true, lastReconciledAt: true },
+    })).resolves.toEqual({
+      status: 'active',
+      cancelAtPeriodEnd: true,
+      lastReconciledAt: null,
+    })
+
+    await expect(runSubscriptionBillingCron({ now: NOW }, cronDependencies))
+      .resolves.toMatchObject({ reconciled: 0, errors: 1 })
+    expect(cancelSubscription).toHaveBeenCalledTimes(1)
+    await expect(prisma.businessSubscription.findUnique({
+      where: { id: SUBSCRIPTION_ID },
+      select: { status: true, lastReconciledAt: true },
+    })).resolves.toEqual({ status: 'active', lastReconciledAt: null })
+
+    await expect(runSubscriptionBillingCron({ now: NOW }, cronDependencies))
+      .resolves.toMatchObject({ reconciled: 1, errors: 0 })
+    expect(cancelSubscription).toHaveBeenCalledTimes(1)
+    await expect(prisma.businessSubscription.findUnique({
+      where: { id: SUBSCRIPTION_ID },
+      select: { status: true, cancelAtPeriodEnd: true, lastReconciledAt: true },
+    })).resolves.toMatchObject({
+      status: 'cancelled',
+      cancelAtPeriodEnd: true,
+      lastReconciledAt: NOW,
+    })
+    expect(providerSnapshot.status).toBe('canceled')
+  })
+})

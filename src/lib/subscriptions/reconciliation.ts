@@ -44,6 +44,32 @@ export class SubscriptionReconciliationPartialError extends Error {
 // budget is used, provider cancellation is deferred to the next cron run.
 export const MAX_MISSING_INVOICES_PER_RECONCILIATION = 3
 
+export type SubscriptionReconciliationResult = {
+  outcome: 'reconciled'
+  invoices: number
+  applied: number
+  providerTerminalCanceled: boolean
+}
+
+type ReconciliationLocalSnapshot = {
+  id: string
+  businessId: string
+  planId: string
+  interval: 'monthly' | 'yearly'
+  status: 'trialing' | 'active' | 'past_due' | 'suspended' | 'cancelled'
+  provider: 'manual' | 'mercado_pago'
+  environment: MercadoPagoEnvironment | null
+  providerSubscriptionId: string | null
+  providerPlanId: string | null
+  amount: number
+  currency: string
+  currentPeriodStart: Date
+  currentPeriodEnd: Date
+  cancelAtPeriodEnd: boolean
+  cancellationRequestedAt: Date | null
+  updatedAt: Date
+}
+
 function runtimeDependencies(): ReconciliationDependencies {
   return {
     prisma,
@@ -63,6 +89,43 @@ function runtimeDependencies(): ReconciliationDependencies {
 
 function hashReference(reference: string): string {
   return createHash('sha256').update(reference).digest('hex')
+}
+
+function sameDate(left: Date | null, right: Date | null): boolean {
+  return left?.getTime() === right?.getTime()
+}
+
+function assertFinancialIdentityUnchanged(
+  initial: ReconciliationLocalSnapshot,
+  current: ReconciliationLocalSnapshot | null,
+): asserts current is ReconciliationLocalSnapshot {
+  if (
+    !current ||
+    current.id !== initial.id ||
+    current.businessId !== initial.businessId ||
+    current.planId !== initial.planId ||
+    current.interval !== initial.interval ||
+    current.provider !== initial.provider ||
+    current.environment !== initial.environment ||
+    current.providerSubscriptionId !== initial.providerSubscriptionId ||
+    current.providerPlanId !== initial.providerPlanId ||
+    current.amount !== initial.amount ||
+    current.currency !== initial.currency
+  ) {
+    throw new SubscriptionReconciliationValidationError()
+  }
+}
+
+function assertCancellationIntentUnchanged(
+  initial: ReconciliationLocalSnapshot,
+  current: ReconciliationLocalSnapshot,
+): void {
+  if (
+    current.cancelAtPeriodEnd !== initial.cancelAtPeriodEnd ||
+    !sameDate(current.cancellationRequestedAt, initial.cancellationRequestedAt)
+  ) {
+    throw new SubscriptionReconciliationValidationError()
+  }
 }
 
 function assertSubscriptionSnapshot(input: {
@@ -233,7 +296,7 @@ function verifiedPeriodEnd(
 export async function reconcileSubscription(
   id: string,
   dependencies: ReconciliationDependencies = runtimeDependencies(),
-): Promise<{ outcome: 'reconciled'; invoices: number; applied: number }> {
+): Promise<SubscriptionReconciliationResult> {
   const local = await dependencies.prisma.businessSubscription.findUnique({
     where: { id },
     select: {
@@ -241,13 +304,18 @@ export async function reconcileSubscription(
       businessId: true,
       planId: true,
       interval: true,
+      status: true,
       provider: true,
       environment: true,
       providerSubscriptionId: true,
       providerPlanId: true,
       amount: true,
       currency: true,
+      currentPeriodStart: true,
+      currentPeriodEnd: true,
       cancelAtPeriodEnd: true,
+      cancellationRequestedAt: true,
+      updatedAt: true,
     },
   })
   if (
@@ -352,14 +420,40 @@ export async function reconcileSubscription(
   ) {
     throw new SubscriptionReconciliationPartialError()
   }
-  if (candidate.status === 'active' && local.cancelAtPeriodEnd) {
-    const cancelled = await client.cancelSubscription(providerSubscriptionId)
-    if (
-      cancelled.id !== providerSubscriptionId ||
-      cancelled.status !== 'canceled' ||
-      cancelled.providerStatus !== 'canceled'
-    ) {
-      throw new SubscriptionReconciliationValidationError()
+  let sealSnapshot = await dependencies.prisma.businessSubscription.findUnique({
+    where: { id: local.id },
+    select: {
+      id: true,
+      businessId: true,
+      planId: true,
+      interval: true,
+      status: true,
+      provider: true,
+      environment: true,
+      providerSubscriptionId: true,
+      providerPlanId: true,
+      amount: true,
+      currency: true,
+      currentPeriodStart: true,
+      currentPeriodEnd: true,
+      cancelAtPeriodEnd: true,
+      cancellationRequestedAt: true,
+      updatedAt: true,
+    },
+  })
+  assertFinancialIdentityUnchanged(local, sealSnapshot)
+  if (candidate.status === 'active') {
+    assertCancellationIntentUnchanged(local, sealSnapshot)
+    if (sealSnapshot.cancelAtPeriodEnd) {
+      const cancelled = await client.cancelSubscription(providerSubscriptionId)
+      if (
+        cancelled.id !== providerSubscriptionId ||
+        cancelled.status !== 'canceled' ||
+        cancelled.providerStatus !== 'canceled'
+      ) {
+        throw new SubscriptionReconciliationValidationError()
+      }
+      throw new SubscriptionReconciliationPartialError()
     }
   }
   if (candidate.status === 'canceled') {
@@ -370,7 +464,30 @@ export async function reconcileSubscription(
     })
     assertSafeProcessorOutcome(result)
     if (result.outcome === 'applied') applied++
+    sealSnapshot = await dependencies.prisma.businessSubscription.findUnique({
+      where: { id: local.id },
+      select: {
+        id: true,
+        businessId: true,
+        planId: true,
+        interval: true,
+        status: true,
+        provider: true,
+        environment: true,
+        providerSubscriptionId: true,
+        providerPlanId: true,
+        amount: true,
+        currency: true,
+        currentPeriodStart: true,
+        currentPeriodEnd: true,
+        cancelAtPeriodEnd: true,
+        cancellationRequestedAt: true,
+        updatedAt: true,
+      },
+    })
+    assertFinancialIdentityUnchanged(local, sealSnapshot)
   }
+  if (!sealSnapshot) throw new SubscriptionReconciliationValidationError()
 
   const marked = await dependencies.prisma.businessSubscription.updateMany({
     where: {
@@ -384,9 +501,20 @@ export async function reconcileSubscription(
       providerPlanId: local.providerPlanId,
       amount: local.amount,
       currency: local.currency,
+      status: sealSnapshot.status,
+      currentPeriodStart: sealSnapshot.currentPeriodStart,
+      currentPeriodEnd: sealSnapshot.currentPeriodEnd,
+      cancelAtPeriodEnd: sealSnapshot.cancelAtPeriodEnd,
+      cancellationRequestedAt: sealSnapshot.cancellationRequestedAt,
+      updatedAt: sealSnapshot.updatedAt,
     },
     data: { lastReconciledAt: dependencies.now() },
   })
   if (marked.count !== 1) throw new SubscriptionReconciliationValidationError()
-  return { outcome: 'reconciled', invoices: orderedInvoices.length, applied }
+  return {
+    outcome: 'reconciled',
+    invoices: orderedInvoices.length,
+    applied,
+    providerTerminalCanceled: candidate.status === 'canceled',
+  }
 }
