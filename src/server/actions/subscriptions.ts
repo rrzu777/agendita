@@ -2,7 +2,10 @@
 
 import { prisma } from '@/lib/db'
 import { requireBusinessRole } from '@/lib/auth/server'
-import { action } from '@/lib/actions/result'
+import { UserError } from '@/lib/actions/result'
+import { logger } from '@/lib/logger'
+import { unstable_rethrow } from 'next/navigation'
+import { MercadoPagoSubscriptionTransportError } from '@/lib/subscriptions/mercado-pago-client'
 import {
   requestSubscriptionCancellation,
   startSubscriptionCheckout,
@@ -10,9 +13,46 @@ import {
 
 export type SubscriptionActionState = { error: string | null }
 
-async function subscriptionActionState(operation: () => Promise<void>): Promise<SubscriptionActionState> {
-  const result = await action(operation)()
-  return result.ok ? { error: null } : { error: result.error }
+type OwnerSubscriptionOperation = 'start_checkout' | 'cancel_renewal'
+
+const GENERIC_SUBSCRIPTION_ACTION_ERROR = 'Ocurrió un error inesperado. Intenta nuevamente.'
+
+function safeFailureMetadata(error: unknown, operation: OwnerSubscriptionOperation) {
+  if (error instanceof MercadoPagoSubscriptionTransportError) {
+    const statusCategory = error.status === null
+      ? 'unavailable'
+      : error.status >= 500
+        ? '5xx'
+        : error.status >= 400
+          ? '4xx'
+          : 'other'
+    return {
+      operation,
+      classification: 'provider_transport',
+      providerOutcome: error.outcome,
+      statusCategory,
+    } as const
+  }
+  return { operation, classification: 'unexpected' } as const
+}
+
+async function subscriptionActionState(
+  operation: OwnerSubscriptionOperation,
+  execute: () => Promise<void>,
+): Promise<SubscriptionActionState> {
+  try {
+    await execute()
+    return { error: null }
+  } catch (error) {
+    unstable_rethrow(error)
+    if (error instanceof UserError) return { error: error.message }
+    logger.error(
+      'subscription_billing.owner_action_failed',
+      'Owner subscription billing action failed.',
+      { metadata: safeFailureMetadata(error, operation) },
+    )
+    return { error: GENERIC_SUBSCRIPTION_ACTION_ERROR }
+  }
 }
 
 export async function startSubscriptionAction(
@@ -21,7 +61,7 @@ export async function startSubscriptionAction(
 ): Promise<SubscriptionActionState> {
   void _previousState
   void _formData
-  return subscriptionActionState(startSubscriptionCheckout)
+  return subscriptionActionState('start_checkout', startSubscriptionCheckout)
 }
 
 export async function cancelSubscriptionAction(
@@ -30,7 +70,7 @@ export async function cancelSubscriptionAction(
 ): Promise<SubscriptionActionState> {
   void _previousState
   void _formData
-  return subscriptionActionState(requestSubscriptionCancellation)
+  return subscriptionActionState('cancel_renewal', requestSubscriptionCancellation)
 }
 
 // businessId SIEMPRE sale de la sesión autenticada, nunca de un parámetro del
