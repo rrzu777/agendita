@@ -14,6 +14,8 @@ const MAX_CUTOFF_HOURS = 720
 const LEASE_MS = 10 * 60 * 1000
 const QUERY_BATCH_SIZE = 100
 const MAX_ACTIVE_SUBSCRIPTIONS = 5
+const DELIVERY_CONCURRENCY = 2
+const GENERATION_DELIVERY_ATTEMPTS = 2
 
 export interface SendCancellationWarningsResult {
   sent: number
@@ -48,12 +50,42 @@ export function cancellationWarningWindow(
 
 type Candidate = Awaited<ReturnType<typeof loadCandidateBatch>>[number]
 type Subscription = Awaited<ReturnType<typeof loadActiveSubscriptions>>[number]
+type Clock = () => Date
 
 type DeliveryDisposition =
-  | { kind: 'success'; subscription: Subscription }
-  | { kind: 'gone'; subscription: Subscription }
-  | { kind: 'permanent'; subscription: Subscription }
-  | { kind: 'transient'; subscription: Subscription }
+  | { kind: 'success'; subscription: Subscription; occurredAt: Date }
+  | { kind: 'gone'; subscription: Subscription; occurredAt: Date }
+  | { kind: 'permanent'; subscription: Subscription; occurredAt: Date }
+  | { kind: 'transient'; subscription: Subscription; occurredAt: Date }
+  | { kind: 'invalid'; subscription: Subscription; occurredAt: Date }
+
+type DeliveryAttempt =
+  | DeliveryDisposition
+  | { kind: 'expired'; subscription: Subscription }
+
+async function mapSettledBounded<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  operation: (item: T, index: number) => Promise<R>,
+): Promise<Array<PromiseSettledResult<R>>> {
+  const results = new Array<PromiseSettledResult<R>>(items.length)
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++
+      try {
+        results[index] = { status: 'fulfilled', value: await operation(items[index], index) }
+      } catch (reason) {
+        results[index] = { status: 'rejected', reason }
+      }
+    }
+  }
+
+  const workerCount = Math.min(Math.max(1, concurrency), items.length)
+  await Promise.allSettled(Array.from({ length: workerCount }, () => worker()))
+  return results
+}
 
 function candidateCutoffHours(candidate: Candidate): number {
   return candidate.cancellationCutoffHours
@@ -88,16 +120,21 @@ function isCutoffInsideWarningWindow(
 
 async function revalidateClaimedCandidate(
   bookingId: string,
-  now: Date,
-): Promise<{ cutoffHours: number; userId: string | null } | null> {
+  claimedAt: Date,
+  currentTime: Date,
+): Promise<{
+  cutoffHours: number
+  startDateTime: Date
+  userId: string | null
+} | null> {
   const current = await prisma.booking.findFirst({
     where: {
       id: bookingId,
-      cancellationReminderClaimedAt: now,
+      cancellationReminderClaimedAt: claimedAt,
       cancellationReminderSentAt: null,
       status: BookingStatus.confirmed,
       depositPaid: { gt: 0 },
-      startDateTime: { gt: now },
+      startDateTime: { gt: currentTime },
       business: { cancellationReminderEnabled: true },
     },
     select: {
@@ -111,8 +148,12 @@ async function revalidateClaimedCandidate(
 
   const cutoffHours = current.cancellationCutoffHours
     ?? current.business.selfServiceCutoffHours
-  return isCutoffInsideWarningWindow(current.startDateTime, cutoffHours, now)
-    ? { cutoffHours, userId: current.customer.userId }
+  return isCutoffInsideWarningWindow(current.startDateTime, cutoffHours, currentTime)
+    ? {
+        cutoffHours,
+        startDateTime: current.startDateTime,
+        userId: current.customer.userId,
+      }
     : null
 }
 
@@ -202,82 +243,128 @@ function pushDestination(candidate: Candidate, subscription: Subscription): stri
 function classifyDelivery(
   subscription: Subscription,
   delivery: WebPushResult,
+  occurredAt: Date,
 ): DeliveryDisposition {
-  if (delivery.ok) return { kind: 'success', subscription }
+  if (delivery.ok) return { kind: 'success', subscription, occurredAt }
   if (delivery.statusCode === 404 || delivery.statusCode === 410) {
-    return { kind: 'gone', subscription }
+    return { kind: 'gone', subscription, occurredAt }
   }
   if (
     delivery.statusCode === 400
     || delivery.statusCode === 401
     || delivery.statusCode === 403
   ) {
-    return { kind: 'permanent', subscription }
+    return { kind: 'permanent', subscription, occurredAt }
   }
-  return { kind: 'transient', subscription }
+  return { kind: 'transient', subscription, occurredAt }
 }
 
-async function persistDisposition(disposition: DeliveryDisposition, now: Date): Promise<void> {
+async function recordDisposition(disposition: DeliveryDisposition): Promise<boolean> {
   const { subscription } = disposition
   const deliveredGeneration = {
     id: subscription.id,
     subscriptionFingerprint: subscription.subscriptionFingerprint,
-    subscriptionEncrypted: subscription.subscriptionEncrypted,
     revokedAt: null,
   }
   if (disposition.kind === 'success') {
-    await prisma.pushSubscription.updateMany({
+    const updated = await prisma.pushSubscription.updateMany({
       where: deliveredGeneration,
       data: {
         failureCount: 0,
         lastFailureAt: null,
-        lastSuccessAt: now,
+        lastSuccessAt: disposition.occurredAt,
       },
     })
-    return
+    return updated.count === 1
   }
 
-  if (disposition.kind === 'gone') {
-    await prisma.pushSubscription.updateMany({
+  if (disposition.kind === 'gone' || disposition.kind === 'invalid') {
+    const updated = await prisma.pushSubscription.updateMany({
       where: deliveredGeneration,
       data: {
-        revokedAt: now,
-        lastFailureAt: now,
+        revokedAt: disposition.occurredAt,
+        lastFailureAt: disposition.occurredAt,
         failureCount: { increment: 1 },
       },
     })
-    return
+    return updated.count === 1
   }
 
   if (disposition.kind === 'permanent') {
-    await prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx) => {
       const incremented = await tx.pushSubscription.updateMany({
         where: deliveredGeneration,
         data: {
           failureCount: { increment: 1 },
-          lastFailureAt: now,
+          lastFailureAt: disposition.occurredAt,
         },
       })
-      if (incremented.count === 0) return
+      if (incremented.count === 0) return false
 
       // This second statement observes the increment in the same transaction.
       // Concurrent workers serialize on the row, while a re-subscribe changes
-      // the ciphertext and makes both generation guards no-ops.
+      // the stable endpoint-and-keys fingerprint and makes both generation
+      // guards no-ops.
       await tx.pushSubscription.updateMany({
         where: {
           ...deliveredGeneration,
           failureCount: { gte: 3 },
         },
-        data: { revokedAt: now },
+        data: { revokedAt: disposition.occurredAt },
       })
+      return true
     })
-    return
   }
 
-  await prisma.pushSubscription.updateMany({
+  const updated = await prisma.pushSubscription.updateMany({
     where: deliveredGeneration,
-    data: { lastFailureAt: now },
+    data: { lastFailureAt: disposition.occurredAt },
   })
+  return updated.count === 1
+}
+
+export function cancellationWarningTtlSeconds(closesAt: Date, now: Date): number | null {
+  const remainingSeconds = Math.floor((closesAt.getTime() - now.getTime()) / 1_000)
+  if (!Number.isSafeInteger(remainingSeconds) || remainingSeconds <= 0) return null
+  return Math.min(WARNING_LEAD_HOURS * 60 * 60, remainingSeconds)
+}
+
+async function deliverSubscription(
+  candidate: Candidate,
+  subscription: Subscription,
+  body: string,
+  closesAt: Date,
+  readClock: Clock,
+): Promise<DeliveryAttempt> {
+  let normalized: ReturnType<typeof normalizePushSubscription>
+  try {
+    // The capability URL and browser keys stay encrypted until this worker
+    // wins the booking lease. Losing concurrent workers never decrypt them.
+    normalized = normalizePushSubscription(
+      JSON.parse(decryptSecret(subscription.subscriptionEncrypted)) as unknown,
+    )
+  } catch {
+    return { kind: 'invalid', subscription, occurredAt: readClock() }
+  }
+
+  // This clock read is deliberately adjacent to the external effect. A
+  // cancellation or window close after it and before the provider accepts the
+  // request is the unavoidable distributed-system boundary guarded by the
+  // recoverable booking lease and a TTL no longer than the remaining window.
+  const effectTime = readClock()
+  const ttlSeconds = cancellationWarningTtlSeconds(closesAt, effectTime)
+  if (ttlSeconds === null) return { kind: 'expired', subscription }
+
+  try {
+    const delivery = await sendWebPush(normalized, {
+      title: candidate.business.name,
+      body,
+      url: pushDestination(candidate, subscription),
+    }, ttlSeconds)
+    return classifyDelivery(subscription, delivery, effectTime)
+  } catch {
+    return { kind: 'transient', subscription, occurredAt: effectTime }
+  }
 }
 
 function releaseClaim(bookingId: string, now: Date) {
@@ -293,11 +380,12 @@ function releaseClaim(bookingId: string, now: Date) {
 
 async function processCandidate(
   candidate: Candidate,
-  now: Date,
+  readClock: Clock,
 ): Promise<'sent' | 'skipped' | 'error'> {
-  if (!isInsideWarningWindow(candidate, now)) return 'skipped'
+  const claimedAt = readClock()
+  if (!isInsideWarningWindow(candidate, claimedAt)) return 'skipped'
 
-  const staleBefore = new Date(now.getTime() - LEASE_MS)
+  const staleBefore = new Date(claimedAt.getTime() - LEASE_MS)
   let claimOpen = false
   try {
     const claim = await prisma.booking.updateMany({
@@ -313,124 +401,160 @@ async function processCandidate(
           { cancellationReminderClaimedAt: { lt: staleBefore } },
         ],
       },
-      data: { cancellationReminderClaimedAt: now },
+      data: { cancellationReminderClaimedAt: claimedAt },
     })
     if (claim.count === 0) return 'skipped'
     claimOpen = true
 
-    const revalidated = await revalidateClaimedCandidate(candidate.id, now)
+    let revalidated = await revalidateClaimedCandidate(
+      candidate.id,
+      claimedAt,
+      readClock(),
+    )
     if (revalidated === null) {
-      await releaseClaim(candidate.id, now)
+      await releaseClaim(candidate.id, claimedAt)
       claimOpen = false
       return 'skipped'
     }
 
-    // This is the last database eligibility/ownership read before the external
-    // effect. A status change after this point is the unavoidable provider
-    // exactly-once boundary described by the recoverable booking lease.
-    const currentCandidate = {
+    let currentCandidate = {
       ...candidate,
       customer: { userId: revalidated.userId },
     }
-    const subscriptions = await loadActiveSubscriptions(currentCandidate)
+    let subscriptions = await loadActiveSubscriptions(currentCandidate)
     if (subscriptions.length === 0) {
-      await releaseClaim(candidate.id, now)
+      await releaseClaim(candidate.id, claimedAt)
       claimOpen = false
       return 'skipped'
     }
 
-    const body = cancellationWarningText(revalidated.cutoffHours)
-    if (!body) {
-      await releaseClaim(candidate.id, now)
-      claimOpen = false
-      return 'skipped'
-    }
-    const settledDeliveries = await Promise.allSettled(
-      subscriptions.map(async (subscription) => {
-        // The capability URL and browser keys stay encrypted until this worker
-        // wins the booking lease. Losing concurrent workers never decrypt them.
-        const normalized = normalizePushSubscription(
-          JSON.parse(decryptSecret(subscription.subscriptionEncrypted)) as unknown,
-        )
-        const delivery = await sendWebPush(normalized, {
-          title: candidate.business.name,
+    for (let deliveryRound = 0; deliveryRound < GENERATION_DELIVERY_ATTEMPTS; deliveryRound++) {
+      const body = cancellationWarningText(revalidated.cutoffHours)
+      if (!body) {
+        await releaseClaim(candidate.id, claimedAt)
+        claimOpen = false
+        return 'skipped'
+      }
+      const { closesAt } = cancellationWarningWindow(
+        revalidated.startDateTime,
+        revalidated.cutoffHours,
+      )
+      const settledDeliveries = await mapSettledBounded(
+        subscriptions,
+        DELIVERY_CONCURRENCY,
+        (subscription) => deliverSubscription(
+          currentCandidate,
+          subscription,
           body,
-          url: pushDestination(currentCandidate, subscription),
-        })
-        return classifyDelivery(subscription, delivery)
-      }),
-    )
-
-    const dispositions: DeliveryDisposition[] = []
-    for (let index = 0; index < settledDeliveries.length; index++) {
-      const settled = settledDeliveries[index]
-      dispositions.push(
+          closesAt,
+          readClock,
+        ),
+      )
+      const attempts: DeliveryAttempt[] = settledDeliveries.map((settled, index) => (
         settled.status === 'fulfilled'
           ? settled.value
-          : { kind: 'transient', subscription: subscriptions[index] },
+          : { kind: 'transient', subscription: subscriptions[index], occurredAt: readClock() }
+      ))
+      const dispositions = attempts.filter(
+        (attempt): attempt is DeliveryDisposition => attempt.kind !== 'expired',
       )
-    }
+      const persisted = await mapSettledBounded(
+        dispositions,
+        DELIVERY_CONCURRENCY,
+        (disposition) => recordDisposition(disposition),
+      )
+      const persistenceErrors = persisted.filter(({ status }) => status === 'rejected').length
+      const recordedSuccesses = dispositions.reduce((count, disposition, index) => (
+        disposition.kind === 'success'
+        && persisted[index]?.status === 'fulfilled'
+        && persisted[index].value
+          ? count + 1
+          : count
+      ), 0)
+      const staleSuccesses = dispositions.reduce((count, disposition, index) => (
+        disposition.kind === 'success'
+        && persisted[index]?.status === 'fulfilled'
+        && !persisted[index].value
+          ? count + 1
+          : count
+      ), 0)
+      const counts = {
+        success: recordedSuccesses,
+        gone: dispositions.filter(({ kind }) => kind === 'gone').length,
+        permanent: dispositions.filter(({ kind }) => kind === 'permanent').length,
+        transient: dispositions.filter(({ kind }) => kind === 'transient').length,
+        invalid: dispositions.filter(({ kind }) => kind === 'invalid').length,
+        expired: attempts.filter(({ kind }) => kind === 'expired').length,
+        stale: dispositions.filter((_, index) => (
+          persisted[index]?.status === 'fulfilled' && !persisted[index].value
+        )).length,
+        persistenceErrors,
+      }
 
-    const counts = {
-      success: dispositions.filter(({ kind }) => kind === 'success').length,
-      gone: dispositions.filter(({ kind }) => kind === 'gone').length,
-      permanent: dispositions.filter(({ kind }) => kind === 'permanent').length,
-      transient: dispositions.filter(({ kind }) => kind === 'transient').length,
-    }
-
-    let stateError = false
-    try {
-      if (counts.success > 0) {
+      if (recordedSuccesses > 0) {
+        const sentAt = readClock()
         const finalized = await prisma.booking.updateMany({
           where: {
             id: candidate.id,
-            cancellationReminderClaimedAt: now,
+            cancellationReminderClaimedAt: claimedAt,
             cancellationReminderSentAt: null,
           },
           data: {
-            cancellationReminderSentAt: now,
+            cancellationReminderSentAt: sentAt,
             cancellationReminderClaimedAt: null,
           },
         })
-        stateError = finalized.count === 0
-      } else {
-        await releaseClaim(candidate.id, now)
+        if (finalized.count === 0) throw new Error('Cancellation warning claim was lost')
+        claimOpen = false
+        logger.info(
+          'booking.cancellation_warning_sent',
+          'Cancellation warning delivery completed',
+          { bookingId: candidate.id, businessId: candidate.business.id, metadata: counts },
+        )
+        return 'sent'
       }
+
+      if (
+        staleSuccesses > 0
+        && deliveryRound + 1 < GENERATION_DELIVERY_ATTEMPTS
+      ) {
+        revalidated = await revalidateClaimedCandidate(
+          candidate.id,
+          claimedAt,
+          readClock(),
+        )
+        if (revalidated === null) {
+          await releaseClaim(candidate.id, claimedAt)
+          claimOpen = false
+          return 'skipped'
+        }
+        currentCandidate = {
+          ...candidate,
+          customer: { userId: revalidated.userId },
+        }
+        subscriptions = await loadActiveSubscriptions(currentCandidate)
+        if (subscriptions.length === 0) break
+        continue
+      }
+
+      await releaseClaim(candidate.id, claimedAt)
       claimOpen = false
-    } catch {
-      stateError = true
-    }
-
-    const persistence = await Promise.allSettled(
-      dispositions.map((disposition) => persistDisposition(disposition, now)),
-    )
-    const persistenceErrors = persistence.filter(({ status }) => status === 'rejected').length
-    if (persistenceErrors > 0) stateError = true
-
-    const logExtra = {
-      bookingId: candidate.id,
-      businessId: candidate.business.id,
-      metadata: { ...counts, persistenceErrors },
-    }
-    if (counts.success > 0 && !stateError) {
-      logger.info(
-        'booking.cancellation_warning_sent',
-        'Cancellation warning delivery completed',
-        logExtra,
+      if (dispositions.length === 0) return 'skipped'
+      logger.error(
+        'booking.cancellation_warning_failed',
+        'Cancellation warning delivery failed',
+        { bookingId: candidate.id, businessId: candidate.business.id, metadata: counts },
       )
-      return 'sent'
+      return 'error'
     }
 
-    logger.error(
-      'booking.cancellation_warning_failed',
-      'Cancellation warning delivery failed',
-      logExtra,
-    )
+    await releaseClaim(candidate.id, claimedAt)
+    claimOpen = false
     return 'error'
   } catch (error) {
     if (claimOpen) {
       try {
-        await releaseClaim(candidate.id, now)
+        await releaseClaim(candidate.id, claimedAt)
       } catch {
         // Keep the original, sanitized failure path. The lease is recoverable.
       }
@@ -440,18 +564,22 @@ async function processCandidate(
 }
 
 export async function sendCancellationWarnings(
-  now: Date = new Date(),
+  nowOrClock: Date | Clock = () => new Date(),
 ): Promise<SendCancellationWarningsResult> {
   const result: SendCancellationWarningsResult = { sent: 0, skipped: 0, errors: 0 }
   if (!hasCompletePushConfig()) return result
 
+  const readClock: Clock = typeof nowOrClock === 'function'
+    ? nowOrClock
+    : () => nowOrClock
+  const scanTime = readClock()
   let cursor: string | undefined
 
   do {
-    const candidates = await loadCandidateBatch(now, cursor)
+    const candidates = await loadCandidateBatch(scanTime, cursor)
     for (const candidate of candidates) {
       try {
-        const outcome = await processCandidate(candidate, now)
+        const outcome = await processCandidate(candidate, readClock)
         result[outcome === 'error' ? 'errors' : outcome]++
       } catch {
         logger.error(

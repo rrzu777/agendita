@@ -30,18 +30,44 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Expire stale holds
+        id: expire_holds
+        continue-on-error: true
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/expire-holds"
       - name: Send reminders
+        id: send_reminders
+        continue-on-error: true
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/send-reminders"
       - name: Transfer reminders
+        id: transfer_reminders
+        continue-on-error: true
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/transfer-reminders"
       - name: Loyalty automatic conditions
+        id: loyalty_automatic
+        continue-on-error: true
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/loyalty-automatic"
+      - name: Fail if any cron failed
+        if: always()
+        env:
+          EXPIRE_HOLDS_OUTCOME: ${{ steps.expire_holds.outcome }}
+          SEND_REMINDERS_OUTCOME: ${{ steps.send_reminders.outcome }}
+          TRANSFER_REMINDERS_OUTCOME: ${{ steps.transfer_reminders.outcome }}
+          LOYALTY_AUTOMATIC_OUTCOME: ${{ steps.loyalty_automatic.outcome }}
+        run: |
+          for outcome in \
+            "$EXPIRE_HOLDS_OUTCOME" \
+            "$SEND_REMINDERS_OUTCOME" \
+            "$TRANSFER_REMINDERS_OUTCOME" \
+            "$LOYALTY_AUTOMATIC_OUTCOME"
+          do
+            if [ "$outcome" != "success" ]; then
+              exit 1
+            fi
+          done

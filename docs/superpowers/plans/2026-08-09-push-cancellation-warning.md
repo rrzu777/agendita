@@ -346,7 +346,7 @@ git commit -m "feat: authorize guest push subscriptions"
   `authorizedUserId` or an exact booking entitlement.
 - Produces: `POST /api/push/subscribe` and `POST /api/push/unsubscribe`.
 - Produces: canonical `/sw.js` with push and notificationclick listeners only.
-- Produces: `sendWebPush(subscription, payload): Promise<{ ok: boolean; statusCode?: number }>`.
+- Produces: `sendWebPush(subscription, payload, ttlSeconds): Promise<{ ok: boolean; statusCode?: number }>`.
 
 - [ ] **Step 1: Add the dependency and failing tests**
 
@@ -471,10 +471,22 @@ Decrypt active subscriptions only after winning the claim.
 
 - [ ] **Step 4: Implement delivery dispositions**
 
-Use `Promise.allSettled`. Mark `404/410` revoked; count/revoke permanent failures;
-retain transient subscriptions. If at least one succeeds, set `SentAt` and clear
-claim. Otherwise clear claim so the next 15-minute run retries. Logs contain IDs,
-status classes and counts only.
+Use an explicit bounded-concurrency helper (the query cap alone is not the
+fanout contract). Mark `404/410` revoked; count/revoke permanent failures;
+retain transient provider failures. Irreversible local decrypt/JSON/normalize
+failures revoke only the matching subscription fingerprint generation. Record
+every disposition with an `id + subscriptionFingerprint` CAS before counting a
+success; a provider success from an older generation must retry the current
+generation and cannot set `SentAt`. Otherwise clear the claim so the next
+15-minute run retries. Logs contain IDs, status classes and counts only.
+
+Refresh the clock for each candidate and again immediately before every
+provider call. Compute a positive integer TTL no larger than the seconds
+remaining until `closesAt`, capped at two hours; if the window has closed,
+release the claim without calling the provider. A cancellation/window close in
+the interval after this final clock/database read but before provider acceptance
+is an unavoidable external-effect boundary, limited by the lease and TTL rather
+than represented as atomic.
 
 - [ ] **Step 5: Clear delivery timestamps on reschedule**
 
@@ -539,8 +551,10 @@ headers or secrets.
 
 - [ ] **Step 3: Harden existing and add new workflows**
 
-Replace each direct curl in `cron.yml` with the helper. The new workflow checks
-out the repository, exports `BASE_URL` and `CRON_SECRET`, and calls only
+Replace each direct curl in `cron.yml` with the helper. Its four endpoint steps
+continue independently after a failure and a final secret-free aggregation step
+fails the job if any result was not successful. The new workflow checks out the
+repository, exports `BASE_URL` and step-scoped `CRON_SECRET`, and calls only
 `/api/cron/cancellation-warnings` every 15 minutes with concurrency protection.
 
 - [ ] **Step 4: Update operations documentation**

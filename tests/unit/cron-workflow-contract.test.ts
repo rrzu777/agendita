@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -16,7 +16,14 @@ const requests: Array<{ path: string; method?: string; authorization?: string }>
 let server: Server
 let baseUrl: string
 
-type WorkflowStep = { uses?: string; run?: string; env?: Record<string, string> }
+type WorkflowStep = {
+  id?: string
+  uses?: string
+  run?: string
+  env?: Record<string, string>
+  if?: string
+  'continue-on-error'?: boolean
+}
 type WorkflowJob = {
   env?: Record<string, string>
   'timeout-minutes'?: number
@@ -103,6 +110,7 @@ beforeAll(async () => {
       '/string-errors': JSON.stringify({ errors: '0' }),
       '/missing-errors': JSON.stringify({ sent: 2 }),
       '/malformed': 'not-json',
+      '/api/cron/expire-holds': JSON.stringify({ errors: 1 }),
     }
     response.end(bodies[request.url ?? ''] ?? JSON.stringify({ errors: 0 }))
   })
@@ -160,11 +168,18 @@ describe('cron workflow contract', () => {
     expect(workflow.permissions).toEqual({ contents: 'read' })
     expect(jobs[0]['timeout-minutes']).toBe(6)
     expect(jobs[0].steps.some((step) => step.uses === 'actions/checkout@v4')).toBe(true)
-    expect(runSteps(workflow).every(
+    expect(runSteps(workflow).filter((step) => step.run?.includes('scripts/run-json-cron.sh')).every(
       (step) => step.env?.CRON_SECRET === '${{ secrets.CRON_SECRET }}',
     )).toBe(true)
-    expect(runs).toHaveLength(4)
-    expect(runs.every((run) => run.includes('scripts/run-json-cron.sh'))).toBe(true)
+    const helperSteps = runSteps(workflow).filter((step) => step.run?.includes('scripts/run-json-cron.sh'))
+    const aggregateStep = runSteps(workflow).find((step) => step.if === 'always()')
+    expect(helperSteps).toHaveLength(4)
+    expect(helperSteps.every((step) => step['continue-on-error'] === true)).toBe(true)
+    expect(new Set(helperSteps.map((step) => step.id)).size).toBe(4)
+    expect(aggregateStep?.env?.EXPIRE_HOLDS_OUTCOME).toBe('${{ steps.expire_holds.outcome }}')
+    expect(aggregateStep?.env?.LOYALTY_AUTOMATIC_OUTCOME).toBe('${{ steps.loyalty_automatic.outcome }}')
+    expect(aggregateStep?.env?.CRON_SECRET).toBeUndefined()
+    expect(aggregateStep?.run).toContain('exit 1')
     expect(runs.join('\n')).not.toContain('curl ')
     for (const endpoint of [
       '/api/cron/expire-holds',
@@ -174,6 +189,41 @@ describe('cron workflow contract', () => {
     ]) {
       expect(runs.filter((run) => run.includes(endpoint))).toHaveLength(1)
     }
+  })
+
+  it('invoca los cuatro endpoints aunque el primero falle y falla al agregar resultados', async () => {
+    const workflow = loadWorkflow('cron.yml')
+    const steps = runSteps(workflow)
+    const helperSteps = steps.filter((step) => step.run?.includes('scripts/run-json-cron.sh'))
+    const requestStart = requests.length
+    const outcomes: Record<string, string> = {}
+
+    for (const step of helperSteps) {
+      const url = resolveWorkflowUrl(step.run!, baseUrl)
+      const result = await executeHelper(new URL(url).pathname)
+      outcomes[step.id!] = result.code === 0 ? 'success' : 'failure'
+      if (result.code !== 0 && !step['continue-on-error']) break
+    }
+
+    expect(requests.slice(requestStart).map(({ path }) => path)).toEqual([
+      '/api/cron/expire-holds',
+      '/api/cron/send-reminders',
+      '/api/cron/transfer-reminders',
+      '/api/cron/loyalty-automatic',
+    ])
+
+    const aggregateStep = steps.find((step) => step.if === 'always()')!
+    const result = spawnSync('bash', ['-c', aggregateStep.run!], {
+      cwd: repositoryRoot,
+      env: {
+        ...process.env,
+        EXPIRE_HOLDS_OUTCOME: outcomes.expire_holds,
+        SEND_REMINDERS_OUTCOME: outcomes.send_reminders,
+        TRANSFER_REMINDERS_OUTCOME: outcomes.transfer_reminders,
+        LOYALTY_AUTOMATIC_OUTCOME: outcomes.loyalty_automatic,
+      },
+    })
+    expect(result.status).not.toBe(0)
   })
 
   it('runs only cancellation warnings every fifteen minutes with checkout and concurrency', () => {
@@ -205,7 +255,9 @@ describe('cron workflow contract', () => {
     'normalizes BASE_URL=%s without corrupting the https origin',
     (baseUrl) => {
       for (const filename of ['cron.yml', 'cancellation-warnings.yml']) {
-        for (const run of runnableSteps(loadWorkflow(filename))) {
+        for (const run of runnableSteps(loadWorkflow(filename)).filter(
+          (source) => source.includes('scripts/run-json-cron.sh'),
+        )) {
           const resolvedUrl = resolveWorkflowUrl(run, baseUrl)
 
           expect(resolvedUrl).toMatch(/^https:\/\/cron\.example\.test\/api\/cron\//)

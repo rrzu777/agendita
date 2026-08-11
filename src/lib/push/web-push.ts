@@ -29,14 +29,17 @@ function providerStatus(error: unknown): number | undefined {
 export async function sendWebPush(
   subscription: NormalizedPushSubscription,
   payload: WebPushPayload,
+  ttlSeconds: number,
 ): Promise<WebPushResult> {
   const config = vapidConfig()
-  if (!config) return { ok: false }
+  if (!config || !Number.isSafeInteger(ttlSeconds) || ttlSeconds <= 0) {
+    return { ok: false }
+  }
 
   try {
     webPush.setVapidDetails(config.subject, config.publicKey, config.privateKey)
     const response = await webPush.sendNotification(subscription, JSON.stringify(payload), {
-      TTL: 0,
+      TTL: ttlSeconds,
       timeout: 10_000,
     })
     return response.statusCode === undefined

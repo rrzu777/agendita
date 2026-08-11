@@ -97,8 +97,11 @@ GitHub Actions ejecuta dos workflows autenticados con `CRON_SECRET`:
 
 Ambos pasan por `scripts/run-json-cron.sh`. El runner exige HTTP exitoso y JSON
 con un campo numérico `errors` igual a `0`; `errors > 0`, un campo ausente o una
-respuesta inválida dejan el run rojo. Para una ejecución manual controlada, con
-las variables ya cargadas sin imprimirlas:
+respuesta inválida dejan el run rojo. El workflow horario ejecuta siempre sus
+cuatro endpoints y agrega los resultados al final: un fallo no omite los crons
+posteriores, pero el job termina rojo. `CRON_SECRET` permanece limitado al step
+de cada llamada y cada endpoint conserva su resultado visible. Para una
+ejecución manual controlada, con las variables ya cargadas sin imprimirlas:
 
 ```bash
 scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/cancellation-warnings"
@@ -108,6 +111,13 @@ Si las tres variables VAPID no están configuradas, el endpoint de advertencias
 se omite de forma deliberada y devuelve `sent: 0`, `skipped: 0`, `errors: 0`.
 En ese estado el workflow verde sólo confirma un no-op seguro: no demuestra que
 Web Push esté habilitado ni que exista entrega real.
+
+Cada push de advertencia usa un TTL positivo calculado justo antes de contactar
+al proveedor y nunca mayor que el tiempo restante hasta el cierre (con tope de
+dos horas). El estado de reserva se relee con un reloj fresco antes del efecto.
+Existe una frontera distribuida inevitable entre esa última lectura y la
+aceptación del proveedor; el lease recuperable y el TTL acotado limitan esa
+ventana, pero no prometen atomicidad externa.
 
 ## 7. Smoke posterior a la recuperación
 

@@ -717,7 +717,7 @@ describe('web push sender', () => {
   it('stays disabled without the complete VAPID trio', async () => {
     const { sendWebPush } = await import('@/lib/push/web-push')
 
-    await expect(sendWebPush(validSubscription, { title: 'Aviso', body: 'Texto', url: 'https://www.agendita.cl/mi/demo' }))
+    await expect(sendWebPush(validSubscription, { title: 'Aviso', body: 'Texto', url: 'https://www.agendita.cl/mi/demo' }, 60))
       .resolves.toEqual({ ok: false })
     expect(mocks.sendNotification).not.toHaveBeenCalled()
   })
@@ -734,7 +734,7 @@ describe('web push sender', () => {
       body: 'Recordatorio de cancelación',
       url: 'https://www.agendita.cl/mi/demo',
     }
-    await expect(sendWebPush(validSubscription, payload)).resolves.toEqual({ ok: true, statusCode: 201 })
+    await expect(sendWebPush(validSubscription, payload, 7_200)).resolves.toEqual({ ok: true, statusCode: 201 })
     expect(mocks.setVapidDetails).toHaveBeenCalledWith(
       'mailto:soporte@agendita.cl',
       TEST_VAPID_PUBLIC_KEY,
@@ -743,7 +743,7 @@ describe('web push sender', () => {
     expect(mocks.sendNotification).toHaveBeenCalledWith(
       validSubscription,
       JSON.stringify(payload),
-      { TTL: 0, timeout: 10_000 },
+      { TTL: 7_200, timeout: 10_000 },
     )
   })
 
@@ -754,7 +754,7 @@ describe('web push sender', () => {
     mocks.sendNotification.mockRejectedValue({ statusCode: 410, body: 'secret provider body' })
     const { sendWebPush } = await import('@/lib/push/web-push')
 
-    await expect(sendWebPush(validSubscription, { title: 'Aviso', body: 'Texto', url: 'https://www.agendita.cl/mi/demo' }))
+    await expect(sendWebPush(validSubscription, { title: 'Aviso', body: 'Texto', url: 'https://www.agendita.cl/mi/demo' }, 60))
       .resolves.toEqual({ ok: false, statusCode: 410 })
   })
 
@@ -765,7 +765,7 @@ describe('web push sender', () => {
     mocks.setVapidDetails.mockImplementation(() => { throw new Error('provider included credentials') })
     const { sendWebPush } = await import('@/lib/push/web-push')
 
-    await expect(sendWebPush(validSubscription, { title: 'Aviso', body: 'Texto', url: 'https://www.agendita.cl/mi/demo' }))
+    await expect(sendWebPush(validSubscription, { title: 'Aviso', body: 'Texto', url: 'https://www.agendita.cl/mi/demo' }, 60))
       .resolves.toEqual({ ok: false })
   })
 })

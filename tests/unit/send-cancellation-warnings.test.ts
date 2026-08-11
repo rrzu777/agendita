@@ -117,8 +117,8 @@ function simulateSubscriptionPersistence(initial: SimulatedSubscriptionRow) {
       | undefined
     if (
       where.id !== row.id
-      || ('subscriptionEncrypted' in where
-        && where.subscriptionEncrypted !== row.subscriptionEncrypted)
+      || ('subscriptionFingerprint' in where
+        && where.subscriptionFingerprint !== row.subscriptionFingerprint)
       || (typeof expectedFailureCount === 'number'
         && expectedFailureCount !== row.failureCount)
       || (typeof expectedFailureCount === 'object'
@@ -142,6 +142,7 @@ function simulateSubscriptionPersistence(initial: SimulatedSubscriptionRow) {
     replaceWithFreshGeneration() {
       row = {
         ...row,
+        subscriptionFingerprint: 'fingerprint-2',
         subscriptionEncrypted: 'fresh-ciphertext',
         failureCount: 0,
         revokedAt: null,
@@ -600,7 +601,7 @@ describe('sendCancellationWarnings', () => {
     }))
   })
 
-  it('envía todos los dispositivos en paralelo y un éxito parcial marca sent', async () => {
+  it('envía dispositivos con fanout acotado y un éxito parcial marca sent', async () => {
     let releaseFirst!: () => void
     const firstPending = new Promise<void>((resolve) => { releaseFirst = resolve })
     mockSubscriptionFindMany.mockResolvedValue([
@@ -624,7 +625,6 @@ describe('sendCancellationWarnings', () => {
       where: {
         id: 'subscription-2',
         subscriptionFingerprint: 'fingerprint-1',
-        subscriptionEncrypted: PUSH_JSON,
         revokedAt: null,
       },
       data: expect.objectContaining({ revokedAt: NOW, lastFailureAt: NOW }),
@@ -651,7 +651,6 @@ describe('sendCancellationWarnings', () => {
       where: {
         id: 'subscription-1',
         subscriptionFingerprint: 'fingerprint-1',
-        subscriptionEncrypted: PUSH_JSON,
         revokedAt: null,
       },
       data: expect.objectContaining({
@@ -813,7 +812,6 @@ describe('sendCancellationWarnings', () => {
       where: {
         id: 'subscription-1',
         subscriptionFingerprint: 'fingerprint-1',
-        subscriptionEncrypted: PUSH_JSON,
         revokedAt: null,
       },
       data: { lastFailureAt: NOW },
@@ -821,7 +819,7 @@ describe('sendCancellationWarnings', () => {
     expect(mockSubscriptionUpdate).not.toHaveBeenCalled()
   })
 
-  it('un rechazo de red es transitorio y Promise.allSettled evita abortar el lote', async () => {
+  it('un rechazo de red es transitorio y el fanout acotado evita abortar el lote', async () => {
     mockSendWebPush.mockRejectedValue(new Error('endpoint capability must not leak'))
 
     const result = await sendCancellationWarnings(NOW)
@@ -831,7 +829,6 @@ describe('sendCancellationWarnings', () => {
       where: {
         id: 'subscription-1',
         subscriptionFingerprint: 'fingerprint-1',
-        subscriptionEncrypted: PUSH_JSON,
         revokedAt: null,
       },
       data: { lastFailureAt: NOW },
@@ -866,7 +863,6 @@ describe('sendCancellationWarnings', () => {
       where: {
         id: 'subscription-1',
         subscriptionFingerprint: 'fingerprint-1',
-        subscriptionEncrypted: PUSH_JSON,
         revokedAt: null,
       },
       data: {
@@ -882,13 +878,14 @@ describe('sendCancellationWarnings', () => {
         body: 'Podés cancelar o reprogramar hasta 24 horas antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.',
         url: 'https://www.agendita.cl/mi/mimos-nails',
       },
+      7_200,
     )
     const payload = JSON.stringify(mockSendWebPush.mock.calls[0][1])
     expect(payload).not.toContain('customer-1')
     expect(payload).not.toContain('5000')
   })
 
-  it('un éxito del envío viejo no reinicia el estado de una re-suscripción concurrente', async () => {
+  it('un éxito del envío viejo reintenta la generación actual antes de marcar sent', async () => {
     const freshSuccessAt = new Date('2026-08-10T11:59:00.000Z')
     const simulated = simulateSubscriptionPersistence({
       ...makeSubscription({ failureCount: 2 }),
@@ -897,22 +894,169 @@ describe('sendCancellationWarnings', () => {
       lastSuccessAt: null,
     })
     mockSendWebPush.mockImplementation(async () => {
-      simulated.replaceWithFreshGeneration()
-      const row = simulated.read()
-      row.failureCount = 1
-      row.lastFailureAt = new Date('2026-08-10T11:58:00.000Z')
-      row.lastSuccessAt = freshSuccessAt
+      if (mockSendWebPush.mock.calls.length === 1) {
+        simulated.replaceWithFreshGeneration()
+        const row = simulated.read()
+        row.failureCount = 1
+        row.lastFailureAt = new Date('2026-08-10T11:58:00.000Z')
+        row.lastSuccessAt = freshSuccessAt
+      }
+      return { ok: true, statusCode: 201 }
+    })
+    mockSubscriptionFindMany.mockImplementation(async () => [{ ...simulated.read() }])
+    mockDecryptSecret.mockReturnValue(PUSH_JSON)
+
+    const result = await sendCancellationWarnings(NOW)
+
+    expect(simulated.read()).toMatchObject({
+      subscriptionEncrypted: 'fresh-ciphertext',
+      subscriptionFingerprint: 'fingerprint-2',
+      failureCount: 0,
+      lastFailureAt: null,
+      lastSuccessAt: NOW,
+    })
+    expect(result).toEqual({ sent: 1, skipped: 0, errors: 0 })
+    expect(mockSendWebPush).toHaveBeenCalledTimes(2)
+  })
+
+  it('recalcula copy y TTL si cambia el cutoff legacy antes del retry de generación', async () => {
+    const simulated = simulateSubscriptionPersistence({
+      ...makeSubscription(),
+      revokedAt: null,
+      lastFailureAt: null,
+      lastSuccessAt: null,
+    })
+    mockBookingFindMany.mockResolvedValue([
+      makeBooking({ cancellationCutoffHours: null }),
+    ])
+    mockBookingFindFirst
+      .mockResolvedValueOnce({
+        cancellationCutoffHours: null,
+        startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
+        customer: { userId: 'user-1' },
+        business: { selfServiceCutoffHours: 24 },
+      })
+      .mockResolvedValueOnce({
+        cancellationCutoffHours: null,
+        startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
+        customer: { userId: 'user-1' },
+        business: { selfServiceCutoffHours: 25 },
+      })
+    mockSubscriptionFindMany.mockImplementation(async () => [{ ...simulated.read() }])
+    mockDecryptSecret.mockReturnValue(PUSH_JSON)
+    mockSendWebPush.mockImplementation(async () => {
+      if (mockSendWebPush.mock.calls.length === 1) simulated.replaceWithFreshGeneration()
       return { ok: true, statusCode: 201 }
     })
 
     await sendCancellationWarnings(NOW)
 
-    expect(simulated.read()).toMatchObject({
-      subscriptionEncrypted: 'fresh-ciphertext',
-      failureCount: 1,
-      lastFailureAt: new Date('2026-08-10T11:58:00.000Z'),
-      lastSuccessAt: freshSuccessAt,
+    expect(mockSendWebPush).toHaveBeenNthCalledWith(
+      2,
+      expect.any(Object),
+      expect.objectContaining({
+        body: expect.stringContaining('hasta 25 horas antes'),
+      }),
+      3_600,
+    )
+  })
+
+  it('calcula TTL fresco antes del efecto y nunca excede la ventana restante', async () => {
+    let current = NOW
+    mockSubscriptionFindMany.mockImplementation(async () => {
+      current = new Date(NOW.getTime() + 30 * 60_000 + 450)
+      return [makeSubscription()]
     })
+
+    await sendCancellationWarnings(() => current)
+
+    expect(mockSendWebPush).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      5_399,
+    )
+  })
+
+  it('libera el claim si la ventana cierra antes del efecto externo', async () => {
+    let current = NOW
+    mockSubscriptionFindMany.mockImplementation(async () => {
+      current = new Date(NOW.getTime() + 2 * HOUR_MS)
+      return [makeSubscription()]
+    })
+
+    const result = await sendCancellationWarnings(() => current)
+
+    expect(result).toEqual({ sent: 0, skipped: 1, errors: 0 })
+    expect(mockSendWebPush).not.toHaveBeenCalled()
+    expect(mockBookingUpdateMany).toHaveBeenLastCalledWith({
+      where: {
+        id: 'booking-1',
+        cancellationReminderClaimedAt: NOW,
+        cancellationReminderSentAt: null,
+      },
+      data: { cancellationReminderClaimedAt: null },
+    })
+  })
+
+  it.each([
+    ['rotación de ENCRYPTION_KEY', () => { throw new Error('bad key') }],
+    ['ciphertext corrupto', () => '{not-json'],
+  ])('revoca una generación localmente ilegible y no la reintenta para siempre: %s', async (_case, decrypt) => {
+    mockDecryptSecret.mockImplementation(decrypt)
+    mockSubscriptionFindMany
+      .mockResolvedValueOnce([makeSubscription()])
+      .mockResolvedValueOnce([])
+
+    const first = await sendCancellationWarnings(NOW)
+    const second = await sendCancellationWarnings(NOW)
+
+    expect(first).toEqual({ sent: 0, skipped: 0, errors: 1 })
+    expect(second).toEqual({ sent: 0, skipped: 1, errors: 0 })
+    expect(mockSendWebPush).not.toHaveBeenCalled()
+    expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'subscription-1',
+        subscriptionFingerprint: 'fingerprint-1',
+        revokedAt: null,
+      },
+      data: expect.objectContaining({
+        revokedAt: NOW,
+        lastFailureAt: NOW,
+      }),
+    })
+  })
+
+  it('limita explícitamente a dos los envíos simultáneos del fanout', async () => {
+    mockSubscriptionFindMany.mockResolvedValue(
+      Array.from({ length: 5 }, (_, index) => makeSubscription({
+        id: `subscription-${index + 1}`,
+        subscriptionFingerprint: `fingerprint-${index + 1}`,
+      })),
+    )
+    let active = 0
+    let maxActive = 0
+    const releases: Array<() => void> = []
+    mockSendWebPush.mockImplementation(() => new Promise((resolve) => {
+      active++
+      maxActive = Math.max(maxActive, active)
+      releases.push(() => {
+        active--
+        resolve({ ok: true, statusCode: 201 })
+      })
+    }))
+
+    const running = sendCancellationWarnings(NOW)
+    await vi.waitFor(() => expect(mockSendWebPush).toHaveBeenCalledTimes(2))
+    expect(maxActive).toBe(2)
+    releases.splice(0).forEach((release) => release())
+    await vi.waitFor(() => expect(mockSendWebPush).toHaveBeenCalledTimes(4))
+    expect(maxActive).toBe(2)
+    releases.splice(0).forEach((release) => release())
+    await vi.waitFor(() => expect(mockSendWebPush).toHaveBeenCalledTimes(5))
+    releases.splice(0).forEach((release) => release())
+
+    await expect(running).resolves.toEqual({ sent: 1, skipped: 0, errors: 0 })
+    expect(maxActive).toBe(2)
   })
 
   it('para invitada abre la confirmación pública del tenant', async () => {
