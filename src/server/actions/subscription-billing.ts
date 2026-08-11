@@ -11,6 +11,7 @@ import { prisma } from '@/lib/db'
 import { requireMercadoPagoEnvironment } from '@/lib/payments/mercado-pago-environment'
 import {
   createMpSubscriptionClient,
+  MercadoPagoSubscriptionTransportError,
   type MpSubscriptionClient,
 } from '@/lib/subscriptions/mercado-pago-client'
 import { applySubscriptionTransition } from '@/lib/subscriptions/transition'
@@ -259,6 +260,25 @@ async function ensureProviderPlan(input: {
       provisioningStatus: 'ready',
     })
   } catch (error) {
+    if (
+      error instanceof MercadoPagoSubscriptionTransportError &&
+      error.outcome === 'definitive_rejection'
+    ) {
+      try {
+        await prisma.subscriptionPlanMapping.deleteMany({
+          where: {
+            id: reservation.id,
+            providerPlanId: null,
+            provisioningToken,
+            provisioningStatus: 'provisioning',
+          },
+        })
+      } catch {
+        // A failed release leaves the bounded lease fail-closed. The next
+        // attempt will require exact reconciliation instead of duplicating it.
+      }
+      throw error
+    }
     try {
       await prisma.subscriptionPlanMapping.updateMany({
         where: {
@@ -314,9 +334,9 @@ export async function reconcileSubscriptionPlan(providerPlanId: string): Promise
   const matches = candidates.filter((candidate) =>
     !!candidate.externalReference &&
     candidate.amount === providerPlan.amount && candidate.currency === providerPlan.currency &&
-    (providerPlan.reason === null || providerPlan.reason === candidate.plan.name) &&
-    (providerPlan.externalReference === null ||
-      providerPlan.externalReference === candidate.externalReference),
+    providerPlan.reason !== null && providerPlan.reason === candidate.plan.name &&
+    providerPlan.externalReference !== null &&
+      providerPlan.externalReference === candidate.externalReference,
   )
   if (matches.length !== 1) {
     throw new UserError('El plan externo exacto no coincide con una única reserva local.')

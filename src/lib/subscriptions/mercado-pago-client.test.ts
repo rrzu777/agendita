@@ -263,11 +263,49 @@ describe('createMpSubscriptionClient', () => {
       expect.objectContaining({
         name: 'MercadoPagoSubscriptionTransportError',
         message: 'Mercado Pago subscriptions request failed (HTTP 401).',
+        status: 401,
+        outcome: 'definitive_rejection',
       }),
     )
     await expect(createMpSubscriptionClient(config).getPlan('plan-1')).rejects.toBeInstanceOf(
       MercadoPagoSubscriptionTransportError,
     )
+  })
+
+  it.each([
+    [400, 'definitive_rejection'],
+    [401, 'definitive_rejection'],
+    [403, 'definitive_rejection'],
+    [408, 'ambiguous'],
+    [500, 'ambiguous'],
+  ] as const)('classifies sanitized HTTP %s as %s', async (status, outcome) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(`secret upstream body ${config.accessToken}`, { status }),
+    ))
+
+    const error = await createMpSubscriptionClient(config).createPlan({
+      name: 'Plan Pro', amount: 12000, externalReference: 'plan-reference',
+    }).catch((caught: unknown) => caught)
+
+    expect(error).toEqual(expect.objectContaining({ status, outcome }))
+    expect(String(error)).not.toContain(config.accessToken)
+    expect(JSON.stringify(error)).not.toContain(config.accessToken)
+  })
+
+  it.each([
+    ['network', new TypeError('fetch failed')],
+    ['timeout', new DOMException('timed out', 'AbortError')],
+  ])('classifies a %s failure as ambiguous without leaking the cause', async (_name, cause) => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(cause))
+
+    const error = await createMpSubscriptionClient(config).createPlan({
+      name: 'Plan Pro', amount: 12000, externalReference: 'plan-reference',
+    }).catch((caught: unknown) => caught)
+
+    expect(error).toEqual(expect.objectContaining({
+      status: null, outcome: 'ambiguous', message: 'Mercado Pago subscriptions request failed.',
+    }))
+    expect(error).not.toHaveProperty('cause')
   })
 
   it('bounds every provider request with the fixed five-second timeout', async () => {

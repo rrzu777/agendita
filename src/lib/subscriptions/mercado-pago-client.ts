@@ -57,14 +57,25 @@ export type MpSubscriptionClient = {
   searchInvoices(subscriptionId: string): Promise<MpInvoice[]>
 }
 
+export type MercadoPagoSubscriptionRequestOutcome =
+  | 'definitive_rejection'
+  | 'ambiguous'
+
 export class MercadoPagoSubscriptionTransportError extends Error {
-  constructor(status?: number) {
+  readonly status: number | null
+  readonly outcome: MercadoPagoSubscriptionRequestOutcome
+
+  constructor(status: number | null = null) {
     super(
-      status
+      status !== null
         ? `Mercado Pago subscriptions request failed (HTTP ${status}).`
         : 'Mercado Pago subscriptions request failed.',
     )
     this.name = 'MercadoPagoSubscriptionTransportError'
+    this.status = status
+    this.outcome = status !== null && status >= 400 && status < 500 && status !== 408
+      ? 'definitive_rejection'
+      : 'ambiguous'
   }
 }
 

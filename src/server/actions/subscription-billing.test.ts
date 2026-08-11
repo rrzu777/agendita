@@ -30,16 +30,20 @@ vi.mock('@/lib/auth/server', () => ({
 vi.mock('@/lib/auth/user', () => ({
   requirePlatformAdminUser: (...args: unknown[]) => mocks.requirePlatformAdminUser(...args),
 }))
-vi.mock('@/lib/subscriptions/mercado-pago-client', () => ({
-  createMpSubscriptionClient: vi.fn(() => ({
-    createPlan: mocks.createPlan,
-    getPlan: mocks.getPlan,
-    getCurrentAccountId: mocks.getCurrentAccountId,
-    createSubscription: mocks.createSubscription,
-    getSubscription: mocks.getSubscription,
-    cancelSubscription: mocks.cancelSubscription,
-  })),
-}))
+vi.mock('@/lib/subscriptions/mercado-pago-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/subscriptions/mercado-pago-client')>()
+  return {
+    ...actual,
+    createMpSubscriptionClient: vi.fn(() => ({
+      createPlan: mocks.createPlan,
+      getPlan: mocks.getPlan,
+      getCurrentAccountId: mocks.getCurrentAccountId,
+      createSubscription: mocks.createSubscription,
+      getSubscription: mocks.getSubscription,
+      cancelSubscription: mocks.cancelSubscription,
+    })),
+  }
+})
 vi.mock('@/lib/subscriptions/transition', () => ({
   applySubscriptionTransition: (...args: unknown[]) => mocks.applySubscriptionTransition(...args),
 }))
@@ -51,6 +55,7 @@ import {
   requestSubscriptionCancellation,
   startSubscriptionCheckout,
 } from './subscription-billing'
+import { MercadoPagoSubscriptionTransportError } from '@/lib/subscriptions/mercado-pago-client'
 
 const NOW = new Date('2026-08-11T12:00:00.000Z')
 const TRIAL_END = new Date('2026-08-14T12:00:00.000Z')
@@ -71,7 +76,7 @@ const mapping = {
 
 describe('subscription billing actions', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     vi.setSystemTime(NOW)
     process.env.MP_SUBSCRIPTIONS_ENABLED = 'true'
     process.env.MERCADO_PAGO_ENVIRONMENT = 'sandbox'
@@ -529,9 +534,90 @@ describe('subscription billing actions', () => {
     expect(mocks.createSubscription).not.toHaveBeenCalled()
   })
 
+  it.each([400, 401, 403])(
+    'releases a definitively rejected plan reservation after HTTP %s and permits a corrected retry',
+    async (status) => {
+      mocks.prisma.subscriptionPlanMapping.findFirst.mockResolvedValue(null)
+      let reservation: Record<string, unknown> | undefined
+      mocks.prisma.subscriptionPlanMapping.upsert.mockImplementation(async ({ create }) => {
+        reservation ??= {
+          ...mapping, id: create.id, providerPlanId: null, isActive: false,
+          provisioningToken: create.provisioningToken,
+          provisioningLeaseExpiresAt: create.provisioningLeaseExpiresAt,
+          externalReference: create.externalReference,
+          provisioningStatus: 'provisioning',
+        }
+        return reservation
+      })
+      mocks.createPlan
+        .mockRejectedValueOnce(new MercadoPagoSubscriptionTransportError(status))
+        .mockImplementationOnce(async (input) => ({
+          id: 'provider-plan-after-fix', status: 'active', amount: 14_990, currency: 'CLP',
+          frequency: 1, frequencyType: 'months', externalReference: input.externalReference,
+          reason: 'Plan Pro', collectorId: 'collector-1',
+        }))
+      mocks.prisma.subscriptionPlanMapping.deleteMany.mockImplementation(async () => {
+        reservation = undefined
+        return { count: 1 }
+      })
+
+      await expect(startSubscriptionCheckout()).rejects.toMatchObject({
+        status, outcome: 'definitive_rejection',
+      })
+      await startSubscriptionCheckout()
+
+      expect(mocks.prisma.subscriptionPlanMapping.deleteMany).toHaveBeenCalledTimes(1)
+      expect(mocks.createPlan).toHaveBeenCalledTimes(2)
+    },
+  )
+
+  it.each([
+    ['HTTP 408', new MercadoPagoSubscriptionTransportError(408)],
+    ['HTTP 500', new MercadoPagoSubscriptionTransportError(500)],
+    ['network', new MercadoPagoSubscriptionTransportError()],
+    ['timeout', new MercadoPagoSubscriptionTransportError()],
+  ])('marks %s plan creation as ambiguous and never creates automatically again', async (_name, failure) => {
+    mocks.prisma.subscriptionPlanMapping.findFirst.mockResolvedValue(null)
+    let reservation: {
+      providerPlanId: string | null
+      provisioningToken: string | null
+      provisioningLeaseExpiresAt: Date | null
+      provisioningStatus: string
+      [key: string]: unknown
+    } | undefined
+    mocks.prisma.subscriptionPlanMapping.upsert.mockImplementation(async ({ create }) => {
+      reservation ??= {
+        ...mapping, id: create.id, providerPlanId: null, isActive: false,
+        provisioningToken: create.provisioningToken,
+        provisioningLeaseExpiresAt: create.provisioningLeaseExpiresAt,
+        externalReference: create.externalReference,
+        provisioningStatus: 'provisioning',
+      }
+      return reservation
+    })
+    mocks.createPlan.mockRejectedValue(failure)
+    mocks.prisma.subscriptionPlanMapping.updateMany.mockImplementation(async ({ data }) => {
+      if (data.provisioningStatus === 'manual_reconciliation_required') {
+        reservation!.provisioningStatus = 'manual_reconciliation_required'
+        reservation!.provisioningToken = null
+        reservation!.provisioningLeaseExpiresAt = null
+      }
+      return { count: 1 }
+    })
+
+    await expect(startSubscriptionCheckout()).rejects.toMatchObject({ outcome: 'ambiguous' })
+    await expect(startSubscriptionCheckout()).rejects.toThrow(/reconciliaci.n manual/i)
+
+    expect(mocks.prisma.subscriptionPlanMapping.deleteMany).not.toHaveBeenCalled()
+    expect(mocks.createPlan).toHaveBeenCalledTimes(1)
+  })
+
   it.each([
     ['wrong account', { collectorId: 'attacker-collector' }],
     ['wrong price', { amount: 1 }],
+    ['null reason', { reason: null }],
+    ['wrong reason', { reason: 'Other Plan' }],
+    ['null reference', { externalReference: null }],
     ['wrong reference', { externalReference: 'other-reference' }],
   ])('rejects exact operator recovery for a %s plan', async (_name, override) => {
     const manualMapping = {
