@@ -35,6 +35,18 @@ export type PushUnsubscribeScope =
   | { kind: 'user'; userId: string }
   | { kind: 'endpoint' }
 
+export type PushStatusScope =
+  | {
+      kind: 'guest'
+      target: {
+        businessId: string
+        customerId: string
+        authorization: Extract<PushSubscriptionAuthorization, { kind: 'guest' }>
+      }
+    }
+  | { kind: 'user'; userId: string }
+  | { kind: 'endpoint' }
+
 export class PushDeviceLimitError extends Error {
   constructor() {
     super('Push device limit reached')
@@ -146,6 +158,42 @@ export function fingerprintPushSubscription(
   return createHash('sha256')
     .update(JSON.stringify(subscription), 'utf8')
     .digest('hex')
+}
+
+export async function hasActivePushAssociation({
+  endpoint,
+  scope,
+}: {
+  endpoint: string
+  scope: PushStatusScope
+}): Promise<boolean> {
+  const endpointHash = hashPushEndpoint(endpoint)
+  const authorizationWhere = scope.kind === 'guest'
+    ? {
+        businessId: scope.target.businessId,
+        customerId: scope.target.customerId,
+        bookingEntitlements: {
+          some: { bookingId: scope.target.authorization.bookingId },
+        },
+      }
+    : scope.kind === 'user'
+      ? { authorizedUserId: scope.userId }
+      : {
+          OR: [
+            { authorizedUserId: { not: null } },
+            { bookingEntitlements: { some: {} } },
+          ],
+        }
+
+  const association = await prisma.pushSubscription.findFirst({
+    where: {
+      endpointHash,
+      revokedAt: null,
+      ...authorizationWhere,
+    },
+    select: { id: true },
+  })
+  return association !== null
 }
 
 async function detachOlderScopeGeneration({

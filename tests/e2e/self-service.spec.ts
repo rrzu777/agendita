@@ -376,6 +376,7 @@ test.describe('self-service: recordatorios push', () => {
   })
 
   test('tras recargar descubre la suscripción y una invitada puede desactivarla por posesión', async ({ page }) => {
+    const statusBodies: unknown[] = []
     const unsubscribeBodies: unknown[] = []
     await page.route('**/api/push/subscribe', async (route) => {
       await route.fulfill({
@@ -390,6 +391,14 @@ test.describe('self-service: recordatorios push', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ unsubscribed: true }),
+      })
+    })
+    await page.route('**/api/push/status', async (route) => {
+      statusBodies.push(route.request().postDataJSON())
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ associated: true }),
       })
     })
     await page.addInitScript(() => {
@@ -410,9 +419,13 @@ test.describe('self-service: recordatorios push', () => {
         value: class MockPushManager {},
       })
 
+      const vapidPublicKey = 'BAmuMRGniKzfw0ZShPIqYtZrZM8Ilz2YJYG3eS8T9rXcK3BEMp4ckNkh5EywptWzWaDLfHmcfWXKixB0ghV1HPI'
+      const padding = '='.repeat((4 - (vapidPublicKey.length % 4)) % 4)
+      const rawKey = atob((vapidPublicKey + padding).replace(/-/g, '+').replace(/_/g, '/'))
+      const applicationServerKey = Uint8Array.from(rawKey, (character) => character.charCodeAt(0))
       const subscription = {
         endpoint: 'https://push.example.test/e2e-reload-subscription',
-        options: { applicationServerKey: null },
+        options: { applicationServerKey: applicationServerKey.buffer },
         unsubscribe: async () => {
           counters.unsubscribeCalls += 1
           sessionStorage.removeItem('__pushE2EActive')
@@ -458,6 +471,9 @@ test.describe('self-service: recordatorios push', () => {
       window as unknown as { __pushReloadE2E: { permissionRequests: number } }
     ).__pushReloadE2E.permissionRequests)
     expect(afterReload).toBe(0)
+    expect(statusBodies).toEqual([
+      { endpoint: 'https://push.example.test/e2e-reload-subscription' },
+    ])
 
     await page.getByRole('button', { name: 'Desactivar recordatorios' }).click()
     await expect(page.getByText(/iniciá sesión/)).toBeVisible()

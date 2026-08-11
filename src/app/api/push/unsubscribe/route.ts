@@ -25,7 +25,13 @@ export async function POST(request: Request) {
     if (!validPushEndpoint(body.endpoint)) {
       return Response.json({ error: 'Solicitud inválida' }, { status: 400, headers: JSON_HEADERS })
     }
-    const scope = await resolvePushUnsubscribeScope(body.grant)
+    if (body.endpointPossession !== undefined && body.endpointPossession !== true) {
+      return Response.json({ error: 'Solicitud inválida' }, { status: 400, headers: JSON_HEADERS })
+    }
+    const scope = await resolvePushUnsubscribeScope(
+      body.grant,
+      body.endpointPossession === true,
+    )
     if (!scope) {
       return Response.json({ error: 'Solicitud no autorizada' }, { status: 401, headers: JSON_HEADERS })
     }

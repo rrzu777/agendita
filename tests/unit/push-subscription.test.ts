@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   customerFindMany: vi.fn(),
   subscriptionFindUnique: vi.fn(),
   subscriptionFindMany: vi.fn(),
+  associationFindFirst: vi.fn(),
   subscriptionCount: vi.fn(),
   upsert: vi.fn(),
   entitlementUpsert: vi.fn(),
@@ -26,6 +27,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/db', () => ({
   prisma: {
     $transaction: mocks.transaction,
+    pushSubscription: { findFirst: mocks.associationFindFirst },
   },
 }))
 
@@ -62,6 +64,7 @@ describe('push subscription storage', () => {
     mocks.customerFindMany.mockResolvedValue([])
     mocks.subscriptionFindUnique.mockResolvedValue(null)
     mocks.subscriptionFindMany.mockResolvedValue([{ id: 'push-1', customerId: 'customer-1' }])
+    mocks.associationFindFirst.mockResolvedValue(null)
     mocks.subscriptionCount.mockResolvedValue(0)
     mocks.entitlementUpsert.mockResolvedValue({ subscriptionId: 'push-1', bookingId: 'booking-1' })
     mocks.entitlementDeleteMany.mockResolvedValue({ count: 1 })
@@ -137,6 +140,70 @@ describe('push subscription storage', () => {
     expect(hashPushEndpoint(validSubscription.endpoint)).toBe(
       'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
     )
+  })
+
+  it.each([
+    {
+      label: 'guest entitlement',
+      scope: {
+        kind: 'guest' as const,
+        target: {
+          businessId: 'business-1',
+          customerId: 'customer-1',
+          authorization: { kind: 'guest' as const, bookingId: 'booking-1' },
+        },
+      },
+      expectedWhere: {
+        endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
+        revokedAt: null,
+        businessId: 'business-1',
+        customerId: 'customer-1',
+        bookingEntitlements: { some: { bookingId: 'booking-1' } },
+      },
+    },
+    {
+      label: 'authenticated user',
+      scope: { kind: 'user' as const, userId: 'user-1' },
+      expectedWhere: {
+        endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
+        revokedAt: null,
+        authorizedUserId: 'user-1',
+      },
+    },
+    {
+      label: 'endpoint possession',
+      scope: { kind: 'endpoint' as const },
+      expectedWhere: {
+        endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
+        revokedAt: null,
+        OR: [
+          { authorizedUserId: { not: null } },
+          { bookingEntitlements: { some: {} } },
+        ],
+      },
+    },
+  ])('checks only an active $label association and returns a boolean', async ({ scope, expectedWhere }) => {
+    const { hasActivePushAssociation } = await import('@/lib/push/subscription')
+    mocks.associationFindFirst.mockResolvedValue({ id: 'push-1' })
+
+    await expect(hasActivePushAssociation({
+      endpoint: validSubscription.endpoint,
+      scope,
+    })).resolves.toBe(true)
+
+    expect(mocks.associationFindFirst).toHaveBeenCalledWith({
+      where: expectedWhere,
+      select: { id: true },
+    })
+  })
+
+  it('reports a revoked or absent association as false without returning row data', async () => {
+    const { hasActivePushAssociation } = await import('@/lib/push/subscription')
+
+    await expect(hasActivePushAssociation({
+      endpoint: validSubscription.endpoint,
+      scope: { kind: 'endpoint' },
+    })).resolves.toBe(false)
   })
 
   it('fingerprints the normalized endpoint and keys so key rotation creates a new generation', async () => {

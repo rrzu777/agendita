@@ -6,6 +6,7 @@ import { hasUsablePushConfig } from '@/lib/push/config'
 import {
   hashPushEndpoint,
   isAllowedWebPushEndpoint,
+  type PushStatusScope,
   type PushSubscriptionAuthorization,
   type PushUnsubscribeScope,
 } from '@/lib/push/subscription'
@@ -116,7 +117,13 @@ export async function resolvePushSubscribeScope(grant: unknown): Promise<PushSub
   return user ? { kind: 'user', userId: user.id } : null
 }
 
-export async function resolvePushUnsubscribeScope(grant: unknown): Promise<PushUnsubscribeScope | null> {
+export async function resolvePushUnsubscribeScope(
+  grant: unknown,
+  endpointPossession = false,
+): Promise<PushUnsubscribeScope | null> {
+  if (endpointPossession) {
+    return grant === undefined || grant === null ? { kind: 'endpoint' } : null
+  }
   if (grant !== undefined && grant !== null) {
     if (typeof grant !== 'string') return null
     const target = await guestTarget(grant)
@@ -130,6 +137,17 @@ export async function resolvePushUnsubscribeScope(grant: unknown): Promise<PushU
         bookingId: target.authorization.bookingId,
       },
     }
+  }
+
+  const user = await getCurrentUser()
+  return user ? { kind: 'user', userId: user.id } : { kind: 'endpoint' }
+}
+
+export async function resolvePushStatusScope(grant: unknown): Promise<PushStatusScope | null> {
+  if (grant !== undefined && grant !== null) {
+    if (typeof grant !== 'string') return null
+    const target = await guestTarget(grant)
+    return target ? { kind: 'guest', target } : null
   }
 
   const user = await getCurrentUser()
@@ -165,6 +183,13 @@ export function pushUnsubscribeRateLimitContext(scope: PushUnsubscribeScope, end
         keyMode: 'target',
         targetId: `guest:${scope.target.businessId}:${scope.target.customerId}:${scope.target.bookingId}`,
       }
+}
+
+export function pushStatusRateLimitContext(endpoint: string): {
+  keyMode: 'target'
+  targetId: string
+} {
+  return { keyMode: 'target', targetId: `endpoint:${hashPushEndpoint(endpoint)}` }
 }
 
 export function validPushEndpoint(value: unknown): value is string {

@@ -9,7 +9,7 @@ import {
   replaceBrowserLocation,
 } from '@/lib/push/canonical-client'
 
-type ManagerStatus = 'checking' | 'available' | 'activating' | 'active' | 'denied' | 'unsupported' | 'disabled' | 'missing-scope' | 'association-error' | 'cleanup-error' | 'error'
+type ManagerStatus = 'checking' | 'available' | 'activating' | 'active' | 'denied' | 'unsupported' | 'disabled' | 'missing-scope' | 'update-required' | 'local-only' | 'verification-error' | 'association-error' | 'cleanup-error' | 'error'
 
 function applicationServerKey(value: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (value.length % 4)) % 4)
@@ -38,6 +38,35 @@ function sameApplicationServerKey(
 }
 
 const subscribeToBrowserReady = () => () => undefined
+
+async function checkServerAssociation(
+  subscription: PushSubscription,
+  grant: string | null,
+): Promise<'active' | 'inactive' | 'unavailable'> {
+  try {
+    const response = await fetch('/api/push/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: subscription.endpoint,
+        ...(grant ? { grant } : {}),
+      }),
+    })
+    if (!response.ok) return 'unavailable'
+    const result: unknown = await response.json()
+    if (
+      typeof result !== 'object'
+      || result === null
+      || !('associated' in result)
+      || typeof (result as { associated: unknown }).associated !== 'boolean'
+    ) {
+      return 'unavailable'
+    }
+    return (result as { associated: boolean }).associated ? 'active' : 'inactive'
+  } catch {
+    return 'unavailable'
+  }
+}
 
 export function PushManager({
   vapidPublicKey,
@@ -99,11 +128,37 @@ export function PushManager({
         const existing = await registration?.pushManager.getSubscription()
         if (!cancelled && existing) {
           subscriptionRef.current = existing
-          setInteractionStatus('active')
+          const canActivate = isAuthenticated || grantRef.current !== null
+          if (!vapidPublicKey) {
+            setInteractionStatus('local-only')
+            return
+          }
+
+          const configuredApplicationServerKey = applicationServerKey(vapidPublicKey)
+          if (!sameApplicationServerKey(
+            existing.options?.applicationServerKey,
+            configuredApplicationServerKey,
+          )) {
+            setInteractionStatus(canActivate ? 'update-required' : 'local-only')
+            return
+          }
+
+          const association = await checkServerAssociation(existing, grantRef.current)
+          if (!cancelled) {
+            setInteractionStatus(association === 'active'
+              ? 'active'
+              : association === 'inactive'
+                ? canActivate ? 'update-required' : 'local-only'
+                : 'verification-error')
+          }
         }
       } catch {
         // Discovery is best effort. It never registers a worker or asks for
-        // permission; the explicit activation path remains available.
+        // permission. A local subscription must remain removable even when
+        // the authoritative server check is temporarily unavailable.
+        if (!cancelled && subscriptionRef.current) {
+          setInteractionStatus('verification-error')
+        }
       } finally {
         if (!cancelled) setDiscoveryComplete(true)
       }
@@ -111,7 +166,7 @@ export function PushManager({
     void discoverExistingSubscription()
 
     return () => { cancelled = true }
-  }, [canonicalOrigin, isAuthenticated])
+  }, [canonicalOrigin, isAuthenticated, vapidPublicKey])
 
   const availableStatus: ManagerStatus = !browserReady || !discoveryComplete || scopeStatus === 'checking'
     ? 'checking'
@@ -203,19 +258,9 @@ export function PushManager({
     setRetryAction('deactivate')
     setInteractionStatus('activating')
     const endpoint = subscription.endpoint
-    const grant = grantRef.current
     let serverCleaned = false
     let locallyUnsubscribed = false
-    try {
-      const response = await fetch('/api/push/unsubscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endpoint, ...(grant ? { grant } : {}) }),
-      })
-      serverCleaned = response.ok
-    } catch {
-      serverCleaned = false
-    }
+    serverCleaned = await cleanupServerAssociation(endpoint)
 
     try {
       locallyUnsubscribed = await subscription.unsubscribe()
@@ -237,26 +282,77 @@ export function PushManager({
     }
 
     cleanupEndpointRef.current = null
-    setInteractionStatus(scopeStatus === 'allowed' ? 'available' : 'missing-scope')
+    setInteractionStatus(isAuthenticated || grantRef.current !== null
+      ? 'available'
+      : 'missing-scope')
   }
 
   async function retryCleanup() {
     const endpoint = cleanupEndpointRef.current
     if (!endpoint) return
     setInteractionStatus('activating')
-    const grant = grantRef.current
     try {
-      const response = await fetch('/api/push/unsubscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endpoint, ...(grant ? { grant } : {}) }),
-      })
-      if (!response.ok) throw new Error('Cleanup failed')
+      if (!await cleanupServerAssociation(endpoint)) throw new Error('Cleanup failed')
       cleanupEndpointRef.current = null
-      setInteractionStatus(scopeStatus === 'allowed' ? 'available' : 'missing-scope')
+      setInteractionStatus(isAuthenticated || grantRef.current !== null
+        ? 'available'
+        : 'missing-scope')
     } catch {
       setInteractionStatus('cleanup-error')
     }
+  }
+
+  async function retryVerification() {
+    const subscription = subscriptionRef.current
+    if (!subscription || !vapidPublicKey) return
+    setInteractionStatus('checking')
+    const configuredApplicationServerKey = applicationServerKey(vapidPublicKey)
+    if (!sameApplicationServerKey(
+      subscription.options?.applicationServerKey,
+      configuredApplicationServerKey,
+    )) {
+      setInteractionStatus(isAuthenticated || grantRef.current !== null
+        ? 'update-required'
+        : 'local-only')
+      return
+    }
+
+    const association = await checkServerAssociation(subscription, grantRef.current)
+    setInteractionStatus(association === 'active'
+      ? 'active'
+      : association === 'inactive'
+        ? isAuthenticated || grantRef.current !== null ? 'update-required' : 'local-only'
+        : 'verification-error')
+  }
+
+  async function cleanupServerAssociation(endpoint: string): Promise<boolean> {
+    const cleanup = async (grant: string | null, endpointPossession = false) => {
+      try {
+        return await fetch('/api/push/unsubscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            endpoint,
+            ...(grant ? { grant } : {}),
+            ...(endpointPossession ? { endpointPossession: true } : {}),
+          }),
+        })
+      } catch {
+        return null
+      }
+    }
+
+    const grant = grantRef.current
+    const response = await cleanup(grant)
+    if (response?.ok) return true
+    if (!grant || response === null) return false
+
+    // An explicit guest capability takes precedence on the server. If it is
+    // stale, discard it and retry once without it so the endpoint-possession
+    // cleanup path remains reachable. This never recreates a subscription.
+    grantRef.current = null
+    setScopeStatus(isAuthenticated ? 'allowed' : 'missing')
+    return (await cleanup(null, true))?.ok === true
   }
 
   if (status === 'checking') return <p>Comprobando compatibilidad…</p>
@@ -284,6 +380,36 @@ export function PushManager({
       <div className="space-y-3">
         <p>El navegador creó la suscripción, pero no pudimos completar la activación en el servidor. Desactivala para limpiar el intento antes de volver a probar.</p>
         <Button type="button" variant="outline" onClick={deactivate}>Desactivar suscripción</Button>
+      </div>
+    )
+  }
+  if (status === 'update-required') {
+    return (
+      <div className="space-y-3">
+        <p>La suscripción de este navegador no está activa en el servidor. Podés actualizarla o eliminarla.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={activate}>Actualizar recordatorios</Button>
+          <Button type="button" variant="outline" onClick={deactivate}>Desactivar suscripción</Button>
+        </div>
+      </div>
+    )
+  }
+  if (status === 'local-only') {
+    return (
+      <div className="space-y-3">
+        <p>Hay una suscripción en este navegador, pero no está activa con la configuración actual.</p>
+        <Button type="button" variant="outline" onClick={deactivate}>Desactivar suscripción</Button>
+      </div>
+    )
+  }
+  if (status === 'verification-error') {
+    return (
+      <div className="space-y-3">
+        <p>No pudimos verificar si los recordatorios de este navegador siguen activos.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={retryVerification}>Reintentar verificación</Button>
+          <Button type="button" variant="outline" onClick={deactivate}>Desactivar suscripción</Button>
+        </div>
       </div>
     )
   }

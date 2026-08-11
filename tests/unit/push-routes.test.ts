@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   storePushSubscription: vi.fn(),
   storeAuthenticatedPushSubscriptions: vi.fn(),
   unsubscribePushSubscription: vi.fn(),
+  hasActivePushAssociation: vi.fn(),
 }))
 
 vi.mock('@/lib/auth/user', () => ({ getCurrentUser: mocks.getCurrentUser }))
@@ -25,6 +26,7 @@ vi.mock('@/lib/push/subscription', async (importOriginal) => ({
   storePushSubscription: mocks.storePushSubscription,
   storeAuthenticatedPushSubscriptions: mocks.storeAuthenticatedPushSubscriptions,
   unsubscribePushSubscription: mocks.unsubscribePushSubscription,
+  hasActivePushAssociation: mocks.hasActivePushAssociation,
 }))
 vi.mock('@/lib/db', () => ({
   prisma: {
@@ -62,6 +64,7 @@ describe('push subscription routes', () => {
     mocks.storePushSubscription.mockResolvedValue({ id: 'push-1' })
     mocks.storeAuthenticatedPushSubscriptions.mockResolvedValue(0)
     mocks.unsubscribePushSubscription.mockResolvedValue(1)
+    mocks.hasActivePushAssociation.mockResolvedValue(false)
   })
 
   afterEach(() => {
@@ -139,6 +142,115 @@ describe('push subscription routes', () => {
 
     await expect(readBoundedJson(request)).rejects.toThrow('Invalid body')
     expect(cancelled).toBe(true)
+  })
+
+  it.each([undefined, 'https://tenant.agendita.cl', 'https://www.agendita.cl.evil.test'])(
+    'rejects a non-canonical status Origin before reading endpoint capability (%s)',
+    async (origin) => {
+      const { POST } = await import('@/app/api/push/status/route')
+      const request = new Request(`${canonicalOrigin}/api/push/status`, {
+        method: 'POST',
+        headers: origin ? { 'content-type': 'application/json', origin } : { 'content-type': 'application/json' },
+        body: JSON.stringify({ endpoint: subscription.endpoint }),
+      })
+
+      const response = await POST(request)
+
+      expect(response.status).toBe(403)
+      await expect(response.json()).resolves.toEqual({ error: 'Solicitud no autorizada' })
+      expect(mocks.hasActivePushAssociation).not.toHaveBeenCalled()
+    },
+  )
+
+  it('rate-limits status before parsing or resolving authorization', async () => {
+    mocks.checkRateLimit.mockResolvedValue({ success: false, remaining: 0, resetAt: 0 })
+    const { POST } = await import('@/app/api/push/status/route')
+
+    const response = await POST(pushRequest('/api/push/status', { endpoint: subscription.endpoint }))
+
+    expect(response.status).toBe(429)
+    expect(mocks.getCurrentUser).not.toHaveBeenCalled()
+    expect(mocks.hasActivePushAssociation).not.toHaveBeenCalled()
+  })
+
+  it('reports endpoint-possession association as one boolean with a hashed target rate limit', async () => {
+    mocks.hasActivePushAssociation.mockResolvedValue(true)
+    const { POST } = await import('@/app/api/push/status/route')
+
+    const response = await POST(pushRequest('/api/push/status', { endpoint: subscription.endpoint }))
+
+    expect(response.status).toBe(200)
+    const payload = await response.json()
+    expect(payload).toEqual({ associated: true })
+    expect(mocks.hasActivePushAssociation).toHaveBeenCalledWith({
+      endpoint: subscription.endpoint,
+      scope: { kind: 'endpoint' },
+    })
+    const endpointHash = createHash('sha256').update(subscription.endpoint).digest('hex')
+    expect(mocks.checkRateLimit).toHaveBeenNthCalledWith(
+      2,
+      'push-status-target',
+      30,
+      60_000,
+      { keyMode: 'target', targetId: `endpoint:${endpointHash}` },
+    )
+    expect(JSON.stringify(payload)).not.toContain('count')
+  })
+
+  it('checks an exact guest booking entitlement without exposing its identity', async () => {
+    mocks.verifyPushGrant.mockReturnValue({
+      version: 1,
+      bookingId: 'booking-1',
+      customerId: 'customer-1',
+      businessId: 'business-1',
+      expiresAt: Date.now() + 60_000,
+    })
+    mocks.bookingFindFirst.mockResolvedValue({ id: 'booking-1' })
+    const { POST } = await import('@/app/api/push/status/route')
+
+    const response = await POST(pushRequest('/api/push/status', {
+      endpoint: subscription.endpoint,
+      grant: 'signed-grant',
+    }))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ associated: false })
+    expect(mocks.hasActivePushAssociation).toHaveBeenCalledWith({
+      endpoint: subscription.endpoint,
+      scope: {
+        kind: 'guest',
+        target: {
+          businessId: 'business-1',
+          customerId: 'customer-1',
+          authorization: { kind: 'guest', bookingId: 'booking-1' },
+        },
+      },
+    })
+  })
+
+  it('checks only the authenticated user association when a session exists', async () => {
+    mocks.getCurrentUser.mockResolvedValue({ id: 'user-1' })
+    mocks.hasActivePushAssociation.mockResolvedValue(true)
+    const { POST } = await import('@/app/api/push/status/route')
+
+    const response = await POST(pushRequest('/api/push/status', { endpoint: subscription.endpoint }))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ associated: true })
+    expect(mocks.hasActivePushAssociation).toHaveBeenCalledWith({
+      endpoint: subscription.endpoint,
+      scope: { kind: 'user', userId: 'user-1' },
+    })
+  })
+
+  it('rejects malformed status endpoints before database lookup', async () => {
+    const { POST } = await import('@/app/api/push/status/route')
+
+    const response = await POST(pushRequest('/api/push/status', { endpoint: 'https://evil.example.test/push' }))
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'Solicitud inválida' })
+    expect(mocks.hasActivePushAssociation).not.toHaveBeenCalled()
   })
 
   it('rejects a non-canonical browser key without reporting a subscription', async () => {
@@ -360,6 +472,24 @@ describe('push subscription routes', () => {
       { keyMode: 'target', targetId: `endpoint:${endpointHash}` },
     )
     expect(JSON.stringify(mocks.checkRateLimit.mock.calls[1])).not.toContain(subscription.endpoint)
+  })
+
+  it('uses explicit endpoint possession for stale-grant fallback even with an authenticated session', async () => {
+    mocks.getCurrentUser.mockResolvedValue({ id: 'user-1' })
+    const { POST } = await import('@/app/api/push/unsubscribe/route')
+
+    const response = await POST(pushRequest('/api/push/unsubscribe', {
+      endpoint: subscription.endpoint,
+      endpointPossession: true,
+    }))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ unsubscribed: true })
+    expect(mocks.unsubscribePushSubscription).toHaveBeenCalledWith({
+      endpoint: subscription.endpoint,
+      scope: { kind: 'endpoint' },
+      now: new Date('2026-08-10T12:00:00.000Z'),
+    })
   })
 
   it('applies a second rate limit keyed to the exact guest target', async () => {

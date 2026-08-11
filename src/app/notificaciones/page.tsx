@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { PushManager } from '@/components/push/push-manager'
 import { getAppUrl } from '@/lib/business/urls'
 import { getCurrentUser } from '@/lib/auth/user'
+import { hasUsablePushConfig } from '@/lib/push/config'
 
 export const metadata: Metadata = {
   title: 'Recordatorios | Agendita',
@@ -22,7 +23,9 @@ export default async function NotificationsPage() {
           </p>
         </div>
         <PushManager
-          vapidPublicKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || null}
+          vapidPublicKey={hasUsablePushConfig()
+            ? process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || null
+            : null}
           canonicalOrigin={getAppUrl('')}
           isAuthenticated={user !== null}
         />

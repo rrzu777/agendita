@@ -80,6 +80,36 @@ preserves real-device delivery as an explicit rollout gate.
   grants are now discarded before endpoint-possession cleanup; an account
   session remains independently eligible, while a guest returns to sign-in.
 
+## External review round 1
+
+- Server RED failed five assertions plus the missing status-route import; it
+  proved the page exposed a public key from an unusable VAPID configuration
+  and that no privacy-safe authoritative association lookup existed. Client
+  RED failed seven reload/rotation/revocation/cleanup assertions, followed by
+  one focused RED for an unavailable status check. GREEN is 102 tests across
+  the four focused route, storage, page and manager suites.
+- `/api/push/status` now requires canonical Origin, bounded JSON and a valid
+  browser endpoint, applies generic plus endpoint-hash rate limits, and returns
+  only `{ associated: boolean }`. Guest grants check the exact booking
+  entitlement, sessions check `authorizedUserId`, and endpoint possession
+  checks only whether that high-entropy endpoint retains any authorization.
+- Reload preserves the local subscription but reports active only when its
+  application-server key matches current VAPID and the server returns the
+  exact associated boolean. Old keys and confirmed missing associations offer
+  gesture-driven update only with an eligible scope; otherwise they offer
+  cleanup. A 401, 429, 5xx, malformed response or network failure remains a
+  separate “no pudimos verificar” state and never claims active or inactive.
+- Review RED then failed four assertions proving two subtler gaps: a signed-in
+  browser could turn a stale-grant fallback into user-scoped cleanup, and an
+  unavailable status response was described as a confirmed inactive
+  association. The retry now explicitly selects endpoint possession without
+  the grant even when a session exists; verification failure has truthful copy
+  and a status-only retry. Browser unsubscribe still executes exactly once.
+- Fresh focused verification: 102 unit tests and all three Web Push Playwright
+  journeys pass. Typecheck, production build and diff checks pass; lint remains
+  at zero errors and the same 35 warnings outside this remediation. Real-device
+  delivery remains pending as stated below.
+
 ## Remaining rollout gate
 
 Provider delivery, installed-PWA behavior and unsubscribe must still be
