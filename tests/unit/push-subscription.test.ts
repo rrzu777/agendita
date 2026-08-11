@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   advisoryLock: vi.fn(),
   bookingFindFirst: vi.fn(),
   customerFindFirst: vi.fn(),
+  customerFindMany: vi.fn(),
   subscriptionFindUnique: vi.fn(),
   subscriptionFindMany: vi.fn(),
   subscriptionCount: vi.fn(),
@@ -58,6 +59,7 @@ describe('push subscription storage', () => {
     mocks.upsert.mockResolvedValue({ id: 'push-1', subscriptionEncrypted: 'must-not-return' })
     mocks.bookingFindFirst.mockResolvedValue({ id: 'booking-1' })
     mocks.customerFindFirst.mockResolvedValue({ id: 'customer-1' })
+    mocks.customerFindMany.mockResolvedValue([])
     mocks.subscriptionFindUnique.mockResolvedValue(null)
     mocks.subscriptionFindMany.mockResolvedValue([{ id: 'push-1', customerId: 'customer-1' }])
     mocks.subscriptionCount.mockResolvedValue(0)
@@ -66,7 +68,10 @@ describe('push subscription storage', () => {
     mocks.updateMany.mockResolvedValue({ count: 1 })
     mocks.transaction.mockImplementation(async (callback) => callback({
       booking: { findFirst: mocks.bookingFindFirst },
-      customer: { findFirst: mocks.customerFindFirst },
+      customer: {
+        findFirst: mocks.customerFindFirst,
+        findMany: mocks.customerFindMany,
+      },
       pushSubscription: {
         findUnique: mocks.subscriptionFindUnique,
         findMany: mocks.subscriptionFindMany,
@@ -240,6 +245,42 @@ describe('push subscription storage', () => {
     expect(mocks.entitlementUpsert).not.toHaveBeenCalled()
   })
 
+  it('requeries and locks the authenticated customer set in deterministic order', async () => {
+    const { storeAuthenticatedPushSubscriptions } = await import('@/lib/push/subscription')
+    const now = new Date('2026-08-10T12:00:00.000Z')
+    mocks.customerFindMany.mockResolvedValue([
+      { id: 'customer-2', businessId: 'business-2' },
+      { id: 'customer-1', businessId: 'business-1' },
+    ])
+
+    await expect(storeAuthenticatedPushSubscriptions({
+      userId: 'user-1',
+      subscription: validSubscription,
+      now,
+    })).resolves.toBe(2)
+
+    expect(mocks.customerFindMany).toHaveBeenCalledWith({
+      where: {
+        userId: 'user-1',
+        business: { cancellationReminderEnabled: true },
+        bookings: {
+          some: {
+            startDateTime: { gt: now },
+            status: { in: ['pending_payment', 'pending_confirmation', 'confirmed'] },
+          },
+        },
+      },
+      select: { id: true, businessId: true },
+      orderBy: { id: 'asc' },
+    })
+    expect(mocks.advisoryLock.mock.calls.map(([, key]) => key)).toEqual([
+      'push-authorization:user-1:b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
+      'push-subscription:customer-1',
+      'push-subscription:customer-2',
+    ])
+    expect(mocks.upsert).toHaveBeenCalledTimes(2)
+  })
+
   it('hard-rejects a sixth active guest device for one booking', async () => {
     const { PushDeviceLimitError, storePushSubscription } = await import('@/lib/push/subscription')
     mocks.subscriptionCount.mockResolvedValue(5)
@@ -253,6 +294,117 @@ describe('push subscription storage', () => {
 
     expect(mocks.upsert).not.toHaveBeenCalled()
     expect(mocks.entitlementUpsert).not.toHaveBeenCalled()
+  })
+
+  it('moves a guest booking scope off older key generations before enforcing the cap', async () => {
+    const { storePushSubscription } = await import('@/lib/push/subscription')
+    mocks.subscriptionCount.mockImplementation(async () => (
+      mocks.entitlementDeleteMany.mock.calls.length > 0 ? 4 : 5
+    ))
+
+    await expect(storePushSubscription({
+      businessId: 'business-1',
+      customerId: 'customer-1',
+      subscription: validSubscription,
+      authorization: { kind: 'guest', bookingId: 'booking-1' },
+    })).resolves.toEqual({ id: 'push-1' })
+
+    expect(mocks.entitlementDeleteMany).toHaveBeenCalledWith({
+      where: {
+        bookingId: 'booking-1',
+        subscription: {
+          businessId: 'business-1',
+          customerId: 'customer-1',
+          endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
+          subscriptionFingerprint: {
+            not: 'f9e6976bfd25d5d977c3537b5b57bf09a99dbb8ab8b1ec651cbb61cbcbbfd2d5',
+          },
+        },
+      },
+    })
+    expect(mocks.updateMany).toHaveBeenCalledWith({
+      where: {
+        businessId: 'business-1',
+        customerId: 'customer-1',
+        endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
+        subscriptionFingerprint: {
+          not: 'f9e6976bfd25d5d977c3537b5b57bf09a99dbb8ab8b1ec651cbb61cbcbbfd2d5',
+        },
+        authorizedUserId: null,
+        revokedAt: null,
+        bookingEntitlements: { none: {} },
+      },
+      data: { revokedAt: expect.any(Date) },
+    })
+    expect(mocks.entitlementDeleteMany.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.subscriptionCount.mock.invocationCallOrder[0])
+  })
+
+  it('moves only auth scope off older key generations and preserves guest entitlements', async () => {
+    const { storePushSubscription } = await import('@/lib/push/subscription')
+    mocks.subscriptionCount.mockImplementation(async () => (
+      mocks.updateMany.mock.calls.some(([{ data }]) => data.authorizedUserId === null)
+        ? 4
+        : 5
+    ))
+
+    await expect(storePushSubscription({
+      businessId: 'business-1',
+      customerId: 'customer-1',
+      subscription: validSubscription,
+      authorization: { kind: 'user', userId: 'user-1' },
+    })).resolves.toEqual({ id: 'push-1' })
+
+    expect(mocks.updateMany).toHaveBeenNthCalledWith(1, {
+      where: {
+        businessId: 'business-1',
+        customerId: 'customer-1',
+        endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
+        subscriptionFingerprint: {
+          not: 'f9e6976bfd25d5d977c3537b5b57bf09a99dbb8ab8b1ec651cbb61cbcbbfd2d5',
+        },
+        authorizedUserId: 'user-1',
+        revokedAt: null,
+      },
+      data: { authorizedUserId: null },
+    })
+    expect(mocks.updateMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        businessId: 'business-1',
+        customerId: 'customer-1',
+        endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
+        subscriptionFingerprint: {
+          not: 'f9e6976bfd25d5d977c3537b5b57bf09a99dbb8ab8b1ec651cbb61cbcbbfd2d5',
+        },
+        authorizedUserId: null,
+        revokedAt: null,
+        bookingEntitlements: { none: {} },
+      },
+      data: { revokedAt: expect.any(Date) },
+    })
+    expect(mocks.updateMany.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.subscriptionCount.mock.invocationCallOrder[0])
+  })
+
+  it('continues an authenticated batch when one customer has five unrelated devices', async () => {
+    const { storeAuthenticatedPushSubscriptions } = await import('@/lib/push/subscription')
+    mocks.customerFindMany.mockResolvedValue([
+      { id: 'customer-1', businessId: 'business-1' },
+      { id: 'customer-2', businessId: 'business-2' },
+    ])
+    mocks.subscriptionCount.mockImplementation(async ({ where }) => (
+      where.customerId === 'customer-1' ? 5 : 0
+    ))
+
+    await expect(storeAuthenticatedPushSubscriptions({
+      userId: 'user-1',
+      subscription: validSubscription,
+    })).resolves.toBe(1)
+
+    expect(mocks.upsert).toHaveBeenCalledTimes(1)
+    expect(mocks.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ customerId: 'customer-2' }),
+    }))
   })
 
   it('guest unsubscribe deletes only the exact booking entitlement and revokes only orphan rows', async () => {
@@ -310,6 +462,105 @@ describe('push subscription storage', () => {
       },
       data: { revokedAt: new Date('2026-08-10T12:00:00.000Z') },
     })
+  })
+
+  it('lets authenticated unsubscribe win when it starts after a serialized subscribe batch', async () => {
+    const {
+      storeAuthenticatedPushSubscriptions,
+      unsubscribePushSubscription,
+    } = await import('@/lib/push/subscription')
+    const lockTails = new Map<string, Promise<void>>()
+    const lockReleases = new WeakMap<object, Array<() => void>>()
+    let authorizedUserId: string | null = null
+    let releaseCustomerQuery!: () => void
+    const customerQueryGate = new Promise<void>((resolve) => { releaseCustomerQuery = resolve })
+    let signalCustomerQuery!: () => void
+    const customerQueryReached = new Promise<void>((resolve) => { signalCustomerQuery = resolve })
+    let signalSecondAuthLock!: () => void
+    const secondAuthLockAttempted = new Promise<void>((resolve) => { signalSecondAuthLock = resolve })
+    let authLockAttempts = 0
+
+    mocks.customerFindMany.mockImplementation(async () => {
+      signalCustomerQuery()
+      await customerQueryGate
+      return [{ id: 'customer-1', businessId: 'business-1' }]
+    })
+    mocks.subscriptionFindMany.mockImplementation(async () => (
+      authorizedUserId === 'user-1' ? [{ id: 'push-1', customerId: 'customer-1' }] : []
+    ))
+    mocks.upsert.mockImplementation(async ({ create }) => {
+      authorizedUserId = create.authorizedUserId
+      return { id: 'push-1' }
+    })
+    mocks.updateMany.mockImplementation(async ({ where, data }) => {
+      if (where.id?.in && data.authorizedUserId === null && authorizedUserId === where.authorizedUserId) {
+        authorizedUserId = null
+        return { count: 1 }
+      }
+      return { count: 0 }
+    })
+    mocks.advisoryLock.mockImplementation(async (tx, key: string) => {
+      if (key.startsWith('push-authorization:')) {
+        authLockAttempts += 1
+        if (authLockAttempts === 2) signalSecondAuthLock()
+      }
+      const previous = lockTails.get(key) ?? Promise.resolve()
+      let release!: () => void
+      const held = new Promise<void>((resolve) => { release = resolve })
+      lockTails.set(key, previous.then(() => held))
+      await previous
+      lockReleases.get(tx)?.push(release)
+    })
+    mocks.transaction.mockImplementation(async (callback) => {
+      const tx = {
+        booking: { findFirst: mocks.bookingFindFirst },
+        customer: {
+          findFirst: mocks.customerFindFirst,
+          findMany: mocks.customerFindMany,
+        },
+        pushSubscription: {
+          findUnique: mocks.subscriptionFindUnique,
+          findMany: mocks.subscriptionFindMany,
+          count: mocks.subscriptionCount,
+          upsert: mocks.upsert,
+          updateMany: mocks.updateMany,
+        },
+        pushSubscriptionBooking: {
+          upsert: mocks.entitlementUpsert,
+          deleteMany: mocks.entitlementDeleteMany,
+        },
+      }
+      lockReleases.set(tx, [])
+      try {
+        return await callback(tx)
+      } finally {
+        for (const release of lockReleases.get(tx)?.reverse() ?? []) release()
+      }
+    })
+
+    const subscribe = storeAuthenticatedPushSubscriptions({
+      userId: 'user-1',
+      subscription: validSubscription,
+      now: new Date('2026-08-10T12:00:00.000Z'),
+    })
+    await customerQueryReached
+
+    let unsubscribeFinished = false
+    const unsubscribe = unsubscribePushSubscription({
+      endpoint: validSubscription.endpoint,
+      scope: { kind: 'user', userId: 'user-1' },
+    }).then((count) => {
+      unsubscribeFinished = true
+      return count
+    })
+    await secondAuthLockAttempted
+
+    expect(unsubscribeFinished).toBe(false)
+    releaseCustomerQuery()
+
+    await expect(subscribe).resolves.toBe(1)
+    await expect(unsubscribe).resolves.toBe(1)
+    expect(authorizedUserId).toBeNull()
   })
 })
 

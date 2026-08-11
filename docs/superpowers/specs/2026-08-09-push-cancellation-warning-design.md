@@ -69,9 +69,11 @@ inicio. No se promete soporte cuando el navegador no expone `PushManager`.
 
 Una clienta autenticada activa o desactiva recordatorios desde su superficie de
 reservas, navegando al mismo origen canónico. Desactivar llama
-`PushSubscription.unsubscribe()` y envía el `endpointHash` al servidor. Con
-sesión se revocan todas las filas de ese endpoint pertenecientes a Customers de
-la usuaria; con grant de invitada, sólo la fila del customer/business autorizado.
+`PushSubscription.unsubscribe()` y envía el endpoint al servidor, que lo
+normaliza y hashea. Con sesión se elimina únicamente la autorización explícita
+de esa cuenta en las generaciones del endpoint; con grant de invitada, sólo el
+entitlement de la reserva firmada. Una fila se revoca únicamente si ya no
+conserva autorización de cuenta ni entitlements de reservas.
 
 ### Al recibir el push
 
@@ -104,21 +106,46 @@ una invitada recarga sin ese estado o abre luego el link del email, deberá
 iniciar sesión para activar push. Esta limitación evita convertir la URL pública
 de confirmación en autorización de notificaciones.
 
-Las clientas autenticadas usan su sesión y ownership de `Customer.userId`; no
-necesitan el grant de invitada.
+Las clientas autenticadas no necesitan el grant de invitada. La sesión permite
+seleccionar Customers cuyo `userId` coincide en ese momento, pero cada alta
+persiste además `PushSubscription.authorizedUserId` como scope explícito. El
+cron revalida el `Customer.userId` actual y exige que coincida con ese valor; la
+relación de Customer por sí sola nunca autoriza una entrega.
 
 ## Persistencia y secretos
 
 Se agrega `PushSubscription` con:
 
-- `id`, `businessId` y `customerId`; la cuenta se deriva de
-  `Customer.userId` para que vincular una clienta después no deje dos fuentes de
-  ownership;
-- `endpointHash` para búsqueda/deduplicación sin exponer la capability URL;
+- `id`, `businessId` y `customerId` como relaciones de pertenencia, no como
+  autorización de entrega;
+- `authorizedUserId` nullable como autorización explícita de cuenta;
+- `endpointHash` para localizar todas las generaciones de una capability sin
+  guardar el endpoint en claro;
+- `subscriptionFingerprint`, SHA-256 de la forma canónica completa
+  `endpoint + p256dh + auth`, para distinguir rotaciones de claves;
 - payload cifrado (`endpoint`, `p256dh`, `auth`);
 - `createdAt`, `updatedAt`, `lastSuccessAt`, `revokedAt`, `failureCount` y
   `lastFailureAt`;
-- unicidad por `(customerId, endpointHash)`.
+- unicidad por `(customerId, subscriptionFingerprint)`.
+
+`PushSubscriptionBooking` relaciona una suscripción con cada `bookingId`
+autorizado por un grant invitado. Una fila es entregable sólo si conserva el
+entitlement de la reserva exacta o si su `authorizedUserId` coincide con el
+usuario actual de la Customer. En particular, dos valores null nunca equivalen
+a autorización.
+
+El alta serializa por Customer para mantener exacto el máximo de cinco
+dispositivos activos por scope. Las altas autenticadas usan además un lock
+determinístico por `authorizedUserId + endpointHash`, resuelven de nuevo todo el
+set elegible dentro de una sola transacción y toman los locks de Customer
+ordenados. La baja autenticada comparte el mismo lock, por lo que no puede
+intercalarse con una escritura parcial del set.
+
+Cuando el navegador rota claves manteniendo el endpoint, el alta quita sólo el
+scope actual de generaciones anteriores, conserva scopes ajenos y revoca sólo
+las filas que queden huérfanas antes de contar el límite. Así una quinta o
+posterior rotación repara la generación vigente en vez de quedar bloqueada por
+filas obsoletas.
 
 El cifrado reutiliza la infraestructura de `ENCRYPTION_KEY`. Las claves VAPID
 entran por `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y
@@ -127,6 +154,13 @@ devuelve al cliente ni se registra. La validación de entorno exige las tres
 variables VAPID juntas y exige `ENCRYPTION_KEY` cuando push está configurado,
 aunque Mercado Pago esté apagado. Los endpoints validan tamaños y forma del
 payload, verifican `Origin` canónico y aplican rate limiting.
+Cada ruta aplica primero un bucket por IP y después un bucket global por scope;
+el segundo excluye la IP y usa sólo un SHA-256 del identificador de cuenta o del
+trío guest business/customer/booking, sin PII cruda en la clave Redis.
+
+El hardening se aplica con una migración nueva y forward-only. Las filas legacy
+reciben un fingerprint estable para mantener el esquema válido, pero no heredan
+`authorizedUserId` ni entitlements: fallan cerrado hasta una nueva alta.
 
 Una respuesta Web Push `404` o `410` revoca inmediatamente. `400`, `401` o `403`
 incrementan `failureCount` y revocan al tercer fallo consecutivo. `429`, `5xx` y
@@ -153,6 +187,12 @@ el lease después de diez minutos. Si no hay suscripción activa o todos los
 envíos fallan, el claim se libera. Un éxito en al menos un dispositivo escribe
 `SentAt = now` y limpia `ClaimedAt`; ese criterio deliberado evita repetir el
 aviso a dispositivos que ya lo recibieron.
+
+Para cada candidata, el cron selecciona como máximo cinco filas activas que
+tengan el entitlement del `bookingId` exacto o `authorizedUserId` igual al
+`Customer.userId` revalidado. Una invitada sin cuenta usa sólo entitlements; no
+existe comparación `null === null`. Como la rotación retira el scope de
+generaciones anteriores, sólo la generación vigente sigue siendo elegible.
 
 `/api/cron/cancellation-warnings` usa el mismo bearer `CRON_SECRET`. Un workflow
 propio lo invoca cada 15 minutos; la entrega esperada queda entre 1 h 45 min y
@@ -208,32 +248,3 @@ real exige configurar VAPID en Vercel, ejecutar la migración, probar
 subscribe/unsubscribe y verificar un push real antes y después del cutoff con
 una reserva de prueba. El rollout empieza con un negocio y se amplía después de
 confirmar entrega y ausencia de duplicados.
-
-## Addendum de seguridad: autorización por reserva
-
-La revisión final detectó que relacionar una suscripción invitada sólo con
-`Customer` ampliaba un grant de una reserva a todas las reservas de esa ficha.
-La persistencia queda corregida con dos scopes explícitos:
-
-- una invitada obtiene únicamente un `PushSubscriptionBooking` para el
-  `bookingId` firmado y revalidado junto con `customerId` y `businessId`;
-- una sesión guarda `PushSubscription.authorizedUserId` explícitamente. El cron
-  compara ese valor con el `Customer.userId` actual y nunca considera
-  `null === null` como autorización;
-- `subscriptionFingerprint` deduplica la forma canónica completa
-  `endpoint + p256dh + auth`, mientras `endpointHash` sigue permitiendo buscar
-  una capability para unsubscribe sin guardar el endpoint en claro;
-- una suscripción se entrega sólo si tiene entitlement de la reserva exacta o
-  autorización explícita de la cuenta de esa Customer;
-- quitar un grant elimina sólo ese entitlement. Quitar una cuenta limpia sólo
-  su `authorizedUserId`. La fila se revoca únicamente cuando no conserva ningún
-  scope;
-- cada scope admite como máximo cinco dispositivos activos y el cron lee como
-  máximo cinco filas. El alta se serializa por Customer para que el límite no
-  se exceda con requests concurrentes.
-
-La migración de hardening es forward-only. Filas legacy no reciben ownership
-implícito: quedan sin usuario autorizado y sin entitlements hasta una nueva
-suscripción, por lo que el despliegue falla cerrado. La baja por mera posesión
-del endpoint para reconstruir estado tras recargar pertenece al track de UI y
-no se agrega en este addendum.

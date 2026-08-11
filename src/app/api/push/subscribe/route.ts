@@ -1,14 +1,14 @@
 import { checkRateLimit } from '@/lib/rate-limit'
 import {
   normalizePushSubscription,
-  PushDeviceLimitError,
+  storeAuthenticatedPushSubscriptions,
   storePushSubscription,
 } from '@/lib/push/subscription'
 import {
   hasCanonicalOrigin,
   hasCompletePushConfig,
   readBoundedJson,
-  resolvePushTargets,
+  resolvePushSubscribeScope,
   pushTargetRateLimitContext,
 } from '@/lib/push/routes'
 
@@ -30,31 +30,28 @@ export async function POST(request: Request) {
   try {
     const body = await readBoundedJson(request)
     const subscription = normalizePushSubscription(body.subscription)
-    const targets = await resolvePushTargets(body.grant)
-    if (!targets) {
+    const scope = await resolvePushSubscribeScope(body.grant)
+    if (!scope) {
       return Response.json({ error: 'Solicitud no autorizada' }, { status: 401, headers: JSON_HEADERS })
     }
 
-    const targetLimits = await Promise.all(targets.map((target) => checkRateLimit(
+    const targetLimit = await checkRateLimit(
       'push-subscribe-target',
       10,
       60_000,
-      pushTargetRateLimitContext(target),
-    )))
-    if (targetLimits.some(({ success }) => !success)) {
+      pushTargetRateLimitContext(scope),
+    )
+    if (!targetLimit.success) {
       return Response.json({ error: 'Demasiadas solicitudes' }, { status: 429, headers: JSON_HEADERS })
     }
 
-    const stored = await Promise.allSettled(
-      targets.map((target) => storePushSubscription({ ...target, subscription })),
-    )
-    for (const result of stored) {
-      if (result.status === 'rejected' && !(result.reason instanceof PushDeviceLimitError)) {
-        throw result.reason
-      }
-    }
-    const subscribed = stored.filter(({ status }) => status === 'fulfilled').length
-    if (targets.length > 0 && subscribed === 0) throw new PushDeviceLimitError()
+    const subscribed = scope.kind === 'guest'
+      ? await storePushSubscription({ ...scope.target, subscription }).then(() => 1)
+      : await storeAuthenticatedPushSubscriptions({
+          userId: scope.userId,
+          subscription,
+          now: new Date(),
+        })
     return Response.json({ subscribed }, { headers: JSON_HEADERS })
   } catch {
     return Response.json({ error: 'Solicitud inválida' }, { status: 400, headers: JSON_HEADERS })

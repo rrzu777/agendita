@@ -26,6 +26,7 @@
 **Files:**
 - Modify: `prisma/schema.prisma`
 - Create: `prisma/migrations/20260809120000_add_cancellation_push/migration.sql`
+- Create: `prisma/migrations/20260810210000_scope_push_authorization/migration.sql`
 - Modify: `src/lib/business/schema.ts`
 - Modify: `src/server/actions/business-settings.ts`
 - Modify: `src/components/dashboard/settings-form.tsx`
@@ -37,7 +38,9 @@
 **Interfaces:**
 - Produces: `Business.cancellationReminderEnabled: boolean`.
 - Produces: `Booking.cancellationCutoffHours: number | null`, `cancellationPolicySnapshot: string | null`, `cancellationReminderClaimedAt: Date | null`, `cancellationReminderSentAt: Date | null`.
-- Produces: `PushSubscription` related to `Business` and `Customer`, unique on `(customerId, endpointHash)`.
+- Produces: `PushSubscription` with explicit nullable account authorization,
+  stable full-subscription fingerprint and exact booking entitlements; unique on
+  `(customerId, subscriptionFingerprint)`.
 
 - [ ] **Step 1: Write failing schema/action tests**
 
@@ -83,23 +86,39 @@ Add the model:
 
 ```prisma
 model PushSubscription {
-  id                    String    @id @default(cuid())
-  businessId            String
-  customerId            String
-  endpointHash          String
-  subscriptionEncrypted String
-  failureCount          Int       @default(0)
-  lastFailureAt         DateTime?
-  lastSuccessAt         DateTime?
-  revokedAt             DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  business              Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer              Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  id                      String                    @id @default(cuid())
+  businessId              String
+  customerId              String
+  authorizedUserId        String?
+  endpointHash            String
+  subscriptionFingerprint String
+  subscriptionEncrypted   String
+  failureCount            Int                       @default(0)
+  lastFailureAt           DateTime?
+  lastSuccessAt           DateTime?
+  revokedAt               DateTime?
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  business                Business                  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer                Customer                  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  authorizedUser          User?                     @relation("PushSubscriptionAuthorizedUser", fields: [authorizedUserId], references: [id], onDelete: SetNull)
+  bookingEntitlements     PushSubscriptionBooking[]
 
-  @@unique([customerId, endpointHash])
+  @@unique([customerId, subscriptionFingerprint])
   @@index([businessId, revokedAt])
   @@index([endpointHash, revokedAt])
+  @@index([authorizedUserId, revokedAt])
+}
+
+model PushSubscriptionBooking {
+  subscriptionId String
+  bookingId      String
+  createdAt      DateTime         @default(now())
+  subscription   PushSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  booking        Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@id([subscriptionId, bookingId])
+  @@index([bookingId, subscriptionId])
 }
 ```
 
@@ -109,8 +128,11 @@ Add an index supporting the sweep:
 @@index([status, cancellationReminderSentAt, startDateTime])
 ```
 
-Mirror these changes in the SQL migration with foreign keys and indexes; do not
-use `prisma migrate dev`.
+Create the baseline table in the original SQL migration, then add the security
+fields/join/FKs/indexes in a new forward-only migration. Never rewrite an
+already applied migration. Backfill only `subscriptionFingerprint` for legacy
+rows; leave authorization and entitlements empty so delivery fails closed. Do
+not use `prisma migrate dev`.
 
 - [ ] **Step 3: Wire Settings validation and UI**
 
@@ -319,7 +341,9 @@ git commit -m "feat: authorize guest push subscriptions"
 - Test: `tests/unit/env-validation.test.ts`
 
 **Interfaces:**
-- Consumes: guest grants from Task 3 or authenticated `Customer.userId` ownership.
+- Consumes: guest grants from Task 3 or an authenticated session. Customer
+  ownership selects candidates but never substitutes for persisted
+  `authorizedUserId` or an exact booking entitlement.
 - Produces: `POST /api/push/subscribe` and `POST /api/push/unsubscribe`.
 - Produces: canonical `/sw.js` with push and notificationclick listeners only.
 - Produces: `sendWebPush(subscription, payload): Promise<{ ok: boolean; statusCode?: number }>`.
@@ -332,21 +356,32 @@ the package manager. Tests must fail because routes, manager and worker do not e
 - [ ] **Step 2: Implement encrypted subscription storage**
 
 Normalize the browser JSON to `{ endpoint, keys: { p256dh, auth } }`, enforce
-maximum lengths, hash endpoint with SHA-256 and encrypt the normalized JSON with
-`encryptSecret`. Upsert by `(customerId, endpointHash)`, clear revocation/failure
-state on resubscribe and never return encrypted contents.
+maximum lengths, hash endpoint with SHA-256, fingerprint the canonical endpoint
+and keys with SHA-256, and encrypt the normalized JSON with `encryptSecret`.
+Upsert by `(customerId, subscriptionFingerprint)`, clear revocation/failure
+state on resubscribe and never return encrypted contents. A guest creates only
+the entitlement for the exact revalidated `bookingId`; an authenticated call
+writes the exact session user to `authorizedUserId`.
+
+For the same endpoint with rotated keys, remove only the current guest/auth
+scope from older fingerprints, preserve unrelated scopes, revoke only orphaned
+generations, and then enforce the five-device cap.
 
 - [ ] **Step 3: Implement authorization and route defenses**
 
 `subscribe` accepts either `grant` or authenticated session, validates canonical
-`Origin`, rate-limits, rechecks database ownership and writes one row per target
-Customer. `unsubscribe` hashes the submitted endpoint and applies the scope from
-the spec. Return only `{ subscribed: number }` or `{ unsubscribed: number }`.
+`Origin`, applies an IP bucket plus a hashed target-global bucket, rechecks
+database ownership and writes one row per target Customer. `unsubscribe` hashes
+the submitted endpoint and removes only the exact persisted scope from the
+spec. Return only `{ subscribed: number }` or `{ unsubscribed: number }`.
 
 For authenticated calls, the exact target set is every Customer with
 `userId === session.user.id` and at least one future non-terminal booking in a
-business with reminders enabled. Guest calls target only the Customer in the
-verified grant.
+business with reminders enabled. Resolve that set again inside one transaction,
+lock `userId + endpointHash`, then lock Customers in deterministic ID order.
+Authenticated unsubscribe uses the same account/endpoint lock. Guest calls
+target only the exact booking entitlement in the verified grant. Never infer
+authorization from `Customer.userId` alone and never authorize `null === null`.
 
 - [ ] **Step 4: Implement canonical permission UI**
 

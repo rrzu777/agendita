@@ -1,4 +1,3 @@
-import { BookingStatus } from '@prisma/client'
 import { getCurrentUser } from '@/lib/auth/user'
 import { getAppUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
@@ -16,8 +15,12 @@ export const MAX_ENDPOINT_LENGTH = 4096
 export type PushTarget = {
   businessId: string
   customerId: string
-  authorization: PushSubscriptionAuthorization
+  authorization: Extract<PushSubscriptionAuthorization, { kind: 'guest' }>
 }
+
+export type PushSubscribeScope =
+  | { kind: 'guest'; target: PushTarget }
+  | { kind: 'user'; userId: string }
 
 export function hasCompletePushConfig(): boolean {
   return Boolean(
@@ -60,7 +63,7 @@ export async function readBoundedJson(request: Request): Promise<Record<string, 
   return value as Record<string, unknown>
 }
 
-async function guestTarget(grant: string): Promise<PushTarget[] | null> {
+async function guestTarget(grant: string): Promise<PushTarget | null> {
   if (grant.length === 0 || grant.length > MAX_GRANT_LENGTH) return null
   const claims = verifyPushGrant(grant)
   if (!claims) return null
@@ -74,54 +77,29 @@ async function guestTarget(grant: string): Promise<PushTarget[] | null> {
     select: { id: true },
   })
   if (!booking) return null
-  return [{
+  return {
     businessId: claims.businessId,
     customerId: claims.customerId,
     authorization: { kind: 'guest', bookingId: claims.bookingId },
-  }]
+  }
 }
 
-export async function resolvePushTargets(grant: unknown): Promise<PushTarget[] | null> {
+export async function resolvePushSubscribeScope(grant: unknown): Promise<PushSubscribeScope | null> {
   if (grant !== undefined && grant !== null) {
-    return typeof grant === 'string' ? guestTarget(grant) : null
+    if (typeof grant !== 'string') return null
+    const target = await guestTarget(grant)
+    return target ? { kind: 'guest', target } : null
   }
 
   const user = await getCurrentUser()
-  if (!user) return null
-
-  const customers = await prisma.customer.findMany({
-    where: {
-      userId: user.id,
-      business: { cancellationReminderEnabled: true },
-      bookings: {
-        some: {
-          startDateTime: { gt: new Date() },
-          status: {
-            in: [
-              BookingStatus.pending_payment,
-              BookingStatus.pending_confirmation,
-              BookingStatus.confirmed,
-            ],
-          },
-        },
-      },
-    },
-    select: { id: true, businessId: true },
-  })
-
-  return customers.map((customer) => ({
-    businessId: customer.businessId,
-    customerId: customer.id,
-    authorization: { kind: 'user' as const, userId: user.id },
-  }))
+  return user ? { kind: 'user', userId: user.id } : null
 }
 
 export async function resolvePushUnsubscribeScope(grant: unknown): Promise<PushUnsubscribeScope | null> {
   if (grant !== undefined && grant !== null) {
     if (typeof grant !== 'string') return null
-    const targets = await guestTarget(grant)
-    if (!targets) return null
-    const [target] = targets
+    const target = await guestTarget(grant)
+    if (!target) return null
     if (target.authorization.kind !== 'guest') return null
     return {
       kind: 'guest',
@@ -137,33 +115,30 @@ export async function resolvePushUnsubscribeScope(grant: unknown): Promise<PushU
   return user ? { kind: 'user', userId: user.id } : null
 }
 
-export function pushTargetRateLimitContext(target: PushTarget): {
-  businessId: string
-  userId?: string
+export function pushTargetRateLimitContext(scope: PushSubscribeScope): {
+  keyMode: 'target'
   targetId: string
 } {
-  return target.authorization.kind === 'user'
+  return scope.kind === 'user'
     ? {
-        businessId: target.businessId,
-        userId: target.authorization.userId,
-        targetId: target.customerId,
+        keyMode: 'target',
+        targetId: `user:${scope.userId}`,
       }
     : {
-        businessId: target.businessId,
-        targetId: target.authorization.bookingId,
+        keyMode: 'target',
+        targetId: `guest:${scope.target.businessId}:${scope.target.customerId}:${scope.target.authorization.bookingId}`,
       }
 }
 
 export function pushUnsubscribeRateLimitContext(scope: PushUnsubscribeScope): {
-  businessId?: string
-  userId?: string
+  keyMode: 'target'
   targetId: string
 } {
   return scope.kind === 'user'
-    ? { userId: scope.userId, targetId: scope.userId }
+    ? { keyMode: 'target', targetId: `user:${scope.userId}` }
     : {
-        businessId: scope.target.businessId,
-        targetId: scope.target.bookingId,
+        keyMode: 'target',
+        targetId: `guest:${scope.target.businessId}:${scope.target.customerId}:${scope.target.bookingId}`,
       }
 }
 

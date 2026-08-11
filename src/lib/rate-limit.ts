@@ -11,6 +11,7 @@
  * - Graceful fallback with logging
  */
 
+import { createHash } from 'crypto'
 import { headers as nextHeaders } from 'next/headers'
 import { executeUpstashCommand } from '@/lib/upstash-rest'
 
@@ -21,6 +22,7 @@ export interface RateLimitContext {
   userId?: string
   businessId?: string
   targetId?: string
+  keyMode?: 'ip' | 'target'
 }
 
 export interface RateLimiter {
@@ -142,6 +144,11 @@ function sanitizeIp(ip: string): string {
 // ─── Key building ─────────────────────────────────────────────────────────────
 
 function buildKey(action: string, ip: string, context?: RateLimitContext): string {
+  if (context?.keyMode === 'target') {
+    if (!context.targetId) throw new Error('targetId is required for target rate limits')
+    const targetHash = createHash('sha256').update(context.targetId, 'utf8').digest('hex')
+    return `${action}:t:${targetHash}`
+  }
   const parts = [action, ip]
   if (context?.userId) parts.push(`u:${context.userId}`)
   if (context?.businessId) parts.push(`b:${context.businessId}`)

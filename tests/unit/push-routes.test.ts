@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   bookingFindFirst: vi.fn(),
   customerFindMany: vi.fn(),
   storePushSubscription: vi.fn(),
+  storeAuthenticatedPushSubscriptions: vi.fn(),
   unsubscribePushSubscription: vi.fn(),
 }))
 
@@ -21,6 +22,7 @@ vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }))
 vi.mock('@/lib/push/subscription', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/push/subscription')>()),
   storePushSubscription: mocks.storePushSubscription,
+  storeAuthenticatedPushSubscriptions: mocks.storeAuthenticatedPushSubscriptions,
   unsubscribePushSubscription: mocks.unsubscribePushSubscription,
 }))
 vi.mock('@/lib/db', () => ({
@@ -57,6 +59,7 @@ describe('push subscription routes', () => {
     mocks.checkRateLimit.mockResolvedValue({ success: true, remaining: 9, resetAt: 0 })
     mocks.getCurrentUser.mockResolvedValue(null)
     mocks.storePushSubscription.mockResolvedValue({ id: 'push-1' })
+    mocks.storeAuthenticatedPushSubscriptions.mockResolvedValue(0)
     mocks.unsubscribePushSubscription.mockResolvedValue(1)
   })
 
@@ -174,44 +177,28 @@ describe('push subscription routes', () => {
     expect(mocks.storePushSubscription).not.toHaveBeenCalled()
   })
 
-  it('targets exactly the authenticated user customers with future non-terminal bookings and reminders enabled', async () => {
+  it('delegates authenticated customer selection and storage to one serialized transaction', async () => {
     mocks.getCurrentUser.mockResolvedValue({ id: 'user-1' })
-    mocks.customerFindMany.mockResolvedValue([
-      { id: 'customer-1', businessId: 'business-1' },
-      { id: 'customer-2', businessId: 'business-2' },
-    ])
+    mocks.storeAuthenticatedPushSubscriptions.mockResolvedValue(2)
     const { POST } = await import('@/app/api/push/subscribe/route')
 
     const response = await POST(pushRequest('/api/push/subscribe', { subscription }))
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ subscribed: 2 })
-    expect(mocks.customerFindMany).toHaveBeenCalledWith({
-      where: {
-        userId: 'user-1',
-        business: { cancellationReminderEnabled: true },
-        bookings: {
-          some: {
-            startDateTime: { gt: new Date('2026-08-10T12:00:00.000Z') },
-            status: { in: ['pending_payment', 'pending_confirmation', 'confirmed'] },
-          },
-        },
-      },
-      select: { id: true, businessId: true },
-    })
-    expect(mocks.storePushSubscription).toHaveBeenCalledTimes(2)
-    expect(mocks.storePushSubscription).toHaveBeenNthCalledWith(1, {
-      businessId: 'business-1',
-      customerId: 'customer-1',
+    expect(mocks.storeAuthenticatedPushSubscriptions).toHaveBeenCalledWith({
+      userId: 'user-1',
       subscription,
-      authorization: { kind: 'user', userId: 'user-1' },
+      now: new Date('2026-08-10T12:00:00.000Z'),
     })
-    expect(mocks.storePushSubscription).toHaveBeenNthCalledWith(2, {
-      businessId: 'business-2',
-      customerId: 'customer-2',
-      subscription,
-      authorization: { kind: 'user', userId: 'user-1' },
-    })
+    expect(mocks.storePushSubscription).not.toHaveBeenCalled()
+    expect(mocks.checkRateLimit).toHaveBeenNthCalledWith(
+      2,
+      'push-subscribe-target',
+      10,
+      60_000,
+      { keyMode: 'target', targetId: 'user:user-1' },
+    )
   })
 
   it('returns only a count when an authenticated user has no eligible targets', async () => {
@@ -223,18 +210,12 @@ describe('push subscription routes', () => {
 
     await expect(response.json()).resolves.toEqual({ subscribed: 0 })
     expect(mocks.storePushSubscription).not.toHaveBeenCalled()
+    expect(mocks.storeAuthenticatedPushSubscriptions).toHaveBeenCalledTimes(1)
   })
 
   it('subscribes eligible auth targets even when another target reached its device cap', async () => {
-    const { PushDeviceLimitError } = await import('@/lib/push/subscription')
     mocks.getCurrentUser.mockResolvedValue({ id: 'user-1' })
-    mocks.customerFindMany.mockResolvedValue([
-      { id: 'customer-1', businessId: 'business-1' },
-      { id: 'customer-2', businessId: 'business-2' },
-    ])
-    mocks.storePushSubscription
-      .mockRejectedValueOnce(new PushDeviceLimitError())
-      .mockResolvedValueOnce({ id: 'push-2' })
+    mocks.storeAuthenticatedPushSubscriptions.mockResolvedValue(1)
     const { POST } = await import('@/app/api/push/subscribe/route')
 
     const response = await POST(pushRequest('/api/push/subscribe', { subscription }))
@@ -336,7 +317,10 @@ describe('push subscription routes', () => {
       'push-subscribe-target',
       10,
       60_000,
-      { businessId: 'business-1', targetId: 'booking-1' },
+      {
+        keyMode: 'target',
+        targetId: 'guest:business-1:customer-1:booking-1',
+      },
     )
   })
 })
