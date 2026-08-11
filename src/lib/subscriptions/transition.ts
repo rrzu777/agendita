@@ -36,6 +36,8 @@ export type AdminSubscriptionCommand =
   | { type: 'admin_change_plan'; planId: string }
   | { type: 'admin_mark_past_due'; occurredAt: Date }
   | { type: 'admin_cancel'; occurredAt: Date; reason?: string }
+  | { type: 'admin_clear_complimentary'; occurredAt: Date }
+  | { type: 'admin_set_complimentary'; complimentaryUntil: Date; reason: string }
 
 export type ApplySubscriptionTransitionCommand = {
   subscriptionId?: string
@@ -292,6 +294,77 @@ function adminTransition(
           cancellationRequestedAt: command.occurredAt,
         },
         auditAction: 'subscription_cancellation_requested_by_admin',
+        ignored: false,
+      }
+    case 'admin_clear_complimentary': {
+      if (
+        !subscription.complimentaryUntil ||
+        subscription.complimentaryUntil.getTime() <= command.occurredAt.getTime()
+      ) {
+        throw new Error('No hay una exención vigente para retirar')
+      }
+      const trialEndAt = new Date(
+        command.occurredAt.getTime() + subscription.trialDays * 24 * 60 * 60 * 1000,
+      )
+      if (subscription.trialDays === 0) {
+        return {
+          nextStatus: 'past_due',
+          changes: {
+            trialStartAt: command.occurredAt,
+            trialEndAt: command.occurredAt,
+            currentPeriodStart: command.occurredAt,
+            currentPeriodEnd: command.occurredAt,
+            complimentaryUntil: null,
+            pastDueAt: command.occurredAt,
+            graceEndsAt: new Date(
+              command.occurredAt.getTime() + subscription.graceDays * 24 * 60 * 60 * 1000,
+            ),
+            graceEnforcementDeferredAt: null,
+            suspendedAt: null,
+            suspendedReason: null,
+          },
+          subscriptionData: { complimentaryReason: null },
+          businessData: { trialEndsAt: command.occurredAt },
+          auditAction: 'complimentary_period_cleared',
+          ignored: false,
+        }
+      }
+      return {
+        nextStatus: 'trialing',
+        changes: {
+          trialStartAt: command.occurredAt,
+          trialEndAt,
+          currentPeriodStart: command.occurredAt,
+          currentPeriodEnd: trialEndAt,
+          complimentaryUntil: null,
+          pastDueAt: null,
+          graceEndsAt: null,
+          graceEnforcementDeferredAt: null,
+          suspendedAt: null,
+          suspendedReason: null,
+        },
+        subscriptionData: { complimentaryReason: null },
+        businessData: { trialEndsAt: trialEndAt },
+        auditAction: 'complimentary_period_cleared',
+        ignored: false,
+      }
+    }
+    case 'admin_set_complimentary':
+      if (subscription.providerSubscriptionId) {
+        throw new Error('Primero cancela y confirma la autorización externa antes de asignar una exención')
+      }
+      return {
+        nextStatus: 'trialing',
+        changes: {
+          complimentaryUntil: command.complimentaryUntil,
+          pastDueAt: null,
+          graceEndsAt: null,
+          graceEnforcementDeferredAt: null,
+          suspendedAt: null,
+          suspendedReason: null,
+        },
+        subscriptionData: { complimentaryReason: command.reason },
+        auditAction: 'complimentary_period_set',
         ignored: false,
       }
   }

@@ -6,6 +6,7 @@ import { requirePlatformAdminUser } from '@/lib/auth/user'
 import { applySubscriptionTransition } from '@/lib/subscriptions/transition'
 import { reconcileSubscription } from '@/lib/subscriptions/reconciliation'
 import { revalidatePath } from 'next/cache'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 
 function actor(user: { id: string; email?: string | null }, notes: string) {
   return {
@@ -38,6 +39,31 @@ function revalidateAdminBusiness(businessId: string) {
   revalidatePath(`/admin/businesses/${businessId}`)
 }
 
+function endOfBusinessDate(dateOnly: string, timezone: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateOnly)
+  if (!match) throw new Error('La fecha debe usar el formato YYYY-MM-DD')
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date())
+  } catch {
+    throw new Error('La zona horaria del negocio no es válida')
+  }
+  const [, yearText, monthText, dayText] = match
+  const year = Number(yearText)
+  const month = Number(monthText)
+  const day = Number(dayText)
+  const civilDate = new Date(Date.UTC(year, month - 1, day))
+  if (
+    civilDate.getUTCFullYear() !== year ||
+    civilDate.getUTCMonth() !== month - 1 ||
+    civilDate.getUTCDate() !== day
+  ) {
+    throw new Error('La fecha no es válida')
+  }
+  civilDate.setUTCDate(civilDate.getUTCDate() + 1)
+  const nextDateOnly = civilDate.toISOString().slice(0, 10)
+  return new Date(fromZonedTime(`${nextDateOnly}T00:00:00.000`, timezone).getTime() - 1)
+}
+
 async function auditedSubscriptionUpdate(input: {
   businessId: string
   data: Parameters<typeof prisma.businessSubscription.updateMany>[0]['data']
@@ -45,7 +71,6 @@ async function auditedSubscriptionUpdate(input: {
   notes: string
   user: { id: string; email?: string | null }
   updateBusinessPlanId?: string
-  requireNoProviderAuthorization?: boolean
 }) {
   await prisma.$transaction(async (tx) => {
     const subscription = await tx.businessSubscription.findFirst({
@@ -53,9 +78,6 @@ async function auditedSubscriptionUpdate(input: {
       orderBy: { createdAt: 'desc' },
     })
     if (!subscription) throw new Error('No se encontró suscripción para este negocio')
-    if (input.requireNoProviderAuthorization && subscription.providerSubscriptionId) {
-      throw new Error('Primero cancela y confirma la autorización externa antes de asignar una exención')
-    }
 
     const updated = await tx.businessSubscription.updateMany({
       where: { id: subscription.id, updatedAt: subscription.updatedAt },
@@ -87,35 +109,37 @@ async function auditedSubscriptionUpdate(input: {
 
 export async function adminSetComplimentaryPeriod(
   businessId: string,
-  complimentaryUntil: Date,
+  complimentaryDate: string,
   reason: string,
 ) {
   const user = await requirePlatformAdminUser()
   const notes = requiredReason(reason)
-  if (!(complimentaryUntil instanceof Date) || !Number.isFinite(complimentaryUntil.getTime()) ||
-      complimentaryUntil.getTime() <= Date.now()) {
+  const business = await prisma.business.findUnique({
+    where: { id: businessId },
+    select: { timezone: true },
+  })
+  if (!business) throw new Error('No se encontró el negocio')
+  const complimentaryUntil = endOfBusinessDate(complimentaryDate, business.timezone)
+  if (complimentaryDate <= formatInTimeZone(new Date(), business.timezone, 'yyyy-MM-dd')) {
     throw new Error('La fecha de exención debe ser futura')
   }
-  await auditedSubscriptionUpdate({
+  await applySubscriptionTransition(prisma, {
     businessId,
-    data: { complimentaryUntil, complimentaryReason: notes },
-    action: 'complimentary_period_set',
-    notes,
-    user,
-    requireNoProviderAuthorization: true,
+    command: { type: 'admin_set_complimentary', complimentaryUntil, reason: notes },
+    actor: actor(user, notes),
   })
+  revalidateAdminBusiness(businessId)
 }
 
 export async function adminClearComplimentaryPeriod(businessId: string, reason: string) {
   const user = await requirePlatformAdminUser()
   const notes = requiredReason(reason)
-  await auditedSubscriptionUpdate({
+  await applySubscriptionTransition(prisma, {
     businessId,
-    data: { complimentaryUntil: null, complimentaryReason: null },
-    action: 'complimentary_period_cleared',
-    notes,
-    user,
+    command: { type: 'admin_clear_complimentary', occurredAt: new Date() },
+    actor: actor(user, notes),
   })
+  revalidateAdminBusiness(businessId)
 }
 
 export async function adminConfigureBilling(businessId: string, configuration: BillingConfiguration) {
@@ -175,16 +199,35 @@ export async function adminReconcileSubscription(businessId: string) {
   })
   if (!subscription) throw new Error('No se encontró suscripción para este negocio')
 
-  const result = await reconcileSubscription(subscription.id)
-  await prisma.$transaction((tx) => tx.subscriptionLog.create({
+  const requestLog = await prisma.$transaction((tx) => tx.subscriptionLog.create({
     data: {
       businessId,
-      action: 'subscription_reconciled_by_admin',
+      action: 'subscription_reconciliation_requested',
       adminUserId: user.id,
       adminEmail: user.email ?? undefined,
-      notes: `Reconciliación autoritativa solicitada; ${result.invoices} facturas revisadas, ${result.applied} aplicadas`,
+      notes: 'Reconciliación autoritativa solicitada por admin',
     },
   }))
+  let result: Awaited<ReturnType<typeof reconcileSubscription>>
+  try {
+    result = await reconcileSubscription(subscription.id)
+  } catch (error) {
+    await prisma.$transaction((tx) => tx.subscriptionLog.create({ data: {
+      businessId,
+      action: 'subscription_reconciliation_failed',
+      adminUserId: user.id,
+      adminEmail: user.email ?? undefined,
+      notes: `Solicitud ${requestLog.id}; proveedor no pudo completar la reconciliación`,
+    } }))
+    throw error
+  }
+  await prisma.$transaction((tx) => tx.subscriptionLog.create({ data: {
+    businessId,
+    action: 'subscription_reconciliation_succeeded',
+    adminUserId: user.id,
+    adminEmail: user.email ?? undefined,
+    notes: `Solicitud ${requestLog.id}; ${result.invoices} facturas revisadas, ${result.applied} aplicadas`,
+  } }))
   revalidateAdminBusiness(businessId)
   return result
 }

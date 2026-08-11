@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import type { BusinessSubscription } from '@prisma/client'
 
 const { requirePlatformAdminUser, mockBusinessSubscription } = vi.hoisted(() => ({
@@ -21,6 +21,7 @@ const mockPrisma = {
 }
 
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
 // admin.ts autoriza vía requirePlatformAdminUser (getUser remoto + isPlatformAdmin).
 vi.mock('@/lib/auth/user', () => ({ requirePlatformAdminUser }))
@@ -137,6 +138,111 @@ describe('adminExtendTrial', () => {
     const { adminExtendTrial } = await import('@/server/actions/admin')
     await expect(adminExtendTrial('biz-1', 366)).rejects.toThrow('número entre 1 y 365')
     await expect(adminExtendTrial('biz-1', 700)).rejects.toThrow('número entre 1 y 365')
+  })
+})
+
+describe('adminClearComplimentaryPeriod entitlement reset', () => {
+  beforeEach(() => {
+    setupTxMock()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-15T12:00:00.000Z'))
+  })
+
+  afterEach(() => vi.useRealTimers())
+
+  it.each([
+    ['short', new Date('2026-08-20T00:00:00.000Z')],
+    ['long', new Date('2027-08-20T00:00:00.000Z')],
+  ])('starts the full configured trial when clearing a %s exemption', async (_label, until) => {
+    mockBusinessSubscription.findFirst.mockResolvedValue(subscriptionFixture({
+      complimentaryUntil: until,
+      complimentaryReason: 'family',
+      trialStartAt: new Date('2026-01-01T00:00:00.000Z'),
+      trialEndAt: new Date('2026-01-31T00:00:00.000Z'),
+      currentPeriodStart: new Date('2026-01-01T00:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-01-31T00:00:00.000Z'),
+      trialDays: 30,
+    }))
+
+    const { adminClearComplimentaryPeriod } = await import('@/server/actions/admin')
+    await adminClearComplimentaryPeriod('biz-1', 'fin de beneficio')
+
+    expect(mockBusinessSubscription.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        status: 'trialing',
+        complimentaryUntil: null,
+        complimentaryReason: null,
+        trialStartAt: new Date('2026-08-15T12:00:00.000Z'),
+        trialEndAt: new Date('2026-09-14T12:00:00.000Z'),
+        currentPeriodStart: new Date('2026-08-15T12:00:00.000Z'),
+        currentPeriodEnd: new Date('2026-09-14T12:00:00.000Z'),
+        pastDueAt: null,
+        graceEndsAt: null,
+        suspendedAt: null,
+      }),
+    }))
+    expect(mockPrisma.business.update).toHaveBeenCalledWith({
+      where: { id: 'biz-1' },
+      data: expect.objectContaining({
+        subscriptionStatus: 'trialing',
+        trialEndsAt: new Date('2026-09-14T12:00:00.000Z'),
+      }),
+    })
+  })
+
+  it('rejects clearing an already expired exemption instead of granting a retroactive trial', async () => {
+    mockBusinessSubscription.findFirst.mockResolvedValue(subscriptionFixture({
+      complimentaryUntil: new Date('2026-08-14T00:00:00.000Z'),
+      complimentaryReason: 'expired',
+    }))
+    const { adminClearComplimentaryPeriod } = await import('@/server/actions/admin')
+    await expect(adminClearComplimentaryPeriod('biz-1', 'late clear'))
+      .rejects.toThrow(/exención vigente/i)
+    expect(mockBusinessSubscription.updateMany).not.toHaveBeenCalled()
+  })
+})
+
+describe('adminSetComplimentaryPeriod entitlement', () => {
+  beforeEach(() => {
+    setupTxMock()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-15T12:00:00.000Z'))
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('restores access immediately instead of waiting for the daily cron', async () => {
+    mockPrisma.business.findUnique
+      .mockResolvedValueOnce({ timezone: 'America/Santiago' })
+      .mockResolvedValue({
+        name: 'Negocio de prueba',
+        users: [{ user: { email: 'owner@example.com' } }],
+      })
+    mockBusinessSubscription.findFirst.mockResolvedValue(subscriptionFixture({
+      status: 'suspended',
+      suspendedAt: new Date('2026-08-14T00:00:00.000Z'),
+      suspendedReason: 'grace expired',
+      pastDueAt: new Date('2026-08-01T00:00:00.000Z'),
+      graceEndsAt: new Date('2026-08-08T00:00:00.000Z'),
+    }))
+
+    const { adminSetComplimentaryPeriod } = await import('@/server/actions/admin')
+    await adminSetComplimentaryPeriod('biz-1', '2027-01-15', 'family')
+
+    expect(mockBusinessSubscription.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        status: 'trialing',
+        complimentaryUntil: new Date('2027-01-16T02:59:59.999Z'),
+        complimentaryReason: 'family',
+        pastDueAt: null,
+        graceEndsAt: null,
+        suspendedAt: null,
+        suspendedReason: null,
+      }),
+    }))
+    expect(mockPrisma.business.update).toHaveBeenCalledWith({
+      where: { id: 'biz-1' },
+      data: expect.objectContaining({ subscriptionStatus: 'trialing' }),
+    })
   })
 })
 

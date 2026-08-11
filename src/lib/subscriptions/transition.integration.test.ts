@@ -48,6 +48,11 @@ async function resetSubscription() {
       currency: 'CLP',
       currentPeriodStart: new Date('2026-08-01T00:00:00.000Z'),
       currentPeriodEnd: PERIOD_END,
+      trialStartAt: null,
+      trialEndAt: null,
+      trialDays: 30,
+      complimentaryUntil: null,
+      complimentaryReason: null,
       lastPaidAt: null,
       nextBillingAt: null,
       pastDueAt: new Date('2026-08-10T00:00:00.000Z'),
@@ -60,6 +65,18 @@ async function resetSubscription() {
       cancelledAt: null,
     },
   })
+  await Promise.all([
+    prisma.businessSubscription.update({ where: { id: SUBSCRIPTION }, data: {
+      provider: 'mercado_pago', environment: 'sandbox',
+      providerPlanId: 'subscription-transition-provider-plan',
+      providerSubscriptionId: 'subscription-transition-provider-id',
+    } }),
+    prisma.businessSubscription.update({ where: { id: OTHER_SUBSCRIPTION }, data: {
+      provider: 'mercado_pago', environment: 'sandbox',
+      providerPlanId: 'subscription-transition-other-provider-plan',
+      providerSubscriptionId: 'subscription-transition-other-provider-id',
+    } }),
+  ])
 }
 
 beforeAll(async () => {
@@ -541,6 +558,88 @@ describe('applySubscriptionTransition', () => {
         afterStatus: 'active',
       }),
     ])
+  })
+
+  it.each([
+    ['short', new Date('2026-08-20T00:00:00.000Z')],
+    ['long', new Date('2027-08-20T00:00:00.000Z')],
+  ])('retirar una exención %s inicia el trial completo sin mora retroactiva', async (_label, until) => {
+    const clearedAt = new Date('2026-08-15T12:00:00.000Z')
+    const trialEndAt = new Date('2026-09-14T12:00:00.000Z')
+    await prisma.businessSubscription.update({ where: { id: SUBSCRIPTION }, data: {
+      status: 'trialing',
+      trialDays: 30,
+      trialStartAt: new Date('2026-01-01T00:00:00.000Z'),
+      trialEndAt: new Date('2026-01-31T00:00:00.000Z'),
+      currentPeriodStart: new Date('2026-01-01T00:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-01-31T00:00:00.000Z'),
+      complimentaryUntil: until,
+      complimentaryReason: 'family',
+      pastDueAt: new Date('2026-02-01T00:00:00.000Z'),
+      graceEndsAt: new Date('2026-02-08T00:00:00.000Z'),
+      suspendedAt: new Date('2026-02-09T00:00:00.000Z'),
+      suspendedReason: 'legacy',
+    } })
+
+    await expect(applySubscriptionTransition(prisma, {
+      subscriptionId: SUBSCRIPTION,
+      command: { type: 'admin_clear_complimentary', occurredAt: clearedAt },
+      actor: { userId: 'admin-1', email: 'admin@example.com', notes: 'fin beneficio' },
+    })).resolves.toEqual({ applied: true, status: 'trialing' })
+
+    const [updated, business, log] = await Promise.all([
+      prisma.businessSubscription.findUniqueOrThrow({ where: { id: SUBSCRIPTION } }),
+      prisma.business.findUniqueOrThrow({ where: { id: BUSINESS } }),
+      prisma.subscriptionLog.findFirstOrThrow({ where: { businessId: BUSINESS } }),
+    ])
+    expect(updated).toMatchObject({
+      status: 'trialing',
+      trialStartAt: clearedAt,
+      trialEndAt,
+      currentPeriodStart: clearedAt,
+      currentPeriodEnd: trialEndAt,
+      complimentaryUntil: null,
+      complimentaryReason: null,
+      pastDueAt: null,
+      graceEndsAt: null,
+      suspendedAt: null,
+      suspendedReason: null,
+    })
+    expect(business).toMatchObject({ subscriptionStatus: 'trialing', trialEndsAt: trialEndAt })
+    expect(log).toMatchObject({
+      action: 'complimentary_period_cleared',
+      adminUserId: 'admin-1',
+      adminEmail: 'admin@example.com',
+    })
+  })
+
+  it('asignar una exención restaura acceso inmediatamente y deja auditoría admin', async () => {
+    const until = new Date('2027-01-16T02:59:59.999Z')
+    await prisma.businessSubscription.update({ where: { id: SUBSCRIPTION }, data: {
+      status: 'suspended',
+      provider: 'manual',
+      environment: null,
+      providerPlanId: null,
+      providerSubscriptionId: null,
+      suspendedAt: new Date('2026-08-14T00:00:00.000Z'),
+      suspendedReason: 'grace expired',
+    } })
+
+    await applySubscriptionTransition(prisma, {
+      subscriptionId: SUBSCRIPTION,
+      command: { type: 'admin_set_complimentary', complimentaryUntil: until, reason: 'family' },
+      actor: { userId: 'admin-1', email: 'admin@example.com', notes: 'family' },
+    })
+
+    await expect(prisma.businessSubscription.findUniqueOrThrow({ where: { id: SUBSCRIPTION } }))
+      .resolves.toMatchObject({
+        status: 'trialing', complimentaryUntil: until, complimentaryReason: 'family',
+        pastDueAt: null, graceEndsAt: null, suspendedAt: null, suspendedReason: null,
+      })
+    await expect(prisma.business.findUniqueOrThrow({ where: { id: BUSINESS } }))
+      .resolves.toMatchObject({ subscriptionStatus: 'trialing' })
+    await expect(prisma.subscriptionLog.findFirstOrThrow({ where: { businessId: BUSINESS } }))
+      .resolves.toMatchObject({ action: 'complimentary_period_set', adminUserId: 'admin-1' })
   })
 
   it('rechaza también comandos admin sobre una suscripción no mensual', async () => {

@@ -118,7 +118,7 @@ export function AdminSubscriptionControls({ businessId, timezone, plans, subscri
           'exempt', '¿Asignar o extender esta exención? No se solicitará tarjeta ni se generará un cobro.',
           async () => {
             const { adminSetComplimentaryPeriod } = await import('@/server/actions/admin')
-            return adminSetComplimentaryPeriod(businessId, new Date(`${complimentaryUntil}T23:59:59.999Z`), complimentaryReason)
+            return adminSetComplimentaryPeriod(businessId, complimentaryUntil, complimentaryReason)
           },
         )}>{busy === 'exempt' ? 'Guardando…' : 'Asignar o extender exención'}</Button>
         {subscription.complimentaryUntil && <>

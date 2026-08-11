@@ -3,16 +3,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   requirePlatformAdminUser: vi.fn(),
   reconcileSubscription: vi.fn(),
+  applySubscriptionTransition: vi.fn(),
   revalidatePath: vi.fn(),
   tx: {
     plan: { findUnique: vi.fn() },
     businessSubscription: { findFirst: vi.fn(), updateMany: vi.fn() },
-    business: { update: vi.fn() },
+    business: { update: vi.fn(), findUnique: vi.fn() },
     subscriptionLog: { create: vi.fn() },
   },
   prisma: {
     $transaction: vi.fn(),
     businessSubscription: { findFirst: vi.fn() },
+    business: { findUnique: vi.fn() },
   },
 }))
 
@@ -23,6 +25,9 @@ vi.mock('@/lib/db', () => ({ prisma: mocks.prisma }))
 vi.mock('next/cache', () => ({ revalidatePath: mocks.revalidatePath }))
 vi.mock('@/lib/subscriptions/reconciliation', () => ({
   reconcileSubscription: (...args: unknown[]) => mocks.reconcileSubscription(...args),
+}))
+vi.mock('@/lib/subscriptions/transition', () => ({
+  applySubscriptionTransition: (...args: unknown[]) => mocks.applySubscriptionTransition(...args),
 }))
 
 const subscription = {
@@ -49,6 +54,7 @@ beforeEach(() => {
   mocks.tx.businessSubscription.updateMany.mockResolvedValue({ count: 1 })
   mocks.tx.plan.findUnique.mockResolvedValue({ id: 'plan-pro', name: 'Pro', priceMonthly: 14_990 })
   mocks.tx.business.update.mockResolvedValue({})
+  mocks.prisma.business.findUnique.mockResolvedValue({ timezone: 'America/Santiago' })
   mocks.tx.subscriptionLog.create.mockResolvedValue({ id: 'log-1' })
 })
 
@@ -57,7 +63,7 @@ describe('recurring billing admin authorization', () => {
     mocks.requirePlatformAdminUser.mockRejectedValue(new Error('Sin permisos'))
     const actions = await import('./admin')
 
-    await expect(actions.adminSetComplimentaryPeriod('biz-1', new Date('2026-09-01'), 'familia'))
+    await expect(actions.adminSetComplimentaryPeriod('biz-1', '2099-09-01', 'familia'))
       .rejects.toThrow('Sin permisos')
     await expect(actions.adminClearComplimentaryPeriod('biz-1', 'fin de exención'))
       .rejects.toThrow('Sin permisos')
@@ -74,50 +80,61 @@ describe('recurring billing admin authorization', () => {
 describe('adminSetComplimentaryPeriod', () => {
   it('requires a future date and a non-empty reason', async () => {
     const { adminSetComplimentaryPeriod } = await import('./admin')
-    await expect(adminSetComplimentaryPeriod('biz-1', new Date(0), 'familia'))
-      .rejects.toThrow(/futura/i)
-    await expect(adminSetComplimentaryPeriod('biz-1', new Date('2099-01-01'), '   '))
+    await expect(adminSetComplimentaryPeriod('biz-1', 'fecha-inválida', 'familia'))
+      .rejects.toThrow(/fecha/i)
+    await expect(adminSetComplimentaryPeriod('biz-1', '2099-01-01', '   '))
       .rejects.toThrow(/motivo/i)
+    await expect(adminSetComplimentaryPeriod('biz-1', '2027-02-30', 'familia'))
+      .rejects.toThrow(/fecha/i)
   })
 
-  it('stores the exemption and actor in one audited transaction', async () => {
-    const until = new Date('2099-01-01T00:00:00.000Z')
+  it('rejects an invalid persisted business timezone', async () => {
+    mocks.prisma.business.findUnique.mockResolvedValue({ timezone: 'Chile/Invalid' })
     const { adminSetComplimentaryPeriod } = await import('./admin')
-    await adminSetComplimentaryPeriod('biz-1', until, 'Family & friends')
+    await expect(adminSetComplimentaryPeriod('biz-1', '2027-01-15', 'familia'))
+      .rejects.toThrow(/zona horaria/i)
+    expect(mocks.tx.businessSubscription.updateMany).not.toHaveBeenCalled()
+  })
 
-    expect(mocks.tx.businessSubscription.updateMany).toHaveBeenCalledWith({
-      where: { id: 'sub-1', updatedAt: subscription.updatedAt },
-      data: { complimentaryUntil: until, complimentaryReason: 'Family & friends' },
+  it.each([
+    ['2027-01-15', '2027-01-16T02:59:59.999Z'],
+    ['2027-07-15', '2027-07-16T03:59:59.999Z'],
+  ])('resolves Chilean date-only %s to local end-of-day across DST', async (dateOnly, expected) => {
+    const { adminSetComplimentaryPeriod } = await import('./admin')
+    await adminSetComplimentaryPeriod('biz-1', dateOnly, 'Family & friends')
+
+    expect(mocks.applySubscriptionTransition).toHaveBeenCalledWith(mocks.prisma, {
+      businessId: 'biz-1',
+      command: {
+        type: 'admin_set_complimentary',
+        complimentaryUntil: new Date(expected),
+        reason: 'Family & friends',
+      },
+      actor: { userId: 'admin-1', email: 'admin@agendita.cl', notes: 'Family & friends' },
     })
-    expect(mocks.tx.subscriptionLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
-      businessId: 'biz-1', action: 'complimentary_period_set',
-      adminUserId: 'admin-1', adminEmail: 'admin@agendita.cl', notes: 'Family & friends',
-    }) })
   })
 
   it('does not pretend to exempt a subscription that can still charge at the provider', async () => {
-    mocks.tx.businessSubscription.findFirst.mockResolvedValue({
-      ...subscription,
-      provider: 'mercado_pago',
-      environment: 'sandbox',
-      providerSubscriptionId: 'authorized-1',
-    })
+    mocks.applySubscriptionTransition.mockRejectedValueOnce(new Error(
+      'Primero cancela y confirma la autorización externa antes de asignar una exención',
+    ))
     const { adminSetComplimentaryPeriod } = await import('./admin')
-    await expect(adminSetComplimentaryPeriod('biz-1', new Date('2099-01-01'), 'familia'))
+    await expect(adminSetComplimentaryPeriod('biz-1', '2099-01-01', 'familia'))
       .rejects.toThrow(/autorización/i)
     expect(mocks.tx.businessSubscription.updateMany).not.toHaveBeenCalled()
   })
 })
 
 describe('adminClearComplimentaryPeriod', () => {
-  it('requires a reason and only clears local fields without charging or creating checkout', async () => {
+  it('requires a reason and starts a fresh configured trial through the transition service', async () => {
     const { adminClearComplimentaryPeriod } = await import('./admin')
     await expect(adminClearComplimentaryPeriod('biz-1', '')).rejects.toThrow(/motivo/i)
     await adminClearComplimentaryPeriod('biz-1', 'Terminó beneficio')
 
-    expect(mocks.tx.businessSubscription.updateMany).toHaveBeenCalledWith({
-      where: { id: 'sub-1', updatedAt: subscription.updatedAt },
-      data: { complimentaryUntil: null, complimentaryReason: null },
+    expect(mocks.applySubscriptionTransition).toHaveBeenCalledWith(mocks.prisma, {
+      businessId: 'biz-1',
+      command: { type: 'admin_clear_complimentary', occurredAt: expect.any(Date) },
+      actor: { userId: 'admin-1', email: 'admin@agendita.cl', notes: 'Terminó beneficio' },
     })
     expect(mocks.reconcileSubscription).not.toHaveBeenCalled()
   })
@@ -176,5 +193,35 @@ describe('adminReconcileSubscription', () => {
 
     await expect(adminReconcileSubscription('biz-1')).resolves.toMatchObject({ outcome: 'reconciled' })
     expect(mocks.reconcileSubscription).toHaveBeenCalledWith('sub-1')
+    expect(mocks.tx.subscriptionLog.create).toHaveBeenLastCalledWith({ data: expect.objectContaining({
+      action: 'subscription_reconciliation_succeeded',
+      notes: expect.stringContaining('log-1'),
+      adminUserId: 'admin-1',
+    }) })
+  })
+
+  it('does not call the provider when the durable request audit fails', async () => {
+    mocks.prisma.businessSubscription.findFirst.mockResolvedValue({ id: 'sub-1' })
+    mocks.tx.subscriptionLog.create.mockRejectedValueOnce(new Error('audit unavailable'))
+    const { adminReconcileSubscription } = await import('./admin')
+
+    await expect(adminReconcileSubscription('biz-1')).rejects.toThrow('audit unavailable')
+    expect(mocks.reconcileSubscription).not.toHaveBeenCalled()
+  })
+
+  it('records an attributable failed outcome when the provider call fails', async () => {
+    mocks.prisma.businessSubscription.findFirst.mockResolvedValue({ id: 'sub-1' })
+    mocks.tx.subscriptionLog.create
+      .mockResolvedValueOnce({ id: 'request-log-1' })
+      .mockResolvedValueOnce({ id: 'outcome-log-1' })
+    mocks.reconcileSubscription.mockRejectedValue(new Error('provider timeout'))
+    const { adminReconcileSubscription } = await import('./admin')
+
+    await expect(adminReconcileSubscription('biz-1')).rejects.toThrow('provider timeout')
+    expect(mocks.tx.subscriptionLog.create).toHaveBeenLastCalledWith({ data: expect.objectContaining({
+      action: 'subscription_reconciliation_failed',
+      notes: expect.stringContaining('request-log-1'),
+      adminUserId: 'admin-1',
+    }) })
   })
 })

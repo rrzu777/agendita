@@ -54,3 +54,12 @@ Advertencias observadas y preexistentes: `DEP0205`, `localStorage` experimental 
 - La reconciliación usa el ID local resuelto server-side y el mismo flujo autoritativo existente.
 - Las acciones autorizan antes de leer o mutar datos.
 - Sin gaps conocidos dentro del alcance de Task 8.
+
+## Fix round 1
+
+- Retirar una exención vigente ahora usa `admin_clear_complimentary` en la máquina transaccional: inicia el trial completo desde el instante de retiro, limpia mora/suspensión y sincroniza `Business.subscriptionStatus`/`trialEndsAt`. Rechaza retiros tardíos para no regalar un trial retroactivo. Exenciones cortas y largas tienen regresión unitaria y PostgreSQL.
+- Asignar una exención también pasa por la máquina transaccional y recupera acceso inmediatamente; no espera al cron diario. Conserva la guarda que prohíbe eximir una autorización externa todavía cobrable.
+- La reconciliación manual persiste primero un request auditado en una transacción corta, realiza la red fuera de transacción y persiste outcome success/failure enlazado por el ID del request. Un fallo del audit inicial impide cualquier llamada al proveedor; errores del proveedor dejan request y outcome sanitario atribuibles.
+- La UI envía una fecha civil `YYYY-MM-DD`; el servidor valida fecha y zona IANA del negocio, exige un día local estrictamente futuro y calcula el fin del día como el siguiente midnight local menos 1 ms usando `date-fns-tz`. Regresiones Chile verifican UTC-3 de verano y UTC-4 de invierno.
+- RED: 8 fallos focalizados antes de implementar (servicio de clear ausente, conversión UTC incorrecta y audit posterior a red).
+- GREEN final: focalizados 74/74; PostgreSQL 16 temporal fresh con 45/45 migraciones y `transition.integration` 27/27; typecheck, eslint quiet, build Next 16 de 48 rutas y `git diff --check` pasan.
