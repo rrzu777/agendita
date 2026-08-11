@@ -474,11 +474,14 @@ Decrypt active subscriptions only after winning the claim.
 Use an explicit bounded-concurrency helper (the query cap alone is not the
 fanout contract). Mark `404/410` revoked; count/revoke permanent failures;
 retain transient provider failures. Irreversible local decrypt/JSON/normalize
-failures revoke only the matching subscription fingerprint generation. Record
-every disposition with an `id + subscriptionFingerprint` CAS before counting a
-success; a provider success from an older generation must retry the current
-generation and cannot set `SentAt`. Otherwise clear the claim so the next
-15-minute run retries. Logs contain IDs, status classes and counts only.
+failures revoke only the exact loaded ciphertext revision using an
+`id + subscriptionFingerprint + subscriptionEncrypted` CAS. Provider HTTP and
+network dispositions use the semantic `id + subscriptionFingerprint` generation
+CAS, so a same-generation ciphertext refresh does not erase provider history.
+Record a success before counting it; a provider success from an older generation
+must retry the current generation and cannot set `SentAt`. Otherwise clear the
+claim so the next 15-minute run retries. Logs contain IDs, status classes and
+counts only.
 
 Refresh the clock for each candidate and again immediately before every
 provider call. Compute a positive integer TTL no larger than the seconds

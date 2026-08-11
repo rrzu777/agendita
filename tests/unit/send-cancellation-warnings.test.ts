@@ -119,6 +119,8 @@ function simulateSubscriptionPersistence(initial: SimulatedSubscriptionRow) {
       where.id !== row.id
       || ('subscriptionFingerprint' in where
         && where.subscriptionFingerprint !== row.subscriptionFingerprint)
+      || ('subscriptionEncrypted' in where
+        && where.subscriptionEncrypted !== row.subscriptionEncrypted)
       || (typeof expectedFailureCount === 'number'
         && expectedFailureCount !== row.failureCount)
       || (typeof expectedFailureCount === 'object'
@@ -143,6 +145,16 @@ function simulateSubscriptionPersistence(initial: SimulatedSubscriptionRow) {
       row = {
         ...row,
         subscriptionFingerprint: 'fingerprint-2',
+        subscriptionEncrypted: 'fresh-ciphertext',
+        failureCount: 0,
+        revokedAt: null,
+        lastFailureAt: null,
+        lastSuccessAt: null,
+      }
+    },
+    replaceCiphertextWithinGeneration() {
+      row = {
+        ...row,
         subscriptionEncrypted: 'fresh-ciphertext',
         failureCount: 0,
         revokedAt: null,
@@ -661,6 +673,45 @@ describe('sendCancellationWarnings', () => {
     })
   })
 
+  it('un fallo local viejo no revoca un ciphertext nuevo del mismo fingerprint', async () => {
+    const simulated = simulateSubscriptionPersistence({
+      ...makeSubscription(),
+      revokedAt: null,
+      lastFailureAt: null,
+      lastSuccessAt: null,
+    })
+    mockSubscriptionFindMany.mockImplementation(async () => (
+      simulated.read().revokedAt === null ? [{ ...simulated.read() }] : []
+    ))
+    mockDecryptSecret
+      .mockImplementationOnce(() => {
+        simulated.replaceCiphertextWithinGeneration()
+        throw new Error('old encryption key')
+      })
+      .mockReturnValue(PUSH_JSON)
+
+    const staleRun = await sendCancellationWarnings(NOW)
+
+    expect(staleRun).toEqual({ sent: 0, skipped: 0, errors: 1 })
+    expect(simulated.read()).toMatchObject({
+      subscriptionFingerprint: 'fingerprint-1',
+      subscriptionEncrypted: 'fresh-ciphertext',
+      revokedAt: null,
+      failureCount: 0,
+    })
+
+    const freshRun = await sendCancellationWarnings(NOW)
+
+    expect(freshRun).toEqual({ sent: 1, skipped: 0, errors: 0 })
+    expect(mockSendWebPush).toHaveBeenCalledTimes(1)
+    expect(simulated.read()).toMatchObject({
+      subscriptionFingerprint: 'fingerprint-1',
+      subscriptionEncrypted: 'fresh-ciphertext',
+      revokedAt: null,
+      lastSuccessAt: NOW,
+    })
+  })
+
   it.each([404, 410])(
     'un HTTP %s del envío viejo no revoca una re-suscripción concurrente',
     async (statusCode) => {
@@ -1017,6 +1068,7 @@ describe('sendCancellationWarnings', () => {
       where: {
         id: 'subscription-1',
         subscriptionFingerprint: 'fingerprint-1',
+        subscriptionEncrypted: PUSH_JSON,
         revokedAt: null,
       },
       data: expect.objectContaining({

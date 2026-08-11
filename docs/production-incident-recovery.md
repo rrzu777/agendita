@@ -119,6 +119,11 @@ Existe una frontera distribuida inevitable entre esa última lectura y la
 aceptación del proveedor; el lease recuperable y el TTL acotado limitan esa
 ventana, pero no prometen atomicidad externa.
 
+Los resultados HTTP y de red se asientan contra la generación semántica del
+fingerprint. Un fallo local irreversible de descifrado o formato agrega el
+ciphertext exacto al guard: una re-suscripción concurrente que refresca el
+cifrado sin cambiar endpoint ni llaves permanece activa y se reintenta.
+
 ## 7. Smoke posterior a la recuperación
 
 Completa y registra:

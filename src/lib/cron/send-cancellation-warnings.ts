@@ -278,7 +278,22 @@ async function recordDisposition(disposition: DeliveryDisposition): Promise<bool
     return updated.count === 1
   }
 
-  if (disposition.kind === 'gone' || disposition.kind === 'invalid') {
+  if (disposition.kind === 'invalid') {
+    const updated = await prisma.pushSubscription.updateMany({
+      where: {
+        ...deliveredGeneration,
+        subscriptionEncrypted: subscription.subscriptionEncrypted,
+      },
+      data: {
+        revokedAt: disposition.occurredAt,
+        lastFailureAt: disposition.occurredAt,
+        failureCount: { increment: 1 },
+      },
+    })
+    return updated.count === 1
+  }
+
+  if (disposition.kind === 'gone') {
     const updated = await prisma.pushSubscription.updateMany({
       where: deliveredGeneration,
       data: {
