@@ -114,6 +114,7 @@ function lifecycleNotification(input: {
                   : null
   if (!kind) return null
   const occurredAt = command.type === 'invoice_approved' ? command.paidAt
+    : command.type === 'admin_record_payment' ? command.paidAt
     : command.type === 'invoice_failed' ? command.occurredAt
       : command.type === 'time_elapsed' ? command.at
         : command.type === 'cancel_at_period_end' ? command.requestedAt

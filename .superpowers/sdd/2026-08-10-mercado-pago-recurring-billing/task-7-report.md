@@ -28,3 +28,7 @@ No existe actualmente un escritor que cambie `PaymentAccount` a `expired` (el ú
 - La ventana de 23 h comienza en `firstProviderAttemptAt`; un aviso nunca intentado sigue disponible aunque sea antiguo. Intentos ambiguos vencidos e idempotency conflicts pasan a `manual_review` sanitario, sin reenvío.
 - `npm test -- src/lib/notifications/subscriptions.test.ts src/lib/cron/subscription-billing.test.ts` — 33/33; `npm run typecheck` — OK.
 - Evidencia final: PostgreSQL 16 temporal fresh aplicó las 43 migraciones y `npm run test:integration -- src/lib/subscriptions/transition.integration.test.ts src/lib/cron/subscription-billing.integration.test.ts` pasó 26/26. `npm run lint` tuvo 0 errores (35 warnings preexistentes); build sanitizado completó las 48 rutas; `git diff --check` OK.
+
+## Fix round 2
+
+- `admin_record_payment` ahora usa `paidAt` como `eventAt`, `effectiveDate` y disponibilidad inmediata. Nueva migración forward-only backfillea intentos históricos y terminaliza sanitariamente los ya fuera de ventana; intentos cero no se tocan.
