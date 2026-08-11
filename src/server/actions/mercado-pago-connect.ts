@@ -2,12 +2,12 @@
 
 import { prisma } from '@/lib/db'
 import { requireBusiness } from '@/lib/auth/server'
-import { encryptSecret } from '@/lib/payments/encryption'
-import { signState } from '@/lib/payments/oauth-state'
 import { randomBytes } from 'crypto'
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 import { action, UserError } from '@/lib/actions/result'
 import { requireMercadoPagoEnvironment } from '@/lib/payments/mercado-pago-environment'
+import { createMercadoPagoOAuthState, createPkcePair, MP_OAUTH_PKCE_COOKIE } from '@/lib/payments/mercado-pago-oauth'
 
 const MP_AUTH_URL = 'https://auth.mercadopago.cl/authorization'
 
@@ -21,7 +21,7 @@ export async function startMercadoPagoConnect() {
 
 export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string }> {
   const { businessId } = await requireBusiness()
-  requireMercadoPagoEnvironment()
+  const environment = requireMercadoPagoEnvironment()
 
   const clientId = process.env.MERCADO_PAGO_CLIENT_ID
   const redirectUri = process.env.MERCADO_PAGO_REDIRECT_URI
@@ -32,18 +32,23 @@ export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string 
     )
   }
 
-  const stateValue = randomBytes(32).toString('hex')
-  const expiresAt = Date.now() + 10 * 60 * 1000
-  const payload = `${businessId}:${stateValue}:${expiresAt}`
-
-  let signature: string
+  const nonce = randomBytes(32).toString('base64url')
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
+  const { verifier, challenge } = createPkcePair()
+  let state: string
   try {
-    signature = signState(payload)
+    state = createMercadoPagoOAuthState({ businessId, environment, nonce, expiresAt })
+    const cookieStore = await cookies()
+    cookieStore.set(MP_OAUTH_PKCE_COOKIE, Buffer.from(JSON.stringify({ nonce, verifier })).toString('base64url'), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/api/mercado-pago/callback',
+      expires: expiresAt,
+    })
   } catch {
     throw new Error('ENCRYPTION_KEY must be configured for Mercado Pago OAuth')
   }
-
-  const state = `${payload}:${signature}`
 
   const params = new URLSearchParams({
     client_id: clientId,
@@ -51,6 +56,8 @@ export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string 
     platform_id: 'mp',
     state,
     redirect_uri: redirectUri,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
   })
 
   return { redirectUrl: `${MP_AUTH_URL}?${params.toString()}` }

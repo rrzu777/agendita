@@ -17,7 +17,6 @@ const mockSupabaseAuth = {
   getUser: vi.fn(),
 }
 
-vi.mock('@prisma/client', () => ({}))
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 vi.mock('@/lib/payments/encryption', () => ({
   encryptSecret: vi.fn().mockReturnValue('encrypted-token'),
@@ -43,7 +42,8 @@ function makeCallbackRequest(params: Record<string, string>): NextRequest {
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value)
   }
-  return new NextRequest(url)
+  const cookie = Buffer.from(JSON.stringify({ nonce: 'abc123', verifier: 'verifier' })).toString('base64url')
+  return new NextRequest(url, { headers: { cookie: `agendita_mp_oauth_pkce=${cookie}` } })
 }
 
 function createValidState(businessId: string): string {
@@ -52,7 +52,7 @@ function createValidState(businessId: string): string {
   const signingKey = createHash('sha256').update(`oauth-state-hmac:${key}`).digest()
   const expiresAt = Date.now() + 600000
   const stateValue = 'abc123'
-  const payload = `${businessId}:${stateValue}:${expiresAt}`
+  const payload = `${businessId}:sandbox:${stateValue}:${expiresAt}`
   const sig = createHmac('sha256', signingKey).update(payload).digest('hex')
   return `${payload}:${sig}`
 }
@@ -90,7 +90,7 @@ describe('Mercado Pago OAuth callback', () => {
   it('redirects with error=invalid_state when state is expired', async () => {
     const state = createValidState('biz-1')
     const parts = state.split(':')
-    parts[2] = String(Date.now() - 1000)
+    parts[3] = String(Date.now() - 1000)
     const expiredState = parts.join(':')
 
     const req = makeCallbackRequest({ code: 'test-code', state: expiredState })
@@ -101,7 +101,7 @@ describe('Mercado Pago OAuth callback', () => {
   })
 
   it('redirects with error=invalid_state when state has invalid signature', async () => {
-    const state = 'biz-1:abc123:9999999999999:badsignature1234567890abcdef1234567890abcdef'
+    const state = 'biz-1:sandbox:abc123:9999999999999:badsignature1234567890abcdef1234567890abcdef'
 
     const req = makeCallbackRequest({ code: 'test-code', state })
     const res = await GET(req)
@@ -143,8 +143,9 @@ describe('Mercado Pago OAuth callback', () => {
 
     mockMpFetch.mockResolvedValue({
       ok: false,
-      text: () => Promise.resolve('{"error":"invalid_grant"}'),
-      json: () => Promise.resolve({}),
+      status: 400,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.resolve({ error: 'invalid_grant' }),
     })
 
     const state = createValidState('biz-1')
