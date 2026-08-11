@@ -27,10 +27,16 @@ ningún canal y no agrega navegación offline.
 - La página server-rendered calcula una revisión SHA-256 domain-separated del
   `businessId`, cutoff y condiciones adicionales que mostró. El wizard la envía
   al crear; después de resolver un eventual reintento idempotente y antes del
-  insert, el servidor exige que coincida con la política vigente. Una revisión
-  ausente, alterada o vieja pide recargar y no crea ni inicia pagos. Un reintento
-  de una reserva ya existente devuelve sus snapshots aunque la configuración
-  haya cambiado después. Las creaciones internas del dashboard están exentas.
+  insert, la transacción toma la fila `Business FOR UPDATE`, exige que la revisión
+  coincida y usa esos mismos valores protegidos para los snapshots y el toggle
+  de activación hasta el commit. El lock exclusivo evita el upgrade posterior
+  del contador `bookingNumberSeq`; el dashboard conserva la exención de revisión,
+  pero toma Business antes del slot para compartir el mismo orden. Un update
+  posterior de Settings espera el lock; uno ya commiteado se observa y rechaza
+  la revisión vieja. Una revisión ausente, alterada o vieja
+  pide recargar y no crea ni inicia pagos. Un reintento de una reserva ya
+  existente devuelve sus snapshots aunque la configuración haya cambiado
+  después. Las creaciones internas del dashboard están exentas.
 - Se agrega `Business.cancellationReminderEnabled Boolean @default(true)` para
   que cada negocio pueda apagar únicamente el push. La política visible en
   checkout, confirmación y email no se oculta con este toggle.
@@ -46,9 +52,10 @@ ningún canal y no agrega navegación offline.
 - La elegibilidad para **activar** Web Push es deliberadamente un poco más
   amplia que la entrega: requiere configuración VAPID/cifrado completa, toggle
   del negocio activo, reserva futura y no terminal, cutoff efectivo mayor que
-  cero, y abono requerido **o** pagado. Esto permite activar antes de completar
-  el checkout; el scheduler sigue enviando sólo con `depositPaid > 0` y estado
-  confirmado.
+  cero, que `now` sea estrictamente anterior a `startDateTime - cutoffHours`, y
+  abono requerido **o** pagado. La igualdad exacta ya está cerrada. Esto permite
+  activar antes de completar el checkout; el scheduler sigue enviando sólo con
+  `depositPaid > 0` y estado confirmado.
 - No se implementa devolución automática. El copy no la promete: “Podés
   cancelar o reprogramar hasta X horas antes. Con menos anticipación, el abono
   no se devuelve. Para cancelaciones anteriores aplica la política del
@@ -83,11 +90,12 @@ inicio. No se promete soporte cuando el navegador no expone `PushManager`.
 Una clienta autenticada activa o desactiva recordatorios desde su superficie de
 reservas, navegando al mismo origen canónico. El enlace sólo aparece si al menos
 una reserva cumple la elegibilidad completa de activación. Desactivar llama
-`PushSubscription.unsubscribe()` y envía el endpoint al servidor, que lo
-normaliza y hashea. Con sesión se elimina únicamente la autorización explícita
-de esa cuenta en las generaciones del endpoint; con grant de invitada, sólo el
-entitlement de la reserva firmada. Una fila se revoca únicamente si ya no
-conserva autorización de cuenta ni entitlements de reservas.
+`PushSubscription.unsubscribe()`, que invalida globalmente la capability del
+endpoint en el navegador. Por la misma razón, la limpieza server-side usa
+posesión explícita de ese endpoint y elimina **todos** sus scopes (cuentas y
+reservas invitadas) en todas las generaciones. Si la limpieza remota falla pero
+la baja local sí resulta, la UI conserva el endpoint sólo para reintentar esa
+limpieza y nunca vuelve a ejecutar `unsubscribe()`.
 
 ### Al recibir el push
 
@@ -108,7 +116,13 @@ vieja en CDN.
 `createBooking` emite un grant firmado y domain-separated con `bookingId`,
 `customerId`, `businessId` y expiración de 24 horas. El endpoint de alta
 valida firma, expiración y que esos tres valores sigan perteneciendo a la misma
-reserva. Un `bookingId` aislado nunca autoriza una suscripción. Reintentar
+reserva. Dentro de la misma transacción que escribe el entitlement vuelve a
+exigir que la reserva no sea terminal, esté en el futuro, tenga abono positivo
+requerido o pagado, que el negocio mantenga push activo y que el plazo de
+cancelación siga abierto. El límite exacto queda cerrado. Una baja conserva la
+validación de identidad pero no exige elegibilidad vigente, para que un grant
+que quedó obsoleto todavía pueda limpiar su endpoint. Un `bookingId` aislado
+nunca autoriza una suscripción. Reintentar
 idempotentemente la misma creación puede emitir un grant nuevo sin crear otra
 reserva.
 
@@ -122,7 +136,13 @@ de confirmación en autorización de notificaciones.
 
 Las clientas autenticadas no necesitan ni usan el grant de invitada: en
 subscribe, status y unsubscribe una sesión explícita tiene precedencia sobre un
-grant recibido. La sesión permite
+grant recibido. `/notificaciones` precalcula si la cuenta tiene al menos un
+target elegible y, si el set es cero, no muestra activación ni pide permiso;
+aun así descubre una suscripción local existente y permite limpiarla. Ese
+preflight sólo controla la UI: subscribe vuelve a resolver el set dentro de su
+transacción para cerrar el TOCTOU de una página abierta. Después de tomar los
+locks ordenados de Customer lo resuelve otra vez con una hora fresca; cruzar el
+cutoff mientras esperaba no persiste scopes vencidos. La sesión permite
 seleccionar Customers cuyo `userId` coincide en ese momento, pero cada alta
 persiste además `PushSubscription.authorizedUserId` como scope explícito. El
 cron revalida el `Customer.userId` actual y exige que coincida con ese valor; la

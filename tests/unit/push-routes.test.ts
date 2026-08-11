@@ -394,7 +394,6 @@ describe('push subscription routes', () => {
     expect(mocks.storeAuthenticatedPushSubscriptions).toHaveBeenCalledWith({
       userId: 'user-1',
       subscription,
-      now: new Date('2026-08-10T12:00:00.000Z'),
     })
     expect(mocks.storePushSubscription).not.toHaveBeenCalled()
     expect(mocks.checkRateLimit).toHaveBeenNthCalledWith(
@@ -459,7 +458,7 @@ describe('push subscription routes', () => {
     }))
   })
 
-  it('scopes guest unsubscribe to the reverified customer and business', async () => {
+  it('accepts an owned guest grant for cleanup even when it is no longer activation-eligible', async () => {
     mocks.verifyPushGrant.mockReturnValue({
       version: 1,
       bookingId: 'booking-1',
@@ -467,6 +466,8 @@ describe('push subscription routes', () => {
       businessId: 'business-1',
       expiresAt: Date.now() + 60_000,
     })
+    // Cleanup intentionally revalidates identity only. Eligibility may have
+    // expired or the booking may have been cancelled since activation.
     mocks.bookingFindFirst.mockResolvedValue({ id: 'booking-1' })
     const { POST } = await import('@/app/api/push/unsubscribe/route')
 

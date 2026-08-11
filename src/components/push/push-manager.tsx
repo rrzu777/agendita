@@ -9,7 +9,7 @@ import {
   replaceBrowserLocation,
 } from '@/lib/push/canonical-client'
 
-type ManagerStatus = 'checking' | 'available' | 'activating' | 'active' | 'denied' | 'unsupported' | 'disabled' | 'missing-scope' | 'update-required' | 'local-only' | 'verification-error' | 'association-error' | 'cleanup-error' | 'error'
+type ManagerStatus = 'checking' | 'available' | 'activating' | 'active' | 'denied' | 'unsupported' | 'disabled' | 'missing-scope' | 'no-targets' | 'update-required' | 'local-only' | 'verification-error' | 'association-error' | 'cleanup-error' | 'error'
 
 function applicationServerKey(value: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (value.length % 4)) % 4)
@@ -42,7 +42,7 @@ const subscribeToBrowserReady = () => () => undefined
 async function checkServerAssociation(
   subscription: PushSubscription,
   grant: string | null,
-): Promise<'active' | 'inactive' | 'unavailable'> {
+): Promise<'active' | 'inactive' | 'unauthorized' | 'unavailable'> {
   try {
     const response = await fetch('/api/push/status', {
       method: 'POST',
@@ -52,6 +52,7 @@ async function checkServerAssociation(
         ...(grant ? { grant } : {}),
       }),
     })
+    if (response.status === 401) return 'unauthorized'
     if (!response.ok) return 'unavailable'
     const result: unknown = await response.json()
     if (
@@ -72,14 +73,16 @@ export function PushManager({
   vapidPublicKey,
   canonicalOrigin,
   isAuthenticated,
+  canActivateAccount,
 }: {
   vapidPublicKey: string | null
   canonicalOrigin: string
   isAuthenticated: boolean
+  canActivateAccount: boolean
 }) {
   const browserReady = useSyncExternalStore(subscribeToBrowserReady, () => true, () => false)
   const [interactionStatus, setInteractionStatus] = useState<ManagerStatus | null>(null)
-  const [scopeStatus, setScopeStatus] = useState<'checking' | 'allowed' | 'missing'>('checking')
+  const [scopeStatus, setScopeStatus] = useState<'checking' | 'allowed' | 'missing' | 'ineligible'>('checking')
   const [discoveryComplete, setDiscoveryComplete] = useState(false)
   const [retryAction, setRetryAction] = useState<'activate' | 'deactivate'>('activate')
   const grantRef = useRef<string | null>(null)
@@ -107,7 +110,9 @@ export function PushManager({
       return
     }
 
-    setScopeStatus(isAuthenticated || grantRef.current !== null ? 'allowed' : 'missing')
+    setScopeStatus(isAuthenticated
+      ? canActivateAccount ? 'allowed' : 'ineligible'
+      : grantRef.current !== null ? 'allowed' : 'missing')
 
     let cancelled = false
     async function discoverExistingSubscription() {
@@ -128,7 +133,9 @@ export function PushManager({
         const existing = await registration?.pushManager.getSubscription()
         if (!cancelled && existing) {
           subscriptionRef.current = existing
-          const canActivate = isAuthenticated || grantRef.current !== null
+          const canActivate = isAuthenticated
+            ? canActivateAccount
+            : grantRef.current !== null
           if (!vapidPublicKey) {
             setInteractionStatus('local-only')
             return
@@ -145,11 +152,17 @@ export function PushManager({
 
           const association = await checkServerAssociation(existing, grantRef.current)
           if (!cancelled) {
-            setInteractionStatus(association === 'active'
-              ? 'active'
-              : association === 'inactive'
-                ? canActivate ? 'update-required' : 'local-only'
-                : 'verification-error')
+            if (association === 'unauthorized' && !isAuthenticated) {
+              grantRef.current = null
+              setScopeStatus('missing')
+              setInteractionStatus('local-only')
+            } else {
+              setInteractionStatus(association === 'active'
+                ? 'active'
+                : association === 'inactive'
+                  ? canActivate ? 'update-required' : 'local-only'
+                  : 'verification-error')
+            }
           }
         }
       } catch {
@@ -166,7 +179,7 @@ export function PushManager({
     void discoverExistingSubscription()
 
     return () => { cancelled = true }
-  }, [canonicalOrigin, isAuthenticated, vapidPublicKey])
+  }, [canActivateAccount, canonicalOrigin, isAuthenticated, vapidPublicKey])
 
   const availableStatus: ManagerStatus = !browserReady || !discoveryComplete || scopeStatus === 'checking'
     ? 'checking'
@@ -176,6 +189,8 @@ export function PushManager({
       ? 'disabled'
       : !('serviceWorker' in navigator) || !('Notification' in window) || typeof window.PushManager === 'undefined'
         ? 'unsupported'
+        : scopeStatus === 'ineligible'
+          ? 'no-targets'
         : Notification.permission === 'denied'
           ? 'denied'
           : scopeStatus === 'missing'
@@ -256,7 +271,9 @@ export function PushManager({
         // Once association failed, cleanup falls back to endpoint possession;
         // an authenticated session remains independently eligible to retry.
         grantRef.current = null
-        setScopeStatus(isAuthenticated ? 'allowed' : 'missing')
+        setScopeStatus(isAuthenticated
+          ? canActivateAccount ? 'allowed' : 'ineligible'
+          : 'missing')
         setRetryAction('deactivate')
         setInteractionStatus('association-error')
       } else {
@@ -295,9 +312,9 @@ export function PushManager({
     }
 
     cleanupEndpointRef.current = null
-    setInteractionStatus(isAuthenticated || grantRef.current !== null
+    setInteractionStatus(scopeStatus === 'allowed'
       ? 'available'
-      : 'missing-scope')
+      : scopeStatus === 'ineligible' ? 'no-targets' : 'missing-scope')
   }
 
   async function retryCleanup() {
@@ -307,9 +324,9 @@ export function PushManager({
     try {
       if (!await cleanupServerAssociation(endpoint)) throw new Error('Cleanup failed')
       cleanupEndpointRef.current = null
-      setInteractionStatus(isAuthenticated || grantRef.current !== null
+      setInteractionStatus(scopeStatus === 'allowed'
         ? 'available'
-        : 'missing-scope')
+        : scopeStatus === 'ineligible' ? 'no-targets' : 'missing-scope')
     } catch {
       setInteractionStatus('cleanup-error')
     }
@@ -324,9 +341,7 @@ export function PushManager({
       subscription.options?.applicationServerKey,
       configuredApplicationServerKey,
     )) {
-      setInteractionStatus(isAuthenticated || grantRef.current !== null
-        ? 'update-required'
-        : 'local-only')
+      setInteractionStatus(scopeStatus === 'allowed' ? 'update-required' : 'local-only')
       return
     }
 
@@ -334,38 +349,21 @@ export function PushManager({
     setInteractionStatus(association === 'active'
       ? 'active'
       : association === 'inactive'
-        ? isAuthenticated || grantRef.current !== null ? 'update-required' : 'local-only'
+        ? scopeStatus === 'allowed' ? 'update-required' : 'local-only'
         : 'verification-error')
   }
 
   async function cleanupServerAssociation(endpoint: string): Promise<boolean> {
-    const cleanup = async (grant: string | null, endpointPossession = false) => {
-      try {
-        return await fetch('/api/push/unsubscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            endpoint,
-            ...(grant ? { grant } : {}),
-            ...(endpointPossession ? { endpointPossession: true } : {}),
-          }),
-        })
-      } catch {
-        return null
-      }
+    try {
+      const response = await fetch('/api/push/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint, endpointPossession: true }),
+      })
+      return response.ok
+    } catch {
+      return false
     }
-
-    const grant = grantRef.current
-    const response = await cleanup(grant)
-    if (response?.ok) return true
-    if (!grant || response === null) return false
-
-    // An explicit guest capability takes precedence on the server. If it is
-    // stale, discard it and retry once without it so the endpoint-possession
-    // cleanup path remains reachable. This never recreates a subscription.
-    grantRef.current = null
-    setScopeStatus(isAuthenticated ? 'allowed' : 'missing')
-    return (await cleanup(null, true))?.ok === true
   }
 
   async function cleanupEndpointPossession(endpoint: string): Promise<void> {
@@ -400,6 +398,9 @@ export function PushManager({
         </Link>
       </div>
     )
+  }
+  if (status === 'no-targets') {
+    return <p>No tenés citas elegibles para activar recordatorios en este momento.</p>
   }
   if (status === 'association-error') {
     return (

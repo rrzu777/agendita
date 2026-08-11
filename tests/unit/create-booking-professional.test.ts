@@ -114,7 +114,11 @@ function setupMocks() {
     timeBlock: { findMany: vi.fn().mockResolvedValue([]) },
     availabilityRule: { findFirst: vi.fn().mockResolvedValue({ startTime: '08:00', endTime: '20:00' }) },
     $executeRaw: vi.fn(),
-    $queryRaw: vi.fn().mockResolvedValue([]),
+    $queryRaw: vi.fn().mockResolvedValue([{
+      selfServiceCutoffHours: 24,
+      cancellationPolicy: null,
+      cancellationReminderEnabled: true,
+    }]),
   }))
 }
 

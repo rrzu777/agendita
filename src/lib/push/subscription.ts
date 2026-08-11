@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
 import { encryptSecret } from '@/lib/payments/encryption'
 import { decodeCanonicalBase64Url, isValidVapidPublicKey } from './vapid-validation'
-import { findEligiblePushCustomers } from './eligibility'
+import { findEligiblePushCustomers, isPushBookingEligible } from './eligibility'
 
 const MAX_ENDPOINT_LENGTH = 4096
 const MAX_KEY_LENGTH = 1024
@@ -188,6 +188,30 @@ export async function hasActivePushAssociation({
     return customerIds.every((customerId) => coveredCustomers.has(customerId))
   }
 
+  if (scope.kind === 'guest') {
+    const booking = await prisma.booking.findFirst({
+      where: {
+        id: scope.target.authorization.bookingId,
+        customerId: scope.target.customerId,
+        businessId: scope.target.businessId,
+      },
+      select: {
+        startDateTime: true,
+        status: true,
+        cancellationCutoffHours: true,
+        depositRequired: true,
+        depositPaid: true,
+        business: {
+          select: {
+            cancellationReminderEnabled: true,
+            selfServiceCutoffHours: true,
+          },
+        },
+      },
+    })
+    if (!booking || !isPushBookingEligible(booking, booking.business, now)) return false
+  }
+
   const authorizationWhere = scope.kind === 'guest'
     ? {
         businessId: scope.target.businessId,
@@ -304,9 +328,25 @@ async function storePushSubscriptionInTx({
   if (authorization.kind === 'guest') {
     const booking = await tx.booking.findFirst({
       where: { id: authorization.bookingId, customerId, businessId },
-      select: { id: true },
+      select: {
+        id: true,
+        startDateTime: true,
+        status: true,
+        cancellationCutoffHours: true,
+        depositRequired: true,
+        depositPaid: true,
+        business: {
+          select: {
+            cancellationReminderEnabled: true,
+            selfServiceCutoffHours: true,
+          },
+        },
+      },
     })
     if (!booking) throw new Error('Push authorization no longer owns booking')
+    if (!isPushBookingEligible(booking, booking.business, now)) {
+      throw new Error('Push booking is no longer eligible')
+    }
   } else {
     const customer = await tx.customer.findFirst({
       where: { id: customerId, businessId, userId: authorization.userId },
@@ -423,7 +463,6 @@ export async function storePushSubscription({
   authorization: PushSubscriptionAuthorization
 }): Promise<{ id: string }> {
   const prepared = preparePushSubscription(subscription)
-  const now = new Date()
 
   return prisma.$transaction(async (tx) => {
     // Possession-based cleanup uses the same first lock, so once it returns no
@@ -439,6 +478,9 @@ export async function storePushSubscription({
     // Serializing one Customer keeps the five-device cap exact even when
     // multiple browser tabs subscribe concurrently with different keys.
     await acquireAdvisoryXactLock(tx, `push-subscription:${customerId}`)
+    // Evaluate the time boundary only after every subscription lock. A request
+    // that waited across the exact cutoff must not persist a stale entitlement.
+    const now = new Date()
     return storePushSubscriptionInTx({
       tx,
       businessId,
@@ -453,7 +495,7 @@ export async function storePushSubscription({
 export async function storeAuthenticatedPushSubscriptions({
   userId,
   subscription,
-  now = new Date(),
+  now,
 }: {
   userId: string
   subscription: unknown
@@ -465,16 +507,31 @@ export async function storeAuthenticatedPushSubscriptions({
     await acquireAdvisoryXactLock(tx, endpointLockKey(prepared.endpointHash))
     await acquireAdvisoryXactLock(tx, authorizationLockKey(userId, prepared.endpointHash))
 
-    // Resolve the eligible set only after serializing this user/endpoint. That
-    // makes the multi-customer write atomic with authenticated unsubscribe.
-    const eligibleCustomers = await findEligiblePushCustomers(tx, userId, now)
-    const orderedCustomers = [...eligibleCustomers].sort((left, right) => (
+    // First resolve which Customer locks this request could need. The account
+    // authorization lock serializes the endpoint scope, while Customer locks
+    // keep each device cap exact across different endpoints.
+    const candidates = await findEligiblePushCustomers(tx, userId, now ?? new Date())
+    const orderedCandidates = [...candidates].sort((left, right) => (
       left.id.localeCompare(right.id)
     ))
 
-    for (const customer of orderedCustomers) {
+    for (const customer of orderedCandidates) {
       await acquireAdvisoryXactLock(tx, `push-subscription:${customer.id}`)
     }
+
+    // Eligibility is authoritative only after every required lock. Re-read at
+    // a fresh production time so a wait that crosses the exact cutoff cannot
+    // persist stale account scopes. If database state introduced a new target
+    // mid-flight, fail safely instead of writing it without its Customer lock.
+    const eligibilityNow = now ?? new Date()
+    const eligibleCustomers = await findEligiblePushCustomers(tx, userId, eligibilityNow)
+    const lockedCustomerIds = new Set(orderedCandidates.map(({ id }) => id))
+    if (eligibleCustomers.some(({ id }) => !lockedCustomerIds.has(id))) {
+      throw new Error('Push eligibility changed while acquiring locks')
+    }
+    const orderedCustomers = [...eligibleCustomers].sort((left, right) => (
+      left.id.localeCompare(right.id)
+    ))
 
     let storedCount = 0
     for (const customer of orderedCustomers) {
@@ -484,7 +541,7 @@ export async function storeAuthenticatedPushSubscriptions({
         customerId: customer.id,
         prepared,
         authorization: { kind: 'user', userId },
-        now,
+        now: eligibilityNow,
       })
       storedCount += 1
     }

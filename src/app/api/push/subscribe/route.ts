@@ -50,7 +50,6 @@ export async function POST(request: Request) {
       : await storeAuthenticatedPushSubscriptions({
           userId: scope.userId,
           subscription,
-          now: new Date(),
         })
     return Response.json({ subscribed }, { headers: JSON_HEADERS })
   } catch {

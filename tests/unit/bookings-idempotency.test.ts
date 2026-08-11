@@ -4,6 +4,7 @@ import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 import { UserError } from '@/lib/actions/result'
 import { DEFAULT_HOLD_MINUTES } from '@/lib/bookings/hold'
 import { TEST_VAPID_PRIVATE_KEY, TEST_VAPID_PUBLIC_KEY } from '../helpers/push-fixtures'
+import { cancellationPolicyRevision } from '@/lib/bookings/cancellation-policy-revision'
 
 // Mocks de dependencias server-only
 const mockPrisma = {
@@ -27,6 +28,7 @@ const mockPrisma = {
   promotionGrant: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
   promotionRedemption: { findFirst: vi.fn().mockResolvedValue(null) },
   $executeRaw: vi.fn().mockResolvedValue(0),
+  $queryRaw: vi.fn(),
   $transaction: vi.fn(),
 }
 
@@ -151,6 +153,11 @@ describe('createBooking idempotency', () => {
     })
     mockPrisma.customer.findFirst.mockResolvedValue(null)
     mockPrisma.customer.create.mockResolvedValue({ id: 'cust-1' })
+    mockPrisma.$queryRaw.mockResolvedValue([{
+      selfServiceCutoffHours: 24,
+      cancellationPolicy: null,
+      cancellationReminderEnabled: true,
+    }])
   })
 
   // El reintento con la misma key (botón "Intentar de nuevo", re-envío tras
@@ -387,6 +394,114 @@ describe('createBooking idempotency', () => {
       // reintento devuelve ESA reserva, y sin el nombre la confirmación de quien
       // pidió "cualquiera" no podría decir quién la atiende.
       include: { service: true, customer: true, professional: { select: { name: true } } },
+    })
+  })
+
+  it('rejects old consent when the locked policy revision already changed', async () => {
+    mockPrisma.booking.findUnique.mockResolvedValue(null)
+    mockPrisma.$queryRaw.mockResolvedValue([{
+      selfServiceCutoffHours: 12,
+      cancellationPolicy: 'Nueva política',
+      cancellationReminderEnabled: true,
+    }])
+    const createdBooking = {
+      id: 'booking-must-not-exist',
+      businessId: 'biz-1',
+      customerId: 'cust-1',
+      status: BookingStatus.pending_payment,
+      cancellationCutoffHours: 24,
+      cancellationPolicySnapshot: null,
+      depositRequired: 5_000,
+      depositPaid: 0,
+      startDateTime: baseInput.startDateTime,
+      service: { name: 'Manicure' },
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
+    }
+    const create = vi.fn().mockResolvedValue(createdBooking)
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({
+      ...mockPrisma,
+      booking: { ...mockPrisma.booking, create },
+    }))
+
+    const result = await createBooking(baseInput, 'biz-1')
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('política de cancelación se actualizó')
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('snapshots the exact policy values protected by the booking transaction lock', async () => {
+    mockPrisma.booking.findUnique.mockResolvedValue(null)
+    const lockedPolicy = {
+      selfServiceCutoffHours: 12,
+      cancellationPolicy: 'Avisar por WhatsApp',
+      cancellationReminderEnabled: true,
+    }
+    mockPrisma.$queryRaw.mockResolvedValue([lockedPolicy])
+    const create = vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: 'booking-locked-policy',
+      businessId: 'biz-1',
+      customerId: 'cust-1',
+      status: BookingStatus.pending_payment,
+      cancellationCutoffHours: data.cancellationCutoffHours,
+      cancellationPolicySnapshot: data.cancellationPolicySnapshot,
+      depositRequired: 5_000,
+      depositPaid: 0,
+      startDateTime: baseInput.startDateTime,
+      service: { name: 'Manicure' },
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
+    }))
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({
+      ...mockPrisma,
+      booking: { ...mockPrisma.booking, create },
+    }))
+    const revision = cancellationPolicyRevision({
+      businessId: 'biz-1',
+      cutoffHours: lockedPolicy.selfServiceCutoffHours,
+      additionalPolicy: lockedPolicy.cancellationPolicy,
+    })
+
+    const result = await createBooking({ ...baseInput, cancellationPolicyRevision: revision }, 'biz-1')
+
+    expect(result.ok).toBe(true)
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        cancellationCutoffHours: 12,
+        cancellationPolicySnapshot: 'Avisar por WhatsApp',
+      }),
+    }))
+  })
+
+  it('uses the locked reminder toggle instead of emitting a grant from the stale outer read', async () => {
+    mockPrisma.booking.findUnique.mockResolvedValue(null)
+    mockPrisma.$queryRaw.mockResolvedValue([{
+      selfServiceCutoffHours: 24,
+      cancellationPolicy: null,
+      cancellationReminderEnabled: false,
+    }])
+    const createdBooking = {
+      id: 'booking-toggle-disabled',
+      businessId: 'biz-1',
+      customerId: 'cust-1',
+      status: BookingStatus.pending_payment,
+      cancellationCutoffHours: 24,
+      cancellationPolicySnapshot: null,
+      depositRequired: 5_000,
+      depositPaid: 0,
+      startDateTime: baseInput.startDateTime,
+      service: { name: 'Manicure' },
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
+    }
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({
+      ...mockPrisma,
+      booking: { ...mockPrisma.booking, create: vi.fn().mockResolvedValue(createdBooking) },
+    }))
+
+    const result = await createBooking(baseInput, 'biz-1')
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { id: 'booking-toggle-disabled', pushMode: null, pushGrant: null },
     })
   })
 

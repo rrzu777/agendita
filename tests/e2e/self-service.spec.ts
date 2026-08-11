@@ -483,7 +483,10 @@ test.describe('self-service: recordatorios push', () => {
     ).__pushReloadE2E.unsubscribeCalls)
     expect(afterDeactivate).toBe(1)
     expect(unsubscribeBodies).toEqual([
-      { endpoint: 'https://push.example.test/e2e-reload-subscription' },
+      {
+        endpoint: 'https://push.example.test/e2e-reload-subscription',
+        endpointPossession: true,
+      },
     ])
   })
 })

@@ -2,7 +2,7 @@
 
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import type { Booking } from '@prisma/client'
+import type { Booking, Prisma } from '@prisma/client'
 import { BookingStatus, BookingPaymentStatus, PaymentType, ServiceModality } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -62,6 +62,27 @@ import {
 // repetido: sin la relación en UNA salida, la persona desaparece de la
 // respuesta sin error de compilación — pasó con las salidas de paquete/código.
 const BOOKING_RESULT_INCLUDE = { service: true, customer: true, professional: { select: { name: true } } } as const
+
+type LockedCancellationPolicy = {
+  selfServiceCutoffHours: number
+  cancellationPolicy: string | null
+  cancellationReminderEnabled: boolean
+}
+
+async function lockCancellationPolicy(
+  tx: Prisma.TransactionClient,
+  businessId: string,
+): Promise<LockedCancellationPolicy> {
+  const rows = await tx.$queryRaw<LockedCancellationPolicy[]>`
+    SELECT "selfServiceCutoffHours", "cancellationPolicy", "cancellationReminderEnabled"
+    FROM "Business"
+    WHERE "id" = ${businessId}
+    FOR UPDATE
+  `
+  const policy = rows[0]
+  if (!policy) throw new UserError('Negocio no válido')
+  return policy
+}
 
 function withPushActivation<T extends {
   id: string
@@ -397,17 +418,21 @@ async function _createBooking(data: {
     }
   }
 
-  const currentPolicyRevision = cancellationPolicyRevision({
-    businessId: business.id,
-    cutoffHours: business.selfServiceCutoffHours,
-    additionalPolicy: business.cancellationPolicy,
-  })
-  if (parsed.data.cancellationPolicyRevision !== currentPolicyRevision) {
-    throw new UserError('La política de cancelación se actualizó. Recargá la página y revisala antes de reservar.')
-  }
-
   try {
-    const booking = await prisma.$transaction(async (tx) => {
+    const created = await prisma.$transaction(async (tx) => {
+      // Linealiza la aceptación con Settings y con el contador de reservas. El
+      // lock exclusivo evita un upgrade SHARE -> UPDATE (bookingNumberSeq), que
+      // podría deadlockear con otra creación. El fast path idempotente ya salió.
+      const lockedPolicy = await lockCancellationPolicy(tx, businessId)
+      const currentPolicyRevision = cancellationPolicyRevision({
+        businessId,
+        cutoffHours: lockedPolicy.selfServiceCutoffHours,
+        additionalPolicy: lockedPolicy.cancellationPolicy,
+      })
+      if (parsed.data.cancellationPolicyRevision !== currentPolicyRevision) {
+        throw new UserError('La política de cancelación se actualizó. Recargá la página y revisala antes de reservar.')
+      }
+
       // Validación transaccional de disponibilidad con lock, y de paso quién atiende:
       // con una persona elegida el chequeo mira SU horario, SUS bloqueos (más los del
       // negocio) y las citas que le tapan la hora; con "cualquiera disponible" prueba
@@ -480,8 +505,8 @@ async function _createBooking(data: {
           meetingUrl,
           holdExpiresAt,
           approvalExpiresAt,
-          cancellationCutoffHours: business.selfServiceCutoffHours,
-          cancellationPolicySnapshot: business.cancellationPolicy,
+          cancellationCutoffHours: lockedPolicy.selfServiceCutoffHours,
+          cancellationPolicySnapshot: lockedPolicy.cancellationPolicy,
           paymentMethod: metodoDePago,
           idempotencyKey: data.idempotencyKey || null,
           bookingNumber,
@@ -509,7 +534,7 @@ async function _createBooking(data: {
         source: 'public_booking',
       })
 
-      if (!discount) return booking
+      if (!discount) return { booking, lockedPolicy }
 
       const updated = await tx.booking.update({
         where: { id: booking.id },
@@ -529,11 +554,12 @@ async function _createBooking(data: {
         // más común, porque el paquete se usa por default cuando la clienta tiene.
         include: BOOKING_RESULT_INCLUDE,
       })
-      return updated
+      return { booking: updated, lockedPolicy }
       // 15s: la tx hace lock de slot + upsert de cliente + creación de reserva +
       // aplicación de promo + update; el default de 5s queda corto cuando se aplica
       // un código (varias queries extra) o si la latencia a la DB es alta.
     }, { timeout: 15_000 })
+    const { booking, lockedPolicy } = created
 
     const bookingForNotification = booking as Booking & {
       service: { name: string }
@@ -547,7 +573,11 @@ async function _createBooking(data: {
 
     revalidatePath('/dashboard/bookings')
     await revalidateBusinessPublicPaths(businessId)
-    return withPushActivation(booking, business, sessionUser)
+    return withPushActivation(booking, {
+      ...business,
+      selfServiceCutoffHours: lockedPolicy.selfServiceCutoffHours,
+      cancellationReminderEnabled: lockedPolicy.cancellationReminderEnabled,
+    }, sessionUser)
   } catch (e: unknown) {
     // Race: otro request creó la misma idempotencyKey entre el findUnique y el create.
     // El unique constraint de DB lo detecta y devolvemos la reserva existente — por
@@ -989,6 +1019,10 @@ async function _createBookingFromDashboard(data: {
     : BookingPaymentStatus.unpaid
 
   const booking = await prisma.$transaction(async (tx) => {
+    // Mantener el mismo orden global del camino público: Business antes que el
+    // advisory del slot. El incremento revierte con la tx si el slot falla.
+    const bookingNumber = await assignBookingNumber(tx, businessId)
+
     // Valida el horario y de paso resuelve quién atiende (con `anyone` prueba a
     // los candidatos en orden de carga). El lead time va en 0 y la resolución no
     // re-aplica el default: la dueña anota walk-ins que empiezan ahora mismo.
@@ -1024,8 +1058,6 @@ async function _createBookingFromDashboard(data: {
       })
       customer = result.customer
     }
-
-    const bookingNumber = await assignBookingNumber(tx, businessId)
 
     const newBooking = await tx.booking.create({
       data: {

@@ -217,4 +217,81 @@ describe('push authorization persistence', () => {
       now: new Date('2026-08-11T00:00:00.000Z'),
     })).resolves.toBe(false)
   })
+
+  it('endpoint-possession cleanup removes mixed guest A+B scopes with no stale active row', async () => {
+    const {
+      hashPushEndpoint,
+      unsubscribePushSubscription,
+    } = await import('@/lib/push/subscription')
+    const endpoint = 'https://fcm.googleapis.com/fcm/send/mixed-guests-cleanup'
+    const endpointHash = hashPushEndpoint(endpoint)
+    await prisma.pushSubscription.create({
+      data: {
+        id: 'push-mixed-guest-a',
+        businessId: BUSINESS_ID,
+        customerId: CUSTOMER_ID,
+        endpointHash,
+        subscriptionFingerprint: 'a1'.repeat(32),
+        subscriptionEncrypted: 'mixed-guest-a',
+        bookingEntitlements: { create: { bookingId: BOOKING_ONE_ID } },
+      },
+    })
+    await prisma.pushSubscription.create({
+      data: {
+        id: 'push-mixed-guest-b',
+        businessId: BUSINESS_ID,
+        customerId: CUSTOMER_TWO_ID,
+        endpointHash,
+        subscriptionFingerprint: 'b2'.repeat(32),
+        subscriptionEncrypted: 'mixed-guest-b',
+        bookingEntitlements: { create: { bookingId: BOOKING_TWO_ID } },
+      },
+    })
+
+    await expect(unsubscribePushSubscription({
+      endpoint,
+      scope: { kind: 'endpoint' },
+      now: new Date('2026-08-11T12:00:00.000Z'),
+    })).resolves.toBe(2)
+
+    expect(await prisma.pushSubscription.count({ where: { endpointHash, revokedAt: null } })).toBe(0)
+    expect(await prisma.pushSubscriptionBooking.count({
+      where: { subscription: { endpointHash } },
+    })).toBe(0)
+  })
+
+  it('endpoint-possession cleanup removes auth+guest scopes from the same row', async () => {
+    const {
+      hashPushEndpoint,
+      unsubscribePushSubscription,
+    } = await import('@/lib/push/subscription')
+    const endpoint = 'https://fcm.googleapis.com/fcm/send/mixed-auth-guest-cleanup'
+    const endpointHash = hashPushEndpoint(endpoint)
+    await prisma.pushSubscription.create({
+      data: {
+        id: 'push-mixed-auth-guest',
+        businessId: BUSINESS_ID,
+        customerId: CUSTOMER_ID,
+        authorizedUserId: USER_ID,
+        endpointHash,
+        subscriptionFingerprint: 'c3'.repeat(32),
+        subscriptionEncrypted: 'mixed-auth-guest',
+        bookingEntitlements: { create: { bookingId: BOOKING_ONE_ID } },
+      },
+    })
+
+    await expect(unsubscribePushSubscription({
+      endpoint,
+      scope: { kind: 'endpoint' },
+      now: new Date('2026-08-11T12:00:00.000Z'),
+    })).resolves.toBe(1)
+
+    const stored = await prisma.pushSubscription.findUniqueOrThrow({
+      where: { id: 'push-mixed-auth-guest' },
+      include: { bookingEntitlements: true },
+    })
+    expect(stored.revokedAt).not.toBeNull()
+    expect(stored.authorizedUserId).toBeNull()
+    expect(stored.bookingEntitlements).toEqual([])
+  })
 })

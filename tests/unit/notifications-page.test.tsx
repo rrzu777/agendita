@@ -4,13 +4,16 @@ import { renderToStaticMarkup } from 'react-dom/server'
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
   hasUsablePushConfig: vi.fn(),
+  findEligiblePushCustomers: vi.fn(),
 }))
 
 vi.mock('@/lib/auth/user', () => ({ getCurrentUser: mocks.getCurrentUser }))
 vi.mock('@/lib/push/config', () => ({ hasUsablePushConfig: mocks.hasUsablePushConfig }))
+vi.mock('@/lib/push/eligibility', () => ({ findEligiblePushCustomers: mocks.findEligiblePushCustomers }))
+vi.mock('@/lib/db', () => ({ prisma: {} }))
 vi.mock('@/components/push/push-manager', () => ({
-  PushManager: ({ isAuthenticated, vapidPublicKey }: { isAuthenticated: boolean; vapidPublicKey: string | null }) => (
-    <span>{isAuthenticated ? 'authenticated-manager' : 'guest-manager'}:{vapidPublicKey ?? 'push-disabled'}</span>
+  PushManager: ({ isAuthenticated, vapidPublicKey, canActivateAccount }: { isAuthenticated: boolean; vapidPublicKey: string | null; canActivateAccount: boolean }) => (
+    <span>{isAuthenticated ? 'authenticated-manager' : 'guest-manager'}:{vapidPublicKey ?? 'push-disabled'}:{canActivateAccount ? 'eligible' : 'ineligible'}</span>
   ),
 }))
 
@@ -21,6 +24,19 @@ describe('/notificaciones', () => {
     vi.clearAllMocks()
     vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'public-key-present')
     mocks.hasUsablePushConfig.mockReturnValue(true)
+    mocks.findEligiblePushCustomers.mockResolvedValue([])
+  })
+
+  it('preflights authenticated activation targets server-side', async () => {
+    mocks.getCurrentUser.mockResolvedValue({ id: 'user-1' })
+    mocks.findEligiblePushCustomers.mockResolvedValue([{ id: 'customer-1', businessId: 'business-1' }])
+
+    const eligible = renderToStaticMarkup(await NotificationsPage())
+    mocks.findEligiblePushCustomers.mockResolvedValue([])
+    const ineligible = renderToStaticMarkup(await NotificationsPage())
+
+    expect(eligible).toContain('authenticated-manager:public-key-present:eligible')
+    expect(ineligible).toContain('authenticated-manager:public-key-present:ineligible')
   })
 
   afterEach(() => vi.unstubAllEnvs())

@@ -9,14 +9,73 @@ export const PUSH_ELIGIBLE_BOOKING_STATUSES = [
 
 export type PushEligibleCustomer = { id: string; businessId: string }
 
+type PushEligibleBookingCandidate = {
+  startDateTime: Date
+  status: BookingStatus
+  cancellationCutoffHours: number | null
+  depositRequired: number
+  depositPaid: number
+}
+
+type PushEligibleBusinessCandidate = {
+  cancellationReminderEnabled: boolean
+  selfServiceCutoffHours: number
+}
+
+type PushEligibleCustomerCandidate = PushEligibleCustomer & {
+  business: PushEligibleBusinessCandidate
+  bookings: PushEligibleBookingCandidate[]
+}
+
 type CustomerReader = {
   customer: {
     findMany(args: {
       where: Prisma.CustomerWhereInput
-      select: { id: true; businessId: true }
+      select: {
+        id: true
+        businessId: true
+        business: {
+          select: {
+            cancellationReminderEnabled: true
+            selfServiceCutoffHours: true
+          }
+        }
+        bookings: {
+          where: Prisma.BookingWhereInput
+          select: {
+            startDateTime: true
+            status: true
+            cancellationCutoffHours: true
+            depositRequired: true
+            depositPaid: true
+          }
+        }
+      }
       orderBy: { id: 'asc' }
-    }): Promise<PushEligibleCustomer[]>
+    }): Promise<PushEligibleCustomerCandidate[]>
   }
+}
+
+const HOUR_MS = 60 * 60 * 1000
+
+function hasOpenCancellationWindow(
+  startDateTime: Date,
+  cutoffHours: number,
+  now: Date,
+): boolean {
+  const startMs = startDateTime.getTime()
+  const nowMs = now.getTime()
+  if (
+    !Number.isSafeInteger(startMs)
+    || !Number.isSafeInteger(nowMs)
+    || !Number.isSafeInteger(cutoffHours)
+    || cutoffHours <= 0
+  ) return false
+
+  const cutoffMs = cutoffHours * HOUR_MS
+  if (!Number.isSafeInteger(cutoffMs)) return false
+  const closesAtMs = startMs - cutoffMs
+  return Number.isSafeInteger(closesAtMs) && nowMs < closesAtMs
 }
 
 /**
@@ -66,11 +125,35 @@ export async function findEligiblePushCustomers(
   now: Date,
 ): Promise<PushEligibleCustomer[]> {
   if (!hasUsablePushConfig()) return []
-  return db.customer.findMany({
+  const candidates = await db.customer.findMany({
     where: eligiblePushCustomerWhere(userId, now),
-    select: { id: true, businessId: true },
+    select: {
+      id: true,
+      businessId: true,
+      business: {
+        select: {
+          cancellationReminderEnabled: true,
+          selfServiceCutoffHours: true,
+        },
+      },
+      bookings: {
+        where: eligiblePushBookingWhere(now),
+        select: {
+          startDateTime: true,
+          status: true,
+          cancellationCutoffHours: true,
+          depositRequired: true,
+          depositPaid: true,
+        },
+      },
+    },
     orderBy: { id: 'asc' },
   })
+  return candidates
+    .filter((customer) => customer.bookings.some((booking) => (
+      isPushBookingEligible(booking, customer.business, now)
+    )))
+    .map(({ id, businessId }) => ({ id, businessId }))
 }
 
 export function isPushBookingEligible(
@@ -92,8 +175,7 @@ export function isPushBookingEligible(
     ?? business.selfServiceCutoffHours
   return hasUsablePushConfig()
     && business.cancellationReminderEnabled
-    && booking.startDateTime.getTime() > now.getTime()
     && (PUSH_ELIGIBLE_BOOKING_STATUSES as readonly BookingStatus[]).includes(booking.status)
-    && cutoffHours > 0
+    && hasOpenCancellationWindow(booking.startDateTime, cutoffHours, now)
     && (booking.depositRequired > 0 || booking.depositPaid > 0)
 }

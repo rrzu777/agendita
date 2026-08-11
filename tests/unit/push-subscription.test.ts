@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   TEST_PUSH_AUTH,
   TEST_VAPID_PRIVATE_KEY,
@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/db', () => ({
   prisma: {
     $transaction: mocks.transaction,
+    booking: { findFirst: mocks.bookingFindFirst },
     customer: { findMany: mocks.customerFindMany },
     pushSubscription: {
       findFirst: mocks.associationFindFirst,
@@ -62,11 +63,41 @@ const validSubscription = {
   },
 }
 
+function eligibleCustomer(id: string, businessId: string) {
+  return {
+    id,
+    businessId,
+    business: {
+      cancellationReminderEnabled: true,
+      selfServiceCutoffHours: 24,
+    },
+    bookings: [{
+      startDateTime: new Date('2027-08-12T15:00:00.000Z'),
+      status: 'confirmed',
+      cancellationCutoffHours: 24,
+      depositRequired: 2_000,
+      depositPaid: 2_000,
+    }],
+  }
+}
+
 describe('push subscription storage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.advisoryLock.mockReset()
     mocks.upsert.mockResolvedValue({ id: 'push-1', subscriptionEncrypted: 'must-not-return' })
-    mocks.bookingFindFirst.mockResolvedValue({ id: 'booking-1' })
+    mocks.bookingFindFirst.mockResolvedValue({
+      id: 'booking-1',
+      startDateTime: new Date('2027-08-12T15:00:00.000Z'),
+      status: 'confirmed',
+      cancellationCutoffHours: 24,
+      depositRequired: 2_000,
+      depositPaid: 2_000,
+      business: {
+        cancellationReminderEnabled: true,
+        selfServiceCutoffHours: 24,
+      },
+    })
     mocks.customerFindFirst.mockResolvedValue({ id: 'customer-1' })
     mocks.customerFindMany.mockResolvedValue([])
     mocks.subscriptionFindUnique.mockResolvedValue(null)
@@ -96,6 +127,8 @@ describe('push subscription storage', () => {
       },
     }))
   })
+
+  afterEach(() => vi.useRealTimers())
 
   it('normalizes browser JSON to the bounded fields the server stores', async () => {
     const { normalizePushSubscription } = await import('@/lib/push/subscription')
@@ -209,8 +242,8 @@ describe('push subscription storage', () => {
     const { hasActivePushAssociation } = await import('@/lib/push/subscription')
     const now = new Date('2026-08-10T12:00:00.000Z')
     mocks.customerFindMany.mockResolvedValue([
-      { id: 'customer-1' },
-      { id: 'customer-2' },
+      eligibleCustomer('customer-1', 'business-1'),
+      eligibleCustomer('customer-2', 'business-2'),
     ])
     mocks.associationFindMany.mockResolvedValue([{ customerId: 'customer-1' }])
 
@@ -315,7 +348,20 @@ describe('push subscription storage', () => {
     })
     expect(mocks.bookingFindFirst).toHaveBeenCalledWith({
       where: { id: 'booking-1', customerId: 'customer-1', businessId: 'business-1' },
-      select: { id: true },
+      select: {
+        id: true,
+        startDateTime: true,
+        status: true,
+        cancellationCutoffHours: true,
+        depositRequired: true,
+        depositPaid: true,
+        business: {
+          select: {
+            cancellationReminderEnabled: true,
+            selfServiceCutoffHours: true,
+          },
+        },
+      },
     })
     expect(mocks.entitlementUpsert).toHaveBeenCalledWith({
       where: {
@@ -331,6 +377,130 @@ describe('push subscription storage', () => {
       'push-endpoint:b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
       'push-subscription:customer-1',
     ])
+  })
+
+  it.each([
+    ['cancelled booking', { status: 'cancelled' }],
+    ['disabled business reminder', { business: { cancellationReminderEnabled: false, selfServiceCutoffHours: 24 } }],
+    ['booking without a deposit', { depositRequired: 0, depositPaid: 0 }],
+    ['closed cutoff window', { startDateTime: new Date('2026-08-12T12:00:00.000Z') }],
+  ])('rejects a stale guest grant inside the storage transaction for a %s', async (_label, overrides) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-11T12:00:00.000Z'))
+    mocks.bookingFindFirst.mockResolvedValue({
+      id: 'booking-1',
+      startDateTime: new Date('2026-08-15T12:00:00.000Z'),
+      status: 'confirmed',
+      cancellationCutoffHours: 24,
+      depositRequired: 2_000,
+      depositPaid: 2_000,
+      business: {
+        cancellationReminderEnabled: true,
+        selfServiceCutoffHours: 24,
+      },
+      ...overrides,
+    })
+    const { storePushSubscription } = await import('@/lib/push/subscription')
+
+    await expect(storePushSubscription({
+      businessId: 'business-1',
+      customerId: 'customer-1',
+      subscription: validSubscription,
+      authorization: { kind: 'guest', bookingId: 'booking-1' },
+    })).rejects.toThrow('Push booking is no longer eligible')
+
+    expect(mocks.upsert).not.toHaveBeenCalled()
+    expect(mocks.entitlementUpsert).not.toHaveBeenCalled()
+  })
+
+  it('evaluates a guest cutoff after subscription locks are acquired', async () => {
+    const closesAt = new Date('2026-08-11T12:00:00.000Z')
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(closesAt.getTime() - 1))
+    mocks.bookingFindFirst.mockResolvedValue({
+      id: 'booking-1',
+      startDateTime: new Date('2026-08-12T12:00:00.000Z'),
+      status: 'confirmed',
+      cancellationCutoffHours: 24,
+      depositRequired: 2_000,
+      depositPaid: 2_000,
+      business: {
+        cancellationReminderEnabled: true,
+        selfServiceCutoffHours: 24,
+      },
+    })
+    mocks.advisoryLock.mockImplementation(async (_tx, key: string) => {
+      if (key.startsWith('push-subscription:')) vi.setSystemTime(closesAt)
+    })
+    const { storePushSubscription } = await import('@/lib/push/subscription')
+
+    await expect(storePushSubscription({
+      businessId: 'business-1',
+      customerId: 'customer-1',
+      subscription: validSubscription,
+      authorization: { kind: 'guest', bookingId: 'booking-1' },
+    })).rejects.toThrow('Push booking is no longer eligible')
+
+    expect(mocks.upsert).not.toHaveBeenCalled()
+    expect(mocks.entitlementUpsert).not.toHaveBeenCalled()
+  })
+
+  it('evaluates account targets after every account subscription lock is acquired', async () => {
+    const closesAt = new Date('2026-08-11T12:00:00.000Z')
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(closesAt.getTime() - 1))
+    mocks.customerFindMany.mockResolvedValue([{
+      ...eligibleCustomer('customer-1', 'business-1'),
+      bookings: [{
+        startDateTime: new Date('2026-08-12T12:00:00.000Z'),
+        status: 'confirmed',
+        cancellationCutoffHours: 24,
+        depositRequired: 2_000,
+        depositPaid: 2_000,
+      }],
+    }])
+    mocks.advisoryLock.mockImplementation(async (_tx, key: string) => {
+      if (key.startsWith('push-subscription:')) vi.setSystemTime(closesAt)
+    })
+    const { storeAuthenticatedPushSubscriptions } = await import('@/lib/push/subscription')
+
+    await expect(storeAuthenticatedPushSubscriptions({
+      userId: 'user-1',
+      subscription: validSubscription,
+    })).resolves.toBe(0)
+
+    expect(mocks.upsert).not.toHaveBeenCalled()
+  })
+
+  it('does not report a stale guest entitlement as an active association', async () => {
+    mocks.bookingFindFirst.mockResolvedValue({
+      id: 'booking-1',
+      startDateTime: new Date('2027-08-12T15:00:00.000Z'),
+      status: 'cancelled',
+      cancellationCutoffHours: 24,
+      depositRequired: 2_000,
+      depositPaid: 2_000,
+      business: {
+        cancellationReminderEnabled: true,
+        selfServiceCutoffHours: 24,
+      },
+    })
+    mocks.associationFindFirst.mockResolvedValue({ id: 'push-1' })
+    const { hasActivePushAssociation } = await import('@/lib/push/subscription')
+
+    await expect(hasActivePushAssociation({
+      endpoint: validSubscription.endpoint,
+      scope: {
+        kind: 'guest',
+        target: {
+          businessId: 'business-1',
+          customerId: 'customer-1',
+          authorization: { kind: 'guest', bookingId: 'booking-1' },
+        },
+      },
+      now: new Date('2026-08-11T12:00:00.000Z'),
+    })).resolves.toBe(false)
+    expect(mocks.associationFindFirst).not.toHaveBeenCalled()
   })
 
   it('persists authenticated authorization explicitly and creates no guest entitlement', async () => {
@@ -358,8 +528,8 @@ describe('push subscription storage', () => {
     const { storeAuthenticatedPushSubscriptions } = await import('@/lib/push/subscription')
     const now = new Date('2026-08-10T12:00:00.000Z')
     mocks.customerFindMany.mockResolvedValue([
-      { id: 'customer-2', businessId: 'business-2' },
-      { id: 'customer-1', businessId: 'business-1' },
+      eligibleCustomer('customer-2', 'business-2'),
+      eligibleCustomer('customer-1', 'business-1'),
     ])
 
     await expect(storeAuthenticatedPushSubscriptions({
@@ -396,7 +566,46 @@ describe('push subscription storage', () => {
           },
         },
       },
-      select: { id: true, businessId: true },
+      select: {
+        id: true,
+        businessId: true,
+        business: {
+          select: {
+            cancellationReminderEnabled: true,
+            selfServiceCutoffHours: true,
+          },
+        },
+        bookings: {
+          where: {
+            startDateTime: { gt: now },
+            status: { in: ['pending_payment', 'pending_confirmation', 'confirmed'] },
+            AND: [
+              {
+                OR: [
+                  { depositRequired: { gt: 0 } },
+                  { depositPaid: { gt: 0 } },
+                ],
+              },
+              {
+                OR: [
+                  { cancellationCutoffHours: { gt: 0 } },
+                  {
+                    cancellationCutoffHours: null,
+                    business: { selfServiceCutoffHours: { gt: 0 } },
+                  },
+                ],
+              },
+            ],
+          },
+          select: {
+            startDateTime: true,
+            status: true,
+            cancellationCutoffHours: true,
+            depositRequired: true,
+            depositPaid: true,
+          },
+        },
+      },
       orderBy: { id: 'asc' },
     })
     expect(mocks.advisoryLock.mock.calls.map(([, key]) => key)).toEqual([
@@ -550,8 +759,8 @@ describe('push subscription storage', () => {
       storeAuthenticatedPushSubscriptions,
     } = await import('@/lib/push/subscription')
     mocks.customerFindMany.mockResolvedValue([
-      { id: 'customer-1', businessId: 'business-1' },
-      { id: 'customer-2', businessId: 'business-2' },
+      eligibleCustomer('customer-1', 'business-1'),
+      eligibleCustomer('customer-2', 'business-2'),
     ])
     mocks.subscriptionCount.mockImplementation(async ({ where }) => (
       where.customerId === 'customer-2' ? 5 : 0
@@ -776,7 +985,7 @@ describe('push subscription storage', () => {
     mocks.customerFindMany.mockImplementation(async () => {
       signalCustomerQuery()
       await customerQueryGate
-      return [{ id: 'customer-1', businessId: 'business-1' }]
+      return [eligibleCustomer('customer-1', 'business-1')]
     })
     mocks.subscriptionFindMany.mockImplementation(async () => (
       authorizedUserId === 'user-1' ? [{ id: 'push-1', customerId: 'customer-1' }] : []

@@ -145,7 +145,14 @@ function setupMocks(depositAmount: number, servicePrice: number) {
         }),
       },
       $executeRaw: vi.fn(),
-      $queryRaw: vi.fn().mockResolvedValue([]),
+      $queryRaw: vi.fn().mockImplementation(async () => {
+        const business = await mockPrisma.business.findUnique()
+        return business ? [{
+          selfServiceCutoffHours: business.selfServiceCutoffHours,
+          cancellationPolicy: business.cancellationPolicy,
+          cancellationReminderEnabled: business.cancellationReminderEnabled,
+        }] : []
+      }),
     }
     return fn(tx)
   })

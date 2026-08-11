@@ -3,6 +3,8 @@ import { PushManager } from '@/components/push/push-manager'
 import { getAppUrl } from '@/lib/business/urls'
 import { getCurrentUser } from '@/lib/auth/user'
 import { hasUsablePushConfig } from '@/lib/push/config'
+import { findEligiblePushCustomers } from '@/lib/push/eligibility'
+import { prisma } from '@/lib/db'
 
 export const metadata: Metadata = {
   title: 'Recordatorios | Agendita',
@@ -11,6 +13,8 @@ export const metadata: Metadata = {
 
 export default async function NotificationsPage() {
   const user = await getCurrentUser()
+  const canActivateAccount = user !== null
+    && (await findEligiblePushCustomers(prisma, user.id, new Date())).length > 0
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-lg items-center px-6 py-12">
@@ -28,6 +32,7 @@ export default async function NotificationsPage() {
             : null}
           canonicalOrigin={getAppUrl('')}
           isAuthenticated={user !== null}
+          canActivateAccount={canActivateAccount}
         />
       </section>
     </main>

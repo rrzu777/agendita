@@ -122,6 +122,7 @@ describe('/mi/[slug]', () => {
     ['sin abono', { booking: { depositRequired: 0, depositPaid: 0 } }],
     ['cutoff cero', { booking: { cancellationCutoffHours: 0 } }],
     ['reserva terminal', { booking: { status: 'cancelled' } }],
+    ['ventana cerrada justo en el cutoff', { booking: { startDateTime: new Date(Date.now() + 24 * 3_600_000) } }],
   ])('oculta administrar recordatorios cuando %s', async (_label, overrides) => {
     mockPrepareMiUser.mockResolvedValue({ status: 'ok', user: { id: 'u1' } })
     const businessOverride = 'business' in overrides ? overrides.business : undefined
