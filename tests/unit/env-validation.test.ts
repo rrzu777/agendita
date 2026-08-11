@@ -19,6 +19,87 @@ afterEach(() => {
 
 describe('env validation', () => {
   describe('validateEnv', () => {
+    describe('Mercado Pago subscriptions', () => {
+      const subscriptionEnv = {
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost/test',
+        DIRECT_URL: 'postgresql://localhost/test',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+        APP_DOMAIN: 'localhost:3000',
+        NEXT_PUBLIC_APP_DOMAIN: 'localhost:3000',
+        PAYMENT_PROVIDER: 'manual',
+        SUPABASE_SERVICE_ROLE_KEY: 'service-key',
+        MP_SUBSCRIPTIONS_ENABLED: 'true',
+        MERCADO_PAGO_ENVIRONMENT: 'sandbox',
+        MERCADO_PAGO_SANDBOX_ACCESS_TOKEN: 'sandbox-token',
+        MERCADO_PAGO_SANDBOX_WEBHOOK_SECRET: 'sandbox-webhook-secret',
+        MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL:
+          'https://sandbox.example.com/api/webhooks/mercado-pago/subscriptions',
+      }
+
+      it('fails closed when an enabled subscriptions transport lacks required sandbox configuration', async () => {
+        setEnv({
+          ...subscriptionEnv,
+          MERCADO_PAGO_SANDBOX_ACCESS_TOKEN: undefined,
+          MERCADO_PAGO_SANDBOX_WEBHOOK_SECRET: undefined,
+          MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL: undefined,
+        })
+        const { validateEnv } = await import('@/lib/env')
+
+        expect(validateEnv().errors).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ key: 'MERCADO_PAGO_SANDBOX_ACCESS_TOKEN' }),
+            expect.objectContaining({ key: 'MERCADO_PAGO_SANDBOX_WEBHOOK_SECRET' }),
+            expect.objectContaining({
+              key: 'MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL',
+            }),
+          ]),
+        )
+      })
+
+      it('rejects an enabled subscriptions transport without an explicit supported environment', async () => {
+        setEnv({ ...subscriptionEnv, MERCADO_PAGO_ENVIRONMENT: 'staging' })
+        const { validateEnv } = await import('@/lib/env')
+
+        expect(validateEnv().errors).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ key: 'MERCADO_PAGO_ENVIRONMENT' }),
+          ]),
+        )
+      })
+
+      it('rejects an invalid Mercado Pago environment even when subscriptions are disabled', async () => {
+        setEnv({
+          ...subscriptionEnv,
+          MP_SUBSCRIPTIONS_ENABLED: 'false',
+          MERCADO_PAGO_ENVIRONMENT: 'staging',
+        })
+        const { validateEnv } = await import('@/lib/env')
+
+        expect(validateEnv().errors).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ key: 'MERCADO_PAGO_ENVIRONMENT' }),
+          ]),
+        )
+      })
+
+      it('does not accept a generic Mercado Pago token as a sandbox fallback', async () => {
+        setEnv({
+          ...subscriptionEnv,
+          MERCADO_PAGO_SANDBOX_ACCESS_TOKEN: undefined,
+          MERCADO_PAGO_ACCESS_TOKEN: 'generic-token-must-not-be-used',
+        })
+        const { validateEnv } = await import('@/lib/env')
+
+        expect(validateEnv().errors).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ key: 'MERCADO_PAGO_SANDBOX_ACCESS_TOKEN' }),
+          ]),
+        )
+      })
+    })
+
     it('returns empty errors and warnings when all required envs are set', async () => {
       setEnv({
         NODE_ENV: 'development',

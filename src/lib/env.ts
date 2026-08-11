@@ -22,6 +22,10 @@ const VALID_PAYMENT_PROVIDERS = [
 ] as const
 export type PaymentProvider = (typeof VALID_PAYMENT_PROVIDERS)[number]
 
+export type MercadoPagoSubscriptionsEnvironment = 'sandbox' | 'production'
+
+const MP_SUBSCRIPTIONS_ENVIRONMENTS = ['sandbox', 'production'] as const
+
 function isValidUrl(value: string): boolean {
   try {
     const url = new URL(value)
@@ -220,6 +224,55 @@ export function validateEnv(): EnvValidationResult {
         message:
           'ENCRYPTION_KEY is required in production with Mercado Pago for per-business token encryption',
       })
+    }
+  }
+
+  // --- Mercado Pago subscriptions ---
+  // Subscription credentials are deliberately environment-scoped. The generic
+  // checkout token is never a fallback: selecting the wrong credential can
+  // charge real customers while an app believes it is in sandbox.
+  const subscriptionsEnabled = process.env.MP_SUBSCRIPTIONS_ENABLED
+  if (subscriptionsEnabled !== undefined && !isStrictBoolean(subscriptionsEnabled)) {
+    errors.push({
+      key: 'MP_SUBSCRIPTIONS_ENABLED',
+      message:
+        'MP_SUBSCRIPTIONS_ENABLED must be "true" or "false" when configured.',
+    })
+  }
+
+  const subscriptionsEnvironment = process.env.MERCADO_PAGO_ENVIRONMENT
+  const hasValidSubscriptionsEnvironment = MP_SUBSCRIPTIONS_ENVIRONMENTS.includes(
+    subscriptionsEnvironment as MercadoPagoSubscriptionsEnvironment,
+  )
+  if (subscriptionsEnvironment && !hasValidSubscriptionsEnvironment) {
+    errors.push({
+      key: 'MERCADO_PAGO_ENVIRONMENT',
+      message: 'MERCADO_PAGO_ENVIRONMENT must be "sandbox" or "production".',
+    })
+  }
+
+  if (subscriptionsEnabled?.toLowerCase() === 'true') {
+    if (!subscriptionsEnvironment || !hasValidSubscriptionsEnvironment) {
+      errors.push({
+        key: 'MERCADO_PAGO_ENVIRONMENT',
+        message:
+          'MERCADO_PAGO_ENVIRONMENT is required for subscriptions and must be "sandbox" or "production".',
+      })
+    } else {
+      const prefix = `MERCADO_PAGO_${subscriptionsEnvironment.toUpperCase()}`
+      for (const suffix of [
+        'ACCESS_TOKEN',
+        'WEBHOOK_SECRET',
+        'SUBSCRIPTIONS_CALLBACK_URL',
+      ]) {
+        const key = `${prefix}_${suffix}`
+        if (!process.env[key]) {
+          errors.push({
+            key,
+            message: `${key} is required when MP_SUBSCRIPTIONS_ENABLED=true and MERCADO_PAGO_ENVIRONMENT=${subscriptionsEnvironment}.`,
+          })
+        }
+      }
     }
   }
 

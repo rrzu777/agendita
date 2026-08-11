@@ -1,0 +1,226 @@
+import 'server-only'
+
+import {
+  type MpInvoice,
+  type MpSubscription,
+  MercadoPagoSubscriptionContractError,
+  normalizeMpInvoice,
+  normalizeMpSubscription,
+} from './mercado-pago-mappers'
+
+const MP_API_BASE = 'https://api.mercadopago.com'
+const REQUEST_TIMEOUT_MS = 5_000
+
+export type MpSubscriptionsEnvironment = 'sandbox' | 'production'
+
+export type MpSubscriptionClientConfig = {
+  accessToken: string
+  webhookSecret: string
+  callbackUrl: string
+  environment: MpSubscriptionsEnvironment
+}
+
+export type CreatePlanInput = {
+  name: string
+  amount: number
+  externalReference: string
+}
+
+export type CreateSubscriptionInput = {
+  planId: string
+  externalReference: string
+  payerEmail?: string
+}
+
+export type MpPlan = {
+  id: string
+  status: string | null
+  raw: Record<string, unknown>
+}
+
+export type MpSubscriptionClient = {
+  createPlan(input: CreatePlanInput): Promise<MpPlan>
+  getPlan(id: string): Promise<MpPlan>
+  createSubscription(input: CreateSubscriptionInput): Promise<MpSubscription>
+  getSubscription(id: string): Promise<MpSubscription>
+  cancelSubscription(id: string): Promise<MpSubscription>
+  getInvoice(id: string): Promise<MpInvoice>
+  searchInvoices(subscriptionId: string): Promise<MpInvoice[]>
+}
+
+export class MercadoPagoSubscriptionTransportError extends Error {
+  constructor(status?: number) {
+    super(
+      status
+        ? `Mercado Pago subscriptions request failed (HTTP ${status}).`
+        : 'Mercado Pago subscriptions request failed.',
+    )
+    this.name = 'MercadoPagoSubscriptionTransportError'
+  }
+}
+
+function validateConfig(config: MpSubscriptionClientConfig): void {
+  if (!config.accessToken || !config.webhookSecret) {
+    throw new Error('Mercado Pago subscriptions client configuration is incomplete.')
+  }
+  if (config.environment !== 'sandbox' && config.environment !== 'production') {
+    throw new Error('Mercado Pago subscriptions environment must be explicit.')
+  }
+  try {
+    const callbackUrl = new URL(config.callbackUrl)
+    if (callbackUrl.protocol !== 'https:') throw new Error('invalid protocol')
+  } catch {
+    throw new Error('Mercado Pago subscriptions callback URL is invalid.')
+  }
+}
+
+function requiredString(value: string, field: string): string {
+  if (!value.trim()) throw new Error(`${field} is required.`)
+  return value
+}
+
+function requireMonthlyClp(amount: number): void {
+  if (!Number.isInteger(amount) || amount <= 0) {
+    throw new Error('Mercado Pago subscriptions amount must be a positive integer CLP value.')
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new MercadoPagoSubscriptionContractError()
+  }
+  return value as Record<string, unknown>
+}
+
+function normalizePlan(response: unknown): MpPlan {
+  const raw = asRecord(response)
+  const id = raw.id
+  if ((typeof id !== 'string' && typeof id !== 'number') || String(id).trim() === '') {
+    throw new MercadoPagoSubscriptionContractError()
+  }
+  return {
+    id: String(id),
+    status: typeof raw.status === 'string' ? raw.status : null,
+    raw,
+  }
+}
+
+function timeoutSignal(): AbortSignal {
+  if (typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  }
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  return controller.signal
+}
+
+export function createMpSubscriptionClient(
+  config: MpSubscriptionClientConfig,
+): MpSubscriptionClient {
+  validateConfig(config)
+
+  async function request(path: string, init: RequestInit = {}): Promise<Record<string, unknown>> {
+    let response: Response
+    try {
+      response = await fetch(`${MP_API_BASE}${path}`, {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${config.accessToken}`,
+          'Content-Type': 'application/json',
+          ...init.headers,
+        },
+        signal: timeoutSignal(),
+      })
+    } catch {
+      throw new MercadoPagoSubscriptionTransportError()
+    }
+
+    if (!response.ok) {
+      // Do not read, log, or attach an upstream body: it can contain provider
+      // data and must never appear in an application error.
+      throw new MercadoPagoSubscriptionTransportError(response.status)
+    }
+
+    try {
+      return asRecord(await response.json())
+    } catch (error) {
+      if (error instanceof MercadoPagoSubscriptionContractError) throw error
+      throw new MercadoPagoSubscriptionContractError()
+    }
+  }
+
+  return {
+    async createPlan(input) {
+      requiredString(input.name, 'Plan name')
+      requiredString(input.externalReference, 'External reference')
+      requireMonthlyClp(input.amount)
+      const raw = await request('/preapproval_plan', {
+        method: 'POST',
+        body: JSON.stringify({
+          reason: input.name,
+          external_reference: input.externalReference,
+          back_url: config.callbackUrl,
+          auto_recurring: {
+            frequency: 1,
+            frequency_type: 'months',
+            transaction_amount: input.amount,
+            currency_id: 'CLP',
+          },
+        }),
+      })
+      return normalizePlan(raw)
+    },
+
+    async getPlan(id) {
+      return normalizePlan(
+        await request(`/preapproval_plan/${encodeURIComponent(requiredString(id, 'Plan id'))}`),
+      )
+    },
+
+    async createSubscription(input) {
+      requiredString(input.planId, 'Plan id')
+      requiredString(input.externalReference, 'External reference')
+      const body: Record<string, unknown> = {
+        preapproval_plan_id: input.planId,
+        external_reference: input.externalReference,
+        back_url: config.callbackUrl,
+      }
+      if (input.payerEmail) body.payer_email = input.payerEmail
+      const subscription = normalizeMpSubscription(
+        await request('/preapproval', { method: 'POST', body: JSON.stringify(body) }),
+      )
+      if (!subscription.checkoutUrl) throw new MercadoPagoSubscriptionContractError()
+      return subscription
+    },
+
+    async getSubscription(id) {
+      return normalizeMpSubscription(
+        await request(`/preapproval/${encodeURIComponent(requiredString(id, 'Subscription id'))}`),
+      )
+    },
+
+    async cancelSubscription(id) {
+      return normalizeMpSubscription(
+        await request(`/preapproval/${encodeURIComponent(requiredString(id, 'Subscription id'))}`, {
+          method: 'PUT',
+          body: JSON.stringify({ status: 'cancelled' }),
+        }),
+      )
+    },
+
+    async getInvoice(id) {
+      return normalizeMpInvoice(
+        await request(`/authorized_payments/${encodeURIComponent(requiredString(id, 'Invoice id'))}`),
+      )
+    },
+
+    async searchInvoices(subscriptionId) {
+      const query = new URLSearchParams({
+        preapproval_id: requiredString(subscriptionId, 'Subscription id'),
+      })
+      const raw = await request(`/authorized_payments/search?${query.toString()}`)
+      if (!Array.isArray(raw.results)) throw new MercadoPagoSubscriptionContractError()
+      return raw.results.map((invoice) => normalizeMpInvoice(invoice))
+    },
+  }
+}

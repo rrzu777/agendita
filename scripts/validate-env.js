@@ -17,9 +17,14 @@ const { loadEnvConfig } = require('@next/env')
 loadEnvConfig(process.cwd())
 
 const VALID_PAYMENT_PROVIDERS = ['mock', 'manual', 'mercado_pago', 'webpay']
+const MP_SUBSCRIPTIONS_ENVIRONMENTS = ['sandbox', 'production']
 
 function getEnv(key) {
   return process.env[key] ?? process.env[`NEXT_PUBLIC_${key}`] ?? ''
+}
+
+function getServerEnv(key) {
+  return process.env[key] ?? ''
 }
 
 function isStrictBoolean(value) {
@@ -129,6 +134,38 @@ function validate() {
       errors.push(
         'MISSING: ENCRYPTION_KEY (required in production with Mercado Pago for token encryption)',
       )
+    }
+  }
+
+  // ── Mercado Pago subscriptions ────────────────────────────────────────
+  // Credentials are selected by a mandatory explicit environment. Generic
+  // Mercado Pago variables intentionally cannot satisfy this transport.
+  const subscriptionsEnabled = getServerEnv('MP_SUBSCRIPTIONS_ENABLED')
+  if (subscriptionsEnabled && !isStrictBoolean(subscriptionsEnabled)) {
+    errors.push('MP_SUBSCRIPTIONS_ENABLED must be "true" or "false" when configured.')
+  }
+  const subscriptionsEnvironment = getServerEnv('MERCADO_PAGO_ENVIRONMENT')
+  const hasValidSubscriptionsEnvironment = MP_SUBSCRIPTIONS_ENVIRONMENTS.includes(
+    subscriptionsEnvironment,
+  )
+  if (subscriptionsEnvironment && !hasValidSubscriptionsEnvironment) {
+    errors.push('MERCADO_PAGO_ENVIRONMENT must be "sandbox" or "production".')
+  }
+  if (subscriptionsEnabled.toLowerCase() === 'true') {
+    if (!hasValidSubscriptionsEnvironment) {
+      errors.push(
+        'MERCADO_PAGO_ENVIRONMENT is required for subscriptions and must be "sandbox" or "production".',
+      )
+    } else {
+      const prefix = `MERCADO_PAGO_${subscriptionsEnvironment.toUpperCase()}`
+      for (const suffix of [
+        'ACCESS_TOKEN',
+        'WEBHOOK_SECRET',
+        'SUBSCRIPTIONS_CALLBACK_URL',
+      ]) {
+        const key = `${prefix}_${suffix}`
+        if (!getServerEnv(key)) errors.push(`MISSING: ${key}`)
+      }
     }
   }
 
