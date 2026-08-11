@@ -12,6 +12,8 @@ vi.mock('@/lib/auth/user', () => ({
 
 vi.mock('@/server/actions/subscriptions', () => ({
   getCurrentSubscription: (...args: unknown[]) => mocks.getCurrentSubscription(...args),
+  startSubscriptionAction: vi.fn(),
+  cancelSubscriptionAction: vi.fn(),
 }))
 
 vi.mock('next/navigation', () => ({ redirect: vi.fn() }))
@@ -87,6 +89,12 @@ describe('owner subscription billing experience', () => {
 
     expect(html).toContain('Exención activa')
     expect(html).toContain('No necesitas registrar un medio de pago')
+    expect(html).not.toContain('En prueba')
+    expect(html).not.toContain('Inicio de prueba')
+    expect(html).not.toContain('Fin de prueba')
+    expect(html).not.toContain('Periodo actual')
+    expect(html).not.toContain('Período de prueba activo')
+    expect(html).not.toContain('Tu prueba gratuita')
     expect(html).not.toContain('Activar mensualidad automática')
     expect(html).not.toContain('cobro inmediato')
   })

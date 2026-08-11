@@ -72,10 +72,10 @@ export default async function BillingPage({
   }
 
   const status = subscription.status
-  const StatusIcon = statusIcons[status] ?? CircleAlert
   const plan = subscription.plan
   const now = new Date()
   const complimentaryActive = !!subscription.complimentaryUntil && subscription.complimentaryUntil > now
+  const StatusIcon = complimentaryActive ? BadgeCheck : (statusIcons[status] ?? CircleAlert)
   const checkoutAvailable =
     subscription.billingEnabled &&
     !subscription.hasProviderSubscription &&
@@ -115,9 +115,9 @@ export default async function BillingPage({
                   <div>
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="text-2xl font-semibold text-primary">{plan?.name ?? 'Plan no asignado'}</h3>
-                      <span className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold', statusColors[status])}>
+                      <span className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold', complimentaryActive ? statusColors.active : statusColors[status])}>
                         <StatusIcon className="size-3.5" />
-                        {getSubscriptionStatusLabel(status)}
+                        {complimentaryActive ? 'Exención vigente' : getSubscriptionStatusLabel(status)}
                       </span>
                     </div>
                     {plan && (
@@ -129,7 +129,7 @@ export default async function BillingPage({
                 </div>
 
                 <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                  {subscription.trialStartAt && (
+                  {!complimentaryActive && subscription.trialStartAt && (
                     <div className="rounded-lg border border-border bg-muted/30 p-4">
                       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Inicio de prueba</p>
                       <p className="mt-1 text-sm font-semibold text-primary">
@@ -137,7 +137,7 @@ export default async function BillingPage({
                       </p>
                     </div>
                   )}
-                  {subscription.trialEndAt && (
+                  {!complimentaryActive && subscription.trialEndAt && (
                     <div className="rounded-lg border border-border bg-muted/30 p-4">
                       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Fin de prueba</p>
                       <p className="mt-1 text-sm font-semibold text-primary">
@@ -145,12 +145,14 @@ export default async function BillingPage({
                       </p>
                     </div>
                   )}
-                  <div className="rounded-lg border border-border bg-muted/30 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Periodo actual</p>
-                    <p className="mt-1 text-sm font-semibold text-primary">
-                      {subscription.currentPeriodStart.toLocaleDateString('es-CL')} - {subscription.currentPeriodEnd.toLocaleDateString('es-CL')}
-                    </p>
-                  </div>
+                  {!complimentaryActive && (
+                    <div className="rounded-lg border border-border bg-muted/30 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Periodo actual</p>
+                      <p className="mt-1 text-sm font-semibold text-primary">
+                        {subscription.currentPeriodStart.toLocaleDateString('es-CL')} - {subscription.currentPeriodEnd.toLocaleDateString('es-CL')}
+                      </p>
+                    </div>
+                  )}
                   <div className="rounded-lg border border-border bg-muted/30 p-4">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ciclo</p>
                     <p className="mt-1 text-sm font-semibold capitalize text-primary">
@@ -289,7 +291,7 @@ export default async function BillingPage({
               </CardContent>
             </Card>
 
-            {business.subscriptionStatus === 'trialing' && subscription.trialEndAt && (
+            {!complimentaryActive && business.subscriptionStatus === 'trialing' && subscription.trialEndAt && (
               <Card className="border-blue-200 bg-blue-50/50">
                 <CardContent className="p-6">
                   <div className="flex items-center gap-3">

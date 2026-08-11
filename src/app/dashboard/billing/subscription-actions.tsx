@@ -1,29 +1,14 @@
 'use client'
 
-import { useFormStatus } from 'react-dom'
+import { useActionState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
-  requestSubscriptionCancellation,
-  startSubscriptionCheckout,
-} from '@/server/actions/subscription-billing'
+  cancelSubscriptionAction,
+  startSubscriptionAction,
+  type SubscriptionActionState,
+} from '@/server/actions/subscriptions'
 
-function SubmitButton({
-  children,
-  pendingLabel,
-  variant = 'default',
-}: {
-  children: React.ReactNode
-  pendingLabel: string
-  variant?: 'default' | 'outline'
-}) {
-  const { pending } = useFormStatus()
-
-  return (
-    <Button type="submit" variant={variant} className="w-full" disabled={pending}>
-      {pending ? pendingLabel : children}
-    </Button>
-  )
-}
+const initialState: SubscriptionActionState = { error: null }
 
 export function SubscriptionActions({
   canStartCheckout,
@@ -32,20 +17,33 @@ export function SubscriptionActions({
   canStartCheckout: boolean
   canCancel: boolean
 }) {
+  const [startState, startAction, startPending] = useActionState(startSubscriptionAction, initialState)
+  const [cancelState, cancelAction, cancelPending] = useActionState(cancelSubscriptionAction, initialState)
+
   return (
     <>
       {canStartCheckout && (
-        <form action={startSubscriptionCheckout}>
-          <SubmitButton pendingLabel="Abriendo Mercado Pago…">
-            Activar mensualidad automática
-          </SubmitButton>
+        <form action={startAction} className="space-y-2">
+          <Button type="submit" className="w-full" disabled={startPending}>
+            {startPending ? 'Abriendo Mercado Pago…' : 'Activar mensualidad automática'}
+          </Button>
+          {startState.error && (
+            <p role="alert" aria-live="polite" className="text-xs text-destructive">
+              {startState.error}
+            </p>
+          )}
         </form>
       )}
       {canCancel && (
-        <form action={requestSubscriptionCancellation}>
-          <SubmitButton pendingLabel="Cancelando renovación…" variant="outline">
-            Cancelar al final del período
-          </SubmitButton>
+        <form action={cancelAction} className="space-y-2">
+          <Button type="submit" variant="outline" className="w-full" disabled={cancelPending}>
+            {cancelPending ? 'Cancelando renovación…' : 'Cancelar al final del período'}
+          </Button>
+          {cancelState.error && (
+            <p role="alert" aria-live="polite" className="text-xs text-destructive">
+              {cancelState.error}
+            </p>
+          )}
         </form>
       )}
     </>

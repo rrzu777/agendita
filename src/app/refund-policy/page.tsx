@@ -32,8 +32,9 @@ export default function RefundPolicyPage() {
           </p>
           <p className="mt-2">
             Cuando el Negocio activa la mensualidad automática, autoriza cobros recurrentes mensuales
-            mediante Mercado Pago. El primer cobro se realiza al terminar el período de prueba; una
-            exención vigente no solicita un medio de pago ni genera cobros.
+            mediante Mercado Pago. El primer cobro se realiza al terminar el período de prueba, si
+            corresponde. Si el plan no contempla días de prueba, la mensualidad comienza inmediatamente
+            después de la autorización. Una exención vigente no solicita un medio de pago ni genera cobros.
           </p>
           <p className="mt-2">
             Los pagos de suscripción ya procesados no son reembolsables, salvo que la ley aplicable

@@ -2,6 +2,36 @@
 
 import { prisma } from '@/lib/db'
 import { requireBusinessRole } from '@/lib/auth/server'
+import { action } from '@/lib/actions/result'
+import {
+  requestSubscriptionCancellation,
+  startSubscriptionCheckout,
+} from '@/server/actions/subscription-billing'
+
+export type SubscriptionActionState = { error: string | null }
+
+async function subscriptionActionState(operation: () => Promise<void>): Promise<SubscriptionActionState> {
+  const result = await action(operation)()
+  return result.ok ? { error: null } : { error: result.error }
+}
+
+export async function startSubscriptionAction(
+  _previousState: SubscriptionActionState,
+  _formData: FormData,
+): Promise<SubscriptionActionState> {
+  void _previousState
+  void _formData
+  return subscriptionActionState(startSubscriptionCheckout)
+}
+
+export async function cancelSubscriptionAction(
+  _previousState: SubscriptionActionState,
+  _formData: FormData,
+): Promise<SubscriptionActionState> {
+  void _previousState
+  void _formData
+  return subscriptionActionState(requestSubscriptionCancellation)
+}
 
 // businessId SIEMPRE sale de la sesión autenticada, nunca de un parámetro del
 // caller: cada export de un módulo 'use server' es un endpoint POST público, así
