@@ -125,23 +125,28 @@ export async function probeResend(): Promise<ConfiguredDependencyStatus> {
   }
 }
 
-export function isMercadoPagoRequired(): boolean {
-  if (process.env.PAYMENT_PROVIDER === 'mercado_pago') return true
-  if (process.env.PAYMENT_PROVIDER) return false
+export function isMercadoPagoSubscriptionsRequired(): boolean {
+  return process.env.MP_SUBSCRIPTIONS_ENABLED?.toLowerCase() === 'true'
+}
 
+export function isMercadoPagoOAuthRequired(): boolean {
   return Boolean(
     process.env.MERCADO_PAGO_CLIENT_ID
-    && process.env.MERCADO_PAGO_CLIENT_SECRET
-    && process.env.MERCADO_PAGO_REDIRECT_URI,
+    || process.env.MERCADO_PAGO_CLIENT_SECRET
+    || process.env.MERCADO_PAGO_REDIRECT_URI,
   )
 }
 
-export async function probeMercadoPago(): Promise<DependencyStatus> {
-  if (!isMercadoPagoRequired()) {
-    return 'not_required'
-  }
+export async function probeMercadoPagoSubscriptions(): Promise<DependencyStatus> {
+  if (!isMercadoPagoSubscriptionsRequired()) return 'not_required'
 
-  const token = process.env.MERCADO_PAGO_ACCESS_TOKEN
+  const environment = process.env.MERCADO_PAGO_ENVIRONMENT
+  if (environment !== 'sandbox' && environment !== 'production') {
+    return 'not_configured'
+  }
+  const token = process.env[
+    `MERCADO_PAGO_${environment.toUpperCase()}_ACCESS_TOKEN`
+  ]
   if (!token) return 'not_configured'
 
   try {
@@ -157,6 +162,31 @@ export async function probeMercadoPago(): Promise<DependencyStatus> {
       && (typeof payload.id === 'string' || typeof payload.id === 'number')
       ? 'up'
       : 'down'
+  } catch {
+    return 'down'
+  }
+}
+
+/**
+ * OAuth is multi-tenant: health must never iterate over or expose arbitrary
+ * business credentials. This probe therefore validates only application-level
+ * configuration. A connected business and a successful E2E charge are separate
+ * operational signals documented in the runbook.
+ */
+export async function probeMercadoPagoOAuth(): Promise<DependencyStatus> {
+  if (!isMercadoPagoOAuthRequired()) return 'not_required'
+
+  const clientId = process.env.MERCADO_PAGO_CLIENT_ID
+  const clientSecret = process.env.MERCADO_PAGO_CLIENT_SECRET
+  const redirectUri = process.env.MERCADO_PAGO_REDIRECT_URI
+  if (!clientId || !clientSecret || !redirectUri) return 'down'
+
+  try {
+    const url = new URL(redirectUri)
+    const localDevelopment = process.env.NODE_ENV !== 'production'
+      && url.protocol === 'http:'
+      && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
+    return url.protocol === 'https:' || localDevelopment ? 'up' : 'down'
   } catch {
     return 'down'
   }

@@ -92,6 +92,52 @@ describe('build environment validation', () => {
     expect(result.stderr).toContain('MERCADO_PAGO_ENVIRONMENT')
   })
 
+  it('rejects a non-HTTPS subscriptions callback', () => {
+    const env = {
+      ...process.env,
+      NODE_ENV: 'development',
+      DATABASE_URL: 'postgresql://localhost/test',
+      DIRECT_URL: 'postgresql://localhost/test',
+      NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+      APP_DOMAIN: 'app.agendita.com',
+      NEXT_PUBLIC_APP_DOMAIN: 'app.agendita.com',
+      PAYMENT_PROVIDER: 'manual',
+      MP_SUBSCRIPTIONS_ENABLED: 'true',
+      MERCADO_PAGO_ENVIRONMENT: 'sandbox',
+      MERCADO_PAGO_SANDBOX_ACCESS_TOKEN: 'sandbox-token',
+      MERCADO_PAGO_SANDBOX_WEBHOOK_SECRET: 'sandbox-secret',
+      MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL: 'http://example.com/callback',
+    }
+
+    const result = spawnSync(process.execPath, [scriptPath], { env, encoding: 'utf8' })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL')
+  })
+
+  it('rejects partial OAuth configuration at build time', () => {
+    const env = {
+      ...process.env,
+      NODE_ENV: 'development',
+      DATABASE_URL: 'postgresql://localhost/test',
+      DIRECT_URL: 'postgresql://localhost/test',
+      NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+      APP_DOMAIN: 'app.agendita.com',
+      NEXT_PUBLIC_APP_DOMAIN: 'app.agendita.com',
+      PAYMENT_PROVIDER: 'manual',
+      MERCADO_PAGO_CLIENT_ID: 'client-id',
+      MERCADO_PAGO_CLIENT_SECRET: '',
+      MERCADO_PAGO_REDIRECT_URI: 'https://app.agendita.com/callback',
+    }
+
+    const result = spawnSync(process.execPath, [scriptPath], { env, encoding: 'utf8' })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('MERCADO_PAGO_CLIENT_SECRET')
+  })
+
   it('accepts complete production subscriptions credentials and a false enforcement flag', () => {
     const env = {
       ...process.env,

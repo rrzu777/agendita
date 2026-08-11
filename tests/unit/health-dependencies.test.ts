@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   isDependencyReady,
-  probeMercadoPago,
+  probeMercadoPagoOAuth,
+  probeMercadoPagoSubscriptions,
   probeRedis,
   probeResend,
   probeSupabase,
@@ -189,47 +190,30 @@ describe('dependency health probes', () => {
     })
   })
 
-  describe('probeMercadoPago', () => {
+  describe('probeMercadoPagoSubscriptions', () => {
     it('returns not_required unless Mercado Pago is the selected provider', async () => {
-      vi.stubEnv('PAYMENT_PROVIDER', 'manual')
+      vi.stubEnv('MP_SUBSCRIPTIONS_ENABLED', 'false')
 
-      await expect(probeMercadoPago()).resolves.toBe('not_required')
+      await expect(probeMercadoPagoSubscriptions()).resolves.toBe('not_required')
     })
 
-    it('returns not_configured when the global token is absent', async () => {
-      vi.stubEnv('PAYMENT_PROVIDER', 'mercado_pago')
-      vi.stubEnv('MERCADO_PAGO_ACCESS_TOKEN', '')
+    it('returns not_configured when enabled credentials are absent', async () => {
+      vi.stubEnv('MP_SUBSCRIPTIONS_ENABLED', 'true')
+      vi.stubEnv('MERCADO_PAGO_ENVIRONMENT', 'sandbox')
+      vi.stubEnv('MERCADO_PAGO_SANDBOX_ACCESS_TOKEN', '')
 
-      await expect(probeMercadoPago()).resolves.toBe('not_configured')
+      await expect(probeMercadoPagoSubscriptions()).resolves.toBe('not_configured')
     })
 
-    it('requires the global token in OAuth-only Mercado Pago mode', async () => {
-      vi.stubEnv('PAYMENT_PROVIDER', '')
-      vi.stubEnv('MERCADO_PAGO_CLIENT_ID', 'client-id')
-      vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
-      vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://app.example.com/callback')
-      vi.stubEnv('MERCADO_PAGO_ACCESS_TOKEN', '')
-
-      await expect(probeMercadoPago()).resolves.toBe('not_configured')
-    })
-
-    it('keeps manual payments not_required even when OAuth credentials exist', async () => {
-      vi.stubEnv('PAYMENT_PROVIDER', 'manual')
-      vi.stubEnv('MERCADO_PAGO_CLIENT_ID', 'client-id')
-      vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
-      vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://app.example.com/callback')
-
-      await expect(probeMercadoPago()).resolves.toBe('not_required')
-    })
-
-    it('requires a successful identity payload', async () => {
-      vi.stubEnv('PAYMENT_PROVIDER', 'mercado_pago')
-      vi.stubEnv('MERCADO_PAGO_ACCESS_TOKEN', 'mp-token')
+    it('uses the environment-scoped credential for a read-only identity probe', async () => {
+      vi.stubEnv('MP_SUBSCRIPTIONS_ENABLED', 'true')
+      vi.stubEnv('MERCADO_PAGO_ENVIRONMENT', 'sandbox')
+      vi.stubEnv('MERCADO_PAGO_SANDBOX_ACCESS_TOKEN', 'mp-token')
       const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(
         new Response(JSON.stringify({ id: 123 }), { status: 200 }),
       )
 
-      await expect(probeMercadoPago()).resolves.toBe('up')
+      await expect(probeMercadoPagoSubscriptions()).resolves.toBe('up')
       expect(fetchMock).toHaveBeenCalledWith(
         'https://api.mercadopago.com/users/me',
         expect.objectContaining({
@@ -243,11 +227,42 @@ describe('dependency health probes', () => {
       new Response('private-provider-detail', { status: 403 }),
       new Response(JSON.stringify({ site_id: 'MLC' }), { status: 200 }),
     ])('marks an invalid credential response down', async response => {
-      vi.stubEnv('PAYMENT_PROVIDER', 'mercado_pago')
-      vi.stubEnv('MERCADO_PAGO_ACCESS_TOKEN', 'mp-token')
+      vi.stubEnv('MP_SUBSCRIPTIONS_ENABLED', 'true')
+      vi.stubEnv('MERCADO_PAGO_ENVIRONMENT', 'production')
+      vi.stubEnv('MERCADO_PAGO_PRODUCTION_ACCESS_TOKEN', 'mp-token')
       vi.spyOn(global, 'fetch').mockResolvedValue(response)
 
-      await expect(probeMercadoPago()).resolves.toBe('down')
+      await expect(probeMercadoPagoSubscriptions()).resolves.toBe('down')
+    })
+  })
+
+  describe('probeMercadoPagoOAuth', () => {
+    it('reports absent OAuth configuration as not_required', async () => {
+      vi.stubEnv('MERCADO_PAGO_CLIENT_ID', '')
+      vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', '')
+      vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', '')
+
+      await expect(probeMercadoPagoOAuth()).resolves.toBe('not_required')
+    })
+
+    it('reports partial or unsafe configuration as down without provider traffic', async () => {
+      vi.stubEnv('MERCADO_PAGO_CLIENT_ID', 'client-id')
+      vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', '')
+      vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'http://app.example.com/callback')
+      const fetchMock = vi.spyOn(global, 'fetch')
+
+      await expect(probeMercadoPagoOAuth()).resolves.toBe('down')
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('checks only complete OAuth configuration and never arbitrary business tokens', async () => {
+      vi.stubEnv('MERCADO_PAGO_CLIENT_ID', 'client-id')
+      vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
+      vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://www.agendita.cl/api/mercado-pago/callback')
+      const fetchMock = vi.spyOn(global, 'fetch')
+
+      await expect(probeMercadoPagoOAuth()).resolves.toBe('up')
+      expect(fetchMock).not.toHaveBeenCalled()
     })
   })
 

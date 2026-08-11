@@ -99,6 +99,23 @@ describe('env validation', () => {
         )
       })
 
+      it('rejects a non-HTTPS subscriptions callback', async () => {
+        setEnv({
+          ...subscriptionEnv,
+          MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL:
+            'http://sandbox.example.com/api/webhooks/mercado-pago/subscriptions',
+        })
+        const { validateEnv } = await import('@/lib/env')
+
+        expect(validateEnv().errors).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              key: 'MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL',
+            }),
+          ]),
+        )
+      })
+
       it('accepts only the selected production credentials when subscriptions are enabled', async () => {
         setEnv({
           ...subscriptionEnv,
@@ -116,6 +133,49 @@ describe('env validation', () => {
 
         expect(validateEnv().errors).toEqual([])
       })
+    })
+
+    it('rejects partial or non-HTTPS Mercado Pago OAuth configuration', async () => {
+      setEnv({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost/test',
+        DIRECT_URL: 'postgresql://localhost/test',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+        APP_DOMAIN: 'localhost:3000',
+        NEXT_PUBLIC_APP_DOMAIN: 'localhost:3000',
+        PAYMENT_PROVIDER: 'manual',
+        MERCADO_PAGO_CLIENT_ID: 'client-id',
+        MERCADO_PAGO_CLIENT_SECRET: undefined,
+        MERCADO_PAGO_REDIRECT_URI: 'http://app.example.com/callback',
+      })
+      const { validateEnv } = await import('@/lib/env')
+
+      expect(validateEnv().errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: 'MERCADO_PAGO_CLIENT_SECRET' }),
+        expect.objectContaining({ key: 'MERCADO_PAGO_REDIRECT_URI' }),
+      ]))
+    })
+
+    it('allows an HTTP localhost OAuth callback only in development', async () => {
+      setEnv({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost/test',
+        DIRECT_URL: 'postgresql://localhost/test',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+        APP_DOMAIN: 'localhost:3000',
+        NEXT_PUBLIC_APP_DOMAIN: 'localhost:3000',
+        PAYMENT_PROVIDER: 'manual',
+        MERCADO_PAGO_CLIENT_ID: 'client-id',
+        MERCADO_PAGO_CLIENT_SECRET: 'client-secret',
+        MERCADO_PAGO_REDIRECT_URI: 'http://localhost:3000/api/mercado-pago/callback',
+      })
+      const { validateEnv } = await import('@/lib/env')
+
+      expect(validateEnv().errors).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: 'MERCADO_PAGO_REDIRECT_URI' }),
+      ]))
     })
 
     describe('subscription enforcement', () => {

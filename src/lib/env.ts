@@ -35,6 +35,26 @@ function isValidUrl(value: string): boolean {
   }
 }
 
+function isValidHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function isValidOAuthRedirectUrl(value: string, production: boolean): boolean {
+  try {
+    const url = new URL(value)
+    if (url.protocol === 'https:') return true
+    return !production
+      && url.protocol === 'http:'
+      && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
+  } catch {
+    return false
+  }
+}
+
 function isStrictBoolean(value: string): boolean {
   const lower = value.toLowerCase()
   return lower === 'true' || lower === 'false'
@@ -110,6 +130,30 @@ export function validateEnv(): EnvValidationResult {
     !!process.env.MERCADO_PAGO_CLIENT_ID &&
     !!process.env.MERCADO_PAGO_CLIENT_SECRET &&
     !!process.env.MERCADO_PAGO_REDIRECT_URI
+  const mpOAuthKeys = [
+    'MERCADO_PAGO_CLIENT_ID',
+    'MERCADO_PAGO_CLIENT_SECRET',
+    'MERCADO_PAGO_REDIRECT_URI',
+  ]
+  const mpOAuthPresent = mpOAuthKeys.filter(key => !!process.env[key])
+  if (mpOAuthPresent.length > 0 && mpOAuthPresent.length < mpOAuthKeys.length) {
+    for (const key of mpOAuthKeys.filter(key => !process.env[key])) {
+      errors.push({
+        key,
+        message: `${key} is required when Mercado Pago OAuth is partially configured.`,
+      })
+    }
+  }
+  if (
+    process.env.MERCADO_PAGO_REDIRECT_URI
+    && !isValidOAuthRedirectUrl(process.env.MERCADO_PAGO_REDIRECT_URI, isProduction)
+  ) {
+    errors.push({
+      key: 'MERCADO_PAGO_REDIRECT_URI',
+      message:
+        'MERCADO_PAGO_REDIRECT_URI must be HTTPS (HTTP localhost is allowed only outside production).',
+    })
+  }
   if (!process.env.PAYMENT_PROVIDER && !hasMpOAuth) {
     if (isProduction) {
       // In production a payment configuration is required: either an explicit
@@ -289,6 +333,14 @@ export function validateEnv(): EnvValidationResult {
             message: `${key} is required when MP_SUBSCRIPTIONS_ENABLED=true and MERCADO_PAGO_ENVIRONMENT=${subscriptionsEnvironment}.`,
           })
         }
+      }
+      const callbackKey = `${prefix}_SUBSCRIPTIONS_CALLBACK_URL`
+      const callbackUrl = process.env[callbackKey]
+      if (callbackUrl && !isValidHttpsUrl(callbackUrl)) {
+        errors.push({
+          key: callbackKey,
+          message: `${callbackKey} must be a valid HTTPS URL.`,
+        })
       }
     }
   }

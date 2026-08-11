@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server'
 import { hasValidBearerSecret } from '@/lib/auth/bearer-secret'
 import {
   isDependencyReady,
-  isMercadoPagoRequired,
-  probeMercadoPago,
+  isMercadoPagoOAuthRequired,
+  isMercadoPagoSubscriptionsRequired,
+  probeMercadoPagoOAuth,
+  probeMercadoPagoSubscriptions,
   probeRedis,
   probeResend,
   type ConfiguredDependencyStatus,
@@ -17,7 +19,8 @@ type DependencyHealthResponse = {
   checks: {
     redis: ConfiguredDependencyStatus
     resend: ConfiguredDependencyStatus
-    mercadoPago: DependencyStatus
+    mercadoPagoSubscriptions: DependencyStatus
+    mercadoPagoOAuth: DependencyStatus
   }
   timestamp: string
 }
@@ -27,22 +30,28 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const [redis, resend, mercadoPago] = await Promise.all([
+  const [redis, resend, mercadoPagoSubscriptions, mercadoPagoOAuth] = await Promise.all([
     probeRedis(),
     probeResend(),
-    probeMercadoPago(),
+    probeMercadoPagoSubscriptions(),
+    probeMercadoPagoOAuth(),
   ])
   const checks: DependencyHealthResponse['checks'] = {
     redis,
     resend,
-    mercadoPago,
+    mercadoPagoSubscriptions,
+    mercadoPagoOAuth,
   }
   const production = process.env.NODE_ENV === 'production'
   const healthy = isDependencyReady(checks.redis, production)
     && isDependencyReady(checks.resend, production)
     && isDependencyReady(
-      checks.mercadoPago,
-      isMercadoPagoRequired(),
+      checks.mercadoPagoSubscriptions,
+      isMercadoPagoSubscriptionsRequired(),
+    )
+    && isDependencyReady(
+      checks.mercadoPagoOAuth,
+      isMercadoPagoOAuthRequired(),
     )
   const status: DependencyHealthResponse['status'] = healthy ? 'ok' : 'degraded'
 

@@ -11,11 +11,16 @@ sin tokens expuestos y con webhook idempotente.
 2. Credenciales configuradas en `.env.local`:
    - `MERCADO_PAGO_CLIENT_ID`
    - `MERCADO_PAGO_CLIENT_SECRET`
-   - `MERCADO_PAGO_REDIRECT_URI` (ej. `http://localhost:3000/api/mercado-pago/callback`)
+   - `MERCADO_PAGO_REDIRECT_URI` (HTTPS público en entornos compartidos)
 3. Dos cuentas sandbox de prueba (vendedores):
    - Seller A (`TEST-USER-A-...`)
    - Seller B (`TEST-USER-B-...`)
 4. Una cuenta comprador sandbox para simular pagos
+
+Registrar la callback exacta
+`https://<APP_DOMAIN>/api/mercado-pago/callback`. La health protegida valida
+la configuración OAuth, pero nunca prueba tokens de negocios arbitrarios.
+`up` significa configurado, no conectado ni cobro E2E validado.
 
 ## Preparación
 
@@ -64,7 +69,9 @@ INSERT INTO "AvailabilityRule" (...) VALUES (...);
 ### 6. Token expirado
 - Expirar manualmente el token (o esperar expiración natural)
 - Procesar pago
-- **Esperado:** Webhook falla o usa fallback con warning
+- **Esperado:** la cuenta queda `expired`, se encola
+  `subscription_oauth_expired` y no existe fallback a credenciales globales o
+  de otro ambiente
 
 ### 7. Webhook cross-tenant
 - Enviar webhook de A intentando modificar booking de B
@@ -148,3 +155,7 @@ Ver `tests/e2e/` para ejemplos de estructura.
 - IDs de reservas/pagos sandbox
 - Resultado PASS/FAIL por caso
 - Bugs encontrados con pasos para reproducir
+
+Nunca compartir IDs, tokens, URLs de checkout ni payloads como evidencia.
+Usar sólo PASS/FAIL, conteos, estados y timestamps redondeados. Al terminar,
+desconectar y revocar los sellers sandbox y eliminar únicamente datos de prueba.

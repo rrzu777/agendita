@@ -1,5 +1,9 @@
 # Mercado Pago QA — Sandbox Testing
 
+> Este documento cubre el flujo **clienta → dueña**. La mensualidad automática
+> de Agendita se prueba por separado en
+> [`mercado-pago-subscriptions-qa.md`](./mercado-pago-subscriptions-qa.md).
+
 ## Status: ⏳ PENDING — Sandbox not yet executed
 
 This document defines the end-to-end test cases required to validate the Mercado Pago integration before going to production. **Prompt 06 is NOT complete until these tests are executed with real sandbox credentials.**
@@ -27,6 +31,18 @@ MERCADO_PAGO_WEBHOOK_SECRET=...            # from MP webhook config
 NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY=APP_USR-...  # from MP developer dashboard
 ALLOW_MOCK_PAYMENTS_IN_PRODUCTION=false
 ```
+
+La configuración correcta habilita el flujo, pero **no prueba un cobro E2E**.
+El health protegido tampoco crea preferencias, autorizaciones ni pagos.
+
+## Webhook y rollback
+
+1. Registrar `https://<APP_DOMAIN>/api/webhooks/mercado-pago` para eventos de pago.
+2. Guardar el secret como `MERCADO_PAGO_WEBHOOK_SECRET`; no reutilizar el access token.
+3. Para rotar: agregar el secret nuevo, cambiar la variable, desplegar y probar
+   firma inválida/válida antes de retirar el anterior.
+4. Rollback: desconectar Mercado Pago por negocio o pasar temporalmente a pago
+   manual. Esto no revierte pagos ya aprobados.
 
 ---
 

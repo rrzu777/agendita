@@ -37,6 +37,17 @@ function hasPath(value) {
   return clean.includes('/')
 }
 
+function isValidCallbackUrl(value, { allowLocalHttp = false } = {}) {
+  try {
+    const url = new URL(value)
+    if (url.protocol === 'https:') return true
+    return allowLocalHttp && url.protocol === 'http:' &&
+      (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
+  } catch {
+    return false
+  }
+}
+
 function validate() {
   const errors = []
   const isProduction = (process.env.NODE_ENV || 'development') === 'production'
@@ -60,9 +71,24 @@ function validate() {
   // ── PAYMENT_PROVIDER — warning, no bloquea build (beta) ──────────────────
   const provider = getEnv('PAYMENT_PROVIDER')
   const hasMpOAuth =
-    !!getEnv('MERCADO_PAGO_CLIENT_ID') &&
-    !!getEnv('MERCADO_PAGO_CLIENT_SECRET') &&
-    !!getEnv('MERCADO_PAGO_REDIRECT_URI')
+    !!getServerEnv('MERCADO_PAGO_CLIENT_ID') &&
+    !!getServerEnv('MERCADO_PAGO_CLIENT_SECRET') &&
+    !!getServerEnv('MERCADO_PAGO_REDIRECT_URI')
+  const oauthKeys = [
+    'MERCADO_PAGO_CLIENT_ID',
+    'MERCADO_PAGO_CLIENT_SECRET',
+    'MERCADO_PAGO_REDIRECT_URI',
+  ]
+  const oauthPresent = oauthKeys.filter((key) => !!getServerEnv(key))
+  if (oauthPresent.length > 0 && oauthPresent.length < oauthKeys.length) {
+    for (const key of oauthKeys.filter((key) => !getServerEnv(key))) {
+      errors.push(`MISSING: ${key} (Mercado Pago OAuth is partially configured)`)
+    }
+  }
+  const oauthRedirect = getServerEnv('MERCADO_PAGO_REDIRECT_URI')
+  if (oauthRedirect && !isValidCallbackUrl(oauthRedirect, { allowLocalHttp: !isProduction })) {
+    errors.push('MERCADO_PAGO_REDIRECT_URI must be HTTPS (HTTP localhost is allowed only outside production).')
+  }
 
   if (!provider && !hasMpOAuth) {
     console.warn(
@@ -171,6 +197,11 @@ function validate() {
       ]) {
         const key = `${prefix}_${suffix}`
         if (!getServerEnv(key)) errors.push(`MISSING: ${key}`)
+      }
+      const callbackKey = `${prefix}_SUBSCRIPTIONS_CALLBACK_URL`
+      const callbackUrl = getServerEnv(callbackKey)
+      if (callbackUrl && !isValidCallbackUrl(callbackUrl)) {
+        errors.push(`${callbackKey} must be a valid HTTPS URL.`)
       }
     }
   }
