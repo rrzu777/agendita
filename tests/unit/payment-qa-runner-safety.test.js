@@ -63,6 +63,11 @@ describe('payment QA runner safety boundary', () => {
       MERCADO_PAGO_ACCESS_TOKEN: 'sentinel', MERCADO_PAGO_CLIENT_SECRET: 'sentinel',
       RESEND_API_KEY: 'sentinel', FROM_EMAIL: 'sentinel@example.com', PAYMENT_PROVIDER: 'mercado_pago',
       MP_SUBSCRIPTIONS_ENABLED: 'true',
+      NODE_OPTIONS: '--no-warnings', NODE_PATH: '/tmp/evil', BUN_OPTIONS: '--preload=/tmp/evil.js',
+      VITEST_POOL_ID: 'sentinel', NPM_CONFIG_REGISTRY: 'https://example.invalid',
+      ENCRYPTION_KEY: 'sentinel', CRON_SECRET: 'sentinel', SUPABASE_SERVICE_ROLE_KEY: 'sentinel',
+      UPSTASH_REDIS_REST_TOKEN: 'sentinel', R2_SECRET_ACCESS_KEY: 'sentinel', AWS_SECRET_ACCESS_KEY: 'sentinel',
+      VERCEL_OIDC_TOKEN: 'sentinel', UNRELATED_SECRET: 'sentinel',
     })
     const result = run([], fake.env)
     expect(result.status).toBe(0)
@@ -74,6 +79,11 @@ describe('payment QA runner safety boundary', () => {
     expect(child.env.FROM_EMAIL).toBeUndefined()
     expect(child.env.PAYMENT_PROVIDER).toBeUndefined()
     expect(child.env.MP_SUBSCRIPTIONS_ENABLED).toBeUndefined()
+    for (const key of [
+      'NODE_OPTIONS', 'NODE_PATH', 'BUN_OPTIONS', 'VITEST_POOL_ID', 'NPM_CONFIG_REGISTRY',
+      'ENCRYPTION_KEY', 'CRON_SECRET', 'SUPABASE_SERVICE_ROLE_KEY', 'UPSTASH_REDIS_REST_TOKEN',
+      'R2_SECRET_ACCESS_KEY', 'AWS_SECRET_ACCESS_KEY', 'VERCEL_OIDC_TOKEN', 'UNRELATED_SECRET',
+    ]) expect(child.env[key]).toBeUndefined()
     expect(child.args).toContain('--config=vitest.payment-qa.config.ts')
   })
 })

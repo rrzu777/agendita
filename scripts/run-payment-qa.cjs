@@ -11,10 +11,17 @@ function fail(message) {
 }
 
 function childEnvironment(databaseUrl) {
-  const env = { ...process.env, NODE_ENV: 'test', PAYMENT_QA_OFFLINE: '1' }
-  for (const key of Object.keys(env)) {
-    if (/MERCADO_PAGO|(^|_)MP_|RESEND|EMAIL|PAYMENT_PROVIDER|ALLOW_MOCK_PAYMENTS/i.test(key)) delete env[key]
+  const env = {}
+  const executionKeys = [
+    'PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'CI', 'TERM',
+    'SYSTEMROOT', 'COMSPEC', 'PATHEXT', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
+  ]
+  for (const key of executionKeys) {
+    if (process.env[key]) env[key] = process.env[key]
   }
+  env.NODE_ENV = 'test'
+  env.APP_ENV = 'test'
+  env.TZ = 'UTC'
   env.PAYMENT_QA_OFFLINE = '1'
   if (databaseUrl) {
     env.TEST_DATABASE_URL = databaseUrl

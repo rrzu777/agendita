@@ -123,7 +123,8 @@ El resultado expone únicamente conteos `reissue`, `manual_review` y `no_action`
 demuestran que el POST nunca ocurrió: todo pago legacy pendiente se clasifica de
 forma conservadora como `manual_review`. Tras revisar los conteos, `--apply` sólo
 persiste incidentes idempotentes; no cancela pagos, no crea intentos, no lee
-`MERCADO_PAGO_ACCESS_TOKEN`, no prueba tokens y no usa red.
+ninguna credencial `MERCADO_PAGO_<AMBIENTE>_ACCESS_TOKEN` de mensualidades, no
+prueba tokens y no usa red.
 
 ## Desconexión
 
@@ -139,15 +140,18 @@ persiste incidentes idempotentes; no cancela pagos, no crea intentos, no lee
 | MERCADO_PAGO_CLIENT_ID | OAuth client_id | Solo para OAuth connect |
 | MERCADO_PAGO_CLIENT_SECRET | OAuth client_secret | Solo para OAuth connect |
 | MERCADO_PAGO_REDIRECT_URI | OAuth callback URL | Solo para OAuth connect |
-| MERCADO_PAGO_ACCESS_TOKEN | Credencial vendedora de Agendita para mensualidades; nunca se usa en pagos clienta→dueña | Sólo facturación SaaS |
-| MERCADO_PAGO_WEBHOOK_SECRET | Firma webhook HMAC | Sí en producción |
+| MERCADO_PAGO_SANDBOX_ACCESS_TOKEN / MERCADO_PAGO_PRODUCTION_ACCESS_TOKEN | Credencial vendedora de Agendita para mensualidades, seleccionada estrictamente por `MERCADO_PAGO_ENVIRONMENT` | Sólo facturación SaaS del ambiente correspondiente |
+| MERCADO_PAGO_SANDBOX_WEBHOOK_SECRET / MERCADO_PAGO_PRODUCTION_WEBHOOK_SECRET | Firma del webhook de mensualidades, estrictamente por ambiente | Sólo facturación SaaS del ambiente correspondiente |
+| MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL / MERCADO_PAGO_PRODUCTION_SUBSCRIPTIONS_CALLBACK_URL | Callback hosted de mensualidades, estrictamente por ambiente | Sólo facturación SaaS del ambiente correspondiente |
+| MERCADO_PAGO_WEBHOOK_SECRET | Firma del webhook Checkout Pro clienta→dueña; no es credencial de consulta ni fallback de mensualidades | Sí para ese webhook |
 | ENCRYPTION_KEY | Clave para cifrar/descifrar tokens de negocios + firmar OAuth state | **Sí — obligatorio para Mercado Pago** |
 | APP_URL | URL base de la app (usada para notification_url del webhook) | Sí |
 
 ### Separación de la credencial de Agendita
 
-`MERCADO_PAGO_ACCESS_TOKEN` pertenece al circuito de mensualidades dueña→Agendita.
-El webhook de servicios clienta→dueña no la lee. Crear, consultar y aplicar un pago
+Las credenciales `MERCADO_PAGO_<AMBIENTE>_*` pertenecen al circuito de
+mensualidades dueña→Agendita y nunca hacen fallback entre sandbox y producción.
+El webhook de servicios clienta→dueña no las lee. Crear, consultar y aplicar un pago
 de servicio requiere siempre el token OAuth cifrado del `PaymentAccount` resuelto
 por business y environment; una cuenta ausente/expirada falla cerrada.
 
