@@ -3,7 +3,11 @@ import { getCurrentUser } from '@/lib/auth/user'
 import { getAppUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
 import { verifyPushGrant } from '@/lib/push/grant'
-import { isAllowedWebPushEndpoint } from '@/lib/push/subscription'
+import {
+  isAllowedWebPushEndpoint,
+  type PushSubscriptionAuthorization,
+  type PushUnsubscribeScope,
+} from '@/lib/push/subscription'
 
 const MAX_BODY_BYTES = 16 * 1024
 const MAX_GRANT_LENGTH = 4096
@@ -12,11 +16,8 @@ export const MAX_ENDPOINT_LENGTH = 4096
 export type PushTarget = {
   businessId: string
   customerId: string
+  authorization: PushSubscriptionAuthorization
 }
-
-export type PushUnsubscribeScope =
-  | { kind: 'guest'; target: PushTarget }
-  | { kind: 'user'; userId: string }
 
 export function hasCompletePushConfig(): boolean {
   return Boolean(
@@ -73,7 +74,11 @@ async function guestTarget(grant: string): Promise<PushTarget[] | null> {
     select: { id: true },
   })
   if (!booking) return null
-  return [{ businessId: claims.businessId, customerId: claims.customerId }]
+  return [{
+    businessId: claims.businessId,
+    customerId: claims.customerId,
+    authorization: { kind: 'guest', bookingId: claims.bookingId },
+  }]
 }
 
 export async function resolvePushTargets(grant: unknown): Promise<PushTarget[] | null> {
@@ -107,6 +112,7 @@ export async function resolvePushTargets(grant: unknown): Promise<PushTarget[] |
   return customers.map((customer) => ({
     businessId: customer.businessId,
     customerId: customer.id,
+    authorization: { kind: 'user' as const, userId: user.id },
   }))
 }
 
@@ -114,11 +120,51 @@ export async function resolvePushUnsubscribeScope(grant: unknown): Promise<PushU
   if (grant !== undefined && grant !== null) {
     if (typeof grant !== 'string') return null
     const targets = await guestTarget(grant)
-    return targets ? { kind: 'guest', target: targets[0] } : null
+    if (!targets) return null
+    const [target] = targets
+    if (target.authorization.kind !== 'guest') return null
+    return {
+      kind: 'guest',
+      target: {
+        businessId: target.businessId,
+        customerId: target.customerId,
+        bookingId: target.authorization.bookingId,
+      },
+    }
   }
 
   const user = await getCurrentUser()
   return user ? { kind: 'user', userId: user.id } : null
+}
+
+export function pushTargetRateLimitContext(target: PushTarget): {
+  businessId: string
+  userId?: string
+  targetId: string
+} {
+  return target.authorization.kind === 'user'
+    ? {
+        businessId: target.businessId,
+        userId: target.authorization.userId,
+        targetId: target.customerId,
+      }
+    : {
+        businessId: target.businessId,
+        targetId: target.authorization.bookingId,
+      }
+}
+
+export function pushUnsubscribeRateLimitContext(scope: PushUnsubscribeScope): {
+  businessId?: string
+  userId?: string
+  targetId: string
+} {
+  return scope.kind === 'user'
+    ? { userId: scope.userId, targetId: scope.userId }
+    : {
+        businessId: scope.target.businessId,
+        targetId: scope.target.bookingId,
+      }
 }
 
 export function validPushEndpoint(value: unknown): value is string {

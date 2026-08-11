@@ -18,6 +18,7 @@ model User {
 
   businesses BusinessUser[]
   customers  Customer[]
+  authorizedPushSubscriptions PushSubscription[] @relation("PushSubscriptionAuthorizedUser")
 }
 
 enum SubscriptionStatus {
@@ -549,6 +550,7 @@ model Booking {
   reminderSentAt                 DateTime?
   transferReminderCustomerSentAt DateTime? // CAS del recordatorio a la clienta (pre-declaración)
   transferReminderBusinessSentAt DateTime? // CAS del recordatorio a la dueña (declarada sin verificar)
+  pushSubscriptionEntitlements   PushSubscriptionBooking[]
 
   @@unique([businessId, idempotencyKey])
   @@unique([businessId, bookingNumber])
@@ -572,23 +574,39 @@ model Booking {
 }
 
 model PushSubscription {
-  id                    String    @id @default(cuid())
-  businessId            String
-  customerId            String
-  endpointHash          String
-  subscriptionEncrypted String
-  failureCount          Int       @default(0)
-  lastFailureAt         DateTime?
-  lastSuccessAt         DateTime?
-  revokedAt             DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  business              Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer              Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  id                      String                    @id @default(cuid())
+  businessId              String
+  customerId              String
+  authorizedUserId        String?
+  endpointHash            String
+  subscriptionFingerprint String
+  subscriptionEncrypted   String
+  failureCount            Int                       @default(0)
+  lastFailureAt           DateTime?
+  lastSuccessAt           DateTime?
+  revokedAt               DateTime?
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  business                Business                  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer                Customer                  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  authorizedUser          User?                     @relation("PushSubscriptionAuthorizedUser", fields: [authorizedUserId], references: [id], onDelete: SetNull)
+  bookingEntitlements     PushSubscriptionBooking[]
 
-  @@unique([customerId, endpointHash])
+  @@unique([customerId, subscriptionFingerprint])
   @@index([businessId, revokedAt])
   @@index([endpointHash, revokedAt])
+  @@index([authorizedUserId, revokedAt])
+}
+
+model PushSubscriptionBooking {
+  subscriptionId String
+  bookingId      String
+  createdAt      DateTime         @default(now())
+  subscription   PushSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  booking        Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@id([subscriptionId, bookingId])
+  @@index([bookingId, subscriptionId])
 }
 
 enum BookingStatus {

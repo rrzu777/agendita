@@ -20,6 +20,7 @@ export interface RateLimitContext {
   ip?: string
   userId?: string
   businessId?: string
+  targetId?: string
 }
 
 export interface RateLimiter {
@@ -144,6 +145,7 @@ function buildKey(action: string, ip: string, context?: RateLimitContext): strin
   const parts = [action, ip]
   if (context?.userId) parts.push(`u:${context.userId}`)
   if (context?.businessId) parts.push(`b:${context.businessId}`)
+  if (context?.targetId) parts.push(`t:${context.targetId}`)
   return parts.join(':')
 }
 

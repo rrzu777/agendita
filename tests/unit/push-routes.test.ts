@@ -11,8 +11,8 @@ const mocks = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   bookingFindFirst: vi.fn(),
   customerFindMany: vi.fn(),
-  updateMany: vi.fn(),
   storePushSubscription: vi.fn(),
+  unsubscribePushSubscription: vi.fn(),
 }))
 
 vi.mock('@/lib/auth/user', () => ({ getCurrentUser: mocks.getCurrentUser }))
@@ -21,12 +21,12 @@ vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }))
 vi.mock('@/lib/push/subscription', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/push/subscription')>()),
   storePushSubscription: mocks.storePushSubscription,
+  unsubscribePushSubscription: mocks.unsubscribePushSubscription,
 }))
 vi.mock('@/lib/db', () => ({
   prisma: {
     booking: { findFirst: mocks.bookingFindFirst },
     customer: { findMany: mocks.customerFindMany },
-    pushSubscription: { updateMany: mocks.updateMany },
   },
 }))
 
@@ -57,7 +57,7 @@ describe('push subscription routes', () => {
     mocks.checkRateLimit.mockResolvedValue({ success: true, remaining: 9, resetAt: 0 })
     mocks.getCurrentUser.mockResolvedValue(null)
     mocks.storePushSubscription.mockResolvedValue({ id: 'push-1' })
-    mocks.updateMany.mockResolvedValue({ count: 1 })
+    mocks.unsubscribePushSubscription.mockResolvedValue(1)
   })
 
   afterEach(() => {
@@ -151,6 +151,7 @@ describe('push subscription routes', () => {
       businessId: 'business-1',
       customerId: 'customer-1',
       subscription,
+      authorization: { kind: 'guest', bookingId: 'booking-1' },
     })
     expect(mocks.getCurrentUser).not.toHaveBeenCalled()
   })
@@ -199,6 +200,18 @@ describe('push subscription routes', () => {
       select: { id: true, businessId: true },
     })
     expect(mocks.storePushSubscription).toHaveBeenCalledTimes(2)
+    expect(mocks.storePushSubscription).toHaveBeenNthCalledWith(1, {
+      businessId: 'business-1',
+      customerId: 'customer-1',
+      subscription,
+      authorization: { kind: 'user', userId: 'user-1' },
+    })
+    expect(mocks.storePushSubscription).toHaveBeenNthCalledWith(2, {
+      businessId: 'business-2',
+      customerId: 'customer-2',
+      subscription,
+      authorization: { kind: 'user', userId: 'user-1' },
+    })
   })
 
   it('returns only a count when an authenticated user has no eligible targets', async () => {
@@ -212,22 +225,37 @@ describe('push subscription routes', () => {
     expect(mocks.storePushSubscription).not.toHaveBeenCalled()
   })
 
+  it('subscribes eligible auth targets even when another target reached its device cap', async () => {
+    const { PushDeviceLimitError } = await import('@/lib/push/subscription')
+    mocks.getCurrentUser.mockResolvedValue({ id: 'user-1' })
+    mocks.customerFindMany.mockResolvedValue([
+      { id: 'customer-1', businessId: 'business-1' },
+      { id: 'customer-2', businessId: 'business-2' },
+    ])
+    mocks.storePushSubscription
+      .mockRejectedValueOnce(new PushDeviceLimitError())
+      .mockResolvedValueOnce({ id: 'push-2' })
+    const { POST } = await import('@/app/api/push/subscribe/route')
+
+    const response = await POST(pushRequest('/api/push/subscribe', { subscription }))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ subscribed: 1 })
+  })
+
   it('revokes every matching endpoint row owned by the authenticated user', async () => {
     mocks.getCurrentUser.mockResolvedValue({ id: 'user-1' })
-    mocks.updateMany.mockResolvedValue({ count: 2 })
+    mocks.unsubscribePushSubscription.mockResolvedValue(2)
     const { POST } = await import('@/app/api/push/unsubscribe/route')
 
     const response = await POST(pushRequest('/api/push/unsubscribe', { endpoint: subscription.endpoint }))
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ unsubscribed: 2 })
-    expect(mocks.updateMany).toHaveBeenCalledWith({
-      where: {
-        endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
-        revokedAt: null,
-        customer: { userId: 'user-1' },
-      },
-      data: { revokedAt: new Date('2026-08-10T12:00:00.000Z') },
+    expect(mocks.unsubscribePushSubscription).toHaveBeenCalledWith({
+      endpoint: subscription.endpoint,
+      scope: { kind: 'user', userId: 'user-1' },
+      now: new Date('2026-08-10T12:00:00.000Z'),
     })
   })
 
@@ -240,10 +268,8 @@ describe('push subscription routes', () => {
     }))
 
     expect(response.status).toBe(200)
-    expect(mocks.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({
-        endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
-      }),
+    expect(mocks.unsubscribePushSubscription).toHaveBeenCalledWith(expect.objectContaining({
+      endpoint: 'https://FCM.GOOGLEAPIS.COM:443/fcm/send/subscription-1',
     }))
   })
 
@@ -264,14 +290,17 @@ describe('push subscription routes', () => {
     }))
 
     await expect(response.json()).resolves.toEqual({ unsubscribed: 1 })
-    expect(mocks.updateMany).toHaveBeenCalledWith({
-      where: {
-        endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
-        customerId: 'customer-1',
-        businessId: 'business-1',
-        revokedAt: null,
+    expect(mocks.unsubscribePushSubscription).toHaveBeenCalledWith({
+      endpoint: subscription.endpoint,
+      scope: {
+        kind: 'guest',
+        target: {
+          businessId: 'business-1',
+          customerId: 'customer-1',
+          bookingId: 'booking-1',
+        },
       },
-      data: { revokedAt: new Date('2026-08-10T12:00:00.000Z') },
+      now: new Date('2026-08-10T12:00:00.000Z'),
     })
   })
 
@@ -286,6 +315,28 @@ describe('push subscription routes', () => {
 
     expect(response.status).toBe(401)
     await expect(response.json()).resolves.toEqual({ error: 'Solicitud no autorizada' })
-    expect(mocks.updateMany).not.toHaveBeenCalled()
+    expect(mocks.unsubscribePushSubscription).not.toHaveBeenCalled()
+  })
+
+  it('applies a second rate limit keyed to the exact guest target', async () => {
+    mocks.verifyPushGrant.mockReturnValue({
+      version: 1,
+      bookingId: 'booking-1',
+      customerId: 'customer-1',
+      businessId: 'business-1',
+      expiresAt: Date.now() + 60_000,
+    })
+    mocks.bookingFindFirst.mockResolvedValue({ id: 'booking-1' })
+    const { POST } = await import('@/app/api/push/subscribe/route')
+
+    await POST(pushRequest('/api/push/subscribe', { subscription, grant: 'signed-grant' }))
+
+    expect(mocks.checkRateLimit).toHaveBeenNthCalledWith(
+      2,
+      'push-subscribe-target',
+      10,
+      60_000,
+      { businessId: 'business-1', targetId: 'booking-1' },
+    )
   })
 })

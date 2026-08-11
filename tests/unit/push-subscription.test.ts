@@ -7,17 +7,29 @@ import {
 
 const mocks = vi.hoisted(() => ({
   encryptSecret: vi.fn(() => 'ciphertext-only'),
+  transaction: vi.fn(),
+  advisoryLock: vi.fn(),
+  bookingFindFirst: vi.fn(),
+  customerFindFirst: vi.fn(),
+  subscriptionFindUnique: vi.fn(),
+  subscriptionFindMany: vi.fn(),
+  subscriptionCount: vi.fn(),
   upsert: vi.fn(),
+  entitlementUpsert: vi.fn(),
+  entitlementDeleteMany: vi.fn(),
+  updateMany: vi.fn(),
   setVapidDetails: vi.fn(),
   sendNotification: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({
   prisma: {
-    pushSubscription: {
-      upsert: mocks.upsert,
-    },
+    $transaction: mocks.transaction,
   },
+}))
+
+vi.mock('@/lib/db/advisory-lock', () => ({
+  acquireAdvisoryXactLock: mocks.advisoryLock,
 }))
 
 vi.mock('@/lib/payments/encryption', () => ({
@@ -44,6 +56,29 @@ describe('push subscription storage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.upsert.mockResolvedValue({ id: 'push-1', subscriptionEncrypted: 'must-not-return' })
+    mocks.bookingFindFirst.mockResolvedValue({ id: 'booking-1' })
+    mocks.customerFindFirst.mockResolvedValue({ id: 'customer-1' })
+    mocks.subscriptionFindUnique.mockResolvedValue(null)
+    mocks.subscriptionFindMany.mockResolvedValue([{ id: 'push-1', customerId: 'customer-1' }])
+    mocks.subscriptionCount.mockResolvedValue(0)
+    mocks.entitlementUpsert.mockResolvedValue({ subscriptionId: 'push-1', bookingId: 'booking-1' })
+    mocks.entitlementDeleteMany.mockResolvedValue({ count: 1 })
+    mocks.updateMany.mockResolvedValue({ count: 1 })
+    mocks.transaction.mockImplementation(async (callback) => callback({
+      booking: { findFirst: mocks.bookingFindFirst },
+      customer: { findFirst: mocks.customerFindFirst },
+      pushSubscription: {
+        findUnique: mocks.subscriptionFindUnique,
+        findMany: mocks.subscriptionFindMany,
+        count: mocks.subscriptionCount,
+        upsert: mocks.upsert,
+        updateMany: mocks.updateMany,
+      },
+      pushSubscriptionBooking: {
+        upsert: mocks.entitlementUpsert,
+        deleteMany: mocks.entitlementDeleteMany,
+      },
+    }))
   })
 
   it('normalizes browser JSON to the bounded fields the server stores', async () => {
@@ -99,6 +134,23 @@ describe('push subscription storage', () => {
     )
   })
 
+  it('fingerprints the normalized endpoint and keys so key rotation creates a new generation', async () => {
+    const { fingerprintPushSubscription, normalizePushSubscription } = await import('@/lib/push/subscription')
+    const normalized = normalizePushSubscription(validSubscription)
+    const rotated = normalizePushSubscription({
+      ...validSubscription,
+      keys: {
+        p256dh: TEST_VAPID_PUBLIC_KEY,
+        auth: Buffer.alloc(16, 8).toString('base64url'),
+      },
+    })
+
+    expect(fingerprintPushSubscription(normalized)).toBe(
+      'f9e6976bfd25d5d977c3537b5b57bf09a99dbb8ab8b1ec651cbb61cbcbbfd2d5',
+    )
+    expect(fingerprintPushSubscription(rotated)).not.toBe(fingerprintPushSubscription(normalized))
+  })
+
   it('canonicalizes equivalent endpoint spellings before hashing and storage', async () => {
     const { hashPushEndpoint, normalizePushSubscription } = await import('@/lib/push/subscription')
     const variant = 'https://FCM.GOOGLEAPIS.COM:443/fcm/send/subscription-1'
@@ -113,13 +165,14 @@ describe('push subscription storage', () => {
     expect(hashPushEndpoint(queryVariant)).toBe(hashPushEndpoint(canonicalQuery))
   })
 
-  it('encrypts only normalized JSON and resets revocation state on safe upsert', async () => {
+  it('stores a guest capability with only the exact booking entitlement', async () => {
     const { storePushSubscription } = await import('@/lib/push/subscription')
 
     const result = await storePushSubscription({
       businessId: 'business-1',
       customerId: 'customer-1',
       subscription: validSubscription,
+      authorization: { kind: 'guest', bookingId: 'booking-1' },
     })
 
     expect(mocks.encryptSecret).toHaveBeenCalledWith(JSON.stringify({
@@ -128,15 +181,17 @@ describe('push subscription storage', () => {
     }))
     expect(mocks.upsert).toHaveBeenCalledWith({
       where: {
-        customerId_endpointHash: {
+        customerId_subscriptionFingerprint: {
           customerId: 'customer-1',
-          endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
+          subscriptionFingerprint: 'f9e6976bfd25d5d977c3537b5b57bf09a99dbb8ab8b1ec651cbb61cbcbbfd2d5',
         },
       },
       create: {
         businessId: 'business-1',
         customerId: 'customer-1',
+        authorizedUserId: null,
         endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
+        subscriptionFingerprint: 'f9e6976bfd25d5d977c3537b5b57bf09a99dbb8ab8b1ec651cbb61cbcbbfd2d5',
         subscriptionEncrypted: 'ciphertext-only',
       },
       update: {
@@ -148,8 +203,113 @@ describe('push subscription storage', () => {
       },
       select: { id: true },
     })
+    expect(mocks.bookingFindFirst).toHaveBeenCalledWith({
+      where: { id: 'booking-1', customerId: 'customer-1', businessId: 'business-1' },
+      select: { id: true },
+    })
+    expect(mocks.entitlementUpsert).toHaveBeenCalledWith({
+      where: {
+        subscriptionId_bookingId: { subscriptionId: 'push-1', bookingId: 'booking-1' },
+      },
+      create: { subscriptionId: 'push-1', bookingId: 'booking-1' },
+      update: {},
+    })
+    expect(mocks.customerFindFirst).not.toHaveBeenCalled()
     expect(result).toEqual({ id: 'push-1' })
     expect(JSON.stringify(result)).not.toContain('must-not-return')
+  })
+
+  it('persists authenticated authorization explicitly and creates no guest entitlement', async () => {
+    const { storePushSubscription } = await import('@/lib/push/subscription')
+
+    await storePushSubscription({
+      businessId: 'business-1',
+      customerId: 'customer-1',
+      subscription: validSubscription,
+      authorization: { kind: 'user', userId: 'user-1' },
+    })
+
+    expect(mocks.customerFindFirst).toHaveBeenCalledWith({
+      where: { id: 'customer-1', businessId: 'business-1', userId: 'user-1' },
+      select: { id: true },
+    })
+    expect(mocks.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ authorizedUserId: 'user-1' }),
+      update: expect.objectContaining({ authorizedUserId: 'user-1' }),
+    }))
+    expect(mocks.entitlementUpsert).not.toHaveBeenCalled()
+  })
+
+  it('hard-rejects a sixth active guest device for one booking', async () => {
+    const { PushDeviceLimitError, storePushSubscription } = await import('@/lib/push/subscription')
+    mocks.subscriptionCount.mockResolvedValue(5)
+
+    await expect(storePushSubscription({
+      businessId: 'business-1',
+      customerId: 'customer-1',
+      subscription: validSubscription,
+      authorization: { kind: 'guest', bookingId: 'booking-1' },
+    })).rejects.toBeInstanceOf(PushDeviceLimitError)
+
+    expect(mocks.upsert).not.toHaveBeenCalled()
+    expect(mocks.entitlementUpsert).not.toHaveBeenCalled()
+  })
+
+  it('guest unsubscribe deletes only the exact booking entitlement and revokes only orphan rows', async () => {
+    const { unsubscribePushSubscription } = await import('@/lib/push/subscription')
+
+    await expect(unsubscribePushSubscription({
+      endpoint: validSubscription.endpoint,
+      scope: {
+        kind: 'guest',
+        target: { businessId: 'business-1', customerId: 'customer-1', bookingId: 'booking-1' },
+      },
+      now: new Date('2026-08-10T12:00:00.000Z'),
+    })).resolves.toBe(1)
+
+    expect(mocks.entitlementDeleteMany).toHaveBeenCalledWith({
+      where: {
+        bookingId: 'booking-1',
+        subscriptionId: { in: ['push-1'] },
+      },
+    })
+    expect(mocks.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ['push-1'] },
+        authorizedUserId: null,
+        revokedAt: null,
+        bookingEntitlements: { none: {} },
+      },
+      data: { revokedAt: new Date('2026-08-10T12:00:00.000Z') },
+    })
+  })
+
+  it('authenticated unsubscribe clears only matching explicit authorization and preserves entitled rows', async () => {
+    const { unsubscribePushSubscription } = await import('@/lib/push/subscription')
+
+    await unsubscribePushSubscription({
+      endpoint: validSubscription.endpoint,
+      scope: { kind: 'user', userId: 'user-1' },
+      now: new Date('2026-08-10T12:00:00.000Z'),
+    })
+
+    expect(mocks.updateMany).toHaveBeenNthCalledWith(1, {
+      where: {
+        id: { in: ['push-1'] },
+        authorizedUserId: 'user-1',
+        revokedAt: null,
+      },
+      data: { authorizedUserId: null },
+    })
+    expect(mocks.updateMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        id: { in: ['push-1'] },
+        authorizedUserId: null,
+        revokedAt: null,
+        bookingEntitlements: { none: {} },
+      },
+      data: { revokedAt: new Date('2026-08-10T12:00:00.000Z') },
+    })
   })
 })
 

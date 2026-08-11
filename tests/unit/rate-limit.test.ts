@@ -85,6 +85,22 @@ describe('MemoryRateLimiter', () => {
     expect(differentIp.remaining).toBe(1)
   })
 
+  it('separates exact push targets behind the same IP and business', async () => {
+    await limiter.check('push-subscribe-target', 1, 60_000, {
+      ip: '10.0.0.1', businessId: 'business-1', targetId: 'booking-1',
+    })
+
+    const sameTarget = await limiter.check('push-subscribe-target', 1, 60_000, {
+      ip: '10.0.0.1', businessId: 'business-1', targetId: 'booking-1',
+    })
+    const otherTarget = await limiter.check('push-subscribe-target', 1, 60_000, {
+      ip: '10.0.0.1', businessId: 'business-1', targetId: 'booking-2',
+    })
+
+    expect(sameTarget.success).toBe(false)
+    expect(otherTarget.success).toBe(true)
+  })
+
   it('clears store correctly', () => {
     limiter.clear()
     expect(() => limiter.clear()).not.toThrow()

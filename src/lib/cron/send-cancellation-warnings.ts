@@ -13,6 +13,7 @@ const WARNING_LEAD_HOURS = 2
 const MAX_CUTOFF_HOURS = 720
 const LEASE_MS = 10 * 60 * 1000
 const QUERY_BATCH_SIZE = 100
+const MAX_ACTIVE_SUBSCRIPTIONS = 5
 
 export interface SendCancellationWarningsResult {
   sent: number
@@ -88,7 +89,7 @@ function isCutoffInsideWarningWindow(
 async function revalidateClaimedCandidate(
   bookingId: string,
   now: Date,
-): Promise<number | null> {
+): Promise<{ cutoffHours: number; userId: string | null } | null> {
   const current = await prisma.booking.findFirst({
     where: {
       id: bookingId,
@@ -102,6 +103,7 @@ async function revalidateClaimedCandidate(
     select: {
       cancellationCutoffHours: true,
       startDateTime: true,
+      customer: { select: { userId: true } },
       business: { select: { selfServiceCutoffHours: true } },
     },
   })
@@ -110,7 +112,7 @@ async function revalidateClaimedCandidate(
   const cutoffHours = current.cancellationCutoffHours
     ?? current.business.selfServiceCutoffHours
   return isCutoffInsideWarningWindow(current.startDateTime, cutoffHours, now)
-    ? cutoffHours
+    ? { cutoffHours, userId: current.customer.userId }
     : null
 }
 
@@ -158,22 +160,40 @@ async function loadCandidateBatch(now: Date, cursor?: string) {
 }
 
 async function loadActiveSubscriptions(candidate: Candidate) {
+  const bookingEntitlement = {
+    bookingEntitlements: { some: { bookingId: candidate.id } },
+  }
   return prisma.pushSubscription.findMany({
     where: {
       businessId: candidate.business.id,
       customerId: candidate.customerId,
       revokedAt: null,
+      ...(candidate.customer.userId
+        ? {
+            OR: [
+              bookingEntitlement,
+              { authorizedUserId: candidate.customer.userId },
+            ],
+          }
+        : bookingEntitlement),
     },
     select: {
       id: true,
+      authorizedUserId: true,
+      subscriptionFingerprint: true,
       subscriptionEncrypted: true,
       failureCount: true,
     },
+    orderBy: { updatedAt: 'desc' },
+    take: MAX_ACTIVE_SUBSCRIPTIONS,
   })
 }
 
-function pushDestination(candidate: Candidate): string {
-  if (candidate.customer.userId) {
+function pushDestination(candidate: Candidate, subscription: Subscription): string {
+  if (
+    candidate.customer.userId
+    && subscription.authorizedUserId === candidate.customer.userId
+  ) {
     return getAppUrl(`/mi/${candidate.business.slug}`)
   }
   return getBookingConfirmationUrl(candidate.business, candidate.id)
@@ -201,6 +221,7 @@ async function persistDisposition(disposition: DeliveryDisposition, now: Date): 
   const { subscription } = disposition
   const deliveredGeneration = {
     id: subscription.id,
+    subscriptionFingerprint: subscription.subscriptionFingerprint,
     subscriptionEncrypted: subscription.subscriptionEncrypted,
     revokedAt: null,
   }
@@ -297,8 +318,8 @@ async function processCandidate(
     if (claim.count === 0) return 'skipped'
     claimOpen = true
 
-    const cutoffHours = await revalidateClaimedCandidate(candidate.id, now)
-    if (cutoffHours === null) {
+    const revalidated = await revalidateClaimedCandidate(candidate.id, now)
+    if (revalidated === null) {
       await releaseClaim(candidate.id, now)
       claimOpen = false
       return 'skipped'
@@ -307,25 +328,23 @@ async function processCandidate(
     // This is the last database eligibility/ownership read before the external
     // effect. A status change after this point is the unavoidable provider
     // exactly-once boundary described by the recoverable booking lease.
-    const subscriptions = await loadActiveSubscriptions(candidate)
+    const currentCandidate = {
+      ...candidate,
+      customer: { userId: revalidated.userId },
+    }
+    const subscriptions = await loadActiveSubscriptions(currentCandidate)
     if (subscriptions.length === 0) {
       await releaseClaim(candidate.id, now)
       claimOpen = false
       return 'skipped'
     }
 
-    const body = cancellationWarningText(cutoffHours)
+    const body = cancellationWarningText(revalidated.cutoffHours)
     if (!body) {
       await releaseClaim(candidate.id, now)
       claimOpen = false
       return 'skipped'
     }
-    const payload = {
-      title: candidate.business.name,
-      body,
-      url: pushDestination(candidate),
-    }
-
     const settledDeliveries = await Promise.allSettled(
       subscriptions.map(async (subscription) => {
         // The capability URL and browser keys stay encrypted until this worker
@@ -333,7 +352,11 @@ async function processCandidate(
         const normalized = normalizePushSubscription(
           JSON.parse(decryptSecret(subscription.subscriptionEncrypted)) as unknown,
         )
-        const delivery = await sendWebPush(normalized, payload)
+        const delivery = await sendWebPush(normalized, {
+          title: candidate.business.name,
+          body,
+          url: pushDestination(currentCandidate, subscription),
+        })
         return classifyDelivery(subscription, delivery)
       }),
     )

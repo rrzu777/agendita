@@ -82,6 +82,8 @@ function makeBooking(overrides: Record<string, unknown> = {}) {
 function makeSubscription(overrides: Record<string, unknown> = {}) {
   return {
     id: 'subscription-1',
+    authorizedUserId: 'user-1',
+    subscriptionFingerprint: 'fingerprint-1',
     subscriptionEncrypted: PUSH_JSON,
     failureCount: 0,
     ...overrides,
@@ -184,6 +186,7 @@ describe('sendCancellationWarnings', () => {
     mockBookingFindFirst.mockResolvedValue({
       cancellationCutoffHours: 24,
       startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
+      customer: { userId: 'user-1' },
       business: { selfServiceCutoffHours: 24 },
     })
     mockBookingUpdateMany.mockResolvedValue({ count: 1 })
@@ -279,6 +282,7 @@ describe('sendCancellationWarnings', () => {
       select: {
         cancellationCutoffHours: true,
         startDateTime: true,
+        customer: { select: { userId: true } },
         business: { select: { selfServiceCutoffHours: true } },
       },
     })
@@ -341,6 +345,7 @@ describe('sendCancellationWarnings', () => {
       mockBookingFindFirst.mockResolvedValue({
         cancellationCutoffHours: null,
         startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
+        customer: { userId: 'user-1' },
         business: { selfServiceCutoffHours: currentCutoffHours },
       })
 
@@ -360,6 +365,7 @@ describe('sendCancellationWarnings', () => {
         select: {
           cancellationCutoffHours: true,
           startDateTime: true,
+          customer: { select: { userId: true } },
           business: { select: { selfServiceCutoffHours: true } },
         },
       })
@@ -418,6 +424,7 @@ describe('sendCancellationWarnings', () => {
         return {
           cancellationCutoffHours: 24,
           startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
+          customer: { userId: 'user-1' },
           business: { selfServiceCutoffHours: 24 },
         }
       })
@@ -435,6 +442,7 @@ describe('sendCancellationWarnings', () => {
     mockBookingFindFirst.mockResolvedValue({
       cancellationCutoffHours: 24,
       startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS + 1),
+      customer: { userId: 'user-1' },
       business: { selfServiceCutoffHours: 24 },
     })
 
@@ -514,6 +522,84 @@ describe('sendCancellationWarnings', () => {
     })
   })
 
+  it('una invitada sólo recibe el push si la suscripción tiene entitlement para esta reserva', async () => {
+    mockBookingFindMany.mockResolvedValue([
+      makeBooking({ customer: { userId: null } }),
+    ])
+    mockBookingFindFirst.mockResolvedValue({
+      cancellationCutoffHours: 24,
+      startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
+      customer: { userId: null },
+      business: { selfServiceCutoffHours: 24 },
+    })
+
+    await sendCancellationWarnings(NOW)
+
+    expect(mockSubscriptionFindMany).toHaveBeenCalledWith({
+      where: {
+        businessId: 'business-1',
+        customerId: 'customer-1',
+        revokedAt: null,
+        bookingEntitlements: { some: { bookingId: 'booking-1' } },
+      },
+      select: {
+        id: true,
+        authorizedUserId: true,
+        subscriptionFingerprint: true,
+        subscriptionEncrypted: true,
+        failureCount: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 5,
+    })
+  })
+
+  it('una cuenta usa autorización explícita y nunca compara null con null', async () => {
+    await sendCancellationWarnings(NOW)
+
+    expect(mockSubscriptionFindMany).toHaveBeenCalledWith({
+      where: {
+        businessId: 'business-1',
+        customerId: 'customer-1',
+        revokedAt: null,
+        OR: [
+          { bookingEntitlements: { some: { bookingId: 'booking-1' } } },
+          { authorizedUserId: 'user-1' },
+        ],
+      },
+      select: {
+        id: true,
+        authorizedUserId: true,
+        subscriptionFingerprint: true,
+        subscriptionEncrypted: true,
+        failureCount: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 5,
+    })
+  })
+
+  it('revalida el usuario actual de Customer antes de seleccionar dispositivos', async () => {
+    mockBookingFindFirst.mockResolvedValue({
+      cancellationCutoffHours: 24,
+      startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
+      customer: { userId: 'user-2' },
+      business: { selfServiceCutoffHours: 24 },
+    })
+    mockSubscriptionFindMany.mockResolvedValue([])
+
+    await sendCancellationWarnings(NOW)
+
+    expect(mockSubscriptionFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        OR: [
+          { bookingEntitlements: { some: { bookingId: 'booking-1' } } },
+          { authorizedUserId: 'user-2' },
+        ],
+      }),
+    }))
+  })
+
   it('envía todos los dispositivos en paralelo y un éxito parcial marca sent', async () => {
     let releaseFirst!: () => void
     const firstPending = new Promise<void>((resolve) => { releaseFirst = resolve })
@@ -537,6 +623,7 @@ describe('sendCancellationWarnings', () => {
     expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
       where: {
         id: 'subscription-2',
+        subscriptionFingerprint: 'fingerprint-1',
         subscriptionEncrypted: PUSH_JSON,
         revokedAt: null,
       },
@@ -563,6 +650,7 @@ describe('sendCancellationWarnings', () => {
     expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
       where: {
         id: 'subscription-1',
+        subscriptionFingerprint: 'fingerprint-1',
         subscriptionEncrypted: PUSH_JSON,
         revokedAt: null,
       },
@@ -724,6 +812,7 @@ describe('sendCancellationWarnings', () => {
     expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
       where: {
         id: 'subscription-1',
+        subscriptionFingerprint: 'fingerprint-1',
         subscriptionEncrypted: PUSH_JSON,
         revokedAt: null,
       },
@@ -741,6 +830,7 @@ describe('sendCancellationWarnings', () => {
     expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
       where: {
         id: 'subscription-1',
+        subscriptionFingerprint: 'fingerprint-1',
         subscriptionEncrypted: PUSH_JSON,
         revokedAt: null,
       },
@@ -775,6 +865,7 @@ describe('sendCancellationWarnings', () => {
     expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith({
       where: {
         id: 'subscription-1',
+        subscriptionFingerprint: 'fingerprint-1',
         subscriptionEncrypted: PUSH_JSON,
         revokedAt: null,
       },
@@ -827,6 +918,24 @@ describe('sendCancellationWarnings', () => {
   it('para invitada abre la confirmación pública del tenant', async () => {
     mockBookingFindMany.mockResolvedValue([
       makeBooking({ customer: { userId: null } }),
+    ])
+    mockBookingFindFirst.mockResolvedValue({
+      cancellationCutoffHours: 24,
+      startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
+      customer: { userId: null },
+      business: { selfServiceCutoffHours: 24 },
+    })
+
+    await sendCancellationWarnings(NOW)
+
+    expect(mockSendWebPush.mock.calls[0][1].url).toBe(
+      'https://mimos.agendita.cl/book/confirmation?bookingId=booking-1',
+    )
+  })
+
+  it('usa destino público para entitlement invitado aunque la Customer después tenga cuenta', async () => {
+    mockSubscriptionFindMany.mockResolvedValue([
+      makeSubscription({ authorizedUserId: null }),
     ])
 
     await sendCancellationWarnings(NOW)

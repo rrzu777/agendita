@@ -208,3 +208,32 @@ real exige configurar VAPID en Vercel, ejecutar la migración, probar
 subscribe/unsubscribe y verificar un push real antes y después del cutoff con
 una reserva de prueba. El rollout empieza con un negocio y se amplía después de
 confirmar entrega y ausencia de duplicados.
+
+## Addendum de seguridad: autorización por reserva
+
+La revisión final detectó que relacionar una suscripción invitada sólo con
+`Customer` ampliaba un grant de una reserva a todas las reservas de esa ficha.
+La persistencia queda corregida con dos scopes explícitos:
+
+- una invitada obtiene únicamente un `PushSubscriptionBooking` para el
+  `bookingId` firmado y revalidado junto con `customerId` y `businessId`;
+- una sesión guarda `PushSubscription.authorizedUserId` explícitamente. El cron
+  compara ese valor con el `Customer.userId` actual y nunca considera
+  `null === null` como autorización;
+- `subscriptionFingerprint` deduplica la forma canónica completa
+  `endpoint + p256dh + auth`, mientras `endpointHash` sigue permitiendo buscar
+  una capability para unsubscribe sin guardar el endpoint en claro;
+- una suscripción se entrega sólo si tiene entitlement de la reserva exacta o
+  autorización explícita de la cuenta de esa Customer;
+- quitar un grant elimina sólo ese entitlement. Quitar una cuenta limpia sólo
+  su `authorizedUserId`. La fila se revoca únicamente cuando no conserva ningún
+  scope;
+- cada scope admite como máximo cinco dispositivos activos y el cron lee como
+  máximo cinco filas. El alta se serializa por Customer para que el límite no
+  se exceda con requests concurrentes.
+
+La migración de hardening es forward-only. Filas legacy no reciben ownership
+implícito: quedan sin usuario autorizado y sin entitlements hasta una nueva
+suscripción, por lo que el despliegue falla cerrado. La baja por mera posesión
+del endpoint para reconstruir estado tras recargar pertenece al track de UI y
+no se agrega en este addendum.

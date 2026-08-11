@@ -1,8 +1,8 @@
-import { prisma } from '@/lib/db'
 import { checkRateLimit } from '@/lib/rate-limit'
-import { hashPushEndpoint } from '@/lib/push/subscription'
+import { unsubscribePushSubscription } from '@/lib/push/subscription'
 import {
   hasCanonicalOrigin,
+  pushUnsubscribeRateLimitContext,
   readBoundedJson,
   resolvePushUnsubscribeScope,
   validPushEndpoint,
@@ -30,31 +30,21 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Solicitud no autorizada' }, { status: 401, headers: JSON_HEADERS })
     }
 
-    const endpointHash = hashPushEndpoint(body.endpoint)
-    const revokedAt = new Date()
-    let count = 0
-    if (scope.kind === 'guest') {
-      const result = await prisma.pushSubscription.updateMany({
-        where: {
-          endpointHash,
-          customerId: scope.target.customerId,
-          businessId: scope.target.businessId,
-          revokedAt: null,
-        },
-        data: { revokedAt },
-      })
-      count = result.count
-    } else {
-      const result = await prisma.pushSubscription.updateMany({
-        where: {
-          endpointHash,
-          revokedAt: null,
-          customer: { userId: scope.userId },
-        },
-        data: { revokedAt },
-      })
-      count = result.count
+    const targetLimit = await checkRateLimit(
+      'push-unsubscribe-target',
+      10,
+      60_000,
+      pushUnsubscribeRateLimitContext(scope),
+    )
+    if (!targetLimit.success) {
+      return Response.json({ error: 'Demasiadas solicitudes' }, { status: 429, headers: JSON_HEADERS })
     }
+
+    const count = await unsubscribePushSubscription({
+      endpoint: body.endpoint,
+      scope,
+      now: new Date(),
+    })
 
     return Response.json({ unsubscribed: count }, { headers: JSON_HEADERS })
   } catch {

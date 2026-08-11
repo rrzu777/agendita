@@ -635,3 +635,26 @@ With one controlled business and booking:
 6. Confirm production health and both cron workflows remain green.
 
 Do not call Web Push production-complete until this real-device gate passes.
+
+## Security remediation addendum (2026-08-10)
+
+The final security review split remediation into independent tracks. Track A
+replaces Customer-wide implicit authorization before the PR can ship:
+
+- add a forward migration with `PushSubscription.authorizedUserId`, a stable
+  endpoint-and-keys fingerprint, and `PushSubscriptionBooking`;
+- guest subscribe/unsubscribe creates or removes only the exact booking
+  entitlement after revalidating all signed ownership fields;
+- authenticated subscribe/unsubscribe writes or clears only the exact
+  `authorizedUserId`; it never infers persisted authorization from
+  `Customer.userId`;
+- the scheduler requires an exact booking entitlement or an explicit user ID
+  match, avoids nullable equality, and caps selected devices at five;
+- subscription writes enforce a transactionally serialized five-device cap per
+  Customer authorization or booking entitlement, plus target-aware rate limits;
+- legacy rows receive no inferred authorization during migration and remain
+  ineligible until re-subscribed.
+
+Possession-based reload management, TTL/UI work, and cron-workflow changes stay
+in their respective remediation tracks unless a compile-only adaptation is
+required here.
