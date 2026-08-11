@@ -34,14 +34,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-function isExactCanonicalCallback(value: string, pathname: string): boolean {
+function isExactCanonicalCallback(
+  value: string,
+  pathname: string,
+  requireHttps = false,
+): boolean {
   try {
     const url = new URL(value)
     const domain = process.env.APP_DOMAIN || process.env.NEXT_PUBLIC_APP_DOMAIN
     if (!domain || domain.includes('/')) return false
     const local = domain.startsWith('localhost') || domain.startsWith('127.0.0.1')
     const canonicalOrigin = `${process.env.NODE_ENV !== 'production' && local ? 'http' : 'https'}://${domain}`
-    return url.origin === canonicalOrigin
+    return (!requireHttps || url.protocol === 'https:')
+      && url.origin === canonicalOrigin
       && url.pathname === pathname
       && url.username === ''
       && url.password === ''
@@ -175,6 +180,7 @@ export async function probeMercadoPagoSubscriptions(): Promise<DependencyStatus>
   if (!isExactCanonicalCallback(
     callbackUrl,
     '/api/mercado-pago/subscriptions/callback',
+    true,
   )) return 'down'
 
   try {
@@ -207,11 +213,13 @@ export async function probeMercadoPagoOAuth(): Promise<DependencyStatus> {
   const clientId = process.env.MERCADO_PAGO_CLIENT_ID
   const clientSecret = process.env.MERCADO_PAGO_CLIENT_SECRET
   const redirectUri = process.env.MERCADO_PAGO_REDIRECT_URI
+  const encryptionKey = process.env.ENCRYPTION_KEY
   const environment = process.env.MERCADO_PAGO_ENVIRONMENT
   if (
     !clientId
     || !clientSecret
     || !redirectUri
+    || !encryptionKey
     || (environment !== 'sandbox' && environment !== 'production')
   ) return 'down'
 

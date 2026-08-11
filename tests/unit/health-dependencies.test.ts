@@ -281,6 +281,7 @@ describe('dependency health probes', () => {
       vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
       vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://www.agendita.cl/api/mercado-pago/callback')
       vi.stubEnv('MERCADO_PAGO_ENVIRONMENT', 'sandbox')
+      vi.stubEnv('ENCRYPTION_KEY', 'encryption-key')
       const fetchMock = vi.spyOn(global, 'fetch')
 
       await expect(probeMercadoPagoOAuth()).resolves.toBe('up')
@@ -293,8 +294,36 @@ describe('dependency health probes', () => {
       vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
       vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://www.agendita.cl/api/mercado-pago/callback')
       vi.stubEnv('MERCADO_PAGO_ENVIRONMENT', '')
+      vi.stubEnv('ENCRYPTION_KEY', 'encryption-key')
 
       await expect(probeMercadoPagoOAuth()).resolves.toBe('down')
+    })
+
+    it.each([
+      ['development', 'http://localhost:3000', 'localhost:3000'],
+      ['production', 'https://app.example.com', 'app.example.com'],
+    ])('does not report OAuth up without encrypted-at-rest configuration in %s', async (nodeEnv, origin, domain) => {
+      vi.stubEnv('NODE_ENV', nodeEnv)
+      vi.stubEnv('APP_DOMAIN', domain)
+      vi.stubEnv('MERCADO_PAGO_CLIENT_ID', 'client-id')
+      vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
+      vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', `${origin}/api/mercado-pago/callback`)
+      vi.stubEnv('MERCADO_PAGO_ENVIRONMENT', 'sandbox')
+      vi.stubEnv('ENCRYPTION_KEY', '')
+
+      await expect(probeMercadoPagoOAuth()).resolves.toBe('down')
+    })
+
+    it('rejects HTTP localhost for subscriptions even outside production', async () => {
+      vi.stubEnv('NODE_ENV', 'development')
+      vi.stubEnv('APP_DOMAIN', 'localhost:3000')
+      vi.stubEnv('MP_SUBSCRIPTIONS_ENABLED', 'true')
+      vi.stubEnv('MERCADO_PAGO_ENVIRONMENT', 'sandbox')
+      vi.stubEnv('MERCADO_PAGO_SANDBOX_ACCESS_TOKEN', 'mp-token')
+      vi.stubEnv('MERCADO_PAGO_SANDBOX_WEBHOOK_SECRET', 'webhook-secret')
+      vi.stubEnv('MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL', 'http://localhost:3000/api/mercado-pago/subscriptions/callback')
+
+      await expect(probeMercadoPagoSubscriptions()).resolves.toBe('down')
     })
   })
 

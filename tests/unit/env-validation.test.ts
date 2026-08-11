@@ -103,7 +103,7 @@ describe('env validation', () => {
         setEnv({
           ...subscriptionEnv,
           MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL:
-            'http://sandbox.example.com/api/webhooks/mercado-pago/subscriptions',
+            'http://localhost:3000/api/mercado-pago/subscriptions/callback',
         })
         const { validateEnv } = await import('@/lib/env')
 
@@ -178,6 +178,33 @@ describe('env validation', () => {
 
       expect(validateEnv().errors).toEqual(expect.arrayContaining([
         expect.objectContaining({ key: 'MERCADO_PAGO_ENVIRONMENT' }),
+      ]))
+    })
+
+    it.each(['development', 'production'])('requires encryption for OAuth with manual provider in %s', async nodeEnv => {
+      setEnv({
+        NODE_ENV: nodeEnv,
+        DATABASE_URL: 'postgresql://localhost/test',
+        DIRECT_URL: 'postgresql://localhost/test',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+        APP_DOMAIN: 'app.example.com',
+        NEXT_PUBLIC_APP_DOMAIN: 'app.example.com',
+        PAYMENT_PROVIDER: 'manual',
+        MERCADO_PAGO_CLIENT_ID: 'client-id',
+        MERCADO_PAGO_CLIENT_SECRET: 'client-secret',
+        MERCADO_PAGO_REDIRECT_URI: 'https://app.example.com/api/mercado-pago/callback',
+        MERCADO_PAGO_ENVIRONMENT: 'sandbox',
+        ENCRYPTION_KEY: undefined,
+        ...(nodeEnv === 'production' ? {
+          UPSTASH_REDIS_REST_URL: 'https://redis.example.com',
+          UPSTASH_REDIS_REST_TOKEN: 'redis-token',
+        } : {}),
+      })
+      const { validateEnv } = await import('@/lib/env')
+
+      expect(validateEnv().errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: 'ENCRYPTION_KEY' }),
       ]))
     })
 

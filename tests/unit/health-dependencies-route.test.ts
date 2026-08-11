@@ -24,6 +24,7 @@ function setRequiredEnv(paymentProvider = 'mercado_pago') {
   vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
   vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://www.agendita.cl/api/mercado-pago/callback')
   vi.stubEnv('APP_DOMAIN', 'www.agendita.cl')
+  vi.stubEnv('ENCRYPTION_KEY', 'encryption-key')
 }
 
 type ProviderOverrides = {

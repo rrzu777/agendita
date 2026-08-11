@@ -353,6 +353,13 @@ export function validateEnv(): EnvValidationResult {
         'MERCADO_PAGO_ENVIRONMENT is required for OAuth and must be "sandbox" or "production".',
     })
   }
+  if (hasMpOAuth && !process.env.ENCRYPTION_KEY) {
+    errors.push({
+      key: 'ENCRYPTION_KEY',
+      message:
+        'ENCRYPTION_KEY is required whenever Mercado Pago OAuth is configured.',
+    })
+  }
 
   if (subscriptionsEnabled?.toLowerCase() === 'true') {
     if (!subscriptionsEnvironment || !hasValidSubscriptionsEnvironment) {

@@ -13,6 +13,8 @@ sin tokens expuestos y con webhook idempotente.
    - `MERCADO_PAGO_CLIENT_SECRET`
    - `MERCADO_PAGO_REDIRECT_URI` (HTTPS público en entornos compartidos)
    - `MERCADO_PAGO_ENVIRONMENT` (`sandbox` o `production`, explícito)
+   - `ENCRYPTION_KEY` (obligatoria también en sandbox/dev y con provider manual;
+     cifra tokens OAuth en reposo)
 3. Dos cuentas sandbox de prueba (vendedores):
    - Seller A (`TEST-USER-A-...`)
    - Seller B (`TEST-USER-B-...`)
@@ -22,6 +24,8 @@ Registrar la callback exacta
 `https://<APP_DOMAIN>/api/mercado-pago/callback`. La health protegida valida
 la configuración OAuth, pero nunca prueba tokens de negocios arbitrarios.
 `up` significa configurado, no conectado ni cobro E2E validado.
+Health sólo comprueba que `ENCRYPTION_KEY` esté presente: nunca la expone, usa
+para descifrar ni intenta leer tokens almacenados.
 El origen debe coincidir exactamente con `APP_DOMAIN`: no se agrega ni elimina
 `www`, no se aceptan puertos alternos, query, hash ni credenciales embebidas.
 Los previews con otro hostname requieren su propia configuración; nunca se

@@ -13,6 +13,9 @@ clienta → dueña y usa credenciales separadas por ambiente.
 - `MERCADO_PAGO_<AMBIENTE>_SUBSCRIPTIONS_CALLBACK_URL`.
 - `CRON_SECRET`, igual en runtime y GitHub Actions.
 
+`ENCRYPTION_KEY` es obligatoria para el flujo OAuth clienta → dueña, no para el
+transporte de mensualidades por sí solo. No agregar esa dependencia a este flujo.
+
 No hay fallback al token genérico ni al otro ambiente. La callback configurada
 en la variable debe ser HTTPS y terminar exactamente en
 `/api/mercado-pago/subscriptions/callback`. Este callback de navegador es
@@ -32,7 +35,7 @@ configurar explícitamente ese dominio como el canónico del entorno.
   `not_configured` si falta configuración, `down` ante credencial inválida y
   `up` tras una consulta read-only de identidad.
 - `mercadoPagoOAuth`: valida sólo configuración de la aplicación. Nunca enumera
-  ni prueba tokens de negocios.
+  ni prueba tokens de negocios, y exige que exista `ENCRYPTION_KEY` sin leerla.
 
 El health no crea planes, preferencias, autorizaciones ni pagos, no muta DB y
 no genera tráfico cobrado. `up` prueba configuración/credencial, **no E2E**.

@@ -122,6 +122,10 @@ UPSTASH_REDIS_REST_URL=https://xxx.upstash.io
 UPSTASH_REDIS_REST_TOKEN=...
 ```
 
+`ENCRYPTION_KEY` es obligatoria siempre que el triplete OAuth esté configurado,
+incluso en sandbox/desarrollo y aunque `PAYMENT_PROVIDER=manual`. No es un
+requisito independiente del flujo de mensualidades.
+
 ### 2. DNS — Dominio Wildcard
 
 ```

@@ -210,6 +210,9 @@ function validate() {
       'MERCADO_PAGO_ENVIRONMENT is required for OAuth and must be "sandbox" or "production".',
     )
   }
+  if (hasMpOAuth && !getServerEnv('ENCRYPTION_KEY')) {
+    errors.push('MISSING: ENCRYPTION_KEY (required whenever Mercado Pago OAuth is configured)')
+  }
   if (subscriptionsEnabled.toLowerCase() === 'true') {
     if (!hasValidSubscriptionsEnvironment) {
       errors.push(
