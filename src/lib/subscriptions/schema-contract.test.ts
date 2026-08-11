@@ -21,6 +21,10 @@ const checkoutHardeningMigrationPath = path.join(
   root,
   'prisma/migrations/20260812020000_subscription_checkout_hardening/migration.sql',
 )
+const manualReconciliationMigrationPath = path.join(
+  root,
+  'prisma/migrations/20260812030000_subscription_plan_manual_reconciliation/migration.sql',
+)
 
 describe('Mercado Pago recurring billing persistence contract', () => {
   it('declares the provider-separated recurring billing schema', async () => {
@@ -98,5 +102,19 @@ describe('Mercado Pago recurring billing persistence contract', () => {
     expect(migration).toContain('WHERE "invalidatedAt" IS NULL')
     expect(migration).toContain('attempt."providerSubscriptionId" = subscription."providerSubscriptionId"')
     expect(migration).toContain('"providerSubscriptionId" = NULL')
+  })
+
+  it('persists fail-closed manual plan reconciliation and immutable checkout snapshots', async () => {
+    const schema = await readFile(schemaPath, 'utf8')
+    const migration = await readFile(manualReconciliationMigrationPath, 'utf8')
+
+    expect(schema).toContain('manual_reconciliation_required')
+    expect(schema).toContain('provisioningStatus')
+    expect(schema).toMatch(/model SubscriptionCheckoutAttempt[\s\S]*?planId\s+String\?/)
+    expect(schema).toMatch(/model SubscriptionCheckoutAttempt[\s\S]*?amount\s+Int\?/)
+    expect(migration).toContain("'manual_reconciliation_required'")
+    expect(migration).toContain('ADD COLUMN "planId" TEXT')
+    expect(migration).toContain('ADD COLUMN "amount" INTEGER')
+    expect(migration).toContain('SubscriptionPlanMapping_provisioning_state_check')
   })
 })

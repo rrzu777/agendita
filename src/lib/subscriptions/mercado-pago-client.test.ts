@@ -117,38 +117,36 @@ describe('createMpSubscriptionClient', () => {
     expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ status: 'canceled' })
   })
 
-  it('searches plans by deterministic reference and returns only exact reference matches', async () => {
-    const recurring = {
-      transaction_amount: 12000,
-      currency_id: 'CLP',
-      frequency: 1,
-      frequency_type: 'months',
-    }
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
-      paging: { offset: 0, limit: 20, total: 2 },
-      results: [
-        { id: 'plan-wrong', status: 'active', external_reference: 'similar-ref', auto_recurring: recurring },
-        { id: 'plan-exact', status: 'active', external_reference: 'agendita_plan_mapping-1', auto_recurring: recurring },
-      ],
-    }))
+  it('gets an exact plan and the seller account bound to the configured token', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        id: 'plan-exact', status: 'active', external_reference: 'agendita_plan_mapping-1',
+        reason: 'Plan Pro', collector_id: 12345,
+        auto_recurring: {
+          transaction_amount: 12000, currency_id: 'CLP', frequency: 1, frequency_type: 'months',
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ id: 12345 }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const plans = await createMpSubscriptionClient(config).searchPlans(
-      'agendita_plan_mapping-1',
-    )
+    const client = createMpSubscriptionClient(config)
 
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      'https://api.mercadopago.com/preapproval_plan/search?q=agendita_plan_mapping-1',
-    )
-    expect(plans).toEqual([{
+    await expect(client.getPlan('plan-exact')).resolves.toEqual({
       id: 'plan-exact',
       status: 'active',
       externalReference: 'agendita_plan_mapping-1',
+      reason: 'Plan Pro',
+      collectorId: '12345',
       amount: 12000,
       currency: 'CLP',
       frequency: 1,
       frequencyType: 'months',
-    }])
+    })
+    await expect(client.getCurrentAccountId()).resolves.toBe('12345')
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://api.mercadopago.com/preapproval_plan/plan-exact',
+      'https://api.mercadopago.com/users/me',
+    ])
   })
 
   it.each([

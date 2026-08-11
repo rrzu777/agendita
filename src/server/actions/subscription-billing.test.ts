@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => {
   const prisma = {
     businessSubscription: { findFirst: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
     subscriptionPlanMapping: {
-      findFirst: vi.fn(), upsert: vi.fn(), updateMany: vi.fn(), update: vi.fn(), deleteMany: vi.fn(),
+      findFirst: vi.fn(), findMany: vi.fn(), upsert: vi.fn(), updateMany: vi.fn(), update: vi.fn(), deleteMany: vi.fn(),
     },
     subscriptionCheckoutAttempt: {
       findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn(),
@@ -16,7 +16,8 @@ const mocks = vi.hoisted(() => {
   return {
     prisma,
     requireBusinessRole: vi.fn(),
-    createPlan: vi.fn(), searchPlans: vi.fn(), createSubscription: vi.fn(),
+    requirePlatformAdminUser: vi.fn(),
+    createPlan: vi.fn(), getPlan: vi.fn(), getCurrentAccountId: vi.fn(), createSubscription: vi.fn(),
     getSubscription: vi.fn(), cancelSubscription: vi.fn(),
     applySubscriptionTransition: vi.fn(), redirect: vi.fn(),
   }
@@ -26,10 +27,14 @@ vi.mock('@/lib/db', () => ({ prisma: mocks.prisma }))
 vi.mock('@/lib/auth/server', () => ({
   requireBusinessRole: (...args: unknown[]) => mocks.requireBusinessRole(...args),
 }))
+vi.mock('@/lib/auth/user', () => ({
+  requirePlatformAdminUser: (...args: unknown[]) => mocks.requirePlatformAdminUser(...args),
+}))
 vi.mock('@/lib/subscriptions/mercado-pago-client', () => ({
   createMpSubscriptionClient: vi.fn(() => ({
     createPlan: mocks.createPlan,
-    searchPlans: mocks.searchPlans,
+    getPlan: mocks.getPlan,
+    getCurrentAccountId: mocks.getCurrentAccountId,
     createSubscription: mocks.createSubscription,
     getSubscription: mocks.getSubscription,
     cancelSubscription: mocks.cancelSubscription,
@@ -41,7 +46,11 @@ vi.mock('@/lib/subscriptions/transition', () => ({
 vi.mock('next/navigation', () => ({ redirect: (...args: unknown[]) => mocks.redirect(...args) }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
-import { requestSubscriptionCancellation, startSubscriptionCheckout } from './subscription-billing'
+import {
+  reconcileSubscriptionPlan,
+  requestSubscriptionCancellation,
+  startSubscriptionCheckout,
+} from './subscription-billing'
 
 const NOW = new Date('2026-08-11T12:00:00.000Z')
 const TRIAL_END = new Date('2026-08-14T12:00:00.000Z')
@@ -57,6 +66,7 @@ const mapping = {
   id: 'mapping-1', planId: 'plan-1', provider: 'mercado_pago', environment: 'sandbox',
   providerPlanId: 'provider-plan-1', amount: 14_990, currency: 'CLP', isActive: true,
   provisioningToken: null, provisioningLeaseExpiresAt: null, externalReference: null,
+  provisioningStatus: 'ready',
 }
 
 describe('subscription billing actions', () => {
@@ -72,6 +82,7 @@ describe('subscription billing actions', () => {
     mocks.requireBusinessRole.mockResolvedValue({
       businessId: 'business-1', user: { id: 'user-1', email: 'owner@example.com' }, role: 'owner',
     })
+    mocks.requirePlatformAdminUser.mockResolvedValue({ id: 'platform-admin-1', email: 'admin@example.com' })
     mocks.prisma.businessSubscription.findFirst.mockResolvedValue(subscription)
     mocks.prisma.subscriptionPlanMapping.findFirst.mockResolvedValue(mapping)
     mocks.prisma.subscriptionCheckoutAttempt.findFirst.mockResolvedValue(null)
@@ -81,7 +92,8 @@ describe('subscription billing actions', () => {
     mocks.prisma.subscriptionLog.create.mockResolvedValue({ id: 'log-1' })
     mocks.prisma.businessSubscription.updateMany.mockResolvedValue({ count: 1 })
     mocks.prisma.businessSubscription.findUnique.mockResolvedValue(subscription)
-    mocks.searchPlans.mockResolvedValue([])
+    mocks.getCurrentAccountId.mockResolvedValue('collector-1')
+    mocks.cancelSubscription.mockImplementation(async (id) => ({ id, status: 'canceled' }))
     mocks.prisma.$transaction.mockImplementation(async (callback) => callback(mocks.prisma))
     mocks.createSubscription.mockImplementation(async (input) => ({
       id: 'provider-subscription-1', status: 'pending',
@@ -97,7 +109,7 @@ describe('subscription billing actions', () => {
   it('fails closed when recurring subscriptions are disabled', async () => {
     process.env.MP_SUBSCRIPTIONS_ENABLED = 'false'
     await expect(startSubscriptionCheckout()).rejects.toThrow(/deshabilitada/i)
-    expect(mocks.prisma.businessSubscription.findFirst).not.toHaveBeenCalled()
+    expect(mocks.prisma.businessSubscription.findFirst).toHaveBeenCalledTimes(1)
     expect(mocks.createSubscription).not.toHaveBeenCalled()
   })
 
@@ -151,6 +163,7 @@ describe('subscription billing actions', () => {
     const createAttempt = mocks.prisma.subscriptionCheckoutAttempt.create.mock.calls[0][0]
     expect(createAttempt.data).toMatchObject({
       businessId: 'business-1', subscriptionId: 'subscription-1', environment: 'sandbox',
+      providerPlanId: 'provider-plan-1', planId: 'plan-1', amount: 14_990, currency: 'CLP',
     })
     expect(createAttempt.data.referenceHash).toMatch(/^[a-f0-9]{64}$/)
     expect(createAttempt.data).not.toHaveProperty('reference')
@@ -161,7 +174,7 @@ describe('subscription billing actions', () => {
         subscription: { providerSubscriptionId: null },
       },
       data: {
-        providerSubscriptionId: 'provider-subscription-1', providerPlanId: 'provider-plan-1',
+        providerSubscriptionId: 'provider-subscription-1',
       },
     })
     expect(mocks.redirect).toHaveBeenCalledWith(
@@ -202,6 +215,7 @@ describe('subscription billing actions', () => {
     const oldReference = 'old-reference'
     mocks.prisma.subscriptionCheckoutAttempt.findFirst.mockResolvedValue({
       id: 'attempt-old', providerSubscriptionId: 'candidate-old', providerPlanId: 'provider-plan-1',
+      planId: 'plan-1', amount: 14_990, currency: 'CLP',
       referenceHash: createHash('sha256').update(oldReference).digest('hex'),
       expiresAt: new Date(NOW.getTime() - 1_000), invalidatedAt: null,
     })
@@ -217,8 +231,8 @@ describe('subscription billing actions', () => {
     expect(mocks.getSubscription).toHaveBeenCalledWith('candidate-old')
     expect(mocks.cancelSubscription).toHaveBeenCalledWith('candidate-old')
     expect(mocks.prisma.subscriptionCheckoutAttempt.updateMany).toHaveBeenCalledWith({
-      where: { id: 'attempt-old', invalidatedAt: null, expiresAt: { lte: NOW } },
-      data: { invalidatedAt: NOW },
+      where: { id: 'attempt-old', invalidatedAt: null },
+      data: { invalidatedAt: expect.any(Date) },
     })
     expect(mocks.createSubscription).toHaveBeenCalledTimes(1)
     expect(mocks.prisma.businessSubscription.updateMany).not.toHaveBeenCalled()
@@ -259,6 +273,7 @@ describe('subscription billing actions', () => {
     mocks.prisma.subscriptionCheckoutAttempt.findFirst.mockResolvedValue({
       id: 'attempt-authorized', providerSubscriptionId: 'candidate-authorized',
       providerPlanId: 'provider-plan-1',
+      planId: 'plan-1', amount: 14_990, currency: 'CLP',
       referenceHash: createHash('sha256').update(oldReference).digest('hex'),
       expiresAt: new Date(NOW.getTime() - 1_000), invalidatedAt: null,
     })
@@ -276,8 +291,10 @@ describe('subscription billing actions', () => {
     expect(mocks.prisma.subscriptionLog.create).toHaveBeenCalledTimes(1)
     expect(mocks.prisma.subscriptionCheckoutAttempt.updateMany).toHaveBeenCalledWith({
       where: {
-        id: 'attempt-authorized', providerSubscriptionId: 'candidate-authorized',
-        providerPlanId: 'provider-plan-1', invalidatedAt: null,
+        id: 'attempt-authorized', businessId: 'business-1', subscriptionId: 'subscription-1',
+        environment: 'sandbox', providerSubscriptionId: 'candidate-authorized',
+        providerPlanId: 'provider-plan-1', planId: 'plan-1', amount: 14_990,
+        currency: 'CLP', invalidatedAt: null,
       },
       data: { invalidatedAt: NOW },
     })
@@ -288,6 +305,7 @@ describe('subscription billing actions', () => {
     mocks.prisma.subscriptionCheckoutAttempt.findFirst.mockResolvedValue({
       id: 'attempt-authorized', providerSubscriptionId: 'candidate-authorized',
       providerPlanId: 'provider-plan-1',
+      planId: 'plan-1', amount: 14_990, currency: 'CLP',
       referenceHash: createHash('sha256').update(oldReference).digest('hex'),
       expiresAt: new Date(NOW.getTime() - 1_000), invalidatedAt: null,
     })
@@ -308,6 +326,133 @@ describe('subscription billing actions', () => {
     expect(mocks.redirect).toHaveBeenCalledWith('/dashboard/billing?subscription=active')
   })
 
+  it('cancels an expired authorized candidate when the local plan changed', async () => {
+    const oldReference = 'authorized-old-plan'
+    const changed = { ...subscription, planId: 'plan-2', plan: { ...subscription.plan, id: 'plan-2' } }
+    mocks.prisma.businessSubscription.findFirst.mockResolvedValue(changed)
+    mocks.prisma.businessSubscription.findUnique.mockResolvedValue(changed)
+    mocks.prisma.subscriptionCheckoutAttempt.findFirst.mockResolvedValue({
+      id: 'attempt-old-plan', providerSubscriptionId: 'candidate-old-plan',
+      providerPlanId: 'provider-plan-1', planId: 'plan-1', amount: 14_990, currency: 'CLP',
+      referenceHash: createHash('sha256').update(oldReference).digest('hex'),
+      expiresAt: new Date(NOW.getTime() - 1_000), invalidatedAt: null,
+    })
+    mocks.getSubscription.mockResolvedValue({
+      id: 'candidate-old-plan', status: 'active', providerStatus: 'authorized',
+      planId: 'provider-plan-1', externalReference: oldReference, checkoutUrl: null,
+      amount: 14_990, currency: 'CLP', frequency: 1, frequencyType: 'months', nextPaymentAt: TRIAL_END,
+    })
+    mocks.cancelSubscription.mockResolvedValue({ id: 'candidate-old-plan', status: 'canceled' })
+
+    await expect(startSubscriptionCheckout()).rejects.toThrow(/elegible|reintenta/i)
+
+    expect(mocks.cancelSubscription).toHaveBeenCalledWith('candidate-old-plan')
+    expect(mocks.prisma.subscriptionCheckoutAttempt.updateMany).toHaveBeenCalledWith({
+      where: { id: 'attempt-old-plan', invalidatedAt: null },
+      data: { invalidatedAt: expect.any(Date) },
+    })
+    expect(mocks.prisma.businessSubscription.updateMany).not.toHaveBeenCalled()
+    expect(mocks.createSubscription).not.toHaveBeenCalled()
+  })
+
+  it('cancels an authorized candidate when an exemption is granted during provider lookup', async () => {
+    const oldReference = 'authorized-exempted'
+    const exempted = { ...subscription, complimentaryUntil: new Date('2026-09-01T00:00:00.000Z') }
+    mocks.prisma.subscriptionCheckoutAttempt.findFirst.mockResolvedValue({
+      id: 'attempt-exempted', providerSubscriptionId: 'candidate-exempted',
+      providerPlanId: 'provider-plan-1', planId: 'plan-1', amount: 14_990, currency: 'CLP',
+      referenceHash: createHash('sha256').update(oldReference).digest('hex'),
+      expiresAt: new Date(NOW.getTime() - 1_000), invalidatedAt: null,
+    })
+    mocks.getSubscription.mockImplementation(async () => {
+      mocks.prisma.businessSubscription.findUnique.mockResolvedValue(exempted)
+      return {
+        id: 'candidate-exempted', status: 'active', providerStatus: 'authorized',
+        planId: 'provider-plan-1', externalReference: oldReference, checkoutUrl: null,
+        amount: 14_990, currency: 'CLP', frequency: 1, frequencyType: 'months', nextPaymentAt: TRIAL_END,
+      }
+    })
+    mocks.cancelSubscription.mockResolvedValue({ id: 'candidate-exempted', status: 'canceled' })
+
+    await expect(startSubscriptionCheckout()).rejects.toThrow(/elegible|vigente|reintenta/i)
+
+    expect(mocks.cancelSubscription).toHaveBeenCalledWith('candidate-exempted')
+    expect(mocks.prisma.businessSubscription.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('cancels an authorized candidate when persisted rollout is disabled during lookup', async () => {
+    const oldReference = 'authorized-rollout-disabled'
+    const rolloutDisabled = { ...subscription, billingEnabled: false }
+    mocks.prisma.subscriptionCheckoutAttempt.findFirst.mockResolvedValue({
+      id: 'attempt-rollout-disabled', providerSubscriptionId: 'candidate-rollout-disabled',
+      providerPlanId: 'provider-plan-1', planId: 'plan-1', amount: 14_990, currency: 'CLP',
+      referenceHash: createHash('sha256').update(oldReference).digest('hex'),
+      expiresAt: new Date(NOW.getTime() - 1_000), invalidatedAt: null,
+    })
+    mocks.getSubscription.mockImplementation(async () => {
+      mocks.prisma.businessSubscription.findUnique.mockResolvedValue(rolloutDisabled)
+      return {
+        id: 'candidate-rollout-disabled', status: 'active', providerStatus: 'authorized',
+        planId: 'provider-plan-1', externalReference: oldReference, checkoutUrl: null,
+        amount: 14_990, currency: 'CLP', frequency: 1, frequencyType: 'months', nextPaymentAt: TRIAL_END,
+      }
+    })
+
+    await expect(startSubscriptionCheckout()).rejects.toThrow(/elegible/i)
+
+    expect(mocks.cancelSubscription).toHaveBeenCalledWith('candidate-rollout-disabled')
+    expect(mocks.prisma.businessSubscription.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('cancels an authorized candidate when the creation flag is disabled during lookup', async () => {
+    const oldReference = 'authorized-disabled'
+    mocks.prisma.subscriptionCheckoutAttempt.findFirst.mockResolvedValue({
+      id: 'attempt-disabled', providerSubscriptionId: 'candidate-disabled',
+      providerPlanId: 'provider-plan-1', planId: 'plan-1', amount: 14_990, currency: 'CLP',
+      referenceHash: createHash('sha256').update(oldReference).digest('hex'),
+      expiresAt: new Date(NOW.getTime() - 1_000), invalidatedAt: null,
+    })
+    mocks.getSubscription.mockImplementation(async () => {
+      process.env.MP_SUBSCRIPTIONS_ENABLED = 'false'
+      return {
+        id: 'candidate-disabled', status: 'active', providerStatus: 'authorized',
+        planId: 'provider-plan-1', externalReference: oldReference, checkoutUrl: null,
+        amount: 14_990, currency: 'CLP', frequency: 1, frequencyType: 'months', nextPaymentAt: TRIAL_END,
+      }
+    })
+    mocks.cancelSubscription.mockResolvedValue({ id: 'candidate-disabled', status: 'canceled' })
+
+    await expect(startSubscriptionCheckout()).rejects.toThrow(/deshabilitada/i)
+
+    expect(mocks.cancelSubscription).toHaveBeenCalledWith('candidate-disabled')
+    expect(mocks.prisma.businessSubscription.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('cancels and invalidates an authorized candidate whose immutable attempt data mismatches', async () => {
+    const oldReference = 'authorized-expected-reference'
+    mocks.prisma.subscriptionCheckoutAttempt.findFirst.mockResolvedValue({
+      id: 'attempt-mismatch', providerSubscriptionId: 'candidate-mismatch',
+      providerPlanId: 'provider-plan-1', planId: 'plan-1', amount: 14_990, currency: 'CLP',
+      referenceHash: createHash('sha256').update(oldReference).digest('hex'),
+      expiresAt: new Date(NOW.getTime() - 1_000), invalidatedAt: null,
+    })
+    mocks.getSubscription.mockResolvedValue({
+      id: 'candidate-mismatch', status: 'active', providerStatus: 'authorized',
+      planId: 'provider-plan-1', externalReference: 'wrong-reference', checkoutUrl: null,
+      amount: 14_990, currency: 'CLP', frequency: 1, frequencyType: 'months', nextPaymentAt: TRIAL_END,
+    })
+    mocks.cancelSubscription.mockResolvedValue({ id: 'candidate-mismatch', status: 'canceled' })
+
+    await expect(startSubscriptionCheckout()).rejects.toThrow(/reintenta|coincide/i)
+
+    expect(mocks.cancelSubscription).toHaveBeenCalledWith('candidate-mismatch')
+    expect(mocks.prisma.subscriptionCheckoutAttempt.updateMany).toHaveBeenCalledWith({
+      where: { id: 'attempt-mismatch', invalidatedAt: null },
+      data: { invalidatedAt: expect.any(Date) },
+    })
+    expect(mocks.prisma.businessSubscription.updateMany).not.toHaveBeenCalled()
+  })
+
   it('provisions one price-version mapping and uses a DB snapshot, not Plan.priceMonthly', async () => {
     mocks.prisma.subscriptionPlanMapping.findFirst.mockResolvedValue(null)
     mocks.prisma.subscriptionPlanMapping.upsert.mockImplementation(async ({ create }) => ({
@@ -315,9 +460,11 @@ describe('subscription billing actions', () => {
       provisioningToken: create.provisioningToken,
       provisioningLeaseExpiresAt: create.provisioningLeaseExpiresAt,
       externalReference: create.externalReference,
+      provisioningStatus: 'provisioning',
     }))
     mocks.createPlan.mockImplementation(async (input) => ({
       id: 'provider-plan-new', status: 'active', externalReference: input.externalReference,
+      reason: null, collectorId: null,
       amount: 14_990, currency: 'CLP', frequency: 1, frequencyType: 'months',
     }))
     await startSubscriptionCheckout()
@@ -341,19 +488,14 @@ describe('subscription billing actions', () => {
     expect(mocks.createSubscription).toHaveBeenCalledWith(expect.objectContaining({ planId: 'provider-plan-1' }))
   })
 
-  it('recovers an externally-created plan after DB failure and a stale lease without duplication', async () => {
+  it('requires exact manual reconciliation after POST succeeds but providerPlanId persistence fails', async () => {
     mocks.prisma.subscriptionPlanMapping.findFirst.mockResolvedValue(null)
     let reserved: {
       id: string; planId: string; provider: 'mercado_pago'; environment: 'sandbox';
       providerPlanId: null; amount: number; currency: string; isActive: false;
       provisioningToken: string; provisioningLeaseExpiresAt: Date; externalReference: string;
+      provisioningStatus: 'provisioning' | 'manual_reconciliation_required';
     } | undefined
-    mocks.prisma.subscriptionPlanMapping.upsert.mockImplementation(async ({ create }) => ({
-      ...mapping, id: 'mapping-new', providerPlanId: null, isActive: false,
-      provisioningToken: create.provisioningToken,
-      provisioningLeaseExpiresAt: create.provisioningLeaseExpiresAt,
-      externalReference: create.externalReference,
-    }))
     mocks.prisma.subscriptionPlanMapping.upsert.mockImplementation(async ({ create }) => {
       reserved ??= {
         id: create.id, planId: 'plan-1', provider: 'mercado_pago', environment: 'sandbox',
@@ -361,29 +503,92 @@ describe('subscription billing actions', () => {
         provisioningToken: create.provisioningToken,
         provisioningLeaseExpiresAt: create.provisioningLeaseExpiresAt,
         externalReference: create.externalReference,
+        provisioningStatus: 'provisioning',
       }
       return reserved
     })
     const externalPlan = {
       id: 'provider-plan-new', status: 'active', amount: 14_990, currency: 'CLP' as const,
       frequency: 1 as const, frequencyType: 'months' as const, externalReference: '',
+      reason: 'Plan Pro', collectorId: 'collector-1',
     }
     mocks.createPlan.mockImplementation(async (input) => ({ ...externalPlan, externalReference: input.externalReference }))
-    mocks.prisma.subscriptionPlanMapping.updateMany
-      .mockRejectedValueOnce(new Error('database unavailable'))
+    mocks.prisma.subscriptionPlanMapping.updateMany.mockImplementation(async ({ data }) => {
+      if (data.providerPlanId) throw new Error('database unavailable')
+      reserved!.provisioningStatus = 'manual_reconciliation_required'
+      return { count: 1 }
+    })
 
     await expect(startSubscriptionCheckout()).rejects.toThrow(/database unavailable/i)
     expect(mocks.createPlan).toHaveBeenCalledTimes(1)
 
     vi.setSystemTime(new Date(NOW.getTime() + 6 * 60 * 1_000))
-    reserved!.provisioningLeaseExpiresAt = new Date(NOW.getTime() + 5 * 60 * 1_000)
-    mocks.searchPlans.mockResolvedValue([{ ...externalPlan, externalReference: reserved!.externalReference }])
-    mocks.prisma.subscriptionPlanMapping.updateMany.mockResolvedValue({ count: 1 })
-    await startSubscriptionCheckout()
+    await expect(startSubscriptionCheckout()).rejects.toThrow(/reconciliaci.n manual/i)
 
     expect(mocks.createPlan).toHaveBeenCalledTimes(1)
-    expect(mocks.searchPlans).toHaveBeenLastCalledWith(reserved!.externalReference)
-    expect(mocks.createSubscription).toHaveBeenCalledTimes(1)
+    expect(mocks.createSubscription).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['wrong account', { collectorId: 'attacker-collector' }],
+    ['wrong price', { amount: 1 }],
+    ['wrong reference', { externalReference: 'other-reference' }],
+  ])('rejects exact operator recovery for a %s plan', async (_name, override) => {
+    const manualMapping = {
+      ...mapping, providerPlanId: null, isActive: false,
+      externalReference: 'agendita_plan_mapping-1',
+      provisioningStatus: 'manual_reconciliation_required',
+      plan: { id: 'plan-1', name: 'Plan Pro' },
+    }
+    mocks.prisma.subscriptionPlanMapping.findMany.mockResolvedValue([manualMapping])
+    mocks.getPlan.mockResolvedValue({
+      id: 'provider-plan-exact', status: 'active', amount: 14_990, currency: 'CLP',
+      frequency: 1, frequencyType: 'months', externalReference: manualMapping.externalReference,
+      reason: 'Plan Pro', collectorId: 'collector-1', ...override,
+    })
+
+    await expect(reconcileSubscriptionPlan('provider-plan-exact')).rejects.toThrow(/no coincide/i)
+
+    expect(mocks.prisma.subscriptionPlanMapping.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('restricts exact plan recovery to platform admins before provider lookup', async () => {
+    mocks.requirePlatformAdminUser.mockRejectedValue(new Error('No autorizado'))
+
+    await expect(reconcileSubscriptionPlan('provider-plan-exact')).rejects.toThrow(/autorizado/i)
+
+    expect(mocks.getPlan).not.toHaveBeenCalled()
+    expect(mocks.getCurrentAccountId).not.toHaveBeenCalled()
+  })
+
+  it('adopts an exact valid provider plan through operator recovery CAS', async () => {
+    const manualMapping = {
+      ...mapping, providerPlanId: null, isActive: false,
+      externalReference: 'agendita_plan_mapping-1',
+      provisioningStatus: 'manual_reconciliation_required',
+      plan: { id: 'plan-1', name: 'Plan Pro' },
+    }
+    mocks.prisma.subscriptionPlanMapping.findMany.mockResolvedValue([manualMapping])
+    mocks.getPlan.mockResolvedValue({
+      id: 'provider-plan-exact', status: 'active', amount: 14_990, currency: 'CLP',
+      frequency: 1, frequencyType: 'months', externalReference: manualMapping.externalReference,
+      reason: 'Plan Pro', collectorId: 'collector-1',
+    })
+
+    await reconcileSubscriptionPlan('provider-plan-exact')
+
+    expect(mocks.requirePlatformAdminUser).toHaveBeenCalledTimes(1)
+    expect(mocks.getPlan).toHaveBeenCalledWith('provider-plan-exact')
+    expect(mocks.getCurrentAccountId).toHaveBeenCalledTimes(1)
+    expect(mocks.prisma.subscriptionPlanMapping.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'mapping-1', providerPlanId: null,
+        provisioningStatus: 'manual_reconciliation_required',
+      },
+      data: {
+        providerPlanId: 'provider-plan-exact', provisioningStatus: 'ready', isActive: true,
+      },
+    })
   })
 
   it('requests provider cancellation before the atomic local period-end transition', async () => {

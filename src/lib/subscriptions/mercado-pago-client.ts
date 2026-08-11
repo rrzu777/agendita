@@ -38,6 +38,8 @@ export type MpPlan = {
   id: string
   status: string | null
   externalReference: string | null
+  reason: string | null
+  collectorId: string | null
   amount: number
   currency: 'CLP'
   frequency: 1
@@ -47,7 +49,7 @@ export type MpPlan = {
 export type MpSubscriptionClient = {
   createPlan(input: CreatePlanInput): Promise<MpPlan>
   getPlan(id: string): Promise<MpPlan>
-  searchPlans(externalReference: string): Promise<MpPlan[]>
+  getCurrentAccountId(): Promise<string>
   createSubscription(input: CreateSubscriptionInput): Promise<MpSubscription>
   getSubscription(id: string): Promise<MpSubscription>
   cancelSubscription(id: string): Promise<MpSubscription>
@@ -99,20 +101,36 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-function normalizePlan(response: unknown): MpPlan {
-  const raw = asRecord(response)
-  const id = raw.id
-  if ((typeof id !== 'string' && typeof id !== 'number') || String(id).trim() === '') {
+function providerId(value: unknown): string {
+  if ((typeof value !== 'string' && typeof value !== 'number') || String(value).trim() === '') {
     throw new MercadoPagoSubscriptionContractError()
   }
+  return String(value)
+}
+
+function optionalProviderString(value: unknown): string | null {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string') throw new MercadoPagoSubscriptionContractError()
+  return value
+}
+
+function optionalProviderId(value: unknown): string | null {
+  if (value === undefined || value === null) return null
+  return providerId(value)
+}
+
+function normalizePlan(response: unknown): MpPlan {
+  const raw = asRecord(response)
   return {
-    id: String(id),
+    id: providerId(raw.id),
     status: typeof raw.status === 'string' ? raw.status : null,
     externalReference: raw.external_reference === undefined || raw.external_reference === null
       ? null
       : typeof raw.external_reference === 'string' && raw.external_reference.trim()
         ? raw.external_reference
         : (() => { throw new MercadoPagoSubscriptionContractError() })(),
+    reason: optionalProviderString(raw.reason),
+    collectorId: optionalProviderId(raw.collector_id),
     ...(() => {
       const recurring = asRecord(raw.auto_recurring)
       const amount = Number(recurring.transaction_amount)
@@ -197,15 +215,8 @@ export function createMpSubscriptionClient(
       )
     },
 
-    async searchPlans(externalReference) {
-      const exactReference = requiredString(externalReference, 'Plan external reference')
-      const query = new URLSearchParams({ q: exactReference })
-      const raw = await request(`/preapproval_plan/search?${query.toString()}`)
-      if (!Array.isArray(raw.results)) throw new MercadoPagoSubscriptionContractError()
-      return raw.results
-        .map((plan) => asRecord(plan))
-        .filter((plan) => plan.external_reference === exactReference)
-        .map((plan) => normalizePlan(plan))
+    async getCurrentAccountId() {
+      return providerId((await request('/users/me')).id)
     },
 
     async createSubscription(input) {
