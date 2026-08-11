@@ -146,6 +146,7 @@ export async function recoverBusiness(): Promise<RecoverBusinessResult> {
           planId: betaPlan.id,
           status: 'trialing',
           interval: 'monthly',
+          amount: betaPlan.priceMonthly,
           currentPeriodStart: new Date(),
           currentPeriodEnd: thirtyDaysFromNow,
           trialStartAt: new Date(),
