@@ -2,22 +2,26 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- executable CommonJS script */
 
 const { spawnSync } = require('node:child_process')
-const { existsSync } = require('node:fs')
+const { existsSync, mkdtempSync, rmSync } = require('node:fs')
+const { tmpdir } = require('node:os')
+const { delimiter, dirname, join } = require('node:path')
 const { monthlyLocal, tenantLocal, postgres, scenarios } = require('./payment-qa-manifest.cjs')
+const { paymentQaCommands } = require('./payment-qa-runtime.cjs')
 
 function fail(message) {
   console.error(message)
   process.exit(1)
 }
 
-function childEnvironment(databaseUrl) {
-  const env = {}
-  const executionKeys = [
-    'PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'CI', 'TERM',
-    'SYSTEMROOT', 'COMSPEC', 'PATHEXT', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
-  ]
-  for (const key of executionKeys) {
-    if (process.env[key]) env[key] = process.env[key]
+function childEnvironment(databaseUrl, scratchHome) {
+  const nodeDirectory = dirname(process.execPath)
+  const env = {
+    PATH: [nodeDirectory, '/usr/bin', '/bin'].join(delimiter),
+    HOME: scratchHome,
+    TMPDIR: scratchHome,
+    TMP: scratchHome,
+    TEMP: scratchHome,
+    USERPROFILE: scratchHome,
   }
   env.NODE_ENV = 'test'
   env.APP_ENV = 'test'
@@ -37,8 +41,11 @@ function childEnvironment(databaseUrl) {
 
 function run(command, args, env) {
   const result = spawnSync(command, args, { stdio: 'inherit', env })
-  if (result.error) fail(`QA runner could not start ${command}.`)
-  if (result.status !== 0) process.exit(result.status ?? 1)
+  if (result.error) {
+    console.error('QA runner could not start trusted local CLI.')
+    return 1
+  }
+  return result.status ?? 1
 }
 
 function printManifest() {
@@ -75,16 +82,25 @@ const databaseUrl = args.has('--postgres') ? validatedPostgresUrl() : undefined
 printManifest()
 if (args.has('--list')) process.exit(0)
 
-const env = childEnvironment(databaseUrl)
+const scratchHome = mkdtempSync(join(tmpdir(), 'agendita-payment-qa-home-'))
+let status = 0
+try {
+  const env = childEnvironment(databaseUrl, scratchHome)
+  const commands = paymentQaCommands()
+  status = run(commands.vitest.executable, [
+    commands.vitest.cli, '--run', ...monthlyLocal, ...tenantLocal,
+    '--testTimeout=30000', '--maxWorkers=4', '--config=vitest.payment-qa.config.ts',
+  ], env)
 
-run('npm', [
-  'test', '--', ...monthlyLocal, ...tenantLocal,
-  '--testTimeout=30000', '--maxWorkers=4', '--config=vitest.payment-qa.config.ts',
-], env)
-
-if (args.has('--postgres')) {
-  run('./node_modules/.bin/prisma', ['migrate', 'deploy'], env)
-  run('./node_modules/.bin/vitest', ['--run', '--config', 'vitest.payment-qa.integration.config.ts', ...postgres], env)
-} else {
-  console.log('External sandbox and PostgreSQL QA remain pending; rerun with --postgres for local DB suites.')
+  if (status === 0 && args.has('--postgres')) {
+    status = run(commands.prisma.executable, [commands.prisma.cli, 'migrate', 'deploy'], env)
+    if (status === 0) {
+      status = run(commands.vitest.executable, [commands.vitest.cli, '--run', '--config', 'vitest.payment-qa.integration.config.ts', ...postgres], env)
+    }
+  } else if (status === 0) {
+    console.log('External sandbox and PostgreSQL QA remain pending; rerun with --postgres for local DB suites.')
+  }
+} finally {
+  rmSync(scratchHome, { recursive: true, force: true })
 }
+if (status !== 0) process.exit(status)

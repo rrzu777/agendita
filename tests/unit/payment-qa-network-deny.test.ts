@@ -21,6 +21,9 @@ describe('payment QA offline network boundary', () => {
   it.runIf(process.env.PAYMENT_QA_OFFLINE === '1')('is preloaded by the dedicated runner', () => {
     expect(process.env.MERCADO_PAGO_ACCESS_TOKEN).toBeUndefined()
     expect(process.env.RESEND_API_KEY).toBeUndefined()
+    for (const key of ['NODE_OPTIONS', 'NODE_PATH', 'BUN_OPTIONS', 'NPM_CONFIG_REGISTRY', 'ENCRYPTION_KEY', 'CRON_SECRET', 'SUPABASE_SERVICE_ROLE_KEY', 'UPSTASH_REDIS_REST_TOKEN', 'R2_SECRET_ACCESS_KEY', 'AWS_SECRET_ACCESS_KEY', 'VERCEL_OIDC_TOKEN', 'UNRELATED_SECRET']) {
+      expect(process.env[key]).toBeUndefined()
+    }
     expect(() => fetch('https://example.com')).toThrow('blocks external HTTP(S)')
     expect(() => http.get('http://example.com')).toThrow('blocks external HTTP(S)')
     expect(() => https.get('https://example.com')).toThrow('blocks external HTTP(S)')

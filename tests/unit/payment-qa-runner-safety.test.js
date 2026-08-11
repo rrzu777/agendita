@@ -1,8 +1,9 @@
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { delimiter, join, sep } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
+import runtime from '../../scripts/payment-qa-runtime.cjs'
 
 const ROOT = process.cwd()
 const RUNNER = join(ROOT, 'scripts/run-payment-qa.cjs')
@@ -12,16 +13,22 @@ afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
-function fakeNpmEnvironment(extraEnv = {}) {
+function hostileExecutionEnvironment(extraEnv = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'agendita-payment-qa-'))
   temporaryDirectories.push(directory)
-  const output = join(directory, 'child.json')
-  const executable = join(directory, 'npm')
-  writeFileSync(executable, `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(output)}, JSON.stringify({ env: process.env, args: process.argv.slice(2) }))\n`)
+  const output = join(directory, 'hostile-executed')
+  const executable = join(directory, 'hostile')
+  writeFileSync(executable, `#!/bin/sh\ntouch ${JSON.stringify(output)}\nexit 99\n`)
   chmodSync(executable, 0o755)
+  for (const name of ['npm', 'node']) {
+    const path = join(directory, name)
+    writeFileSync(path, `#!/bin/sh\nexec ${JSON.stringify(executable)}\n`)
+    chmodSync(path, 0o755)
+  }
+  writeFileSync(join(directory, '.npmrc'), `script-shell=${executable}\nnode-options=--require=${directory}/evil.js\n`)
   return {
     output,
-    env: { ...process.env, PATH: `${directory}${delimiter}${process.env.PATH}`, ...extraEnv },
+    env: { ...process.env, HOME: directory, PATH: `${directory}${delimiter}${process.env.PATH}`, ...extraEnv },
   }
 }
 
@@ -37,29 +44,35 @@ describe('payment QA runner safety boundary', () => {
     ['query parameters', { NODE_ENV: 'test', TEST_DATABASE_URL: 'postgresql://postgres:test@127.0.0.1:5432/agendita_payment_qa_test?schema=public' }],
     ['missing password', { NODE_ENV: 'test', TEST_DATABASE_URL: 'postgresql://postgres@127.0.0.1:5432/agendita_payment_qa_test' }],
   ])('rejects %s before spawning a child', (_name, overrides) => {
-    const fake = fakeNpmEnvironment({
+    const fake = hostileExecutionEnvironment({
       ...overrides,
       DATABASE_URL: overrides.TEST_DATABASE_URL,
       DIRECT_URL: overrides.TEST_DATABASE_URL,
     })
     const result = run(['--postgres'], fake.env)
     expect(result.status).not.toBe(0)
-    expect(() => readFileSync(fake.output)).toThrow()
+    expect(existsSync(fake.output)).toBe(false)
   })
 
   it('rejects parent database URL mismatches before spawning a child', () => {
     const safe = 'postgresql://postgres:test@127.0.0.1:5432/agendita_payment_qa_test'
-    const fake = fakeNpmEnvironment({
+    const fake = hostileExecutionEnvironment({
       NODE_ENV: 'test', TEST_DATABASE_URL: safe, DATABASE_URL: safe,
       DIRECT_URL: 'postgresql://postgres:test@127.0.0.1:5432/other',
     })
     const result = run(['--postgres'], fake.env)
     expect(result.status).not.toBe(0)
-    expect(() => readFileSync(fake.output)).toThrow()
+    expect(existsSync(fake.output)).toBe(false)
   })
 
-  it('sanitizes provider credentials and injects the offline network guard', () => {
-    const fake = fakeNpmEnvironment({
+  it('uses absolute trusted local CLIs through the current Node executable', () => {
+    const commands = runtime.paymentQaCommands(ROOT)
+    expect(Object.values(commands).every((command) => command.executable === process.execPath)).toBe(true)
+    expect(Object.values(commands).every((command) => command.cli.startsWith(join(ROOT, 'node_modules') + sep))).toBe(true)
+  })
+
+  it('ignores hostile PATH, HOME npm config, node and npm shims', () => {
+    const fake = hostileExecutionEnvironment({
       MERCADO_PAGO_ACCESS_TOKEN: 'sentinel', MERCADO_PAGO_CLIENT_SECRET: 'sentinel',
       RESEND_API_KEY: 'sentinel', FROM_EMAIL: 'sentinel@example.com', PAYMENT_PROVIDER: 'mercado_pago',
       MP_SUBSCRIPTIONS_ENABLED: 'true',
@@ -71,19 +84,6 @@ describe('payment QA runner safety boundary', () => {
     })
     const result = run([], fake.env)
     expect(result.status).toBe(0)
-    const child = JSON.parse(readFileSync(fake.output, 'utf8'))
-    expect(child.env.PAYMENT_QA_OFFLINE).toBe('1')
-    expect(child.env.MERCADO_PAGO_ACCESS_TOKEN).toBeUndefined()
-    expect(child.env.MERCADO_PAGO_CLIENT_SECRET).toBeUndefined()
-    expect(child.env.RESEND_API_KEY).toBeUndefined()
-    expect(child.env.FROM_EMAIL).toBeUndefined()
-    expect(child.env.PAYMENT_PROVIDER).toBeUndefined()
-    expect(child.env.MP_SUBSCRIPTIONS_ENABLED).toBeUndefined()
-    for (const key of [
-      'NODE_OPTIONS', 'NODE_PATH', 'BUN_OPTIONS', 'VITEST_POOL_ID', 'NPM_CONFIG_REGISTRY',
-      'ENCRYPTION_KEY', 'CRON_SECRET', 'SUPABASE_SERVICE_ROLE_KEY', 'UPSTASH_REDIS_REST_TOKEN',
-      'R2_SECRET_ACCESS_KEY', 'AWS_SECRET_ACCESS_KEY', 'VERCEL_OIDC_TOKEN', 'UNRELATED_SECRET',
-    ]) expect(child.env[key]).toBeUndefined()
-    expect(child.args).toContain('--config=vitest.payment-qa.config.ts')
-  })
+    expect(existsSync(fake.output)).toBe(false)
+  }, 30000)
 })
