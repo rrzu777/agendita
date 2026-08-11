@@ -116,6 +116,18 @@ describe('env validation', () => {
         )
       })
 
+      it('accepts an exact HTTPS localhost subscriptions callback in development', async () => {
+        setEnv({
+          ...subscriptionEnv,
+          MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL:
+            'https://localhost:3000/api/mercado-pago/subscriptions/callback',
+        })
+        const { validateEnv } = await import('@/lib/env')
+        expect(validateEnv().errors).not.toEqual(expect.arrayContaining([
+          expect.objectContaining({ key: 'MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL' }),
+        ]))
+      })
+
       it('accepts only the selected production credentials when subscriptions are enabled', async () => {
         setEnv({
           ...subscriptionEnv,
@@ -250,10 +262,29 @@ describe('env validation', () => {
         MERCADO_PAGO_CLIENT_SECRET: 'client-secret',
         MERCADO_PAGO_REDIRECT_URI: 'http://localhost:3000/api/mercado-pago/callback',
         MERCADO_PAGO_ENVIRONMENT: 'sandbox',
+        ENCRYPTION_KEY: 'encryption-key',
       })
       const { validateEnv } = await import('@/lib/env')
 
       expect(validateEnv().errors).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: 'MERCADO_PAGO_REDIRECT_URI' }),
+      ]))
+    })
+
+    it.each([
+      'https://localhost:3000/api/mercado-pago/callback',
+      'http://127.0.0.1:3000/api/mercado-pago/callback',
+      'http://localhost:3000/api/mercado-pago/subscriptions/callback',
+    ])('rejects a non-canonical development OAuth callback: %s', async redirectUri => {
+      setEnv({
+        NODE_ENV: 'development', DATABASE_URL: 'postgresql://localhost/test', DIRECT_URL: 'postgresql://localhost/test',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+        APP_DOMAIN: 'localhost:3000', NEXT_PUBLIC_APP_DOMAIN: 'localhost:3000', PAYMENT_PROVIDER: 'manual',
+        MERCADO_PAGO_CLIENT_ID: 'client-id', MERCADO_PAGO_CLIENT_SECRET: 'client-secret',
+        MERCADO_PAGO_REDIRECT_URI: redirectUri, MERCADO_PAGO_ENVIRONMENT: 'sandbox', ENCRYPTION_KEY: 'encryption-key',
+      })
+      const { validateEnv } = await import('@/lib/env')
+      expect(validateEnv().errors).toEqual(expect.arrayContaining([
         expect.objectContaining({ key: 'MERCADO_PAGO_REDIRECT_URI' }),
       ]))
     })

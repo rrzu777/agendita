@@ -44,7 +44,7 @@ function isExactCanonicalCallback(
     const domain = process.env.APP_DOMAIN || process.env.NEXT_PUBLIC_APP_DOMAIN
     if (!domain || domain.includes('/')) return false
     const local = domain.startsWith('localhost') || domain.startsWith('127.0.0.1')
-    const canonicalOrigin = `${process.env.NODE_ENV !== 'production' && local ? 'http' : 'https'}://${domain}`
+    const canonicalOrigin = `${!requireHttps && process.env.NODE_ENV !== 'production' && local ? 'http' : 'https'}://${domain}`
     return (!requireHttps || url.protocol === 'https:')
       && url.origin === canonicalOrigin
       && url.pathname === pathname

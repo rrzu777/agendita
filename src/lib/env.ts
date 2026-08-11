@@ -55,19 +55,20 @@ function isValidOAuthRedirectUrl(value: string, production: boolean): boolean {
   }
 }
 
-function canonicalAppOrigin(production: boolean): string | null {
+function canonicalAppOrigin(production: boolean, forceHttps: boolean): string | null {
   const domain = process.env.APP_DOMAIN || process.env.NEXT_PUBLIC_APP_DOMAIN
   if (!domain || hasPath(domain)) return null
   const local = domain.startsWith('localhost') || domain.startsWith('127.0.0.1')
-  return `${!production && local ? 'http' : 'https'}://${domain}`
+  return `${!forceHttps && !production && local ? 'http' : 'https'}://${domain}`
 }
 
 function isExactCallbackUrl(
   value: string,
   expectedPathname: string,
   production: boolean,
+  forceHttps = false,
 ): boolean {
-  const origin = canonicalAppOrigin(production)
+  const origin = canonicalAppOrigin(production, forceHttps)
   if (!origin) return false
   try {
     const url = new URL(value)
@@ -393,6 +394,7 @@ export function validateEnv(): EnvValidationResult {
             callbackUrl,
             '/api/mercado-pago/subscriptions/callback',
             isProduction,
+            true,
           )
         )
       ) {

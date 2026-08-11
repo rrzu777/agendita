@@ -253,6 +253,18 @@ describe('dependency health probes', () => {
       await expect(probeMercadoPagoSubscriptions()).resolves.toBe('down')
       expect(fetchMock).not.toHaveBeenCalled()
     })
+
+    it('accepts exact HTTPS localhost subscriptions configuration in development', async () => {
+      vi.stubEnv('NODE_ENV', 'development')
+      vi.stubEnv('APP_DOMAIN', 'localhost:3000')
+      vi.stubEnv('MP_SUBSCRIPTIONS_ENABLED', 'true')
+      vi.stubEnv('MERCADO_PAGO_ENVIRONMENT', 'sandbox')
+      vi.stubEnv('MERCADO_PAGO_SANDBOX_ACCESS_TOKEN', 'mp-token')
+      vi.stubEnv('MERCADO_PAGO_SANDBOX_WEBHOOK_SECRET', 'webhook-secret')
+      vi.stubEnv('MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL', 'https://localhost:3000/api/mercado-pago/subscriptions/callback')
+      vi.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({ id: 123 }), { status: 200 }))
+      await expect(probeMercadoPagoSubscriptions()).resolves.toBe('up')
+    })
   })
 
   describe('probeMercadoPagoOAuth', () => {
@@ -286,6 +298,32 @@ describe('dependency health probes', () => {
 
       await expect(probeMercadoPagoOAuth()).resolves.toBe('up')
       expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('accepts exact HTTP localhost OAuth with complete encrypted configuration in development', async () => {
+      vi.stubEnv('NODE_ENV', 'development')
+      vi.stubEnv('APP_DOMAIN', 'localhost:3000')
+      vi.stubEnv('MERCADO_PAGO_CLIENT_ID', 'client-id')
+      vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
+      vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'http://localhost:3000/api/mercado-pago/callback')
+      vi.stubEnv('MERCADO_PAGO_ENVIRONMENT', 'sandbox')
+      vi.stubEnv('ENCRYPTION_KEY', 'encryption-key')
+      await expect(probeMercadoPagoOAuth()).resolves.toBe('up')
+    })
+
+    it.each([
+      'https://localhost:3000/api/mercado-pago/callback',
+      'http://127.0.0.1:3000/api/mercado-pago/callback',
+      'http://localhost:3000/api/mercado-pago/subscriptions/callback',
+    ])('rejects non-canonical development OAuth callback %s', async redirectUri => {
+      vi.stubEnv('NODE_ENV', 'development')
+      vi.stubEnv('APP_DOMAIN', 'localhost:3000')
+      vi.stubEnv('MERCADO_PAGO_CLIENT_ID', 'client-id')
+      vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
+      vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', redirectUri)
+      vi.stubEnv('MERCADO_PAGO_ENVIRONMENT', 'sandbox')
+      vi.stubEnv('ENCRYPTION_KEY', 'encryption-key')
+      await expect(probeMercadoPagoOAuth()).resolves.toBe('down')
     })
 
     it('does not report OAuth up without an explicit environment', async () => {

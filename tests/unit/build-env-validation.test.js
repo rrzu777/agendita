@@ -116,6 +116,52 @@ describe('build environment validation', () => {
     expect(result.stderr).toContain('MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL')
   })
 
+  it('accepts an exact HTTPS localhost subscriptions callback in development', () => {
+    const env = {
+      ...process.env, NODE_ENV: 'development', DATABASE_URL: 'postgresql://localhost/test',
+      DIRECT_URL: 'postgresql://localhost/test', NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key', APP_DOMAIN: 'localhost:3000',
+      NEXT_PUBLIC_APP_DOMAIN: 'localhost:3000', PAYMENT_PROVIDER: 'manual', MP_SUBSCRIPTIONS_ENABLED: 'true',
+      MERCADO_PAGO_ENVIRONMENT: 'sandbox', MERCADO_PAGO_SANDBOX_ACCESS_TOKEN: 'sandbox-token',
+      MERCADO_PAGO_SANDBOX_WEBHOOK_SECRET: 'sandbox-secret',
+      MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL: 'https://localhost:3000/api/mercado-pago/subscriptions/callback',
+    }
+    const result = spawnSync(process.execPath, [scriptPath], { env, encoding: 'utf8' })
+    expect(result.status).toBe(0)
+  })
+
+  it('accepts complete development OAuth on exact HTTP localhost', () => {
+    const env = {
+      ...process.env, NODE_ENV: 'development', DATABASE_URL: 'postgresql://localhost/test',
+      DIRECT_URL: 'postgresql://localhost/test', NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key', APP_DOMAIN: 'localhost:3000',
+      NEXT_PUBLIC_APP_DOMAIN: 'localhost:3000', PAYMENT_PROVIDER: 'manual',
+      MERCADO_PAGO_CLIENT_ID: 'client-id', MERCADO_PAGO_CLIENT_SECRET: 'client-secret',
+      MERCADO_PAGO_REDIRECT_URI: 'http://localhost:3000/api/mercado-pago/callback',
+      MERCADO_PAGO_ENVIRONMENT: 'sandbox', ENCRYPTION_KEY: 'encryption-key',
+    }
+    const result = spawnSync(process.execPath, [scriptPath], { env, encoding: 'utf8' })
+    expect(result.status).toBe(0)
+  })
+
+  it.each([
+    'https://localhost:3000/api/mercado-pago/callback',
+    'http://127.0.0.1:3000/api/mercado-pago/callback',
+    'http://localhost:3000/api/mercado-pago/subscriptions/callback',
+  ])('rejects non-canonical development OAuth callback %s', redirectUri => {
+    const env = {
+      ...process.env, NODE_ENV: 'development', DATABASE_URL: 'postgresql://localhost/test',
+      DIRECT_URL: 'postgresql://localhost/test', NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key', APP_DOMAIN: 'localhost:3000',
+      NEXT_PUBLIC_APP_DOMAIN: 'localhost:3000', PAYMENT_PROVIDER: 'manual',
+      MERCADO_PAGO_CLIENT_ID: 'client-id', MERCADO_PAGO_CLIENT_SECRET: 'client-secret',
+      MERCADO_PAGO_REDIRECT_URI: redirectUri, MERCADO_PAGO_ENVIRONMENT: 'sandbox', ENCRYPTION_KEY: 'encryption-key',
+    }
+    const result = spawnSync(process.execPath, [scriptPath], { env, encoding: 'utf8' })
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('MERCADO_PAGO_REDIRECT_URI')
+  })
+
   it('requires an explicit environment and exact canonical OAuth callback', () => {
     const env = {
       ...process.env,

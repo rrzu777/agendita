@@ -48,15 +48,15 @@ function isValidCallbackUrl(value, { allowLocalHttp = false } = {}) {
   }
 }
 
-function canonicalAppOrigin(isProduction) {
+function canonicalAppOrigin(isProduction, forceHttps) {
   const domain = getServerEnv('APP_DOMAIN') || getEnv('NEXT_PUBLIC_APP_DOMAIN')
   if (!domain || hasPath(domain)) return null
   const local = domain.startsWith('localhost') || domain.startsWith('127.0.0.1')
-  return `${!isProduction && local ? 'http' : 'https'}://${domain}`
+  return `${!forceHttps && !isProduction && local ? 'http' : 'https'}://${domain}`
 }
 
-function isExactCallbackUrl(value, expectedPathname, isProduction) {
-  const origin = canonicalAppOrigin(isProduction)
+function isExactCallbackUrl(value, expectedPathname, isProduction, forceHttps = false) {
+  const origin = canonicalAppOrigin(isProduction, forceHttps)
   if (!origin) return false
   try {
     const url = new URL(value)
@@ -236,6 +236,7 @@ function validate() {
           callbackUrl,
           '/api/mercado-pago/subscriptions/callback',
           isProduction,
+          true,
         )
       )) {
         errors.push(`${callbackKey} must be HTTPS and exactly match the canonical app origin plus /api/mercado-pago/subscriptions/callback, without credentials, query, or hash.`)
