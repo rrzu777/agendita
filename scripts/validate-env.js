@@ -48,6 +48,25 @@ function isValidCallbackUrl(value, { allowLocalHttp = false } = {}) {
   }
 }
 
+function canonicalAppOrigin(isProduction) {
+  const domain = getServerEnv('APP_DOMAIN') || getEnv('NEXT_PUBLIC_APP_DOMAIN')
+  if (!domain || hasPath(domain)) return null
+  const local = domain.startsWith('localhost') || domain.startsWith('127.0.0.1')
+  return `${!isProduction && local ? 'http' : 'https'}://${domain}`
+}
+
+function isExactCallbackUrl(value, expectedPathname, isProduction) {
+  const origin = canonicalAppOrigin(isProduction)
+  if (!origin) return false
+  try {
+    const url = new URL(value)
+    return url.origin === origin && url.pathname === expectedPathname &&
+      !url.username && !url.password && !url.search && !url.hash
+  } catch {
+    return false
+  }
+}
+
 function validate() {
   const errors = []
   const isProduction = (process.env.NODE_ENV || 'development') === 'production'
@@ -86,8 +105,11 @@ function validate() {
     }
   }
   const oauthRedirect = getServerEnv('MERCADO_PAGO_REDIRECT_URI')
-  if (oauthRedirect && !isValidCallbackUrl(oauthRedirect, { allowLocalHttp: !isProduction })) {
-    errors.push('MERCADO_PAGO_REDIRECT_URI must be HTTPS (HTTP localhost is allowed only outside production).')
+  if (oauthRedirect && (
+    !isValidCallbackUrl(oauthRedirect, { allowLocalHttp: !isProduction }) ||
+    !isExactCallbackUrl(oauthRedirect, '/api/mercado-pago/callback', isProduction)
+  )) {
+    errors.push('MERCADO_PAGO_REDIRECT_URI must exactly match the canonical app origin and /api/mercado-pago/callback (HTTP localhost only outside production; no credentials, query, or hash).')
   }
 
   if (!provider && !hasMpOAuth) {
@@ -183,6 +205,11 @@ function validate() {
   if (subscriptionsEnvironment && !hasValidSubscriptionsEnvironment) {
     errors.push('MERCADO_PAGO_ENVIRONMENT must be "sandbox" or "production".')
   }
+  if (hasMpOAuth && !hasValidSubscriptionsEnvironment) {
+    errors.push(
+      'MERCADO_PAGO_ENVIRONMENT is required for OAuth and must be "sandbox" or "production".',
+    )
+  }
   if (subscriptionsEnabled.toLowerCase() === 'true') {
     if (!hasValidSubscriptionsEnvironment) {
       errors.push(
@@ -200,8 +227,15 @@ function validate() {
       }
       const callbackKey = `${prefix}_SUBSCRIPTIONS_CALLBACK_URL`
       const callbackUrl = getServerEnv(callbackKey)
-      if (callbackUrl && !isValidCallbackUrl(callbackUrl)) {
-        errors.push(`${callbackKey} must be a valid HTTPS URL.`)
+      if (callbackUrl && (
+        !isValidCallbackUrl(callbackUrl) ||
+        !isExactCallbackUrl(
+          callbackUrl,
+          '/api/mercado-pago/subscriptions/callback',
+          isProduction,
+        )
+      )) {
+        errors.push(`${callbackKey} must be HTTPS and exactly match the canonical app origin plus /api/mercado-pago/subscriptions/callback, without credentials, query, or hash.`)
       }
     }
   }

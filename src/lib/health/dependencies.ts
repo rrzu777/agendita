@@ -34,6 +34,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+function isExactCanonicalCallback(value: string, pathname: string): boolean {
+  try {
+    const url = new URL(value)
+    const domain = process.env.APP_DOMAIN || process.env.NEXT_PUBLIC_APP_DOMAIN
+    if (!domain || domain.includes('/')) return false
+    const local = domain.startsWith('localhost') || domain.startsWith('127.0.0.1')
+    const canonicalOrigin = `${process.env.NODE_ENV !== 'production' && local ? 'http' : 'https'}://${domain}`
+    return url.origin === canonicalOrigin
+      && url.pathname === pathname
+      && url.username === ''
+      && url.password === ''
+      && url.search === ''
+      && url.hash === ''
+  } catch {
+    return false
+  }
+}
+
 export function isDependencyReady(
   status: DependencyStatus,
   required: boolean,
@@ -147,7 +165,17 @@ export async function probeMercadoPagoSubscriptions(): Promise<DependencyStatus>
   const token = process.env[
     `MERCADO_PAGO_${environment.toUpperCase()}_ACCESS_TOKEN`
   ]
-  if (!token) return 'not_configured'
+  const webhookSecret = process.env[
+    `MERCADO_PAGO_${environment.toUpperCase()}_WEBHOOK_SECRET`
+  ]
+  const callbackUrl = process.env[
+    `MERCADO_PAGO_${environment.toUpperCase()}_SUBSCRIPTIONS_CALLBACK_URL`
+  ]
+  if (!token || !webhookSecret || !callbackUrl) return 'not_configured'
+  if (!isExactCanonicalCallback(
+    callbackUrl,
+    '/api/mercado-pago/subscriptions/callback',
+  )) return 'down'
 
   try {
     const response = await fetch('https://api.mercadopago.com/users/me', {
@@ -179,15 +207,17 @@ export async function probeMercadoPagoOAuth(): Promise<DependencyStatus> {
   const clientId = process.env.MERCADO_PAGO_CLIENT_ID
   const clientSecret = process.env.MERCADO_PAGO_CLIENT_SECRET
   const redirectUri = process.env.MERCADO_PAGO_REDIRECT_URI
-  if (!clientId || !clientSecret || !redirectUri) return 'down'
+  const environment = process.env.MERCADO_PAGO_ENVIRONMENT
+  if (
+    !clientId
+    || !clientSecret
+    || !redirectUri
+    || (environment !== 'sandbox' && environment !== 'production')
+  ) return 'down'
 
   try {
-    const url = new URL(redirectUri)
-    const localDevelopment = process.env.NODE_ENV !== 'production'
-      && url.protocol === 'http:'
-      && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
-    return url.protocol === 'https:' || localDevelopment ? 'up' : 'down'
-  } catch {
-    return 'down'
-  }
+    return isExactCanonicalCallback(redirectUri, '/api/mercado-pago/callback')
+      ? 'up'
+      : 'down'
+  } catch { return 'down' }
 }

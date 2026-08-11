@@ -13,9 +13,16 @@ clienta → dueña y usa credenciales separadas por ambiente.
 - `MERCADO_PAGO_<AMBIENTE>_SUBSCRIPTIONS_CALLBACK_URL`.
 - `CRON_SECRET`, igual en runtime y GitHub Actions.
 
-No hay fallback al token genérico ni al otro ambiente. La callback debe ser
-HTTPS y terminar en `/api/webhooks/mercado-pago/subscriptions`. Registrar
-preapproval y pagos autorizados en Mercado Pago Developers.
+No hay fallback al token genérico ni al otro ambiente. La callback configurada
+en la variable debe ser HTTPS y terminar exactamente en
+`/api/mercado-pago/subscriptions/callback`. Este callback de navegador es
+distinto del webhook firmado `/api/webhooks/mercado-pago/subscriptions`, donde
+se registran preapproval y pagos autorizados.
+
+El origen del callback debe coincidir exactamente con `APP_DOMAIN`, incluyendo
+la decisión de usar o no `www`; no admite previews con otro hostname, puertos
+alternos, credenciales embebidas, query ni hash. Para probar un preview se debe
+configurar explícitamente ese dominio como el canónico del entorno.
 
 ## Health seguro
 

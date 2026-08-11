@@ -92,11 +92,15 @@ El health protegido tampoco crea preferencias, autorizaciones ni pagos.
 
 **Validation**:
 ```bash
-# Check DB state
-psql $DATABASE_URL -c "SELECT id, status, depositPaid FROM booking WHERE id='{bookingId}'"
-psql $DATABASE_URL -c "SELECT id, bookingId, status, paymentType FROM payment ORDER BY createdAt DESC LIMIT 5"
-psql $DATABASE_URL -c "SELECT id, bookingId, type, direction FROM ledger_entry ORDER BY createdAt DESC LIMIT 5"
+# Sólo agregados seguros; ejecutar con un rol read-only.
+psql $DATABASE_URL -c 'SELECT status, COUNT(*) FROM "Booking" GROUP BY status'
+psql $DATABASE_URL -c 'SELECT status, COUNT(*) FROM "Payment" GROUP BY status'
+psql $DATABASE_URL -c 'SELECT type, direction, COUNT(*) FROM "LedgerEntry" GROUP BY type, direction'
 ```
+
+No copiar filas, identificadores, correos, URLs, payloads ni credenciales a la
+evidencia. Confirmar el caso individual dentro de la UI sandbox y conservar
+externamente sólo PASS/FAIL, conteos, estados, timestamps redondeados y booleans.
 
 ---
 

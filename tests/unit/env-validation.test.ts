@@ -35,7 +35,7 @@ describe('env validation', () => {
         MERCADO_PAGO_SANDBOX_ACCESS_TOKEN: 'sandbox-token',
         MERCADO_PAGO_SANDBOX_WEBHOOK_SECRET: 'sandbox-webhook-secret',
         MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL:
-          'https://sandbox.example.com/api/webhooks/mercado-pago/subscriptions',
+          'http://localhost:3000/api/mercado-pago/subscriptions/callback',
       }
 
       it('fails closed when an enabled subscriptions transport lacks required sandbox configuration', async () => {
@@ -120,12 +120,14 @@ describe('env validation', () => {
         setEnv({
           ...subscriptionEnv,
           NODE_ENV: 'production',
+          APP_DOMAIN: 'app.agendita.com',
+          NEXT_PUBLIC_APP_DOMAIN: 'app.agendita.com',
           MP_SUBSCRIPTIONS_ENABLED: 'true',
           MERCADO_PAGO_ENVIRONMENT: 'production',
           MERCADO_PAGO_PRODUCTION_ACCESS_TOKEN: 'production-token',
           MERCADO_PAGO_PRODUCTION_WEBHOOK_SECRET: 'production-webhook-secret',
           MERCADO_PAGO_PRODUCTION_SUBSCRIPTIONS_CALLBACK_URL:
-            'https://app.agendita.com/api/webhooks/mercado-pago/subscriptions',
+            'https://app.agendita.com/api/mercado-pago/subscriptions/callback',
           UPSTASH_REDIS_REST_URL: 'https://redis.example.com',
           UPSTASH_REDIS_REST_TOKEN: 'redis-token',
         })
@@ -157,6 +159,56 @@ describe('env validation', () => {
       ]))
     })
 
+    it('requires an explicit valid environment for complete OAuth configuration', async () => {
+      setEnv({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost/test',
+        DIRECT_URL: 'postgresql://localhost/test',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+        APP_DOMAIN: 'app.example.com',
+        NEXT_PUBLIC_APP_DOMAIN: 'app.example.com',
+        PAYMENT_PROVIDER: 'manual',
+        MERCADO_PAGO_CLIENT_ID: 'client-id',
+        MERCADO_PAGO_CLIENT_SECRET: 'client-secret',
+        MERCADO_PAGO_REDIRECT_URI: 'https://app.example.com/api/mercado-pago/callback',
+        MERCADO_PAGO_ENVIRONMENT: undefined,
+      })
+      const { validateEnv } = await import('@/lib/env')
+
+      expect(validateEnv().errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: 'MERCADO_PAGO_ENVIRONMENT' }),
+      ]))
+    })
+
+    it.each([
+      'https://www.app.example.com/api/mercado-pago/callback',
+      'https://app.example.com/api/mercado-pago/callback?next=1',
+      'https://user@app.example.com/api/mercado-pago/callback',
+      'https://app.example.com:444/api/mercado-pago/callback',
+      'https://app.example.com/api/mercado-pago/subscriptions/callback',
+    ])('rejects OAuth callback outside the exact canonical route: %s', async redirectUri => {
+      setEnv({
+        NODE_ENV: 'production',
+        DATABASE_URL: 'postgresql://localhost/test',
+        DIRECT_URL: 'postgresql://localhost/test',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+        APP_DOMAIN: 'app.example.com',
+        NEXT_PUBLIC_APP_DOMAIN: 'app.example.com',
+        PAYMENT_PROVIDER: 'manual',
+        MERCADO_PAGO_CLIENT_ID: 'client-id',
+        MERCADO_PAGO_CLIENT_SECRET: 'client-secret',
+        MERCADO_PAGO_REDIRECT_URI: redirectUri,
+        MERCADO_PAGO_ENVIRONMENT: 'sandbox',
+      })
+      const { validateEnv } = await import('@/lib/env')
+
+      expect(validateEnv().errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: 'MERCADO_PAGO_REDIRECT_URI' }),
+      ]))
+    })
+
     it('allows an HTTP localhost OAuth callback only in development', async () => {
       setEnv({
         NODE_ENV: 'development',
@@ -170,6 +222,7 @@ describe('env validation', () => {
         MERCADO_PAGO_CLIENT_ID: 'client-id',
         MERCADO_PAGO_CLIENT_SECRET: 'client-secret',
         MERCADO_PAGO_REDIRECT_URI: 'http://localhost:3000/api/mercado-pago/callback',
+        MERCADO_PAGO_ENVIRONMENT: 'sandbox',
       })
       const { validateEnv } = await import('@/lib/env')
 

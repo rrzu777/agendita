@@ -18,9 +18,12 @@ function setRequiredEnv(paymentProvider = 'mercado_pago') {
   vi.stubEnv('MP_SUBSCRIPTIONS_ENABLED', 'true')
   vi.stubEnv('MERCADO_PAGO_ENVIRONMENT', 'sandbox')
   vi.stubEnv('MERCADO_PAGO_SANDBOX_ACCESS_TOKEN', 'mp-subscriptions-token')
+  vi.stubEnv('MERCADO_PAGO_SANDBOX_WEBHOOK_SECRET', 'mp-subscriptions-secret')
+  vi.stubEnv('MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL', 'https://www.agendita.cl/api/mercado-pago/subscriptions/callback')
   vi.stubEnv('MERCADO_PAGO_CLIENT_ID', 'client-id')
   vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
   vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://www.agendita.cl/api/mercado-pago/callback')
+  vi.stubEnv('APP_DOMAIN', 'www.agendita.cl')
 }
 
 type ProviderOverrides = {
@@ -182,7 +185,7 @@ describe('GET /api/health/dependencies', () => {
     vi.stubEnv('PAYMENT_PROVIDER', '')
     vi.stubEnv('MERCADO_PAGO_CLIENT_ID', 'client-id')
     vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
-    vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://app.example.com/callback')
+    vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://www.agendita.cl/api/mercado-pago/callback')
     vi.stubEnv('MERCADO_PAGO_ACCESS_TOKEN', '')
     mockProviders()
 

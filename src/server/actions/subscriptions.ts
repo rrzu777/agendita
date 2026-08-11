@@ -65,7 +65,7 @@ export async function startSubscriptionAction(
 ): Promise<SubscriptionActionState> {
   void _previousState
   void _formData
-  await requireBusinessRole(['owner'])
+  await requireBusinessRole(['owner', 'admin'])
   return subscriptionActionState('start_checkout', startSubscriptionCheckout)
 }
 
@@ -75,7 +75,7 @@ export async function cancelSubscriptionAction(
 ): Promise<SubscriptionActionState> {
   void _previousState
   void _formData
-  await requireBusinessRole(['owner'])
+  await requireBusinessRole(['owner', 'admin'])
   return subscriptionActionState('cancel_renewal', requestSubscriptionCancellation)
 }
 

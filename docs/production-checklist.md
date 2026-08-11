@@ -111,7 +111,7 @@ SUBSCRIPTION_ENFORCEMENT_ENABLED=false
 MERCADO_PAGO_ENVIRONMENT=sandbox
 MERCADO_PAGO_SANDBOX_ACCESS_TOKEN=
 MERCADO_PAGO_SANDBOX_WEBHOOK_SECRET=
-MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL=https://tu-dominio.com/api/webhooks/mercado-pago/subscriptions
+MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL=https://tu-dominio.com/api/mercado-pago/subscriptions/callback
 
 # Production con email (Resend)
 RESEND_API_KEY=re_...
@@ -157,6 +157,9 @@ Registrar por separado la callback OAuth
 `/api/webhooks/mercado-pago/subscriptions`. Ver los runbooks
 [`mercado-pago-multitenant-qa.md`](./payments/mercado-pago-multitenant-qa.md) y
 [`mercado-pago-subscriptions-qa.md`](./payments/mercado-pago-subscriptions-qa.md).
+La callback de navegador de mensualidad es además
+`/api/mercado-pago/subscriptions/callback`. Ambas callbacks deben usar el origen
+exacto de `APP_DOMAIN`; no hay alias automático para `www` ni dominios preview.
 
 ### 5. Resend — Dominio verificado
 
