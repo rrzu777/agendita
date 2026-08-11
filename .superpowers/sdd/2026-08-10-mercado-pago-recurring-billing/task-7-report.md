@@ -41,3 +41,11 @@ No existe actualmente un escritor que cambie `PaymentAccount` a `expired` (el ú
 - PostgreSQL 16 temporal fresco: `DATABASE_URL=<temporal> DIRECT_URL=<temporal> npx prisma migrate deploy` aplicó 44/44 migraciones; `DATABASE_URL=<temporal> DIRECT_URL=<temporal> npm run test:integration -- src/lib/subscriptions/transition.integration.test.ts` — 24/24.
 - `npm run typecheck` — OK. `npm run lint` — 0 errores, 35 warnings preexistentes. `npm run build` con URLs/dominios locales sanitarios y PostgreSQL temporal — OK, 48 rutas (warning preexistente de `middleware`).
 - `npx prisma migrate diff --from-url <temporal> --to-schema-datamodel prisma/schema.prisma --script` dejó sólo los tres índices únicos parciales históricos no representables por Prisma; no hay drift de notificaciones. `git diff --check` — OK.
+
+## Fix round 3
+
+- Nueva migración forward-only `20260812080000_subscription_notification_attempt_created_at_floor`: para entregas históricas con intentos, `firstProviderAttemptAt` queda acotado conservadoramente por `createdAt`; las pendientes/fallidas cuyo límite queda fuera de 23 h pasan a `manual_review`, con timestamp, código sanitario y sin próximo reintento. Ninguna migración comprometida fue editada; filas creadas después de esta corrección conservan el primer intento real que persiste la aplicación.
+- El test de upgrade añade el caso crítico: fila creada hace más de 24 h, actualizada recientemente por un retry y con intentos previos. Aplica las dos migraciones en secuencia y verifica que no reabre la ventana: conserva la cota antigua, queda `manual_review` y `nextAttemptAt=null`. Mantiene además los casos attempts=0 elegible y legacy reciente retryable.
+- PostgreSQL 16 temporal fresco: `npx prisma migrate deploy` aplicó 45/45 migraciones; integración de transición+cron 28/28 y focalizados de notificaciones/cron 34/34.
+- `npm run typecheck` — OK. `npm run lint` — 0 errores, 35 warnings preexistentes. Build con variables locales sanitarias — OK, 48 rutas. `git diff --check` — OK.
+- `prisma migrate diff` conserva exclusivamente los tres índices parciales históricos no representables por Prisma; cero drift de `SubscriptionNotificationDelivery`.
