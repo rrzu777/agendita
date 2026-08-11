@@ -3,7 +3,8 @@ import { NextRequest } from 'next/server'
 
 const { prismaMock, decryptSecret, fetchMock, getValidBusinessAccessTokenForAccount } = vi.hoisted(() => ({
   prismaMock: {
-    payment: { findUnique: vi.fn(), update: vi.fn() },
+    payment: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    paymentProviderIncident: { upsert: vi.fn() },
     paymentAccount: { findFirst: vi.fn() },
     packagePurchase: { findUnique: vi.fn() },
     booking: { findUnique: vi.fn() },
@@ -173,7 +174,7 @@ describe('Mercado Pago tenant webhook resolution', () => {
   })
 
   it('handles an already approved duplicate without applying a second local effect', async () => {
-    prismaMock.payment.findUnique.mockResolvedValue({ ...payment, status: 'approved' })
+    prismaMock.payment.findUnique.mockResolvedValue({ ...payment, status: 'approved', providerPaymentId: 'provider-payment-1' })
     fetchMock.mockImplementation(async () => new Response(JSON.stringify(providerPayment({
       status: 'approved', date_approved: '2026-08-11T01:00:00Z',
     })), { status: 200 }))
@@ -185,6 +186,27 @@ describe('Mercado Pago tenant webhook resolution', () => {
     expect(second.status).toBe(200)
     expect(prismaMock.payment.update).not.toHaveBeenCalled()
     expect(prismaMock.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('persists a late distinct approval for manual review instead of returning a bare conflict', async () => {
+    prismaMock.payment.findUnique.mockResolvedValue({
+      ...payment, status: 'approved', providerPaymentId: 'provider-payment-winner',
+    })
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(providerPayment({
+      status: 'approved', date_approved: '2026-08-11T01:00:00Z',
+    })), { status: 200 }))
+    prismaMock.$transaction.mockImplementation(async (callback: (tx: typeof prismaMock) => unknown) => {
+      prismaMock.payment.updateMany.mockResolvedValue({ count: 0 })
+      prismaMock.paymentProviderIncident.upsert.mockResolvedValue({ id: 'incident-1' })
+      return callback(prismaMock)
+    })
+
+    const response = await POST(request())
+
+    expect(response.status).toBe(200)
+    expect(prismaMock.paymentProviderIncident.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ kind: 'distinct_approved_overpayment', status: 'manual_review' }),
+    }))
   })
 
   it('projects hostile provider payloads before persistence', async () => {

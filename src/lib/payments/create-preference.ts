@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import type { PaymentProvider, CreatePaymentInput, CreatePaymentResult } from './types'
 import { requireMercadoPagoEnvironment } from './mercado-pago-environment'
 import { withMercadoPagoPaymentLocator } from './mercado-pago-provider'
+import { MercadoPagoPreferenceCreationError } from './mercado-pago-provider'
 
 /**
  * Base URL de la app para armar el webhookUrl. Verbatim del helper privado que
@@ -35,7 +36,30 @@ export async function createMpPreferenceForPayment(
         webhookUrl: withMercadoPagoPaymentLocator(input.webhookUrl, input.localPaymentId),
       }
     : input
-  const result = await provider.createPayment(providerInput)
+  let result: CreatePaymentResult
+  try {
+    result = await provider.createPayment(providerInput)
+  } catch (error) {
+    const ambiguous = error instanceof MercadoPagoPreferenceCreationError
+      ? error.outcome === 'ambiguous'
+      : error instanceof Error && error.name === 'MercadoPagoAmbiguousPreferenceError'
+    if (input.localPaymentId && ambiguous) {
+      await prisma.paymentProviderIncident.upsert({
+        where: { dedupeKey: `preference_creation:${input.localPaymentId}` },
+        update: {},
+        create: {
+          paymentId: input.localPaymentId,
+          dedupeKey: `preference_creation:${input.localPaymentId}`,
+          environment: requireMercadoPagoEnvironment(),
+          kind: 'preference_creation_ambiguous',
+          status: 'manual_review',
+          payload: { outcome: 'ambiguous' },
+        },
+      })
+      throw new Error('Mercado Pago preference creation requires manual reconciliation.')
+    }
+    throw error
+  }
   if (input.localPaymentId) {
     const providerPreferenceId =
       result.rawResponse && typeof result.rawResponse === 'object' && 'preferenceId' in result.rawResponse
@@ -54,6 +78,19 @@ export async function createMpPreferenceForPayment(
         where: { id: input.localPaymentId }, select: { providerPreferenceId: true },
       })
       if (!providerPreferenceId || current?.providerPreferenceId !== providerPreferenceId) {
+        await prisma.paymentProviderIncident.upsert({
+          where: { dedupeKey: `preference_conflict:${input.localPaymentId}` },
+          update: {},
+          create: {
+            paymentId: input.localPaymentId,
+            dedupeKey: `preference_conflict:${input.localPaymentId}`,
+            environment: requireMercadoPagoEnvironment(),
+            providerPaymentId: null,
+            kind: 'preference_conflict',
+            status: 'manual_review',
+            payload: { returnedPreferenceId: providerPreferenceId },
+          },
+        })
         throw new Error('Mercado Pago preference conflict requires manual reconciliation.')
       }
     }

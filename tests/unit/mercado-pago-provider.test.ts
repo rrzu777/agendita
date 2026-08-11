@@ -73,7 +73,7 @@ describe('mercadoPagoPaymentProvider', () => {
 
       const fetchCall = mockFetch.mock.calls[0] as [string, RequestInit]
       const body = JSON.parse(fetchCall[1].body as string)
-      expect((fetchCall[1].headers as Record<string, string>)['X-Idempotency-Key']).toBe('pay-local-1')
+      expect((fetchCall[1].headers as Record<string, string>)['X-Idempotency-Key']).toBeUndefined()
 
       expect(body.external_reference).toBe('pay-local-1')
       expect(body.items[0].unit_price).toBe(10000)
@@ -197,6 +197,37 @@ describe('mercadoPagoPaymentProvider', () => {
           webhookUrl: 'https://example.com/webhook',
         }),
       ).rejects.toThrow('localPaymentId')
+    })
+
+    it.each([
+      ['network failure', () => Promise.reject(new Error('socket reset'))],
+      ['provider 5xx', () => Promise.resolve({ ok: false, status: 503 })],
+    ])('classifies %s as ambiguous without retrying', async (_label, response) => {
+      mockFetch.mockImplementationOnce(response)
+      await expect(provider.createPayment({
+        amount: 10000, currency: 'CLP', description: 'Test',
+        returnUrl: 'https://example.com/return', webhookUrl: 'https://example.com/webhook',
+        localPaymentId: 'pay-ambiguous',
+      })).rejects.toMatchObject({ outcome: 'ambiguous' })
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('classifies a provider 4xx as a definitive rejection', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 400 })
+      await expect(provider.createPayment({
+        amount: 10000, currency: 'CLP', description: 'Test',
+        returnUrl: 'https://example.com/return', webhookUrl: 'https://example.com/webhook',
+        localPaymentId: 'pay-rejected',
+      })).rejects.toMatchObject({ outcome: 'definitive_rejection' })
+    })
+
+    it('classifies a malformed 2xx response as ambiguous', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ id: 'created-but-no-url' }) })
+      await expect(provider.createPayment({
+        amount: 10000, currency: 'CLP', description: 'Test',
+        returnUrl: 'https://example.com/return', webhookUrl: 'https://example.com/webhook',
+        localPaymentId: 'pay-malformed',
+      })).rejects.toMatchObject({ outcome: 'ambiguous' })
     })
   })
 

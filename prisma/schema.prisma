@@ -769,6 +769,7 @@ model Payment {
   packagePurchase PackagePurchase? @relation(fields: [packagePurchaseId], references: [id], onDelete: Cascade)
   customer        Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   ledgerEntries   LedgerEntry[]
+  providerIncidents PaymentProviderIncident[]
 
   // Evita duplicar exactamente el mismo pago para la misma reserva.
   // En PostgreSQL, múltiples NULLs no se consideran iguales, por lo que
@@ -784,6 +785,24 @@ model Payment {
   // Pagos de la clienta (getCustomerDetail) + performance del cascade delete.
   @@index([customerId])
   @@index([provider, providerEnvironment, providerPreferenceId])
+}
+
+model PaymentProviderIncident {
+  id                String                  @id @default(cuid())
+  paymentId         String
+  dedupeKey         String                  @unique
+  environment       MercadoPagoEnvironment
+  providerPaymentId String?
+  kind              String
+  status            String                  @default("manual_review")
+  payload           Json
+  resolvedAt        DateTime?
+  createdAt         DateTime                @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@unique([environment, providerPaymentId])
+  @@index([paymentId, status, createdAt])
 }
 
 enum PaymentProvider {

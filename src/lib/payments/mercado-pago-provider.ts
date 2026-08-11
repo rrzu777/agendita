@@ -11,6 +11,18 @@ import {
 
 const MP_API_BASE = 'https://api.mercadopago.com'
 
+export class MercadoPagoPreferenceCreationError extends Error {
+  readonly outcome: 'ambiguous' | 'definitive_rejection'
+
+  constructor(outcome: 'ambiguous' | 'definitive_rejection') {
+    super(outcome === 'ambiguous'
+      ? 'Mercado Pago preference creation requires manual reconciliation.'
+      : 'Mercado Pago rejected preference creation.')
+    this.name = 'MercadoPagoPreferenceCreationError'
+    this.outcome = outcome
+  }
+}
+
 /**
  * Adds an opaque local candidate locator to the callback URL submitted to MP.
  * The webhook must still fetch and validate the provider resource with the
@@ -20,40 +32,6 @@ export function withMercadoPagoPaymentLocator(webhookUrl: string, localPaymentId
   const url = new URL(webhookUrl)
   url.searchParams.set('local_payment_id', localPaymentId)
   return url.toString()
-}
-
-function getAccessToken(): string {
-  const token = process.env.MERCADO_PAGO_ACCESS_TOKEN
-  if (!token) {
-    throw new Error('MERCADO_PAGO_ACCESS_TOKEN no está configurado')
-  }
-  return token
-}
-
-async function mpRequest<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const token = getAccessToken()
-  const url = `${MP_API_BASE}${path}`
-
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  })
-
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(
-      `Mercado Pago API error ${res.status} for ${path}: ${body}`,
-    )
-  }
-
-  return res.json() as Promise<T>
 }
 
 /**
@@ -119,13 +97,44 @@ export function createMercadoPagoProvider(accessToken: string): PaymentProvider 
         preferencePayload.metadata = input.metadata
       }
 
-      const preference = await mpRequestWithToken<{
-        id: string; init_point: string; sandbox_init_point: string
-      }>('/checkout/preferences', {
-        method: 'POST',
-        body: JSON.stringify(preferencePayload),
-        headers: { 'X-Idempotency-Key': paymentId },
-      })
+      // Checkout Preferences does not document an idempotency contract for this
+      // POST. A timeout/5xx can mean MP created it but we lost the response, so
+      // it must never be retried automatically against the same local Payment.
+      let response: Response
+      try {
+        response = await fetch(`${MP_API_BASE}/checkout/preferences`, {
+          method: 'POST',
+          signal: AbortSignal.timeout(5_000),
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(preferencePayload),
+        })
+      } catch {
+        throw new MercadoPagoPreferenceCreationError('ambiguous')
+      }
+      if (!response.ok) {
+        throw new MercadoPagoPreferenceCreationError(
+          response.status >= 500 ? 'ambiguous' : 'definitive_rejection',
+        )
+      }
+      let preference: { id: string; init_point: string; sandbox_init_point: string }
+      try {
+        const value = await response.json() as Record<string, unknown>
+        if (typeof value.id !== 'string' || typeof value.init_point !== 'string') {
+          throw new Error('invalid preference response')
+        }
+        preference = {
+          id: value.id,
+          init_point: value.init_point,
+          sandbox_init_point: typeof value.sandbox_init_point === 'string' ? value.sandbox_init_point : '',
+        }
+      } catch {
+        // A 2xx means MP may have committed the preference. Losing/malformed JSON
+        // is therefore just as ambiguous as losing the HTTP response.
+        throw new MercadoPagoPreferenceCreationError('ambiguous')
+      }
 
       return {
         paymentId,

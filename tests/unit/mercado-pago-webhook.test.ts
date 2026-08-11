@@ -13,9 +13,11 @@ const mockPrisma = {
     findUnique: vi.fn(),
     findFirst: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
     create: vi.fn(),
     findMany: vi.fn(),
   },
+  paymentProviderIncident: { upsert: vi.fn() },
   booking: {
     findUnique: vi.fn(),
     update: vi.fn(),
@@ -168,6 +170,8 @@ describe('Mercado Pago webhook', () => {
     vi.clearAllMocks()
     mockMpFetch.mockReset()
     mockGetValidBusinessAccessTokenForAccount.mockReset().mockResolvedValue('test-access-token')
+    mockPrisma.payment.updateMany.mockResolvedValue({ count: 1 })
+    mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockPrisma) => unknown) => callback(mockPrisma))
 
     mockPrisma.paymentAccount.findFirst.mockReset().mockResolvedValue({
       id: 'pa-1',
@@ -420,9 +424,9 @@ describe('Mercado Pago webhook', () => {
           status: 'connected',
         },
       })
-      expect(mockPrisma.payment.update).toHaveBeenCalledWith(
+      expect(mockPrisma.payment.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'pay-local-001' },
+          where: expect.objectContaining({ id: 'pay-local-001' }),
           data: expect.objectContaining({
             providerPaymentId: 'mp-pay-001',
           }),
@@ -1229,7 +1233,7 @@ describe('Mercado Pago webhook', () => {
   })
 
   describe('providerPaymentId conflict', () => {
-    it('rejects conflicting providerPaymentId with 409', async () => {
+    it('records a distinct approved providerPaymentId for manual review', async () => {
       const secret = 'test-webhook-secret'
       const body = { data: { id: 'mp-pay-conflict' } }
       const signature = createMpSignatureHeader('mp-pay-conflict', 'req-conflict', secret)
@@ -1275,6 +1279,8 @@ describe('Mercado Pago webhook', () => {
           status: 'pending_payment',
         },
       })
+      mockPrisma.payment.updateMany.mockResolvedValue({ count: 0 })
+      mockPrisma.paymentProviderIncident.upsert.mockResolvedValue({ id: 'incident-conflict' })
 
       const req = makeRequest(body, {
         'x-signature': signature,
@@ -1282,8 +1288,9 @@ describe('Mercado Pago webhook', () => {
       })
       const res = await POST(req)
 
-      expect(res.status).toBe(409)
-      expect((await res.json()).error).toContain('ProviderPaymentId conflict')
+      expect(res.status).toBe(200)
+      expect((await res.json()).message).toContain('manual review')
+      expect(mockPrisma.paymentProviderIncident.upsert).toHaveBeenCalled()
     })
   })
 

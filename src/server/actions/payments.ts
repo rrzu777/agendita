@@ -128,6 +128,7 @@ async function _initiatePayment(data: {
         providerEnvironment,
         providerPreferenceId: null,
         status: 'pending',
+        providerIncidents: { none: { status: 'manual_review' } },
       },
     })
 

@@ -25,6 +25,7 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 import { getVocabulary } from '@/lib/vocabulary'
 import type { Prisma } from '@prisma/client'
 import { verifyMercadoPagoSignature } from '@/lib/payments/mercado-pago-signature'
+import { claimApprovedProviderPayment } from '@/lib/payments/provider-incidents'
 
 function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
   return fetch(`https://api.mercadopago.com${path}`, {
@@ -492,18 +493,22 @@ export async function POST(request: NextRequest) {
 
     // Ya está approved → idempotente, 200 sin side effects
     if (payment.status === 'approved') {
-      if (payment.providerPaymentId && payment.providerPaymentId !== mpPayment.id) {
+      if (payment.providerPaymentId === mpPayment.id) {
+        return NextResponse.json({
+          success: true,
+          message: 'Payment already approved',
+          bookingId: payment.bookingId,
+        })
+      }
+      // Un approved distinto es dinero real adicional. Continúa hasta el claim
+      // transaccional para persistirlo como overpayment/manual_review.
+      if (mpStatus !== 'approved') {
         return NextResponse.json({ error: 'ProviderPaymentId conflict' }, { status: 409 })
       }
-      return NextResponse.json({
-        success: true,
-        message: 'Payment already approved',
-        bookingId: payment.bookingId,
-      })
     }
 
     // Evitar que un providerPaymentId se asocie a otro Payment
-    if (payment.providerPaymentId && payment.providerPaymentId !== mpPayment.id) {
+    if (mpStatus !== 'approved' && payment.providerPaymentId && payment.providerPaymentId !== mpPayment.id) {
       console.error('[MP Webhook] providerPaymentId already set to different value', {
         existing: payment.providerPaymentId,
         incoming: mpPayment.id,
@@ -516,16 +521,15 @@ export async function POST(request: NextRequest) {
         const bookingId = payment.bookingId
         // Pago aprobado: actualizar y confirmar booking
         const result = await prisma.$transaction(async (tx) => {
-          // Actualizar providerPaymentId y rawPayload
-          await tx.payment.update({
-            where: { id: payment.id },
-            data: {
-              providerPaymentId: mpPayment.id,
-              rawPayload: safeRawPayload,
-            },
+          const claim = await claimApprovedProviderPayment(tx, {
+            paymentId: payment.id,
+            environment: payment.providerEnvironment!,
+            providerPaymentId: mpPayment.id,
+            payload: safeRawPayload as Prisma.InputJsonObject & { id: string; status: string },
           })
+          if (claim.kind === 'conflict') return { providerConflict: true as const }
 
-          return applyApprovedPayment({
+          const approved = await applyApprovedPayment({
             tx,
             bookingId,
             businessId: payment.businessId,
@@ -545,6 +549,7 @@ export async function POST(request: NextRequest) {
             // aviso de abajo se lo cuenta a la dueña.
             recordEvenIfNotPayable: true,
           })
+          return { providerConflict: false as const, approved }
           // 15s y no el default de 5s: al confirmar, esta tx ahora toma el advisory
           // lock por negocio+día para re-chequear el cupo, así que puede quedar
           // esperando a una creación de reserva concurrente. Con 5s el timeout daría
@@ -552,11 +557,18 @@ export async function POST(request: NextRequest) {
           // trata de evitar. Mismo presupuesto que la tx de createBooking.
         }, { timeout: 15_000 })
 
-        if (!result || !result.booking) {
+        if (result.providerConflict) {
+          return NextResponse.json({
+            success: true,
+            message: 'Distinct approved payment recorded for manual review',
+          })
+        }
+        const approvedResult = result.approved
+        if (!approvedResult || !approvedResult.booking) {
           throw new Error('Reserva no encontrada')
         }
 
-        if (result.wasConfirmed) {
+        if (approvedResult.wasConfirmed) {
           await sendNotificationSafely('booking confirmed', () =>
             sendBookingConfirmedNotification(bookingId, payment.businessId),
           )
@@ -567,7 +579,7 @@ export async function POST(request: NextRequest) {
         // dos). El servicio ya lo asentó como `overpayment`; acá sólo avisamos para
         // que la dueña decida el reembolso. La clienta NO recibe nada: para ella su
         // reserva no cambió.
-        if (result.wasUnexpected) {
+        if (approvedResult.wasUnexpected) {
           const bk = await prisma.booking.findUnique({
             where: { id: bookingId },
             select: {
@@ -597,11 +609,11 @@ export async function POST(request: NextRequest) {
         // pasa en un webhook, sin nadie mirando la pantalla — y decide la dueña:
         // reacomodar en otra hora o reembolsar. La clienta no recibe nada todavía,
         // justamente porque su hora está en manos de esa decisión.
-        if (result.unconfirmedReason) {
+        if (approvedResult.unconfirmedReason) {
           await firePaymentNotConfirmedNotification({
             bookingId,
             businessId: payment.businessId,
-            reason: result.unconfirmedReason,
+            reason: approvedResult.unconfirmedReason,
             amount: payment.amount,
           })
         }
@@ -613,10 +625,10 @@ export async function POST(request: NextRequest) {
         // siempre el mismo evento ya procesado.
         return NextResponse.json({
           success: true,
-          message: result.unconfirmedReason
-            ? `Payment approved, booking left unconfirmed: ${result.unconfirmedReason.kind}`
+          message: approvedResult.unconfirmedReason
+            ? `Payment approved, booking left unconfirmed: ${approvedResult.unconfirmedReason.kind}`
             : 'Payment approved',
-          bookingId: result.booking.id,
+          bookingId: approvedResult.booking.id,
         })
       }
 
@@ -626,17 +638,16 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Pago no asociado a una reserva ni a un paquete' }, { status: 400 })
       }
 
-      const { outcome } = await prisma.$transaction(async (tx) => {
-        // Actualizar providerPaymentId y rawPayload
-        await tx.payment.update({
-          where: { id: payment.id },
-          data: {
-            providerPaymentId: mpPayment.id,
-            rawPayload: safeRawPayload,
-          },
+      const packageResult = await prisma.$transaction(async (tx) => {
+        const claim = await claimApprovedProviderPayment(tx, {
+          paymentId: payment.id,
+          environment: payment.providerEnvironment!,
+          providerPaymentId: mpPayment.id,
+          payload: safeRawPayload as Prisma.InputJsonObject & { id: string; status: string },
         })
+        if (claim.kind === 'conflict') return { providerConflict: true as const }
 
-        return applyApprovedPackagePayment({
+        const approved = await applyApprovedPackagePayment({
           tx,
           packagePurchaseId,
           businessId: payment.businessId,
@@ -649,7 +660,15 @@ export async function POST(request: NextRequest) {
           rawPayload: safeRawPayload,
           paymentId: payment.id,
         })
+        return { providerConflict: false as const, approved }
       })
+      if (packageResult.providerConflict) {
+        return NextResponse.json({
+          success: true,
+          message: 'Distinct approved payment recorded for manual review',
+        })
+      }
+      const { outcome } = packageResult.approved
 
       // Notificar SOLO en la primera activación: MP redeliveria el webhook
       // (at-least-once) y sin este gate cada reintento reenviaría los dos emails.

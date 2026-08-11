@@ -259,6 +259,7 @@ async function _initiatePackagePayment(input: { purchaseId: string }): Promise<
       provider: provider.name as PaymentProvider,
       providerEnvironment,
       providerPreferenceId: null,
+      providerIncidents: { none: { status: 'manual_review' } },
     },
   })
 

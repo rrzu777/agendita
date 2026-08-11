@@ -3,11 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const update = vi.fn()
 const updateMany = vi.fn()
 const findUnique = vi.fn()
+const incidentUpsert = vi.fn()
 vi.mock('@/lib/db', () => ({ prisma: { payment: {
   update: (...a: unknown[]) => update(...a),
   updateMany: (...a: unknown[]) => updateMany(...a),
   findUnique: (...a: unknown[]) => findUnique(...a),
-} } }))
+}, paymentProviderIncident: { upsert: (...a: unknown[]) => incidentUpsert(...a) } } }))
 
 import { createMpPreferenceForPayment } from './create-preference'
 import type { PaymentProvider } from './types'
@@ -41,6 +42,7 @@ describe('createMpPreferenceForPayment', () => {
     update.mockReset()
     updateMany.mockReset().mockResolvedValue({ count: 1 })
     findUnique.mockReset()
+    incidentUpsert.mockReset()
     process.env.MERCADO_PAGO_ENVIRONMENT = 'sandbox'
   })
 
@@ -104,5 +106,26 @@ describe('createMpPreferenceForPayment', () => {
       amount: 1, currency: 'CLP', description: 'x', returnUrl: 'https://x/r',
       webhookUrl: 'https://x/w', localPaymentId: 'pay1',
     })).rejects.toThrow(/manual reconciliation/i)
+    expect(incidentUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ kind: 'preference_conflict', status: 'manual_review' }),
+    }))
+  })
+
+  it('marks an ambiguous provider POST and never assumes it is safe to retry', async () => {
+    const provider = fakeProvider()
+    provider.createPayment = vi.fn().mockRejectedValue(Object.assign(new Error('timeout'), {
+      name: 'MercadoPagoAmbiguousPreferenceError',
+    }))
+
+    await expect(createMpPreferenceForPayment(provider, {
+      amount: 1, currency: 'CLP', description: 'x', returnUrl: 'https://x/r',
+      webhookUrl: 'https://x/w', localPaymentId: 'pay1',
+    })).rejects.toThrow(/manual reconciliation/i)
+
+    expect(incidentUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({
+        paymentId: 'pay1', kind: 'preference_creation_ambiguous', status: 'manual_review',
+      }),
+    }))
   })
 })

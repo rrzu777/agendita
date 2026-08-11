@@ -100,10 +100,26 @@ falla cerrado y se deriva a reconciliación operativa acotada usando el
 `providerPreferenceId`, negocio y ambiente ya persistidos, siempre con la cuenta
 vendedora conocida. Nunca se prueba tokens de otros negocios para descubrirlo.
 
-Cada creación usa `Payment.id` como idempotency key. El `providerPreferenceId` se
+Cada creación usa `Payment.id` como referencia externa estable. El `providerPreferenceId` se
 persiste por CAS y jamás se sobrescribe; una respuesta distinta para el mismo intento
 queda en reconciliación manual. Los payloads persistidos son proyecciones sanitarias:
 no incluyen payer, tarjeta, identificación, tokens, email, URLs ni objetos anidados.
+
+Checkout Preferences no garantiza idempotencia para su `POST`. Por eso Agendita no
+envía ni confía en `X-Idempotency-Key`: timeout o 5xx dejan el intento en
+`manual_review`, lo excluyen de reuso y no disparan un retry automático.
+
+El inventario legacy es ejecutable, acotado y sólo consulta DB por defecto:
+
+```bash
+npm run payments:audit-legacy-mp -- --before 2026-08-11T00:00:00Z --limit 50
+```
+
+El resultado expone únicamente conteos `reissue`, `manual_review` y `no_action`.
+Tras revisar esos conteos, `--apply` cancela por CAS sólo pendientes atribuibles,
+crea un intento local nuevo sin contactar Mercado Pago y deja el resto en revisión
+manual. El checkout normal posterior emite la preferencia con la credencial del
+negocio. El script no lee `MERCADO_PAGO_ACCESS_TOKEN`, no prueba tokens y no usa red.
 
 ## Desconexión
 

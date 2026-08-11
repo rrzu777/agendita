@@ -20,6 +20,7 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
+    "payments:audit-legacy-mp": "node scripts/audit-legacy-mp-preferences.cjs",
     "postinstall": "prisma generate"
   },
   "prisma": {
