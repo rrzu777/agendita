@@ -93,11 +93,8 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 APP_DOMAIN=tu-dominio.com
 NEXT_PUBLIC_APP_DOMAIN=tu-dominio.com
-PAYMENT_PROVIDER=mercado_pago   # o manual/webpay/mock
-
-# Production con Mercado Pago
-MERCADO_PAGO_ACCESS_TOKEN=APP_USR-...   # del dashboard de Mercado Pago
-MERCADO_PAGO_WEBHOOK_SECRET=           # del dashboard de Mercado Pago (ver sección Webhook más abajo)
+PAYMENT_PROVIDER=manual          # fallback; MP online se habilita por negocio conectado
+MERCADO_PAGO_WEBHOOK_SECRET=     # firma del webhook, no sirve para consultar pagos
 
 # Clienta → dueña (OAuth por negocio)
 MERCADO_PAGO_CLIENT_ID=
@@ -155,6 +152,8 @@ Verificar que en el dashboard de Supabase estén configuradas:
    - Asignar como `MERCADO_PAGO_WEBHOOK_SECRET`
 
 **Importante**: El secret del webhook (`MERCADO_PAGO_WEBHOOK_SECRET`) es diferente del `ACCESS_TOKEN`. No son intercambiables.
+Los pagos de reservas/paquetes se consultan exclusivamente con el token OAuth
+cifrado del negocio resuelto por el locator local; no existe fallback global.
 
 Registrar por separado la callback OAuth
 `/api/mercado-pago/callback` y el webhook de mensualidad

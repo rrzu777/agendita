@@ -157,6 +157,10 @@ WHERE notes LIKE '%access_token%' OR notes LIKE '%APP_USR%';
 
 ## Automatización
 
+Ejecutar `npm run payments:qa` para la matriz offline y
+`npm run payments:qa -- --postgres` con PostgreSQL local fresco. Ninguno de
+estos comandos autoriza tráfico externo ni prueba que el seller recibió dinero.
+
 Tests unitarios existentes cubren:
 - `mercado-pago-webhook.test.ts`: firma, idempotencia, validaciones metadata, amount
 - `mercado-pago-provider.test.ts`: createPayment, verifyPayment, handleWebhook
@@ -164,6 +168,9 @@ Tests unitarios existentes cubren:
 
 Para automatizar casos sandbox reales, se recomienda usar Playwright E2E con cuentas sandbox.
 Ver `tests/e2e/` para ejemplos de estructura.
+
+Todo checkout OAuth real, recepción por Seller Test y entrega de webhook del
+proveedor sigue **pendiente externo** hasta ejecutarse manualmente en sandbox.
 
 ## Evidencia requerida
 

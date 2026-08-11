@@ -21,6 +21,7 @@
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
     "payments:audit-legacy-mp": "node scripts/audit-legacy-mp-preferences.cjs",
+    "payments:qa": "node scripts/run-payment-qa.cjs",
     "postinstall": "prisma generate"
   },
   "prisma": {

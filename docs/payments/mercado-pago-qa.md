@@ -16,8 +16,8 @@ Before running these tests, you need:
 
 1. **Mercado Pago Developer Account** — [mercadopago.com.ar/developers](https://mercadopago.com.ar/developers)
 2. **Test User** — Create a test buyer and seller in the Mercado Pago developer dashboard
-3. **Application ID** — From your MP developer app credentials
-4. **Access Token** — From MP developer dashboard → Gestión de credenciales → Producción (or Prueba)
+3. **Aplicación OAuth** — Client ID/secret configurados sólo en el servidor
+4. **Seller Test User** conectado por OAuth y Buyer Test User separado
 5. **Webhook URL** — Must be publicly accessible (not localhost). Use a tunneling tool like `ngrok` for local testing.
 
 ---
@@ -25,11 +25,13 @@ Before running these tests, you need:
 ## Test Environment Variables Required
 
 ```bash
-PAYMENT_PROVIDER=mercado_pago
-MERCADO_PAGO_ACCESS_TOKEN=APP_USR-...      # from MP developer dashboard
-MERCADO_PAGO_WEBHOOK_SECRET=...            # from MP webhook config
-NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY=APP_USR-...  # from MP developer dashboard
-ALLOW_MOCK_PAYMENTS_IN_PRODUCTION=false
+PAYMENT_PROVIDER=manual                     # fallback; checkout online es por cuenta conectada
+MERCADO_PAGO_ENVIRONMENT=sandbox
+MERCADO_PAGO_CLIENT_ID=...
+MERCADO_PAGO_CLIENT_SECRET=...
+MERCADO_PAGO_REDIRECT_URI=https://<APP_DOMAIN>/api/mercado-pago/callback
+MERCADO_PAGO_WEBHOOK_SECRET=...             # valida el webhook, no consulta pagos
+ENCRYPTION_KEY=...                           # cifra tokens OAuth en reposo
 ```
 
 La configuración correcta habilita el flujo, pero **no prueba un cobro E2E**.
@@ -142,6 +144,11 @@ curl -X POST https://yourdomain.com/api/webhooks/mercado-pago \
   -d '{"action":"payment.approved","data":{"id":"1234567890"}}'
 # Expected: HTTP 400 or 401
 ```
+
+El webhook real incluye el locator local persistido en su URL registrada. Ese
+locator sólo encuentra el candidato; la verificación autoritativa usa el token
+OAuth cifrado del seller del mismo negocio. Nunca configurar un access token
+global de Agendita como fallback para reservas o paquetes.
 
 ---
 

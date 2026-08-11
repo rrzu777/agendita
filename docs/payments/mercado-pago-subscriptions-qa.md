@@ -42,6 +42,9 @@ no genera tráfico cobrado. `up` prueba configuración/credencial, **no E2E**.
 
 ## Prueba sandbox mensual
 
+La parte offline se ejecuta con `npm run payments:qa`; con PostgreSQL local
+fresco, `npm run payments:qa -- --postgres`. Esto no llama a Mercado Pago.
+
 1. Seleccionar `sandbox`, dejar ambos flags en `false` y revisar health.
 2. Crear vendedor y comprador de prueba separados; nunca usar cuentas reales.
 3. Activar `MP_SUBSCRIPTIONS_ENABLED=true`, con enforcement aún en `false`.
@@ -53,6 +56,10 @@ no genera tráfico cobrado. `up` prueba configuración/credencial, **no E2E**.
 7. Ejecutar manualmente `Scheduled crons`; observar sólo `processed`,
    `reconciled`, `notified`, `suspended` y `errors`.
 8. Activar enforcement sólo después de una ventana estable.
+
+Los pasos 4-8 contra Mercado Pago permanecen **pendientes externos** hasta que
+se ejecuten con cuentas sandbox. Tests verdes locales no equivalen a checkout,
+webhook o correo sandbox validados.
 
 ## Señales agregadas de incidente
 
