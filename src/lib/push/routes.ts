@@ -107,14 +107,16 @@ async function guestTarget(grant: string): Promise<PushTarget | null> {
 }
 
 export async function resolvePushSubscribeScope(grant: unknown): Promise<PushSubscribeScope | null> {
+  const user = await getCurrentUser()
+  if (user) return { kind: 'user', userId: user.id }
+
   if (grant !== undefined && grant !== null) {
     if (typeof grant !== 'string') return null
     const target = await guestTarget(grant)
     return target ? { kind: 'guest', target } : null
   }
 
-  const user = await getCurrentUser()
-  return user ? { kind: 'user', userId: user.id } : null
+  return null
 }
 
 export async function resolvePushUnsubscribeScope(
@@ -124,6 +126,9 @@ export async function resolvePushUnsubscribeScope(
   if (endpointPossession) {
     return grant === undefined || grant === null ? { kind: 'endpoint' } : null
   }
+  const user = await getCurrentUser()
+  if (user) return { kind: 'user', userId: user.id }
+
   if (grant !== undefined && grant !== null) {
     if (typeof grant !== 'string') return null
     const target = await guestTarget(grant)
@@ -139,19 +144,20 @@ export async function resolvePushUnsubscribeScope(
     }
   }
 
-  const user = await getCurrentUser()
-  return user ? { kind: 'user', userId: user.id } : { kind: 'endpoint' }
+  return { kind: 'endpoint' }
 }
 
 export async function resolvePushStatusScope(grant: unknown): Promise<PushStatusScope | null> {
+  const user = await getCurrentUser()
+  if (user) return { kind: 'user', userId: user.id }
+
   if (grant !== undefined && grant !== null) {
     if (typeof grant !== 'string') return null
     const target = await guestTarget(grant)
     return target ? { kind: 'guest', target } : null
   }
 
-  const user = await getCurrentUser()
-  return user ? { kind: 'user', userId: user.id } : { kind: 'endpoint' }
+  return { kind: 'endpoint' }
 }
 
 export function pushTargetRateLimitContext(scope: PushSubscribeScope): {

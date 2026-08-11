@@ -24,6 +24,13 @@ ningún canal y no agrega navegación offline.
   “Condiciones adicionales” y se aclara que no debe repetir ni contradecir el
   plazo estructurado; el aviso generado por el sistema aparece primero y manda
   sobre texto histórico contradictorio.
+- La página server-rendered calcula una revisión SHA-256 domain-separated del
+  `businessId`, cutoff y condiciones adicionales que mostró. El wizard la envía
+  al crear; después de resolver un eventual reintento idempotente y antes del
+  insert, el servidor exige que coincida con la política vigente. Una revisión
+  ausente, alterada o vieja pide recargar y no crea ni inicia pagos. Un reintento
+  de una reserva ya existente devuelve sus snapshots aunque la configuración
+  haya cambiado después. Las creaciones internas del dashboard están exentas.
 - Se agrega `Business.cancellationReminderEnabled Boolean @default(true)` para
   que cada negocio pueda apagar únicamente el push. La política visible en
   checkout, confirmación y email no se oculta con este toggle.
@@ -36,6 +43,12 @@ ningún canal y no agrega navegación offline.
 - Sólo son elegibles reservas confirmadas, futuras y con un abono efectivamente
   pagado (`depositPaid > 0`). Un snapshot de cero horas no genera recordatorio
   porque no existe una ventana de pérdida del abono.
+- La elegibilidad para **activar** Web Push es deliberadamente un poco más
+  amplia que la entrega: requiere configuración VAPID/cifrado completa, toggle
+  del negocio activo, reserva futura y no terminal, cutoff efectivo mayor que
+  cero, y abono requerido **o** pagado. Esto permite activar antes de completar
+  el checkout; el scheduler sigue enviando sólo con `depositPaid > 0` y estado
+  confirmado.
 - No se implementa devolución automática. El copy no la promete: “Podés
   cancelar o reprogramar hasta X horas antes. Con menos anticipación, el abono
   no se devuelve. Para cancelaciones anteriores aplica la política del
@@ -68,7 +81,8 @@ inicio. No se promete soporte cuando el navegador no expone `PushManager`.
 ### En `/mi`
 
 Una clienta autenticada activa o desactiva recordatorios desde su superficie de
-reservas, navegando al mismo origen canónico. Desactivar llama
+reservas, navegando al mismo origen canónico. El enlace sólo aparece si al menos
+una reserva cumple la elegibilidad completa de activación. Desactivar llama
 `PushSubscription.unsubscribe()` y envía el endpoint al servidor, que lo
 normaliza y hashea. Con sesión se elimina únicamente la autorización explícita
 de esa cuenta en las generaciones del endpoint; con grant de invitada, sólo el
@@ -106,11 +120,21 @@ una invitada recarga sin ese estado o abre luego el link del email, deberá
 iniciar sesión para activar push. Esta limitación evita convertir la URL pública
 de confirmación en autorización de notificaciones.
 
-Las clientas autenticadas no necesitan el grant de invitada. La sesión permite
+Las clientas autenticadas no necesitan ni usan el grant de invitada: en
+subscribe, status y unsubscribe una sesión explícita tiene precedencia sobre un
+grant recibido. La sesión permite
 seleccionar Customers cuyo `userId` coincide en ese momento, pero cada alta
 persiste además `PushSubscription.authorizedUserId` como scope explícito. El
 cron revalida el `Customer.userId` actual y exige que coincida con ese valor; la
 relación de Customer por sí sola nunca autoriza una entrega.
+
+Las respuestas de creación y las dos confirmaciones usan un modo explícito:
+`account` sólo para una Customer elegible vinculada a la sesión, `guest` sólo
+cuando no existe sesión, y `null` cuando no hay autorización elegible. Nunca se
+emite ni conserva un grant guest para una sesión autenticada. El status de
+cuenta recalcula el set completo de Customers elegibles: el endpoint se declara
+asociado sólo si cubre cada uno; un subset o un set vacío exige actualización y
+no declara activación. Subscribe vuelve a asociar todo ese set actual.
 
 ## Persistencia y secretos
 
@@ -146,6 +170,12 @@ scope actual de generaciones anteriores, conserva scopes ajenos y revoca sólo
 las filas que queden huérfanas antes de contar el límite. Así una quinta o
 posterior rotación repara la generación vigente en vez de quedar bloqueada por
 filas obsoletas.
+
+Cuando cambia la clave VAPID configurada, el navegador intenta primero una baja
+server-side por posesión explícita del endpoint viejo y luego la baja local,
+antes de crear la nueva suscripción. Ambos pasos son best effort: sus fallos no
+bloquean el intento de reemplazo ni dejan las filas viejas consumiendo el cupo
+cuando el servidor está disponible.
 
 El cifrado reutiliza la infraestructura de `ENCRYPTION_KEY`. Las claves VAPID
 entran por `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y
@@ -193,6 +223,11 @@ tengan el entitlement del `bookingId` exacto o `authorizedUserId` igual al
 `Customer.userId` revalidado. Una invitada sin cuenta usa sólo entitlements; no
 existe comparación `null === null`. Como la rotación retira el scope de
 generaciones anteriores, sólo la generación vigente sigue siendo elegible.
+Después de que el proveedor acepta el push, la escritura de éxito repite esa
+misma autorización como CAS junto con id, fingerprint y `revokedAt: null`. Si
+el entitlement exacto o la cuenta revalidada fueron retirados durante el envío,
+el éxito stale no cuenta ni marca la reserva enviada; se reintenta contra la
+generación/autorización actualmente vigente sin revocar scopes ajenos.
 
 `/api/cron/cancellation-warnings` usa el mismo bearer `CRON_SECRET`. Un workflow
 propio lo invoca cada 15 minutos; la entrega esperada queda entre 1 h 45 min y
@@ -219,10 +254,13 @@ todos cada 15 minutos.
 - Unitarias del snapshot contractual, cálculo de objetivo, límites estrictos y
   copy en 0/1/N horas.
 - Unitarias de pantalla final, email y estados del botón de suscripción.
+- Unitarias de la revisión de política: render→action, manipulación/obsolescencia,
+  reintentos idempotentes tras cambios y los caminos normal, P2002 y Mercado Pago.
 - Unitarias del grant: domain separation, firma, expiración,
   reserva/customer/business cruzados, fragment cleanup y sesión autenticada.
 - Unitarias del cifrado, deduplicación, revocación por código HTTP, fallos
-  transitorios y unsubscribe multi-negocio.
+  transitorios, cobertura completa de cuenta, precedencia auth, rotación VAPID
+  con cleanup best effort y unsubscribe multi-negocio.
 - Unitarias del cron: elegibilidad, claim atómico, recuperación del lease,
   concurrencia, éxito parcial, liberación del claim y reprogramación.
 - Test del service worker para payload privado, cache headers y allowlist de URL.

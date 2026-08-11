@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { TEST_VAPID_PRIVATE_KEY, TEST_VAPID_PUBLIC_KEY } from '../helpers/push-fixtures'
 
 const { mockGetCurrentUser, mockFindUnique, mockGetTenant, mockGetBankTransferInfo, mockNotFound } = vi.hoisted(() => ({
   mockGetCurrentUser: vi.fn(),
@@ -16,6 +17,12 @@ vi.mock('@/server/actions/bank-transfer-public', () => ({ getBankTransferInfo: m
 vi.mock('next/navigation', () => ({
   notFound: mockNotFound,
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+}))
+vi.mock('@/components/push/guest-push-link', () => ({
+  GuestPushLink: () => <span>guest-push-link</span>,
+}))
+vi.mock('@/components/push/account-push-link', () => ({
+  AccountPushLink: () => <span>account-push-link</span>,
 }))
 
 import BookingConfirmationPage from '@/app/book/confirmation/page'
@@ -53,9 +60,10 @@ function booking(overrides: Record<string, unknown> = {}) {
       whatsapp: null,
       selfServiceCutoffHours: 72,
       cancellationPolicy: 'Condiciones actuales',
+      cancellationReminderEnabled: true,
     },
     service: { name: 'Manicure' },
-    customer: { email: 'maria@example.com' },
+    customer: { email: 'maria@example.com', userId: 'user-1' },
     payments: [],
     ...overrides,
   }
@@ -67,6 +75,10 @@ describe('/book/confirmation cancellation warning', () => {
     mockGetCurrentUser.mockResolvedValue(null)
     mockGetTenant.mockResolvedValue(null)
     mockGetBankTransferInfo.mockResolvedValue(null)
+    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', TEST_VAPID_PUBLIC_KEY)
+    vi.stubEnv('VAPID_PRIVATE_KEY', TEST_VAPID_PRIVATE_KEY)
+    vi.stubEnv('VAPID_SUBJECT', 'mailto:soporte@agendita.cl')
+    vi.stubEnv('ENCRYPTION_KEY', 'confirmation-push-test-key')
   })
 
   it('usa el cutoff persistido aunque la configuración actual sea distinta', async () => {
@@ -111,5 +123,25 @@ describe('/book/confirmation cancellation warning', () => {
     mockFindUnique.mockResolvedValue(incomplete)
 
     await expect(BookingConfirmationPage({ searchParams })).rejects.toThrow(/cancellationCutoffHours/)
+  })
+
+  it.each([
+    ['anonymous guest', null, 'user-1', 'guest-push-link'],
+    ['matching account', { id: 'user-1' }, 'user-1', 'account-push-link'],
+    ['different account', { id: 'user-2' }, 'user-1', null],
+  ])('shows the correct push activation for %s', async (_label, user, customerUserId, marker) => {
+    mockGetCurrentUser.mockResolvedValue(user)
+    mockFindUnique.mockResolvedValue(booking({
+      startDateTime: new Date(Date.now() + 72 * 3_600_000),
+      customer: { email: 'maria@example.com', userId: customerUserId },
+    }))
+
+    const html = renderToStaticMarkup(await BookingConfirmationPage({ searchParams }))
+
+    if (marker) expect(html).toContain(marker)
+    else {
+      expect(html).not.toContain('guest-push-link')
+      expect(html).not.toContain('account-push-link')
+    }
   })
 })

@@ -1,9 +1,10 @@
 import { createHash } from 'crypto'
-import { BookingStatus, type Prisma } from '@prisma/client'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
 import { encryptSecret } from '@/lib/payments/encryption'
 import { decodeCanonicalBase64Url, isValidVapidPublicKey } from './vapid-validation'
+import { findEligiblePushCustomers } from './eligibility'
 
 const MAX_ENDPOINT_LENGTH = 4096
 const MAX_KEY_LENGTH = 1024
@@ -163,11 +164,30 @@ export function fingerprintPushSubscription(
 export async function hasActivePushAssociation({
   endpoint,
   scope,
+  now = new Date(),
 }: {
   endpoint: string
   scope: PushStatusScope
+  now?: Date
 }): Promise<boolean> {
   const endpointHash = hashPushEndpoint(endpoint)
+  if (scope.kind === 'user') {
+    const eligibleCustomers = await findEligiblePushCustomers(prisma, scope.userId, now)
+    if (eligibleCustomers.length === 0) return false
+    const customerIds = eligibleCustomers.map(({ id }) => id)
+    const associations = await prisma.pushSubscription.findMany({
+      where: {
+        endpointHash,
+        revokedAt: null,
+        authorizedUserId: scope.userId,
+        customerId: { in: customerIds },
+      },
+      select: { customerId: true },
+    })
+    const coveredCustomers = new Set(associations.map(({ customerId }) => customerId))
+    return customerIds.every((customerId) => coveredCustomers.has(customerId))
+  }
+
   const authorizationWhere = scope.kind === 'guest'
     ? {
         businessId: scope.target.businessId,
@@ -176,14 +196,12 @@ export async function hasActivePushAssociation({
           some: { bookingId: scope.target.authorization.bookingId },
         },
       }
-    : scope.kind === 'user'
-      ? { authorizedUserId: scope.userId }
-      : {
-          OR: [
-            { authorizedUserId: { not: null } },
-            { bookingEntitlements: { some: {} } },
-          ],
-        }
+    : {
+        OR: [
+          { authorizedUserId: { not: null } },
+          { bookingEntitlements: { some: {} } },
+        ],
+      }
 
   const association = await prisma.pushSubscription.findFirst({
     where: {
@@ -449,26 +467,7 @@ export async function storeAuthenticatedPushSubscriptions({
 
     // Resolve the eligible set only after serializing this user/endpoint. That
     // makes the multi-customer write atomic with authenticated unsubscribe.
-    const eligibleCustomers = await tx.customer.findMany({
-      where: {
-        userId,
-        business: { cancellationReminderEnabled: true },
-        bookings: {
-          some: {
-            startDateTime: { gt: now },
-            status: {
-              in: [
-                BookingStatus.pending_payment,
-                BookingStatus.pending_confirmation,
-                BookingStatus.confirmed,
-              ],
-            },
-          },
-        },
-      },
-      select: { id: true, businessId: true },
-      orderBy: { id: 'asc' },
-    })
+    const eligibleCustomers = await findEligiblePushCustomers(tx, userId, now)
     const orderedCustomers = [...eligibleCustomers].sort((left, right) => (
       left.id.localeCompare(right.id)
     ))

@@ -111,9 +111,10 @@ describe('createBooking idempotency', () => {
     serviceId: 'svc-1',
     customerName: 'Juan',
     customerPhone: '+56912345678',
-    startDateTime: new Date('2026-05-20T14:00:00Z'),
+    startDateTime: new Date('2027-05-20T14:00:00Z'),
     idempotencyKey: 'key-abc-123',
     acceptedTerms: true,
+    cancellationPolicyRevision: '27f95039ffe60460abd372196819b22618f17f170193f2612ebae2f0ed098a71',
   }
 
   beforeEach(() => {
@@ -358,8 +359,8 @@ describe('createBooking idempotency', () => {
       paymentStatus: BookingPaymentStatus.unpaid,
       cancellationCutoffHours: 24,
       cancellationPolicySnapshot: null,
-      startDateTime: new Date('2026-05-20T14:00:00Z'),
-      endDateTime: new Date('2026-05-20T15:00:00Z'),
+      startDateTime: baseInput.startDateTime,
+      endDateTime: new Date(baseInput.startDateTime.getTime() + 60 * 60 * 1000),
       service: { name: 'Manicure' },
       customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
     }
@@ -407,7 +408,7 @@ describe('createBooking idempotency', () => {
       cancellationCutoffHours: 24,
       cancellationPolicySnapshot: null,
       startDateTime: baseInput.startDateTime,
-      endDateTime: new Date('2026-05-20T15:00:00Z'),
+      endDateTime: new Date(baseInput.startDateTime.getTime() + 60 * 60 * 1000),
       service: { name: 'Manicure' },
       customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
     }
@@ -442,6 +443,10 @@ describe('createBooking idempotency', () => {
       customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
       discountAmount: 0,
       holdExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      cancellationCutoffHours: 24,
+      cancellationPolicySnapshot: null,
+      depositRequired: 5_000,
+      depositPaid: 0,
     }
     mockPrisma.booking.findUnique.mockResolvedValueOnce(existingBooking)
 
@@ -457,6 +462,8 @@ describe('createBooking idempotency', () => {
 
     expect(result.ok).toBe(true)
     expect(result.ok && result.data.id).toBe('booking-race')
+    expect(result.ok && result.data.pushMode).toBe('guest')
+    expect(result.ok && result.data.pushGrant).toEqual(expect.any(String))
   })
 
   it('recovers a P2002 booking with push disabled when ENCRYPTION_KEY is absent', async () => {
@@ -519,8 +526,8 @@ describe('createBooking idempotency', () => {
       paymentStatus: BookingPaymentStatus.unpaid,
       cancellationCutoffHours: 24,
       cancellationPolicySnapshot: null,
-      startDateTime: new Date('2026-05-20T14:00:00Z'),
-      endDateTime: new Date('2026-05-20T15:00:00Z'),
+      startDateTime: baseInput.startDateTime,
+      endDateTime: new Date(baseInput.startDateTime.getTime() + 60 * 60 * 1000),
       service: { name: 'Manicure' },
       customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
     }
@@ -580,7 +587,8 @@ describe('createBooking acceptedTerms enforcement', () => {
     serviceId: 'svc-1',
     customerName: 'Juan',
     customerPhone: '+56912345678',
-    startDateTime: new Date('2026-05-20T14:00:00Z'),
+    startDateTime: new Date('2027-05-20T14:00:00Z'),
+    cancellationPolicyRevision: '27f95039ffe60460abd372196819b22618f17f170193f2612ebae2f0ed098a71',
   }
 
   it('rejects when acceptedTerms is false', async () => {
@@ -610,8 +618,8 @@ describe('createBooking acceptedTerms enforcement', () => {
       paymentStatus: BookingPaymentStatus.unpaid,
       cancellationCutoffHours: 24,
       cancellationPolicySnapshot: null,
-      startDateTime: new Date('2026-05-20T14:00:00Z'),
-      endDateTime: new Date('2026-05-20T15:00:00Z'),
+      startDateTime: baseInput.startDateTime,
+      endDateTime: new Date(baseInput.startDateTime.getTime() + 60 * 60 * 1000),
       service: { name: 'Manicure' },
       customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
     }
@@ -638,18 +646,20 @@ describe('createBooking acceptedTerms enforcement', () => {
   // ventana configurada y la reserva queda marcada para el cron y el panel.
   describe('coordinación manual del abono', () => {
     function txConCreate() {
-      const createSpy = vi.fn().mockResolvedValue({
+      const createSpy = vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
         id: 'booking-manual',
         businessId: 'biz-1',
         customerId: 'cust-1',
+        startDateTime: data.startDateTime,
+        status: data.status,
         cancellationCutoffHours: 24,
         cancellationPolicySnapshot: null,
-        depositRequired: 5000,
-        depositPaid: 0,
+        depositRequired: data.depositRequired,
+        depositPaid: data.depositPaid,
         service: { name: 'Manicure' },
-        customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
+        customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null, userId: null },
         professional: null,
-      })
+      }))
       mockPrisma.customer.findFirst.mockResolvedValue(null)
       mockPrisma.customer.create.mockResolvedValue({ id: 'cust-1' })
       mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>

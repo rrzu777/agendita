@@ -456,6 +456,53 @@ describe('PushManager', () => {
     await act(async () => root.unmount())
   })
 
+  it('best-effort cleans the old endpoint by possession before replacing a VAPID subscription', async () => {
+    window.history.replaceState(null, '', '/notificaciones')
+    const oldSubscription = {
+      endpoint: subscriptionJson.endpoint,
+      options: { applicationServerKey: base64UrlBytes(OTHER_VAPID_PUBLIC_KEY).buffer },
+      unsubscribe: vi.fn().mockResolvedValue(true),
+    }
+    const freshSubscription = {
+      endpoint: 'https://fcm.googleapis.com/fcm/send/subscription-fresh',
+      options: { applicationServerKey: base64UrlBytes(TEST_VAPID_PUBLIC_KEY).buffer },
+      toJSON: () => ({ ...subscriptionJson, endpoint: 'https://fcm.googleapis.com/fcm/send/subscription-fresh' }),
+      unsubscribe: vi.fn(),
+    }
+    const subscribe = vi.fn().mockResolvedValue(freshSubscription)
+    const register = vi.fn().mockResolvedValue({
+      pushManager: { getSubscription: vi.fn().mockResolvedValue(oldSubscription), subscribe },
+    })
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: { getRegistration: vi.fn().mockResolvedValue(undefined), register },
+    })
+    vi.stubGlobal('Notification', { permission: 'granted', requestPermission: vi.fn() })
+    vi.stubGlobal('PushManager', class {})
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ subscribed: 1 }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const { PushManager } = await import('@/components/push/push-manager')
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => root.render(<PushManager {...managerProps(true)} />))
+    await flushPromises()
+    await clickButton(container, 'Activar recordatorios')
+    await flushPromises()
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      endpoint: oldSubscription.endpoint,
+      endpointPossession: true,
+    })
+    expect(oldSubscription.unsubscribe).toHaveBeenCalledTimes(1)
+    expect(subscribe).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/push/subscribe')
+    expect(container.textContent).toContain('Recordatorios activos')
+    await act(async () => root.unmount())
+  })
+
   it('retries an invalid guest grant once without it and unsubscribes locally exactly once', async () => {
     const browserSubscription = {
       endpoint: subscriptionJson.endpoint,
@@ -736,9 +783,60 @@ describe('PushManager', () => {
       userVisibleOnly: true,
       applicationServerKey: base64UrlBytes(TEST_VAPID_PUBLIC_KEY),
     })
+    expect(fetch).toHaveBeenNthCalledWith(1, '/api/push/unsubscribe', expect.objectContaining({
+      body: JSON.stringify({
+        endpoint: 'https://fcm.googleapis.com/fcm/send/old-subscription',
+        endpointPossession: true,
+      }),
+    }))
     expect(fetch).toHaveBeenCalledWith('/api/push/subscribe', expect.objectContaining({
       body: JSON.stringify({ subscription: subscriptionJson }),
     }))
+    expect(container.textContent).toContain('Recordatorios activos')
+    await act(async () => root.unmount())
+  })
+
+  it('does not let best-effort VAPID cleanup failures block replacement', async () => {
+    window.history.replaceState(null, '', '/notificaciones')
+    const existing = {
+      endpoint: 'https://fcm.googleapis.com/fcm/send/old-subscription',
+      options: { applicationServerKey: base64UrlBytes(OTHER_VAPID_PUBLIC_KEY).buffer },
+      toJSON: () => ({ ...subscriptionJson, endpoint: 'https://fcm.googleapis.com/fcm/send/old-subscription' }),
+      unsubscribe: vi.fn().mockRejectedValue(new Error('browser cleanup unavailable')),
+    }
+    const replacement = {
+      endpoint: subscriptionJson.endpoint,
+      options: { applicationServerKey: base64UrlBytes(TEST_VAPID_PUBLIC_KEY).buffer },
+      toJSON: () => subscriptionJson,
+      unsubscribe: vi.fn(),
+    }
+    const subscribe = vi.fn().mockResolvedValue(replacement)
+    const register = vi.fn().mockResolvedValue({
+      pushManager: { getSubscription: vi.fn().mockResolvedValue(existing), subscribe },
+    })
+    vi.stubGlobal('Notification', { permission: 'granted', requestPermission: vi.fn() })
+    vi.stubGlobal('PushManager', class {})
+    Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { register } })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 503 })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ subscribed: 1 }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const { PushManager } = await import('@/components/push/push-manager')
+    const container = document.createElement('div')
+    const root = createRoot(container)
+
+    await act(async () => root.render(<PushManager {...managerProps(true)} />))
+    await clickButton(container, 'Activar recordatorios')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/push/unsubscribe', expect.objectContaining({
+      body: JSON.stringify({
+        endpoint: existing.endpoint,
+        endpointPossession: true,
+      }),
+    }))
+    expect(existing.unsubscribe).toHaveBeenCalledTimes(1)
+    expect(subscribe).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('Recordatorios activos')
     await act(async () => root.unmount())
   })

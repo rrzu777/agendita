@@ -263,7 +263,7 @@ export function SettingsForm({ business }: { business: Business }) {
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-4">
-              <Label htmlFor="cancellationReminderEnabled">Avisar antes del límite de cancelación</Label>
+              <Label htmlFor="cancellationReminderEnabled">Avisar por Web Push antes del límite de cancelación</Label>
               <Switch
                 id="cancellationReminderEnabled"
                 checked={!!watchedValues.cancellationReminderEnabled}
@@ -271,7 +271,7 @@ export function SettingsForm({ business }: { business: Business }) {
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              Envía una notificación antes de que venza la ventana para cancelar o reprogramar.
+              Envía una notificación Web Push sólo para reservas futuras y vigentes con abono requerido o pagado y un límite mayor que 0. El aviso sale cuando el abono ya está pagado.
             </p>
           </div>
           <div className="space-y-2">

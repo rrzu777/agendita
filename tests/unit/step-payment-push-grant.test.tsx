@@ -56,6 +56,7 @@ describe('StepPayment push grant redirect handoff', () => {
       data: {
         id: 'booking-1',
         pushGrant: 'server-signed-grant',
+        pushMode: 'guest',
         bookingNumber: 7,
         status: 'pending_payment',
         modality: 'on_site',
@@ -84,6 +85,7 @@ describe('StepPayment push grant redirect handoff', () => {
           updateData={vi.fn()}
           businessId="business-1"
           selfServiceCutoffHours={24}
+          cancellationPolicyRevision="policy-revision-1"
           manualHoldHours={24}
           timezone="America/Santiago"
           currency="CLP"
@@ -97,6 +99,10 @@ describe('StepPayment push grant redirect handoff', () => {
     await clickButton(container, 'Pagar abono', { match: 'contains' })
 
     expect(sessionStorage.getItem('agendita:push-grant:booking-1')).toBe('server-signed-grant')
+    expect(mockCreateBooking).toHaveBeenCalledWith(
+      expect.objectContaining({ cancellationPolicyRevision: 'policy-revision-1' }),
+      'business-1',
+    )
 
     await act(async () => root.unmount())
   }, 20_000)
@@ -108,6 +114,7 @@ describe('StepPayment push grant redirect handoff', () => {
       data: {
         id: 'booking-without-push',
         pushGrant: null,
+        pushMode: null,
         bookingNumber: 8,
         status: 'pending_payment',
         modality: 'on_site',
@@ -134,6 +141,7 @@ describe('StepPayment push grant redirect handoff', () => {
           updateData={vi.fn()}
           businessId="business-1"
           selfServiceCutoffHours={24}
+          cancellationPolicyRevision="policy-revision-1"
           manualHoldHours={24}
           timezone="America/Santiago"
           currency="CLP"

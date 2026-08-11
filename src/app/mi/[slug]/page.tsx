@@ -24,6 +24,7 @@ import { ServiceModality, type BookingStatus, type Prisma } from '@prisma/client
 import { getVocabulary } from '@/lib/vocabulary'
 import { resolveCancellationPolicy } from '@/lib/bookings/cancellation-policy'
 import { AccountPushLink } from '@/components/push/account-push-link'
+import { isPushBookingEligible } from '@/lib/push/eligibility'
 
 const UPCOMING_STATUSES = ['pending_payment', 'pending_confirmation', 'confirmed'] as const
 
@@ -92,7 +93,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
     where: { slug },
     select: {
       id: true, name: true, slug: true, subdomain: true, logoUrl: true, category: true, selfServiceCutoffHours: true,
-      cancellationPolicy: true,
+      cancellationPolicy: true, cancellationReminderEnabled: true,
       addressText: true,
       loyaltyConfig: { select: { isActive: true, programName: true, pointsLabel: true, cardMessage: true } },
     },
@@ -119,7 +120,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
     prisma.booking.findMany({
       where: { customerId: { in: customerIds }, startDateTime: { gte: now }, status: { in: [...UPCOMING_STATUSES] } },
       orderBy: { startDateTime: 'asc' },
-      select: { id: true, bookingNumber: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true, approvalExpiresAt: true, cancellationCutoffHours: true, cancellationPolicySnapshot: true, modality: true, serviceAddress: true, meetingUrl: true, service: { select: { name: true } }, payments: PAGOS_QUE_PISAN_EL_HOLD },
+      select: { id: true, bookingNumber: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true, approvalExpiresAt: true, cancellationCutoffHours: true, cancellationPolicySnapshot: true, depositRequired: true, depositPaid: true, modality: true, serviceAddress: true, meetingUrl: true, service: { select: { name: true } }, payments: PAGOS_QUE_PISAN_EL_HOLD },
     }),
     prisma.booking.findMany({
       where: { customerId: { in: customerIds }, OR: [{ startDateTime: { lt: now } }, { status: { notIn: [...UPCOMING_STATUSES] } }] },
@@ -191,7 +192,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
             })}
           </ul>
         )}
-        {upcoming.length > 0 && <AccountPushLink />}
+        {upcoming.some((booking) => isPushBookingEligible(booking, business, now)) && <AccountPushLink />}
         <a
           href={getBookingFunnelUrl({ slug: business.slug, subdomain: business.subdomain })}
           className="mt-3 inline-block rounded-full bg-pink-600 px-4 py-2 text-sm font-semibold text-white"

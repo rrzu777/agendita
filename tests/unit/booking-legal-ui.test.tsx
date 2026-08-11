@@ -57,7 +57,7 @@ describe('booking legal UI', () => {
   it('public booking payment step shows terms, privacy and refund links', async () => {
     const { StepPayment } = await import('@/components/booking/step-payment')
     const html = renderToStaticMarkup(
-      <StepPayment data={bookingData} updateData={vi.fn()} businessId="biz-1" selfServiceCutoffHours={24} manualHoldHours={24} timezone="America/Santiago" currency="CLP" onSuccess={vi.fn()} onBack={vi.fn()} />,
+      <StepPayment cancellationPolicyRevision="revision-1" data={bookingData} updateData={vi.fn()} businessId="biz-1" selfServiceCutoffHours={24} manualHoldHours={24} timezone="America/Santiago" currency="CLP" onSuccess={vi.fn()} onBack={vi.fn()} />,
     )
 
     expect(html).toContain('href="/terms"')
@@ -69,6 +69,7 @@ describe('booking legal UI', () => {
     const { StepPayment } = await import('@/components/booking/step-payment')
     const html = renderToStaticMarkup(
       <StepPayment
+        cancellationPolicyRevision="revision-1"
         data={bookingData}
         updateData={vi.fn()}
         businessId="biz-1" selfServiceCutoffHours={24} manualHoldHours={24} timezone="America/Santiago" currency="CLP"
@@ -89,6 +90,7 @@ describe('booking legal UI', () => {
     await act(async () => {
       root.render(
         <StepPayment
+          cancellationPolicyRevision="revision-1"
           data={{ ...bookingData, serviceDeposit: 5_000 }}
           updateData={vi.fn()}
           businessId="biz-1" selfServiceCutoffHours={24} manualHoldHours={24} timezone="America/Santiago" currency="CLP"
@@ -116,6 +118,7 @@ describe('booking legal UI', () => {
     await act(async () => {
       root.render(
         <StepPayment
+          cancellationPolicyRevision="revision-1"
           data={{ ...bookingData, serviceDeposit: 5_000 }}
           updateData={vi.fn()}
           businessId="biz-1" selfServiceCutoffHours={24} manualHoldHours={24} timezone="America/Santiago" currency="CLP"
@@ -138,6 +141,7 @@ describe('booking legal UI', () => {
     const { StepPayment } = await import('@/components/booking/step-payment')
     const html = renderToStaticMarkup(
       <StepPayment
+        cancellationPolicyRevision="revision-1"
         data={bookingData}
         updateData={vi.fn()}
         businessId="biz-1" selfServiceCutoffHours={24} manualHoldHours={24} timezone="America/Santiago" currency="CLP"
@@ -160,6 +164,7 @@ describe('booking legal UI', () => {
     await act(async () => {
       root.render(
         <StepPayment
+          cancellationPolicyRevision="revision-1"
           data={{ ...bookingData, serviceDeposit: 5000 }}
           updateData={vi.fn()}
           businessId="biz-1" selfServiceCutoffHours={24} manualHoldHours={24} timezone="America/Santiago" currency="CLP"

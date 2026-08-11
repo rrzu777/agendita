@@ -1,4 +1,4 @@
-import { BookingStatus } from '@prisma/client'
+import { BookingStatus, type Prisma } from '@prisma/client'
 import { cancellationWarningText } from '@/lib/bookings/cancellation-policy'
 import { getAppUrl, getBookingConfirmationUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
@@ -62,6 +62,11 @@ type DeliveryDisposition =
 type DeliveryAttempt =
   | DeliveryDisposition
   | { kind: 'expired'; subscription: Subscription }
+
+type DeliveryAuthorization = {
+  bookingId: string
+  userId: string | null
+}
 
 async function mapSettledBounded<T, R>(
   items: readonly T[],
@@ -259,7 +264,10 @@ function classifyDelivery(
   return { kind: 'transient', subscription, occurredAt }
 }
 
-async function recordDisposition(disposition: DeliveryDisposition): Promise<boolean> {
+async function recordDisposition(
+  disposition: DeliveryDisposition,
+  authorization: DeliveryAuthorization,
+): Promise<boolean> {
   const { subscription } = disposition
   const deliveredGeneration = {
     id: subscription.id,
@@ -267,8 +275,17 @@ async function recordDisposition(disposition: DeliveryDisposition): Promise<bool
     revokedAt: null,
   }
   if (disposition.kind === 'success') {
+    const authorizationBranches: Prisma.PushSubscriptionWhereInput[] = [
+      { bookingEntitlements: { some: { bookingId: authorization.bookingId } } },
+    ]
+    if (authorization.userId !== null) {
+      authorizationBranches.push({ authorizedUserId: authorization.userId })
+    }
     const updated = await prisma.pushSubscription.updateMany({
-      where: deliveredGeneration,
+      where: {
+        ...deliveredGeneration,
+        OR: authorizationBranches,
+      },
       data: {
         failureCount: 0,
         lastFailureAt: null,
@@ -476,7 +493,10 @@ async function processCandidate(
       const persisted = await mapSettledBounded(
         dispositions,
         DELIVERY_CONCURRENCY,
-        (disposition) => recordDisposition(disposition),
+        (disposition) => recordDisposition(disposition, {
+          bookingId: candidate.id,
+          userId: currentCandidate.customer.userId,
+        }),
       )
       const persistenceErrors = persisted.filter(({ status }) => status === 'rejected').length
       const recordedSuccesses = dispositions.reduce((count, disposition, index) => (

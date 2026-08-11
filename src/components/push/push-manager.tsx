@@ -210,7 +210,20 @@ export function PushManager({
       if (existing && sameApplicationServerKey(existing.options?.applicationServerKey, configuredApplicationServerKey)) {
         subscription = existing
       } else {
-        if (existing) await existing.unsubscribe()
+        if (existing) {
+          // A VAPID rotation produces a new browser endpoint/key capability.
+          // Retire every server scope carried by the old endpoint first so its
+          // rows cannot keep consuming device caps. Cleanup is deliberately
+          // best effort: a transient server failure must not block replacement.
+          await cleanupEndpointPossession(existing.endpoint)
+          try {
+            await existing.unsubscribe()
+          } catch {
+            // The replacement attempt remains authoritative. If the browser
+            // cannot retire the stale local generation, subscribe will either
+            // replace it or fail with the normal retryable activation state.
+          }
+        }
         subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: configuredApplicationServerKey,
@@ -353,6 +366,19 @@ export function PushManager({
     grantRef.current = null
     setScopeStatus(isAuthenticated ? 'allowed' : 'missing')
     return (await cleanup(null, true))?.ok === true
+  }
+
+  async function cleanupEndpointPossession(endpoint: string): Promise<void> {
+    try {
+      await fetch('/api/push/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint, endpointPossession: true }),
+      })
+    } catch {
+      // Best effort by design; the new browser subscription can still be
+      // associated and later endpoint cleanup remains possession-scoped.
+    }
   }
 
   if (status === 'checking') return <p>Comprobando compatibilidad…</p>

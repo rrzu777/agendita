@@ -77,6 +77,8 @@ function setupMocks() {
     whatsapp: '+56987654321',
     addressText: 'Av. Siempre Viva 742',
     currency: 'CLP',
+    selfServiceCutoffHours: 24,
+    cancellationReminderEnabled: true,
     cancellationPolicy: null,
     slug: 'test-biz',
     subdomain: null,
@@ -122,6 +124,7 @@ const baseInput = {
   customerPhone: '+56912345678',
   startDateTime: new Date('2026-06-15T14:00:00Z'),
   acceptedTerms: true,
+  cancellationPolicyRevision: '27f95039ffe60460abd372196819b22618f17f170193f2612ebae2f0ed098a71',
 }
 
 function datosCreados() {

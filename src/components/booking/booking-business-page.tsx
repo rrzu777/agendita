@@ -5,6 +5,7 @@ import type { BookingBusiness } from '@/lib/business/public'
 import type { FunnelSession } from '@/lib/customers/session-prefill'
 import { getVocabulary } from '@/lib/vocabulary'
 import { toFunnelProfessionals } from '@/lib/professionals/eligible'
+import { cancellationPolicyRevision } from '@/lib/bookings/cancellation-policy-revision'
 
 interface BookingBusinessPageProps {
   business: BookingBusiness
@@ -47,6 +48,11 @@ export function BookingBusinessPage({ business, profileHref, referralToken, sess
           professionals={toFunnelProfessionals(business.professionals)}
           professionalWords={getVocabulary(business.category)}
           cancellationPolicy={business.cancellationPolicy}
+          cancellationPolicyRevision={cancellationPolicyRevision({
+            businessId: business.id,
+            cutoffHours: business.selfServiceCutoffHours,
+            additionalPolicy: business.cancellationPolicy,
+          })}
           selfServiceCutoffHours={business.selfServiceCutoffHours}
           manualHoldHours={business.manualHoldHours}
           referralToken={referralToken}

@@ -85,4 +85,29 @@ describe('StepConfirmation cancellation warning', () => {
     )
     expect(html).toContain('el abono no se devuelve')
   })
+
+  it.each([
+    ['account', 'Administrar recordatorios', 'Activar recordatorios'],
+    ['guest', 'Activar recordatorios', 'Administrar recordatorios'],
+    [null, null, 'Administrar recordatorios'],
+  ] as const)('renders only the explicit %s push activation mode', (pushMode, expected, absent) => {
+    const html = renderToStaticMarkup(
+      <StepConfirmation
+        {...common}
+        data={base}
+        cancellationCutoffHours={24}
+        depositRequired={5_000}
+        depositPaid={0}
+        {...({
+          pushMode,
+          pushGrant: pushMode === 'guest' ? 'signed-grant' : null,
+          canonicalOrigin: 'https://www.agendita.cl',
+        } as Record<string, unknown>)}
+      />,
+    )
+
+    if (expected) expect(html).toContain(expected)
+    else expect(html).not.toContain('recordatorios')
+    expect(html).not.toContain(absent)
+  })
 })

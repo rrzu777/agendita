@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   subscriptionFindUnique: vi.fn(),
   subscriptionFindMany: vi.fn(),
   associationFindFirst: vi.fn(),
+  associationFindMany: vi.fn(),
   subscriptionCount: vi.fn(),
   upsert: vi.fn(),
   entitlementUpsert: vi.fn(),
@@ -27,7 +28,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/db', () => ({
   prisma: {
     $transaction: mocks.transaction,
-    pushSubscription: { findFirst: mocks.associationFindFirst },
+    customer: { findMany: mocks.customerFindMany },
+    pushSubscription: {
+      findFirst: mocks.associationFindFirst,
+      findMany: mocks.associationFindMany,
+    },
   },
 }))
 
@@ -38,6 +43,8 @@ vi.mock('@/lib/db/advisory-lock', () => ({
 vi.mock('@/lib/payments/encryption', () => ({
   encryptSecret: mocks.encryptSecret,
 }))
+
+vi.mock('@/lib/push/config', () => ({ hasUsablePushConfig: () => true }))
 
 vi.mock('web-push', () => ({
   default: {
@@ -65,6 +72,7 @@ describe('push subscription storage', () => {
     mocks.subscriptionFindUnique.mockResolvedValue(null)
     mocks.subscriptionFindMany.mockResolvedValue([{ id: 'push-1', customerId: 'customer-1' }])
     mocks.associationFindFirst.mockResolvedValue(null)
+    mocks.associationFindMany.mockResolvedValue([])
     mocks.subscriptionCount.mockResolvedValue(0)
     mocks.entitlementUpsert.mockResolvedValue({ subscriptionId: 'push-1', bookingId: 'booking-1' })
     mocks.entitlementDeleteMany.mockResolvedValue({ count: 1 })
@@ -162,15 +170,6 @@ describe('push subscription storage', () => {
       },
     },
     {
-      label: 'authenticated user',
-      scope: { kind: 'user' as const, userId: 'user-1' },
-      expectedWhere: {
-        endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
-        revokedAt: null,
-        authorizedUserId: 'user-1',
-      },
-    },
-    {
       label: 'endpoint possession',
       scope: { kind: 'endpoint' as const },
       expectedWhere: {
@@ -204,6 +203,45 @@ describe('push subscription storage', () => {
       endpoint: validSubscription.endpoint,
       scope: { kind: 'endpoint' },
     })).resolves.toBe(false)
+  })
+
+  it('reports an authenticated endpoint active only when it covers every currently eligible Customer', async () => {
+    const { hasActivePushAssociation } = await import('@/lib/push/subscription')
+    const now = new Date('2026-08-10T12:00:00.000Z')
+    mocks.customerFindMany.mockResolvedValue([
+      { id: 'customer-1' },
+      { id: 'customer-2' },
+    ])
+    mocks.associationFindMany.mockResolvedValue([{ customerId: 'customer-1' }])
+
+    await expect(hasActivePushAssociation({
+      endpoint: validSubscription.endpoint,
+      scope: { kind: 'user', userId: 'user-1' },
+      now,
+    })).resolves.toBe(false)
+
+    expect(mocks.associationFindMany).toHaveBeenCalledWith({
+      where: {
+        endpointHash: 'b2cd90efe7a9e3a56ace8d387ce4eef5271b3d42bba70044e02b735c8aa1aae8',
+        revokedAt: null,
+        authorizedUserId: 'user-1',
+        customerId: { in: ['customer-1', 'customer-2'] },
+      },
+      select: { customerId: true },
+    })
+  })
+
+  it('reports no authenticated activation when there are zero eligible Customers', async () => {
+    const { hasActivePushAssociation } = await import('@/lib/push/subscription')
+    mocks.customerFindMany.mockResolvedValue([])
+
+    await expect(hasActivePushAssociation({
+      endpoint: validSubscription.endpoint,
+      scope: { kind: 'user', userId: 'user-1' },
+      now: new Date('2026-08-10T12:00:00.000Z'),
+    })).resolves.toBe(false)
+
+    expect(mocks.associationFindMany).not.toHaveBeenCalled()
   })
 
   it('fingerprints the normalized endpoint and keys so key rotation creates a new generation', async () => {
@@ -338,6 +376,23 @@ describe('push subscription storage', () => {
           some: {
             startDateTime: { gt: now },
             status: { in: ['pending_payment', 'pending_confirmation', 'confirmed'] },
+            AND: [
+              {
+                OR: [
+                  { depositRequired: { gt: 0 } },
+                  { depositPaid: { gt: 0 } },
+                ],
+              },
+              {
+                OR: [
+                  { cancellationCutoffHours: { gt: 0 } },
+                  {
+                    cancellationCutoffHours: null,
+                    business: { selfServiceCutoffHours: { gt: 0 } },
+                  },
+                ],
+              },
+            ],
           },
         },
       },

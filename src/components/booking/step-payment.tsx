@@ -55,6 +55,7 @@ export interface BookingCreated {
   cancellationPolicySnapshot: string | null
   depositRequired: number
   depositPaid: number
+  pushMode: 'account' | 'guest' | null
   pushGrant: string | null
 }
 
@@ -124,7 +125,7 @@ type Paso =
   | { k: 'transfer-details'; bank: BankTransferPublicInfo; reserva: ReservaEnTransferencia }
   | { k: 'transfer-declared'; reserva: ReservaEnTransferencia }
 
-export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, selfServiceCutoffHours, manualHoldHours, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; selfServiceCutoffHours: number; manualHoldHours: number; referralToken?: string; onSuccess: (result: BookingCreated) => void; onBack: () => void }) {
+export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, cancellationPolicyRevision, selfServiceCutoffHours, manualHoldHours, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; cancellationPolicyRevision: string; selfServiceCutoffHours: number; manualHoldHours: number; referralToken?: string; onSuccess: (result: BookingCreated) => void; onBack: () => void }) {
   const [paso, setPaso] = useState<Paso>({ k: 'review' })
   const [bankInfo, setBankInfo] = useState<BankTransferPublicInfo | null>(null)
   const [method, setMethod] = useState<'online' | 'transfer'>('online')
@@ -348,6 +349,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       startDateTime: data.timeSlot!.start,
       idempotencyKey,
       acceptedTerms,
+      cancellationPolicyRevision,
       promotionCode: appliedPromo?.code,
       referralToken,
       skipPackage: !usePackage,
@@ -436,6 +438,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       depositRequired: number
       depositPaid: number
       pushGrant: string | null
+      pushMode: 'account' | 'guest' | null
     },
     mode: 'paid' | 'pending',
     confirmed: boolean,
@@ -455,11 +458,12 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       depositRequired: booking.depositRequired,
       depositPaid: booking.depositPaid,
       pushGrant: booking.pushGrant,
+      pushMode: booking.pushMode,
     }
   }
 
-  function retainPushGrant(booking: { id: string; pushGrant: string | null }) {
-    if (!booking.pushGrant) return
+  function retainPushGrant(booking: { id: string; pushMode: 'account' | 'guest' | null; pushGrant: string | null }) {
+    if (booking.pushMode !== 'guest' || !booking.pushGrant) return
     try {
       sessionStorage.setItem(guestPushGrantSessionKey(booking.id), booking.pushGrant)
     } catch {

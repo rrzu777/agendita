@@ -100,6 +100,7 @@ describe('StepPayment — el plazo que promete la pantalla de transferencia', ()
     await act(async () => {
       root.render(
         <StepPayment
+          cancellationPolicyRevision="revision-1"
           data={bookingData}
           updateData={vi.fn()}
           businessId="biz-1"
@@ -163,6 +164,7 @@ describe('StepPayment — el plazo que promete la pantalla de transferencia', ()
     await act(async () => {
       root.render(
         <StepPayment
+          cancellationPolicyRevision="revision-1"
           data={bookingData}
           updateData={vi.fn()}
           businessId="biz-1"

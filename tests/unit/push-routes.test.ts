@@ -243,6 +243,61 @@ describe('push subscription routes', () => {
     })
   })
 
+  it.each(['status', 'subscribe', 'unsubscribe'] as const)(
+    'gives the authenticated account precedence over a supplied guest grant for %s',
+    async (operation) => {
+      mocks.getCurrentUser.mockResolvedValue({ id: 'user-1' })
+      mocks.hasActivePushAssociation.mockResolvedValue(true)
+      mocks.storeAuthenticatedPushSubscriptions.mockResolvedValue(1)
+      const path = `/api/push/${operation}`
+      const { POST } = operation === 'status'
+        ? await import('@/app/api/push/status/route')
+        : operation === 'subscribe'
+          ? await import('@/app/api/push/subscribe/route')
+          : await import('@/app/api/push/unsubscribe/route')
+      const body = operation === 'subscribe'
+        ? { subscription, grant: 'signed-grant' }
+        : { endpoint: subscription.endpoint, grant: 'signed-grant' }
+
+      const response = await POST(pushRequest(path, body))
+
+      expect(response.status).toBe(200)
+      expect(mocks.verifyPushGrant).not.toHaveBeenCalled()
+      if (operation === 'status') {
+        expect(mocks.hasActivePushAssociation).toHaveBeenCalledWith({
+          endpoint: subscription.endpoint,
+          scope: { kind: 'user', userId: 'user-1' },
+        })
+      } else if (operation === 'subscribe') {
+        expect(mocks.storeAuthenticatedPushSubscriptions).toHaveBeenCalledWith(expect.objectContaining({
+          userId: 'user-1',
+        }))
+        expect(mocks.storePushSubscription).not.toHaveBeenCalled()
+      } else {
+        expect(mocks.unsubscribePushSubscription).toHaveBeenCalledWith(expect.objectContaining({
+          scope: { kind: 'user', userId: 'user-1' },
+        }))
+      }
+    },
+  )
+
+  it('keeps explicit endpoint-possession cleanup independent from an authenticated account and stale grant', async () => {
+    mocks.getCurrentUser.mockResolvedValue({ id: 'user-1' })
+    const { POST } = await import('@/app/api/push/unsubscribe/route')
+
+    const response = await POST(pushRequest('/api/push/unsubscribe', {
+      endpoint: subscription.endpoint,
+      endpointPossession: true,
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.getCurrentUser).not.toHaveBeenCalled()
+    expect(mocks.verifyPushGrant).not.toHaveBeenCalled()
+    expect(mocks.unsubscribePushSubscription).toHaveBeenCalledWith(expect.objectContaining({
+      scope: { kind: 'endpoint' },
+    }))
+  })
+
   it('rejects malformed status endpoints before database lookup', async () => {
     const { POST } = await import('@/app/api/push/status/route')
 
@@ -304,7 +359,9 @@ describe('push subscription routes', () => {
       subscription,
       authorization: { kind: 'guest', bookingId: 'booking-1' },
     })
-    expect(mocks.getCurrentUser).not.toHaveBeenCalled()
+    expect(mocks.getCurrentUser).toHaveBeenCalledTimes(1)
+    expect(mocks.getCurrentUser.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.verifyPushGrant.mock.invocationCallOrder[0])
   })
 
   it('fails closed when a validly signed guest grant no longer owns the booking', async () => {

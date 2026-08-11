@@ -22,7 +22,9 @@ import { buildBookingHelpWhatsappUrl } from '@/lib/notifications/whatsapp'
 import { WhatsappHelpLine, WhereRowValue } from '@/components/booking/where-row-value'
 import { cancellationWarningText, resolveCancellationPolicy } from '@/lib/bookings/cancellation-policy'
 import { GuestPushLink } from '@/components/push/guest-push-link'
+import { AccountPushLink } from '@/components/push/account-push-link'
 import { getAppUrl } from '@/lib/business/urls'
+import { isPushBookingEligible } from '@/lib/push/eligibility'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
@@ -49,10 +51,11 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           whatsapp: true,
           selfServiceCutoffHours: true,
           cancellationPolicy: true,
+          cancellationReminderEnabled: true,
         },
       },
       service: true,
-      customer: { select: { email: true } },
+      customer: { select: { email: true, userId: true } },
       payments: {
         where: { provider: { in: ['mercado_pago', 'manual'] } },
         select: { status: true, provider: true, providerPaymentId: true, amount: true, proofKey: true },
@@ -113,6 +116,14 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
   const cancellationWarning = (booking.depositRequired > 0 || booking.depositPaid > 0)
     ? cancellationWarningText(cutoffHours)
     : null
+  const pushEligible = isPushBookingEligible(booking, booking.business, now)
+  const pushMode = !pushEligible
+    ? null
+    : sessionUser === null
+      ? 'guest' as const
+      : booking.customer.userId === sessionUser.id
+        ? 'account' as const
+        : null
 
   // Las mismas filas que manda el mail de la reserva: es el momento en que la
   // clienta cierra la pestaña y necesita saber a dónde va.
@@ -412,7 +423,10 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
         {/* El CTA de cuenta nunca compite con la acción de declarar transferencia. */}
         {!canDeclare && (
           <>
-            <GuestPushLink bookingId={booking.id} canonicalOrigin={getAppUrl('')} className="mt-4" />
+            {pushMode === 'account' && <AccountPushLink />}
+            {pushMode === 'guest' && (
+              <GuestPushLink bookingId={booking.id} canonicalOrigin={getAppUrl('')} className="mt-4" />
+            )}
             <AccountCta sessionActive={sessionUser !== null} customerEmail={customerEmail} className="mt-4" />
           </>
         )}

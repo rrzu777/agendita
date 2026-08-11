@@ -919,6 +919,10 @@ describe('sendCancellationWarnings', () => {
         id: 'subscription-1',
         subscriptionFingerprint: 'fingerprint-1',
         revokedAt: null,
+        OR: [
+          { bookingEntitlements: { some: { bookingId: 'booking-1' } } },
+          { authorizedUserId: 'user-1' },
+        ],
       },
       data: {
         failureCount: 0,
@@ -973,6 +977,66 @@ describe('sendCancellationWarnings', () => {
     expect(result).toEqual({ sent: 1, skipped: 0, errors: 0 })
     expect(mockSendWebPush).toHaveBeenCalledTimes(2)
   })
+
+  it.each([
+    ['account authorization', 'user-1', makeSubscription({ authorizedUserId: 'user-1' })],
+    ['exact guest booking entitlement', null, makeSubscription({ authorizedUserId: null })],
+  ])(
+    'does not count stale success after detaching %s while preserving another live scope',
+    async (_label, userId, subscription) => {
+      let detachedFromBooking = false
+      let otherScopeStillLive = true
+      mockBookingFindMany.mockResolvedValue([makeBooking({ customer: { userId } })])
+      mockBookingFindFirst.mockResolvedValue({
+        cancellationCutoffHours: 24,
+        startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
+        customer: { userId },
+        business: { selfServiceCutoffHours: 24 },
+      })
+      mockSubscriptionFindMany.mockImplementation(async () => (
+        detachedFromBooking ? [] : [subscription]
+      ))
+      mockSendWebPush.mockImplementation(async () => {
+        detachedFromBooking = true
+        // The same row/fingerprint remains active for a different booking or
+        // account scope. This worker must neither count nor revoke that scope.
+        otherScopeStillLive = true
+        return { ok: true, statusCode: 201 }
+      })
+      mockSubscriptionUpdateMany.mockImplementation(async ({ where, data }) => {
+        if ('lastSuccessAt' in data) {
+          // Old code had no authorization CAS and therefore incorrectly
+          // persisted success. The remediated query includes the exact booking
+          // entitlement and, only when non-null, the current account identity.
+          return { count: 'OR' in where ? 0 : 1 }
+        }
+        return { count: 1 }
+      })
+
+      const result = await sendCancellationWarnings(NOW)
+
+      expect(result).toEqual({ sent: 0, skipped: 0, errors: 1 })
+      expect(otherScopeStillLive).toBe(true)
+      expect(mockBookingUpdateMany).not.toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ cancellationReminderSentAt: expect.any(Date) }),
+      }))
+      expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          id: subscription.id,
+          subscriptionFingerprint: subscription.subscriptionFingerprint,
+          OR: userId
+            ? [
+                { bookingEntitlements: { some: { bookingId: 'booking-1' } } },
+                { authorizedUserId: userId },
+              ]
+            : [
+                { bookingEntitlements: { some: { bookingId: 'booking-1' } } },
+              ],
+        }),
+        data: expect.objectContaining({ lastSuccessAt: NOW }),
+      }))
+    },
+  )
 
   it('recalcula copy y TTL si cambia el cutoff legacy antes del retry de generación', async () => {
     const simulated = simulateSubscriptionPersistence({

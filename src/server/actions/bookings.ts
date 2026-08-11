@@ -45,7 +45,8 @@ import { holdPrecedencePaymentWhere } from '@/lib/payments/hold-precedence'
 import { fireBookingNotifications } from '@/lib/bookings/notifications'
 import { resolveBookingDraft } from '@/lib/bookings/draft'
 import { issuePushGrant } from '@/lib/push/grant'
-import { hasUsablePushConfig } from '@/lib/push/config'
+import { isPushBookingEligible } from '@/lib/push/eligibility'
+import { cancellationPolicyRevision } from '@/lib/bookings/cancellation-policy-revision'
 import { applyBookingDiscountInTx } from '@/lib/bookings/discount'
 import { loadBookingInvite, loadBookingCancelNotice } from '@/lib/calendar/booking-invite'
 import {
@@ -62,22 +63,28 @@ import {
 // respuesta sin error de compilación — pasó con las salidas de paquete/código.
 const BOOKING_RESULT_INCLUDE = { service: true, customer: true, professional: { select: { name: true } } } as const
 
-function withPushGrant<T extends {
+function withPushActivation<T extends {
   id: string
-  customer: { id: string }
+  customer: { id: string; userId?: string | null }
+  startDateTime: Date
+  status: BookingStatus
   cancellationCutoffHours: number | null
   depositRequired: number
   depositPaid: number
 }>(
   booking: T,
-  business: { id: string; cancellationReminderEnabled: boolean },
+  business: { id: string; cancellationReminderEnabled: boolean; selfServiceCutoffHours: number },
+  sessionUser: { id: string } | null,
 ) {
-  const eligible = business.cancellationReminderEnabled
-    && booking.cancellationCutoffHours !== null
-    && booking.cancellationCutoffHours > 0
-    && (booking.depositRequired > 0 || booking.depositPaid > 0)
-    && hasUsablePushConfig()
-  const pushGrant = eligible
+  const eligible = isPushBookingEligible(booking, business, new Date())
+  const pushMode = !eligible
+    ? null
+    : sessionUser === null
+      ? 'guest' as const
+      : booking.customer.userId === sessionUser.id
+        ? 'account' as const
+        : null
+  const pushGrant = pushMode === 'guest'
     ? issuePushGrant({
         bookingId: booking.id,
         customerId: booking.customer.id,
@@ -87,6 +94,7 @@ function withPushGrant<T extends {
 
   return {
     ...booking,
+    pushMode,
     pushGrant,
   }
 }
@@ -111,6 +119,7 @@ const createBookingSchema = z.object({
   startDateTime: z.date(),
   idempotencyKey: z.string().min(1).max(64).optional(),
   acceptedTerms: z.boolean(),
+  cancellationPolicyRevision: z.string().min(1).max(128).optional(),
   promotionCode: z.string().trim().max(40).optional(),
   skipPackage: z.boolean().optional(),
   paymentMethod: z.enum(['bank_transfer']).optional(),
@@ -233,6 +242,7 @@ async function _createBooking(data: {
   startDateTime: Date
   idempotencyKey?: string
   acceptedTerms: boolean
+  cancellationPolicyRevision?: string
   promotionCode?: string
   skipPackage?: boolean
   referralToken?: string
@@ -383,8 +393,17 @@ async function _createBooking(data: {
     // seguimos al camino de creación normal, que ahora la puede volver a usar.
     if (existing) {
       const resumida = await resumeBookingForRetry(existing, retryCtx)
-      if (resumida) return withPushGrant(resumida, business)
+      if (resumida) return withPushActivation(resumida, business, sessionUser)
     }
+  }
+
+  const currentPolicyRevision = cancellationPolicyRevision({
+    businessId: business.id,
+    cutoffHours: business.selfServiceCutoffHours,
+    additionalPolicy: business.cancellationPolicy,
+  })
+  if (parsed.data.cancellationPolicyRevision !== currentPolicyRevision) {
+    throw new UserError('La política de cancelación se actualizó. Recargá la página y revisala antes de reservar.')
   }
 
   try {
@@ -528,7 +547,7 @@ async function _createBooking(data: {
 
     revalidatePath('/dashboard/bookings')
     await revalidateBusinessPublicPaths(businessId)
-    return withPushGrant(booking, business)
+    return withPushActivation(booking, business, sessionUser)
   } catch (e: unknown) {
     // Race: otro request creó la misma idempotencyKey entre el findUnique y el create.
     // El unique constraint de DB lo detecta y devolvemos la reserva existente — por
@@ -557,7 +576,7 @@ async function _createBooking(data: {
       // milisegundos. Si pasara, cae al manejo de error de abajo con el P2002.
       if (existing) {
         const resumida = await resumeBookingForRetry(existing, retryCtx)
-        if (resumida) return withPushGrant(resumida, business)
+        if (resumida) return withPushActivation(resumida, business, sessionUser)
       }
     }
     // Safe error handling: log internal error, return generic message
