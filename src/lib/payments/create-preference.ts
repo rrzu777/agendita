@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import type { PaymentProvider, CreatePaymentInput, CreatePaymentResult } from './types'
 import { requireMercadoPagoEnvironment } from './mercado-pago-environment'
+import { withMercadoPagoPaymentLocator } from './mercado-pago-provider'
 
 /**
  * Base URL de la app para armar el webhookUrl. Verbatim del helper privado que
@@ -28,7 +29,13 @@ export async function createMpPreferenceForPayment(
   provider: PaymentProvider,
   input: CreatePaymentInput,
 ): Promise<CreatePaymentResult> {
-  const result = await provider.createPayment(input)
+  const providerInput = input.localPaymentId && provider.name === 'mercado_pago'
+    ? {
+        ...input,
+        webhookUrl: withMercadoPagoPaymentLocator(input.webhookUrl, input.localPaymentId),
+      }
+    : input
+  const result = await provider.createPayment(providerInput)
   if (input.localPaymentId) {
     const providerPreferenceId =
       result.rawResponse && typeof result.rawResponse === 'object' && 'preferenceId' in result.rawResponse

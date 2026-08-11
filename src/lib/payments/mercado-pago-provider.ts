@@ -11,6 +11,17 @@ import {
 
 const MP_API_BASE = 'https://api.mercadopago.com'
 
+/**
+ * Adds an opaque local candidate locator to the callback URL submitted to MP.
+ * The webhook must still fetch and validate the provider resource with the
+ * resolved seller credential; this value is never financial authority.
+ */
+export function withMercadoPagoPaymentLocator(webhookUrl: string, localPaymentId: string): string {
+  const url = new URL(webhookUrl)
+  url.searchParams.set('local_payment_id', localPaymentId)
+  return url.toString()
+}
+
 function getAccessToken(): string {
   const token = process.env.MERCADO_PAGO_ACCESS_TOKEN
   if (!token) {

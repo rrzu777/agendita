@@ -126,6 +126,7 @@ describe('Mercado Pago webhook', () => {
     date_approved: '2024-01-15T10:30:00Z',
     date_created: '2024-01-15T10:25:00Z',
     external_reference: 'pay-local-001',
+    collector_id: 12345,
     metadata: {
       bookingId: 'booking-1',
       businessId: 'biz-1',
@@ -167,7 +168,9 @@ describe('Mercado Pago webhook', () => {
       id: 'pa-1',
       businessId: 'biz-1',
       provider: 'mercado_pago',
+      environment: 'sandbox',
       status: 'connected',
+      providerAccountId: '12345',
       accessTokenEncrypted: 'encrypted-test-token',
     })
 
@@ -184,8 +187,14 @@ describe('Mercado Pago webhook', () => {
   function makeRequest(
     body: unknown,
     headers: Record<string, string> = {},
+    localPaymentId?: string,
   ): Request {
     const url = new URL('https://example.com/api/webhooks/mercado-pago')
+    const providerId = String((body as { data?: { id?: string } })?.data?.id ?? '')
+    url.searchParams.set(
+      'local_payment_id',
+      localPaymentId ?? providerId.replace(/^mp-pay-/, 'pay-local-'),
+    )
     return new Request(url, {
       method: 'POST',
       headers: createRequestInit(headers),
@@ -287,7 +296,7 @@ describe('Mercado Pago webhook', () => {
       mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({ ...mockPrisma }))
 
       const url = new URL(
-        'https://example.com/api/webhooks/mercado-pago?data.id=mp-pay-qp',
+        'https://example.com/api/webhooks/mercado-pago?data.id=mp-pay-qp&local_payment_id=pay-local-qp',
       )
       const req = new Request(url, {
         method: 'POST',
@@ -303,7 +312,7 @@ describe('Mercado Pago webhook', () => {
 
     it('rejects invalid signature with data.id from query params', async () => {
       const url = new URL(
-        'https://example.com/api/webhooks/mercado-pago?data.id=mp-pay-bad',
+        'https://example.com/api/webhooks/mercado-pago?data.id=mp-pay-bad&local_payment_id=pay-local-bad',
       )
       const req = new Request(url, {
         method: 'POST',
@@ -1041,7 +1050,7 @@ describe('Mercado Pago webhook', () => {
       setupApprovedWebhook()
       mockPrisma.paymentAccount.findFirst.mockResolvedValue(null)
 
-      const req = makeRequest(approvedPaymentBody)
+      const req = makeRequest(approvedPaymentBody, {}, 'pay-local-fc')
       const res = await POST(req)
 
       expect(res.status).toBe(400)
@@ -1054,7 +1063,9 @@ describe('Mercado Pago webhook', () => {
         id: 'pa-1',
         businessId: 'biz-1',
         provider: 'mercado_pago',
+        environment: 'sandbox',
         status: 'connected',
+        providerAccountId: '12345',
         accessTokenEncrypted: 'invalid-ciphertext',
       })
 
@@ -1063,7 +1074,7 @@ describe('Mercado Pago webhook', () => {
         throw new Error('Decrypt failed')
       })
 
-      const req = makeRequest(approvedPaymentBody)
+      const req = makeRequest(approvedPaymentBody, {}, 'pay-local-fc')
       const res = await POST(req)
 
       expect(res.status).toBe(500)
@@ -1076,21 +1087,15 @@ describe('Mercado Pago webhook', () => {
         id: 'pa-1',
         businessId: 'biz-1',
         provider: 'mercado_pago',
+        environment: 'sandbox',
         status: 'connected',
+        providerAccountId: '12345',
         accessTokenEncrypted: 'encrypted-test-token',
       })
 
-      // The beforeEach sets mockMpFetch.mockResolvedValue globally.
-      // For this test, first call (global lookup) succeeds, second (business re-verify) must fail.
-      // Queue: first call OK, second call rejects.
-      mockMpFetch
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve(approvedPaymentBody),
-        })
-        .mockRejectedValueOnce(new Error('Network error on re-verify'))
+      mockMpFetch.mockRejectedValueOnce(new Error('Network error on seller verification'))
 
-      const req = makeRequest(approvedPaymentBody)
+      const req = makeRequest(approvedPaymentBody, {}, 'pay-local-fc')
       const res = await POST(req)
 
       expect(res.status).toBe(502)
@@ -1115,6 +1120,7 @@ describe('Mercado Pago webhook', () => {
             currency_id: 'USD',
             date_approved: '2024-01-15T10:30:00Z',
             date_created: '2024-01-15T10:25:00Z',
+            collector_id: 12345,
             external_reference: 'pay-currency',
             metadata: {
               bookingId: 'booking-1',
@@ -1174,6 +1180,7 @@ describe('Mercado Pago webhook', () => {
             currency_id: 'CLP',
             date_approved: '2024-01-15T10:30:00Z',
             date_created: '2024-01-15T10:25:00Z',
+            collector_id: 12345,
             external_reference: 'pay-bizid',
             metadata: {
               bookingId: 'booking-1',
@@ -1233,6 +1240,7 @@ describe('Mercado Pago webhook', () => {
             currency_id: 'CLP',
             date_approved: '2024-01-15T10:30:00Z',
             date_created: '2024-01-15T10:25:00Z',
+            collector_id: 12345,
             external_reference: 'pay-conflict',
             metadata: {
               bookingId: 'booking-1',
@@ -1291,6 +1299,7 @@ describe('Mercado Pago webhook', () => {
             currency_id: 'CLP',
             date_approved: '2024-01-15T10:30:00Z',
             date_created: '2024-01-15T10:25:00Z',
+            collector_id: 12345,
             external_reference: 'pay-cross',
             metadata: {
               bookingId: 'booking-1',
@@ -1335,8 +1344,8 @@ describe('Mercado Pago webhook', () => {
     })
   })
 
-  describe('two fetch calls before apply', () => {
-    it('uses global token for first fetch and business token for second fetch before applying', async () => {
+  describe('single seller fetch before apply', () => {
+    it('uses only the business token before applying', async () => {
       const secret = 'test-webhook-secret'
       const body = { data: { id: 'mp-pay-twofet' } }
       const signature = createMpSignatureHeader('mp-pay-twofet', 'req-twofet', secret)
@@ -1358,6 +1367,7 @@ describe('Mercado Pago webhook', () => {
                     currency_id: 'CLP',
                     date_approved: '2024-01-15T10:30:00Z',
                     date_created: '2024-01-15T10:25:00Z',
+                    collector_id: 12345,
                     external_reference: 'pay-twofet',
                     metadata: {
                       bookingId: 'booking-1',
@@ -1398,7 +1408,8 @@ describe('Mercado Pago webhook', () => {
       const res = await POST(req)
 
       expect(res.status).toBe(200)
-      expect(fetchCalls.length).toBe(2)
+      expect(fetchCalls.length).toBe(1)
+      expect(mockMpFetch.mock.calls[0][1].headers.Authorization).toBe('Bearer test-access-token')
       expect(applyApprovedPayment).toHaveBeenCalled()
     })
   })

@@ -80,6 +80,7 @@ interface MpPayment {
   date_approved: string | null
   date_created: string
   external_reference: string | null
+  collector_id: number | string | null
   metadata: Record<string, string> | null
 }
 
@@ -154,31 +155,22 @@ export async function POST(request: NextRequest) {
       console.warn('[MP Webhook] No MERCADO_PAGO_WEBHOOK_SECRET configured, skipping signature validation (dev only)')
     }
 
-    // Consultar pago real a Mercado Pago.
-    // Paso 1: Usar token global (app-level) solo para la búsqueda inicial del
-    // external_reference. Esto es necesario porque aún no sabemos a qué negocio
-    // pertenece el pago. El token global NUNCA se usa para aplicar pagos.
-    const globalToken = process.env.MERCADO_PAGO_ACCESS_TOKEN
-    if (!globalToken) {
-      logger.webhook.rejected('mercado_pago', 'MERCADO_PAGO_ACCESS_TOKEN missing', requestId)
-      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
-    }
-
-    const mpPayment = await mpFetchWithToken<MpPayment>(
-      `/v1/payments/${mpPaymentId}`,
-      globalToken,
-    )
-
-    // Validar external_reference / localPaymentId
-    const localPaymentId = mpPayment.external_reference
+    // `local_payment_id` sólo localiza un candidato. No es autoridad: antes de
+    // mutar estado verificamos el pago real con el token OAuth del mismo negocio
+    // y exigimos que external_reference, metadata, vendedor, monto y moneda
+    // coincidan. Esto evita el fetch inicial con la credencial global de Agendita.
+    const localPaymentId = url.searchParams.get('local_payment_id')
     if (!localPaymentId) {
-      logger.webhook.rejected('mercado_pago', 'missing external_reference', requestId)
-      return NextResponse.json({ error: 'Missing external_reference' }, { status: 400 })
+      logger.webhook.rejected('mercado_pago', 'missing local payment locator', requestId)
+      return NextResponse.json({ error: 'Missing payment locator' }, { status: 400 })
     }
 
     const payment = await prisma.payment.findUnique({
       where: { id: localPaymentId },
-      include: { booking: true, packagePurchase: { select: { customerId: true } } },
+      include: {
+        booking: true,
+        packagePurchase: { select: { customerId: true, businessId: true } },
+      },
     })
 
     if (!payment) {
@@ -191,60 +183,69 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Payment provider mismatch' }, { status: 400 })
     }
 
-    // Paso 2: Para pagos approved, REQUERIR verificación con token del negocio.
-    // El token global se usó solo para el lookup inicial del external_reference.
-    // NUNCA aplicar un pago approved sin re-verificar con el token del negocio.
-    const mpStatus = mpPayment.status
-
-    if (mpStatus === 'approved') {
-      if (!payment.providerEnvironment) {
-        logger.webhook.rejected('mercado_pago', 'Payment has no Mercado Pago environment', requestId)
-        return NextResponse.json({ error: 'Payment environment is missing' }, { status: 400 })
-      }
-      const paymentAccount = await prisma.paymentAccount.findFirst({
-        where: {
-          businessId: payment.businessId,
-          provider: 'mercado_pago',
-          environment: payment.providerEnvironment,
-          status: 'connected',
-        },
-      })
-
-      if (!paymentAccount) {
-        logger.webhook.rejected('mercado_pago', 'No connected PaymentAccount for approved payment', requestId)
-        return NextResponse.json({
-          error: 'Business has no connected Mercado Pago account',
-        }, { status: 400 })
-      }
-
-      let businessToken: string
-      try {
-        businessToken = decryptSecret(paymentAccount.accessTokenEncrypted)
-      } catch {
-        logger.webhook.rejected('mercado_pago', 'Failed to decrypt business token for approved payment', requestId)
-        return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
-      }
-
-      try {
-        const verifiedPayment = await mpFetchWithToken<MpPayment>(
-          `/v1/payments/${mpPaymentId}`,
-          businessToken,
-        )
-        Object.assign(mpPayment, verifiedPayment)
-      } catch (e) {
-        logger.webhook.rejected('mercado_pago',
-          `Failed to re-verify approved payment with business token: ${e instanceof Error ? e.message : 'Unknown'}`,
-          requestId,
-        )
-        return NextResponse.json({
-          error: 'Failed to verify payment with business credentials',
-        }, { status: 502 })
-      }
+    if (!payment.providerEnvironment) {
+      logger.webhook.rejected('mercado_pago', 'Payment has no Mercado Pago environment', requestId)
+      return NextResponse.json({ error: 'Payment environment is missing' }, { status: 400 })
+    }
+    if (payment.booking && payment.businessId !== payment.booking.businessId) {
+      logger.webhook.rejected('mercado_pago', 'Business mismatch payment vs booking', requestId)
+      return NextResponse.json({ error: 'Business mismatch' }, { status: 403 })
+    }
+    if (payment.packagePurchase && payment.businessId !== payment.packagePurchase.businessId) {
+      logger.webhook.rejected('mercado_pago', 'Business mismatch payment vs package purchase', requestId)
+      return NextResponse.json({ error: 'Business mismatch' }, { status: 403 })
     }
 
-    // Validar metadata contra DB.
-    // Para pagos approved, la metadata con bookingId/businessId/paymentType/localPaymentId
-    // es requerida para evitar confirmación fraudulenta.
+    const paymentAccount = await prisma.paymentAccount.findFirst({
+      where: {
+        businessId: payment.businessId,
+        provider: 'mercado_pago',
+        environment: payment.providerEnvironment,
+        status: 'connected',
+      },
+    })
+    if (!paymentAccount?.providerAccountId) {
+      logger.webhook.rejected('mercado_pago', 'No connected seller account for payment', requestId)
+      return NextResponse.json({ error: 'Business has no connected Mercado Pago account' }, { status: 400 })
+    }
+
+    let businessToken: string
+    try {
+      businessToken = decryptSecret(paymentAccount.accessTokenEncrypted)
+    } catch {
+      logger.webhook.rejected('mercado_pago', 'Failed to decrypt business token', requestId)
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+    }
+
+    let mpPayment: MpPayment
+    try {
+      mpPayment = await mpFetchWithToken<MpPayment>(`/v1/payments/${mpPaymentId}`, businessToken)
+    } catch (e) {
+      logger.webhook.rejected(
+        'mercado_pago',
+        `Failed to verify payment with business token: ${e instanceof Error ? e.message : 'Unknown'}`,
+        requestId,
+      )
+      return NextResponse.json({ error: 'Failed to verify payment with business credentials' }, { status: 502 })
+    }
+
+    if (String(mpPayment.id) !== mpPaymentId) {
+      logger.webhook.rejected('mercado_pago', 'Provider payment id mismatch', requestId)
+      return NextResponse.json({ error: 'Provider payment id mismatch' }, { status: 400 })
+    }
+    if (mpPayment.external_reference !== payment.id) {
+      logger.webhook.rejected('mercado_pago', 'external_reference mismatch', requestId)
+      return NextResponse.json({ error: 'external_reference mismatch' }, { status: 400 })
+    }
+    if (String(mpPayment.collector_id ?? '') !== paymentAccount.providerAccountId) {
+      logger.webhook.rejected('mercado_pago', 'Seller mismatch', requestId)
+      return NextResponse.json({ error: 'Seller mismatch' }, { status: 403 })
+    }
+
+    const mpStatus = mpPayment.status
+
+    // Para approvals, la metadata completa es una prueba adicional obligatoria.
+    // Otros estados siguen sujetos a ID, external_reference, seller, amount y currency.
     const metadata = mpPayment.metadata ?? {}
 
     if (mpStatus === 'approved') {
@@ -257,7 +258,7 @@ export async function POST(request: NextRequest) {
         : (['localPaymentId', 'bookingId', 'businessId', 'paymentType'] as const)
       const missingFields = requiredMetadataFields.filter(f => !metadata[f])
       if (missingFields.length > 0) {
-        console.error('[MP Webhook] missing required metadata fields for approved payment', {
+        console.error('[MP Webhook] missing required metadata fields for payment', {
           mpPaymentId,
           missingFields,
         })
@@ -327,12 +328,6 @@ export async function POST(request: NextRequest) {
         db: payment.currency,
       })
       return NextResponse.json({ error: 'Currency mismatch' }, { status: 400 })
-    }
-
-    // Validar ownership: payment y booking mismo business
-    if (payment.booking && payment.businessId !== payment.booking.businessId) {
-      console.error('[MP Webhook] Business mismatch payment vs booking')
-      return NextResponse.json({ error: 'Business mismatch' }, { status: 403 })
     }
 
     // B4b-3: chargeback/refund INVOLUNTARIO de un paquete YA ACTIVO. El Payment está

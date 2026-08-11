@@ -18,6 +18,18 @@ function fakeProvider(): PaymentProvider {
   }
 }
 
+function capturingProvider(capture: (input: Parameters<PaymentProvider['createPayment']>[0]) => void): PaymentProvider {
+  const provider = fakeProvider()
+  provider.createPayment = vi.fn(async (input) => {
+    capture(input)
+    return {
+      paymentId: 'pay1', providerPaymentId: null, redirectUrl: 'https://mp/redirect',
+      status: 'pending' as const, rawResponse: { preferenceId: 'pref1' },
+    }
+  })
+  return provider
+}
+
 describe('createMpPreferenceForPayment', () => {
   beforeEach(() => {
     update.mockReset()
@@ -50,5 +62,21 @@ describe('createMpPreferenceForPayment', () => {
       returnUrl: 'r', webhookUrl: 'w',
     })
     expect(update).not.toHaveBeenCalled()
+  })
+
+  it('passes the local payment locator to Mercado Pago without making it authoritative', async () => {
+    let captured: Parameters<PaymentProvider['createPayment']>[0] | undefined
+    const provider = capturingProvider((input) => { captured = input })
+
+    await createMpPreferenceForPayment(provider, {
+      amount: 5000, currency: 'CLP', description: 'Reserva',
+      returnUrl: 'https://agendita.cl/return',
+      webhookUrl: 'https://agendita.cl/api/webhooks/mercado-pago',
+      localPaymentId: 'pay/with spaces',
+    })
+
+    expect(captured?.webhookUrl).toBe(
+      'https://agendita.cl/api/webhooks/mercado-pago?local_payment_id=pay%2Fwith+spaces',
+    )
   })
 })

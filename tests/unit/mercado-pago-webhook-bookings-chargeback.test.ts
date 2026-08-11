@@ -18,6 +18,9 @@ const mockPrisma = {
   packagePurchase: {
     findUnique: vi.fn(),
   },
+  paymentAccount: {
+    findFirst: vi.fn(),
+  },
   $transaction: vi.fn(),
 }
 
@@ -109,6 +112,7 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
     date_approved: '2026-07-10T10:30:00Z',
     date_created: '2026-07-10T10:25:00Z',
     external_reference: 'pay-bk-001',
+    collector_id: 12345,
     metadata: {
       bookingId: 'bk-1',
       businessId: 'biz-1',
@@ -155,6 +159,11 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
       business: { name: 'Estudio Mimo', currency: 'CLP', timezone: 'America/Santiago' },
     })
     mockPrisma.$transaction.mockReset().mockImplementation(async (fn: (tx: unknown) => unknown) => fn(mockPrisma))
+    mockPrisma.paymentAccount.findFirst.mockReset().mockResolvedValue({
+      id: 'pa-1', businessId: 'biz-1', provider: 'mercado_pago',
+      environment: 'sandbox', status: 'connected', providerAccountId: '12345',
+      accessTokenEncrypted: 'encrypted-test-token',
+    })
 
     vi.resetModules()
     const mod = await import('@/app/api/webhooks/mercado-pago/route')
@@ -167,7 +176,8 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
 
   function makeRequest(mpPaymentId: string, requestId: string): Request {
     const signature = createMpSignatureHeader(mpPaymentId, requestId, 'test-webhook-secret')
-    return new Request('https://example.com/api/webhooks/mercado-pago', {
+    const localPaymentId = mpPaymentId.replace(/^mp-/, 'pay-')
+    return new Request(`https://example.com/api/webhooks/mercado-pago?local_payment_id=${localPaymentId}`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -280,7 +290,7 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
       bookingId: null,
       booking: null,
       packagePurchaseId: 'pp-1',
-      packagePurchase: { customerId: 'cust-1' },
+      packagePurchase: { customerId: 'cust-1', businessId: 'biz-1' },
       providerPaymentId: 'mp-pkg-001',
     })
     mockPrisma.packagePurchase.findUnique.mockResolvedValue({
