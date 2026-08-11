@@ -9,6 +9,8 @@ describe('offline Mercado Pago QA manifest', () => {
       'monthly.callback_non_authoritative',
       'monthly.reconciliation',
       'monthly.trial_reminders_exemption_grace_enforcement_cancel',
+      'monthly.hosted_checkout',
+      'monthly.notifications_email_delivery',
       'tenant.oauth_environment_refresh',
       'tenant.booking_exactly_once',
       'tenant.package_exactly_once',
@@ -24,5 +26,12 @@ describe('offline Mercado Pago QA manifest', () => {
     const local = new Set([...manifest.monthlyLocal, ...manifest.tenantLocal])
     expect(manifest.postgres.every((file) => !local.has(file))).toBe(true)
     expect(manifest.postgres.every((file) => file.includes('integration'))).toBe(true)
+  })
+
+  it('executes every file referenced by a required scenario', () => {
+    const executed = new Set([...manifest.monthlyLocal, ...manifest.tenantLocal, ...manifest.postgres])
+    for (const files of Object.values(manifest.scenarios)) {
+      expect(files.every((file) => executed.has(file))).toBe(true)
+    }
   })
 })

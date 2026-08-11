@@ -42,8 +42,12 @@ no genera tráfico cobrado. `up` prueba configuración/credencial, **no E2E**.
 
 ## Prueba sandbox mensual
 
-La parte offline se ejecuta con `npm run payments:qa`; con PostgreSQL local
-fresco, `npm run payments:qa -- --postgres`. Esto no llama a Mercado Pago.
+La parte offline se ejecuta con `npm run payments:qa`. Para PostgreSQL local
+fresco, definir `NODE_ENV=test` y las tres variables `TEST_DATABASE_URL`,
+`DATABASE_URL` y `DIRECT_URL` con exactamente la misma URL loopback y base
+`agendita_payment_qa_test`, luego ejecutar `npm run payments:qa -- --postgres`.
+El runner rechaza hosts remotos, query params y nombres de base distintos antes
+de iniciar Prisma. Esto no llama a Mercado Pago.
 
 1. Seleccionar `sandbox`, dejar ambos flags en `false` y revisar health.
 2. Crear vendedor y comprador de prueba separados; nunca usar cuentas reales.

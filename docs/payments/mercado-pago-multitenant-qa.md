@@ -75,8 +75,10 @@ INSERT INTO "AvailabilityRule" (...) VALUES (...);
 - Intentar iniciar pago online
 - **Esperado:** Error de disponibilidad
 
-### 6. Token expirado
-- Expirar manualmente el token (o esperar expiración natural)
+### 6. Credencial OAuth del seller expirada
+- En sandbox, expirar la credencial OAuth sandbox de Seller A (o esperar su
+  expiración natural). En producción, este caso sólo usa credenciales OAuth
+  productivas del seller conectado; nunca reutilizar credenciales sandbox.
 - Procesar pago
 - **Esperado:** la cuenta queda `expired`, se encola
   `subscription_oauth_expired` y no existe fallback a credenciales globales o
@@ -157,8 +159,10 @@ WHERE notes LIKE '%access_token%' OR notes LIKE '%APP_USR%';
 
 ## Automatización
 
-Ejecutar `npm run payments:qa` para la matriz offline y
-`npm run payments:qa -- --postgres` con PostgreSQL local fresco. Ninguno de
+Ejecutar `npm run payments:qa` para la matriz offline. Para PostgreSQL local
+fresco, usar `NODE_ENV=test` y `TEST_DATABASE_URL`, `DATABASE_URL` y
+`DIRECT_URL` idénticas, con host loopback y base `agendita_payment_qa_test`, y
+ejecutar `npm run payments:qa -- --postgres`. Ninguno de
 estos comandos autoriza tráfico externo ni prueba que el seller recibió dinero.
 
 Tests unitarios existentes cubren:

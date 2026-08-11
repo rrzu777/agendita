@@ -1,4 +1,5 @@
 const monthlyLocal = [
+  'tests/unit/payment-qa-network-deny.test.ts',
   'src/lib/payments/mercado-pago-signature.test.ts',
   'src/app/api/webhooks/mercado-pago/subscriptions/route.test.ts',
   'src/lib/subscriptions/webhook.test.ts',
@@ -7,6 +8,11 @@ const monthlyLocal = [
   'src/lib/subscriptions/state-machine.test.ts',
   'src/lib/cron/subscription-billing.test.ts',
   'src/server/actions/admin-subscriptions.test.ts',
+  'src/server/actions/subscription-billing.test.ts',
+  'src/server/actions/subscriptions.test.ts',
+  'src/lib/subscriptions/mercado-pago-client.test.ts',
+  'src/lib/notifications/subscriptions.test.ts',
+  'src/lib/notifications/subscriptions-email-provider.test.ts',
 ]
 
 const tenantLocal = [
@@ -44,6 +50,16 @@ const scenarios = {
   'monthly.trial_reminders_exemption_grace_enforcement_cancel': [
     'src/lib/subscriptions/state-machine.test.ts',
     'src/lib/cron/subscription-billing.test.ts',
+    'src/lib/subscriptions/transition.integration.test.ts',
+  ],
+  'monthly.hosted_checkout': [
+    'src/server/actions/subscription-billing.test.ts',
+    'src/server/actions/subscriptions.test.ts',
+    'src/lib/subscriptions/mercado-pago-client.test.ts',
+  ],
+  'monthly.notifications_email_delivery': [
+    'src/lib/notifications/subscriptions.test.ts',
+    'src/lib/notifications/subscriptions-email-provider.test.ts',
     'src/lib/subscriptions/transition.integration.test.ts',
   ],
   'tenant.oauth_environment_refresh': [
