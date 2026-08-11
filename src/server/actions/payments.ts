@@ -118,13 +118,15 @@ async function _initiatePayment(data: {
   // Mercado Pago (redirect-based): pre-crear Payment local antes de llamar al provider.
   // El Payment.id se usa como external_reference en la preferencia de MP.
   if (provider.name === 'mercado_pago') {
+    const providerEnvironment = requireMercadoPagoEnvironment()
     // Evitar múltiples Payment pending por doble click: reusar si ya existe
-    // uno pending para este booking + deposit.
+    // uno pending para este booking + deposit en el mismo ambiente.
     const existingPending = await prisma.payment.findFirst({
       where: {
         bookingId: data.bookingId,
         paymentType: PaymentType.deposit,
         provider: 'mercado_pago',
+        providerEnvironment,
         status: 'pending',
       },
     })
@@ -140,7 +142,7 @@ async function _initiatePayment(data: {
           customerId: booking.customerId,
           provider: PaymentProvider.mercado_pago,
           providerPaymentId: null,
-          providerEnvironment: requireMercadoPagoEnvironment(),
+          providerEnvironment,
           amount,
           currency,
           status: PaymentStatus.pending,

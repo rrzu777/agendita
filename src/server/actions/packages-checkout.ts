@@ -243,6 +243,9 @@ async function _initiatePackagePayment(input: { purchaseId: string }): Promise<
 
   const provider = await getOnlinePaymentProviderForBusiness(purchase.businessId)
   const currency = purchase.business.currency || 'CLP'
+  const providerEnvironment = provider.name === 'mercado_pago'
+    ? requireMercadoPagoEnvironment()
+    : null
 
   // Evitar múltiples Payment pending por doble click: reusar si ya existe uno.
   // Scopeado por provider: si la clienta declaró una transferencia (Payment 'manual')
@@ -254,6 +257,7 @@ async function _initiatePackagePayment(input: { purchaseId: string }): Promise<
       paymentType: PaymentType.package_purchase,
       status: PaymentStatus.pending,
       provider: provider.name as PaymentProvider,
+      providerEnvironment,
     },
   })
 
@@ -268,7 +272,7 @@ async function _initiatePackagePayment(input: { purchaseId: string }): Promise<
         customerId: purchase.customerId,
         provider: provider.name as PaymentProvider,
         providerPaymentId: null,
-        providerEnvironment: provider.name === 'mercado_pago' ? requireMercadoPagoEnvironment() : null,
+        providerEnvironment,
         amount: purchase.pricePaid,
         currency,
         status: PaymentStatus.pending,

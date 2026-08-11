@@ -84,6 +84,52 @@ describe('initiatePackagePayment', () => {
     expect(createMpPreferenceForPayment.mock.calls[0][1].localPaymentId).toBe('payExisting')
   })
 
+  it('does not reuse a sandbox pending payment for a production initiation', async () => {
+    process.env.MERCADO_PAGO_ENVIRONMENT = 'production'
+    prismaMock.payment.findFirst.mockImplementation(({ where }) =>
+      where.providerEnvironment === 'production' ? null : { id: 'paySandbox' },
+    )
+    prismaMock.payment.create.mockResolvedValue({ id: 'payProduction' })
+
+    const res = await initiatePackagePayment({ purchaseId: 'pp1' })
+
+    expect(res.ok).toBe(true)
+    expect(prismaMock.payment.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        provider: 'mercado_pago',
+        providerEnvironment: 'production',
+        status: 'pending',
+      }),
+    })
+    expect(prismaMock.payment.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ providerEnvironment: 'production' }),
+    })
+    expect(createMpPreferenceForPayment.mock.calls[0][1].localPaymentId).toBe('payProduction')
+  })
+
+  it('reuses a pending Mercado Pago payment in the same environment', async () => {
+    process.env.MERCADO_PAGO_ENVIRONMENT = 'production'
+    prismaMock.payment.findFirst.mockImplementation(({ where }) =>
+      where.providerEnvironment === 'production' ? { id: 'payProductionExisting' } : null,
+    )
+
+    const res = await initiatePackagePayment({ purchaseId: 'pp1' })
+
+    expect(res.ok).toBe(true)
+    expect(prismaMock.payment.create).not.toHaveBeenCalled()
+    expect(createMpPreferenceForPayment.mock.calls[0][1].localPaymentId).toBe('payProductionExisting')
+  })
+
+  it('fails closed before pending lookup when Mercado Pago environment is missing', async () => {
+    delete process.env.MERCADO_PAGO_ENVIRONMENT
+
+    const res = await initiatePackagePayment({ purchaseId: 'pp1' })
+
+    expect(res.ok).toBe(false)
+    expect(prismaMock.payment.findFirst).not.toHaveBeenCalled()
+    expect(prismaMock.payment.create).not.toHaveBeenCalled()
+  })
+
   it('provider mock (sin redirect) confirma vía applyApprovedPackagePayment', async () => {
     getOnlinePaymentProviderForBusiness.mockResolvedValue({ name: 'mock' })
     createMpPreferenceForPayment.mockResolvedValue({ redirectUrl: null, paymentId: 'pay1' })
