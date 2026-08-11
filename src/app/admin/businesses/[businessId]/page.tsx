@@ -14,6 +14,7 @@ import { formatMoney } from '@/lib/money'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { AdminActions } from './admin-actions'
 import { CopyLinkButton } from './copy-link-button'
+import { AdminSubscriptionControls } from './admin-subscription-controls'
 
 interface BusinessDetailPageProps {
   params: Promise<{ businessId: string }>
@@ -66,7 +67,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
   const bookingUrl = `${publicUrl}/book`
 
   const plans = await prisma.plan.findMany({
-    select: { id: true, name: true },
+    select: { id: true, name: true, priceMonthly: true },
     orderBy: { sortOrder: 'asc' },
   })
 
@@ -256,6 +257,36 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
         <div className="space-y-6">
           <Card>
             <CardHeader>
+              <CardTitle>Facturación recurrente</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AdminSubscriptionControls
+                businessId={business.id}
+                timezone={tz}
+                plans={plans}
+                subscription={business.subscriptions[0] ? {
+                  status: business.subscriptions[0].status,
+                  environment: business.subscriptions[0].environment,
+                  trialDays: business.subscriptions[0].trialDays,
+                  trialEndAt: business.subscriptions[0].trialEndAt?.toISOString() ?? null,
+                  graceDays: business.subscriptions[0].graceDays,
+                  pastDueAt: business.subscriptions[0].pastDueAt?.toISOString() ?? null,
+                  graceEndsAt: business.subscriptions[0].graceEndsAt?.toISOString() ?? null,
+                  complimentaryUntil: business.subscriptions[0].complimentaryUntil?.toISOString() ?? null,
+                  complimentaryReason: business.subscriptions[0].complimentaryReason,
+                  nextBillingAt: business.subscriptions[0].nextBillingAt?.toISOString() ?? null,
+                  cancelAtPeriodEnd: business.subscriptions[0].cancelAtPeriodEnd,
+                  currentPeriodEnd: business.subscriptions[0].currentPeriodEnd.toISOString(),
+                  lastReconciledAt: business.subscriptions[0].lastReconciledAt?.toISOString() ?? null,
+                  billingEnabled: business.subscriptions[0].billingEnabled,
+                  planId: business.subscriptions[0].planId,
+                } : null}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>Links públicos</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -315,7 +346,6 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
                 businessId={business.id}
                 businessName={business.name}
                 currentStatus={status}
-                plans={plans}
               />
             </CardContent>
           </Card>

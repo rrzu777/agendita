@@ -14,7 +14,8 @@ const mockPrisma = {
   plan: { findUnique: vi.fn() },
   $transaction: vi.fn(),
   businessSubscription: mockBusinessSubscription,
-  business: { update: vi.fn() },
+  business: { update: vi.fn(), findUnique: vi.fn() },
+  subscriptionNotificationDelivery: { createMany: vi.fn() },
   subscriptionPayment: { create: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() },
   subscriptionLog: { create: vi.fn() },
 }
@@ -89,6 +90,12 @@ function setupTxMock() {
 beforeEach(() => {
   vi.clearAllMocks()
   requirePlatformAdminUser.mockResolvedValue({ id: 'admin-1', email: 'admin@example.com' })
+  mockPrisma.subscriptionLog.create.mockResolvedValue({ id: 'subscription-log-1' })
+  mockPrisma.business.findUnique.mockResolvedValue({
+    name: 'Negocio de prueba',
+    users: [{ user: { email: 'owner@example.com' } }],
+  })
+  mockPrisma.subscriptionNotificationDelivery.createMany.mockResolvedValue({ count: 1 })
 })
 
 describe('adminRecordSubscriptionPayment', () => {
