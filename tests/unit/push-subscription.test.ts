@@ -364,7 +364,6 @@ describe('push subscription storage', () => {
           not: 'f9e6976bfd25d5d977c3537b5b57bf09a99dbb8ab8b1ec651cbb61cbcbbfd2d5',
         },
         authorizedUserId: 'user-1',
-        revokedAt: null,
       },
       data: { authorizedUserId: null },
     })
@@ -384,6 +383,38 @@ describe('push subscription storage', () => {
     })
     expect(mocks.updateMany.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.subscriptionCount.mock.invocationCallOrder[0])
+  })
+
+  it('removes auth scope from a revoked older generation while preserving its guest entitlement', async () => {
+    const { storePushSubscription } = await import('@/lib/push/subscription')
+    const older = {
+      authorizedUserId: 'user-1' as string | null,
+      revokedAt: new Date('2026-08-10T11:00:00.000Z') as Date | null,
+      hasGuestEntitlement: true,
+    }
+    mocks.updateMany.mockImplementation(async ({ where, data }) => {
+      if (data.authorizedUserId === null && where.subscriptionFingerprint?.not) {
+        if (where.revokedAt === null && older.revokedAt !== null) return { count: 0 }
+        if (where.authorizedUserId === older.authorizedUserId) {
+          older.authorizedUserId = null
+          return { count: 1 }
+        }
+      }
+      return { count: 0 }
+    })
+
+    await storePushSubscription({
+      businessId: 'business-1',
+      customerId: 'customer-1',
+      subscription: validSubscription,
+      authorization: { kind: 'user', userId: 'user-1' },
+    })
+
+    expect(older).toEqual({
+      authorizedUserId: null,
+      revokedAt: new Date('2026-08-10T11:00:00.000Z'),
+      hasGuestEntitlement: true,
+    })
   })
 
   it('continues an authenticated batch when one customer has five unrelated devices', async () => {
@@ -449,7 +480,6 @@ describe('push subscription storage', () => {
       where: {
         id: { in: ['push-1'] },
         authorizedUserId: 'user-1',
-        revokedAt: null,
       },
       data: { authorizedUserId: null },
     })
@@ -461,6 +491,118 @@ describe('push subscription storage', () => {
         bookingEntitlements: { none: {} },
       },
       data: { revokedAt: new Date('2026-08-10T12:00:00.000Z') },
+    })
+  })
+
+  it('does not resurrect auth when guest re-subscribes the same revoked mixed fingerprint', async () => {
+    const {
+      storePushSubscription,
+      unsubscribePushSubscription,
+    } = await import('@/lib/push/subscription')
+    const row = {
+      authorizedUserId: 'user-1' as string | null,
+      revokedAt: new Date('2026-08-10T11:00:00.000Z') as Date | null,
+      hasGuestEntitlement: true,
+    }
+    mocks.subscriptionFindMany.mockImplementation(async ({ where }) => {
+      if (where.revokedAt === null && row.revokedAt !== null) return []
+      return where.authorizedUserId === row.authorizedUserId
+        ? [{ id: 'push-1', customerId: 'customer-1' }]
+        : []
+    })
+    mocks.updateMany.mockImplementation(async ({ where, data }) => {
+      if (where.id?.in && data.authorizedUserId === null) {
+        if (where.revokedAt === null && row.revokedAt !== null) return { count: 0 }
+        if (where.authorizedUserId === row.authorizedUserId) {
+          row.authorizedUserId = null
+          return { count: 1 }
+        }
+      }
+      return { count: 0 }
+    })
+    mocks.subscriptionFindUnique.mockImplementation(async () => ({
+      id: 'push-1',
+      authorizedUserId: row.authorizedUserId,
+      revokedAt: row.revokedAt,
+      bookingEntitlements: row.hasGuestEntitlement ? [{ bookingId: 'booking-1' }] : [],
+    }))
+    mocks.upsert.mockImplementation(async ({ update }) => {
+      row.revokedAt = update.revokedAt
+      if (update.authorizedUserId !== undefined) row.authorizedUserId = update.authorizedUserId
+      return { id: 'push-1' }
+    })
+
+    await expect(unsubscribePushSubscription({
+      endpoint: validSubscription.endpoint,
+      scope: { kind: 'user', userId: 'user-1' },
+    })).resolves.toBe(1)
+    await storePushSubscription({
+      businessId: 'business-1',
+      customerId: 'customer-1',
+      subscription: validSubscription,
+      authorization: { kind: 'guest', bookingId: 'booking-1' },
+    })
+
+    expect(row).toEqual({
+      authorizedUserId: null,
+      revokedAt: null,
+      hasGuestEntitlement: true,
+    })
+  })
+
+  it('does not resurrect a guest entitlement when auth re-subscribes the same revoked mixed fingerprint', async () => {
+    const {
+      storePushSubscription,
+      unsubscribePushSubscription,
+    } = await import('@/lib/push/subscription')
+    const row = {
+      authorizedUserId: 'user-1' as string | null,
+      revokedAt: new Date('2026-08-10T11:00:00.000Z') as Date | null,
+      hasGuestEntitlement: true,
+    }
+    mocks.subscriptionFindMany.mockImplementation(async ({ where }) => {
+      if (where.revokedAt === null && row.revokedAt !== null) return []
+      return row.hasGuestEntitlement
+        ? [{ id: 'push-1', customerId: 'customer-1' }]
+        : []
+    })
+    mocks.entitlementDeleteMany.mockImplementation(async ({ where }) => {
+      if (where.subscriptionId?.in) {
+        const count = row.hasGuestEntitlement ? 1 : 0
+        row.hasGuestEntitlement = false
+        return { count }
+      }
+      return { count: 0 }
+    })
+    mocks.subscriptionFindUnique.mockImplementation(async () => ({
+      id: 'push-1',
+      authorizedUserId: row.authorizedUserId,
+      revokedAt: row.revokedAt,
+    }))
+    mocks.upsert.mockImplementation(async ({ update }) => {
+      row.revokedAt = update.revokedAt
+      if (update.authorizedUserId !== undefined) row.authorizedUserId = update.authorizedUserId
+      return { id: 'push-1' }
+    })
+
+    await expect(unsubscribePushSubscription({
+      endpoint: validSubscription.endpoint,
+      scope: {
+        kind: 'guest',
+        target: { businessId: 'business-1', customerId: 'customer-1', bookingId: 'booking-1' },
+      },
+    })).resolves.toBe(1)
+    await storePushSubscription({
+      businessId: 'business-1',
+      customerId: 'customer-1',
+      subscription: validSubscription,
+      authorization: { kind: 'user', userId: 'user-1' },
+    })
+
+    expect(row).toEqual({
+      authorizedUserId: 'user-1',
+      revokedAt: null,
+      hasGuestEntitlement: false,
     })
   })
 

@@ -183,7 +183,6 @@ async function detachOlderScopeGeneration({
       where: {
         ...olderGeneration,
         authorizedUserId: authorization.userId,
-        revokedAt: null,
       },
       data: { authorizedUserId: null },
     })
@@ -470,7 +469,6 @@ export async function unsubscribePushSubscription({
           endpointHash,
           customerId: target.customerId,
           businessId: target.businessId,
-          revokedAt: null,
           bookingEntitlements: { some: { bookingId: target.bookingId } },
         },
         select: { id: true, customerId: true },
@@ -499,7 +497,6 @@ export async function unsubscribePushSubscription({
       where: {
         endpointHash,
         authorizedUserId: scope.userId,
-        revokedAt: null,
       },
       select: { id: true, customerId: true },
     })
@@ -510,7 +507,6 @@ export async function unsubscribePushSubscription({
       where: {
         id: { in: ids },
         authorizedUserId: scope.userId,
-        revokedAt: null,
       },
       data: { authorizedUserId: null },
     })
