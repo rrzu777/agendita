@@ -12,6 +12,11 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { formatMoney } from '@/lib/money'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
+import { Button } from '@/components/ui/button'
+import {
+  requestSubscriptionCancellation,
+  startSubscriptionCheckout,
+} from '@/server/actions/subscription-billing'
 
 const statusIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   trialing: Clock,
@@ -29,7 +34,12 @@ const statusColors: Record<string, string> = {
   cancelled: 'bg-stone-100 text-stone-800',
 }
 
-export default async function BillingPage() {
+export default async function BillingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ subscription?: string }>
+} = {}) {
+  const callbackStatus = (await searchParams)?.subscription
   const userData = await getCurrentUserWithBusiness()
 
   if (!userData?.user) {
@@ -68,11 +78,34 @@ export default async function BillingPage() {
   const status = subscription.status
   const StatusIcon = statusIcons[status] ?? CircleAlert
   const plan = subscription.plan
+  const now = new Date()
+  const checkoutAvailable =
+    subscription.billingEnabled &&
+    !subscription.providerSubscriptionId &&
+    (!subscription.complimentaryUntil || subscription.complimentaryUntil <= now) &&
+    (subscription.status === 'past_due' || (
+      subscription.status === 'trialing' &&
+      !!subscription.trialEndAt &&
+      subscription.trialEndAt > now &&
+      subscription.trialEndAt.getTime() - now.getTime() <= 7 * 24 * 60 * 60 * 1_000
+    ))
 
   return (
     <div>
       <DashboardHeader title="Facturación" subtitle="Gestiona tu plan y pagos de suscripción" />
       <div className="p-5 md:p-10">
+        {callbackStatus && ['processing', 'active', 'failed'].includes(callbackStatus) && (
+          <div className={cn(
+            'mb-6 rounded-lg border p-4 text-sm',
+            callbackStatus === 'failed'
+              ? 'border-red-200 bg-red-50 text-red-800'
+              : 'border-blue-200 bg-blue-50 text-blue-800',
+          )}>
+            {callbackStatus === 'processing' && 'Mercado Pago está procesando la autorización. Confirmaremos el estado de forma automática.'}
+            {callbackStatus === 'active' && 'Mercado Pago informó una autorización activa. La confirmación final llegará por webhook o reconciliación.'}
+            {callbackStatus === 'failed' && 'No pudimos validar el retorno de Mercado Pago. Tu suscripción local no fue modificada.'}
+          </div>
+        )}
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2 space-y-6">
             <Card>
@@ -201,27 +234,36 @@ export default async function BillingPage() {
           <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Instrucciones de pago</CardTitle>
-                <CardDescription>La suscripción se paga de forma manual durante la beta</CardDescription>
+                <CardTitle>Pago de suscripción</CardTitle>
+                <CardDescription>
+                  {subscription.billingEnabled
+                    ? 'Autoriza la mensualidad en el checkout alojado de Mercado Pago'
+                    : 'La suscripción se gestiona manualmente durante el rollout'}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 text-sm text-muted-foreground">
-                <p>Durante el período beta, los pagos de suscripción se gestionan manualmente.</p>
-                <div className="rounded-lg border border-border bg-muted/30 p-4">
-                  <p className="font-semibold text-primary mb-2">Pasos:</p>
-                  <ol className="list-decimal pl-4 space-y-2">
-                    <li>Realiza una transferencia a la cuenta de Agendita (datos proporcionados por soporte).</li>
-                    <li>Envía el comprobante a nuestro equipo.</li>
-                    <li>Confirmaremos el pago y activaremos tu suscripción.</li>
-                  </ol>
-                </div>
-                {supportEmail ? (
+                {checkoutAvailable && (
+                  <form action={startSubscriptionCheckout}>
+                    <Button type="submit" className="w-full">Autorizar pago automático</Button>
+                  </form>
+                )}
+                {subscription.providerSubscriptionId && !subscription.cancelAtPeriodEnd && (
+                  <form action={requestSubscriptionCancellation}>
+                    <Button type="submit" variant="outline" className="w-full">
+                      Cancelar al final del período
+                    </Button>
+                  </form>
+                )}
+                {subscription.cancelAtPeriodEnd && (
+                  <p>La renovación está cancelada. Mantendrás acceso hasta el cierre del período actual.</p>
+                )}
+                {!subscription.billingEnabled && supportEmail ? (
                   <p className="text-xs">
                     Contacto para pagos: <a href={`mailto:${supportEmail}`} className="font-semibold text-primary underline">{supportEmail}</a>
                   </p>
-                ) : (
-                  <p className="text-xs">
-                    Pronto estará disponible el pago automático con tarjeta.
-                  </p>
+                ) : null}
+                {subscription.billingEnabled && !checkoutAvailable && !subscription.providerSubscriptionId && (
+                  <p>El checkout estará disponible cuando se acerque el fin de tu prueba o si necesitas regularizar un pago.</p>
                 )}
               </CardContent>
             </Card>

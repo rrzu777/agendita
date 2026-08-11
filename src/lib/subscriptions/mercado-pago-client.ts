@@ -30,6 +30,8 @@ export type CreateSubscriptionInput = {
   planId: string
   externalReference: string
   payerEmail?: string
+  amount?: number
+  startDate?: Date
 }
 
 export type MpPlan = {
@@ -178,12 +180,28 @@ export function createMpSubscriptionClient(
     async createSubscription(input) {
       requiredString(input.planId, 'Plan id')
       requiredString(input.externalReference, 'External reference')
+      if ((input.amount === undefined) !== (input.startDate === undefined)) {
+        throw new Error('Subscription amount and start date must be provided together.')
+      }
       const body: Record<string, unknown> = {
         preapproval_plan_id: input.planId,
         external_reference: input.externalReference,
         back_url: config.callbackUrl,
       }
       if (input.payerEmail) body.payer_email = input.payerEmail
+      if (input.amount !== undefined && input.startDate) {
+        requireMonthlyClp(input.amount)
+        if (Number.isNaN(input.startDate.getTime())) {
+          throw new Error('Subscription start date is invalid.')
+        }
+        body.auto_recurring = {
+          frequency: 1,
+          frequency_type: 'months',
+          transaction_amount: input.amount,
+          currency_id: 'CLP',
+          start_date: input.startDate.toISOString(),
+        }
+      }
       const subscription = normalizeMpSubscription(
         await request('/preapproval', { method: 'POST', body: JSON.stringify(body) }),
       )

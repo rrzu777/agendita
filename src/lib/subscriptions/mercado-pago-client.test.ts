@@ -89,6 +89,8 @@ describe('createMpSubscriptionClient', () => {
       planId: 'plan-1',
       externalReference: 'local-op-subscription-1',
       payerEmail: 'payer@example.com',
+      amount: 12000,
+      startDate: new Date('2026-08-14T12:00:00.000Z'),
     })
     await client.getSubscription('preapproval-1')
     await client.cancelSubscription('preapproval-1')
@@ -103,6 +105,13 @@ describe('createMpSubscriptionClient', () => {
       preapproval_plan_id: 'plan-1',
       external_reference: 'local-op-subscription-1',
       payer_email: 'payer@example.com',
+      auto_recurring: {
+        frequency: 1,
+        frequency_type: 'months',
+        transaction_amount: 12000,
+        currency_id: 'CLP',
+        start_date: '2026-08-14T12:00:00.000Z',
+      },
       back_url: config.callbackUrl,
     })
     expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ status: 'canceled' })
