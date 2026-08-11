@@ -15,6 +15,7 @@ import {
 import type { MpSubscription } from './mercado-pago-mappers'
 import {
   applySubscriptionTransition,
+  findExistingProviderPaymentClaim,
   SubscriptionProviderPaymentOwnershipConflictError,
   SubscriptionProviderSnapshotMismatchError,
   SubscriptionTransitionConflictError,
@@ -286,6 +287,41 @@ function recoveryAdoption(
   }
 }
 
+async function hasExistingInvoiceSettlement(
+  dependencies: SubscriptionWebhookDependencies,
+  local: LocalSubscription,
+  invoice: Awaited<ReturnType<MpSubscriptionClient['getInvoice']>>,
+) {
+  if (local.provider !== 'mercado_pago' || !local.environment) {
+    return false
+  }
+  try {
+    return !!(await findExistingProviderPaymentClaim(dependencies.prisma, {
+      provider: local.provider,
+      environment: local.environment,
+      providerPaymentId: invoice.providerPaymentId ?? undefined,
+      providerInvoiceId: invoice.id,
+      subscriptionId: local.id,
+      businessId: local.businessId,
+    }))
+  } catch (error) {
+    if (error instanceof SubscriptionProviderPaymentOwnershipConflictError) {
+      throw new SubscriptionWebhookValidationError()
+    }
+    throw error
+  }
+}
+
+async function cancelFutureRenewals(
+  dependencies: SubscriptionWebhookDependencies,
+  providerSubscriptionId: string,
+) {
+  const cancelled = await dependencies.client.cancelSubscription(providerSubscriptionId)
+  if (cancelled.id !== providerSubscriptionId || cancelled.status !== 'canceled') {
+    throw new SubscriptionWebhookValidationError()
+  }
+}
+
 async function applyInvoice(
   event: SubscriptionWebhookEvent,
   dependencies: SubscriptionWebhookDependencies,
@@ -322,6 +358,12 @@ async function applyInvoice(
   if (!local) throw new SubscriptionWebhookValidationError()
 
   if (invoice.status === 'approved') {
+    if (await hasExistingInvoiceSettlement(dependencies, local, invoice)) {
+      if (candidate.providerStatus === 'authorized' && local.cancelAtPeriodEnd) {
+        await cancelFutureRenewals(dependencies, candidate.id)
+      }
+      return { outcome: 'duplicate' as const, status: local.status }
+    }
     if (!invoice.providerPaymentId || !invoice.approvedAt || !candidate.nextPaymentAt) {
       throw new SubscriptionWebhookValidationError()
     }
@@ -347,10 +389,7 @@ async function applyInvoice(
       candidate.providerStatus === 'authorized' &&
       (recoveryRequired || local.cancelAtPeriodEnd)
     ) {
-      const cancelled = await dependencies.client.cancelSubscription(candidate.id)
-      if (cancelled.id !== candidate.id || cancelled.status !== 'canceled') {
-        throw new SubscriptionWebhookValidationError()
-      }
+      await cancelFutureRenewals(dependencies, candidate.id)
     }
     return {
       outcome: result.applied ? 'applied' as const : 'duplicate' as const,

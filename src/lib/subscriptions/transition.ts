@@ -84,25 +84,27 @@ export class SubscriptionProviderPaymentOwnershipConflictError extends Error {
   }
 }
 
-async function findExistingProviderPaymentClaim(
-  tx: Prisma.TransactionClient,
+export async function findExistingProviderPaymentClaim(
+  tx: PrismaClient | Prisma.TransactionClient,
   input: {
     provider: SubscriptionProvider
     environment: MercadoPagoEnvironment
-    providerPaymentId: string
+    providerPaymentId?: string
     providerInvoiceId?: string
     subscriptionId: string
     businessId: string
   },
 ) {
+  const identifiers: Prisma.SubscriptionPaymentWhereInput[] = [
+    ...(input.providerPaymentId ? [{ providerPaymentId: input.providerPaymentId }] : []),
+    ...(input.providerInvoiceId ? [{ providerInvoiceId: input.providerInvoiceId }] : []),
+  ]
+  if (identifiers.length === 0) return null
   const claims = await tx.subscriptionPayment.findMany({
     where: {
       provider: input.provider,
       environment: input.environment,
-      OR: [
-        { providerPaymentId: input.providerPaymentId },
-        ...(input.providerInvoiceId ? [{ providerInvoiceId: input.providerInvoiceId }] : []),
-      ],
+      OR: identifiers,
     },
     select: {
       id: true,

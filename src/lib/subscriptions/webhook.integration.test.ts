@@ -247,7 +247,10 @@ function candidateWebhookFixture(id: string) {
       id: CANDIDATE_PROVIDER_SUBSCRIPTION_ID,
       status: 'canceled',
     }),
-  } as unknown as MpSubscriptionClient & { cancelSubscription: ReturnType<typeof vi.fn> }
+  } as unknown as MpSubscriptionClient & {
+    getSubscription: ReturnType<typeof vi.fn>
+    cancelSubscription: ReturnType<typeof vi.fn>
+  }
   return {
     client,
     dependencies: {
@@ -516,5 +519,52 @@ describe('processSubscriptionWebhook concurrency', () => {
       where: { businessId: CANDIDATE_BUSINESS_ID },
     })).resolves.toBe(1)
     expect(client.cancelSubscription).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns duplicate when remote cancellation succeeded but its response was lost', async () => {
+    await prisma.businessSubscription.update({
+      where: { id: CANDIDATE_SUBSCRIPTION_ID },
+      data: { billingEnabled: false },
+    })
+    const { client, dependencies, event } = candidateWebhookFixture('cancel-applied-timeout')
+    client.cancelSubscription.mockRejectedValueOnce(new MercadoPagoSubscriptionTransportError())
+
+    await expect(processSubscriptionWebhook(event, dependencies))
+      .rejects.toBeInstanceOf(MercadoPagoSubscriptionTransportError)
+
+    client.getSubscription.mockResolvedValue({
+      id: CANDIDATE_PROVIDER_SUBSCRIPTION_ID,
+      status: 'canceled',
+      providerStatus: 'canceled',
+      collectorId: 'agendita-account-candidate',
+      planId: PROVIDER_PLAN_ID,
+      externalReference: `${REFERENCE}-candidate`,
+      checkoutUrl: null,
+      amount: 14990,
+      currency: 'CLP',
+      frequency: 1,
+      frequencyType: 'months',
+      nextPaymentAt: null,
+      updatedAt: PAID_AT,
+    })
+
+    await expect(processSubscriptionWebhook(event, dependencies)).resolves.toEqual({
+      outcome: 'duplicate',
+      status: 'active',
+    })
+
+    const [subscription, paymentCount, logCount] = await Promise.all([
+      prisma.businessSubscription.findUniqueOrThrow({ where: { id: CANDIDATE_SUBSCRIPTION_ID } }),
+      prisma.subscriptionPayment.count({ where: { subscriptionId: CANDIDATE_SUBSCRIPTION_ID } }),
+      prisma.subscriptionLog.count({ where: { businessId: CANDIDATE_BUSINESS_ID } }),
+    ])
+    expect(subscription).toMatchObject({
+      status: 'active',
+      currentPeriodEnd: PERIOD_END,
+      cancelAtPeriodEnd: true,
+    })
+    expect(paymentCount).toBe(1)
+    expect(logCount).toBe(1)
+    expect(client.cancelSubscription).toHaveBeenCalledTimes(1)
   })
 })

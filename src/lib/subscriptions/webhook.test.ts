@@ -95,7 +95,10 @@ function createDependencies(): SubscriptionWebhookDependencies & {
       findFirst: vi.fn().mockResolvedValue(checkoutAttempt),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
-    subscriptionPayment: { findUnique: vi.fn().mockResolvedValue(null) },
+    subscriptionPayment: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   } as unknown as PrismaClient
   const client = {
     getInvoice: vi.fn().mockResolvedValue(approvedInvoice),
@@ -365,6 +368,7 @@ describe('processSubscriptionWebhook', () => {
     ;(dependencies.prisma.businessSubscription.findFirst as ReturnType<typeof vi.fn>)
       .mockResolvedValue({
         ...localSubscription,
+        status: 'active',
         cancelAtPeriodEnd: true,
         cancellationRequestedAt: new Date('2026-08-11T12:05:00.000Z'),
       })
@@ -381,6 +385,37 @@ describe('processSubscriptionWebhook', () => {
     })
     expect(dependencies.applyTransition).toHaveBeenCalledTimes(2)
     expect(dependencies.client.cancelSubscription).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns duplicate when remote cancellation succeeded after a lost response', async () => {
+    ;(dependencies.prisma.businessSubscription.findFirst as ReturnType<typeof vi.fn>)
+      .mockResolvedValue({
+        ...localSubscription,
+        status: 'active',
+        cancelAtPeriodEnd: true,
+        cancellationRequestedAt: new Date('2026-08-11T12:05:00.000Z'),
+      })
+    dependencies.client.getSubscription.mockResolvedValue({
+      ...providerSubscription,
+      status: 'canceled',
+      providerStatus: 'canceled',
+      nextPaymentAt: null,
+    })
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockResolvedValue([{
+        id: 'settled-payment-1',
+        businessId: localSubscription.businessId,
+        subscriptionId: localSubscription.id,
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+      }])
+
+    await expect(processSubscriptionWebhook(invoiceEvent, dependencies)).resolves.toEqual({
+      outcome: 'duplicate',
+      status: 'active',
+    })
+    expect(dependencies.applyTransition).not.toHaveBeenCalled()
+    expect(dependencies.client.cancelSubscription).not.toHaveBeenCalled()
   })
 
   it('rejects an unknown provider subscription without applying a transition', async () => {
@@ -463,13 +498,23 @@ describe('processSubscriptionWebhook', () => {
   })
 
   it('maps a cross-owner payment claim to sanitized webhook validation', async () => {
-    const { SubscriptionProviderPaymentOwnershipConflictError } = await import('./transition')
-    dependencies.applyTransition.mockRejectedValue(
-      new SubscriptionProviderPaymentOwnershipConflictError(),
-    )
+    dependencies.client.getSubscription.mockResolvedValue({
+      ...providerSubscription,
+      status: 'canceled',
+      providerStatus: 'canceled',
+      nextPaymentAt: null,
+    })
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockResolvedValue([{
+        id: 'other-owner-payment',
+        businessId: 'other-business',
+        subscriptionId: 'other-subscription',
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+      }])
 
     await expect(processSubscriptionWebhook(invoiceEvent, dependencies))
       .rejects.toBeInstanceOf(SubscriptionWebhookValidationError)
-    expect(dependencies.applyTransition).toHaveBeenCalledTimes(1)
+    expect(dependencies.applyTransition).not.toHaveBeenCalled()
   })
 })
