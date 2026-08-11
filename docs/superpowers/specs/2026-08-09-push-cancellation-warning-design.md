@@ -164,6 +164,10 @@ determinístico por `authorizedUserId + endpointHash`, resuelven de nuevo todo e
 set elegible dentro de una sola transacción y toman los locks de Customer
 ordenados. La baja autenticada comparte el mismo lock, por lo que no puede
 intercalarse con una escritura parcial del set.
+El alta es all-or-nothing: si cualquier Customer del set llega al cupo o falla
+al persistir, la transacción completa hace rollback y la ruta responde error.
+Nunca se confirma en el navegador una asociación parcial; status continúa
+reportando actualización requerida hasta que el endpoint cubra todo el set.
 
 Cuando el navegador rota claves manteniendo el endpoint, el alta quita sólo el
 scope actual de generaciones anteriores, conserva scopes ajenos y revoca sólo
@@ -224,8 +228,10 @@ tengan el entitlement del `bookingId` exacto o `authorizedUserId` igual al
 existe comparación `null === null`. Como la rotación retira el scope de
 generaciones anteriores, sólo la generación vigente sigue siendo elegible.
 Después de que el proveedor acepta el push, la escritura de éxito repite esa
-misma autorización como CAS junto con id, fingerprint y `revokedAt: null`. Si
-el entitlement exacto o la cuenta revalidada fueron retirados durante el envío,
+misma autorización como CAS junto con id, fingerprint y `revokedAt: null`. La
+rama de cuenta exige conjuntamente `authorizedUserId` y que la relación viva
+`customer.userId` siga siendo ese mismo usuario no nulo; la rama guest conserva
+el entitlement exacto. Si cualquiera fue retirado durante el envío,
 el éxito stale no cuenta ni marca la reserva enviada; se reintenta contra la
 generación/autorización actualmente vigente sin revocar scopes ajenos.
 

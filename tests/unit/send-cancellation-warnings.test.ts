@@ -921,7 +921,10 @@ describe('sendCancellationWarnings', () => {
         revokedAt: null,
         OR: [
           { bookingEntitlements: { some: { bookingId: 'booking-1' } } },
-          { authorizedUserId: 'user-1' },
+          {
+            authorizedUserId: 'user-1',
+            customer: { userId: 'user-1' },
+          },
         ],
       },
       data: {
@@ -1027,7 +1030,10 @@ describe('sendCancellationWarnings', () => {
           OR: userId
             ? [
                 { bookingEntitlements: { some: { bookingId: 'booking-1' } } },
-                { authorizedUserId: userId },
+                {
+                  authorizedUserId: userId,
+                  customer: { userId },
+                },
               ]
             : [
                 { bookingEntitlements: { some: { bookingId: 'booking-1' } } },
@@ -1037,6 +1043,70 @@ describe('sendCancellationWarnings', () => {
       }))
     },
   )
+
+  it('does not persist account success after the Customer is relinked during provider delivery', async () => {
+    let liveCustomerUserId = 'user-1'
+    const subscription = makeSubscription({ authorizedUserId: 'user-1' })
+    mockBookingFindMany.mockResolvedValue([
+      makeBooking({ customer: { userId: 'user-1' } }),
+    ])
+    mockBookingFindFirst.mockImplementation(async () => ({
+      cancellationCutoffHours: 24,
+      startDateTime: new Date(NOW.getTime() + 26 * HOUR_MS),
+      customer: { userId: liveCustomerUserId },
+      business: { selfServiceCutoffHours: 24 },
+    }))
+    mockSubscriptionFindMany.mockImplementation(async ({ where }) => {
+      const accountBranch = where.OR?.find((branch: Record<string, unknown>) => (
+        'authorizedUserId' in branch
+      )) as { authorizedUserId?: string } | undefined
+      return accountBranch?.authorizedUserId === subscription.authorizedUserId
+        && accountBranch.authorizedUserId === liveCustomerUserId
+        ? [subscription]
+        : []
+    })
+    mockSendWebPush.mockImplementation(async () => {
+      liveCustomerUserId = 'user-2'
+      return { ok: true, statusCode: 201 }
+    })
+    mockSubscriptionUpdateMany.mockImplementation(async ({ where, data }) => {
+      if (!('lastSuccessAt' in data)) return { count: 1 }
+      const accountBranch = where.OR?.find((branch: Record<string, unknown>) => (
+        'authorizedUserId' in branch
+      )) as {
+        authorizedUserId?: string
+        customer?: { userId?: string }
+      } | undefined
+      const stillAuthorized = accountBranch?.authorizedUserId === subscription.authorizedUserId
+        && (accountBranch.customer === undefined
+          || accountBranch.customer.userId === liveCustomerUserId)
+      return { count: stillAuthorized ? 1 : 0 }
+    })
+
+    const result = await sendCancellationWarnings(NOW)
+
+    expect(result).toEqual({ sent: 0, skipped: 0, errors: 1 })
+    expect(mockSendWebPush).toHaveBeenCalledTimes(1)
+    expect(mockSubscriptionUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        OR: [
+          { bookingEntitlements: { some: { bookingId: 'booking-1' } } },
+          {
+            authorizedUserId: 'user-1',
+            customer: { userId: 'user-1' },
+          },
+        ],
+      }),
+      data: expect.objectContaining({ lastSuccessAt: NOW }),
+    }))
+    expect(mockBookingUpdateMany).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ cancellationReminderSentAt: expect.any(Date) }),
+    }))
+    expect(subscription.authorizedUserId).toBe('user-1')
+    expect(mockSubscriptionUpdateMany).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ revokedAt: expect.any(Date) }),
+    }))
+  })
 
   it('recalcula copy y TTL si cambia el cutoff legacy antes del retry de generación', async () => {
     const simulated = simulateSubscriptionPersistence({

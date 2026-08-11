@@ -478,19 +478,15 @@ export async function storeAuthenticatedPushSubscriptions({
 
     let storedCount = 0
     for (const customer of orderedCustomers) {
-      try {
-        await storePushSubscriptionInTx({
-          tx,
-          businessId: customer.businessId,
-          customerId: customer.id,
-          prepared,
-          authorization: { kind: 'user', userId },
-          now,
-        })
-        storedCount += 1
-      } catch (error) {
-        if (!(error instanceof PushDeviceLimitError)) throw error
-      }
+      await storePushSubscriptionInTx({
+        tx,
+        businessId: customer.businessId,
+        customerId: customer.id,
+        prepared,
+        authorization: { kind: 'user', userId },
+        now,
+      })
+      storedCount += 1
     }
     return storedCount
   })

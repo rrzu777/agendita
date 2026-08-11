@@ -418,15 +418,15 @@ describe('push subscription routes', () => {
     expect(mocks.storeAuthenticatedPushSubscriptions).toHaveBeenCalledTimes(1)
   })
 
-  it('subscribes eligible auth targets even when another target reached its device cap', async () => {
+  it('returns non-success when any eligible authenticated target reaches its device cap', async () => {
     mocks.getCurrentUser.mockResolvedValue({ id: 'user-1' })
-    mocks.storeAuthenticatedPushSubscriptions.mockResolvedValue(1)
+    mocks.storeAuthenticatedPushSubscriptions.mockRejectedValue(new Error('Push device limit reached'))
     const { POST } = await import('@/app/api/push/subscribe/route')
 
     const response = await POST(pushRequest('/api/push/subscribe', { subscription }))
 
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({ subscribed: 1 })
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'Solicitud inválida' })
   })
 
   it('revokes every matching endpoint row owned by the authenticated user', async () => {

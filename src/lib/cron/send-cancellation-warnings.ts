@@ -279,7 +279,10 @@ async function recordDisposition(
       { bookingEntitlements: { some: { bookingId: authorization.bookingId } } },
     ]
     if (authorization.userId !== null) {
-      authorizationBranches.push({ authorizedUserId: authorization.userId })
+      authorizationBranches.push({
+        authorizedUserId: authorization.userId,
+        customer: { userId: authorization.userId },
+      })
     }
     const updated = await prisma.pushSubscription.updateMany({
       where: {

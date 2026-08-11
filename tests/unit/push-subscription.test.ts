@@ -544,25 +544,23 @@ describe('push subscription storage', () => {
     })
   })
 
-  it('continues an authenticated batch when one customer has five unrelated devices', async () => {
-    const { storeAuthenticatedPushSubscriptions } = await import('@/lib/push/subscription')
+  it('aborts an authenticated batch when any eligible customer reaches the device cap', async () => {
+    const {
+      PushDeviceLimitError,
+      storeAuthenticatedPushSubscriptions,
+    } = await import('@/lib/push/subscription')
     mocks.customerFindMany.mockResolvedValue([
       { id: 'customer-1', businessId: 'business-1' },
       { id: 'customer-2', businessId: 'business-2' },
     ])
     mocks.subscriptionCount.mockImplementation(async ({ where }) => (
-      where.customerId === 'customer-1' ? 5 : 0
+      where.customerId === 'customer-2' ? 5 : 0
     ))
 
     await expect(storeAuthenticatedPushSubscriptions({
       userId: 'user-1',
       subscription: validSubscription,
-    })).resolves.toBe(1)
-
-    expect(mocks.upsert).toHaveBeenCalledTimes(1)
-    expect(mocks.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      create: expect.objectContaining({ customerId: 'customer-2' }),
-    }))
+    })).rejects.toBeInstanceOf(PushDeviceLimitError)
   })
 
   it('guest unsubscribe deletes only the exact booking entitlement and revokes only orphan rows', async () => {

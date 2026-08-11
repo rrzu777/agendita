@@ -1,6 +1,11 @@
 import { BookingPaymentStatus, BookingStatus, Prisma, PrismaClient } from '@prisma/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { requireTestDatabase } from './setup'
+import {
+  TEST_PUSH_AUTH,
+  TEST_VAPID_PRIVATE_KEY,
+  TEST_VAPID_PUBLIC_KEY,
+} from '../helpers/push-fixtures'
 
 requireTestDatabase()
 
@@ -8,12 +13,19 @@ const OWNER_ID = 'push-schema-owner'
 const USER_ID = 'push-schema-user'
 const BUSINESS_ID = 'push-schema-business'
 const CUSTOMER_ID = 'push-schema-customer'
+const CUSTOMER_TWO_ID = 'push-schema-customer-z'
 const SERVICE_ID = 'push-schema-service'
 const BOOKING_ONE_ID = 'push-schema-booking-1'
 const BOOKING_TWO_ID = 'push-schema-booking-2'
 
 describe('push authorization persistence', () => {
   const prisma = new PrismaClient()
+  const originalPushEnv = {
+    publicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+    privateKey: process.env.VAPID_PRIVATE_KEY,
+    subject: process.env.VAPID_SUBJECT,
+    encryptionKey: process.env.ENCRYPTION_KEY,
+  }
 
   async function cleanup() {
     await prisma.business.deleteMany({ where: { id: BUSINESS_ID } })
@@ -21,6 +33,10 @@ describe('push authorization persistence', () => {
   }
 
   beforeAll(async () => {
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = TEST_VAPID_PUBLIC_KEY
+    process.env.VAPID_PRIVATE_KEY = TEST_VAPID_PRIVATE_KEY
+    process.env.VAPID_SUBJECT = 'mailto:integration@agendita.test'
+    process.env.ENCRYPTION_KEY = 'push-schema-integration-encryption-key'
     await cleanup()
     await prisma.user.createMany({
       data: [
@@ -38,14 +54,23 @@ describe('push authorization persistence', () => {
         city: 'Santiago',
       },
     })
-    await prisma.customer.create({
-      data: {
-        id: CUSTOMER_ID,
-        businessId: BUSINESS_ID,
-        userId: USER_ID,
-        name: 'Push Test',
-        phone: '56900000001',
-      },
+    await prisma.customer.createMany({
+      data: [
+        {
+          id: CUSTOMER_ID,
+          businessId: BUSINESS_ID,
+          userId: USER_ID,
+          name: 'Push Test One',
+          phone: '56900000001',
+        },
+        {
+          id: CUSTOMER_TWO_ID,
+          businessId: BUSINESS_ID,
+          userId: USER_ID,
+          name: 'Push Test Two',
+          phone: '56900000002',
+        },
+      ],
     })
     await prisma.service.create({
       data: {
@@ -58,13 +83,16 @@ describe('push authorization persistence', () => {
         pastelColor: '#abcdef',
       },
     })
-    for (const [id, day] of [[BOOKING_ONE_ID, 12], [BOOKING_TWO_ID, 13]] as const) {
+    for (const [id, customerId, day] of [
+      [BOOKING_ONE_ID, CUSTOMER_ID, 12],
+      [BOOKING_TWO_ID, CUSTOMER_TWO_ID, 13],
+    ] as const) {
       const startDateTime = new Date(`2026-08-${day}T15:00:00.000Z`)
       await prisma.booking.create({
         data: {
           id,
           businessId: BUSINESS_ID,
-          customerId: CUSTOMER_ID,
+          customerId,
           serviceId: SERVICE_ID,
           startDateTime,
           endDateTime: new Date(startDateTime.getTime() + 60 * 60_000),
@@ -83,6 +111,14 @@ describe('push authorization persistence', () => {
   afterAll(async () => {
     await cleanup()
     await prisma.$disconnect()
+    if (originalPushEnv.publicKey === undefined) delete process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+    else process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = originalPushEnv.publicKey
+    if (originalPushEnv.privateKey === undefined) delete process.env.VAPID_PRIVATE_KEY
+    else process.env.VAPID_PRIVATE_KEY = originalPushEnv.privateKey
+    if (originalPushEnv.subject === undefined) delete process.env.VAPID_SUBJECT
+    else process.env.VAPID_SUBJECT = originalPushEnv.subject
+    if (originalPushEnv.encryptionKey === undefined) delete process.env.ENCRYPTION_KEY
+    else process.env.ENCRYPTION_KEY = originalPushEnv.encryptionKey
   })
 
   it('enforces explicit user ownership and fingerprint uniqueness', async () => {
@@ -142,5 +178,43 @@ describe('push authorization persistence', () => {
     expect(await prisma.pushSubscriptionBooking.count({
       where: { subscriptionId: subscription.id, bookingId: BOOKING_TWO_ID },
     })).toBe(0)
+  })
+
+  it('rolls back every Customer association when one eligible Customer is at the device cap', async () => {
+    const {
+      PushDeviceLimitError,
+      hasActivePushAssociation,
+      hashPushEndpoint,
+      storeAuthenticatedPushSubscriptions,
+    } = await import('@/lib/push/subscription')
+    const incoming = {
+      endpoint: 'https://fcm.googleapis.com/fcm/send/account-batch-incoming',
+      keys: { p256dh: TEST_VAPID_PUBLIC_KEY, auth: TEST_PUSH_AUTH },
+    }
+    await prisma.pushSubscription.createMany({
+      data: Array.from({ length: 5 }, (_, index) => ({
+        businessId: BUSINESS_ID,
+        customerId: CUSTOMER_TWO_ID,
+        authorizedUserId: USER_ID,
+        endpointHash: String(index + 1).repeat(64).slice(0, 64),
+        subscriptionFingerprint: String(index + 1).repeat(64).slice(0, 64),
+        subscriptionEncrypted: `existing-device-${index + 1}`,
+      })),
+    })
+
+    await expect(storeAuthenticatedPushSubscriptions({
+      userId: USER_ID,
+      subscription: incoming,
+      now: new Date('2026-08-11T00:00:00.000Z'),
+    })).rejects.toBeInstanceOf(PushDeviceLimitError)
+
+    expect(await prisma.pushSubscription.count({
+      where: { endpointHash: hashPushEndpoint(incoming.endpoint) },
+    })).toBe(0)
+    await expect(hasActivePushAssociation({
+      endpoint: incoming.endpoint,
+      scope: { kind: 'user', userId: USER_ID },
+      now: new Date('2026-08-11T00:00:00.000Z'),
+    })).resolves.toBe(false)
   })
 })
