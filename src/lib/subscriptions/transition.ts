@@ -49,7 +49,17 @@ export type ApplySubscriptionTransitionCommand = {
     providerPlanId: string
     amount: number
     currency: string
-    updatedAt: Date
+  }
+  recoveryAdoption?: {
+    attemptId: string
+    businessId: string
+    environment: MercadoPagoEnvironment
+    providerSubscriptionId: string
+    providerPlanId: string
+    planId: string
+    amount: number
+    currency: string
+    requestedAt: Date
   }
 }
 
@@ -65,6 +75,57 @@ export class SubscriptionProviderSnapshotMismatchError extends Error {
     super('La suscripción ya no coincide con el snapshot verificado del proveedor')
     this.name = 'SubscriptionProviderSnapshotMismatchError'
   }
+}
+
+export class SubscriptionProviderPaymentOwnershipConflictError extends Error {
+  constructor() {
+    super('El pago externo ya pertenece a otra suscripción')
+    this.name = 'SubscriptionProviderPaymentOwnershipConflictError'
+  }
+}
+
+async function findExistingProviderPaymentClaim(
+  tx: Prisma.TransactionClient,
+  input: {
+    provider: SubscriptionProvider
+    environment: MercadoPagoEnvironment
+    providerPaymentId: string
+    providerInvoiceId?: string
+    subscriptionId: string
+    businessId: string
+  },
+) {
+  const claims = await tx.subscriptionPayment.findMany({
+    where: {
+      provider: input.provider,
+      environment: input.environment,
+      OR: [
+        { providerPaymentId: input.providerPaymentId },
+        ...(input.providerInvoiceId ? [{ providerInvoiceId: input.providerInvoiceId }] : []),
+      ],
+    },
+    select: {
+      id: true,
+      businessId: true,
+      subscriptionId: true,
+      provider: true,
+      environment: true,
+    },
+  })
+  if (claims.length === 0) return null
+  const first = claims[0]
+  if (
+    claims.some((claim) =>
+      claim.id !== first.id ||
+      claim.subscriptionId !== input.subscriptionId ||
+      claim.businessId !== input.businessId ||
+      claim.provider !== input.provider ||
+      claim.environment !== input.environment
+    )
+  ) {
+    throw new SubscriptionProviderPaymentOwnershipConflictError()
+  }
+  return first
 }
 
 function toState(subscription: {
@@ -210,6 +271,26 @@ export async function applySubscriptionTransition(
       throw new Error('La suscripción no pertenece al negocio indicado')
     }
     const expected = input.expectedProviderSnapshot
+    const recovery = input.recoveryAdoption
+    if (recovery && input.command.type !== 'invoice_approved') {
+      throw new Error('La recuperación de checkout sólo admite una factura aprobada')
+    }
+    if (input.command.type === 'invoice_approved') {
+      const paymentProvider = recovery ? 'mercado_pago' : expected?.provider ?? subscription.provider
+      const paymentEnvironment = recovery?.environment ?? expected?.environment ?? subscription.environment
+      if (paymentProvider !== 'mercado_pago' || !paymentEnvironment) {
+        throw new Error('Un pago externo requiere proveedor Mercado Pago y ambiente')
+      }
+      const existingClaim = await findExistingProviderPaymentClaim(tx, {
+        provider: paymentProvider,
+        environment: paymentEnvironment,
+        providerPaymentId: input.command.providerPaymentId,
+        providerInvoiceId: input.payment?.providerInvoiceId,
+        subscriptionId: subscription.id,
+        businessId: subscription.businessId,
+      })
+      if (existingClaim) return { applied: false, status: subscription.status }
+    }
     if (expected && (
       subscription.provider !== expected.provider ||
       subscription.environment !== expected.environment ||
@@ -217,8 +298,7 @@ export async function applySubscriptionTransition(
       subscription.planId !== expected.planId ||
       subscription.providerPlanId !== expected.providerPlanId ||
       subscription.amount !== expected.amount ||
-      subscription.currency !== expected.currency ||
-      subscription.updatedAt.getTime() !== expected.updatedAt.getTime()
+      subscription.currency !== expected.currency
     )) {
       throw new SubscriptionProviderSnapshotMismatchError()
     }
@@ -226,8 +306,36 @@ export async function applySubscriptionTransition(
       throw new Error('Sólo se admiten suscripciones monthly')
     }
 
+    if (recovery) {
+      if (
+        subscription.businessId !== recovery.businessId ||
+        (subscription.providerSubscriptionId !== null &&
+          subscription.providerSubscriptionId !== recovery.providerSubscriptionId)
+      ) {
+        throw new SubscriptionProviderSnapshotMismatchError()
+      }
+      const claimedAttempt = await tx.subscriptionCheckoutAttempt.updateMany({
+        where: {
+          id: recovery.attemptId,
+          businessId: recovery.businessId,
+          subscriptionId: subscription.id,
+          environment: recovery.environment,
+          providerSubscriptionId: recovery.providerSubscriptionId,
+          providerPlanId: recovery.providerPlanId,
+          planId: recovery.planId,
+          amount: recovery.amount,
+          currency: recovery.currency,
+          invalidatedAt: null,
+        },
+        data: { invalidatedAt: recovery.requestedAt },
+      })
+      if (claimedAttempt.count !== 1) throw new SubscriptionTransitionConflictError()
+    }
+
     if (input.command.type === 'invoice_approved') {
-      if (subscription.provider !== 'mercado_pago' || !subscription.environment) {
+      const paymentProvider = recovery ? 'mercado_pago' : subscription.provider
+      const paymentEnvironment = recovery?.environment ?? subscription.environment
+      if (paymentProvider !== 'mercado_pago' || !paymentEnvironment) {
         throw new Error('Un pago externo requiere proveedor Mercado Pago y ambiente')
       }
       const candidatePaymentId = randomUUID()
@@ -236,12 +344,12 @@ export async function applySubscriptionTransition(
           id: candidatePaymentId,
           businessId: subscription.businessId,
           subscriptionId: subscription.id,
-          amount: subscription.amount,
-          currency: subscription.currency,
+          amount: recovery?.amount ?? subscription.amount,
+          currency: recovery?.currency ?? subscription.currency,
           status: 'approved',
           paidAt: input.command.paidAt,
-          provider: subscription.provider,
-          environment: subscription.environment,
+          provider: paymentProvider,
+          environment: paymentEnvironment,
           providerPaymentId: input.command.providerPaymentId,
           providerInvoiceId: input.payment?.providerInvoiceId,
           providerStatus: input.payment?.providerStatus,
@@ -250,32 +358,14 @@ export async function applySubscriptionTransition(
         }],
         skipDuplicates: true,
       })
-      const claimedPayment = await tx.subscriptionPayment.findUnique({
-        where: {
-          provider_environment_providerPaymentId: {
-            provider: subscription.provider,
-            environment: subscription.environment,
-            providerPaymentId: input.command.providerPaymentId,
-          },
-        },
-        select: {
-          id: true,
-          businessId: true,
-          subscriptionId: true,
-          provider: true,
-          environment: true,
-        },
+      const claimedPayment = await findExistingProviderPaymentClaim(tx, {
+        provider: paymentProvider,
+        environment: paymentEnvironment,
+        providerPaymentId: input.command.providerPaymentId,
+        providerInvoiceId: input.payment?.providerInvoiceId,
+        subscriptionId: subscription.id,
+        businessId: subscription.businessId,
       })
-
-      const claimHasExpectedOwner = claimedPayment &&
-        claimedPayment.subscriptionId === subscription.id &&
-        claimedPayment.businessId === subscription.businessId &&
-        claimedPayment.provider === subscription.provider &&
-        claimedPayment.environment === subscription.environment
-
-      if (claimedPayment && !claimHasExpectedOwner) {
-        throw new Error('El pago externo ya pertenece a otra suscripción')
-      }
       if (!claimedPayment) {
         throw new Error('El pago externo colisiona con otra clave única')
       }
@@ -307,6 +397,17 @@ export async function applySubscriptionTransition(
     const subscriptionData: Prisma.BusinessSubscriptionUncheckedUpdateManyInput = {
       ...derived.changes,
       ...(derived.subscriptionData ?? {}),
+      ...(recovery ? {
+        provider: 'mercado_pago',
+        environment: recovery.environment,
+        providerSubscriptionId: recovery.providerSubscriptionId,
+        providerPlanId: recovery.providerPlanId,
+        planId: recovery.planId,
+        amount: recovery.amount,
+        currency: recovery.currency,
+        cancelAtPeriodEnd: true,
+        cancellationRequestedAt: subscription.cancellationRequestedAt ?? recovery.requestedAt,
+      } : {}),
       status: derived.nextStatus,
     }
     const updated = await tx.businessSubscription.updateMany({
@@ -323,6 +424,7 @@ export async function applySubscriptionTransition(
       where: { id: subscription.businessId },
       data: {
         ...(derived.businessData ?? {}),
+        ...(recovery ? { planId: recovery.planId } : {}),
         subscriptionStatus: derived.nextStatus,
         ...('trialEndAt' in derived.changes
           ? { trialEndsAt: derived.changes.trialEndAt }

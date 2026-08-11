@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { prisma } from '@/lib/db'
 import { requireTestDatabase } from '../../../tests/integration/setup'
 import type { MpSubscriptionClient } from './mercado-pago-client'
+import { MercadoPagoSubscriptionTransportError } from './mercado-pago-client'
 import { applySubscriptionTransition } from './transition'
 import { adoptAuthorizedSubscriptionCandidate } from './checkout-adoption'
 import {
@@ -145,8 +146,11 @@ beforeAll(async () => {
 })
 
 beforeEach(async () => {
+  process.env.MP_SUBSCRIPTIONS_ENABLED = 'true'
   await prisma.subscriptionPayment.deleteMany({ where: { businessId: BUSINESS_ID } })
   await prisma.subscriptionLog.deleteMany({ where: { businessId: BUSINESS_ID } })
+  await prisma.subscriptionPayment.deleteMany({ where: { businessId: CANDIDATE_BUSINESS_ID } })
+  await prisma.subscriptionLog.deleteMany({ where: { businessId: CANDIDATE_BUSINESS_ID } })
   await prisma.business.update({
     where: { id: BUSINESS_ID },
     data: { subscriptionStatus: 'past_due' },
@@ -166,6 +170,37 @@ beforeEach(async () => {
       graceEndsAt: new Date('2026-08-17T00:00:00.000Z'),
     },
   })
+  await prisma.business.update({
+    where: { id: CANDIDATE_BUSINESS_ID },
+    data: { subscriptionStatus: 'past_due', planId: PLAN_ID },
+  })
+  await prisma.businessSubscription.update({
+    where: { id: CANDIDATE_SUBSCRIPTION_ID },
+    data: {
+      status: 'past_due',
+      planId: PLAN_ID,
+      amount: 14990,
+      currency: 'CLP',
+      provider: 'manual',
+      environment: null,
+      providerPlanId: null,
+      providerSubscriptionId: null,
+      currentPeriodStart: new Date('2026-08-01T00:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-09-01T00:00:00.000Z'),
+      lastPaidAt: null,
+      nextBillingAt: null,
+      pastDueAt: new Date('2026-08-10T00:00:00.000Z'),
+      graceEndsAt: new Date('2026-08-17T00:00:00.000Z'),
+      billingEnabled: true,
+      complimentaryUntil: null,
+      cancelAtPeriodEnd: false,
+      cancellationRequestedAt: null,
+    },
+  })
+  await prisma.subscriptionCheckoutAttempt.update({
+    where: { id: CANDIDATE_ATTEMPT_ID },
+    data: { invalidatedAt: null },
+  })
 })
 
 afterAll(async () => {
@@ -174,6 +209,62 @@ afterAll(async () => {
   await concurrentPrisma.$disconnect()
   await prisma.$disconnect()
 })
+
+function candidateWebhookFixture(id: string) {
+  const candidateReference = `${REFERENCE}-candidate`
+  const client = {
+    getInvoice: vi.fn().mockResolvedValue({
+      id: `invoice-${id}`,
+      subscriptionId: CANDIDATE_PROVIDER_SUBSCRIPTION_ID,
+      status: 'approved',
+      providerPaymentId: `payment-${id}`,
+      providerStatus: 'approved',
+      amount: 14990,
+      currency: 'CLP',
+      externalReference: candidateReference,
+      approvedAt: PAID_AT,
+      createdAt: PAID_AT,
+      updatedAt: PAID_AT,
+      debitAt: PAID_AT,
+    }),
+    getSubscription: vi.fn().mockResolvedValue({
+      id: CANDIDATE_PROVIDER_SUBSCRIPTION_ID,
+      status: 'active',
+      providerStatus: 'authorized',
+      collectorId: 'agendita-account-candidate',
+      planId: PROVIDER_PLAN_ID,
+      externalReference: candidateReference,
+      checkoutUrl: null,
+      amount: 14990,
+      currency: 'CLP',
+      frequency: 1,
+      frequencyType: 'months',
+      nextPaymentAt: PERIOD_END,
+      updatedAt: PAID_AT,
+    }),
+    getCurrentAccountId: vi.fn().mockResolvedValue('agendita-account-candidate'),
+    cancelSubscription: vi.fn().mockResolvedValue({
+      id: CANDIDATE_PROVIDER_SUBSCRIPTION_ID,
+      status: 'canceled',
+    }),
+  } as unknown as MpSubscriptionClient & { cancelSubscription: ReturnType<typeof vi.fn> }
+  return {
+    client,
+    dependencies: {
+      prisma,
+      client,
+      environment: 'sandbox' as const,
+      applyTransition: applySubscriptionTransition,
+      adoptCandidate: adoptAuthorizedSubscriptionCandidate,
+      now: () => PAID_AT,
+    },
+    event: {
+      topic: 'subscription_authorized_payment' as const,
+      resourceId: `invoice-${id}`,
+      liveMode: false,
+    },
+  }
+}
 
 describe('processSubscriptionWebhook concurrency', () => {
   it('processes two simultaneous deliveries as one payment, period advance, and financial log', async () => {
@@ -331,52 +422,7 @@ describe('processSubscriptionWebhook concurrency', () => {
 
   it('settles an authorized candidate once after the global creation flag is turned off', async () => {
     process.env.MP_SUBSCRIPTIONS_ENABLED = 'false'
-    const candidateReference = `${REFERENCE}-candidate`
-    const client = {
-      getInvoice: vi.fn().mockResolvedValue({
-        id: 'invoice-candidate-flag-off',
-        subscriptionId: CANDIDATE_PROVIDER_SUBSCRIPTION_ID,
-        status: 'approved',
-        providerPaymentId: 'payment-candidate-flag-off',
-        providerStatus: 'approved',
-        amount: 14990,
-        currency: 'CLP',
-        externalReference: candidateReference,
-        approvedAt: PAID_AT,
-        createdAt: PAID_AT,
-        updatedAt: PAID_AT,
-        debitAt: PAID_AT,
-      }),
-      getSubscription: vi.fn().mockResolvedValue({
-        id: CANDIDATE_PROVIDER_SUBSCRIPTION_ID,
-        status: 'active',
-        providerStatus: 'authorized',
-        collectorId: 'agendita-account-candidate',
-        planId: PROVIDER_PLAN_ID,
-        externalReference: candidateReference,
-        checkoutUrl: null,
-        amount: 14990,
-        currency: 'CLP',
-        frequency: 1,
-        frequencyType: 'months',
-        nextPaymentAt: PERIOD_END,
-        updatedAt: PAID_AT,
-      }),
-      getCurrentAccountId: vi.fn().mockResolvedValue('agendita-account-candidate'),
-    } as unknown as MpSubscriptionClient
-    const dependencies: SubscriptionWebhookDependencies = {
-      prisma,
-      client,
-      environment: 'sandbox',
-      applyTransition: applySubscriptionTransition,
-      adoptCandidate: adoptAuthorizedSubscriptionCandidate,
-      now: () => PAID_AT,
-    }
-    const event = {
-      topic: 'subscription_authorized_payment' as const,
-      resourceId: 'invoice-candidate-flag-off',
-      liveMode: false,
-    }
+    const { dependencies, event } = candidateWebhookFixture('candidate-flag-off')
 
     const first = await processSubscriptionWebhook(event, dependencies)
     const duplicate = await processSubscriptionWebhook(event, dependencies)
@@ -399,5 +445,76 @@ describe('processSubscriptionWebhook concurrency', () => {
     expect(paymentCount).toBe(1)
     expect(logs.filter((log) => log.action === 'provider_subscription_authorized')).toHaveLength(1)
     expect(logs.filter((log) => log.action === 'subscription_recovered')).toHaveLength(1)
+  })
+
+  it.each([
+    ['billing disabled', { billingEnabled: false }],
+    ['complimentary exemption added', { complimentaryUntil: new Date('2026-09-01T00:00:00.000Z') }],
+  ])('settles a paid period once and disables renewals when %s after checkout', async (_name, patch) => {
+    await prisma.businessSubscription.update({
+      where: { id: CANDIDATE_SUBSCRIPTION_ID },
+      data: patch,
+    })
+    const { client, dependencies, event } = candidateWebhookFixture(
+      `eligibility-${_name.replaceAll(' ', '-')}`,
+    )
+
+    const first = await processSubscriptionWebhook(event, dependencies)
+    const duplicate = await processSubscriptionWebhook(event, dependencies)
+
+    expect([first.outcome, duplicate.outcome]).toEqual(['applied', 'duplicate'])
+    const [subscription, paymentCount, logs] = await Promise.all([
+      prisma.businessSubscription.findUniqueOrThrow({ where: { id: CANDIDATE_SUBSCRIPTION_ID } }),
+      prisma.subscriptionPayment.count({ where: { subscriptionId: CANDIDATE_SUBSCRIPTION_ID } }),
+      prisma.subscriptionLog.findMany({ where: { businessId: CANDIDATE_BUSINESS_ID } }),
+    ])
+    expect(subscription).toMatchObject({
+      provider: 'mercado_pago',
+      providerSubscriptionId: CANDIDATE_PROVIDER_SUBSCRIPTION_ID,
+      status: 'active',
+      currentPeriodEnd: PERIOD_END,
+      cancelAtPeriodEnd: true,
+      cancellationRequestedAt: PAID_AT,
+    })
+    expect(paymentCount).toBe(1)
+    expect(logs.filter((log) => log.action === 'subscription_recovered')).toHaveLength(1)
+    expect(client.cancelSubscription).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps settlement durable and retries future-renewal cancellation after a network failure', async () => {
+    await prisma.businessSubscription.update({
+      where: { id: CANDIDATE_SUBSCRIPTION_ID },
+      data: { billingEnabled: false },
+    })
+    const { client, dependencies, event } = candidateWebhookFixture('cancel-retry')
+    client.cancelSubscription
+      .mockRejectedValueOnce(new MercadoPagoSubscriptionTransportError())
+      .mockResolvedValueOnce({ id: CANDIDATE_PROVIDER_SUBSCRIPTION_ID, status: 'canceled' })
+
+    await expect(processSubscriptionWebhook(event, dependencies))
+      .rejects.toBeInstanceOf(MercadoPagoSubscriptionTransportError)
+
+    await expect(prisma.businessSubscription.findUniqueOrThrow({
+      where: { id: CANDIDATE_SUBSCRIPTION_ID },
+    })).resolves.toMatchObject({
+      status: 'active',
+      currentPeriodEnd: PERIOD_END,
+      cancelAtPeriodEnd: true,
+    })
+    await expect(prisma.subscriptionPayment.count({
+      where: { subscriptionId: CANDIDATE_SUBSCRIPTION_ID },
+    })).resolves.toBe(1)
+
+    await expect(processSubscriptionWebhook(event, dependencies)).resolves.toMatchObject({
+      outcome: 'duplicate',
+      status: 'active',
+    })
+    await expect(prisma.subscriptionPayment.count({
+      where: { subscriptionId: CANDIDATE_SUBSCRIPTION_ID },
+    })).resolves.toBe(1)
+    await expect(prisma.subscriptionLog.count({
+      where: { businessId: CANDIDATE_BUSINESS_ID },
+    })).resolves.toBe(1)
+    expect(client.cancelSubscription).toHaveBeenCalledTimes(2)
   })
 })

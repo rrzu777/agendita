@@ -15,6 +15,7 @@ import {
 import type { MpSubscription } from './mercado-pago-mappers'
 import {
   applySubscriptionTransition,
+  SubscriptionProviderPaymentOwnershipConflictError,
   SubscriptionProviderSnapshotMismatchError,
   SubscriptionTransitionConflictError,
   type ApplySubscriptionTransitionCommand,
@@ -83,6 +84,11 @@ function hashReference(reference: string): string {
 
 type LocalSubscription = NonNullable<Awaited<ReturnType<typeof findLocalSubscription>>>
 type CheckoutAttempt = NonNullable<Awaited<ReturnType<typeof findCheckoutAttempt>>>
+type ResolvedSubscription = {
+  local: LocalSubscription | null
+  attempt: CheckoutAttempt
+  recoveryRequired: boolean
+}
 
 function findLocalSubscription(
   dependencies: SubscriptionWebhookDependencies,
@@ -151,8 +157,9 @@ async function resolveSubscription(input: {
   dependencies: SubscriptionWebhookDependencies
   accountId: string
   requireAdopted: boolean
-}): Promise<LocalSubscription | null> {
-  const { candidate, dependencies, accountId, requireAdopted } = input
+  recoverApprovedCharge?: boolean
+}): Promise<ResolvedSubscription> {
+  const { candidate, dependencies, accountId, requireAdopted, recoverApprovedCharge } = input
   let [local, attempt] = await Promise.all([
     findLocalSubscription(dependencies, candidate.id),
     findCheckoutAttempt(dependencies, candidate.id),
@@ -179,6 +186,9 @@ async function resolveSubscription(input: {
       })
     } catch (error) {
       if (error instanceof CheckoutEligibilityConflictError) {
+        if (recoverApprovedCharge) {
+          return { local: attempt!.subscription, attempt: attempt!, recoveryRequired: true }
+        }
         const cancelled = await dependencies.client.cancelSubscription(candidate.id)
         if (cancelled.id !== candidate.id || cancelled.status !== 'canceled') {
           throw new SubscriptionWebhookValidationError()
@@ -197,7 +207,7 @@ async function resolveSubscription(input: {
   }
 
   if (requireAdopted && !local) throw new SubscriptionWebhookValidationError()
-  return local
+  return { local, attempt: attempt!, recoveryRequired: false }
 }
 
 async function applyTransitionWithConflictRetry(
@@ -207,14 +217,20 @@ async function applyTransitionWithConflictRetry(
   try {
     return await dependencies.applyTransition(dependencies.prisma, input)
   } catch (error) {
-    if (error instanceof SubscriptionProviderSnapshotMismatchError) {
+    if (
+      error instanceof SubscriptionProviderSnapshotMismatchError ||
+      error instanceof SubscriptionProviderPaymentOwnershipConflictError
+    ) {
       throw new SubscriptionWebhookValidationError()
     }
     if (!(error instanceof SubscriptionTransitionConflictError)) throw error
     try {
       return await dependencies.applyTransition(dependencies.prisma, input)
     } catch (retryError) {
-      if (retryError instanceof SubscriptionProviderSnapshotMismatchError) {
+      if (
+        retryError instanceof SubscriptionProviderSnapshotMismatchError ||
+        retryError instanceof SubscriptionProviderPaymentOwnershipConflictError
+      ) {
         throw new SubscriptionWebhookValidationError()
       }
       throw retryError
@@ -239,7 +255,34 @@ function expectedProviderSnapshot(local: LocalSubscription) {
     providerPlanId: local.providerPlanId,
     amount: local.amount,
     currency: local.currency,
-    updatedAt: local.updatedAt,
+  }
+}
+
+function recoveryAdoption(
+  attempt: CheckoutAttempt,
+  candidate: MpSubscription,
+  requestedAt: Date,
+) {
+  if (
+    !attempt.providerPlanId ||
+    !attempt.planId ||
+    attempt.amount === null ||
+    !attempt.currency ||
+    candidate.id !== attempt.providerSubscriptionId ||
+    candidate.planId !== attempt.providerPlanId
+  ) {
+    throw new SubscriptionWebhookValidationError()
+  }
+  return {
+    attemptId: attempt.id,
+    businessId: attempt.businessId,
+    environment: attempt.environment,
+    providerSubscriptionId: candidate.id,
+    providerPlanId: attempt.providerPlanId,
+    planId: attempt.planId,
+    amount: attempt.amount,
+    currency: attempt.currency,
+    requestedAt,
   }
 }
 
@@ -255,19 +298,18 @@ async function applyInvoice(
     dependencies.client.getCurrentAccountId(),
   ])
   if (candidate.id !== invoice.subscriptionId) throw new SubscriptionWebhookValidationError()
-  const local = await resolveSubscription({
+  const resolved = await resolveSubscription({
     candidate,
     dependencies,
     accountId,
     requireAdopted: invoice.status === 'approved' || invoice.status === 'failed',
+    recoverApprovedCharge: invoice.status === 'approved',
   })
+  const { local, attempt, recoveryRequired } = resolved
   if (
     invoice.externalReference !== candidate.externalReference ||
     !invoice.externalReference ||
-    hashReference(invoice.externalReference) !== (await findCheckoutAttempt(
-      dependencies,
-      candidate.id,
-    ))?.referenceHash ||
+    hashReference(invoice.externalReference) !== attempt.referenceHash ||
     invoice.amount !== candidate.amount ||
     invoice.currency !== candidate.currency
   ) {
@@ -283,6 +325,7 @@ async function applyInvoice(
     if (!invoice.providerPaymentId || !invoice.approvedAt || !candidate.nextPaymentAt) {
       throw new SubscriptionWebhookValidationError()
     }
+    const requestedAt = dependencies.now()
     const result = await applyTransitionWithConflictRetry(dependencies, {
       subscriptionId: local.id,
       command: {
@@ -296,8 +339,19 @@ async function applyInvoice(
         providerStatus: invoice.providerStatus ?? undefined,
         providerUpdatedAt: invoice.updatedAt ?? undefined,
       },
-      expectedProviderSnapshot: expectedProviderSnapshot(local),
+      ...(recoveryRequired
+        ? { recoveryAdoption: recoveryAdoption(attempt, candidate, requestedAt) }
+        : { expectedProviderSnapshot: expectedProviderSnapshot(local) }),
     })
+    if (
+      candidate.providerStatus === 'authorized' &&
+      (recoveryRequired || local.cancelAtPeriodEnd)
+    ) {
+      const cancelled = await dependencies.client.cancelSubscription(candidate.id)
+      if (cancelled.id !== candidate.id || cancelled.status !== 'canceled') {
+        throw new SubscriptionWebhookValidationError()
+      }
+    }
     return {
       outcome: result.applied ? 'applied' as const : 'duplicate' as const,
       status: result.status,
@@ -342,7 +396,7 @@ async function applySubscription(
     dependencies.client.getCurrentAccountId(),
   ])
   if (candidate.id !== event.resourceId) throw new SubscriptionWebhookValidationError()
-  const local = await resolveSubscription({
+  const { local } = await resolveSubscription({
     candidate,
     dependencies,
     accountId,

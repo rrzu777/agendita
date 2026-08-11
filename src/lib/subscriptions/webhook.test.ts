@@ -156,7 +156,6 @@ describe('processSubscriptionWebhook', () => {
         providerPlanId: providerSubscription.planId,
         amount: localSubscription.amount,
         currency: localSubscription.currency,
-        updatedAt: localSubscription.updatedAt,
       },
     })
   })
@@ -188,7 +187,6 @@ describe('processSubscriptionWebhook', () => {
         providerPlanId: providerSubscription.planId,
         amount: localSubscription.amount,
         currency: localSubscription.currency,
-        updatedAt: localSubscription.updatedAt,
       },
     })
   })
@@ -252,7 +250,6 @@ describe('processSubscriptionWebhook', () => {
         providerPlanId: providerSubscription.planId,
         amount: localSubscription.amount,
         currency: localSubscription.currency,
-        updatedAt: localSubscription.updatedAt,
       },
     })
   })
@@ -296,7 +293,7 @@ describe('processSubscriptionWebhook', () => {
   it.each([
     ['billing rollout revoked', { billingEnabled: false }],
     ['complimentary exemption added', { complimentaryUntil: new Date('2026-09-01T00:00:00.000Z') }],
-  ])('cancels and invalidates an authorized candidate when %s', async (_name, localPatch) => {
+  ])('settles an approved candidate and cancels future renewals when %s', async (_name, localPatch) => {
     ;(dependencies.prisma.businessSubscription.findFirst as ReturnType<typeof vi.fn>)
       .mockResolvedValue(null)
     dependencies.prisma.subscriptionCheckoutAttempt.findFirst = vi.fn().mockResolvedValue({
@@ -310,8 +307,39 @@ describe('processSubscriptionWebhook', () => {
     })
     dependencies.adoptCandidate.mockRejectedValue(new CheckoutEligibilityConflictError())
 
-    await expect(processSubscriptionWebhook(invoiceEvent, dependencies))
-      .rejects.toBeInstanceOf(SubscriptionWebhookValidationError)
+    await expect(processSubscriptionWebhook(invoiceEvent, dependencies)).resolves.toMatchObject({
+      outcome: 'applied',
+      status: 'active',
+    })
+
+    expect(dependencies.client.cancelSubscription).toHaveBeenCalledWith(providerSubscription.id)
+    expect(dependencies.applyTransition).toHaveBeenCalledWith(dependencies.prisma, expect.objectContaining({
+      subscriptionId: checkoutAttempt.subscriptionId,
+      recoveryAdoption: {
+        attemptId: checkoutAttempt.id,
+        businessId: checkoutAttempt.businessId,
+        environment: checkoutAttempt.environment,
+        providerSubscriptionId: providerSubscription.id,
+        providerPlanId: providerSubscription.planId,
+        planId: checkoutAttempt.planId,
+        amount: checkoutAttempt.amount,
+        currency: checkoutAttempt.currency,
+        requestedAt: new Date('2026-08-11T12:05:00.000Z'),
+      },
+    }))
+    expect(dependencies.prisma.subscriptionCheckoutAttempt.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('compensates an authorized candidate without an approved invoice', async () => {
+    ;(dependencies.prisma.businessSubscription.findFirst as ReturnType<typeof vi.fn>)
+      .mockResolvedValue(null)
+    dependencies.adoptCandidate.mockRejectedValue(new CheckoutEligibilityConflictError())
+
+    await expect(processSubscriptionWebhook({
+      topic: 'subscription_preapproval',
+      resourceId: providerSubscription.id,
+      liveMode: false,
+    }, dependencies)).rejects.toBeInstanceOf(SubscriptionWebhookValidationError)
 
     expect(dependencies.client.cancelSubscription).toHaveBeenCalledWith(providerSubscription.id)
     expect(dependencies.prisma.subscriptionCheckoutAttempt.updateMany).toHaveBeenCalledWith({
@@ -319,6 +347,40 @@ describe('processSubscriptionWebhook', () => {
       data: { invalidatedAt: new Date('2026-08-11T12:05:00.000Z') },
     })
     expect(dependencies.applyTransition).not.toHaveBeenCalled()
+  })
+
+  it('keeps an approved recovery settled when cancellation fails and retries cancellation idempotently', async () => {
+    const { MercadoPagoSubscriptionTransportError } = await import('./mercado-pago-client')
+    ;(dependencies.prisma.businessSubscription.findFirst as ReturnType<typeof vi.fn>)
+      .mockResolvedValue(null)
+    dependencies.adoptCandidate.mockRejectedValue(new CheckoutEligibilityConflictError())
+    dependencies.client.cancelSubscription.mockRejectedValueOnce(
+      new MercadoPagoSubscriptionTransportError(),
+    )
+
+    await expect(processSubscriptionWebhook(invoiceEvent, dependencies))
+      .rejects.toBeInstanceOf(MercadoPagoSubscriptionTransportError)
+    expect(dependencies.applyTransition).toHaveBeenCalledTimes(1)
+
+    ;(dependencies.prisma.businessSubscription.findFirst as ReturnType<typeof vi.fn>)
+      .mockResolvedValue({
+        ...localSubscription,
+        cancelAtPeriodEnd: true,
+        cancellationRequestedAt: new Date('2026-08-11T12:05:00.000Z'),
+      })
+    dependencies.applyTransition.mockResolvedValueOnce({ applied: false, status: 'active' })
+    dependencies.client.cancelSubscription.mockResolvedValueOnce({
+      ...providerSubscription,
+      status: 'canceled',
+      providerStatus: 'canceled',
+    })
+
+    await expect(processSubscriptionWebhook(invoiceEvent, dependencies)).resolves.toMatchObject({
+      outcome: 'duplicate',
+      status: 'active',
+    })
+    expect(dependencies.applyTransition).toHaveBeenCalledTimes(2)
+    expect(dependencies.client.cancelSubscription).toHaveBeenCalledTimes(2)
   })
 
   it('rejects an unknown provider subscription without applying a transition', async () => {
@@ -398,5 +460,16 @@ describe('processSubscriptionWebhook', () => {
       .rejects.toBeInstanceOf(MercadoPagoSubscriptionContractError)
     expect(dependencies.applyTransition).not.toHaveBeenCalled()
     expect(dependencies.adoptCandidate).not.toHaveBeenCalled()
+  })
+
+  it('maps a cross-owner payment claim to sanitized webhook validation', async () => {
+    const { SubscriptionProviderPaymentOwnershipConflictError } = await import('./transition')
+    dependencies.applyTransition.mockRejectedValue(
+      new SubscriptionProviderPaymentOwnershipConflictError(),
+    )
+
+    await expect(processSubscriptionWebhook(invoiceEvent, dependencies))
+      .rejects.toBeInstanceOf(SubscriptionWebhookValidationError)
+    expect(dependencies.applyTransition).toHaveBeenCalledTimes(1)
   })
 })

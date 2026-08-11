@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { requireTestDatabase } from '../../../tests/integration/setup'
 import {
   applySubscriptionTransition,
+  SubscriptionProviderPaymentOwnershipConflictError,
   SubscriptionTransitionConflictError,
 } from './transition'
 
@@ -40,6 +41,9 @@ async function resetSubscription() {
     data: {
       status: 'past_due',
       interval: 'monthly',
+      planId: PLAN,
+      amount: 14990,
+      currency: 'CLP',
       currentPeriodStart: new Date('2026-08-01T00:00:00.000Z'),
       currentPeriodEnd: PERIOD_END,
       lastPaidAt: null,
@@ -92,6 +96,7 @@ beforeAll(async () => {
       currency: 'CLP',
       provider: 'mercado_pago',
       environment: 'sandbox',
+      providerPlanId: 'subscription-transition-provider-plan',
       providerSubscriptionId: 'subscription-transition-provider-id',
       currentPeriodStart: new Date('2026-08-01T00:00:00.000Z'),
       currentPeriodEnd: PERIOD_END,
@@ -107,6 +112,7 @@ beforeAll(async () => {
       currency: 'CLP',
       provider: 'mercado_pago',
       environment: 'sandbox',
+      providerPlanId: 'subscription-transition-other-provider-plan',
       providerSubscriptionId: 'subscription-transition-other-provider-id',
       currentPeriodStart: new Date('2026-08-01T00:00:00.000Z'),
       currentPeriodEnd: PERIOD_END,
@@ -290,7 +296,54 @@ describe('applySubscriptionTransition', () => {
     expect(logCount).toBe(1)
   })
 
+  it('un duplicado tardío conserva idempotencia aunque el primer commit cambie updatedAt', async () => {
+    const before = await prisma.businessSubscription.findUniqueOrThrow({
+      where: { id: SUBSCRIPTION },
+    })
+    const command = {
+      ...approvedCommand('payment-delayed-duplicate'),
+      expectedProviderSnapshot: {
+        provider: 'mercado_pago' as const,
+        environment: 'sandbox' as const,
+        providerSubscriptionId: 'subscription-transition-provider-id',
+        planId: PLAN,
+        providerPlanId: before.providerPlanId!,
+        amount: 14990,
+        currency: 'CLP',
+        updatedAt: before.updatedAt,
+      },
+    }
+
+    await expect(applySubscriptionTransition(prisma, command)).resolves.toMatchObject({
+      applied: true,
+      status: 'active',
+    })
+    await expect(applySubscriptionTransition(prisma, command)).resolves.toMatchObject({
+      applied: false,
+      status: 'active',
+    })
+
+    await expect(prisma.subscriptionPayment.count({
+      where: { businessId: BUSINESS },
+    })).resolves.toBe(1)
+    await expect(prisma.subscriptionLog.count({
+      where: { businessId: BUSINESS },
+    })).resolves.toBe(1)
+  })
+
   it('dos aprobados idénticos simultáneos convergen en un solo efecto exitoso', async () => {
+    const command = {
+      ...approvedCommand('payment-simultaneous'),
+      expectedProviderSnapshot: {
+        provider: 'mercado_pago' as const,
+        environment: 'sandbox' as const,
+        providerSubscriptionId: 'subscription-transition-provider-id',
+        planId: PLAN,
+        providerPlanId: 'subscription-transition-provider-plan',
+        amount: 14990,
+        currency: 'CLP',
+      },
+    }
     let arrivals = 0
     let releaseBarrier!: () => void
     const barrier = new Promise<void>((resolve) => {
@@ -312,11 +365,11 @@ describe('applySubscriptionTransition', () => {
     const results = await Promise.allSettled([
       applySubscriptionTransition(
         racingPrisma as unknown as PrismaClient,
-        approvedCommand('payment-simultaneous'),
+        command,
       ),
       applySubscriptionTransition(
         racingPrisma as unknown as PrismaClient,
-        approvedCommand('payment-simultaneous'),
+        command,
       ),
     ])
 
@@ -462,7 +515,7 @@ describe('applySubscriptionTransition', () => {
     ])
   })
 
-  it('revierte estado, compatibilidad y log si el pago viola unicidad', async () => {
+  it('trata un providerInvoiceId ya reclamado por el mismo owner como duplicado', async () => {
     await prisma.subscriptionPayment.create({
       data: {
         businessId: BUSINESS,
@@ -483,7 +536,7 @@ describe('applySubscriptionTransition', () => {
         prisma,
         approvedCommand('payment-conflict', 'invoice-conflict'),
       ),
-    ).rejects.toThrow()
+    ).resolves.toEqual({ applied: false, status: 'past_due' })
 
     const [subscription, business, paymentCount, logCount] = await Promise.all([
       prisma.businessSubscription.findUniqueOrThrow({ where: { id: SUBSCRIPTION } }),
@@ -497,6 +550,46 @@ describe('applySubscriptionTransition', () => {
     expect(business.subscriptionStatus).toBe('past_due')
     expect(paymentCount).toBe(1)
     expect(logCount).toBe(0)
+  })
+
+  it('prioriza el conflicto de ownership cruzado sobre un snapshot local desactualizado', async () => {
+    await prisma.subscriptionPayment.create({
+      data: {
+        businessId: OTHER_BUSINESS,
+        subscriptionId: OTHER_SUBSCRIPTION,
+        amount: 14990,
+        currency: 'CLP',
+        status: 'approved',
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        providerPaymentId: 'payment-cross-owner-before-snapshot',
+        providerInvoiceId: 'invoice-cross-owner-before-snapshot',
+        paidAt: PAID_AT,
+      },
+    })
+    await prisma.businessSubscription.update({
+      where: { id: SUBSCRIPTION },
+      data: { amount: 15990 },
+    })
+
+    await expect(applySubscriptionTransition(prisma, {
+      ...approvedCommand(
+        'payment-cross-owner-before-snapshot',
+        'invoice-cross-owner-before-snapshot',
+      ),
+      expectedProviderSnapshot: {
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        providerSubscriptionId: 'subscription-transition-provider-id',
+        planId: PLAN,
+        providerPlanId: 'subscription-transition-provider-plan',
+        amount: 14990,
+        currency: 'CLP',
+      },
+    })).rejects.toBeInstanceOf(SubscriptionProviderPaymentOwnershipConflictError)
+
+    await expect(prisma.subscriptionPayment.count()).resolves.toBe(1)
+    await expect(prisma.subscriptionLog.count()).resolves.toBe(0)
   })
 
   it('el CAS aborta sin efectos parciales si otra escritura gana entre lectura y update', async () => {
