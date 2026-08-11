@@ -70,7 +70,8 @@ function monthlyCycleStart(
   periodEnd: Date,
   periodStart?: Date,
 ): Date {
-  for (const candidate of [periodStart, paidAt, subscription.currentPeriodEnd]) {
+  const candidates = periodStart ? [periodStart] : [paidAt, subscription.currentPeriodEnd]
+  for (const candidate of candidates) {
     if (!candidate) continue
     const days = (periodEnd.getTime() - candidate.getTime()) / DAY_IN_MS
     if (days >= MIN_MONTH_DAYS && days <= MAX_MONTH_DAYS) return candidate
@@ -114,7 +115,6 @@ export function deriveSubscriptionTransition(
   if (command.type === 'invoice_approved') {
     if (
       input.paymentAlreadyApplied ||
-      (subscription.lastPaidAt && command.paidAt.getTime() < subscription.lastPaidAt.getTime()) ||
       command.periodEnd.getTime() <= subscription.currentPeriodEnd.getTime()
     ) {
       return noChange(subscription)
@@ -133,7 +133,9 @@ export function deriveSubscriptionTransition(
         currentPeriodStart,
         currentPeriodEnd: command.periodEnd,
         nextBillingAt: command.periodEnd,
-        lastPaidAt: command.paidAt,
+        lastPaidAt: subscription.lastPaidAt && subscription.lastPaidAt > command.paidAt
+          ? subscription.lastPaidAt
+          : command.paidAt,
         pastDueAt: null,
         graceEndsAt: null,
         graceEnforcementDeferredAt: null,
@@ -151,7 +153,7 @@ export function deriveSubscriptionTransition(
     if (
       subscription.status === 'cancelled' ||
       subscription.status === 'suspended' ||
-      (subscription.lastPaidAt && command.occurredAt.getTime() <= subscription.lastPaidAt.getTime())
+      command.occurredAt.getTime() < subscription.currentPeriodEnd.getTime()
     ) {
       return noChange(subscription)
     }

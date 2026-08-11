@@ -28,7 +28,7 @@ const CANDIDATE_ATTEMPT_ID = 'subscription-webhook-candidate-attempt'
 const CANDIDATE_PROVIDER_SUBSCRIPTION_ID = 'provider-subscription-webhook-candidate'
 const REFERENCE = 'subscription-webhook-reference'
 const PAID_AT = new Date('2026-08-15T12:00:00.000Z')
-const PERIOD_END = new Date('2026-10-01T00:00:00.000Z')
+const PERIOD_END = new Date('2026-09-15T12:00:00.000Z')
 const concurrentPrisma = new PrismaClient()
 
 async function cleanup() {

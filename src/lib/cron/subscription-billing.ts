@@ -230,10 +230,15 @@ export async function runSubscriptionBillingCron(
   const enforcementEnabled = dependencies.enforcementEnabled()
   const claimed: Array<{ candidate: CronSubscription; leaseUntil: Date }> = []
   for (const candidate of subscriptions) {
-    const leaseUntil = await claimSubscription(dependencies, candidate, input.now)
-    if (!leaseUntil) continue
-    result.processed++
-    claimed.push({ candidate, leaseUntil })
+    try {
+      const leaseUntil = await claimSubscription(dependencies, candidate, input.now)
+      if (!leaseUntil) continue
+      result.processed++
+      claimed.push({ candidate, leaseUntil })
+    } catch {
+      result.errors++
+      dependencies.recordError?.()
+    }
   }
   for (let offset = 0; offset < claimed.length; offset += CONCURRENCY) {
     await Promise.all(claimed.slice(offset, offset + CONCURRENCY).map(({ candidate, leaseUntil }) =>

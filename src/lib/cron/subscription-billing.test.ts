@@ -243,4 +243,34 @@ describe('runSubscriptionBillingCron', () => {
     expect(second.processed).toBe(0)
     expect(dependencies.reconcile).toHaveBeenCalledTimes(1)
   })
+
+  it('aísla un error de claim y procesa/libera los claims exitosos', async () => {
+    const first = candidate({ id: 'first-candidate', trialEndAt: NOW, currentPeriodEnd: NOW })
+    const second = candidate({ id: 'second-candidate', trialEndAt: NOW, currentPeriodEnd: NOW })
+    const third = candidate({ id: 'third-candidate', trialEndAt: NOW, currentPeriodEnd: NOW })
+    const { dependencies, applyTransition } = createDependencies([first, second, third])
+    const updateMany = dependencies.prisma.businessSubscription.updateMany as ReturnType<typeof vi.fn>
+    updateMany.mockImplementation(async ({ where, data }) => {
+      if (where.id === second.id && data.billingCronClaimedUntil instanceof Date) {
+        throw new Error('claim unavailable')
+      }
+      return { count: 1 }
+    })
+
+    await expect(runSubscriptionBillingCron({ now: NOW }, dependencies)).resolves.toMatchObject({
+      processed: 2,
+      errors: 1,
+    })
+    expect(applyTransition.mock.calls.map(([, input]) => input.subscriptionId)).toEqual([
+      first.id,
+      third.id,
+    ])
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        id: first.id,
+        billingCronClaimedUntil: new Date(NOW.getTime() + 5 * 60 * 1000),
+      },
+      data: { billingCronClaimedUntil: null },
+    })
+  })
 })

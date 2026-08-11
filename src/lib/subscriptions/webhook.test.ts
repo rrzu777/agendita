@@ -164,6 +164,32 @@ describe('processSubscriptionWebhook', () => {
     })
   })
 
+  it('uses the provider-verified historical period end instead of the current snapshot', async () => {
+    const historicalDebitAt = new Date('2026-06-30T12:00:00.000Z')
+    const historicalPeriodEnd = new Date('2026-07-30T12:00:00.000Z')
+    dependencies.client.getInvoice.mockResolvedValue({
+      ...approvedInvoice,
+      approvedAt: new Date('2026-07-02T12:00:00.000Z'),
+      debitAt: historicalDebitAt,
+    })
+
+    await processSubscriptionWebhook({
+      ...invoiceEvent,
+      periodEnd: historicalPeriodEnd,
+    }, dependencies)
+
+    expect(dependencies.applyTransition).toHaveBeenCalledWith(
+      dependencies.prisma,
+      expect.objectContaining({
+        command: expect.objectContaining({
+          type: 'invoice_approved',
+          periodStart: historicalDebitAt,
+          periodEnd: historicalPeriodEnd,
+        }),
+      }),
+    )
+  })
+
   it('marks a rejected invoice past due using its debit date', async () => {
     dependencies.client.getInvoice.mockResolvedValue({
       ...approvedInvoice,
@@ -179,6 +205,7 @@ describe('processSubscriptionWebhook', () => {
       subscriptionId: localSubscription.id,
       command: { type: 'invoice_failed', occurredAt: PAID_AT },
       payment: {
+        providerPaymentId: 'failed-payment-1',
         providerInvoiceId: approvedInvoice.id,
         providerStatus: 'rejected',
         providerUpdatedAt: approvedInvoice.updatedAt,
@@ -193,6 +220,24 @@ describe('processSubscriptionWebhook', () => {
         currency: localSubscription.currency,
       },
     })
+  })
+
+  it('does not short-circuit an invoice that evolved from rejected to approved', async () => {
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockResolvedValue([{
+        id: 'failed-claim',
+        businessId: localSubscription.businessId,
+        subscriptionId: localSubscription.id,
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        status: 'rejected',
+      }])
+
+    await expect(processSubscriptionWebhook(invoiceEvent, dependencies)).resolves.toEqual({
+      outcome: 'applied',
+      status: 'active',
+    })
+    expect(dependencies.applyTransition).toHaveBeenCalledTimes(1)
   })
 
   it('retries a concurrent failed-invoice CAS once against the new local snapshot', async () => {
@@ -409,6 +454,7 @@ describe('processSubscriptionWebhook', () => {
         subscriptionId: localSubscription.id,
         provider: 'mercado_pago',
         environment: 'sandbox',
+        status: 'approved',
       }])
 
     await expect(processSubscriptionWebhook(invoiceEvent, dependencies)).resolves.toEqual({

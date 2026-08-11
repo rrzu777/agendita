@@ -153,7 +153,155 @@ function approvedCommand(
   }
 }
 
+function failedCommand(providerInvoiceId: string) {
+  return {
+    subscriptionId: SUBSCRIPTION,
+    command: {
+      type: 'invoice_failed' as const,
+      occurredAt: PAID_AT,
+    },
+    payment: {
+      providerPaymentId: `failed-${providerInvoiceId}`,
+      providerInvoiceId,
+      providerStatus: 'rejected',
+      providerUpdatedAt: PAID_AT,
+    },
+  }
+}
+
 describe('applySubscriptionTransition', () => {
+  it('reclama un fallo terminal una vez y reconoce el retry del mismo owner', async () => {
+    await prisma.businessSubscription.update({
+      where: { id: SUBSCRIPTION },
+      data: {
+        status: 'active',
+        currentPeriodStart: new Date('2026-07-15T12:00:00.000Z'),
+        currentPeriodEnd: PAID_AT,
+        pastDueAt: null,
+        graceEndsAt: null,
+      },
+    })
+    await prisma.business.update({
+      where: { id: BUSINESS },
+      data: { subscriptionStatus: 'active' },
+    })
+
+    await expect(applySubscriptionTransition(
+      prisma,
+      failedCommand('invoice-failed-retry'),
+    )).resolves.toMatchObject({ applied: true, status: 'past_due' })
+    await expect(applySubscriptionTransition(
+      prisma,
+      failedCommand('invoice-failed-retry'),
+    )).resolves.toEqual({ applied: false, status: 'past_due' })
+
+    await expect(prisma.subscriptionPayment.findMany({
+      where: { providerInvoiceId: 'invoice-failed-retry' },
+    })).resolves.toEqual([
+      expect.objectContaining({
+        businessId: BUSINESS,
+        subscriptionId: SUBSCRIPTION,
+        status: 'rejected',
+      }),
+    ])
+  })
+
+  it('promueve monotónicamente el mismo invoice de rejected a approved', async () => {
+    await prisma.businessSubscription.update({
+      where: { id: SUBSCRIPTION },
+      data: { status: 'active', pastDueAt: null, graceEndsAt: null },
+    })
+    await applySubscriptionTransition(prisma, failedCommand('invoice-retry-approved'))
+
+    await expect(applySubscriptionTransition(
+      prisma,
+      approvedCommand('payment-retry-approved', 'invoice-retry-approved'),
+    )).resolves.toMatchObject({ applied: true, status: 'active' })
+
+    await expect(prisma.subscriptionPayment.findMany({
+      where: { providerInvoiceId: 'invoice-retry-approved' },
+    })).resolves.toEqual([
+      expect.objectContaining({
+        status: 'approved',
+        providerPaymentId: 'payment-retry-approved',
+        paidAt: PAID_AT,
+      }),
+    ])
+  })
+
+  it('promueve el approved aunque compita desde cero con el failed del mismo invoice', async () => {
+    await prisma.businessSubscription.update({
+      where: { id: SUBSCRIPTION },
+      data: {
+        status: 'active',
+        currentPeriodStart: new Date('2026-07-15T12:00:00.000Z'),
+        currentPeriodEnd: PAID_AT,
+        pastDueAt: null,
+        graceEndsAt: null,
+      },
+    })
+    let approvedReachedInsert!: () => void
+    let failedInserted!: () => void
+    const approvedReady = new Promise<void>((resolve) => { approvedReachedInsert = resolve })
+    const failedReady = new Promise<void>((resolve) => { failedInserted = resolve })
+    const approvedPrisma = prisma.$extends({
+      query: {
+        subscriptionPayment: {
+          async createMany({ args, query }) {
+            approvedReachedInsert()
+            await failedReady
+            return query(args)
+          },
+        },
+      },
+    })
+    const failedPrisma = concurrentPrisma.$extends({
+      query: {
+        subscriptionPayment: {
+          async createMany({ args, query }) {
+            const result = await query(args)
+            failedInserted()
+            return result
+          },
+        },
+      },
+    })
+
+    const approvedInput = approvedCommand(
+      'payment-racing-approved',
+      'invoice-racing-terminal',
+      new Date('2026-09-15T12:00:00.000Z'),
+    )
+    const approved = applySubscriptionTransition(
+      approvedPrisma as unknown as PrismaClient,
+      approvedInput,
+    ).catch((error) => {
+      if (!(error instanceof SubscriptionTransitionConflictError)) throw error
+      return applySubscriptionTransition(prisma, approvedInput)
+    })
+    await approvedReady
+    const failed = applySubscriptionTransition(
+      failedPrisma as unknown as PrismaClient,
+      failedCommand('invoice-racing-terminal'),
+    )
+
+    await expect(Promise.all([approved, failed])).resolves.toEqual([
+      expect.objectContaining({ applied: true, status: 'active' }),
+      expect.objectContaining({ applied: true, status: 'past_due' }),
+    ])
+    await expect(prisma.subscriptionPayment.findMany({
+      where: { providerInvoiceId: 'invoice-racing-terminal' },
+    })).resolves.toEqual([
+      expect.objectContaining({
+        status: 'approved',
+        providerPaymentId: 'payment-racing-approved',
+      }),
+    ])
+    await expect(prisma.businessSubscription.findUniqueOrThrow({
+      where: { id: SUBSCRIPTION },
+    })).resolves.toMatchObject({ status: 'active' })
+  })
+
   it('persiste una sola auditoría para gracia vencida con enforcement apagado', async () => {
     const at = new Date('2026-08-18T00:00:00.000Z')
     const command = {

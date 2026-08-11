@@ -288,6 +288,56 @@ describe('deriveSubscriptionTransition', () => {
     })
   })
 
+  it('un fallo del ciclo siguiente aplica aunque el pago anterior fuera aprobado tarde', () => {
+    const result = transition(state({
+      status: 'active',
+      currentPeriodStart: new Date('2026-07-11T10:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-08-11T10:00:00.000Z'),
+      lastPaidAt: new Date('2026-09-15T12:00:00.000Z'),
+    }), {
+      command: {
+        type: 'invoice_failed',
+        occurredAt: new Date('2026-08-11T10:00:00.000Z'),
+      },
+    })
+
+    expect(result).toMatchObject({
+      nextStatus: 'past_due',
+      changes: {
+        pastDueAt: new Date('2026-08-11T10:00:00.000Z'),
+      },
+      ignored: false,
+    })
+  })
+
+  it('un ciclo aprobado posterior avanza aunque su approvedAt sea anterior al retry previo', () => {
+    const latePreviousApproval = new Date('2026-09-15T12:00:00.000Z')
+    const result = transition(state({
+      status: 'active',
+      currentPeriodStart: new Date('2026-07-11T10:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-08-11T10:00:00.000Z'),
+      lastPaidAt: latePreviousApproval,
+    }), {
+      command: {
+        type: 'invoice_approved',
+        providerPaymentId: 'payment-next-cycle-earlier-approval',
+        paidAt: new Date('2026-08-20T12:00:00.000Z'),
+        periodStart: new Date('2026-08-11T10:00:00.000Z'),
+        periodEnd: new Date('2026-09-11T10:00:00.000Z'),
+      },
+    })
+
+    expect(result).toMatchObject({
+      nextStatus: 'active',
+      changes: {
+        currentPeriodStart: new Date('2026-08-11T10:00:00.000Z'),
+        currentPeriodEnd: new Date('2026-09-11T10:00:00.000Z'),
+        lastPaidAt: latePreviousApproval,
+      },
+      ignored: false,
+    })
+  })
+
   it('un fallo nuevo no degrada una suscripción ya suspendida', () => {
     const result = transition(state({
       status: 'suspended',
@@ -444,6 +494,21 @@ describe('deriveSubscriptionTransition', () => {
         providerPaymentId: 'payment-annual-period',
         paidAt: NOW,
         periodEnd: new Date('2027-08-15T12:00:00.000Z'),
+      },
+    })).toThrow(/27.*32/)
+  })
+
+  it('no sustituye un periodStart autoritativo inválido por el período local', () => {
+    expect(() => transition(state({
+      status: 'active',
+      currentPeriodEnd: new Date('2026-09-01T00:00:00.000Z'),
+    }), {
+      command: {
+        type: 'invoice_approved',
+        providerPaymentId: 'payment-invalid-authoritative-period',
+        paidAt: new Date('2026-08-15T12:00:00.000Z'),
+        periodStart: new Date('2026-08-15T12:00:00.000Z'),
+        periodEnd: new Date('2026-10-01T00:00:00.000Z'),
       },
     })).toThrow(/27.*32/)
   })

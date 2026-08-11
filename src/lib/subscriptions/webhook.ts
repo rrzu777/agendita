@@ -26,7 +26,12 @@ export type SubscriptionWebhookEvent = {
   topic: 'subscription_preapproval' | 'subscription_authorized_payment'
   resourceId: string
   liveMode: boolean
+  periodEnd?: Date
 }
+
+export type SubscriptionWebhookProcessingResult =
+  | { outcome: 'ignored' }
+  | { outcome: 'applied' | 'duplicate'; status: string }
 
 export type SubscriptionWebhookDependencies = {
   prisma: PrismaClient
@@ -287,23 +292,23 @@ function recoveryAdoption(
   }
 }
 
-async function hasExistingInvoiceSettlement(
+async function findExistingInvoiceSettlement(
   dependencies: SubscriptionWebhookDependencies,
   local: LocalSubscription,
   invoice: Awaited<ReturnType<MpSubscriptionClient['getInvoice']>>,
 ) {
   if (local.provider !== 'mercado_pago' || !local.environment) {
-    return false
+    return null
   }
   try {
-    return !!(await findExistingProviderPaymentClaim(dependencies.prisma, {
+    return await findExistingProviderPaymentClaim(dependencies.prisma, {
       provider: local.provider,
       environment: local.environment,
       providerPaymentId: invoice.providerPaymentId ?? undefined,
       providerInvoiceId: invoice.id,
       subscriptionId: local.id,
       businessId: local.businessId,
-    }))
+    })
   } catch (error) {
     if (error instanceof SubscriptionProviderPaymentOwnershipConflictError) {
       throw new SubscriptionWebhookValidationError()
@@ -358,13 +363,15 @@ async function applyInvoice(
   if (!local) throw new SubscriptionWebhookValidationError()
 
   if (invoice.status === 'approved') {
-    if (await hasExistingInvoiceSettlement(dependencies, local, invoice)) {
+    const existingSettlement = await findExistingInvoiceSettlement(dependencies, local, invoice)
+    if (existingSettlement?.status === 'approved') {
       if (candidate.providerStatus === 'authorized' && local.cancelAtPeriodEnd) {
         await cancelFutureRenewals(dependencies, candidate.id)
       }
       return { outcome: 'duplicate' as const, status: local.status }
     }
-    if (!invoice.providerPaymentId || !invoice.approvedAt || !candidate.nextPaymentAt) {
+    const periodEnd = event.periodEnd ?? candidate.nextPaymentAt
+    if (!invoice.providerPaymentId || !invoice.approvedAt || !invoice.debitAt || !periodEnd) {
       throw new SubscriptionWebhookValidationError()
     }
     const requestedAt = dependencies.now()
@@ -374,8 +381,8 @@ async function applyInvoice(
         type: 'invoice_approved',
         providerPaymentId: invoice.providerPaymentId,
         paidAt: invoice.approvedAt,
-        periodStart: invoice.debitAt ?? undefined,
-        periodEnd: candidate.nextPaymentAt,
+        periodStart: invoice.debitAt,
+        periodEnd,
       },
       payment: {
         providerInvoiceId: invoice.id,
@@ -398,23 +405,16 @@ async function applyInvoice(
     }
   }
 
-  const existingApproved = await dependencies.prisma.subscriptionPayment.findUnique({
-    where: {
-      provider_environment_providerInvoiceId: {
-        provider: 'mercado_pago',
-        environment: dependencies.environment,
-        providerInvoiceId: invoice.id,
-      },
-    },
-    select: { id: true },
-  })
-  if (existingApproved) return { outcome: 'duplicate' as const, status: local.status }
+  if (await findExistingInvoiceSettlement(dependencies, local, invoice)) {
+    return { outcome: 'duplicate' as const, status: local.status }
+  }
   const occurredAt = invoice.debitAt ?? invoice.createdAt
   if (!occurredAt) throw new SubscriptionWebhookValidationError()
   const result = await applyTransitionWithConflictRetry(dependencies, {
     subscriptionId: local.id,
     command: { type: 'invoice_failed', occurredAt },
     payment: {
+      providerPaymentId: invoice.providerPaymentId ?? undefined,
       providerInvoiceId: invoice.id,
       providerStatus: invoice.providerStatus ?? undefined,
       providerUpdatedAt: invoice.updatedAt ?? undefined,
@@ -461,7 +461,7 @@ async function applySubscription(
 export async function processSubscriptionWebhook(
   event: SubscriptionWebhookEvent,
   dependencies: SubscriptionWebhookDependencies = getSubscriptionWebhookRuntime().dependencies,
-) {
+): Promise<SubscriptionWebhookProcessingResult> {
   if (event.liveMode !== (dependencies.environment === 'production')) {
     throw new SubscriptionWebhookValidationError()
   }

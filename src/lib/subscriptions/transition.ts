@@ -20,6 +20,7 @@ type TransitionActor = {
 }
 
 type ProviderPayment = {
+  providerPaymentId?: string
   providerInvoiceId?: string
   providerStatus?: string
   providerUpdatedAt?: Date
@@ -112,6 +113,9 @@ export async function findExistingProviderPaymentClaim(
       subscriptionId: true,
       provider: true,
       environment: true,
+      status: true,
+      providerPaymentId: true,
+      providerInvoiceId: true,
     },
   })
   if (claims.length === 0) return null
@@ -274,24 +278,32 @@ export async function applySubscriptionTransition(
     }
     const expected = input.expectedProviderSnapshot
     const recovery = input.recoveryAdoption
+    let existingPaymentClaim: Awaited<ReturnType<typeof findExistingProviderPaymentClaim>> = null
     if (recovery && input.command.type !== 'invoice_approved') {
       throw new Error('La recuperación de checkout sólo admite una factura aprobada')
     }
-    if (input.command.type === 'invoice_approved') {
+    if (input.command.type === 'invoice_approved' || input.command.type === 'invoice_failed') {
       const paymentProvider = recovery ? 'mercado_pago' : expected?.provider ?? subscription.provider
       const paymentEnvironment = recovery?.environment ?? expected?.environment ?? subscription.environment
       if (paymentProvider !== 'mercado_pago' || !paymentEnvironment) {
         throw new Error('Un pago externo requiere proveedor Mercado Pago y ambiente')
       }
-      const existingClaim = await findExistingProviderPaymentClaim(tx, {
+      existingPaymentClaim = await findExistingProviderPaymentClaim(tx, {
         provider: paymentProvider,
         environment: paymentEnvironment,
-        providerPaymentId: input.command.providerPaymentId,
+        providerPaymentId: input.command.type === 'invoice_approved'
+          ? input.command.providerPaymentId
+          : input.payment?.providerPaymentId,
         providerInvoiceId: input.payment?.providerInvoiceId,
         subscriptionId: subscription.id,
         businessId: subscription.businessId,
       })
-      if (existingClaim) return { applied: false, status: subscription.status }
+      if (
+        existingPaymentClaim &&
+        (input.command.type === 'invoice_failed' || existingPaymentClaim.status === 'approved')
+      ) {
+        return { applied: false, status: subscription.status }
+      }
     }
     if (expected && (
       subscription.provider !== expected.provider ||
@@ -334,42 +346,106 @@ export async function applySubscriptionTransition(
       if (claimedAttempt.count !== 1) throw new SubscriptionTransitionConflictError()
     }
 
-    if (input.command.type === 'invoice_approved') {
+    if (input.command.type === 'invoice_approved' || input.command.type === 'invoice_failed') {
       const paymentProvider = recovery ? 'mercado_pago' : subscription.provider
       const paymentEnvironment = recovery?.environment ?? subscription.environment
       if (paymentProvider !== 'mercado_pago' || !paymentEnvironment) {
         throw new Error('Un pago externo requiere proveedor Mercado Pago y ambiente')
       }
-      const candidatePaymentId = randomUUID()
-      const claim = await tx.subscriptionPayment.createMany({
-        data: [{
-          id: candidatePaymentId,
-          businessId: subscription.businessId,
-          subscriptionId: subscription.id,
-          amount: recovery?.amount ?? subscription.amount,
-          currency: recovery?.currency ?? subscription.currency,
-          status: 'approved',
-          paidAt: input.command.paidAt,
-          provider: paymentProvider,
-          environment: paymentEnvironment,
-          providerPaymentId: input.command.providerPaymentId,
-          providerInvoiceId: input.payment?.providerInvoiceId,
-          providerStatus: input.payment?.providerStatus,
-          providerUpdatedAt: input.payment?.providerUpdatedAt,
-          rawPayload: input.payment?.safeMetadata,
-        }],
-        skipDuplicates: true,
-      })
-      const claimedPayment = await findExistingProviderPaymentClaim(tx, {
+      let candidatePaymentId: string = randomUUID()
+      let claim: { count: number }
+      const approvedPaymentData = input.command.type === 'invoice_approved'
+        ? {
+            status: 'approved' as const,
+            paidAt: input.command.paidAt,
+            providerPaymentId: input.command.providerPaymentId,
+            providerStatus: input.payment?.providerStatus,
+            providerUpdatedAt: input.payment?.providerUpdatedAt,
+            rawPayload: input.payment?.safeMetadata,
+          }
+        : null
+      if (input.command.type === 'invoice_approved' && existingPaymentClaim) {
+        candidatePaymentId = existingPaymentClaim.id
+        claim = await tx.subscriptionPayment.updateMany({
+          where: {
+            id: existingPaymentClaim.id,
+            businessId: subscription.businessId,
+            subscriptionId: subscription.id,
+            provider: paymentProvider,
+            environment: paymentEnvironment,
+            status: { in: ['pending', 'rejected', 'cancelled', 'failed'] },
+          },
+          data: approvedPaymentData!,
+        })
+      } else {
+        claim = await tx.subscriptionPayment.createMany({
+          data: [{
+            id: candidatePaymentId,
+            businessId: subscription.businessId,
+            subscriptionId: subscription.id,
+            amount: recovery?.amount ?? subscription.amount,
+            currency: recovery?.currency ?? subscription.currency,
+            status: input.command.type === 'invoice_approved'
+              ? 'approved'
+              : input.payment?.providerStatus === 'cancelled'
+                ? 'cancelled'
+                : input.payment?.providerStatus === 'rejected'
+                  ? 'rejected'
+                  : 'failed',
+            paidAt: input.command.type === 'invoice_approved' ? input.command.paidAt : null,
+            provider: paymentProvider,
+            environment: paymentEnvironment,
+            providerPaymentId: input.command.type === 'invoice_approved'
+              ? input.command.providerPaymentId
+              : input.payment?.providerPaymentId,
+            providerInvoiceId: input.payment?.providerInvoiceId,
+            providerStatus: input.payment?.providerStatus,
+            providerUpdatedAt: input.payment?.providerUpdatedAt,
+            rawPayload: input.payment?.safeMetadata,
+          }],
+          skipDuplicates: true,
+        })
+      }
+      let claimedPayment = await findExistingProviderPaymentClaim(tx, {
         provider: paymentProvider,
         environment: paymentEnvironment,
-        providerPaymentId: input.command.providerPaymentId,
+        providerPaymentId: input.command.type === 'invoice_approved'
+          ? input.command.providerPaymentId
+          : input.payment?.providerPaymentId,
         providerInvoiceId: input.payment?.providerInvoiceId,
         subscriptionId: subscription.id,
         businessId: subscription.businessId,
       })
       if (!claimedPayment) {
         throw new Error('El pago externo colisiona con otra clave única')
+      }
+      if (
+        input.command.type === 'invoice_approved' &&
+        claim.count === 0 &&
+        claimedPayment.status !== 'approved' &&
+        claimedPayment.providerInvoiceId === input.payment?.providerInvoiceId
+      ) {
+        candidatePaymentId = claimedPayment.id
+        claim = await tx.subscriptionPayment.updateMany({
+          where: {
+            id: claimedPayment.id,
+            businessId: subscription.businessId,
+            subscriptionId: subscription.id,
+            provider: paymentProvider,
+            environment: paymentEnvironment,
+            status: { in: ['pending', 'rejected', 'cancelled', 'failed'] },
+          },
+          data: approvedPaymentData!,
+        })
+        claimedPayment = await findExistingProviderPaymentClaim(tx, {
+          provider: paymentProvider,
+          environment: paymentEnvironment,
+          providerPaymentId: input.command.providerPaymentId,
+          providerInvoiceId: input.payment?.providerInvoiceId,
+          subscriptionId: subscription.id,
+          businessId: subscription.businessId,
+        })
+        if (!claimedPayment) throw new Error('El pago externo colisiona con otra clave única')
       }
       if (claim.count === 0 || claimedPayment.id !== candidatePaymentId) {
         const latest = await tx.businessSubscription.findUnique({
