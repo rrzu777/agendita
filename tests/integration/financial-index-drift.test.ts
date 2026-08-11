@@ -80,6 +80,23 @@ describe('financial unique index schema parity', () => {
   })
 
   it('allows repeated nullable provider IDs but rejects repeated concrete IDs', async () => {
+    const subscriptionBase = {
+      businessId, planId, amount: 1000, provider: 'mercado_pago' as const,
+      environment: 'sandbox' as const, status: 'cancelled' as const,
+      currentPeriodStart: new Date('2026-08-01T00:00:00Z'),
+      currentPeriodEnd: new Date('2026-09-01T00:00:00Z'),
+    }
+    await prisma.businessSubscription.createMany({ data: [
+      { ...subscriptionBase, id: 'financial-index-null-subscription-a' },
+      { ...subscriptionBase, id: 'financial-index-null-subscription-b', providerSubscriptionId: null },
+    ] })
+    await prisma.businessSubscription.create({ data: {
+      ...subscriptionBase, id: 'financial-index-concrete-subscription-a', providerSubscriptionId: 'provider-subscription-unique',
+    } })
+    await expect(prisma.businessSubscription.create({ data: {
+      ...subscriptionBase, id: 'financial-index-concrete-subscription-b', providerSubscriptionId: 'provider-subscription-unique',
+    } })).rejects.toMatchObject({ code: 'P2002' })
+
     const base = { businessId, subscriptionId, amount: 1000, provider: 'manual' as const }
     await prisma.subscriptionPayment.createMany({
       data: [{ ...base }, { ...base }, { ...base, providerInvoiceId: null }, { ...base, providerPaymentId: null }],
@@ -89,7 +106,18 @@ describe('financial unique index schema parity', () => {
     })
     await expect(prisma.subscriptionPayment.create({
       data: { ...base, provider: 'mercado_pago', environment: 'sandbox', providerPaymentId: 'payment-unique' },
-    })).rejects.toThrow()
+    })).rejects.toMatchObject({ code: 'P2002' })
+
+    await prisma.subscriptionPayment.createMany({ data: [
+      { ...base, provider: 'mercado_pago', environment: 'production', providerInvoiceId: null },
+      { ...base, provider: 'mercado_pago', environment: 'production', providerInvoiceId: null },
+    ] })
+    await prisma.subscriptionPayment.create({ data: {
+      ...base, provider: 'mercado_pago', environment: 'production', providerInvoiceId: 'invoice-unique',
+    } })
+    await expect(prisma.subscriptionPayment.create({ data: {
+      ...base, provider: 'mercado_pago', environment: 'production', providerInvoiceId: 'invoice-unique',
+    } })).rejects.toMatchObject({ code: 'P2002' })
   })
 
   it('preserves the unknown-environment incident guard while allowing fully nullable incidents', async () => {
@@ -106,6 +134,17 @@ describe('financial unique index schema parity', () => {
     })
     await expect(prisma.paymentProviderIncident.create({
       data: { paymentId, dedupeKey: 'unknown-env-2', providerPaymentId: 'unknown-payment', kind: 'conflict', payload: {} },
-    })).rejects.toThrow()
+    })).rejects.toMatchObject({ code: 'P2002' })
+
+    await prisma.paymentProviderIncident.createMany({ data: [
+      { paymentId, dedupeKey: 'known-null-a', environment: 'sandbox', providerPaymentId: null, kind: 'conflict', payload: {} },
+      { paymentId, dedupeKey: 'known-null-b', environment: 'sandbox', providerPaymentId: null, kind: 'conflict', payload: {} },
+    ] })
+    await prisma.paymentProviderIncident.create({ data: {
+      paymentId, dedupeKey: 'known-concrete-a', environment: 'sandbox', providerPaymentId: 'known-payment', kind: 'conflict', payload: {},
+    } })
+    await expect(prisma.paymentProviderIncident.create({ data: {
+      paymentId, dedupeKey: 'known-concrete-b', environment: 'sandbox', providerPaymentId: 'known-payment', kind: 'conflict', payload: {},
+    } })).rejects.toMatchObject({ code: 'P2002' })
   })
 })

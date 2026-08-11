@@ -29,6 +29,14 @@ const cronLeaseMigrationPath = path.join(
   root,
   'prisma/migrations/20260812040000_subscription_billing_cron_lease/migration.sql',
 )
+const financialIndexAlignmentMigrationPath = path.join(
+  root,
+  'prisma/migrations/20260812130000_align_financial_unique_indexes/migration.sql',
+)
+const providerIncidentUnknownEnvironmentMigrationPath = path.join(
+  root,
+  'prisma/migrations/20260812120000_payment_provider_incident_unknown_environment/migration.sql',
+)
 
 describe('Mercado Pago recurring billing persistence contract', () => {
   it('declares the provider-separated recurring billing schema', async () => {
@@ -66,9 +74,11 @@ describe('Mercado Pago recurring billing persistence contract', () => {
     expect(migration).toContain('COMMIT;')
   })
 
-  it('enforces nullable provider identifiers with partial unique indexes', async () => {
+  it('migrates legacy partial identities to the full Prisma unique contract', async () => {
     const migration = await readFile(migrationPath, 'utf8')
     const correctiveMigration = await readFile(correctiveMigrationPath, 'utf8')
+    const alignmentMigration = await readFile(financialIndexAlignmentMigrationPath, 'utf8')
+    const unknownEnvironmentMigration = await readFile(providerIncidentUnknownEnvironmentMigrationPath, 'utf8')
 
     expect(migration).toContain('BEGIN;')
     expect(migration).toContain('COMMIT;')
@@ -88,6 +98,20 @@ describe('Mercado Pago recurring billing persistence contract', () => {
     expect(correctiveMigration).toContain('"PaymentAccount_mercado_pago_environment_check"')
     expect(correctiveMigration).toContain("'mercado_pago_legacy'")
     expect(correctiveMigration).toContain('DROP INDEX IF EXISTS "PaymentAccount_businessId_provider_key"')
+    for (const indexName of [
+      'BusinessSubscription_provider_env_subscription_key',
+      'SubscriptionPayment_provider_environment_payment_key',
+      'SubscriptionPayment_provider_environment_invoice_key',
+      'PaymentProviderIncident_environment_providerPaymentId_key',
+    ]) {
+      expect(alignmentMigration).toContain(`DROP INDEX "${indexName}"`)
+      expect(alignmentMigration).toMatch(
+        new RegExp(`CREATE UNIQUE INDEX "${indexName}"[\\s\\S]*?;`),
+      )
+    }
+    expect(alignmentMigration).not.toContain(' WHERE ')
+    expect(unknownEnvironmentMigration).toContain('PaymentProviderIncident_unknownEnv_providerPaymentId_key')
+    expect(unknownEnvironmentMigration).toContain('WHERE "environment" IS NULL')
   })
 
   it('aligns checkout coordination indexes and persists recoverable provisioning leases', async () => {
@@ -97,7 +121,7 @@ describe('Mercado Pago recurring billing persistence contract', () => {
     expect(schema).toContain('@unique(map: "SubscriptionPlanMapping_provisioningToken_key")')
     expect(schema).toContain('@unique(map: "SubscriptionPlanMapping_externalReference_key")')
     expect(schema).toContain('map: "SubscriptionPlanMapping_price_version_key"')
-    expect(schema).toContain('PostgreSQL owns these partial nullable-ID indexes')
+    expect(schema).toContain('PostgreSQL full compound uniqueness matches this Prisma declaration')
     expect(schema).toContain('provisioningLeaseExpiresAt')
     expect(migration).toContain('DROP INDEX "SubscriptionPlanMapping_provisioningToken_key"')
     expect(migration).toContain('CREATE UNIQUE INDEX "SubscriptionPlanMapping_provisioningToken_key"')
