@@ -153,6 +153,7 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
     businessId: 'biz-1',
     customerId: 'cust-1',
     provider: 'mercado_pago',
+    providerEnvironment: 'sandbox',
     providerPaymentId: null,
     amount: 50000,
     currency: 'CLP',

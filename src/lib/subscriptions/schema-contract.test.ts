@@ -9,6 +9,10 @@ const migrationPath = path.join(
   root,
   'prisma/migrations/20260811030000_mp_recurring_billing/migration.sql',
 )
+const correctiveMigrationPath = path.join(
+  root,
+  'prisma/migrations/20260811120000_mp_payment_account_environment/migration.sql',
+)
 
 describe('Mercado Pago recurring billing persistence contract', () => {
   it('declares the provider-separated recurring billing schema', async () => {
@@ -20,6 +24,8 @@ describe('Mercado Pago recurring billing persistence contract', () => {
     expect(schema).toContain('enum SubscriptionProvider')
     expect(schema).toContain('manual')
     expect(schema).toContain('mercado_pago')
+    expect(schema).toMatch(/model PaymentAccount[\s\S]*?environment\s+MercadoPagoEnvironment\?/)
+    expect(schema).toContain('@@unique([businessId, provider, environment])')
     expect(schema).toContain('model SubscriptionPlanMapping')
     expect(schema).toContain('complimentaryUntil')
     expect(schema).toContain('cancelAtPeriodEnd')
@@ -32,6 +38,7 @@ describe('Mercado Pago recurring billing persistence contract', () => {
 
   it('enforces nullable provider identifiers with partial unique indexes', async () => {
     const migration = await readFile(migrationPath, 'utf8')
+    const correctiveMigration = await readFile(correctiveMigrationPath, 'utf8')
 
     expect(migration).toContain('BEGIN;')
     expect(migration).toContain('COMMIT;')
@@ -45,5 +52,11 @@ describe('Mercado Pago recurring billing persistence contract', () => {
     expect(migration).toContain('WHERE "providerPreferenceId" IS NOT NULL')
     expect(migration).toContain('"SubscriptionPlanMapping_one_active_per_environment"')
     expect(migration).toContain('WHERE "isActive" = true')
+    expect(correctiveMigration).toContain('"BusinessSubscription_mercado_pago_environment_check"')
+    expect(correctiveMigration).toContain('"SubscriptionPayment_mercado_pago_environment_check"')
+    expect(correctiveMigration).toContain('"Payment_mercado_pago_preference_environment_check"')
+    expect(correctiveMigration).toContain('"PaymentAccount_mercado_pago_environment_check"')
+    expect(correctiveMigration).toContain("'mercado_pago_legacy'")
+    expect(correctiveMigration).toContain('DROP INDEX IF EXISTS "PaymentAccount_businessId_provider_key"')
   })
 })

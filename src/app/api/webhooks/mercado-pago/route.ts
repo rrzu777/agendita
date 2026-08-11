@@ -248,10 +248,15 @@ export async function POST(request: NextRequest) {
     const mpStatus = mpPayment.status
 
     if (mpStatus === 'approved') {
+      if (!payment.providerEnvironment) {
+        logger.webhook.rejected('mercado_pago', 'Payment has no Mercado Pago environment', requestId)
+        return NextResponse.json({ error: 'Payment environment is missing' }, { status: 400 })
+      }
       const paymentAccount = await prisma.paymentAccount.findFirst({
         where: {
           businessId: payment.businessId,
           provider: 'mercado_pago',
+          environment: payment.providerEnvironment,
           status: 'connected',
         },
       })

@@ -66,6 +66,7 @@ describe('Mercado Pago OAuth', () => {
       MERCADO_PAGO_CLIENT_ID: 'test-client-id',
       MERCADO_PAGO_CLIENT_SECRET: 'test-client-secret',
       MERCADO_PAGO_REDIRECT_URI: 'https://app.example.com/api/mercado-pago/callback',
+      MERCADO_PAGO_ENVIRONMENT: 'sandbox',
     })
     vi.clearAllMocks()
   })
@@ -203,9 +204,15 @@ describe('Mercado Pago OAuth', () => {
       expect(res.headers.get('location')).toContain('success=connected')
       expect(mockPrisma.paymentAccount.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { businessId_provider: { businessId: 'biz-1', provider: 'mercado_pago' } },
+          where: {
+            businessId_provider_environment: {
+              businessId: 'biz-1',
+              provider: 'mercado_pago',
+              environment: 'sandbox',
+            },
+          },
           create: expect.objectContaining({
-            businessId: 'biz-1', provider: 'mercado_pago',
+            businessId: 'biz-1', provider: 'mercado_pago', environment: 'sandbox',
             accessTokenEncrypted: 'encrypted-token', status: 'connected',
           }),
         }),

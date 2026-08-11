@@ -30,6 +30,7 @@ afterEach(() => {
 })
 
 beforeEach(() => {
+  setEnv({ MERCADO_PAGO_ENVIRONMENT: 'sandbox' })
   mockPaymentAccountFindFirst.mockReset()
 })
 
@@ -501,13 +502,39 @@ describe('payment factory', () => {
     })
 
     it('PAYMENT_PROVIDER=mercado_pago + PaymentAccount connected => available true', async () => {
-      setEnv({ NODE_ENV: 'development', PAYMENT_PROVIDER: 'mercado_pago', MERCADO_PAGO_ACCESS_TOKEN: 'tok' })
+      setEnv({
+        NODE_ENV: 'development',
+        PAYMENT_PROVIDER: 'mercado_pago',
+        MERCADO_PAGO_ACCESS_TOKEN: 'tok',
+        MERCADO_PAGO_ENVIRONMENT: 'sandbox',
+      })
       mockPaymentAccountFindFirst.mockResolvedValue(connectedAccount)
       const { resolveOnlinePaymentAvailabilityForBusiness } = await import('@/lib/payments/factory')
       const result = await resolveOnlinePaymentAvailabilityForBusiness('biz-1')
       expect(result.available).toBe(true)
       expect(result.provider).toBe('mercado_pago')
       expect(result.isMock).toBe(false)
+      expect(mockPaymentAccountFindFirst).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          businessId: 'biz-1',
+          provider: 'mercado_pago',
+          environment: 'sandbox',
+        }),
+      })
+    })
+
+    it('fails closed when Mercado Pago environment is absent', async () => {
+      setEnv({
+        NODE_ENV: 'development',
+        PAYMENT_PROVIDER: 'mercado_pago',
+        MERCADO_PAGO_ACCESS_TOKEN: 'tok',
+        MERCADO_PAGO_ENVIRONMENT: undefined,
+      })
+      mockPaymentAccountFindFirst.mockResolvedValue(connectedAccount)
+      const { resolveOnlinePaymentAvailabilityForBusiness } = await import('@/lib/payments/factory')
+      const result = await resolveOnlinePaymentAvailabilityForBusiness('biz-1')
+      expect(result).toMatchObject({ available: false, provider: null })
+      expect(mockPaymentAccountFindFirst).not.toHaveBeenCalled()
     })
 
     it('no PAYMENT_PROVIDER + OAuth full + PaymentAccount connected => available true', async () => {

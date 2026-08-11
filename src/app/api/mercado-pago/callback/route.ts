@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { encryptSecret } from '@/lib/payments/encryption'
 import { verifyStateSignature } from '@/lib/payments/oauth-state'
 import { createClient } from '@/lib/auth/middleware'
+import { getMercadoPagoEnvironment } from '@/lib/payments/mercado-pago-environment'
 
 function verifyState(state: string): { businessId: string; valid: boolean } {
   const parts = state.split(':')
@@ -83,8 +84,9 @@ export async function GET(request: NextRequest) {
   const clientId = process.env.MERCADO_PAGO_CLIENT_ID
   const clientSecret = process.env.MERCADO_PAGO_CLIENT_SECRET
   const redirectUri = process.env.MERCADO_PAGO_REDIRECT_URI
+  const environment = getMercadoPagoEnvironment()
 
-  if (!clientId || !clientSecret || !redirectUri) {
+  if (!clientId || !clientSecret || !redirectUri || !environment) {
     return NextResponse.redirect(
       new URL('/dashboard/settings/payments?error=mp_not_configured', request.url),
     )
@@ -134,14 +136,16 @@ export async function GET(request: NextRequest) {
 
     await prisma.paymentAccount.upsert({
       where: {
-        businessId_provider: {
+        businessId_provider_environment: {
           businessId,
           provider: 'mercado_pago',
+          environment,
         },
       },
       create: {
         businessId,
         provider: 'mercado_pago',
+        environment,
         providerAccountId: tokenData.user_id ? String(tokenData.user_id) : null,
         accessTokenEncrypted: encryptedAccessToken,
         refreshTokenEncrypted: encryptedRefreshToken,

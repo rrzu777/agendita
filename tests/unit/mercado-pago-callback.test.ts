@@ -66,6 +66,7 @@ describe('Mercado Pago OAuth callback', () => {
       MERCADO_PAGO_CLIENT_ID: 'test-client-id',
       MERCADO_PAGO_CLIENT_SECRET: 'test-client-secret',
       MERCADO_PAGO_REDIRECT_URI: 'http://localhost:3000/api/mercado-pago/callback',
+      MERCADO_PAGO_ENVIRONMENT: 'sandbox',
       NODE_ENV: 'development',
     })
 

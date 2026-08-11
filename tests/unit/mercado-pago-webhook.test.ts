@@ -140,6 +140,7 @@ describe('Mercado Pago webhook', () => {
     businessId: 'biz-1',
     customerId: 'cust-1',
     provider: 'mercado_pago',
+    providerEnvironment: 'sandbox',
     providerPaymentId: null,
     amount: 10000,
     currency: 'CLP',
@@ -397,6 +398,14 @@ describe('Mercado Pago webhook', () => {
       expect(json.bookingId).toBe('booking-1')
 
       expect(applyApprovedPayment).toHaveBeenCalledTimes(1)
+      expect(mockPrisma.paymentAccount.findFirst).toHaveBeenCalledWith({
+        where: {
+          businessId: 'biz-1',
+          provider: 'mercado_pago',
+          environment: 'sandbox',
+          status: 'connected',
+        },
+      })
       expect(mockPrisma.payment.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'pay-local-001' },
@@ -405,6 +414,30 @@ describe('Mercado Pago webhook', () => {
           }),
         }),
       )
+    })
+
+    it('fails closed when an approved payment has no persisted environment', async () => {
+      const secret = 'test-webhook-secret'
+      const body = { data: { id: 'mp-pay-no-env' } }
+      const signature = createMpSignatureHeader('mp-pay-no-env', 'req-no-env', secret)
+
+      mockMpFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ ...baseMpPayment, id: 'mp-pay-no-env' }),
+      })
+      mockPrisma.payment.findUnique.mockResolvedValue({
+        ...basePayment,
+        providerEnvironment: null,
+      })
+
+      const res = await POST(makeRequest(body, {
+        'x-signature': signature,
+        'x-request-id': 'req-no-env',
+      }))
+
+      expect(res.status).toBe(400)
+      expect(mockPrisma.paymentAccount.findFirst).not.toHaveBeenCalled()
+      expect(applyApprovedPayment).not.toHaveBeenCalled()
     })
 
     // El cobro ya ocurrió: si el webhook devuelve error, MP reintenta el mismo
@@ -982,6 +1015,7 @@ describe('Mercado Pago webhook', () => {
         bookingId: 'booking-fc',
         businessId: 'biz-1',
         provider: 'mercado_pago',
+        providerEnvironment: 'sandbox',
         amount: 10000,
         currency: 'CLP',
         status: 'pending',
@@ -1097,6 +1131,7 @@ describe('Mercado Pago webhook', () => {
         businessId: 'biz-1',
         customerId: 'cust-1',
         provider: 'mercado_pago',
+        providerEnvironment: 'sandbox',
         providerPaymentId: null,
         amount: 10000,
         currency: 'CLP',
@@ -1155,6 +1190,7 @@ describe('Mercado Pago webhook', () => {
         businessId: 'biz-1',
         customerId: 'cust-1',
         provider: 'mercado_pago',
+        providerEnvironment: 'sandbox',
         providerPaymentId: null,
         amount: 10000,
         currency: 'CLP',
@@ -1213,6 +1249,7 @@ describe('Mercado Pago webhook', () => {
         businessId: 'biz-1',
         customerId: 'cust-1',
         provider: 'mercado_pago',
+        providerEnvironment: 'sandbox',
         providerPaymentId: 'some-other-mp-id',
         amount: 10000,
         currency: 'CLP',
@@ -1270,6 +1307,7 @@ describe('Mercado Pago webhook', () => {
         businessId: 'biz-1',
         customerId: 'cust-1',
         provider: 'mercado_pago',
+        providerEnvironment: 'sandbox',
         providerPaymentId: null,
         amount: 10000,
         currency: 'CLP',
@@ -1339,6 +1377,7 @@ describe('Mercado Pago webhook', () => {
         businessId: 'biz-1',
         customerId: 'cust-1',
         provider: 'mercado_pago',
+        providerEnvironment: 'sandbox',
         providerPaymentId: null,
         amount: 10000,
         currency: 'CLP',

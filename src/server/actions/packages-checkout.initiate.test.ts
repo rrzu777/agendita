@@ -46,6 +46,7 @@ const purchase = {
 describe('initiatePackagePayment', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    process.env.MERCADO_PAGO_ENVIRONMENT = 'sandbox'
     getCurrentUser.mockResolvedValue({ id: 'u1', email: 'ana@x.cl' })
     prismaMock.packagePurchase.findUnique.mockResolvedValue(purchase)
     getOnlinePaymentProviderForBusiness.mockResolvedValue({ name: 'mercado_pago' })
@@ -67,6 +68,7 @@ describe('initiatePackagePayment', () => {
     expect(data.paymentType).toBe('package_purchase')
     expect(data.packagePurchaseId).toBe('pp1')
     expect(data.status).toBe('pending')
+    expect(data.providerEnvironment).toBe('sandbox')
     expect(data.amount).toBe(50000)
     expect(res.ok).toBe(true)
     if (!res.ok) throw new Error('expected ok')

@@ -19,7 +19,10 @@ function fakeProvider(): PaymentProvider {
 }
 
 describe('createMpPreferenceForPayment', () => {
-  beforeEach(() => update.mockReset())
+  beforeEach(() => {
+    update.mockReset()
+    process.env.MERCADO_PAGO_ENVIRONMENT = 'sandbox'
+  })
 
   it('llama createPayment y persiste rawResponse en el Payment local', async () => {
     const provider = fakeProvider()
@@ -30,7 +33,14 @@ describe('createMpPreferenceForPayment', () => {
       metadata: { packagePurchaseId: 'pp1', businessId: 'b1', paymentType: 'package_purchase', localPaymentId: 'pay1' },
     })
     expect(res.redirectUrl).toBe('https://mp/redirect')
-    expect(update).toHaveBeenCalledWith({ where: { id: 'pay1' }, data: { rawPayload: { preferenceId: 'pref1', init_point: 'https://mp/redirect' } } })
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'pay1' },
+      data: {
+        rawPayload: { preferenceId: 'pref1', init_point: 'https://mp/redirect' },
+        providerPreferenceId: 'pref1',
+        providerEnvironment: 'sandbox',
+      },
+    })
   })
 
   it('no persiste rawPayload si no hay localPaymentId', async () => {

@@ -22,6 +22,7 @@ import { logger } from '@/lib/logger'
 import { assertBookingPayable } from '@/lib/bookings/payments'
 import { applyApprovedPayment, unconfirmedPaymentCustomerMessage } from '@/server/services/finance'
 import { firePaymentNotConfirmedNotification } from '@/lib/bookings/notify-payment-not-confirmed'
+import { requireMercadoPagoEnvironment } from '@/lib/payments/mercado-pago-environment'
 
 const initiatePaymentSchema = z.object({
   bookingId: z.string().min(1),
@@ -139,6 +140,7 @@ async function _initiatePayment(data: {
           customerId: booking.customerId,
           provider: PaymentProvider.mercado_pago,
           providerPaymentId: null,
+          providerEnvironment: requireMercadoPagoEnvironment(),
           amount,
           currency,
           status: PaymentStatus.pending,

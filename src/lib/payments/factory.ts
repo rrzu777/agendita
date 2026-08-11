@@ -5,6 +5,7 @@ import { mercadoPagoPaymentProvider, createMercadoPagoProvider } from './mercado
 import { prisma } from '@/lib/db'
 import { decryptSecret } from './encryption'
 import { PaymentAccountStatus } from '@prisma/client'
+import { getMercadoPagoEnvironment, requireMercadoPagoEnvironment } from './mercado-pago-environment'
 
 export type ProviderName = 'mock' | 'manual' | 'mercado_pago' | 'webpay'
 
@@ -285,10 +286,12 @@ export function getDefaultProvider(): PaymentProvider {
 export async function getMercadoPagoProviderForBusiness(
   businessId: string
 ): Promise<PaymentProvider> {
+  const environment = requireMercadoPagoEnvironment()
   const account = await prisma.paymentAccount.findFirst({
     where: {
       businessId,
       provider: 'mercado_pago',
+      environment,
       status: PaymentAccountStatus.connected,
     },
   })
@@ -341,10 +344,21 @@ export async function resolveOnlinePaymentAvailabilityForBusiness(
     }
   }
 
+  const environment = getMercadoPagoEnvironment()
+  if (!environment) {
+    return {
+      available: false,
+      provider: null,
+      reason: 'La configuración de ambiente de Mercado Pago es inválida.',
+      isMock: false,
+    }
+  }
+
   const account = await prisma.paymentAccount.findFirst({
     where: {
       businessId,
       provider: 'mercado_pago',
+      environment,
       status: { in: [PaymentAccountStatus.connected, PaymentAccountStatus.expired] },
     },
   })

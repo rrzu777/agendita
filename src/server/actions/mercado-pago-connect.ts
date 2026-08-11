@@ -7,6 +7,7 @@ import { signState } from '@/lib/payments/oauth-state'
 import { randomBytes } from 'crypto'
 import { redirect } from 'next/navigation'
 import { action, UserError } from '@/lib/actions/result'
+import { requireMercadoPagoEnvironment } from '@/lib/payments/mercado-pago-environment'
 
 const MP_AUTH_URL = 'https://auth.mercadopago.cl/authorization'
 
@@ -20,6 +21,7 @@ export async function startMercadoPagoConnect() {
 
 export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string }> {
   const { businessId } = await requireBusiness()
+  requireMercadoPagoEnvironment()
 
   const clientId = process.env.MERCADO_PAGO_CLIENT_ID
   const redirectUri = process.env.MERCADO_PAGO_REDIRECT_URI
@@ -56,9 +58,10 @@ export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string 
 
 async function _disconnectMercadoPagoConnection() {
   const { businessId } = await requireBusiness()
+  const environment = requireMercadoPagoEnvironment()
 
   const account = await prisma.paymentAccount.findFirst({
-    where: { businessId, provider: 'mercado_pago' },
+    where: { businessId, provider: 'mercado_pago', environment },
   })
 
   if (!account) {
@@ -89,9 +92,10 @@ export async function disconnectMercadoPago() {
 
 export async function getPaymentAccountStatus() {
   const { businessId } = await requireBusiness()
+  const environment = requireMercadoPagoEnvironment()
 
   const account = await prisma.paymentAccount.findFirst({
-    where: { businessId, provider: 'mercado_pago' },
+    where: { businessId, provider: 'mercado_pago', environment },
     select: {
       id: true,
       status: true,

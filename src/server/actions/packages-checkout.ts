@@ -13,6 +13,7 @@ import {
   getOnlinePaymentProviderForBusiness,
 } from '@/lib/payments/factory'
 import { createMpPreferenceForPayment, getPaymentAppUrl } from '@/lib/payments/create-preference'
+import { requireMercadoPagoEnvironment } from '@/lib/payments/mercado-pago-environment'
 import { getPackageConfirmationUrl } from '@/lib/business/urls'
 import { applyApprovedPackagePayment } from '@/server/services/finance'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
@@ -267,6 +268,7 @@ async function _initiatePackagePayment(input: { purchaseId: string }): Promise<
         customerId: purchase.customerId,
         provider: provider.name as PaymentProvider,
         providerPaymentId: null,
+        providerEnvironment: provider.name === 'mercado_pago' ? requireMercadoPagoEnvironment() : null,
         amount: purchase.pricePaid,
         currency,
         status: PaymentStatus.pending,
