@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireTestDatabase } from '../../../tests/integration/setup'
@@ -950,5 +952,129 @@ describe('applySubscriptionTransition', () => {
     expect(business.subscriptionStatus).toBe('past_due')
     expect(paymentCount).toBe(0)
     expect(logCount).toBe(0)
+  })
+
+  it('actualiza intentos legacy de notificaciones sin invalidar filas nunca enviadas', async () => {
+    const suffix = `migration-backfill-${Date.now()}`
+    const neverAttemptedId = `${suffix}-never-attempted`
+    const recentAttemptId = `${suffix}-recent-attempt`
+    const staleAttemptId = `${suffix}-stale-attempt`
+    const now = new Date()
+    const retryAt = new Date(now.getTime() - 60_000)
+    const recentUpdatedAt = new Date(now.getTime() - 60 * 60 * 1_000)
+    const staleUpdatedAt = new Date(now.getTime() - 24 * 60 * 60 * 1_000)
+    const ids = [neverAttemptedId, recentAttemptId, staleAttemptId]
+
+    try {
+      await prisma.subscriptionNotificationDelivery.createMany({
+        data: [
+          {
+            id: neverAttemptedId,
+            businessId: BUSINESS,
+            subscriptionId: SUBSCRIPTION,
+            kind: 'payment_reminder_7d',
+            effectiveDate: now,
+            eventAt: now,
+            availableAt: retryAt,
+            dedupeKey: `${suffix}:never-attempted`,
+            status: 'pending',
+            attempts: 0,
+            nextAttemptAt: retryAt,
+            businessNameSnapshot: 'Subscription Transition',
+          },
+          {
+            id: recentAttemptId,
+            businessId: BUSINESS,
+            subscriptionId: SUBSCRIPTION,
+            kind: 'payment_reminder_3d',
+            effectiveDate: now,
+            eventAt: now,
+            availableAt: retryAt,
+            dedupeKey: `${suffix}:recent-attempt`,
+            status: 'failed',
+            attempts: 1,
+            nextAttemptAt: retryAt,
+            businessNameSnapshot: 'Subscription Transition',
+          },
+          {
+            id: staleAttemptId,
+            businessId: BUSINESS,
+            subscriptionId: SUBSCRIPTION,
+            kind: 'payment_reminder_1d',
+            effectiveDate: now,
+            eventAt: now,
+            availableAt: retryAt,
+            dedupeKey: `${suffix}:stale-attempt`,
+            status: 'pending',
+            attempts: 1,
+            nextAttemptAt: retryAt,
+            businessNameSnapshot: 'Subscription Transition',
+          },
+        ],
+      })
+      await prisma.$executeRawUnsafe(
+        'UPDATE "SubscriptionNotificationDelivery" SET "updatedAt" = $1 WHERE "id" = $2',
+        recentUpdatedAt,
+        recentAttemptId,
+      )
+      await prisma.$executeRawUnsafe(
+        'UPDATE "SubscriptionNotificationDelivery" SET "updatedAt" = $1 WHERE "id" = $2',
+        staleUpdatedAt,
+        staleAttemptId,
+      )
+
+      const migration = await readFile(resolve(
+        process.cwd(),
+        'prisma/migrations/20260812070000_subscription_notification_attempt_backfill/migration.sql',
+      ), 'utf8')
+      const statements = migration
+        .replace('BEGIN;\n\n', '')
+        .replace('\nCOMMIT;\n', '')
+        .split(';\n\n')
+        .filter(Boolean)
+
+      expect(statements).toHaveLength(2)
+      for (const statement of statements) {
+        await prisma.$executeRawUnsafe(statement)
+      }
+
+      const [neverAttempted, recentAttempt, staleAttempt] = await Promise.all([
+        prisma.subscriptionNotificationDelivery.findUniqueOrThrow({
+          where: { id: neverAttemptedId },
+        }),
+        prisma.subscriptionNotificationDelivery.findUniqueOrThrow({
+          where: { id: recentAttemptId },
+        }),
+        prisma.subscriptionNotificationDelivery.findUniqueOrThrow({
+          where: { id: staleAttemptId },
+        }),
+      ])
+
+      expect(neverAttempted).toMatchObject({
+        attempts: 0,
+        firstProviderAttemptAt: null,
+        status: 'pending',
+        nextAttemptAt: retryAt,
+      })
+      expect(recentAttempt).toMatchObject({
+        attempts: 1,
+        status: 'failed',
+        nextAttemptAt: retryAt,
+        manualReviewAt: null,
+      })
+      expect(recentAttempt.firstProviderAttemptAt).toEqual(recentUpdatedAt)
+      expect(staleAttempt).toMatchObject({
+        attempts: 1,
+        status: 'manual_review',
+        nextAttemptAt: null,
+        lastErrorCode: 'legacy_attempt_outside_idempotency_window',
+      })
+      expect(staleAttempt.firstProviderAttemptAt).toEqual(staleUpdatedAt)
+      expect(staleAttempt.manualReviewAt).toBeInstanceOf(Date)
+    } finally {
+      await prisma.subscriptionNotificationDelivery.deleteMany({
+        where: { id: { in: ids } },
+      })
+    }
   })
 })

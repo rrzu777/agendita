@@ -368,6 +368,7 @@ model SubscriptionNotificationDelivery {
 
   @@index([subscriptionId])
   @@index([status, nextAttemptAt])
+  @@index([status, availableAt])
 }
 
 model SubscriptionLog {

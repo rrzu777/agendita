@@ -33,3 +33,11 @@ No existe actualmente un escritor que cambie `PaymentAccount` a `expired` (el ú
 
 - `admin_record_payment` ahora usa `paidAt` como `eventAt`, `effectiveDate` y disponibilidad inmediata. Nueva migración forward-only backfillea intentos históricos y terminaliza sanitariamente los ya fuera de ventana; intentos cero no se tocan.
 - PostgreSQL fresh: el test de pago manual temprano verifica `eventAt/effectiveDate/availableAt=paidAt` y evento durable; transición integración 23/23 y typecheck OK.
+
+### Evidencia final round 2
+
+- Se añadió el test de upgrade de `20260812070000_subscription_notification_attempt_backfill`: ejecuta literalmente sus dos `UPDATE` sobre filas legacy en PostgreSQL y verifica los tres casos. `attempts=0` mantiene `firstProviderAttemptAt=null` y permanece elegible; un intento dentro de 23 h se backfillea y sigue `failed` retryable; uno de más de 23 h queda `manual_review`, con `manualReviewAt`, sin `nextAttemptAt`.
+- Se declaró en Prisma el índice existente `SubscriptionNotificationDelivery(status, availableAt)`, creado por la migración de timing. Esto elimina su drift del diff sin reescribir migraciones ya comprometidas.
+- PostgreSQL 16 temporal fresco: `DATABASE_URL=<temporal> DIRECT_URL=<temporal> npx prisma migrate deploy` aplicó 44/44 migraciones; `DATABASE_URL=<temporal> DIRECT_URL=<temporal> npm run test:integration -- src/lib/subscriptions/transition.integration.test.ts` — 24/24.
+- `npm run typecheck` — OK. `npm run lint` — 0 errores, 35 warnings preexistentes. `npm run build` con URLs/dominios locales sanitarios y PostgreSQL temporal — OK, 48 rutas (warning preexistente de `middleware`).
+- `npx prisma migrate diff --from-url <temporal> --to-schema-datamodel prisma/schema.prisma --script` dejó sólo los tres índices únicos parciales históricos no representables por Prisma; no hay drift de notificaciones. `git diff --check` — OK.
