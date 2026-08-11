@@ -19,17 +19,21 @@ const GENERIC_SUBSCRIPTION_ACTION_ERROR = 'Ocurrió un error inesperado. Intenta
 
 function safeFailureMetadata(error: unknown, operation: OwnerSubscriptionOperation) {
   if (error instanceof MercadoPagoSubscriptionTransportError) {
-    const statusCategory = error.status === null
+    const status = error.status as unknown
+    const statusCategory = typeof status !== 'number' || !Number.isInteger(status)
       ? 'unavailable'
-      : error.status >= 500
+      : status >= 500
         ? '5xx'
-        : error.status >= 400
+        : status >= 400
           ? '4xx'
           : 'other'
+    const outcome = error.outcome === 'ambiguous' || error.outcome === 'definitive_rejection'
+      ? error.outcome
+      : 'unknown'
     return {
       operation,
       classification: 'provider_transport',
-      providerOutcome: error.outcome,
+      providerOutcome: outcome,
       statusCategory,
     } as const
   }

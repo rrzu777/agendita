@@ -163,6 +163,33 @@ describe('owner subscription action state', () => {
     expect(logged).not.toContain('provider.example')
   })
 
+  it('normalizes hostile provider outcome and status values before logging', async () => {
+    const outcomeSentinel = 'ambiguous-token-secret'
+    const statusSentinel = '503-provider-id-secret'
+    const error = new MercadoPagoSubscriptionTransportError()
+    Object.assign(error as unknown as Record<string, unknown>, {
+      outcome: outcomeSentinel,
+      status: statusSentinel,
+    })
+    mocks.startSubscriptionCheckout.mockRejectedValue(error)
+
+    await startSubscriptionAction({ error: null }, new FormData())
+
+    expect(mocks.loggerError).toHaveBeenCalledWith(
+      'subscription_billing.owner_action_failed',
+      'Owner subscription billing action failed.',
+      { metadata: {
+        operation: 'start_checkout',
+        classification: 'provider_transport',
+        providerOutcome: 'unknown',
+        statusCategory: 'unavailable',
+      } },
+    )
+    const logged = JSON.stringify(mocks.loggerError.mock.calls)
+    expect(logged).not.toContain(outcomeSentinel)
+    expect(logged).not.toContain(statusSentinel)
+  })
+
   it('maps cancellation failures to the same sanitary action state', async () => {
     mocks.requestSubscriptionCancellation.mockRejectedValue(
       new UserError('La suscripción cambió; actualiza la página e intenta nuevamente.'),
