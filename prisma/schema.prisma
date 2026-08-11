@@ -223,37 +223,39 @@ model SubscriptionPlanMapping {
 }
 
 model BusinessSubscription {
-  id                      String                  @id @default(cuid())
-  businessId              String
-  planId                  String
-  status                  SubscriptionStatus      @default(trialing)
-  interval                BillingInterval         @default(monthly)
-  currentPeriodStart      DateTime
-  currentPeriodEnd        DateTime
-  trialStartAt            DateTime?
-  trialEndAt              DateTime?
-  cancelledAt             DateTime?
-  suspendedAt             DateTime?
-  suspendedReason         String?
-  amount                  Int
-  currency                String                  @default("CLP")
-  provider                SubscriptionProvider    @default(manual)
-  environment             MercadoPagoEnvironment?
-  providerPlanId          String?
-  providerSubscriptionId  String?
-  nextBillingAt           DateTime?
-  lastPaidAt              DateTime?
-  pastDueAt               DateTime?
-  graceEndsAt             DateTime?
-  graceDays               Int                     @default(7)
-  cancelAtPeriodEnd       Boolean                 @default(false)
-  cancellationRequestedAt DateTime?
-  complimentaryUntil      DateTime?
-  complimentaryReason     String?
-  billingEnabled          Boolean                 @default(false)
-  lastReconciledAt        DateTime?
-  createdAt               DateTime                @default(now())
-  updatedAt               DateTime                @updatedAt
+  id                         String                  @id @default(cuid())
+  businessId                 String
+  planId                     String
+  status                     SubscriptionStatus      @default(trialing)
+  interval                   BillingInterval         @default(monthly)
+  currentPeriodStart         DateTime
+  currentPeriodEnd           DateTime
+  trialStartAt               DateTime?
+  trialEndAt                 DateTime?
+  trialDays                  Int                     @default(30)
+  cancelledAt                DateTime?
+  suspendedAt                DateTime?
+  suspendedReason            String?
+  amount                     Int
+  currency                   String                  @default("CLP")
+  provider                   SubscriptionProvider    @default(manual)
+  environment                MercadoPagoEnvironment?
+  providerPlanId             String?
+  providerSubscriptionId     String?
+  nextBillingAt              DateTime?
+  lastPaidAt                 DateTime?
+  pastDueAt                  DateTime?
+  graceEndsAt                DateTime?
+  graceDays                  Int                     @default(7)
+  graceEnforcementDeferredAt DateTime?
+  cancelAtPeriodEnd          Boolean                 @default(false)
+  cancellationRequestedAt    DateTime?
+  complimentaryUntil         DateTime?
+  complimentaryReason        String?
+  billingEnabled             Boolean                 @default(false)
+  lastReconciledAt           DateTime?
+  createdAt                  DateTime                @default(now())
+  updatedAt                  DateTime                @updatedAt
 
   business               Business                           @relation(fields: [businessId], references: [id], onDelete: Cascade)
   plan                   Plan                               @relation(fields: [planId], references: [id])

@@ -1,5 +1,3 @@
-import type { BillingClock } from './clock'
-
 export type SubscriptionStatus =
   | 'trialing'
   | 'active'
@@ -16,10 +14,12 @@ export type SubscriptionCommand =
 
 export type SubscriptionState = {
   status: SubscriptionStatus
+  interval: 'monthly' | 'yearly'
   currentPeriodStart: Date
   currentPeriodEnd: Date
   trialStartAt: Date | null
   trialEndAt: Date | null
+  trialDays: number
   cancelledAt: Date | null
   suspendedAt: Date | null
   suspendedReason: string | null
@@ -28,10 +28,11 @@ export type SubscriptionState = {
   pastDueAt: Date | null
   graceEndsAt: Date | null
   graceDays: number
+  graceEnforcementDeferredAt: Date | null
   cancelAtPeriodEnd: boolean
   cancellationRequestedAt: Date | null
   complimentaryUntil: Date | null
-  providerSubscriptionId?: string | null
+  providerSubscriptionId: string | null
 }
 
 export type SubscriptionStateChanges = Partial<Omit<SubscriptionState, 'status'>>
@@ -39,7 +40,6 @@ export type SubscriptionStateChanges = Partial<Omit<SubscriptionState, 'status'>
 export type SubscriptionTransitionInput = {
   subscription: SubscriptionState
   command: SubscriptionCommand
-  clock: BillingClock
   paymentAlreadyApplied?: boolean
 }
 
@@ -51,6 +51,20 @@ export type DerivedSubscriptionTransition = {
 }
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000
+const MIN_MONTH_DAYS = 27
+const MAX_MONTH_DAYS = 32
+
+function addDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * DAY_IN_MS)
+}
+
+function monthlyCycleStart(subscription: SubscriptionState, paidAt: Date, periodEnd: Date): Date {
+  for (const candidate of [paidAt, subscription.currentPeriodEnd]) {
+    const days = (periodEnd.getTime() - candidate.getTime()) / DAY_IN_MS
+    if (days >= MIN_MONTH_DAYS && days <= MAX_MONTH_DAYS) return candidate
+  }
+  throw new Error('El período mensual debe durar entre 27 y 32 días')
+}
 
 function noChange(subscription: SubscriptionState): DerivedSubscriptionTransition {
   return {
@@ -70,6 +84,9 @@ function pastDueChanges(subscription: SubscriptionState, occurredAt: Date): Subs
     ...(!subscription.graceEndsAt
       ? { graceEndsAt: new Date(pastDueAt.getTime() + subscription.graceDays * DAY_IN_MS) }
       : {}),
+    ...(subscription.graceEnforcementDeferredAt
+      ? { graceEnforcementDeferredAt: null }
+      : {}),
   }
 }
 
@@ -77,6 +94,10 @@ export function deriveSubscriptionTransition(
   input: SubscriptionTransitionInput,
 ): DerivedSubscriptionTransition {
   const { subscription, command } = input
+
+  if (subscription.interval !== 'monthly') {
+    throw new Error('Sólo se admiten suscripciones monthly')
+  }
 
   if (command.type === 'invoice_approved') {
     if (
@@ -87,15 +108,22 @@ export function deriveSubscriptionTransition(
       return noChange(subscription)
     }
 
+    const currentPeriodStart = monthlyCycleStart(
+      subscription,
+      command.paidAt,
+      command.periodEnd,
+    )
+
     return {
       nextStatus: 'active',
       changes: {
-        currentPeriodStart: command.paidAt,
+        currentPeriodStart,
         currentPeriodEnd: command.periodEnd,
         nextBillingAt: command.periodEnd,
         lastPaidAt: command.paidAt,
         pastDueAt: null,
         graceEndsAt: null,
+        graceEnforcementDeferredAt: null,
         suspendedAt: null,
         suspendedReason: null,
       },
@@ -109,6 +137,7 @@ export function deriveSubscriptionTransition(
   if (command.type === 'invoice_failed') {
     if (
       subscription.status === 'cancelled' ||
+      subscription.status === 'suspended' ||
       (subscription.lastPaidAt && command.occurredAt.getTime() <= subscription.lastPaidAt.getTime())
     ) {
       return noChange(subscription)
@@ -148,11 +177,16 @@ export function deriveSubscriptionTransition(
   }
 
   if (command.type === 'provider_cancelled') {
-    if (subscription.status === 'cancelled') return noChange(subscription)
+    if (subscription.status === 'cancelled' || subscription.cancelAtPeriodEnd) {
+      return noChange(subscription)
+    }
     return {
-      nextStatus: 'cancelled',
-      changes: { cancelledAt: command.occurredAt, nextBillingAt: null },
-      auditAction: 'subscription_cancelled_by_provider',
+      nextStatus: subscription.status,
+      changes: {
+        cancelAtPeriodEnd: true,
+        cancellationRequestedAt: command.occurredAt,
+      },
+      auditAction: 'subscription_cancellation_requested_by_provider',
       ignored: false,
     }
   }
@@ -187,18 +221,45 @@ export function deriveSubscriptionTransition(
   }
 
   if (subscription.status === 'trialing') {
-    const accessEndsAt = subscription.complimentaryUntil ?? subscription.trialEndAt
+    if (subscription.complimentaryUntil) {
+      const trialWasDeferred = Boolean(
+        subscription.trialStartAt &&
+        subscription.trialStartAt.getTime() >= subscription.complimentaryUntil.getTime(),
+      )
+      if (!trialWasDeferred && subscription.trialDays > 0) {
+        const trialEndAt = addDays(subscription.complimentaryUntil, subscription.trialDays)
+        return {
+          nextStatus: 'trialing',
+          changes: {
+            trialStartAt: subscription.complimentaryUntil,
+            trialEndAt,
+            currentPeriodStart: subscription.complimentaryUntil,
+            currentPeriodEnd: trialEndAt,
+          },
+          auditAction: 'trial_started_after_complimentary',
+          ignored: false,
+        }
+      }
+      if (!trialWasDeferred) {
+        return {
+          nextStatus: 'past_due',
+          changes: pastDueChanges(subscription, subscription.complimentaryUntil),
+          auditAction: 'trial_expired',
+          ignored: false,
+        }
+      }
+    }
+
+    const accessEndsAt = subscription.trialEndAt ?? subscription.complimentaryUntil
     if (!accessEndsAt || at.getTime() < accessEndsAt.getTime()) return noChange(subscription)
-    if (!subscription.complimentaryUntil && subscription.providerSubscriptionId) {
+    if (subscription.providerSubscriptionId) {
       return noChange(subscription)
     }
 
     return {
       nextStatus: 'past_due',
       changes: pastDueChanges(subscription, accessEndsAt),
-      auditAction: subscription.complimentaryUntil
-        ? 'complimentary_access_expired'
-        : 'trial_expired',
+      auditAction: 'trial_expired',
       ignored: false,
     }
   }
@@ -209,9 +270,10 @@ export function deriveSubscriptionTransition(
     at.getTime() >= subscription.graceEndsAt.getTime()
   ) {
     if (!command.enforcementEnabled) {
+      if (subscription.graceEnforcementDeferredAt) return noChange(subscription)
       return {
         nextStatus: 'past_due',
-        changes: {},
+        changes: { graceEnforcementDeferredAt: at },
         auditAction: 'grace_expired_unenforced',
         ignored: false,
       }

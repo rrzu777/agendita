@@ -11,38 +11,47 @@ requireTestDatabase()
 
 const PLAN = 'subscription-transition-plan'
 const BUSINESS = 'subscription-transition-business'
+const OTHER_BUSINESS = 'subscription-transition-other-business'
 const SUBSCRIPTION = 'subscription-transition-subscription'
+const OTHER_SUBSCRIPTION = 'subscription-transition-other-subscription'
 const PERIOD_END = new Date('2026-09-01T00:00:00.000Z')
 const PAID_AT = new Date('2026-08-15T12:00:00.000Z')
 const concurrentPrisma = new PrismaClient()
 
 async function cleanup() {
-  await prisma.subscriptionPayment.deleteMany({ where: { businessId: BUSINESS } })
-  await prisma.subscriptionLog.deleteMany({ where: { businessId: BUSINESS } })
-  await prisma.businessSubscription.deleteMany({ where: { businessId: BUSINESS } })
-  await prisma.business.deleteMany({ where: { id: BUSINESS } })
+  const businessIds = [BUSINESS, OTHER_BUSINESS]
+  await prisma.subscriptionPayment.deleteMany({ where: { businessId: { in: businessIds } } })
+  await prisma.subscriptionLog.deleteMany({ where: { businessId: { in: businessIds } } })
+  await prisma.businessSubscription.deleteMany({ where: { businessId: { in: businessIds } } })
+  await prisma.business.deleteMany({ where: { id: { in: businessIds } } })
   await prisma.plan.deleteMany({ where: { id: PLAN } })
 }
 
 async function resetSubscription() {
-  await prisma.subscriptionPayment.deleteMany({ where: { businessId: BUSINESS } })
-  await prisma.subscriptionLog.deleteMany({ where: { businessId: BUSINESS } })
-  await prisma.business.update({
-    where: { id: BUSINESS },
+  const businessIds = [BUSINESS, OTHER_BUSINESS]
+  await prisma.subscriptionPayment.deleteMany({ where: { businessId: { in: businessIds } } })
+  await prisma.subscriptionLog.deleteMany({ where: { businessId: { in: businessIds } } })
+  await prisma.business.updateMany({
+    where: { id: { in: businessIds } },
     data: { subscriptionStatus: 'past_due' },
   })
-  await prisma.businessSubscription.update({
-    where: { id: SUBSCRIPTION },
+  await prisma.businessSubscription.updateMany({
+    where: { id: { in: [SUBSCRIPTION, OTHER_SUBSCRIPTION] } },
     data: {
       status: 'past_due',
+      interval: 'monthly',
       currentPeriodStart: new Date('2026-08-01T00:00:00.000Z'),
       currentPeriodEnd: PERIOD_END,
       lastPaidAt: null,
       nextBillingAt: null,
       pastDueAt: new Date('2026-08-10T00:00:00.000Z'),
       graceEndsAt: new Date('2026-08-17T00:00:00.000Z'),
+      graceEnforcementDeferredAt: null,
       suspendedAt: null,
       suspendedReason: null,
+      cancelAtPeriodEnd: false,
+      cancellationRequestedAt: null,
+      cancelledAt: null,
     },
   })
 }
@@ -52,8 +61,8 @@ beforeAll(async () => {
   await prisma.plan.create({
     data: { id: PLAN, name: PLAN, priceMonthly: 14990, priceYearly: 149900 },
   })
-  await prisma.business.create({
-    data: {
+  await prisma.business.createMany({
+    data: [{
       id: BUSINESS,
       name: 'Subscription Transition',
       slug: BUSINESS,
@@ -62,10 +71,19 @@ beforeAll(async () => {
       city: 'Santiago',
       subscriptionStatus: 'past_due',
       planId: PLAN,
-    },
+    }, {
+      id: OTHER_BUSINESS,
+      name: 'Subscription Transition Other',
+      slug: OTHER_BUSINESS,
+      subdomain: OTHER_BUSINESS,
+      ownerUserId: 'subscription-transition-other-owner',
+      city: 'Santiago',
+      subscriptionStatus: 'past_due',
+      planId: PLAN,
+    }],
   })
-  await prisma.businessSubscription.create({
-    data: {
+  await prisma.businessSubscription.createMany({
+    data: [{
       id: SUBSCRIPTION,
       businessId: BUSINESS,
       planId: PLAN,
@@ -80,7 +98,22 @@ beforeAll(async () => {
       pastDueAt: new Date('2026-08-10T00:00:00.000Z'),
       graceEndsAt: new Date('2026-08-17T00:00:00.000Z'),
       billingEnabled: true,
-    },
+    }, {
+      id: OTHER_SUBSCRIPTION,
+      businessId: OTHER_BUSINESS,
+      planId: PLAN,
+      status: 'past_due',
+      amount: 14990,
+      currency: 'CLP',
+      provider: 'mercado_pago',
+      environment: 'sandbox',
+      providerSubscriptionId: 'subscription-transition-other-provider-id',
+      currentPeriodStart: new Date('2026-08-01T00:00:00.000Z'),
+      currentPeriodEnd: PERIOD_END,
+      pastDueAt: new Date('2026-08-10T00:00:00.000Z'),
+      graceEndsAt: new Date('2026-08-17T00:00:00.000Z'),
+      billingEnabled: true,
+    }],
   })
 })
 
@@ -96,9 +129,10 @@ function approvedCommand(
   providerPaymentId: string,
   providerInvoiceId = `invoice-${providerPaymentId}`,
   periodEnd = new Date('2026-10-01T00:00:00.000Z'),
+  subscriptionId = SUBSCRIPTION,
 ) {
   return {
-    subscriptionId: SUBSCRIPTION,
+    subscriptionId,
     command: {
       type: 'invoice_approved' as const,
       providerPaymentId,
@@ -114,6 +148,91 @@ function approvedCommand(
 }
 
 describe('applySubscriptionTransition', () => {
+  it('persiste una sola auditoría para gracia vencida con enforcement apagado', async () => {
+    const at = new Date('2026-08-18T00:00:00.000Z')
+    const command = {
+      subscriptionId: SUBSCRIPTION,
+      command: { type: 'time_elapsed' as const, at, enforcementEnabled: false },
+    }
+
+    await expect(applySubscriptionTransition(prisma, command)).resolves.toMatchObject({
+      applied: true,
+      status: 'past_due',
+    })
+    await expect(applySubscriptionTransition(prisma, {
+      ...command,
+      command: { ...command.command, at: new Date('2026-08-19T00:00:00.000Z') },
+    })).resolves.toMatchObject({ applied: false, status: 'past_due' })
+
+    await expect(prisma.businessSubscription.findUniqueOrThrow({
+      where: { id: SUBSCRIPTION },
+    })).resolves.toMatchObject({ graceEnforcementDeferredAt: at })
+    await expect(prisma.subscriptionLog.findMany({
+      where: { businessId: BUSINESS },
+    })).resolves.toEqual([
+      expect.objectContaining({ action: 'grace_expired_unenforced' }),
+    ])
+  })
+
+  it('la cancelación admin mantiene entitlement hasta currentPeriodEnd', async () => {
+    await prisma.businessSubscription.update({
+      where: { id: SUBSCRIPTION },
+      data: { status: 'active' },
+    })
+    await prisma.business.update({
+      where: { id: BUSINESS },
+      data: { subscriptionStatus: 'active' },
+    })
+
+    await applySubscriptionTransition(prisma, {
+      subscriptionId: SUBSCRIPTION,
+      command: {
+        type: 'admin_cancel',
+        occurredAt: PAID_AT,
+        reason: 'requested-by-owner',
+      },
+    })
+
+    const [subscription, business, logs] = await Promise.all([
+      prisma.businessSubscription.findUniqueOrThrow({ where: { id: SUBSCRIPTION } }),
+      prisma.business.findUniqueOrThrow({ where: { id: BUSINESS } }),
+      prisma.subscriptionLog.findMany({ where: { businessId: BUSINESS } }),
+    ])
+    expect(subscription).toMatchObject({
+      status: 'active',
+      cancelAtPeriodEnd: true,
+      cancellationRequestedAt: PAID_AT,
+      cancelledAt: null,
+    })
+    expect(business.subscriptionStatus).toBe('active')
+    expect(logs).toEqual([
+      expect.objectContaining({
+        action: 'subscription_cancellation_requested_by_admin',
+        beforeStatus: 'active',
+        afterStatus: 'active',
+      }),
+    ])
+  })
+
+  it('rechaza también comandos admin sobre una suscripción no mensual', async () => {
+    await prisma.businessSubscription.update({
+      where: { id: SUBSCRIPTION },
+      data: { interval: 'yearly' },
+    })
+
+    await expect(applySubscriptionTransition(prisma, {
+      subscriptionId: SUBSCRIPTION,
+      command: { type: 'admin_activate', occurredAt: PAID_AT },
+    })).rejects.toThrow(/monthly/)
+
+    await expect(prisma.businessSubscription.findUniqueOrThrow({
+      where: { id: SUBSCRIPTION },
+    })).resolves.toMatchObject({ status: 'past_due', interval: 'yearly' })
+    await expect(prisma.subscriptionLog.count({
+      where: { businessId: BUSINESS },
+    })).resolves.toBe(0)
+  })
+
   it('confirma suscripción, estado compatible, pago y log en una transacción', async () => {
     await applySubscriptionTransition(prisma, approvedCommand('payment-atomic'))
 
@@ -179,8 +298,8 @@ describe('applySubscriptionTransition', () => {
     })
     const racingPrisma = prisma.$extends({
       query: {
-        businessSubscription: {
-          async updateMany({ args, query }) {
+        subscriptionPayment: {
+          async createMany({ args, query }) {
             arrivals += 1
             if (arrivals === 2) releaseBarrier()
             await barrier
@@ -208,12 +327,139 @@ describe('applySubscriptionTransition', () => {
     expect(results.flatMap((result) =>
       result.status === 'fulfilled' ? [result.value.applied] : [],
     ).sort()).toEqual([false, true])
+    expect(results.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value.status] : [],
+    )).toEqual(['active', 'active'])
     await expect(prisma.subscriptionPayment.count({
       where: { businessId: BUSINESS },
     })).resolves.toBe(1)
     await expect(prisma.subscriptionLog.count({
       where: { businessId: BUSINESS },
     })).resolves.toBe(1)
+  })
+
+  it('el mismo providerPaymentId concurrente no puede activar dos suscripciones', async () => {
+    let arrivals = 0
+    let releaseBarrier!: () => void
+    const barrier = new Promise<void>((resolve) => {
+      releaseBarrier = resolve
+    })
+    const racingPrisma = prisma.$extends({
+      query: {
+        subscriptionPayment: {
+          async createMany({ args, query }) {
+            arrivals += 1
+            if (arrivals === 2) releaseBarrier()
+            await barrier
+            return query(args)
+          },
+        },
+      },
+    })
+
+    const sharedPaymentId = 'payment-cross-subscription-race'
+    const results = await Promise.allSettled([
+      applySubscriptionTransition(
+        racingPrisma as unknown as PrismaClient,
+        approvedCommand(sharedPaymentId, 'invoice-cross-a'),
+      ),
+      applySubscriptionTransition(
+        racingPrisma as unknown as PrismaClient,
+        approvedCommand(
+          sharedPaymentId,
+          'invoice-cross-b',
+          new Date('2026-10-01T00:00:00.000Z'),
+          OTHER_SUBSCRIPTION,
+        ),
+      ),
+    ])
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
+
+    const [subscriptions, businesses, payments, logs] = await Promise.all([
+      prisma.businessSubscription.findMany({
+        where: { id: { in: [SUBSCRIPTION, OTHER_SUBSCRIPTION] } },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.business.findMany({
+        where: { id: { in: [BUSINESS, OTHER_BUSINESS] } },
+      }),
+      prisma.subscriptionPayment.findMany({
+        where: { providerPaymentId: sharedPaymentId },
+      }),
+      prisma.subscriptionLog.findMany({
+        where: { businessId: { in: [BUSINESS, OTHER_BUSINESS] } },
+      }),
+    ])
+
+    expect(subscriptions.filter((subscription) => subscription.status === 'active')).toHaveLength(1)
+    expect(subscriptions.filter((subscription) => subscription.status === 'past_due')).toHaveLength(1)
+    expect(businesses.filter((business) => business.subscriptionStatus === 'active')).toHaveLength(1)
+    expect(businesses.filter((business) => business.subscriptionStatus === 'past_due')).toHaveLength(1)
+    expect(payments).toHaveLength(1)
+    expect(logs).toHaveLength(1)
+    expect(payments[0]).toMatchObject({
+      subscriptionId: logs[0].businessId === BUSINESS ? SUBSCRIPTION : OTHER_SUBSCRIPTION,
+      businessId: logs[0].businessId,
+      environment: 'sandbox',
+    })
+  })
+
+  it('rechaza la fila que otra suscripción reclama después del precheck y antes del CAS', async () => {
+    const sharedPaymentId = 'payment-cross-subscription-interleaving'
+    let winnerResult: Awaited<ReturnType<typeof applySubscriptionTransition>> | undefined
+    let winnerStarted = false
+    const staleReaderPrisma = prisma.$extends({
+      query: {
+        subscriptionPayment: {
+          async createMany({ args, query }) {
+            if (!winnerStarted) {
+              winnerStarted = true
+              winnerResult = await applySubscriptionTransition(
+                concurrentPrisma,
+                approvedCommand(
+                  sharedPaymentId,
+                  'invoice-cross-winner',
+                  new Date('2026-10-01T00:00:00.000Z'),
+                  OTHER_SUBSCRIPTION,
+                ),
+              )
+            }
+            return query(args)
+          },
+        },
+      },
+    })
+
+    await expect(applySubscriptionTransition(
+      staleReaderPrisma as unknown as PrismaClient,
+      approvedCommand(sharedPaymentId, 'invoice-cross-loser'),
+    )).rejects.toThrow(/otra suscripción/)
+    expect(winnerResult).toMatchObject({ applied: true, status: 'active' })
+
+    const [subscriptions, payments, logs] = await Promise.all([
+      prisma.businessSubscription.findMany({
+        where: { id: { in: [SUBSCRIPTION, OTHER_SUBSCRIPTION] } },
+      }),
+      prisma.subscriptionPayment.findMany({ where: { providerPaymentId: sharedPaymentId } }),
+      prisma.subscriptionLog.findMany({
+        where: { businessId: { in: [BUSINESS, OTHER_BUSINESS] } },
+      }),
+    ])
+
+    expect(subscriptions.find((row) => row.id === SUBSCRIPTION)?.status).toBe('past_due')
+    expect(subscriptions.find((row) => row.id === OTHER_SUBSCRIPTION)?.status).toBe('active')
+    expect(payments).toEqual([
+      expect.objectContaining({
+        businessId: OTHER_BUSINESS,
+        subscriptionId: OTHER_SUBSCRIPTION,
+        environment: 'sandbox',
+      }),
+    ])
+    expect(logs).toEqual([
+      expect.objectContaining({ businessId: OTHER_BUSINESS }),
+    ])
   })
 
   it('revierte estado, compatibilidad y log si el pago viola unicidad', async () => {

@@ -4,18 +4,25 @@ import {
   type SubscriptionState,
   type SubscriptionTransitionInput,
 } from './state-machine'
-import type { BillingClock } from './clock'
 
 const NOW = new Date('2026-08-15T12:00:00.000Z')
-const clock: BillingClock = { now: () => NOW }
 
-function state(overrides: Partial<SubscriptionState> = {}): SubscriptionState {
+type TestSubscriptionState = SubscriptionState & {
+  interval: 'monthly' | 'yearly'
+  trialDays: number
+  graceEnforcementDeferredAt: Date | null
+  providerSubscriptionId: string | null
+}
+
+function state(overrides: Partial<TestSubscriptionState> = {}): TestSubscriptionState {
   return {
     status: 'trialing',
+    interval: 'monthly',
     currentPeriodStart: new Date('2026-08-01T00:00:00.000Z'),
     currentPeriodEnd: new Date('2026-09-01T00:00:00.000Z'),
     trialStartAt: new Date('2026-08-01T00:00:00.000Z'),
     trialEndAt: new Date('2026-08-31T00:00:00.000Z'),
+    trialDays: 30,
     cancelledAt: null,
     suspendedAt: null,
     suspendedReason: null,
@@ -24,18 +31,20 @@ function state(overrides: Partial<SubscriptionState> = {}): SubscriptionState {
     pastDueAt: null,
     graceEndsAt: null,
     graceDays: 7,
+    graceEnforcementDeferredAt: null,
     cancelAtPeriodEnd: false,
     cancellationRequestedAt: null,
     complimentaryUntil: null,
+    providerSubscriptionId: null,
     ...overrides,
   }
 }
 
 function transition(
   subscription: SubscriptionState,
-  input: Omit<SubscriptionTransitionInput, 'subscription' | 'clock'>,
+  input: Omit<SubscriptionTransitionInput, 'subscription'>,
 ) {
-  return deriveSubscriptionTransition({ subscription, clock, ...input })
+  return deriveSubscriptionTransition({ subscription, ...input })
 }
 
 describe('deriveSubscriptionTransition', () => {
@@ -144,6 +153,58 @@ describe('deriveSubscriptionTransition', () => {
     expect(result.changes).not.toHaveProperty('trialEndAt')
   })
 
+  it('inicia el trial completo después de una exención más corta que las fechas originales', () => {
+    const complimentaryUntil = new Date('2026-08-20T00:00:00.000Z')
+    const result = transition(state({
+      trialStartAt: new Date('2026-08-01T00:00:00.000Z'),
+      trialEndAt: new Date('2026-08-31T00:00:00.000Z'),
+      complimentaryUntil,
+    }), {
+      command: { type: 'time_elapsed', at: complimentaryUntil, enforcementEnabled: true },
+    })
+
+    expect(result).toMatchObject({
+      nextStatus: 'trialing',
+      changes: {
+        trialStartAt: complimentaryUntil,
+        trialEndAt: new Date('2026-09-19T00:00:00.000Z'),
+        currentPeriodStart: complimentaryUntil,
+        currentPeriodEnd: new Date('2026-09-19T00:00:00.000Z'),
+      },
+      auditAction: 'trial_started_after_complimentary',
+      ignored: false,
+    })
+  })
+
+  it('inicia el trial completo después de una exención más larga que las fechas originales', () => {
+    const complimentaryUntil = new Date('2026-10-01T00:00:00.000Z')
+    const result = transition(state({ complimentaryUntil }), {
+      command: { type: 'time_elapsed', at: complimentaryUntil, enforcementEnabled: true },
+    })
+
+    expect(result.changes).toMatchObject({
+      trialStartAt: complimentaryUntil,
+      trialEndAt: new Date('2026-10-31T00:00:00.000Z'),
+    })
+    expect(result.nextStatus).toBe('trialing')
+  })
+
+  it('con trialDays cero inicia mora exactamente al terminar la exención', () => {
+    const complimentaryUntil = new Date('2026-10-01T00:00:00.000Z')
+    const result = transition(state({ complimentaryUntil, trialDays: 0 }), {
+      command: { type: 'time_elapsed', at: complimentaryUntil, enforcementEnabled: true },
+    })
+
+    expect(result).toMatchObject({
+      nextStatus: 'past_due',
+      changes: {
+        pastDueAt: complimentaryUntil,
+        graceEndsAt: new Date('2026-10-08T00:00:00.000Z'),
+      },
+      auditAction: 'trial_expired',
+    })
+  })
+
   it('no inventa mora al vencer un trial con autorización cuyo cobro sigue pendiente', () => {
     const authorized = {
       ...state({ trialEndAt: new Date('2026-08-14T00:00:00.000Z') }),
@@ -202,6 +263,23 @@ describe('deriveSubscriptionTransition', () => {
     })
   })
 
+  it('un fallo nuevo no degrada una suscripción ya suspendida', () => {
+    const result = transition(state({
+      status: 'suspended',
+      suspendedAt: new Date('2026-08-14T00:00:00.000Z'),
+      suspendedReason: 'grace_period_expired',
+    }), {
+      command: { type: 'invoice_failed', occurredAt: NOW },
+    })
+
+    expect(result).toMatchObject({
+      nextStatus: 'suspended',
+      changes: {},
+      auditAction: null,
+      ignored: true,
+    })
+  })
+
   it('un aprobado fuera de orden no reduce el período ya confirmado', () => {
     const currentPeriodEnd = new Date('2026-10-01T00:00:00.000Z')
     const result = transition(
@@ -252,7 +330,7 @@ describe('deriveSubscriptionTransition', () => {
     })
   })
 
-  it('una cancelación confirmada por el proveedor termina acceso y renovación', () => {
+  it('una cancelación confirmada por el proveedor difiere el cierre al fin del período', () => {
     const occurredAt = new Date('2026-08-15T10:00:00.000Z')
     const result = transition(state({
       status: 'active',
@@ -262,10 +340,109 @@ describe('deriveSubscriptionTransition', () => {
     })
 
     expect(result).toMatchObject({
-      nextStatus: 'cancelled',
-      changes: { cancelledAt: occurredAt, nextBillingAt: null },
-      auditAction: 'subscription_cancelled_by_provider',
+      nextStatus: 'active',
+      changes: {
+        cancelAtPeriodEnd: true,
+        cancellationRequestedAt: occurredAt,
+      },
+      auditAction: 'subscription_cancellation_requested_by_provider',
       ignored: false,
+    })
+  })
+
+  it('un provider_cancelled tardío no corta el nuevo período ya pagado', () => {
+    const paidPeriodEnd = new Date('2026-10-01T00:00:00.000Z')
+    const cancelledAtProvider = new Date('2026-09-02T00:00:00.000Z')
+    const requested = transition(state({
+      status: 'active',
+      currentPeriodStart: new Date('2026-09-01T00:00:00.000Z'),
+      currentPeriodEnd: paidPeriodEnd,
+      lastPaidAt: new Date('2026-09-01T00:00:00.000Z'),
+    }), {
+      command: { type: 'provider_cancelled', occurredAt: cancelledAtProvider },
+    })
+
+    const beforeEnd = transition(state({
+      status: requested.nextStatus,
+      currentPeriodEnd: paidPeriodEnd,
+      ...requested.changes,
+    }), {
+      command: {
+        type: 'time_elapsed',
+        at: new Date('2026-09-30T23:59:59.999Z'),
+        enforcementEnabled: true,
+      },
+    })
+
+    expect(beforeEnd.nextStatus).toBe('active')
+    expect(requested.changes).not.toHaveProperty('cancelledAt')
+  })
+
+  it('registra una sola vez la gracia vencida con enforcement apagado', () => {
+    const graceEndsAt = new Date('2026-08-14T00:00:00.000Z')
+    const first = transition(state({ status: 'past_due', graceEndsAt }), {
+      command: { type: 'time_elapsed', at: NOW, enforcementEnabled: false },
+    })
+    const second = transition(state({
+      status: first.nextStatus,
+      graceEndsAt,
+      ...first.changes,
+    }), {
+      command: {
+        type: 'time_elapsed',
+        at: new Date('2026-08-16T12:00:00.000Z'),
+        enforcementEnabled: false,
+      },
+    })
+
+    expect(first).toMatchObject({
+      changes: { graceEnforcementDeferredAt: NOW },
+      auditAction: 'grace_expired_unenforced',
+      ignored: false,
+    })
+    expect(second).toMatchObject({ changes: {}, auditAction: null, ignored: true })
+  })
+
+  it('rechaza suscripciones yearly en el contrato mensual', () => {
+    expect(() => transition(state({ interval: 'yearly' }), {
+      command: { type: 'time_elapsed', at: NOW, enforcementEnabled: true },
+    })).toThrow(/monthly/)
+  })
+
+  it('rechaza un periodEnd anual aunque la suscripción diga monthly', () => {
+    expect(() => transition(state({
+      status: 'active',
+      currentPeriodEnd: new Date('2026-08-15T12:00:00.000Z'),
+    }), {
+      command: {
+        type: 'invoice_approved',
+        providerPaymentId: 'payment-annual-period',
+        paidAt: NOW,
+        periodEnd: new Date('2027-08-15T12:00:00.000Z'),
+      },
+    })).toThrow(/27.*32/)
+  })
+
+  it('acepta un mes calendario desde 31 de enero hasta 28 de febrero', () => {
+    const paidAt = new Date('2027-01-31T00:00:00.000Z')
+    const result = transition(state({
+      status: 'past_due',
+      currentPeriodEnd: paidAt,
+    }), {
+      command: {
+        type: 'invoice_approved',
+        providerPaymentId: 'payment-end-of-month',
+        paidAt,
+        periodEnd: new Date('2027-02-28T00:00:00.000Z'),
+      },
+    })
+
+    expect(result).toMatchObject({
+      nextStatus: 'active',
+      changes: {
+        currentPeriodStart: paidAt,
+        currentPeriodEnd: new Date('2027-02-28T00:00:00.000Z'),
+      },
     })
   })
 

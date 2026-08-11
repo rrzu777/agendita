@@ -3,13 +3,13 @@ import {
   type PrismaClient,
   type SubscriptionStatus as PrismaSubscriptionStatus,
 } from '@prisma/client'
+import { randomUUID } from 'node:crypto'
 import {
   deriveSubscriptionTransition,
   type DerivedSubscriptionTransition,
   type SubscriptionCommand,
   type SubscriptionState,
 } from './state-machine'
-import { systemBillingClock, type BillingClock } from './clock'
 
 type TransitionActor = {
   userId?: string
@@ -29,7 +29,7 @@ export type AdminSubscriptionCommand =
   | { type: 'admin_extend_trial'; days: number; at: Date }
   | { type: 'admin_suspend'; occurredAt: Date; reason?: string }
   | { type: 'admin_activate'; occurredAt: Date }
-  | { type: 'admin_change_plan'; planId: string; planName: string }
+  | { type: 'admin_change_plan'; planId: string }
   | { type: 'admin_mark_past_due'; occurredAt: Date }
   | { type: 'admin_cancel'; occurredAt: Date; reason?: string }
 
@@ -39,7 +39,6 @@ export type ApplySubscriptionTransitionCommand = {
   command: SubscriptionCommand | AdminSubscriptionCommand
   payment?: ProviderPayment
   actor?: TransitionActor
-  clock?: BillingClock
 }
 
 export class SubscriptionTransitionConflictError extends Error {
@@ -51,10 +50,12 @@ export class SubscriptionTransitionConflictError extends Error {
 
 function toState(subscription: {
   status: PrismaSubscriptionStatus
+  interval: 'monthly' | 'yearly'
   currentPeriodStart: Date
   currentPeriodEnd: Date
   trialStartAt: Date | null
   trialEndAt: Date | null
+  trialDays: number
   cancelledAt: Date | null
   suspendedAt: Date | null
   suspendedReason: string | null
@@ -63,6 +64,7 @@ function toState(subscription: {
   pastDueAt: Date | null
   graceEndsAt: Date | null
   graceDays: number
+  graceEnforcementDeferredAt: Date | null
   cancelAtPeriodEnd: boolean
   cancellationRequestedAt: Date | null
   complimentaryUntil: Date | null
@@ -82,7 +84,14 @@ function adminTransition(
     case 'admin_record_payment':
       return {
         nextStatus: 'active',
-        changes: { lastPaidAt: command.paidAt, pastDueAt: null, graceEndsAt: null },
+        changes: {
+          lastPaidAt: command.paidAt,
+          pastDueAt: null,
+          graceEndsAt: null,
+          graceEnforcementDeferredAt: null,
+          suspendedAt: null,
+          suspendedReason: null,
+        },
         auditAction: 'payment_recorded_by_admin',
         ignored: false,
       }
@@ -93,7 +102,11 @@ function adminTransition(
       )
       return {
         nextStatus: 'trialing',
-        changes: { trialEndAt, currentPeriodEnd: trialEndAt },
+        changes: {
+          trialEndAt,
+          currentPeriodEnd: trialEndAt,
+          trialDays: Math.min(365, subscription.trialDays + command.days),
+        },
         businessData: { trialEndsAt: trialEndAt },
         auditAction: 'trial_extended_by_admin',
         ignored: false,
@@ -133,15 +146,19 @@ function adminTransition(
           graceEndsAt: subscription.graceEndsAt ?? new Date(
             command.occurredAt.getTime() + subscription.graceDays * 24 * 60 * 60 * 1000,
           ),
+          graceEnforcementDeferredAt: null,
         },
         auditAction: 'marked_past_due_by_admin',
         ignored: false,
       }
     case 'admin_cancel':
       return {
-        nextStatus: 'cancelled',
-        changes: { cancelledAt: command.occurredAt, nextBillingAt: null },
-        auditAction: 'subscription_cancelled_by_admin',
+        nextStatus: subscription.status,
+        changes: {
+          cancelAtPeriodEnd: true,
+          cancellationRequestedAt: command.occurredAt,
+        },
+        auditAction: 'subscription_cancellation_requested_by_admin',
         ignored: false,
       }
   }
@@ -173,13 +190,35 @@ export async function applySubscriptionTransition(
     if (input.businessId && subscription.businessId !== input.businessId) {
       throw new Error('La suscripción no pertenece al negocio indicado')
     }
+    if (subscription.interval !== 'monthly') {
+      throw new Error('Sólo se admiten suscripciones monthly')
+    }
 
-    let paymentAlreadyApplied = false
     if (input.command.type === 'invoice_approved') {
       if (subscription.provider !== 'mercado_pago' || !subscription.environment) {
         throw new Error('Un pago externo requiere proveedor Mercado Pago y ambiente')
       }
-      const existingPayment = await tx.subscriptionPayment.findUnique({
+      const candidatePaymentId = randomUUID()
+      const claim = await tx.subscriptionPayment.createMany({
+        data: [{
+          id: candidatePaymentId,
+          businessId: subscription.businessId,
+          subscriptionId: subscription.id,
+          amount: subscription.amount,
+          currency: subscription.currency,
+          status: 'approved',
+          paidAt: input.command.paidAt,
+          provider: subscription.provider,
+          environment: subscription.environment,
+          providerPaymentId: input.command.providerPaymentId,
+          providerInvoiceId: input.payment?.providerInvoiceId,
+          providerStatus: input.payment?.providerStatus,
+          providerUpdatedAt: input.payment?.providerUpdatedAt,
+          rawPayload: input.payment?.safeMetadata,
+        }],
+        skipDuplicates: true,
+      })
+      const claimedPayment = await tx.subscriptionPayment.findUnique({
         where: {
           provider_environment_providerPaymentId: {
             provider: subscription.provider,
@@ -187,12 +226,34 @@ export async function applySubscriptionTransition(
             providerPaymentId: input.command.providerPaymentId,
           },
         },
-        select: { subscriptionId: true },
+        select: {
+          id: true,
+          businessId: true,
+          subscriptionId: true,
+          provider: true,
+          environment: true,
+        },
       })
-      if (existingPayment && existingPayment.subscriptionId !== subscription.id) {
+
+      const claimHasExpectedOwner = claimedPayment &&
+        claimedPayment.subscriptionId === subscription.id &&
+        claimedPayment.businessId === subscription.businessId &&
+        claimedPayment.provider === subscription.provider &&
+        claimedPayment.environment === subscription.environment
+
+      if (claimedPayment && !claimHasExpectedOwner) {
         throw new Error('El pago externo ya pertenece a otra suscripción')
       }
-      paymentAlreadyApplied = Boolean(existingPayment)
+      if (!claimedPayment) {
+        throw new Error('El pago externo colisiona con otra clave única')
+      }
+      if (claim.count === 0 || claimedPayment.id !== candidatePaymentId) {
+        const latest = await tx.businessSubscription.findUnique({
+          where: { id: subscription.id },
+          select: { status: true },
+        })
+        return { applied: false, status: latest?.status ?? subscription.status }
+      }
     }
 
     const before = toState(subscription)
@@ -204,8 +265,7 @@ export async function applySubscriptionTransition(
       : deriveSubscriptionTransition({
           subscription: before,
           command: input.command,
-          clock: input.clock ?? systemBillingClock,
-          paymentAlreadyApplied,
+          paymentAlreadyApplied: false,
         })
 
     if (derived.ignored) {
@@ -225,66 +285,20 @@ export async function applySubscriptionTransition(
       },
       data: subscriptionData,
     })
-    if (updated.count !== 1) {
-      if (input.command.type === 'invoice_approved' && subscription.environment) {
-        const concurrentPayment = await tx.subscriptionPayment.findUnique({
-          where: {
-            provider_environment_providerPaymentId: {
-              provider: subscription.provider,
-              environment: subscription.environment,
-              providerPaymentId: input.command.providerPaymentId,
-            },
-          },
-          select: { subscriptionId: true },
-        })
-        if (concurrentPayment?.subscriptionId === subscription.id) {
-          const latest = await tx.businessSubscription.findUnique({
-            where: { id: subscription.id },
-            select: { status: true },
-          })
-          return { applied: false, status: latest?.status ?? subscription.status }
-        }
-      }
-      throw new SubscriptionTransitionConflictError()
-    }
+    if (updated.count !== 1) throw new SubscriptionTransitionConflictError()
 
     await tx.business.update({
       where: { id: subscription.businessId },
       data: {
         ...(derived.businessData ?? {}),
         subscriptionStatus: derived.nextStatus,
+        ...('trialEndAt' in derived.changes
+          ? { trialEndsAt: derived.changes.trialEndAt }
+          : {}),
       },
     })
 
-    if (input.command.type === 'invoice_approved') {
-      const environment = subscription.environment
-      if (!environment) throw new Error('El pago externo no tiene ambiente')
-      await tx.subscriptionPayment.upsert({
-        where: {
-          provider_environment_providerPaymentId: {
-            provider: subscription.provider,
-            environment,
-            providerPaymentId: input.command.providerPaymentId,
-          },
-        },
-        update: {},
-        create: {
-          businessId: subscription.businessId,
-          subscriptionId: subscription.id,
-          amount: subscription.amount,
-          currency: subscription.currency,
-          status: 'approved',
-          paidAt: input.command.paidAt,
-          provider: subscription.provider,
-          environment,
-          providerPaymentId: input.command.providerPaymentId,
-          providerInvoiceId: input.payment?.providerInvoiceId,
-          providerStatus: input.payment?.providerStatus,
-          providerUpdatedAt: input.payment?.providerUpdatedAt,
-          rawPayload: input.payment?.safeMetadata,
-        },
-      })
-    } else if (input.command.type === 'admin_record_payment') {
+    if (input.command.type === 'admin_record_payment') {
       await tx.subscriptionPayment.create({
         data: {
           businessId: subscription.businessId,

@@ -13,6 +13,10 @@ const correctiveMigrationPath = path.join(
   root,
   'prisma/migrations/20260811120000_mp_payment_account_environment/migration.sql',
 )
+const stateMachineMigrationPath = path.join(
+  root,
+  'prisma/migrations/20260811180000_subscription_state_machine_hardening/migration.sql',
+)
 
 describe('Mercado Pago recurring billing persistence contract', () => {
   it('declares the provider-separated recurring billing schema', async () => {
@@ -29,11 +33,23 @@ describe('Mercado Pago recurring billing persistence contract', () => {
     expect(schema).toContain('model SubscriptionPlanMapping')
     expect(schema).toContain('complimentaryUntil')
     expect(schema).toContain('cancelAtPeriodEnd')
+    expect(schema).toMatch(/trialDays\s+Int\s+@default\(30\)/)
+    expect(schema).toContain('graceEnforcementDeferredAt')
     expect(schema).toContain('providerPaymentId')
     expect(schema).toContain('@@unique([provider, environment, providerPaymentId])')
     expect(schema).toContain('model SubscriptionNotificationDelivery')
     expect(schema).toContain('providerPreferenceId')
     expect(schema).toMatch(/providerEnvironment\s+MercadoPagoEnvironment\?/)
+  })
+
+  it('persists deferred trial entitlement and enforcement-off dedupe forward-only', async () => {
+    const migration = await readFile(stateMachineMigrationPath, 'utf8')
+
+    expect(migration).toContain('BEGIN;')
+    expect(migration).toContain('ADD COLUMN "trialDays" INTEGER NOT NULL DEFAULT 30')
+    expect(migration).toContain('ADD COLUMN "graceEnforcementDeferredAt" TIMESTAMP(3)')
+    expect(migration).toContain('BusinessSubscription_trial_days_check')
+    expect(migration).toContain('COMMIT;')
   })
 
   it('enforces nullable provider identifiers with partial unique indexes', async () => {

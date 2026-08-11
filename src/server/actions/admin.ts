@@ -81,7 +81,7 @@ export async function adminChangePlan(businessId: string, planId: string) {
 
   await applySubscriptionTransition(prisma, {
     businessId,
-    command: { type: 'admin_change_plan', planId, planName: plan.name },
+    command: { type: 'admin_change_plan', planId },
     actor: actor(user, `Plan cambiado a "${plan.name}" por admin`),
   })
 }
