@@ -6,7 +6,13 @@ export type SubscriptionStatus =
   | 'cancelled'
 
 export type SubscriptionCommand =
-  | { type: 'invoice_approved'; providerPaymentId: string; paidAt: Date; periodEnd: Date }
+  | {
+      type: 'invoice_approved'
+      providerPaymentId: string
+      paidAt: Date
+      periodStart?: Date
+      periodEnd: Date
+    }
   | { type: 'invoice_failed'; occurredAt: Date }
   | { type: 'time_elapsed'; at: Date; enforcementEnabled: boolean }
   | { type: 'cancel_at_period_end'; requestedAt: Date }
@@ -58,8 +64,14 @@ function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * DAY_IN_MS)
 }
 
-function monthlyCycleStart(subscription: SubscriptionState, paidAt: Date, periodEnd: Date): Date {
-  for (const candidate of [paidAt, subscription.currentPeriodEnd]) {
+function monthlyCycleStart(
+  subscription: SubscriptionState,
+  paidAt: Date,
+  periodEnd: Date,
+  periodStart?: Date,
+): Date {
+  for (const candidate of [periodStart, paidAt, subscription.currentPeriodEnd]) {
+    if (!candidate) continue
     const days = (periodEnd.getTime() - candidate.getTime()) / DAY_IN_MS
     if (days >= MIN_MONTH_DAYS && days <= MAX_MONTH_DAYS) return candidate
   }
@@ -112,6 +124,7 @@ export function deriveSubscriptionTransition(
       subscription,
       command.paidAt,
       command.periodEnd,
+      command.periodStart,
     )
 
     return {

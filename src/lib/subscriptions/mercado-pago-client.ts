@@ -10,6 +10,8 @@ import {
 
 const MP_API_BASE = 'https://api.mercadopago.com'
 export const MP_SUBSCRIPTION_REQUEST_TIMEOUT_MS = 5_000
+const MP_INVOICE_PAGE_SIZE = 20
+const MP_INVOICE_RECONCILIATION_CAP = 100
 
 export type MpSubscriptionsEnvironment = 'sandbox' | 'production'
 
@@ -286,12 +288,39 @@ export function createMpSubscriptionClient(
     },
 
     async searchInvoices(subscriptionId) {
-      const query = new URLSearchParams({
-        preapproval_id: requiredString(subscriptionId, 'Subscription id'),
-      })
-      const raw = await request(`/authorized_payments/search?${query.toString()}`)
-      if (!Array.isArray(raw.results)) throw new MercadoPagoSubscriptionContractError()
-      return raw.results.map((invoice) => normalizeMpInvoice(invoice))
+      const preapprovalId = requiredString(subscriptionId, 'Subscription id')
+      const invoices: MpInvoice[] = []
+      const seen = new Set<string>()
+      for (let offset = 0; offset <= MP_INVOICE_RECONCILIATION_CAP; offset += MP_INVOICE_PAGE_SIZE) {
+        const query = new URLSearchParams({
+          preapproval_id: preapprovalId,
+          limit: String(MP_INVOICE_PAGE_SIZE),
+          offset: String(offset),
+        })
+        const raw = await request(`/authorized_payments/search?${query.toString()}`)
+        if (!Array.isArray(raw.results)) throw new MercadoPagoSubscriptionContractError()
+        const paging = asRecord(raw.paging)
+        const total = Number(paging.total)
+        const responseOffset = Number(paging.offset)
+        const limit = Number(paging.limit)
+        if (
+          !Number.isSafeInteger(total) || total < 0 || total > MP_INVOICE_RECONCILIATION_CAP ||
+          responseOffset !== offset || limit !== MP_INVOICE_PAGE_SIZE ||
+          raw.results.length > MP_INVOICE_PAGE_SIZE ||
+          (raw.results.length === 0 && invoices.length < total)
+        ) {
+          throw new MercadoPagoSubscriptionContractError()
+        }
+        for (const rawInvoice of raw.results) {
+          const invoice = normalizeMpInvoice(rawInvoice)
+          if (seen.has(invoice.id)) throw new MercadoPagoSubscriptionContractError()
+          seen.add(invoice.id)
+          invoices.push(invoice)
+        }
+        if (invoices.length === total) return invoices
+        if (invoices.length > total) throw new MercadoPagoSubscriptionContractError()
+      }
+      throw new MercadoPagoSubscriptionContractError()
     },
   }
 }

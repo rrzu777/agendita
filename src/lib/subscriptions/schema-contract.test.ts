@@ -25,6 +25,10 @@ const manualReconciliationMigrationPath = path.join(
   root,
   'prisma/migrations/20260812030000_subscription_plan_manual_reconciliation/migration.sql',
 )
+const cronLeaseMigrationPath = path.join(
+  root,
+  'prisma/migrations/20260812040000_subscription_billing_cron_lease/migration.sql',
+)
 
 describe('Mercado Pago recurring billing persistence contract', () => {
   it('declares the provider-separated recurring billing schema', async () => {
@@ -116,5 +120,14 @@ describe('Mercado Pago recurring billing persistence contract', () => {
     expect(migration).toContain('ADD COLUMN "planId" TEXT')
     expect(migration).toContain('ADD COLUMN "amount" INTEGER')
     expect(migration).toContain('SubscriptionPlanMapping_provisioning_state_check')
+  })
+
+  it('persiste un lease separado del último resultado de reconciliación', async () => {
+    const schema = await readFile(schemaPath, 'utf8')
+    const migration = await readFile(cronLeaseMigrationPath, 'utf8')
+
+    expect(schema).toContain('billingCronClaimedUntil')
+    expect(migration).toContain('ADD COLUMN "billingCronClaimedUntil" TIMESTAMP(3)')
+    expect(migration).toContain('BusinessSubscription_billingCronClaimedUntil_idx')
   })
 })

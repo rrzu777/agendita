@@ -24,18 +24,59 @@ jobs:
       BASE_URL: ${{ vars.APP_BASE_URL || 'https://www.agendita.cl' }}
     steps:
       - name: Expire stale holds
+        id: expire-holds
+        if: always()
+        continue-on-error: true
         run: |
           curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/expire-holds" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
       - name: Send reminders
+        id: send-reminders
+        if: always()
+        continue-on-error: true
         run: |
           curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/send-reminders" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
       - name: Transfer reminders
+        id: transfer-reminders
+        if: always()
+        continue-on-error: true
         run: |
           curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/transfer-reminders" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
       - name: Loyalty automatic conditions
+        id: loyalty-automatic
+        if: always()
+        continue-on-error: true
         run: |
           curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/loyalty-automatic" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+      - name: Subscription billing
+        id: subscription-billing
+        if: always()
+        continue-on-error: true
+        run: |
+          curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/subscription-billing" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+      - name: Report aggregate cron result
+        if: always()
+        env:
+          EXPIRE_HOLDS_OUTCOME: ${{ steps.expire-holds.outcome }}
+          SEND_REMINDERS_OUTCOME: ${{ steps.send-reminders.outcome }}
+          TRANSFER_REMINDERS_OUTCOME: ${{ steps.transfer-reminders.outcome }}
+          LOYALTY_AUTOMATIC_OUTCOME: ${{ steps.loyalty-automatic.outcome }}
+          SUBSCRIPTION_BILLING_OUTCOME: ${{ steps.subscription-billing.outcome }}
+        run: |
+          failed=0
+          for outcome in \
+            "$EXPIRE_HOLDS_OUTCOME" \
+            "$SEND_REMINDERS_OUTCOME" \
+            "$TRANSFER_REMINDERS_OUTCOME" \
+            "$LOYALTY_AUTOMATIC_OUTCOME" \
+            "$SUBSCRIPTION_BILLING_OUTCOME"
+          do
+            if [ "$outcome" != "success" ]; then
+              failed=1
+            fi
+          done
+          exit "$failed"

@@ -144,6 +144,7 @@ describe('processSubscriptionWebhook', () => {
         type: 'invoice_approved',
         providerPaymentId: approvedInvoice.providerPaymentId,
         paidAt: PAID_AT,
+        periodStart: approvedInvoice.debitAt,
         periodEnd: NEXT_PAYMENT_AT,
       },
       payment: {

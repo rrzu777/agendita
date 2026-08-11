@@ -237,7 +237,10 @@ describe('createMpSubscriptionClient', () => {
     }
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse(invoice))
-      .mockResolvedValueOnce(jsonResponse({ results: [invoice] }))
+      .mockResolvedValueOnce(jsonResponse({
+        paging: { total: 1, offset: 0, limit: 20 },
+        results: [invoice],
+      }))
     vi.stubGlobal('fetch', fetchMock)
     const client = createMpSubscriptionClient(config)
 
@@ -245,8 +248,47 @@ describe('createMpSubscriptionClient', () => {
     await expect(client.searchInvoices('preapproval-1')).resolves.toHaveLength(1)
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       'https://api.mercadopago.com/authorized_payments/invoice-1',
-      'https://api.mercadopago.com/authorized_payments/search?preapproval_id=preapproval-1',
+      'https://api.mercadopago.com/authorized_payments/search?preapproval_id=preapproval-1&limit=20&offset=0',
     ])
+  })
+
+  it('pagina facturas con un límite total explícito antes de declarar la búsqueda completa', async () => {
+    const invoice = (id: number) => ({
+      id: `invoice-${id}`,
+      status: 'approved',
+      preapproval_id: 'preapproval-1',
+      transaction_amount: 12000,
+      currency_id: 'CLP',
+    })
+    const firstPage = Array.from({ length: 20 }, (_, index) => invoice(index + 1))
+    const secondPage = [invoice(21)]
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        paging: { total: 21, offset: 0, limit: 20 },
+        results: firstPage,
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        paging: { total: 21, offset: 20, limit: 20 },
+        results: secondPage,
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createMpSubscriptionClient(config).searchInvoices('preapproval-1'))
+      .resolves.toHaveLength(21)
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://api.mercadopago.com/authorized_payments/search?preapproval_id=preapproval-1&limit=20&offset=0',
+      'https://api.mercadopago.com/authorized_payments/search?preapproval_id=preapproval-1&limit=20&offset=20',
+    ])
+  })
+
+  it('falla cerrado si el total externo excede el cap sanitario', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      paging: { total: 101, offset: 0, limit: 20 },
+      results: [],
+    })))
+
+    await expect(createMpSubscriptionClient(config).searchInvoices('preapproval-1'))
+      .rejects.toMatchObject({ name: 'MercadoPagoSubscriptionContractError' })
   })
 
   it('sanitizes upstream failures without exposing response bodies or credentials', async () => {

@@ -266,6 +266,7 @@ model BusinessSubscription {
   complimentaryReason        String?
   billingEnabled             Boolean                 @default(false)
   lastReconciledAt           DateTime?
+  billingCronClaimedUntil    DateTime?
   createdAt                  DateTime                @default(now())
   updatedAt                  DateTime                @updatedAt
 
@@ -279,6 +280,7 @@ model BusinessSubscription {
   // this declaration retains Prisma's compound unique selector for typed callers.
   @@unique([provider, environment, providerSubscriptionId], map: "BusinessSubscription_provider_env_subscription_key")
   @@index([businessId])
+  @@index([billingCronClaimedUntil], map: "BusinessSubscription_billingCronClaimedUntil_idx")
 }
 
 /// Operación efímera que coordina un único checkout alojado. La referencia

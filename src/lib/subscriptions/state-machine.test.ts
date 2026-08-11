@@ -241,6 +241,31 @@ describe('deriveSubscriptionTransition', () => {
     })
   })
 
+  it('usa el debitAt verificado como inicio de un ciclo perdido con aprobación tardía', () => {
+    const result = transition(state({
+      status: 'past_due',
+      currentPeriodStart: new Date('2026-07-01T00:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-08-01T00:00:00.000Z'),
+    }), {
+      command: {
+        type: 'invoice_approved',
+        providerPaymentId: 'late-payment',
+        paidAt: new Date('2026-09-10T00:00:00.000Z'),
+        periodStart: new Date('2026-09-01T00:00:00.000Z'),
+        periodEnd: new Date('2026-10-01T00:00:00.000Z'),
+      },
+    })
+
+    expect(result).toMatchObject({
+      nextStatus: 'active',
+      changes: {
+        currentPeriodStart: new Date('2026-09-01T00:00:00.000Z'),
+        currentPeriodEnd: new Date('2026-10-01T00:00:00.000Z'),
+        lastPaidAt: new Date('2026-09-10T00:00:00.000Z'),
+      },
+    })
+  })
+
   it('un fallo anterior al último cobro no degrada el estado nuevo', () => {
     const result = transition(
       state({

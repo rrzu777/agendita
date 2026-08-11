@@ -374,6 +374,7 @@ async function applyInvoice(
         type: 'invoice_approved',
         providerPaymentId: invoice.providerPaymentId,
         paidAt: invoice.approvedAt,
+        periodStart: invoice.debitAt ?? undefined,
         periodEnd: candidate.nextPaymentAt,
       },
       payment: {
