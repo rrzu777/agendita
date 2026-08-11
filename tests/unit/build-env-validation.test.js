@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process'
-import { resolve } from 'node:path'
+import { copyFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   OTHER_VAPID_PUBLIC_KEY,
@@ -28,6 +30,36 @@ describe('build environment validation', () => {
       ...overrides,
     }
   }
+
+  function validateEnvExample() {
+    const directory = mkdtempSync(join(tmpdir(), 'agendita-env-example-'))
+    try {
+      copyFileSync(resolve(process.cwd(), '.env.example'), join(directory, '.env'))
+      return spawnSync(process.execPath, [scriptPath], {
+        cwd: directory,
+        env: {
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost/test',
+          DIRECT_URL: 'postgresql://localhost/test',
+          NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+          APP_DOMAIN: 'app.agendita.test',
+          NEXT_PUBLIC_APP_DOMAIN: 'app.agendita.test',
+          PAYMENT_PROVIDER: 'manual',
+        },
+        encoding: 'utf8',
+      })
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }
+
+  it('keeps the copied .env.example defaults valid with Web Push disabled', () => {
+    const result = validateEnvExample()
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('Environment validation passed')
+  })
 
   it('blocks the build when VAPID configuration is partial', () => {
     const result = spawnSync(process.execPath, [scriptPath], {
