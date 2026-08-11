@@ -2,16 +2,22 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createHmac } from 'crypto'
 
 const mockMpFetch = vi.fn()
+const mockGetValidBusinessAccessTokenForAccount = vi.fn()
 vi.stubGlobal('fetch', mockMpFetch)
+vi.mock('@/lib/payments/mercado-pago-oauth', () => ({
+  getValidBusinessAccessTokenForAccount: (...args: unknown[]) => mockGetValidBusinessAccessTokenForAccount(...args),
+}))
 
 const mockPrisma = {
   payment: {
     findUnique: vi.fn(),
     findFirst: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
     create: vi.fn(),
     findMany: vi.fn(),
   },
+  paymentProviderIncident: { upsert: vi.fn() },
   booking: {
     findUnique: vi.fn(),
     update: vi.fn(),
@@ -138,6 +144,7 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
     date_approved: '2024-01-15T10:30:00Z',
     date_created: '2024-01-15T10:25:00Z',
     external_reference: 'pay-pkg-001',
+    collector_id: 12345,
     metadata: {
       packagePurchaseId: 'pp-1',
       businessId: 'biz-1',
@@ -153,6 +160,7 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
     businessId: 'biz-1',
     customerId: 'cust-1',
     provider: 'mercado_pago',
+    providerEnvironment: 'sandbox',
     providerPaymentId: null,
     amount: 50000,
     currency: 'CLP',
@@ -160,7 +168,7 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
     paymentType: 'package_purchase',
     paymentMethod: null,
     booking: null,
-    packagePurchase: { customerId: 'cust-1' },
+    packagePurchase: { customerId: 'cust-1', businessId: 'biz-1' },
   }
 
   beforeEach(async () => {
@@ -171,6 +179,9 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
     })
     vi.clearAllMocks()
     mockMpFetch.mockReset()
+    mockGetValidBusinessAccessTokenForAccount.mockReset().mockResolvedValue('test-access-token')
+    mockPrisma.payment.updateMany.mockResolvedValue({ count: 1 })
+    mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockPrisma) => unknown) => callback(mockPrisma))
     // clearAllMocks borra el valor de retorno; el webhook desestructura { outcome }.
     ;(applyApprovedPackagePayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ outcome: 'activated' })
 
@@ -178,7 +189,9 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
       id: 'pa-1',
       businessId: 'biz-1',
       provider: 'mercado_pago',
+      environment: 'sandbox',
       status: 'connected',
+      providerAccountId: '12345',
       accessTokenEncrypted: 'encrypted-test-token',
     })
 
@@ -210,6 +223,7 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
     headers: Record<string, string> = {},
   ): Request {
     const url = new URL('https://example.com/api/webhooks/mercado-pago')
+    url.searchParams.set('local_payment_id', 'pay-pkg-001')
     return new Request(url, {
       method: 'POST',
       headers: createRequestInit(headers),
@@ -245,9 +259,9 @@ describe('Mercado Pago webhook — dispatch de paquete', () => {
       expect(applyApprovedPackagePayment).toHaveBeenCalledTimes(1)
       expect(applyApprovedPayment).not.toHaveBeenCalled()
 
-      expect(mockPrisma.payment.update).toHaveBeenCalledWith(
+      expect(mockPrisma.payment.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'pay-pkg-001' },
+          where: expect.objectContaining({ id: 'pay-pkg-001' }),
           data: expect.objectContaining({ providerPaymentId: 'mp-pkg-001' }),
         }),
       )

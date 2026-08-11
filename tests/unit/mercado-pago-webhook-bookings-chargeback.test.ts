@@ -3,6 +3,9 @@ import { createHmac } from 'crypto'
 
 const mockMpFetch = vi.fn()
 vi.stubGlobal('fetch', mockMpFetch)
+vi.mock('@/lib/payments/mercado-pago-oauth', () => ({
+  getValidBusinessAccessTokenForAccount: vi.fn().mockResolvedValue('test-access-token'),
+}))
 
 // Solo los modelos que las ramas testeadas tocan de verdad: el núcleo de
 // reversión y las notifs están mockeados por módulo, así que ledger/loyalty/
@@ -17,6 +20,9 @@ const mockPrisma = {
   },
   packagePurchase: {
     findUnique: vi.fn(),
+  },
+  paymentAccount: {
+    findFirst: vi.fn(),
   },
   $transaction: vi.fn(),
 }
@@ -109,10 +115,12 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
     date_approved: '2026-07-10T10:30:00Z',
     date_created: '2026-07-10T10:25:00Z',
     external_reference: 'pay-bk-001',
+    collector_id: 12345,
     metadata: {
       bookingId: 'bk-1',
       businessId: 'biz-1',
       localPaymentId: 'pay-bk-001',
+      paymentType: 'deposit',
     },
   }
 
@@ -123,6 +131,7 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
     businessId: 'biz-1',
     customerId: 'cust-1',
     provider: 'mercado_pago',
+    providerEnvironment: 'sandbox',
     providerPaymentId: 'mp-bk-001',
     amount: 8000,
     currency: 'CLP',
@@ -154,6 +163,11 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
       business: { name: 'Estudio Mimo', currency: 'CLP', timezone: 'America/Santiago' },
     })
     mockPrisma.$transaction.mockReset().mockImplementation(async (fn: (tx: unknown) => unknown) => fn(mockPrisma))
+    mockPrisma.paymentAccount.findFirst.mockReset().mockResolvedValue({
+      id: 'pa-1', businessId: 'biz-1', provider: 'mercado_pago',
+      environment: 'sandbox', status: 'connected', providerAccountId: '12345',
+      accessTokenEncrypted: 'encrypted-test-token',
+    })
 
     vi.resetModules()
     const mod = await import('@/app/api/webhooks/mercado-pago/route')
@@ -166,7 +180,8 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
 
   function makeRequest(mpPaymentId: string, requestId: string): Request {
     const signature = createMpSignatureHeader(mpPaymentId, requestId, 'test-webhook-secret')
-    return new Request('https://example.com/api/webhooks/mercado-pago', {
+    const localPaymentId = mpPaymentId.replace(/^mp-/, 'pay-')
+    return new Request(`https://example.com/api/webhooks/mercado-pago?local_payment_id=${localPaymentId}`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -271,7 +286,13 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
   it('payment de PAQUETE con charged_back: va a reversePackagePurchaseInTx, nunca al núcleo de reservas', async () => {
     mockMpFetch.mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ ...baseMpPayment, id: 'mp-pkg-001', external_reference: 'pay-pkg-001' }),
+      json: () => Promise.resolve({
+        ...baseMpPayment, id: 'mp-pkg-001', external_reference: 'pay-pkg-001',
+        metadata: {
+          localPaymentId: 'pay-pkg-001', packagePurchaseId: 'pp-1',
+          businessId: 'biz-1', paymentType: 'package_purchase',
+        },
+      }),
     })
     mockPrisma.payment.findUnique.mockResolvedValue({
       ...approvedBookingPayment,
@@ -279,8 +300,9 @@ describe('Mercado Pago webhook — chargeback/refund de RESERVA post-approved', 
       bookingId: null,
       booking: null,
       packagePurchaseId: 'pp-1',
-      packagePurchase: { customerId: 'cust-1' },
+      packagePurchase: { customerId: 'cust-1', businessId: 'biz-1' },
       providerPaymentId: 'mp-pkg-001',
+      paymentType: 'package_purchase',
     })
     mockPrisma.packagePurchase.findUnique.mockResolvedValue({
       id: 'pp-1', businessId: 'biz-1', customerId: 'cust-1', status: 'active',

@@ -3,9 +3,11 @@ import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 
 async function main() {
+  await prisma.subscriptionNotificationDelivery.deleteMany()
   await prisma.subscriptionPayment.deleteMany()
   await prisma.subscriptionLog.deleteMany()
   await prisma.businessSubscription.deleteMany()
+  await prisma.subscriptionPlanMapping.deleteMany()
   await prisma.plan.deleteMany()
   await prisma.ledgerEntry.deleteMany()
   await prisma.payment.deleteMany()
@@ -62,9 +64,6 @@ async function main() {
 
   const thirtyDaysFromNow = new Date()
   thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30)
-  const ninetyDaysFromNow = new Date()
-  ninetyDaysFromNow.setDate(ninetyDaysFromNow.getDate() + 90)
-
   const business = await prisma.business.create({
     data: {
       name: 'Mimos Nails',
@@ -81,7 +80,7 @@ async function main() {
       timezone: 'America/Santiago',
       planId: betaFreePlan.id,
       subscriptionStatus: 'trialing',
-      trialEndsAt: ninetyDaysFromNow,
+      trialEndsAt: thirtyDaysFromNow,
       // Mark onboarding complete so /dashboard renders the dashboard instead of
       // redirecting to /dashboard/onboarding (most E2E flows assume this).
       onboardingCompletedAt: new Date(),
@@ -94,10 +93,11 @@ async function main() {
       planId: betaFreePlan.id,
       status: 'trialing',
       interval: 'monthly',
+      amount: betaFreePlan.priceMonthly,
       currentPeriodStart: new Date(),
-      currentPeriodEnd: ninetyDaysFromNow,
+      currentPeriodEnd: thirtyDaysFromNow,
       trialStartAt: new Date(),
-      trialEndAt: ninetyDaysFromNow,
+      trialEndAt: thirtyDaysFromNow,
     },
   })
 

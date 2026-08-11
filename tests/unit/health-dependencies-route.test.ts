@@ -15,6 +15,16 @@ function setRequiredEnv(paymentProvider = 'mercado_pago') {
   vi.stubEnv('RESEND_API_KEY', 'resend-token')
   vi.stubEnv('PAYMENT_PROVIDER', paymentProvider)
   vi.stubEnv('MERCADO_PAGO_ACCESS_TOKEN', 'mp-token')
+  vi.stubEnv('MP_SUBSCRIPTIONS_ENABLED', 'true')
+  vi.stubEnv('MERCADO_PAGO_ENVIRONMENT', 'sandbox')
+  vi.stubEnv('MERCADO_PAGO_SANDBOX_ACCESS_TOKEN', 'mp-subscriptions-token')
+  vi.stubEnv('MERCADO_PAGO_SANDBOX_WEBHOOK_SECRET', 'mp-subscriptions-secret')
+  vi.stubEnv('MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL', 'https://www.agendita.cl/api/mercado-pago/subscriptions/callback')
+  vi.stubEnv('MERCADO_PAGO_CLIENT_ID', 'client-id')
+  vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
+  vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://www.agendita.cl/api/mercado-pago/callback')
+  vi.stubEnv('APP_DOMAIN', 'www.agendita.cl')
+  vi.stubEnv('ENCRYPTION_KEY', 'encryption-key')
 }
 
 type ProviderOverrides = {
@@ -76,7 +86,12 @@ describe('GET /api/health/dependencies', () => {
     expect(response.status).toBe(200)
     expect(body).toMatchObject({
       status: 'ok',
-      checks: { redis: 'up', resend: 'up', mercadoPago: 'up' },
+      checks: {
+        redis: 'up',
+        resend: 'up',
+        mercadoPagoSubscriptions: 'up',
+        mercadoPagoOAuth: 'up',
+      },
     })
     expect(Object.keys(body)).toEqual(['status', 'checks', 'timestamp'])
     expect(Number.isNaN(Date.parse(body.timestamp))).toBe(false)
@@ -117,8 +132,12 @@ describe('GET /api/health/dependencies', () => {
     expect(body).not.toContain('invalid-key-private-detail')
   })
 
-  it('marks Mercado Pago not_required for manual payments', async () => {
+  it('marks both Mercado Pago flows not_required when independently disabled', async () => {
     setRequiredEnv('manual')
+    vi.stubEnv('MP_SUBSCRIPTIONS_ENABLED', 'false')
+    vi.stubEnv('MERCADO_PAGO_CLIENT_ID', '')
+    vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', '')
+    vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', '')
     const fetchMock = mockProviders()
 
     const response = await GET(request('expected'))
@@ -126,7 +145,12 @@ describe('GET /api/health/dependencies', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({
       status: 'ok',
-      checks: { redis: 'up', resend: 'up', mercadoPago: 'not_required' },
+      checks: {
+        redis: 'up',
+        resend: 'up',
+        mercadoPagoSubscriptions: 'not_required',
+        mercadoPagoOAuth: 'not_required',
+      },
     })
     expect(fetchMock.mock.calls.every(([url]) => (
       !String(url).includes('mercadopago.com')
@@ -135,7 +159,11 @@ describe('GET /api/health/dependencies', () => {
 
   it.each([
     ['Resend', 'RESEND_API_KEY', 'resend'],
-    ['Mercado Pago', 'MERCADO_PAGO_ACCESS_TOKEN', 'mercadoPago'],
+    [
+      'Mercado Pago subscriptions',
+      'MERCADO_PAGO_SANDBOX_ACCESS_TOKEN',
+      'mercadoPagoSubscriptions',
+    ],
   ])('degrades when required %s credentials are absent', async (
     _name,
     envKey,
@@ -153,22 +181,22 @@ describe('GET /api/health/dependencies', () => {
     expect(body.checks[checkKey]).toBe('not_configured')
   })
 
-  it('degrades OAuth-only Mercado Pago mode without the required global token', async () => {
+  it('does not use the unrelated global token to validate OAuth configuration', async () => {
     setRequiredEnv()
     vi.stubEnv('PAYMENT_PROVIDER', '')
     vi.stubEnv('MERCADO_PAGO_CLIENT_ID', 'client-id')
     vi.stubEnv('MERCADO_PAGO_CLIENT_SECRET', 'client-secret')
-    vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://app.example.com/callback')
+    vi.stubEnv('MERCADO_PAGO_REDIRECT_URI', 'https://www.agendita.cl/api/mercado-pago/callback')
     vi.stubEnv('MERCADO_PAGO_ACCESS_TOKEN', '')
     mockProviders()
 
     const response = await GET(request('expected'))
     const body = await response.json()
 
-    expect(response.status).toBe(503)
+    expect(response.status).toBe(200)
     expect(body).toMatchObject({
-      status: 'degraded',
-      checks: { mercadoPago: 'not_configured' },
+      status: 'ok',
+      checks: { mercadoPagoOAuth: 'up' },
     })
   })
 })

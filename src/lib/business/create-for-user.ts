@@ -136,6 +136,7 @@ export async function createBusinessForUser({ userId, email, name, subdomain, ca
         planId: betaPlan.id,
         status: 'trialing',
         interval: 'monthly',
+        amount: betaPlan.priceMonthly,
         currentPeriodStart: new Date(),
         currentPeriodEnd: thirtyDaysFromNow,
         trialStartAt: new Date(),

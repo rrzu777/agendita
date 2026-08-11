@@ -2,16 +2,22 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createHmac } from 'crypto'
 
 const mockMpFetch = vi.fn()
+const mockGetValidBusinessAccessTokenForAccount = vi.fn()
 vi.stubGlobal('fetch', mockMpFetch)
+vi.mock('@/lib/payments/mercado-pago-oauth', () => ({
+  getValidBusinessAccessTokenForAccount: (...args: unknown[]) => mockGetValidBusinessAccessTokenForAccount(...args),
+}))
 
 const mockPrisma = {
   payment: {
     findUnique: vi.fn(),
     findFirst: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
     create: vi.fn(),
     findMany: vi.fn(),
   },
+  paymentProviderIncident: { upsert: vi.fn() },
   booking: {
     findUnique: vi.fn(),
     update: vi.fn(),
@@ -126,6 +132,7 @@ describe('Mercado Pago webhook', () => {
     date_approved: '2024-01-15T10:30:00Z',
     date_created: '2024-01-15T10:25:00Z',
     external_reference: 'pay-local-001',
+    collector_id: 12345,
     metadata: {
       bookingId: 'booking-1',
       businessId: 'biz-1',
@@ -140,6 +147,7 @@ describe('Mercado Pago webhook', () => {
     businessId: 'biz-1',
     customerId: 'cust-1',
     provider: 'mercado_pago',
+    providerEnvironment: 'sandbox',
     providerPaymentId: null,
     amount: 10000,
     currency: 'CLP',
@@ -161,12 +169,17 @@ describe('Mercado Pago webhook', () => {
     })
     vi.clearAllMocks()
     mockMpFetch.mockReset()
+    mockGetValidBusinessAccessTokenForAccount.mockReset().mockResolvedValue('test-access-token')
+    mockPrisma.payment.updateMany.mockResolvedValue({ count: 1 })
+    mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockPrisma) => unknown) => callback(mockPrisma))
 
     mockPrisma.paymentAccount.findFirst.mockReset().mockResolvedValue({
       id: 'pa-1',
       businessId: 'biz-1',
       provider: 'mercado_pago',
+      environment: 'sandbox',
       status: 'connected',
+      providerAccountId: '12345',
       accessTokenEncrypted: 'encrypted-test-token',
     })
 
@@ -183,8 +196,14 @@ describe('Mercado Pago webhook', () => {
   function makeRequest(
     body: unknown,
     headers: Record<string, string> = {},
+    localPaymentId?: string,
   ): Request {
     const url = new URL('https://example.com/api/webhooks/mercado-pago')
+    const providerId = String((body as { data?: { id?: string } })?.data?.id ?? '')
+    url.searchParams.set(
+      'local_payment_id',
+      localPaymentId ?? providerId.replace(/^mp-pay-/, 'pay-local-'),
+    )
     return new Request(url, {
       method: 'POST',
       headers: createRequestInit(headers),
@@ -286,7 +305,7 @@ describe('Mercado Pago webhook', () => {
       mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({ ...mockPrisma }))
 
       const url = new URL(
-        'https://example.com/api/webhooks/mercado-pago?data.id=mp-pay-qp',
+        'https://example.com/api/webhooks/mercado-pago?data.id=mp-pay-qp&local_payment_id=pay-local-qp',
       )
       const req = new Request(url, {
         method: 'POST',
@@ -302,7 +321,7 @@ describe('Mercado Pago webhook', () => {
 
     it('rejects invalid signature with data.id from query params', async () => {
       const url = new URL(
-        'https://example.com/api/webhooks/mercado-pago?data.id=mp-pay-bad',
+        'https://example.com/api/webhooks/mercado-pago?data.id=mp-pay-bad&local_payment_id=pay-local-bad',
       )
       const req = new Request(url, {
         method: 'POST',
@@ -397,14 +416,46 @@ describe('Mercado Pago webhook', () => {
       expect(json.bookingId).toBe('booking-1')
 
       expect(applyApprovedPayment).toHaveBeenCalledTimes(1)
-      expect(mockPrisma.payment.update).toHaveBeenCalledWith(
+      expect(mockPrisma.paymentAccount.findFirst).toHaveBeenCalledWith({
+        where: {
+          businessId: 'biz-1',
+          provider: 'mercado_pago',
+          environment: 'sandbox',
+          status: 'connected',
+        },
+      })
+      expect(mockPrisma.payment.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'pay-local-001' },
+          where: expect.objectContaining({ id: 'pay-local-001' }),
           data: expect.objectContaining({
             providerPaymentId: 'mp-pay-001',
           }),
         }),
       )
+    })
+
+    it('fails closed when an approved payment has no persisted environment', async () => {
+      const secret = 'test-webhook-secret'
+      const body = { data: { id: 'mp-pay-no-env' } }
+      const signature = createMpSignatureHeader('mp-pay-no-env', 'req-no-env', secret)
+
+      mockMpFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ ...baseMpPayment, id: 'mp-pay-no-env' }),
+      })
+      mockPrisma.payment.findUnique.mockResolvedValue({
+        ...basePayment,
+        providerEnvironment: null,
+      })
+
+      const res = await POST(makeRequest(body, {
+        'x-signature': signature,
+        'x-request-id': 'req-no-env',
+      }))
+
+      expect(res.status).toBe(400)
+      expect(mockPrisma.paymentAccount.findFirst).not.toHaveBeenCalled()
+      expect(applyApprovedPayment).not.toHaveBeenCalled()
     })
 
     // El cobro ya ocurrió: si el webhook devuelve error, MP reintenta el mismo
@@ -547,6 +598,7 @@ describe('Mercado Pago webhook', () => {
             status: 'pending',
             date_approved: null,
             external_reference: 'pay-local-002',
+            metadata: { ...baseMpPayment.metadata, localPaymentId: 'pay-local-002' },
           }),
       })
 
@@ -581,6 +633,7 @@ describe('Mercado Pago webhook', () => {
             status: 'rejected',
             date_approved: null,
             external_reference: 'pay-local-003',
+            metadata: { ...baseMpPayment.metadata, localPaymentId: 'pay-local-003' },
           }),
       })
 
@@ -625,6 +678,7 @@ describe('Mercado Pago webhook', () => {
             status: 'rejected',
             date_approved: null,
             external_reference: 'pay-local-004',
+            metadata: { ...baseMpPayment.metadata, localPaymentId: 'pay-local-004' },
           }),
       })
 
@@ -982,6 +1036,7 @@ describe('Mercado Pago webhook', () => {
         bookingId: 'booking-fc',
         businessId: 'biz-1',
         provider: 'mercado_pago',
+        providerEnvironment: 'sandbox',
         amount: 10000,
         currency: 'CLP',
         status: 'pending',
@@ -1007,7 +1062,7 @@ describe('Mercado Pago webhook', () => {
       setupApprovedWebhook()
       mockPrisma.paymentAccount.findFirst.mockResolvedValue(null)
 
-      const req = makeRequest(approvedPaymentBody)
+      const req = makeRequest(approvedPaymentBody, {}, 'pay-local-fc')
       const res = await POST(req)
 
       expect(res.status).toBe(400)
@@ -1020,16 +1075,15 @@ describe('Mercado Pago webhook', () => {
         id: 'pa-1',
         businessId: 'biz-1',
         provider: 'mercado_pago',
+        environment: 'sandbox',
         status: 'connected',
+        providerAccountId: '12345',
         accessTokenEncrypted: 'invalid-ciphertext',
       })
 
-      const { decryptSecret } = await import('@/lib/payments/encryption')
-      vi.mocked(decryptSecret).mockImplementationOnce(() => {
-        throw new Error('Decrypt failed')
-      })
+      mockGetValidBusinessAccessTokenForAccount.mockRejectedValueOnce(new Error('Decrypt failed'))
 
-      const req = makeRequest(approvedPaymentBody)
+      const req = makeRequest(approvedPaymentBody, {}, 'pay-local-fc')
       const res = await POST(req)
 
       expect(res.status).toBe(500)
@@ -1042,21 +1096,15 @@ describe('Mercado Pago webhook', () => {
         id: 'pa-1',
         businessId: 'biz-1',
         provider: 'mercado_pago',
+        environment: 'sandbox',
         status: 'connected',
+        providerAccountId: '12345',
         accessTokenEncrypted: 'encrypted-test-token',
       })
 
-      // The beforeEach sets mockMpFetch.mockResolvedValue globally.
-      // For this test, first call (global lookup) succeeds, second (business re-verify) must fail.
-      // Queue: first call OK, second call rejects.
-      mockMpFetch
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve(approvedPaymentBody),
-        })
-        .mockRejectedValueOnce(new Error('Network error on re-verify'))
+      mockMpFetch.mockRejectedValueOnce(new Error('Network error on seller verification'))
 
-      const req = makeRequest(approvedPaymentBody)
+      const req = makeRequest(approvedPaymentBody, {}, 'pay-local-fc')
       const res = await POST(req)
 
       expect(res.status).toBe(502)
@@ -1081,6 +1129,7 @@ describe('Mercado Pago webhook', () => {
             currency_id: 'USD',
             date_approved: '2024-01-15T10:30:00Z',
             date_created: '2024-01-15T10:25:00Z',
+            collector_id: 12345,
             external_reference: 'pay-currency',
             metadata: {
               bookingId: 'booking-1',
@@ -1097,6 +1146,7 @@ describe('Mercado Pago webhook', () => {
         businessId: 'biz-1',
         customerId: 'cust-1',
         provider: 'mercado_pago',
+        providerEnvironment: 'sandbox',
         providerPaymentId: null,
         amount: 10000,
         currency: 'CLP',
@@ -1139,6 +1189,7 @@ describe('Mercado Pago webhook', () => {
             currency_id: 'CLP',
             date_approved: '2024-01-15T10:30:00Z',
             date_created: '2024-01-15T10:25:00Z',
+            collector_id: 12345,
             external_reference: 'pay-bizid',
             metadata: {
               bookingId: 'booking-1',
@@ -1155,6 +1206,7 @@ describe('Mercado Pago webhook', () => {
         businessId: 'biz-1',
         customerId: 'cust-1',
         provider: 'mercado_pago',
+        providerEnvironment: 'sandbox',
         providerPaymentId: null,
         amount: 10000,
         currency: 'CLP',
@@ -1181,7 +1233,7 @@ describe('Mercado Pago webhook', () => {
   })
 
   describe('providerPaymentId conflict', () => {
-    it('rejects conflicting providerPaymentId with 409', async () => {
+    it('records a distinct approved providerPaymentId for manual review', async () => {
       const secret = 'test-webhook-secret'
       const body = { data: { id: 'mp-pay-conflict' } }
       const signature = createMpSignatureHeader('mp-pay-conflict', 'req-conflict', secret)
@@ -1197,6 +1249,7 @@ describe('Mercado Pago webhook', () => {
             currency_id: 'CLP',
             date_approved: '2024-01-15T10:30:00Z',
             date_created: '2024-01-15T10:25:00Z',
+            collector_id: 12345,
             external_reference: 'pay-conflict',
             metadata: {
               bookingId: 'booking-1',
@@ -1213,6 +1266,7 @@ describe('Mercado Pago webhook', () => {
         businessId: 'biz-1',
         customerId: 'cust-1',
         provider: 'mercado_pago',
+        providerEnvironment: 'sandbox',
         providerPaymentId: 'some-other-mp-id',
         amount: 10000,
         currency: 'CLP',
@@ -1225,6 +1279,8 @@ describe('Mercado Pago webhook', () => {
           status: 'pending_payment',
         },
       })
+      mockPrisma.payment.updateMany.mockResolvedValue({ count: 0 })
+      mockPrisma.paymentProviderIncident.upsert.mockResolvedValue({ id: 'incident-conflict' })
 
       const req = makeRequest(body, {
         'x-signature': signature,
@@ -1232,8 +1288,9 @@ describe('Mercado Pago webhook', () => {
       })
       const res = await POST(req)
 
-      expect(res.status).toBe(409)
-      expect((await res.json()).error).toContain('ProviderPaymentId conflict')
+      expect(res.status).toBe(200)
+      expect((await res.json()).message).toContain('manual review')
+      expect(mockPrisma.paymentProviderIncident.upsert).toHaveBeenCalled()
     })
   })
 
@@ -1254,6 +1311,7 @@ describe('Mercado Pago webhook', () => {
             currency_id: 'CLP',
             date_approved: '2024-01-15T10:30:00Z',
             date_created: '2024-01-15T10:25:00Z',
+            collector_id: 12345,
             external_reference: 'pay-cross',
             metadata: {
               bookingId: 'booking-1',
@@ -1270,6 +1328,7 @@ describe('Mercado Pago webhook', () => {
         businessId: 'biz-1',
         customerId: 'cust-1',
         provider: 'mercado_pago',
+        providerEnvironment: 'sandbox',
         providerPaymentId: null,
         amount: 10000,
         currency: 'CLP',
@@ -1297,8 +1356,8 @@ describe('Mercado Pago webhook', () => {
     })
   })
 
-  describe('two fetch calls before apply', () => {
-    it('uses global token for first fetch and business token for second fetch before applying', async () => {
+  describe('single seller fetch before apply', () => {
+    it('uses only the business token before applying', async () => {
       const secret = 'test-webhook-secret'
       const body = { data: { id: 'mp-pay-twofet' } }
       const signature = createMpSignatureHeader('mp-pay-twofet', 'req-twofet', secret)
@@ -1320,6 +1379,7 @@ describe('Mercado Pago webhook', () => {
                     currency_id: 'CLP',
                     date_approved: '2024-01-15T10:30:00Z',
                     date_created: '2024-01-15T10:25:00Z',
+                    collector_id: 12345,
                     external_reference: 'pay-twofet',
                     metadata: {
                       bookingId: 'booking-1',
@@ -1339,6 +1399,7 @@ describe('Mercado Pago webhook', () => {
         businessId: 'biz-1',
         customerId: 'cust-1',
         provider: 'mercado_pago',
+        providerEnvironment: 'sandbox',
         providerPaymentId: null,
         amount: 10000,
         currency: 'CLP',
@@ -1359,7 +1420,8 @@ describe('Mercado Pago webhook', () => {
       const res = await POST(req)
 
       expect(res.status).toBe(200)
-      expect(fetchCalls.length).toBe(2)
+      expect(fetchCalls.length).toBe(1)
+      expect(mockMpFetch.mock.calls[0][1].headers.Authorization).toBe('Bearer test-access-token')
       expect(applyApprovedPayment).toHaveBeenCalled()
     })
   })

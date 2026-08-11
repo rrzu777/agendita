@@ -1,0 +1,376 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import {
+  createMpSubscriptionClient,
+  MercadoPagoSubscriptionTransportError,
+  MP_SUBSCRIPTION_REQUEST_TIMEOUT_MS,
+} from './mercado-pago-client'
+
+const config = {
+  accessToken: 'test-token-must-never-leak',
+  webhookSecret: 'test-webhook-secret-must-never-leak',
+  callbackUrl: 'https://app.example.com/api/webhooks/mercado-pago/subscriptions',
+  environment: 'sandbox' as const,
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+beforeEach(() => vi.stubGlobal('window', undefined))
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+describe('createMpSubscriptionClient', () => {
+  it('creates a monthly CLP plan using the selected hosted-checkout transport', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        id: 'plan-1',
+        status: 'active',
+        reason: 'Plan Pro',
+        auto_recurring: {
+          transaction_amount: 12000,
+          currency_id: 'CLP',
+          frequency: 1,
+          frequency_type: 'months',
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const plan = await createMpSubscriptionClient(config).createPlan({
+      name: 'Plan Pro',
+      amount: 12000,
+      externalReference: 'local-op-plan-1',
+    })
+
+    expect(plan.id).toBe('plan-1')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.mercadopago.com/preapproval_plan',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer test-token-must-never-leak',
+          'Content-Type': 'application/json',
+        }),
+        signal: expect.any(AbortSignal),
+      }),
+    )
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(JSON.parse(init.body as string)).toEqual({
+      reason: 'Plan Pro',
+      external_reference: 'local-op-plan-1',
+      back_url: config.callbackUrl,
+      auto_recurring: {
+        frequency: 1,
+        frequency_type: 'months',
+        transaction_amount: 12000,
+        currency_id: 'CLP',
+      },
+    })
+  })
+
+  it('uses documented endpoints for plan and subscription lifecycle operations', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ id: 'plan-1', status: 'active', auto_recurring: { transaction_amount: 12000, currency_id: 'CLP', frequency: 1, frequency_type: 'months' } }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'preapproval-1', status: 'pending', auto_recurring: { transaction_amount: 12000, currency_id: 'CLP', frequency: 1, frequency_type: 'months' }, init_point: 'https://www.mercadopago.cl/checkout' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'preapproval-1', status: 'authorized', auto_recurring: { transaction_amount: 12000, currency_id: 'CLP', frequency: 1, frequency_type: 'months' } }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'preapproval-1', status: 'canceled', auto_recurring: { transaction_amount: 12000, currency_id: 'CLP', frequency: 1, frequency_type: 'months' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const client = createMpSubscriptionClient(config)
+
+    await client.getPlan('plan-1')
+    await client.createSubscription({
+      planId: 'plan-1',
+      externalReference: 'local-op-subscription-1',
+      payerEmail: 'payer@example.com',
+      amount: 12000,
+      startDate: new Date('2026-08-14T12:00:00.000Z'),
+    })
+    await client.getSubscription('preapproval-1')
+    await client.cancelSubscription('preapproval-1')
+
+    expect(fetchMock.mock.calls.map(([url, init]) => [url, (init as RequestInit).method ?? 'GET'])).toEqual([
+      ['https://api.mercadopago.com/preapproval_plan/plan-1', 'GET'],
+      ['https://api.mercadopago.com/preapproval', 'POST'],
+      ['https://api.mercadopago.com/preapproval/preapproval-1', 'GET'],
+      ['https://api.mercadopago.com/preapproval/preapproval-1', 'PUT'],
+    ])
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+      preapproval_plan_id: 'plan-1',
+      external_reference: 'local-op-subscription-1',
+      payer_email: 'payer@example.com',
+      auto_recurring: {
+        frequency: 1,
+        frequency_type: 'months',
+        transaction_amount: 12000,
+        currency_id: 'CLP',
+        start_date: '2026-08-14T12:00:00.000Z',
+      },
+      back_url: config.callbackUrl,
+    })
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ status: 'canceled' })
+  })
+
+  it('gets an exact plan and the seller account bound to the configured token', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        id: 'plan-exact', status: 'active', external_reference: 'agendita_plan_mapping-1',
+        reason: 'Plan Pro', collector_id: 12345,
+        auto_recurring: {
+          transaction_amount: 12000, currency_id: 'CLP', frequency: 1, frequency_type: 'months',
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ id: 12345 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const client = createMpSubscriptionClient(config)
+
+    await expect(client.getPlan('plan-exact')).resolves.toEqual({
+      id: 'plan-exact',
+      status: 'active',
+      externalReference: 'agendita_plan_mapping-1',
+      reason: 'Plan Pro',
+      collectorId: '12345',
+      amount: 12000,
+      currency: 'CLP',
+      frequency: 1,
+      frequencyType: 'months',
+    })
+    await expect(client.getCurrentAccountId()).resolves.toBe('12345')
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://api.mercadopago.com/preapproval_plan/plan-exact',
+      'https://api.mercadopago.com/users/me',
+    ])
+  })
+
+  it.each([
+    'http://www.mercadopago.cl/checkout',
+    'javascript:alert(1)',
+    'https://mercadopago.cl@evil.example/checkout',
+    'https://merchant.example/checkout',
+    'https://user@www.mercadopago.cl/checkout',
+  ])('rejects an unsafe hosted checkout URL: %s', async (initPoint) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          id: 'preapproval-unsafe-checkout',
+          status: 'pending',
+          init_point: initPoint,
+          auto_recurring: {
+            transaction_amount: 12000,
+            currency_id: 'CLP',
+            frequency: 1,
+            frequency_type: 'months',
+          },
+        }),
+      ),
+    )
+
+    await expect(
+      createMpSubscriptionClient(config).createSubscription({
+        planId: 'plan-1',
+        externalReference: 'local-op-unsafe-checkout',
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining({ name: 'MercadoPagoSubscriptionContractError' }),
+    )
+  })
+
+  it('fails the create operation when Mercado Pago does not return hosted checkout', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          id: 'preapproval-no-hosted-checkout',
+          status: 'pending',
+          auto_recurring: {
+            transaction_amount: 12000,
+            currency_id: 'CLP',
+            frequency: 1,
+            frequency_type: 'months',
+          },
+        }),
+      ),
+    )
+
+    await expect(
+      createMpSubscriptionClient(config).createSubscription({
+        planId: 'plan-1',
+        externalReference: 'local-op-subscription-no-hosted-checkout',
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining({ name: 'MercadoPagoSubscriptionContractError' }),
+    )
+  })
+
+  it('accepts a directly authorized create response without a hosted URL', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      id: 'preapproval-authorized', status: 'authorized', preapproval_plan_id: 'plan-1',
+      external_reference: 'local-op-authorized',
+      auto_recurring: {
+        transaction_amount: 12000, currency_id: 'CLP', frequency: 1, frequency_type: 'months',
+      },
+    })))
+
+    await expect(createMpSubscriptionClient(config).createSubscription({
+      planId: 'plan-1', externalReference: 'local-op-authorized', amount: 12000,
+      startDate: new Date('2026-08-14T12:00:00.000Z'),
+    })).resolves.toMatchObject({
+      id: 'preapproval-authorized', providerStatus: 'authorized', checkoutUrl: null,
+    })
+  })
+
+  it('gets and searches invoices by preapproval id', async () => {
+    const invoice = {
+      id: 'invoice-1',
+      status: 'approved',
+      preapproval_id: 'preapproval-1',
+      transaction_amount: 12000,
+      currency_id: 'CLP',
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(invoice))
+      .mockResolvedValueOnce(jsonResponse({
+        paging: { total: 1, offset: 0, limit: 20 },
+        results: [invoice],
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+    const client = createMpSubscriptionClient(config)
+
+    await expect(client.getInvoice('invoice-1')).resolves.toMatchObject({ id: 'invoice-1' })
+    await expect(client.searchInvoices('preapproval-1')).resolves.toHaveLength(1)
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://api.mercadopago.com/authorized_payments/invoice-1',
+      'https://api.mercadopago.com/authorized_payments/search?preapproval_id=preapproval-1&limit=20&offset=0',
+    ])
+  })
+
+  it('pagina facturas con un límite total explícito antes de declarar la búsqueda completa', async () => {
+    const invoice = (id: number) => ({
+      id: `invoice-${id}`,
+      status: 'approved',
+      preapproval_id: 'preapproval-1',
+      transaction_amount: 12000,
+      currency_id: 'CLP',
+    })
+    const firstPage = Array.from({ length: 20 }, (_, index) => invoice(index + 1))
+    const secondPage = [invoice(21)]
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        paging: { total: 21, offset: 0, limit: 20 },
+        results: firstPage,
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        paging: { total: 21, offset: 20, limit: 20 },
+        results: secondPage,
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createMpSubscriptionClient(config).searchInvoices('preapproval-1'))
+      .resolves.toHaveLength(21)
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://api.mercadopago.com/authorized_payments/search?preapproval_id=preapproval-1&limit=20&offset=0',
+      'https://api.mercadopago.com/authorized_payments/search?preapproval_id=preapproval-1&limit=20&offset=20',
+    ])
+  })
+
+  it('falla cerrado si el total externo excede el cap sanitario', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      paging: { total: 101, offset: 0, limit: 20 },
+      results: [],
+    })))
+
+    await expect(createMpSubscriptionClient(config).searchInvoices('preapproval-1'))
+      .rejects.toMatchObject({ name: 'MercadoPagoSubscriptionContractError' })
+  })
+
+  it('sanitizes upstream failures without exposing response bodies or credentials', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(`provider body ${config.accessToken} ${config.webhookSecret}`, {
+          status: 401,
+        }),
+      ),
+    )
+
+    await expect(createMpSubscriptionClient(config).getPlan('plan-1')).rejects.toEqual(
+      expect.objectContaining({
+        name: 'MercadoPagoSubscriptionTransportError',
+        message: 'Mercado Pago subscriptions request failed (HTTP 401).',
+        status: 401,
+        outcome: 'definitive_rejection',
+      }),
+    )
+    await expect(createMpSubscriptionClient(config).getPlan('plan-1')).rejects.toBeInstanceOf(
+      MercadoPagoSubscriptionTransportError,
+    )
+  })
+
+  it.each([
+    [400, 'definitive_rejection'],
+    [401, 'definitive_rejection'],
+    [403, 'definitive_rejection'],
+    [408, 'ambiguous'],
+    [500, 'ambiguous'],
+  ] as const)('classifies sanitized HTTP %s as %s', async (status, outcome) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(`secret upstream body ${config.accessToken}`, { status }),
+    ))
+
+    const error = await createMpSubscriptionClient(config).createPlan({
+      name: 'Plan Pro', amount: 12000, externalReference: 'plan-reference',
+    }).catch((caught: unknown) => caught)
+
+    expect(error).toEqual(expect.objectContaining({ status, outcome }))
+    expect(String(error)).not.toContain(config.accessToken)
+    expect(JSON.stringify(error)).not.toContain(config.accessToken)
+  })
+
+  it.each([
+    ['network', new TypeError('fetch failed')],
+    ['timeout', new DOMException('timed out', 'AbortError')],
+  ])('classifies a %s failure as ambiguous without leaking the cause', async (_name, cause) => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(cause))
+
+    const error = await createMpSubscriptionClient(config).createPlan({
+      name: 'Plan Pro', amount: 12000, externalReference: 'plan-reference',
+    }).catch((caught: unknown) => caught)
+
+    expect(error).toEqual(expect.objectContaining({
+      status: null, outcome: 'ambiguous', message: 'Mercado Pago subscriptions request failed.',
+    }))
+    expect(error).not.toHaveProperty('cause')
+  })
+
+  it('bounds every provider request with the fixed five-second timeout', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          id: 'plan-1',
+          status: 'active',
+          auto_recurring: {
+            transaction_amount: 12000,
+            currency_id: 'CLP',
+            frequency: 1,
+            frequency_type: 'months',
+          },
+        }),
+      ),
+    )
+
+    await createMpSubscriptionClient(config).getPlan('plan-1')
+
+    expect(MP_SUBSCRIPTION_REQUEST_TIMEOUT_MS).toBe(5_000)
+    expect(timeout).toHaveBeenCalledWith(MP_SUBSCRIPTION_REQUEST_TIMEOUT_MS)
+  })
+})

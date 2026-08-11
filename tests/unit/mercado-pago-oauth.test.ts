@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createHmac } from 'crypto'
+import { NextRequest } from 'next/server'
 
 type AuthMiddlewareModule = typeof import('@/lib/auth/middleware')
 type CreateClientResult = Awaited<ReturnType<AuthMiddlewareModule['createClient']>>
@@ -15,12 +16,17 @@ const mockPrisma = {
   },
   businessUser: { findFirst: vi.fn() },
   business: { findUnique: vi.fn() },
+  mercadoPagoOAuthAttempt: {
+    create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn(),
+  },
+  $queryRaw: vi.fn(),
+  $transaction: vi.fn(),
 }
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 
 vi.mock('@/lib/auth/server', () => ({
   requireUser: vi.fn().mockResolvedValue({ id: 'user-1' }),
-  requireBusiness: vi.fn().mockResolvedValue({ userId: 'user-1', businessId: 'biz-1' }),
+  requireBusiness: vi.fn().mockResolvedValue({ user: { id: 'user-1' }, businessId: 'biz-1' }),
 }))
 
 vi.mock('@/lib/payments/encryption', () => ({
@@ -29,8 +35,12 @@ vi.mock('@/lib/payments/encryption', () => ({
 }))
 
 vi.mock('@/lib/payments/oauth-state', () => ({
-  signState: vi.fn(),
+  signState: vi.fn().mockReturnValue('signed-state'),
   verifyStateSignature: vi.fn(),
+}))
+
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({ set: vi.fn() })),
 }))
 
 const mockSupabaseAuth = { getUser: vi.fn() }
@@ -50,12 +60,17 @@ function setEnv(vars: Record<string, string | undefined>) {
 }
 
 function createValidState(businessId: string, expirationMs?: number): string {
-  const key = process.env.ENCRYPTION_KEY || 'test-encryption-key-32bytes!!'
-  const stateValue = 'state-abc-123'
   const expiresAt = expirationMs ?? Date.now() + 600000
-  const payload = `${businessId}:${stateValue}:${expiresAt}`
-  const sig = createHmac('sha256', key).update(payload).digest('hex')
+  const payload = `${businessId}:sandbox:state-abc-123:${expiresAt}`
+  const sig = createHmac('sha256', process.env.ENCRYPTION_KEY || '').update(payload).digest('hex')
   return `${payload}:${sig}`
+}
+
+function callbackRequest(query: string) {
+  const value = Buffer.from(JSON.stringify({ nonce: 'state-abc-123', verifier: 'verifier' })).toString('base64url')
+  return new NextRequest(`http://localhost/api/mercado-pago/callback?${query}`, {
+    headers: { cookie: `agendita_mp_oauth_pkce=${value}` },
+  })
 }
 
 describe('Mercado Pago OAuth', () => {
@@ -66,8 +81,17 @@ describe('Mercado Pago OAuth', () => {
       MERCADO_PAGO_CLIENT_ID: 'test-client-id',
       MERCADO_PAGO_CLIENT_SECRET: 'test-client-secret',
       MERCADO_PAGO_REDIRECT_URI: 'https://app.example.com/api/mercado-pago/callback',
+      MERCADO_PAGO_ENVIRONMENT: 'sandbox',
     })
     vi.clearAllMocks()
+    mockPrisma.mercadoPagoOAuthAttempt.create.mockResolvedValue({ id: 'attempt-1' })
+    mockPrisma.mercadoPagoOAuthAttempt.findMany.mockResolvedValue([])
+    mockPrisma.mercadoPagoOAuthAttempt.deleteMany.mockResolvedValue({ count: 0 })
+    mockPrisma.mercadoPagoOAuthAttempt.findFirst.mockResolvedValue({
+      id: 'attempt-1', verifierEncrypted: 'encrypted-token',
+    })
+    mockPrisma.mercadoPagoOAuthAttempt.updateMany.mockResolvedValue({ count: 1 })
+    mockPrisma.$transaction.mockImplementation(async (operation) => operation(mockPrisma))
   })
 
   afterEach(() => {
@@ -87,6 +111,8 @@ describe('Mercado Pago OAuth', () => {
       expect(url.searchParams.get('response_type')).toBe('code')
       expect(url.searchParams.get('platform_id')).toBe('mp')
       expect(url.searchParams.get('redirect_uri')).toBe('https://app.example.com/api/mercado-pago/callback')
+      expect(url.searchParams.get('code_challenge_method')).toBe('S256')
+      expect(url.searchParams.get('code_challenge')).toBeTruthy()
     })
 
     it('includes signed state containing businessId and expiration', async () => {
@@ -96,9 +122,10 @@ describe('Mercado Pago OAuth', () => {
       const state = url.searchParams.get('state')
       expect(state).toBeDefined()
       const parts = state!.split(':')
-      expect(parts.length).toBe(4)
+      expect(parts.length).toBe(5)
       expect(parts[0]).toBe('biz-1')
-      expect(parseInt(parts[2], 10)).toBeGreaterThan(Date.now())
+      expect(parts[1]).toBe('sandbox')
+      expect(parseInt(parts[3], 10)).toBeGreaterThan(Date.now())
     })
 
     it('throws when MERCADO_PAGO_CLIENT_ID is not configured', async () => {
@@ -146,9 +173,7 @@ describe('Mercado Pago OAuth', () => {
       const mod = await importRoute(false)
       const GET = mod.GET as unknown as (req: Request) => Promise<Response>
       // State with invalid (non-hex) signature so verifyStateSignature returns false
-      const req = new Request(
-        `http://localhost/api/mercado-pago/callback?code=test-code&state=biz-1:state:9999999999:NOT_A_VALID_SIGNATURE_HEX_STRING_THAT_WONT_VERIFY`,
-      )
+      const req = callbackRequest('code=test-code&state=biz-1:sandbox:state-abc-123:9999999999999:invalid')
       const res = await GET(req)
       expect(res.status).toBe(307)
       expect(res.headers.get('location')).toContain('error=invalid_state')
@@ -158,21 +183,17 @@ describe('Mercado Pago OAuth', () => {
       mockMpFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ access_token: 'tok' }) })
       const mod = await importRoute()
       const GET = mod.GET as unknown as (req: Request) => Promise<Response>
-      const req = new Request(
-        `http://localhost/api/mercado-pago/callback?state=${encodeURIComponent(createValidState('biz-1'))}`,
-      )
+      const req = callbackRequest(`state=${encodeURIComponent(createValidState('biz-1'))}`)
       const res = await GET(req)
       expect(res.status).toBe(307)
       expect(res.headers.get('location')).toContain('error=invalid_callback')
     })
 
     it('redirects with error=token_exchange_failed when MP token API fails', async () => {
-      mockMpFetch.mockResolvedValue({ ok: false, text: () => Promise.resolve('invalid_grant') })
+      mockMpFetch.mockResolvedValue({ ok: false, status: 400, headers: new Headers({ 'content-type': 'application/json' }), json: () => Promise.resolve({ error: 'invalid_grant' }) })
       const mod = await importRoute()
       const GET = mod.GET as unknown as (req: Request) => Promise<Response>
-      const req = new Request(
-        `http://localhost/api/mercado-pago/callback?code=test-code&state=${encodeURIComponent(createValidState('biz-1'))}`,
-      )
+      const req = callbackRequest(`code=test-code&state=${encodeURIComponent(createValidState('biz-1'))}`)
       const res = await GET(req)
       expect(res.status).toBe(307)
       expect(res.headers.get('location')).toContain('error=token_exchange_failed')
@@ -182,6 +203,8 @@ describe('Mercado Pago OAuth', () => {
     it('creates PaymentAccount on successful token exchange', async () => {
       mockMpFetch.mockResolvedValue({
         ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
         json: () =>
           Promise.resolve({
             access_token: 'mp-access-token-123',
@@ -195,33 +218,35 @@ describe('Mercado Pago OAuth', () => {
       })
       const mod = await importRoute()
       const GET = mod.GET as unknown as (req: Request) => Promise<Response>
-      const req = new Request(
-        `http://localhost/api/mercado-pago/callback?code=valid-code&state=${encodeURIComponent(createValidState('biz-1'))}`,
-      )
+      const req = callbackRequest(`code=valid-code&state=${encodeURIComponent(createValidState('biz-1'))}`)
       const res = await GET(req)
       expect(res.status).toBe(307)
       expect(res.headers.get('location')).toContain('success=connected')
       expect(mockPrisma.paymentAccount.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { businessId_provider: { businessId: 'biz-1', provider: 'mercado_pago' } },
+          where: {
+            businessId_provider_environment: {
+              businessId: 'biz-1',
+              provider: 'mercado_pago',
+              environment: 'sandbox',
+            },
+          },
           create: expect.objectContaining({
-            businessId: 'biz-1', provider: 'mercado_pago',
+            businessId: 'biz-1', provider: 'mercado_pago', environment: 'sandbox',
             accessTokenEncrypted: 'encrypted-token', status: 'connected',
           }),
         }),
       )
     })
 
-    it('passes network error through as error=unexpected', async () => {
+    it('sanitizes a network error as token_exchange_failed', async () => {
       mockMpFetch.mockRejectedValue(new Error('ECONNRESET'))
       const mod = await importRoute()
       const GET = mod.GET as unknown as (req: Request) => Promise<Response>
-      const req = new Request(
-        `http://localhost/api/mercado-pago/callback?code=net-err&state=${encodeURIComponent(createValidState('biz-1'))}`,
-      )
+      const req = callbackRequest(`code=net-err&state=${encodeURIComponent(createValidState('biz-1'))}`)
       const res = await GET(req)
       expect(res.status).toBe(307)
-      expect(res.headers.get('location')).toContain('error=unexpected')
+      expect(res.headers.get('location')).toContain('error=token_exchange_failed')
     })
   })
 

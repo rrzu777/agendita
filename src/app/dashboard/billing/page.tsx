@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { formatMoney } from '@/lib/money'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
+import { SubscriptionActions } from './subscription-actions'
 
 const statusIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   trialing: Clock,
@@ -29,7 +30,12 @@ const statusColors: Record<string, string> = {
   cancelled: 'bg-stone-100 text-stone-800',
 }
 
-export default async function BillingPage() {
+export default async function BillingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ subscription?: string }>
+} = {}) {
+  const callbackStatus = (await searchParams)?.subscription
   const userData = await getCurrentUserWithBusiness()
 
   if (!userData?.user) {
@@ -66,13 +72,37 @@ export default async function BillingPage() {
   }
 
   const status = subscription.status
-  const StatusIcon = statusIcons[status] ?? CircleAlert
   const plan = subscription.plan
+  const now = new Date()
+  const complimentaryActive = !!subscription.complimentaryUntil && subscription.complimentaryUntil > now
+  const StatusIcon = complimentaryActive ? BadgeCheck : (statusIcons[status] ?? CircleAlert)
+  const checkoutAvailable =
+    subscription.billingEnabled &&
+    !subscription.hasProviderSubscription &&
+    !complimentaryActive &&
+    (subscription.status === 'past_due' || (
+      subscription.status === 'trialing' &&
+      !!subscription.trialEndAt &&
+      subscription.trialEndAt > now &&
+      subscription.trialEndAt.getTime() - now.getTime() <= 7 * 24 * 60 * 60 * 1_000
+    ))
 
   return (
     <div>
       <DashboardHeader title="Facturación" subtitle="Gestiona tu plan y pagos de suscripción" />
       <div className="p-5 md:p-10">
+        {callbackStatus && ['processing', 'active', 'failed'].includes(callbackStatus) && (
+          <div className={cn(
+            'mb-6 rounded-lg border p-4 text-sm',
+            callbackStatus === 'failed'
+              ? 'border-red-200 bg-red-50 text-red-800'
+              : 'border-blue-200 bg-blue-50 text-blue-800',
+          )}>
+            {callbackStatus === 'processing' && 'Mercado Pago está procesando la autorización. Confirmaremos el estado de forma automática.'}
+            {callbackStatus === 'active' && 'Mercado Pago informó una autorización activa. La confirmación final llegará por webhook o reconciliación.'}
+            {callbackStatus === 'failed' && 'No pudimos validar el retorno de Mercado Pago. Tu suscripción local no fue modificada.'}
+          </div>
+        )}
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2 space-y-6">
             <Card>
@@ -85,22 +115,21 @@ export default async function BillingPage() {
                   <div>
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="text-2xl font-semibold text-primary">{plan?.name ?? 'Plan no asignado'}</h3>
-                      <span className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold', statusColors[status])}>
+                      <span className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold', complimentaryActive ? statusColors.active : statusColors[status])}>
                         <StatusIcon className="size-3.5" />
-                        {getSubscriptionStatusLabel(status)}
+                        {complimentaryActive ? 'Exención vigente' : getSubscriptionStatusLabel(status)}
                       </span>
                     </div>
                     {plan && (
                       <p className="text-sm text-muted-foreground">
                         {formatMoney(plan.priceMonthly, 'CLP')} CLP / mes
-                        {plan.priceYearly > 0 && ` · ${formatMoney(plan.priceYearly, 'CLP')} CLP / año`}
                       </p>
                     )}
                   </div>
                 </div>
 
                 <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                  {subscription.trialStartAt && (
+                  {!complimentaryActive && subscription.trialStartAt && (
                     <div className="rounded-lg border border-border bg-muted/30 p-4">
                       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Inicio de prueba</p>
                       <p className="mt-1 text-sm font-semibold text-primary">
@@ -108,7 +137,7 @@ export default async function BillingPage() {
                       </p>
                     </div>
                   )}
-                  {subscription.trialEndAt && (
+                  {!complimentaryActive && subscription.trialEndAt && (
                     <div className="rounded-lg border border-border bg-muted/30 p-4">
                       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Fin de prueba</p>
                       <p className="mt-1 text-sm font-semibold text-primary">
@@ -116,18 +145,36 @@ export default async function BillingPage() {
                       </p>
                     </div>
                   )}
-                  <div className="rounded-lg border border-border bg-muted/30 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Periodo actual</p>
-                    <p className="mt-1 text-sm font-semibold text-primary">
-                      {subscription.currentPeriodStart.toLocaleDateString('es-CL')} - {subscription.currentPeriodEnd.toLocaleDateString('es-CL')}
-                    </p>
-                  </div>
+                  {!complimentaryActive && (
+                    <div className="rounded-lg border border-border bg-muted/30 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Periodo actual</p>
+                      <p className="mt-1 text-sm font-semibold text-primary">
+                        {subscription.currentPeriodStart.toLocaleDateString('es-CL')} - {subscription.currentPeriodEnd.toLocaleDateString('es-CL')}
+                      </p>
+                    </div>
+                  )}
                   <div className="rounded-lg border border-border bg-muted/30 p-4">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ciclo</p>
                     <p className="mt-1 text-sm font-semibold capitalize text-primary">
                       {subscription.interval === 'monthly' ? 'Mensual' : 'Anual'}
                     </p>
                   </div>
+                  {subscription.nextBillingAt && !subscription.cancelAtPeriodEnd && (
+                    <div className="rounded-lg border border-border bg-muted/30 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Próximo cobro</p>
+                      <p className="mt-1 text-sm font-semibold text-primary">
+                        {subscription.nextBillingAt.toLocaleDateString('es-CL')}
+                      </p>
+                    </div>
+                  )}
+                  {subscription.graceEndsAt && subscription.status === 'past_due' && (
+                    <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-yellow-700">Período de gracia hasta</p>
+                      <p className="mt-1 text-sm font-semibold text-yellow-800">
+                        {subscription.graceEndsAt.toLocaleDateString('es-CL')}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -201,32 +248,50 @@ export default async function BillingPage() {
           <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Instrucciones de pago</CardTitle>
-                <CardDescription>La suscripción se paga de forma manual durante la beta</CardDescription>
+                <CardTitle>Pago de suscripción</CardTitle>
+                <CardDescription>
+                  {subscription.hasProviderSubscription
+                    ? 'Tu medio de pago está autorizado para la mensualidad automática'
+                    : subscription.billingEnabled
+                      ? 'Activa la mensualidad en el checkout alojado de Mercado Pago'
+                      : 'La facturación automática aún no está habilitada para este negocio'}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 text-sm text-muted-foreground">
-                <p>Durante el período beta, los pagos de suscripción se gestionan manualmente.</p>
-                <div className="rounded-lg border border-border bg-muted/30 p-4">
-                  <p className="font-semibold text-primary mb-2">Pasos:</p>
-                  <ol className="list-decimal pl-4 space-y-2">
-                    <li>Realiza una transferencia a la cuenta de Agendita (datos proporcionados por soporte).</li>
-                    <li>Envía el comprobante a nuestro equipo.</li>
-                    <li>Confirmaremos el pago y activaremos tu suscripción.</li>
-                  </ol>
-                </div>
-                {supportEmail ? (
+                <SubscriptionActions
+                  canStartCheckout={checkoutAvailable}
+                  canCancel={subscription.hasProviderSubscription && !subscription.cancelAtPeriodEnd && subscription.status !== 'cancelled'}
+                />
+                {subscription.hasProviderSubscription && !subscription.cancelAtPeriodEnd && (
+                  <p><strong className="text-primary">Mensualidad automática activa.</strong> Mercado Pago realizará los cobros mensuales según la fecha indicada.</p>
+                )}
+                {checkoutAvailable && subscription.status === 'trialing' && subscription.trialEndAt && (
+                  <p>El primer cobro se realizará al terminar tu prueba, el {subscription.trialEndAt.toLocaleDateString('es-CL')}.</p>
+                )}
+                {checkoutAvailable && subscription.status === 'past_due' && (
+                  <p><strong className="text-primary">Activación requerida.</strong> Mercado Pago te pedirá autorizar los cobros mensuales; no realizamos cargos retroactivos.</p>
+                )}
+                {complimentaryActive && (
+                  <p><strong className="text-primary">Exención activa.</strong> No necesitas registrar un medio de pago ni se generarán cobros hasta el {subscription.complimentaryUntil!.toLocaleDateString('es-CL')}.</p>
+                )}
+                {subscription.cancelAtPeriodEnd && (
+                  <p><strong className="text-primary">Cancelación programada.</strong> Mantendrás acceso hasta el {subscription.currentPeriodEnd.toLocaleDateString('es-CL')}. No se renovará ni se generará un reembolso automático.</p>
+                )}
+                {!subscription.billingEnabled && supportEmail ? (
                   <p className="text-xs">
                     Contacto para pagos: <a href={`mailto:${supportEmail}`} className="font-semibold text-primary underline">{supportEmail}</a>
                   </p>
-                ) : (
-                  <p className="text-xs">
-                    Pronto estará disponible el pago automático con tarjeta.
-                  </p>
+                ) : null}
+                {subscription.billingEnabled && !checkoutAvailable && !subscription.hasProviderSubscription && !complimentaryActive && subscription.status === 'trialing' && (
+                  <p>El checkout estará disponible cuando se acerque el fin de tu prueba o si necesitas regularizar un pago.</p>
+                )}
+                {subscription.status === 'cancelled' && (
+                  <p><strong className="text-primary">Suscripción cancelada.</strong> La mensualidad automática terminó y no se realizarán nuevos cobros.</p>
                 )}
               </CardContent>
             </Card>
 
-            {business.subscriptionStatus === 'trialing' && subscription.trialEndAt && (
+            {!complimentaryActive && business.subscriptionStatus === 'trialing' && subscription.trialEndAt && (
               <Card className="border-blue-200 bg-blue-50/50">
                 <CardContent className="p-6">
                   <div className="flex items-center gap-3">
@@ -251,7 +316,10 @@ export default async function BillingPage() {
                     <div>
                       <p className="font-semibold text-yellow-800">Pago pendiente</p>
                       <p className="text-sm text-yellow-600">
-                        Tu suscripción tiene un pago pendiente. Regulariza tu pago pronto para evitar interrupciones.
+                        Tu suscripción tiene un pago pendiente.
+                        {subscription.graceEndsAt
+                          ? ` Tu período de gracia termina el ${subscription.graceEndsAt.toLocaleDateString('es-CL')}.`
+                          : ' Regulariza tu pago pronto para evitar interrupciones.'}
                       </p>
                       {supportEmail && (
                         <p className="mt-1 text-sm text-yellow-700">
@@ -272,9 +340,9 @@ export default async function BillingPage() {
                     <div>
                       <p className="font-semibold text-red-800">Cuenta suspendida</p>
                       <p className="text-sm text-red-600">
-                        Tu cuenta ha sido suspendida.
+                        Tu cuenta ha sido suspendida. Contacta a soporte para revisar la reactivación.
                         {supportEmail && (
-                          <> Contacta a <a href={`mailto:${supportEmail}`} className="font-semibold underline">{supportEmail}</a> para reactivar.</>
+                          <> Escríbenos a <a href={`mailto:${supportEmail}`} className="font-semibold underline">{supportEmail}</a>.</>
                         )}
                       </p>
                     </div>

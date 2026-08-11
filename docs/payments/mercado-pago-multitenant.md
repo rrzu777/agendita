@@ -15,7 +15,8 @@ La clienta paga directo al Mercado Pago del negocio. Agendita registra el estado
 | id | TEXT (PK) | CUID |
 | businessId | TEXT (FK → Business) | Negocio dueño de la cuenta |
 | provider | TEXT | Siempre 'mercado_pago' |
-| providerAccountId | TEXT? | user_id de Mercado Pago |
+| providerAccountId | TEXT? | user_id vendedor de Mercado Pago; obligatorio al conectar |
+| environment | MercadoPagoEnvironment | sandbox/production, sin compartir credenciales |
 | accessTokenEncrypted | TEXT | Token cifrado con AES-256-GCM |
 | refreshTokenEncrypted | TEXT? | Refresh token cifrado |
 | publicKeyEncrypted | TEXT? | Public key cifrada |
@@ -25,7 +26,7 @@ La clienta paga directo al Mercado Pago del negocio. Agendita registra el estado
 | disconnectedAt | TIMESTAMP? | Fecha de desconexión |
 | rawMetadata | JSONB? | Metadata adicional |
 
-Unique constraint: `[businessId, provider]`
+Unique constraint: `[businessId, provider, environment]`
 
 ## Cifrado
 
@@ -64,28 +65,66 @@ Unique constraint: `[businessId, provider]`
    - Crea preferencia MP con:
      - `external_reference = localPaymentId`
      - `metadata = { businessId, bookingId, localPaymentId, paymentType }`
-     - `notification_url = APP_URL/api/webhooks/mercado-pago`
+     - `notification_url = APP_URL/api/webhooks/mercado-pago?local_payment_id=<Payment.id>`
+       (localizador de candidato, nunca prueba de pago)
    - Retorna redirectUrl para checkout MP
 
 ## Flujo webhook
 
 1. Mercado Pago POST a `/api/webhooks/mercado-pago` con data.id
 2. Validar firma con `MERCADO_PAGO_WEBHOOK_SECRET` (HMAC SHA-256)
-3. Consultar pago a MP con **token global** (SOLO para obtener external_reference)
-   - El token global es MERCADO_PAGO_ACCESS_TOKEN, credencial a nivel de aplicación
-   - Se usa **exclusivamente** para el lookup inicial del external_reference
-   - NUNCA se usa para aplicar/confirmar pagos
-4. Resolver Payment local via external_reference = localPaymentId
-5. Obtener businessId desde Payment
-6. **Para pagos approved: OBLIGATORIO** buscar PaymentAccount.connected para ese businessId
+3. Resolver el candidato `Payment` por el `local_payment_id` persistido en la URL de notificación
+   - El query param sólo localiza; no autoriza ni confirma nada
+   - Validar localmente provider, environment y ownership Payment↔booking/paquete antes de red
+4. Obtener businessId y environment desde Payment
+5. Buscar exclusivamente el `PaymentAccount.connected` de ese business+environment
+6. Consultar `/v1/payments/{data.id}` una sola vez con el token OAuth de ese negocio
    - Si no existe PaymentAccount → RECHAZAR (no aplicar pago)
    - Si falla decrypt del token → RECHAZAR (no aplicar pago)
    - Si falla fetch con token del negocio → RECHAZAR (no aplicar pago)
-   - Solo tras re-verificación exitosa con token del negocio → continuar
-7. Validar metadata: localPaymentId, bookingId, businessId, paymentType
-8. Validar amount, currency, provider
+   - No existe fallback a `MERCADO_PAGO_ACCESS_TOKEN`
+7. Exigir coincidencia del ID consultado, `external_reference`, `collector_id` vendedor,
+   metadata (`localPaymentId`, booking/paquete, businessId, paymentType), monto y moneda
+8. Sólo tras la verificación autoritativa continuar con la transición local
 9. Si approved: `applyApprovedPayment` vía servicio financiero central
 10. Si ya approved: retornar 200 idempotentemente
+
+### Preferencias legacy sin locator
+
+Las preferencias emitidas antes del despliegue de `local_payment_id` no pueden
+resolverse de forma segura desde una notificación estándar de pago: Mercado Pago
+no incluye un preference ID autoritativo en ese webhook. No se hace lookup global.
+Un nuevo intento crea otro `Payment` local y una preferencia nueva; la preferencia
+anterior no se reutiliza. Si un pago/refund/chargeback legacy llega tarde, el webhook
+falla cerrado y se deriva a reconciliación operativa acotada usando el
+`providerPreferenceId`, negocio y ambiente ya persistidos, siempre con la cuenta
+vendedora conocida. Nunca se prueba tokens de otros negocios para descubrirlo.
+
+Cada creación usa `Payment.id` como referencia externa estable. El `providerPreferenceId` se
+persiste por CAS y jamás se sobrescribe; una respuesta distinta para el mismo intento
+queda en reconciliación manual. Los payloads persistidos son proyecciones sanitarias:
+no incluyen payer, tarjeta, identificación, tokens, email, URLs ni objetos anidados.
+
+Checkout Preferences no garantiza idempotencia para su `POST`. Por eso Agendita no
+envía ni confía en `X-Idempotency-Key`. Antes del POST toma un lease durable por
+`Payment.id`: dos requests concurrentes jamás emiten dos preferencias para el mismo
+intento. Timeout, 5xx o respuesta 2xx inválida dejan el lease en `manual_review`,
+excluyen ese `Payment` del reuso y un nuevo click explícito crea otro intento local.
+
+El inventario legacy es ejecutable, acotado y sólo consulta DB por defecto:
+
+```bash
+npm run payments:audit-legacy-mp -- --before 2026-08-11T00:00:00Z --limit 50
+```
+
+El resultado expone únicamente conteos `reissue`, `manual_review` y `no_action`
+(`reissue` permanece en cero con la evidencia disponible). Ni un
+`providerPreferenceId`/ambiente nulo ni una cuenta vendedora ausente o expirada
+demuestran que el POST nunca ocurrió: todo pago legacy pendiente se clasifica de
+forma conservadora como `manual_review`. Tras revisar los conteos, `--apply` sólo
+persiste incidentes idempotentes; no cancela pagos, no crea intentos, no lee
+ninguna credencial `MERCADO_PAGO_<AMBIENTE>_ACCESS_TOKEN` de mensualidades, no
+prueba tokens y no usa red.
 
 ## Desconexión
 
@@ -101,22 +140,20 @@ Unique constraint: `[businessId, provider]`
 | MERCADO_PAGO_CLIENT_ID | OAuth client_id | Solo para OAuth connect |
 | MERCADO_PAGO_CLIENT_SECRET | OAuth client_secret | Solo para OAuth connect |
 | MERCADO_PAGO_REDIRECT_URI | OAuth callback URL | Solo para OAuth connect |
-| MERCADO_PAGO_ACCESS_TOKEN | **Token nivel app. Solo para lookup inicial de external_reference en webhook. NUNCA para aplicar pagos.** | Sí (webhook lookup) |
-| MERCADO_PAGO_WEBHOOK_SECRET | Firma webhook HMAC | Sí en producción |
+| MERCADO_PAGO_SANDBOX_ACCESS_TOKEN / MERCADO_PAGO_PRODUCTION_ACCESS_TOKEN | Credencial vendedora de Agendita para mensualidades, seleccionada estrictamente por `MERCADO_PAGO_ENVIRONMENT` | Sólo facturación SaaS del ambiente correspondiente |
+| MERCADO_PAGO_SANDBOX_WEBHOOK_SECRET / MERCADO_PAGO_PRODUCTION_WEBHOOK_SECRET | Firma del webhook de mensualidades, estrictamente por ambiente | Sólo facturación SaaS del ambiente correspondiente |
+| MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL / MERCADO_PAGO_PRODUCTION_SUBSCRIPTIONS_CALLBACK_URL | Callback hosted de mensualidades, estrictamente por ambiente | Sólo facturación SaaS del ambiente correspondiente |
+| MERCADO_PAGO_WEBHOOK_SECRET | Firma del webhook Checkout Pro clienta→dueña; no es credencial de consulta ni fallback de mensualidades | Sí para ese webhook |
 | ENCRYPTION_KEY | Clave para cifrar/descifrar tokens de negocios + firmar OAuth state | **Sí — obligatorio para Mercado Pago** |
 | APP_URL | URL base de la app (usada para notification_url del webhook) | Sí |
 
-### Semántica de MERCADO_PAGO_ACCESS_TOKEN
+### Separación de la credencial de Agendita
 
-El `MERCADO_PAGO_ACCESS_TOKEN` es una credencial a **nivel de aplicación** (no de negocio).
-Se usa **exclusivamente** para:
-1. El lookup inicial en el webhook (obtener `external_reference` desde un pago)
-2. Cualquier operación de infraestructura que no involucre dinero de tenants
-
-**NUNCA** se usa para:
-- Crear preferencias de pago para negocios (eso usa el token del negocio)
-- Aplicar/confirmar pagos (eso requiere re-verificación con token del negocio)
-- Cobrar a nombre de un negocio
+Las credenciales `MERCADO_PAGO_<AMBIENTE>_*` pertenecen al circuito de
+mensualidades dueña→Agendita y nunca hacen fallback entre sandbox y producción.
+El webhook de servicios clienta→dueña no las lee. Crear, consultar y aplicar un pago
+de servicio requiere siempre el token OAuth cifrado del `PaymentAccount` resuelto
+por business y environment; una cuenta ausente/expirada falla cerrada.
 
 ## Restricciones
 

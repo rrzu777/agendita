@@ -3,7 +3,6 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
 import { applyApprovedPayment, applyApprovedPackagePayment, describeUnexpectedPackagePayment } from '@/server/services/finance'
 import { firePaymentNotConfirmedNotification } from '@/lib/bookings/notify-payment-not-confirmed'
-import { createHmac, timingSafeEqual } from 'crypto'
 import {
   sendBookingConfirmedNotification,
   sendNotificationSafely,
@@ -17,7 +16,7 @@ import {
 } from '@/lib/notifications'
 import type { EmailResult } from '@/lib/notifications'
 import { logger } from '@/lib/logger'
-import { decryptSecret } from '@/lib/payments/encryption'
+import { getValidBusinessAccessTokenForAccount } from '@/lib/payments/mercado-pago-oauth'
 import { releaseRedemptionForBooking } from '@/lib/promotions/release'
 import { clawbackLoyaltyForBooking } from '@/lib/loyalty/clawback'
 import { reversePackagePurchaseInTx } from '@/lib/packages/reverse'
@@ -25,6 +24,8 @@ import { reverseBookingPaymentInTx } from '@/lib/bookings/reverse-payment'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { getVocabulary } from '@/lib/vocabulary'
 import type { Prisma } from '@prisma/client'
+import { verifyMercadoPagoSignature } from '@/lib/payments/mercado-pago-signature'
+import { claimApprovedProviderPayment } from '@/lib/payments/provider-incidents'
 
 function mpFetchWithToken<T>(path: string, accessToken: string): Promise<T> {
   return fetch(`https://api.mercadopago.com${path}`, {
@@ -80,62 +81,42 @@ interface MpPayment {
   date_approved: string | null
   date_created: string
   external_reference: string | null
+  collector_id: number | string | null
   metadata: Record<string, string> | null
 }
 
-/**
- * Replay protection: reject signatures whose timestamp is outside the allowed
- * window. OPT-IN — only enforced when MERCADO_PAGO_WEBHOOK_TOLERANCE_SECONDS is
- * set, so we never risk rejecting a legitimate (possibly delayed/retried) MP
- * webhook unless the operator deliberately opts into a tolerance. Idempotency
- * already prevents double money-movement; this is defense-in-depth.
- */
-function isTimestampFresh(ts: string): boolean {
-  const toleranceRaw = process.env.MERCADO_PAGO_WEBHOOK_TOLERANCE_SECONDS
-  if (!toleranceRaw) return true
-  const tolerance = Number(toleranceRaw)
-  if (!Number.isFinite(tolerance) || tolerance <= 0) return true
+const MP_PAYMENT_STATUSES = new Set(['approved', 'pending', 'in_process', 'rejected', 'cancelled', 'refunded', 'charged_back'])
 
-  const tsNum = Number(ts)
-  if (!Number.isFinite(tsNum)) return false
-  // MP sends ts in seconds; tolerate millisecond timestamps just in case.
-  const tsSeconds = tsNum > 1e12 ? Math.floor(tsNum / 1000) : tsNum
-  const nowSeconds = Math.floor(Date.now() / 1000)
-  return Math.abs(nowSeconds - tsSeconds) <= tolerance
+function parseMpPayment(value: unknown): MpPayment | null {
+  if (!value || typeof value !== 'object') return null
+  const v = value as Record<string, unknown>
+  if ((typeof v.id !== 'string' && typeof v.id !== 'number') ||
+      typeof v.status !== 'string' || !MP_PAYMENT_STATUSES.has(v.status) ||
+      typeof v.transaction_amount !== 'number' || !Number.isFinite(v.transaction_amount) ||
+      typeof v.currency_id !== 'string' ||
+      (typeof v.collector_id !== 'string' && typeof v.collector_id !== 'number')) return null
+  const rawMetadata = v.metadata
+  const metadata = rawMetadata && typeof rawMetadata === 'object' && !Array.isArray(rawMetadata)
+    ? Object.fromEntries(Object.entries(rawMetadata).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+    : null
+  return {
+    id: String(v.id), status: v.status, transaction_amount: v.transaction_amount,
+    currency_id: v.currency_id, collector_id: v.collector_id,
+    status_detail: typeof v.status_detail === 'string' ? v.status_detail : null,
+    date_approved: typeof v.date_approved === 'string' ? v.date_approved : null,
+    date_created: typeof v.date_created === 'string' ? v.date_created : '',
+    external_reference: typeof v.external_reference === 'string' ? v.external_reference : null,
+    metadata,
+  }
 }
 
-// Mercado Pago webhook signature validation
-// Format: x-signature = "ts={timestamp},v1={hmac_sha256_hex}"
-// HMAC input: "id:{data.id};request-id:{x-request-id};ts:{ts};"
-function verifyMercadoPagoSignature(
-  mpPaymentId: string | undefined,
-  requestId: string | null,
-  signatureHeader: string | null,
-  secret: string,
-): boolean {
-  if (!mpPaymentId || !signatureHeader) return false
-
-  const parts = signatureHeader.split(',')
-  let ts = ''
-  let v1 = ''
-
-  for (const part of parts) {
-    const [key, ...valueParts] = part.split('=')
-    const value = valueParts.join('=')
-    if (key.trim() === 'ts') ts = value.trim()
-    if (key.trim() === 'v1') v1 = value.trim()
-  }
-
-  if (!ts || !v1) return false
-  if (!isTimestampFresh(ts)) return false
-
-  const manifest = `id:${mpPaymentId};request-id:${requestId ?? ''};ts:${ts};`
-  const expected = createHmac('sha256', secret).update(manifest).digest('hex')
-
-  try {
-    return timingSafeEqual(Buffer.from(expected), Buffer.from(v1))
-  } catch {
-    return false
+function sanitaryPaymentPayload(payment: MpPayment): Prisma.InputJsonObject {
+  return {
+    id: String(payment.id), status: payment.status, statusDetail: payment.status_detail,
+    transactionAmount: payment.transaction_amount, currencyId: payment.currency_id,
+    dateApproved: payment.date_approved, dateCreated: payment.date_created,
+    externalReference: payment.external_reference,
+    collectorId: payment.collector_id === null ? null : String(payment.collector_id),
   }
 }
 
@@ -197,7 +178,12 @@ export async function POST(request: NextRequest) {
     if (mpSecret) {
       const signatureHeader = request.headers.get('x-signature')
       const reqId = request.headers.get('x-request-id')
-      if (!verifyMercadoPagoSignature(mpPaymentId, reqId, signatureHeader, mpSecret)) {
+      if (!verifyMercadoPagoSignature({
+        resourceId: mpPaymentId,
+        requestId: reqId,
+        signatureHeader,
+        secret: mpSecret,
+      })) {
         logger.webhook.rejected('mercado_pago', 'Invalid signature', requestId)
         return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
       }
@@ -205,31 +191,22 @@ export async function POST(request: NextRequest) {
       console.warn('[MP Webhook] No MERCADO_PAGO_WEBHOOK_SECRET configured, skipping signature validation (dev only)')
     }
 
-    // Consultar pago real a Mercado Pago.
-    // Paso 1: Usar token global (app-level) solo para la búsqueda inicial del
-    // external_reference. Esto es necesario porque aún no sabemos a qué negocio
-    // pertenece el pago. El token global NUNCA se usa para aplicar pagos.
-    const globalToken = process.env.MERCADO_PAGO_ACCESS_TOKEN
-    if (!globalToken) {
-      logger.webhook.rejected('mercado_pago', 'MERCADO_PAGO_ACCESS_TOKEN missing', requestId)
-      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
-    }
-
-    const mpPayment = await mpFetchWithToken<MpPayment>(
-      `/v1/payments/${mpPaymentId}`,
-      globalToken,
-    )
-
-    // Validar external_reference / localPaymentId
-    const localPaymentId = mpPayment.external_reference
+    // `local_payment_id` sólo localiza un candidato. No es autoridad: antes de
+    // mutar estado verificamos el pago real con el token OAuth del mismo negocio
+    // y exigimos que external_reference, metadata, vendedor, monto y moneda
+    // coincidan. Esto evita el fetch inicial con la credencial global de Agendita.
+    const localPaymentId = url.searchParams.get('local_payment_id')
     if (!localPaymentId) {
-      logger.webhook.rejected('mercado_pago', 'missing external_reference', requestId)
-      return NextResponse.json({ error: 'Missing external_reference' }, { status: 400 })
+      logger.webhook.rejected('mercado_pago', 'missing local payment locator', requestId)
+      return NextResponse.json({ error: 'Missing payment locator' }, { status: 400 })
     }
 
     const payment = await prisma.payment.findUnique({
       where: { id: localPaymentId },
-      include: { booking: true, packagePurchase: { select: { customerId: true } } },
+      include: {
+        booking: true,
+        packagePurchase: { select: { customerId: true, businessId: true } },
+      },
     })
 
     if (!payment) {
@@ -242,58 +219,81 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Payment provider mismatch' }, { status: 400 })
     }
 
-    // Paso 2: Para pagos approved, REQUERIR verificación con token del negocio.
-    // El token global se usó solo para el lookup inicial del external_reference.
-    // NUNCA aplicar un pago approved sin re-verificar con el token del negocio.
-    const mpStatus = mpPayment.status
-
-    if (mpStatus === 'approved') {
-      const paymentAccount = await prisma.paymentAccount.findFirst({
-        where: {
-          businessId: payment.businessId,
-          provider: 'mercado_pago',
-          status: 'connected',
-        },
-      })
-
-      if (!paymentAccount) {
-        logger.webhook.rejected('mercado_pago', 'No connected PaymentAccount for approved payment', requestId)
-        return NextResponse.json({
-          error: 'Business has no connected Mercado Pago account',
-        }, { status: 400 })
-      }
-
-      let businessToken: string
-      try {
-        businessToken = decryptSecret(paymentAccount.accessTokenEncrypted)
-      } catch {
-        logger.webhook.rejected('mercado_pago', 'Failed to decrypt business token for approved payment', requestId)
-        return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
-      }
-
-      try {
-        const verifiedPayment = await mpFetchWithToken<MpPayment>(
-          `/v1/payments/${mpPaymentId}`,
-          businessToken,
-        )
-        Object.assign(mpPayment, verifiedPayment)
-      } catch (e) {
-        logger.webhook.rejected('mercado_pago',
-          `Failed to re-verify approved payment with business token: ${e instanceof Error ? e.message : 'Unknown'}`,
-          requestId,
-        )
-        return NextResponse.json({
-          error: 'Failed to verify payment with business credentials',
-        }, { status: 502 })
-      }
+    if (!payment.providerEnvironment) {
+      logger.webhook.rejected('mercado_pago', 'Payment has no Mercado Pago environment', requestId)
+      return NextResponse.json({ error: 'Payment environment is missing' }, { status: 400 })
+    }
+    if (payment.booking && payment.businessId !== payment.booking.businessId) {
+      logger.webhook.rejected('mercado_pago', 'Business mismatch payment vs booking', requestId)
+      return NextResponse.json({ error: 'Business mismatch' }, { status: 403 })
+    }
+    if (payment.packagePurchase && payment.businessId !== payment.packagePurchase.businessId) {
+      logger.webhook.rejected('mercado_pago', 'Business mismatch payment vs package purchase', requestId)
+      return NextResponse.json({ error: 'Business mismatch' }, { status: 403 })
+    }
+    if (Boolean(payment.bookingId) === Boolean(payment.packagePurchaseId)) {
+      logger.webhook.rejected('mercado_pago', 'Payment ownership type is ambiguous', requestId)
+      return NextResponse.json({ error: 'Payment ownership type is ambiguous' }, { status: 400 })
     }
 
-    // Validar metadata contra DB.
-    // Para pagos approved, la metadata con bookingId/businessId/paymentType/localPaymentId
-    // es requerida para evitar confirmación fraudulenta.
+    const paymentAccount = await prisma.paymentAccount.findFirst({
+      where: {
+        businessId: payment.businessId,
+        provider: 'mercado_pago',
+        environment: payment.providerEnvironment,
+        status: 'connected',
+      },
+    })
+    if (!paymentAccount?.providerAccountId) {
+      logger.webhook.rejected('mercado_pago', 'No connected seller account for payment', requestId)
+      return NextResponse.json({ error: 'Business has no connected Mercado Pago account' }, { status: 400 })
+    }
+
+    let businessToken: string
+    try {
+      businessToken = await getValidBusinessAccessTokenForAccount(
+        paymentAccount.id, payment.businessId, payment.providerEnvironment,
+      )
+    } catch {
+      logger.webhook.rejected('mercado_pago', 'Failed to resolve valid business token', requestId)
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+    }
+
+    let mpPayment: MpPayment
+    try {
+      const providerPayload = await mpFetchWithToken<unknown>(`/v1/payments/${mpPaymentId}`, businessToken)
+      const parsedPayment = parseMpPayment(providerPayload)
+      if (!parsedPayment) throw new Error('Invalid Mercado Pago payment response')
+      mpPayment = parsedPayment
+    } catch (e) {
+      logger.webhook.rejected(
+        'mercado_pago',
+        `Failed to verify payment with business token: ${e instanceof Error ? e.message : 'Unknown'}`,
+        requestId,
+      )
+      return NextResponse.json({ error: 'Failed to verify payment with business credentials' }, { status: 502 })
+    }
+
+    if (String(mpPayment.id) !== mpPaymentId) {
+      logger.webhook.rejected('mercado_pago', 'Provider payment id mismatch', requestId)
+      return NextResponse.json({ error: 'Provider payment id mismatch' }, { status: 400 })
+    }
+    if (mpPayment.external_reference !== payment.id) {
+      logger.webhook.rejected('mercado_pago', 'external_reference mismatch', requestId)
+      return NextResponse.json({ error: 'external_reference mismatch' }, { status: 400 })
+    }
+    if (String(mpPayment.collector_id ?? '') !== paymentAccount.providerAccountId) {
+      logger.webhook.rejected('mercado_pago', 'Seller mismatch', requestId)
+      return NextResponse.json({ error: 'Seller mismatch' }, { status: 403 })
+    }
+
+    const mpStatus = mpPayment.status
+    const safeRawPayload = sanitaryPaymentPayload(mpPayment)
+
+    // Toda transición exige metadata de ownership completa y específica del tipo.
     const metadata = mpPayment.metadata ?? {}
 
-    if (mpStatus === 'approved') {
+    {
       // Rama paquete (B4b-2): un pago sin bookingId con packagePurchaseId set es
       // una compra de paquete online; su metadata requerida difiere (packagePurchaseId
       // en vez de bookingId).
@@ -303,7 +303,7 @@ export async function POST(request: NextRequest) {
         : (['localPaymentId', 'bookingId', 'businessId', 'paymentType'] as const)
       const missingFields = requiredMetadataFields.filter(f => !metadata[f])
       if (missingFields.length > 0) {
-        console.error('[MP Webhook] missing required metadata fields for approved payment', {
+        console.error('[MP Webhook] missing required metadata fields for payment', {
           mpPaymentId,
           missingFields,
         })
@@ -323,6 +323,7 @@ export async function POST(request: NextRequest) {
 
       // Solo el id de referencia difiere por tipo; el resto de checks son comunes.
       if (isPackagePayment) {
+        if (metadata.bookingId) return NextResponse.json({ error: 'Unexpected bookingId metadata' }, { status: 400 })
         if (metadata.packagePurchaseId !== payment.packagePurchaseId) {
           console.error('[MP Webhook] packagePurchaseId mismatch', {
             metadata: metadata.packagePurchaseId,
@@ -331,6 +332,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'packagePurchaseId mismatch' }, { status: 400 })
         }
       } else {
+        if (metadata.packagePurchaseId) return NextResponse.json({ error: 'Unexpected packagePurchaseId metadata' }, { status: 400 })
         if (metadata.bookingId !== payment.bookingId) {
           console.error('[MP Webhook] bookingId mismatch', {
             metadata: metadata.bookingId,
@@ -375,12 +377,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Currency mismatch' }, { status: 400 })
     }
 
-    // Validar ownership: payment y booking mismo business
-    if (payment.booking && payment.businessId !== payment.booking.businessId) {
-      console.error('[MP Webhook] Business mismatch payment vs booking')
-      return NextResponse.json({ error: 'Business mismatch' }, { status: 403 })
-    }
-
     // B4b-3: chargeback/refund INVOLUNTARIO de un paquete YA ACTIVO. El Payment está
     // approved, así que hay que actuar ANTES del early-return de abajo. Exclusivo de
     // paquetes activos: reservas y refunds voluntarios (purchase ya 'refunded') no entran.
@@ -401,7 +397,7 @@ export async function POST(request: NextRequest) {
         await prisma.$transaction(async (tx) => {
           await tx.payment.update({
             where: { id: payment.id },
-            data: { status: 'refunded', providerPaymentId: mpPayment.id, rawPayload: mpPayment as unknown as Prisma.InputJsonValue },
+            data: { status: 'refunded', providerPaymentId: mpPayment.id, rawPayload: safeRawPayload },
           })
           await reversePackagePurchaseInTx(tx, purchase, {
             mode: reverseMode,
@@ -454,7 +450,7 @@ export async function POST(request: NextRequest) {
           currency: payment.currency,
           mode,
           now: new Date(),
-          flipData: { providerPaymentId: mpPayment.id, rawPayload: mpPayment as unknown as Prisma.InputJsonValue },
+          flipData: { providerPaymentId: mpPayment.id, rawPayload: safeRawPayload },
         }),
       )
       if (reversed && mode === 'chargeback') {
@@ -497,15 +493,22 @@ export async function POST(request: NextRequest) {
 
     // Ya está approved → idempotente, 200 sin side effects
     if (payment.status === 'approved') {
-      return NextResponse.json({
-        success: true,
-        message: 'Payment already approved',
-        bookingId: payment.bookingId,
-      })
+      if (payment.providerPaymentId === mpPayment.id) {
+        return NextResponse.json({
+          success: true,
+          message: 'Payment already approved',
+          bookingId: payment.bookingId,
+        })
+      }
+      // Un approved distinto es dinero real adicional. Continúa hasta el claim
+      // transaccional para persistirlo como overpayment/manual_review.
+      if (mpStatus !== 'approved') {
+        return NextResponse.json({ error: 'ProviderPaymentId conflict' }, { status: 409 })
+      }
     }
 
     // Evitar que un providerPaymentId se asocie a otro Payment
-    if (payment.providerPaymentId && payment.providerPaymentId !== mpPayment.id) {
+    if (mpStatus !== 'approved' && payment.providerPaymentId && payment.providerPaymentId !== mpPayment.id) {
       console.error('[MP Webhook] providerPaymentId already set to different value', {
         existing: payment.providerPaymentId,
         incoming: mpPayment.id,
@@ -518,16 +521,15 @@ export async function POST(request: NextRequest) {
         const bookingId = payment.bookingId
         // Pago aprobado: actualizar y confirmar booking
         const result = await prisma.$transaction(async (tx) => {
-          // Actualizar providerPaymentId y rawPayload
-          await tx.payment.update({
-            where: { id: payment.id },
-            data: {
-              providerPaymentId: mpPayment.id,
-              rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
-            },
+          const claim = await claimApprovedProviderPayment(tx, {
+            paymentId: payment.id,
+            environment: payment.providerEnvironment!,
+            providerPaymentId: mpPayment.id,
+            payload: safeRawPayload as Prisma.InputJsonObject & { id: string; status: string },
           })
+          if (claim.kind === 'conflict') return { providerConflict: true as const }
 
-          return applyApprovedPayment({
+          const approved = await applyApprovedPayment({
             tx,
             bookingId,
             businessId: payment.businessId,
@@ -537,7 +539,7 @@ export async function POST(request: NextRequest) {
             providerPaymentId: mpPayment.id,
             paymentType: payment.paymentType,
             paymentMethod: payment.paymentMethod,
-            rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+            rawPayload: safeRawPayload,
             paymentId: payment.id,
             // El cobro YA ocurrió y del otro lado no hay nadie a quien decirle
             // "no": si esto lanzara (reserva vencida por el cron, cancelada, hold
@@ -547,6 +549,7 @@ export async function POST(request: NextRequest) {
             // aviso de abajo se lo cuenta a la dueña.
             recordEvenIfNotPayable: true,
           })
+          return { providerConflict: false as const, approved }
           // 15s y no el default de 5s: al confirmar, esta tx ahora toma el advisory
           // lock por negocio+día para re-chequear el cupo, así que puede quedar
           // esperando a una creación de reserva concurrente. Con 5s el timeout daría
@@ -554,11 +557,18 @@ export async function POST(request: NextRequest) {
           // trata de evitar. Mismo presupuesto que la tx de createBooking.
         }, { timeout: 15_000 })
 
-        if (!result || !result.booking) {
+        if (result.providerConflict) {
+          return NextResponse.json({
+            success: true,
+            message: 'Distinct approved payment recorded for manual review',
+          })
+        }
+        const approvedResult = result.approved
+        if (!approvedResult || !approvedResult.booking) {
           throw new Error('Reserva no encontrada')
         }
 
-        if (result.wasConfirmed) {
+        if (approvedResult.wasConfirmed) {
           await sendNotificationSafely('booking confirmed', () =>
             sendBookingConfirmedNotification(bookingId, payment.businessId),
           )
@@ -569,7 +579,7 @@ export async function POST(request: NextRequest) {
         // dos). El servicio ya lo asentó como `overpayment`; acá sólo avisamos para
         // que la dueña decida el reembolso. La clienta NO recibe nada: para ella su
         // reserva no cambió.
-        if (result.wasUnexpected) {
+        if (approvedResult.wasUnexpected) {
           const bk = await prisma.booking.findUnique({
             where: { id: bookingId },
             select: {
@@ -599,11 +609,11 @@ export async function POST(request: NextRequest) {
         // pasa en un webhook, sin nadie mirando la pantalla — y decide la dueña:
         // reacomodar en otra hora o reembolsar. La clienta no recibe nada todavía,
         // justamente porque su hora está en manos de esa decisión.
-        if (result.unconfirmedReason) {
+        if (approvedResult.unconfirmedReason) {
           await firePaymentNotConfirmedNotification({
             bookingId,
             businessId: payment.businessId,
-            reason: result.unconfirmedReason,
+            reason: approvedResult.unconfirmedReason,
             amount: payment.amount,
           })
         }
@@ -615,10 +625,10 @@ export async function POST(request: NextRequest) {
         // siempre el mismo evento ya procesado.
         return NextResponse.json({
           success: true,
-          message: result.unconfirmedReason
-            ? `Payment approved, booking left unconfirmed: ${result.unconfirmedReason.kind}`
+          message: approvedResult.unconfirmedReason
+            ? `Payment approved, booking left unconfirmed: ${approvedResult.unconfirmedReason.kind}`
             : 'Payment approved',
-          bookingId: result.booking.id,
+          bookingId: approvedResult.booking.id,
         })
       }
 
@@ -628,17 +638,16 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Pago no asociado a una reserva ni a un paquete' }, { status: 400 })
       }
 
-      const { outcome } = await prisma.$transaction(async (tx) => {
-        // Actualizar providerPaymentId y rawPayload
-        await tx.payment.update({
-          where: { id: payment.id },
-          data: {
-            providerPaymentId: mpPayment.id,
-            rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
-          },
+      const packageResult = await prisma.$transaction(async (tx) => {
+        const claim = await claimApprovedProviderPayment(tx, {
+          paymentId: payment.id,
+          environment: payment.providerEnvironment!,
+          providerPaymentId: mpPayment.id,
+          payload: safeRawPayload as Prisma.InputJsonObject & { id: string; status: string },
         })
+        if (claim.kind === 'conflict') return { providerConflict: true as const }
 
-        return applyApprovedPackagePayment({
+        const approved = await applyApprovedPackagePayment({
           tx,
           packagePurchaseId,
           businessId: payment.businessId,
@@ -648,10 +657,18 @@ export async function POST(request: NextRequest) {
           providerPaymentId: mpPayment.id,
           paymentType: payment.paymentType,
           paymentMethod: payment.paymentMethod,
-          rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+          rawPayload: safeRawPayload,
           paymentId: payment.id,
         })
+        return { providerConflict: false as const, approved }
       })
+      if (packageResult.providerConflict) {
+        return NextResponse.json({
+          success: true,
+          message: 'Distinct approved payment recorded for manual review',
+        })
+      }
+      const { outcome } = packageResult.approved
 
       // Notificar SOLO en la primera activación: MP redeliveria el webhook
       // (at-least-once) y sin este gate cada reintento reenviaría los dos emails.
@@ -720,7 +737,7 @@ export async function POST(request: NextRequest) {
           where: { id: payment.id },
           data: {
             providerPaymentId: mpPayment.id,
-            rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+            rawPayload: safeRawPayload,
           },
         })
       }
@@ -766,7 +783,7 @@ export async function POST(request: NextRequest) {
           data: {
             status: finalStatus,
             providerPaymentId: mpPayment.id,
-            rawPayload: mpPayment as unknown as Prisma.InputJsonValue,
+            rawPayload: safeRawPayload,
           },
         })
         if (finalStatus === 'refunded' && payment.bookingId) {

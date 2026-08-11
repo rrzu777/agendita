@@ -18,6 +18,8 @@ This checklist covers all infrastructure and configuration required to run Agend
 - [x] `PAYMENT_PROVIDER` — siempre requerido (`mock`, `manual`, `mercado_pago`, `webpay`)
 - [x] `ALLOW_MOCK_PAYMENTS_IN_PRODUCTION` — booleano estricto, requerido si provider es `mock` en production
 - [x] `assertValidEnv()` — fail-fast al boot con mensajes claros
+- [x] OAuth de Mercado Pago falla por configuración parcial o callback no HTTPS
+- [x] Mensualidades usan ambiente explícito y callback HTTPS, sin fallback entre tokens
 
 ### Rate Limiting
 - [x] Production usa Redis (Upstash REST) — fail-closed si no está configurado
@@ -91,11 +93,22 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 APP_DOMAIN=tu-dominio.com
 NEXT_PUBLIC_APP_DOMAIN=tu-dominio.com
-PAYMENT_PROVIDER=mercado_pago   # o manual/webpay/mock
+PAYMENT_PROVIDER=manual          # fallback; MP online se habilita por negocio conectado
+MERCADO_PAGO_WEBHOOK_SECRET=     # firma del webhook, no sirve para consultar pagos
 
-# Production con Mercado Pago
-MERCADO_PAGO_ACCESS_TOKEN=APP_USR-...   # del dashboard de Mercado Pago
-MERCADO_PAGO_WEBHOOK_SECRET=           # del dashboard de Mercado Pago (ver sección Webhook más abajo)
+# Clienta → dueña (OAuth por negocio)
+MERCADO_PAGO_CLIENT_ID=
+MERCADO_PAGO_CLIENT_SECRET=
+MERCADO_PAGO_REDIRECT_URI=https://tu-dominio.com/api/mercado-pago/callback
+ENCRYPTION_KEY=
+
+# Dueña → Agendita (mensualidad automática; comenzar en sandbox)
+MP_SUBSCRIPTIONS_ENABLED=false
+SUBSCRIPTION_ENFORCEMENT_ENABLED=false
+MERCADO_PAGO_ENVIRONMENT=sandbox
+MERCADO_PAGO_SANDBOX_ACCESS_TOKEN=
+MERCADO_PAGO_SANDBOX_WEBHOOK_SECRET=
+MERCADO_PAGO_SANDBOX_SUBSCRIPTIONS_CALLBACK_URL=https://tu-dominio.com/api/mercado-pago/subscriptions/callback
 
 # Production con email (Resend)
 RESEND_API_KEY=re_...
@@ -105,6 +118,10 @@ FROM_EMAIL=noreply@tu-dominio.com    # dominio verificado en Resend
 UPSTASH_REDIS_REST_URL=https://xxx.upstash.io
 UPSTASH_REDIS_REST_TOKEN=...
 ```
+
+`ENCRYPTION_KEY` es obligatoria siempre que el triplete OAuth esté configurado,
+incluso en sandbox/desarrollo y aunque `PAYMENT_PROVIDER=manual`. No es un
+requisito independiente del flujo de mensualidades.
 
 ### 2. DNS — Dominio Wildcard
 
@@ -135,6 +152,17 @@ Verificar que en el dashboard de Supabase estén configuradas:
    - Asignar como `MERCADO_PAGO_WEBHOOK_SECRET`
 
 **Importante**: El secret del webhook (`MERCADO_PAGO_WEBHOOK_SECRET`) es diferente del `ACCESS_TOKEN`. No son intercambiables.
+Los pagos de reservas/paquetes se consultan exclusivamente con el token OAuth
+cifrado del negocio resuelto por el locator local; no existe fallback global.
+
+Registrar por separado la callback OAuth
+`/api/mercado-pago/callback` y el webhook de mensualidad
+`/api/webhooks/mercado-pago/subscriptions`. Ver los runbooks
+[`mercado-pago-multitenant-qa.md`](./payments/mercado-pago-multitenant-qa.md) y
+[`mercado-pago-subscriptions-qa.md`](./payments/mercado-pago-subscriptions-qa.md).
+La callback de navegador de mensualidad es además
+`/api/mercado-pago/subscriptions/callback`. Ambas callbacks deben usar el origen
+exacto de `APP_DOMAIN`; no hay alias automático para `www` ni dominios preview.
 
 ### 5. Resend — Dominio verificado
 
@@ -187,6 +215,16 @@ npm run lint
 npm run test:e2e
 ```
 
+### Health y crons
+
+- `/api/health/dependencies` requiere bearer `CRON_SECRET` y separa
+  `mercadoPagoSubscriptions` de `mercadoPagoOAuth`.
+- El probe de mensualidad sólo consulta identidad; OAuth valida configuración y
+  nunca inspecciona tokens de negocios.
+- El workflow `Production health` no crea ni cobra nada.
+- El workflow `Scheduled crons` debe terminar `success`; el cron de mensualidad
+  emite sólo conteos agregados. Un health verde no demuestra un cobro E2E.
+
 ---
 
 ## 🔄 Rollback Básico
@@ -196,7 +234,9 @@ Si algo sale mal en producción:
 1. **Revertir deploy**: Volver al commit anterior en Vercel / tu plataforma
 2. **Desactivar business**: Si hay problema de negocio específico, marcar `isActive: false` en la DB
 3. **Deshabilitar payments**: Cambiar `PAYMENT_PROVIDER=manual` temporalmente
-4. **Deshabilitar rate limit**: Configurar `UPSTASH_REDIS_REST_URL` y `UPSTASH_REDIS_REST_TOKEN` de backup (no hay fallback en memoria para production)
+4. **Deshabilitar nuevas mensualidades**: `MP_SUBSCRIPTIONS_ENABLED=false`
+5. **Diferir enforcement**: `SUBSCRIPTION_ENFORCEMENT_ENABLED=false`
+6. **Restaurar rate limit**: Configurar `UPSTASH_REDIS_REST_URL` y `UPSTASH_REDIS_REST_TOKEN` de backup (no hay fallback en memoria para production)
 
 ---
 

@@ -11,11 +11,25 @@ sin tokens expuestos y con webhook idempotente.
 2. Credenciales configuradas en `.env.local`:
    - `MERCADO_PAGO_CLIENT_ID`
    - `MERCADO_PAGO_CLIENT_SECRET`
-   - `MERCADO_PAGO_REDIRECT_URI` (ej. `http://localhost:3000/api/mercado-pago/callback`)
+   - `MERCADO_PAGO_REDIRECT_URI` (HTTPS público en entornos compartidos)
+   - `MERCADO_PAGO_ENVIRONMENT` (`sandbox` o `production`, explícito)
+   - `ENCRYPTION_KEY` (obligatoria también en sandbox/dev y con provider manual;
+     cifra tokens OAuth en reposo)
 3. Dos cuentas sandbox de prueba (vendedores):
    - Seller A (`TEST-USER-A-...`)
    - Seller B (`TEST-USER-B-...`)
 4. Una cuenta comprador sandbox para simular pagos
+
+Registrar la callback exacta
+`https://<APP_DOMAIN>/api/mercado-pago/callback`. La health protegida valida
+la configuración OAuth, pero nunca prueba tokens de negocios arbitrarios.
+`up` significa configurado, no conectado ni cobro E2E validado.
+Health sólo comprueba que `ENCRYPTION_KEY` esté presente: nunca la expone, usa
+para descifrar ni intenta leer tokens almacenados.
+El origen debe coincidir exactamente con `APP_DOMAIN`: no se agrega ni elimina
+`www`, no se aceptan puertos alternos, query, hash ni credenciales embebidas.
+Los previews con otro hostname requieren su propia configuración; nunca se
+reutiliza silenciosamente la callback canónica de producción.
 
 ## Preparación
 
@@ -61,10 +75,14 @@ INSERT INTO "AvailabilityRule" (...) VALUES (...);
 - Intentar iniciar pago online
 - **Esperado:** Error de disponibilidad
 
-### 6. Token expirado
-- Expirar manualmente el token (o esperar expiración natural)
+### 6. Credencial OAuth del seller expirada
+- En sandbox, expirar la credencial OAuth sandbox de Seller A (o esperar su
+  expiración natural). En producción, este caso sólo usa credenciales OAuth
+  productivas del seller conectado; nunca reutilizar credenciales sandbox.
 - Procesar pago
-- **Esperado:** Webhook falla o usa fallback con warning
+- **Esperado:** la cuenta queda `expired`, se encola
+  `subscription_oauth_expired` y no existe fallback a credenciales globales o
+  de otro ambiente
 
 ### 7. Webhook cross-tenant
 - Enviar webhook de A intentando modificar booking de B
@@ -99,31 +117,38 @@ INSERT INTO "AvailabilityRule" (...) VALUES (...);
 ## Validaciones DB
 
 ```sql
--- No cross-tenant leakage
-SELECT "businessId", COUNT(*) FROM "Payment" GROUP BY "businessId";
--- Debe mostrar solo los businessId correctos
+-- Distribución por estado, sin IDs ni agrupación por negocio
+SELECT status, COUNT(*) FROM "Payment" GROUP BY status;
 
 -- LedgerEntry único por Payment
-SELECT "paymentId", COUNT(*) FROM "LedgerEntry" GROUP BY "paymentId" HAVING COUNT(*) > 1;
--- Debe retornar 0 filas
+SELECT COUNT(*) AS duplicate_payment_groups
+FROM (
+  SELECT "paymentId" FROM "LedgerEntry"
+  WHERE "paymentId" IS NOT NULL
+  GROUP BY "paymentId" HAVING COUNT(*) > 1
+) duplicates;
+-- Debe retornar el número 0; no expone los paymentId.
 
 -- Payment.businessId coincide con Booking.businessId
-SELECT p.id, p."businessId" as p_biz, b."businessId" as b_biz
+SELECT COUNT(*) AS cross_tenant_mismatches
 FROM "Payment" p JOIN "Booking" b ON p."bookingId" = b.id
 WHERE p."businessId" != b."businessId";
--- Debe retornar 0 filas
+-- Debe retornar el número 0.
 ```
 
 ## Validaciones seguridad
 
 ```sql
--- Tokens en PaymentAccount están cifrados (no legibles)
-SELECT id, "accessTokenEncrypted" FROM "PaymentAccount";
--- Debe mostrar strings base64, no tokens planos
+-- Sólo indica si existen cuentas con material ausente; nunca devuelve blobs.
+SELECT COUNT(*) AS accounts_missing_encrypted_material
+FROM "PaymentAccount"
+WHERE "accessTokenEncrypted" IS NULL OR "accessTokenEncrypted" = '';
 
 -- No hay tokens en SubscriptionLog
-SELECT * FROM "SubscriptionLog" WHERE notes LIKE '%access_token%' OR notes LIKE '%APP_USR%';
--- Debe retornar 0 filas
+SELECT COUNT(*) AS suspicious_log_rows
+FROM "SubscriptionLog"
+WHERE notes LIKE '%access_token%' OR notes LIKE '%APP_USR%';
+-- Ambas consultas deben retornar el número 0.
 ```
 
 ## Validaciones fallback
@@ -134,6 +159,12 @@ SELECT * FROM "SubscriptionLog" WHERE notes LIKE '%access_token%' OR notes LIKE 
 
 ## Automatización
 
+Ejecutar `npm run payments:qa` para la matriz offline. Para PostgreSQL local
+fresco, usar `NODE_ENV=test` y `TEST_DATABASE_URL`, `DATABASE_URL` y
+`DIRECT_URL` idénticas, con host loopback y base `agendita_payment_qa_test`, y
+ejecutar `npm run payments:qa -- --postgres`. Ninguno de
+estos comandos autoriza tráfico externo ni prueba que el seller recibió dinero.
+
 Tests unitarios existentes cubren:
 - `mercado-pago-webhook.test.ts`: firma, idempotencia, validaciones metadata, amount
 - `mercado-pago-provider.test.ts`: createPayment, verifyPayment, handleWebhook
@@ -142,9 +173,17 @@ Tests unitarios existentes cubren:
 Para automatizar casos sandbox reales, se recomienda usar Playwright E2E con cuentas sandbox.
 Ver `tests/e2e/` para ejemplos de estructura.
 
+Todo checkout OAuth real, recepción por Seller Test y entrega de webhook del
+proveedor sigue **pendiente externo** hasta ejecutarse manualmente en sandbox.
+
 ## Evidencia requerida
 
 - Capturas de pantalla de cada caso
-- IDs de reservas/pagos sandbox
+- Conteos, estados, timestamps redondeados y booleans; nunca IDs de
+  reservas/pagos/negocios/proveedor
 - Resultado PASS/FAIL por caso
 - Bugs encontrados con pasos para reproducir
+
+Nunca compartir IDs, tokens, URLs de checkout ni payloads como evidencia.
+Usar sólo PASS/FAIL, conteos, estados y timestamps redondeados. Al terminar,
+desconectar y revocar los sellers sandbox y eliminar únicamente datos de prueba.

@@ -4,7 +4,13 @@ import { renderToStaticMarkup } from 'react-dom/server'
 describe('legal pages', () => {
   it('loads terms page', async () => {
     const { default: TermsPage } = await import('@/app/terms/page')
-    expect(renderToStaticMarkup(<TermsPage />)).toContain('Términos y Condiciones')
+    const html = renderToStaticMarkup(<TermsPage />)
+    expect(html).toContain('Términos y Condiciones')
+    expect(html).toContain('cobros mensuales')
+    expect(html).toContain('si corresponde')
+    expect(html).toContain('comienza inmediatamente después de la autorización')
+    expect(html).toContain('no se realizan cargos retroactivos')
+    expect(html).toContain('cierre del período vigente')
   })
 
   it('loads privacy page', async () => {
@@ -14,6 +20,12 @@ describe('legal pages', () => {
 
   it('loads refund policy page', async () => {
     const { default: RefundPolicyPage } = await import('@/app/refund-policy/page')
-    expect(renderToStaticMarkup(<RefundPolicyPage />)).toContain('Política de Reembolsos')
+    const html = renderToStaticMarkup(<RefundPolicyPage />)
+    expect(html).toContain('Política de Reembolsos')
+    expect(html).toContain('cobros recurrentes mensuales')
+    expect(html).toContain('si corresponde')
+    expect(html).toContain('comienza inmediatamente después de la autorización')
+    expect(html).toContain('no genera un reembolso automático')
+    expect(html).not.toContain('pagos de suscripción se gestionan de forma manual')
   })
 })

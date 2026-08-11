@@ -25,6 +25,10 @@ vi.mock('@/app/admin/businesses/[businessId]/copy-link-button', () => ({
   CopyLinkButton: () => <button>copiar</button>,
 }))
 
+vi.mock('@/app/admin/businesses/[businessId]/admin-subscription-controls', () => ({
+  AdminSubscriptionControls: () => <div>subscription controls</div>,
+}))
+
 describe('BusinessDetailPage (admin)', () => {
   beforeEach(() => {
     vi.clearAllMocks()

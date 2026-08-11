@@ -2,11 +2,15 @@
 
 import { prisma } from '@/lib/db'
 import { requireBusiness } from '@/lib/auth/server'
-import { encryptSecret } from '@/lib/payments/encryption'
-import { signState } from '@/lib/payments/oauth-state'
 import { randomBytes } from 'crypto'
 import { redirect } from 'next/navigation'
 import { action, UserError } from '@/lib/actions/result'
+import { requireMercadoPagoEnvironment } from '@/lib/payments/mercado-pago-environment'
+import {
+  createMercadoPagoOAuthState,
+  createPkcePair,
+  persistMercadoPagoOAuthAttempt,
+} from '@/lib/payments/mercado-pago-oauth'
 
 const MP_AUTH_URL = 'https://auth.mercadopago.cl/authorization'
 
@@ -19,7 +23,8 @@ export async function startMercadoPagoConnect() {
 }
 
 export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string }> {
-  const { businessId } = await requireBusiness()
+  const { businessId, user } = await requireBusiness()
+  const environment = requireMercadoPagoEnvironment()
 
   const clientId = process.env.MERCADO_PAGO_CLIENT_ID
   const redirectUri = process.env.MERCADO_PAGO_REDIRECT_URI
@@ -30,18 +35,18 @@ export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string 
     )
   }
 
-  const stateValue = randomBytes(32).toString('hex')
-  const expiresAt = Date.now() + 10 * 60 * 1000
-  const payload = `${businessId}:${stateValue}:${expiresAt}`
-
-  let signature: string
+  const nonce = randomBytes(32).toString('base64url')
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
+  const { verifier, challenge } = createPkcePair()
+  let state: string
   try {
-    signature = signState(payload)
+    state = createMercadoPagoOAuthState({ businessId, environment, nonce, expiresAt })
+    await persistMercadoPagoOAuthAttempt({
+      businessId, environment, nonce, verifier, userId: user.id, expiresAt,
+    })
   } catch {
     throw new Error('ENCRYPTION_KEY must be configured for Mercado Pago OAuth')
   }
-
-  const state = `${payload}:${signature}`
 
   const params = new URLSearchParams({
     client_id: clientId,
@@ -49,6 +54,8 @@ export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string 
     platform_id: 'mp',
     state,
     redirect_uri: redirectUri,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
   })
 
   return { redirectUrl: `${MP_AUTH_URL}?${params.toString()}` }
@@ -56,9 +63,10 @@ export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string 
 
 async function _disconnectMercadoPagoConnection() {
   const { businessId } = await requireBusiness()
+  const environment = requireMercadoPagoEnvironment()
 
   const account = await prisma.paymentAccount.findFirst({
-    where: { businessId, provider: 'mercado_pago' },
+    where: { businessId, provider: 'mercado_pago', environment },
   })
 
   if (!account) {
@@ -89,9 +97,10 @@ export async function disconnectMercadoPago() {
 
 export async function getPaymentAccountStatus() {
   const { businessId } = await requireBusiness()
+  const environment = requireMercadoPagoEnvironment()
 
   const account = await prisma.paymentAccount.findFirst({
-    where: { businessId, provider: 'mercado_pago' },
+    where: { businessId, provider: 'mercado_pago', environment },
     select: {
       id: true,
       status: true,

@@ -8,6 +8,34 @@ export interface EmailResult {
   skipped?: string
   messageId?: string
   error?: string
+  errorCode?: string
+}
+
+export type SubscriptionNotificationKind =
+  | 'subscription_due_7_days'
+  | 'subscription_due_3_days'
+  | 'subscription_due_1_day'
+  | 'subscription_activated'
+  | 'subscription_payment_approved'
+  | 'subscription_payment_failed'
+  | 'subscription_recovered'
+  | 'subscription_suspended'
+  | 'subscription_cancellation_requested'
+  | 'subscription_cancelled'
+  | 'subscription_oauth_expired'
+
+/** Datos mínimos y no sensibles para un aviso de facturación. Los identificadores
+ * locales sólo se usan para deduplicar y nunca se interpolan en la plantilla. */
+export interface SubscriptionNotificationData {
+  businessId: string
+  subscriptionId: string
+  effectiveDate: Date
+  eventAt?: Date
+  availableAt?: Date
+  eventId?: string
+  businessName?: string
+  /** Internal durable lease already owned by the billing cron. */
+  billingLeaseUntil?: Date
 }
 
 export interface BookingEmailData {

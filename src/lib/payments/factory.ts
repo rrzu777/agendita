@@ -3,8 +3,9 @@ import { mockPaymentProvider } from './mock-provider'
 import { manualPaymentProvider } from './manual-provider'
 import { mercadoPagoPaymentProvider, createMercadoPagoProvider } from './mercado-pago-provider'
 import { prisma } from '@/lib/db'
-import { decryptSecret } from './encryption'
 import { PaymentAccountStatus } from '@prisma/client'
+import { getMercadoPagoEnvironment, requireMercadoPagoEnvironment } from './mercado-pago-environment'
+import { getValidBusinessAccessToken, type MercadoPagoOAuthRepository } from './mercado-pago-oauth'
 
 export type ProviderName = 'mock' | 'manual' | 'mercado_pago' | 'webpay'
 
@@ -283,26 +284,14 @@ export function getDefaultProvider(): PaymentProvider {
  * Creates a provider instance with the business's decrypted access token.
  */
 export async function getMercadoPagoProviderForBusiness(
-  businessId: string
+  businessId: string,
+  dependencies: { oauthRepository?: MercadoPagoOAuthRepository; now?: () => Date } = {},
 ): Promise<PaymentProvider> {
-  const account = await prisma.paymentAccount.findFirst({
-    where: {
-      businessId,
-      provider: 'mercado_pago',
-      status: PaymentAccountStatus.connected,
-    },
+  const environment = requireMercadoPagoEnvironment()
+  const accessToken = await getValidBusinessAccessToken(businessId, environment, {
+    repository: dependencies.oauthRepository,
+    now: dependencies.now,
   })
-
-  if (!account) {
-    throw new Error('Este negocio no tiene Mercado Pago conectado.')
-  }
-
-  let accessToken: string
-  try {
-    accessToken = decryptSecret(account.accessTokenEncrypted)
-  } catch {
-    throw new Error('Error al leer las credenciales de Mercado Pago.')
-  }
 
   return createMercadoPagoProvider(accessToken)
 }
@@ -341,10 +330,21 @@ export async function resolveOnlinePaymentAvailabilityForBusiness(
     }
   }
 
+  const environment = getMercadoPagoEnvironment()
+  if (!environment) {
+    return {
+      available: false,
+      provider: null,
+      reason: 'La configuración de ambiente de Mercado Pago es inválida.',
+      isMock: false,
+    }
+  }
+
   const account = await prisma.paymentAccount.findFirst({
     where: {
       businessId,
       provider: 'mercado_pago',
+      environment,
       status: { in: [PaymentAccountStatus.connected, PaymentAccountStatus.expired] },
     },
   })

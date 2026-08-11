@@ -5,7 +5,6 @@ import { prisma } from '@/lib/db'
 import { PaymentProvider, PaymentStatus, PaymentType } from '@prisma/client'
 import {
   getDefaultProvider,
-  resolveOnlinePaymentAvailability,
   getOnlinePaymentProviderForBusiness,
   resolveOnlinePaymentAvailabilityForBusiness,
 } from '@/lib/payments/factory'
@@ -22,6 +21,7 @@ import { logger } from '@/lib/logger'
 import { assertBookingPayable } from '@/lib/bookings/payments'
 import { applyApprovedPayment, unconfirmedPaymentCustomerMessage } from '@/server/services/finance'
 import { firePaymentNotConfirmedNotification } from '@/lib/bookings/notify-payment-not-confirmed'
+import { requireMercadoPagoEnvironment } from '@/lib/payments/mercado-pago-environment'
 
 const initiatePaymentSchema = z.object({
   bookingId: z.string().min(1),
@@ -117,14 +117,23 @@ async function _initiatePayment(data: {
   // Mercado Pago (redirect-based): pre-crear Payment local antes de llamar al provider.
   // El Payment.id se usa como external_reference en la preferencia de MP.
   if (provider.name === 'mercado_pago') {
+    const providerEnvironment = requireMercadoPagoEnvironment()
     // Evitar múltiples Payment pending por doble click: reusar si ya existe
-    // uno pending para este booking + deposit.
+    // uno pending para este booking + deposit en el mismo ambiente.
     const existingPending = await prisma.payment.findFirst({
       where: {
         bookingId: data.bookingId,
         paymentType: PaymentType.deposit,
         provider: 'mercado_pago',
+        providerEnvironment,
+        providerPreferenceId: null,
         status: 'pending',
+        providerIncidents: {
+          none: {
+            kind: { in: ['preference_creation', 'preference_creation_ambiguous'] },
+            status: { in: ['in_progress', 'manual_review'] },
+          },
+        },
       },
     })
 
@@ -139,6 +148,7 @@ async function _initiatePayment(data: {
           customerId: booking.customerId,
           provider: PaymentProvider.mercado_pago,
           providerPaymentId: null,
+          providerEnvironment,
           amount,
           currency,
           status: PaymentStatus.pending,
@@ -206,8 +216,8 @@ export const initiatePayment = action(_initiatePayment)
 
 /**
  * Server action para que el frontend público consulte la disponibilidad de pago online.
- * Si recibe businessId, resuelve por negocio (multi-tenant).
- * Si no, usa la configuración global (modo legacy/deprecado).
+ * Requiere businessId y resuelve siempre por negocio (multi-tenant). No existe
+ * fallback global: un caller público sin tenant no puede sondear credenciales.
  * Nunca lanza: siempre retorna un objeto con { available, provider, reason?, isMock }.
  *
  * Deliberadamente SIN action(): no hay throw que sanear (nunca lanza, por
@@ -216,11 +226,8 @@ export const initiatePayment = action(_initiatePayment)
  * patrón que getBankTransferInfo (bank-transfer-public.ts), con quien
  * comparte el Promise.all en step-payment.tsx.
  */
-export async function getOnlinePaymentAvailability(businessId?: string) {
-  if (businessId) {
-    return resolveOnlinePaymentAvailabilityForBusiness(businessId)
-  }
-  return resolveOnlinePaymentAvailability()
+export async function getOnlinePaymentAvailability(businessId: string) {
+  return resolveOnlinePaymentAvailabilityForBusiness(businessId)
 }
 
 /**

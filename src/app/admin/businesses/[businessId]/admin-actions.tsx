@@ -4,25 +4,21 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { AdminChangePlanDialog } from './admin-change-plan-dialog'
 import { cn } from '@/lib/utils'
 
 interface AdminActionsProps {
   businessId: string
   businessName: string
   currentStatus: string
-  plans: Array<{ id: string; name: string }>
 }
 
-export function AdminActions({ businessId, businessName, currentStatus, plans }: AdminActionsProps) {
+export function AdminActions({ businessId, businessName, currentStatus }: AdminActionsProps) {
   const router = useRouter()
   const [loading, setLoading] = useState<string | null>(null)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [amount, setAmount] = useState('')
   const [notes, setNotes] = useState('')
-  const [trialDays, setTrialDays] = useState('30')
   const [suspendReason, setSuspendReason] = useState('')
-  const [showChangePlan, setShowChangePlan] = useState(false)
 
   async function handleAction(action: () => Promise<unknown>, actionName: string) {
     setLoading(actionName)
@@ -97,42 +93,6 @@ export function AdminActions({ businessId, businessName, currentStatus, plans }:
       </div>
 
       <div className="space-y-2">
-        <p className="text-sm font-semibold text-muted-foreground">Extender trial</p>
-        <div className="flex gap-2">
-          <Input
-            type="number"
-            placeholder="Días"
-            value={trialDays}
-            onChange={(e) => setTrialDays(e.target.value)}
-            className="h-10 w-24"
-            min="1"
-            max="365"
-          />
-          <Button
-            variant="outline"
-            className="h-10 flex-1"
-            onClick={() => {
-              const parsed = parseInt(trialDays, 10)
-              if (isNaN(parsed) || parsed < 1 || parsed > 365) {
-                setMessage({ type: 'error', text: 'Los días deben ser entre 1 y 365' })
-                return
-              }
-              return handleAction(
-                async () => {
-                  const { adminExtendTrial } = await import('@/server/actions/admin')
-                  return adminExtendTrial(businessId, parsed)
-                },
-                'trial'
-              )
-            }}
-            disabled={loading !== null}
-          >
-            {loading === 'trial' ? 'Extendiendo...' : `Extender ${trialDays} días`}
-          </Button>
-        </div>
-      </div>
-
-      <div className="space-y-2">
         <p className="text-sm font-semibold text-muted-foreground">
           {isSuspended ? 'Reactivar negocio' : 'Suspender negocio'}
         </p>
@@ -147,8 +107,10 @@ export function AdminActions({ businessId, businessName, currentStatus, plans }:
         <Button
           variant={isSuspended ? 'default' : 'destructive'}
           className="w-full h-10"
-          onClick={() => handleAction(
-            isSuspended
+          onClick={() => {
+            if (!isSuspended && !window.confirm(`¿Suspender ${businessName}?`)) return
+            return handleAction(
+              isSuspended
               ? async () => {
                   const { adminActivateBusiness } = await import('@/server/actions/admin')
                   return adminActivateBusiness(businessId)
@@ -157,8 +119,9 @@ export function AdminActions({ businessId, businessName, currentStatus, plans }:
                   const { adminSuspendBusiness } = await import('@/server/actions/admin')
                   return adminSuspendBusiness(businessId, suspendReason || undefined)
                 },
-            'suspend'
-          )}
+              'suspend'
+            )
+          }}
           disabled={loading !== null}
         >
           {loading === 'suspend'
@@ -170,31 +133,21 @@ export function AdminActions({ businessId, businessName, currentStatus, plans }:
       </div>
 
       <div className="space-y-2">
-        <p className="text-sm font-semibold text-muted-foreground">Plan</p>
-        <Button
-          variant="outline"
-          className="w-full h-10"
-          onClick={() => setShowChangePlan(true)}
-          disabled={loading !== null || isCancelled}
-        >
-          Cambiar plan
-        </Button>
-      </div>
-
-      <div className="space-y-2">
         <p className="text-sm font-semibold text-muted-foreground">Estado de pago</p>
         <div className="flex gap-2">
           <Button
             variant="outline"
             size="sm"
             className="flex-1 h-9"
-            onClick={() => handleAction(
-              async () => {
+            onClick={() => {
+              if (!window.confirm(`¿Marcar la suscripción de ${businessName} como pendiente?`)) return
+              return handleAction(async () => {
                 const { adminMarkPastDue } = await import('@/server/actions/admin')
                 return adminMarkPastDue(businessId)
               },
               'pastdue'
-            )}
+              )
+            }}
             disabled={loading !== null || isCancelled || isPastDue}
           >
             {loading === 'pastdue' ? '...' : 'Marcar pendiente'}
@@ -203,13 +156,15 @@ export function AdminActions({ businessId, businessName, currentStatus, plans }:
             variant="destructive"
             size="sm"
             className="flex-1 h-9"
-            onClick={() => handleAction(
-              async () => {
+            onClick={() => {
+              if (!window.confirm(`¿Cancelar la renovación de ${businessName} al cierre del periodo?`)) return
+              return handleAction(async () => {
                 const { adminCancelSubscription } = await import('@/server/actions/admin')
                 return adminCancelSubscription(businessId)
               },
               'cancel'
-            )}
+              )
+            }}
             disabled={loading !== null || isCancelled}
           >
             {loading === 'cancel' ? '...' : 'Cancelar'}
@@ -217,20 +172,6 @@ export function AdminActions({ businessId, businessName, currentStatus, plans }:
         </div>
       </div>
 
-      {showChangePlan && (
-        <AdminChangePlanDialog
-          businessId={businessId}
-          plans={plans}
-          currentStatus={currentStatus}
-          onClose={() => setShowChangePlan(false)}
-          onSuccess={() => {
-            setShowChangePlan(false)
-            setMessage({ type: 'success', text: 'Plan actualizado' })
-            router.refresh()
-          }}
-          onError={(msg) => setMessage({ type: 'error', text: msg })}
-        />
-      )}
     </div>
   )
 }

@@ -10,6 +10,8 @@ vi.mock('@/lib/auth/user', () => ({
 
 vi.mock('@/server/actions/subscriptions', () => ({
   getCurrentSubscription: mockGetCurrentSubscription,
+  startSubscriptionAction: vi.fn(),
+  cancelSubscriptionAction: vi.fn(),
 }))
 
 vi.mock('next/navigation', () => ({

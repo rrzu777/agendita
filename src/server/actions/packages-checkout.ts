@@ -13,6 +13,7 @@ import {
   getOnlinePaymentProviderForBusiness,
 } from '@/lib/payments/factory'
 import { createMpPreferenceForPayment, getPaymentAppUrl } from '@/lib/payments/create-preference'
+import { requireMercadoPagoEnvironment } from '@/lib/payments/mercado-pago-environment'
 import { getPackageConfirmationUrl } from '@/lib/business/urls'
 import { applyApprovedPackagePayment } from '@/server/services/finance'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
@@ -242,6 +243,9 @@ async function _initiatePackagePayment(input: { purchaseId: string }): Promise<
 
   const provider = await getOnlinePaymentProviderForBusiness(purchase.businessId)
   const currency = purchase.business.currency || 'CLP'
+  const providerEnvironment = provider.name === 'mercado_pago'
+    ? requireMercadoPagoEnvironment()
+    : null
 
   // Evitar múltiples Payment pending por doble click: reusar si ya existe uno.
   // Scopeado por provider: si la clienta declaró una transferencia (Payment 'manual')
@@ -253,6 +257,14 @@ async function _initiatePackagePayment(input: { purchaseId: string }): Promise<
       paymentType: PaymentType.package_purchase,
       status: PaymentStatus.pending,
       provider: provider.name as PaymentProvider,
+      providerEnvironment,
+      providerPreferenceId: null,
+      providerIncidents: {
+        none: {
+          kind: { in: ['preference_creation', 'preference_creation_ambiguous'] },
+          status: { in: ['in_progress', 'manual_review'] },
+        },
+      },
     },
   })
 
@@ -267,6 +279,7 @@ async function _initiatePackagePayment(input: { purchaseId: string }): Promise<
         customerId: purchase.customerId,
         provider: provider.name as PaymentProvider,
         providerPaymentId: null,
+        providerEnvironment,
         amount: purchase.pricePaid,
         currency,
         status: PaymentStatus.pending,

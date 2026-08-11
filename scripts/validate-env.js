@@ -17,9 +17,14 @@ const { loadEnvConfig } = require('@next/env')
 loadEnvConfig(process.cwd())
 
 const VALID_PAYMENT_PROVIDERS = ['mock', 'manual', 'mercado_pago', 'webpay']
+const MP_SUBSCRIPTIONS_ENVIRONMENTS = ['sandbox', 'production']
 
 function getEnv(key) {
   return process.env[key] ?? process.env[`NEXT_PUBLIC_${key}`] ?? ''
+}
+
+function getServerEnv(key) {
+  return process.env[key] ?? ''
 }
 
 function isStrictBoolean(value) {
@@ -30,6 +35,36 @@ function isStrictBoolean(value) {
 function hasPath(value) {
   const clean = value.replace(/^https?:\/\//, '').replace(/\/$/, '')
   return clean.includes('/')
+}
+
+function isValidCallbackUrl(value, { allowLocalHttp = false } = {}) {
+  try {
+    const url = new URL(value)
+    if (url.protocol === 'https:') return true
+    return allowLocalHttp && url.protocol === 'http:' &&
+      (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
+  } catch {
+    return false
+  }
+}
+
+function canonicalAppOrigin(isProduction, forceHttps) {
+  const domain = getServerEnv('APP_DOMAIN') || getEnv('NEXT_PUBLIC_APP_DOMAIN')
+  if (!domain || hasPath(domain)) return null
+  const local = domain.startsWith('localhost') || domain.startsWith('127.0.0.1')
+  return `${!forceHttps && !isProduction && local ? 'http' : 'https'}://${domain}`
+}
+
+function isExactCallbackUrl(value, expectedPathname, isProduction, forceHttps = false) {
+  const origin = canonicalAppOrigin(isProduction, forceHttps)
+  if (!origin) return false
+  try {
+    const url = new URL(value)
+    return url.origin === origin && url.pathname === expectedPathname &&
+      !url.username && !url.password && !url.search && !url.hash
+  } catch {
+    return false
+  }
 }
 
 function validate() {
@@ -55,9 +90,27 @@ function validate() {
   // ── PAYMENT_PROVIDER — warning, no bloquea build (beta) ──────────────────
   const provider = getEnv('PAYMENT_PROVIDER')
   const hasMpOAuth =
-    !!getEnv('MERCADO_PAGO_CLIENT_ID') &&
-    !!getEnv('MERCADO_PAGO_CLIENT_SECRET') &&
-    !!getEnv('MERCADO_PAGO_REDIRECT_URI')
+    !!getServerEnv('MERCADO_PAGO_CLIENT_ID') &&
+    !!getServerEnv('MERCADO_PAGO_CLIENT_SECRET') &&
+    !!getServerEnv('MERCADO_PAGO_REDIRECT_URI')
+  const oauthKeys = [
+    'MERCADO_PAGO_CLIENT_ID',
+    'MERCADO_PAGO_CLIENT_SECRET',
+    'MERCADO_PAGO_REDIRECT_URI',
+  ]
+  const oauthPresent = oauthKeys.filter((key) => !!getServerEnv(key))
+  if (oauthPresent.length > 0 && oauthPresent.length < oauthKeys.length) {
+    for (const key of oauthKeys.filter((key) => !getServerEnv(key))) {
+      errors.push(`MISSING: ${key} (Mercado Pago OAuth is partially configured)`)
+    }
+  }
+  const oauthRedirect = getServerEnv('MERCADO_PAGO_REDIRECT_URI')
+  if (oauthRedirect && (
+    !isValidCallbackUrl(oauthRedirect, { allowLocalHttp: !isProduction }) ||
+    !isExactCallbackUrl(oauthRedirect, '/api/mercado-pago/callback', isProduction)
+  )) {
+    errors.push('MERCADO_PAGO_REDIRECT_URI must exactly match the canonical app origin and /api/mercado-pago/callback (HTTP localhost only outside production; no credentials, query, or hash).')
+  }
 
   if (!provider && !hasMpOAuth) {
     console.warn(
@@ -129,6 +182,65 @@ function validate() {
       errors.push(
         'MISSING: ENCRYPTION_KEY (required in production with Mercado Pago for token encryption)',
       )
+    }
+  }
+
+  // ── Mercado Pago subscriptions ────────────────────────────────────────
+  // Credentials are selected by a mandatory explicit environment. Generic
+  // Mercado Pago variables intentionally cannot satisfy this transport.
+  const subscriptionsEnabled = getServerEnv('MP_SUBSCRIPTIONS_ENABLED')
+  if (subscriptionsEnabled && !isStrictBoolean(subscriptionsEnabled)) {
+    errors.push('MP_SUBSCRIPTIONS_ENABLED must be "true" or "false" when configured.')
+  }
+  const subscriptionEnforcement = getServerEnv('SUBSCRIPTION_ENFORCEMENT_ENABLED')
+  if (subscriptionEnforcement && !isStrictBoolean(subscriptionEnforcement)) {
+    errors.push(
+      'SUBSCRIPTION_ENFORCEMENT_ENABLED must be "true" or "false" when configured.',
+    )
+  }
+  const subscriptionsEnvironment = getServerEnv('MERCADO_PAGO_ENVIRONMENT')
+  const hasValidSubscriptionsEnvironment = MP_SUBSCRIPTIONS_ENVIRONMENTS.includes(
+    subscriptionsEnvironment,
+  )
+  if (subscriptionsEnvironment && !hasValidSubscriptionsEnvironment) {
+    errors.push('MERCADO_PAGO_ENVIRONMENT must be "sandbox" or "production".')
+  }
+  if (hasMpOAuth && !hasValidSubscriptionsEnvironment) {
+    errors.push(
+      'MERCADO_PAGO_ENVIRONMENT is required for OAuth and must be "sandbox" or "production".',
+    )
+  }
+  if (hasMpOAuth && !getServerEnv('ENCRYPTION_KEY')) {
+    errors.push('MISSING: ENCRYPTION_KEY (required whenever Mercado Pago OAuth is configured)')
+  }
+  if (subscriptionsEnabled.toLowerCase() === 'true') {
+    if (!hasValidSubscriptionsEnvironment) {
+      errors.push(
+        'MERCADO_PAGO_ENVIRONMENT is required for subscriptions and must be "sandbox" or "production".',
+      )
+    } else {
+      const prefix = `MERCADO_PAGO_${subscriptionsEnvironment.toUpperCase()}`
+      for (const suffix of [
+        'ACCESS_TOKEN',
+        'WEBHOOK_SECRET',
+        'SUBSCRIPTIONS_CALLBACK_URL',
+      ]) {
+        const key = `${prefix}_${suffix}`
+        if (!getServerEnv(key)) errors.push(`MISSING: ${key}`)
+      }
+      const callbackKey = `${prefix}_SUBSCRIPTIONS_CALLBACK_URL`
+      const callbackUrl = getServerEnv(callbackKey)
+      if (callbackUrl && (
+        !isValidCallbackUrl(callbackUrl) ||
+        !isExactCallbackUrl(
+          callbackUrl,
+          '/api/mercado-pago/subscriptions/callback',
+          isProduction,
+          true,
+        )
+      )) {
+        errors.push(`${callbackKey} must be HTTPS and exactly match the canonical app origin plus /api/mercado-pago/subscriptions/callback, without credentials, query, or hash.`)
+      }
     }
   }
 

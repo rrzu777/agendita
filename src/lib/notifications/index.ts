@@ -34,6 +34,7 @@ export {
   sendBookingPaymentNotConfirmedToBusiness,
   sendPackageTransferReminderToCustomer,
   sendPackageTransferUnverifiedToBusiness,
+  sendSubscriptionEmail,
 } from './email-provider'
 export {
   buildWhatsappUrl,
@@ -108,6 +109,16 @@ export {
   packageTransferReminderCustomerText,
   packageTransferUnverifiedBusinessHtml,
   packageTransferUnverifiedBusinessText,
+  subscriptionNotificationHtml,
+  subscriptionNotificationText,
+  subscriptionNotificationSubject,
 } from './templates'
-export type { EmailResult, BookingEmailData, CancellationEmailData, RescheduledEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, BankTransferVerifyCustomerEmailData, BalanceTransferCustomerEmailData, ReminderEmailData, LoyaltyRewardEmailData, NotificationResult, TransferReminderCustomerEmailData, TransferReminderBusinessEmailData, OwnerBookingChangedData, PackagePurchasedEmailData, PackageDisputedEmailData, PackageUnexpectedPaymentEmailData, BookingDisputedEmailData, BookingUnexpectedPaymentEmailData, BookingPaymentNotConfirmedEmailData, PackageTransferDeclaredEmailData, PackageTransferReminderCustomerEmailData, PackageTransferUnverifiedBusinessEmailData } from './types'
+export {
+  buildSubscriptionNotification,
+  queueSubscriptionNotification,
+  retrySubscriptionNotifications,
+  sendSubscriptionNotification,
+  subscriptionNotificationDedupeKey,
+} from './subscriptions'
+export type { EmailResult, BookingEmailData, CancellationEmailData, RescheduledEmailData, ReviewRequestEmailData, NewBookingBusinessEmailData, BankTransferVerifyCustomerEmailData, BalanceTransferCustomerEmailData, ReminderEmailData, LoyaltyRewardEmailData, NotificationResult, TransferReminderCustomerEmailData, TransferReminderBusinessEmailData, OwnerBookingChangedData, PackagePurchasedEmailData, PackageDisputedEmailData, PackageUnexpectedPaymentEmailData, BookingDisputedEmailData, BookingUnexpectedPaymentEmailData, BookingPaymentNotConfirmedEmailData, PackageTransferDeclaredEmailData, PackageTransferReminderCustomerEmailData, PackageTransferUnverifiedBusinessEmailData, SubscriptionNotificationData, SubscriptionNotificationKind } from './types'
 export type { BookingWhatsappData, BookingRescheduledWhatsappData, ReviewRequestWhatsappData } from './whatsapp'

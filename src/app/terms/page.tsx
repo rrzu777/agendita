@@ -36,7 +36,18 @@ export default function TermsPage() {
             Cliente y Negocio.
           </p>
           <p className="mt-2">
-            La suscripción de Agendita se cobra por separado al Negocio, según el plan contratado.
+            La suscripción de Agendita se cobra por separado al Negocio, según el plan mensual
+            asignado. Al activar la mensualidad automática, el Negocio autoriza a Mercado Pago a
+            realizar cobros mensuales desde el término de su período de prueba, si corresponde. Si el
+            plan no contempla días de prueba, la mensualidad comienza inmediatamente después de la
+            autorización. Mientras una exención esté vigente no se solicita un medio de pago ni se
+            generan cobros; al terminar, el Negocio debe activar la mensualidad y no se realizan cargos
+            retroactivos.
+          </p>
+          <p className="mt-2">
+            El Negocio puede solicitar la cancelación de la renovación. Mantendrá acceso hasta el
+            cierre del período vigente y no se realizará un reembolso automático. Ante un cobro
+            fallido puede existir un período de gracia antes de que se suspendan nuevas reservas.
           </p>
           <p className="mt-2">
             Las políticas de cancelación, reembolso y abono son definidas por cada Negocio.
@@ -90,7 +101,7 @@ export default function TermsPage() {
         </section>
 
         <p className="mt-10 text-xs text-muted-foreground">
-          Última actualización: Mayo 2026. Versión borrador para revisión legal.
+          Última actualización: Agosto 2026. Versión borrador para revisión legal.
         </p>
       </div>
     </div>

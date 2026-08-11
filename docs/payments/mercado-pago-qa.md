@@ -1,5 +1,9 @@
 # Mercado Pago QA — Sandbox Testing
 
+> Este documento cubre el flujo **clienta → dueña**. La mensualidad automática
+> de Agendita se prueba por separado en
+> [`mercado-pago-subscriptions-qa.md`](./mercado-pago-subscriptions-qa.md).
+
 ## Status: ⏳ PENDING — Sandbox not yet executed
 
 This document defines the end-to-end test cases required to validate the Mercado Pago integration before going to production. **Prompt 06 is NOT complete until these tests are executed with real sandbox credentials.**
@@ -12,8 +16,8 @@ Before running these tests, you need:
 
 1. **Mercado Pago Developer Account** — [mercadopago.com.ar/developers](https://mercadopago.com.ar/developers)
 2. **Test User** — Create a test buyer and seller in the Mercado Pago developer dashboard
-3. **Application ID** — From your MP developer app credentials
-4. **Access Token** — From MP developer dashboard → Gestión de credenciales → Producción (or Prueba)
+3. **Aplicación OAuth** — Client ID/secret configurados sólo en el servidor
+4. **Seller Test User** conectado por OAuth y Buyer Test User separado
 5. **Webhook URL** — Must be publicly accessible (not localhost). Use a tunneling tool like `ngrok` for local testing.
 
 ---
@@ -21,12 +25,26 @@ Before running these tests, you need:
 ## Test Environment Variables Required
 
 ```bash
-PAYMENT_PROVIDER=mercado_pago
-MERCADO_PAGO_ACCESS_TOKEN=APP_USR-...      # from MP developer dashboard
-MERCADO_PAGO_WEBHOOK_SECRET=...            # from MP webhook config
-NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY=APP_USR-...  # from MP developer dashboard
-ALLOW_MOCK_PAYMENTS_IN_PRODUCTION=false
+PAYMENT_PROVIDER=manual                     # fallback; checkout online es por cuenta conectada
+MERCADO_PAGO_ENVIRONMENT=sandbox
+MERCADO_PAGO_CLIENT_ID=...
+MERCADO_PAGO_CLIENT_SECRET=...
+MERCADO_PAGO_REDIRECT_URI=https://<APP_DOMAIN>/api/mercado-pago/callback
+MERCADO_PAGO_WEBHOOK_SECRET=...             # valida el webhook, no consulta pagos
+ENCRYPTION_KEY=...                           # cifra tokens OAuth en reposo
 ```
+
+La configuración correcta habilita el flujo, pero **no prueba un cobro E2E**.
+El health protegido tampoco crea preferencias, autorizaciones ni pagos.
+
+## Webhook y rollback
+
+1. Registrar `https://<APP_DOMAIN>/api/webhooks/mercado-pago` para eventos de pago.
+2. Guardar el secret como `MERCADO_PAGO_WEBHOOK_SECRET`; no reutilizar el access token.
+3. Para rotar: agregar el secret nuevo, cambiar la variable, desplegar y probar
+   firma inválida/válida antes de retirar el anterior.
+4. Rollback: desconectar Mercado Pago por negocio o pasar temporalmente a pago
+   manual. Esto no revierte pagos ya aprobados.
 
 ---
 
@@ -76,11 +94,15 @@ ALLOW_MOCK_PAYMENTS_IN_PRODUCTION=false
 
 **Validation**:
 ```bash
-# Check DB state
-psql $DATABASE_URL -c "SELECT id, status, depositPaid FROM booking WHERE id='{bookingId}'"
-psql $DATABASE_URL -c "SELECT id, bookingId, status, paymentType FROM payment ORDER BY createdAt DESC LIMIT 5"
-psql $DATABASE_URL -c "SELECT id, bookingId, type, direction FROM ledger_entry ORDER BY createdAt DESC LIMIT 5"
+# Sólo agregados seguros; ejecutar con un rol read-only.
+psql $DATABASE_URL -c 'SELECT status, COUNT(*) FROM "Booking" GROUP BY status'
+psql $DATABASE_URL -c 'SELECT status, COUNT(*) FROM "Payment" GROUP BY status'
+psql $DATABASE_URL -c 'SELECT type, direction, COUNT(*) FROM "LedgerEntry" GROUP BY type, direction'
 ```
+
+No copiar filas, identificadores, correos, URLs, payloads ni credenciales a la
+evidencia. Confirmar el caso individual dentro de la UI sandbox y conservar
+externamente sólo PASS/FAIL, conteos, estados, timestamps redondeados y booleans.
 
 ---
 
@@ -122,6 +144,11 @@ curl -X POST https://yourdomain.com/api/webhooks/mercado-pago \
   -d '{"action":"payment.approved","data":{"id":"1234567890"}}'
 # Expected: HTTP 400 or 401
 ```
+
+El webhook real incluye el locator local persistido en su URL registrada. Ese
+locator sólo encuentra el candidato; la verificación autoritativa usa el token
+OAuth cifrado del seller del mismo negocio. Nunca configurar un access token
+global de Agendita como fallback para reservas o paquetes.
 
 ---
 

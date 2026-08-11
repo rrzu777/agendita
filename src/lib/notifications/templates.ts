@@ -29,6 +29,8 @@ import type {
   PackageTransferDeclaredEmailData,
   PackageTransferReminderCustomerEmailData,
   PackageTransferUnverifiedBusinessEmailData,
+  SubscriptionNotificationData,
+  SubscriptionNotificationKind,
 } from './types'
 
 function escapeHtml(str: string): string {
@@ -93,6 +95,66 @@ function header(title: string): string {
 
 function footer(businessName: string): string {
   return `<hr style="border:0;border-top:1px solid #e0e0e0;margin:24px 0 0"><p style="font-size:12px;color:#999;margin-top:8px">Enviado por ${escapeHtml(businessName)} a través de Agendita</p>`
+}
+
+type SubscriptionNoticeCopy = {
+  subject: string
+  title: string
+  body: string
+}
+
+function subscriptionNoticeCopy(
+  kind: SubscriptionNotificationKind,
+  data: Pick<SubscriptionNotificationData, 'effectiveDate'>,
+): SubscriptionNoticeCopy {
+  const formattedDate = fmtDate(data.effectiveDate, 'America/Santiago')
+  switch (kind) {
+    case 'subscription_due_7_days':
+      return { subject: 'Tu suscripción vence en 7 días', title: 'Tu suscripción vence pronto', body: `Tu acceso actual vence el ${formattedDate}. Revisá tu método de pago para continuar sin interrupciones.` }
+    case 'subscription_due_3_days':
+      return { subject: 'Tu suscripción vence en 3 días', title: 'Quedan 3 días de suscripción', body: `Tu acceso actual vence el ${formattedDate}. Revisá tu método de pago para continuar sin interrupciones.` }
+    case 'subscription_due_1_day':
+      return { subject: 'Tu suscripción vence mañana', title: 'Tu suscripción vence mañana', body: `Tu acceso actual vence el ${formattedDate}. Revisá tu método de pago para continuar sin interrupciones.` }
+    case 'subscription_activated':
+      return { subject: 'Tu suscripción está activa', title: 'Suscripción activada', body: 'Tu suscripción está activa y ya podés seguir usando Agendita.' }
+    case 'subscription_payment_approved':
+      return { subject: 'Confirmamos el pago de tu suscripción', title: 'Pago confirmado', body: 'Confirmamos el pago de tu suscripción. Tu acceso continúa activo.' }
+    case 'subscription_payment_failed':
+      return { subject: 'No pudimos procesar el pago de tu suscripción', title: 'Pago pendiente', body: 'No pudimos procesar el pago de tu suscripción. Revisá tu método de pago para evitar una interrupción.' }
+    case 'subscription_recovered':
+      return { subject: 'Tu suscripción fue recuperada', title: 'Acceso recuperado', body: 'Confirmamos tu pago y tu suscripción vuelve a estar activa.' }
+    case 'subscription_suspended':
+      return { subject: 'Tu suscripción fue suspendida', title: 'Suscripción suspendida', body: 'Tu suscripción fue suspendida por falta de pago. Actualizá tu método de pago para recuperar el acceso.' }
+    case 'subscription_cancellation_requested':
+      return { subject: 'Programamos la cancelación de tu suscripción', title: 'Cancelación programada', body: `Tu suscripción seguirá activa hasta el ${formattedDate}. Después de esa fecha no se renovará.` }
+    case 'subscription_cancelled':
+      return { subject: 'Tu suscripción finalizó', title: 'Suscripción finalizada', body: 'Tu suscripción finalizó. Podés volver a activarla cuando quieras.' }
+    case 'subscription_oauth_expired':
+      return { subject: 'La conexión de pagos necesita atención', title: 'Reconectá tu cuenta de pagos', body: 'La conexión de pagos venció. Reconectala para que las operaciones que dependen de ella puedan continuar.' }
+  }
+}
+
+export function subscriptionNotificationSubject(
+  kind: SubscriptionNotificationKind,
+  data: Pick<SubscriptionNotificationData, 'effectiveDate'>,
+): string {
+  return subscriptionNoticeCopy(kind, data).subject
+}
+
+export function subscriptionNotificationHtml(
+  kind: SubscriptionNotificationKind,
+  data: Required<Pick<SubscriptionNotificationData, 'businessName' | 'effectiveDate'>>,
+): string {
+  const copy = subscriptionNoticeCopy(kind, data)
+  return baseHtml(`${header(copy.title)}<p style="font-size:15px">${escapeHtml(copy.body)}</p>${footer(data.businessName)}`)
+}
+
+export function subscriptionNotificationText(
+  kind: SubscriptionNotificationKind,
+  data: Required<Pick<SubscriptionNotificationData, 'businessName' | 'effectiveDate'>>,
+): string {
+  const copy = subscriptionNoticeCopy(kind, data)
+  return `${copy.title}\n\n${copy.body}\n\nEnviado por ${data.businessName} a través de Agendita`
 }
 
 function bookingNumberRowHtml(n: number | null | undefined): string {
