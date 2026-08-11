@@ -1,6 +1,6 @@
 'use server'
 
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { Prisma, type MercadoPagoEnvironment, type SubscriptionPlanMapping } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -16,6 +16,7 @@ import { applySubscriptionTransition } from '@/lib/subscriptions/transition'
 
 const CHECKOUT_LEAD_TIME_MS = 7 * 24 * 60 * 60 * 1_000
 const CHECKOUT_ATTEMPT_TTL_MS = 30 * 60 * 1_000
+const PLAN_PROVISIONING_LEASE_MS = 5 * 60 * 1_000
 
 function opaqueReference(): string {
   return randomBytes(32).toString('base64url')
@@ -31,11 +32,11 @@ function isP2002(error: unknown): boolean {
     : !!error && typeof error === 'object' && (error as { code?: string }).code === 'P2002'
 }
 
-function subscriptionClient(): {
+function subscriptionClient(requireCreationEnabled = false): {
   client: MpSubscriptionClient
   environment: MercadoPagoEnvironment
 } {
-  if (process.env.MP_SUBSCRIPTIONS_ENABLED !== 'true') {
+  if (requireCreationEnabled && process.env.MP_SUBSCRIPTIONS_ENABLED !== 'true') {
     throw new UserError('La facturación automática está deshabilitada.')
   }
 
@@ -141,7 +142,11 @@ async function ensureProviderPlan(input: {
   })
   if (existing) return activateMapping(existing)
 
+  const now = new Date()
+  const reservationId = randomUUID()
   const provisioningToken = opaqueReference()
+  const externalReference = `agendita_plan_${reservationId}`
+  const leaseExpiresAt = new Date(now.getTime() + PLAN_PROVISIONING_LEASE_MS)
   let reservation: SubscriptionPlanMapping
   try {
     reservation = await prisma.subscriptionPlanMapping.upsert({
@@ -155,6 +160,7 @@ async function ensureProviderPlan(input: {
         },
       },
       create: {
+        id: reservationId,
         planId: subscription.planId,
         provider: 'mercado_pago',
         environment,
@@ -163,50 +169,159 @@ async function ensureProviderPlan(input: {
         currency: subscription.currency,
         isActive: false,
         provisioningToken,
+        provisioningLeaseExpiresAt: leaseExpiresAt,
+        externalReference,
       },
       update: {},
     })
   } catch (error) {
     if (!isP2002(error)) throw error
     const raced = await prisma.subscriptionPlanMapping.findFirst({
-      where: exactWhere,
+      where: {
+        planId: subscription.planId, provider: 'mercado_pago', environment,
+        amount: subscription.amount, currency: subscription.currency,
+      },
       orderBy: { createdAt: 'desc' },
     })
     if (!raced) throw new UserError('El plan externo todavía se está sincronizando.')
-    return activateMapping(raced)
+    reservation = raced
   }
 
   if (reservation.providerPlanId) return activateMapping(reservation)
+  let ownedToken = provisioningToken
   if (reservation.provisioningToken !== provisioningToken) {
-    throw new UserError('El plan externo todavía se está sincronizando.')
+    if (!reservation.provisioningToken || !reservation.provisioningLeaseExpiresAt ||
+        reservation.provisioningLeaseExpiresAt.getTime() > now.getTime()) {
+      throw new UserError('El plan externo todavía se está sincronizando.')
+    }
+    ownedToken = opaqueReference()
+    const stolen = await prisma.subscriptionPlanMapping.updateMany({
+      where: {
+        id: reservation.id,
+        providerPlanId: null,
+        provisioningToken: reservation.provisioningToken,
+        provisioningLeaseExpiresAt: { lte: now },
+      },
+      data: { provisioningToken: ownedToken, provisioningLeaseExpiresAt: leaseExpiresAt },
+    })
+    if (stolen.count !== 1) throw new UserError('El plan externo todavía se está sincronizando.')
+    reservation = {
+      ...reservation,
+      provisioningToken: ownedToken,
+      provisioningLeaseExpiresAt: leaseExpiresAt,
+    }
   }
 
-  let providerPlanCreated = false
-  try {
-    const providerPlan = await client.createPlan({
-      name: subscription.plan.name,
-      amount: subscription.amount,
-      externalReference: `plan_${opaqueReference()}`,
-    })
-    providerPlanCreated = true
-    const ready = await prisma.subscriptionPlanMapping.update({
-      where: { id: reservation.id },
-      data: { providerPlanId: providerPlan.id, provisioningToken: null },
-    })
-    return activateMapping(ready)
-  } catch (error) {
-    if (!providerPlanCreated) {
-      await prisma.subscriptionPlanMapping.deleteMany({
-        where: { id: reservation.id, provisioningToken, providerPlanId: null },
-      })
-    }
-    throw error
+  if (!reservation.externalReference) {
+    throw new Error('La reserva del plan externo no tiene referencia determinista.')
   }
+  const matches = await client.searchPlans(reservation.externalReference)
+  if (matches.length > 1) {
+    throw new Error('Mercado Pago devolvió más de un plan para la referencia local.')
+  }
+  const providerPlan = matches[0] ?? await client.createPlan({
+    name: subscription.plan.name,
+    amount: subscription.amount,
+    externalReference: reservation.externalReference,
+  })
+  if (
+    providerPlan.externalReference !== reservation.externalReference ||
+    providerPlan.status !== 'active' ||
+    providerPlan.amount !== subscription.amount || providerPlan.currency !== subscription.currency ||
+    providerPlan.frequency !== 1 || providerPlan.frequencyType !== 'months'
+  ) {
+    throw new Error('El plan externo recuperado no coincide con el snapshot local.')
+  }
+  const persisted = await prisma.subscriptionPlanMapping.updateMany({
+    where: { id: reservation.id, providerPlanId: null, provisioningToken: ownedToken },
+    data: {
+      providerPlanId: providerPlan.id,
+      provisioningToken: null,
+      provisioningLeaseExpiresAt: null,
+    },
+  })
+  if (persisted.count !== 1) throw new Error('La reserva del plan externo cambió durante la sincronización.')
+  return activateMapping({
+    ...reservation,
+    providerPlanId: providerPlan.id,
+    provisioningToken: null,
+    provisioningLeaseExpiresAt: null,
+  })
+}
+
+type ProviderSubscription = Awaited<ReturnType<MpSubscriptionClient['getSubscription']>>
+
+function matchesAttempt(input: {
+  candidate: ProviderSubscription
+  attempt: { referenceHash: string; providerSubscriptionId: string | null; providerPlanId: string | null }
+  subscription: CheckoutSubscription
+  providerPlanId: string
+}): boolean {
+  const { candidate, attempt, subscription, providerPlanId } = input
+  return candidate.id === attempt.providerSubscriptionId &&
+    !!candidate.externalReference && referenceHash(candidate.externalReference) === attempt.referenceHash &&
+    candidate.planId === providerPlanId && attempt.providerPlanId === providerPlanId &&
+    candidate.amount === subscription.amount && candidate.currency === subscription.currency
+}
+
+async function adoptAuthorizedCandidate(input: {
+  candidate: ProviderSubscription
+  attemptId: string
+  subscription: CheckoutSubscription
+  businessId: string
+  environment: MercadoPagoEnvironment
+  providerPlanId: string
+  now: Date
+}): Promise<void> {
+  const { candidate, attemptId, subscription, businessId, environment, providerPlanId, now } = input
+  if (candidate.providerStatus !== 'authorized') {
+    throw new Error('Sólo una autorización confirmada por Mercado Pago se puede vincular.')
+  }
+  await prisma.$transaction(async (tx) => {
+    const claimed = await tx.subscriptionCheckoutAttempt.updateMany({
+      where: {
+        id: attemptId,
+        providerSubscriptionId: candidate.id,
+        providerPlanId,
+        invalidatedAt: null,
+      },
+      data: { invalidatedAt: now },
+    })
+    if (claimed.count !== 1) {
+      const current = await tx.businessSubscription.findUnique({ where: { id: subscription.id } })
+      if (current?.providerSubscriptionId === candidate.id) return
+      throw new Error('El checkout autorizado ya no está vigente.')
+    }
+    const linked = await tx.businessSubscription.updateMany({
+      where: { id: subscription.id, businessId, providerSubscriptionId: null },
+      data: {
+        provider: 'mercado_pago', environment, providerPlanId,
+        providerSubscriptionId: candidate.id, nextBillingAt: candidate.nextPaymentAt,
+      },
+    })
+    if (linked.count === 1) {
+      await tx.subscriptionLog.create({
+        data: {
+          businessId,
+          action: 'provider_subscription_authorized',
+          beforeStatus: subscription.status,
+          afterStatus: subscription.status,
+          beforePlanId: subscription.planId,
+          afterPlanId: subscription.planId,
+        },
+      })
+    } else {
+      const current = await tx.businessSubscription.findUnique({ where: { id: subscription.id } })
+      if (current?.providerSubscriptionId !== candidate.id) {
+        throw new Error('La suscripción cambió durante la autorización del checkout.')
+      }
+    }
+  })
 }
 
 export async function startSubscriptionCheckout(): Promise<void> {
   const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
-  const { client, environment } = subscriptionClient()
+  const { client, environment } = subscriptionClient(true)
   const now = new Date()
   const subscription = await loadSubscriptionForCheckout(businessId)
   if (!subscription) throw new UserError('No se encontró la suscripción del negocio.')
@@ -215,20 +330,47 @@ export async function startSubscriptionCheckout(): Promise<void> {
   const mapping = await ensureProviderPlan({ subscription, environment, client })
   if (!mapping.providerPlanId) throw new UserError('El plan externo no está disponible.')
 
+  const openAttempt = await prisma.subscriptionCheckoutAttempt.findFirst({
+    where: { subscriptionId: subscription.id, environment, invalidatedAt: null },
+    orderBy: { createdAt: 'desc' },
+  })
+  if (openAttempt && openAttempt.expiresAt.getTime() > now.getTime()) {
+    throw new UserError('Ya hay un checkout de suscripción en proceso.')
+  }
+  if (openAttempt) {
+    if (openAttempt.providerSubscriptionId) {
+      const staleCandidate = await client.getSubscription(openAttempt.providerSubscriptionId)
+      const exact = matchesAttempt({
+        candidate: staleCandidate, attempt: openAttempt, subscription,
+        providerPlanId: mapping.providerPlanId,
+      })
+      if (!exact) throw new Error('La suscripción externa pendiente no coincide con el checkout local.')
+      if (staleCandidate.providerStatus === 'authorized') {
+        await adoptAuthorizedCandidate({
+          candidate: staleCandidate, attemptId: openAttempt.id, subscription, businessId,
+          environment, providerPlanId: mapping.providerPlanId, now,
+        })
+        redirect('/dashboard/billing?subscription=active')
+        return
+      }
+      if (staleCandidate.providerStatus === 'pending') {
+        const cancelled = await client.cancelSubscription(staleCandidate.id)
+        if (cancelled.id !== staleCandidate.id || cancelled.status !== 'canceled') {
+          throw new Error('Mercado Pago no confirmó la cancelación del checkout vencido.')
+        }
+      }
+    }
+    const invalidated = await prisma.subscriptionCheckoutAttempt.updateMany({
+      where: { id: openAttempt.id, invalidatedAt: null, expiresAt: { lte: now } },
+      data: { invalidatedAt: now },
+    })
+    if (invalidated.count !== 1) throw new UserError('Ya hay un checkout de suscripción en proceso.')
+  }
+
   const reference = opaqueReference()
   let attempt: { id: string }
   try {
     attempt = await prisma.$transaction(async (tx) => {
-      await tx.subscriptionCheckoutAttempt.updateMany({
-        where: {
-          subscriptionId: subscription.id,
-          environment,
-          consumedAt: null,
-          invalidatedAt: null,
-          expiresAt: { lte: now },
-        },
-        data: { invalidatedAt: now },
-      })
       return tx.subscriptionCheckoutAttempt.create({
         data: {
           businessId,
@@ -262,6 +404,7 @@ export async function startSubscriptionCheckout(): Promise<void> {
     })
     if (
       providerSubscription.externalReference !== reference ||
+      providerSubscription.planId !== mapping.providerPlanId ||
       providerSubscription.amount !== subscription.amount ||
       providerSubscription.currency !== subscription.currency
     ) {
@@ -284,30 +427,30 @@ export async function startSubscriptionCheckout(): Promise<void> {
 
   try {
     if (!providerSubscription) throw new Error('Mercado Pago no creó la suscripción.')
-    await prisma.$transaction(async (tx) => {
-      const linked = await tx.businessSubscription.updateMany({
-        where: {
-          id: subscription.id,
-          businessId,
-          providerSubscriptionId: null,
-          updatedAt: subscription.updatedAt,
-        },
-        data: {
-          provider: 'mercado_pago',
-          environment,
-          providerPlanId: mapping.providerPlanId,
-          providerSubscriptionId: providerSubscription.id,
-          nextBillingAt: providerSubscription.nextPaymentAt,
-        },
-      })
-      if (linked.count !== 1) throw new Error('La suscripción cambió durante el checkout.')
-
-      const completed = await tx.subscriptionCheckoutAttempt.updateMany({
-        where: { id: attempt.id, providerSubscriptionId: null, invalidatedAt: null },
-        data: { providerSubscriptionId: providerSubscription.id },
-      })
-      if (completed.count !== 1) throw new Error('El checkout ya no está vigente.')
+    const completed = await prisma.subscriptionCheckoutAttempt.updateMany({
+      where: {
+        id: attempt.id,
+        providerSubscriptionId: null,
+        invalidatedAt: null,
+        subscription: { providerSubscriptionId: null },
+      },
+      data: {
+        providerSubscriptionId: providerSubscription.id,
+        providerPlanId: mapping.providerPlanId,
+      },
     })
+    if (completed.count !== 1) throw new Error('El checkout ya no está vigente.')
+    if (providerSubscription.providerStatus === 'authorized') {
+      await adoptAuthorizedCandidate({
+        candidate: providerSubscription, attemptId: attempt.id, subscription, businessId,
+        environment, providerPlanId: mapping.providerPlanId, now: new Date(),
+      })
+      redirect('/dashboard/billing?subscription=active')
+      return
+    }
+    if (providerSubscription.providerStatus !== 'pending') {
+      throw new Error('Mercado Pago devolvió un estado no válido para iniciar el checkout.')
+    }
   } catch (error) {
     try {
       await client.cancelSubscription(providerSubscription.id)

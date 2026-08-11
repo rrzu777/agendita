@@ -17,6 +17,10 @@ const stateMachineMigrationPath = path.join(
   root,
   'prisma/migrations/20260811180000_subscription_state_machine_hardening/migration.sql',
 )
+const checkoutHardeningMigrationPath = path.join(
+  root,
+  'prisma/migrations/20260812020000_subscription_checkout_hardening/migration.sql',
+)
 
 describe('Mercado Pago recurring billing persistence contract', () => {
   it('declares the provider-separated recurring billing schema', async () => {
@@ -36,7 +40,9 @@ describe('Mercado Pago recurring billing persistence contract', () => {
     expect(schema).toMatch(/trialDays\s+Int\s+@default\(30\)/)
     expect(schema).toContain('graceEnforcementDeferredAt')
     expect(schema).toContain('providerPaymentId')
-    expect(schema).toContain('@@unique([provider, environment, providerPaymentId])')
+    expect(schema).toContain(
+      '@@unique([provider, environment, providerPaymentId], map: "SubscriptionPayment_provider_environment_payment_key")',
+    )
     expect(schema).toContain('model SubscriptionNotificationDelivery')
     expect(schema).toContain('providerPreferenceId')
     expect(schema).toMatch(/providerEnvironment\s+MercadoPagoEnvironment\?/)
@@ -74,5 +80,23 @@ describe('Mercado Pago recurring billing persistence contract', () => {
     expect(correctiveMigration).toContain('"PaymentAccount_mercado_pago_environment_check"')
     expect(correctiveMigration).toContain("'mercado_pago_legacy'")
     expect(correctiveMigration).toContain('DROP INDEX IF EXISTS "PaymentAccount_businessId_provider_key"')
+  })
+
+  it('aligns checkout coordination indexes and persists recoverable provisioning leases', async () => {
+    const schema = await readFile(schemaPath, 'utf8')
+    const migration = await readFile(checkoutHardeningMigrationPath, 'utf8')
+
+    expect(schema).toContain('@unique(map: "SubscriptionPlanMapping_provisioningToken_key")')
+    expect(schema).toContain('@unique(map: "SubscriptionPlanMapping_externalReference_key")')
+    expect(schema).toContain('map: "SubscriptionPlanMapping_price_version_key"')
+    expect(schema).toContain('PostgreSQL owns these partial nullable-ID indexes')
+    expect(schema).toContain('provisioningLeaseExpiresAt')
+    expect(migration).toContain('DROP INDEX "SubscriptionPlanMapping_provisioningToken_key"')
+    expect(migration).toContain('CREATE UNIQUE INDEX "SubscriptionPlanMapping_provisioningToken_key"')
+    expect(migration).not.toContain('WHERE "provisioningToken" IS NOT NULL')
+    expect(migration).toContain('SubscriptionCheckoutAttempt_one_open_per_subscription')
+    expect(migration).toContain('WHERE "invalidatedAt" IS NULL')
+    expect(migration).toContain('attempt."providerSubscriptionId" = subscription."providerSubscriptionId"')
+    expect(migration).toContain('"providerSubscriptionId" = NULL')
   })
 })

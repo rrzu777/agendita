@@ -11,6 +11,7 @@ describe('Mercado Pago subscription mappers', () => {
     const raw = {
       id: 'preapproval-1',
       status: 'authorized',
+      preapproval_plan_id: 'provider-plan-1',
       external_reference: 'local-operation-opaque',
       init_point: 'https://www.mercadopago.cl/subscriptions/checkout',
       auto_recurring: {
@@ -25,6 +26,8 @@ describe('Mercado Pago subscription mappers', () => {
     expect(normalizeMpSubscription(raw)).toMatchObject({
       id: 'preapproval-1',
       status: 'active',
+      providerStatus: 'authorized',
+      planId: 'provider-plan-1',
       externalReference: 'local-operation-opaque',
       checkoutUrl: 'https://www.mercadopago.cl/subscriptions/checkout',
       amount: 12000,

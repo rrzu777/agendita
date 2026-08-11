@@ -24,7 +24,7 @@ function referenceFrom(request: Request): string | null {
 
 export async function GET(request: Request): Promise<NextResponse> {
   const reference = referenceFrom(request)
-  if (!reference || process.env.MP_SUBSCRIPTIONS_ENABLED !== 'true') {
+  if (!reference) {
     return redirectToBilling(request, 'failed')
   }
 
@@ -70,12 +70,13 @@ export async function GET(request: Request): Promise<NextResponse> {
 
     const exactMatch =
       providerSubscription.id === attempt.providerSubscriptionId &&
+      providerSubscription.planId === attempt.providerPlanId &&
       providerSubscription.externalReference === reference &&
       providerSubscription.amount === attempt.subscription.amount &&
       providerSubscription.currency === attempt.subscription.currency
     if (!exactMatch) return redirectToBilling(request, 'failed')
 
-    if (providerSubscription.status === 'active') {
+    if (providerSubscription.providerStatus === 'authorized') {
       return redirectToBilling(request, 'active')
     }
     if (providerSubscription.status === 'pending') {

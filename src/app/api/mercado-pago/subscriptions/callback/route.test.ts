@@ -23,6 +23,7 @@ const attempt = {
   id: 'attempt-1', businessId: 'business-1', subscriptionId: 'subscription-1',
   environment: 'sandbox', referenceHash: hash,
   providerSubscriptionId: 'provider-subscription-1',
+  providerPlanId: 'provider-plan-1',
   expiresAt: new Date('2026-08-11T13:00:00.000Z'), consumedAt: null,
   subscription: { amount: 14_990, currency: 'CLP' },
 }
@@ -46,6 +47,7 @@ describe('Mercado Pago subscriptions callback', () => {
     mocks.prisma.$transaction.mockImplementation(async (callback) => callback(mocks.prisma))
     mocks.getSubscription.mockResolvedValue({
       id: 'provider-subscription-1', status: 'pending', externalReference: REFERENCE,
+      providerStatus: 'pending', planId: 'provider-plan-1',
       checkoutUrl: null, amount: 14_990, currency: 'CLP', frequency: 1,
       frequencyType: 'months', nextPaymentAt: null,
     })
@@ -91,6 +93,7 @@ describe('Mercado Pago subscriptions callback', () => {
   it('shows active provisionally only after exact provider/reference/amount validation', async () => {
     mocks.getSubscription.mockResolvedValue({
       id: 'provider-subscription-1', status: 'active', externalReference: REFERENCE,
+      providerStatus: 'authorized', planId: 'provider-plan-1',
       checkoutUrl: null, amount: 14_990, currency: 'CLP', frequency: 1,
       frequencyType: 'months', nextPaymentAt: new Date('2026-09-14T12:00:00.000Z'),
     })
@@ -108,6 +111,7 @@ describe('Mercado Pago subscriptions callback', () => {
   ])('fails closed for %s and never activates locally', async (_name, override) => {
     mocks.getSubscription.mockResolvedValue({
       id: 'provider-subscription-1', status: 'active', externalReference: REFERENCE,
+      providerStatus: 'authorized', planId: 'provider-plan-1',
       checkoutUrl: null, amount: 14_990, currency: 'CLP', frequency: 1,
       frequencyType: 'months', nextPaymentAt: null, ...override,
     })

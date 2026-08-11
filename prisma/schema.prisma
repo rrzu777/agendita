@@ -206,22 +206,24 @@ model Plan {
 }
 
 model SubscriptionPlanMapping {
-  id                String                 @id @default(cuid())
-  planId            String
-  provider          SubscriptionProvider
-  environment       MercadoPagoEnvironment
-  providerPlanId    String?
-  amount            Int
-  currency          String                 @default("CLP")
-  isActive          Boolean                @default(true)
-  provisioningToken String?                @unique
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
+  id                         String                 @id @default(cuid())
+  planId                     String
+  provider                   SubscriptionProvider
+  environment                MercadoPagoEnvironment
+  providerPlanId             String?
+  amount                     Int
+  currency                   String                 @default("CLP")
+  isActive                   Boolean                @default(true)
+  provisioningToken          String?                @unique(map: "SubscriptionPlanMapping_provisioningToken_key")
+  provisioningLeaseExpiresAt DateTime?
+  externalReference          String?                @unique(map: "SubscriptionPlanMapping_externalReference_key")
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
 
   plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
 
-  @@unique([provider, environment, providerPlanId])
-  @@unique([planId, provider, environment, amount, currency])
+  @@unique([provider, environment, providerPlanId], map: "SubscriptionPlanMapping_provider_environment_providerPlanId_key")
+  @@unique([planId, provider, environment, amount, currency], map: "SubscriptionPlanMapping_price_version_key")
   @@index([planId, provider, environment])
 }
 
@@ -266,6 +268,8 @@ model BusinessSubscription {
   notificationDeliveries SubscriptionNotificationDelivery[]
   checkoutAttempts       SubscriptionCheckoutAttempt[]
 
+  // PostgreSQL migration owns the partial WHERE providerSubscriptionId IS NOT NULL;
+  // this declaration retains Prisma's compound unique selector for typed callers.
   @@unique([provider, environment, providerSubscriptionId], map: "BusinessSubscription_provider_env_subscription_key")
   @@index([businessId])
 }
@@ -280,6 +284,7 @@ model SubscriptionCheckoutAttempt {
   environment            MercadoPagoEnvironment
   referenceHash          String                 @unique
   providerSubscriptionId String?
+  providerPlanId         String?
   expiresAt              DateTime
   consumedAt             DateTime?
   invalidatedAt          DateTime?
@@ -317,8 +322,10 @@ model SubscriptionPayment {
   business     Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
   subscription BusinessSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
-  @@unique([provider, environment, providerPaymentId])
-  @@unique([provider, environment, providerInvoiceId])
+  // PostgreSQL owns these partial nullable-ID indexes. Prisma cannot express
+  // their WHERE clauses; declarations retain the typed compound selectors.
+  @@unique([provider, environment, providerPaymentId], map: "SubscriptionPayment_provider_environment_payment_key")
+  @@unique([provider, environment, providerInvoiceId], map: "SubscriptionPayment_provider_environment_invoice_key")
   @@index([businessId])
 }
 

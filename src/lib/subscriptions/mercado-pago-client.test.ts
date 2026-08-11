@@ -117,6 +117,40 @@ describe('createMpSubscriptionClient', () => {
     expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ status: 'canceled' })
   })
 
+  it('searches plans by deterministic reference and returns only exact reference matches', async () => {
+    const recurring = {
+      transaction_amount: 12000,
+      currency_id: 'CLP',
+      frequency: 1,
+      frequency_type: 'months',
+    }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      paging: { offset: 0, limit: 20, total: 2 },
+      results: [
+        { id: 'plan-wrong', status: 'active', external_reference: 'similar-ref', auto_recurring: recurring },
+        { id: 'plan-exact', status: 'active', external_reference: 'agendita_plan_mapping-1', auto_recurring: recurring },
+      ],
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const plans = await createMpSubscriptionClient(config).searchPlans(
+      'agendita_plan_mapping-1',
+    )
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://api.mercadopago.com/preapproval_plan/search?q=agendita_plan_mapping-1',
+    )
+    expect(plans).toEqual([{
+      id: 'plan-exact',
+      status: 'active',
+      externalReference: 'agendita_plan_mapping-1',
+      amount: 12000,
+      currency: 'CLP',
+      frequency: 1,
+      frequencyType: 'months',
+    }])
+  })
+
   it.each([
     'http://www.mercadopago.cl/checkout',
     'javascript:alert(1)',
@@ -176,6 +210,23 @@ describe('createMpSubscriptionClient', () => {
     ).rejects.toEqual(
       expect.objectContaining({ name: 'MercadoPagoSubscriptionContractError' }),
     )
+  })
+
+  it('accepts a directly authorized create response without a hosted URL', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      id: 'preapproval-authorized', status: 'authorized', preapproval_plan_id: 'plan-1',
+      external_reference: 'local-op-authorized',
+      auto_recurring: {
+        transaction_amount: 12000, currency_id: 'CLP', frequency: 1, frequency_type: 'months',
+      },
+    })))
+
+    await expect(createMpSubscriptionClient(config).createSubscription({
+      planId: 'plan-1', externalReference: 'local-op-authorized', amount: 12000,
+      startDate: new Date('2026-08-14T12:00:00.000Z'),
+    })).resolves.toMatchObject({
+      id: 'preapproval-authorized', providerStatus: 'authorized', checkoutUrl: null,
+    })
   })
 
   it('gets and searches invoices by preapproval id', async () => {

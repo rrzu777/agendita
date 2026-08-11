@@ -19,6 +19,8 @@ export type MpInvoiceStatus = 'approved' | 'pending' | 'failed' | 'ignored'
 export type MpSubscription = {
   id: string
   status: MpSubscriptionStatus
+  providerStatus: string | null
+  planId: string | null
   externalReference: string | null
   checkoutUrl: string | null
   amount: number
@@ -167,6 +169,8 @@ export function normalizeMpSubscription(response: unknown): MpSubscription {
   return {
     id: requiredId(raw.id),
     status,
+    providerStatus: typeof raw.status === 'string' ? raw.status : null,
+    planId: optionalString(raw.preapproval_plan_id),
     externalReference: optionalString(raw.external_reference),
     checkoutUrl: optionalHostedCheckoutUrl(raw.init_point),
     ...monthlyClp(raw),
