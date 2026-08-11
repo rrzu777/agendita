@@ -127,7 +127,10 @@ export async function findExistingProviderPaymentClaim(
       claim.businessId !== input.businessId ||
       claim.provider !== input.provider ||
       claim.environment !== input.environment
-    )
+    ) ||
+    (first.providerPaymentId !== null && input.providerPaymentId !== undefined &&
+      first.providerPaymentId !== input.providerPaymentId) ||
+    (first.providerInvoiceId !== null && first.providerInvoiceId !== input.providerInvoiceId)
   ) {
     throw new SubscriptionProviderPaymentOwnershipConflictError()
   }
@@ -298,9 +301,24 @@ export async function applySubscriptionTransition(
         subscriptionId: subscription.id,
         businessId: subscription.businessId,
       })
+      const failedClaimIsCurrent = input.command.type === 'invoice_failed' &&
+        existingPaymentClaim?.status === (
+          input.payment?.providerStatus === 'cancelled' ? 'cancelled' : 'rejected'
+        ) &&
+        existingPaymentClaim.providerInvoiceId === input.payment?.providerInvoiceId &&
+        (input.payment?.providerPaymentId === undefined ||
+          existingPaymentClaim.providerPaymentId === input.payment.providerPaymentId)
       if (
         existingPaymentClaim &&
-        (input.command.type === 'invoice_failed' || existingPaymentClaim.status === 'approved')
+        (
+          (input.command.type === 'invoice_failed' &&
+            (existingPaymentClaim.status === 'approved' || failedClaimIsCurrent)) ||
+          (
+            existingPaymentClaim.status === 'approved' &&
+            existingPaymentClaim.providerPaymentId !== null &&
+            existingPaymentClaim.providerInvoiceId !== null
+          )
+        )
       ) {
         return { applied: false, status: subscription.status }
       }
@@ -354,11 +372,36 @@ export async function applySubscriptionTransition(
       }
       let candidatePaymentId: string = randomUUID()
       let claim: { count: number }
-      const approvedPaymentData = input.command.type === 'invoice_approved'
+      const approvedPaymentData = (
+        currentClaim: NonNullable<typeof existingPaymentClaim>,
+      ) => input.command.type === 'invoice_approved'
         ? {
             status: 'approved' as const,
             paidAt: input.command.paidAt,
-            providerPaymentId: input.command.providerPaymentId,
+            ...(currentClaim.providerPaymentId === null
+              ? { providerPaymentId: input.command.providerPaymentId }
+              : {}),
+            ...(currentClaim.providerInvoiceId === null
+              ? { providerInvoiceId: input.payment?.providerInvoiceId }
+              : {}),
+            providerStatus: input.payment?.providerStatus,
+            providerUpdatedAt: input.payment?.providerUpdatedAt,
+            rawPayload: input.payment?.safeMetadata,
+          }
+        : null
+      const failedPaymentData = (
+        currentClaim: NonNullable<typeof existingPaymentClaim>,
+      ) => input.command.type === 'invoice_failed'
+        ? {
+            status: input.payment?.providerStatus === 'cancelled'
+              ? 'cancelled' as const
+              : 'rejected' as const,
+            ...(currentClaim.providerPaymentId === null
+              ? { providerPaymentId: input.payment?.providerPaymentId }
+              : {}),
+            ...(currentClaim.providerInvoiceId === null
+              ? { providerInvoiceId: input.payment?.providerInvoiceId }
+              : {}),
             providerStatus: input.payment?.providerStatus,
             providerUpdatedAt: input.payment?.providerUpdatedAt,
             rawPayload: input.payment?.safeMetadata,
@@ -373,9 +416,26 @@ export async function applySubscriptionTransition(
             subscriptionId: subscription.id,
             provider: paymentProvider,
             environment: paymentEnvironment,
-            status: { in: ['pending', 'rejected', 'cancelled', 'failed'] },
+            status: existingPaymentClaim.status,
+            providerPaymentId: existingPaymentClaim.providerPaymentId,
+            providerInvoiceId: existingPaymentClaim.providerInvoiceId,
           },
-          data: approvedPaymentData!,
+          data: approvedPaymentData(existingPaymentClaim)!,
+        })
+      } else if (input.command.type === 'invoice_failed' && existingPaymentClaim) {
+        candidatePaymentId = existingPaymentClaim.id
+        claim = await tx.subscriptionPayment.updateMany({
+          where: {
+            id: existingPaymentClaim.id,
+            businessId: subscription.businessId,
+            subscriptionId: subscription.id,
+            provider: paymentProvider,
+            environment: paymentEnvironment,
+            status: existingPaymentClaim.status,
+            providerPaymentId: existingPaymentClaim.providerPaymentId,
+            providerInvoiceId: existingPaymentClaim.providerInvoiceId,
+          },
+          data: failedPaymentData(existingPaymentClaim)!,
         })
       } else {
         claim = await tx.subscriptionPayment.createMany({
@@ -422,8 +482,11 @@ export async function applySubscriptionTransition(
       if (
         input.command.type === 'invoice_approved' &&
         claim.count === 0 &&
-        claimedPayment.status !== 'approved' &&
-        claimedPayment.providerInvoiceId === input.payment?.providerInvoiceId
+        (
+          claimedPayment.status !== 'approved' ||
+          claimedPayment.providerPaymentId === null ||
+          claimedPayment.providerInvoiceId === null
+        )
       ) {
         candidatePaymentId = claimedPayment.id
         claim = await tx.subscriptionPayment.updateMany({
@@ -433,14 +496,52 @@ export async function applySubscriptionTransition(
             subscriptionId: subscription.id,
             provider: paymentProvider,
             environment: paymentEnvironment,
-            status: { in: ['pending', 'rejected', 'cancelled', 'failed'] },
+            status: claimedPayment.status,
+            providerPaymentId: claimedPayment.providerPaymentId,
+            providerInvoiceId: claimedPayment.providerInvoiceId,
           },
-          data: approvedPaymentData!,
+          data: approvedPaymentData(claimedPayment)!,
         })
         claimedPayment = await findExistingProviderPaymentClaim(tx, {
           provider: paymentProvider,
           environment: paymentEnvironment,
           providerPaymentId: input.command.providerPaymentId,
+          providerInvoiceId: input.payment?.providerInvoiceId,
+          subscriptionId: subscription.id,
+          businessId: subscription.businessId,
+        })
+        if (!claimedPayment) throw new Error('El pago externo colisiona con otra clave única')
+      }
+      if (
+        input.command.type === 'invoice_failed' &&
+        claim.count === 0 &&
+        claimedPayment.status !== 'approved' &&
+        (
+          claimedPayment.status !== (
+            input.payment?.providerStatus === 'cancelled' ? 'cancelled' : 'rejected'
+          ) ||
+          claimedPayment.providerPaymentId !== (input.payment?.providerPaymentId ?? null) ||
+          claimedPayment.providerInvoiceId !== input.payment?.providerInvoiceId
+        )
+      ) {
+        candidatePaymentId = claimedPayment.id
+        claim = await tx.subscriptionPayment.updateMany({
+          where: {
+            id: claimedPayment.id,
+            businessId: subscription.businessId,
+            subscriptionId: subscription.id,
+            provider: paymentProvider,
+            environment: paymentEnvironment,
+            status: claimedPayment.status,
+            providerPaymentId: claimedPayment.providerPaymentId,
+            providerInvoiceId: claimedPayment.providerInvoiceId,
+          },
+          data: failedPaymentData(claimedPayment)!,
+        })
+        claimedPayment = await findExistingProviderPaymentClaim(tx, {
+          provider: paymentProvider,
+          environment: paymentEnvironment,
+          providerPaymentId: input.payment?.providerPaymentId,
           providerInvoiceId: input.payment?.providerInvoiceId,
           subscriptionId: subscription.id,
           businessId: subscription.businessId,
@@ -453,6 +554,21 @@ export async function applySubscriptionTransition(
           select: { status: true },
         })
         return { applied: false, status: latest?.status ?? subscription.status }
+      }
+    }
+
+    if (input.command.type === 'invoice_failed') {
+      const coveringManualPayment = await tx.subscriptionPayment.findFirst({
+        where: {
+          subscriptionId: subscription.id,
+          status: 'approved',
+          paidAt: { gte: input.command.occurredAt },
+          OR: [{ provider: 'manual' }, { paymentMethod: 'manual' }],
+        },
+        select: { id: true },
+      })
+      if (coveringManualPayment) {
+        return { applied: false, status: subscription.status }
       }
     }
 

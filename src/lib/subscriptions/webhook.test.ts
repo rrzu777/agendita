@@ -231,6 +231,28 @@ describe('processSubscriptionWebhook', () => {
         provider: 'mercado_pago',
         environment: 'sandbox',
         status: 'rejected',
+        providerPaymentId: null,
+        providerInvoiceId: approvedInvoice.id,
+      }])
+
+    await expect(processSubscriptionWebhook(invoiceEvent, dependencies)).resolves.toEqual({
+      outcome: 'applied',
+      status: 'active',
+    })
+    expect(dependencies.applyTransition).toHaveBeenCalledTimes(1)
+  })
+
+  it('completes a partial approved claim instead of returning duplicate', async () => {
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockResolvedValue([{
+        id: 'partial-approved-claim',
+        businessId: localSubscription.businessId,
+        subscriptionId: localSubscription.id,
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        status: 'approved',
+        providerPaymentId: null,
+        providerInvoiceId: approvedInvoice.id,
       }])
 
     await expect(processSubscriptionWebhook(invoiceEvent, dependencies)).resolves.toEqual({
@@ -258,6 +280,104 @@ describe('processSubscriptionWebhook', () => {
     expect(dependencies.applyTransition).toHaveBeenCalledTimes(2)
     expect(dependencies.client.getInvoice).toHaveBeenCalledTimes(1)
     expect(dependencies.client.getSubscription).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes a changed failed claim instead of short-circuiting it', async () => {
+    dependencies.client.getInvoice.mockResolvedValue({
+      ...approvedInvoice,
+      status: 'failed',
+      providerPaymentId: 'late-failed-payment',
+      providerStatus: 'cancelled',
+      approvedAt: null,
+    })
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockResolvedValue([{
+        id: 'rejected-partial-claim',
+        businessId: localSubscription.businessId,
+        subscriptionId: localSubscription.id,
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        status: 'rejected',
+        providerPaymentId: null,
+        providerInvoiceId: approvedInvoice.id,
+      }])
+
+    await expect(processSubscriptionWebhook(invoiceEvent, dependencies)).resolves.toEqual({
+      outcome: 'applied',
+      status: 'active',
+    })
+    expect(dependencies.applyTransition).toHaveBeenCalledTimes(1)
+    expect(dependencies.applyTransition).toHaveBeenCalledWith(
+      dependencies.prisma,
+      expect.objectContaining({
+        command: { type: 'invoice_failed', occurredAt: PAID_AT },
+        payment: expect.objectContaining({
+          providerPaymentId: 'late-failed-payment',
+          providerStatus: 'cancelled',
+        }),
+      }),
+    )
+  })
+
+  it('keeps an approved claim monotonic when failed omits the payment id', async () => {
+    dependencies.client.getInvoice.mockResolvedValue({
+      ...approvedInvoice,
+      status: 'failed',
+      providerPaymentId: null,
+      providerStatus: 'rejected',
+      approvedAt: null,
+    })
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockResolvedValue([{
+        id: 'approved-claim-before-provider-regression',
+        businessId: localSubscription.businessId,
+        subscriptionId: localSubscription.id,
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        status: 'approved',
+        providerPaymentId: approvedInvoice.providerPaymentId,
+        providerInvoiceId: approvedInvoice.id,
+      }])
+
+    await expect(processSubscriptionWebhook(invoiceEvent, dependencies)).resolves.toEqual({
+      outcome: 'duplicate',
+      status: 'past_due',
+    })
+    expect(dependencies.applyTransition).not.toHaveBeenCalled()
+  })
+
+  it('preserves an existing failed payment id when a status refresh omits it', async () => {
+    dependencies.client.getInvoice.mockResolvedValue({
+      ...approvedInvoice,
+      status: 'failed',
+      providerPaymentId: null,
+      providerStatus: 'cancelled',
+      approvedAt: null,
+    })
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockResolvedValue([{
+        id: 'failed-claim-with-payment',
+        businessId: localSubscription.businessId,
+        subscriptionId: localSubscription.id,
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        status: 'rejected',
+        providerPaymentId: 'existing-failed-payment',
+        providerInvoiceId: approvedInvoice.id,
+      }])
+
+    await processSubscriptionWebhook(invoiceEvent, dependencies)
+
+    expect(dependencies.applyTransition).toHaveBeenCalledTimes(1)
+    expect(dependencies.applyTransition).toHaveBeenCalledWith(
+      dependencies.prisma,
+      expect.objectContaining({
+        payment: expect.objectContaining({
+          providerPaymentId: undefined,
+          providerStatus: 'cancelled',
+        }),
+      }),
+    )
   })
 
   it('ignores pending invoices without mutating state', async () => {
@@ -455,6 +575,8 @@ describe('processSubscriptionWebhook', () => {
         provider: 'mercado_pago',
         environment: 'sandbox',
         status: 'approved',
+        providerPaymentId: approvedInvoice.providerPaymentId,
+        providerInvoiceId: approvedInvoice.id,
       }])
 
     await expect(processSubscriptionWebhook(invoiceEvent, dependencies)).resolves.toEqual({

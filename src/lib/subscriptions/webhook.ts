@@ -364,7 +364,11 @@ async function applyInvoice(
 
   if (invoice.status === 'approved') {
     const existingSettlement = await findExistingInvoiceSettlement(dependencies, local, invoice)
-    if (existingSettlement?.status === 'approved') {
+    if (
+      existingSettlement?.status === 'approved' &&
+      existingSettlement.providerPaymentId !== null &&
+      existingSettlement.providerInvoiceId !== null
+    ) {
       if (candidate.providerStatus === 'authorized' && local.cancelAtPeriodEnd) {
         await cancelFutureRenewals(dependencies, candidate.id)
       }
@@ -405,7 +409,15 @@ async function applyInvoice(
     }
   }
 
-  if (await findExistingInvoiceSettlement(dependencies, local, invoice)) {
+  const existingFailedSettlement = await findExistingInvoiceSettlement(dependencies, local, invoice)
+  const failedSettlementIsCurrent = existingFailedSettlement &&
+    existingFailedSettlement.status === (
+      invoice.providerStatus === 'cancelled' ? 'cancelled' : 'rejected'
+    ) &&
+    (invoice.providerPaymentId === null ||
+      existingFailedSettlement.providerPaymentId === invoice.providerPaymentId) &&
+    existingFailedSettlement.providerInvoiceId === invoice.id
+  if (existingFailedSettlement?.status === 'approved' || failedSettlementIsCurrent) {
     return { outcome: 'duplicate' as const, status: local.status }
   }
   const occurredAt = invoice.debitAt ?? invoice.createdAt

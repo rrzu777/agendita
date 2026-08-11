@@ -17,7 +17,7 @@ export type ReconciliationDependencies = {
   getProcessor(environment: MercadoPagoEnvironment): {
     client: Pick<
       MpSubscriptionClient,
-      'getSubscription' | 'searchInvoices' | 'getCurrentAccountId'
+      'getSubscription' | 'searchInvoices' | 'getCurrentAccountId' | 'cancelSubscription'
     >
     process(event: SubscriptionWebhookEvent): Promise<SubscriptionWebhookProcessingResult>
   }
@@ -30,6 +30,19 @@ export class SubscriptionReconciliationValidationError extends Error {
     this.name = 'SubscriptionReconciliationValidationError'
   }
 }
+
+export class SubscriptionReconciliationPartialError extends Error {
+  constructor() {
+    super('Mercado Pago subscription reconciliation has durable work remaining.')
+    this.name = 'SubscriptionReconciliationPartialError'
+  }
+}
+
+// The capped history search costs at most 5 pages x 5 s. Each authoritative
+// invoice processor has two sequential 5 s network phases, so three invoices
+// keep the run near 55 s and well inside the five-minute lease. When that full
+// budget is used, provider cancellation is deferred to the next cron run.
+export const MAX_MISSING_INVOICES_PER_RECONCILIATION = 3
 
 function runtimeDependencies(): ReconciliationDependencies {
   return {
@@ -76,6 +89,7 @@ function assertSubscriptionSnapshot(input: {
     providerPlanId: string | null
     amount: number
     currency: string
+    cancelAtPeriodEnd: boolean
   }
 }): void {
   const { accountId, attempt, candidate, local } = input
@@ -147,6 +161,59 @@ function assertSafeProcessorOutcome(result: SubscriptionWebhookProcessingResult)
   }
 }
 
+type LocalInvoiceClaim = {
+  id: string
+  businessId: string
+  subscriptionId: string
+  provider: string
+  environment: MercadoPagoEnvironment | null
+  status: string
+  providerPaymentId: string | null
+  providerInvoiceId: string | null
+}
+
+function expectedClaimStatus(invoice: MpInvoice): string {
+  if (invoice.status === 'approved') return 'approved'
+  return invoice.providerStatus === 'cancelled' ? 'cancelled' : 'rejected'
+}
+
+function findInvoiceClaim(
+  local: { id: string; businessId: string; environment: MercadoPagoEnvironment },
+  claims: LocalInvoiceClaim[],
+  invoice: MpInvoice,
+): LocalInvoiceClaim | null {
+  const matches = claims.filter((claim) =>
+    claim.providerInvoiceId === invoice.id ||
+    (!!invoice.providerPaymentId && claim.providerPaymentId === invoice.providerPaymentId),
+  )
+  if (matches.length === 0) return null
+  const claim = matches[0]
+  if (
+    matches.some((candidate) => candidate.id !== claim.id) ||
+    claim.provider !== 'mercado_pago' ||
+    claim.environment !== local.environment ||
+    claim.subscriptionId !== local.id ||
+    claim.businessId !== local.businessId ||
+    (claim.providerInvoiceId !== null && claim.providerInvoiceId !== invoice.id) ||
+    (claim.providerPaymentId !== null && invoice.providerPaymentId !== null &&
+      claim.providerPaymentId !== invoice.providerPaymentId)
+  ) {
+    throw new SubscriptionReconciliationValidationError()
+  }
+  return claim
+}
+
+function claimMatchesInvoice(claim: LocalInvoiceClaim | null, invoice: MpInvoice): boolean {
+  if (!claim || claim.providerInvoiceId !== invoice.id) {
+    return false
+  }
+  const paymentIdIsCompatible = invoice.providerPaymentId === null ||
+    claim.providerPaymentId === invoice.providerPaymentId
+  if (!paymentIdIsCompatible) return false
+  return claim.status === expectedClaimStatus(invoice) ||
+    (claim.status === 'approved' && invoice.status === 'failed')
+}
+
 function verifiedPeriodEnd(
   invoice: MpInvoice,
   nextInvoice: MpInvoice | undefined,
@@ -180,6 +247,7 @@ export async function reconcileSubscription(
       providerPlanId: true,
       amount: true,
       currency: true,
+      cancelAtPeriodEnd: true,
     },
   })
   if (
@@ -228,8 +296,42 @@ export async function reconcileSubscription(
 
   for (const invoice of invoices) assertTerminalInvoice(candidate, invoice)
   const orderedInvoices = [...invoices].sort(compareInvoices)
+  const providerPaymentIds = orderedInvoices.flatMap((invoice) =>
+    invoice.providerPaymentId ? [invoice.providerPaymentId] : [],
+  )
+  const claims = await dependencies.prisma.subscriptionPayment.findMany({
+    where: {
+      provider: 'mercado_pago',
+      environment,
+      OR: [
+        { providerInvoiceId: { in: orderedInvoices.map((invoice) => invoice.id) } },
+        ...(providerPaymentIds.length > 0
+          ? [{ providerPaymentId: { in: providerPaymentIds } }]
+          : []),
+      ],
+    },
+    select: {
+      id: true,
+      businessId: true,
+      subscriptionId: true,
+      provider: true,
+      environment: true,
+      status: true,
+      providerPaymentId: true,
+      providerInvoiceId: true,
+    },
+  })
+  const actionableInvoices = orderedInvoices.filter((invoice) =>
+    !claimMatchesInvoice(findInvoiceClaim({
+      id: local.id,
+      businessId: local.businessId,
+      environment,
+    }, claims, invoice), invoice),
+  )
+  const replayBatch = actionableInvoices.slice(0, MAX_MISSING_INVOICES_PER_RECONCILIATION)
   let applied = 0
-  for (const [index, invoice] of orderedInvoices.entries()) {
+  for (const invoice of replayBatch) {
+    const index = orderedInvoices.indexOf(invoice)
     const result = await process({
       topic: 'subscription_authorized_payment',
       resourceId: invoice.id,
@@ -238,6 +340,27 @@ export async function reconcileSubscription(
     })
     assertSafeProcessorOutcome(result)
     if (result.outcome === 'applied') applied++
+  }
+  if (actionableInvoices.length > replayBatch.length) {
+    throw new SubscriptionReconciliationPartialError()
+  }
+  const hasPendingCancellation = candidate.status === 'canceled' ||
+    (candidate.status === 'active' && local.cancelAtPeriodEnd)
+  if (
+    hasPendingCancellation &&
+    replayBatch.length === MAX_MISSING_INVOICES_PER_RECONCILIATION
+  ) {
+    throw new SubscriptionReconciliationPartialError()
+  }
+  if (candidate.status === 'active' && local.cancelAtPeriodEnd) {
+    const cancelled = await client.cancelSubscription(providerSubscriptionId)
+    if (
+      cancelled.id !== providerSubscriptionId ||
+      cancelled.status !== 'canceled' ||
+      cancelled.providerStatus !== 'canceled'
+    ) {
+      throw new SubscriptionReconciliationValidationError()
+    }
   }
   if (candidate.status === 'canceled') {
     const result = await process({

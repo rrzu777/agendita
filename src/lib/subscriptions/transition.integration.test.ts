@@ -153,7 +153,10 @@ function approvedCommand(
   }
 }
 
-function failedCommand(providerInvoiceId: string) {
+function failedCommand(
+  providerInvoiceId: string,
+  providerPaymentId: string | null = `failed-${providerInvoiceId}`,
+) {
   return {
     subscriptionId: SUBSCRIPTION,
     command: {
@@ -161,7 +164,7 @@ function failedCommand(providerInvoiceId: string) {
       occurredAt: PAID_AT,
     },
     payment: {
-      providerPaymentId: `failed-${providerInvoiceId}`,
+      providerPaymentId: providerPaymentId ?? undefined,
       providerInvoiceId,
       providerStatus: 'rejected',
       providerUpdatedAt: PAID_AT,
@@ -206,12 +209,61 @@ describe('applySubscriptionTransition', () => {
     ])
   })
 
+  it('refresca por CAS status e ID nulo de un terminal failed del mismo recurso', async () => {
+    await applySubscriptionTransition(
+      prisma,
+      failedCommand('invoice-failed-status-refresh', null),
+    )
+
+    await expect(applySubscriptionTransition(prisma, {
+      ...failedCommand('invoice-failed-status-refresh', 'payment-failed-status-refresh'),
+      payment: {
+        providerPaymentId: 'payment-failed-status-refresh',
+        providerInvoiceId: 'invoice-failed-status-refresh',
+        providerStatus: 'cancelled',
+        providerUpdatedAt: new Date('2026-08-16T12:00:00.000Z'),
+      },
+    })).resolves.toMatchObject({ status: 'past_due' })
+
+    await expect(prisma.subscriptionPayment.findFirstOrThrow({
+      where: { providerInvoiceId: 'invoice-failed-status-refresh' },
+    })).resolves.toMatchObject({
+      status: 'cancelled',
+      providerPaymentId: 'payment-failed-status-refresh',
+      providerStatus: 'cancelled',
+    })
+  })
+
+  it('conserva el payment id failed si el refresh de status lo omite', async () => {
+    await applySubscriptionTransition(
+      prisma,
+      failedCommand('invoice-failed-omits-payment', 'payment-failed-preserved'),
+    )
+
+    await applySubscriptionTransition(prisma, {
+      ...failedCommand('invoice-failed-omits-payment', null),
+      payment: {
+        providerInvoiceId: 'invoice-failed-omits-payment',
+        providerStatus: 'cancelled',
+        providerUpdatedAt: new Date('2026-08-16T12:00:00.000Z'),
+      },
+    })
+
+    await expect(prisma.subscriptionPayment.findFirstOrThrow({
+      where: { providerInvoiceId: 'invoice-failed-omits-payment' },
+    })).resolves.toMatchObject({
+      status: 'cancelled',
+      providerPaymentId: 'payment-failed-preserved',
+      providerStatus: 'cancelled',
+    })
+  })
+
   it('promueve monotónicamente el mismo invoice de rejected a approved', async () => {
     await prisma.businessSubscription.update({
       where: { id: SUBSCRIPTION },
       data: { status: 'active', pastDueAt: null, graceEndsAt: null },
     })
-    await applySubscriptionTransition(prisma, failedCommand('invoice-retry-approved'))
+    await applySubscriptionTransition(prisma, failedCommand('invoice-retry-approved', null))
 
     await expect(applySubscriptionTransition(
       prisma,
@@ -224,9 +276,48 @@ describe('applySubscriptionTransition', () => {
       expect.objectContaining({
         status: 'approved',
         providerPaymentId: 'payment-retry-approved',
+        providerInvoiceId: 'invoice-retry-approved',
         paidAt: PAID_AT,
       }),
     ])
+  })
+
+  it('rechaza reutilizar un payment id existente para otro invoice', async () => {
+    await applySubscriptionTransition(
+      prisma,
+      failedCommand('invoice-original-payment', 'payment-reused-across-invoices'),
+    )
+
+    await expect(applySubscriptionTransition(
+      prisma,
+      approvedCommand('payment-reused-across-invoices', 'invoice-different-payment'),
+    )).rejects.toBeInstanceOf(SubscriptionProviderPaymentOwnershipConflictError)
+
+    await expect(prisma.subscriptionPayment.findFirstOrThrow({
+      where: { providerPaymentId: 'payment-reused-across-invoices' },
+    })).resolves.toMatchObject({
+      providerInvoiceId: 'invoice-original-payment',
+      status: 'rejected',
+    })
+  })
+
+  it('rechaza reemplazar el payment id no nulo de un invoice existente', async () => {
+    await applySubscriptionTransition(
+      prisma,
+      failedCommand('invoice-reused-with-payment', 'payment-original-failed'),
+    )
+
+    await expect(applySubscriptionTransition(
+      prisma,
+      approvedCommand('payment-replacement-attempt', 'invoice-reused-with-payment'),
+    )).rejects.toBeInstanceOf(SubscriptionProviderPaymentOwnershipConflictError)
+
+    await expect(prisma.subscriptionPayment.findFirstOrThrow({
+      where: { providerInvoiceId: 'invoice-reused-with-payment' },
+    })).resolves.toMatchObject({
+      providerPaymentId: 'payment-original-failed',
+      status: 'rejected',
+    })
   })
 
   it('promueve el approved aunque compita desde cero con el failed del mismo invoice', async () => {
@@ -282,7 +373,7 @@ describe('applySubscriptionTransition', () => {
     await approvedReady
     const failed = applySubscriptionTransition(
       failedPrisma as unknown as PrismaClient,
-      failedCommand('invoice-racing-terminal'),
+      failedCommand('invoice-racing-terminal', null),
     )
 
     await expect(Promise.all([approved, failed])).resolves.toEqual([
@@ -300,6 +391,75 @@ describe('applySubscriptionTransition', () => {
     await expect(prisma.businessSubscription.findUniqueOrThrow({
       where: { id: SUBSCRIPTION },
     })).resolves.toMatchObject({ status: 'active' })
+  })
+
+  it('un pago manual posterior cubre un failure externo anterior', async () => {
+    const manualPaidAt = new Date('2026-09-15T12:00:00.000Z')
+    await applySubscriptionTransition(prisma, {
+      subscriptionId: SUBSCRIPTION,
+      command: { type: 'admin_record_payment', amount: 14990, paidAt: manualPaidAt },
+    })
+
+    await expect(applySubscriptionTransition(
+      prisma,
+      {
+        ...failedCommand('invoice-before-manual', null),
+        command: {
+          type: 'invoice_failed',
+          occurredAt: new Date('2026-09-01T00:00:00.000Z'),
+        },
+      },
+    )).resolves.toEqual({ applied: false, status: 'active' })
+
+    await expect(prisma.businessSubscription.findUniqueOrThrow({
+      where: { id: SUBSCRIPTION },
+    })).resolves.toMatchObject({ status: 'active', lastPaidAt: manualPaidAt })
+  })
+
+  it('la cobertura manual no queda oculta por un approved externo con paidAt mayor', async () => {
+    const manualPaidAt = new Date('2026-09-15T12:00:00.000Z')
+    await applySubscriptionTransition(prisma, {
+      subscriptionId: SUBSCRIPTION,
+      command: { type: 'admin_record_payment', amount: 14990, paidAt: manualPaidAt },
+    })
+    await prisma.subscriptionPayment.create({
+      data: {
+        businessId: BUSINESS,
+        subscriptionId: SUBSCRIPTION,
+        amount: 14990,
+        currency: 'CLP',
+        status: 'approved',
+        paidAt: new Date('2026-09-20T12:00:00.000Z'),
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        providerPaymentId: 'newer-external-payment',
+        providerInvoiceId: 'newer-external-invoice',
+      },
+    })
+
+    await expect(applySubscriptionTransition(prisma, {
+      ...failedCommand('invoice-before-covered-manual', null),
+      command: {
+        type: 'invoice_failed',
+        occurredAt: new Date('2026-09-01T00:00:00.000Z'),
+      },
+    })).resolves.toEqual({ applied: false, status: 'active' })
+  })
+
+  it('un failure posterior a la cobertura manual puede marcar past_due', async () => {
+    const manualPaidAt = new Date('2026-09-15T12:00:00.000Z')
+    await applySubscriptionTransition(prisma, {
+      subscriptionId: SUBSCRIPTION,
+      command: { type: 'admin_record_payment', amount: 14990, paidAt: manualPaidAt },
+    })
+
+    await expect(applySubscriptionTransition(prisma, {
+      ...failedCommand('invoice-after-manual', null),
+      command: {
+        type: 'invoice_failed',
+        occurredAt: new Date('2026-10-01T00:00:00.000Z'),
+      },
+    })).resolves.toMatchObject({ applied: true, status: 'past_due' })
   })
 
   it('persiste una sola auditoría para gracia vencida con enforcement apagado', async () => {
@@ -673,7 +833,7 @@ describe('applySubscriptionTransition', () => {
         status: 'approved',
         provider: 'mercado_pago',
         environment: 'sandbox',
-        providerPaymentId: 'payment-existing',
+        providerPaymentId: 'payment-conflict',
         providerInvoiceId: 'invoice-conflict',
         paidAt: new Date('2026-08-01T00:00:00.000Z'),
       },

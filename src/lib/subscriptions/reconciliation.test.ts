@@ -22,6 +22,7 @@ const localSubscription = {
   currency: 'CLP',
   currentPeriodEnd: new Date('2026-06-11T10:00:00.000Z'),
   lastPaidAt: null,
+  cancelAtPeriodEnd: false,
 }
 const providerSubscription: MpSubscription = {
   id: 'provider-subscription',
@@ -106,6 +107,12 @@ function createDependencies(overrides: {
     getSubscription: vi.fn().mockResolvedValue(overrides.subscription ?? providerSubscription),
     searchInvoices: vi.fn().mockResolvedValue(overrides.invoices ?? [JULY_APPROVED]),
     getCurrentAccountId: vi.fn().mockResolvedValue('provider-account'),
+    cancelSubscription: vi.fn().mockResolvedValue({
+      ...providerSubscription,
+      status: 'canceled',
+      providerStatus: 'canceled',
+      nextPaymentAt: null,
+    }),
   }
   const dependencies = {
     prisma: {
@@ -183,6 +190,147 @@ describe('reconcileSubscription', () => {
       ['subscription_authorized_payment', AUGUST_FAILED.id],
       ['subscription_preapproval', providerSubscription.id],
     ])
+  })
+
+  it('difiere la cancelación si el lote completo ya consumió el presupuesto de red', async () => {
+    const failures = [0, 1, 2].map((index) => invoice({
+      id: `invoice-canceled-budget-${index}`,
+      status: 'failed',
+      debitAt: new Date(Date.UTC(2026, 5 + index, 11, 10)).toISOString(),
+    }))
+    const durableClaims = new Map<string, {
+      id: string
+      businessId: string
+      subscriptionId: string
+      provider: string
+      environment: 'sandbox'
+      status: string
+      providerPaymentId: string | null
+      providerInvoiceId: string
+    }>()
+    const { dependencies, process } = createDependencies({
+      subscription: {
+        ...providerSubscription,
+        status: 'canceled',
+        providerStatus: 'canceled',
+        nextPaymentAt: null,
+      },
+      invoices: failures,
+    })
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockImplementation(async () => [...durableClaims.values()])
+    process.mockImplementation(async (event) => {
+      if (event.topic === 'subscription_authorized_payment') {
+        durableClaims.set(event.resourceId, {
+          id: `claim-${event.resourceId}`,
+          businessId: localSubscription.businessId,
+          subscriptionId: localSubscription.id,
+          provider: 'mercado_pago',
+          environment: 'sandbox',
+          status: 'rejected',
+          providerPaymentId: null,
+          providerInvoiceId: event.resourceId,
+        })
+      }
+      return { outcome: 'applied' as const, status: 'past_due' }
+    })
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies))
+      .rejects.toMatchObject({ name: 'SubscriptionReconciliationPartialError' })
+    expect(process).toHaveBeenCalledTimes(3)
+    expect(process.mock.calls.every(([event]) =>
+      event.topic === 'subscription_authorized_payment')).toBe(true)
+    expectNoSuccessfulReconciliation(dependencies)
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toMatchObject({
+      outcome: 'reconciled', invoices: 3, applied: 1,
+    })
+    expect(process).toHaveBeenCalledTimes(4)
+    expect(process.mock.calls[3]?.[0].topic).toBe('subscription_preapproval')
+    expect(dependencies.prisma.businessSubscription.updateMany).toHaveBeenCalledTimes(1)
+  })
+
+  it('difiere cancelSubscription si tres invoices ya agotaron el presupuesto', async () => {
+    const failures = [0, 1, 2].map((index) => invoice({
+      id: `invoice-active-budget-${index}`,
+      status: 'failed',
+      debitAt: new Date(Date.UTC(2026, 5 + index, 11, 10)).toISOString(),
+    }))
+    const durableClaims = new Map<string, LocalClaim>()
+    type LocalClaim = {
+      id: string
+      businessId: string
+      subscriptionId: string
+      provider: string
+      environment: 'sandbox'
+      status: string
+      providerPaymentId: string | null
+      providerInvoiceId: string
+    }
+    const { dependencies, client, process } = createDependencies({
+      local: { ...localSubscription, cancelAtPeriodEnd: true },
+      invoices: failures,
+    })
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockImplementation(async () => [...durableClaims.values()])
+    process.mockImplementation(async (event) => {
+      durableClaims.set(event.resourceId, {
+        id: `claim-${event.resourceId}`,
+        businessId: localSubscription.businessId,
+        subscriptionId: localSubscription.id,
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        status: 'rejected',
+        providerPaymentId: null,
+        providerInvoiceId: event.resourceId,
+      })
+      return { outcome: 'applied' as const, status: 'past_due' }
+    })
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies))
+      .rejects.toMatchObject({ name: 'SubscriptionReconciliationPartialError' })
+    expect(process).toHaveBeenCalledTimes(3)
+    expect(client.cancelSubscription).not.toHaveBeenCalled()
+    expectNoSuccessfulReconciliation(dependencies)
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toMatchObject({
+      outcome: 'reconciled', invoices: 3, applied: 0,
+    })
+    expect(process).toHaveBeenCalledTimes(3)
+    expect(client.cancelSubscription).toHaveBeenCalledTimes(1)
+    expect(dependencies.prisma.businessSubscription.updateMany).toHaveBeenCalledTimes(1)
+  })
+
+  it('reintenta cancelar renovaciones aun si el approved exacto no requiere refetch', async () => {
+    const { dependencies, client, process } = createDependencies({
+      local: { ...localSubscription, cancelAtPeriodEnd: true },
+      invoices: [JULY_APPROVED],
+    })
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockResolvedValue([{
+        id: 'claim-approved-exact',
+        businessId: localSubscription.businessId,
+        subscriptionId: localSubscription.id,
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        status: 'approved',
+        providerPaymentId: JULY_APPROVED.providerPaymentId,
+        providerInvoiceId: JULY_APPROVED.id,
+      }])
+    client.cancelSubscription
+      .mockRejectedValueOnce(new Error('ambiguous cancellation'))
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies))
+      .rejects.toThrow('ambiguous cancellation')
+    expect(process).not.toHaveBeenCalled()
+    expectNoSuccessfulReconciliation(dependencies)
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toMatchObject({
+      outcome: 'reconciled', invoices: 1, applied: 0,
+    })
+    expect(client.cancelSubscription).toHaveBeenCalledTimes(2)
+    expect(process).not.toHaveBeenCalled()
+    expect(dependencies.prisma.businessSubscription.updateMany).toHaveBeenCalledTimes(1)
   })
 
   it('permite cerrar canceled sin nextPaymentAt sólo si el último approved ya es duplicate', async () => {
@@ -290,6 +438,73 @@ describe('reconcileSubscription', () => {
     })
   })
 
+  it('omite el refetch de un terminal ya reclamado con los mismos IDs y status', async () => {
+    const { dependencies, process } = createDependencies({ invoices: [JULY_APPROVED] })
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([{
+        id: 'existing-approved-claim',
+        businessId: localSubscription.businessId,
+        subscriptionId: localSubscription.id,
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        status: 'approved',
+        providerPaymentId: JULY_APPROVED.providerPaymentId,
+        providerInvoiceId: JULY_APPROVED.id,
+      }])
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toMatchObject({
+      outcome: 'reconciled', applied: 0,
+    })
+    expect(process).not.toHaveBeenCalled()
+  })
+
+  it('mantiene actionable una promoción durable de failed a approved', async () => {
+    const { dependencies, process } = createDependencies({ invoices: [JULY_APPROVED] })
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([{
+        id: 'existing-rejected-claim',
+        businessId: localSubscription.businessId,
+        subscriptionId: localSubscription.id,
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        status: 'rejected',
+        providerPaymentId: null,
+        providerInvoiceId: JULY_APPROVED.id,
+      }])
+
+    await reconcileSubscription(localSubscription.id, dependencies)
+
+    expect(process).toHaveBeenCalledTimes(1)
+    expect(process).toHaveBeenCalledWith(expect.objectContaining({ resourceId: JULY_APPROVED.id }))
+  })
+
+  it('no degrada ni bloquea un approved local si provider regresa el mismo invoice a failed', async () => {
+    const providerFailed = {
+      ...JULY_APPROVED,
+      status: 'failed' as const,
+      providerPaymentId: null,
+      providerStatus: 'rejected',
+      approvedAt: null,
+    }
+    const { dependencies, process } = createDependencies({ invoices: [providerFailed] })
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([{
+        id: 'approved-monotonic-claim',
+        businessId: localSubscription.businessId,
+        subscriptionId: localSubscription.id,
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        status: 'approved',
+        providerPaymentId: JULY_APPROVED.providerPaymentId,
+        providerInvoiceId: JULY_APPROVED.id,
+      }])
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toMatchObject({
+      outcome: 'reconciled', applied: 0,
+    })
+    expect(process).not.toHaveBeenCalled()
+  })
+
   it('no marca reconciliación si la identidad financiera local cambia durante la red', async () => {
     const { dependencies } = createDependencies({ invoices: [] })
     ;(dependencies.prisma.businessSubscription.updateMany as ReturnType<typeof vi.fn>)
@@ -322,5 +537,101 @@ describe('reconcileSubscription', () => {
       .rejects.toMatchObject({ name: 'SubscriptionReconciliationValidationError' })
     expect(process).not.toHaveBeenCalled()
     expectNoSuccessfulReconciliation(dependencies)
+  })
+
+  it('drena 100 invoices con máximo tres refetches faltantes por corrida', async () => {
+    const debitAt = (index: number) => new Date(Date.UTC(2018, index, 11, 10))
+    const history = Array.from({ length: 100 }, (_, index) => invoice({
+      id: `invoice-history-${String(index).padStart(3, '0')}`,
+      status: 'approved',
+      debitAt: debitAt(index).toISOString(),
+      approvedAt: new Date(debitAt(index).getTime() + 60 * 60 * 1000).toISOString(),
+    }))
+    const durableClaims = new Map(history.slice(0, 94).map((item, index) => [item.id, {
+      id: `claim-${index}`,
+      businessId: localSubscription.businessId,
+      subscriptionId: localSubscription.id,
+      provider: 'mercado_pago',
+      environment: 'sandbox',
+      status: 'approved',
+      providerPaymentId: item.providerPaymentId,
+      providerInvoiceId: item.id,
+    }]))
+    const { dependencies, process } = createDependencies({
+      subscription: { ...providerSubscription, nextPaymentAt: debitAt(100) },
+      invoices: history,
+    })
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockImplementation(async () => [...durableClaims.values()])
+    process.mockImplementation(async (event) => {
+      const item = history.find((candidate) => candidate.id === event.resourceId)!
+      durableClaims.set(item.id, {
+        id: `claim-${item.id}`,
+        businessId: localSubscription.businessId,
+        subscriptionId: localSubscription.id,
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        status: 'approved',
+        providerPaymentId: item.providerPaymentId,
+        providerInvoiceId: item.id,
+      })
+      return { outcome: 'applied' as const, status: 'active' }
+    })
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies))
+      .rejects.toMatchObject({ name: 'SubscriptionReconciliationPartialError' })
+    expect(process).toHaveBeenCalledTimes(3)
+    expectNoSuccessfulReconciliation(dependencies)
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toMatchObject({
+      outcome: 'reconciled', invoices: 100, applied: 3,
+    })
+    expect(process).toHaveBeenCalledTimes(6)
+    expect(new Set(process.mock.calls.map(([event]) => event.resourceId)).size).toBe(6)
+    expect(dependencies.prisma.businessSubscription.updateMany).toHaveBeenCalledTimes(1)
+  })
+
+  it('persiste refreshes failed y no repite los mismos tres hasta starvation', async () => {
+    const failures = Array.from({ length: 4 }, (_, index) => ({
+      ...invoice({
+        id: `invoice-failed-refresh-${index}`,
+        status: 'failed',
+        debitAt: new Date(Date.UTC(2026, 4 + index, 11, 10)).toISOString(),
+      }),
+      providerStatus: 'cancelled',
+    }))
+    const durableClaims = new Map(failures.map((item, index) => [item.id, {
+      id: `failed-claim-${index}`,
+      businessId: localSubscription.businessId,
+      subscriptionId: localSubscription.id,
+      provider: 'mercado_pago',
+      environment: 'sandbox',
+      status: 'rejected',
+      providerPaymentId: `persisted-failed-payment-${index}`,
+      providerInvoiceId: item.id,
+    }]))
+    const { dependencies, process } = createDependencies({
+      subscription: {
+        ...providerSubscription,
+        nextPaymentAt: new Date('2026-09-11T10:00:00.000Z'),
+      },
+      invoices: failures,
+    })
+    ;(dependencies.prisma.subscriptionPayment.findMany as ReturnType<typeof vi.fn>)
+      .mockImplementation(async () => [...durableClaims.values()])
+    process.mockImplementation(async (event) => {
+      const claim = durableClaims.get(event.resourceId)!
+      durableClaims.set(event.resourceId, { ...claim, status: 'cancelled' })
+      return { outcome: 'duplicate' as const, status: 'past_due' }
+    })
+
+    await expect(reconcileSubscription(localSubscription.id, dependencies))
+      .rejects.toMatchObject({ name: 'SubscriptionReconciliationPartialError' })
+    await expect(reconcileSubscription(localSubscription.id, dependencies)).resolves.toMatchObject({
+      outcome: 'reconciled', invoices: 4,
+    })
+
+    expect(process).toHaveBeenCalledTimes(4)
+    expect(new Set(process.mock.calls.map(([event]) => event.resourceId)).size).toBe(4)
   })
 })
