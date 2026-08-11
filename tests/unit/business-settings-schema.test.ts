@@ -151,4 +151,12 @@ describe('updateBusinessSchema', () => {
     // Input vacío del form ('') debe volver al default 24, no convertirse en 0 (= sin límite).
     expect(updateBusinessSchema.parse({ ...minimalValid, selfServiceCutoffHours: '' }).selfServiceCutoffHours).toBe(24)
   })
+
+  it('defaults cancellation reminders to enabled when not provided', () => {
+    const result = updateBusinessSchema.parse({
+      name: 'Test', city: 'Santiago', subdomain: 'test',
+    })
+
+    expect(result.cancellationReminderEnabled).toBe(true)
+  })
 })

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { TEST_VAPID_PRIVATE_KEY, TEST_VAPID_PUBLIC_KEY } from '../helpers/push-fixtures'
 
 const { mockPrepareMiUser, mockBusinessFindUnique, mockCustomerFindMany, mockBookingFindMany, mockLoadCard, mockNotFound } = vi.hoisted(() => ({
   mockPrepareMiUser: vi.fn(),
@@ -27,6 +28,7 @@ import MiBusinessPage from '@/app/mi/[slug]/page'
 
 const business = {
   id: 'b1', name: 'Mimos Nails', slug: 'mimosnails', subdomain: 'mimosnails', logoUrl: null, selfServiceCutoffHours: 24,
+  cancellationPolicy: null, cancellationReminderEnabled: true,
   loyaltyConfig: { isActive: true, programName: 'Club', pointsLabel: 'mimos', cardMessage: null },
 }
 const cardData = {
@@ -38,13 +40,18 @@ describe('/mi/[slug]', () => {
     vi.clearAllMocks()
     process.env.NEXT_PUBLIC_APP_DOMAIN = 'agendita.test'
     process.env.APP_DOMAIN = 'agendita.test'
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = TEST_VAPID_PUBLIC_KEY
+    process.env.VAPID_PRIVATE_KEY = TEST_VAPID_PRIVATE_KEY
+    process.env.VAPID_SUBJECT = 'mailto:soporte@agendita.cl'
+    process.env.ENCRYPTION_KEY = 'mi-push-test-key'
   })
 
-  it('notFound si no hay Customer vinculado en el negocio (sin leak)', async () => {
+  it('notFound sin consultar reservas ni exponer controles si no hay Customer vinculado', async () => {
     mockPrepareMiUser.mockResolvedValue({ status: 'ok', user: { id: 'u1' } })
     mockBusinessFindUnique.mockResolvedValue(business)
     mockCustomerFindMany.mockResolvedValue([])
     await expect(MiBusinessPage({ params: Promise.resolve({ slug: 'mimosnails' }) })).rejects.toThrow('NOT_FOUND')
+    expect(mockBookingFindMany).not.toHaveBeenCalled()
   })
 
   it('renderiza tarjeta + próximas reservas + historial', async () => {
@@ -55,7 +62,7 @@ describe('/mi/[slug]', () => {
     const future = new Date(Date.now() + 86400000)
     mockBookingFindMany
       .mockResolvedValueOnce([
-        { id: 'bk1', bookingNumber: 4738, startDateTime: future, status: 'confirmed', service: { name: 'Manicura' } },
+        { id: 'bk1', bookingNumber: 4738, startDateTime: future, status: 'confirmed', cancellationCutoffHours: 24, cancellationPolicySnapshot: null, service: { name: 'Manicura' } },
       ])
       .mockResolvedValueOnce([])
     const html = renderToStaticMarkup(await MiBusinessPage({ params: Promise.resolve({ slug: 'mimosnails' }) }))
@@ -63,6 +70,85 @@ describe('/mi/[slug]', () => {
     expect(html).toContain('Manicura')
     expect(html).toContain('4738')
     expect(html).toContain('Reservar')
+  })
+
+  it('ofrece administrar recordatorios en el origen canónico cuando la clienta tiene una reserva próxima', async () => {
+    process.env.NEXT_PUBLIC_APP_DOMAIN = 'www.agendita.test'
+    process.env.APP_DOMAIN = 'www.agendita.test'
+    mockPrepareMiUser.mockResolvedValue({ status: 'ok', user: { id: 'u1' } })
+    mockBusinessFindUnique.mockResolvedValue(business)
+    mockCustomerFindMany.mockResolvedValue([{
+      id: 'c1', name: 'Ana', businessId: 'b1', referralToken: null, marketingOptOutAt: null,
+    }])
+    mockLoadCard.mockResolvedValue(cardData)
+    mockBookingFindMany
+      .mockResolvedValueOnce([{
+        id: 'bk1', bookingNumber: 4738, startDateTime: new Date(Date.now() + 72 * 3_600_000),
+        status: 'confirmed', paymentStatus: 'fully_paid', holdExpiresAt: null, approvalExpiresAt: null,
+        depositRequired: 5_000, depositPaid: 5_000,
+        cancellationCutoffHours: 24, cancellationPolicySnapshot: null,
+        modality: 'at_business', serviceAddress: null, meetingUrl: null,
+        service: { name: 'Manicura' }, payments: [],
+      }])
+      .mockResolvedValueOnce([])
+
+    const html = renderToStaticMarkup(await MiBusinessPage({
+      params: Promise.resolve({ slug: 'mimosnails' }),
+    }))
+
+    expect(html).toContain('Administrar recordatorios')
+    expect(html).toContain('href="https://www.agendita.test/notificaciones"')
+    expect(html).not.toContain('href="https://mimosnails.agendita.test/notificaciones"')
+  })
+
+  it('no ofrece administrar recordatorios cuando la clienta no tiene reservas próximas', async () => {
+    mockPrepareMiUser.mockResolvedValue({ status: 'ok', user: { id: 'u1' } })
+    mockBusinessFindUnique.mockResolvedValue(business)
+    mockCustomerFindMany.mockResolvedValue([{
+      id: 'c1', name: 'Ana', businessId: 'b1', referralToken: null, marketingOptOutAt: null,
+    }])
+    mockLoadCard.mockResolvedValue(cardData)
+    mockBookingFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([])
+
+    const html = renderToStaticMarkup(await MiBusinessPage({
+      params: Promise.resolve({ slug: 'mimosnails' }),
+    }))
+
+    expect(html).not.toContain('Administrar recordatorios')
+  })
+
+  it.each([
+    ['recordatorios apagados', { business: { cancellationReminderEnabled: false } }],
+    ['sin abono', { booking: { depositRequired: 0, depositPaid: 0 } }],
+    ['cutoff cero', { booking: { cancellationCutoffHours: 0 } }],
+    ['reserva terminal', { booking: { status: 'cancelled' } }],
+    ['ventana cerrada justo en el cutoff', { booking: { startDateTime: new Date(Date.now() + 24 * 3_600_000) } }],
+  ])('oculta administrar recordatorios cuando %s', async (_label, overrides) => {
+    mockPrepareMiUser.mockResolvedValue({ status: 'ok', user: { id: 'u1' } })
+    const businessOverride = 'business' in overrides ? overrides.business : undefined
+    const bookingOverride = 'booking' in overrides ? overrides.booking : undefined
+    mockBusinessFindUnique.mockResolvedValue({ ...business, ...businessOverride })
+    mockCustomerFindMany.mockResolvedValue([{
+      id: 'c1', name: 'Ana', businessId: 'b1', referralToken: null, marketingOptOutAt: null,
+    }])
+    mockLoadCard.mockResolvedValue(cardData)
+    mockBookingFindMany
+      .mockResolvedValueOnce([{
+        id: 'bk1', bookingNumber: 4738, startDateTime: new Date(Date.now() + 72 * 3_600_000),
+        status: 'confirmed', paymentStatus: 'deposit_paid', holdExpiresAt: null, approvalExpiresAt: null,
+        cancellationCutoffHours: 24, cancellationPolicySnapshot: null,
+        depositRequired: 5_000, depositPaid: 5_000,
+        modality: 'at_business', serviceAddress: null, meetingUrl: null,
+        service: { name: 'Manicura' }, payments: [],
+        ...bookingOverride,
+      }])
+      .mockResolvedValueOnce([])
+
+    const html = renderToStaticMarkup(await MiBusinessPage({
+      params: Promise.resolve({ slug: 'mimosnails' }),
+    }))
+
+    expect(html).not.toContain('Administrar recordatorios')
   })
 
   // El hold vencido que el cron todavía no barrió: la etiqueta no puede seguir
@@ -77,6 +163,7 @@ describe('/mi/[slug]', () => {
         .mockResolvedValueOnce([{
           id: 'bk1', bookingNumber: 4738, startDateTime: new Date(Date.now() + 86400000),
           status: 'pending_payment', paymentStatus: 'unpaid', holdExpiresAt: null, approvalExpiresAt: null,
+          cancellationCutoffHours: 24, cancellationPolicySnapshot: null,
           service: { name: 'Manicura' }, payments: [],
           ...booking,
         }])

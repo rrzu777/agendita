@@ -12,6 +12,9 @@ import { buildBookingHelpWhatsappUrl } from '@/lib/notifications/whatsapp'
 import { AccountCta } from './account-cta'
 import { AddToCalendar } from './add-to-calendar'
 import { WhatsappHelpLine, WhereRowValue } from './where-row-value'
+import { cancellationWarningText } from '@/lib/bookings/cancellation-policy'
+import { AccountPushLink } from '@/components/push/account-push-link'
+import { GuestPushLink } from '@/components/push/guest-push-link'
 
 /** El negocio, en lo que la reserva no trae. La modalidad, la dirección de la
  *  clienta y el link de la videollamada NO van acá: los resuelve el servidor al
@@ -22,7 +25,7 @@ export interface ConfirmationBusiness {
   whatsapp: string | null
 }
 
-export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail, business, where, confirmed, professionalName }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields; confirmed: boolean; professionalName: string }) {
+export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail, business, where, confirmed, professionalName, cancellationCutoffHours, cancellationPolicySnapshot, depositRequired, depositPaid, pushMode = null, pushGrant = null, canonicalOrigin = '' }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields; confirmed: boolean; professionalName: string; cancellationCutoffHours: number; cancellationPolicySnapshot: string | null; depositRequired: number; depositPaid: number; pushMode?: 'account' | 'guest' | null; pushGrant?: string | null; canonicalOrigin?: string }) {
   const isPending = mode === 'pending'
   const isFree = data.servicePrice <= 0
   const noDeposit = data.serviceDeposit <= 0
@@ -47,6 +50,10 @@ export function StepConfirmation({ data, timezone, currency, bookingId, bookingN
   // "Precio total" sigue mostrando el precio original (pre-descuento).
   const hasDiscount = promo != null && promo.discountAmount > 0
   const effectiveFinal = hasDiscount ? promo!.finalAmount : data.servicePrice
+  const hasPersistedDeposit = depositRequired > 0 || depositPaid > 0
+  const cancellationWarning = hasPersistedDeposit
+    ? cancellationWarningText(cancellationCutoffHours)
+    : null
 
   return (
     <div className="text-center">
@@ -112,12 +119,36 @@ export function StepConfirmation({ data, timezone, currency, bookingId, bookingN
 
       <p className="mb-6 text-sm text-muted-foreground">Número de reserva: {formatBookingNumber(bookingNumber, bookingId)}</p>
 
+      {cancellationWarning && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-900">
+          <p className="font-semibold">Importante sobre tu abono</p>
+          <p className="mt-1">{cancellationWarning}</p>
+        </div>
+      )}
+
+      {cancellationPolicySnapshot && (
+        <div className="mb-6 rounded-xl border border-border/70 bg-muted/40 p-4 text-left text-sm text-muted-foreground">
+          <p className="font-semibold text-primary">Condiciones adicionales</p>
+          <p className="mt-1 whitespace-pre-line">{cancellationPolicySnapshot}</p>
+        </div>
+      )}
+
       {/* Sólo con la reserva confirmada: una cita que todavía puede caerse no va
           al calendario de nadie. Ver `loadBookingInvite`, que aplica el mismo
           criterio del lado del servidor. */}
       {confirmed && bookingId && <AddToCalendar bookingId={bookingId} className="mb-6" />}
 
       {whatsappHref && <WhatsappHelpLine href={whatsappHref} businessName={business.name} className="mb-6" />}
+
+      {pushMode === 'account' && <AccountPushLink />}
+      {pushMode === 'guest' && bookingId && pushGrant && canonicalOrigin && (
+        <GuestPushLink
+          bookingId={bookingId}
+          pushGrant={pushGrant}
+          canonicalOrigin={canonicalOrigin}
+          className="mb-6"
+        />
+      )}
 
       <AccountCta sessionActive={sessionEmail !== null} customerEmail={data.customerEmail || null} className="mb-6" />
 

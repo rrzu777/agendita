@@ -1,3 +1,5 @@
+import { cancellationWarningText } from '@/lib/bookings/cancellation-policy'
+
 function LegalAcceptanceLabel() {
   return (
     <span>
@@ -23,7 +25,7 @@ function BusinessCancellationPolicy({ policy }: { policy?: string | null }) {
 
   return (
     <div className="mb-4 rounded-xl border border-border/70 bg-muted/40 p-4 text-sm text-muted-foreground">
-      <p className="font-semibold text-primary">Política de cancelación del negocio</p>
+      <p className="font-semibold text-primary">Condiciones adicionales</p>
       <p className="mt-1 whitespace-pre-line">{policy}</p>
     </div>
   )
@@ -31,17 +33,29 @@ function BusinessCancellationPolicy({ policy }: { policy?: string | null }) {
 
 export function BookingLegalAcceptance({
   policy,
+  cutoffHours,
+  hasDeposit,
   accepted,
   onAcceptedChange,
   inputId = 'accept-terms',
 }: {
   policy?: string | null
+  cutoffHours: number
+  hasDeposit: boolean
   accepted: boolean
   onAcceptedChange: (accepted: boolean) => void
   inputId?: string
 }) {
+  const warning = hasDeposit ? cancellationWarningText(cutoffHours) : null
+
   return (
     <>
+      {warning && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-semibold">Importante sobre tu abono</p>
+          <p className="mt-1">{warning}</p>
+        </div>
+      )}
       <BusinessCancellationPolicy policy={policy} />
 
       <div className="mb-4 flex items-start gap-3">

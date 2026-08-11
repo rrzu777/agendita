@@ -49,8 +49,10 @@ describe('/mi/[slug]/reservas/[bookingId]/reprogramar', () => {
     mockBookingFindFirst.mockResolvedValue({
       id: 'bk1',
       startDateTime: new Date(Date.now() + 2 * 3_600_000), // en 2h
+      cancellationCutoffHours: 24,
+      cancellationPolicySnapshot: null,
       service: { name: 'Manicura' },
-      business: { slug: 'salon-ana', name: 'Salón Ana', timezone: 'America/Santiago', selfServiceCutoffHours: 24 },
+      business: { slug: 'salon-ana', name: 'Salón Ana', timezone: 'America/Santiago', selfServiceCutoffHours: 24, cancellationPolicy: null },
     })
     const html = renderToStaticMarkup(await ReprogramarPage({ params }))
     expect(html.toLowerCase()).toContain('hasta 24 horas antes')
@@ -99,8 +101,10 @@ function dentroDeVentana(overrides: Record<string, unknown> = {}) {
     status: 'pending_payment',
     paymentStatus: 'unpaid',
     holdExpiresAt: null,
+    cancellationCutoffHours: 24,
+    cancellationPolicySnapshot: null,
     service: { name: 'Manicura' },
-    business: { slug: 'salon-ana', name: 'Salón Ana', timezone: 'America/Santiago', selfServiceCutoffHours: 24 },
+    business: { slug: 'salon-ana', name: 'Salón Ana', timezone: 'America/Santiago', selfServiceCutoffHours: 24, cancellationPolicy: null },
     ...overrides,
   }
 }

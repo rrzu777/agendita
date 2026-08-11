@@ -5,6 +5,7 @@ import { logger } from '@/lib/logger'
 import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
 import { bookingInvite, loadBookingInvite, type BookingCalendarInvite } from '@/lib/calendar/booking-invite'
 import { getAppUrl } from '@/lib/business/urls'
+import { resolveCancellationPolicy } from '@/lib/bookings/cancellation-policy'
 import { unsubscribeHeaders, unsubscribeFooterHtml, unsubscribeFooterText } from './marketing-email'
 import type {
   EmailResult,
@@ -458,6 +459,7 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
           addressText: true,
           currency: true,
           cancellationPolicy: true,
+          selfServiceCutoffHours: true,
           loyaltyConfig: { select: { isActive: true } },
         },
       },
@@ -471,6 +473,7 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
   const business = booking.business
   const tz = business.timezone || 'America/Santiago'
   const curr = business.currency || 'CLP'
+  const cancellationPolicy = resolveCancellationPolicy(booking, business)
 
   // Link "Mi tarjeta" solo si el programa de fidelización está activo.
   const loyaltyCardLink = await buildLoyaltyCardLink(
@@ -494,7 +497,8 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
     meetingUrl: booking.meetingUrl,
     businessTimezone: tz,
     businessCurrency: curr,
-    businessCancellationPolicy: business.cancellationPolicy,
+    businessCancellationPolicy: cancellationPolicy.additionalPolicy,
+    cancellationCutoffHours: cancellationPolicy.cutoffHours,
     customerName: booking.customer.name,
     customerEmail: booking.customer.email,
     customerPhone: booking.customer.phone,

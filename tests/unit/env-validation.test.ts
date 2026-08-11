@@ -1,4 +1,9 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
+import {
+  OTHER_VAPID_PUBLIC_KEY,
+  TEST_VAPID_PRIVATE_KEY,
+  TEST_VAPID_PUBLIC_KEY,
+} from '../helpers/push-fixtures'
 
 const originalEnv = { ...process.env }
 
@@ -19,6 +24,134 @@ afterEach(() => {
 
 describe('env validation', () => {
   describe('validateEnv', () => {
+    it('allows Web Push to stay fully disabled when all VAPID variables are absent', async () => {
+      setEnv({
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: undefined,
+        VAPID_PRIVATE_KEY: undefined,
+        VAPID_SUBJECT: undefined,
+      })
+      const { validateEnv } = await import('@/lib/env')
+
+      const { errors } = validateEnv()
+
+      expect(errors.some((error) => error.key.includes('VAPID'))).toBe(false)
+    })
+
+    it.each([
+      { NEXT_PUBLIC_VAPID_PUBLIC_KEY: 'public', VAPID_PRIVATE_KEY: undefined, VAPID_SUBJECT: undefined },
+      { NEXT_PUBLIC_VAPID_PUBLIC_KEY: 'public', VAPID_PRIVATE_KEY: 'private', VAPID_SUBJECT: undefined },
+      { NEXT_PUBLIC_VAPID_PUBLIC_KEY: undefined, VAPID_PRIVATE_KEY: 'private', VAPID_SUBJECT: 'mailto:push@agendita.cl' },
+    ])('rejects partial VAPID configuration', async (vapid) => {
+      setEnv(vapid)
+      const { validateEnv } = await import('@/lib/env')
+
+      const { errors } = validateEnv()
+
+      expect(errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: 'NEXT_PUBLIC_VAPID_PUBLIC_KEY' }),
+      ]))
+    })
+
+    it('requires ENCRYPTION_KEY when the complete VAPID trio enables push', async () => {
+      setEnv({
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: TEST_VAPID_PUBLIC_KEY,
+        VAPID_PRIVATE_KEY: TEST_VAPID_PRIVATE_KEY,
+        VAPID_SUBJECT: 'mailto:push@agendita.cl',
+        ENCRYPTION_KEY: undefined,
+      })
+      const { validateEnv } = await import('@/lib/env')
+
+      const { errors } = validateEnv()
+
+      expect(errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: 'ENCRYPTION_KEY' }),
+      ]))
+    })
+
+    it.each([
+      'http://agendita.cl',
+      'push@agendita.cl',
+      'mailto:',
+    ])('rejects an unsafe VAPID_SUBJECT: %s', async (subject) => {
+      setEnv({
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: TEST_VAPID_PUBLIC_KEY,
+        VAPID_PRIVATE_KEY: TEST_VAPID_PRIVATE_KEY,
+        VAPID_SUBJECT: subject,
+        ENCRYPTION_KEY: 'encryption-key',
+      })
+      const { validateEnv } = await import('@/lib/env')
+
+      const { errors } = validateEnv()
+
+      expect(errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: 'VAPID_SUBJECT' }),
+      ]))
+    })
+
+    it.each(['mailto:push@agendita.cl', 'https://www.agendita.cl/push-contact'])(
+      'accepts a complete encrypted VAPID configuration with subject %s',
+      async (subject) => {
+        setEnv({
+          NEXT_PUBLIC_VAPID_PUBLIC_KEY: TEST_VAPID_PUBLIC_KEY,
+          VAPID_PRIVATE_KEY: TEST_VAPID_PRIVATE_KEY,
+          VAPID_SUBJECT: subject,
+          ENCRYPTION_KEY: 'encryption-key',
+        })
+        const { validateEnv } = await import('@/lib/env')
+
+        const { errors } = validateEnv()
+
+        expect(errors.filter((error) => [
+          'NEXT_PUBLIC_VAPID_PUBLIC_KEY',
+          'VAPID_PRIVATE_KEY',
+          'VAPID_SUBJECT',
+          'ENCRYPTION_KEY',
+        ].includes(error.key))).toEqual([])
+      },
+    )
+
+    it('rejects individually valid VAPID keys that do not form a pair', async () => {
+      setEnv({
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: OTHER_VAPID_PUBLIC_KEY,
+        VAPID_PRIVATE_KEY: TEST_VAPID_PRIVATE_KEY,
+        VAPID_SUBJECT: 'mailto:push@agendita.cl',
+        ENCRYPTION_KEY: 'encryption-key',
+      })
+      const { validateEnv } = await import('@/lib/env')
+
+      const { errors } = validateEnv()
+
+      expect(errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          key: 'VAPID_PRIVATE_KEY',
+          message: expect.stringContaining('matching P-256 key pair'),
+        }),
+      ]))
+    })
+
+    it.each([
+      ['NEXT_PUBLIC_VAPID_PUBLIC_KEY', `${TEST_VAPID_PUBLIC_KEY}=`],
+      ['NEXT_PUBLIC_VAPID_PUBLIC_KEY', Buffer.alloc(65, 3).toString('base64url')],
+      ['VAPID_PRIVATE_KEY', `${TEST_VAPID_PRIVATE_KEY}=`],
+      ['VAPID_PRIVATE_KEY', Buffer.alloc(31, 9).toString('base64url')],
+      ['VAPID_PRIVATE_KEY', Buffer.alloc(32).toString('base64url')],
+    ])('rejects malformed VAPID key material in %s', async (key, malformed) => {
+      setEnv({
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: TEST_VAPID_PUBLIC_KEY,
+        VAPID_PRIVATE_KEY: TEST_VAPID_PRIVATE_KEY,
+        VAPID_SUBJECT: 'mailto:push@agendita.cl',
+        ENCRYPTION_KEY: 'encryption-key',
+        [key]: malformed,
+      })
+      const { validateEnv } = await import('@/lib/env')
+
+      const { errors } = validateEnv()
+
+      expect(errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ key }),
+      ]))
+    })
+
     it('returns empty errors and warnings when all required envs are set', async () => {
       setEnv({
         NODE_ENV: 'development',

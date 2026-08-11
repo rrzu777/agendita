@@ -6,6 +6,7 @@ import { getVocabulary } from '@/lib/vocabulary'
 import { whereRows, whereText, type WhereFields } from '@/lib/services/modality'
 import type { HoldDeadlinePromise } from '@/lib/bookings/hold'
 import type { BusinessCategory } from '@prisma/client'
+import { cancellationWarningText } from '@/lib/bookings/cancellation-policy'
 import type {
   BookingEmailData,
   CancellationEmailData,
@@ -253,10 +254,15 @@ export function bookingConfirmationCustomerHtml(data: BookingEmailData): string 
   const deposit = fmtCurrency(data.depositPaid || data.depositRequired, data.businessCurrency)
   const remaining = fmtCurrency(data.remainingBalance, data.businessCurrency)
 
+  const warning = (data.depositRequired > 0 || data.depositPaid > 0)
+    ? cancellationWarningText(data.cancellationCutoffHours)
+    : null
+  const warningSection = warning
+    ? `<p style="font-size:13px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;margin-top:16px"><strong>Importante:</strong> ${escapeHtml(warning)}</p>`
+    : ''
   const policySection = data.businessCancellationPolicy
     ? `<p style="font-size:13px;color:#666;margin-top:8px"><strong>Política de cancelación:</strong> ${escapeHtml(data.businessCancellationPolicy)}</p>`
     : ''
-
   const reviewSection = data.reviewLink
     ? `<p style="margin-top:16px"><a href="${data.reviewLink}" style="color:#e91e63;text-decoration:none;font-weight:600">Dejar una reseña</a></p>`
     : ''
@@ -281,7 +287,7 @@ export function bookingConfirmationCustomerHtml(data: BookingEmailData): string 
       ${remaining !== deposit ? `<tr><td style="padding:8px 0;color:#666">Saldo pendiente</td><td style="padding:8px 0;font-weight:600">${remaining}</td></tr>` : ''}
     </table>
     ${calendarLinksHtml(data.calendar)}
-    ${policySection}${reviewSection}${loyaltySection}${whatsappSection}
+    ${warningSection}${policySection}${reviewSection}${loyaltySection}${whatsappSection}
     ${footer(data.businessName)}
   `)
 }
@@ -309,6 +315,10 @@ export function bookingConfirmationCustomerText(data: BookingEmailData): string 
   )
   if (remaining !== deposit) lines.push(`Saldo pendiente: ${remaining}`)
   lines.push(...calendarLinksText(data.calendar))
+  const warning = (data.depositRequired > 0 || data.depositPaid > 0)
+    ? cancellationWarningText(data.cancellationCutoffHours)
+    : null
+  if (warning) lines.push(``, `Importante: ${warning}`)
   if (data.businessCancellationPolicy) lines.push(``, `Política de cancelación: ${data.businessCancellationPolicy}`)
   if (data.reviewLink) lines.push(``, `Dejar una reseña: ${data.reviewLink}`)
   if (data.loyaltyCardLink) lines.push(``, `Tu tarjeta de puntos: ${data.loyaltyCardLink}`)
@@ -342,6 +352,12 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
 
   const policySection = data.businessCancellationPolicy
     ? `<p style="font-size:13px;color:#666;margin-top:8px"><strong>Política de cancelación:</strong> ${escapeHtml(data.businessCancellationPolicy)}</p>`
+    : ''
+  const warning = (data.depositRequired > 0 || data.depositPaid > 0)
+    ? cancellationWarningText(data.cancellationCutoffHours)
+    : null
+  const warningSection = warning
+    ? `<p style="font-size:13px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;margin-top:16px"><strong>Importante:</strong> ${escapeHtml(warning)}</p>`
     : ''
 
   const whatsappSection = data.businessWhatsapp
@@ -378,7 +394,7 @@ export function bookingReceivedCustomerHtml(data: BookingEmailData): string {
       : data.manualCoordination ? manualCoordinationNote(data.manualCoordination, data.businessTimezone)
       : 'Recibirás una confirmación cuando el pago sea registrado.'}</p>`}
     ${calendarLinksHtml(data.calendar)}
-    ${policySection}${whatsappSection}
+    ${warningSection}${policySection}${whatsappSection}
     ${footer(data.businessName)}
   `)
 }
@@ -429,6 +445,10 @@ export function bookingReceivedCustomerText(data: BookingEmailData): string {
     lines.push(``, `Recibirás una confirmación cuando el pago sea registrado.`)
   }
   lines.push(...calendarLinksText(data.calendar))
+  const warning = (data.depositRequired > 0 || data.depositPaid > 0)
+    ? cancellationWarningText(data.cancellationCutoffHours)
+    : null
+  if (warning) lines.push(``, `Importante: ${warning}`)
   if (data.businessCancellationPolicy) lines.push(``, `Política de cancelación: ${data.businessCancellationPolicy}`)
   if (data.businessWhatsapp) lines.push(``, `WhatsApp: https://wa.me/${data.businessWhatsapp.replace(/\D/g, '')}`)
   lines.push(``, `Enviado por ${data.businessName} a través de Agendita`)

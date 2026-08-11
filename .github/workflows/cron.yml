@@ -13,6 +13,9 @@ on:
     - cron: '0 * * * *' # hourly (GitHub may delay up to ~15 min under load)
   workflow_dispatch: {} # allow manual runs from the Actions tab
 
+permissions:
+  contents: read
+
 concurrency:
   group: scheduled-crons
   cancel-in-progress: false
@@ -20,22 +23,51 @@ concurrency:
 jobs:
   run-crons:
     runs-on: ubuntu-latest
+    timeout-minutes: 6
     env:
       BASE_URL: ${{ vars.APP_BASE_URL || 'https://www.agendita.cl' }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Expire stale holds
-        run: |
-          curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/expire-holds" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+        id: expire_holds
+        continue-on-error: true
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/expire-holds"
       - name: Send reminders
-        run: |
-          curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/send-reminders" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+        id: send_reminders
+        continue-on-error: true
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/send-reminders"
       - name: Transfer reminders
-        run: |
-          curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/transfer-reminders" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+        id: transfer_reminders
+        continue-on-error: true
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/transfer-reminders"
       - name: Loyalty automatic conditions
+        id: loyalty_automatic
+        continue-on-error: true
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/loyalty-automatic"
+      - name: Fail if any cron failed
+        if: always()
+        env:
+          EXPIRE_HOLDS_OUTCOME: ${{ steps.expire_holds.outcome }}
+          SEND_REMINDERS_OUTCOME: ${{ steps.send_reminders.outcome }}
+          TRANSFER_REMINDERS_OUTCOME: ${{ steps.transfer_reminders.outcome }}
+          LOYALTY_AUTOMATIC_OUTCOME: ${{ steps.loyalty_automatic.outcome }}
         run: |
-          curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/loyalty-automatic" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+          for outcome in \
+            "$EXPIRE_HOLDS_OUTCOME" \
+            "$SEND_REMINDERS_OUTCOME" \
+            "$TRANSFER_REMINDERS_OUTCOME" \
+            "$LOYALTY_AUTOMATIC_OUTCOME"
+          do
+            if [ "$outcome" != "success" ]; then
+              exit 1
+            fi
+          done

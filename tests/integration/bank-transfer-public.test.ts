@@ -4,6 +4,7 @@ import { requireTestDatabase } from './setup'
 import { prisma as sharedPrisma } from '@/lib/db'
 import { seedDeclaredTransfer, cleanupBankTransferSeed } from './helpers/bank-transfer-seed'
 import { unwrap, expectActionError } from './helpers/action-result'
+import { cancellationPolicyRevision } from '@/lib/bookings/cancellation-policy-revision'
 
 requireTestDatabase()
 
@@ -13,6 +14,11 @@ requireTestDatabase()
 // Postgres real.
 const BIZ = 'btp-biz-1'
 const OWNER_USER = 'btp-owner-1'
+const POLICY_REVISION = cancellationPolicyRevision({
+  businessId: BIZ,
+  cutoffHours: 24,
+  additionalPolicy: null,
+})
 
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: async () => ({ success: true, remaining: 30, resetAt: 0 }) }))
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
@@ -139,7 +145,7 @@ describe('bank-transfer flujo público', () => {
       const before = Date.now()
       const res = await createBooking({
         serviceId: svc.id, customerName: 'Ana', customerPhone: '+56911200001',
-        startDateTime: futureDate(2, 15), acceptedTerms: true, paymentMethod: 'bank_transfer',
+        startDateTime: futureDate(2, 15), acceptedTerms: true, cancellationPolicyRevision: POLICY_REVISION, paymentMethod: 'bank_transfer',
       }, BIZ)
       if (!res.ok) throw new Error(res.error)
       const booking = res.data
@@ -157,7 +163,7 @@ describe('bank-transfer flujo público', () => {
       await prisma.bankTransferAccount.update({ where: { businessId: BIZ }, data: { isEnabled: false } })
       const res = await createBooking({
         serviceId: svc.id, customerName: 'Bea', customerPhone: '+56911200002',
-        startDateTime: futureDate(3, 15), acceptedTerms: true, paymentMethod: 'bank_transfer',
+        startDateTime: futureDate(3, 15), acceptedTerms: true, cancellationPolicyRevision: POLICY_REVISION, paymentMethod: 'bank_transfer',
       }, BIZ)
       expect(res.ok).toBe(false)
       expect(!res.ok && res.error).toContain('transferencia')
@@ -175,7 +181,7 @@ describe('bank-transfer flujo público', () => {
       const before = Date.now()
       const res = await createBooking({
         serviceId: svc.id, customerName: 'Cata', customerPhone: '+56911200003',
-        startDateTime: futureDate(4, 15), acceptedTerms: true,
+        startDateTime: futureDate(4, 15), acceptedTerms: true, cancellationPolicyRevision: POLICY_REVISION,
       }, BIZ)
       if (!res.ok) throw new Error(res.error)
       const booking = res.data
@@ -205,7 +211,7 @@ describe('bank-transfer flujo público', () => {
       phoneSeq += 1
       const res = await createBooking({
         serviceId: svc.id, customerName: `Decl ${phoneSeq}`, customerPhone: `+5691130${String(phoneSeq).padStart(4, '0')}`,
-        startDateTime: futureDate(10 + phoneSeq, 15), acceptedTerms: true, paymentMethod: 'bank_transfer',
+        startDateTime: futureDate(10 + phoneSeq, 15), acceptedTerms: true, cancellationPolicyRevision: POLICY_REVISION, paymentMethod: 'bank_transfer',
       }, BIZ)
       if (!res.ok) throw new Error(res.error)
       return res.data
@@ -278,7 +284,7 @@ describe('bank-transfer flujo público', () => {
       const { declareBankTransfer } = await import('@/server/actions/bank-transfer-public')
       const res = await createBooking({
         serviceId: svc.id, customerName: 'MP', customerPhone: '+56911309999',
-        startDateTime: futureDate(9, 15), acceptedTerms: true,
+        startDateTime: futureDate(9, 15), acceptedTerms: true, cancellationPolicyRevision: POLICY_REVISION,
       }, BIZ)
       if (!res.ok) throw new Error(res.error)
       const booking = res.data

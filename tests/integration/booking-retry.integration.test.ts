@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client'
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { requireTestDatabase } from './setup'
 import { unwrap, expectActionError } from './helpers/action-result'
+import { cancellationPolicyRevision } from '@/lib/bookings/cancellation-policy-revision'
 
 requireTestDatabase()
 
@@ -16,6 +17,11 @@ requireTestDatabase()
 // advisory lock, y el hold renovado tiene que quedar escrito de verdad.
 const BIZ = 'retry-biz-1'
 const OWNER_USER = 'retry-owner-1'
+const POLICY_REVISION = cancellationPolicyRevision({
+  businessId: BIZ,
+  cutoffHours: 24,
+  additionalPolicy: null,
+})
 
 vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: async () => ({ success: true, remaining: 30, resetAt: 0 }) }))
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
@@ -102,7 +108,7 @@ describe('reintento de pago con la misma idempotencyKey', () => {
     const { createBooking } = await import('@/server/actions/bookings')
     return createBooking({
       serviceId, customerName: 'Ana', customerPhone: '+56911300001',
-      startDateTime, acceptedTerms: true, idempotencyKey: key,
+      startDateTime, acceptedTerms: true, cancellationPolicyRevision: POLICY_REVISION, idempotencyKey: key,
     }, BIZ)
   }
 

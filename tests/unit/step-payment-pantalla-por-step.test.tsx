@@ -88,9 +88,11 @@ describe('StepPayment — la pantalla la manda el step', () => {
     await act(async () => {
       root.render(
         <StepPayment
+          cancellationPolicyRevision="revision-1"
           data={bookingData}
           updateData={vi.fn()}
           businessId="biz-1"
+          selfServiceCutoffHours={24}
           manualHoldHours={24}
           timezone={TZ}
           currency="CLP"

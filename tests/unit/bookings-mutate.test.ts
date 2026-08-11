@@ -89,8 +89,13 @@ describe('rescheduleBookingInTx', () => {
       data: expect.objectContaining({
         startDateTime: baseInput.newStartDateTime,
         endDateTime: new Date('2026-07-21T16:00:00Z'),
+        cancellationReminderClaimedAt: null,
+        cancellationReminderSentAt: null,
       }),
     }))
+    const data = tx.booking.updateMany.mock.calls[0][0].data
+    expect(data).not.toHaveProperty('cancellationCutoffHours')
+    expect(data).not.toHaveProperty('cancellationPolicySnapshot')
   })
 
   it('lanza si el updateMany no matchea (carrera de status)', async () => {

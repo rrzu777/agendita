@@ -6,6 +6,7 @@ import { PageMessage } from '@/components/ui/page-message'
 import { rescheduleBlockedReason } from '@/lib/bookings/hold'
 import { ReprogramarForm } from './reprogramar-form'
 import { formatInTimeZone } from 'date-fns-tz'
+import { resolveCancellationPolicy } from '@/lib/bookings/cancellation-policy'
 
 export default async function ReprogramarPage({
   params,
@@ -28,14 +29,16 @@ export default async function ReprogramarPage({
       paymentStatus: true,
       holdExpiresAt: true,
       approvalExpiresAt: true,
+      cancellationCutoffHours: true,
+      cancellationPolicySnapshot: true,
       service: { select: { name: true } },
-      business: { select: { slug: true, name: true, timezone: true, selfServiceCutoffHours: true } },
+      business: { select: { slug: true, name: true, timezone: true, selfServiceCutoffHours: true, cancellationPolicy: true } },
     },
   })
   if (!booking) notFound()
 
   const timezone = booking.business.timezone || 'America/Santiago'
-  const cutoff = booking.business.selfServiceCutoffHours
+  const { cutoffHours: cutoff } = resolveCancellationPolicy(booking, booking.business)
   if (!canSelfManage(booking.startDateTime, cutoff)) {
     return (
       <PageMessage title="Ya no se puede reprogramar" message={selfServiceBlockedMessage(cutoff, 'reprogramar')} />

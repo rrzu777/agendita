@@ -53,6 +53,8 @@ function makeBooking(overrides: Record<string, unknown> = {}) {
     bookingNumber: 4738,
     startDateTime: new Date(now.getTime() + 48 * 3_600_000),
     status: 'confirmed',
+    cancellationCutoffHours: 24,
+    cancellationPolicySnapshot: null,
     service: { name: 'Manicure' },
     customer: { name: 'Maria', email: 'maria@example.com' },
     business: {
@@ -110,7 +112,7 @@ describe('cancelMyBooking', () => {
     expect(mockRevalidateBusinessPublicPaths).toHaveBeenCalledWith('b1')
   })
 
-  // El include se asserta directo: con Prisma mockeado, mirar el aviso de
+  // El select se asserta directo: con Prisma mockeado, mirar el aviso de
   // salida no prueba que la consulta haya pedido la relación.
   it('el aviso a la dueña dice a quién se le libera la hora', async () => {
     mockFindFirstBooking.mockResolvedValue(makeBooking({ professional: { name: 'Juan Pérez' } }))
@@ -120,7 +122,11 @@ describe('cancelMyBooking', () => {
 
     expect(mockFindFirstBooking).toHaveBeenCalledWith(
       expect.objectContaining({
-        include: expect.objectContaining({ professional: { select: { name: true } } }),
+        select: expect.objectContaining({
+          cancellationCutoffHours: true,
+          cancellationPolicySnapshot: true,
+          professional: { select: { name: true } },
+        }),
       }),
     )
     expect(mockSendOwnerBookingChangedNotification).toHaveBeenCalledWith(
@@ -151,6 +157,37 @@ describe('cancelMyBooking', () => {
     expect(result.ok).toBe(false)
     expect(!result.ok && result.error).toMatch(/hasta 24 horas/)
     expect(mockCancelBookingInTx).not.toHaveBeenCalled()
+  })
+
+  it('el snapshot de cutoff manda aunque el negocio lo haya cambiado', async () => {
+    const now = new Date('2026-07-11T12:00:00Z')
+    mockFindFirstBooking.mockResolvedValue(
+      makeBooking({
+        startDateTime: new Date(now.getTime() + 2 * 3_600_000),
+        cancellationCutoffHours: 1,
+      }),
+    )
+    const { cancelMyBooking } = await import('@/server/actions/my-bookings')
+
+    const result = await cancelMyBooking('bk-1')
+
+    expect(result).toEqual({ ok: true, data: { cancelled: true } })
+  })
+
+  it('una reserva legacy sin snapshot usa el cutoff actual del negocio', async () => {
+    const now = new Date('2026-07-11T12:00:00Z')
+    mockFindFirstBooking.mockResolvedValue(
+      makeBooking({
+        startDateTime: new Date(now.getTime() + 2 * 3_600_000),
+        cancellationCutoffHours: null,
+      }),
+    )
+    const { cancelMyBooking } = await import('@/server/actions/my-bookings')
+
+    const result = await cancelMyBooking('bk-1')
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/hasta 24 horas/)
   })
 
   it('status no cancelable: el where excluye la reserva (findFirst → null)', async () => {

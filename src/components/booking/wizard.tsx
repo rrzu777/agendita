@@ -15,6 +15,7 @@ import type { ProfessionalWords } from '@/lib/vocabulary'
 import { NO_PROFESSIONAL, professionalChoice, professionalFields, samePick, type FunnelProfessional, type ProfessionalPick } from '@/lib/professionals/eligible'
 import { entryStepAfterRestore, stepAfter, stepBefore, stepsFor, type StepKey, type WizardStep } from '@/lib/bookings/wizard-steps'
 import { restoreWizardState, serializeWizardState, wizardStorageKey } from '@/lib/bookings/wizard-storage'
+import { getAppUrl } from '@/lib/business/urls'
 
 type WizardSession = Pick<FunnelSession, 'email' | 'name' | 'phone'> | null
 
@@ -93,6 +94,8 @@ interface BookingWizardProps {
   /** El sustantivo de oficio del rubro; da el título y la etiqueta del paso nuevo. */
   professionalWords: ProfessionalWords
   cancellationPolicy?: string | null
+  cancellationPolicyRevision: string
+  selfServiceCutoffHours: number
   /** Ventana del hold cuando el negocio coordina el abono a mano; el aviso del
    *  paso de pago la muestra para que la promesa coincida con el server. */
   manualHoldHours: number
@@ -100,7 +103,7 @@ interface BookingWizardProps {
   session: WizardSession
 }
 
-export function BookingWizard({ businessId, slug, business, timezone, currency, services, professionals, professionalWords, cancellationPolicy, manualHoldHours, referralToken, session }: BookingWizardProps) {
+export function BookingWizard({ businessId, slug, business, timezone, currency, services, professionals, professionalWords, cancellationPolicy, cancellationPolicyRevision, selfServiceCutoffHours, manualHoldHours, referralToken, session }: BookingWizardProps) {
   const [currentStep, setCurrentStep] = useState<StepKey>('service')
   const [data, setData] = useState<BookingData>(() => applySessionPrefill(initialData, session))
   // La reserva ya escrita, tal como la devolvió el servidor: es lo único que
@@ -271,7 +274,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
           </div>
         )}
         {currentStep === 'payment' && data.serviceId && data.timeSlot && (
-          <StepPayment data={data} updateData={updateData} businessId={businessId} timezone={timezone} currency={currency} cancellationPolicy={cancellationPolicy} manualHoldHours={manualHoldHours} referralToken={referralToken} onSuccess={(creada) => {
+          <StepPayment data={data} updateData={updateData} businessId={businessId} timezone={timezone} currency={currency} cancellationPolicy={cancellationPolicy} cancellationPolicyRevision={cancellationPolicyRevision} selfServiceCutoffHours={selfServiceCutoffHours} manualHoldHours={manualHoldHours} referralToken={referralToken} onSuccess={(creada) => {
             setReserva(creada)
             nextStep()
           }} onBack={prevStep} />
@@ -289,7 +292,9 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
             resto del archivo ya resuelve así los pasos que dependen de un dato
             (ver 'time', 'customer' y 'payment' acá arriba). */}
         {currentStep === 'confirmation' && reserva && (
-          <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={reserva.id} bookingNumber={reserva.bookingNumber} mode={reserva.mode} promo={reserva.promo} sessionEmail={session?.email ?? null} business={business} where={reserva.where} confirmed={reserva.confirmed} professionalName={reserva.professionalName} />
+          <>
+            <StepConfirmation data={data} timezone={timezone} currency={currency} bookingId={reserva.id} bookingNumber={reserva.bookingNumber} mode={reserva.mode} promo={reserva.promo} sessionEmail={session?.email ?? null} business={business} where={reserva.where} confirmed={reserva.confirmed} professionalName={reserva.professionalName} cancellationCutoffHours={reserva.cancellationCutoffHours} cancellationPolicySnapshot={reserva.cancellationPolicySnapshot} depositRequired={reserva.depositRequired} depositPaid={reserva.depositPaid} pushMode={reserva.pushMode} pushGrant={reserva.pushGrant} canonicalOrigin={getAppUrl('')} />
+          </>
         )}
         {currentStep === 'confirmation' && !reserva && (
           /* Hoy no se llega: a 'confirmation' sólo se entra desde el `onSuccess`

@@ -27,6 +27,7 @@ const business = {
   addressText: 'Santa Isabel 0120',
   currency: 'CLP',
   cancellationPolicy: null,
+  selfServiceCutoffHours: 24,
   slug: 'barberia-carlos',
   subdomain: null,
   category: 'barber' as const,
@@ -48,6 +49,8 @@ function makeBooking(professional: { name: string } | null) {
     depositRequired: 0,
     depositPaid: 0,
     remainingBalance: 15000,
+    cancellationCutoffHours: 24,
+    cancellationPolicySnapshot: null,
     paymentMethod: null,
     holdExpiresAt: null,
     status: BookingStatus.confirmed,
@@ -92,6 +95,24 @@ describe('fireBookingNotifications y la persona', () => {
     )
     const { calendar } = mockReceived.mock.calls[0][0] as { calendar: { ics: string } }
     expect(calendar.ics).not.toContain('Te atiende')
+  })
+
+  it('el email usa la política persistida aunque cambie la configuración del negocio', async () => {
+    await fireBookingNotifications(
+      { ...business, selfServiceCutoffHours: 72, cancellationPolicy: 'Política nueva' },
+      {
+        ...makeBooking(null),
+        cancellationCutoffHours: 24,
+        cancellationPolicySnapshot: 'Política aceptada',
+      },
+      'Corte de pelo',
+      null,
+    )
+
+    expect(mockReceived).toHaveBeenCalledWith(expect.objectContaining({
+      cancellationCutoffHours: 24,
+      businessCancellationPolicy: 'Política aceptada',
+    }))
   })
 })
 

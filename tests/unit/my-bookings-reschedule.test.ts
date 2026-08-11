@@ -59,6 +59,8 @@ function makeBooking(overrides: Record<string, unknown> = {}) {
     bookingNumber: 4738,
     startDateTime: new Date(NOW.getTime() + 48 * 3_600_000),
     status: 'confirmed',
+    cancellationCutoffHours: 24,
+    cancellationPolicySnapshot: null,
     service: { name: 'Manicure', durationMinutes: 60 },
     customer: { name: 'Maria', email: 'maria@example.com', phone: '+56911111111' },
     business: {
@@ -120,7 +122,7 @@ describe('rescheduleMyBooking', () => {
     expect(mockRevalidateBusinessPublicPaths).toHaveBeenCalledWith('b1')
   })
 
-  // El include se asserta directo: con Prisma mockeado, mirar los avisos no
+  // El select se asserta directo: con Prisma mockeado, mirar los avisos no
   // prueba que la consulta haya pedido la relación. Reprogramar conserva a la
   // persona: el nombre leído antes de la tx es el que atiende.
   it('la persona viaja en el aviso a la dueña y en el email a la clienta', async () => {
@@ -131,7 +133,11 @@ describe('rescheduleMyBooking', () => {
 
     expect(mockFindFirstBooking).toHaveBeenCalledWith(
       expect.objectContaining({
-        include: expect.objectContaining({ professional: { select: { name: true } } }),
+        select: expect.objectContaining({
+          cancellationCutoffHours: true,
+          cancellationPolicySnapshot: true,
+          professional: { select: { name: true } },
+        }),
       }),
     )
     expect(mockSendOwnerBookingChangedNotification).toHaveBeenCalledWith(
@@ -173,6 +179,18 @@ describe('rescheduleMyBooking', () => {
     expect(result.ok).toBe(false)
     expect(!result.ok && result.error).toMatch(/reprogramar/)
     expect(mockRescheduleBookingInTx).not.toHaveBeenCalled()
+  })
+
+  it('el snapshot de cutoff manda aunque el negocio lo haya cambiado', async () => {
+    mockFindFirstBooking.mockResolvedValue(makeBooking({
+      startDateTime: new Date(NOW.getTime() + 2 * 3_600_000),
+      cancellationCutoffHours: 1,
+    }))
+
+    const { rescheduleMyBooking } = await import('@/server/actions/my-bookings')
+    const result = await rescheduleMyBooking('bk-1', new Date(NOW.getTime() + 72 * 3_600_000))
+
+    expect(result).toEqual({ ok: true, data: { rescheduled: true } })
   })
 
   // bookingWindowDays y lead time del slot NUEVO los valida assertSlotIsAvailable

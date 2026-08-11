@@ -86,7 +86,45 @@ dominio o entrega; esa evidencia sigue siendo el envío controlado y su evento.
 `mercadoPago: up` sólo valida el token global usado por el lookup inicial del
 webhook. No prueba tokens OAuth de negocios, cobro, webhook ni settlement.
 
-## 6. Smoke posterior a la recuperación
+## 6. Crons operativos
+
+GitHub Actions ejecuta dos workflows autenticados con `CRON_SECRET`:
+
+- `Scheduled crons` llama cada hora a expiración de holds, recordatorios de
+  citas, recordatorios de transferencias y fidelización automática.
+- `Cancellation warnings` llama cada 15 minutos, sujeto a posibles retrasos del
+  scheduler de GitHub, únicamente a `POST /api/cron/cancellation-warnings`.
+
+Ambos pasan por `scripts/run-json-cron.sh`. El runner exige HTTP exitoso y JSON
+con un campo numérico `errors` igual a `0`; `errors > 0`, un campo ausente o una
+respuesta inválida dejan el run rojo. El workflow horario ejecuta siempre sus
+cuatro endpoints y agrega los resultados al final: un fallo no omite los crons
+posteriores, pero el job termina rojo. `CRON_SECRET` permanece limitado al step
+de cada llamada y cada endpoint conserva su resultado visible. Para una
+ejecución manual controlada, con las variables ya cargadas sin imprimirlas:
+
+```bash
+scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/cancellation-warnings"
+```
+
+Si las tres variables VAPID no están configuradas, el endpoint de advertencias
+se omite de forma deliberada y devuelve `sent: 0`, `skipped: 0`, `errors: 0`.
+En ese estado el workflow verde sólo confirma un no-op seguro: no demuestra que
+Web Push esté habilitado ni que exista entrega real.
+
+Cada push de advertencia usa un TTL positivo calculado justo antes de contactar
+al proveedor y nunca mayor que el tiempo restante hasta el cierre (con tope de
+dos horas). El estado de reserva se relee con un reloj fresco antes del efecto.
+Existe una frontera distribuida inevitable entre esa última lectura y la
+aceptación del proveedor; el lease recuperable y el TTL acotado limitan esa
+ventana, pero no prometen atomicidad externa.
+
+Los resultados HTTP y de red se asientan contra la generación semántica del
+fingerprint. Un fallo local irreversible de descifrado o formato agrega el
+ciphertext exacto al guard: una re-suscripción concurrente que refresca el
+cifrado sin cambiar endpoint ni llaves permanece activa y se reintenta.
+
+## 7. Smoke posterior a la recuperación
 
 Completa y registra:
 
@@ -98,10 +136,10 @@ Completa y registra:
 - webhook, ledger e idempotencia;
 - ambos health checks en HTTP 200.
 
-No uses un HTTP 2xx de los crons como única evidencia: revisa también los campos
-`errors` de sus respuestas hasta que el workflow de crons sea endurecido.
+Un workflow verde confirma HTTP exitoso y `errors: 0`, pero no sustituye la
+verificación del efecto esperado: expiración, entrega o emisión idempotente.
 
-## 7. Cerrar el incidente
+## 8. Cerrar el incidente
 
 Ejecuta el monitor manualmente y registra su run:
 

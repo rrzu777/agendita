@@ -19,6 +19,9 @@ export interface BookingEmailData {
   businessTimezone: string
   businessCurrency: string
   businessCancellationPolicy?: string | null
+  /** Ventana contractual persistida en la reserva. Requerida para que cada
+   *  emisor use el snapshot y no la configuración mutable del negocio. */
+  cancellationCutoffHours: number
   customerName: string
   customerEmail?: string | null
   customerPhone: string

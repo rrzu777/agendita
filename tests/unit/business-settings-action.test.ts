@@ -131,6 +131,21 @@ describe('updateBusinessSettings', () => {
   })
 
   describe('data normalization', () => {
+    it('persists cancellation reminders disabled explicitly', async () => {
+      await updateBusinessSettings({
+        ...baseData,
+        cancellationReminderEnabled: false,
+      })
+
+      expect(mockPrisma.business.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cancellationReminderEnabled: false,
+          }),
+        })
+      )
+    })
+
     it('normalizes whatsapp and instagram before saving', async () => {
       const result = await updateBusinessSettings({
         ...baseData,

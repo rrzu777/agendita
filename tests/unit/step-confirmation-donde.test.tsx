@@ -34,6 +34,8 @@ function render(where: WhereFields = enElLocal, biz: ConfirmationBusiness = busi
       timezone="America/Santiago" currency="CLP" data={base} bookingId="clabc12345"
       bookingNumber={4738} mode="paid" promo={null} sessionEmail={null} business={biz} where={where}
       confirmed={confirmed} professionalName=""
+      cancellationCutoffHours={24} depositRequired={0} depositPaid={0}
+      cancellationPolicySnapshot={null}
     />,
   )
 }

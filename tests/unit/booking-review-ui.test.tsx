@@ -37,6 +37,8 @@ describe('booking review UI', () => {
       root.render(
         <BookingLegalAcceptance
           policy="Puedes cancelar hasta 24 horas antes."
+          cutoffHours={24}
+          hasDeposit
           accepted={false}
           onAcceptedChange={onAcceptedChange}
         />,

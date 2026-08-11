@@ -10,6 +10,7 @@ const base = {
   businessName: 'Studio X',
   businessTimezone: 'America/Santiago',
   businessCurrency: 'CLP',
+  cancellationCutoffHours: 24,
   customerName: 'Ana',
   customerPhone: '56911100001',
   serviceName: 'Corte',

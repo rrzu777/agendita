@@ -20,6 +20,7 @@ import type { WhereFields } from '@/lib/services/modality'
 import type { ServiceModality } from '@prisma/client'
 import { BookingSummary } from './booking-summary'
 import { BookingLegalAcceptance } from './booking-legal-acceptance'
+import { guestPushGrantSessionKey } from '@/components/push/guest-push-link'
 
 /**
  * Lo que el paso de pago le pasa a la confirmación: la reserva tal como quedó
@@ -50,6 +51,12 @@ export interface BookingCreated {
   /** Con quién quedó. Vacío si la reserva no tiene persona. Con "Cualquiera
    *  disponible" es lo ÚNICO que sabe quién atiende: lo eligió el servidor. */
   professionalName: string
+  cancellationCutoffHours: number
+  cancellationPolicySnapshot: string | null
+  depositRequired: number
+  depositPaid: number
+  pushMode: 'account' | 'guest' | null
+  pushGrant: string | null
 }
 
 function generateIdempotencyKey(): string {
@@ -118,7 +125,7 @@ type Paso =
   | { k: 'transfer-details'; bank: BankTransferPublicInfo; reserva: ReservaEnTransferencia }
   | { k: 'transfer-declared'; reserva: ReservaEnTransferencia }
 
-export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, manualHoldHours, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; manualHoldHours: number; referralToken?: string; onSuccess: (result: BookingCreated) => void; onBack: () => void }) {
+export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, cancellationPolicyRevision, selfServiceCutoffHours, manualHoldHours, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; cancellationPolicyRevision: string; selfServiceCutoffHours: number; manualHoldHours: number; referralToken?: string; onSuccess: (result: BookingCreated) => void; onBack: () => void }) {
   const [paso, setPaso] = useState<Paso>({ k: 'review' })
   const [bankInfo, setBankInfo] = useState<BankTransferPublicInfo | null>(null)
   const [method, setMethod] = useState<'online' | 'transfer'>('online')
@@ -342,6 +349,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       startDateTime: data.timeSlot!.start,
       idempotencyKey,
       acceptedTerms,
+      cancellationPolicyRevision,
       promotionCode: appliedPromo?.code,
       referralToken,
       skipPackage: !usePackage,
@@ -373,6 +381,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         return
       }
       const booking = res.data
+      retainPushGrant(booking)
       setPaso({
         k: 'transfer-details',
         bank,
@@ -424,6 +433,12 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       serviceAddress: string | null
       meetingUrl: string | null
       professional?: { name: string } | null
+      cancellationCutoffHours: number | null
+      cancellationPolicySnapshot: string | null
+      depositRequired: number
+      depositPaid: number
+      pushGrant: string | null
+      pushMode: 'account' | 'guest' | null
     },
     mode: 'paid' | 'pending',
     confirmed: boolean,
@@ -436,6 +451,24 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       where: { modality: booking.modality, serviceAddress: booking.serviceAddress, meetingUrl: booking.meetingUrl },
       confirmed,
       professionalName: booking.professional?.name ?? '',
+      // Las reservas nuevas siempre traen snapshot; el fallback sólo protege
+      // una respuesta legacy sin ese campo durante un despliegue escalonado.
+      cancellationCutoffHours: booking.cancellationCutoffHours ?? selfServiceCutoffHours,
+      cancellationPolicySnapshot: booking.cancellationPolicySnapshot,
+      depositRequired: booking.depositRequired,
+      depositPaid: booking.depositPaid,
+      pushGrant: booking.pushGrant,
+      pushMode: booking.pushMode,
+    }
+  }
+
+  function retainPushGrant(booking: { id: string; pushMode: 'account' | 'guest' | null; pushGrant: string | null }) {
+    if (booking.pushMode !== 'guest' || !booking.pushGrant) return
+    try {
+      sessionStorage.setItem(guestPushGrantSessionKey(booking.id), booking.pushGrant)
+    } catch {
+      // Storage can be unavailable in restricted browsing modes. The direct
+      // confirmation path still carries the grant in BookingCreated.
     }
   }
 
@@ -451,6 +484,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         return
       }
       const booking = res.data
+
+      retainPushGrant(booking)
 
       setPaso({ k: 'success' })
       const mode = noDepositNeeded ? 'paid' as const : 'pending' as const
@@ -481,6 +516,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         return
       }
       const booking = res.data
+
+      retainPushGrant(booking)
 
       const paymentRes = await initiatePayment({
         bookingId: booking.id,
@@ -661,6 +698,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
         <BookingLegalAcceptance
           policy={cancellationPolicy}
+          cutoffHours={selfServiceCutoffHours}
+          hasDeposit={effectiveDeposit > 0}
           accepted={acceptedTerms}
           onAcceptedChange={setAcceptedTerms}
         />
@@ -720,6 +759,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
         <BookingLegalAcceptance
           policy={cancellationPolicy}
+          cutoffHours={selfServiceCutoffHours}
+          hasDeposit={effectiveDeposit > 0}
           accepted={acceptedTerms}
           onAcceptedChange={setAcceptedTerms}
         />
@@ -807,6 +848,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
       <BookingLegalAcceptance
         policy={cancellationPolicy}
+        cutoffHours={selfServiceCutoffHours}
+        hasDeposit={effectiveDeposit > 0}
         accepted={acceptedTerms}
         onAcceptedChange={setAcceptedTerms}
       />
