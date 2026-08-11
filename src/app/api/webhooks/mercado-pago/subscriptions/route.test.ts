@@ -1,5 +1,9 @@
 import { createHmac } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  MercadoPagoSubscriptionContractError,
+  normalizeMpInvoice,
+} from '@/lib/subscriptions/mercado-pago-mappers'
 
 const mocks = vi.hoisted(() => ({
   process: vi.fn(),
@@ -130,4 +134,37 @@ describe('Mercado Pago recurring subscriptions webhook route', () => {
     expect(response.status).toBe(502)
     await expect(response.json()).resolves.toEqual({ error: 'Provider temporarily unavailable' })
   })
+
+  it.each([
+    ['currency', {
+      id: 'invoice-invalid-currency', status: 'approved', preapproval_id: 'subscription-1',
+      transaction_amount: 14990, currency_id: 'USD',
+    }],
+    ['date', {
+      id: 'invoice-invalid-date', status: 'approved', preapproval_id: 'subscription-1',
+      transaction_amount: 14990, currency_id: 'CLP', date_approved: '2026-02-30T00:00:00.000Z',
+    }],
+    ['status shape', {
+      id: 'invoice-invalid-status', status: 'scheduled', preapproval_id: 'subscription-1',
+      transaction_amount: 14990, currency_id: 'CLP', payment: { id: 1, status: { value: 'approved' } },
+    }],
+  ])(
+    'maps an invalid authoritative %s contract to 400',
+    async (_label, rawInvoice) => {
+      let contractError: unknown
+      try {
+        normalizeMpInvoice(rawInvoice)
+      } catch (error) {
+        contractError = error
+      }
+      expect(contractError).toBeInstanceOf(MercadoPagoSubscriptionContractError)
+      mocks.process.mockRejectedValue(contractError)
+      const { POST } = await import('./route')
+
+      const response = await POST(request())
+
+      expect(response.status).toBe(400)
+      await expect(response.json()).resolves.toEqual({ error: 'Invalid webhook event' })
+    },
+  )
 })

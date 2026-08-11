@@ -1,6 +1,8 @@
 import {
   Prisma,
+  type MercadoPagoEnvironment,
   type PrismaClient,
+  type SubscriptionProvider,
   type SubscriptionStatus as PrismaSubscriptionStatus,
 } from '@prisma/client'
 import { randomUUID } from 'node:crypto'
@@ -39,12 +41,29 @@ export type ApplySubscriptionTransitionCommand = {
   command: SubscriptionCommand | AdminSubscriptionCommand
   payment?: ProviderPayment
   actor?: TransitionActor
+  expectedProviderSnapshot?: {
+    provider: SubscriptionProvider
+    environment: MercadoPagoEnvironment
+    providerSubscriptionId: string
+    planId: string
+    providerPlanId: string
+    amount: number
+    currency: string
+    updatedAt: Date
+  }
 }
 
 export class SubscriptionTransitionConflictError extends Error {
   constructor() {
     super('La suscripción cambió durante la transición; reintente con el estado actual')
     this.name = 'SubscriptionTransitionConflictError'
+  }
+}
+
+export class SubscriptionProviderSnapshotMismatchError extends Error {
+  constructor() {
+    super('La suscripción ya no coincide con el snapshot verificado del proveedor')
+    this.name = 'SubscriptionProviderSnapshotMismatchError'
   }
 }
 
@@ -189,6 +208,19 @@ export async function applySubscriptionTransition(
     if (!subscription) throw new Error('No se encontró suscripción para este negocio')
     if (input.businessId && subscription.businessId !== input.businessId) {
       throw new Error('La suscripción no pertenece al negocio indicado')
+    }
+    const expected = input.expectedProviderSnapshot
+    if (expected && (
+      subscription.provider !== expected.provider ||
+      subscription.environment !== expected.environment ||
+      subscription.providerSubscriptionId !== expected.providerSubscriptionId ||
+      subscription.planId !== expected.planId ||
+      subscription.providerPlanId !== expected.providerPlanId ||
+      subscription.amount !== expected.amount ||
+      subscription.currency !== expected.currency ||
+      subscription.updatedAt.getTime() !== expected.updatedAt.getTime()
+    )) {
+      throw new SubscriptionProviderSnapshotMismatchError()
     }
     if (subscription.interval !== 'monthly') {
       throw new Error('Sólo se admiten suscripciones monthly')

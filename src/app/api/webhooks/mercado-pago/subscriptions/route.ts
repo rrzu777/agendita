@@ -1,5 +1,6 @@
 import { verifyMercadoPagoSignature } from '@/lib/payments/mercado-pago-signature'
 import { MercadoPagoSubscriptionTransportError } from '@/lib/subscriptions/mercado-pago-client'
+import { MercadoPagoSubscriptionContractError } from '@/lib/subscriptions/mercado-pago-mappers'
 import {
   getSubscriptionWebhookRuntime,
   processSubscriptionWebhook,
@@ -73,7 +74,10 @@ export async function POST(request: Request): Promise<Response> {
     const result = await processSubscriptionWebhook(event, runtime.dependencies)
     return Response.json({ ok: true, outcome: result.outcome })
   } catch (error) {
-    if (error instanceof SubscriptionWebhookValidationError) {
+    if (
+      error instanceof SubscriptionWebhookValidationError ||
+      error instanceof MercadoPagoSubscriptionContractError
+    ) {
       return Response.json({ error: 'Invalid webhook event' }, { status: 400 })
     }
     if (error instanceof MercadoPagoSubscriptionTransportError) {

@@ -15,6 +15,7 @@ import {
 import type { MpSubscription } from './mercado-pago-mappers'
 import {
   applySubscriptionTransition,
+  SubscriptionProviderSnapshotMismatchError,
   SubscriptionTransitionConflictError,
   type ApplySubscriptionTransitionCommand,
 } from './transition'
@@ -178,6 +179,14 @@ async function resolveSubscription(input: {
       })
     } catch (error) {
       if (error instanceof CheckoutEligibilityConflictError) {
+        const cancelled = await dependencies.client.cancelSubscription(candidate.id)
+        if (cancelled.id !== candidate.id || cancelled.status !== 'canceled') {
+          throw new SubscriptionWebhookValidationError()
+        }
+        await dependencies.prisma.subscriptionCheckoutAttempt.updateMany({
+          where: { id: attempt!.id, invalidatedAt: null },
+          data: { invalidatedAt: dependencies.now() },
+        })
         throw new SubscriptionWebhookValidationError()
       }
       throw error
@@ -198,8 +207,39 @@ async function applyTransitionWithConflictRetry(
   try {
     return await dependencies.applyTransition(dependencies.prisma, input)
   } catch (error) {
+    if (error instanceof SubscriptionProviderSnapshotMismatchError) {
+      throw new SubscriptionWebhookValidationError()
+    }
     if (!(error instanceof SubscriptionTransitionConflictError)) throw error
-    return dependencies.applyTransition(dependencies.prisma, input)
+    try {
+      return await dependencies.applyTransition(dependencies.prisma, input)
+    } catch (retryError) {
+      if (retryError instanceof SubscriptionProviderSnapshotMismatchError) {
+        throw new SubscriptionWebhookValidationError()
+      }
+      throw retryError
+    }
+  }
+}
+
+function expectedProviderSnapshot(local: LocalSubscription) {
+  if (
+    local.provider !== 'mercado_pago' ||
+    !local.environment ||
+    !local.providerSubscriptionId ||
+    !local.providerPlanId
+  ) {
+    throw new SubscriptionWebhookValidationError()
+  }
+  return {
+    provider: local.provider,
+    environment: local.environment,
+    providerSubscriptionId: local.providerSubscriptionId,
+    planId: local.planId,
+    providerPlanId: local.providerPlanId,
+    amount: local.amount,
+    currency: local.currency,
+    updatedAt: local.updatedAt,
   }
 }
 
@@ -256,6 +296,7 @@ async function applyInvoice(
         providerStatus: invoice.providerStatus ?? undefined,
         providerUpdatedAt: invoice.updatedAt ?? undefined,
       },
+      expectedProviderSnapshot: expectedProviderSnapshot(local),
     })
     return {
       outcome: result.applied ? 'applied' as const : 'duplicate' as const,
@@ -284,6 +325,7 @@ async function applyInvoice(
       providerStatus: invoice.providerStatus ?? undefined,
       providerUpdatedAt: invoice.updatedAt ?? undefined,
     },
+    expectedProviderSnapshot: expectedProviderSnapshot(local),
   })
   return {
     outcome: result.applied ? 'applied' as const : 'duplicate' as const,
@@ -314,6 +356,7 @@ async function applySubscription(
       type: 'provider_cancelled',
       occurredAt: candidate.updatedAt ?? dependencies.now(),
     },
+    expectedProviderSnapshot: expectedProviderSnapshot(local),
   })
   return {
     outcome: result.applied ? 'applied' as const : 'duplicate' as const,

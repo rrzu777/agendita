@@ -409,7 +409,7 @@ describe('subscription billing actions', () => {
     expect(mocks.prisma.businessSubscription.updateMany).not.toHaveBeenCalled()
   })
 
-  it('cancels an authorized candidate when the creation flag is disabled during lookup', async () => {
+  it('settles an already authorized candidate when the creation flag is disabled during lookup', async () => {
     const oldReference = 'authorized-disabled'
     mocks.prisma.subscriptionCheckoutAttempt.findFirst.mockResolvedValue({
       id: 'attempt-disabled', providerSubscriptionId: 'candidate-disabled',
@@ -425,12 +425,12 @@ describe('subscription billing actions', () => {
         amount: 14_990, currency: 'CLP', frequency: 1, frequencyType: 'months', nextPaymentAt: TRIAL_END,
       }
     })
-    mocks.cancelSubscription.mockResolvedValue({ id: 'candidate-disabled', status: 'canceled' })
+    await startSubscriptionCheckout()
 
-    await expect(startSubscriptionCheckout()).rejects.toThrow(/deshabilitada/i)
-
-    expect(mocks.cancelSubscription).toHaveBeenCalledWith('candidate-disabled')
-    expect(mocks.prisma.businessSubscription.updateMany).not.toHaveBeenCalled()
+    expect(mocks.cancelSubscription).not.toHaveBeenCalled()
+    expect(mocks.prisma.businessSubscription.updateMany).toHaveBeenCalledTimes(1)
+    expect(mocks.prisma.subscriptionLog.create).toHaveBeenCalledTimes(1)
+    expect(mocks.redirect).toHaveBeenCalledWith('/dashboard/billing?subscription=active')
   })
 
   it('cancels and invalidates an authorized candidate whose immutable attempt data mismatches', async () => {

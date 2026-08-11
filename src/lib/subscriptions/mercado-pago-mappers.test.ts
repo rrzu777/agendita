@@ -57,6 +57,22 @@ describe('Mercado Pago subscription mappers', () => {
     ).toBe('ignored')
   })
 
+  it.each([
+    { status: { value: 'authorized' } },
+    { status: 1 },
+  ])('rejects a subscription status with an invalid provider shape %#', ({ status }) => {
+    expect(() => normalizeMpSubscription({
+      id: 'preapproval-invalid-status-shape',
+      status,
+      auto_recurring: {
+        transaction_amount: 12000,
+        currency_id: 'CLP',
+        frequency: 1,
+        frequency_type: 'months',
+      },
+    })).toThrow(MercadoPagoSubscriptionContractError)
+  })
+
   it('maps Mercado Pago canceled subscriptions using the provider spelling', () => {
     expect(
       normalizeMpSubscription({
@@ -137,6 +153,17 @@ describe('Mercado Pago subscription mappers', () => {
       updatedAt: new Date('2026-08-11T12:00:00.000Z'),
       debitAt: new Date('2026-08-11T12:00:00.000Z'),
     })
+  })
+
+  it('rejects an invoice payment status with an invalid provider shape', () => {
+    expect(() => normalizeMpInvoice({
+      id: 'invoice-invalid-status-shape',
+      status: 'scheduled',
+      preapproval_id: 'preapproval-1',
+      transaction_amount: 12000,
+      currency_id: 'CLP',
+      payment: { id: 778899, status: { value: 'approved' } },
+    })).toThrow(MercadoPagoSubscriptionContractError)
   })
 
   it.each([

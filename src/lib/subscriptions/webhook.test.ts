@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MpSubscriptionClient } from './mercado-pago-client'
 import { SubscriptionTransitionConflictError } from './transition'
+import { CheckoutEligibilityConflictError } from './checkout-adoption'
 import {
   processSubscriptionWebhook,
   SubscriptionWebhookValidationError,
@@ -85,17 +86,26 @@ function createDependencies(): SubscriptionWebhookDependencies & {
     getInvoice: ReturnType<typeof vi.fn>
     getSubscription: ReturnType<typeof vi.fn>
     getCurrentAccountId: ReturnType<typeof vi.fn>
+    cancelSubscription: ReturnType<typeof vi.fn>
   }
 } {
   const prisma = {
     businessSubscription: { findFirst: vi.fn().mockResolvedValue(localSubscription) },
-    subscriptionCheckoutAttempt: { findFirst: vi.fn().mockResolvedValue(checkoutAttempt) },
+    subscriptionCheckoutAttempt: {
+      findFirst: vi.fn().mockResolvedValue(checkoutAttempt),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
     subscriptionPayment: { findUnique: vi.fn().mockResolvedValue(null) },
   } as unknown as PrismaClient
   const client = {
     getInvoice: vi.fn().mockResolvedValue(approvedInvoice),
     getSubscription: vi.fn().mockResolvedValue(providerSubscription),
     getCurrentAccountId: vi.fn().mockResolvedValue('agendita-account-1'),
+    cancelSubscription: vi.fn().mockResolvedValue({
+      ...providerSubscription,
+      status: 'canceled',
+      providerStatus: 'canceled',
+    }),
   } as unknown as ReturnType<typeof createDependencies>['client']
   return {
     prisma,
@@ -138,6 +148,16 @@ describe('processSubscriptionWebhook', () => {
         providerStatus: approvedInvoice.providerStatus,
         providerUpdatedAt: approvedInvoice.updatedAt,
       },
+      expectedProviderSnapshot: {
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        providerSubscriptionId: providerSubscription.id,
+        planId: localSubscription.planId,
+        providerPlanId: providerSubscription.planId,
+        amount: localSubscription.amount,
+        currency: localSubscription.currency,
+        updatedAt: localSubscription.updatedAt,
+      },
     })
   })
 
@@ -159,6 +179,16 @@ describe('processSubscriptionWebhook', () => {
         providerInvoiceId: approvedInvoice.id,
         providerStatus: 'rejected',
         providerUpdatedAt: approvedInvoice.updatedAt,
+      },
+      expectedProviderSnapshot: {
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        providerSubscriptionId: providerSubscription.id,
+        planId: localSubscription.planId,
+        providerPlanId: providerSubscription.planId,
+        amount: localSubscription.amount,
+        currency: localSubscription.currency,
+        updatedAt: localSubscription.updatedAt,
       },
     })
   })
@@ -214,6 +244,16 @@ describe('processSubscriptionWebhook', () => {
     expect(dependencies.applyTransition).toHaveBeenCalledWith(dependencies.prisma, {
       subscriptionId: localSubscription.id,
       command: { type: 'provider_cancelled', occurredAt: PAID_AT },
+      expectedProviderSnapshot: {
+        provider: 'mercado_pago',
+        environment: 'sandbox',
+        providerSubscriptionId: providerSubscription.id,
+        planId: localSubscription.planId,
+        providerPlanId: providerSubscription.planId,
+        amount: localSubscription.amount,
+        currency: localSubscription.currency,
+        updatedAt: localSubscription.updatedAt,
+      },
     })
   })
 
@@ -251,6 +291,34 @@ describe('processSubscriptionWebhook', () => {
       environment: 'sandbox',
       providerPlanId: providerSubscription.planId,
     }))
+  })
+
+  it.each([
+    ['billing rollout revoked', { billingEnabled: false }],
+    ['complimentary exemption added', { complimentaryUntil: new Date('2026-09-01T00:00:00.000Z') }],
+  ])('cancels and invalidates an authorized candidate when %s', async (_name, localPatch) => {
+    ;(dependencies.prisma.businessSubscription.findFirst as ReturnType<typeof vi.fn>)
+      .mockResolvedValue(null)
+    dependencies.prisma.subscriptionCheckoutAttempt.findFirst = vi.fn().mockResolvedValue({
+      ...checkoutAttempt,
+      invalidatedAt: null,
+      subscription: {
+        ...checkoutAttempt.subscription,
+        ...localPatch,
+        providerSubscriptionId: null,
+      },
+    })
+    dependencies.adoptCandidate.mockRejectedValue(new CheckoutEligibilityConflictError())
+
+    await expect(processSubscriptionWebhook(invoiceEvent, dependencies))
+      .rejects.toBeInstanceOf(SubscriptionWebhookValidationError)
+
+    expect(dependencies.client.cancelSubscription).toHaveBeenCalledWith(providerSubscription.id)
+    expect(dependencies.prisma.subscriptionCheckoutAttempt.updateMany).toHaveBeenCalledWith({
+      where: { id: checkoutAttempt.id, invalidatedAt: null },
+      data: { invalidatedAt: new Date('2026-08-11T12:05:00.000Z') },
+    })
+    expect(dependencies.applyTransition).not.toHaveBeenCalled()
   })
 
   it('rejects an unknown provider subscription without applying a transition', async () => {
@@ -320,5 +388,15 @@ describe('processSubscriptionWebhook', () => {
       outcome: 'ambiguous',
     })
     expect(dependencies.applyTransition).not.toHaveBeenCalled()
+  })
+
+  it('propagates a sanitized provider contract error without attempting mutation', async () => {
+    const { MercadoPagoSubscriptionContractError } = await import('./mercado-pago-mappers')
+    dependencies.client.getInvoice.mockRejectedValue(new MercadoPagoSubscriptionContractError())
+
+    await expect(processSubscriptionWebhook(invoiceEvent, dependencies))
+      .rejects.toBeInstanceOf(MercadoPagoSubscriptionContractError)
+    expect(dependencies.applyTransition).not.toHaveBeenCalled()
+    expect(dependencies.adoptCandidate).not.toHaveBeenCalled()
   })
 })

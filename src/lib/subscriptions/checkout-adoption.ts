@@ -55,9 +55,6 @@ export async function adoptAuthorizedSubscriptionCandidate(input: {
   if (candidate.providerStatus !== 'authorized') {
     throw new Error('Sólo una autorización confirmada por Mercado Pago se puede vincular.')
   }
-  if (process.env.MP_SUBSCRIPTIONS_ENABLED !== 'true') {
-    throw new CheckoutEligibilityConflictError('La facturación automática fue deshabilitada.')
-  }
   await prisma.$transaction(async (tx) => {
     const current = await tx.businessSubscription.findUnique({ where: { id: subscription.id } })
     const stillEligible = current &&

@@ -67,6 +67,12 @@ function optionalString(value: unknown): string | null {
   return value
 }
 
+function optionalStatus(value: unknown): string | null {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string') throw new MercadoPagoSubscriptionContractError()
+  return value
+}
+
 function optionalId(value: unknown): string | null {
   if (value === undefined || value === null) return null
   return requiredId(value)
@@ -177,12 +183,13 @@ const INVOICE_STATUS: Record<string, MpInvoiceStatus> = {
 
 export function normalizeMpSubscription(response: unknown): MpSubscription {
   const raw = asRecord(response)
-  const status = typeof raw.status === 'string' ? SUBSCRIPTION_STATUS[raw.status] ?? 'ignored' : 'ignored'
+  const providerStatus = optionalStatus(raw.status)
+  const status = providerStatus ? SUBSCRIPTION_STATUS[providerStatus] ?? 'ignored' : 'ignored'
 
   return {
     id: requiredId(raw.id),
     status,
-    providerStatus: typeof raw.status === 'string' ? raw.status : null,
+    providerStatus,
     collectorId: optionalId(raw.collector_id),
     planId: optionalString(raw.preapproval_plan_id),
     externalReference: optionalString(raw.external_reference),
@@ -198,8 +205,8 @@ export function normalizeMpInvoice(response: unknown): MpInvoice {
   const payment = raw.payment && typeof raw.payment === 'object' && !Array.isArray(raw.payment)
     ? raw.payment as Record<string, unknown>
     : null
-  const providerStatus = payment?.status ?? raw.status
-  const status = typeof providerStatus === 'string'
+  const providerStatus = optionalStatus(payment?.status ?? raw.status)
+  const status = providerStatus
     ? INVOICE_STATUS[providerStatus] ?? 'ignored'
     : 'ignored'
 
@@ -208,7 +215,7 @@ export function normalizeMpInvoice(response: unknown): MpInvoice {
     subscriptionId: optionalString(raw.preapproval_id),
     status,
     providerPaymentId: optionalId(payment?.id),
-    providerStatus: typeof providerStatus === 'string' ? providerStatus : null,
+    providerStatus,
     ...invoiceAmount(raw),
     externalReference: optionalString(raw.external_reference),
     approvedAt: optionalDate(
