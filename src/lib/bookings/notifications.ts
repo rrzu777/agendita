@@ -21,6 +21,7 @@ import { fmtDeadlinePromise } from '@/lib/notifications/templates'
 import { bookingInvite } from '@/lib/calendar/booking-invite'
 import { type BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import type { BookingEmailData } from '@/lib/notifications/types'
+import { resolveCancellationPolicy } from '@/lib/bookings/cancellation-policy'
 import {
   sendBookingReceivedToCustomer,
   sendNewBookingNotificationToBusiness,
@@ -37,6 +38,7 @@ export async function fireBookingNotifications(
     addressText: string | null
     currency: string
     cancellationPolicy: string | null
+    selfServiceCutoffHours: number
     slug: string
     subdomain: string | null
     // El rubro decide el vocabulario del aviso al negocio.
@@ -56,6 +58,8 @@ export async function fireBookingNotifications(
     depositRequired: number
     depositPaid: number
     remainingBalance: number
+    cancellationCutoffHours: number | null
+    cancellationPolicySnapshot: string | null
     startDateTime: Date
     paymentMethod: string | null
     holdExpiresAt: Date | null
@@ -79,6 +83,7 @@ export async function fireBookingNotifications(
   // movió la reserva a otro estado, el email tiene que contar lo que pasó de
   // verdad, no lo que la config decía al empezar.
   const awaitingApproval = booking.status === BookingStatus.pending_confirmation
+  const cancellationPolicy = resolveCancellationPolicy(booking, business)
 
   // Un solo plazo para los tres textos que lo mencionan (datos bancarios,
   // coordinación manual y el aviso a la dueña). Topado con la cita: prometer
@@ -131,7 +136,8 @@ export async function fireBookingNotifications(
           meetingUrl: booking.meetingUrl,
           businessTimezone,
           businessCurrency,
-          businessCancellationPolicy: business.cancellationPolicy,
+          businessCancellationPolicy: cancellationPolicy.additionalPolicy,
+          cancellationCutoffHours: cancellationPolicy.cutoffHours,
           customerName: booking.customer.name,
           customerEmail,
           customerPhone: booking.customer.phone,

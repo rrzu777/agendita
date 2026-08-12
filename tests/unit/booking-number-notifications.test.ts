@@ -21,6 +21,7 @@ const emailBase = {
   businessName: 'Biz', businessCategory: 'nails' as const,
   businessTimezone: 'America/Santiago',
   businessCurrency: 'CLP',
+  cancellationCutoffHours: 24,
   customerName: 'Ana',
   customerPhone: '+56911111111',
   serviceName: 'Corte',

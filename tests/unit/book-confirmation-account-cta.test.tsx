@@ -36,7 +36,12 @@ function baseBooking(overrides: Record<string, unknown> = {}) {
     depositPaid: 20000,
     depositRequired: 20000,
     remainingBalance: 0,
-    business: { name: 'Salón Ana', slug: 'salon-ana', subdomain: null, timezone: 'America/Santiago' },
+    cancellationCutoffHours: 24,
+    cancellationPolicySnapshot: null,
+    business: {
+      name: 'Salón Ana', slug: 'salon-ana', subdomain: null, timezone: 'America/Santiago',
+      selfServiceCutoffHours: 24, cancellationPolicy: null,
+    },
     service: { name: 'Manicure' },
     customer: { email: 'maria@example.com' },
     payments: [],

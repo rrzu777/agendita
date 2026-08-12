@@ -31,7 +31,12 @@ vi.mock('@/lib/auth/server', () => ({
   requireBusinessRole: vi.fn().mockResolvedValue({
     businessId: 'biz-1',
     user: { id: 'user-1' },
-    business: { timezone: 'America/Santiago', currency: 'CLP' },
+    business: {
+      timezone: 'America/Santiago',
+      currency: 'CLP',
+      selfServiceCutoffHours: 36,
+      cancellationPolicy: 'Condiciones del negocio',
+    },
   }),
   ForbiddenError,
 }))
@@ -216,6 +221,24 @@ describe('createBookingFromDashboard advanced payment modes', () => {
       paymentType: PaymentType.deposit,
       paymentId: 'payment-1',
     }))
+  })
+
+  it('snapshots cancellation terms before confirming a deposit-paid booking', async () => {
+    await createBookingFromDashboard({
+      ...baseInput,
+      paymentMode: 'deposit_paid',
+      paymentMethod: 'transfer',
+    })
+
+    expect(mockPrisma.booking.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: BookingStatus.confirmed,
+          cancellationCutoffHours: 36,
+          cancellationPolicySnapshot: 'Condiciones del negocio',
+        }),
+      })
+    )
   })
 
   it('full_paid creates manual full_payment Payment and applies ledger via finance service', async () => {

@@ -1,4 +1,9 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
+import {
+  OTHER_VAPID_PUBLIC_KEY,
+  TEST_VAPID_PRIVATE_KEY,
+  TEST_VAPID_PUBLIC_KEY,
+} from '../helpers/push-fixtures'
 
 const originalEnv = { ...process.env }
 
@@ -547,6 +552,43 @@ describe('env validation', () => {
       setEnv({ NODE_ENV: 'development' })
       const { isProduction } = await import('@/lib/env')
       expect(isProduction()).toBe(false)
+    })
+  })
+
+  describe('Web Push', () => {
+    it('rejects partial VAPID configuration', async () => {
+      setEnv({ NEXT_PUBLIC_VAPID_PUBLIC_KEY: 'public', VAPID_PRIVATE_KEY: undefined, VAPID_SUBJECT: undefined })
+      const { validateEnv } = await import('@/lib/env')
+      expect(validateEnv().errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: 'NEXT_PUBLIC_VAPID_PUBLIC_KEY' }),
+      ]))
+    })
+
+    it('requires encryption and a matching VAPID key pair', async () => {
+      setEnv({
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: OTHER_VAPID_PUBLIC_KEY,
+        VAPID_PRIVATE_KEY: TEST_VAPID_PRIVATE_KEY,
+        VAPID_SUBJECT: 'mailto:push@agendita.cl',
+        ENCRYPTION_KEY: undefined,
+      })
+      const { validateEnv } = await import('@/lib/env')
+      expect(validateEnv().errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: 'ENCRYPTION_KEY' }),
+        expect.objectContaining({ key: 'VAPID_PRIVATE_KEY' }),
+      ]))
+    })
+
+    it('accepts a complete encrypted VAPID configuration', async () => {
+      setEnv({
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: TEST_VAPID_PUBLIC_KEY,
+        VAPID_PRIVATE_KEY: TEST_VAPID_PRIVATE_KEY,
+        VAPID_SUBJECT: 'https://www.agendita.cl/push-contact',
+        ENCRYPTION_KEY: 'encryption-key',
+      })
+      const { validateEnv } = await import('@/lib/env')
+      expect(validateEnv().errors.filter(error => [
+        'NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT', 'ENCRYPTION_KEY',
+      ].includes(error.key))).toEqual([])
     })
   })
 })

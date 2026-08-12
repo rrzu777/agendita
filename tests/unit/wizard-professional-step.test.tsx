@@ -53,6 +53,8 @@ describe('el wizard con equipo', () => {
     act(() => {
       root?.render(
         <BookingWizard
+          cancellationPolicyRevision="revision-1"
+          selfServiceCutoffHours={24}
           manualHoldHours={24}
           businessId="biz-1"
           slug="test-biz"

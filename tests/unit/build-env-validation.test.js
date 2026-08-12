@@ -1,6 +1,10 @@
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import {
+  TEST_VAPID_PRIVATE_KEY,
+  TEST_VAPID_PUBLIC_KEY,
+} from '../helpers/push-fixtures'
 
 const scriptPath = resolve(process.cwd(), 'scripts/validate-env.js')
 
@@ -316,5 +320,28 @@ describe('build environment validation', () => {
 
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('MISSING: MERCADO_PAGO_ACCESS_TOKEN')
+  })
+
+  it('rejects incomplete Web Push configuration in the build validator', () => {
+    const env = {
+      ...process.env,
+      NODE_ENV: 'development',
+      DATABASE_URL: 'postgresql://localhost/test',
+      DIRECT_URL: 'postgresql://localhost/test',
+      NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+      APP_DOMAIN: 'app.agendita.com',
+      NEXT_PUBLIC_APP_DOMAIN: 'app.agendita.com',
+      PAYMENT_PROVIDER: 'manual',
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: TEST_VAPID_PUBLIC_KEY,
+      VAPID_PRIVATE_KEY: TEST_VAPID_PRIVATE_KEY,
+      VAPID_SUBJECT: 'mailto:push@agendita.cl',
+      ENCRYPTION_KEY: '',
+    }
+
+    const result = spawnSync(process.execPath, [scriptPath], { env, encoding: 'utf8' })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('ENCRYPTION_KEY')
   })
 })

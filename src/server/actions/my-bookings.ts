@@ -23,6 +23,7 @@ import {
 import { revalidateBusinessPublicPaths } from '@/server/actions/revalidate-business'
 import { action, UserError } from '@/lib/actions/result'
 import { loadBookingInvite, loadBookingCancelNotice } from '@/lib/calendar/booking-invite'
+import { resolveCancellationPolicy } from '@/lib/bookings/cancellation-policy'
 
 async function _cancelMyBooking(bookingId: string) {
   const user = await requireUser()
@@ -35,12 +36,19 @@ async function _cancelMyBooking(bookingId: string) {
   // Ownership EN el where (customer.userId === user.id): jamás confiar en ids del cliente.
   const booking = await prisma.booking.findFirst({
     where: ownedManageableBookingWhere(bookingId, user.id),
-    include: {
+    select: {
+      id: true,
+      internalNotes: true,
+      bookingNumber: true,
+      startDateTime: true,
+      status: true,
+      cancellationCutoffHours: true,
+      cancellationPolicySnapshot: true,
       service: { select: { name: true } },
       professional: { select: { name: true } },
       customer: { select: { name: true, email: true } },
       business: {
-        select: { id: true, name: true, slug: true, timezone: true, category: true, selfServiceCutoffHours: true },
+        select: { id: true, name: true, slug: true, timezone: true, category: true, selfServiceCutoffHours: true, cancellationPolicy: true },
       },
     },
   })
@@ -48,7 +56,7 @@ async function _cancelMyBooking(bookingId: string) {
     throw new UserError('Reserva no encontrada')
   }
 
-  const cutoff = booking.business.selfServiceCutoffHours
+  const { cutoffHours: cutoff } = resolveCancellationPolicy(booking, booking.business)
   if (!canSelfManage(booking.startDateTime, cutoff)) {
     throw new UserError(selfServiceBlockedMessage(cutoff, 'cancelar'))
   }
@@ -113,7 +121,24 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
   // Ownership EN el where (customer.userId === user.id): jamás confiar en ids del cliente.
   const booking = await prisma.booking.findFirst({
     where: ownedManageableBookingWhere(bookingId, user.id),
-    include: {
+    select: {
+      id: true,
+      businessId: true,
+      serviceId: true,
+      professionalId: true,
+      internalNotes: true,
+      bookingNumber: true,
+      startDateTime: true,
+      status: true,
+      paymentStatus: true,
+      holdExpiresAt: true,
+      approvalExpiresAt: true,
+      createdAt: true,
+      modality: true,
+      serviceAddress: true,
+      meetingUrl: true,
+      cancellationCutoffHours: true,
+      cancellationPolicySnapshot: true,
       service: { select: { name: true, durationMinutes: true } },
       professional: { select: { name: true } },
       customer: { select: { name: true, email: true, phone: true } },
@@ -125,6 +150,7 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
           timezone: true,
           isActive: true,
           selfServiceCutoffHours: true,
+          cancellationPolicy: true,
           category: true,
           whatsapp: true,
           addressText: true,
@@ -141,7 +167,7 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
     throw new UserError('El negocio no está aceptando reservas en este momento.')
   }
 
-  const cutoff = booking.business.selfServiceCutoffHours
+  const { cutoffHours: cutoff } = resolveCancellationPolicy(booking, booking.business)
   if (!canSelfManage(booking.startDateTime, cutoff)) {
     throw new UserError(selfServiceBlockedMessage(cutoff, 'reprogramar'))
   }

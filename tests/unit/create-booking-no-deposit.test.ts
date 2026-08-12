@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ForbiddenError } from '../helpers/auth-errors'
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
+import { TEST_VAPID_PRIVATE_KEY, TEST_VAPID_PUBLIC_KEY } from '../helpers/push-fixtures'
+
+process.env.ENCRYPTION_KEY = 'create-booking-push-grant-test-key'
+process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = TEST_VAPID_PUBLIC_KEY
+process.env.VAPID_PRIVATE_KEY = TEST_VAPID_PRIVATE_KEY
+process.env.VAPID_SUBJECT = 'mailto:soporte@agendita.cl'
+
+const mockGetConfirmedSessionUser = vi.fn().mockResolvedValue(null)
 
 const mockPrisma = {
   business: { findUnique: vi.fn() },
@@ -33,7 +41,7 @@ vi.mock('@/lib/auth/server', () => ({
 
 vi.mock('@/lib/auth/user', () => ({
   getCurrentUser: vi.fn().mockResolvedValue(null),
-  getConfirmedSessionUser: vi.fn().mockResolvedValue(null),
+  getConfirmedSessionUser: mockGetConfirmedSessionUser,
 }))
 
 vi.mock('next/cache', () => ({
@@ -83,7 +91,9 @@ function setupMocks(depositAmount: number, servicePrice: number) {
     whatsapp: '+56987654321',
     addressText: 'Test Address',
     currency: 'CLP',
-    cancellationPolicy: null,
+    selfServiceCutoffHours: 24,
+    cancellationReminderEnabled: true,
+    cancellationPolicy: 'Condiciones originales',
     slug: 'test-biz',
     subdomain: null,
     subscriptionStatus: 'active',
@@ -99,10 +109,24 @@ function setupMocks(depositAmount: number, servicePrice: number) {
   })
   const createBookingResult = {
     id: 'booking-created',
-    customer: { name: 'Juan', phone: '+56912345678', email: null },
+    businessId: 'biz-1',
+    customerId: 'cust-1',
+    cancellationCutoffHours: 24,
+    cancellationPolicySnapshot: 'Condiciones originales',
+    depositRequired: Math.min(depositAmount, servicePrice),
+    depositPaid: 0,
+    customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
     service: { name: 'Manicure' },
   }
-  mockPrisma.booking.create.mockResolvedValue(createBookingResult)
+  mockPrisma.booking.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+    ...createBookingResult,
+    startDateTime: data.startDateTime,
+    status: data.status,
+    cancellationCutoffHours: data.cancellationCutoffHours,
+    cancellationPolicySnapshot: data.cancellationPolicySnapshot,
+    depositRequired: data.depositRequired,
+    depositPaid: data.depositPaid,
+  }))
   mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
     const tx = {
       business: { findUnique: mockPrisma.business.findUnique, update: vi.fn().mockResolvedValue({ bookingNumberSeq: 4242 }) },
@@ -121,7 +145,14 @@ function setupMocks(depositAmount: number, servicePrice: number) {
         }),
       },
       $executeRaw: vi.fn(),
-      $queryRaw: vi.fn().mockResolvedValue([]),
+      $queryRaw: vi.fn().mockImplementation(async () => {
+        const business = await mockPrisma.business.findUnique()
+        return business ? [{
+          selfServiceCutoffHours: business.selfServiceCutoffHours,
+          cancellationPolicy: business.cancellationPolicy,
+          cancellationReminderEnabled: business.cancellationReminderEnabled,
+        }] : []
+      }),
     }
     return fn(tx)
   })
@@ -132,12 +163,18 @@ describe('createBooking - no deposit / free service', () => {
     serviceId: 'svc-1',
     customerName: 'Juan',
     customerPhone: '+56912345678',
-    startDateTime: new Date('2026-06-15T14:00:00Z'),
+    startDateTime: new Date('2027-06-15T14:00:00Z'),
     acceptedTerms: true,
+    cancellationPolicyRevision: 'f0992f452f8046a66991a7d0cc83eea4c21f7bfc30049726882c42bca36466d8',
   }
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockGetConfirmedSessionUser.mockResolvedValue(null)
+    vi.stubEnv('ENCRYPTION_KEY', 'create-booking-push-grant-test-key')
+    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', TEST_VAPID_PUBLIC_KEY)
+    vi.stubEnv('VAPID_PRIVATE_KEY', TEST_VAPID_PRIVATE_KEY)
+    vi.stubEnv('VAPID_SUBJECT', 'mailto:soporte@agendita.cl')
   })
 
   it('creates confirmed + unpaid + hold null when depositRequired=0 and price>0', async () => {
@@ -153,6 +190,44 @@ describe('createBooking - no deposit / free service', () => {
     expect(data.depositPaid).toBe(0)
     expect(data.remainingBalance).toBe(20000)
     expect(data.finalAmount).toBe(20000)
+  })
+
+  it('snapshots the cancellation cutoff and additional policy at creation', async () => {
+    setupMocks(0, 20000)
+
+    await createBooking(baseInput, 'biz-1')
+
+    expect(mockPrisma.booking.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          cancellationCutoffHours: 24,
+          cancellationPolicySnapshot: 'Condiciones originales',
+        }),
+      })
+    )
+  })
+
+  it('rejects a stale or tampered displayed policy before creating a booking', async () => {
+    setupMocks(5_000, 20_000)
+
+    const result = await createBooking({
+      ...baseInput,
+      cancellationPolicyRevision: 'stale-policy-revision',
+    }, 'biz-1')
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toMatch(/política.*actualiz/i)
+    expect(mockPrisma.booking.create).not.toHaveBeenCalled()
+  })
+
+  it('does not issue a push grant when the persisted booking has no deposit', async () => {
+    setupMocks(0, 20000)
+
+    const result = await createBooking(baseInput, 'biz-1')
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.pushGrant).toBeNull()
   })
 
   it('creates confirmed + fully_paid + hold null when service is free', async () => {
@@ -172,7 +247,7 @@ describe('createBooking - no deposit / free service', () => {
   it('creates pending_payment + unpaid + hold set when depositRequired>0', async () => {
     setupMocks(5000, 20000)
 
-    await createBooking(baseInput, 'biz-1')
+    const result = await createBooking(baseInput, 'biz-1')
 
     const createCall = mockPrisma.booking.create.mock.calls[0]?.[0] as Record<string, unknown>
     const data = createCall?.data as Record<string, unknown>
@@ -180,6 +255,78 @@ describe('createBooking - no deposit / free service', () => {
     expect(data.paymentStatus).toBe(BookingPaymentStatus.unpaid)
     expect(data.holdExpiresAt).not.toBeNull()
     expect(data.depositRequired).toBe(5000)
+    expect(result.ok && result.data.pushGrant).toEqual(expect.any(String))
+    expect(result.ok && result.data.pushMode).toBe('guest')
+  })
+
+  it('returns account mode without issuing a guest grant for the matching signed-in customer', async () => {
+    setupMocks(5_000, 20_000)
+    mockGetConfirmedSessionUser.mockResolvedValue({ id: 'user-1', email: 'juan@example.com' })
+    mockPrisma.customer.create.mockResolvedValue({
+      id: 'cust-1', name: 'Juan', phone: '+56912345678', email: 'juan@example.com', userId: 'user-1',
+    })
+    mockPrisma.booking.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: 'booking-account',
+      businessId: 'biz-1',
+      customerId: 'cust-1',
+      startDateTime: data.startDateTime,
+      status: data.status,
+      cancellationCutoffHours: data.cancellationCutoffHours,
+      cancellationPolicySnapshot: data.cancellationPolicySnapshot,
+      depositRequired: data.depositRequired,
+      depositPaid: data.depositPaid,
+      customer: {
+        id: 'cust-1', name: 'Juan', phone: '+56912345678', email: 'juan@example.com', userId: 'user-1',
+      },
+      service: { name: 'Manicure' },
+    }))
+
+    const result = await createBooking(baseInput, 'biz-1')
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data).toMatchObject({ pushMode: 'account', pushGrant: null })
+  })
+
+  it('does not downgrade a signed-in but unlinked customer to a guest grant', async () => {
+    setupMocks(5_000, 20_000)
+    mockGetConfirmedSessionUser.mockResolvedValue({ id: 'user-1', email: 'juan@example.com' })
+
+    const result = await createBooking(baseInput, 'biz-1')
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data).toMatchObject({ pushMode: null, pushGrant: null })
+  })
+
+  it.each([
+    { label: 'business reminders disabled', business: { cancellationReminderEnabled: false } },
+    { label: 'zero cancellation cutoff', business: { selfServiceCutoffHours: 0 } },
+  ])('does not issue a grant with $label', async ({ business }) => {
+    setupMocks(5_000, 20_000)
+    mockPrisma.business.findUnique.mockResolvedValue({
+      ...(await mockPrisma.business.findUnique()),
+      ...business,
+    })
+
+    const result = await createBooking({
+      ...baseInput,
+      ...(business.selfServiceCutoffHours === 0
+        ? { cancellationPolicyRevision: '778f639547ba1014068452896ce6a8203df5e4e73212382f30802591bac667bd' }
+        : {}),
+    }, 'biz-1')
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data.pushGrant).toBeNull()
+  })
+
+  it('keeps the booking successful and omits the grant when runtime VAPID is invalid', async () => {
+    setupMocks(5_000, 20_000)
+    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'malformed-public')
+    vi.stubEnv('VAPID_PRIVATE_KEY', 'malformed-private')
+
+    const result = await createBooking(baseInput, 'biz-1')
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.data.pushGrant).toBeNull()
   })
 
   it('rejects when acceptedTerms is false', async () => {
@@ -217,6 +364,8 @@ describe('createBooking - no deposit / free service', () => {
     // (eso es sólo para las que siguen esperando el pago).
     const existingBooking = {
       id: 'booking-existing',
+      businessId: 'biz-1',
+      customerId: 'cust-1',
       serviceId: baseInput.serviceId,
       startDateTime: baseInput.startDateTime,
       // Explícito y no ausente: el resume compara los tres campos que definen la
@@ -225,14 +374,32 @@ describe('createBooking - no deposit / free service', () => {
       // reintento por una diferencia que no existe.
       professionalId: null,
       status: BookingStatus.confirmed,
+      depositRequired: 5_000,
+      depositPaid: 0,
+      cancellationCutoffHours: 48,
+      cancellationPolicySnapshot: 'Condiciones guardadas anteriormente',
       service: { name: 'Manicure' },
-      customer: { name: 'Juan', phone: '+56912345678', email: null },
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null, userId: 'user-1' },
     }
     mockPrisma.booking.findUnique.mockResolvedValueOnce(existingBooking)
+    mockGetConfirmedSessionUser.mockResolvedValue({ id: 'user-1', email: 'juan@example.com' })
+    mockPrisma.business.findUnique.mockResolvedValue({
+      ...(await mockPrisma.business.findUnique()),
+      selfServiceCutoffHours: 72,
+      cancellationPolicy: 'Política editada después',
+    })
 
     const result = await createBooking({ ...baseInput, idempotencyKey: 'key-1' }, 'biz-1')
 
-    expect(result).toEqual({ ok: true, data: existingBooking })
+    expect(result).toMatchObject({ ok: true, data: existingBooking })
+    expect(result.ok && result.data).toMatchObject({
+      cancellationCutoffHours: 48,
+      cancellationPolicySnapshot: 'Condiciones guardadas anteriormente',
+    })
+    if (result.ok) {
+      expect(result.data.pushGrant).toBeNull()
+      expect(result.data.pushMode).toBe('account')
+    }
     expect(mockPrisma.booking.create).not.toHaveBeenCalled()
   })
 })

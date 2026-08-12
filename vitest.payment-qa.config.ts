@@ -8,6 +8,17 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./tests/helpers/react-dom.tsx', './tests/helpers/payment-qa-network-deny.ts'],
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.next/**',
+      '**/coverage/**',
+      '**/.worktrees/**',
+      '.claude/**',
+      'tests/e2e/**',
+      'tests/integration/**',
+      'playwright.config.ts',
+    ],
   },
   resolve: {
     alias: {

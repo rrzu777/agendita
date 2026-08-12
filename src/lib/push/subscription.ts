@@ -1,0 +1,653 @@
+import { createHash } from 'crypto'
+import type { Prisma } from '@prisma/client'
+import { prisma } from '@/lib/db'
+import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
+import { encryptSecret } from '@/lib/payments/encryption'
+import { decodeCanonicalBase64Url, isValidVapidPublicKey } from './vapid-validation'
+import { findEligiblePushCustomers, isPushBookingEligible } from './eligibility'
+
+const MAX_ENDPOINT_LENGTH = 4096
+const MAX_KEY_LENGTH = 1024
+const MAX_ACTIVE_DEVICES = 5
+const EXACT_PUSH_HOSTS = new Set([
+  'fcm.googleapis.com',
+  'updates.push.services.mozilla.com',
+  'push.services.mozilla.com',
+  'push.apple.com',
+])
+
+export type NormalizedPushSubscription = {
+  endpoint: string
+  keys: {
+    p256dh: string
+    auth: string
+  }
+}
+
+export type PushSubscriptionAuthorization =
+  | { kind: 'guest'; bookingId: string }
+  | { kind: 'user'; userId: string }
+
+export type PushUnsubscribeScope =
+  | {
+      kind: 'guest'
+      target: { businessId: string; customerId: string; bookingId: string }
+    }
+  | { kind: 'user'; userId: string }
+  | { kind: 'endpoint' }
+
+export type PushStatusScope =
+  | {
+      kind: 'guest'
+      target: {
+        businessId: string
+        customerId: string
+        authorization: Extract<PushSubscriptionAuthorization, { kind: 'guest' }>
+      }
+    }
+  | { kind: 'user'; userId: string }
+  | { kind: 'endpoint' }
+
+export class PushDeviceLimitError extends Error {
+  constructor() {
+    super('Push device limit reached')
+    this.name = 'PushDeviceLimitError'
+  }
+}
+
+type PreparedPushSubscription = {
+  endpointHash: string
+  subscriptionFingerprint: string
+  subscriptionEncrypted: string
+}
+
+function boundedString(value: unknown, maxLength: number): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= maxLength
+}
+
+function isAllowedPushHost(hostname: string): boolean {
+  return EXACT_PUSH_HOSTS.has(hostname)
+    || hostname.endsWith('.notify.windows.com')
+    || hostname.endsWith('.push.apple.com')
+}
+
+export function canonicalizeWebPushEndpoint(value: string): string {
+  if (!boundedString(value, MAX_ENDPOINT_LENGTH)) {
+    throw new Error('Invalid push subscription')
+  }
+
+  let endpoint: URL
+  try {
+    endpoint = new URL(value)
+  } catch {
+    throw new Error('Invalid push subscription')
+  }
+  const hostname = endpoint.hostname.toLowerCase()
+  if (
+    endpoint.protocol !== 'https:'
+    || endpoint.port
+    || endpoint.username
+    || endpoint.password
+    || endpoint.hash
+    || !isAllowedPushHost(hostname)
+  ) {
+    throw new Error('Invalid push subscription')
+  }
+
+  return endpoint.href
+}
+
+export function isAllowedWebPushEndpoint(value: string): boolean {
+  try {
+    // The endpoint is later fetched by the server. Limiting it to browser push
+    // providers prevents an authenticated client from turning delivery into SSRF.
+    canonicalizeWebPushEndpoint(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function normalizePushSubscription(value: unknown): NormalizedPushSubscription {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('Invalid push subscription')
+  }
+
+  const candidate = value as Record<string, unknown>
+  const keys = candidate.keys
+  if (typeof keys !== 'object' || keys === null || Array.isArray(keys)) {
+    throw new Error('Invalid push subscription')
+  }
+  const keyRecord = keys as Record<string, unknown>
+
+  if (
+    !boundedString(candidate.endpoint, MAX_ENDPOINT_LENGTH)
+    || !boundedString(keyRecord.p256dh, MAX_KEY_LENGTH)
+    || !boundedString(keyRecord.auth, MAX_KEY_LENGTH)
+  ) {
+    throw new Error('Invalid push subscription')
+  }
+
+  const p256dh = decodeCanonicalBase64Url(keyRecord.p256dh)
+  const auth = decodeCanonicalBase64Url(keyRecord.auth)
+  if (
+    !isValidVapidPublicKey(keyRecord.p256dh)
+    || !p256dh
+    || p256dh.length !== 65
+    || !auth
+    || auth.length !== 16
+  ) {
+    throw new Error('Invalid push subscription')
+  }
+
+  return {
+    endpoint: canonicalizeWebPushEndpoint(candidate.endpoint),
+    keys: {
+      p256dh: keyRecord.p256dh,
+      auth: keyRecord.auth,
+    },
+  }
+}
+
+export function hashPushEndpoint(endpoint: string): string {
+  return createHash('sha256').update(canonicalizeWebPushEndpoint(endpoint), 'utf8').digest('hex')
+}
+
+export function fingerprintPushSubscription(
+  subscription: NormalizedPushSubscription,
+): string {
+  return createHash('sha256')
+    .update(JSON.stringify(subscription), 'utf8')
+    .digest('hex')
+}
+
+export async function hasActivePushAssociation({
+  endpoint,
+  scope,
+  now = new Date(),
+}: {
+  endpoint: string
+  scope: PushStatusScope
+  now?: Date
+}): Promise<boolean> {
+  const endpointHash = hashPushEndpoint(endpoint)
+  if (scope.kind === 'user') {
+    const eligibleCustomers = await findEligiblePushCustomers(prisma, scope.userId, now)
+    if (eligibleCustomers.length === 0) return false
+    const customerIds = eligibleCustomers.map(({ id }) => id)
+    const associations = await prisma.pushSubscription.findMany({
+      where: {
+        endpointHash,
+        revokedAt: null,
+        authorizedUserId: scope.userId,
+        customerId: { in: customerIds },
+      },
+      select: { customerId: true },
+    })
+    const coveredCustomers = new Set(associations.map(({ customerId }) => customerId))
+    return customerIds.every((customerId) => coveredCustomers.has(customerId))
+  }
+
+  if (scope.kind === 'guest') {
+    const booking = await prisma.booking.findFirst({
+      where: {
+        id: scope.target.authorization.bookingId,
+        customerId: scope.target.customerId,
+        businessId: scope.target.businessId,
+      },
+      select: {
+        startDateTime: true,
+        status: true,
+        cancellationCutoffHours: true,
+        depositRequired: true,
+        depositPaid: true,
+        business: {
+          select: {
+            cancellationReminderEnabled: true,
+            selfServiceCutoffHours: true,
+          },
+        },
+      },
+    })
+    if (!booking || !isPushBookingEligible(booking, booking.business, now)) return false
+  }
+
+  const authorizationWhere = scope.kind === 'guest'
+    ? {
+        businessId: scope.target.businessId,
+        customerId: scope.target.customerId,
+        bookingEntitlements: {
+          some: { bookingId: scope.target.authorization.bookingId },
+        },
+      }
+    : {
+        OR: [
+          { authorizedUserId: { not: null } },
+          { bookingEntitlements: { some: {} } },
+        ],
+      }
+
+  const association = await prisma.pushSubscription.findFirst({
+    where: {
+      endpointHash,
+      revokedAt: null,
+      ...authorizationWhere,
+    },
+    select: { id: true },
+  })
+  return association !== null
+}
+
+async function detachOlderScopeGeneration({
+  tx,
+  businessId,
+  customerId,
+  endpointHash,
+  subscriptionFingerprint,
+  authorization,
+  now,
+}: {
+  tx: Prisma.TransactionClient
+  businessId: string
+  customerId: string
+  endpointHash: string
+  subscriptionFingerprint: string
+  authorization: PushSubscriptionAuthorization
+  now: Date
+}): Promise<void> {
+  const olderGeneration = {
+    businessId,
+    customerId,
+    endpointHash,
+    subscriptionFingerprint: { not: subscriptionFingerprint },
+  }
+
+  if (authorization.kind === 'guest') {
+    await tx.pushSubscriptionBooking.deleteMany({
+      where: {
+        bookingId: authorization.bookingId,
+        subscription: olderGeneration,
+      },
+    })
+  } else {
+    await tx.pushSubscription.updateMany({
+      where: {
+        ...olderGeneration,
+        authorizedUserId: authorization.userId,
+      },
+      data: { authorizedUserId: null },
+    })
+  }
+
+  // A rotated generation may still carry a different booking entitlement or
+  // account authorization. Preserve it unless the exact scope removal above
+  // left the row completely orphaned.
+  await tx.pushSubscription.updateMany({
+    where: {
+      ...olderGeneration,
+      authorizedUserId: null,
+      revokedAt: null,
+      bookingEntitlements: { none: {} },
+    },
+    data: { revokedAt: now },
+  })
+}
+
+function preparePushSubscription(subscription: unknown): PreparedPushSubscription {
+  const normalized = normalizePushSubscription(subscription)
+  return {
+    endpointHash: hashPushEndpoint(normalized.endpoint),
+    subscriptionFingerprint: fingerprintPushSubscription(normalized),
+    subscriptionEncrypted: encryptSecret(JSON.stringify(normalized)),
+  }
+}
+
+function authorizationLockKey(userId: string, endpointHash: string): string {
+  return `push-authorization:${userId}:${endpointHash}`
+}
+
+function endpointLockKey(endpointHash: string): string {
+  return `push-endpoint:${endpointHash}`
+}
+
+async function storePushSubscriptionInTx({
+  tx,
+  businessId,
+  customerId,
+  prepared,
+  authorization,
+  now,
+}: {
+  tx: Prisma.TransactionClient
+  businessId: string
+  customerId: string
+  prepared: PreparedPushSubscription
+  authorization: PushSubscriptionAuthorization
+  now: Date
+}): Promise<{ id: string }> {
+  if (authorization.kind === 'guest') {
+    const booking = await tx.booking.findFirst({
+      where: { id: authorization.bookingId, customerId, businessId },
+      select: {
+        id: true,
+        startDateTime: true,
+        status: true,
+        cancellationCutoffHours: true,
+        depositRequired: true,
+        depositPaid: true,
+        business: {
+          select: {
+            cancellationReminderEnabled: true,
+            selfServiceCutoffHours: true,
+          },
+        },
+      },
+    })
+    if (!booking) throw new Error('Push authorization no longer owns booking')
+    if (!isPushBookingEligible(booking, booking.business, now)) {
+      throw new Error('Push booking is no longer eligible')
+    }
+  } else {
+    const customer = await tx.customer.findFirst({
+      where: { id: customerId, businessId, userId: authorization.userId },
+      select: { id: true },
+    })
+    if (!customer) throw new Error('Push authorization no longer owns customer')
+  }
+
+  await detachOlderScopeGeneration({
+    tx,
+    businessId,
+    customerId,
+    endpointHash: prepared.endpointHash,
+    subscriptionFingerprint: prepared.subscriptionFingerprint,
+    authorization,
+    now,
+  })
+
+  const existing = await tx.pushSubscription.findUnique({
+    where: {
+      customerId_subscriptionFingerprint: {
+        customerId,
+        subscriptionFingerprint: prepared.subscriptionFingerprint,
+      },
+    },
+    select: {
+      id: true,
+      revokedAt: true,
+      authorizedUserId: true,
+      bookingEntitlements: authorization.kind === 'guest'
+        ? {
+            where: { bookingId: authorization.bookingId },
+            select: { bookingId: true },
+            take: 1,
+          }
+        : false,
+    },
+  })
+  const alreadyAuthorized = existing?.revokedAt === null && (
+    authorization.kind === 'user'
+      ? existing.authorizedUserId === authorization.userId
+      : existing.bookingEntitlements.length > 0
+  )
+
+  if (!alreadyAuthorized) {
+    const activeDevices = await tx.pushSubscription.count({
+      where: {
+        businessId,
+        customerId,
+        revokedAt: null,
+        ...(authorization.kind === 'user'
+          ? { authorizedUserId: authorization.userId }
+          : {
+              bookingEntitlements: {
+                some: { bookingId: authorization.bookingId },
+              },
+            }),
+      },
+    })
+    if (activeDevices >= MAX_ACTIVE_DEVICES) throw new PushDeviceLimitError()
+  }
+
+  const stored = await tx.pushSubscription.upsert({
+    where: {
+      customerId_subscriptionFingerprint: {
+        customerId,
+        subscriptionFingerprint: prepared.subscriptionFingerprint,
+      },
+    },
+    create: {
+      businessId,
+      customerId,
+      authorizedUserId: authorization.kind === 'user' ? authorization.userId : null,
+      endpointHash: prepared.endpointHash,
+      subscriptionFingerprint: prepared.subscriptionFingerprint,
+      subscriptionEncrypted: prepared.subscriptionEncrypted,
+    },
+    update: {
+      businessId,
+      ...(authorization.kind === 'user' ? { authorizedUserId: authorization.userId } : {}),
+      subscriptionEncrypted: prepared.subscriptionEncrypted,
+      failureCount: 0,
+      lastFailureAt: null,
+      revokedAt: null,
+    },
+    select: { id: true },
+  })
+
+  if (authorization.kind === 'guest') {
+    await tx.pushSubscriptionBooking.upsert({
+      where: {
+        subscriptionId_bookingId: {
+          subscriptionId: stored.id,
+          bookingId: authorization.bookingId,
+        },
+      },
+      create: { subscriptionId: stored.id, bookingId: authorization.bookingId },
+      update: {},
+    })
+  }
+
+  return { id: stored.id }
+}
+
+export async function storePushSubscription({
+  businessId,
+  customerId,
+  subscription,
+  authorization,
+}: {
+  businessId: string
+  customerId: string
+  subscription: unknown
+  authorization: PushSubscriptionAuthorization
+}): Promise<{ id: string }> {
+  const prepared = preparePushSubscription(subscription)
+
+  return prisma.$transaction(async (tx) => {
+    // Possession-based cleanup uses the same first lock, so once it returns no
+    // concurrent guest/account subscribe that began earlier can reauthorize
+    // this browser endpoint behind it.
+    await acquireAdvisoryXactLock(tx, endpointLockKey(prepared.endpointHash))
+    if (authorization.kind === 'user') {
+      await acquireAdvisoryXactLock(
+        tx,
+        authorizationLockKey(authorization.userId, prepared.endpointHash),
+      )
+    }
+    // Serializing one Customer keeps the five-device cap exact even when
+    // multiple browser tabs subscribe concurrently with different keys.
+    await acquireAdvisoryXactLock(tx, `push-subscription:${customerId}`)
+    // Evaluate the time boundary only after every subscription lock. A request
+    // that waited across the exact cutoff must not persist a stale entitlement.
+    const now = new Date()
+    return storePushSubscriptionInTx({
+      tx,
+      businessId,
+      customerId,
+      prepared,
+      authorization,
+      now,
+    })
+  })
+}
+
+export async function storeAuthenticatedPushSubscriptions({
+  userId,
+  subscription,
+  now,
+}: {
+  userId: string
+  subscription: unknown
+  now?: Date
+}): Promise<number> {
+  const prepared = preparePushSubscription(subscription)
+
+  return prisma.$transaction(async (tx) => {
+    await acquireAdvisoryXactLock(tx, endpointLockKey(prepared.endpointHash))
+    await acquireAdvisoryXactLock(tx, authorizationLockKey(userId, prepared.endpointHash))
+
+    // First resolve which Customer locks this request could need. The account
+    // authorization lock serializes the endpoint scope, while Customer locks
+    // keep each device cap exact across different endpoints.
+    const candidates = await findEligiblePushCustomers(tx, userId, now ?? new Date())
+    const orderedCandidates = [...candidates].sort((left, right) => (
+      left.id.localeCompare(right.id)
+    ))
+
+    for (const customer of orderedCandidates) {
+      await acquireAdvisoryXactLock(tx, `push-subscription:${customer.id}`)
+    }
+
+    // Eligibility is authoritative only after every required lock. Re-read at
+    // a fresh production time so a wait that crosses the exact cutoff cannot
+    // persist stale account scopes. If database state introduced a new target
+    // mid-flight, fail safely instead of writing it without its Customer lock.
+    const eligibilityNow = now ?? new Date()
+    const eligibleCustomers = await findEligiblePushCustomers(tx, userId, eligibilityNow)
+    const lockedCustomerIds = new Set(orderedCandidates.map(({ id }) => id))
+    if (eligibleCustomers.some(({ id }) => !lockedCustomerIds.has(id))) {
+      throw new Error('Push eligibility changed while acquiring locks')
+    }
+    const orderedCustomers = [...eligibleCustomers].sort((left, right) => (
+      left.id.localeCompare(right.id)
+    ))
+
+    let storedCount = 0
+    for (const customer of orderedCustomers) {
+      await storePushSubscriptionInTx({
+        tx,
+        businessId: customer.businessId,
+        customerId: customer.id,
+        prepared,
+        authorization: { kind: 'user', userId },
+        now: eligibilityNow,
+      })
+      storedCount += 1
+    }
+    return storedCount
+  })
+}
+
+export async function unsubscribePushSubscription({
+  endpoint,
+  scope,
+  now = new Date(),
+}: {
+  endpoint: string
+  scope: PushUnsubscribeScope
+  now?: Date
+}): Promise<number> {
+  const endpointHash = hashPushEndpoint(endpoint)
+
+  return prisma.$transaction(async (tx) => {
+    if (scope.kind === 'endpoint') {
+      await acquireAdvisoryXactLock(tx, endpointLockKey(endpointHash))
+      const subscriptions = await tx.pushSubscription.findMany({
+        where: { endpointHash },
+        select: { id: true, customerId: true },
+      })
+      const ids = subscriptions.map(({ id }) => id)
+      if (ids.length === 0) return 0
+
+      await tx.pushSubscriptionBooking.deleteMany({
+        where: { subscriptionId: { in: ids } },
+      })
+      const revoked = await tx.pushSubscription.updateMany({
+        where: { id: { in: ids } },
+        data: { authorizedUserId: null, revokedAt: now },
+      })
+      return revoked.count
+    }
+
+    if (scope.kind === 'guest') {
+      const { target } = scope
+      await acquireAdvisoryXactLock(tx, `push-subscription:${target.customerId}`)
+      const booking = await tx.booking.findFirst({
+        where: {
+          id: target.bookingId,
+          customerId: target.customerId,
+          businessId: target.businessId,
+        },
+        select: { id: true },
+      })
+      if (!booking) throw new Error('Push authorization no longer owns booking')
+
+      const subscriptions = await tx.pushSubscription.findMany({
+        where: {
+          endpointHash,
+          customerId: target.customerId,
+          businessId: target.businessId,
+          bookingEntitlements: { some: { bookingId: target.bookingId } },
+        },
+        select: { id: true, customerId: true },
+      })
+      const ids = subscriptions.map(({ id }) => id)
+      if (ids.length === 0) return 0
+
+      const removed = await tx.pushSubscriptionBooking.deleteMany({
+        where: { bookingId: target.bookingId, subscriptionId: { in: ids } },
+      })
+      await tx.pushSubscription.updateMany({
+        where: {
+          id: { in: ids },
+          authorizedUserId: null,
+          revokedAt: null,
+          bookingEntitlements: { none: {} },
+        },
+        data: { revokedAt: now },
+      })
+      return removed.count
+    }
+
+    await acquireAdvisoryXactLock(tx, authorizationLockKey(scope.userId, endpointHash))
+
+    const subscriptions = await tx.pushSubscription.findMany({
+      where: {
+        endpointHash,
+        authorizedUserId: scope.userId,
+      },
+      select: { id: true, customerId: true },
+    })
+    const ids = subscriptions.map(({ id }) => id)
+    if (ids.length === 0) return 0
+
+    const cleared = await tx.pushSubscription.updateMany({
+      where: {
+        id: { in: ids },
+        authorizedUserId: scope.userId,
+      },
+      data: { authorizedUserId: null },
+    })
+    await tx.pushSubscription.updateMany({
+      where: {
+        id: { in: ids },
+        authorizedUserId: null,
+        revokedAt: null,
+        bookingEntitlements: { none: {} },
+      },
+      data: { revokedAt: now },
+    })
+    return cleared.count
+  })
+}

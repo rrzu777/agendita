@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client'
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { requireTestDatabase } from './setup'
 import { normalizePhone } from '@/lib/customers/phone'
+import { cancellationPolicyRevision } from '@/lib/bookings/cancellation-policy-revision'
 
 requireTestDatabase()
 
@@ -14,6 +15,11 @@ requireTestDatabase()
 const BIZ = 'cal-biz-1'
 const OWNER_USER = 'cal-owner-1'
 const LOGGED_USER = 'test-user-1'
+const POLICY_REVISION = cancellationPolicyRevision({
+  businessId: BIZ,
+  cutoffHours: 24,
+  additionalPolicy: null,
+})
 
 // email_confirmed_at requerido: la vía 3 solo vincula con email de sesión VERIFICADO.
 let mockSessionUser: { id: string; email: string; email_confirmed_at: string | null } | null = null
@@ -142,6 +148,7 @@ describe('customer-account link (vía 3)', () => {
         customerEmail: 'logged-1@cal.test',
         startDateTime: futureDate(2, 15),
         acceptedTerms: true,
+        cancellationPolicyRevision: POLICY_REVISION,
       },
       BIZ,
     )
@@ -195,6 +202,7 @@ describe('customer-account link (vía 3)', () => {
         customerPhone: phone,
         startDateTime: futureDate(3, 15),
         acceptedTerms: true,
+        cancellationPolicyRevision: POLICY_REVISION,
       },
       BIZ,
     )
@@ -221,6 +229,7 @@ describe('customer-account link (vía 3)', () => {
         customerEmail: 'owner@cal.test',
         startDateTime: futureDate(4, 15),
         acceptedTerms: true,
+        cancellationPolicyRevision: POLICY_REVISION,
       },
       BIZ,
     )
@@ -250,6 +259,7 @@ describe('customer-account link (vía 3)', () => {
         customerEmail: 'amiga@cal.test',
         startDateTime: futureDate(5, 15),
         acceptedTerms: true,
+        cancellationPolicyRevision: POLICY_REVISION,
       },
       BIZ,
     )

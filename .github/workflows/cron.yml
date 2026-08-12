@@ -1,17 +1,15 @@
 name: Scheduled crons
 
 # Free-tier friendly scheduler: Vercel Hobby caps cron jobs at ~once/day, so we
-# drive the cron endpoints from GitHub Actions instead (free/unlimited on public
-# repos). The endpoints authenticate with Authorization: Bearer ${CRON_SECRET}.
-#
-# Setup: add a repository secret CRON_SECRET (Settings → Secrets and variables →
-# Actions) that matches the CRON_SECRET env var in Vercel. Optionally override the
-# base URL with a repository variable APP_BASE_URL.
-
+# drive the cron endpoints from GitHub Actions instead. The endpoints require
+# Authorization: Bearer ${CRON_SECRET}.
 on:
   schedule:
-    - cron: '0 * * * *' # hourly (GitHub may delay up to ~15 min under load)
-  workflow_dispatch: {} # allow manual runs from the Actions tab
+    - cron: '0 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
 
 concurrency:
   group: scheduled-crons
@@ -20,54 +18,51 @@ concurrency:
 jobs:
   run-crons:
     runs-on: ubuntu-latest
+    timeout-minutes: 6
     env:
       BASE_URL: ${{ vars.APP_BASE_URL || 'https://www.agendita.cl' }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Expire stale holds
-        id: expire-holds
-        if: always()
+        id: expire_holds
         continue-on-error: true
-        run: |
-          curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/expire-holds" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/expire-holds"
       - name: Send reminders
-        id: send-reminders
-        if: always()
+        id: send_reminders
         continue-on-error: true
-        run: |
-          curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/send-reminders" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/send-reminders"
       - name: Transfer reminders
-        id: transfer-reminders
-        if: always()
+        id: transfer_reminders
         continue-on-error: true
-        run: |
-          curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/transfer-reminders" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/transfer-reminders"
       - name: Loyalty automatic conditions
-        id: loyalty-automatic
-        if: always()
+        id: loyalty_automatic
         continue-on-error: true
-        run: |
-          curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/loyalty-automatic" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/loyalty-automatic"
       - name: Subscription billing
-        id: subscription-billing
-        if: always()
+        id: subscription_billing
         continue-on-error: true
-        run: |
-          curl -fsS --max-time 60 -X POST "$BASE_URL/api/cron/subscription-billing" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
-      - name: Report aggregate cron result
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: scripts/run-json-cron.sh "${BASE_URL%/}/api/cron/subscription-billing"
+      - name: Fail if any cron failed
         if: always()
         env:
-          EXPIRE_HOLDS_OUTCOME: ${{ steps.expire-holds.outcome }}
-          SEND_REMINDERS_OUTCOME: ${{ steps.send-reminders.outcome }}
-          TRANSFER_REMINDERS_OUTCOME: ${{ steps.transfer-reminders.outcome }}
-          LOYALTY_AUTOMATIC_OUTCOME: ${{ steps.loyalty-automatic.outcome }}
-          SUBSCRIPTION_BILLING_OUTCOME: ${{ steps.subscription-billing.outcome }}
+          EXPIRE_HOLDS_OUTCOME: ${{ steps.expire_holds.outcome }}
+          SEND_REMINDERS_OUTCOME: ${{ steps.send_reminders.outcome }}
+          TRANSFER_REMINDERS_OUTCOME: ${{ steps.transfer_reminders.outcome }}
+          LOYALTY_AUTOMATIC_OUTCOME: ${{ steps.loyalty_automatic.outcome }}
+          SUBSCRIPTION_BILLING_OUTCOME: ${{ steps.subscription_billing.outcome }}
         run: |
-          failed=0
           for outcome in \
             "$EXPIRE_HOLDS_OUTCOME" \
             "$SEND_REMINDERS_OUTCOME" \
@@ -76,7 +71,6 @@ jobs:
             "$SUBSCRIPTION_BILLING_OUTCOME"
           do
             if [ "$outcome" != "success" ]; then
-              failed=1
+              exit 1
             fi
           done
-          exit "$failed"

@@ -6,7 +6,7 @@ import {
   RATE_LIMITS,
   resetLimiter,
 } from '@/lib/rate-limit'
-import { MemoryRateLimiter } from '@/lib/rate-limit'
+import { MemoryRateLimiter, RedisRateLimiter } from '@/lib/rate-limit'
 
 describe('block list', () => {
   afterEach(() => {
@@ -85,9 +85,51 @@ describe('MemoryRateLimiter', () => {
     expect(differentIp.remaining).toBe(1)
   })
 
+  it('shares one target-global bucket across IPs and isolates unrelated targets', async () => {
+    await limiter.check('push-subscribe-target', 1, 60_000, {
+      ip: '10.0.0.1', keyMode: 'target', targetId: 'booking-1',
+    })
+
+    const sameTarget = await limiter.check('push-subscribe-target', 1, 60_000, {
+      ip: '10.0.0.2', keyMode: 'target', targetId: 'booking-1',
+    })
+    const otherTarget = await limiter.check('push-subscribe-target', 1, 60_000, {
+      ip: '10.0.0.1', keyMode: 'target', targetId: 'booking-2',
+    })
+
+    expect(sameTarget.success).toBe(false)
+    expect(otherTarget.success).toBe(true)
+  })
+
   it('clears store correctly', () => {
     limiter.clear()
     expect(() => limiter.clear()).not.toThrow()
+  })
+})
+
+describe('RedisRateLimiter target keys', () => {
+  it('sends only a hashed target and excludes both raw target and IP', async () => {
+    const rawTarget = 'guest:business-1:customer-1:booking-1'
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ result: [1, 9, 60] }), { status: 200 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      const limiter = new RedisRateLimiter('https://redis.example.test', 'token')
+      await limiter.check('push-subscribe-target', 10, 60_000, {
+        ip: '203.0.113.42',
+        keyMode: 'target',
+        targetId: rawTarget,
+      })
+
+      const requestBody = String(fetchMock.mock.calls[0]?.[1]?.body)
+      expect(requestBody).not.toContain(rawTarget)
+      expect(requestBody).not.toContain('203.0.113.42')
+      expect(requestBody).toMatch(/push-subscribe-target:t:[a-f0-9]{64}/)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 

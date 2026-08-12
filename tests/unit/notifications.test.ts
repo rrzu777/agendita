@@ -6,6 +6,7 @@ import { ServiceModality } from '@prisma/client'
 import {
   bookingConfirmationCustomerHtml,
   bookingConfirmationCustomerText,
+  bookingReceivedCustomerHtml,
   bookingReceivedCustomerText,
   manualHoldExpiredCustomerText,
   bankTransferExpiredCustomerText,
@@ -27,6 +28,7 @@ const sampleBookingData = {
   businessTimezone: 'America/Santiago',
   businessCurrency: 'CLP',
   businessCancellationPolicy: 'Cancela con 24h de anticipación.',
+  cancellationCutoffHours: 24,
   customerName: 'Maria',
   customerEmail: 'maria@example.com',
   customerPhone: '+56987654321',
@@ -119,6 +121,23 @@ describe('templates: bookingConfirmationCustomerHtml', () => {
     expect(html).toContain('Cancela con 24h de anticipación')
   })
 
+  it('muestra el warning contractual antes de la política adicional', () => {
+    const html = bookingConfirmationCustomerHtml(sampleBookingData)
+    const warning = 'Podés cancelar o reprogramar hasta 24 horas antes.'
+    expect(html).toContain(warning)
+    expect(html.indexOf(warning)).toBeLessThan(html.indexOf('Cancela con 24h de anticipación'))
+
+    const text = bookingConfirmationCustomerText(sampleBookingData)
+    expect(text).toContain(warning)
+    expect(text.indexOf(warning)).toBeLessThan(text.indexOf('Cancela con 24h de anticipación'))
+  })
+
+  it('omite el warning contractual con cutoff cero', () => {
+    const data = { ...sampleBookingData, cancellationCutoffHours: 0 }
+    expect(bookingConfirmationCustomerHtml(data)).not.toContain('el abono no se devuelve')
+    expect(bookingConfirmationCustomerText(data)).not.toContain('el abono no se devuelve')
+  })
+
   it('contains review link', () => {
     const html = bookingConfirmationCustomerHtml(sampleBookingData)
     expect(html).toContain('https://agendita.app/review/booking-1?token=abc')
@@ -142,7 +161,7 @@ describe('templates: bookingConfirmationCustomerHtml', () => {
       ...sampleBookingData,
       businessCancellationPolicy: null,
     })
-    expect(html).not.toContain('anticipación')
+    expect(html).not.toContain('Cancela con 24h de anticipación')
   })
 
   it('omits review link when undefined', () => {
@@ -180,6 +199,19 @@ describe('templates: bookingConfirmationCustomerText', () => {
     expect(text).toContain('Manicure semipermanente')
     expect(text).toContain('$25.000')
     expect(text).toContain('Saldo pendiente')
+  })
+})
+
+describe('templates: bookingReceivedCustomer cancellation warning', () => {
+  it('muestra el warning antes de la política adicional en html y texto', () => {
+    const warning = 'Podés cancelar o reprogramar hasta 24 horas antes.'
+    for (const output of [
+      bookingReceivedCustomerHtml(sampleBookingData),
+      bookingReceivedCustomerText(sampleBookingData),
+    ]) {
+      expect(output).toContain(warning)
+      expect(output.indexOf(warning)).toBeLessThan(output.indexOf('Cancela con 24h de anticipación'))
+    }
   })
 })
 

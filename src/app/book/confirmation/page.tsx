@@ -20,6 +20,11 @@ import { formatConfirmationDateTime } from '@/lib/bookings/format-confirmation-d
 import { whereRows } from '@/lib/services/modality'
 import { buildBookingHelpWhatsappUrl } from '@/lib/notifications/whatsapp'
 import { WhatsappHelpLine, WhereRowValue } from '@/components/booking/where-row-value'
+import { cancellationWarningText, resolveCancellationPolicy } from '@/lib/bookings/cancellation-policy'
+import { GuestPushLink } from '@/components/push/guest-push-link'
+import { AccountPushLink } from '@/components/push/account-push-link'
+import { getAppUrl } from '@/lib/business/urls'
+import { isPushBookingEligible } from '@/lib/push/eligibility'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
@@ -44,10 +49,13 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           currency: true,
           addressText: true,
           whatsapp: true,
+          selfServiceCutoffHours: true,
+          cancellationPolicy: true,
+          cancellationReminderEnabled: true,
         },
       },
       service: true,
-      customer: { select: { email: true } },
+      customer: { select: { email: true, userId: true } },
       payments: {
         where: { provider: { in: ['mercado_pago', 'manual'] } },
         select: { status: true, provider: true, providerPaymentId: true, amount: true, proofKey: true },
@@ -104,6 +112,18 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
   )
   const remainingBalance = booking.finalAmount - booking.depositPaid
   const currency = booking.business.currency || 'CLP'
+  const { cutoffHours, additionalPolicy } = resolveCancellationPolicy(booking, booking.business)
+  const cancellationWarning = (booking.depositRequired > 0 || booking.depositPaid > 0)
+    ? cancellationWarningText(cutoffHours)
+    : null
+  const pushEligible = isPushBookingEligible(booking, booking.business, now)
+  const pushMode = !pushEligible
+    ? null
+    : sessionUser === null
+      ? 'guest' as const
+      : booking.customer.userId === sessionUser.id
+        ? 'account' as const
+        : null
 
   // Las mismas filas que manda el mail de la reserva: es el momento en que la
   // clienta cierra la pestaña y necesita saber a dónde va.
@@ -231,6 +251,20 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
             <p className="mt-3 text-sm font-medium text-green-700">Comprobante adjuntado ✓</p>
           )}
         </div>
+
+        {cancellationWarning && (
+          <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-semibold">Importante sobre tu abono</p>
+            <p className="mt-1">{cancellationWarning}</p>
+          </div>
+        )}
+
+        {additionalPolicy && (
+          <div className="mb-8 rounded-xl border border-border/70 bg-muted/40 p-4 text-sm text-muted-foreground">
+            <p className="font-semibold text-primary">Condiciones adicionales</p>
+            <p className="mt-1 whitespace-pre-line">{additionalPolicy}</p>
+          </div>
+        )}
 
         <div className="studio-card mb-8 overflow-hidden">
           <div className="border-b border-border/50 bg-muted/30 px-5 py-4">
@@ -388,7 +422,13 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
 
         {/* El CTA de cuenta nunca compite con la acción de declarar transferencia. */}
         {!canDeclare && (
-          <AccountCta sessionActive={sessionUser !== null} customerEmail={customerEmail} className="mt-4" />
+          <>
+            {pushMode === 'account' && <AccountPushLink />}
+            {pushMode === 'guest' && (
+              <GuestPushLink bookingId={booking.id} canonicalOrigin={getAppUrl('')} className="mt-4" />
+            )}
+            <AccountCta sessionActive={sessionUser !== null} customerEmail={customerEmail} className="mt-4" />
+          </>
         )}
       </section>
     </main>

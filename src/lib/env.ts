@@ -4,6 +4,12 @@
  * Do NOT import this from client components - it reads secrets.
  */
 
+import {
+  isMatchingVapidKeyPair,
+  isValidVapidPrivateKey,
+  isValidVapidPublicKey,
+} from '@/lib/push/vapid-validation'
+
 export type EnvValidationError = {
   key: string
   message: string
@@ -443,6 +449,72 @@ export function validateEnv(): EnvValidationResult {
       key: 'R2_BUCKET',
       message: `Config de R2 incompleta (${r2Present.length}/${r2Keys.length}). La subida de comprobantes queda deshabilitada hasta setear: ${r2Keys.join(', ')}.`,
     })
+  }
+
+  // --- Web Push (optional, but atomic) ---
+  const vapidKeys = [
+    'NEXT_PUBLIC_VAPID_PUBLIC_KEY',
+    'VAPID_PRIVATE_KEY',
+    'VAPID_SUBJECT',
+  ]
+  const vapidPresent = vapidKeys.filter((key) => !!process.env[key])
+  if (vapidPresent.length > 0 && vapidPresent.length < vapidKeys.length) {
+    errors.push({
+      key: 'NEXT_PUBLIC_VAPID_PUBLIC_KEY',
+      message: `Web Push configuration is incomplete (${vapidPresent.length}/${vapidKeys.length}). Configure all VAPID variables together or remove all of them.`,
+    })
+  }
+  if (vapidPresent.length === vapidKeys.length) {
+    if (!process.env.ENCRYPTION_KEY) {
+      errors.push({
+        key: 'ENCRYPTION_KEY',
+        message: 'ENCRYPTION_KEY is required when Web Push is enabled',
+      })
+    }
+
+    const validVapidPublicKey = isValidVapidPublicKey(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY)
+    const validVapidPrivateKey = isValidVapidPrivateKey(process.env.VAPID_PRIVATE_KEY)
+    if (!validVapidPublicKey) {
+      errors.push({
+        key: 'NEXT_PUBLIC_VAPID_PUBLIC_KEY',
+        message: 'NEXT_PUBLIC_VAPID_PUBLIC_KEY must be a canonical base64url uncompressed P-256 public key',
+      })
+    }
+    if (!validVapidPrivateKey) {
+      errors.push({
+        key: 'VAPID_PRIVATE_KEY',
+        message: 'VAPID_PRIVATE_KEY must be a canonical base64url P-256 private key',
+      })
+    }
+    if (
+      validVapidPublicKey
+      && validVapidPrivateKey
+      && !isMatchingVapidKeyPair(
+        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+        process.env.VAPID_PRIVATE_KEY,
+      )
+    ) {
+      errors.push({
+        key: 'VAPID_PRIVATE_KEY',
+        message: 'NEXT_PUBLIC_VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must form a matching P-256 key pair',
+      })
+    }
+
+    const subject = process.env.VAPID_SUBJECT!
+    const validMailto = /^mailto:[^@\s]+@[^@\s]+$/i.test(subject)
+    let validHttps = false
+    try {
+      const subjectUrl = new URL(subject)
+      validHttps = subjectUrl.protocol === 'https:' && subjectUrl.hostname.length > 0
+    } catch {
+      validHttps = false
+    }
+    if (!validMailto && !validHttps) {
+      errors.push({
+        key: 'VAPID_SUBJECT',
+        message: 'VAPID_SUBJECT must be a mailto: address or an HTTPS URL',
+      })
+    }
   }
 
   // --- Upstash Redis — REQUIRED in production ---

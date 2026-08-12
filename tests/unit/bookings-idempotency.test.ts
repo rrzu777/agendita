@@ -3,6 +3,8 @@ import { ForbiddenError } from '../helpers/auth-errors'
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 import { UserError } from '@/lib/actions/result'
 import { DEFAULT_HOLD_MINUTES } from '@/lib/bookings/hold'
+import { TEST_VAPID_PRIVATE_KEY, TEST_VAPID_PUBLIC_KEY } from '../helpers/push-fixtures'
+import { cancellationPolicyRevision } from '@/lib/bookings/cancellation-policy-revision'
 
 // Mocks de dependencias server-only
 const mockPrisma = {
@@ -26,6 +28,7 @@ const mockPrisma = {
   promotionGrant: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
   promotionRedemption: { findFirst: vi.fn().mockResolvedValue(null) },
   $executeRaw: vi.fn().mockResolvedValue(0),
+  $queryRaw: vi.fn(),
   $transaction: vi.fn(),
 }
 
@@ -110,13 +113,18 @@ describe('createBooking idempotency', () => {
     serviceId: 'svc-1',
     customerName: 'Juan',
     customerPhone: '+56912345678',
-    startDateTime: new Date('2026-05-20T14:00:00Z'),
+    startDateTime: new Date('2027-05-20T14:00:00Z'),
     idempotencyKey: 'key-abc-123',
     acceptedTerms: true,
+    cancellationPolicyRevision: '27f95039ffe60460abd372196819b22618f17f170193f2612ebae2f0ed098a71',
   }
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv('ENCRYPTION_KEY', 'bookings-idempotency-push-grant-key')
+    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', TEST_VAPID_PUBLIC_KEY)
+    vi.stubEnv('VAPID_PRIVATE_KEY', TEST_VAPID_PRIVATE_KEY)
+    vi.stubEnv('VAPID_SUBJECT', 'mailto:soporte@agendita.cl')
     vi.stubEnv('RESEND_API_KEY', '')
     vi.stubEnv('FROM_EMAIL', '')
     mockResolveOnline.mockResolvedValue({ available: true, provider: 'mercado_pago', isMock: false })
@@ -127,6 +135,8 @@ describe('createBooking idempotency', () => {
       whatsapp: '+56987654321',
       addressText: 'Test Address',
       currency: 'CLP',
+      selfServiceCutoffHours: 24,
+      cancellationReminderEnabled: true,
       cancellationPolicy: null,
       slug: 'test-biz',
       subdomain: null,
@@ -143,6 +153,11 @@ describe('createBooking idempotency', () => {
     })
     mockPrisma.customer.findFirst.mockResolvedValue(null)
     mockPrisma.customer.create.mockResolvedValue({ id: 'cust-1' })
+    mockPrisma.$queryRaw.mockResolvedValue([{
+      selfServiceCutoffHours: 24,
+      cancellationPolicy: null,
+      cancellationReminderEnabled: true,
+    }])
   })
 
   // El reintento con la misma key (botón "Intentar de nuevo", re-envío tras
@@ -166,8 +181,13 @@ describe('createBooking idempotency', () => {
         startDateTime: EN_UNA_SEMANA,
         endDateTime: new Date(EN_UNA_SEMANA.getTime() + 60 * 60 * 1000),
         professionalId: null,
+        customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
         discountAmount: 0,
         holdExpiresAt: new Date(Date.now() - 60 * 60 * 1000), // vencido hace rato
+        cancellationCutoffHours: 24,
+        cancellationPolicySnapshot: null,
+        depositRequired: 5_000,
+        depositPaid: 0,
         ...over,
       }
     }
@@ -288,10 +308,12 @@ describe('createBooking idempotency', () => {
           totalPrice: 10000, depositRequired: 5000, depositPaid: 0,
           remainingBalance: 10000, finalAmount: 10000,
           paymentStatus: BookingPaymentStatus.unpaid,
+          businessId: 'biz-1', customerId: 'cust-1',
+          cancellationCutoffHours: 24, cancellationPolicySnapshot: null,
           startDateTime: EN_UNA_SEMANA,
           endDateTime: new Date(EN_UNA_SEMANA.getTime() + 60 * 60 * 1000),
           service: { name: 'Manicure' },
-          customer: { name: 'Juan', phone: '+56912345678', email: null },
+          customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
         })
 
         const result = await createBooking(input, 'biz-1')
@@ -310,9 +332,21 @@ describe('createBooking idempotency', () => {
 
       const result = await createBooking(input, 'biz-1')
 
-      expect(result).toEqual({ ok: true, data: confirmada })
+      expect(result).toMatchObject({ ok: true, data: confirmada })
+      expect(result.ok && result.data.pushGrant).toEqual(expect.any(String))
       expect(mockPrisma.$transaction).not.toHaveBeenCalled()
       expect(mockPrisma.booking.updateMany).not.toHaveBeenCalled()
+    })
+
+    it('returns the idempotent booking with push disabled when ENCRYPTION_KEY is absent', async () => {
+      vi.stubEnv('ENCRYPTION_KEY', '')
+      const confirmada = reservaGuardada({ status: BookingStatus.confirmed, holdExpiresAt: null })
+      mockPrisma.booking.findUnique.mockResolvedValue(confirmada)
+
+      const result = await createBooking(input, 'biz-1')
+
+      expect(result).toMatchObject({ ok: true, data: { ...confirmada, pushGrant: null } })
+      expect(mockPrisma.booking.create).not.toHaveBeenCalled()
     })
   })
 
@@ -330,10 +364,12 @@ describe('createBooking idempotency', () => {
       remainingBalance: 10000,
       finalAmount: 10000,
       paymentStatus: BookingPaymentStatus.unpaid,
-      startDateTime: new Date('2026-05-20T14:00:00Z'),
-      endDateTime: new Date('2026-05-20T15:00:00Z'),
+      cancellationCutoffHours: 24,
+      cancellationPolicySnapshot: null,
+      startDateTime: baseInput.startDateTime,
+      endDateTime: new Date(baseInput.startDateTime.getTime() + 60 * 60 * 1000),
       service: { name: 'Manicure' },
-      customer: { name: 'Juan', phone: '+56912345678', email: null },
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
     }
     mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
       const tx = {
@@ -345,7 +381,8 @@ describe('createBooking idempotency', () => {
 
     const result = await createBooking(baseInput, 'biz-1')
 
-    expect(result).toEqual({ ok: true, data: createdBooking })
+    expect(result).toMatchObject({ ok: true, data: createdBooking })
+    expect(result.ok && result.data.pushGrant).toEqual(expect.any(String))
     expect(mockPrisma.booking.findUnique).toHaveBeenCalledWith({
       where: {
         businessId_idempotencyKey: {
@@ -358,6 +395,149 @@ describe('createBooking idempotency', () => {
       // pidió "cualquiera" no podría decir quién la atiende.
       include: { service: true, customer: true, professional: { select: { name: true } } },
     })
+  })
+
+  it('rejects old consent when the locked policy revision already changed', async () => {
+    mockPrisma.booking.findUnique.mockResolvedValue(null)
+    mockPrisma.$queryRaw.mockResolvedValue([{
+      selfServiceCutoffHours: 12,
+      cancellationPolicy: 'Nueva política',
+      cancellationReminderEnabled: true,
+    }])
+    const createdBooking = {
+      id: 'booking-must-not-exist',
+      businessId: 'biz-1',
+      customerId: 'cust-1',
+      status: BookingStatus.pending_payment,
+      cancellationCutoffHours: 24,
+      cancellationPolicySnapshot: null,
+      depositRequired: 5_000,
+      depositPaid: 0,
+      startDateTime: baseInput.startDateTime,
+      service: { name: 'Manicure' },
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
+    }
+    const create = vi.fn().mockResolvedValue(createdBooking)
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({
+      ...mockPrisma,
+      booking: { ...mockPrisma.booking, create },
+    }))
+
+    const result = await createBooking(baseInput, 'biz-1')
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('política de cancelación se actualizó')
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('snapshots the exact policy values protected by the booking transaction lock', async () => {
+    mockPrisma.booking.findUnique.mockResolvedValue(null)
+    const lockedPolicy = {
+      selfServiceCutoffHours: 12,
+      cancellationPolicy: 'Avisar por WhatsApp',
+      cancellationReminderEnabled: true,
+    }
+    mockPrisma.$queryRaw.mockResolvedValue([lockedPolicy])
+    const create = vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: 'booking-locked-policy',
+      businessId: 'biz-1',
+      customerId: 'cust-1',
+      status: BookingStatus.pending_payment,
+      cancellationCutoffHours: data.cancellationCutoffHours,
+      cancellationPolicySnapshot: data.cancellationPolicySnapshot,
+      depositRequired: 5_000,
+      depositPaid: 0,
+      startDateTime: baseInput.startDateTime,
+      service: { name: 'Manicure' },
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
+    }))
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({
+      ...mockPrisma,
+      booking: { ...mockPrisma.booking, create },
+    }))
+    const revision = cancellationPolicyRevision({
+      businessId: 'biz-1',
+      cutoffHours: lockedPolicy.selfServiceCutoffHours,
+      additionalPolicy: lockedPolicy.cancellationPolicy,
+    })
+
+    const result = await createBooking({ ...baseInput, cancellationPolicyRevision: revision }, 'biz-1')
+
+    expect(result.ok).toBe(true)
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        cancellationCutoffHours: 12,
+        cancellationPolicySnapshot: 'Avisar por WhatsApp',
+      }),
+    }))
+  })
+
+  it('uses the locked reminder toggle instead of emitting a grant from the stale outer read', async () => {
+    mockPrisma.booking.findUnique.mockResolvedValue(null)
+    mockPrisma.$queryRaw.mockResolvedValue([{
+      selfServiceCutoffHours: 24,
+      cancellationPolicy: null,
+      cancellationReminderEnabled: false,
+    }])
+    const createdBooking = {
+      id: 'booking-toggle-disabled',
+      businessId: 'biz-1',
+      customerId: 'cust-1',
+      status: BookingStatus.pending_payment,
+      cancellationCutoffHours: 24,
+      cancellationPolicySnapshot: null,
+      depositRequired: 5_000,
+      depositPaid: 0,
+      startDateTime: baseInput.startDateTime,
+      service: { name: 'Manicure' },
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
+    }
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({
+      ...mockPrisma,
+      booking: { ...mockPrisma.booking, create: vi.fn().mockResolvedValue(createdBooking) },
+    }))
+
+    const result = await createBooking(baseInput, 'biz-1')
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { id: 'booking-toggle-disabled', pushMode: null, pushGrant: null },
+    })
+  })
+
+  it('does not fail a newly persisted booking when push signing is disabled', async () => {
+    vi.stubEnv('ENCRYPTION_KEY', '')
+    mockPrisma.booking.findUnique.mockResolvedValue(null)
+    const createdBooking = {
+      id: 'booking-no-push',
+      businessId: 'biz-1',
+      serviceId: 'svc-1',
+      customerId: 'cust-1',
+      status: BookingStatus.pending_payment,
+      totalPrice: 10000,
+      depositRequired: 5000,
+      depositPaid: 0,
+      remainingBalance: 10000,
+      finalAmount: 10000,
+      paymentStatus: BookingPaymentStatus.unpaid,
+      cancellationCutoffHours: 24,
+      cancellationPolicySnapshot: null,
+      startDateTime: baseInput.startDateTime,
+      endDateTime: new Date(baseInput.startDateTime.getTime() + 60 * 60 * 1000),
+      service: { name: 'Manicure' },
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
+    }
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
+      const tx = {
+        ...mockPrisma,
+        booking: { ...mockPrisma.booking, create: vi.fn().mockResolvedValue(createdBooking) },
+      }
+      return fn(tx)
+    })
+
+    const result = await createBooking(baseInput, 'biz-1')
+
+    expect(result).toMatchObject({ ok: true, data: { ...createdBooking, pushGrant: null } })
   })
 
   it('handles race condition by returning existing booking on P2002', async () => {
@@ -375,8 +555,13 @@ describe('createBooking idempotency', () => {
       startDateTime: enUnaSemana,
       endDateTime: new Date(enUnaSemana.getTime() + 60 * 60 * 1000),
       professionalId: null,
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
       discountAmount: 0,
       holdExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      cancellationCutoffHours: 24,
+      cancellationPolicySnapshot: null,
+      depositRequired: 5_000,
+      depositPaid: 0,
     }
     mockPrisma.booking.findUnique.mockResolvedValueOnce(existingBooking)
 
@@ -392,6 +577,38 @@ describe('createBooking idempotency', () => {
 
     expect(result.ok).toBe(true)
     expect(result.ok && result.data.id).toBe('booking-race')
+    expect(result.ok && result.data.pushMode).toBe('guest')
+    expect(result.ok && result.data.pushGrant).toEqual(expect.any(String))
+  })
+
+  it('recovers a P2002 booking with push disabled when ENCRYPTION_KEY is absent', async () => {
+    vi.stubEnv('ENCRYPTION_KEY', '')
+    const enUnaSemana = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    mockPrisma.booking.findUnique.mockResolvedValueOnce(null)
+    const existingBooking = {
+      id: 'booking-race-no-push',
+      businessId: 'biz-1',
+      serviceId: 'svc-1',
+      status: BookingStatus.pending_payment,
+      startDateTime: enUnaSemana,
+      endDateTime: new Date(enUnaSemana.getTime() + 60 * 60 * 1000),
+      professionalId: null,
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
+      discountAmount: 0,
+      holdExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    }
+    mockPrisma.booking.findUnique.mockResolvedValueOnce(existingBooking)
+    const p2002Error = Object.assign(new Error('Unique constraint failed'), {
+      code: 'P2002',
+      meta: { target: ['businessId_idempotencyKey'] },
+    })
+    mockPrisma.$transaction.mockRejectedValueOnce(p2002Error)
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(mockPrisma))
+    mockPrisma.booking.updateMany.mockResolvedValue({ count: 1 })
+
+    const result = await createBooking({ ...baseInput, startDateTime: enUnaSemana }, 'biz-1')
+
+    expect(result).toMatchObject({ ok: true, data: { id: 'booking-race-no-push', pushGrant: null } })
   })
 
   it('re-throws non-idempotency errors as safe generic message', async () => {
@@ -422,10 +639,12 @@ describe('createBooking idempotency', () => {
       remainingBalance: 10000,
       finalAmount: 10000,
       paymentStatus: BookingPaymentStatus.unpaid,
-      startDateTime: new Date('2026-05-20T14:00:00Z'),
-      endDateTime: new Date('2026-05-20T15:00:00Z'),
+      cancellationCutoffHours: 24,
+      cancellationPolicySnapshot: null,
+      startDateTime: baseInput.startDateTime,
+      endDateTime: new Date(baseInput.startDateTime.getTime() + 60 * 60 * 1000),
       service: { name: 'Manicure' },
-      customer: { name: 'Juan', phone: '+56912345678', email: null },
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
     }
     mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
       const tx = {
@@ -437,7 +656,8 @@ describe('createBooking idempotency', () => {
 
     const result = await createBooking(inputWithoutKey, 'biz-1')
 
-    expect(result).toEqual({ ok: true, data: createdBooking })
+    expect(result).toMatchObject({ ok: true, data: createdBooking })
+    expect(result.ok && result.data.pushGrant).toEqual(expect.any(String))
     expect(mockPrisma.booking.findUnique).not.toHaveBeenCalled()
   })
 })
@@ -445,6 +665,10 @@ describe('createBooking idempotency', () => {
 describe('createBooking acceptedTerms enforcement', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv('ENCRYPTION_KEY', 'bookings-terms-push-grant-key')
+    vi.stubEnv('NEXT_PUBLIC_VAPID_PUBLIC_KEY', TEST_VAPID_PUBLIC_KEY)
+    vi.stubEnv('VAPID_PRIVATE_KEY', TEST_VAPID_PRIVATE_KEY)
+    vi.stubEnv('VAPID_SUBJECT', 'mailto:soporte@agendita.cl')
     vi.stubEnv('RESEND_API_KEY', '')
     vi.stubEnv('FROM_EMAIL', '')
     mockResolveOnline.mockResolvedValue({ available: true, provider: 'mercado_pago', isMock: false })
@@ -455,6 +679,8 @@ describe('createBooking acceptedTerms enforcement', () => {
       whatsapp: '+56987654321',
       addressText: 'Test Address',
       currency: 'CLP',
+      selfServiceCutoffHours: 24,
+      cancellationReminderEnabled: true,
       cancellationPolicy: null,
       slug: 'test',
       subdomain: 'test',
@@ -476,7 +702,8 @@ describe('createBooking acceptedTerms enforcement', () => {
     serviceId: 'svc-1',
     customerName: 'Juan',
     customerPhone: '+56912345678',
-    startDateTime: new Date('2026-05-20T14:00:00Z'),
+    startDateTime: new Date('2027-05-20T14:00:00Z'),
+    cancellationPolicyRevision: '27f95039ffe60460abd372196819b22618f17f170193f2612ebae2f0ed098a71',
   }
 
   it('rejects when acceptedTerms is false', async () => {
@@ -504,10 +731,12 @@ describe('createBooking acceptedTerms enforcement', () => {
       remainingBalance: 10000,
       finalAmount: 10000,
       paymentStatus: BookingPaymentStatus.unpaid,
-      startDateTime: new Date('2026-05-20T14:00:00Z'),
-      endDateTime: new Date('2026-05-20T15:00:00Z'),
+      cancellationCutoffHours: 24,
+      cancellationPolicySnapshot: null,
+      startDateTime: baseInput.startDateTime,
+      endDateTime: new Date(baseInput.startDateTime.getTime() + 60 * 60 * 1000),
       service: { name: 'Manicure' },
-      customer: { name: 'Juan', phone: '+56912345678', email: null },
+      customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null },
     }
 
     mockPrisma.customer.findFirst.mockResolvedValue(null)
@@ -523,7 +752,8 @@ describe('createBooking acceptedTerms enforcement', () => {
 
     const result = await createBooking({ ...baseInput, acceptedTerms: true }, 'biz-1')
 
-    expect(result).toEqual({ ok: true, data: createdBooking })
+    expect(result).toMatchObject({ ok: true, data: createdBooking })
+    expect(result.ok && result.data.pushGrant).toEqual(expect.any(String))
   })
 
   // Coordinación manual: con abono requerido pero sin checkout online ni
@@ -531,12 +761,20 @@ describe('createBooking acceptedTerms enforcement', () => {
   // ventana configurada y la reserva queda marcada para el cron y el panel.
   describe('coordinación manual del abono', () => {
     function txConCreate() {
-      const createSpy = vi.fn().mockResolvedValue({
+      const createSpy = vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
         id: 'booking-manual',
+        businessId: 'biz-1',
+        customerId: 'cust-1',
+        startDateTime: data.startDateTime,
+        status: data.status,
+        cancellationCutoffHours: 24,
+        cancellationPolicySnapshot: null,
+        depositRequired: data.depositRequired,
+        depositPaid: data.depositPaid,
         service: { name: 'Manicure' },
-        customer: { name: 'Juan', phone: '+56912345678', email: null },
+        customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null, userId: null },
         professional: null,
-      })
+      }))
       mockPrisma.customer.findFirst.mockResolvedValue(null)
       mockPrisma.customer.create.mockResolvedValue({ id: 'cust-1' })
       mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
@@ -550,6 +788,7 @@ describe('createBooking acceptedTerms enforcement', () => {
       mockPrisma.business.findUnique.mockResolvedValue({
         id: 'biz-1', timezone: 'America/Santiago', name: 'Test Business',
         whatsapp: null, addressText: null, currency: 'CLP', cancellationPolicy: null,
+        selfServiceCutoffHours: 24,
         slug: 'test', subdomain: 'test', subscriptionStatus: 'trialing',
         manualHoldHours: 48,
       })

@@ -168,6 +168,8 @@ export async function rescheduleBookingInTx(
     data: {
       startDateTime: newStartDateTime,
       endDateTime,
+      cancellationReminderClaimedAt: null,
+      cancellationReminderSentAt: null,
       internalNotes: booking.internalNotes ? `${booking.internalNotes}\n${historyNote}` : historyNote,
       ...approvalPatch,
     },
