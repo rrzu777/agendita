@@ -81,6 +81,20 @@ describe('BookingRowActions', () => {
     expect(html).toContain('Cobrar')
   })
 
+  it('keeps contact controls out of the fixed-width primary action area', () => {
+    const html = renderToStaticMarkup(
+      <BookingRowActions
+        booking={rowBooking() as never}
+        businessCurrency="CLP"
+        contact={<span>Confirmación</span>}
+        now={NOW}
+      />,
+    )
+
+    expect(html).toContain('data-slot="table-actions-primary"')
+    expect(html).not.toMatch(/data-slot="table-actions-primary"[^]*Confirmación/)
+  })
+
   // OJO: buscar 'disabled' pelado no sirve — las clases de Tailwind traen
   // `disabled:opacity-50` en TODOS los botones. La propiedad real es `disabled=""`.
   it('con el plazo vivo el Cobrar sigue habilitado', () => {

@@ -109,7 +109,12 @@ export function BookingRowActions({
 
   return (
     <>
-      <TableActions primary={<>{contact}{primary}</>}>
+      <TableActions primary={primary}>
+        {contact && (
+          <div className="border-b border-border/70 p-1 pb-2">
+            {contact}
+          </div>
+        )}
         {isConfirmed && (
           <DropdownMenuItem asChild>
             <Link href={`/dashboard/bookings/${booking.id}/reschedule`}>
