@@ -22,7 +22,11 @@ export function TableActions({
   const hasMenu = items.length > 0
   return (
     <div className="flex items-center justify-end gap-1">
-      {primary}
+      {primary && (
+        <div data-slot="table-actions-primary" className="flex shrink-0 items-center justify-end gap-1">
+          {primary}
+        </div>
+      )}
       {hasMenu && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -31,7 +35,9 @@ export function TableActions({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align={align} className="w-auto min-w-44">
-            {items}
+            <div data-slot="table-actions-menu" className="space-y-1">
+              {items}
+            </div>
           </DropdownMenuContent>
         </DropdownMenu>
       )}

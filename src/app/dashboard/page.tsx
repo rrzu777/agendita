@@ -4,7 +4,7 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
-import { getBookingsSummary } from '@/server/actions/bookings'
+import { getDashboardBookingSummary } from '@/server/actions/bookings'
 import { getFinancialSummary } from '@/server/actions/ledger'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
@@ -36,8 +36,8 @@ export default async function DashboardPage() {
 
   const business = userData.business
   const v = getVocabulary(business.category)
-  const [bookings, summary, servicesCount, availabilityCount, connectedPaymentAccounts, pendingPackageTransfersCount] = await Promise.all([
-    getBookingsSummary(),
+  const [bookingSummary, summary, servicesCount, availabilityCount, connectedPaymentAccounts, pendingPackageTransfersCount] = await Promise.all([
+    getDashboardBookingSummary(new Date(), business.timezone || 'America/Santiago'),
     getFinancialSummary(),
     prisma.service.count({ where: { businessId: business.id, isActive: true } }),
     // Progreso de onboarding ("¿ya configuró su horario?"), del SALÓN. Sin el filtro,
@@ -47,28 +47,7 @@ export default async function DashboardPage() {
     prisma.packagePurchase.count({ where: pendingPackageTransferWhere(business.id) }),
   ])
 
-  // Calcular estadísticas reales
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const bookingsToday = bookings.filter(b => {
-    const bDate = new Date(b.startDateTime)
-    bDate.setHours(0, 0, 0, 0)
-    return bDate.getTime() === today.getTime()
-  })
-  const upcomingBookings = bookings.filter(b =>
-    new Date(b.startDateTime) >= today &&
-    b.status !== 'cancelled' &&
-    b.status !== 'no_show' &&
-    // Una expirada futura no es una "próxima cita": revivila desde Reservas.
-    b.status !== 'expired'
-  )
-  // Deriva de la relación filtrada `payments` (Task 1): no-vacía sólo cuando hay
-  // una transferencia declarada pendiente → sin segunda query. Cuenta abono
-  // (pending_payment) y saldo (confirmed|completed); cancelled/expired quedan
-  // afuera gratis porque ninguno de los dos predicados los admite.
-  const pendingTransfersCount = bookings.filter(
-    (b) => hasPendingDeclaredTransfer(b) || hasPendingBalanceTransfer(b),
-  ).length
+  const upcomingBookings = bookingSummary.upcoming
 
   const publicUrl = getBusinessPublicUrl(business)
   const bookingUrl = getBusinessPublicUrl(business, '/book')
@@ -76,23 +55,23 @@ export default async function DashboardPage() {
     business,
     servicesCount,
     availabilityCount,
-    bookingsCount: bookings.length,
+    bookingsCount: bookingSummary.total,
     hasConnectedPaymentAccount: connectedPaymentAccounts > 0,
     publicUrl,
     bookingUrl,
   })
   const stats = [
-    { label: 'Reservas hoy', value: bookingsToday.length.toString(), hint: '+ hoy', icon: CalendarCheck2 },
+    { label: 'Reservas hoy', value: bookingSummary.today.toString(), hint: '+ hoy', icon: CalendarCheck2 },
     { label: 'Ingresos mes', value: formatMoney(summary.incomeMonth, business.currency || 'CLP'), hint: 'Este mes', icon: CreditCard },
     { label: 'Próximas reservas', value: upcomingBookings.length.toString(), hint: 'Agenda', icon: TrendingUp },
-    { label: 'Total reservas', value: bookings.length.toString(), hint: 'Histórico', icon: Users },
+    { label: 'Total reservas', value: bookingSummary.total.toString(), hint: 'Histórico', icon: Users },
   ]
 
   return (
     <div>
       <DashboardHeader title={`Resumen de ${business.name}`} subtitle="Aquí tienes el pulso de tu estudio hoy." />
       <div className="p-5 md:p-10">
-        <PendingTransfersBanner count={pendingTransfersCount} />
+        <PendingTransfersBanner count={bookingSummary.pendingTransfers} />
         <PendingPackageTransfersBanner count={pendingPackageTransfersCount} />
         <Card className="studio-card mb-8 border-border/60 bg-card">
           <CardContent className="p-6">
@@ -178,7 +157,7 @@ export default async function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {upcomingBookings.slice(0, 5).map((booking) => (
+              {upcomingBookings.map((booking) => (
                 <article key={booking.id} className="studio-card flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
                   <div className="flex items-center gap-5">
                     <div className="flex size-16 flex-col items-center justify-center rounded-xl bg-accent text-primary">

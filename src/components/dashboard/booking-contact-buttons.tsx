@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { MessageCircle, Copy, Check, BellRing } from 'lucide-react'
 import {
   buildWhatsappUrl,
@@ -32,7 +33,7 @@ export interface BookingContactData extends BookingWhere {
 
 interface BookingContactButtonsProps {
   booking: BookingContactData
-  variant?: 'default' | 'compact'
+  variant?: 'default' | 'compact' | 'menu'
   showReminder?: boolean
 }
 
@@ -81,6 +82,38 @@ export function BookingContactButtons({ booking, variant = 'default', showRemind
     } catch {
       // clipboard API may not be available
     }
+  }
+
+  if (variant === 'menu') {
+    return (
+      <>
+        {hasPhone && (
+          <DropdownMenuItem asChild>
+            <a href={buildWhatsappUrl(phone, whatsappMessage)} target="_blank" rel="noopener noreferrer">
+              <MessageCircle className="size-4" /> Enviar confirmación
+            </a>
+          </DropdownMenuItem>
+        )}
+        {showReminder && hasPhone && (
+          <DropdownMenuItem asChild>
+            <a href={buildWhatsappUrl(phone, reminderMessage)} target="_blank" rel="noopener noreferrer">
+              <BellRing className="size-4" /> Enviar recordatorio
+            </a>
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onSelect={() => { void handleCopySummary() }} disabled={copied}>
+          {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+          {copied ? 'Copiado' : 'Copiar resumen'}
+        </DropdownMenuItem>
+        {showReminder && (
+          <DropdownMenuItem onSelect={() => { void handleCopyReminder() }} disabled={reminderCopied}>
+            {reminderCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
+            {reminderCopied ? 'Copiado' : 'Copiar recordatorio'}
+          </DropdownMenuItem>
+        )}
+        {!hasPhone && <DropdownMenuItem disabled>Sin teléfono registrado</DropdownMenuItem>}
+      </>
+    )
   }
 
   return (

@@ -626,6 +626,8 @@ model Customer {
   // cruda alcanza.
   @@unique([businessId, phone])
   @@index([businessId])
+  // Cursor estable de la tabla de clientes.
+  @@index([businessId, createdAt, id])
   @@index([userId])
 }
 
@@ -718,6 +720,9 @@ model Booking {
   // Agenda por rango de fechas sin filtro de status (getBookingsInRange):
   // el índice de arriba arranca por status, así que no sirve para esta query.
   @@index([businessId, startDateTime])
+  // Paginación estable del historial y de la cola de transferencias. El id
+  // desempata fechas idénticas sin que Postgres tenga que ordenar el resultado.
+  @@index([businessId, startDateTime, id])
   // Historial de la clienta (getCustomerDetail) + performance del cascade delete.
   @@index([customerId])
   // Sweep cross-business de holds vencidos (cron expire-holds + transfer-reminders):
@@ -903,6 +908,8 @@ model LedgerEntry {
   // tener varias LedgerEntries sin paymentId (casos manuales u otros).
   @@unique([paymentId])
   @@index([businessId, occurredAt])
+  // Cursor de Pagos: mismo orden que la UI (`occurredAt`, `id`).
+  @@index([businessId, occurredAt, id])
   @@index([bookingId])
   @@index([packagePurchaseId])
 }

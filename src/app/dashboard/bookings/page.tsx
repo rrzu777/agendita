@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
-import { getBookings } from '@/server/actions/bookings'
+import { getBookingListStats, getBookingsPage, getPendingBookingTransfersPage } from '@/server/actions/bookings'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { getVocabulary } from '@/lib/vocabulary'
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,7 @@ import { BookingRowActions } from '@/components/dashboard/booking-row-actions'
 import { ReviveBookingButton } from '@/components/dashboard/revive-booking-dialog'
 import { getReviveReopenState } from '@/components/dashboard/revive-utils'
 import { PendingTransfersSection, type PendingTransferItem } from '@/components/dashboard/pending-transfers-section'
+import { DashboardPagination, getSingleSearchParam } from '@/components/dashboard/dashboard-pagination'
 import {
   BT_BALANCE_PREFIX,
   hasPendingBalanceTransfer,
@@ -193,7 +194,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
       </div>
 
       {booking.status === 'confirmed' && (
-        <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
+        <div className="mt-4 grid grid-cols-2 gap-2 border-t border-border/50 pt-4">
           <form action={async () => {
             'use server'
             // Sin UI de error en esta card (vista móvil): si falla, la reserva
@@ -202,7 +203,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
             // BookingRowActions (tabla de escritorio).
             const res = await updateBookingStatus(booking.id, 'completed')
             if (!res.ok) return
-          }} className="flex-1">
+          }}>
             <Button type="submit" variant="outline" className="w-full h-10 text-sm font-semibold">
               Completar
             </Button>
@@ -211,13 +212,13 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
               y getBookings() no está paginado; sin esto, cada fila visible haría
               un prefetch de su ruta de reprogramar (O(reservas)). Reprogramar es
               acción poco frecuente: fetch on-click alcanza. */}
-          <Link href={`/dashboard/bookings/${booking.id}/reschedule`} prefetch={false} className="flex-1">
+          <Link href={`/dashboard/bookings/${booking.id}/reschedule`} prefetch={false}>
             <Button type="button" variant="outline" className="w-full h-10 text-sm font-semibold">
               <RefreshCw className="mr-1 size-3" />
               Reprogramar
             </Button>
           </Link>
-          <div className="flex-1">
+          <div>
             <CancelBookingButton bookingId={booking.id} size="default" />
           </div>
           {canRegisterPayment && (
@@ -226,8 +227,9 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
               now={now}
               businessCurrency={businessCurrency}
               defaultBookingId={booking.id}
+              triggerLabel="Cobrar"
               triggerVariant="outline"
-              triggerClassName="flex-1 h-10 text-sm font-semibold"
+              triggerClassName="h-10 w-full min-w-0 text-sm font-semibold"
             />
           )}
         </div>
@@ -264,8 +266,9 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
                 now={now}
                 businessCurrency={businessCurrency}
                 defaultBookingId={booking.id}
+                triggerLabel="Cobrar"
                 triggerVariant="outline"
-                triggerClassName="flex-1 h-10 text-sm font-semibold"
+                triggerClassName="h-10 w-full min-w-0 text-sm font-semibold"
               />
             )}
             <CancelBookingButton bookingId={booking.id} size="default" />
@@ -281,8 +284,9 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
             now={now}
             businessCurrency={businessCurrency}
             defaultBookingId={booking.id}
+            triggerLabel="Cobrar"
             triggerVariant="outline"
-            triggerClassName="flex-1 h-10 text-sm font-semibold"
+            triggerClassName="h-10 w-full min-w-0 text-sm font-semibold"
           />
         </div>
       )}
@@ -303,7 +307,11 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
   )
 }
 
-export default async function BookingsPage() {
+export default async function BookingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cursor?: string | string[]; transferCursor?: string | string[] }>
+}) {
   const userData = await getCurrentUserWithBusiness()
   const vocabulary = getVocabulary(userData?.business?.category ?? 'other')
 
@@ -315,12 +323,20 @@ export default async function BookingsPage() {
     redirect('/recover-business')
   }
 
-  const bookings = await getBookings()
+  const params = await searchParams
+  const cursor = getSingleSearchParam(params.cursor)
+  const transferCursor = getSingleSearchParam(params.transferCursor)
   // Un solo reloj para toda la página: el badge de la tabla, el de la tarjeta
   // móvil y el contador de arriba derivan el mismo "plazo vencido", y con un
   // `new Date()` por llamada una reserva que vence entre medio los deja
   // discrepando entre sí.
   const now = new Date()
+  const [bookingPage, stats, transferPage] = await Promise.all([
+    getBookingsPage({ cursor }),
+    getBookingListStats(now),
+    getPendingBookingTransfersPage({ cursor: transferCursor }),
+  ])
+  const bookings = bookingPage.items
   const businessCurrency = userData.business.currency || 'CLP'
   const businessTimezone = userData.business.timezone || 'America/Santiago'
   const businessAddress = userData.business.addressText || null
@@ -329,25 +345,13 @@ export default async function BookingsPage() {
     ? !!(await getBankTransferInfo(userData.business.id))
     : false
 
-  const confirmedCount = bookings.filter(b => b.status === 'confirmed').length
-  // Por status MOSTRADO, igual que los badges de abajo: si no, la tarjeta dice
-  // "3 pendientes de pago" y la tabla muestra dos, porque a la tercera ya se le
-  // venció el plazo. Con la precedencia incluida (displayedBookingStatus, no
-  // effectiveBookingStatus): dos filas con el badge "Transferencia por
-  // verificar" tienen que contar igual, y con el crudo la del plazo vencido
-  // se caía del conteo mientras la otra sumaba.
-  const pendingCount = bookings.filter(b => displayedBookingStatus(b, now) === 'pending_payment').length
-  // Solicitudes esperando respuesta. La tarjeta sólo aparece si hay alguna: un
-  // negocio sin confirmación manual nunca ve un contador que siempre marca 0.
-  // Va por el status CRUDO a propósito: la dueña puede aceptar una solicitud con
-  // el plazo vencido, así que esconderle la tarjeta le sacaría el punto de
-  // entrada a algo que todavía puede resolver.
-  const requestCount = bookings.filter(b => b.status === 'pending_confirmation').length
+  const confirmedCount = stats.confirmed
+  const pendingCount = stats.pendingPayment
+  const requestCount = stats.pendingConfirmation
 
   // Race orphans (spec §5): una reserva cancelada/expirada puede haber quedado
   // con un Payment pending sin barrer; no la mostramos como "por verificar".
-  const pendingTransfers: PendingTransferItem[] = bookings
-    .filter((b) => !['cancelled', 'expired'].includes(b.status))
+  const pendingTransfers: PendingTransferItem[] = transferPage.items
     .flatMap((b) =>
       b.payments
         .filter(
@@ -385,7 +389,7 @@ export default async function BookingsPage() {
         <div className={`grid gap-4 ${requestCount > 0 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}`}>
           <div className="studio-card p-4">
             <p className="studio-eyebrow">Total</p>
-            <p className="mt-1 text-3xl font-semibold text-primary">{bookings.length}</p>
+            <p className="mt-1 text-3xl font-semibold text-primary">{stats.total}</p>
           </div>
           {requestCount > 0 && (
             <div className="studio-card p-4">
@@ -409,9 +413,23 @@ export default async function BookingsPage() {
           businessTimezone={businessTimezone}
           now={now}
         />
+        <DashboardPagination
+          nextCursor={transferPage.nextCursor}
+          label="Ver 50 transferencias más"
+          searchParam="transferCursor"
+          preserve={{ cursor }}
+        />
 
-        {bookings.length === 0 ? (
+        {stats.total === 0 ? (
           <EmptyState />
+        ) : bookings.length === 0 ? (
+          <div className="studio-card p-8 text-center">
+            <h3 className="text-lg font-semibold text-primary">Esta página ya no está disponible</h3>
+            <p className="mt-2 text-sm text-muted-foreground">Volvé al inicio de Reservas para cargar el historial actual.</p>
+            <Button className="mt-5" variant="outline" asChild>
+              <Link href="/dashboard/bookings">Ir al inicio</Link>
+            </Button>
+          </div>
         ) : (
           <>
             <div className="hidden lg:block studio-card overflow-hidden">
@@ -480,9 +498,9 @@ export default async function BookingsPage() {
                           now={now}
                           businessCurrency={businessCurrency}
                           transferEnabled={transferEnabled}
-                          contact={
+                          contactMenu={
                             <BookingContactButtons
-                              variant="compact"
+                              variant="menu"
                               booking={{
                                 bookingNumber: booking.bookingNumber,
                                 customerName: booking.customer?.name || '',
@@ -495,6 +513,28 @@ export default async function BookingsPage() {
                                 totalPrice: booking.totalPrice,
                                 depositPaid: booking.depositPaid,
                                 remainingBalance: booking.remainingBalance,
+                                modality: booking.modality,
+                                serviceAddress: booking.serviceAddress,
+                                meetingUrl: booking.meetingUrl,
+                                businessAddress,
+                              }}
+                            />
+                          }
+                          contactInline={
+                            <BookingContactButtons
+                              variant="compact"
+                              booking={{
+                                bookingNumber: booking.bookingNumber,
+                                customerName: booking.customer?.name || '',
+                                customerPhone: booking.customer?.phone ?? null,
+                                serviceName: booking.service?.name || '',
+                                professionalName: booking.professional?.name ?? null,
+                                startDateTime: booking.startDateTime.toISOString(),
+                                businessTimezone,
+                                businessCurrency,
+                                totalPrice: booking.totalPrice ?? 0,
+                                depositPaid: booking.depositPaid,
+                                remainingBalance: booking.remainingBalance ?? 0,
                                 modality: booking.modality,
                                 serviceAddress: booking.serviceAddress,
                                 meetingUrl: booking.meetingUrl,
@@ -523,6 +563,11 @@ export default async function BookingsPage() {
                 />
               ))}
             </div>
+            <DashboardPagination
+              nextCursor={bookingPage.nextCursor}
+              label="Ver 50 reservas más"
+              preserve={{ transferCursor }}
+            />
           </>
         )}
       </div>

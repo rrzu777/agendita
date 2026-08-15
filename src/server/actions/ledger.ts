@@ -2,7 +2,7 @@
 
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import type { LedgerEntry } from '@prisma/client'
+import type { LedgerEntry, Prisma } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
@@ -21,16 +21,62 @@ const createLedgerEntrySchema = z.object({
   occurredAt: z.date(),
 })
 
+const LEDGER_LIST_INCLUDE = {
+  booking: true,
+  payment: true,
+  packagePurchase: { include: { product: { select: { name: true } }, customer: { select: { name: true } } } },
+} satisfies Prisma.LedgerEntryInclude
+
+export type LedgerListItem = Prisma.LedgerEntryGetPayload<{ include: typeof LEDGER_LIST_INCLUDE }>
+
+export type LedgerPage = { items: LedgerListItem[]; nextCursor: string | null }
+
+const MAX_LEDGER_PAGE_SIZE = 100
+const DEFAULT_LEDGER_PAGE_SIZE = 50
+
+function ledgerPageSize(limit: number | undefined): number {
+  if (!Number.isFinite(limit)) return DEFAULT_LEDGER_PAGE_SIZE
+  return Math.min(Math.max(Math.floor(limit ?? DEFAULT_LEDGER_PAGE_SIZE), 1), MAX_LEDGER_PAGE_SIZE)
+}
+
+export async function getLedgerEntriesPage({
+  cursor,
+  limit,
+}: {
+  cursor?: string
+  limit?: number
+} = {}): Promise<LedgerPage> {
+  const { businessId } = await requireBusiness()
+  const take = ledgerPageSize(limit)
+
+  if (cursor) {
+    const ownedCursor = await prisma.ledgerEntry.findFirst({
+      where: { id: cursor, businessId },
+      select: { id: true },
+    })
+    if (!ownedCursor) return { items: [], nextCursor: null }
+  }
+
+  const rows = await prisma.ledgerEntry.findMany({
+    where: { businessId },
+    orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    take: take + 1,
+    include: LEDGER_LIST_INCLUDE,
+  })
+  const hasNextPage = rows.length > take
+  const items = hasNextPage ? rows.slice(0, take) : rows
+  return { items, nextCursor: hasNextPage ? items.at(-1)?.id ?? null : null }
+}
+
+// Compatibilidad para consumidores server-side que pidan expresamente todo el
+// libro. La ruta de Pagos usa getLedgerEntriesPage.
 export async function getLedgerEntries() {
   const { businessId } = await requireBusiness()
   return prisma.ledgerEntry.findMany({
     where: { businessId },
-    orderBy: { occurredAt: 'desc' },
-    include: {
-      booking: true,
-      payment: true,
-      packagePurchase: { include: { product: { select: { name: true } }, customer: { select: { name: true } } } },
-    },
+    orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+    include: LEDGER_LIST_INCLUDE,
   })
 }
 

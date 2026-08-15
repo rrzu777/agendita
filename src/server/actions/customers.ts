@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
 import { action, UserError } from '@/lib/actions/result'
 import { checkRateLimit } from '@/lib/rate-limit'
-import { PaymentStatus, BookingStatus } from '@prisma/client'
+import { PaymentStatus, BookingStatus, type Prisma } from '@prisma/client'
 import { updateCustomerSchema, updateCustomerNotesSchema } from '@/lib/customers/schema'
 import { normalizePhone } from '@/lib/customers/phone'
 import { setMarketingOptOut } from '@/lib/campaigns/optout'
@@ -27,44 +27,43 @@ export type CustomerListItem = {
   createdAt: Date
 }
 
-export async function getCustomers(): Promise<CustomerListItem[]> {
-  const { businessId } = await requireBusiness()
+export type CustomerPage = {
+  items: CustomerListItem[]
+  nextCursor: string | null
+}
 
-  const customers = await prisma.customer.findMany({
-    where: { businessId },
-    select: {
-      id: true,
-      name: true,
-      phone: true,
-      email: true,
-      notes: true,
-      birthDate: true,
-      marketingOptOutAt: true,
-      createdAt: true,
-    },
-    take: 500,
-  })
+export type CustomerListStats = {
+  total: number
+  withBookings: number
+  withPendingBalance: number
+}
 
+const CUSTOMER_LIST_SELECT = {
+  id: true,
+  name: true,
+  phone: true,
+  email: true,
+  notes: true,
+  birthDate: true,
+  marketingOptOutAt: true,
+  createdAt: true,
+} satisfies Prisma.CustomerSelect
+
+type CustomerListBase = Prisma.CustomerGetPayload<{ select: typeof CUSTOMER_LIST_SELECT }>
+
+async function enrichCustomerListItems(businessId: string, customers: CustomerListBase[]): Promise<CustomerListItem[]> {
   if (customers.length === 0) return []
-
-  const customerIds = customers.map((c) => c.id)
-
+  const customerIds = customers.map((customer) => customer.id)
   const [paymentAggregates, bookingStats, pendingBalanceAggregates] = await Promise.all([
     prisma.payment.groupBy({
       by: ['customerId'],
-      where: {
-        customerId: { in: customerIds },
-        businessId,
-        status: PaymentStatus.approved,
-        paymentType: { not: 'refund' },
-      },
+      where: { customerId: { in: customerIds }, businessId, status: PaymentStatus.approved, paymentType: { not: 'refund' } },
       _sum: { amount: true },
     }),
     prisma.booking.groupBy({
       by: ['customerId'],
       where: {
-        customerId: { in: customerIds },
-        businessId,
+        customerId: { in: customerIds }, businessId,
         status: { notIn: [BookingStatus.cancelled, BookingStatus.no_show, BookingStatus.expired] },
       },
       _count: { id: true },
@@ -73,49 +72,45 @@ export async function getCustomers(): Promise<CustomerListItem[]> {
     prisma.booking.groupBy({
       by: ['customerId'],
       where: {
-        customerId: { in: customerIds },
-        businessId,
-        remainingBalance: { gt: 0 },
+        customerId: { in: customerIds }, businessId, remainingBalance: { gt: 0 },
         status: { notIn: [BookingStatus.cancelled, BookingStatus.no_show, BookingStatus.expired] },
       },
       _sum: { remainingBalance: true },
     }),
   ])
+  const paymentByCustomer = new Map(paymentAggregates.map((payment) => [payment.customerId, payment._sum.amount ?? 0]))
+  const bookingStatsByCustomer = new Map(bookingStats.map((booking) => [booking.customerId, booking]))
+  const pendingBalanceByCustomer = new Map(pendingBalanceAggregates.map((booking) => [booking.customerId, booking._sum.remainingBalance ?? 0]))
 
-  const paymentByCustomer = new Map(
-    paymentAggregates.map((p) => [p.customerId, p._sum.amount ?? 0])
-  )
-
-  const bookingStatsByCustomer = new Map(
-    bookingStats.map((b) => [b.customerId, b])
-  )
-
-  const pendingBalanceByCustomer = new Map(
-    pendingBalanceAggregates.map((b) => [b.customerId, b._sum.remainingBalance ?? 0])
-  )
-
-  const merged = customers.map((c) => {
-    const bookingStat = bookingStatsByCustomer.get(c.id)
-    const bookingCount = bookingStat?._count.id ?? 0
-    const lastBookingAt = bookingStat?._max.startDateTime ?? null
-    const pendingBalance = pendingBalanceByCustomer.get(c.id) ?? 0
-    const totalPaidApproved = paymentByCustomer.get(c.id) ?? 0
-
+  return customers.map((customer) => {
+    const bookingStat = bookingStatsByCustomer.get(customer.id)
     return {
-      id: c.id,
-      name: c.name,
-      phone: c.phone,
-      email: c.email,
-      notes: c.notes,
-      birthDate: c.birthDate,
-      marketingOptOut: c.marketingOptOutAt != null,
-      bookingCount,
-      lastBookingAt,
-      totalPaidApproved,
-      pendingBalance,
-      createdAt: c.createdAt,
+      id: customer.id,
+      name: customer.name,
+      phone: customer.phone,
+      email: customer.email,
+      notes: customer.notes,
+      birthDate: customer.birthDate,
+      marketingOptOut: customer.marketingOptOutAt != null,
+      bookingCount: bookingStat?._count.id ?? 0,
+      lastBookingAt: bookingStat?._max.startDateTime ?? null,
+      totalPaidApproved: paymentByCustomer.get(customer.id) ?? 0,
+      pendingBalance: pendingBalanceByCustomer.get(customer.id) ?? 0,
+      createdAt: customer.createdAt,
     }
   })
+}
+
+export async function getCustomers(): Promise<CustomerListItem[]> {
+  const { businessId } = await requireBusiness()
+
+  const customers = await prisma.customer.findMany({
+    where: { businessId },
+    select: CUSTOMER_LIST_SELECT,
+    take: 500,
+  })
+
+  const merged = await enrichCustomerListItems(businessId, customers)
 
   merged.sort((a, b) => {
     if (a.lastBookingAt && b.lastBookingAt) {
@@ -127,6 +122,50 @@ export async function getCustomers(): Promise<CustomerListItem[]> {
   })
 
   return merged
+}
+
+/** La tabla general carga una página acotada; las fichas individuales siguen
+ * usando su historial completo. El cursor se valida en el tenant antes de usarlo. */
+export async function getCustomersPage({ cursor, limit = 50 }: { cursor?: string; limit?: number } = {}): Promise<CustomerPage> {
+  const { businessId } = await requireBusiness()
+  const take = Math.min(Math.max(Math.floor(limit), 1), 100)
+  if (cursor) {
+    const ownedCursor = await prisma.customer.findFirst({
+      where: { id: cursor, businessId },
+      select: { id: true },
+    })
+    if (!ownedCursor) return { items: [], nextCursor: null }
+  }
+  const rows = await prisma.customer.findMany({
+    where: { businessId },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    take: take + 1,
+    select: CUSTOMER_LIST_SELECT,
+  })
+  const visible = rows.length > take ? rows.slice(0, take) : rows
+  return {
+    items: await enrichCustomerListItems(businessId, visible),
+    nextCursor: rows.length > take ? visible.at(-1)?.id ?? null : null,
+  }
+}
+
+export async function getCustomerListStats(): Promise<CustomerListStats> {
+  const { businessId } = await requireBusiness()
+  const activeStatuses = [BookingStatus.cancelled, BookingStatus.no_show, BookingStatus.expired]
+  const [total, withBookings, withPendingBalance] = await Promise.all([
+    prisma.customer.count({ where: { businessId } }),
+    prisma.customer.count({
+      where: { businessId, bookings: { some: { businessId, status: { notIn: activeStatuses } } } },
+    }),
+    prisma.customer.count({
+      where: {
+        businessId,
+        bookings: { some: { businessId, remainingBalance: { gt: 0 }, status: { notIn: activeStatuses } } },
+      },
+    }),
+  ])
+  return { total, withBookings, withPendingBalance }
 }
 
 export type CustomerDetail = {

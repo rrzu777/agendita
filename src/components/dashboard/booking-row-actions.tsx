@@ -22,13 +22,17 @@ type RowBooking = ManualPaymentBooking & {
 export function BookingRowActions({
   booking,
   businessCurrency,
-  contact,
+  contactMenu,
+  contactInline,
   transferEnabled,
   now,
 }: {
   booking: RowBooking
   businessCurrency: string
-  contact?: React.ReactNode
+  /** Ítems Radix para la fila accionable: no usar fuera de TableActions. */
+  contactMenu?: React.ReactNode
+  /** Controles compactos para estados sin menú (expirada/terminal). */
+  contactInline?: React.ReactNode
   transferEnabled?: boolean
   /** El reloj del SERVIDOR de este render. Requerido: este componente es
    *  cliente y sale en el HTML de la tabla, así que con un reloj propio el
@@ -56,7 +60,7 @@ export function BookingRowActions({
     const { canReopen, reason } = getReviveReopenState(booking, !!transferEnabled, now)
     return (
       <div className="flex items-center justify-end gap-2">
-        {contact}
+        {contactInline}
         <ReviveBookingButton
           bookingId={booking.id}
           serviceName={booking.service?.name || 'Servicio'}
@@ -71,7 +75,7 @@ export function BookingRowActions({
   }
 
   if (!isActionable && !isCompletedWithBalance) {
-    return contact ? <div className="flex justify-end">{contact}</div> : null
+    return contactInline ? <div className="flex justify-end">{contactInline}</div> : null
   }
 
   const primary = isRequest ? (
@@ -109,7 +113,8 @@ export function BookingRowActions({
 
   return (
     <>
-      <TableActions primary={<>{contact}{primary}</>}>
+      <TableActions primary={primary}>
+        {contactMenu}
         {isConfirmed && (
           <DropdownMenuItem asChild>
             <Link href={`/dashboard/bookings/${booking.id}/reschedule`}>

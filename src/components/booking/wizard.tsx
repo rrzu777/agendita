@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { StepService } from './step-service'
 import { StepProfessional } from './step-professional'
 import { StepDate } from './step-date'
 import { StepTime } from './step-time'
 import { StepCustomer } from './step-customer'
-import { StepPayment, type BookingCreated } from './step-payment'
-import { StepConfirmation, type ConfirmationBusiness } from './step-confirmation'
+import type { BookingCreated } from './step-payment'
+import type { ConfirmationBusiness } from './step-confirmation'
 import type { Service, ServiceModality } from '@prisma/client'
 import type { FunnelSession } from '@/lib/customers/session-prefill'
 import type { ProfessionalWords } from '@/lib/vocabulary'
@@ -16,6 +17,15 @@ import { NO_PROFESSIONAL, professionalChoice, professionalFields, samePick, type
 import { entryStepAfterRestore, stepAfter, stepBefore, stepsFor, type StepKey, type WizardStep } from '@/lib/bookings/wizard-steps'
 import { restoreWizardState, serializeWizardState, wizardStorageKey } from '@/lib/bookings/wizard-storage'
 import { getAppUrl } from '@/lib/business/urls'
+
+const StepPayment = dynamic(
+  () => import('./step-payment').then((module) => module.StepPayment),
+  { loading: () => <p className="py-8 text-center text-muted-foreground">Cargando pago…</p> },
+)
+const StepConfirmation = dynamic(
+  () => import('./step-confirmation').then((module) => module.StepConfirmation),
+  { loading: () => <p className="py-8 text-center text-muted-foreground">Cargando confirmación…</p> },
+)
 
 type WizardSession = Pick<FunnelSession, 'email' | 'name' | 'phone'> | null
 

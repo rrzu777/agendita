@@ -5,15 +5,25 @@ import {
   normalizeMpInvoice,
 } from '@/lib/subscriptions/mercado-pago-mappers'
 
-const mocks = vi.hoisted(() => ({
-  process: vi.fn(),
-  runtime: vi.fn(),
-}))
+const mocks = vi.hoisted(() => {
+  class SubscriptionWebhookValidationError extends Error {}
+  class SubscriptionWebhookConfigurationError extends Error {}
+  return {
+    process: vi.fn(),
+    runtime: vi.fn(),
+    SubscriptionWebhookValidationError,
+    SubscriptionWebhookConfigurationError,
+  }
+})
 
-vi.mock('@/lib/subscriptions/webhook', async (importActual) => ({
-  ...(await importActual<typeof import('@/lib/subscriptions/webhook')>()),
+// Esta ruta sólo necesita el contrato del processor. Importar el grafo real de
+// conciliación/Prisma para cada caso agrega >5s de transform y hace que un test
+// de borde HTTP expire antes de ejecutar la aserción.
+vi.mock('@/lib/subscriptions/webhook', () => ({
   processSubscriptionWebhook: (...args: unknown[]) => mocks.process(...args),
   getSubscriptionWebhookRuntime: () => mocks.runtime(),
+  SubscriptionWebhookValidationError: mocks.SubscriptionWebhookValidationError,
+  SubscriptionWebhookConfigurationError: mocks.SubscriptionWebhookConfigurationError,
 }))
 
 const SECRET = 'subscriptions-webhook-secret'

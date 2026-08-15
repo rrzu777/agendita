@@ -45,6 +45,7 @@ vi.mock('next/cache', () => ({
 
 const {
   getCustomers,
+  getCustomersPage,
   getCustomerDetail,
   updateCustomer,
   updateCustomerNotes,
@@ -284,6 +285,34 @@ describe('customers actions', () => {
       expect(mockPrisma.customer.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ take: 500 })
       )
+    })
+  })
+
+  describe('getCustomersPage', () => {
+    it('uses a stable bounded cursor page owned by the current business', async () => {
+      mockPrisma.customer.findMany.mockResolvedValue([
+        ...mockCustomers,
+        { ...mockCustomers[0], id: 'cust-3' },
+      ])
+      mockPrisma.payment.groupBy.mockResolvedValue([])
+      mockPrisma.booking.groupBy.mockResolvedValue([])
+
+      const page = await getCustomersPage({ limit: 2 })
+
+      expect(page.items).toHaveLength(2)
+      expect(page.nextCursor).toBe('cust-2')
+      expect(mockPrisma.customer.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { businessId },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 3,
+      }))
+    })
+
+    it('rejects a cursor from another business before listing customers', async () => {
+      mockPrisma.customer.findFirst.mockResolvedValue(null)
+
+      await expect(getCustomersPage({ cursor: 'other-customer' })).resolves.toEqual({ items: [], nextCursor: null })
+      expect(mockPrisma.customer.findMany).not.toHaveBeenCalled()
     })
   })
 
