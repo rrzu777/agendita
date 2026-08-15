@@ -19,6 +19,7 @@ export default defineConfig({
       '.claude/**',
       'tests/e2e/**',
       'tests/integration/**',
+      'src/**/*.integration.test.ts',
       'playwright.config.ts',
     ],
   },
