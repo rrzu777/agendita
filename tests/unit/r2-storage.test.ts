@@ -51,6 +51,10 @@ describe('isObjectStorageAvailable', () => {
     'https://evil.example',
     'http://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
     'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/path',
+    'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com:443',
+    'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/?',
+    'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/#',
+    'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/.',
     'https://user:pass@0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
   ])('rechaza un endpoint R2 no canónico: %s', async (endpoint) => {
     process.env.R2_ENDPOINT = endpoint

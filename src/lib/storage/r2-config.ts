@@ -1,22 +1,12 @@
-const R2_S3_HOST = /^[a-f0-9]{32}(?:\.(?:eu|fedramp))?\.r2\.cloudflarestorage\.com$/i
+const R2_S3_ENDPOINT =
+  /^https:\/\/[a-f0-9]{32}(?:\.(?:eu|fedramp))?\.r2\.cloudflarestorage\.com\/?$/i
 
 export function normalizeR2Endpoint(value: string | undefined): string | null {
   if (!value) return null
+  if (!R2_S3_ENDPOINT.test(value)) return null
 
   try {
     const url = new URL(value)
-    if (
-      url.protocol !== 'https:' ||
-      !R2_S3_HOST.test(url.hostname) ||
-      url.username ||
-      url.password ||
-      url.port ||
-      url.pathname !== '/' ||
-      url.search ||
-      url.hash
-    ) {
-      return null
-    }
     return url.origin
   } catch {
     return null
