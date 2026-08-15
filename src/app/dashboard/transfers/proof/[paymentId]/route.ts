@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireBusinessRole } from '@/lib/auth/server'
+import { AuthError, ForbiddenError, requireBusinessRole } from '@/lib/auth/server'
 import { getObjectStorage } from '@/lib/storage/r2'
 
 // Único camino para ver un comprobante: el bucket R2 es PRIVADO. Verificamos
@@ -13,7 +13,18 @@ export async function GET(
   { params }: { params: Promise<{ paymentId: string }> },
 ) {
   const { paymentId } = await params
-  const { businessId } = await requireBusinessRole(['owner', 'admin'])
+  let businessId: string
+  try {
+    ;({ businessId } = await requireBusinessRole(['owner', 'admin']))
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return new NextResponse('No autorizado', { status: 401 })
+    }
+    if (error instanceof ForbiddenError) {
+      return new NextResponse('Prohibido', { status: 403 })
+    }
+    throw error
+  }
 
   const payment = await prisma.payment.findUnique({
     where: { id: paymentId },
