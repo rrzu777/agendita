@@ -16,7 +16,7 @@ import { formatBookingNumber } from '@/lib/bookings/number'
 import { bookingWhere, isNotableModality } from '@/lib/services/modality'
 import type { ServiceModality } from '@prisma/client'
 import { formatMoney } from '@/lib/money'
-import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
+import { TABLE_COL } from '@/components/ui/table-widths'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { displayedBookingStatus } from '@/lib/bookings/status-labels'
@@ -34,6 +34,12 @@ import {
   isDeclaredTransferPayment,
 } from '@/lib/bank-transfer/declared'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
+
+// El badge "Transferencia por verificar" es una decisión financiera, no un
+// texto decorativo: necesita caber completo y no puede invadir la columna Pago.
+// Otras tablas siguen usando el ancho compacto de TABLE_COL.status.
+export const BOOKING_STATUS_COLUMN = 'w-[232px]'
+export const BOOKING_TABLE_MIN_WIDTH = 'min-w-[980px]'
 
 const PENDING_TRANSFER_BADGE_CLASS =
   'inline-flex items-center rounded-md border border-transparent bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800 dark:bg-orange-500/15 dark:text-orange-300'
@@ -433,13 +439,13 @@ export default async function BookingsPage({
         ) : (
           <>
             <div className="hidden lg:block studio-card overflow-hidden">
-              <Table fixed className={TABLE_MIN_WIDTH}>
+              <Table fixed className={BOOKING_TABLE_MIN_WIDTH}>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead>Servicio</TableHead>
                     <TableHead className={TABLE_COL.date}>Fecha</TableHead>
                     <TableHead className={TABLE_COL.customer}>{vocabulary.Client}</TableHead>
-                    <TableHead className={TABLE_COL.status}>Estado</TableHead>
+                    <TableHead className={BOOKING_STATUS_COLUMN}>Estado</TableHead>
                     <TableHead className={TABLE_COL.money}>Pago</TableHead>
                     <TableHead className={`${TABLE_COL.actions} text-right`}>Acciones</TableHead>
                   </TableRow>
@@ -469,7 +475,7 @@ export default async function BookingsPage({
                         // apilados no dicen cuál es la clienta y cuál el equipo.
                         secondary={booking.professional ? `Atiende: ${booking.professional.name}` : undefined}
                       />
-                      <TableCell className={TABLE_COL.status}>
+                      <TableCell className={BOOKING_STATUS_COLUMN}>
                         <div className="flex flex-col items-start gap-1">
                           {hasPendingDeclaredTransfer(booking) ? (
                             <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>
