@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cursor?: string | string[] }>
+  searchParams: Promise<{ cursor?: string | string[]; q?: string | string[] }>
 }) {
   const userData = await getCurrentUserWithBusiness()
 
@@ -25,12 +25,14 @@ export default async function CustomersPage({
 
   const v = getVocabulary(userData.business.category)
 
-  const cursor = getSingleSearchParam((await searchParams).cursor)
+  const params = await searchParams
+  const cursor = getSingleSearchParam(params.cursor)
+  const searchQuery = getSingleSearchParam(params.q)?.trim().slice(0, 100) ?? ''
   let customerPage
   let stats
   let error: string | null = null
   try {
-    ;[customerPage, stats] = await Promise.all([getCustomersPage({ cursor }), getCustomerListStats()])
+    ;[customerPage, stats] = await Promise.all([getCustomersPage({ cursor, query: searchQuery }), getCustomerListStats()])
   } catch (err) {
     error = err instanceof Error ? err.message : `Error al cargar ${v.clients}`
   }
@@ -48,6 +50,7 @@ export default async function CustomersPage({
           stats={stats ?? { total: 0, withBookings: 0, withPendingBalance: 0 }}
           error={error}
           currency={userData.business.currency || 'CLP'}
+          searchQuery={searchQuery}
         />
       </div>
     </div>

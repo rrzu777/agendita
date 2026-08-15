@@ -280,14 +280,16 @@ async function getBookingPageForWhere({
 export async function getBookingsPage({
   cursor,
   limit,
+  bookingNumber,
 }: {
   cursor?: string
   limit?: number
+  bookingNumber?: number
 } = {}): Promise<BookingPage> {
   const { businessId } = await requireBusiness()
   return getBookingPageForWhere({
     businessId,
-    where: { businessId },
+    where: { businessId, ...(bookingNumber !== undefined ? { bookingNumber } : {}) },
     cursor,
     limit,
     orderBy: [{ startDateTime: 'desc' }, { id: 'desc' }],

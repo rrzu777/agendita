@@ -66,6 +66,18 @@ describe('getBookingsPage', () => {
     })
     expect(mockFindMany).not.toHaveBeenCalled()
   })
+
+  it('looks up an exact booking number only inside the current business', async () => {
+    mockFindMany.mockResolvedValue([{ id: 'b-3318', bookingNumber: 3318 }])
+
+    const page = await getBookingsPage({ bookingNumber: 3318 })
+
+    expect(page.items).toEqual([{ id: 'b-3318', bookingNumber: 3318 }])
+    expect(mockFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { businessId: 'biz-1', bookingNumber: 3318 },
+      take: 51,
+    }))
+  })
 })
 
 describe('getBookingListStats', () => {

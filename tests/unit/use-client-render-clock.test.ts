@@ -99,10 +99,6 @@ const ALLOWED_RENDER_CLOCKS = new Map<string, string>([
     'máximo del input de nacimiento; sólo cambia a medianoche',
   ],
   [
-    'src/app/dashboard/customers/customer-list.tsx — const today = new Date()',
-    'filtro de clientas recientes; granularidad diaria',
-  ],
-  [
     'src/app/mi/[slug]/reservas/[bookingId]/reprogramar/reprogramar-form.tsx — const today = formatInTimeZone(new Date(), timezone, \'yyyy-MM-dd\')',
     'fecha mínima para reprogramar; sólo cambia a medianoche',
   ],

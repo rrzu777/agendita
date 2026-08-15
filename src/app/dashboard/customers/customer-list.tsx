@@ -34,30 +34,18 @@ interface CustomerListProps {
   stats: CustomerListStats
   error: string | null
   currency: string
+  searchQuery?: string
 }
 
-export function CustomerList({ customers, nextCursor, stats, error, currency }: CustomerListProps) {
+export function CustomerList({ customers, nextCursor, stats, error, currency, searchQuery = '' }: CustomerListProps) {
   const v = useVocabulary()
-  const [search, setSearch] = useState('')
   const [showPendingOnly, setShowPendingOnly] = useState(false)
   const [showFrequentOnly, setShowFrequentOnly] = useState(false)
   const [showRecentOnly, setShowRecentOnly] = useState(false)
-
-  const today = new Date()
+  const [recentThreshold, setRecentThreshold] = useState<Date | null>(null)
 
   const filtered = useMemo(() => {
-    const thirtyDaysAgo = new Date(today.getTime() - RECENT_DAYS * 24 * 60 * 60 * 1000)
     let result = customers
-
-    if (search.trim()) {
-      const q = search.toLowerCase().trim()
-      result = result.filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.phone.includes(q) ||
-          (c.email && c.email.toLowerCase().includes(q))
-      )
-    }
 
     if (showPendingOnly) {
       result = result.filter((c) => c.pendingBalance > 0)
@@ -69,12 +57,12 @@ export function CustomerList({ customers, nextCursor, stats, error, currency }: 
 
     if (showRecentOnly) {
       result = result.filter(
-        (c) => c.lastBookingAt && new Date(c.lastBookingAt) >= thirtyDaysAgo
+        (c) => recentThreshold && c.lastBookingAt && new Date(c.lastBookingAt) >= recentThreshold
       )
     }
 
     return result
-  }, [customers, search, showPendingOnly, showFrequentOnly, showRecentOnly])
+  }, [customers, recentThreshold, showPendingOnly, showFrequentOnly, showRecentOnly])
 
   const activeFilters = [showPendingOnly, showFrequentOnly, showRecentOnly].filter(Boolean).length
 
@@ -137,24 +125,24 @@ export function CustomerList({ customers, nextCursor, stats, error, currency }: 
 
       {/* Search + Filters */}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar en esta página por nombre, teléfono o email..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="studio-input pl-10"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary"
-              aria-label="Limpiar busqueda"
-            >
-              <X className="size-4" />
-            </button>
+        <form className="flex flex-1 gap-2 sm:max-w-md" action="/dashboard/customers">
+          <div className="relative min-w-0 flex-1">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              name="q"
+              type="search"
+              placeholder="Buscar por nombre, teléfono o email en todo el historial..."
+              defaultValue={searchQuery}
+              className="studio-input pl-10"
+            />
+          </div>
+          <Button type="submit" variant="outline">Buscar</Button>
+          {searchQuery && (
+            <Button type="button" variant="ghost" asChild aria-label="Limpiar búsqueda">
+              <Link href="/dashboard/customers"><X className="size-4" /></Link>
+            </Button>
           )}
-        </div>
+        </form>
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
@@ -177,7 +165,15 @@ export function CustomerList({ customers, nextCursor, stats, error, currency }: 
           <Button
             size="sm"
             variant={showRecentOnly ? 'default' : 'outline'}
-            onClick={() => setShowRecentOnly(!showRecentOnly)}
+            onClick={() => {
+              if (showRecentOnly) {
+                setShowRecentOnly(false)
+                setRecentThreshold(null)
+              } else {
+                setRecentThreshold(new Date(Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000))
+                setShowRecentOnly(true)
+              }
+            }}
             className="text-xs"
           >
             <Filter className="mr-1 size-3" />
@@ -191,6 +187,7 @@ export function CustomerList({ customers, nextCursor, stats, error, currency }: 
                 setShowPendingOnly(false)
                 setShowFrequentOnly(false)
                 setShowRecentOnly(false)
+                setRecentThreshold(null)
               }}
               className="text-xs"
             >
@@ -201,7 +198,7 @@ export function CustomerList({ customers, nextCursor, stats, error, currency }: 
         </div>
       </div>
       <p className="mb-4 text-xs text-muted-foreground">
-        La búsqueda y los filtros se aplican a esta página de 50 {v.clients}. Usá “Ver 50 {v.clients} más” para continuar el historial.
+        La búsqueda se hace en todo el historial. Los filtros se aplican a esta página de 50 {v.clients}.
       </p>
 
       {filtered.length === 0 ? (
@@ -209,11 +206,11 @@ export function CustomerList({ customers, nextCursor, stats, error, currency }: 
           <p className="text-muted-foreground">
             {activeFilters > 0
               ? `No hay ${v.clients} con estos filtros en esta página.`
-              : search
-              ? `No se encontraron ${v.clients} con esa búsqueda en esta página.`
+              : searchQuery
+              ? `No se encontraron ${v.clients} con esa búsqueda.`
               : `No hay ${v.clients} todavía.`}
           </p>
-          <DashboardPagination nextCursor={nextCursor} label={`Ver 50 ${v.clients} más`} />
+          <DashboardPagination nextCursor={nextCursor} label={`Ver 50 ${v.clients} más`} preserve={{ q: searchQuery }} />
         </div>
       ) : (
         <>
@@ -385,7 +382,7 @@ export function CustomerList({ customers, nextCursor, stats, error, currency }: 
             {filtered.length} mostrados de {totalCustomers} {v.clients}
             {activeFilters > 0 && ' (con filtros)'}
           </p>
-          <DashboardPagination nextCursor={nextCursor} label={`Ver 50 ${v.clients} más`} />
+          <DashboardPagination nextCursor={nextCursor} label={`Ver 50 ${v.clients} más`} preserve={{ q: searchQuery }} />
         </>
       )}
     </div>
