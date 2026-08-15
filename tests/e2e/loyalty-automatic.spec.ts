@@ -192,7 +192,7 @@ async function completeBookingByCustomer(page: Page, name: string): Promise<void
  */
 async function openCustomerByName(page: Page, name: string): Promise<void> {
   await gotoStable(page, '/dashboard/customers')
-  const search = page.getByPlaceholder(/buscar por nombre/i)
+  const search = page.getByPlaceholder(/buscar.*nombre/i)
   await search.fill(name)
   await page.waitForTimeout(500) // filtro client-side
   // La lista renderiza dos variantes (cards mobile md:hidden + tabla desktop). En el
