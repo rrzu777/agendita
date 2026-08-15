@@ -9,6 +9,7 @@ import {
   isValidVapidPrivateKey,
   isValidVapidPublicKey,
 } from '@/lib/push/vapid-validation'
+import { normalizeR2Endpoint, resolveR2Endpoint } from '@/lib/storage/r2-config'
 
 export type EnvValidationError = {
   key: string
@@ -437,17 +438,32 @@ export function validateEnv(): EnvValidationResult {
   // Opcional: la feature se auto-deshabilita si falta config (getObjectStorage
   // devuelve null). Warning pareado sólo si hay config parcial (probable error
   // de config), mirror del bloque Resend/FROM_EMAIL de arriba.
-  const r2Keys = [
-    'R2_ACCOUNT_ID',
-    'R2_ACCESS_KEY_ID',
-    'R2_SECRET_ACCESS_KEY',
-    'R2_BUCKET',
-  ]
-  const r2Present = r2Keys.filter((k) => !!process.env[k])
-  if (r2Present.length > 0 && r2Present.length < r2Keys.length) {
+  const r2CredentialKeys = ['R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET']
+  const r2Endpoint = process.env.R2_ENDPOINT
+  const r2Locator = resolveR2Endpoint({
+    accountId: process.env.R2_ACCOUNT_ID,
+    endpoint: r2Endpoint,
+  })
+  const r2AnyConfigured = [
+    process.env.R2_ACCOUNT_ID,
+    r2Endpoint,
+    ...r2CredentialKeys.map((key) => process.env[key]),
+  ].some(Boolean)
+
+  if (r2Endpoint && !process.env.R2_ACCOUNT_ID && !normalizeR2Endpoint(r2Endpoint)) {
+    warnings.push({
+      key: 'R2_ENDPOINT',
+      message:
+        'R2_ENDPOINT debe ser un endpoint HTTPS canónico de la API S3 de Cloudflare R2.',
+    })
+  } else if (
+    r2AnyConfigured &&
+    (!r2Locator || r2CredentialKeys.some((key) => !process.env[key]))
+  ) {
     warnings.push({
       key: 'R2_BUCKET',
-      message: `Config de R2 incompleta (${r2Present.length}/${r2Keys.length}). La subida de comprobantes queda deshabilitada hasta setear: ${r2Keys.join(', ')}.`,
+      message:
+        'Config de R2 incompleta. La subida queda deshabilitada hasta configurar R2_ACCOUNT_ID o R2_ENDPOINT junto con R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY y R2_BUCKET.',
     })
   }
 

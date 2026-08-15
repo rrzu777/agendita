@@ -7,6 +7,7 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { logger } from '@/lib/logger'
+import { resolveR2Endpoint } from '@/lib/storage/r2-config'
 
 // Cliente único del bucket privado. Nació para los comprobantes de transferencia
 // y hoy también guarda las fotos de la ficha, por eso el nombre es genérico: lo
@@ -32,19 +33,22 @@ export function resolveStorage(injected?: ObjectStorage | null): ObjectStorage |
 }
 
 interface R2Config {
-  accountId: string
+  endpoint: string
   accessKeyId: string
   secretAccessKey: string
   bucket: string
 }
 
 function readConfig(): R2Config | null {
-  const accountId = process.env.R2_ACCOUNT_ID
+  const endpoint = resolveR2Endpoint({
+    accountId: process.env.R2_ACCOUNT_ID,
+    endpoint: process.env.R2_ENDPOINT,
+  })
   const accessKeyId = process.env.R2_ACCESS_KEY_ID
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY
   const bucket = process.env.R2_BUCKET
-  if (!accountId || !accessKeyId || !secretAccessKey || !bucket) return null
-  return { accountId, accessKeyId, secretAccessKey, bucket }
+  if (!endpoint || !accessKeyId || !secretAccessKey || !bucket) return null
+  return { endpoint, accessKeyId, secretAccessKey, bucket }
 }
 
 /** never-throws: para gatear la feature en UI y actions. */
@@ -65,7 +69,7 @@ function getClient(cfg: R2Config): S3Client {
       key,
       client: new S3Client({
         region: 'auto',
-        endpoint: `https://${cfg.accountId}.r2.cloudflarestorage.com`,
+        endpoint: cfg.endpoint,
         credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
       }),
     }

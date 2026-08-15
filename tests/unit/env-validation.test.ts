@@ -341,6 +341,42 @@ describe('env validation', () => {
       expect(warnings).toHaveLength(0)
     })
 
+    it('accepts complete R2 config with an official endpoint instead of account ID', async () => {
+      setEnv({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost/test',
+        DIRECT_URL: 'postgresql://localhost/test',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+        APP_DOMAIN: 'localhost:3000',
+        NEXT_PUBLIC_APP_DOMAIN: 'localhost:3000',
+        PAYMENT_PROVIDER: 'mock',
+        SUPABASE_SERVICE_ROLE_KEY: 'service-key',
+        R2_ACCOUNT_ID: undefined,
+        R2_ENDPOINT:
+          'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
+        R2_ACCESS_KEY_ID: 'ak',
+        R2_SECRET_ACCESS_KEY: 'sk',
+        R2_BUCKET: 'bucket',
+      })
+      const { validateEnv } = await import('@/lib/env')
+      const r2Warning = validateEnv().warnings.find((warning) => warning.key === 'R2_BUCKET')
+      expect(r2Warning).toBeUndefined()
+    })
+
+    it('warns when R2_ENDPOINT is not an official Cloudflare S3 endpoint', async () => {
+      setEnv({
+        R2_ACCOUNT_ID: undefined,
+        R2_ENDPOINT: 'https://evil.example',
+        R2_ACCESS_KEY_ID: 'ak',
+        R2_SECRET_ACCESS_KEY: 'sk',
+        R2_BUCKET: 'bucket',
+      })
+      const { validateEnv } = await import('@/lib/env')
+      const r2Warning = validateEnv().warnings.find((warning) => warning.key === 'R2_ENDPOINT')
+      expect(r2Warning?.message).toContain('Cloudflare R2')
+    })
+
     it('warns about missing SUPABASE_SERVICE_ROLE_KEY', async () => {
       setEnv({
         NODE_ENV: 'development',
