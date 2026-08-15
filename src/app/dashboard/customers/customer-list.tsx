@@ -10,6 +10,8 @@ import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import type { CustomerListItem } from '@/server/actions/customers'
+import type { CustomerListStats } from '@/server/actions/customers'
+import { DashboardPagination } from '@/components/dashboard/dashboard-pagination'
 import {
   Search,
   Phone,
@@ -28,11 +30,13 @@ const RECENT_DAYS = 30
 
 interface CustomerListProps {
   customers: CustomerListItem[]
+  nextCursor: string | null
+  stats: CustomerListStats
   error: string | null
   currency: string
 }
 
-export function CustomerList({ customers, error, currency }: CustomerListProps) {
+export function CustomerList({ customers, nextCursor, stats, error, currency }: CustomerListProps) {
   const v = useVocabulary()
   const [search, setSearch] = useState('')
   const [showPendingOnly, setShowPendingOnly] = useState(false)
@@ -89,7 +93,7 @@ export function CustomerList({ customers, error, currency }: CustomerListProps) 
     )
   }
 
-  if (customers.length === 0) {
+  if (stats.total === 0) {
     return (
       <div className="studio-card flex min-h-[320px] flex-col items-center justify-center p-8 text-center">
         <div className="mb-5 flex size-16 items-center justify-center rounded-2xl bg-secondary text-primary">
@@ -103,9 +107,9 @@ export function CustomerList({ customers, error, currency }: CustomerListProps) 
     )
   }
 
-  const totalCustomers = customers.length
-  const withPending = customers.filter((c) => c.pendingBalance > 0).length
-  const withBookings = customers.filter((c) => c.bookingCount > 0).length
+  const totalCustomers = stats.total
+  const withPending = stats.withPendingBalance
+  const withBookings = stats.withBookings
 
   return (
     <div>
@@ -136,7 +140,7 @@ export function CustomerList({ customers, error, currency }: CustomerListProps) 
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar por nombre, telefono o email..."
+            placeholder="Buscar en esta página por nombre, teléfono o email..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="studio-input pl-10"
@@ -196,16 +200,20 @@ export function CustomerList({ customers, error, currency }: CustomerListProps) 
           )}
         </div>
       </div>
+      <p className="mb-4 text-xs text-muted-foreground">
+        La búsqueda y los filtros se aplican a esta página de 50 {v.clients}. Usá “Ver 50 {v.clients} más” para continuar el historial.
+      </p>
 
       {filtered.length === 0 ? (
         <div className="studio-card flex min-h-[200px] flex-col items-center justify-center p-8 text-center">
           <p className="text-muted-foreground">
             {activeFilters > 0
-              ? `No hay ${v.clients} con estos filtros.`
+              ? `No hay ${v.clients} con estos filtros en esta página.`
               : search
-              ? `No se encontraron ${v.clients} con esa búsqueda.`
+              ? `No se encontraron ${v.clients} con esa búsqueda en esta página.`
               : `No hay ${v.clients} todavía.`}
           </p>
+          <DashboardPagination nextCursor={nextCursor} label={`Ver 50 ${v.clients} más`} />
         </div>
       ) : (
         <>
@@ -374,9 +382,10 @@ export function CustomerList({ customers, error, currency }: CustomerListProps) 
           </div>
 
           <p className="mt-2 text-xs text-muted-foreground">
-            {filtered.length} de {customers.length} {v.clients}
+            {filtered.length} mostrados de {totalCustomers} {v.clients}
             {activeFilters > 0 && ' (con filtros)'}
           </p>
+          <DashboardPagination nextCursor={nextCursor} label={`Ver 50 ${v.clients} más`} />
         </>
       )}
     </div>

@@ -1,7 +1,7 @@
 # Rendimiento y tablas del dashboard — Diseño
 
 **Fecha:** 2026-08-15  
-**Estado:** propuesto
+**Estado:** implementado; validación operativa pendiente de despliegue
 
 ## Objetivo
 
@@ -40,8 +40,10 @@ consultas seriales innecesarias.
 ### Cliente y conexión DB
 
 - Unificar los dos módulos Prisma en una sola instancia canónica.
-- Diferir modales del calendario y pasos tardíos del wizard detrás de imports
-  dinámicos, sin retrasar controles necesarios para la primera interacción.
+- Diferir pasos tardíos del wizard detrás de imports dinámicos, sin retrasar
+  controles necesarios para la primera interacción. El calendario se conserva
+  renderizado en servidor: diferirlo dejó sólo un skeleton en SSR y empeoraba
+  la primera vista del panel.
 - No se cambiarán contratos de reservas, pagos, ni la configuración de
   PgBouncer.
 
@@ -62,6 +64,11 @@ ID de la última fila junto a un orden estable; el cliente añade páginas bajo
 demanda. Las páginas server iniciales reciben la primera página. Las consultas
 de resumen serán funciones separadas que devuelven los conteos y montos ya
 agregados.
+
+Los filtros de Clientes que hoy se resuelven en el cliente se presentan como
+filtros de la página visible, para no comunicar erróneamente un resultado
+global después de paginar. Una búsqueda global futura deberá ser server-side,
+reiniciar el cursor y paginar el conjunto filtrado.
 
 El filtro de tenant (`businessId`) estará presente tanto al resolver el cursor
 como al seleccionar la siguiente página. Ningún cursor de un negocio podrá

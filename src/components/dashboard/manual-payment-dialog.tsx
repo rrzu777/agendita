@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createManualPayment } from '@/server/actions/payments'
+import { searchManualPaymentBookings } from '@/server/actions/bookings'
 import { hasPendingBalanceTransfer } from '@/lib/bank-transfer/declared'
 import {
   calculateManualPaymentAmount,
@@ -60,12 +61,16 @@ export function ManualPaymentDialog({
   const [otherMethod, setOtherMethod] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [search, setSearch] = useState('')
+  const [searchResults, setSearchResults] = useState<ManualPaymentBooking[] | null>(null)
+  const [isSearching, startSearchTransition] = useTransition()
 
   // Lambda y no point-free: `filter` pasa el índice como 2º argumento, que acá
   // es el `now` del predicado. Cada reserva se compararía contra el epoch, o
   // sea contra un plazo que nunca vence, y el gate no filtraría nada. (Desde
   // que `now` es requerido, escribirlo mal tampoco compila.)
-  const payableBookings = useMemo(() => bookings.filter((b) => isManualPaymentAllowed(b, now)), [bookings, now])
+  const candidateBookings = searchResults ?? bookings
+  const payableBookings = useMemo(() => candidateBookings.filter((b) => isManualPaymentAllowed(b, now)), [candidateBookings, now])
   const selectedBooking = payableBookings.find((booking) => booking.id === bookingId) || null
   const suggestion = selectedBooking ? getManualPaymentSuggestion(selectedBooking) : null
   // Aviso informativo, no bloqueante: si ya hay una transferencia del saldo
@@ -103,6 +108,35 @@ export function ManualPaymentDialog({
     if (open) selectBooking(defaultBookingId || payableBookings[0]?.id || '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
+
+  // La página de Pagos baja sólo las primeras 50 opciones. Al buscar, la lista
+  // se resuelve en el servidor y sigue acotada; una fila ya elegida no hace
+  // roundtrip porque trae su única reserva como `defaultBookingId`.
+  useEffect(() => {
+    if (!open || defaultBookingId || search.trim().length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resetear resultados al cerrar/cambiar a búsqueda corta evita que un término viejo oculte las opciones iniciales
+      setSearchResults(null)
+      return
+    }
+
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      startSearchTransition(async () => {
+        try {
+          const results = await searchManualPaymentBookings(search)
+          if (!cancelled) setSearchResults(results)
+        } catch {
+          // La búsqueda es una mejora sobre las primeras 50 opciones: un
+          // fallo transitorio no debe reemplazarlas por un resultado viejo.
+          if (!cancelled) setSearchResults([])
+        }
+      })
+    }, 200)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [defaultBookingId, open, search])
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -166,6 +200,15 @@ export function ManualPaymentDialog({
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2">
             <Label className="studio-eyebrow">Reserva</Label>
+            {!defaultBookingId && (
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar por nombre o teléfono"
+                aria-label="Buscar reserva para cobrar"
+                className="studio-input"
+              />
+            )}
             <select
               value={bookingId}
               onChange={(e) => selectBooking(e.target.value)}
@@ -174,6 +217,7 @@ export function ManualPaymentDialog({
               className="min-h-12 w-full rounded-lg border border-border bg-card px-4 text-base focus:border-primary focus:outline-none disabled:opacity-70"
             >
               <option value="">Selecciona una reserva</option>
+              {isSearching && <option disabled>Buscando…</option>}
               {payableBookings.map((booking) => (
                 <option key={booking.id} value={booking.id}>
                   {booking.customer?.name ? `${booking.customer.name} - ` : `Reserva ${formatBookingNumber(booking.bookingNumber, booking.id)} - `}
@@ -181,6 +225,9 @@ export function ManualPaymentDialog({
                 </option>
               ))}
             </select>
+            {!defaultBookingId && search.trim().length >= 2 && !isSearching && payableBookings.length === 0 && (
+              <p className="text-sm text-muted-foreground">No encontramos reservas con saldo pendiente.</p>
+            )}
           </div>
 
           {hasPendingBalanceNotice && (

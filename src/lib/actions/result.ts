@@ -5,6 +5,7 @@
 // auth real. Además no hay secretos aquí y `unstable_rethrow` es isomórfico, así
 // que la barrera aportaba poco.
 import { unstable_rethrow } from 'next/navigation'
+import { recordOperationalMetric } from '@/lib/metrics/operational'
 
 /**
  * Resultado estructurado de una Server Action invocada desde el cliente.
@@ -44,11 +45,21 @@ export function action<A extends unknown[], T>(
   fn: (...args: A) => Promise<T>,
 ): (...args: A) => Promise<ActionResult<T>> {
   return async (...args: A): Promise<ActionResult<T>> => {
+    const startedAt = performance.now()
+    // Las acciones internas están nombradas `_createBooking`, `_updateService`,
+    // etc. Sólo guardamos ese identificador normalizado, nunca argumentos.
+    const operation = fn.name.replace(/^_/, '').replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase() || 'anonymous_action'
     try {
-      return { ok: true, data: await fn(...args) }
+      const data = await fn(...args)
+      recordOperationalMetric(operation, 'success', performance.now() - startedAt)
+      return { ok: true, data }
     } catch (e) {
       unstable_rethrow(e) // re-lanza redirect/notFound/dynamic — NO son errores
-      if (e instanceof UserError) return { ok: false, error: e.message }
+      if (e instanceof UserError) {
+        recordOperationalMetric(operation, 'user_error', performance.now() - startedAt)
+        return { ok: false, error: e.message }
+      }
+      recordOperationalMetric(operation, 'error', performance.now() - startedAt)
       console.error(e)
       return { ok: false, error: GENERIC_ERROR }
     }

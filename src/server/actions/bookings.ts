@@ -22,7 +22,8 @@ import { assignBookingNumber } from '@/lib/bookings/number'
 import { assertBusinessCanReceiveBookings } from '@/lib/subscriptions/enforcement'
 import { normalizePhone } from '@/lib/customers/phone'
 import { isValidBirthDateString, birthDateToUtcDate } from '@/lib/dates'
-import { addMinutes } from 'date-fns'
+import { addDays, addMinutes, format } from 'date-fns'
+import { fromZonedTime, toZonedTime } from 'date-fns-tz'
 import { recomputeBookingAmountsAfterDiscount } from '@/lib/bookings/recompute'
 import { assertBookingPayable } from '@/lib/bookings/payments'
 import { applyApprovedPayment } from '@/server/services/finance'
@@ -174,18 +175,7 @@ const VALID_STATUS_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
   expired: [],
 }
 
-// Lista completa del historial con SOLO las columnas que consumen la página de
-// Reservas (set pesado) y el diálogo de pago manual de Pagos (subset de
-// ManualPaymentBooking). `select` explícito en vez de `include: { service:
-// true, customer: true }`: antes traía todas las columnas de Booking/Service/
-// Customer (internalNotes, reviewToken, timestamps…) para todo el historial.
-// El resumen del dashboard usa getBookingsSummary (aún más angosto).
-export async function getBookings() {
-  const { businessId } = await requireBusiness()
-  return prisma.booking.findMany({
-    where: { businessId },
-    orderBy: { startDateTime: 'desc' },
-    select: {
+const BOOKING_LIST_SELECT = {
       id: true,
       bookingNumber: true,
       startDateTime: true,
@@ -226,32 +216,251 @@ export async function getBookings() {
           proofContentType: true,
         },
       },
-    },
+} satisfies Prisma.BookingSelect
+
+export type BookingListItem = Prisma.BookingGetPayload<{ select: typeof BOOKING_LIST_SELECT }>
+
+export type BookingPage = {
+  items: BookingListItem[]
+  nextCursor: string | null
+}
+
+const MAX_BOOKINGS_PAGE_SIZE = 100
+const DEFAULT_BOOKINGS_PAGE_SIZE = 50
+
+function bookingPageSize(limit: number | undefined): number {
+  if (!Number.isFinite(limit)) return DEFAULT_BOOKINGS_PAGE_SIZE
+  return Math.min(Math.max(Math.floor(limit ?? DEFAULT_BOOKINGS_PAGE_SIZE), 1), MAX_BOOKINGS_PAGE_SIZE)
+}
+
+async function getBookingPageForWhere({
+  businessId,
+  where,
+  cursor,
+  limit,
+  orderBy,
+}: {
+  businessId: string
+  where: Prisma.BookingWhereInput
+  cursor?: string
+  limit?: number
+  orderBy: Prisma.BookingOrderByWithRelationInput[]
+}): Promise<BookingPage> {
+  const take = bookingPageSize(limit)
+
+  if (cursor) {
+    const ownedCursor = await prisma.booking.findFirst({
+      where: { ...where, id: cursor, businessId },
+      select: { id: true },
+    })
+    if (!ownedCursor) return { items: [], nextCursor: null }
+  }
+
+  const rows = await prisma.booking.findMany({
+    where,
+    orderBy,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    take: take + 1,
+    select: BOOKING_LIST_SELECT,
+  })
+  const hasNextPage = rows.length > take
+  const items = hasNextPage ? rows.slice(0, take) : rows
+
+  return {
+    items,
+    nextCursor: hasNextPage ? items.at(-1)?.id ?? null : null,
+  }
+}
+
+/**
+ * Página estable del historial que consume la UI. El cursor se valida dentro
+ * del tenant antes de entregárselo a Prisma: un ID válido de otro negocio no
+ * filtra, salta ni revela ninguna fila de este negocio.
+ */
+export async function getBookingsPage({
+  cursor,
+  limit,
+}: {
+  cursor?: string
+  limit?: number
+} = {}): Promise<BookingPage> {
+  const { businessId } = await requireBusiness()
+  return getBookingPageForWhere({
+    businessId,
+    where: { businessId },
+    cursor,
+    limit,
+    orderBy: [{ startDateTime: 'desc' }, { id: 'desc' }],
   })
 }
 
-// Versión liviana para el home del dashboard: solo lo que necesitan los conteos
-// (hoy/próximas/total via .length y .filter), las 5 próximas citas y los
-// predicados hasPendingDeclaredTransfer/hasPendingBalanceTransfer. Evita
-// arrastrar las columnas de plata y las relaciones completas en la landing más
-// caliente. Mismo where/orderBy que getBookings → mismo orden y conjunto.
-export async function getBookingsSummary() {
+/**
+ * Contadores de la cabecera de Reservas. Mantenerlos agregados evita que la
+ * primera página de 50 filas cambie el significado de "Total" o que el
+ * dashboard vuelva a descargar todo el historial sólo para contar.
+ */
+export async function getBookingListStats(now: Date): Promise<{
+  total: number
+  confirmed: number
+  pendingPayment: number
+  pendingConfirmation: number
+}> {
+  const { businessId } = await requireBusiness()
+  const baseWhere = { businessId }
+  const [total, confirmed, pendingPayment, pendingConfirmation] = await Promise.all([
+    prisma.booking.count({ where: baseWhere }),
+    prisma.booking.count({ where: { ...baseWhere, status: 'confirmed' } }),
+    prisma.booking.count({
+      where: {
+        ...baseWhere,
+        status: 'pending_payment',
+        // El badge sigue siendo "Pendiente" si hay una transferencia declarada
+        // o un MP en vuelo, aun cuando el hold ya venció.
+        OR: [
+          { holdExpiresAt: null },
+          // `isExpiredPaymentHold` vence estrictamente después de este instante
+          // (`holdExpiresAt < now`); en el límite exacto la fila sigue pendiente.
+          { holdExpiresAt: { gte: now } },
+          // Un abono registrado preserva la reserva aunque el hold ya haya
+          // pasado; la tabla la sigue mostrando como pendiente de cobro.
+          { paymentStatus: { not: 'unpaid' } },
+          { payments: { some: holdPrecedencePaymentWhere } },
+        ],
+      },
+    }),
+    prisma.booking.count({ where: { ...baseWhere, status: 'pending_confirmation' } }),
+  ])
+
+  return { total, confirmed, pendingPayment, pendingConfirmation }
+}
+
+/** Cola operativa separada del historial: sólo reservas con una transferencia
+ * declarada que todavía requiere decisión humana. */
+export async function getPendingBookingTransfersPage({
+  cursor,
+  limit,
+}: {
+  cursor?: string
+  limit?: number
+} = {}): Promise<BookingPage> {
+  const { businessId } = await requireBusiness()
+  const where: Prisma.BookingWhereInput = {
+    businessId,
+    status: { notIn: ['cancelled', 'expired'] },
+    payments: { some: anyDeclaredTransferWhere },
+  }
+  return getBookingPageForWhere({
+    businessId,
+    where,
+    cursor,
+    limit,
+    orderBy: [{ startDateTime: 'asc' }, { id: 'asc' }],
+  })
+}
+
+/** Lista de trabajo del selector de cobro manual. Las reservas cerradas o con
+ * saldo cero nunca pueden elegirse, así que traerlas era sólo peso de HTML y
+ * JavaScript en Pagos. */
+export async function getManualPaymentBookings(): Promise<BookingListItem[]> {
+  const { businessId } = await requireBusiness()
+  return prisma.booking.findMany({
+    where: {
+      businessId,
+      remainingBalance: { gt: 0 },
+      status: { in: ['pending_payment', 'confirmed', 'completed'] },
+    },
+    orderBy: [{ startDateTime: 'desc' }, { id: 'desc' }],
+    take: DEFAULT_BOOKINGS_PAGE_SIZE,
+    select: BOOKING_LIST_SELECT,
+  })
+}
+
+/** Búsqueda acotada del selector de cobro manual. La página inicial trae sólo
+ * 50 opciones; este camino permite encontrar cualquier saldo elegible sin
+ * descargar el historial completo al abrir Pagos. */
+export async function searchManualPaymentBookings(query: string): Promise<BookingListItem[]> {
+  const { businessId } = await requireBusiness()
+  const term = query.trim().slice(0, 100)
+  const manualPaymentWhere: Prisma.BookingWhereInput = {
+    businessId,
+    remainingBalance: { gt: 0 },
+    status: { in: ['pending_payment', 'confirmed', 'completed'] },
+  }
+
+  return prisma.booking.findMany({
+    where: term
+      ? {
+          ...manualPaymentWhere,
+          OR: [
+            { customer: { is: { name: { contains: term, mode: 'insensitive' } } } },
+            { customer: { is: { phone: { contains: term, mode: 'insensitive' } } } },
+          ],
+        }
+      : manualPaymentWhere,
+    orderBy: [{ startDateTime: 'desc' }, { id: 'desc' }],
+    take: 25,
+    select: BOOKING_LIST_SELECT,
+  })
+}
+
+// Compatibilidad temporal para acciones server-side y tests históricos. Ninguna
+// ruta de dashboard debe llamarla: la UI usa getBookingsPage para no cargar todo
+// el historial por render.
+export async function getBookings() {
   const { businessId } = await requireBusiness()
   return prisma.booking.findMany({
     where: { businessId },
-    orderBy: { startDateTime: 'desc' },
-    select: {
-      id: true,
-      startDateTime: true,
-      status: true,
-      service: { select: { name: true } },
-      customer: { select: { name: true } },
-      payments: {
-        where: anyDeclaredTransferWhere,
-        select: { provider: true, status: true, providerPaymentId: true },
-      },
-    },
+    orderBy: [{ startDateTime: 'desc' }, { id: 'desc' }],
+    select: BOOKING_LIST_SELECT,
   })
+}
+
+// Resumen liviano para el home del dashboard: los conteos se calculan en la
+// base y sólo se cargan las 5 próximas citas. Evita
+// arrastrar las columnas de plata y las relaciones completas en la landing más
+// caliente. Mismo where/orderBy que getBookings → mismo orden y conjunto.
+export async function getDashboardBookingSummary(now: Date, timezone: string) {
+  const { businessId } = await requireBusiness()
+  const localNow = toZonedTime(now, timezone)
+  const todayStart = fromZonedTime(`${format(localNow, 'yyyy-MM-dd')}T00:00:00`, timezone)
+  const tomorrowStart = fromZonedTime(`${format(addDays(localNow, 1), 'yyyy-MM-dd')}T00:00:00`, timezone)
+  const activeBookingStatuses = [BookingStatus.cancelled, BookingStatus.no_show, BookingStatus.expired]
+
+  const [total, today, pendingTransfers, upcoming] = await Promise.all([
+    prisma.booking.count({ where: { businessId } }),
+    prisma.booking.count({
+      where: { businessId, startDateTime: { gte: todayStart, lt: tomorrowStart } },
+    }),
+    prisma.booking.count({
+      where: {
+        businessId,
+        status: { notIn: activeBookingStatuses },
+        payments: { some: anyDeclaredTransferWhere },
+      },
+    }),
+    prisma.booking.findMany({
+      where: {
+        businessId,
+        startDateTime: { gte: todayStart },
+        status: { notIn: activeBookingStatuses },
+      },
+      orderBy: [{ startDateTime: 'asc' }, { id: 'asc' }],
+      take: 5,
+      select: {
+        id: true,
+        startDateTime: true,
+        status: true,
+        service: { select: { name: true } },
+        customer: { select: { name: true } },
+        payments: {
+          where: anyDeclaredTransferWhere,
+          select: { provider: true, status: true, providerPaymentId: true },
+        },
+      },
+    }),
+  ])
+
+  return { total, today, pendingTransfers, upcoming }
 }
 
 async function _createBooking(data: {

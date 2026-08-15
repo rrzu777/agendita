@@ -1,3 +1,5 @@
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, it, expect, vi } from 'vitest'
 
@@ -6,6 +8,8 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: 
 import { CancelBookingButton } from '@/components/dashboard/cancel-booking-button'
 import { ManualPaymentDialog } from '@/components/dashboard/manual-payment-dialog'
 import { BookingRowActions } from '@/components/dashboard/booking-row-actions'
+import { BookingContactButtons } from '@/components/dashboard/booking-contact-buttons'
+import { DropdownMenu, DropdownMenuContent } from '@/components/ui/dropdown-menu'
 
 // El reloj lo pone quien renderiza: estos componentes son cliente y salen en
 // el HTML del servidor (ver `isManualPaymentAllowed`). Los plazos de los casos
@@ -86,7 +90,7 @@ describe('BookingRowActions', () => {
       <BookingRowActions
         booking={rowBooking() as never}
         businessCurrency="CLP"
-        contact={<span>Confirmación</span>}
+        contactMenu={<span>Confirmación</span>}
         now={NOW}
       />,
     )
@@ -135,5 +139,60 @@ describe('BookingRowActions', () => {
     expect(html).not.toContain('Completar')
     expect(html).not.toContain('Cobrar')
     expect(html).not.toContain('Más acciones')
+  })
+
+  it('uses inline contact controls for an expired booking, never menu items outside a menu', () => {
+    const html = renderToStaticMarkup(
+      <BookingRowActions
+        booking={rowBooking({ status: 'expired' }) as never}
+        businessCurrency="CLP"
+        contactMenu={<BookingContactButtons variant="menu" booking={{
+          customerName: 'Ana', customerPhone: '+56912345678', serviceName: 'Manicura', professionalName: null,
+          startDateTime: NOW, businessTimezone: 'America/Santiago', businessCurrency: 'CLP', totalPrice: 0,
+          depositPaid: 0, remainingBalance: 0, modality: 'on_site', businessAddress: 'Calle Uno 1',
+        }} />}
+        contactInline={<span>Contacto compacto</span>}
+        now={NOW}
+      />,
+    )
+
+    expect(html).toContain('Contacto compacto')
+    expect(html).not.toContain('Enviar confirmación')
+  })
+})
+
+describe('BookingContactButtons menu variant', () => {
+  it('renders contact actions as actual dropdown menu items', async () => {
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    await act(async () => {
+      root.render(
+        <DropdownMenu open>
+          <DropdownMenuContent forceMount>
+            <BookingContactButtons
+              variant="menu"
+              booking={{
+                customerName: 'Ana',
+                customerPhone: '+56912345678',
+                serviceName: 'Manicura',
+                professionalName: 'Paula',
+                startDateTime: NOW,
+                businessTimezone: 'America/Santiago',
+                businessCurrency: 'CLP',
+                totalPrice: 45000,
+                depositPaid: 15000,
+                remainingBalance: 30000,
+                modality: 'on_site',
+                businessAddress: 'Calle Uno 1',
+              }}
+            />
+          </DropdownMenuContent>
+        </DropdownMenu>,
+      )
+    })
+
+    expect(document.body.querySelectorAll('[data-slot="dropdown-menu-item"]')).toHaveLength(4)
+    expect(document.body.textContent).toContain('Enviar confirmación')
+    await act(async () => root.unmount())
   })
 })

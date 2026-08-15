@@ -165,13 +165,13 @@ export function ReviewsClient({
       </div>
 
       <div className="mb-6 flex flex-col gap-3">
-        <div className="flex flex-wrap gap-3">
-          <div className="flex gap-1 rounded-2xl border border-border bg-card p-1">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <div className="grid grid-cols-4 gap-1 rounded-2xl border border-border bg-card p-1">
             {statusOptions.map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => setStatus(opt.value)}
-                className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
+                className={`min-w-0 rounded-xl px-1 py-2 text-xs font-semibold transition-colors sm:px-4 sm:text-sm ${
                   status === opt.value ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted'
                 }`}
               >
@@ -179,12 +179,12 @@ export function ReviewsClient({
               </button>
             ))}
           </div>
-          <div className="flex gap-1 rounded-2xl border border-border bg-card p-1">
+          <div className="grid grid-cols-6 gap-1 rounded-2xl border border-border bg-card p-1">
             {ratingOptions.map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => setRating(opt.value)}
-                className={`rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${
+                className={`min-w-0 rounded-xl px-1 py-2 text-xs font-semibold transition-colors sm:px-3 sm:text-sm ${
                   rating === opt.value ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted'
                 }`}
               >

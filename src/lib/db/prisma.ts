@@ -1,9 +1,3 @@
-import { PrismaClient } from '@prisma/client'
-
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
-}
-
-export const prisma = globalForPrisma.prisma ?? new PrismaClient()
-
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+// Compatibilidad para imports históricos. El cliente se instancia una sola vez
+// en `@/lib/db`; duplicar este módulo podía abrir dos pools en un warm runtime.
+export { prisma } from '@/lib/db'

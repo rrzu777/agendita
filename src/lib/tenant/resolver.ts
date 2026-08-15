@@ -1,4 +1,6 @@
 import { headers as nextHeaders } from 'next/headers'
+// Alias histórico que reexporta el único cliente de `@/lib/db`. Mantenerlo acá
+// conserva el borde de mocks del resolver sin volver a crear otro PrismaClient.
 import { prisma } from '@/lib/db/prisma'
 
 export interface ResolvedTenant {

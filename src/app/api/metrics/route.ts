@@ -1,92 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { BookingStatus, PaymentStatus, PaymentProvider } from '@prisma/client'
 import { hasValidBearerSecret } from '@/lib/auth/bearer-secret'
+import { getOperationalMetricsSnapshot } from '@/lib/metrics/operational'
 
 export const dynamic = 'force-dynamic'
 
-// Prometheus-compatible text metrics endpoint.
-// Requires Bearer Authorization with METRICS_SECRET. Fails closed: if the env
-// var is unset, every request is rejected (see the guard in GET).
-// Grafana Cloud: add auth via "Add auth header" → "Authorization: Bearer <token>"
-// or use a Grafana Cloud Data Source with "Basic auth" and a service account token.
-//
-// Example Grafana Cloud scraping config:
-//  _url: https://your-app.vercel.app/api/metrics
-//   auth: Bearer with token = value of METRICS_SECRET env var
-
-// Simple in-memory cache (per-function-instance, resets on warm invocations)
-// For production use, use Redis or Vercel KV.
 let cachedMetrics: string | null = null
 let cacheTimestamp = 0
 const CACHE_TTL_MS = 30_000
 
-async function gatherMetrics(): Promise<string> {
-  const lines: string[] = []
+function gatherMetrics(): string {
+  const snapshot = getOperationalMetricsSnapshot()
+  const lines = [
+    '# HELP agendita_metrics_process_healthy Process-local operational metrics are available.',
+    '# TYPE agendita_metrics_process_healthy gauge',
+    'agendita_metrics_process_healthy 1',
+    '# HELP agendita_metrics_samples_total Number of observed server operations in this process.',
+    '# TYPE agendita_metrics_samples_total counter',
+    `agendita_metrics_samples_total ${snapshot.samples.reduce((sum, sample) => sum + sample.count, 0)}`,
+  ]
 
-  // agendita_bookings_total{businessId, status} COUNT
-  try {
-    const bookings = await prisma.$queryRaw<{ businessId: string; status: BookingStatus; count: bigint }[]>`
-      SELECT "businessId", status, COUNT(*) as count
-      FROM "Booking"
-      GROUP BY "businessId", status
-    `
-    for (const row of bookings) {
-      lines.push(`agendita_bookings_total{businessId="${row.businessId}",status="${row.status}"} ${row.count}`)
-    }
-  } catch {
-    lines.push('# failed to gather booking metrics')
+  for (const sample of snapshot.samples) {
+    const labels = `operation="${sample.operation}",outcome="${sample.outcome}"`
+    lines.push(`agendita_operation_total{${labels}} ${sample.count}`)
+    lines.push(`agendita_operation_duration_ms_sum{${labels}} ${sample.durationMs}`)
   }
 
-  // agendita_payments_total{businessId, status} COUNT
-  try {
-    const payments = await prisma.$queryRaw<{ businessId: string; status: PaymentStatus; count: bigint }[]>`
-      SELECT "businessId", status, COUNT(*) as count
-      FROM "Payment"
-      GROUP BY "businessId", status
-    `
-    for (const row of payments) {
-      lines.push(`agendita_payments_total{businessId="${row.businessId}",status="${row.status}"} ${row.count}`)
-    }
-  } catch {
-    lines.push('# failed to gather payment metrics')
-  }
-
-  // agendita_webhook_events_total{provider, event, status} COUNT
-  try {
-    const webhooks = await prisma.$queryRaw<{ provider: PaymentProvider; status: PaymentStatus; count: bigint }[]>`
-      SELECT provider, status, COUNT(*) as count
-      FROM "Payment"
-      GROUP BY provider, status
-    `
-    for (const row of webhooks) {
-      lines.push(`agendita_webhook_events_total{provider="${row.provider}",event="payment.update",status="${row.status}"} ${row.count}`)
-    }
-  } catch {
-    lines.push('# failed to gather webhook metrics')
-  }
-
-  // agendita_rate_limit_blocked_total{action} — no persistent counter
-  lines.push('agendita_rate_limit_blocked_total{action="api"} 0')
-
-  // agendita_errors_total{type} — no persistent counter
-  lines.push('agendita_errors_total{type="error500"} 0')
-
-  lines.push(`# Generated at ${new Date().toISOString()}`)
-
+  lines.push(`# Process started at ${new Date(snapshot.startedAt).toISOString()}`)
   return lines.join('\n')
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  // Mismo guard que los crons, fail-closed: sin METRICS_SECRET nadie autentica y
-  // las métricas por negocio nunca se exponen a un caller anónimo. El cuerpo va en
-  // texto plano (no JSON) porque este endpoint lo scrapea Prometheus.
   if (!hasValidBearerSecret(request, process.env.METRICS_SECRET)) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
   const now = Date.now()
-
   if (cachedMetrics && now - cacheTimestamp < CACHE_TTL_MS) {
     return new NextResponse(cachedMetrics, {
       headers: {
@@ -97,10 +45,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     })
   }
 
-  const body = await gatherMetrics()
+  const body = gatherMetrics()
   cachedMetrics = body
   cacheTimestamp = now
-
   return new NextResponse(body, {
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',

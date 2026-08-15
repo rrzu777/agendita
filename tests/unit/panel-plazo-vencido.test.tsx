@@ -67,14 +67,14 @@ describe('BookingCard y el plazo vencido', () => {
     const html = render(new Date(NOW.getTime() + HORA))
     expect(html).toContain('Pendiente de pago')
     expect(html).not.toContain('Plazo vencido')
-    expect(html).toContain('Registrar pago')
+    expect(html).toContain('Cobrar')
   })
 
   it('con el plazo vencido cambia el badge, saca el cobro y explica la salida', () => {
     const html = render(new Date(NOW.getTime() - HORA))
     expect(html).toContain('Plazo vencido')
     expect(html).not.toContain('Pendiente de pago')
-    expect(html).not.toContain('Registrar pago')
+    expect(html).not.toContain('Cobrar')
     expect(html).toContain('Revivir')
   })
 

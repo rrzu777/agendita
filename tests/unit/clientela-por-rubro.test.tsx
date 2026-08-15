@@ -10,7 +10,7 @@ describe('la sección Clientes habla en el género del rubro', () => {
   it('vacía, un salón de uñas ve "Sin clientas"', () => {
     const html = renderWithVocabulary(
       'nails',
-      <CustomerList customers={[]} error={null} currency="CLP" />,
+      <CustomerList customers={[]} nextCursor={null} stats={{ total: 0, withBookings: 0, withPendingBalance: 0 }} error={null} currency="CLP" />,
     )
     expect(html).toContain('Sin clientas')
     expect(html).toContain('Las clientas aparecerán aquí')
@@ -20,7 +20,7 @@ describe('la sección Clientes habla en el género del rubro', () => {
   it('vacía, una barbería ve "Sin clientes"', () => {
     const html = renderWithVocabulary(
       'barber',
-      <CustomerList customers={[]} error={null} currency="CLP" />,
+      <CustomerList customers={[]} nextCursor={null} stats={{ total: 0, withBookings: 0, withPendingBalance: 0 }} error={null} currency="CLP" />,
     )
     expect(html).toContain('Sin clientes')
     expect(html).toContain('Los clientes aparecerán aquí')
