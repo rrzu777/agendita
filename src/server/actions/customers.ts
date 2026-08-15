@@ -126,18 +126,37 @@ export async function getCustomers(): Promise<CustomerListItem[]> {
 
 /** La tabla general carga una página acotada; las fichas individuales siguen
  * usando su historial completo. El cursor se valida en el tenant antes de usarlo. */
-export async function getCustomersPage({ cursor, limit = 50 }: { cursor?: string; limit?: number } = {}): Promise<CustomerPage> {
+export async function getCustomersPage({
+  cursor,
+  limit = 50,
+  query,
+}: {
+  cursor?: string
+  limit?: number
+  query?: string
+} = {}): Promise<CustomerPage> {
   const { businessId } = await requireBusiness()
   const take = Math.min(Math.max(Math.floor(limit), 1), 100)
+  const term = query?.trim().slice(0, 100)
+  const where: Prisma.CustomerWhereInput = term
+    ? {
+        businessId,
+        OR: [
+          { name: { contains: term, mode: 'insensitive' } },
+          { phone: { contains: term, mode: 'insensitive' } },
+          { email: { contains: term, mode: 'insensitive' } },
+        ],
+      }
+    : { businessId }
   if (cursor) {
     const ownedCursor = await prisma.customer.findFirst({
-      where: { id: cursor, businessId },
+      where: { ...where, id: cursor },
       select: { id: true },
     })
     if (!ownedCursor) return { items: [], nextCursor: null }
   }
   const rows = await prisma.customer.findMany({
-    where: { businessId },
+    where,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     take: take + 1,

@@ -5,6 +5,7 @@ import { getBookingListStats, getBookingsPage, getPendingBookingTransfersPage } 
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { getVocabulary } from '@/lib/vocabulary'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { updateBookingStatus } from '@/server/actions/bookings'
 import { CalendarDays, Clock, User, UserCheck, CreditCard, MapPin, Phone, Plus, RefreshCw } from 'lucide-react'
@@ -34,6 +35,7 @@ import {
   isDeclaredTransferPayment,
 } from '@/lib/bank-transfer/declared'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
+import { bookingSearchClearPath, parseBookingNumberSearch } from '@/lib/bookings/search'
 
 // El badge "Transferencia por verificar" es una decisión financiera, no un
 // texto decorativo: necesita caber completo y no puede invadir la columna Pago.
@@ -316,7 +318,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
 export default async function BookingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cursor?: string | string[]; transferCursor?: string | string[] }>
+  searchParams: Promise<{ cursor?: string | string[]; transferCursor?: string | string[]; booking?: string | string[] }>
 }) {
   const userData = await getCurrentUserWithBusiness()
   const vocabulary = getVocabulary(userData?.business?.category ?? 'other')
@@ -332,13 +334,18 @@ export default async function BookingsPage({
   const params = await searchParams
   const cursor = getSingleSearchParam(params.cursor)
   const transferCursor = getSingleSearchParam(params.transferCursor)
+  const bookingSearch = getSingleSearchParam(params.booking)?.trim().slice(0, 32) ?? ''
+  const bookingNumber = parseBookingNumberSearch(bookingSearch)
+  const hasInvalidBookingSearch = bookingSearch.length > 0 && bookingNumber === null
   // Un solo reloj para toda la página: el badge de la tabla, el de la tarjeta
   // móvil y el contador de arriba derivan el mismo "plazo vencido", y con un
   // `new Date()` por llamada una reserva que vence entre medio los deja
   // discrepando entre sí.
   const now = new Date()
   const [bookingPage, stats, transferPage] = await Promise.all([
-    getBookingsPage({ cursor }),
+    hasInvalidBookingSearch
+      ? Promise.resolve({ items: [], nextCursor: null })
+      : getBookingsPage({ cursor, bookingNumber: bookingNumber ?? undefined }),
     getBookingListStats(now),
     getPendingBookingTransfersPage({ cursor: transferCursor }),
   ])
@@ -392,6 +399,22 @@ export default async function BookingsPage({
             Nueva reserva
           </Button>
         </Link>
+        <form className="flex max-w-md gap-2" action="/dashboard/bookings">
+          {transferCursor && <input type="hidden" name="transferCursor" value={transferCursor} />}
+          <Input
+            name="booking"
+            type="search"
+            placeholder="Buscar reserva #1234"
+            defaultValue={bookingSearch}
+            className="studio-input"
+          />
+          <Button type="submit" variant="outline">Buscar</Button>
+          {bookingSearch && (
+            <Button type="button" variant="ghost" asChild aria-label="Limpiar búsqueda de reserva">
+              <Link href={bookingSearchClearPath(transferCursor)}>Limpiar</Link>
+            </Button>
+          )}
+        </form>
         <div className={`grid gap-4 ${requestCount > 0 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}`}>
           <div className="studio-card p-4">
             <p className="studio-eyebrow">Total</p>
@@ -423,11 +446,21 @@ export default async function BookingsPage({
           nextCursor={transferPage.nextCursor}
           label="Ver 50 transferencias más"
           searchParam="transferCursor"
-          preserve={{ cursor }}
+          preserve={{ cursor, booking: bookingSearch }}
         />
 
         {stats.total === 0 ? (
           <EmptyState />
+        ) : hasInvalidBookingSearch ? (
+          <div className="studio-card p-8 text-center">
+            <h3 className="text-lg font-semibold text-primary">Número de reserva inválido</h3>
+            <p className="mt-2 text-sm text-muted-foreground">Usá un número como #1234.</p>
+          </div>
+        ) : bookingSearch && bookings.length === 0 ? (
+          <div className="studio-card p-8 text-center">
+            <h3 className="text-lg font-semibold text-primary">No encontramos esa reserva</h3>
+            <p className="mt-2 text-sm text-muted-foreground">Verificá el número e intentá de nuevo.</p>
+          </div>
         ) : bookings.length === 0 ? (
           <div className="studio-card p-8 text-center">
             <h3 className="text-lg font-semibold text-primary">Esta página ya no está disponible</h3>
@@ -572,7 +605,7 @@ export default async function BookingsPage({
             <DashboardPagination
               nextCursor={bookingPage.nextCursor}
               label="Ver 50 reservas más"
-              preserve={{ transferCursor }}
+              preserve={{ transferCursor, booking: bookingSearch }}
             />
           </>
         )}

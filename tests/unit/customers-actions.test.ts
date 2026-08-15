@@ -314,6 +314,27 @@ describe('customers actions', () => {
       await expect(getCustomersPage({ cursor: 'other-customer' })).resolves.toEqual({ items: [], nextCursor: null })
       expect(mockPrisma.customer.findMany).not.toHaveBeenCalled()
     })
+
+    it('searches the whole business by name, phone or email and keeps the query on cursor validation', async () => {
+      mockPrisma.customer.findFirst.mockResolvedValue({ id: 'cust-2' })
+      mockPrisma.customer.findMany.mockResolvedValue([])
+
+      await getCustomersPage({ query: '  maria  ', cursor: 'cust-2' })
+
+      const expectedWhere = {
+        businessId,
+        OR: [
+          { name: { contains: 'maria', mode: 'insensitive' } },
+          { phone: { contains: 'maria', mode: 'insensitive' } },
+          { email: { contains: 'maria', mode: 'insensitive' } },
+        ],
+      }
+      expect(mockPrisma.customer.findFirst).toHaveBeenCalledWith({
+        where: { ...expectedWhere, id: 'cust-2' },
+        select: { id: true },
+      })
+      expect(mockPrisma.customer.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expectedWhere }))
+    })
   })
 
   describe('getCustomerDetail', () => {
