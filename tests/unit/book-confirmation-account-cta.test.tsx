@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 const { mockGetCurrentUser, mockFindUnique, mockGetTenant, mockGetBankTransferInfo, mockNotFound } = vi.hoisted(() => ({
@@ -52,8 +52,13 @@ function baseBooking(overrides: Record<string, unknown> = {}) {
 describe('/book/confirmation — CTA de cuenta', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv('NEXT_PUBLIC_APP_DOMAIN', 'www.agendita.cl')
     mockGetTenant.mockResolvedValue(null)
     mockGetBankTransferInfo.mockResolvedValue(null)
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
 
   it('confirmada, sin sesión, con email de cliente → invita a crear cuenta', async () => {
@@ -100,5 +105,31 @@ describe('/book/confirmation — CTA de cuenta', () => {
     expect(html).toContain('Ver mis reservas')
     expect(html).toContain('href="/mi"')
     expect(html).not.toContain('Crea tu cuenta')
+  })
+
+  it('reserva confirmada → ofrece instalar Agendita desde el origen canónico', async () => {
+    mockGetCurrentUser.mockResolvedValue(null)
+    mockFindUnique.mockResolvedValue(baseBooking())
+
+    const html = renderToStaticMarkup(await BookingConfirmationPage({ searchParams }))
+
+    expect(html).toContain('Ten tus citas y recordatorios a mano')
+    expect(html).toContain('href="https://www.agendita.cl/instalar"')
+  })
+
+  it('reserva pendiente → no compite con el flujo de pago', async () => {
+    mockGetCurrentUser.mockResolvedValue(null)
+    mockFindUnique.mockResolvedValue(baseBooking({
+      status: 'pending',
+      startDateTime: new Date(Date.now() + 3_600_000),
+      endDateTime: new Date(Date.now() + 7_200_000),
+      holdExpiresAt: new Date(Date.now() + 3_600_000),
+      depositPaid: 0,
+    }))
+
+    const html = renderToStaticMarkup(await BookingConfirmationPage({ searchParams }))
+
+    expect(html).not.toContain('Ten tus citas y recordatorios a mano')
+    expect(html).not.toContain('/instalar')
   })
 })

@@ -25,6 +25,7 @@ import { GuestPushLink } from '@/components/push/guest-push-link'
 import { AccountPushLink } from '@/components/push/account-push-link'
 import { getAppUrl } from '@/lib/business/urls'
 import { isPushBookingEligible } from '@/lib/push/eligibility'
+import { InstallAppBanner } from '@/components/pwa/install-app-banner'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
@@ -430,6 +431,8 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
             <AccountCta sessionActive={sessionUser !== null} customerEmail={customerEmail} className="mt-4" />
           </>
         )}
+
+        {state === 'confirmed' && <InstallAppBanner canonicalOrigin={getAppUrl('')} />}
       </section>
     </main>
   )
