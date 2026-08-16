@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import type { BusinessSubscription } from '@prisma/client'
 
 const { requirePlatformAdminUser, mockBusinessSubscription } = vi.hoisted(() => ({
@@ -25,6 +25,15 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
 // admin.ts autoriza vía requirePlatformAdminUser (getUser remoto + isPlatformAdmin).
 vi.mock('@/lib/auth/user', () => ({ requirePlatformAdminUser }))
+
+// `admin.ts` carga transiciones y reconciliación de suscripciones. Si la primera
+// prueba lo importa dentro de su cuerpo, Vitest cuenta esa compilación contra el
+// timeout de 5 s del caso y hace flaky la validación de NaN.
+let adminActions: typeof import('@/server/actions/admin')
+
+beforeAll(async () => {
+  adminActions = await import('@/server/actions/admin')
+})
 
 function subscriptionFixture(
   overrides: Partial<BusinessSubscription> = {},
@@ -103,20 +112,17 @@ describe('adminRecordSubscriptionPayment', () => {
   beforeEach(setupTxMock)
 
   it('rejects NaN amount', async () => {
-    const { adminRecordSubscriptionPayment } = await import('@/server/actions/admin')
-    await expect(adminRecordSubscriptionPayment('biz-1', NaN)).rejects.toThrow('número positivo')
+    await expect(adminActions.adminRecordSubscriptionPayment('biz-1', NaN)).rejects.toThrow('número positivo')
   })
 
   it('rejects amount <= 0', async () => {
-    const { adminRecordSubscriptionPayment } = await import('@/server/actions/admin')
-    await expect(adminRecordSubscriptionPayment('biz-1', 0)).rejects.toThrow('número positivo')
-    await expect(adminRecordSubscriptionPayment('biz-1', -100)).rejects.toThrow('número positivo')
+    await expect(adminActions.adminRecordSubscriptionPayment('biz-1', 0)).rejects.toThrow('número positivo')
+    await expect(adminActions.adminRecordSubscriptionPayment('biz-1', -100)).rejects.toThrow('número positivo')
   })
 
   it('rejects non-finite amounts', async () => {
-    const { adminRecordSubscriptionPayment } = await import('@/server/actions/admin')
     const nanValue = parseInt('abc', 10)
-    await expect(adminRecordSubscriptionPayment('biz-1', nanValue)).rejects.toThrow('número positivo')
+    await expect(adminActions.adminRecordSubscriptionPayment('biz-1', nanValue)).rejects.toThrow('número positivo')
   })
 })
 
@@ -124,20 +130,17 @@ describe('adminExtendTrial', () => {
   beforeEach(setupTxMock)
 
   it('rejects NaN days', async () => {
-    const { adminExtendTrial } = await import('@/server/actions/admin')
-    await expect(adminExtendTrial('biz-1', NaN)).rejects.toThrow('número entre 1 y 365')
+    await expect(adminActions.adminExtendTrial('biz-1', NaN)).rejects.toThrow('número entre 1 y 365')
   })
 
   it('rejects days < 1', async () => {
-    const { adminExtendTrial } = await import('@/server/actions/admin')
-    await expect(adminExtendTrial('biz-1', 0)).rejects.toThrow('número entre 1 y 365')
-    await expect(adminExtendTrial('biz-1', -5)).rejects.toThrow('número entre 1 y 365')
+    await expect(adminActions.adminExtendTrial('biz-1', 0)).rejects.toThrow('número entre 1 y 365')
+    await expect(adminActions.adminExtendTrial('biz-1', -5)).rejects.toThrow('número entre 1 y 365')
   })
 
   it('rejects days > 365', async () => {
-    const { adminExtendTrial } = await import('@/server/actions/admin')
-    await expect(adminExtendTrial('biz-1', 366)).rejects.toThrow('número entre 1 y 365')
-    await expect(adminExtendTrial('biz-1', 700)).rejects.toThrow('número entre 1 y 365')
+    await expect(adminActions.adminExtendTrial('biz-1', 366)).rejects.toThrow('número entre 1 y 365')
+    await expect(adminActions.adminExtendTrial('biz-1', 700)).rejects.toThrow('número entre 1 y 365')
   })
 })
 
