@@ -45,12 +45,12 @@ export default async function PaymentsPage({
       <div className="space-y-8 p-5 md:p-10">
         <FinanceStats summary={summary} currency={currency} />
 
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-2xl font-heading font-semibold tracking-tight text-primary">Historial de movimientos</h2>
             <p className="text-sm text-muted-foreground">Ingresos, abonos y ajustes registrados.</p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-end justify-end gap-3">
             <PaymentForm bookings={bookings} now={now} />
             <ExportCSVButton />
           </div>

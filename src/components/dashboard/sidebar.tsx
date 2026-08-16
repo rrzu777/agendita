@@ -95,7 +95,7 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
     <>
       <aside
         className={cn(
-          'hidden min-h-screen shrink-0 flex-col border-r border-border/50 bg-sidebar transition-[width] duration-200 md:flex',
+          'sticky top-0 h-screen min-h-0 hidden shrink-0 flex-col border-r border-border/50 bg-sidebar transition-[width] duration-200 md:flex',
           collapsed ? 'w-20' : 'w-72',
         )}
       >
@@ -121,7 +121,7 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
           </button>
         </div>
 
-        <nav className={cn('flex-1', collapsed ? 'px-2' : 'px-4')}>
+        <nav className={cn('min-h-0 flex-1 overflow-y-auto', collapsed ? 'px-2' : 'px-4')}>
           <ul className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon

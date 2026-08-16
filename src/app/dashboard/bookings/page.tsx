@@ -393,28 +393,30 @@ export default async function BookingsPage({
         subtitle="Administra tus citas y el estado de tus reservas."
       />
       <div className="space-y-6 p-5 md:p-10">
-        <Link href="/dashboard/bookings/new">
-          <Button className="h-11 rounded-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]">
-            <Plus className="mr-2 size-4" />
-            Nueva reserva
-          </Button>
-        </Link>
-        <form className="flex max-w-md gap-2" action="/dashboard/bookings">
-          {transferCursor && <input type="hidden" name="transferCursor" value={transferCursor} />}
-          <Input
-            name="booking"
-            type="search"
-            placeholder="Buscar reserva #1234"
-            defaultValue={bookingSearch}
-            className="studio-input"
-          />
-          <Button type="submit" variant="outline">Buscar</Button>
-          {bookingSearch && (
-            <Button type="button" variant="ghost" asChild aria-label="Limpiar búsqueda de reserva">
-              <Link href={bookingSearchClearPath(transferCursor)}>Limpiar</Link>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Link href="/dashboard/bookings/new">
+            <Button className="h-11 rounded-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]">
+              <Plus className="mr-2 size-4" />
+              Nueva reserva
             </Button>
-          )}
-        </form>
+          </Link>
+          <form className="flex w-full flex-col gap-2 sm:max-w-xl sm:flex-row sm:items-center" action="/dashboard/bookings">
+            {transferCursor && <input type="hidden" name="transferCursor" value={transferCursor} />}
+            <Input
+              name="booking"
+              type="search"
+              placeholder="Buscar reserva #1234"
+              defaultValue={bookingSearch}
+              className="studio-input min-w-0 flex-1"
+            />
+            <Button type="submit" variant="outline" className="shrink-0">Buscar</Button>
+            {bookingSearch && (
+              <Button type="button" variant="ghost" asChild aria-label="Limpiar búsqueda de reserva" className="shrink-0">
+                <Link href={bookingSearchClearPath(transferCursor)}>Limpiar</Link>
+              </Button>
+            )}
+          </form>
+        </div>
         <div className={`grid gap-4 ${requestCount > 0 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}`}>
           <div className="studio-card p-4">
             <p className="studio-eyebrow">Total</p>
