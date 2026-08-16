@@ -1,14 +1,15 @@
-import { beforeAll, describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { BookingStatus } from '@prisma/client'
 
 // El chequeo de cupo se mockea a propósito: acá se prueba la DECISIÓN (¿confirma o
 // no?, ¿pregunta o no?), no la query de solape. Que la query encuentre de verdad
 // una reserva pisada lo cubre tests/integration/booking-slot-race.integration.test.ts.
-const findSlotConflictMock = vi.fn()
+const { findSlotConflictMock } = vi.hoisted(() => ({ findSlotConflictMock: vi.fn() }))
 vi.mock('@/lib/availability/validation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/availability/validation')>()),
   findSlotConflict: findSlotConflictMock,
 }))
+import { recalcBookingFromPayments } from '@/server/services/finance'
 
 const FUTURO = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 const PASADO = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
@@ -48,11 +49,6 @@ function makeTx(booking: Record<string, unknown>, aprobados: Array<Record<string
 }
 
 const ABONO_SUFICIENTE = [{ id: 'p1', amount: 5000, paymentType: 'deposit' }]
-let recalcBookingFromPayments: typeof import('@/server/services/finance')['recalcBookingFromPayments']
-
-beforeAll(async () => {
-  ({ recalcBookingFromPayments } = await import('@/server/services/finance'))
-})
 
 describe('recalcBookingFromPayments — no confirma sobre un horario ocupado', () => {
   beforeEach(() => {

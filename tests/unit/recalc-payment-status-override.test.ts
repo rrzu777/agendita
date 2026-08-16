@@ -1,14 +1,9 @@
-import { beforeAll, describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { BookingPaymentStatus } from '@prisma/client'
+import { recalcBookingFromPayments } from '@/server/services/finance'
 
 // El override de paymentStatus se aplica en el update final; los montos
 // (depositPaid/remainingBalance) se derivan igual de los payments approved.
-let recalcBookingFromPayments: typeof import('@/server/services/finance')['recalcBookingFromPayments']
-
-beforeAll(async () => {
-  ({ recalcBookingFromPayments } = await import('@/server/services/finance'))
-})
-
 describe('recalcBookingFromPayments — paymentStatusOverride', () => {
   function makeTx(booking: Record<string, unknown>, approvedPayments: Array<Record<string, unknown>>) {
     return {

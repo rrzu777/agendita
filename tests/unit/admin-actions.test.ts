@@ -1,24 +1,26 @@
-import { describe, expect, it, vi, beforeAll, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import type { BusinessSubscription } from '@prisma/client'
 
-const { requirePlatformAdminUser, mockBusinessSubscription } = vi.hoisted(() => ({
-  requirePlatformAdminUser: vi.fn(),
-  mockBusinessSubscription: {
+const { requirePlatformAdminUser, mockBusinessSubscription, mockPrisma } = vi.hoisted(() => {
+  const mockBusinessSubscription = {
     findFirst: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
-  },
-}))
-
-const mockPrisma = {
-  plan: { findUnique: vi.fn() },
-  $transaction: vi.fn(),
-  businessSubscription: mockBusinessSubscription,
-  business: { update: vi.fn(), findUnique: vi.fn() },
-  subscriptionNotificationDelivery: { createMany: vi.fn() },
-  subscriptionPayment: { create: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() },
-  subscriptionLog: { create: vi.fn() },
-}
+  }
+  return {
+    requirePlatformAdminUser: vi.fn(),
+    mockBusinessSubscription,
+    mockPrisma: {
+      plan: { findUnique: vi.fn() },
+      $transaction: vi.fn(),
+      businessSubscription: mockBusinessSubscription,
+      business: { update: vi.fn(), findUnique: vi.fn() },
+      subscriptionNotificationDelivery: { createMany: vi.fn() },
+      subscriptionPayment: { create: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() },
+      subscriptionLog: { create: vi.fn() },
+    },
+  }
+})
 
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
@@ -26,14 +28,10 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 // admin.ts autoriza vía requirePlatformAdminUser (getUser remoto + isPlatformAdmin).
 vi.mock('@/lib/auth/user', () => ({ requirePlatformAdminUser }))
 
-// `admin.ts` carga transiciones y reconciliación de suscripciones. Si la primera
-// prueba lo importa dentro de su cuerpo, Vitest cuenta esa compilación contra el
-// timeout de 5 s del caso y hace flaky la validación de NaN.
-let adminActions: typeof import('@/server/actions/admin')
-
-beforeAll(async () => {
-  adminActions = await import('@/server/actions/admin')
-})
+// `admin.ts` carga transiciones y reconciliación de suscripciones. Los mocks
+// son hoisted para que su carga ocurra al inicializar el archivo, no bajo el
+// timeout de un caso ni de un hook.
+import * as adminActions from '@/server/actions/admin'
 
 function subscriptionFixture(
   overrides: Partial<BusinessSubscription> = {},
