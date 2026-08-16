@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { beforeAll, describe, it, expect, vi, beforeEach } from 'vitest'
 import { BookingStatus } from '@prisma/client'
 
 // El chequeo de cupo se mockea a propósito: acá se prueba la DECISIÓN (¿confirma o
@@ -48,6 +48,11 @@ function makeTx(booking: Record<string, unknown>, aprobados: Array<Record<string
 }
 
 const ABONO_SUFICIENTE = [{ id: 'p1', amount: 5000, paymentType: 'deposit' }]
+let recalcBookingFromPayments: typeof import('@/server/services/finance')['recalcBookingFromPayments']
+
+beforeAll(async () => {
+  ({ recalcBookingFromPayments } = await import('@/server/services/finance'))
+})
 
 describe('recalcBookingFromPayments — no confirma sobre un horario ocupado', () => {
   beforeEach(() => {
@@ -56,7 +61,6 @@ describe('recalcBookingFromPayments — no confirma sobre un horario ocupado', (
 
   it('con el horario libre confirma igual que siempre', async () => {
     findSlotConflictMock.mockResolvedValue(null)
-    const { recalcBookingFromPayments } = await import('@/server/services/finance')
     const tx = makeTx(bookingPendiente(), ABONO_SUFICIENTE)
 
     const res = await recalcBookingFromPayments(tx as never, 'b1')
@@ -70,7 +74,6 @@ describe('recalcBookingFromPayments — no confirma sobre un horario ocupado', (
 
   it('con el horario tomado NO confirma, pero deja la plata asentada', async () => {
     findSlotConflictMock.mockResolvedValue({ reason: 'booking_overlap', overlappingBookingIds: ['otra-reserva'] })
-    const { recalcBookingFromPayments } = await import('@/server/services/finance')
     const tx = makeTx(bookingPendiente(), ABONO_SUFICIENTE)
 
     const res = await recalcBookingFromPayments(tx as never, 'b1')
@@ -89,7 +92,6 @@ describe('recalcBookingFromPayments — no confirma sobre un horario ocupado', (
   })
 
   it('un turno que ya pasó no se re-valida: no hay cupo que proteger', async () => {
-    const { recalcBookingFromPayments } = await import('@/server/services/finance')
     const tx = makeTx(bookingPendiente({ startDateTime: PASADO, endDateTime: new Date(PASADO.getTime() + 3600_000) }), ABONO_SUFICIENTE)
 
     const res = await recalcBookingFromPayments(tx as never, 'b1')
@@ -99,7 +101,6 @@ describe('recalcBookingFromPayments — no confirma sobre un horario ocupado', (
   })
 
   it('un recálculo que no iba a confirmar tampoco consulta el cupo', async () => {
-    const { recalcBookingFromPayments } = await import('@/server/services/finance')
     const tx = makeTx(bookingPendiente({ status: BookingStatus.confirmed }), ABONO_SUFICIENTE)
 
     const res = await recalcBookingFromPayments(tx as never, 'b1')
@@ -110,7 +111,6 @@ describe('recalcBookingFromPayments — no confirma sobre un horario ocupado', (
 
   it('excluye la propia reserva del chequeo: su hold no compite consigo mismo', async () => {
     findSlotConflictMock.mockResolvedValue(null)
-    const { recalcBookingFromPayments } = await import('@/server/services/finance')
     const tx = makeTx(bookingPendiente(), ABONO_SUFICIENTE)
 
     await recalcBookingFromPayments(tx as never, 'b1')
