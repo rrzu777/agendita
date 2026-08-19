@@ -1,5 +1,43 @@
 import { describe, it, expect } from 'vitest'
-import { updateBusinessSchema, slotStepToMinutes } from '@/lib/business/schema'
+import {
+  policySettingsSchema,
+  profileSettingsSchema,
+  reservationSettingsSchema,
+  slotStepToMinutes,
+  updateBusinessSchema,
+} from '@/lib/business/schema'
+
+describe('section settings schemas', () => {
+  it('profile schema owns only public identity fields', () => {
+    const parsed = profileSettingsSchema.parse({
+      name: ' Mi Negocio ', bio: '', profileImageUrl: '', logoUrl: '',
+      whatsapp: '', instagram: '', addressText: '', city: ' Santiago ',
+      subdomain: 'Mi-Negocio',
+    })
+
+    expect(parsed).toMatchObject({ name: 'Mi Negocio', city: 'Santiago', subdomain: 'mi-negocio' })
+    expect('timezone' in parsed).toBe(false)
+  })
+
+  it('reservation schema keeps the empty cutoff out of its contract', () => {
+    const parsed = reservationSettingsSchema.parse({
+      timezone: 'America/Santiago', slotStepMinutes: 'service', manualHoldHours: '24',
+      requireBookingApproval: false, defaultMeetingUrl: '',
+    })
+
+    expect(parsed.slotStepMinutes).toBe('service')
+    expect('selfServiceCutoffHours' in parsed).toBe(false)
+  })
+
+  it('policy schema keeps cutoff and reminder together', () => {
+    const parsed = policySettingsSchema.parse({
+      selfServiceCutoffHours: '24', cancellationReminderEnabled: true,
+      cancellationPolicy: '', bookingPolicy: '', depositPolicy: '',
+    })
+
+    expect(parsed.selfServiceCutoffHours).toBe(24)
+  })
+})
 
 describe('updateBusinessSchema', () => {
   it('accepts valid data', () => {
