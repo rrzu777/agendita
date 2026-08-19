@@ -1,7 +1,7 @@
 # Configuración por secciones — Diseño
 
 **Fecha:** 2026-08-18  
-**Estado:** pendiente de revisión
+**Estado:** aprobado para planificación
 
 ## Contexto
 
