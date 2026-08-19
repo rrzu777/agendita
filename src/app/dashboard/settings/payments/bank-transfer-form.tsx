@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,12 +11,44 @@ import { saveBankTransferAccount, setBankTransferEnabled, setRequireTransferProo
 import type { BankTransferAccount } from '@prisma/client'
 import { DEFAULT_HOLD_HOURS, DEFAULT_VERIFY_HOURS, HOLD_HOURS_MAX, VERIFY_HOURS_MAX } from '@/lib/bank-transfer/schema'
 import { useVocabulary } from '@/components/vocabulary-provider'
+import { useSettingsDraft } from '@/components/dashboard/settings/use-settings-draft'
+import { useUnsavedChangesRegistration } from '@/components/dashboard/unsaved-changes-provider'
+
+const DRAFT_VERSION = 1
+
+type BankTransferFormValues = {
+  accountHolder: string
+  rut: string
+  bankName: string
+  accountType: string
+  accountNumber: string
+  email: string
+  instructions: string
+  holdHours: string
+  verifyHours: string
+}
+
+function toFormValues(account: BankTransferAccount | null): BankTransferFormValues {
+  return {
+    accountHolder: account?.accountHolder ?? '',
+    rut: account?.rut ?? '',
+    bankName: account?.bankName ?? '',
+    accountType: account?.accountType ?? '',
+    accountNumber: account?.accountNumber ?? '',
+    email: account?.email ?? '',
+    instructions: account?.instructions ?? '',
+    holdHours: String(account?.holdHours ?? DEFAULT_HOLD_HOURS),
+    verifyHours: account ? String(account.verifyHours ?? '') : String(DEFAULT_VERIFY_HOURS),
+  }
+}
 
 export function BankTransferForm({
+  businessId,
   account,
   requireProof,
   proofUploadAvailable,
 }: {
+  businessId: string
   account: BankTransferAccount | null
   requireProof: boolean
   proofUploadAvailable: boolean
@@ -26,19 +58,21 @@ export function BankTransferForm({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
-
-  const [form, setForm] = useState({
-    accountHolder: account?.accountHolder ?? '',
-    rut: account?.rut ?? '',
-    bankName: account?.bankName ?? '',
-    accountType: account?.accountType ?? '',
-    accountNumber: account?.accountNumber ?? '',
-    email: account?.email ?? '',
-    instructions: account?.instructions ?? '',
-    holdHours: String(account?.holdHours ?? DEFAULT_HOLD_HOURS),
-    // '' representa null = sin límite
-    verifyHours: account ? String(account.verifyHours ?? '') : String(DEFAULT_VERIFY_HOURS),
+  const initialValues = useMemo(() => toFormValues(account), [account])
+  const [baseline, setBaseline] = useState(initialValues)
+  const [form, setForm] = useState(initialValues)
+  const isDirty = Object.keys(baseline).some((key) => form[key as keyof BankTransferFormValues] !== baseline[key as keyof BankTransferFormValues])
+  const reset = useCallback((values: BankTransferFormValues) => setForm(values), [])
+  const draft = useSettingsDraft({
+    key: `settings:${businessId}:payments-bank:v1`,
+    version: DRAFT_VERSION,
+    baseline,
+    values: form,
+    isDirty,
+    reset,
   })
+
+  useUnsavedChangesRegistration({ scope: 'payments-bank', isDirty, discard: draft.discard })
 
   function set<K extends keyof typeof form>(key: K, value: string) {
     setForm(prev => ({ ...prev, [key]: value }))
@@ -49,13 +83,17 @@ export function BankTransferForm({
     setIsSubmitting(true)
     setServerError(null)
     setSuccessMessage(null)
+    const submittedValues = { ...form }
     try {
       const res = await saveBankTransferAccount({
-        ...form,
-        holdHours: Number(form.holdHours),
-        verifyHours: form.verifyHours.trim() === '' ? null : Number(form.verifyHours),
+        ...submittedValues,
+        holdHours: Number(submittedValues.holdHours),
+        verifyHours: submittedValues.verifyHours.trim() === '' ? null : Number(submittedValues.verifyHours),
       })
       if (!res.ok) { setServerError(res.error); return }
+      setBaseline(submittedValues)
+      setForm(submittedValues)
+      draft.clearDraft()
       setSuccessMessage('Datos guardados.')
       router.refresh()
     } catch {

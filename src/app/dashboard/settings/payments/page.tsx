@@ -1,8 +1,5 @@
-import { redirect } from 'next/navigation'
-import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import {
   getPaymentAccountStatus,
   startMercadoPagoConnect,
@@ -14,6 +11,7 @@ import { BadgeCheck, CircleAlert, Landmark, Link2, Link2Off, TestTube } from 'lu
 import { DisconnectButton } from './disconnect-button'
 import { BankTransferForm } from './bank-transfer-form'
 import { getVocabulary } from '@/lib/vocabulary'
+import { requireSettingsPageAccess } from '@/lib/business/settings-access'
 
 interface PaymentsSettingsPageProps {
   params: Promise<Record<string, never>>
@@ -21,19 +19,10 @@ interface PaymentsSettingsPageProps {
 }
 
 export default async function PaymentsSettingsPage(props: PaymentsSettingsPageProps) {
-  const userData = await getCurrentUserWithBusiness()
+  const { business } = await requireSettingsPageAccess()
   const { success, error } = await props.searchParams
-
-  if (!userData?.user) {
-    redirect('/login')
-  }
-
-  if (!userData?.business) {
-    redirect('/recover-business')
-  }
-
-  const businessId = userData.business.id
-  const vocabulary = getVocabulary(userData.business.category)
+  const businessId = business.id
+  const vocabulary = getVocabulary(business.category)
   const [account, availability, bankAccount, businessFlags] = await Promise.all([
     getPaymentAccountStatus(),
     resolveOnlinePaymentAvailabilityForBusiness(businessId),
@@ -47,9 +36,7 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
   const isSandbox = process.env.NODE_ENV !== 'production'
 
   return (
-    <div>
-      <DashboardHeader title="Pagos online" subtitle={`Configura cómo tus ${vocabulary.clients} pagan el abono de sus reservas`} />
-      <div className="p-5 md:p-10 max-w-2xl">
+    <div className="max-w-2xl">
         {success && (
           <div className="mb-6 rounded-lg border border-green-200 bg-green-50/50 p-4 text-sm text-green-800">
             Cuenta de Mercado Pago conectada exitosamente. Tus clientes ya pueden pagar con tarjeta.
@@ -175,13 +162,13 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
           </CardHeader>
           <CardContent>
             <BankTransferForm
+              businessId={businessId}
               account={bankAccount}
               requireProof={businessFlags?.requireTransferProof ?? false}
               proofUploadAvailable={proofUploadAvailable}
             />
           </CardContent>
         </Card>
-      </div>
     </div>
   )
 }
