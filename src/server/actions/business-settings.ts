@@ -11,11 +11,9 @@ import {
   profileSettingsSchema,
   reservationSettingsSchema,
   slotStepToMinutes,
-  updateBusinessSchema,
   type PolicySettingsInput,
   type ProfileSettingsInput,
   type ReservationSettingsInput,
-  type UpdateBusinessInput,
 } from '@/lib/business/schema'
 import { normalizeWhatsapp, normalizeInstagram } from '@/lib/business/normalize'
 import { z } from 'zod'
@@ -25,11 +23,9 @@ const RESERVED_SUBDOMAINS = [
 ]
 
 // NOTE: a 'use server' module must only export async functions. Don't re-export
-// the Zod schema OR types here — the 'use server' transform turns every export
-// into a runtime server reference, so even `export type { UpdateBusinessInput }`
-// emits a reference to a value that doesn't exist at runtime (types are erased),
-// throwing `ReferenceError: UpdateBusinessInput is not defined` when the action
-// runs. Import the schema and types directly from '@/lib/business/schema'.
+// Zod schemas or types here: the transform turns every export into a runtime
+// server reference, including erased type-only names. Import section schemas and
+// types directly from '@/lib/business/schema'.
 
 function trimToNull(value: string | undefined): string | null {
   if (value === undefined || value.trim() === '') return null
@@ -197,69 +193,6 @@ async function _updatePolicySettings(data: PolicySettingsInput) {
   } satisfies PolicySettingsInput
 }
 
-async function _updateBusinessSettings(data: UpdateBusinessInput) {
-  const { businessId } = await requireBusinessRole(['owner', 'admin'])
-
-  const limit = await checkRateLimit('update-business-settings', 20, 60000)
-  if (!limit.success) {
-    throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
-  }
-
-  const parsed = updateBusinessSchema.safeParse(data)
-  if (!parsed.success) {
-    throw new UserError('Datos inválidos: ' + parsed.error.issues.map(i => i.message).join(', '))
-  }
-
-  const validated = parsed.data
-
-  if (RESERVED_SUBDOMAINS.includes(validated.subdomain)) {
-    throw new UserError('Este subdominio está reservado')
-  }
-
-  const existing = await prisma.business.findFirst({
-    where: {
-      subdomain: validated.subdomain,
-      NOT: { id: businessId },
-    },
-  })
-  if (existing) {
-    throw new UserError('Este subdominio ya está en uso')
-  }
-
-  const updateData = {
-    name: validated.name.trim(),
-    bio: trimToNull(validated.bio),
-    profileImageUrl: trimToNull(validated.profileImageUrl),
-    logoUrl: trimToNull(validated.logoUrl),
-    whatsapp: normalizeWhatsapp(validated.whatsapp) || null,
-    instagram: normalizeInstagram(validated.instagram) || null,
-    addressText: trimToNull(validated.addressText),
-    city: validated.city.trim(),
-    timezone: validated.timezone,
-    slotStepMinutes: slotStepToMinutes(validated.slotStepMinutes),
-    selfServiceCutoffHours: validated.selfServiceCutoffHours,
-    cancellationReminderEnabled: validated.cancellationReminderEnabled,
-    manualHoldHours: validated.manualHoldHours,
-    requireBookingApproval: validated.requireBookingApproval,
-    defaultMeetingUrl: trimToNull(validated.defaultMeetingUrl),
-    subdomain: validated.subdomain,
-    cancellationPolicy: trimToNull(validated.cancellationPolicy),
-    bookingPolicy: trimToNull(validated.bookingPolicy),
-    depositPolicy: trimToNull(validated.depositPolicy),
-  }
-
-  const updated = await prisma.business.update({
-    where: { id: businessId },
-    data: updateData,
-  })
-
-  revalidatePath('/dashboard/settings')
-  await revalidateBusinessPublicPaths(businessId)
-
-  return updated
-}
-
-export const updateBusinessSettings = action(_updateBusinessSettings)
 export const updateProfileSettings = action(_updateProfileSettings)
 export const updateReservationSettings = action(_updateReservationSettings)
 export const updatePolicySettings = action(_updatePolicySettings)

@@ -71,19 +71,13 @@ export const policySettingsSchema = z.object({
   depositPolicy: optionalStringField,
 })
 
-// Temporalmente conservamos este contrato para los callers que aún no migran
-// a las tres acciones acotadas. Task 8 retira el monolito.
-export const updateBusinessSchema = profileSettingsSchema
-  .merge(reservationSettingsSchema)
-  .merge(policySettingsSchema)
-
 export type ProfileSettingsInput = z.input<typeof profileSettingsSchema>
 export type ReservationSettingsInput = z.input<typeof reservationSettingsSchema>
 export type PolicySettingsInput = z.input<typeof policySettingsSchema>
-export type UpdateBusinessInput = z.input<typeof updateBusinessSchema>
-export type UpdateBusinessOutput = z.output<typeof updateBusinessSchema>
 
 /** Valor del form → minutos para Business.slotStepMinutes (null = duración del servicio). */
-export function slotStepToMinutes(value: UpdateBusinessOutput['slotStepMinutes']): number | null {
+export function slotStepToMinutes(
+  value: z.output<typeof reservationSettingsSchema>['slotStepMinutes'],
+): number | null {
   return value === 'service' ? null : Number(value)
 }

@@ -42,11 +42,11 @@ vi.mock('@/server/actions/revalidate-business', () => ({
 }))
 
 const {
-  updateBusinessSettings,
   updatePolicySettings,
   updateProfileSettings,
   updateReservationSettings,
 } = await import('@/server/actions/business-settings')
+const businessSettingsActions = await import('@/server/actions/business-settings')
 
 const profileInput: ProfileSettingsInput = {
   name: 'Mi Negocio', bio: '', profileImageUrl: '', logoUrl: '',
@@ -64,20 +64,25 @@ const policyInput: PolicySettingsInput = {
   cancellationPolicy: '', bookingPolicy: '', depositPolicy: '',
 }
 
-describe('updateBusinessSettings', () => {
-  const baseData = {
-    name: 'Mi Estudio',
-    city: 'Santiago',
-    timezone: 'America/Santiago',
-    subdomain: 'miestudio',
-  }
-
+describe('section-scoped business settings actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCheckRateLimit.mockResolvedValue({ success: true })
     mockRequireBusinessRole.mockResolvedValue({ businessId: 'biz-1' })
     mockPrisma.business.findFirst.mockResolvedValue(null)
-    mockPrisma.business.update.mockResolvedValue({ id: 'biz-1', ...baseData })
+    mockPrisma.business.update.mockResolvedValue({
+      name: 'Mi Negocio', bio: null, profileImageUrl: null, logoUrl: null,
+      whatsapp: '+56912345678', instagram: 'minegocio', addressText: null,
+      city: 'Santiago', subdomain: 'mi-negocio',
+      timezone: 'America/Santiago', slotStepMinutes: null, manualHoldHours: 24,
+      requireBookingApproval: false, defaultMeetingUrl: null,
+      selfServiceCutoffHours: 24, cancellationReminderEnabled: true,
+      cancellationPolicy: null, bookingPolicy: null, depositPolicy: null,
+    })
+  })
+
+  it('exports only section-scoped settings actions', () => {
+    expect(businessSettingsActions).not.toHaveProperty('updateBusinessSettings')
   })
 
   describe('auth & session', () => {
@@ -86,7 +91,7 @@ describe('updateBusinessSettings', () => {
         new ForbiddenError('No tienes permisos')
       )
 
-      const result = await updateBusinessSettings(baseData)
+      const result = await updateProfileSettings(profileInput)
 
       expect(result).toEqual({ ok: false, error: 'No tienes permisos' })
       expect(mockPrisma.business.update).not.toHaveBeenCalled()
@@ -95,11 +100,7 @@ describe('updateBusinessSettings', () => {
     it('uses businessId from session, never from input', async () => {
       mockRequireBusinessRole.mockResolvedValue({ businessId: 'session-biz-123' })
 
-      await updateBusinessSettings({
-        ...baseData,
-        // Intento malicioso de enviar businessId en el payload
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any)
+      await updateProfileSettings({ ...profileInput, businessId: 'attacker-biz' } as never)
 
       expect(mockPrisma.business.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -120,7 +121,7 @@ describe('updateBusinessSettings', () => {
       ['register'],
       ['support'],
     ])('rejects reserved subdomain: %s', async (subdomain) => {
-      const result = await updateBusinessSettings({ ...baseData, subdomain })
+      const result = await updateProfileSettings({ ...profileInput, subdomain })
 
       expect(result).toEqual({ ok: false, error: 'Este subdominio está reservado' })
       expect(mockPrisma.business.update).not.toHaveBeenCalled()
@@ -132,7 +133,7 @@ describe('updateBusinessSettings', () => {
         subdomain: 'miestudio',
       })
 
-      const result = await updateBusinessSettings(baseData)
+      const result = await updateProfileSettings(profileInput)
 
       expect(result).toEqual({ ok: false, error: 'Este subdominio ya está en uso' })
       expect(mockPrisma.business.update).not.toHaveBeenCalled()
@@ -141,13 +142,13 @@ describe('updateBusinessSettings', () => {
     it('allows keeping current subdomain (excluded from uniqueness check)', async () => {
       mockPrisma.business.findFirst.mockResolvedValue(null)
 
-      const result = await updateBusinessSettings(baseData)
+      const result = await updateProfileSettings(profileInput)
 
       expect(result).toMatchObject({ ok: true })
       expect(mockPrisma.business.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            subdomain: 'miestudio',
+            subdomain: 'mi-negocio',
             NOT: { id: 'biz-1' },
           }),
         })
@@ -158,10 +159,7 @@ describe('updateBusinessSettings', () => {
 
   describe('data normalization', () => {
     it('persists cancellation reminders disabled explicitly', async () => {
-      await updateBusinessSettings({
-        ...baseData,
-        cancellationReminderEnabled: false,
-      })
+      await updatePolicySettings({ ...policyInput, cancellationReminderEnabled: false })
 
       expect(mockPrisma.business.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -173,29 +171,21 @@ describe('updateBusinessSettings', () => {
     })
 
     it('normalizes whatsapp and instagram before saving', async () => {
-      const result = await updateBusinessSettings({
-        ...baseData,
-        whatsapp: '9 1234 5678',
-        instagram: '@miestudio',
-      })
+      const result = await updateProfileSettings(profileInput)
 
       expect(result).toMatchObject({ ok: true })
       expect(mockPrisma.business.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             whatsapp: '+56912345678',
-            instagram: 'miestudio',
+            instagram: 'minegocio',
           }),
         })
       )
     })
 
     it('trims name and city before saving', async () => {
-      await updateBusinessSettings({
-        ...baseData,
-        name: '  Mi Estudio  ',
-        city: '  Santiago  ',
-      })
+      await updateProfileSettings({ ...profileInput, name: '  Mi Estudio  ', city: '  Santiago  ' })
 
       expect(mockPrisma.business.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -208,17 +198,14 @@ describe('updateBusinessSettings', () => {
     })
 
     it('converts empty strings to null for nullable fields', async () => {
-      await updateBusinessSettings({
-        ...baseData,
+      await updateProfileSettings({
+        ...profileInput,
         bio: '',
         profileImageUrl: '',
         logoUrl: '',
         whatsapp: '',
         instagram: '',
         addressText: '',
-        cancellationPolicy: '',
-        bookingPolicy: '',
-        depositPolicy: '',
       })
 
       expect(mockPrisma.business.update).toHaveBeenCalledWith(
@@ -230,6 +217,14 @@ describe('updateBusinessSettings', () => {
             whatsapp: null,
             instagram: null,
             addressText: null,
+          }),
+        })
+      )
+
+      await updatePolicySettings(policyInput)
+      expect(mockPrisma.business.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
             cancellationPolicy: null,
             bookingPolicy: null,
             depositPolicy: null,
@@ -243,7 +238,7 @@ describe('updateBusinessSettings', () => {
     it('rejects when rate limit is exceeded', async () => {
       mockCheckRateLimit.mockResolvedValue({ success: false })
 
-      const result = await updateBusinessSettings(baseData)
+      const result = await updateProfileSettings(profileInput)
 
       expect(result).toEqual({
         ok: false,
@@ -252,25 +247,6 @@ describe('updateBusinessSettings', () => {
       expect(mockPrisma.business.update).not.toHaveBeenCalled()
     })
   })
-})
-
-describe('section-scoped business settings actions', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockCheckRateLimit.mockResolvedValue({ success: true })
-    mockRequireBusinessRole.mockResolvedValue({ businessId: 'biz-1' })
-    mockPrisma.business.findFirst.mockResolvedValue(null)
-    mockPrisma.business.update.mockResolvedValue({
-      name: 'Mi Negocio', bio: null, profileImageUrl: null, logoUrl: null,
-      whatsapp: '+56912345678', instagram: 'minegocio', addressText: null,
-      city: 'Santiago', subdomain: 'mi-negocio',
-      timezone: 'America/Santiago', slotStepMinutes: null, manualHoldHours: 24,
-      requireBookingApproval: false, defaultMeetingUrl: null,
-      selfServiceCutoffHours: 24, cancellationReminderEnabled: true,
-      cancellationPolicy: null, bookingPolicy: null, depositPolicy: null,
-    })
-  })
-
   it('profile update never writes reservation or policy columns', async () => {
     const result = await updateProfileSettings(profileInput)
     const call = mockPrisma.business.update.mock.calls[0][0]

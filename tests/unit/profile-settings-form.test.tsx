@@ -201,6 +201,27 @@ describe('ProfileSettingsForm', () => {
     expect(container.textContent).toContain('Hay un borrador local de una versión anterior')
   })
 
+  it('re-reads a matching draft when the page returns from browser history', async () => {
+    await renderProfile()
+    writeSettingsDraft(
+      sessionStorage,
+      'biz-1:profile',
+      1,
+      profileValues,
+      { ...profileValues, bio: 'Borrador desde historial' },
+    )
+
+    await act(async () => {
+      const pageshow = new Event('pageshow')
+      Object.defineProperty(pageshow, 'persisted', { value: true })
+      window.dispatchEvent(pageshow)
+    })
+
+    expect(container.textContent).toContain('Recuperamos un borrador local')
+    expect(getInput(container, 'Descripción').value).toBe('Borrador desde historial')
+    expect(container.textContent).toContain('Cambios sin guardar')
+  })
+
   it('wraps long city and bio tokens in the public preview', () => {
     const html = renderToStaticMarkup(
       <PublicProfilePreview

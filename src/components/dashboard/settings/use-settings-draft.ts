@@ -69,6 +69,25 @@ export function useSettingsDraft<T extends FlatSettings>({
   }, [baseline, baselineFingerprint, key, reset, version])
 
   useEffect(() => {
+    const restoreFromHistory = (event: PageTransitionEvent) => {
+      if (!event.persisted) return
+
+      const storage = getSessionStorage()
+      if (!storage) return
+
+      const nextRecovery = readSettingsDraft(storage, key, version, baseline)
+      if (nextRecovery.kind === 'restored') {
+        reset(nextRecovery.values, { keepDefaultValues: true })
+      }
+      setRecovery(nextRecovery.kind)
+      initialized.current = true
+    }
+
+    window.addEventListener('pageshow', restoreFromHistory)
+    return () => window.removeEventListener('pageshow', restoreFromHistory)
+  }, [baseline, key, reset, version])
+
+  useEffect(() => {
     if (!initialized.current) return
 
     const storage = getSessionStorage()
