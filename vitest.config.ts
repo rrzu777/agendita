@@ -7,6 +7,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    // Heavy Next.js modules can saturate local/CI runners and trigger false
+    // hook timeouts when Vitest uses every available core.
+    maxWorkers: 4,
     setupFiles: ['./tests/helpers/react-dom.tsx'],
     exclude: [
       '**/node_modules/**',
