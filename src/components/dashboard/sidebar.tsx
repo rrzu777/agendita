@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { signOut } from '@/lib/auth/actions'
+import { GuardedLink, useUnsavedChanges } from '@/components/dashboard/unsaved-changes-provider'
 import type { User } from '@supabase/supabase-js'
 import type { Business } from '@prisma/client'
 import {
@@ -69,6 +69,8 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
   const pathname = usePathname()
   const userName = user.user_metadata?.name || user.email?.split('@')[0] || 'Usuario'
   const mobileItems = navItems.slice(0, 4)
+  const { hasUnsavedChanges, requestNavigation } = useUnsavedChanges()
+  const allowSignOut = useRef(false)
 
   // Colapsado por defecto en tablet (md–lg) para dar aire al contenido; en
   // pantallas grandes arranca expandido. El usuario puede alternar y se recuerda.
@@ -91,6 +93,17 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
     })
   }
 
+  function handleSignOut(event: FormEvent<HTMLFormElement>) {
+    if (!hasUnsavedChanges || allowSignOut.current) return
+
+    event.preventDefault()
+    const form = event.currentTarget
+    requestNavigation(() => {
+      allowSignOut.current = true
+      form.requestSubmit()
+    })
+  }
+
   return (
     <>
       <aside
@@ -102,9 +115,9 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
         <div className={cn('flex items-center gap-2 p-4', collapsed ? 'justify-center' : 'justify-between px-6 pt-6')}>
           {!collapsed && (
             <div className="min-w-0">
-              <Link href="/" className="font-heading text-2xl font-semibold tracking-tight text-primary">
+              <GuardedLink href="/" className="font-heading text-2xl font-semibold tracking-tight text-primary">
                 Agendita
-              </Link>
+              </GuardedLink>
               {business && (
                 <p className="mt-1 truncate text-sm font-semibold text-sidebar-foreground">{business.name}</p>
               )}
@@ -131,7 +144,7 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
 
               return (
                 <li key={item.href}>
-                  <Link
+                  <GuardedLink
                     href={item.href}
                     title={collapsed ? item.label : undefined}
                     className={cn(
@@ -144,7 +157,7 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
                   >
                     <Icon className="size-5 shrink-0" />
                     {!collapsed && item.label}
-                  </Link>
+                  </GuardedLink>
                 </li>
               )
             })}
@@ -158,7 +171,7 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
               <p className="truncate text-xs text-muted-foreground">{user.email}</p>
             </div>
           )}
-          <form action={signOut}>
+          <form action={signOut} onSubmit={handleSignOut}>
             <button
               type="submit"
               title={collapsed ? 'Cerrar sesión' : undefined}
@@ -183,7 +196,7 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
               : pathname.startsWith(item.href)
 
             return (
-              <Link
+              <GuardedLink
                 key={item.href}
                 href={item.href}
                 className={cn(
@@ -193,7 +206,7 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
               >
                 <Icon className="size-5" />
                 <span>{item.label}</span>
-              </Link>
+              </GuardedLink>
             )
           })}
         </nav>

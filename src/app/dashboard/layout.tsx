@@ -4,6 +4,7 @@ import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { prisma } from '@/lib/db'
 import { getVocabulary } from '@/lib/vocabulary'
 import { VocabularyProvider } from '@/components/vocabulary-provider'
+import { UnsavedChangesProvider } from '@/components/dashboard/unsaved-changes-provider'
 
 export default async function DashboardLayout({
   children,
@@ -25,12 +26,14 @@ export default async function DashboardLayout({
 
   return (
     <VocabularyProvider value={getVocabulary(userData.business.category)}>
-      <div className="flex min-h-screen bg-background text-foreground">
-        <DashboardSidebar user={userData.user} business={userData.business} />
-        <main className="min-w-0 flex-1 pb-24 md:pb-0">
-          {children}
-        </main>
-      </div>
+      <UnsavedChangesProvider>
+        <div className="flex min-h-screen bg-background text-foreground">
+          <DashboardSidebar user={userData.user} business={userData.business} />
+          <main className="min-w-0 flex-1 pb-24 md:pb-0">
+            {children}
+          </main>
+        </div>
+      </UnsavedChangesProvider>
     </VocabularyProvider>
   )
 }
