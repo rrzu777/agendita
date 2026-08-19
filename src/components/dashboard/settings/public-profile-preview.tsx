@@ -47,11 +47,11 @@ export function PublicProfilePreview({
           </div>
           <div className="min-w-0 space-y-1">
             <h2 className="break-words font-heading text-lg font-semibold text-primary">{name || 'Tu negocio'}</h2>
-            {city && <p className="text-sm text-muted-foreground">{city}</p>}
+            {city && <p className="break-words text-sm text-muted-foreground">{city}</p>}
           </div>
         </div>
 
-        {bio ? <p className="whitespace-pre-wrap text-sm text-muted-foreground">{bio}</p> : null}
+        {bio ? <p className="break-words whitespace-pre-wrap text-sm text-muted-foreground">{bio}</p> : null}
 
         <div className="space-y-1 border-t border-border/60 pt-4">
           <p className="text-xs font-medium text-muted-foreground">URL pública</p>

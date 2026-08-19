@@ -1,10 +1,12 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { UnsavedChangesProvider } from '@/components/dashboard/unsaved-changes-provider'
 import { writeSettingsDraft } from '@/lib/business/settings-draft'
 import type { ProfileSettingsInput } from '@/lib/business/schema'
 import { ProfileSettingsForm } from '@/components/dashboard/settings/profile-settings-form'
+import { PublicProfilePreview } from '@/components/dashboard/settings/public-profile-preview'
 
 const { mockUpdateProfile } = vi.hoisted(() => ({ mockUpdateProfile: vi.fn() }))
 
@@ -52,6 +54,12 @@ async function submit(container: HTMLElement) {
   })
 }
 
+function deferred<T>() {
+  let resolve: (value: T) => void
+  const promise = new Promise<T>((nextResolve) => { resolve = nextResolve })
+  return { promise, resolve: (value: T) => resolve(value) }
+}
+
 describe('ProfileSettingsForm', () => {
   let container: HTMLDivElement
   let root: Root
@@ -94,6 +102,33 @@ describe('ProfileSettingsForm', () => {
     expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
   })
 
+  it('locks edits and re-entry until a pending profile update resolves', async () => {
+    const pending = deferred<{ ok: true; data: ProfileSettingsInput }>()
+    mockUpdateProfile.mockReturnValue(pending.promise)
+    await renderProfile()
+
+    await setInput(container, 'WhatsApp', '9 1234 5678')
+    await submit(container)
+
+    const whatsapp = getInput(container, 'WhatsApp')
+    const fieldset = container.querySelector('fieldset')
+    expect(fieldset?.disabled).toBe(true)
+    expect(whatsapp.matches(':disabled')).toBe(true)
+    const valueWhilePending = whatsapp.value
+    whatsapp.focus()
+    expect(document.activeElement).not.toBe(whatsapp)
+    expect(whatsapp.value).toBe(valueWhilePending)
+
+    await submit(container)
+    expect(mockUpdateProfile).toHaveBeenCalledTimes(1)
+
+    await act(async () => pending.resolve({ ok: true, data: { ...profileValues, whatsapp: '+56912345678' } }))
+
+    expect(getInput(container, 'WhatsApp').value).toBe('+56912345678')
+    expect(container.querySelector('fieldset')?.disabled).toBe(false)
+    expect(sessionStorage.getItem('biz-1:profile')).toBeNull()
+  })
+
   it('updates the public preview from a profile field', async () => {
     await renderProfile()
 
@@ -113,6 +148,23 @@ describe('ProfileSettingsForm', () => {
     expect(getInput(container, 'Subdominio').value).toBe('admin')
   })
 
+  it('associates only rendered help and error text with their controls', async () => {
+    await renderProfile()
+
+    const logo = getInput(container, 'URL del logo')
+    expect(logo.getAttribute('aria-describedby')).toBe('profile-logo-url-help')
+    expect(container.querySelector('#profile-logo-url-help')?.textContent).toContain('URL pública')
+
+    await setInput(container, 'Nombre del negocio', '')
+    await submit(container)
+
+    const name = getInput(container, 'Nombre del negocio')
+    expect(name.getAttribute('aria-describedby')).toBe('profile-name-error')
+    expect(container.querySelector('#profile-name-error')?.getAttribute('role')).toBe('alert')
+    const ids = Array.from(container.querySelectorAll('[id]')).map((element) => element.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
   it('announces a restored draft and a conflicting draft', async () => {
     writeSettingsDraft(sessionStorage, 'biz-1:profile', 1, profileValues, { ...profileValues, name: 'Borrador recuperado' })
     await renderProfile()
@@ -127,5 +179,21 @@ describe('ProfileSettingsForm', () => {
     await renderProfile()
 
     expect(container.textContent).toContain('Hay un borrador local de una versión anterior')
+  })
+
+  it('wraps long city and bio tokens in the public preview', () => {
+    const html = renderToStaticMarkup(
+      <PublicProfilePreview
+        name="Mi Negocio"
+        city="CiudadConUnTokenExcepcionalmenteLargoSinEspacios"
+        bio="DescripciónConUnTokenExcepcionalmenteLargoSinEspacios"
+        logoUrl=""
+        publicUrl="https://mi-negocio.example.com"
+      />,
+    )
+
+    expect(html).toMatch(/CiudadConUnTokenExcepcionalmenteLargoSinEspacios<\/p>/)
+    expect(html).toMatch(/class="[^"]*break-words[^"]*"[^>]*>CiudadConUnTokenExcepcionalmenteLargoSinEspacios<\/p>/)
+    expect(html).toMatch(/class="[^"]*break-words[^"]*"[^>]*>DescripciónConUnTokenExcepcionalmenteLargoSinEspacios<\/p>/)
   })
 })
