@@ -3,7 +3,7 @@ import { SettingsNavigation } from '@/components/dashboard/settings/settings-nav
 
 export function SettingsShell({ children }: { children: ReactNode }) {
   return (
-    <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-10">
+    <div className="overflow-x-clip p-5 md:p-10 lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-10">
       <aside className="lg:sticky lg:top-8 lg:self-start lg:border-r lg:border-border/60 lg:pr-5">
         <SettingsNavigation />
       </aside>

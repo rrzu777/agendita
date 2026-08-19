@@ -27,10 +27,22 @@ describe('settings shell', () => {
     expect(html).toContain('href="/dashboard/settings/payments" data-prefetch="false"')
   })
 
+  it('marks a section current only for its exact registered route', () => {
+    mockPathname.mockReturnValue('/dashboard/settings/profile')
+    expect(renderToStaticMarkup(<SettingsNavigation />)).toMatch(/href="\/dashboard\/settings\/profile"[^>]*aria-current="page"/)
+
+    mockPathname.mockReturnValue('/dashboard/settings')
+    expect(renderToStaticMarkup(<SettingsNavigation />)).not.toContain('aria-current="page"')
+
+    mockPathname.mockReturnValue('/dashboard/settings/not-found')
+    expect(renderToStaticMarkup(<SettingsNavigation />)).not.toContain('aria-current="page"')
+  })
+
   it('names every save state without relying on color', () => {
     const idle = renderToStaticMarkup(<SettingsSaveBar isDirty={false} isSubmitting={false} status="idle" />)
     const submitting = renderToStaticMarkup(<SettingsSaveBar isDirty isSubmitting status="idle" />)
     const saved = renderToStaticMarkup(<SettingsSaveBar isDirty={false} isSubmitting={false} status="saved" />)
+    const dirtyAfterSaved = renderToStaticMarkup(<SettingsSaveBar isDirty isSubmitting={false} status="saved" />)
     const error = renderToStaticMarkup(<SettingsSaveBar isDirty isSubmitting={false} status="error" error="No se pudo guardar" />)
 
     expect(idle).toContain('disabled=""')
@@ -38,6 +50,8 @@ describe('settings shell', () => {
     expect(submitting).toContain('disabled=""')
     expect(submitting).toContain('Guardando…')
     expect(saved).toContain('Cambios guardados')
+    expect(dirtyAfterSaved).toContain('Cambios sin guardar')
+    expect(dirtyAfterSaved).not.toContain('Cambios guardados')
     expect(error).toContain('No se pudo guardar')
     expect(error).toContain('aria-live="polite"')
   })
@@ -51,6 +65,7 @@ describe('settings shell', () => {
           <label htmlFor="business-name">Nombre</label>
           <input id="business-name" />
         </SettingsFormSection>
+        <SettingsSaveBar isDirty isSubmitting={false} status="idle" />
       </SettingsShell>,
     )
 
@@ -58,5 +73,12 @@ describe('settings shell', () => {
     expect(html).toContain('<section aria-labelledby=')
     expect(html).toContain('Así te ven quienes reservan.')
     expect(html).toContain('lg:sticky')
+    expect(html).toContain('p-5')
+    expect(html).toContain('md:p-10')
+    expect(html).toContain('overflow-x-clip')
+    expect(html).toContain('-mx-5')
+    expect(html).toContain('md:-mx-10')
+    expect(html).toContain('lg:mx-0')
+    expect(html).toContain('motion-reduce:transition-none')
   })
 })
