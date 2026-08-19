@@ -39,11 +39,12 @@ vi.mock('@/lib/payments/oauth-state', () => ({
   verifyStateSignature: vi.fn(),
 }))
 
+const mockSupabaseAuth = { getUser: vi.fn() }
+const mockRequestHeaders = vi.fn()
 vi.mock('next/headers', () => ({
   cookies: vi.fn(async () => ({ set: vi.fn() })),
+  headers: mockRequestHeaders,
 }))
-
-const mockSupabaseAuth = { getUser: vi.fn() }
 vi.mock('@/lib/auth/middleware', () => ({
   createClient: vi.fn().mockResolvedValue({
     auth: mockSupabaseAuth,
@@ -92,6 +93,7 @@ describe('Mercado Pago OAuth', () => {
     })
     mockPrisma.mercadoPagoOAuthAttempt.updateMany.mockResolvedValue({ count: 1 })
     mockPrisma.$transaction.mockImplementation(async (operation) => operation(mockPrisma))
+    mockRequestHeaders.mockResolvedValue(new Headers())
   })
 
   afterEach(() => {
@@ -100,6 +102,48 @@ describe('Mercado Pago OAuth', () => {
   })
 
   describe('initiateMercadoPagoOAuth', () => {
+    it('connects only through the local mock when the request carries valid E2E headers', async () => {
+      setEnv({ PAYMENT_PROVIDER: 'mock', ENABLE_E2E_AUTH_BYPASS: 'true', E2E_AUTH_BYPASS_SECRET: 'e2e-secret' })
+      mockRequestHeaders.mockResolvedValue(new Headers({
+        'x-e2e-test-user-email': 'owner@mimosnails.com',
+        'x-e2e-auth-secret': 'e2e-secret',
+      }))
+      mockPrisma.paymentAccount.upsert.mockResolvedValue({ id: 'pa-e2e', status: 'connected' })
+
+      const { initiateMercadoPagoOAuth } = await import('@/server/actions/mercado-pago-connect')
+      const result = await initiateMercadoPagoOAuth()
+
+      expect(result.redirectUrl).toBe('/dashboard/settings/payments?success=connected')
+      expect(mockPrisma.paymentAccount.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        where: {
+          businessId_provider_environment: {
+            businessId: 'biz-1',
+            provider: 'mercado_pago',
+            environment: 'sandbox',
+          },
+        },
+        create: expect.objectContaining({
+          businessId: 'biz-1',
+          provider: 'mercado_pago',
+          environment: 'sandbox',
+          providerAccountId: '999999999',
+          status: 'connected',
+          accessTokenEncrypted: 'e2e-mock-no-token',
+        }),
+      }))
+      expect(mockPrisma.mercadoPagoOAuthAttempt.create).not.toHaveBeenCalled()
+    })
+
+    it('does not activate the local mock without a valid E2E request', async () => {
+      setEnv({ PAYMENT_PROVIDER: 'mock', ENABLE_E2E_AUTH_BYPASS: 'true', E2E_AUTH_BYPASS_SECRET: 'e2e-secret' })
+
+      const { initiateMercadoPagoOAuth } = await import('@/server/actions/mercado-pago-connect')
+      const result = await initiateMercadoPagoOAuth()
+
+      expect(new URL(result.redirectUrl).origin).toBe('https://auth.mercadopago.cl')
+      expect(mockPrisma.paymentAccount.upsert).not.toHaveBeenCalled()
+    })
+
     it('builds redirect URL with required MP OAuth params', async () => {
       const { initiateMercadoPagoOAuth } = await import('@/server/actions/mercado-pago-connect')
       const result = await initiateMercadoPagoOAuth()

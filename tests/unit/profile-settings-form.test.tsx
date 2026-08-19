@@ -1,4 +1,4 @@
-import { act } from 'react'
+import { act, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -77,13 +77,20 @@ describe('ProfileSettingsForm', () => {
     container.remove()
   })
 
-  async function renderProfile() {
+  async function renderProfile({
+    initialValues = profileValues,
+    strict = false,
+  }: {
+    initialValues?: ProfileSettingsInput
+    strict?: boolean
+  } = {}) {
+    const form = (
+      <UnsavedChangesProvider>
+        <ProfileSettingsForm businessId="biz-1" slug="mi-negocio" initialValues={initialValues} />
+      </UnsavedChangesProvider>
+    )
     await act(async () => {
-      root.render(
-        <UnsavedChangesProvider>
-          <ProfileSettingsForm businessId="biz-1" slug="mi-negocio" initialValues={profileValues} />
-        </UnsavedChangesProvider>,
-      )
+      root.render(strict ? <StrictMode>{form}</StrictMode> : form)
     })
   }
 
@@ -185,24 +192,33 @@ describe('ProfileSettingsForm', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('announces a restored draft and a conflicting draft', async () => {
+  it('announces a restored draft whose baseline still matches the server', async () => {
     writeSettingsDraft(sessionStorage, 'biz-1:profile', 1, profileValues, { ...profileValues, name: 'Borrador recuperado' })
     await renderProfile()
 
     expect(container.textContent).toContain('Recuperamos un borrador local')
     expect(getInput(container, 'Nombre del negocio').value).toBe('Borrador recuperado')
-
-    await act(async () => root.unmount())
-    sessionStorage.clear()
-    writeSettingsDraft(sessionStorage, 'biz-1:profile', 1, { ...profileValues, name: 'Otro negocio' }, profileValues)
-    root = createRoot(container)
-    await renderProfile()
-
-    expect(container.textContent).toContain('Hay un borrador local de una versión anterior')
   })
 
-  it('re-reads a matching draft when the page returns from browser history', async () => {
-    await renderProfile()
+  it('keeps fresh server values when draft baseline A conflicts with server C', async () => {
+    const serverValues = { ...profileValues, name: 'Servidor C' }
+    writeSettingsDraft(
+      sessionStorage,
+      'biz-1:profile',
+      1,
+      { ...profileValues, name: 'Servidor A' },
+      { ...profileValues, name: 'Borrador B' },
+    )
+
+    await renderProfile({ initialValues: serverValues })
+
+    expect(container.textContent).toContain('Hay un borrador local de una versión anterior')
+    expect(getInput(container, 'Nombre del negocio').value).toBe('Servidor C')
+  })
+
+  it('reloads exactly once without restoring against a stale baseline on persisted pageshow', async () => {
+    const historyGo = vi.spyOn(window.history, 'go').mockImplementation(() => {})
+    await renderProfile({ strict: true })
     writeSettingsDraft(
       sessionStorage,
       'biz-1:profile',
@@ -217,9 +233,11 @@ describe('ProfileSettingsForm', () => {
       window.dispatchEvent(pageshow)
     })
 
-    expect(container.textContent).toContain('Recuperamos un borrador local')
-    expect(getInput(container, 'Descripción').value).toBe('Borrador desde historial')
-    expect(container.textContent).toContain('Cambios sin guardar')
+    expect(historyGo).toHaveBeenCalledTimes(1)
+    expect(historyGo).toHaveBeenCalledWith(0)
+    expect(getInput(container, 'Descripción').value).toBe(profileValues.bio)
+    expect(container.textContent).not.toContain('Recuperamos un borrador local')
+    historyGo.mockRestore()
   })
 
   it('wraps long city and bio tokens in the public preview', () => {

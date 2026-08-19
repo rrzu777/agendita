@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { prisma } from '@/lib/db'
 import { setBusinessAuth, setOwnerAuth } from './helpers/auth'
 
 const SETTINGS_ROUTES = [
@@ -14,6 +15,8 @@ const VIEWPORTS = [
   { width: 1024, height: 900 },
   { width: 1440, height: 900 },
 ] as const
+
+test.describe.configure({ mode: 'serial' })
 
 async function expectNoHorizontalOverflow(page: Page) {
   await expect.poll(() => page.evaluate(() => ({
@@ -53,6 +56,11 @@ test.describe('settings navigation', () => {
   }
 
   test('warns before discarding and restores a Back navigation draft', async ({ page }) => {
+    await page.addInitScript(() => {
+      if (location.origin !== 'http://localhost:3000') return
+      const key = '__settings_document_boots'
+      sessionStorage.setItem(key, String(Number(sessionStorage.getItem(key) ?? '0') + 1))
+    })
     await page.goto('/dashboard')
     await page.getByRole('link', { name: 'Configuración', exact: true }).click()
     await expect(page).toHaveURL(/\/dashboard\/settings\/profile$/)
@@ -77,6 +85,19 @@ test.describe('settings navigation', () => {
     await expect.poll(() => page.evaluate(() => Object.values(sessionStorage).join('\n'))).toContain(draft)
     await page.goForward()
     await expect(page).toHaveURL(/\/dashboard\/settings\/profile$/)
+    await page.waitForLoadState('networkidle')
+    const bootsBeforePersistedPageShow = await page.evaluate(() => Number(sessionStorage.getItem('__settings_document_boots')))
+    await page.evaluate(() => {
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))
+    })
+    await expect.poll(async () => {
+      try {
+        return await page.evaluate(() => Number(sessionStorage.getItem('__settings_document_boots')))
+      } catch {
+        return -1
+      }
+    })
+      .toBe(bootsBeforePersistedPageShow + 1)
     await page.waitForLoadState('networkidle')
     await expect.poll(() => page.evaluate(() => Object.values(sessionStorage).join('\n'))).toContain(draft)
     await expect(page.getByText('Recuperamos un borrador local')).toBeVisible()
@@ -109,6 +130,146 @@ test.describe('settings navigation', () => {
       await description.fill(original)
       await page.getByRole('button', { name: 'Guardar cambios' }).click()
       await expect(page.getByText('Cambios guardados')).toBeVisible()
+    }
+  })
+})
+
+test.describe('settings mutable section journeys', () => {
+  test.beforeEach(async ({ page }) => {
+    setOwnerAuth(page)
+  })
+
+  test('saves, reloads and restores reservation settings', async ({ page }) => {
+    await page.goto('/dashboard/settings/reservations')
+    await page.waitForLoadState('networkidle')
+    const holdHours = page.getByLabel('Reserva sin pago online (horas)')
+    const original = await holdHours.inputValue()
+    const changed = original === '25' ? '26' : '25'
+
+    try {
+      await holdHours.fill(changed)
+      await page.getByRole('button', { name: 'Guardar cambios' }).click()
+      await expect(page.getByText('Cambios guardados')).toBeVisible()
+      await page.reload()
+      await page.waitForLoadState('networkidle')
+      await expect(holdHours).toHaveValue(changed)
+    } finally {
+      await page.goto('/dashboard/settings/reservations')
+      await page.waitForLoadState('networkidle')
+      await holdHours.fill(original)
+      await page.getByRole('button', { name: 'Guardar cambios' }).click()
+      await expect(page.getByText('Cambios guardados')).toBeVisible()
+      await page.reload()
+      await page.waitForLoadState('networkidle')
+      await expect(holdHours).toHaveValue(original)
+    }
+  })
+
+  test('saves, reloads and restores policy settings', async ({ page }) => {
+    await page.goto('/dashboard/settings/policies')
+    await page.waitForLoadState('networkidle')
+    const bookingPolicy = page.getByLabel('Política de reserva')
+    const original = await bookingPolicy.inputValue()
+    const changed = `Política E2E ${Date.now()}`
+
+    try {
+      await bookingPolicy.fill(changed)
+      await page.getByRole('button', { name: 'Guardar cambios' }).click()
+      await expect(page.getByText('Cambios guardados')).toBeVisible()
+      await page.reload()
+      await page.waitForLoadState('networkidle')
+      await expect(bookingPolicy).toHaveValue(changed)
+    } finally {
+      await page.goto('/dashboard/settings/policies')
+      await page.waitForLoadState('networkidle')
+      await bookingPolicy.fill(original)
+      await page.getByRole('button', { name: 'Guardar cambios' }).click()
+      await expect(page.getByText('Cambios guardados')).toBeVisible()
+      await page.reload()
+      await page.waitForLoadState('networkidle')
+      await expect(bookingPolicy).toHaveValue(original)
+    }
+  })
+
+  test('saves, reloads and restores bank transfer settings', async ({ page }) => {
+    const business = await prisma.business.findUniqueOrThrow({
+      where: { slug: 'mimosnails' },
+      select: { id: true },
+    })
+    const existing = await prisma.bankTransferAccount.findUnique({ where: { businessId: business.id } })
+    expect(existing).toBeNull()
+    const originalInstructions = 'Incluye tu nombre en el comentario'
+    await prisma.bankTransferAccount.create({
+      data: {
+        businessId: business.id,
+        accountHolder: 'Mimos Nails E2E',
+        rut: '12.345.678-5',
+        bankName: 'Banco E2E',
+        accountType: 'Cuenta corriente',
+        accountNumber: '123456789',
+        email: 'owner@mimosnails.com',
+        instructions: originalInstructions,
+        holdHours: 24,
+        verifyHours: 48,
+        isEnabled: true,
+      },
+    })
+
+    try {
+      await page.goto('/dashboard/settings/payments')
+      await page.waitForLoadState('networkidle')
+      const instructions = page.getByLabel(/Instrucciones para/)
+      const changed = `Transferencia E2E ${Date.now()}`
+      await instructions.fill(changed)
+      await page.getByRole('button', { name: 'Guardar datos bancarios' }).click()
+      await expect(page.getByText('Datos guardados.')).toBeVisible()
+      await page.reload()
+      await page.waitForLoadState('networkidle')
+      await expect(instructions).toHaveValue(changed)
+
+      await instructions.fill(originalInstructions)
+      await page.getByRole('button', { name: 'Guardar datos bancarios' }).click()
+      await expect(page.getByText('Datos guardados.')).toBeVisible()
+      await page.reload()
+      await page.waitForLoadState('networkidle')
+      await expect(instructions).toHaveValue(originalInstructions)
+    } finally {
+      await prisma.bankTransferAccount.deleteMany({ where: { businessId: business.id } })
+    }
+  })
+
+  test('connects and disconnects Mercado Pago through the E2E mock only', async ({ page }) => {
+    const business = await prisma.business.findUniqueOrThrow({
+      where: { slug: 'mimosnails' },
+      select: { id: true },
+    })
+    const environment = 'sandbox' as const
+    const existing = await prisma.paymentAccount.findUnique({
+      where: {
+        businessId_provider_environment: {
+          businessId: business.id,
+          provider: 'mercado_pago',
+          environment,
+        },
+      },
+    })
+    expect(existing).toBeNull()
+
+    try {
+      await page.goto('/dashboard/settings/payments')
+      await expect(page.getByText('Mercado Pago no configurado')).toBeVisible()
+      await page.getByRole('button', { name: 'Conectar Mercado Pago' }).click()
+      await expect(page).toHaveURL(/\/dashboard\/settings\/payments\?success=connected$/)
+      await expect(page.getByText('Cuenta MP conectada')).toBeVisible()
+
+      await page.getByRole('button', { name: 'Desconectar Mercado Pago' }).click()
+      await expect(page.getByText('Cuenta desconectada')).toBeVisible()
+      await page.reload()
+      await expect(page.getByText('Cuenta desconectada')).toBeVisible()
+    } finally {
+      await prisma.paymentAccount.deleteMany({
+        where: { businessId: business.id, provider: 'mercado_pago', environment },
+      })
     }
   })
 })
