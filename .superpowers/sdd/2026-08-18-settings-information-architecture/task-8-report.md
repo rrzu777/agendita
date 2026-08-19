@@ -8,7 +8,9 @@
 
 **Primer commit correctivo de review:** `c32504bd7943c8cb2ca74dedd6f9eb91d80434f1`.
 
-**Commit correctivo de auditoría final:** creado al cerrar este reporte; el SHA exacto queda en el handoff porque un commit no puede contener su propio hash.
+**Commit correctivo de auditoría final:** `64e5dd2e53b553c309cbca45873f13a2f7992f0a`.
+
+**Commit correctivo de re-review R2:** creado al cerrar este reporte; el SHA exacto queda en el handoff porque un commit no puede contener su propio hash.
 
 **Estado:** implementado; QA real pendiente de despliegue.
 
@@ -106,6 +108,27 @@ El verifier nunca recibe `businessId`, exige owner/admin y selecciona únicament
 
 RED de reduced motion: 1/1 assertion estructural falló por faltar la variante. GREEN: overlay y content del diálogo compartido incluyen `motion-reduce:animate-none motion-reduce:duration-0`; 1/1 pasó. También se eliminó el whitespace final señalado en el diseño.
 
+### Re-review R2: respuestas stale y preservación del candidate
+
+RED:
+
+```text
+use-settings-draft: 6 pass, 7 fail
+```
+
+Los siete fallos reprodujeron las tres carreras observadas: una edición X pendiente recibía el reset del draft B; una segunda verificación no iniciaba y la primera podía ganar; clear/save, discard y unmount no invalidaban el apply; mismatch desde un formulario dirty borraba el candidate; y match contra server A conservaba defaults cacheados C.
+
+GREEN:
+
+```text
+use-settings-draft: 13/13
+hook + Profile + Reservas + Políticas + banco + storage: 6 archivos, 52/52
+```
+
+Cada verificación tiene generación y snapshots del raw candidate y de los valores locales. Antes de aplicar exige ser la generación más reciente, seguir montada, conservar exactamente el mismo candidate en `sessionStorage` y no haber recibido una edición local. Edit, clear/save, discard, nueva verificación y unmount invalidan solicitudes anteriores. StrictMode comparte únicamente la promesa del replay inicial; `popstate`/`pageshow` fuerzan una request nueva.
+
+Match y mismatch preservan explícitamente el candidate durante los resets. Ambos reemplazan primero el baseline con `result.current`; match aplica después B con `keepDefaultValues`, quedando dirty contra el server A autenticado, y mismatch conserva C con el candidate A/B intacto. Un error sigue fail-closed.
+
 ### Harness E2E de Mercado Pago
 
 RED:
@@ -120,13 +143,14 @@ GREEN: con `PAYMENT_PROVIDER=mock` y headers E2E validados por request se crea u
 
 ## Verificación ejecutada
 
-La base fue PostgreSQL 16 efímero local, enlazado sólo a loopback, con usuario/base exclusivos de Task 8. Las URLs se pasaron por entorno; no se copiaron credenciales al repositorio. Se aplicaron 53 migraciones y el seed antes de E2E. La auditoría final usó un contenedor dedicado en `127.0.0.1:55440`, eliminado al finalizar.
+La base fue PostgreSQL 16 efímero local, enlazado sólo a loopback, con usuario/base exclusivos de Task 8. Las URLs se pasaron por entorno; no se copiaron credenciales al repositorio. Se aplicaron 53 migraciones y el seed antes de E2E. La auditoría final usó un contenedor dedicado en `127.0.0.1:55440`; R2 usó otro en `127.0.0.1:55441`. Ambos se eliminaron al finalizar.
 
 | Gate | Resultado |
 |---|---|
 | Focused unit del brief | GREEN: 11 archivos, 115 tests, 0 fallos, 3.63 s |
 | Focused unit correctivo/impactado | GREEN: 12 archivos, 131 tests, 0 fallos, 10.57 s |
 | Focused unit auditoría final | GREEN: 14 archivos, 138 tests, 0 fallos, 4.60 s |
+| Focused hook/forms R2 | GREEN: 6 archivos, 52 tests, 0 fallos, 2.62 s; hook aislado 13/13 |
 | Full unit, comando exacto | NO VERDE: 367/370 archivos; 3440 pass, 3 timeouts, 1 skip; 398.58 s |
 | Reproducción de esos 3 timeouts | GREEN: 3 archivos, 13 tests, 0 fallos, 27.70 s |
 | Full unit, `--maxWorkers=4` | NO VERDE: 367/370 archivos; 3440 pass, 3 timeouts distintos, 1 skip; 372.63 s |
@@ -135,7 +159,9 @@ La base fue PostgreSQL 16 efímero local, enlazado sólo a loopback, con usuario
 | Comparación proporcional mismo set en HEAD | GREEN focal: 5 archivos, 23 tests, 20.70 s; no convierte la full en verde |
 | Integración PostgreSQL | GREEN: 61 archivos, 386 tests, 0 fallos, 133.87 s |
 | Integración focal auditoría final | GREEN: 2 archivos, 9 tests, 0 fallos, 975 ms |
+| Integración verifier R2 | GREEN: 1 archivo, 2 tests, 0 fallos, 486 ms |
 | Playwright Settings Chromium | GREEN auditoría final: 16/16, 1.1 min; rerun Back/Forward post-lint 2/2, 18.3 s |
+| Playwright Back/Forward R2 | GREEN: 2/2, 11.9 s |
 | Typecheck | GREEN, 0 diagnósticos |
 | Lint | Exit 0: 0 errores, 29 warnings fuera del diff Task 8 |
 | Prisma validate | GREEN, schema válido |
@@ -148,10 +174,12 @@ Comandos principales:
 ```bash
 npm test -- tests/unit/business-settings-schema.test.ts tests/unit/business-settings-action.test.ts tests/unit/settings-draft.test.ts tests/unit/unsaved-changes-provider.test.tsx tests/unit/settings-shell.test.tsx tests/unit/profile-settings-form.test.tsx tests/unit/reservation-settings-form.test.tsx tests/unit/policy-settings-form.test.tsx tests/unit/settings-routes.test.tsx tests/unit/bank-transfer-form.test.tsx tests/unit/bank-transfer-form-proof.test.tsx
 npm test -- tests/unit/mercado-pago-oauth.test.ts tests/unit/settings-draft.test.ts tests/unit/settings-draft-verifier.test.ts tests/unit/use-settings-draft.test.tsx tests/unit/profile-settings-form.test.tsx tests/unit/reservation-settings-form.test.tsx tests/unit/policy-settings-form.test.tsx tests/unit/bank-transfer-form.test.tsx tests/unit/bank-transfer-form-proof.test.tsx tests/unit/settings-routes.test.tsx tests/unit/dialog-reduced-motion.test.ts tests/unit/business-settings-action.test.ts tests/unit/business-settings-schema.test.ts tests/unit/settings-shell.test.tsx tests/unit/settings-unsaved-changes-provider.test.tsx --maxWorkers=4
+npm test -- tests/unit/use-settings-draft.test.tsx tests/unit/profile-settings-form.test.tsx tests/unit/reservation-settings-form.test.tsx tests/unit/policy-settings-form.test.tsx tests/unit/bank-transfer-form.test.tsx tests/unit/settings-draft.test.ts --maxWorkers=4
 npm test -- --silent --reporter=dot
 npm test -- --silent --reporter=dot --maxWorkers=4
 npm run test:integration
 npm run test:integration -- tests/integration/settings-draft-verifier.test.ts tests/integration/bank-transfer-settings.test.ts --maxWorkers=2
+npm run test:integration -- tests/integration/settings-draft-verifier.test.ts --maxWorkers=1
 npx playwright test tests/e2e/settings.spec.ts --project=chromium
 npx playwright test tests/e2e/settings.spec.ts --project=chromium --grep 'Back/Forward'
 npm run typecheck
@@ -199,6 +227,7 @@ Ruido observado, sin fallo: `DEP0205` de Node, deprecación de convención `midd
 - La eliminación se limita al formulario/acción/schema de compatibilidad ya sin consumidores.
 - Todos los E2E mutables están serializados y usan `try/finally`: restauran bio, Reservas y Políticas, y eliminan las fixtures bancarias/Mercado Pago.
 - Auditoría post-E2E del seed: `manualHoldHours=24`, `bookingPolicy=NULL`, bio original, 0 cuentas bancarias y 0 cuentas Mercado Pago mock.
+- R2 no tocó servidor, schemas ni API; por alcance no repitió build/full unit. Typecheck, lint completo, integración real del verifier y Back/Forward real sí se repitieron sobre el código final.
 
 ## Riesgos y QA manual pendiente
 
