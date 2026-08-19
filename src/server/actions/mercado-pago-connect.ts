@@ -1,7 +1,7 @@
 'use server'
 
 import { prisma } from '@/lib/db'
-import { requireBusiness } from '@/lib/auth/server'
+import { requireBusinessRole } from '@/lib/auth/server'
 import { randomBytes } from 'crypto'
 import { redirect } from 'next/navigation'
 import { action, UserError } from '@/lib/actions/result'
@@ -24,7 +24,7 @@ export async function startMercadoPagoConnect() {
 }
 
 export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string }> {
-  const { businessId, user } = await requireBusiness()
+  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   const environment = requireMercadoPagoEnvironment()
 
   // Playwright exercises the complete settings UI without contacting Mercado
@@ -103,7 +103,7 @@ export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string 
 }
 
 async function _disconnectMercadoPagoConnection() {
-  const { businessId } = await requireBusiness()
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const environment = requireMercadoPagoEnvironment()
 
   const account = await prisma.paymentAccount.findFirst({
@@ -137,7 +137,7 @@ export async function disconnectMercadoPago() {
 }
 
 export async function getPaymentAccountStatus() {
-  const { businessId } = await requireBusiness()
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const environment = requireMercadoPagoEnvironment()
 
   const account = await prisma.paymentAccount.findFirst({

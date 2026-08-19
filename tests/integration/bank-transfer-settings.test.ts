@@ -70,6 +70,43 @@ describe('bank-transfer settings actions', () => {
     expect(row!.isEnabled).toBe(true)
   })
 
+  it('returns the persisted form-shape DTO after trimming and null normalization', async () => {
+    const { saveBankTransferAccount } = await import('@/server/actions/bank-transfer-settings')
+    const res = await saveBankTransferAccount({
+      ...validInput,
+      accountHolder: '  María Pérez  ',
+      bankName: '  BancoEstado  ',
+      email: '',
+      instructions: '   ',
+      holdHours: 24,
+      verifyHours: null,
+    })
+
+    expect(res).toEqual({
+      ok: true,
+      data: {
+        accountHolder: 'María Pérez',
+        rut: '12.345.678-9',
+        bankName: 'BancoEstado',
+        accountType: 'vista',
+        accountNumber: '12345678',
+        email: '',
+        instructions: '',
+        holdHours: '24',
+        verifyHours: '',
+      },
+    })
+    const row = await prisma.bankTransferAccount.findUniqueOrThrow({ where: { businessId: BIZ } })
+    expect(row).toMatchObject({
+      accountHolder: 'María Pérez',
+      bankName: 'BancoEstado',
+      email: null,
+      instructions: null,
+      holdHours: 24,
+      verifyHours: null,
+    })
+  })
+
   it('actualiza (upsert) sin duplicar y persiste verifyHours null', async () => {
     const { saveBankTransferAccount } = await import('@/server/actions/bank-transfer-settings')
     const setupRes = await saveBankTransferAccount(validInput)

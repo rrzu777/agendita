@@ -6,10 +6,14 @@ import { writeSettingsDraft } from '@/lib/business/settings-draft'
 import type { PolicySettingsInput } from '@/lib/business/schema'
 import { PolicySettingsForm } from '@/components/dashboard/settings/policy-settings-form'
 
-const { mockUpdate } = vi.hoisted(() => ({ mockUpdate: vi.fn() }))
+const { mockUpdate, mockVerifySettingsDraftBaseline } = vi.hoisted(() => ({
+  mockUpdate: vi.fn(),
+  mockVerifySettingsDraftBaseline: vi.fn(),
+}))
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }))
 vi.mock('@/server/actions/business-settings', () => ({ updatePolicySettings: mockUpdate }))
+vi.mock('@/server/actions/settings-draft-verifier', () => ({ verifySettingsDraftBaseline: mockVerifySettingsDraftBaseline }))
 
 const policyValues: PolicySettingsInput = {
   selfServiceCutoffHours: 24,
@@ -83,6 +87,8 @@ describe('PolicySettingsForm', () => {
   beforeEach(() => {
     sessionStorage.clear()
     mockUpdate.mockReset()
+    mockVerifySettingsDraftBaseline.mockReset()
+    mockVerifySettingsDraftBaseline.mockResolvedValue({ matches: true, current: policyValues })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)

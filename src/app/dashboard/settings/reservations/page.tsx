@@ -1,16 +1,10 @@
 import { ReservationSettingsForm } from '@/components/dashboard/settings/reservation-settings-form'
-import type { ReservationSettingsInput } from '@/lib/business/schema'
 import { requireSettingsPageAccess } from '@/lib/business/settings-access'
+import { toReservationSettingsFormValues } from '@/lib/business/settings-form-values'
 
 export default async function ReservationSettingsPage() {
   const { business } = await requireSettingsPageAccess()
-  const initialValues: ReservationSettingsInput = {
-    timezone: business.timezone,
-    slotStepMinutes: business.slotStepMinutes == null ? 'service' : String(business.slotStepMinutes) as ReservationSettingsInput['slotStepMinutes'],
-    manualHoldHours: business.manualHoldHours,
-    requireBookingApproval: business.requireBookingApproval,
-    defaultMeetingUrl: business.defaultMeetingUrl ?? '',
-  }
+  const initialValues = toReservationSettingsFormValues(business)
 
   return <ReservationSettingsForm businessId={business.id} initialValues={initialValues} />
 }

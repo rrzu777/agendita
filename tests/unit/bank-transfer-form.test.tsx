@@ -6,9 +6,10 @@ import { BankTransferForm } from '@/app/dashboard/settings/payments/bank-transfe
 import { GuardedLink, UnsavedChangesProvider } from '@/components/dashboard/unsaved-changes-provider'
 import { writeSettingsDraft } from '@/lib/business/settings-draft'
 
-const { mockSaveBankTransferAccount, mockPush } = vi.hoisted(() => ({
+const { mockSaveBankTransferAccount, mockPush, mockVerifySettingsDraftBaseline } = vi.hoisted(() => ({
   mockSaveBankTransferAccount: vi.fn(),
   mockPush: vi.fn(),
+  mockVerifySettingsDraftBaseline: vi.fn(),
 }))
 
 vi.mock('next/navigation', () => ({
@@ -22,6 +23,7 @@ vi.mock('@/server/actions/bank-transfer-settings', () => ({
   setBankTransferEnabled: vi.fn(),
   setRequireTransferProof: vi.fn(),
 }))
+vi.mock('@/server/actions/settings-draft-verifier', () => ({ verifySettingsDraftBaseline: mockVerifySettingsDraftBaseline }))
 
 // Satisface el tipo Prisma completo (la prop del form es BankTransferAccount | null).
 const account = {
@@ -39,6 +41,18 @@ const account = {
   verifyHours: 48,
   createdAt: new Date('2026-07-10T00:00:00Z'),
   updatedAt: new Date('2026-07-10T00:00:00Z'),
+}
+
+const bankFormValues = {
+  accountHolder: account.accountHolder,
+  rut: account.rut,
+  bankName: account.bankName,
+  accountType: account.accountType,
+  accountNumber: account.accountNumber,
+  email: account.email,
+  instructions: '',
+  holdHours: String(account.holdHours),
+  verifyHours: String(account.verifyHours),
 }
 
 describe('BankTransferForm', () => {
@@ -94,6 +108,8 @@ describe('BankTransferForm unsaved bank details', () => {
     sessionStorage.clear()
     mockSaveBankTransferAccount.mockReset()
     mockPush.mockReset()
+    mockVerifySettingsDraftBaseline.mockReset()
+    mockVerifySettingsDraftBaseline.mockResolvedValue({ matches: true, current: bankFormValues })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -105,7 +121,20 @@ describe('BankTransferForm unsaved bank details', () => {
   })
 
   it('protects edited bank details and clears dirty state after save', async () => {
-    mockSaveBankTransferAccount.mockResolvedValue({ ok: true })
+    mockSaveBankTransferAccount.mockResolvedValue({
+      ok: true,
+      data: {
+        accountHolder: 'María Pérez',
+        rut: '12.345.678-9',
+        bankName: 'Banco de Chile',
+        accountType: 'vista',
+        accountNumber: '12345678',
+        email: 'maria@ejemplo.cl',
+        instructions: '',
+        holdHours: '24',
+        verifyHours: '48',
+      },
+    })
 
     await act(async () => {
       root.render(
@@ -116,7 +145,7 @@ describe('BankTransferForm unsaved bank details', () => {
       )
     })
 
-    await setInput(container, 'Banco', 'Banco de Chile')
+    await setInput(container, 'Banco', '  Banco de Chile  ')
     const link = Array.from(container.querySelectorAll('a')).find((element) => element.textContent === 'Perfil público')
     if (!link) throw new Error('Profile link not found')
 
@@ -133,8 +162,9 @@ describe('BankTransferForm unsaved bank details', () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
       await Promise.resolve()
     })
-    expect(mockSaveBankTransferAccount).toHaveBeenCalledWith(expect.objectContaining({ bankName: 'Banco de Chile' }))
+    expect(mockSaveBankTransferAccount).toHaveBeenCalledWith(expect.objectContaining({ bankName: '  Banco de Chile  ' }))
     expect(mockSaveBankTransferAccount.mock.calls[0]?.[0]?.businessId).toBeUndefined()
+    expect(getInput(container, 'Banco').value).toBe('Banco de Chile')
     expect(sessionStorage.getItem('settings:biz-1:payments-bank:v1')).toBeNull()
 
     link.setAttribute('href', 'javascript:void(0)')
@@ -143,7 +173,20 @@ describe('BankTransferForm unsaved bank details', () => {
   })
 
   it('keeps concurrent edits dirty and restores their draft after a save succeeds', async () => {
-    const pending = deferred<{ ok: true }>()
+    const pending = deferred<{
+      ok: true
+      data: {
+        accountHolder: string
+        rut: string
+        bankName: string
+        accountType: string
+        accountNumber: string
+        email: string
+        instructions: string
+        holdHours: string
+        verifyHours: string
+      }
+    }>()
     mockSaveBankTransferAccount.mockReturnValue(pending.promise)
 
     await act(async () => {
@@ -155,7 +198,7 @@ describe('BankTransferForm unsaved bank details', () => {
       )
     })
 
-    await setInput(container, 'Banco', 'Banco A')
+    await setInput(container, 'Banco', '  Banco A  ')
     const form = container.querySelector('form')
     if (!form) throw new Error('Bank transfer form not found')
     await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
@@ -163,10 +206,27 @@ describe('BankTransferForm unsaved bank details', () => {
     expect(mockSaveBankTransferAccount).toHaveBeenCalledTimes(1)
     await setInput(container, 'Banco', 'Banco B')
 
-    await act(async () => pending.resolve({ ok: true }))
+    await act(async () => pending.resolve({
+      ok: true,
+      data: {
+        accountHolder: 'María Pérez',
+        rut: '12.345.678-9',
+        bankName: 'Banco A',
+        accountType: 'vista',
+        accountNumber: '12345678',
+        email: 'maria@ejemplo.cl',
+        instructions: '',
+        holdHours: '24',
+        verifyHours: '48',
+      },
+    }))
 
     expect(getInput(container, 'Banco').value).toBe('Banco B')
-    expect(sessionStorage.getItem('settings:biz-1:payments-bank:v1')).toContain('Banco B')
+    const persistedDraft = JSON.parse(sessionStorage.getItem('settings:biz-1:payments-bank:v1') ?? 'null')
+    expect(persistedDraft).toMatchObject({
+      baseline: { bankName: 'Banco A' },
+      values: { bankName: 'Banco B' },
+    })
     const link = Array.from(container.querySelectorAll('a')).find((element) => element.textContent === 'Perfil público')
     if (!link) throw new Error('Profile link not found')
     await act(async () => link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })))
@@ -192,6 +252,9 @@ describe('BankTransferForm unsaved bank details', () => {
       recovery === 'restored' ? baseline : { ...baseline, bankName: 'Otra base' },
       { ...baseline, bankName: 'Banco recuperado' },
     )
+    if (recovery === 'conflict') {
+      mockVerifySettingsDraftBaseline.mockResolvedValue({ matches: false, current: baseline })
+    }
 
     await act(async () => {
       root.render(

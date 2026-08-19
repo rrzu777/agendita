@@ -8,10 +8,16 @@ import type { ProfileSettingsInput } from '@/lib/business/schema'
 import { ProfileSettingsForm } from '@/components/dashboard/settings/profile-settings-form'
 import { PublicProfilePreview } from '@/components/dashboard/settings/public-profile-preview'
 
-const { mockUpdateProfile } = vi.hoisted(() => ({ mockUpdateProfile: vi.fn() }))
+const { mockUpdateProfile, mockVerifySettingsDraftBaseline } = vi.hoisted(() => ({
+  mockUpdateProfile: vi.fn(),
+  mockVerifySettingsDraftBaseline: vi.fn(),
+}))
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }))
 vi.mock('@/server/actions/business-settings', () => ({ updateProfileSettings: mockUpdateProfile }))
+vi.mock('@/server/actions/settings-draft-verifier', () => ({
+  verifySettingsDraftBaseline: mockVerifySettingsDraftBaseline,
+}))
 
 const profileValues: ProfileSettingsInput = {
   name: 'Mi Negocio',
@@ -67,6 +73,8 @@ describe('ProfileSettingsForm', () => {
   beforeEach(() => {
     sessionStorage.clear()
     mockUpdateProfile.mockReset()
+    mockVerifySettingsDraftBaseline.mockReset()
+    mockVerifySettingsDraftBaseline.mockResolvedValue({ matches: true, current: profileValues })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -202,6 +210,7 @@ describe('ProfileSettingsForm', () => {
 
   it('keeps fresh server values when draft baseline A conflicts with server C', async () => {
     const serverValues = { ...profileValues, name: 'Servidor C' }
+    mockVerifySettingsDraftBaseline.mockResolvedValue({ matches: false, current: serverValues })
     writeSettingsDraft(
       sessionStorage,
       'biz-1:profile',
@@ -216,7 +225,7 @@ describe('ProfileSettingsForm', () => {
     expect(getInput(container, 'Nombre del negocio').value).toBe('Servidor C')
   })
 
-  it('reloads exactly once without restoring against a stale baseline on persisted pageshow', async () => {
+  it('re-verifies once without reloading on persisted pageshow under StrictMode', async () => {
     const historyGo = vi.spyOn(window.history, 'go').mockImplementation(() => {})
     await renderProfile({ strict: true })
     writeSettingsDraft(
@@ -231,12 +240,13 @@ describe('ProfileSettingsForm', () => {
       const pageshow = new Event('pageshow')
       Object.defineProperty(pageshow, 'persisted', { value: true })
       window.dispatchEvent(pageshow)
+      await vi.waitFor(() => expect(mockVerifySettingsDraftBaseline).toHaveBeenCalledTimes(1))
     })
 
-    expect(historyGo).toHaveBeenCalledTimes(1)
-    expect(historyGo).toHaveBeenCalledWith(0)
-    expect(getInput(container, 'Descripción').value).toBe(profileValues.bio)
-    expect(container.textContent).not.toContain('Recuperamos un borrador local')
+    expect(historyGo).not.toHaveBeenCalled()
+    expect(mockVerifySettingsDraftBaseline).toHaveBeenCalledTimes(1)
+    expect(getInput(container, 'Descripción').value).toBe('Borrador desde historial')
+    expect(container.textContent).toContain('Recuperamos un borrador local')
     historyGo.mockRestore()
   })
 

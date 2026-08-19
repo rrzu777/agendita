@@ -1,12 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   clearSettingsDraft,
-  readSettingsDraft,
+  readSettingsDraftCandidate,
+  settingsFingerprint,
   writeSettingsDraft,
   type FlatSettings,
 } from '@/lib/business/settings-draft'
+import { verifySettingsDraftBaseline } from '@/server/actions/settings-draft-verifier'
+import type { SettingsDraftScope } from '@/lib/business/settings-form-values'
 
 function getSessionStorage(): Storage | null {
   try {
@@ -16,32 +19,32 @@ function getSessionStorage(): Storage | null {
   }
 }
 
-function flatFingerprint(values: FlatSettings) {
-  return Object.keys(values)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${JSON.stringify(values[key])}`)
-    .join('|')
-}
-
 export function useSettingsDraft<T extends FlatSettings>({
+  scope,
   key,
   version,
   baseline,
   values,
   isDirty,
   reset,
+  replaceBaseline,
 }: {
+  scope: SettingsDraftScope
   key: string
   version: number
   baseline: T
   values: T
   isDirty: boolean
   reset: (values: T, options?: { keepDefaultValues?: boolean }) => void
+  replaceBaseline: (values: T) => void
 }) {
-  const [recovery, setRecovery] = useState<'none' | 'restored' | 'conflict'>('none')
-  const baselineFingerprint = useMemo(() => flatFingerprint(baseline), [baseline])
-  const recoveredSignature = useRef<string | null>(null)
-  const initialized = useRef(false)
+  const [recovery, setRecovery] = useState<'none' | 'restored' | 'conflict' | 'verification-failed'>('none')
+  const [draftReady, setDraftReady] = useState(false)
+  const verifiedSignature = useRef<string | null>(null)
+  const verificationInFlight = useRef<{
+    signature: string
+    promise: ReturnType<typeof verifySettingsDraftBaseline>
+  } | null>(null)
   const wasDirty = useRef(false)
 
   const clearDraft = useCallback(() => {
@@ -49,37 +52,75 @@ export function useSettingsDraft<T extends FlatSettings>({
     if (storage) clearSettingsDraft(storage, key)
   }, [key])
 
-  useEffect(() => {
-    const signature = `${key}:${version}:${baselineFingerprint}`
-    if (recoveredSignature.current === signature) return
-    recoveredSignature.current = signature
-
+  const verifyStoredDraft = useCallback(async (force: boolean) => {
     const storage = getSessionStorage()
     if (!storage) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- the browser-only storage read is the external recovery source.
       setRecovery('none')
-      initialized.current = true
+      setDraftReady(true)
       return
     }
 
-    const nextRecovery = readSettingsDraft(storage, key, version, baseline)
-    if (nextRecovery.kind === 'restored') reset(nextRecovery.values, { keepDefaultValues: true })
-    setRecovery(nextRecovery.kind)
-    initialized.current = true
-  }, [baseline, baselineFingerprint, key, reset, version])
-
-  useEffect(() => {
-    const restoreFromHistory = (event: PageTransitionEvent) => {
-      if (!event.persisted) return
-      window.history.go(0)
+    const candidate = readSettingsDraftCandidate<T>(storage, key, version)
+    if (candidate.kind === 'none') {
+      setRecovery('none')
+      setDraftReady(true)
+      return
     }
 
-    window.addEventListener('pageshow', restoreFromHistory)
-    return () => window.removeEventListener('pageshow', restoreFromHistory)
-  }, [])
+    const storedFingerprint = await settingsFingerprint(candidate.baseline)
+    const signature = `${key}:${version}:${storedFingerprint}`
+    if (!force && verifiedSignature.current === signature) return
+    verifiedSignature.current = signature
+
+    const existingVerification = verificationInFlight.current
+    const verification = existingVerification?.signature === signature
+      ? existingVerification
+      : {
+          signature,
+          promise: verifySettingsDraftBaseline(scope, storedFingerprint),
+        }
+    verificationInFlight.current = verification
+
+    try {
+      const result = await verification.promise
+      if (result.matches) {
+        reset(candidate.values, { keepDefaultValues: true })
+        setRecovery('restored')
+      } else {
+        replaceBaseline(result.current as T)
+        setRecovery('conflict')
+      }
+    } catch {
+      setRecovery('verification-failed')
+    } finally {
+      if (verificationInFlight.current === verification) verificationInFlight.current = null
+      setDraftReady(true)
+    }
+  }, [key, replaceBaseline, reset, scope, version])
 
   useEffect(() => {
-    if (!initialized.current) return
+    // Verification is asynchronous whenever a recoverable draft exists; the
+    // synchronous no-draft path only unlocks persistence for this mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void verifyStoredDraft(false)
+
+    const restoreFromPopState = () => {
+      void verifyStoredDraft(true)
+    }
+    const restoreFromPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) void verifyStoredDraft(true)
+    }
+
+    window.addEventListener('popstate', restoreFromPopState)
+    window.addEventListener('pageshow', restoreFromPageShow)
+    return () => {
+      window.removeEventListener('popstate', restoreFromPopState)
+      window.removeEventListener('pageshow', restoreFromPageShow)
+    }
+  }, [verifyStoredDraft])
+
+  useEffect(() => {
+    if (!draftReady) return
 
     const storage = getSessionStorage()
     if (!storage) return
@@ -94,7 +135,7 @@ export function useSettingsDraft<T extends FlatSettings>({
       clearSettingsDraft(storage, key)
       wasDirty.current = false
     }
-  }, [baseline, isDirty, key, values, version])
+  }, [baseline, draftReady, isDirty, key, values, version])
 
   const discard = useCallback(() => {
     clearDraft()

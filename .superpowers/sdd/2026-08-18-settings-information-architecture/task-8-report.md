@@ -6,7 +6,9 @@
 
 **Commit de Task 8:** `739d539e5bcac15958ebd3ecf585b79599bd3856` (`test: cover settings user journeys`).
 
-**Commit correctivo de review:** creado al cerrar este reporte; el SHA exacto queda en el handoff porque un commit no puede contener su propio hash.
+**Primer commit correctivo de review:** `c32504bd7943c8cb2ca74dedd6f9eb91d80434f1`.
+
+**Commit correctivo de auditoría final:** creado al cerrar este reporte; el SHA exacto queda en el handoff porque un commit no puede contener su propio hash.
 
 **Estado:** implementado; QA real pendiente de despliegue.
 
@@ -17,8 +19,10 @@
 - Quedaron como contratos públicos sólo los schemas, tipos y acciones por sección.
 - Los tests legacy se migraron sin perder casos de URL, normalización, autorización, subdominio, cutoff, defaults ni rate limit.
 - Se añadió Playwright para navegación, guard, draft Back/Forward, preview/save/reload, RBAC, overflow, focus order y comportamiento responsive.
-- Un `pageshow.persisted` fuerza una única recarga del documento; el mount normal obtiene props frescas del servidor y decide si restaura el draft o muestra conflicto, sin comparar contra un baseline capturado obsoleto.
+- Antes de aplicar cualquier draft, el cliente envía sólo scope + fingerprint SHA-256 a una acción autenticada owner/admin. La acción lee el baseline actual con selects mínimos y devuelve valores normalizados; match restaura, mismatch conserva servidor y muestra conflicto, y un fallo verifica fail-closed sin aplicar ni borrar el draft.
+- `popstate` y `pageshow.persisted` reales vuelven a verificar sin `history.go(0)`, eventos sintéticos ni bypass del guard productivo; el cleanup mantiene un solo listener bajo StrictMode.
 - El contrato browser cubre guardar/recargar/restaurar Reservas, Políticas y transferencia bancaria, además del ciclo conectar/desconectar Mercado Pago mediante el harness E2E test-only.
+- Connect, disconnect y status de Mercado Pago exigen owner/admin antes de tocar Prisma, OAuth o estado del proveedor. La transferencia bancaria devuelve el DTO normalizado que se usa como baseline cliente, incluso frente a edición concurrente.
 - No se cambiaron reglas de negocio, dependencias, Prisma ni migraciones.
 
 ## Búsqueda de callers legacy
@@ -78,24 +82,29 @@ Tests       1 passed | 8 skipped (9)
 
 El recorrido browser real usa navegación cliente Dashboard → Configuración → Back → Forward. Un experimento con dos `page.goto` duros devolvió en Chromium headless una instantánea inerte sin eventos React; no se usó como sustituto del journey productivo.
 
-### Corrección de baseline BFCache obsoleto
+### Auditoría final: RBAC, baseline normalizado y frescura real del draft
 
-RED, sobre el review de Task 8:
+RED de RBAC Mercado Pago:
 
 ```bash
-npm test -- tests/unit/profile-settings-form.test.tsx -t 'reloads exactly once|keeps fresh server values'
+npm test -- tests/unit/mercado-pago-oauth.test.ts -t 'rejects staff'
 ```
 
-Resultado: 1 pass y 1 fallo; el listener anterior restauraba directamente y no recargaba el documento. El caso A/draft B/server C ya conservaba C y mostraba conflicto al montar.
+Resultado: 7 fallos focales; connect, ambos disconnect y status no exigían explícitamente el rol owner/admin antes de sus dependencias. GREEN: 7/7 focales; staff se rechaza antes de Prisma/OAuth/status y owner/admin conservan sus recorridos.
 
-GREEN después de cambiar el listener a una recarga dura y mantener su cleanup bajo StrictMode:
+RED de transferencia bancaria: la integración esperaba el form-shape normalizado y recibió `data: undefined`; dos tests cliente demostraron whitespace crudo y baseline incorrecto con edición concurrente. GREEN: 1/1 integración de la acción y 2/2 cliente. El upsert y el DTO comparten los valores normalizados; sólo se normaliza el formulario actual si aún coincide con el snapshot crudo enviado.
+
+RED del verifier/draft: el módulo autenticado y el lector candidato no existían, y 4/4 tests del hook demostraron restore sin verificación, conflicto/offline inseguros y lifecycle sin revalidación. GREEN del bloque final:
 
 ```text
-Test Files  1 passed (1)
-Tests       10 passed (10)
+Focused unit: 14 archivos, 138 tests, 0 fallos
+Integration focal PostgreSQL: 2 archivos, 9 tests, 0 fallos
+Back/Forward real post-fix: 2 tests, 0 fallos
 ```
 
-El E2E Back/Forward cuenta boots del documento: al disparar el retorno persistido aumenta exactamente una vez, atraviesa la destrucción transitoria del execution context y recupera el draft sólo tras el mount con props frescas.
+El verifier nunca recibe `businessId`, exige owner/admin y selecciona únicamente campos de `profile`, `reservations`, `policies` o `payments-bank`. El fingerprint es SHA-256 opaco; A/draft B/server C conserva C y mantiene B almacenado, mientras A/draft B/server A recupera B. Si el verifier falla, se informa el fallo y el draft permanece intacto.
+
+RED de reduced motion: 1/1 assertion estructural falló por faltar la variante. GREEN: overlay y content del diálogo compartido incluyen `motion-reduce:animate-none motion-reduce:duration-0`; 1/1 pasó. También se eliminó el whitespace final señalado en el diseño.
 
 ### Harness E2E de Mercado Pago
 
@@ -111,18 +120,22 @@ GREEN: con `PAYMENT_PROVIDER=mock` y headers E2E validados por request se crea u
 
 ## Verificación ejecutada
 
-La base fue PostgreSQL 16 efímero local, enlazado sólo a loopback, con usuario/base exclusivos de Task 8. Las URLs se pasaron por entorno; no se copiaron credenciales al repositorio. Se aplicaron 53 migraciones y el seed antes de E2E. El review correctivo usó un segundo contenedor efímero dedicado en `127.0.0.1:55439`.
+La base fue PostgreSQL 16 efímero local, enlazado sólo a loopback, con usuario/base exclusivos de Task 8. Las URLs se pasaron por entorno; no se copiaron credenciales al repositorio. Se aplicaron 53 migraciones y el seed antes de E2E. La auditoría final usó un contenedor dedicado en `127.0.0.1:55440`, eliminado al finalizar.
 
 | Gate | Resultado |
 |---|---|
 | Focused unit del brief | GREEN: 11 archivos, 115 tests, 0 fallos, 3.63 s |
 | Focused unit correctivo/impactado | GREEN: 12 archivos, 131 tests, 0 fallos, 10.57 s |
+| Focused unit auditoría final | GREEN: 14 archivos, 138 tests, 0 fallos, 4.60 s |
 | Full unit, comando exacto | NO VERDE: 367/370 archivos; 3440 pass, 3 timeouts, 1 skip; 398.58 s |
 | Reproducción de esos 3 timeouts | GREEN: 3 archivos, 13 tests, 0 fallos, 27.70 s |
 | Full unit, `--maxWorkers=4` | NO VERDE: 367/370 archivos; 3440 pass, 3 timeouts distintos, 1 skip; 372.63 s |
 | Reproducción de los 3 timeouts de la segunda corrida | GREEN: 3 archivos, 18 tests, 0 fallos, 19.83 s |
+| Comparación proporcional timeout base `c2007e1` | NO VERDE: 4/5 archivos; 22 pass y timeout 5 s en `my-bookings-cancel`, 33.60 s |
+| Comparación proporcional mismo set en HEAD | GREEN focal: 5 archivos, 23 tests, 20.70 s; no convierte la full en verde |
 | Integración PostgreSQL | GREEN: 61 archivos, 386 tests, 0 fallos, 133.87 s |
-| Playwright Settings Chromium | GREEN final correctivo: 15/15, 48.8 s |
+| Integración focal auditoría final | GREEN: 2 archivos, 9 tests, 0 fallos, 975 ms |
+| Playwright Settings Chromium | GREEN auditoría final: 16/16, 1.1 min; rerun Back/Forward post-lint 2/2, 18.3 s |
 | Typecheck | GREEN, 0 diagnósticos |
 | Lint | Exit 0: 0 errores, 29 warnings fuera del diff Task 8 |
 | Prisma validate | GREEN, schema válido |
@@ -134,16 +147,19 @@ Comandos principales:
 
 ```bash
 npm test -- tests/unit/business-settings-schema.test.ts tests/unit/business-settings-action.test.ts tests/unit/settings-draft.test.ts tests/unit/unsaved-changes-provider.test.tsx tests/unit/settings-shell.test.tsx tests/unit/profile-settings-form.test.tsx tests/unit/reservation-settings-form.test.tsx tests/unit/policy-settings-form.test.tsx tests/unit/settings-routes.test.tsx tests/unit/bank-transfer-form.test.tsx tests/unit/bank-transfer-form-proof.test.tsx
+npm test -- tests/unit/mercado-pago-oauth.test.ts tests/unit/settings-draft.test.ts tests/unit/settings-draft-verifier.test.ts tests/unit/use-settings-draft.test.tsx tests/unit/profile-settings-form.test.tsx tests/unit/reservation-settings-form.test.tsx tests/unit/policy-settings-form.test.tsx tests/unit/bank-transfer-form.test.tsx tests/unit/bank-transfer-form-proof.test.tsx tests/unit/settings-routes.test.tsx tests/unit/dialog-reduced-motion.test.ts tests/unit/business-settings-action.test.ts tests/unit/business-settings-schema.test.ts tests/unit/settings-shell.test.tsx tests/unit/settings-unsaved-changes-provider.test.tsx --maxWorkers=4
 npm test -- --silent --reporter=dot
 npm test -- --silent --reporter=dot --maxWorkers=4
 npm run test:integration
+npm run test:integration -- tests/integration/settings-draft-verifier.test.ts tests/integration/bank-transfer-settings.test.ts --maxWorkers=2
 npx playwright test tests/e2e/settings.spec.ts --project=chromium
+npx playwright test tests/e2e/settings.spec.ts --project=chromium --grep 'Back/Forward'
 npm run typecheck
 npm run lint
 npx prisma validate
 npx prisma generate
 npm run build
-git diff --check
+git diff --check c2007e1
 ```
 
 Entorno no secreto relevante: `APP_DOMAIN=localhost:3000`, `NEXT_PUBLIC_APP_DOMAIN=localhost:3000`, `MERCADO_PAGO_ENVIRONMENT=sandbox`; build con proveedor manual y enforcement/suscripciones desactivados. Playwright usó el bypass y proveedor mock de su configuración test-only. Integración elimina datos seed, por lo que se volvió a ejecutar el seed antes del E2E final.
@@ -155,7 +171,7 @@ No se declara verde el comando full. Las dos corridas terminaron con exactamente
 - corrida exacta: `eslint-internal-anchor`, `loyalty-redeem-as-me`, `payment-qa-runner-safety`;
 - corrida con cuatro workers: `auth-legal`, `my-bookings-cancel`, `payment-qa-runner-safety`.
 
-Todos pasaron inmediatamente en sus reproducciones focales y ninguno toca el diff de Settings. Las focales descartan una regresión reproducible de Task 8 en esos casos, pero no permiten distinguir entre tests frágiles y límites o contención de infraestructura. La señal comprobada es **timeouts bajo carga no aislados**; el full sigue **NO VERDE**. Riesgo residual: la suite global necesita estabilización; este trabajo no cambia timeouts ni configuración porque está fuera de alcance. El fix correctivo no invalida esta evidencia y, según el alcance del review, no se repitió otra corrida full.
+Todos pasaron inmediatamente en sus reproducciones focales y ninguno toca el diff de Settings. Además se comparó el union de cinco archivos que había fallado entre ambas corridas contra la base `c2007e1` y contra el worktree final, con cuatro workers y copias locales equivalentes de dependencias: HEAD pasó 23/23; la base reprodujo un timeout en `my-bookings-cancel` (22/23). Esto prueba que al menos ese timeout existe también en base bajo carga, pero no permite distinguir de forma general entre tests frágiles y contención de infraestructura. La señal comprobada sigue siendo **timeouts bajo carga no aislados**; el full permanece **NO VERDE**. No se ampliaron timeouts ni configuración y el fix final no requirió otra corrida full.
 
 ## Playwright y QA visual
 
@@ -167,7 +183,7 @@ Se capturaron **16 screenshots**: profile, reservations, policies y payments a 3
 - preview sticky sólo desde 1280 px, debajo del formulario en anchos menores y a la derecha en 1440;
 - save bar por encima de la navegación móvil fija a 375;
 - foco Perfil → Reservas y Pagos → primer input;
-- guard conserva foco al cancelar, descarta al confirmar y restaura el draft con Back/Forward después de una recarga real contra props frescas;
+- guard conserva foco al cancelar, descarta al confirmar y restaura el draft con Back/Forward sólo después de verificar el baseline actual autenticado;
 - preview cambia en vivo; guardado real persiste tras reload y el test restaura el valor seed original;
 - Reservas y Políticas guardan, persisten tras reload y restauran el seed dentro de `try/finally`;
 - transferencia bancaria guarda, persiste y restaura su fixture; Mercado Pago conecta, desconecta y confirma ambos estados tras reload usando exclusivamente el harness test-only;
@@ -177,11 +193,12 @@ Ruido observado, sin fallo: `DEP0205` de Node, deprecación de convención `midd
 
 ## Diff, seguridad y alcance
 
-- `git diff --check`: limpio.
+- `git diff --check c2007e1`: limpio.
 - Búsqueda de secretos sobre el diff: sin tokens, claves privadas ni URLs con credencial persistida.
 - No hay cambios en `package.json`, lockfile, Prisma schema o migraciones.
 - La eliminación se limita al formulario/acción/schema de compatibilidad ya sin consumidores.
 - Todos los E2E mutables están serializados y usan `try/finally`: restauran bio, Reservas y Políticas, y eliminan las fixtures bancarias/Mercado Pago.
+- Auditoría post-E2E del seed: `manualHoldHours=24`, `bookingPolicy=NULL`, bio original, 0 cuentas bancarias y 0 cuentas Mercado Pago mock.
 
 ## Riesgos y QA manual pendiente
 

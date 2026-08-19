@@ -1,6 +1,6 @@
 # Configuración por secciones — Diseño
 
-**Fecha:** 2026-08-18  
+**Fecha:** 2026-08-18
 **Estado:** implementado; QA real pendiente de despliegue
 
 ## Contexto

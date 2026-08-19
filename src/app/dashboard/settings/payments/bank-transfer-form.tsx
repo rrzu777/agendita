@@ -8,50 +8,25 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { saveBankTransferAccount, setBankTransferEnabled, setRequireTransferProof } from '@/server/actions/bank-transfer-settings'
-import { DEFAULT_HOLD_HOURS, DEFAULT_VERIFY_HOURS, HOLD_HOURS_MAX, VERIFY_HOURS_MAX } from '@/lib/bank-transfer/schema'
+import { HOLD_HOURS_MAX, VERIFY_HOURS_MAX } from '@/lib/bank-transfer/schema'
 import { useVocabulary } from '@/components/vocabulary-provider'
 import { useSettingsDraft } from '@/components/dashboard/settings/use-settings-draft'
 import { useUnsavedChangesRegistration } from '@/components/dashboard/unsaved-changes-provider'
+import {
+  toBankTransferFormValues,
+  type BankTransferFormValues,
+  type BankTransferSettingsRecord,
+} from '@/lib/business/settings-form-values'
 
 const DRAFT_VERSION = 1
 
-type BankTransferFormValues = {
-  accountHolder: string
-  rut: string
-  bankName: string
-  accountType: string
-  accountNumber: string
-  email: string
-  instructions: string
-  holdHours: string
-  verifyHours: string
+function sameFormValues(left: BankTransferFormValues, right: BankTransferFormValues) {
+  return (Object.keys(left) as Array<keyof BankTransferFormValues>)
+    .every((key) => left[key] === right[key])
 }
 
-export type BankTransferAccountSettings = {
-  accountHolder: string
-  rut: string
-  bankName: string
-  accountType: string
-  accountNumber: string
-  email: string | null
-  instructions: string | null
-  holdHours: number
-  verifyHours: number | null
+export type BankTransferAccountSettings = BankTransferSettingsRecord & {
   isEnabled: boolean
-}
-
-function toFormValues(account: BankTransferAccountSettings | null): BankTransferFormValues {
-  return {
-    accountHolder: account?.accountHolder ?? '',
-    rut: account?.rut ?? '',
-    bankName: account?.bankName ?? '',
-    accountType: account?.accountType ?? '',
-    accountNumber: account?.accountNumber ?? '',
-    email: account?.email ?? '',
-    instructions: account?.instructions ?? '',
-    holdHours: String(account?.holdHours ?? DEFAULT_HOLD_HOURS),
-    verifyHours: account ? String(account.verifyHours ?? '') : String(DEFAULT_VERIFY_HOURS),
-  }
 }
 
 export function BankTransferForm({
@@ -71,24 +46,38 @@ export function BankTransferForm({
   const [serverError, setServerError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const submitInFlight = useRef(false)
-  const initialValues = useMemo(() => toFormValues(account), [account])
+  const initialValues = useMemo(() => toBankTransferFormValues(account), [account])
   const [baseline, setBaseline] = useState(initialValues)
   const [form, setForm] = useState(initialValues)
+  const formRef = useRef(initialValues)
   const isDirty = Object.keys(baseline).some((key) => form[key as keyof BankTransferFormValues] !== baseline[key as keyof BankTransferFormValues])
-  const reset = useCallback((values: BankTransferFormValues) => setForm(values), [])
+  const reset = useCallback((values: BankTransferFormValues) => {
+    formRef.current = values
+    setForm(values)
+  }, [])
+  const replaceBaseline = useCallback((values: BankTransferFormValues) => {
+    reset(values)
+    setBaseline(values)
+  }, [reset])
   const draft = useSettingsDraft({
+    scope: 'payments-bank',
     key: `settings:${businessId}:payments-bank:v1`,
     version: DRAFT_VERSION,
     baseline,
     values: form,
     isDirty,
     reset,
+    replaceBaseline,
   })
 
   useUnsavedChangesRegistration({ scope: 'payments-bank', isDirty, discard: draft.discard })
 
   function set<K extends keyof typeof form>(key: K, value: string) {
-    setForm(prev => ({ ...prev, [key]: value }))
+    setForm((previous) => {
+      const next = { ...previous, [key]: value }
+      formRef.current = next
+      return next
+    })
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -106,8 +95,14 @@ export function BankTransferForm({
         verifyHours: submittedValues.verifyHours.trim() === '' ? null : Number(submittedValues.verifyHours),
       })
       if (!res.ok) { setServerError(res.error); return }
-      setBaseline(submittedValues)
-      draft.clearDraft()
+      const persistedValues = res.data
+      const formStillMatchesSubmission = sameFormValues(formRef.current, submittedValues)
+      setBaseline(persistedValues)
+      if (formStillMatchesSubmission) {
+        formRef.current = persistedValues
+        setForm(persistedValues)
+        draft.clearDraft()
+      }
       setSuccessMessage('Datos guardados.')
       router.refresh()
     } catch {
@@ -152,6 +147,11 @@ export function BankTransferForm({
       {draft.recovery === 'conflict' && (
         <p role="status" className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
           Hay un borrador local de una versión anterior y no se aplicó para evitar sobrescribir cambios recientes.
+        </p>
+      )}
+      {draft.recovery === 'verification-failed' && (
+        <p role="status" className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          No pudimos verificar el borrador con el servidor. No se aplicó ni se eliminó; vuelve a intentarlo con conexión.
         </p>
       )}
       {account && (

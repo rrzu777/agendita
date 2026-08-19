@@ -55,11 +55,11 @@ test.describe('settings navigation', () => {
     })
   }
 
-  test('warns before discarding and restores a Back navigation draft', async ({ page }) => {
-    await page.addInitScript(() => {
-      if (location.origin !== 'http://localhost:3000') return
-      const key = '__settings_document_boots'
-      sessionStorage.setItem(key, String(Number(sessionStorage.getItem(key) ?? '0') + 1))
+  test('warns before discarding and restores a draft through real Back/Forward navigation', async ({ page }) => {
+    let nativeDialogs = 0
+    page.on('dialog', async (dialog) => {
+      nativeDialogs += 1
+      await dialog.dismiss()
     })
     await page.goto('/dashboard')
     await page.getByRole('link', { name: 'Configuración', exact: true }).click()
@@ -86,26 +86,53 @@ test.describe('settings navigation', () => {
     await page.goForward()
     await expect(page).toHaveURL(/\/dashboard\/settings\/profile$/)
     await page.waitForLoadState('networkidle')
-    const bootsBeforePersistedPageShow = await page.evaluate(() => Number(sessionStorage.getItem('__settings_document_boots')))
-    await page.evaluate(() => {
-      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))
-    })
-    await expect.poll(async () => {
-      try {
-        return await page.evaluate(() => Number(sessionStorage.getItem('__settings_document_boots')))
-      } catch {
-        return -1
-      }
-    })
-      .toBe(bootsBeforePersistedPageShow + 1)
-    await page.waitForLoadState('networkidle')
     await expect.poll(() => page.evaluate(() => Object.values(sessionStorage).join('\n'))).toContain(draft)
     await expect(page.getByText('Recuperamos un borrador local')).toBeVisible()
     await expect(description).toHaveValue(draft)
+    expect(nativeDialogs).toBe(0)
 
     await reservationsLink.click()
     await page.getByRole('button', { name: 'Descartar cambios' }).click()
     await expect(page).toHaveURL(/\/dashboard\/settings\/reservations$/)
+  })
+
+  test('keeps server C and reports conflict for draft B after real Back/Forward navigation', async ({ page }) => {
+    const business = await prisma.business.findUniqueOrThrow({
+      where: { slug: 'mimosnails' },
+      select: { id: true, bio: true },
+    })
+    const original = business.bio ?? ''
+    const draftB = `Borrador B ${Date.now()}`
+    const serverC = `Servidor C ${Date.now()}`
+    let nativeDialogs = 0
+    page.on('dialog', async (dialog) => {
+      nativeDialogs += 1
+      await dialog.dismiss()
+    })
+
+    try {
+      await page.goto('/dashboard')
+      await page.getByRole('link', { name: 'Configuración', exact: true }).click()
+      await expect(page).toHaveURL(/\/dashboard\/settings\/profile$/)
+      const description = page.getByLabel('Descripción')
+      await expect(description).toHaveValue(original)
+      await description.fill(draftB)
+      await expect.poll(() => page.evaluate(() => Object.values(sessionStorage).join('\n'))).toContain(draftB)
+
+      await page.goBack()
+      await expect(page).toHaveURL('/dashboard')
+      await prisma.business.update({ where: { id: business.id }, data: { bio: serverC } })
+
+      await page.goForward()
+      await expect(page).toHaveURL(/\/dashboard\/settings\/profile$/)
+      await expect(page.getByText('Hay un borrador local de una versión anterior')).toBeVisible()
+      await expect(description).toHaveValue(serverC)
+      await expect.poll(() => page.evaluate(() => Object.values(sessionStorage).join('\n'))).toContain(draftB)
+      expect(nativeDialogs).toBe(0)
+    } finally {
+      await prisma.business.update({ where: { id: business.id }, data: { bio: business.bio } })
+      await page.evaluate((key) => sessionStorage.removeItem(key), `${business.id}:profile`).catch(() => {})
+    }
   })
 
   test('updates the preview, saves profile changes and restores the seeded value', async ({ page }) => {
@@ -219,15 +246,20 @@ test.describe('settings mutable section journeys', () => {
       await page.goto('/dashboard/settings/payments')
       await page.waitForLoadState('networkidle')
       const instructions = page.getByLabel(/Instrucciones para/)
+      const bankName = page.getByLabel('Banco')
       const changed = `Transferencia E2E ${Date.now()}`
       await instructions.fill(changed)
+      await bankName.fill('  Banco E2E normalizado  ')
       await page.getByRole('button', { name: 'Guardar datos bancarios' }).click()
       await expect(page.getByText('Datos guardados.')).toBeVisible()
+      await expect(bankName).toHaveValue('Banco E2E normalizado')
       await page.reload()
       await page.waitForLoadState('networkidle')
       await expect(instructions).toHaveValue(changed)
+      await expect(bankName).toHaveValue('Banco E2E normalizado')
 
       await instructions.fill(originalInstructions)
+      await bankName.fill('Banco E2E')
       await page.getByRole('button', { name: 'Guardar datos bancarios' }).click()
       await expect(page.getByText('Datos guardados.')).toBeVisible()
       await page.reload()

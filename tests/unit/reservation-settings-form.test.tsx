@@ -6,10 +6,14 @@ import { writeSettingsDraft } from '@/lib/business/settings-draft'
 import type { ReservationSettingsInput } from '@/lib/business/schema'
 import { ReservationSettingsForm } from '@/components/dashboard/settings/reservation-settings-form'
 
-const { mockUpdate } = vi.hoisted(() => ({ mockUpdate: vi.fn() }))
+const { mockUpdate, mockVerifySettingsDraftBaseline } = vi.hoisted(() => ({
+  mockUpdate: vi.fn(),
+  mockVerifySettingsDraftBaseline: vi.fn(),
+}))
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }))
 vi.mock('@/server/actions/business-settings', () => ({ updateReservationSettings: mockUpdate }))
+vi.mock('@/server/actions/settings-draft-verifier', () => ({ verifySettingsDraftBaseline: mockVerifySettingsDraftBaseline }))
 
 const reservationValues: ReservationSettingsInput = {
   timezone: 'America/Santiago',
@@ -69,6 +73,8 @@ describe('ReservationSettingsForm', () => {
   beforeEach(() => {
     sessionStorage.clear()
     mockUpdate.mockReset()
+    mockVerifySettingsDraftBaseline.mockReset()
+    mockVerifySettingsDraftBaseline.mockResolvedValue({ matches: true, current: reservationValues })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)

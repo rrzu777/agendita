@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Input } from '@/components/ui/input'
@@ -49,13 +49,21 @@ export function PolicySettingsForm({ businessId, initialValues }: PolicySettings
     callback: ({ values }) => setDraftValues(values),
   }), [subscribe])
 
+  const replaceBaseline = useCallback((values: PolicySettingsInput) => {
+    reset(values)
+    setBaseline(values)
+    setDraftValues(values)
+  }, [reset])
+
   const draft = useSettingsDraft({
+    scope: 'policies',
     key: `${businessId}:policies`,
     version: DRAFT_VERSION,
     baseline,
     values: draftValues,
     isDirty,
     reset,
+    replaceBaseline,
   })
 
   useUnsavedChangesRegistration({ scope: 'policies', isDirty, discard: draft.discard })
@@ -111,6 +119,11 @@ export function PolicySettingsForm({ businessId, initialValues }: PolicySettings
       {draft.recovery === 'conflict' && (
         <p role="status" className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
           Hay un borrador local de una versión anterior y no se aplicó para evitar sobrescribir cambios recientes.
+        </p>
+      )}
+      {draft.recovery === 'verification-failed' && (
+        <p role="status" className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          No pudimos verificar el borrador con el servidor. No se aplicó ni se eliminó; vuelve a intentarlo con conexión.
         </p>
       )}
 
