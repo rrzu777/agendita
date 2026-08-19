@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { BankTransferForm } from '@/app/dashboard/settings/payments/bank-transfer-form'
 import { GuardedLink, UnsavedChangesProvider } from '@/components/dashboard/unsaved-changes-provider'
+import { writeSettingsDraft } from '@/lib/business/settings-draft'
 
 const { mockSaveBankTransferAccount, mockPush } = vi.hoisted(() => ({
   mockSaveBankTransferAccount: vi.fn(),
@@ -79,6 +80,12 @@ async function setInput(container: HTMLElement, label: string, value: string) {
   })
 }
 
+function deferred<T>() {
+  let resolve: (value: T) => void
+  const promise = new Promise<T>((nextResolve) => { resolve = nextResolve })
+  return { promise, resolve: (value: T) => resolve(value) }
+}
+
 describe('BankTransferForm unsaved bank details', () => {
   let container: HTMLDivElement
   let root: Root
@@ -128,9 +135,72 @@ describe('BankTransferForm unsaved bank details', () => {
     })
     expect(mockSaveBankTransferAccount).toHaveBeenCalledWith(expect.objectContaining({ bankName: 'Banco de Chile' }))
     expect(mockSaveBankTransferAccount.mock.calls[0]?.[0]?.businessId).toBeUndefined()
+    expect(sessionStorage.getItem('settings:biz-1:payments-bank:v1')).toBeNull()
 
     link.setAttribute('href', 'javascript:void(0)')
     await act(async () => link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })))
     expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('keeps concurrent edits dirty and restores their draft after a save succeeds', async () => {
+    const pending = deferred<{ ok: true }>()
+    mockSaveBankTransferAccount.mockReturnValue(pending.promise)
+
+    await act(async () => {
+      root.render(
+        <UnsavedChangesProvider>
+          <BankTransferForm businessId="biz-1" account={account} requireProof={false} proofUploadAvailable />
+          <GuardedLink href="/dashboard/settings/profile">Perfil público</GuardedLink>
+        </UnsavedChangesProvider>,
+      )
+    })
+
+    await setInput(container, 'Banco', 'Banco A')
+    const form = container.querySelector('form')
+    if (!form) throw new Error('Bank transfer form not found')
+    await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    expect(mockSaveBankTransferAccount).toHaveBeenCalledTimes(1)
+    await setInput(container, 'Banco', 'Banco B')
+
+    await act(async () => pending.resolve({ ok: true }))
+
+    expect(getInput(container, 'Banco').value).toBe('Banco B')
+    expect(sessionStorage.getItem('settings:biz-1:payments-bank:v1')).toContain('Banco B')
+    const link = Array.from(container.querySelectorAll('a')).find((element) => element.textContent === 'Perfil público')
+    if (!link) throw new Error('Profile link not found')
+    await act(async () => link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })))
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Cambios sin guardar')
+  })
+
+  it.each(['restored', 'conflict'] as const)('renders %s draft recovery feedback', async (recovery) => {
+    const baseline = {
+      accountHolder: account.accountHolder,
+      rut: account.rut,
+      bankName: account.bankName,
+      accountType: account.accountType,
+      accountNumber: account.accountNumber,
+      email: account.email,
+      instructions: account.instructions ?? '',
+      holdHours: String(account.holdHours),
+      verifyHours: String(account.verifyHours),
+    }
+    writeSettingsDraft(
+      sessionStorage,
+      'settings:biz-1:payments-bank:v1',
+      1,
+      recovery === 'restored' ? baseline : { ...baseline, bankName: 'Otra base' },
+      { ...baseline, bankName: 'Banco recuperado' },
+    )
+
+    await act(async () => {
+      root.render(
+        <UnsavedChangesProvider>
+          <BankTransferForm businessId="biz-1" account={account} requireProof={false} proofUploadAvailable />
+        </UnsavedChangesProvider>,
+      )
+    })
+
+    expect(container.textContent).toContain(recovery === 'restored' ? 'Recuperamos un borrador local' : 'Hay un borrador local de una versión anterior')
   })
 })

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,7 +8,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { saveBankTransferAccount, setBankTransferEnabled, setRequireTransferProof } from '@/server/actions/bank-transfer-settings'
-import type { BankTransferAccount } from '@prisma/client'
 import { DEFAULT_HOLD_HOURS, DEFAULT_VERIFY_HOURS, HOLD_HOURS_MAX, VERIFY_HOURS_MAX } from '@/lib/bank-transfer/schema'
 import { useVocabulary } from '@/components/vocabulary-provider'
 import { useSettingsDraft } from '@/components/dashboard/settings/use-settings-draft'
@@ -28,7 +27,20 @@ type BankTransferFormValues = {
   verifyHours: string
 }
 
-function toFormValues(account: BankTransferAccount | null): BankTransferFormValues {
+export type BankTransferAccountSettings = {
+  accountHolder: string
+  rut: string
+  bankName: string
+  accountType: string
+  accountNumber: string
+  email: string | null
+  instructions: string | null
+  holdHours: number
+  verifyHours: number | null
+  isEnabled: boolean
+}
+
+function toFormValues(account: BankTransferAccountSettings | null): BankTransferFormValues {
   return {
     accountHolder: account?.accountHolder ?? '',
     rut: account?.rut ?? '',
@@ -49,7 +61,7 @@ export function BankTransferForm({
   proofUploadAvailable,
 }: {
   businessId: string
-  account: BankTransferAccount | null
+  account: BankTransferAccountSettings | null
   requireProof: boolean
   proofUploadAvailable: boolean
 }) {
@@ -58,6 +70,7 @@ export function BankTransferForm({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const submitInFlight = useRef(false)
   const initialValues = useMemo(() => toFormValues(account), [account])
   const [baseline, setBaseline] = useState(initialValues)
   const [form, setForm] = useState(initialValues)
@@ -80,6 +93,8 @@ export function BankTransferForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (submitInFlight.current) return
+    submitInFlight.current = true
     setIsSubmitting(true)
     setServerError(null)
     setSuccessMessage(null)
@@ -92,13 +107,13 @@ export function BankTransferForm({
       })
       if (!res.ok) { setServerError(res.error); return }
       setBaseline(submittedValues)
-      setForm(submittedValues)
       draft.clearDraft()
       setSuccessMessage('Datos guardados.')
       router.refresh()
     } catch {
       setServerError('Error al guardar')
     } finally {
+      submitInFlight.current = false
       setIsSubmitting(false)
     }
   }
@@ -129,6 +144,16 @@ export function BankTransferForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {draft.recovery === 'restored' && (
+        <p role="status" className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          Recuperamos un borrador local para que puedas continuar editando.
+        </p>
+      )}
+      {draft.recovery === 'conflict' && (
+        <p role="status" className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          Hay un borrador local de una versión anterior y no se aplicó para evitar sobrescribir cambios recientes.
+        </p>
+      )}
       {account && (
         <div className="flex items-center justify-between rounded-lg border border-border p-4">
           <div>

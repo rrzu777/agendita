@@ -9,7 +9,7 @@ import { isObjectStorageAvailable } from '@/lib/storage/r2'
 import { prisma } from '@/lib/db'
 import { BadgeCheck, CircleAlert, Landmark, Link2, Link2Off, TestTube } from 'lucide-react'
 import { DisconnectButton } from './disconnect-button'
-import { BankTransferForm } from './bank-transfer-form'
+import { BankTransferForm, type BankTransferAccountSettings } from './bank-transfer-form'
 import { getVocabulary } from '@/lib/vocabulary'
 import { requireSettingsPageAccess } from '@/lib/business/settings-access'
 
@@ -26,10 +26,36 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
   const [account, availability, bankAccount, businessFlags] = await Promise.all([
     getPaymentAccountStatus(),
     resolveOnlinePaymentAvailabilityForBusiness(businessId),
-    prisma.bankTransferAccount.findUnique({ where: { businessId } }),
+    prisma.bankTransferAccount.findUnique({
+      where: { businessId },
+      select: {
+        accountHolder: true,
+        rut: true,
+        bankName: true,
+        accountType: true,
+        accountNumber: true,
+        email: true,
+        instructions: true,
+        holdHours: true,
+        verifyHours: true,
+        isEnabled: true,
+      },
+    }),
     prisma.business.findUnique({ where: { id: businessId }, select: { requireTransferProof: true } }),
   ])
   const proofUploadAvailable = isObjectStorageAvailable()
+  const bankAccountSettings: BankTransferAccountSettings | null = bankAccount && {
+    accountHolder: bankAccount.accountHolder,
+    rut: bankAccount.rut,
+    bankName: bankAccount.bankName,
+    accountType: bankAccount.accountType,
+    accountNumber: bankAccount.accountNumber,
+    email: bankAccount.email,
+    instructions: bankAccount.instructions,
+    holdHours: bankAccount.holdHours,
+    verifyHours: bankAccount.verifyHours,
+    isEnabled: bankAccount.isEnabled,
+  }
 
   const isConnected = account?.status === 'connected'
   const isDisconnected = account?.status === 'disconnected'
@@ -163,7 +189,7 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
           <CardContent>
             <BankTransferForm
               businessId={businessId}
-              account={bankAccount}
+              account={bankAccountSettings}
               requireProof={businessFlags?.requireTransferProof ?? false}
               proofUploadAvailable={proofUploadAvailable}
             />
