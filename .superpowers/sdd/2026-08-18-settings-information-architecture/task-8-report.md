@@ -10,9 +10,9 @@
 
 **Commit correctivo de auditoría final:** `64e5dd2e53b553c309cbca45873f13a2f7992f0a`.
 
-**Commit correctivo de re-review R2:** creado al cerrar este reporte; el SHA exacto queda en el handoff porque un commit no puede contener su propio hash.
+**Commit correctivo de re-review R2:** `950d75e7bb8e75937406029014e14a881aa35abd`.
 
-**Estado:** implementado; QA real pendiente de despliegue.
+**Estado:** implementado y review final READY; QA real pendiente de despliegue.
 
 ## Resultado
 
@@ -155,6 +155,7 @@ La base fue PostgreSQL 16 efímero local, enlazado sólo a loopback, con usuario
 | Reproducción de esos 3 timeouts | GREEN: 3 archivos, 13 tests, 0 fallos, 27.70 s |
 | Full unit, `--maxWorkers=4` | NO VERDE: 367/370 archivos; 3440 pass, 3 timeouts distintos, 1 skip; 372.63 s |
 | Reproducción de los 3 timeouts de la segunda corrida | GREEN: 3 archivos, 18 tests, 0 fallos, 19.83 s |
+| Full unit serial exact HEAD `950d75e` | GREEN: exit 0; 372/372 archivos, 3468 pass, 1 skip, 448.39 s |
 | Comparación proporcional timeout base `c2007e1` | NO VERDE: 4/5 archivos; 22 pass y timeout 5 s en `my-bookings-cancel`, 33.60 s |
 | Comparación proporcional mismo set en HEAD | GREEN focal: 5 archivos, 23 tests, 20.70 s; no convierte la full en verde |
 | Integración PostgreSQL | GREEN: 61 archivos, 386 tests, 0 fallos, 133.87 s |
@@ -177,6 +178,7 @@ npm test -- tests/unit/mercado-pago-oauth.test.ts tests/unit/settings-draft.test
 npm test -- tests/unit/use-settings-draft.test.tsx tests/unit/profile-settings-form.test.tsx tests/unit/reservation-settings-form.test.tsx tests/unit/policy-settings-form.test.tsx tests/unit/bank-transfer-form.test.tsx tests/unit/settings-draft.test.ts --maxWorkers=4
 npm test -- --silent --reporter=dot
 npm test -- --silent --reporter=dot --maxWorkers=4
+npm test -- --silent --reporter=dot --maxWorkers=1
 npm run test:integration
 npm run test:integration -- tests/integration/settings-draft-verifier.test.ts tests/integration/bank-transfer-settings.test.ts --maxWorkers=2
 npm run test:integration -- tests/integration/settings-draft-verifier.test.ts --maxWorkers=1
@@ -194,12 +196,24 @@ Entorno no secreto relevante: `APP_DOMAIN=localhost:3000`, `NEXT_PUBLIC_APP_DOMA
 
 ### Clasificación de full unit
 
-No se declara verde el comando full. Las dos corridas terminaron con exactamente 3 timeouts, pero variaron dos de los tres archivos:
+No se declaran verdes las dos corridas full con paralelismo normal/acotado: ambas terminaron con exactamente 3 timeouts, pero variaron dos de los tres archivos:
 
 - corrida exacta: `eslint-internal-anchor`, `loyalty-redeem-as-me`, `payment-qa-runner-safety`;
 - corrida con cuatro workers: `auth-legal`, `my-bookings-cancel`, `payment-qa-runner-safety`.
 
-Todos pasaron inmediatamente en sus reproducciones focales y ninguno toca el diff de Settings. Además se comparó el union de cinco archivos que había fallado entre ambas corridas contra la base `c2007e1` y contra el worktree final, con cuatro workers y copias locales equivalentes de dependencias: HEAD pasó 23/23; la base reprodujo un timeout en `my-bookings-cancel` (22/23). Esto prueba que al menos ese timeout existe también en base bajo carga, pero no permite distinguir de forma general entre tests frágiles y contención de infraestructura. La señal comprobada sigue siendo **timeouts bajo carga no aislados**; el full permanece **NO VERDE**. No se ampliaron timeouts ni configuración y el fix final no requirió otra corrida full.
+Todos pasaron inmediatamente en sus reproducciones focales y ninguno toca el diff de Settings. Además se comparó el union de cinco archivos que había fallado entre ambas corridas contra la base `c2007e1` y contra el worktree final, con cuatro workers y copias locales equivalentes de dependencias: HEAD pasó 23/23; la base reprodujo un timeout en `my-bookings-cancel` (22/23). Esto prueba que al menos ese timeout existe también en base bajo carga, pero no permite distinguir de forma general entre tests frágiles y contención de infraestructura.
+
+Como refresh final se ejecutó sobre el exact HEAD `950d75e7bb8e75937406029014e14a881aa35abd` la misma suite con un solo worker: `npm test -- --silent --reporter=dot --maxWorkers=1`. Terminó exit 0, con 372/372 archivos, 3468 tests pasados, 1 skipped y 448.39 s. Por tanto existe evidencia full exact-HEAD verde en serial, mientras los comandos/configuraciones paralelos anteriores conservan su clasificación **NO VERDE por presión/timeouts bajo carga**. No se ampliaron timeouts ni se cambió configuración.
+
+## Refresh final de Git
+
+Antes del commit documental de cierre:
+
+- `origin/main`: `c2007e1f49051a606c1d6b5af2f051459acf887b`;
+- merge-base con la feature: `c2007e1f49051a606c1d6b5af2f051459acf887b`;
+- feature: 19 commits ahead, 0 behind;
+- HEAD revisado: `950d75e7bb8e75937406029014e14a881aa35abd`;
+- worktree linked/named: `/Users/robertozamorautrera/Projects/agendita/.worktrees/settings-information-architecture`, branch `feature/settings-information-architecture`.
 
 ## Playwright y QA visual
 
@@ -227,7 +241,7 @@ Ruido observado, sin fallo: `DEP0205` de Node, deprecación de convención `midd
 - La eliminación se limita al formulario/acción/schema de compatibilidad ya sin consumidores.
 - Todos los E2E mutables están serializados y usan `try/finally`: restauran bio, Reservas y Políticas, y eliminan las fixtures bancarias/Mercado Pago.
 - Auditoría post-E2E del seed: `manualHoldHours=24`, `bookingPolicy=NULL`, bio original, 0 cuentas bancarias y 0 cuentas Mercado Pago mock.
-- R2 no tocó servidor, schemas ni API; por alcance no repitió build/full unit. Typecheck, lint completo, integración real del verifier y Back/Forward real sí se repitieron sobre el código final.
+- R2 no tocó servidor, schemas ni API; por alcance no repitió build durante el fix. Typecheck, lint completo, integración real del verifier y Back/Forward real sí se repitieron; el refresh posterior agregó la full serial exact-HEAD verde documentada arriba.
 
 ## Riesgos y QA manual pendiente
 
@@ -235,4 +249,4 @@ Ruido observado, sin fallo: `DEP0205` de Node, deprecación de convención `midd
 - Confirmar en un dispositivo móvil real safe-area, teclado virtual y scroll horizontal de la navegación local.
 - Confirmar en navegador real Back/Forward y recarga después de una edición sin guardar.
 - Verificar visualmente en sandbox/despliegue los flujos externos reales de conexión/desconexión de Mercado Pago y comprobante bancario; la automatización usa sólo el harness test-only, sin credenciales reales.
-- El review exact-diff independiente se deja al orquestador por la regla explícita de Task 8 de no crear subagentes. No corresponde merge hasta obtener READY sobre el HEAD final y checks remotos verdes.
+- El review exact-diff final quedó READY sobre `950d75e`; el merge sigue condicionado a los checks remotos y al flujo de integración autorizado.
