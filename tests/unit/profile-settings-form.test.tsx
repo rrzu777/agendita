@@ -1,0 +1,131 @@
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { UnsavedChangesProvider } from '@/components/dashboard/unsaved-changes-provider'
+import { writeSettingsDraft } from '@/lib/business/settings-draft'
+import type { ProfileSettingsInput } from '@/lib/business/schema'
+import { ProfileSettingsForm } from '@/components/dashboard/settings/profile-settings-form'
+
+const { mockUpdateProfile } = vi.hoisted(() => ({ mockUpdateProfile: vi.fn() }))
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }))
+vi.mock('@/server/actions/business-settings', () => ({ updateProfileSettings: mockUpdateProfile }))
+
+const profileValues: ProfileSettingsInput = {
+  name: 'Mi Negocio',
+  bio: '',
+  profileImageUrl: '',
+  logoUrl: '',
+  whatsapp: '',
+  instagram: '',
+  addressText: '',
+  city: 'Santiago',
+  subdomain: 'mi-negocio',
+}
+
+function getInput(container: HTMLElement, label: string) {
+  const labelElement = Array.from(container.querySelectorAll('label')).find((element) => element.textContent === label)
+  const inputId = labelElement?.getAttribute('for')
+  const input = inputId ? container.querySelector<HTMLInputElement | HTMLTextAreaElement>(`#${inputId}`) : null
+  if (!input) throw new Error(`Input not found for ${label}`)
+  return input
+}
+
+async function setInput(container: HTMLElement, label: string, value: string) {
+  const input = getInput(container, label)
+  await act(async () => {
+    const prototype = input instanceof HTMLTextAreaElement
+      ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype
+    const setter = Object.getOwnPropertyDescriptor(prototype, 'value')!.set!
+    setter.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
+async function submit(container: HTMLElement) {
+  const form = container.querySelector('form')
+  if (!form) throw new Error('Profile form not found')
+  await act(async () => {
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await Promise.resolve()
+  })
+}
+
+describe('ProfileSettingsForm', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    sessionStorage.clear()
+    mockUpdateProfile.mockReset()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(async () => {
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  async function renderProfile() {
+    await act(async () => {
+      root.render(
+        <UnsavedChangesProvider>
+          <ProfileSettingsForm businessId="biz-1" slug="mi-negocio" initialValues={profileValues} />
+        </UnsavedChangesProvider>,
+      )
+    })
+  }
+
+  it('submits profile fields only and replaces dirty values with the normalized response', async () => {
+    mockUpdateProfile.mockResolvedValue({ ok: true, data: { ...profileValues, whatsapp: '+56912345678' } })
+    await renderProfile()
+
+    await setInput(container, 'WhatsApp', '9 1234 5678')
+    await submit(container)
+
+    const payload = mockUpdateProfile.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(payload.businessId).toBeUndefined()
+    expect(payload.timezone).toBeUndefined()
+    expect(getInput(container, 'WhatsApp').value).toBe('+56912345678')
+    expect(container.textContent).toContain('Cambios guardados')
+    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
+  })
+
+  it('updates the public preview from a profile field', async () => {
+    await renderProfile()
+
+    await setInput(container, 'Nombre del negocio', 'Mi Negocio nuevo')
+
+    expect(Array.from(container.querySelectorAll('h2')).some((heading) => heading.textContent === 'Mi Negocio nuevo')).toBe(true)
+  })
+
+  it('keeps values and shows a reserved subdomain error returned by the action', async () => {
+    mockUpdateProfile.mockResolvedValue({ ok: false, error: 'Este subdominio está reservado' })
+    await renderProfile()
+
+    await setInput(container, 'Subdominio', 'admin')
+    await submit(container)
+
+    expect(container.textContent).toContain('Este subdominio está reservado')
+    expect(getInput(container, 'Subdominio').value).toBe('admin')
+  })
+
+  it('announces a restored draft and a conflicting draft', async () => {
+    writeSettingsDraft(sessionStorage, 'biz-1:profile', 1, profileValues, { ...profileValues, name: 'Borrador recuperado' })
+    await renderProfile()
+
+    expect(container.textContent).toContain('Recuperamos un borrador local')
+    expect(getInput(container, 'Nombre del negocio').value).toBe('Borrador recuperado')
+
+    await act(async () => root.unmount())
+    sessionStorage.clear()
+    writeSettingsDraft(sessionStorage, 'biz-1:profile', 1, { ...profileValues, name: 'Otro negocio' }, profileValues)
+    root = createRoot(container)
+    await renderProfile()
+
+    expect(container.textContent).toContain('Hay un borrador local de una versión anterior')
+  })
+})
