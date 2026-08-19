@@ -98,10 +98,11 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
 
     event.preventDefault()
     const form = event.currentTarget
+    const submitter = (event.nativeEvent as SubmitEvent).submitter
     requestNavigation(() => {
       allowSignOut.current = true
       form.requestSubmit()
-    })
+    }, submitter instanceof HTMLElement ? submitter : null)
   }
 
   return (

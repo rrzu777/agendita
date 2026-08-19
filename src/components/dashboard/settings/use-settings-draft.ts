@@ -36,7 +36,7 @@ export function useSettingsDraft<T extends FlatSettings>({
   baseline: T
   values: T
   isDirty: boolean
-  reset: (values: T) => void
+  reset: (values: T, options?: { keepDefaultValues?: boolean }) => void
 }) {
   const [recovery, setRecovery] = useState<'none' | 'restored' | 'conflict'>('none')
   const baselineFingerprint = useMemo(() => flatFingerprint(baseline), [baseline])
@@ -63,7 +63,7 @@ export function useSettingsDraft<T extends FlatSettings>({
     }
 
     const nextRecovery = readSettingsDraft(storage, key, version, baseline)
-    if (nextRecovery.kind === 'restored') reset(nextRecovery.values)
+    if (nextRecovery.kind === 'restored') reset(nextRecovery.values, { keepDefaultValues: true })
     setRecovery(nextRecovery.kind)
     initialized.current = true
   }, [baseline, baselineFingerprint, key, reset, version])

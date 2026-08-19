@@ -7,6 +7,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type ComponentProps,
   type MouseEventHandler,
@@ -24,7 +25,7 @@ type DirtyRegistration = {
 
 type UnsavedChangesContextValue = {
   hasUnsavedChanges: boolean
-  requestNavigation: (proceed: () => void) => void
+  requestNavigation: (proceed: () => void, initiator?: HTMLElement | null) => void
   registerDirty: (id: string, registration: DirtyRegistration) => () => void
 }
 
@@ -41,6 +42,8 @@ function useUnsavedChangesContext() {
 export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
   const [registrations, setRegistrations] = useState<Map<string, DirtyRegistration>>(() => new Map())
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null)
+  const initiatingElement = useRef<HTMLElement | null>(null)
+  const shouldRestoreFocus = useRef(false)
 
   const registerDirty = useCallback((id: string, registration: DirtyRegistration) => {
     setRegistrations((current) => {
@@ -76,11 +79,14 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('beforeunload', warnBeforeUnload)
   }, [hasUnsavedChanges])
 
-  const requestNavigation = useCallback((proceed: () => void) => {
+  const requestNavigation = useCallback((proceed: () => void, initiator?: HTMLElement | null) => {
     if (!hasUnsavedChanges) {
       proceed()
       return
     }
+
+    initiatingElement.current = initiator ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
+    shouldRestoreFocus.current = true
     setPendingNavigation(() => proceed)
   }, [hasUnsavedChanges])
 
@@ -88,12 +94,29 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
     const proceed = pendingNavigation
     if (!proceed) return
 
+    shouldRestoreFocus.current = false
     setPendingNavigation(null)
     for (const registration of registrations.values()) {
       registration.discard()
     }
     proceed()
   }, [pendingNavigation, registrations])
+
+  const closeDialog = useCallback(() => {
+    setPendingNavigation(null)
+  }, [])
+
+  const restoreInitiatingFocus = useCallback((event: Event) => {
+    event.preventDefault()
+    const initiator = initiatingElement.current
+    const restore = shouldRestoreFocus.current
+    initiatingElement.current = null
+    shouldRestoreFocus.current = false
+
+    if (restore && initiator?.isConnected) {
+      initiator.focus()
+    }
+  }, [])
 
   const value = useMemo<UnsavedChangesContextValue>(() => ({
     hasUnsavedChanges,
@@ -104,8 +127,8 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
   return (
     <UnsavedChangesContext.Provider value={value}>
       {children}
-      <Dialog open={pendingNavigation !== null} onOpenChange={(open) => { if (!open) setPendingNavigation(null) }}>
-        <DialogContent showCloseButton={false}>
+      <Dialog open={pendingNavigation !== null} onOpenChange={(open) => { if (!open) closeDialog() }}>
+        <DialogContent showCloseButton={false} onCloseAutoFocus={restoreInitiatingFocus}>
           <DialogHeader>
             <DialogTitle>Cambios sin guardar</DialogTitle>
             <DialogDescription>
@@ -113,7 +136,7 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setPendingNavigation(null)}>
+            <Button type="button" variant="outline" onClick={closeDialog}>
               Seguir editando
             </Button>
             <Button type="button" variant="destructive" onClick={discardAndProceed}>
@@ -154,13 +177,16 @@ type GuardedLinkProps = Omit<ComponentProps<typeof Link>, 'href' | 'onClick'> & 
   onClick?: MouseEventHandler<HTMLAnchorElement>
 }
 
-export function GuardedLink({ href, onClick, target, download, ...props }: GuardedLinkProps) {
+export function GuardedLink({ href, onClick, target, replace = false, scroll, ...props }: GuardedLinkProps) {
   const router = useRouter()
   const { hasUnsavedChanges, requestNavigation } = useUnsavedChanges()
 
   const handleClick: MouseEventHandler<HTMLAnchorElement> = (event) => {
     onClick?.(event)
-    const isOwnedSameTabNavigation = href.startsWith('/') && !href.startsWith('//') && (!target || target === '_self') && !download
+    const isOwnedSameTabNavigation = href.startsWith('/')
+      && !href.startsWith('//')
+      && (!target || target === '_self')
+      && !event.currentTarget.hasAttribute('download')
     if (
       event.defaultPrevented
       || !hasUnsavedChanges
@@ -173,8 +199,17 @@ export function GuardedLink({ href, onClick, target, download, ...props }: Guard
     ) return
 
     event.preventDefault()
-    requestNavigation(() => router.push(href))
+    requestNavigation(() => {
+      const options = scroll === undefined ? undefined : { scroll }
+      if (replace) {
+        if (options) router.replace(href, options)
+        else router.replace(href)
+        return
+      }
+      if (options) router.push(href, options)
+      else router.push(href)
+    }, event.currentTarget)
   }
 
-  return <Link href={href} target={target} download={download} onClick={handleClick} {...props} />
+  return <Link href={href} target={target} replace={replace} scroll={scroll} onClick={handleClick} {...props} />
 }
