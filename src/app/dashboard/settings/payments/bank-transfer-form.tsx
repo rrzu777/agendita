@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,16 +8,35 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { saveBankTransferAccount, setBankTransferEnabled, setRequireTransferProof } from '@/server/actions/bank-transfer-settings'
-import type { BankTransferAccount } from '@prisma/client'
-import { DEFAULT_HOLD_HOURS, DEFAULT_VERIFY_HOURS, HOLD_HOURS_MAX, VERIFY_HOURS_MAX } from '@/lib/bank-transfer/schema'
+import { HOLD_HOURS_MAX, VERIFY_HOURS_MAX } from '@/lib/bank-transfer/schema'
 import { useVocabulary } from '@/components/vocabulary-provider'
+import { useSettingsDraft } from '@/components/dashboard/settings/use-settings-draft'
+import { useUnsavedChangesRegistration } from '@/components/dashboard/unsaved-changes-provider'
+import {
+  toBankTransferFormValues,
+  type BankTransferFormValues,
+  type BankTransferSettingsRecord,
+} from '@/lib/business/settings-form-values'
+
+const DRAFT_VERSION = 1
+
+function sameFormValues(left: BankTransferFormValues, right: BankTransferFormValues) {
+  return (Object.keys(left) as Array<keyof BankTransferFormValues>)
+    .every((key) => left[key] === right[key])
+}
+
+export type BankTransferAccountSettings = BankTransferSettingsRecord & {
+  isEnabled: boolean
+}
 
 export function BankTransferForm({
+  businessId,
   account,
   requireProof,
   proofUploadAvailable,
 }: {
-  account: BankTransferAccount | null
+  businessId: string
+  account: BankTransferAccountSettings | null
   requireProof: boolean
   proofUploadAvailable: boolean
 }) {
@@ -26,41 +45,70 @@ export function BankTransferForm({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
-
-  const [form, setForm] = useState({
-    accountHolder: account?.accountHolder ?? '',
-    rut: account?.rut ?? '',
-    bankName: account?.bankName ?? '',
-    accountType: account?.accountType ?? '',
-    accountNumber: account?.accountNumber ?? '',
-    email: account?.email ?? '',
-    instructions: account?.instructions ?? '',
-    holdHours: String(account?.holdHours ?? DEFAULT_HOLD_HOURS),
-    // '' representa null = sin límite
-    verifyHours: account ? String(account.verifyHours ?? '') : String(DEFAULT_VERIFY_HOURS),
+  const submitInFlight = useRef(false)
+  const initialValues = useMemo(() => toBankTransferFormValues(account), [account])
+  const [baseline, setBaseline] = useState(initialValues)
+  const [form, setForm] = useState(initialValues)
+  const formRef = useRef(initialValues)
+  const isDirty = Object.keys(baseline).some((key) => form[key as keyof BankTransferFormValues] !== baseline[key as keyof BankTransferFormValues])
+  const reset = useCallback((values: BankTransferFormValues) => {
+    formRef.current = values
+    setForm(values)
+  }, [])
+  const replaceBaseline = useCallback((values: BankTransferFormValues) => {
+    reset(values)
+    setBaseline(values)
+  }, [reset])
+  const draft = useSettingsDraft({
+    scope: 'payments-bank',
+    key: `settings:${businessId}:payments-bank:v1`,
+    version: DRAFT_VERSION,
+    baseline,
+    values: form,
+    isDirty,
+    reset,
+    replaceBaseline,
   })
 
+  useUnsavedChangesRegistration({ scope: 'payments-bank', isDirty, discard: draft.discard })
+
   function set<K extends keyof typeof form>(key: K, value: string) {
-    setForm(prev => ({ ...prev, [key]: value }))
+    setForm((previous) => {
+      const next = { ...previous, [key]: value }
+      formRef.current = next
+      return next
+    })
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (submitInFlight.current) return
+    submitInFlight.current = true
     setIsSubmitting(true)
     setServerError(null)
     setSuccessMessage(null)
+    const submittedValues = { ...form }
     try {
       const res = await saveBankTransferAccount({
-        ...form,
-        holdHours: Number(form.holdHours),
-        verifyHours: form.verifyHours.trim() === '' ? null : Number(form.verifyHours),
+        ...submittedValues,
+        holdHours: Number(submittedValues.holdHours),
+        verifyHours: submittedValues.verifyHours.trim() === '' ? null : Number(submittedValues.verifyHours),
       })
       if (!res.ok) { setServerError(res.error); return }
+      const persistedValues = res.data
+      const formStillMatchesSubmission = sameFormValues(formRef.current, submittedValues)
+      setBaseline(persistedValues)
+      if (formStillMatchesSubmission) {
+        formRef.current = persistedValues
+        setForm(persistedValues)
+        draft.clearDraft()
+      }
       setSuccessMessage('Datos guardados.')
       router.refresh()
     } catch {
       setServerError('Error al guardar')
     } finally {
+      submitInFlight.current = false
       setIsSubmitting(false)
     }
   }
@@ -91,6 +139,21 @@ export function BankTransferForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {draft.recovery === 'restored' && (
+        <p role="status" className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          Recuperamos un borrador local para que puedas continuar editando.
+        </p>
+      )}
+      {draft.recovery === 'conflict' && (
+        <p role="status" className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          Hay un borrador local de una versión anterior y no se aplicó para evitar sobrescribir cambios recientes.
+        </p>
+      )}
+      {draft.recovery === 'verification-failed' && (
+        <p role="status" className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          No pudimos verificar el borrador con el servidor. No se aplicó ni se eliminó; vuelve a intentarlo con conexión.
+        </p>
+      )}
       {account && (
         <div className="flex items-center justify-between rounded-lg border border-border p-4">
           <div>

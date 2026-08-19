@@ -1,8 +1,5 @@
-import { redirect } from 'next/navigation'
-import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import {
   getPaymentAccountStatus,
   startMercadoPagoConnect,
@@ -12,8 +9,9 @@ import { isObjectStorageAvailable } from '@/lib/storage/r2'
 import { prisma } from '@/lib/db'
 import { BadgeCheck, CircleAlert, Landmark, Link2, Link2Off, TestTube } from 'lucide-react'
 import { DisconnectButton } from './disconnect-button'
-import { BankTransferForm } from './bank-transfer-form'
+import { BankTransferForm, type BankTransferAccountSettings } from './bank-transfer-form'
 import { getVocabulary } from '@/lib/vocabulary'
+import { requireSettingsPageAccess } from '@/lib/business/settings-access'
 
 interface PaymentsSettingsPageProps {
   params: Promise<Record<string, never>>
@@ -21,35 +19,50 @@ interface PaymentsSettingsPageProps {
 }
 
 export default async function PaymentsSettingsPage(props: PaymentsSettingsPageProps) {
-  const userData = await getCurrentUserWithBusiness()
+  const { business } = await requireSettingsPageAccess()
   const { success, error } = await props.searchParams
-
-  if (!userData?.user) {
-    redirect('/login')
-  }
-
-  if (!userData?.business) {
-    redirect('/recover-business')
-  }
-
-  const businessId = userData.business.id
-  const vocabulary = getVocabulary(userData.business.category)
+  const businessId = business.id
+  const vocabulary = getVocabulary(business.category)
   const [account, availability, bankAccount, businessFlags] = await Promise.all([
     getPaymentAccountStatus(),
     resolveOnlinePaymentAvailabilityForBusiness(businessId),
-    prisma.bankTransferAccount.findUnique({ where: { businessId } }),
+    prisma.bankTransferAccount.findUnique({
+      where: { businessId },
+      select: {
+        accountHolder: true,
+        rut: true,
+        bankName: true,
+        accountType: true,
+        accountNumber: true,
+        email: true,
+        instructions: true,
+        holdHours: true,
+        verifyHours: true,
+        isEnabled: true,
+      },
+    }),
     prisma.business.findUnique({ where: { id: businessId }, select: { requireTransferProof: true } }),
   ])
   const proofUploadAvailable = isObjectStorageAvailable()
+  const bankAccountSettings: BankTransferAccountSettings | null = bankAccount && {
+    accountHolder: bankAccount.accountHolder,
+    rut: bankAccount.rut,
+    bankName: bankAccount.bankName,
+    accountType: bankAccount.accountType,
+    accountNumber: bankAccount.accountNumber,
+    email: bankAccount.email,
+    instructions: bankAccount.instructions,
+    holdHours: bankAccount.holdHours,
+    verifyHours: bankAccount.verifyHours,
+    isEnabled: bankAccount.isEnabled,
+  }
 
   const isConnected = account?.status === 'connected'
   const isDisconnected = account?.status === 'disconnected'
   const isSandbox = process.env.NODE_ENV !== 'production'
 
   return (
-    <div>
-      <DashboardHeader title="Pagos online" subtitle={`Configura cómo tus ${vocabulary.clients} pagan el abono de sus reservas`} />
-      <div className="p-5 md:p-10 max-w-2xl">
+    <div className="max-w-2xl">
         {success && (
           <div className="mb-6 rounded-lg border border-green-200 bg-green-50/50 p-4 text-sm text-green-800">
             Cuenta de Mercado Pago conectada exitosamente. Tus clientes ya pueden pagar con tarjeta.
@@ -175,13 +188,13 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
           </CardHeader>
           <CardContent>
             <BankTransferForm
-              account={bankAccount}
+              businessId={businessId}
+              account={bankAccountSettings}
               requireProof={businessFlags?.requireTransferProof ?? false}
               proofUploadAvailable={proofUploadAvailable}
             />
           </CardContent>
         </Card>
-      </div>
     </div>
   )
 }

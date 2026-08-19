@@ -1,10 +1,11 @@
 'use server'
 
 import { prisma } from '@/lib/db'
-import { requireBusiness } from '@/lib/auth/server'
+import { requireBusinessRole } from '@/lib/auth/server'
 import { randomBytes } from 'crypto'
 import { redirect } from 'next/navigation'
 import { action, UserError } from '@/lib/actions/result'
+import { validateE2EHeaders } from '@/lib/auth/e2e-bypass'
 import { requireMercadoPagoEnvironment } from '@/lib/payments/mercado-pago-environment'
 import {
   createMercadoPagoOAuthState,
@@ -23,8 +24,48 @@ export async function startMercadoPagoConnect() {
 }
 
 export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string }> {
-  const { businessId, user } = await requireBusiness()
+  const { businessId, user } = await requireBusinessRole(['owner', 'admin'])
   const environment = requireMercadoPagoEnvironment()
+
+  // Playwright exercises the complete settings UI without contacting Mercado
+  // Pago. Both gates are required: the mock provider alone never bypasses OAuth,
+  // and validateE2EHeaders also requires the per-request test secret.
+  const e2eEmail = process.env.PAYMENT_PROVIDER === 'mock'
+    ? await validateE2EHeaders()
+    : null
+  if (e2eEmail) {
+    const connectedAt = new Date()
+    await prisma.paymentAccount.upsert({
+      where: {
+        businessId_provider_environment: {
+          businessId,
+          provider: 'mercado_pago',
+          environment,
+        },
+      },
+      create: {
+        businessId,
+        provider: 'mercado_pago',
+        environment,
+        providerAccountId: '999999999',
+        accessTokenEncrypted: 'e2e-mock-no-token',
+        status: 'connected',
+        connectedAt,
+        rawMetadata: { source: 'e2e-mock' },
+      },
+      update: {
+        providerAccountId: '999999999',
+        accessTokenEncrypted: 'e2e-mock-no-token',
+        refreshTokenEncrypted: null,
+        expiresAt: null,
+        status: 'connected',
+        connectedAt,
+        disconnectedAt: null,
+        rawMetadata: { source: 'e2e-mock' },
+      },
+    })
+    return { redirectUrl: '/dashboard/settings/payments?success=connected' }
+  }
 
   const clientId = process.env.MERCADO_PAGO_CLIENT_ID
   const redirectUri = process.env.MERCADO_PAGO_REDIRECT_URI
@@ -62,7 +103,7 @@ export async function initiateMercadoPagoOAuth(): Promise<{ redirectUrl: string 
 }
 
 async function _disconnectMercadoPagoConnection() {
-  const { businessId } = await requireBusiness()
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const environment = requireMercadoPagoEnvironment()
 
   const account = await prisma.paymentAccount.findFirst({
@@ -96,7 +137,7 @@ export async function disconnectMercadoPago() {
 }
 
 export async function getPaymentAccountStatus() {
-  const { businessId } = await requireBusiness()
+  const { businessId } = await requireBusinessRole(['owner', 'admin'])
   const environment = requireMercadoPagoEnvironment()
 
   const account = await prisma.paymentAccount.findFirst({

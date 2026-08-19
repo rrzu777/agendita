@@ -8,6 +8,10 @@ type CreateClientResult = Awaited<ReturnType<AuthMiddlewareModule['createClient'
 const mockMpFetch = vi.fn()
 vi.stubGlobal('fetch', mockMpFetch)
 
+const { mockRequireBusinessRole } = vi.hoisted(() => ({
+  mockRequireBusinessRole: vi.fn(),
+}))
+
 const mockPrisma = {
   paymentAccount: {
     findFirst: vi.fn(),
@@ -27,6 +31,7 @@ vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
 vi.mock('@/lib/auth/server', () => ({
   requireUser: vi.fn().mockResolvedValue({ id: 'user-1' }),
   requireBusiness: vi.fn().mockResolvedValue({ user: { id: 'user-1' }, businessId: 'biz-1' }),
+  requireBusinessRole: mockRequireBusinessRole,
 }))
 
 vi.mock('@/lib/payments/encryption', () => ({
@@ -39,11 +44,12 @@ vi.mock('@/lib/payments/oauth-state', () => ({
   verifyStateSignature: vi.fn(),
 }))
 
+const mockSupabaseAuth = { getUser: vi.fn() }
+const mockRequestHeaders = vi.fn()
 vi.mock('next/headers', () => ({
   cookies: vi.fn(async () => ({ set: vi.fn() })),
+  headers: mockRequestHeaders,
 }))
-
-const mockSupabaseAuth = { getUser: vi.fn() }
 vi.mock('@/lib/auth/middleware', () => ({
   createClient: vi.fn().mockResolvedValue({
     auth: mockSupabaseAuth,
@@ -92,6 +98,12 @@ describe('Mercado Pago OAuth', () => {
     })
     mockPrisma.mercadoPagoOAuthAttempt.updateMany.mockResolvedValue({ count: 1 })
     mockPrisma.$transaction.mockImplementation(async (operation) => operation(mockPrisma))
+    mockRequestHeaders.mockResolvedValue(new Headers())
+    mockRequireBusinessRole.mockResolvedValue({
+      user: { id: 'user-1' },
+      businessId: 'biz-1',
+      role: 'owner',
+    })
   })
 
   afterEach(() => {
@@ -100,6 +112,60 @@ describe('Mercado Pago OAuth', () => {
   })
 
   describe('initiateMercadoPagoOAuth', () => {
+    it('rejects staff before OAuth or Prisma work', async () => {
+      mockRequireBusinessRole.mockRejectedValue(new Error('forbidden'))
+
+      const { initiateMercadoPagoOAuth } = await import('@/server/actions/mercado-pago-connect')
+
+      await expect(initiateMercadoPagoOAuth()).rejects.toThrow('forbidden')
+      expect(mockRequireBusinessRole).toHaveBeenCalledWith(['owner', 'admin'])
+      expect(mockPrisma.paymentAccount.upsert).not.toHaveBeenCalled()
+      expect(mockPrisma.mercadoPagoOAuthAttempt.create).not.toHaveBeenCalled()
+    })
+
+    it('connects only through the local mock when the request carries valid E2E headers', async () => {
+      setEnv({ PAYMENT_PROVIDER: 'mock', ENABLE_E2E_AUTH_BYPASS: 'true', E2E_AUTH_BYPASS_SECRET: 'e2e-secret' })
+      mockRequestHeaders.mockResolvedValue(new Headers({
+        'x-e2e-test-user-email': 'owner@mimosnails.com',
+        'x-e2e-auth-secret': 'e2e-secret',
+      }))
+      mockPrisma.paymentAccount.upsert.mockResolvedValue({ id: 'pa-e2e', status: 'connected' })
+
+      const { initiateMercadoPagoOAuth } = await import('@/server/actions/mercado-pago-connect')
+      const result = await initiateMercadoPagoOAuth()
+
+      expect(result.redirectUrl).toBe('/dashboard/settings/payments?success=connected')
+      expect(mockPrisma.paymentAccount.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        where: {
+          businessId_provider_environment: {
+            businessId: 'biz-1',
+            provider: 'mercado_pago',
+            environment: 'sandbox',
+          },
+        },
+        create: expect.objectContaining({
+          businessId: 'biz-1',
+          provider: 'mercado_pago',
+          environment: 'sandbox',
+          providerAccountId: '999999999',
+          status: 'connected',
+          accessTokenEncrypted: 'e2e-mock-no-token',
+        }),
+      }))
+      expect(mockPrisma.mercadoPagoOAuthAttempt.create).not.toHaveBeenCalled()
+      expect(mockRequireBusinessRole).toHaveBeenCalledWith(['owner', 'admin'])
+    })
+
+    it('does not activate the local mock without a valid E2E request', async () => {
+      setEnv({ PAYMENT_PROVIDER: 'mock', ENABLE_E2E_AUTH_BYPASS: 'true', E2E_AUTH_BYPASS_SECRET: 'e2e-secret' })
+
+      const { initiateMercadoPagoOAuth } = await import('@/server/actions/mercado-pago-connect')
+      const result = await initiateMercadoPagoOAuth()
+
+      expect(new URL(result.redirectUrl).origin).toBe('https://auth.mercadopago.cl')
+      expect(mockPrisma.paymentAccount.upsert).not.toHaveBeenCalled()
+    })
+
     it('builds redirect URL with required MP OAuth params', async () => {
       const { initiateMercadoPagoOAuth } = await import('@/server/actions/mercado-pago-connect')
       const result = await initiateMercadoPagoOAuth()
@@ -251,6 +317,21 @@ describe('Mercado Pago OAuth', () => {
   })
 
   describe('disconnectMercadoPagoConnection', () => {
+    it.each([
+      ['disconnectMercadoPagoConnection'],
+      ['disconnectMercadoPago'],
+    ] as const)('rejects staff before reading PaymentAccount through %s', async (exportName) => {
+      mockRequireBusinessRole.mockRejectedValue(new Error('forbidden'))
+      const actions = await import('@/server/actions/mercado-pago-connect')
+
+      const result = await actions[exportName]()
+
+      expect(result.ok).toBe(false)
+      expect(mockRequireBusinessRole).toHaveBeenCalledWith(['owner', 'admin'])
+      expect(mockPrisma.paymentAccount.findFirst).not.toHaveBeenCalled()
+      expect(mockPrisma.paymentAccount.update).not.toHaveBeenCalled()
+    })
+
     it('sets PaymentAccount status to disconnected and keeps the record', async () => {
       mockPrisma.paymentAccount.findFirst.mockResolvedValue({
         id: 'pa-1',
@@ -280,6 +361,7 @@ describe('Mercado Pago OAuth', () => {
           }),
         }),
       )
+      expect(mockRequireBusinessRole).toHaveBeenCalledWith(['owner', 'admin'])
     })
 
     it('returns a user-facing error when no PaymentAccount is connected', async () => {
@@ -293,6 +375,28 @@ describe('Mercado Pago OAuth', () => {
   })
 
   describe('getPaymentAccountStatus', () => {
+    it('rejects staff before reading PaymentAccount status', async () => {
+      mockRequireBusinessRole.mockRejectedValue(new Error('forbidden'))
+      const { getPaymentAccountStatus } = await import('@/server/actions/mercado-pago-connect')
+
+      await expect(getPaymentAccountStatus()).rejects.toThrow('forbidden')
+      expect(mockRequireBusinessRole).toHaveBeenCalledWith(['owner', 'admin'])
+      expect(mockPrisma.paymentAccount.findFirst).not.toHaveBeenCalled()
+    })
+
+    it('allows an admin to read PaymentAccount status', async () => {
+      mockRequireBusinessRole.mockResolvedValue({
+        user: { id: 'admin-1' },
+        businessId: 'biz-1',
+        role: 'admin',
+      })
+      mockPrisma.paymentAccount.findFirst.mockResolvedValue(null)
+      const { getPaymentAccountStatus } = await import('@/server/actions/mercado-pago-connect')
+
+      await expect(getPaymentAccountStatus()).resolves.toBeNull()
+      expect(mockRequireBusinessRole).toHaveBeenCalledWith(['owner', 'admin'])
+    })
+
     it('returns account with correct fields', async () => {
       const mockAccount = {
         id: 'pa-1',

@@ -6,6 +6,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { requireBusinessRole } from '@/lib/auth/server'
 import { action, UserError } from '@/lib/actions/result'
 import { bankTransferAccountSchema, type BankTransferAccountInput } from '@/lib/bank-transfer/schema'
+import { toBankTransferFormValues } from '@/lib/business/settings-form-values'
 
 // NOTE: módulo 'use server' — SOLO funciones async exportadas. El schema Zod y
 // los tipos viven en '@/lib/bank-transfer/schema'; re-exportarlos acá revienta
@@ -35,6 +36,7 @@ async function _saveBankTransferAccount(data: BankTransferAccountInput) {
   })
 
   revalidatePath('/dashboard/settings/payments')
+  return toBankTransferFormValues(fields)
 }
 
 export const saveBankTransferAccount = action(_saveBankTransferAccount)

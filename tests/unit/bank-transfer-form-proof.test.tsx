@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { BankTransferForm } from '@/app/dashboard/settings/payments/bank-transfer-form'
+import { UnsavedChangesProvider } from '@/components/dashboard/unsaved-changes-provider'
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -32,14 +33,14 @@ const account = {
 describe('BankTransferForm — gate de comprobante', () => {
   it('con R2 disponible: muestra el control "Exigir comprobante"', () => {
     const html = renderToStaticMarkup(
-      <BankTransferForm account={account} proofUploadAvailable={true} requireProof={false} />,
+      <UnsavedChangesProvider><BankTransferForm businessId="btp-form-biz" account={account} proofUploadAvailable={true} requireProof={false} /></UnsavedChangesProvider>,
     )
     expect(html).toContain('Exigir comprobante')
   })
 
   it('sin R2 disponible: NO muestra el control "Exigir comprobante"', () => {
     const html = renderToStaticMarkup(
-      <BankTransferForm account={account} proofUploadAvailable={false} requireProof={false} />,
+      <UnsavedChangesProvider><BankTransferForm businessId="btp-form-biz" account={account} proofUploadAvailable={false} requireProof={false} /></UnsavedChangesProvider>,
     )
     expect(html).not.toContain('Exigir comprobante')
   })

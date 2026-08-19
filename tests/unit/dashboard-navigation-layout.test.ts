@@ -12,6 +12,16 @@ describe('dashboard navigation and action layout', () => {
     expect(sidebar).toContain("'min-h-0 flex-1 overflow-y-auto'")
   })
 
+  it('routes dashboard-owned links and sign-out through the unsaved-change guard', () => {
+    const sidebar = source('src/components/dashboard/sidebar.tsx')
+    const layout = source('src/app/dashboard/layout.tsx')
+
+    expect(sidebar).toContain("import { GuardedLink, useUnsavedChanges } from '@/components/dashboard/unsaved-changes-provider'")
+    expect(sidebar).toContain('<GuardedLink')
+    expect(sidebar).toContain('onSubmit={handleSignOut}')
+    expect(layout).toContain('<UnsavedChangesProvider>')
+  })
+
   it('keeps booking creation and search together on desktop and separated on mobile', () => {
     const bookings = source('src/app/dashboard/bookings/page.tsx')
 
