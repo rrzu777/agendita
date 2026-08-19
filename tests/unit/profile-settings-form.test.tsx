@@ -121,12 +121,32 @@ describe('ProfileSettingsForm', () => {
 
     await submit(container)
     expect(mockUpdateProfile).toHaveBeenCalledTimes(1)
+    expect(fieldset?.disabled).toBe(true)
+    expect(whatsapp.matches(':disabled')).toBe(true)
+    const saveButton = container.querySelector<HTMLButtonElement>('button[type="submit"]')
+    expect(saveButton?.disabled).toBe(true)
+    expect(saveButton?.textContent).toBe('Guardando…')
 
     await act(async () => pending.resolve({ ok: true, data: { ...profileValues, whatsapp: '+56912345678' } }))
 
     expect(getInput(container, 'WhatsApp').value).toBe('+56912345678')
     expect(container.querySelector('fieldset')?.disabled).toBe(false)
     expect(sessionStorage.getItem('biz-1:profile')).toBeNull()
+  })
+
+  it('releases the submit lock after client validation rejects the form', async () => {
+    mockUpdateProfile.mockResolvedValue({ ok: true, data: profileValues })
+    await renderProfile()
+
+    await setInput(container, 'Nombre del negocio', '')
+    await submit(container)
+    expect(container.querySelector('#profile-name-error')).not.toBeNull()
+    expect(mockUpdateProfile).not.toHaveBeenCalled()
+
+    await setInput(container, 'Nombre del negocio', 'Negocio corregido')
+    await submit(container)
+
+    expect(mockUpdateProfile).toHaveBeenCalledTimes(1)
   })
 
   it('updates the public preview from a profile field', async () => {

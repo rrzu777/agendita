@@ -65,8 +65,6 @@ export function ProfileSettingsForm({ businessId, slug, initialValues }: Profile
   const publicUrl = getBusinessPublicUrl({ slug, subdomain: subdomain || null })
 
   async function onSubmit(values: ProfileSettingsInput) {
-    if (submitInFlight.current) return
-    submitInFlight.current = true
     setStatus('idle')
     setServerError(null)
 
@@ -91,8 +89,20 @@ export function ProfileSettingsForm({ businessId, slug, initialValues }: Profile
     }
   }
 
+  function onInvalidSubmit() {
+    submitInFlight.current = false
+  }
+
   function submitForm(event: React.FormEvent<HTMLFormElement>) {
-    void handleSubmit(onSubmit)(event)
+    if (submitInFlight.current) {
+      event.preventDefault()
+      return
+    }
+
+    submitInFlight.current = true
+    void handleSubmit(onSubmit, onInvalidSubmit)(event).catch(() => {
+      submitInFlight.current = false
+    })
   }
 
   return (
