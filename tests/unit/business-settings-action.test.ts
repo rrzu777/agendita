@@ -308,7 +308,39 @@ describe('section-scoped business settings actions', () => {
     mockPrisma.business.findFirst.mockResolvedValue({ id: 'other-biz', subdomain: profileInput.subdomain })
     const duplicate = await updateProfileSettings(profileInput)
     expect(duplicate).toEqual({ ok: false, error: 'Este subdominio ya está en uso' })
+    expect(mockPrisma.business.findFirst).toHaveBeenCalledWith({
+      where: { subdomain: profileInput.subdomain, NOT: { id: 'biz-1' } },
+      select: { id: true },
+    })
     expect(mockPrisma.business.update).not.toHaveBeenCalled()
+  })
+
+  it('profile update translates a concurrent subdomain P2002 into the duplicate error', async () => {
+    mockPrisma.business.update.mockRejectedValue({ code: 'P2002' })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      await expect(updateProfileSettings(profileInput)).resolves.toEqual({
+        ok: false,
+        error: 'Este subdominio ya está en uso',
+      })
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
+  it('profile update does not translate non-P2002 persistence errors', async () => {
+    mockPrisma.business.update.mockRejectedValue(new Error('database unavailable'))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      await expect(updateProfileSettings(profileInput)).resolves.toEqual({
+        ok: false,
+        error: 'Ocurrió un error inesperado. Intenta nuevamente.',
+      })
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   it('profile update rejects an unauthorized session', async () => {

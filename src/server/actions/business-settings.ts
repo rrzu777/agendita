@@ -51,6 +51,10 @@ function parseSettings<T extends z.ZodType>(schema: T, data: unknown): z.output<
   return parsed.data
 }
 
+function isP2002(error: unknown): boolean {
+  return !!error && typeof error === 'object' && (error as { code?: string }).code === 'P2002'
+}
+
 async function _updateProfileSettings(data: ProfileSettingsInput) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])
   await enforceSettingsRateLimit()
@@ -65,36 +69,45 @@ async function _updateProfileSettings(data: ProfileSettingsInput) {
       subdomain: validated.subdomain,
       NOT: { id: businessId },
     },
+    select: { id: true },
   })
   if (existing) {
     throw new UserError('Este subdominio ya está en uso')
   }
 
-  const updated = await prisma.business.update({
-    where: { id: businessId },
-    data: {
-      name: validated.name,
-      bio: trimToNull(validated.bio),
-      profileImageUrl: trimToNull(validated.profileImageUrl),
-      logoUrl: trimToNull(validated.logoUrl),
-      whatsapp: normalizeWhatsapp(validated.whatsapp) || null,
-      instagram: normalizeInstagram(validated.instagram) || null,
-      addressText: trimToNull(validated.addressText),
-      city: validated.city,
-      subdomain: validated.subdomain,
-    },
-    select: {
-      name: true,
-      bio: true,
-      profileImageUrl: true,
-      logoUrl: true,
-      whatsapp: true,
-      instagram: true,
-      addressText: true,
-      city: true,
-      subdomain: true,
-    },
-  })
+  let updated
+  try {
+    updated = await prisma.business.update({
+      where: { id: businessId },
+      data: {
+        name: validated.name,
+        bio: trimToNull(validated.bio),
+        profileImageUrl: trimToNull(validated.profileImageUrl),
+        logoUrl: trimToNull(validated.logoUrl),
+        whatsapp: normalizeWhatsapp(validated.whatsapp) || null,
+        instagram: normalizeInstagram(validated.instagram) || null,
+        addressText: trimToNull(validated.addressText),
+        city: validated.city,
+        subdomain: validated.subdomain,
+      },
+      select: {
+        name: true,
+        bio: true,
+        profileImageUrl: true,
+        logoUrl: true,
+        whatsapp: true,
+        instagram: true,
+        addressText: true,
+        city: true,
+        subdomain: true,
+      },
+    })
+  } catch (error) {
+    if (isP2002(error)) {
+      throw new UserError('Este subdominio ya está en uso')
+    }
+    throw error
+  }
 
   revalidatePath('/dashboard/settings/profile')
   await revalidateBusinessPublicPaths(businessId)
