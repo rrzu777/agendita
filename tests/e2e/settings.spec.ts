@@ -378,6 +378,27 @@ test.describe('settings responsive structure', () => {
         expect(mobileBox).not.toBeNull()
         expect(saveBox!.y + saveBox!.height).toBeLessThanOrEqual(mobileBox!.y + 1)
       }
+
+      if (viewport.width >= 1024) {
+        const saveButton = page.getByRole('button', { name: 'Guardar cambios' })
+        const city = page.getByLabel('Ciudad')
+        await city.scrollIntoViewIfNeeded()
+        await expect(saveButton).not.toBeInViewport()
+
+        await city.fill(`${await city.inputValue()} QA`)
+        await expect(saveButton).toBeInViewport()
+        const saveSurface = saveButton.locator('..')
+        const metrics = await saveSurface.evaluate((element) => {
+          const box = element.getBoundingClientRect()
+          return {
+            bottomGap: window.innerHeight - box.bottom,
+            borderRadius: Number.parseFloat(getComputedStyle(element).borderTopLeftRadius),
+          }
+        })
+
+        expect(metrics.bottomGap).toBeGreaterThanOrEqual(20)
+        expect(metrics.borderRadius).toBeGreaterThanOrEqual(12)
+      }
     })
   }
 })
