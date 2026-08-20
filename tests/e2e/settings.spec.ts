@@ -25,6 +25,24 @@ async function expectNoHorizontalOverflow(page: Page) {
   }))).toEqual({ body: true, root: true })
 }
 
+async function expectFormControlGeometry(
+  page: Page,
+  label: string,
+  viewportWidth: number,
+  { fullWidth = false }: { fullWidth?: boolean } = {},
+) {
+  const control = page.getByLabel(label, { exact: true })
+  const box = await control.boundingBox()
+  expect(box).not.toBeNull()
+  expect(box!.height).toBeGreaterThanOrEqual(viewportWidth < 768 ? 44 : 40)
+
+  if (fullWidth) {
+    const fieldBox = await control.locator('..').boundingBox()
+    expect(fieldBox).not.toBeNull()
+    expect(Math.abs(box!.width - fieldBox!.width)).toBeLessThan(2)
+  }
+}
+
 test.describe('settings navigation', () => {
   test.beforeEach(async ({ page }) => {
     setOwnerAuth(page)
@@ -335,6 +353,17 @@ test.describe('settings responsive structure', () => {
           await expect(page.getByText('Mercado Pago', { exact: true }).first()).toBeVisible()
         }
         await expectNoHorizontalOverflow(page)
+
+        if (section.slug === 'profile') {
+          await expectFormControlGeometry(page, 'Nombre del negocio', viewport.width)
+        }
+        if (section.slug === 'reservations') {
+          await expectFormControlGeometry(page, 'Zona horaria', viewport.width, { fullWidth: true })
+        }
+        if (section.slug === 'payments') {
+          await expectFormControlGeometry(page, 'Titular', viewport.width)
+        }
+
         await page.screenshot({
           path: `test-results/settings-visual/${viewport.width}-${section.slug}.png`,
           fullPage: true,

@@ -48,6 +48,7 @@ describe('settings shell', () => {
     expect(idle).toContain('disabled=""')
     expect(idle).toContain('Guardar cambios')
     expect(idle).not.toContain(' sticky ')
+    expect(idle).toContain('data-size="form"')
     expect(submitting).toContain('disabled=""')
     expect(submitting).toContain('Guardando…')
     expect(submitting).toContain(' sticky ')

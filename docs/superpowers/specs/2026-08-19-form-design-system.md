@@ -1,7 +1,7 @@
 # Sistema visual de formularios — Diseño
 
-**Fecha:** 2026-08-19  
-**Estado:** propuesto para revisión  
+**Fecha:** 2026-08-19
+**Estado:** propuesto para revisión
 **Rama:** `feature/form-design-system`
 
 ## Contexto
