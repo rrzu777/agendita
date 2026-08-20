@@ -102,6 +102,13 @@ describe('ProfileSettingsForm', () => {
     })
   }
 
+  it('uses the shared form field and dashboard density for every profile control', async () => {
+    await renderProfile()
+
+    expect(container.querySelectorAll('[data-slot="form-field"]')).toHaveLength(9)
+    expect(container.querySelectorAll('[data-density="form"]')).toHaveLength(9)
+  })
+
   it('submits profile fields only and replaces dirty values with the normalized response', async () => {
     mockUpdateProfile.mockResolvedValue({ ok: true, data: { ...profileValues, whatsapp: '+56912345678' } })
     await renderProfile()

@@ -95,6 +95,19 @@ describe('ReservationSettingsForm', () => {
     })
   }
 
+  it('uses full-width form density for reservation fields and selects', async () => {
+    await renderReservations()
+
+    expect(container.querySelectorAll('[data-slot="form-field"]')).toHaveLength(5)
+    expect(container.querySelectorAll('[data-density="form"]')).toHaveLength(4)
+    const selects = container.querySelectorAll('[data-slot="select-trigger"]')
+    expect(selects).toHaveLength(2)
+    for (const select of selects) {
+      expect(select.getAttribute('data-density')).toBe('form')
+      expect(select.className).toContain('w-full')
+    }
+  })
+
   it('maps service duration and submits only reservation fields', async () => {
     mockUpdate.mockResolvedValue({ ok: true, data: { ...reservationValues, slotStepMinutes: 'service', requireBookingApproval: true } })
     await renderReservations({ slotStepMinutes: 'service' })

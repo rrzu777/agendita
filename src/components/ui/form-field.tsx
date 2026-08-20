@@ -12,6 +12,7 @@ type FormFieldProps = {
   help?: ReactNode
   error?: string
   required?: boolean
+  layout?: 'stacked' | 'inline'
   children: (a11y: FormFieldA11yProps) => ReactNode
 }
 
@@ -21,22 +22,36 @@ export function FormField({
   help,
   error,
   required = false,
+  layout = 'stacked',
   children,
 }: FormFieldProps) {
   const helpId = help ? `${id}-help` : undefined
   const errorId = error ? `${id}-error` : undefined
   const describedBy = [helpId, errorId].filter(Boolean).join(' ') || undefined
+  const labelElement = (
+    <Label htmlFor={id}>
+      {label}
+      {required && <span aria-hidden="true"> *</span>}
+    </Label>
+  )
+  const control = children({
+    'aria-describedby': describedBy,
+    'aria-invalid': Boolean(error),
+  })
 
   return (
-    <div data-slot="form-field" className="min-w-0 space-y-2">
-      <Label htmlFor={id}>
-        {label}
-        {required && <span aria-hidden="true"> *</span>}
-      </Label>
-      {children({
-        'aria-describedby': describedBy,
-        'aria-invalid': Boolean(error),
-      })}
+    <div data-slot="form-field" data-layout={layout} className="min-w-0 space-y-2">
+      {layout === 'inline' ? (
+        <div className="flex items-center justify-between gap-4">
+          {labelElement}
+          {control}
+        </div>
+      ) : (
+        <>
+          {labelElement}
+          {control}
+        </>
+      )}
       {help && (
         <p id={helpId} className="break-words text-xs text-muted-foreground">
           {help}

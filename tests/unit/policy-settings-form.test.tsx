@@ -109,6 +109,13 @@ describe('PolicySettingsForm', () => {
     })
   }
 
+  it('uses the shared form field and dashboard density for policy controls', async () => {
+    await renderPolicies()
+
+    expect(container.querySelectorAll('[data-slot="form-field"]')).toHaveLength(5)
+    expect(container.querySelectorAll('[data-density="form"]')).toHaveLength(4)
+  })
+
   it('keeps the cancellation cutoff immediately before its dependent push switch', async () => {
     await renderPolicies()
 

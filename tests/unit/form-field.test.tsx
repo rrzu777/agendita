@@ -60,4 +60,17 @@ describe('FormField', () => {
     expect(html).toContain('break-words text-xs text-muted-foreground')
     expect(html).toContain('break-words text-sm text-destructive')
   })
+
+  it('keeps a switch label and control in one responsive row', () => {
+    const html = renderToStaticMarkup(
+      <FormField id="approval" label="Confirmar a mano" layout="inline" help="Puedes cambiarlo después">
+        {(a11y) => <button id="approval" role="switch" aria-checked="false" {...a11y}>No</button>}
+      </FormField>,
+    )
+
+    expect(html).toContain('data-layout="inline"')
+    expect(html).toContain('flex items-center justify-between gap-4')
+    expect(html.indexOf('for="approval"')).toBeLessThan(html.indexOf('id="approval" role="switch"'))
+    expect(html).toContain('aria-describedby="approval-help"')
+  })
 })

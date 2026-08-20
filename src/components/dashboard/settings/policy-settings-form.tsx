@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { SettingsFormSection } from '@/components/dashboard/settings/settings-form-section'
@@ -129,64 +129,44 @@ export function PolicySettingsForm({ businessId, initialValues }: PolicySettings
 
       <fieldset disabled={isSubmitting} aria-label="Campos de políticas" aria-busy={isSubmitting} className="space-y-10 disabled:opacity-70">
         <SettingsFormSection title="Cancelación y autogestión">
-          <FieldError
-            controlId="policy-cutoff"
+          <FormField
+            id="policy-cutoff"
+            label="Ventana de autogestión (horas)"
             error={errors.selfServiceCutoffHours?.message}
             help={<>Hasta cuántas horas antes tus {vocabulary.clients} pueden cancelar o reprogramar por su cuenta. 0 = sin límite.</>}
           >
-            {(describedBy) => <><Label htmlFor="policy-cutoff">Ventana de autogestión (horas)</Label><Input id="policy-cutoff" type="number" min={0} max={720} {...register('selfServiceCutoffHours')} aria-invalid={Boolean(errors.selfServiceCutoffHours)} aria-describedby={describedBy} /></>}
-          </FieldError>
-          <FieldError
-            controlId="policy-cancellation-reminder"
+            {(a11y) => <Input id="policy-cutoff" density="form" type="number" min={0} max={720} {...register('selfServiceCutoffHours')} {...a11y} />}
+          </FormField>
+          <FormField
+            id="policy-cancellation-reminder"
+            label="Avisar antes del límite de cancelación"
+            layout="inline"
             error={errors.cancellationReminderEnabled?.message}
             help="Envía una notificación Web Push sólo para reservas futuras y vigentes con abono requerido o pagado y un límite mayor que 0. El aviso sale cuando el abono ya está pagado."
           >
-            {(describedBy) => <div className="flex items-center justify-between gap-4"><Label htmlFor="policy-cancellation-reminder">Avisar antes del límite de cancelación</Label><Switch id="policy-cancellation-reminder" checked={Boolean(cancellationReminderEnabled)} onCheckedChange={(value) => setValue('cancellationReminderEnabled', value, { shouldDirty: true })} aria-invalid={Boolean(errors.cancellationReminderEnabled)} aria-describedby={describedBy} /></div>}
-          </FieldError>
+            {(a11y) => <Switch id="policy-cancellation-reminder" checked={Boolean(cancellationReminderEnabled)} onCheckedChange={(value) => setValue('cancellationReminderEnabled', value, { shouldDirty: true })} {...a11y} />}
+          </FormField>
         </SettingsFormSection>
 
         <SettingsFormSection title="Condiciones visibles al reservar">
-          <FieldError
-            controlId="policy-cancellation"
+          <FormField
+            id="policy-cancellation"
+            label="Condiciones adicionales"
             error={errors.cancellationPolicy?.message}
             help="Complementan la política y no deben repetir ni contradecir el límite estructurado de horas, que tiene prioridad."
           >
-            {(describedBy) => <><Label htmlFor="policy-cancellation">Condiciones adicionales</Label><Textarea id="policy-cancellation" {...register('cancellationPolicy')} rows={3} aria-invalid={Boolean(errors.cancellationPolicy)} aria-describedby={describedBy} /></>}
-          </FieldError>
-          <FieldError controlId="policy-booking" error={errors.bookingPolicy?.message}>
-            {(describedBy) => <><Label htmlFor="policy-booking">Política de reserva</Label><Textarea id="policy-booking" {...register('bookingPolicy')} rows={3} aria-invalid={Boolean(errors.bookingPolicy)} aria-describedby={describedBy} /></>}
-          </FieldError>
-          <FieldError controlId="policy-deposit" error={errors.depositPolicy?.message}>
-            {(describedBy) => <><Label htmlFor="policy-deposit">Política de abono</Label><Textarea id="policy-deposit" {...register('depositPolicy')} rows={3} aria-invalid={Boolean(errors.depositPolicy)} aria-describedby={describedBy} /></>}
-          </FieldError>
+            {(a11y) => <Textarea id="policy-cancellation" density="form" {...register('cancellationPolicy')} rows={3} {...a11y} />}
+          </FormField>
+          <FormField id="policy-booking" label="Política de reserva" error={errors.bookingPolicy?.message}>
+            {(a11y) => <Textarea id="policy-booking" density="form" {...register('bookingPolicy')} rows={3} {...a11y} />}
+          </FormField>
+          <FormField id="policy-deposit" label="Política de abono" error={errors.depositPolicy?.message}>
+            {(a11y) => <Textarea id="policy-deposit" density="form" {...register('depositPolicy')} rows={3} {...a11y} />}
+          </FormField>
         </SettingsFormSection>
       </fieldset>
 
       <SettingsSaveBar isDirty={isDirty} isSubmitting={isSubmitting} status={status} error={serverError} />
     </form>
-  )
-}
-
-function FieldError({
-  children,
-  controlId,
-  error,
-  help,
-}: {
-  children: (describedBy?: string) => React.ReactNode
-  controlId: string
-  error?: string
-  help?: React.ReactNode
-}) {
-  const helpId = help ? `${controlId}-help` : undefined
-  const errorId = error ? `${controlId}-error` : undefined
-  const describedBy = [helpId, errorId].filter(Boolean).join(' ') || undefined
-
-  return (
-    <div className="space-y-2">
-      {children(describedBy)}
-      {help && <p id={helpId} className="text-xs text-muted-foreground">{help}</p>}
-      {error && <p id={errorId} role="alert" className="text-sm text-destructive">{error}</p>}
-    </div>
   )
 }
