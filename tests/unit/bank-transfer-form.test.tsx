@@ -56,6 +56,16 @@ const bankFormValues = {
 }
 
 describe('BankTransferForm', () => {
+  it('uses the shared dashboard form density for bank details', () => {
+    const html = renderToStaticMarkup(<UnsavedChangesProvider><BankTransferForm businessId="bta-form-biz" account={account} requireProof={false} proofUploadAvailable={false} /></UnsavedChangesProvider>)
+
+    expect(html.match(/data-slot="form-field"/g)).toHaveLength(9)
+    expect(html.match(/data-density="form"/g)).toHaveLength(9)
+    expect(html).toContain('data-size="form"')
+    expect(html).toContain('aria-describedby="bt-hold-help"')
+    expect(html).toContain('aria-describedby="bt-verify-help"')
+  })
+
   it('sin cuenta: muestra el form vacío con defaults y sin toggle', () => {
     const html = renderToStaticMarkup(<UnsavedChangesProvider><BankTransferForm businessId="bta-form-biz" account={null} requireProof={false} proofUploadAvailable={false} /></UnsavedChangesProvider>)
     expect(html).toContain('Titular')

@@ -25,6 +25,24 @@ async function expectNoHorizontalOverflow(page: Page) {
   }))).toEqual({ body: true, root: true })
 }
 
+async function expectFormControlGeometry(
+  page: Page,
+  label: string,
+  viewportWidth: number,
+  { fullWidth = false }: { fullWidth?: boolean } = {},
+) {
+  const control = page.getByLabel(label, { exact: true })
+  const box = await control.boundingBox()
+  expect(box).not.toBeNull()
+  expect(box!.height).toBeGreaterThanOrEqual(viewportWidth < 768 ? 44 : 40)
+
+  if (fullWidth) {
+    const fieldBox = await control.locator('xpath=ancestor::*[@data-slot="form-field"][1]').boundingBox()
+    expect(fieldBox).not.toBeNull()
+    expect(box!.width / fieldBox!.width).toBeGreaterThanOrEqual(0.9)
+  }
+}
+
 test.describe('settings navigation', () => {
   test.beforeEach(async ({ page }) => {
     setOwnerAuth(page)
@@ -335,6 +353,17 @@ test.describe('settings responsive structure', () => {
           await expect(page.getByText('Mercado Pago', { exact: true }).first()).toBeVisible()
         }
         await expectNoHorizontalOverflow(page)
+
+        if (section.slug === 'profile') {
+          await expectFormControlGeometry(page, 'Nombre del negocio', viewport.width)
+        }
+        if (section.slug === 'reservations') {
+          await expectFormControlGeometry(page, 'Zona horaria', viewport.width, { fullWidth: true })
+        }
+        if (section.slug === 'payments') {
+          await expectFormControlGeometry(page, 'Titular', viewport.width)
+        }
+
         await page.screenshot({
           path: `test-results/settings-visual/${viewport.width}-${section.slug}.png`,
           fullPage: true,
@@ -381,13 +410,15 @@ test.describe('settings responsive structure', () => {
 
       if (viewport.width >= 1024) {
         const saveButton = page.getByRole('button', { name: 'Guardar cambios' })
+        const saveSurface = saveButton.locator('..')
+        const saveDock = saveSurface.locator('..')
         const city = page.getByLabel('Ciudad')
         await city.scrollIntoViewIfNeeded()
-        await expect(saveButton).not.toBeInViewport()
+        await expect(saveDock).toHaveCSS('position', 'static')
 
         await city.fill(`${await city.inputValue()} QA`)
         await expect(saveButton).toBeInViewport()
-        const saveSurface = saveButton.locator('..')
+        await expect(saveDock).toHaveCSS('position', 'sticky')
         const metrics = await saveSurface.evaluate((element) => {
           const box = element.getBoundingClientRect()
           return {

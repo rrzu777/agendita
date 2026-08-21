@@ -32,7 +32,7 @@ export function SettingsSaveBar(props: SettingsSaveBarProps) {
         <p aria-live="polite" className="text-sm text-muted-foreground">
           {getStatusMessage(props)}
         </p>
-        <Button type="submit" size="lg" disabled={!isDirty || isSubmitting} className="h-11 px-4">
+        <Button type="submit" size="form" disabled={!isDirty || isSubmitting}>
           {isSubmitting ? 'Guardando…' : 'Guardar cambios'}
         </Button>
       </div>

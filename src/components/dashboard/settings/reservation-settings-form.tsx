@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { GuardedLink, useUnsavedChangesRegistration } from '@/components/dashboard/unsaved-changes-provider'
@@ -148,23 +148,25 @@ export function ReservationSettingsForm({ businessId, initialValues }: Reservati
 
       <fieldset disabled={isSubmitting} aria-label="Campos de reservas" aria-busy={isSubmitting} className="space-y-10 disabled:opacity-70">
         <SettingsFormSection title="Agenda" description="Cómo se ofrecen y retienen los horarios de reserva.">
-          <FieldError controlId="reservation-timezone" error={errors.timezone?.message}>
-            {(describedBy) => <><Label htmlFor="reservation-timezone">Zona horaria</Label><Select value={timezone} onValueChange={(value) => setValue('timezone', value, { shouldDirty: true })}><SelectTrigger id="reservation-timezone" aria-invalid={Boolean(errors.timezone)} aria-describedby={describedBy}><SelectValue /></SelectTrigger><SelectContent>{TIMEZONES.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></>}
-          </FieldError>
-          <FieldError
-            controlId="reservation-slot-step"
+          <FormField id="reservation-timezone" label="Zona horaria" error={errors.timezone?.message}>
+            {(a11y) => <Select value={timezone} onValueChange={(value) => setValue('timezone', value, { shouldDirty: true })}><SelectTrigger id="reservation-timezone" density="form" {...a11y}><SelectValue /></SelectTrigger><SelectContent>{TIMEZONES.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>}
+          </FormField>
+          <FormField
+            id="reservation-slot-step"
+            label="Ofrecer horas de reserva"
             error={errors.slotStepMinutes?.message}
             help={<>Cada cuánto se ofrecen horas de inicio en tu página de reservas. &quot;Según la duración del servicio&quot; deja las citas pegadas una tras otra (sin huecos), pero da menos opciones de hora a tus {vocabulary.clients}.</>}
           >
-            {(describedBy) => <><Label htmlFor="reservation-slot-step">Ofrecer horas de reserva</Label><Select value={slotStepMinutes} onValueChange={(value) => setValue('slotStepMinutes', value as ReservationSettingsInput['slotStepMinutes'], { shouldDirty: true })}><SelectTrigger id="reservation-slot-step" aria-invalid={Boolean(errors.slotStepMinutes)} aria-describedby={describedBy}><SelectValue /></SelectTrigger><SelectContent>{SLOT_STEP_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></>}
-          </FieldError>
-          <FieldError
-            controlId="reservation-manual-hold"
+            {(a11y) => <Select value={slotStepMinutes} onValueChange={(value) => setValue('slotStepMinutes', value as ReservationSettingsInput['slotStepMinutes'], { shouldDirty: true })}><SelectTrigger id="reservation-slot-step" density="form" {...a11y}><SelectValue /></SelectTrigger><SelectContent>{SLOT_STEP_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>}
+          </FormField>
+          <FormField
+            id="reservation-manual-hold"
+            label="Reserva sin pago online (horas)"
             error={errors.manualHoldHours?.message}
             help={<>Si no tenés pago online ni transferencia configurados, cuántas horas se guarda el horario de cada ciclo de reserva mientras coordinás el abono. Pasado el plazo, la reserva expira sola. A quien reserve le prometemos este plazo o su cita, lo que pase antes. <GuardedLink href="/dashboard/settings/payments" prefetch={false} className="underline underline-offset-4">Configurar pagos</GuardedLink></>}
           >
-            {(describedBy) => <><Label htmlFor="reservation-manual-hold">Reserva sin pago online (horas)</Label><Input id="reservation-manual-hold" type="number" min={1} max={720} {...register('manualHoldHours')} aria-invalid={Boolean(errors.manualHoldHours)} aria-describedby={describedBy} /></>}
-          </FieldError>
+            {(a11y) => <Input id="reservation-manual-hold" density="form" type="number" min={1} max={720} {...register('manualHoldHours')} {...a11y} />}
+          </FormField>
           <div className="space-y-1 text-sm text-muted-foreground">
             <p className="font-medium text-foreground">Moneda: CLP</p>
             <p>La moneda no se puede cambiar en este momento.</p>
@@ -172,51 +174,30 @@ export function ReservationSettingsForm({ businessId, initialValues }: Reservati
         </SettingsFormSection>
 
         <SettingsFormSection title="Confirmación" description="Elige si quieres revisar cada solicitud antes de confirmarla.">
-          <FieldError
-            controlId="reservation-approval"
+          <FormField
+            id="reservation-approval"
+            label="Confirmar cada reserva a mano"
+            layout="inline"
             error={errors.requireBookingApproval?.message}
             help="Las reservas llegan como solicitudes y vos las aceptás o las rechazás. El horario queda tomado mientras tanto, y si no respondés en 24 horas se libera solo. No aplica a los servicios con abono: ahí el pago ya hace de filtro."
           >
-            {(describedBy) => <div className="flex items-center justify-between gap-4"><Label htmlFor="reservation-approval">Confirmar cada reserva a mano</Label><Switch id="reservation-approval" checked={Boolean(requireBookingApproval)} onCheckedChange={(value) => setValue('requireBookingApproval', value, { shouldDirty: true })} aria-invalid={Boolean(errors.requireBookingApproval)} aria-describedby={describedBy} /></div>}
-          </FieldError>
+            {(a11y) => <Switch id="reservation-approval" checked={Boolean(requireBookingApproval)} onCheckedChange={(value) => setValue('requireBookingApproval', value, { shouldDirty: true })} {...a11y} />}
+          </FormField>
         </SettingsFormSection>
 
         <SettingsFormSection title="Atención online" description="Una sala fija para los servicios que atiendes por videollamada.">
-          <FieldError
-            controlId="reservation-meeting-url"
+          <FormField
+            id="reservation-meeting-url"
+            label="Sala de videollamada"
             error={errors.defaultMeetingUrl?.message}
             help="Tu link fijo de Zoom o Meet. Se copia a cada reserva online cuando la toman, así que si lo cambiás, las citas ya avisadas conservan el que se mandó."
           >
-            {(describedBy) => <><Label htmlFor="reservation-meeting-url">Sala de videollamada</Label><Input id="reservation-meeting-url" type="url" placeholder="https://meet.google.com/abc-defg-hij" {...register('defaultMeetingUrl')} aria-invalid={Boolean(errors.defaultMeetingUrl)} aria-describedby={describedBy} /></>}
-          </FieldError>
+            {(a11y) => <Input id="reservation-meeting-url" density="form" type="url" placeholder="https://meet.google.com/abc-defg-hij" {...register('defaultMeetingUrl')} {...a11y} />}
+          </FormField>
         </SettingsFormSection>
       </fieldset>
 
       <SettingsSaveBar isDirty={isDirty} isSubmitting={isSubmitting} status={status} error={serverError} />
     </form>
-  )
-}
-
-function FieldError({
-  children,
-  controlId,
-  error,
-  help,
-}: {
-  children: (describedBy?: string) => React.ReactNode
-  controlId: string
-  error?: string
-  help?: React.ReactNode
-}) {
-  const helpId = help ? `${controlId}-help` : undefined
-  const errorId = error ? `${controlId}-error` : undefined
-  const describedBy = [helpId, errorId].filter(Boolean).join(' ') || undefined
-
-  return (
-    <div className="space-y-2">
-      {children(describedBy)}
-      {help && <p id={helpId} className="text-xs text-muted-foreground">{help}</p>}
-      {error && <p id={errorId} role="alert" className="text-sm text-destructive">{error}</p>}
-    </div>
   )
 }

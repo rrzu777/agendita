@@ -3,8 +3,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { saveBankTransferAccount, setBankTransferEnabled, setRequireTransferProof } from '@/server/actions/bank-transfer-settings'
@@ -179,58 +179,53 @@ export function BankTransferForm({
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="bt-holder">Titular</Label>
-          <Input id="bt-holder" value={form.accountHolder} onChange={e => set('accountHolder', e.target.value)} required />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="bt-rut">RUT</Label>
-          <Input id="bt-rut" value={form.rut} onChange={e => set('rut', e.target.value)} required />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="bt-bank">Banco</Label>
-          <Input id="bt-bank" value={form.bankName} onChange={e => set('bankName', e.target.value)} required />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="bt-type">Tipo de cuenta</Label>
-          <Input id="bt-type" value={form.accountType} onChange={e => set('accountType', e.target.value)} placeholder="corriente, vista, ahorro…" required />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="bt-number">Número de cuenta</Label>
-          <Input id="bt-number" value={form.accountNumber} onChange={e => set('accountNumber', e.target.value)} required />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="bt-email">Email para avisos (opcional)</Label>
-          <Input id="bt-email" type="email" value={form.email} onChange={e => set('email', e.target.value)} />
-        </div>
+        <FormField id="bt-holder" label="Titular">
+          {(a11y) => <Input id="bt-holder" density="form" value={form.accountHolder} onChange={e => set('accountHolder', e.target.value)} required {...a11y} />}
+        </FormField>
+        <FormField id="bt-rut" label="RUT">
+          {(a11y) => <Input id="bt-rut" density="form" value={form.rut} onChange={e => set('rut', e.target.value)} required {...a11y} />}
+        </FormField>
+        <FormField id="bt-bank" label="Banco">
+          {(a11y) => <Input id="bt-bank" density="form" value={form.bankName} onChange={e => set('bankName', e.target.value)} required {...a11y} />}
+        </FormField>
+        <FormField id="bt-type" label="Tipo de cuenta">
+          {(a11y) => <Input id="bt-type" density="form" value={form.accountType} onChange={e => set('accountType', e.target.value)} placeholder="corriente, vista, ahorro…" required {...a11y} />}
+        </FormField>
+        <FormField id="bt-number" label="Número de cuenta">
+          {(a11y) => <Input id="bt-number" density="form" value={form.accountNumber} onChange={e => set('accountNumber', e.target.value)} required {...a11y} />}
+        </FormField>
+        <FormField id="bt-email" label="Email para avisos (opcional)">
+          {(a11y) => <Input id="bt-email" density="form" type="email" value={form.email} onChange={e => set('email', e.target.value)} {...a11y} />}
+        </FormField>
       </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="bt-instructions">Instrucciones para {vocabulary.theClient} (opcional)</Label>
-        <Textarea id="bt-instructions" value={form.instructions} onChange={e => set('instructions', e.target.value)} rows={2} placeholder="Ej: poné tu nombre y la fecha de la reserva en el asunto" />
-      </div>
+      <FormField id="bt-instructions" label={<>Instrucciones para {vocabulary.theClient} (opcional)</>}>
+        {(a11y) => <Textarea id="bt-instructions" density="form" value={form.instructions} onChange={e => set('instructions', e.target.value)} rows={2} placeholder="Ej: poné tu nombre y la fecha de la reserva en el asunto" {...a11y} />}
+      </FormField>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="bt-hold">Plazo para transferir (horas)</Label>
-          <Input id="bt-hold" type="number" min={1} max={HOLD_HOURS_MAX} value={form.holdHours} onChange={e => set('holdHours', e.target.value)} required />
-          <p className="text-xs text-muted-foreground">Cuánto tiempo se le reserva el horario a {vocabulary.theClient} para que transfiera y te avise.</p>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="bt-verify">Plazo para verificar (horas)</Label>
-          <Input id="bt-verify" type="number" min={1} max={VERIFY_HOURS_MAX} value={form.verifyHours} onChange={e => set('verifyHours', e.target.value)} placeholder="vacío = sin límite" />
-          {noVerifyLimit ? (
-            <p className="text-xs text-orange-600">Vacío = sin límite: el horario queda retenido hasta que verifiques o rechaces la transferencia.</p>
-          ) : (
-            <p className="text-xs text-muted-foreground">Cuánto tiempo tenés para verificar una transferencia declarada antes de que la reserva expire sola.</p>
-          )}
-        </div>
+        <FormField
+          id="bt-hold"
+          label="Plazo para transferir (horas)"
+          help={<>Cuánto tiempo se le reserva el horario a {vocabulary.theClient} para que transfiera y te avise.</>}
+        >
+          {(a11y) => <Input id="bt-hold" density="form" type="number" min={1} max={HOLD_HOURS_MAX} value={form.holdHours} onChange={e => set('holdHours', e.target.value)} required {...a11y} />}
+        </FormField>
+        <FormField
+          id="bt-verify"
+          label="Plazo para verificar (horas)"
+          help={noVerifyLimit
+            ? <span className="text-orange-600">Vacío = sin límite: el horario queda retenido hasta que verifiques o rechaces la transferencia.</span>
+            : 'Cuánto tiempo tenés para verificar una transferencia declarada antes de que la reserva expire sola.'}
+        >
+          {(a11y) => <Input id="bt-verify" density="form" type="number" min={1} max={VERIFY_HOURS_MAX} value={form.verifyHours} onChange={e => set('verifyHours', e.target.value)} placeholder="vacío = sin límite" {...a11y} />}
+        </FormField>
       </div>
 
       {serverError && <p className="text-sm text-destructive">{serverError}</p>}
       {successMessage && <p className="text-sm text-green-600">{successMessage}</p>}
 
-      <Button type="submit" disabled={isSubmitting} className="h-11">
+      <Button type="submit" size="form" disabled={isSubmitting}>
         {isSubmitting ? 'Guardando…' : 'Guardar datos bancarios'}
       </Button>
     </form>

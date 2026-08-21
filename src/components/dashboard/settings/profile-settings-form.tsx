@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { SettingsFormSection } from '@/components/dashboard/settings/settings-form-section'
 import { SettingsSaveBar } from '@/components/dashboard/settings/settings-save-bar'
@@ -134,41 +134,41 @@ export function ProfileSettingsForm({ businessId, slug, initialValues }: Profile
 
         <fieldset disabled={isSubmitting} aria-label="Campos del perfil" aria-busy={isSubmitting} className="space-y-10 disabled:opacity-70">
           <SettingsFormSection title="Identidad" description="La información principal que verá tu público.">
-            <FieldError controlId="profile-name" error={errors.name?.message}>
-              {(describedBy) => <><Label htmlFor="profile-name">Nombre del negocio</Label><Input id="profile-name" {...register('name')} aria-invalid={Boolean(errors.name)} aria-describedby={describedBy} /></>}
-            </FieldError>
-            <FieldError controlId="profile-bio" error={errors.bio?.message}>
-              {(describedBy) => <><Label htmlFor="profile-bio">Descripción</Label><Textarea id="profile-bio" {...register('bio')} rows={4} aria-invalid={Boolean(errors.bio)} aria-describedby={describedBy} /></>}
-            </FieldError>
-            <FieldError controlId="profile-logo-url" error={errors.logoUrl?.message} help="Pega una URL pública para mostrar tu logo en el perfil.">
-              {(describedBy) => <><Label htmlFor="profile-logo-url">URL del logo</Label><Input id="profile-logo-url" type="url" placeholder="https://..." {...register('logoUrl')} aria-invalid={Boolean(errors.logoUrl)} aria-describedby={describedBy} /></>}
-            </FieldError>
-            <FieldError controlId="profile-image-url" error={errors.profileImageUrl?.message} help="Pega una URL pública para agregar una imagen a tu perfil.">
-              {(describedBy) => <><Label htmlFor="profile-image-url">URL de imagen de perfil</Label><Input id="profile-image-url" type="url" placeholder="https://..." {...register('profileImageUrl')} aria-invalid={Boolean(errors.profileImageUrl)} aria-describedby={describedBy} /></>}
-            </FieldError>
+            <FormField id="profile-name" label="Nombre del negocio" error={errors.name?.message}>
+              {(a11y) => <Input id="profile-name" density="form" {...register('name')} {...a11y} />}
+            </FormField>
+            <FormField id="profile-bio" label="Descripción" error={errors.bio?.message}>
+              {(a11y) => <Textarea id="profile-bio" density="form" {...register('bio')} rows={4} {...a11y} />}
+            </FormField>
+            <FormField id="profile-logo-url" label="URL del logo" error={errors.logoUrl?.message} help="Pega una URL pública para mostrar tu logo en el perfil.">
+              {(a11y) => <Input id="profile-logo-url" density="form" type="url" placeholder="https://..." {...register('logoUrl')} {...a11y} />}
+            </FormField>
+            <FormField id="profile-image-url" label="URL de imagen de perfil" error={errors.profileImageUrl?.message} help="Pega una URL pública para agregar una imagen a tu perfil.">
+              {(a11y) => <Input id="profile-image-url" density="form" type="url" placeholder="https://..." {...register('profileImageUrl')} {...a11y} />}
+            </FormField>
           </SettingsFormSection>
 
           <SettingsFormSection title="Contacto y ubicación" description="Canales y ubicación que puedes mostrar a tu público.">
             <div className="grid gap-4 sm:grid-cols-2">
-              <FieldError controlId="profile-whatsapp" error={errors.whatsapp?.message}>
-                {(describedBy) => <><Label htmlFor="profile-whatsapp">WhatsApp</Label><Input id="profile-whatsapp" inputMode="tel" placeholder="9 1234 5678" {...register('whatsapp')} aria-invalid={Boolean(errors.whatsapp)} aria-describedby={describedBy} /></>}
-              </FieldError>
-              <FieldError controlId="profile-instagram" error={errors.instagram?.message}>
-                {(describedBy) => <><Label htmlFor="profile-instagram">Instagram</Label><Input id="profile-instagram" placeholder="@mi-negocio" {...register('instagram')} aria-invalid={Boolean(errors.instagram)} aria-describedby={describedBy} /></>}
-              </FieldError>
+              <FormField id="profile-whatsapp" label="WhatsApp" error={errors.whatsapp?.message}>
+                {(a11y) => <Input id="profile-whatsapp" density="form" inputMode="tel" placeholder="9 1234 5678" {...register('whatsapp')} {...a11y} />}
+              </FormField>
+              <FormField id="profile-instagram" label="Instagram" error={errors.instagram?.message}>
+                {(a11y) => <Input id="profile-instagram" density="form" placeholder="@mi-negocio" {...register('instagram')} {...a11y} />}
+              </FormField>
             </div>
-            <FieldError controlId="profile-address" error={errors.addressText?.message}>
-              {(describedBy) => <><Label htmlFor="profile-address">Dirección</Label><Input id="profile-address" {...register('addressText')} aria-invalid={Boolean(errors.addressText)} aria-describedby={describedBy} /></>}
-            </FieldError>
-            <FieldError controlId="profile-city" error={errors.city?.message}>
-              {(describedBy) => <><Label htmlFor="profile-city">Ciudad</Label><Input id="profile-city" {...register('city')} aria-invalid={Boolean(errors.city)} aria-describedby={describedBy} /></>}
-            </FieldError>
+            <FormField id="profile-address" label="Dirección" error={errors.addressText?.message}>
+              {(a11y) => <Input id="profile-address" density="form" {...register('addressText')} {...a11y} />}
+            </FormField>
+            <FormField id="profile-city" label="Ciudad" error={errors.city?.message}>
+              {(a11y) => <Input id="profile-city" density="form" {...register('city')} {...a11y} />}
+            </FormField>
           </SettingsFormSection>
 
           <SettingsFormSection title="Dirección pública" description="El enlace que compartirás con quienes quieran conocerte o reservar.">
-            <FieldError controlId="profile-subdomain" error={errors.subdomain?.message} help={`Tu URL pública será: ${publicUrl}`}>
-              {(describedBy) => <><Label htmlFor="profile-subdomain">Subdominio</Label><Input id="profile-subdomain" autoCapitalize="none" {...register('subdomain')} aria-invalid={Boolean(errors.subdomain)} aria-describedby={describedBy} /></>}
-            </FieldError>
+            <FormField id="profile-subdomain" label="Subdominio" error={errors.subdomain?.message} help={`Tu URL pública será: ${publicUrl}`}>
+              {(a11y) => <Input id="profile-subdomain" density="form" autoCapitalize="none" {...register('subdomain')} {...a11y} />}
+            </FormField>
           </SettingsFormSection>
         </fieldset>
 
@@ -182,30 +182,6 @@ export function ProfileSettingsForm({ businessId, slug, initialValues }: Profile
         logoUrl={logoUrl || ''}
         publicUrl={publicUrl}
       />
-    </div>
-  )
-}
-
-function FieldError({
-  children,
-  controlId,
-  error,
-  help,
-}: {
-  children: (describedBy?: string) => React.ReactNode
-  controlId: string
-  error?: string
-  help?: string
-}) {
-  const helpId = help ? `${controlId}-help` : undefined
-  const errorId = error ? `${controlId}-error` : undefined
-  const describedBy = [helpId, errorId].filter(Boolean).join(' ') || undefined
-
-  return (
-    <div className="space-y-2">
-      {children(describedBy)}
-      {help && <p id={helpId} className="text-xs text-muted-foreground">{help}</p>}
-      {error && <p id={errorId} role="alert" className="text-sm text-destructive">{error}</p>}
     </div>
   )
 }
