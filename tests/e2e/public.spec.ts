@@ -175,11 +175,19 @@ test.describe('dashboard (e2e auth bypass)', () => {
   })
 
   test('dashboard settings page loads', async ({ page }) => {
+    await page.setExtraHTTPHeaders({
+      'x-e2e-test-user-email': E2E_OWNER_EMAIL,
+      'x-e2e-auth-secret': E2E_SECRET,
+    })
     await page.goto('/dashboard/settings')
     await page.waitForLoadState('networkidle')
-    expect(page.url()).toContain('/dashboard/settings')
+    await expect(page).toHaveURL(/\/dashboard\/settings\/profile$/)
     await expect(page.getByRole('heading', { name: 'Configuración' })).toBeVisible()
-    await expect(page.getByText('Datos del estudio')).toBeVisible()
+    await expect(
+      page
+        .getByRole('navigation', { name: 'Secciones de configuración' })
+        .getByRole('link', { name: 'Perfil público', exact: true }),
+    ).toHaveAttribute('aria-current', 'page')
   })
 
   test('dashboard payments page loads', async ({ page }) => {
