@@ -27,7 +27,8 @@ This first delivery defines semantic control densities and migrates the four Set
 - `git diff --check origin/main`: passed.
 - Next production build: passed, including 57/57 static-generation steps.
 - Settings Playwright suite: 16/16 passed against an isolated PostgreSQL 16 database with all 53 migrations.
-- Full unit suite: **not green under parallel load** — 371/374 files and 3479/3483 tests passed; three existing tests timed out (`loyalty-redeem-as-me`, `payment-qa-runner-safety`, and `sign-in-with-google`). The exact three files passed immediately in isolation, 20/20, so this is classified as runner pressure rather than a reproducible branch regression. The failure remains reported honestly.
+- Full unit suite under parallel load: **not green** — 371/374 files and 3479/3483 tests passed; three existing tests timed out (`loyalty-redeem-as-me`, `payment-qa-runner-safety`, and `sign-in-with-google`). The exact three files passed immediately in isolation, 20/20.
+- Full unit suite in serial: **green** — 374/374 files passed, 3482 tests passed, and 1 skipped. This confirms the parallel failures were runner pressure rather than a reproducible branch regression.
 - Dependency audit from the existing lockfile reported 15 advisories (2 low, 2 moderate, 11 high); this delivery changes no dependencies.
 
 ## Visual QA
