@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 type SettingsSaveBarProps = {
   isDirty: boolean
@@ -17,10 +18,17 @@ function getStatusMessage({ isDirty, isSubmitting, status, error }: SettingsSave
 
 export function SettingsSaveBar(props: SettingsSaveBarProps) {
   const { isDirty, isSubmitting } = props
+  const shouldDock = isDirty || isSubmitting || props.status !== 'idle'
 
   return (
-    <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 -mx-5 mt-8 border-y border-border/60 bg-card/95 px-5 py-3 backdrop-blur md:bottom-0 md:-mx-10 md:px-10 lg:mx-0 lg:px-0">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div
+      className={cn(
+        'pointer-events-none z-30 -mx-5 mt-8 px-5 pb-2 pt-5 md:-mx-4 md:px-4 lg:mx-0 lg:px-0',
+        shouldDock &&
+          'sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] bg-gradient-to-t from-background via-background/95 to-transparent md:bottom-4',
+      )}
+    >
+      <div className="pointer-events-auto flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/70 bg-card px-4 py-3 shadow-[0_12px_40px_-18px_rgba(44,32,24,0.4)]">
         <p aria-live="polite" className="text-sm text-muted-foreground">
           {getStatusMessage(props)}
         </p>
