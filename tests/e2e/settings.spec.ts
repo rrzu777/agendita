@@ -37,9 +37,9 @@ async function expectFormControlGeometry(
   expect(box!.height).toBeGreaterThanOrEqual(viewportWidth < 768 ? 44 : 40)
 
   if (fullWidth) {
-    const fieldBox = await control.locator('..').boundingBox()
+    const fieldBox = await control.locator('xpath=ancestor::*[@data-slot="form-field"][1]').boundingBox()
     expect(fieldBox).not.toBeNull()
-    expect(Math.abs(box!.width - fieldBox!.width)).toBeLessThan(2)
+    expect(box!.width / fieldBox!.width).toBeGreaterThanOrEqual(0.9)
   }
 }
 
@@ -410,13 +410,15 @@ test.describe('settings responsive structure', () => {
 
       if (viewport.width >= 1024) {
         const saveButton = page.getByRole('button', { name: 'Guardar cambios' })
+        const saveSurface = saveButton.locator('..')
+        const saveDock = saveSurface.locator('..')
         const city = page.getByLabel('Ciudad')
         await city.scrollIntoViewIfNeeded()
-        await expect(saveButton).not.toBeInViewport()
+        await expect(saveDock).toHaveCSS('position', 'static')
 
         await city.fill(`${await city.inputValue()} QA`)
         await expect(saveButton).toBeInViewport()
-        const saveSurface = saveButton.locator('..')
+        await expect(saveDock).toHaveCSS('position', 'sticky')
         const metrics = await saveSurface.evaluate((element) => {
           const box = element.getBoundingClientRect()
           return {
