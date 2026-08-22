@@ -4,8 +4,8 @@ import { useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { unstable_rethrow } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { signIn } from '@/lib/auth/actions'
 import { Eye, Loader2, Lock, Mail, Sparkles } from 'lucide-react'
@@ -55,31 +55,23 @@ export default function LoginPage() {
         <CardContent className="px-0">
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+              <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
                 {error}
               </div>
             )}
-            <div className="space-y-2">
-              <Label className="studio-eyebrow" htmlFor="email">Email</Label>
-              <div className="relative">
-                <Mail className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-                <Input className="studio-input pl-12" id="email" name="email" type="email" placeholder="ejemplo@correo.com" required />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <Label className="studio-eyebrow" htmlFor="password">Contraseña</Label>
-                <Link href="/forgot-password" className="text-sm font-semibold text-primary hover:underline">Olvidé mi contraseña</Link>
-              </div>
-              <div className="relative">
-                <Lock className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-                <Input className="studio-input px-12" id="password" name="password" type="password" placeholder="••••••••" required />
-                <Eye className="pointer-events-none absolute right-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-              </div>
+            <FormField id="email" label="Email" required>
+              {(a11y) => <div className="relative"><Mail className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input className="pl-12" id="email" name="email" type="email" placeholder="ejemplo@correo.com" required density="touch" {...a11y} /></div>}
+            </FormField>
+            <div className="relative">
+              <Link href="/forgot-password" className="absolute right-0 top-0 z-10 text-sm font-semibold text-primary hover:underline">Olvidé mi contraseña</Link>
+              <FormField id="password" label="Contraseña" required>
+                {(a11y) => <div className="relative"><Lock className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input className="px-12" id="password" name="password" type="password" placeholder="••••••••" required density="touch" {...a11y} /><Eye className="pointer-events-none absolute right-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /></div>}
+              </FormField>
             </div>
             <Button
               type="submit"
-              className="h-14 w-full rounded-full text-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]"
+              size="touch"
+              className="w-full rounded-full font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]"
               disabled={loading}
               data-auth-loading={loading ? 'true' : undefined}
               aria-busy={loading}

@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { requestPasswordReset } from '@/lib/auth/actions'
 import { Loader2, Mail, Sparkles } from 'lucide-react'
@@ -50,18 +50,14 @@ export default function ForgotPasswordPage() {
           ) : (
             <form action={handleSubmit} className="space-y-6">
               {error && (
-                <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
                   {error}
                 </div>
               )}
-              <div className="space-y-2">
-                <Label className="studio-eyebrow" htmlFor="email">Email</Label>
-                <div className="relative">
-                  <Mail className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-                  <Input className="studio-input pl-12" id="email" name="email" type="email" placeholder="ejemplo@correo.com" required />
-                </div>
-              </div>
-              <Button type="submit" className="h-14 w-full rounded-full text-lg font-semibold" disabled={loading}>
+              <FormField id="email" label="Email" required>
+                {(a11y) => <div className="relative"><Mail className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input className="pl-12" id="email" name="email" type="email" placeholder="ejemplo@correo.com" required density="touch" {...a11y} /></div>}
+              </FormField>
+              <Button type="submit" size="touch" className="w-full rounded-full font-semibold" disabled={loading}>
                 {loading && <Loader2 className="mr-2 size-4 animate-spin" />}
                 {loading ? 'Enviando...' : 'Enviar enlace'}
               </Button>

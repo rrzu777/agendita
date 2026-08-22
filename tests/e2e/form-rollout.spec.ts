@@ -82,4 +82,19 @@ for (const viewport of VIEWPORTS) {
     await expectHeight(campaignDialog.getByRole('button', { name: 'Crear campaña' }), 48)
     await expectNoHorizontalOverflow(page)
   })
+
+  test(`${viewport.name}: authentication controls use touch geometry`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+
+    await page.goto('/login')
+    await expectHeight(page.getByLabel(/^Email/), 48)
+    await expectHeight(page.getByLabel(/^Contraseña/), 48)
+    await expectHeight(page.getByRole('button', { name: 'Iniciar sesión' }), 48)
+    await expectNoHorizontalOverflow(page)
+
+    await page.goto('/register')
+    await expectHeight(page.getByLabel(/^Nombre/), 48)
+    await expectHeight(page.getByLabel(/^Rubro/), 48)
+    await expectNoHorizontalOverflow(page)
+  })
 }

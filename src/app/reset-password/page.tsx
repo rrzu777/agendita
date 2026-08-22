@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { updatePassword } from '@/lib/auth/actions'
 import { Loader2, Lock, Sparkles } from 'lucide-react'
@@ -57,18 +57,14 @@ export default function ResetPasswordPage() {
           ) : (
             <form action={handleSubmit} className="space-y-6">
               {error && (
-                <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
                   {error}
                 </div>
               )}
-              <div className="space-y-2">
-                <Label className="studio-eyebrow" htmlFor="password">Contraseña nueva</Label>
-                <div className="relative">
-                  <Lock className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-                  <Input className="studio-input pl-12" id="password" name="password" type="password" placeholder="Mínimo 6 caracteres" required minLength={6} />
-                </div>
-              </div>
-              <Button type="submit" className="h-14 w-full rounded-full text-lg font-semibold" disabled={loading}>
+              <FormField id="password" label="Contraseña nueva" required help="Mínimo 6 caracteres">
+                {(a11y) => <div className="relative"><Lock className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input className="pl-12" id="password" name="password" type="password" required minLength={6} density="touch" {...a11y} /></div>}
+              </FormField>
+              <Button type="submit" size="touch" className="w-full rounded-full font-semibold" disabled={loading}>
                 {loading && <Loader2 className="mr-2 size-4 animate-spin" />}
                 {loading ? 'Guardando...' : 'Actualizar contraseña'}
               </Button>
