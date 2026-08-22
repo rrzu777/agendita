@@ -1,6 +1,7 @@
 'use client'
 
-import { Label } from '@/components/ui/label'
+import { FormField } from '@/components/ui/form-field'
+import { NativeSelect } from '@/components/ui/native-select'
 import { ANYONE_LABEL, type ProfessionalChoice, type ProfessionalPick } from '@/lib/professionals/eligible'
 
 /**
@@ -26,21 +27,23 @@ export function ProfessionalField({
 }) {
   if (choice.kind !== 'ask') return null
   return (
-    <div className="space-y-2">
-      <Label htmlFor="professional">¿Quién atiende? *</Label>
-      <select
-        id="professional"
-        value={pick.kind === 'person' ? pick.id : 'anyone'}
-        onChange={(e) =>
-          onChange(e.target.value === 'anyone' ? { kind: 'anyone' } : { kind: 'person', id: e.target.value })
-        }
-        className="studio-input w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
-      >
-        <option value="anyone">{ANYONE_LABEL}</option>
-        {choice.options.map((p) => (
-          <option key={p.id} value={p.id}>{p.name}</option>
-        ))}
-      </select>
-    </div>
+    <FormField id="professional" label="¿Quién atiende?" required>
+      {(a11y) => (
+        <NativeSelect
+          {...a11y}
+          id="professional"
+          density="form"
+          value={pick.kind === 'person' ? pick.id : 'anyone'}
+          onChange={(e) =>
+            onChange(e.target.value === 'anyone' ? { kind: 'anyone' } : { kind: 'person', id: e.target.value })
+          }
+        >
+          <option value="anyone">{ANYONE_LABEL}</option>
+          {choice.options.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </NativeSelect>
+      )}
+    </FormField>
   )
 }

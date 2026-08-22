@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
+import { FormField } from '@/components/ui/form-field'
+import { NativeSelect } from '@/components/ui/native-select'
 import { UserCheck } from 'lucide-react'
 import { getReassignTargets, reassignBooking } from '@/server/actions/bookings'
 
@@ -100,21 +101,26 @@ export function ReassignControl({
       )}
       {hasTargets && (
         <>
-          <Label htmlFor="reassign-target">{currentName ? '¿A quién se la pasás?' : '¿Quién la atiende?'}</Label>
-          <select
+          <FormField
             id="reassign-target"
-            value={targetId}
-            onChange={(e) => setTargetId(e.target.value)}
-            className="studio-input w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
-            disabled={saving}
+            label={currentName ? '¿A quién se la pasás?' : '¿Quién la atiende?'}
+            help="La hora no se mueve. Se valida que tenga el horario libre."
           >
-            {targets!.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-          <p className="text-xs text-muted-foreground">
-            La hora no se mueve. Se valida que tenga el horario libre.
-          </p>
+            {(a11y) => (
+              <NativeSelect
+                {...a11y}
+                id="reassign-target"
+                density="form"
+                value={targetId}
+                onChange={(e) => setTargetId(e.target.value)}
+                disabled={saving}
+              >
+                {targets!.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </NativeSelect>
+            )}
+          </FormField>
         </>
       )}
 

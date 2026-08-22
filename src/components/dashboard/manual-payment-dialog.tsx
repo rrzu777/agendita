@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import { CreditCard, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { NativeSelect } from '@/components/ui/native-select'
 import { createManualPayment } from '@/server/actions/payments'
 import { searchManualPaymentBookings } from '@/server/actions/bookings'
 import { hasPendingBalanceTransfer } from '@/lib/bank-transfer/declared'
@@ -198,33 +199,43 @@ export function ManualPaymentDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="space-y-2">
-            <Label className="studio-eyebrow">Reserva</Label>
+          <div className="space-y-4">
             {!defaultBookingId && (
+              <FormField id="manual-payment-search" label="Buscar reserva">
+                {(a11y) => (
               <Input
+                {...a11y}
+                id="manual-payment-search"
+                density="touch"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Buscar por nombre o teléfono"
-                aria-label="Buscar reserva para cobrar"
-                className="studio-input"
               />
+                )}
+              </FormField>
             )}
-            <select
-              value={bookingId}
-              onChange={(e) => selectBooking(e.target.value)}
-              required
-              disabled={Boolean(defaultBookingId)}
-              className="min-h-12 w-full rounded-lg border border-border bg-card px-4 text-base focus:border-primary focus:outline-none disabled:opacity-70"
-            >
-              <option value="">Selecciona una reserva</option>
-              {isSearching && <option disabled>Buscando…</option>}
-              {payableBookings.map((booking) => (
-                <option key={booking.id} value={booking.id}>
-                  {booking.customer?.name ? `${booking.customer.name} - ` : `Reserva ${formatBookingNumber(booking.bookingNumber, booking.id)} - `}
-                  {formatMoney(booking.remainingBalance, businessCurrency)} pendiente
-                </option>
-              ))}
-            </select>
+            <FormField id="manual-payment-booking" label="Reserva" required>
+              {(a11y) => (
+                <NativeSelect
+                  {...a11y}
+                  id="manual-payment-booking"
+                  density="touch"
+                  value={bookingId}
+                  onChange={(e) => selectBooking(e.target.value)}
+                  required
+                  disabled={Boolean(defaultBookingId)}
+                >
+                  <option value="">Selecciona una reserva</option>
+                  {isSearching && <option disabled>Buscando…</option>}
+                  {payableBookings.map((booking) => (
+                    <option key={booking.id} value={booking.id}>
+                      {booking.customer?.name ? `${booking.customer.name} - ` : `Reserva ${formatBookingNumber(booking.bookingNumber, booking.id)} - `}
+                      {formatMoney(booking.remainingBalance, businessCurrency)} pendiente
+                    </option>
+                  ))}
+                </NativeSelect>
+              )}
+            </FormField>
             {!defaultBookingId && search.trim().length >= 2 && !isSearching && payableBookings.length === 0 && (
               <p className="text-sm text-muted-foreground">No encontramos reservas con saldo pendiente.</p>
             )}
@@ -262,14 +273,18 @@ export function ManualPaymentDialog({
           <div className="grid grid-cols-2 gap-2">
             <Button
               type="button"
+              size="touch"
               variant={mode === 'fixed' ? 'default' : 'outline'}
+              aria-pressed={mode === 'fixed'}
               onClick={() => setMode('fixed')}
             >
               Monto fijo
             </Button>
             <Button
               type="button"
+              size="touch"
               variant={mode === 'percentage' ? 'default' : 'outline'}
+              aria-pressed={mode === 'percentage'}
               onClick={() => setMode('percentage')}
             >
               Porcentaje
@@ -277,66 +292,81 @@ export function ManualPaymentDialog({
           </div>
 
           {mode === 'fixed' ? (
-            <div className="space-y-2">
-              <Label className="studio-eyebrow" htmlFor="manual-payment-amount">Monto ({businessCurrency})</Label>
-              <Input
-                id="manual-payment-amount"
-                className="studio-input"
-                type="number"
-                min={1}
-                max={selectedBooking?.remainingBalance}
-                value={fixedAmount}
-                onChange={(e) => setFixedAmount(e.target.value)}
-                required
-              />
-            </div>
+            <FormField id="manual-payment-amount" label={`Monto (${businessCurrency})`} required>
+              {(a11y) => (
+                <Input
+                  {...a11y}
+                  id="manual-payment-amount"
+                  density="touch"
+                  type="number"
+                  min={1}
+                  max={selectedBooking?.remainingBalance}
+                  value={fixedAmount}
+                  onChange={(e) => setFixedAmount(e.target.value)}
+                  required
+                />
+              )}
+            </FormField>
           ) : (
-            <div className="space-y-2">
-              <Label className="studio-eyebrow" htmlFor="manual-payment-percentage">Porcentaje del saldo pendiente</Label>
-              <Input
-                id="manual-payment-percentage"
-                className="studio-input"
-                type="number"
-                min={1}
-                max={100}
-                value={percentage}
-                onChange={(e) => setPercentage(e.target.value)}
-                required
-              />
-              <p className="text-sm text-muted-foreground">
-                Equivale a {formatMoney(amount, businessCurrency)}
-              </p>
-            </div>
+            <FormField
+              id="manual-payment-percentage"
+              label="Porcentaje del saldo pendiente"
+              help={`Equivale a ${formatMoney(amount, businessCurrency)}`}
+              required
+            >
+              {(a11y) => (
+                <Input
+                  {...a11y}
+                  id="manual-payment-percentage"
+                  density="touch"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={percentage}
+                  onChange={(e) => setPercentage(e.target.value)}
+                  required
+                />
+              )}
+            </FormField>
           )}
 
-          <div className="space-y-2">
-            <Label className="studio-eyebrow">Método de pago</Label>
-            <select
-              value={method}
-              onChange={(e) => setMethod(e.target.value)}
-              className="min-h-12 w-full rounded-lg border border-border bg-card px-4 text-base focus:border-primary focus:outline-none"
-            >
-              {PAYMENT_METHODS.map((paymentMethod) => (
-                <option key={paymentMethod} value={paymentMethod}>{paymentMethod}</option>
-              ))}
-              <option value={OTHER}>{OTHER}...</option>
-            </select>
-            {method === OTHER && (
-              <Input
-                className="studio-input"
-                value={otherMethod}
-                onChange={(e) => setOtherMethod(e.target.value)}
-                placeholder="Especifica el método"
-                required
-              />
+          <FormField id="manual-payment-method" label="Método de pago">
+            {(a11y) => (
+              <NativeSelect
+                {...a11y}
+                id="manual-payment-method"
+                density="touch"
+                value={method}
+                onChange={(e) => setMethod(e.target.value)}
+              >
+                {PAYMENT_METHODS.map((paymentMethod) => (
+                  <option key={paymentMethod} value={paymentMethod}>{paymentMethod}</option>
+                ))}
+                <option value={OTHER}>{OTHER}...</option>
+              </NativeSelect>
             )}
-          </div>
+          </FormField>
+          {method === OTHER && (
+            <FormField id="manual-payment-other-method" label="Otro método" required>
+              {(a11y) => (
+                <Input
+                  {...a11y}
+                  id="manual-payment-other-method"
+                  density="touch"
+                  value={otherMethod}
+                  onChange={(e) => setOtherMethod(e.target.value)}
+                  placeholder="Especifica el método"
+                  required
+                />
+              )}
+            </FormField>
+          )}
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
-          <Button type="submit" className="h-12 w-full font-semibold" disabled={isPending || !selectedBooking}>
+          <Button type="submit" size="touch" className="w-full font-semibold" disabled={isPending || !selectedBooking}>
             <CreditCard className="mr-2 size-4" />
-            {isPending ? 'Registrando...' : `Registrar ${formatMoney(amount, businessCurrency)}`}
+            {isPending ? 'Registrando…' : `Registrar ${formatMoney(amount, businessCurrency)}`}
           </Button>
         </form>
       </DialogContent>

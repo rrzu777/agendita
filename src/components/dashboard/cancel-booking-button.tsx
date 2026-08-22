@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
@@ -116,28 +116,28 @@ export function CancelBookingButton({
             <DialogDescription>{copy.description}</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-2">
-            <Label htmlFor="cancelReason" className="studio-eyebrow">
-              Motivo (opcional, se lo mandamos por email)
-            </Label>
-            <Input
-              id="cancelReason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder={`Ej: ${vocabulary.TheClient} canceló, reprogramar...`}
-              className="studio-input"
-            />
-          </div>
+          <FormField id="cancelReason" label="Motivo (opcional, se lo mandamos por email)">
+            {(a11y) => (
+              <Input
+                {...a11y}
+                id="cancelReason"
+                density="form"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder={`Ej: ${vocabulary.TheClient} canceló, reprogramar...`}
+              />
+            )}
+          </FormField>
 
           {error && (
-            <p className="text-sm text-destructive">{error}</p>
+            <p role="alert" className="text-sm text-destructive">{error}</p>
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+            <Button size="form" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
               Volver
             </Button>
-            <Button variant="destructive" onClick={handleConfirm} disabled={loading}>
+            <Button size="form" variant="destructive" onClick={handleConfirm} disabled={loading}>
               {loading ? copy.loading : copy.confirm}
             </Button>
           </DialogFooter>

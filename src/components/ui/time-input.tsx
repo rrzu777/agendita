@@ -18,6 +18,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
+import type { ControlDensity } from '@/components/ui/input'
 
 interface TimeInputProps {
   id?: string
@@ -26,6 +27,9 @@ interface TimeInputProps {
   ariaLabel: string
   disabled?: boolean
   className?: string
+  density?: ControlDensity
+  ariaDescribedBy?: string
+  ariaInvalid?: boolean
 }
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0'))
@@ -45,7 +49,23 @@ function parseTime(value: string) {
   }
 }
 
-export function TimeInput({ id, value, onChange, ariaLabel, disabled, className }: TimeInputProps) {
+const triggerDensityClasses: Record<ControlDensity, string> = {
+  compact: 'h-8 px-2.5 text-sm',
+  form: 'h-11 w-full px-3 text-base md:h-10 md:text-sm',
+  touch: 'min-h-12 w-full px-4 text-base',
+}
+
+export function TimeInput({
+  id,
+  value,
+  onChange,
+  ariaLabel,
+  disabled,
+  className,
+  density,
+  ariaDescribedBy,
+  ariaInvalid,
+}: TimeInputProps) {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const { hour, minute } = parseTime(value)
@@ -85,11 +105,15 @@ export function TimeInput({ id, value, onChange, ariaLabel, disabled, className 
           id={id}
           type="button"
           aria-label={ariaLabel}
+          aria-describedby={ariaDescribedBy}
+          aria-invalid={ariaInvalid}
+          data-density={density}
           disabled={disabled}
           onClick={openMobileSheet}
           className={cn(
             buttonVariants({ variant: 'outline' }),
-            'h-10 min-w-[8.5rem] justify-between gap-3 px-3 text-left'
+            'min-w-[8.5rem] justify-between gap-3 text-left',
+            density ? triggerDensityClasses[density] : 'h-10 px-3 text-sm',
           )}
         >
           <span className="inline-flex items-center gap-2">
