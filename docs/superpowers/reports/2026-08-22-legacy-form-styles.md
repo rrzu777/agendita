@@ -26,6 +26,18 @@ The P2 visual-form inventory is closed. Fidelización now uses shared fields, in
 
 Native checkbox, radio, hidden, and file elements are not counted as visual-form debt because replacing them would remove useful browser semantics or add abstraction without a product benefit.
 
+## Delivery evidence
+
+- Fidelización: `e0fa74f`.
+- Reseñas: `15d1a2e`.
+- CSV: `5fd7c64`.
+- Architecture guard: `3cf6935`.
+- Responsive browser coverage: `5d39755`.
+- Full unit suite: 384 files passed; 3,511 tests passed and 1 skipped.
+- Production Playwright rollout: 15/15 passed at 375, 768, and 1,440 px.
+- TypeScript, Prisma validation/generation, and the Next.js production build passed.
+- ESLint completed with 0 errors and 29 pre-existing warnings outside this rollout.
+
 ### Intentional native exceptions
 
 - `src/components/dashboard/calendar-views.tsx`: native select is explicitly documented for compact calendar navigation.
