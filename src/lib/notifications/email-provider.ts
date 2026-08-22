@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { BookingStatus } from '@prisma/client'
 import { logger } from '@/lib/logger'
 import { buildLoyaltyCardLink } from '@/lib/loyalty/token'
-import { bookingInvite, loadBookingInvite, type BookingCalendarInvite } from '@/lib/calendar/booking-invite'
+import { bookingInvite, type BookingCalendarInvite } from '@/lib/calendar/booking-invite'
 import { getAppUrl } from '@/lib/business/urls'
 import { resolveCancellationPolicy } from '@/lib/bookings/cancellation-policy'
 import { unsubscribeHeaders, unsubscribeFooterHtml, unsubscribeFooterText } from './marketing-email'
@@ -95,10 +95,6 @@ import {
   packageTransferReminderCustomerText,
   packageTransferUnverifiedBusinessHtml,
   packageTransferUnverifiedBusinessText,
-  BOOKING_CONFIRMED_TEMPLATE,
-  BOOKING_REMINDER_TEMPLATE,
-  BOOKING_CANCELLED_TEMPLATE,
-  PAYMENT_RECEIVED_TEMPLATE,
 } from './templates'
 
 function getResend(): Resend | null {

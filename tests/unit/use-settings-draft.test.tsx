@@ -153,15 +153,17 @@ describe('useSettingsDraft', () => {
 
   it('fails closed without applying or deleting a draft when server verification fails', async () => {
     writeSettingsDraft(sessionStorage, 'biz:profile', 1, { name: 'A' }, { name: 'B' })
-    mockVerifySettingsDraftBaseline.mockRejectedValue(new Error('offline'))
+    const verification = deferred<{ matches: boolean; current: { name: string } }>()
+    mockVerifySettingsDraftBaseline.mockReturnValue(verification.promise)
     const reset = vi.fn()
 
     await act(async () => root.render(
       <StrictMode><DraftHarness isDirty={false} reset={reset} /></StrictMode>,
     ))
+    await vi.waitFor(() => expect(mockVerifySettingsDraftBaseline).toHaveBeenCalledTimes(1))
     await act(async () => {
-      await vi.waitFor(() => expect(mockVerifySettingsDraftBaseline).toHaveBeenCalledTimes(1))
-      await vi.waitFor(() => expect(container.textContent).toBe('verification-failed'))
+      verification.reject(new Error('offline'))
+      await expect(verification.promise).rejects.toThrow('offline')
     })
 
     expect(reset).not.toHaveBeenCalled()

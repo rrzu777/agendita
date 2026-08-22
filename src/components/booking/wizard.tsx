@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
+import { useRouter } from 'next/navigation'
 import { StepService } from './step-service'
 import { StepProfessional } from './step-professional'
 import { StepDate } from './step-date'
@@ -114,6 +115,7 @@ interface BookingWizardProps {
 }
 
 export function BookingWizard({ businessId, slug, business, timezone, currency, services, professionals, professionalWords, cancellationPolicy, cancellationPolicyRevision, selfServiceCutoffHours, manualHoldHours, referralToken, session }: BookingWizardProps) {
+  const router = useRouter()
   const [currentStep, setCurrentStep] = useState<StepKey>('service')
   const [data, setData] = useState<BookingData>(() => applySessionPrefill(initialData, session))
   // La reserva ya escrita, tal como la devolvió el servidor: es lo único que
@@ -161,7 +163,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
     const merged = { ...data, ...partial }
     const raw = serializeWizardState(merged)
     if (raw) sessionStorage.setItem(wizardStorageKey(businessId), raw)
-    window.location.href = `/ingresar?next=${encodeURIComponent(`/ir/${slug}`)}`
+    router.push(`/ingresar?next=${encodeURIComponent(`/ir/${slug}`)}`)
   }
 
   function updateData(partial: Partial<BookingData>) {

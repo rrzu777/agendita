@@ -1,6 +1,6 @@
 import { addMinutes, differenceInMinutes, addDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
-import { getLocalDayOfWeek, getLocalDateStr, localDateTimeToUtc, startOfLocalDay } from './timezone'
+import { getLocalDayOfWeek, localDateTimeToUtc } from './timezone'
 import { LEAD_TIME_MINUTES } from './constants'
 import { shrinkBlock } from './shrink-block'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'

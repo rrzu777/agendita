@@ -15,7 +15,6 @@ vi.mock('@/lib/notifications', () => ({
 const { expireStaleHolds } = await import('@/lib/cron/expire-holds')
 
 describe('expireStaleHolds', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function makeDb(overrides: Record<string, any> = {}): any {
     // tx.booking.updateMany is the one whose result drives `expired`.
     const updateMany = vi.fn().mockResolvedValue(overrides.updateMany ?? { count: 0 })
@@ -57,7 +56,6 @@ describe('expireStaleHolds', () => {
       packagePurchase: {
         findMany: vi.fn().mockResolvedValue(overrides.packagesFindMany ?? []),
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       $transaction: (fn: any) => fn(tx),
     }
   }

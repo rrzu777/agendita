@@ -9,8 +9,7 @@ interface ReviewPageProps {
   searchParams: Promise<{ token?: string }>
 }
 
-export async function generateMetadata({ params }: ReviewPageProps): Promise<Metadata> {
-  const { bookingId: _bookingId } = await params
+export async function generateMetadata(): Promise<Metadata> {
   return {
     title: `Reseña — Agendita`,
     robots: { index: false, follow: false },
