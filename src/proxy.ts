@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server'
 import { createMiddlewareAuthClient } from './lib/auth/middleware'
 import { sanitizeNext, authErrorRedirectPath } from './lib/auth/sanitize-next'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Supabase falls back to the Site URL (the landing page, "/") when the
