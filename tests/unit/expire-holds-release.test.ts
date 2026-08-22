@@ -28,7 +28,6 @@ it('releases redemptions of expired holds', async () => {
     promotion: { updateMany: vi.fn().mockResolvedValue({ count: 1 }), findUnique: vi.fn().mockResolvedValue({ triggerType: 'code' }) },
     packagePurchase: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db: any = {
     booking: { findMany },
     packagePurchase: { findMany: vi.fn().mockResolvedValue([]) },
@@ -77,7 +76,6 @@ it('does NOT release a booking that won the payment race in the tx window', asyn
     promotion: { updateMany: vi.fn().mockResolvedValue({ count: 1 }), findUnique: vi.fn().mockResolvedValue({ triggerType: 'code' }) },
     packagePurchase: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db: any = {
     booking: { findMany },
     packagePurchase: { findMany: vi.fn().mockResolvedValue([]) },

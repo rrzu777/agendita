@@ -12,9 +12,7 @@ describe('booking integration', () => {
   let biz1: { id: string; timezone: string }
   let biz2: { id: string; timezone: string }
   let svc1: { id: string; durationMinutes: number; price: number; depositAmount: number }
-  let svc2: { id: string; durationMinutes: number; price: number; depositAmount: number }
   let cust1: { id: string }
-  let custB2: { id: string }
 
   beforeAll(async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
@@ -88,7 +86,7 @@ describe('booking integration', () => {
         pastelColor: '#FFD700',
       },
     })
-    svc2 = await prisma.service.create({
+    await prisma.service.create({
       data: {
         id: 'its-2',
         businessId: biz2.id,
@@ -132,7 +130,7 @@ describe('booking integration', () => {
         email: 'customer@test.com',
       },
     })
-    custB2 = await prisma.customer.create({
+    await prisma.customer.create({
       data: {
         id: 'itc-2',
         businessId: biz2.id,

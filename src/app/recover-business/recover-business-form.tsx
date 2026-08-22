@@ -29,7 +29,7 @@ export function RecoverBusinessForm({ email, name }: RecoverBusinessFormProps) {
         }
 
         router.push(result.redirectTo)
-      } catch (err) {
+      } catch {
         setError('Error inesperado. Intenta de nuevo.')
       }
     })

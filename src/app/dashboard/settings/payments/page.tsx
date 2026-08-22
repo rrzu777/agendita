@@ -4,10 +4,9 @@ import {
   getPaymentAccountStatus,
   startMercadoPagoConnect,
 } from '@/server/actions/mercado-pago-connect'
-import { resolveOnlinePaymentAvailabilityForBusiness } from '@/lib/payments/factory'
 import { isObjectStorageAvailable } from '@/lib/storage/r2'
 import { prisma } from '@/lib/db'
-import { BadgeCheck, CircleAlert, Landmark, Link2, Link2Off, TestTube } from 'lucide-react'
+import { BadgeCheck, CircleAlert, Landmark, Link2, TestTube } from 'lucide-react'
 import { DisconnectButton } from './disconnect-button'
 import { BankTransferForm, type BankTransferAccountSettings } from './bank-transfer-form'
 import { getVocabulary } from '@/lib/vocabulary'
@@ -23,9 +22,8 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
   const { success, error } = await props.searchParams
   const businessId = business.id
   const vocabulary = getVocabulary(business.category)
-  const [account, availability, bankAccount, businessFlags] = await Promise.all([
+  const [account, bankAccount, businessFlags] = await Promise.all([
     getPaymentAccountStatus(),
-    resolveOnlinePaymentAvailabilityForBusiness(businessId),
     prisma.bankTransferAccount.findUnique({
       where: { businessId },
       select: {

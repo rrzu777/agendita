@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { BookingStatus } from '@prisma/client'
 
 // ── Mock external dependencies ───────────────────────────────────────────────
 
@@ -84,9 +83,6 @@ vi.mock('@/lib/logger', () => ({
   },
 }))
 
-// ── Mock Resend fetch (test API, not the SDK, to test actual HTTP call) ──────
-
-const mockFetch = vi.fn()
 vi.stubEnv('RESEND_API_KEY', 're_test_123')
 vi.stubEnv('FROM_EMAIL', 'Agendita <no-reply@agendita.cl>')
 
@@ -110,28 +106,6 @@ const {
 } = await import('@/lib/notifications/email-provider')
 
 // ── Test data ─────────────────────────────────────────────────────────────────
-
-const confirmedBooking = {
-  id: 'booking-1',
-  businessId: 'biz-1',
-  customerId: 'cust-1',
-  status: BookingStatus.confirmed,
-  startDateTime: new Date('2026-06-15T18:00:00Z'),
-  totalPrice: 25000,
-  depositRequired: 5000,
-  depositPaid: 5000,
-  remainingBalance: 20000,
-  service: { name: 'Manicure semipermanente' },
-  customer: { name: 'Maria', phone: '+56987654321', email: 'maria@example.com' },
-  business: {
-    name: 'Nails by Ana',
-    timezone: 'America/Santiago',
-    whatsapp: '+56912345678',
-    addressText: 'Av. Siempre Viva 742',
-    currency: 'CLP',
-    cancellationPolicy: 'Cancela con 24h.',
-  },
-}
 
 const paymentData = {
   id: 'pay-1',

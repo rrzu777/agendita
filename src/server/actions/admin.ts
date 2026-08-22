@@ -93,49 +93,6 @@ function endOfBusinessDate(dateOnly: string, timezone: string): Date {
   return new Date(upper - 1)
 }
 
-async function auditedSubscriptionUpdate(input: {
-  businessId: string
-  data: Parameters<typeof prisma.businessSubscription.updateMany>[0]['data']
-  action: string
-  notes: string
-  user: { id: string; email?: string | null }
-  updateBusinessPlanId?: string
-}) {
-  await prisma.$transaction(async (tx) => {
-    const subscription = await tx.businessSubscription.findFirst({
-      where: { businessId: input.businessId },
-      orderBy: { createdAt: 'desc' },
-    })
-    if (!subscription) throw new Error('No se encontró suscripción para este negocio')
-
-    const updated = await tx.businessSubscription.updateMany({
-      where: { id: subscription.id, updatedAt: subscription.updatedAt },
-      data: input.data,
-    })
-    if (updated.count !== 1) {
-      throw new Error('La suscripción cambió; recarga e intenta nuevamente')
-    }
-    if (input.updateBusinessPlanId) {
-      await tx.business.update({
-        where: { id: subscription.businessId },
-        data: { planId: input.updateBusinessPlanId },
-      })
-    }
-    await tx.subscriptionLog.create({
-      data: {
-        businessId: subscription.businessId,
-        action: input.action,
-        beforeStatus: subscription.status,
-        afterStatus: subscription.status,
-        adminUserId: input.user.id,
-        adminEmail: input.user.email ?? undefined,
-        notes: input.notes,
-      },
-    })
-  })
-  revalidateAdminBusiness(input.businessId)
-}
-
 export async function adminSetComplimentaryPeriod(
   businessId: string,
   complimentaryDate: string,

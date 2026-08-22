@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { PublicBusiness } from '@/lib/business/public'
 import { formatDuration } from '@/lib/format-duration'
 import { formatMoney } from '@/lib/money'
@@ -30,9 +31,12 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
         <section className="mb-10 text-center">
           <div className="relative mx-auto mb-6 size-28">
             {business.profileImageUrl ? (
-              <img
+              <Image
                 src={business.profileImageUrl}
                 alt={business.name}
+                width={112}
+                height={112}
+                unoptimized
                 className="size-28 rounded-full border-4 border-white object-cover shadow-xl"
               />
             ) : (
