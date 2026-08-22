@@ -58,4 +58,28 @@ for (const viewport of VIEWPORTS) {
     await expectHeight(page.getByLabel('Telefono'), viewport.formHeight)
     await expectNoHorizontalOverflow(page)
   })
+
+  test(`${viewport.name}: marketing dialogs keep form geometry without overflow`, async ({ page }) => {
+    setOwnerAuth(page)
+    await page.setViewportSize(viewport)
+
+    await page.goto('/dashboard/promociones')
+    await page.getByRole('button', { name: 'Nueva promoción' }).click()
+    const promotionDialog = page.getByRole('dialog')
+    await expectHeight(promotionDialog.getByLabel(/^Nombre/), viewport.formHeight)
+    await expectHeight(promotionDialog.getByLabel('Descripción'), 96)
+    await expectHeight(promotionDialog.getByRole('button', { name: '% descuento' }), viewport.formHeight)
+    await expectHeight(promotionDialog.getByRole('button', { name: 'Crear promoción' }), 48)
+    await expectNoHorizontalOverflow(page)
+
+    await page.keyboard.press('Escape')
+    await page.goto('/dashboard/campanas')
+    await page.getByRole('button', { name: 'Nueva campaña' }).click()
+    const campaignDialog = page.getByRole('dialog')
+    await expectHeight(campaignDialog.locator('#campaign-name'), viewport.formHeight)
+    await expectHeight(campaignDialog.getByRole('button', { pressed: true }).first(), viewport.formHeight)
+    await expectHeight(campaignDialog.locator('#campaign-message'), 96)
+    await expectHeight(campaignDialog.getByRole('button', { name: 'Crear campaña' }), 48)
+    await expectNoHorizontalOverflow(page)
+  })
 }

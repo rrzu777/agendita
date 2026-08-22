@@ -4,10 +4,11 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { NativeSelect } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { RewardFields, type RewardFieldsValue } from '@/components/dashboard/reward-fields'
 import { createCampaign } from '@/server/actions/campaigns'
 import {
@@ -118,7 +119,7 @@ export function NewCampaignDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="h-11 font-semibold">
+        <Button size="form" className="font-semibold">
           <Plus className="mr-2 size-4" />
           Nueva campaña
         </Button>
@@ -128,6 +129,7 @@ export function NewCampaignDialog({
           <DialogTitle className="font-heading text-2xl font-semibold tracking-tight text-primary">
             Nueva campaña
           </DialogTitle>
+          <DialogDescription>Elige a quién contactar, qué beneficio enviar y el mensaje.</DialogDescription>
         </DialogHeader>
 
         <form
@@ -137,28 +139,19 @@ export function NewCampaignDialog({
           }}
           className="space-y-5"
         >
-          <div className="space-y-2">
-            <Label className="studio-eyebrow" htmlFor="campaign-name">
-              Nombre
-            </Label>
-            <Input
-              id="campaign-name"
-              className="studio-input"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              maxLength={80}
-            />
-          </div>
+          <FormField id="campaign-name" label="Nombre" required>
+            {(a11y) => <Input id="campaign-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} density="form" {...a11y} />}
+          </FormField>
 
-          <div className="space-y-2">
-            <Label className="studio-eyebrow">Segmento</Label>
+          <fieldset className="space-y-2">
+            <legend className="studio-eyebrow">Segmento</legend>
             <div className="grid grid-cols-2 gap-1 rounded-2xl border border-border bg-card p-1">
               {CAMPAIGN_SEGMENTS.map((s) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => selectSegment(s)}
+                  aria-pressed={segment === s}
                   className={`rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${
                     segment === s
                       ? 'bg-primary text-primary-foreground shadow-sm'
@@ -169,42 +162,22 @@ export function NewCampaignDialog({
                 </button>
               ))}
             </div>
-          </div>
+          </fieldset>
 
           {segment === 'inactive' && (
-            <div className="space-y-2">
-              <Label className="studio-eyebrow" htmlFor="campaign-inactive-days">
-                Sin reservas hace (días)
-              </Label>
-              <Input
-                id="campaign-inactive-days"
-                className="studio-input"
-                type="number"
-                min={1}
-                value={inactiveDays}
-                onChange={(e) => setInactiveDays(e.target.value)}
-              />
-            </div>
+            <FormField id="campaign-inactive-days" label="Sin reservas hace (días)" required>
+              {(a11y) => <Input id="campaign-inactive-days" type="number" min={1} value={inactiveDays} onChange={(e) => setInactiveDays(e.target.value)} density="form" {...a11y} />}
+            </FormField>
           )}
 
           {segment === 'frequent' && (
-            <div className="space-y-2">
-              <Label className="studio-eyebrow" htmlFor="campaign-frequent-min">
-                Reservas mínimas
-              </Label>
-              <Input
-                id="campaign-frequent-min"
-                className="studio-input"
-                type="number"
-                min={1}
-                value={frequentMin}
-                onChange={(e) => setFrequentMin(e.target.value)}
-              />
-            </div>
+            <FormField id="campaign-frequent-min" label="Reservas mínimas" required>
+              {(a11y) => <Input id="campaign-frequent-min" type="number" min={1} value={frequentMin} onChange={(e) => setFrequentMin(e.target.value)} density="form" {...a11y} />}
+            </FormField>
           )}
 
-          <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
-            <Label className="studio-eyebrow">Promo a regalar</Label>
+          <fieldset className="space-y-3 rounded-2xl border border-border bg-card p-4">
+            <legend className="studio-eyebrow px-1">Promo a regalar</legend>
             <div className="flex flex-wrap gap-4">
               <label className="flex items-center gap-2 text-sm font-medium">
                 <input
@@ -231,76 +204,36 @@ export function NewCampaignDialog({
               promotions.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No hay promos en el catálogo. Creá una nueva.</p>
               ) : (
-                <select
-                  aria-label="Promo del catálogo"
-                  value={promotionId}
-                  onChange={(e) => setPromotionId(e.target.value)}
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                >
-                  {promotions.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                <FormField id="campaign-promotion" label="Promo del catálogo" required>
+                  {(a11y) => (
+                    <NativeSelect id="campaign-promotion" value={promotionId} onChange={(e) => setPromotionId(e.target.value)} density="form" required {...a11y}>
+                      {promotions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </NativeSelect>
+                  )}
+                </FormField>
               )
             ) : (
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label className="studio-eyebrow" htmlFor="campaign-promo-name">
-                    Nombre de la promo
-                  </Label>
-                  <Input
-                    id="campaign-promo-name"
-                    className="studio-input"
-                    value={newPromoName}
-                    onChange={(e) => setNewPromoName(e.target.value)}
-                    required={promoMode === 'new'}
-                    maxLength={60}
-                  />
-                </div>
+                <FormField id="campaign-promo-name" label="Nombre de la promo" required>
+                  {(a11y) => <Input id="campaign-promo-name" value={newPromoName} onChange={(e) => setNewPromoName(e.target.value)} required={promoMode === 'new'} maxLength={60} density="form" {...a11y} />}
+                </FormField>
                 <RewardFields value={reward} onChange={setReward} services={services} currency={currency} />
-                <div className="space-y-2">
-                  <Label className="studio-eyebrow" htmlFor="campaign-grant-expiry">
-                    Vence en X días
-                  </Label>
-                  <Input
-                    id="campaign-grant-expiry"
-                    className="studio-input"
-                    type="number"
-                    min={1}
-                    value={grantExpiryDays}
-                    onChange={(e) => setGrantExpiryDays(e.target.value)}
-                    placeholder="Opcional"
-                  />
-                </div>
+                <FormField id="campaign-grant-expiry" label="Vence en X días" help="Opcional">
+                  {(a11y) => <Input id="campaign-grant-expiry" type="number" min={1} value={grantExpiryDays} onChange={(e) => setGrantExpiryDays(e.target.value)} density="form" {...a11y} />}
+                </FormField>
               </div>
             )}
-          </div>
+          </fieldset>
 
-          <div className="space-y-2">
-            <Label className="studio-eyebrow" htmlFor="campaign-message">
-              Mensaje
-            </Label>
-            <Textarea
-              id="campaign-message"
-              value={message}
-              onChange={(e) => {
-                setMessage(e.target.value)
-                setMessageTouched(true)
-              }}
-              rows={4}
-              maxLength={1000}
-              required
-            />
-            <p className="text-xs text-muted-foreground">
-              Podés usar {CAMPAIGN_PLACEHOLDERS.map((p) => `{${p}}`).join(' ')} y se reemplazan al enviar.
-            </p>
-          </div>
+          <FormField id="campaign-message" label="Mensaje" required help={`Podés usar ${CAMPAIGN_PLACEHOLDERS.map((p) => `{${p}}`).join(' ')} y se reemplazan al enviar.`}>
+            {(a11y) => (
+              <Textarea id="campaign-message" value={message} onChange={(e) => { setMessage(e.target.value); setMessageTouched(true) }} rows={4} maxLength={1000} required density="form" {...a11y} />
+            )}
+          </FormField>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
-          <Button type="submit" className="h-12 w-full font-semibold" disabled={isPending}>
+          <Button type="submit" size="touch" className="w-full font-semibold" disabled={isPending}>
             {isPending ? 'Creando…' : 'Crear campaña'}
           </Button>
         </form>

@@ -1,6 +1,7 @@
 'use client'
 
 import { Input } from '@/components/ui/input'
+import { FormField } from '@/components/ui/form-field'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 
@@ -40,14 +41,15 @@ export function RewardFields({
 
   return (
     <>
-      <div className="space-y-2">
-        <Label className="studio-eyebrow">Tipo de recompensa</Label>
+      <fieldset className="space-y-2">
+        <legend className="studio-eyebrow">Tipo de recompensa</legend>
         <div className="flex gap-1 rounded-2xl border border-border bg-card p-1">
           {rewardOptions.map((opt) => (
             <button
               key={opt.value}
               type="button"
               onClick={() => update({ rewardType: opt.value })}
+              aria-pressed={value.rewardType === opt.value}
               className={`flex-1 rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${
                 value.rewardType === opt.value
                   ? 'bg-primary text-primary-foreground shadow-sm'
@@ -58,40 +60,19 @@ export function RewardFields({
             </button>
           ))}
         </div>
-      </div>
+      </fieldset>
 
       {value.rewardType !== 'free_service' && (
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label className="studio-eyebrow" htmlFor="reward-value">
-              {value.rewardType === 'percentage' ? 'Porcentaje (1–100)' : `Monto (${currency})`}
-            </Label>
-            <Input
-              id="reward-value"
-              className="studio-input"
-              type="number"
-              min={value.rewardType === 'percentage' ? 1 : 0}
-              max={value.rewardType === 'percentage' ? 100 : undefined}
-              value={value.rewardValue}
-              onChange={(e) => update({ rewardValue: e.target.value })}
-              required
-            />
-          </div>
+          <FormField id="reward-value" label={value.rewardType === 'percentage' ? 'Porcentaje (1–100)' : `Monto (${currency})`} required>
+            {(a11y) => (
+              <Input id="reward-value" type="number" min={value.rewardType === 'percentage' ? 1 : 0} max={value.rewardType === 'percentage' ? 100 : undefined} value={value.rewardValue} onChange={(e) => update({ rewardValue: e.target.value })} required density="form" {...a11y} />
+            )}
+          </FormField>
           {value.rewardType === 'percentage' && (
-            <div className="space-y-2">
-              <Label className="studio-eyebrow" htmlFor="reward-max-discount">
-                Descuento máximo
-              </Label>
-              <Input
-                id="reward-max-discount"
-                className="studio-input"
-                type="number"
-                min={1}
-                value={value.maxDiscount}
-                onChange={(e) => update({ maxDiscount: e.target.value })}
-                placeholder="Opcional"
-              />
-            </div>
+            <FormField id="reward-max-discount" label="Descuento máximo" help="Opcional">
+              {(a11y) => <Input id="reward-max-discount" type="number" min={1} value={value.maxDiscount} onChange={(e) => update({ maxDiscount: e.target.value })} density="form" {...a11y} />}
+            </FormField>
           )}
         </div>
       )}

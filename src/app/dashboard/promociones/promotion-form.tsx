@@ -3,10 +3,10 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Plus, Pencil } from 'lucide-react'
 import { RewardFields } from '@/components/dashboard/reward-fields'
 import { createPromotion, updatePromotion } from '@/server/actions/promotions'
@@ -195,7 +195,7 @@ export function PromotionForm({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {!editing ? (
-          <Button className="h-11 font-semibold">
+          <Button size="form" className="font-semibold">
             <Plus className="mr-2 size-4" />
             Nueva promoción
           </Button>
@@ -211,6 +211,7 @@ export function PromotionForm({
           <DialogTitle className="font-heading text-2xl font-semibold tracking-tight text-primary">
             {editing ? 'Editar promoción' : 'Nueva promoción'}
           </DialogTitle>
+          <DialogDescription>Define el beneficio, vigencia y límites de uso.</DialogDescription>
         </DialogHeader>
 
         <form
@@ -220,27 +221,13 @@ export function PromotionForm({
           }}
           className="space-y-5"
         >
-          <div className="space-y-2">
-            <Label className="studio-eyebrow">Nombre</Label>
-            <Input
-              className="studio-input"
-              value={form.name}
-              onChange={(e) => update('name', e.target.value)}
-              required
-              maxLength={100}
-            />
-          </div>
+          <FormField id="promotion-name" label="Nombre" required>
+            {(a11y) => <Input id="promotion-name" value={form.name} onChange={(e) => update('name', e.target.value)} required maxLength={100} density="form" {...a11y} />}
+          </FormField>
 
-          <div className="space-y-2">
-            <Label className="studio-eyebrow">Descripción</Label>
-            <Textarea
-              value={form.description}
-              onChange={(e) => update('description', e.target.value)}
-              rows={2}
-              maxLength={500}
-              placeholder="Opcional"
-            />
-          </div>
+          <FormField id="promotion-description" label="Descripción" help="Opcional">
+            {(a11y) => <Textarea id="promotion-description" value={form.description} onChange={(e) => update('description', e.target.value)} rows={2} maxLength={500} density="form" {...a11y} />}
+          </FormField>
 
           <RewardFields
             value={{
@@ -256,90 +243,36 @@ export function PromotionForm({
           />
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label className="studio-eyebrow">Vigente desde</Label>
-              <Input
-                className="studio-input"
-                type="date"
-                value={form.validFrom}
-                onChange={(e) => update('validFrom', e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="studio-eyebrow">Vigente hasta</Label>
-              <Input
-                className="studio-input"
-                type="date"
-                value={form.validUntil}
-                onChange={(e) => update('validUntil', e.target.value)}
-              />
-            </div>
+            <FormField id="promotion-valid-from" label="Vigente desde">
+              {(a11y) => <Input id="promotion-valid-from" type="date" value={form.validFrom} onChange={(e) => update('validFrom', e.target.value)} density="form" {...a11y} />}
+            </FormField>
+            <FormField id="promotion-valid-until" label="Vigente hasta">
+              {(a11y) => <Input id="promotion-valid-until" type="date" value={form.validUntil} onChange={(e) => update('validUntil', e.target.value)} density="form" {...a11y} />}
+            </FormField>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-2">
-              <Label className="studio-eyebrow">Gasto mínimo</Label>
-              <Input
-                className="studio-input"
-                type="number"
-                min={0}
-                value={form.minSpend}
-                onChange={(e) => update('minSpend', e.target.value)}
-                placeholder="Opcional"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="studio-eyebrow">Usos máximos</Label>
-              <Input
-                className="studio-input"
-                type="number"
-                min={1}
-                value={form.maxRedemptions}
-                onChange={(e) => update('maxRedemptions', e.target.value)}
-                placeholder="∞"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="studio-eyebrow">Máx. por cliente</Label>
-              <Input
-                className="studio-input"
-                type="number"
-                min={1}
-                value={form.maxPerCustomer}
-                onChange={(e) => update('maxPerCustomer', e.target.value)}
-                placeholder="∞"
-              />
-            </div>
+            <FormField id="promotion-min-spend" label="Gasto mínimo" help="Opcional">
+              {(a11y) => <Input id="promotion-min-spend" type="number" min={0} value={form.minSpend} onChange={(e) => update('minSpend', e.target.value)} density="form" {...a11y} />}
+            </FormField>
+            <FormField id="promotion-max-redemptions" label="Usos máximos" help="Sin límite si se deja vacío">
+              {(a11y) => <Input id="promotion-max-redemptions" type="number" min={1} value={form.maxRedemptions} onChange={(e) => update('maxRedemptions', e.target.value)} density="form" {...a11y} />}
+            </FormField>
+            <FormField id="promotion-max-customer" label="Máx. por cliente" help="Sin límite si se deja vacío">
+              {(a11y) => <Input id="promotion-max-customer" type="number" min={1} value={form.maxPerCustomer} onChange={(e) => update('maxPerCustomer', e.target.value)} density="form" {...a11y} />}
+            </FormField>
           </div>
 
-          <div className="space-y-2">
-            <Label className="studio-eyebrow">Código</Label>
-            <Input
-              className="studio-input uppercase"
-              value={form.code}
-              onChange={(e) => update('code', e.target.value.toUpperCase())}
-              placeholder="Ej: VERANO20"
-              maxLength={40}
-              disabled={codeLocked}
-            />
-            {codeLocked && (
-              <p className="text-xs text-muted-foreground">El código se bloquea tras el primer canje.</p>
-            )}
-          </div>
+          <FormField id="promotion-code" label="Código" help={codeLocked ? 'El código se bloquea tras el primer canje.' : 'Opcional, por ejemplo VERANO20'}>
+            {(a11y) => <Input id="promotion-code" className="uppercase" value={form.code} onChange={(e) => update('code', e.target.value.toUpperCase())} maxLength={40} disabled={codeLocked} density="form" {...a11y} />}
+          </FormField>
 
           <div className="rounded-2xl border border-border bg-muted/40 p-4">
             <div className="flex items-center justify-between gap-3">
-              <Label className="studio-eyebrow">Vista previa</Label>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Precio</span>
-                <Input
-                  className="studio-input h-9 w-28"
-                  type="number"
-                  min={0}
-                  value={sample}
-                  onChange={(e) => setSample(e.target.value)}
-                />
-              </div>
+              <span className="studio-eyebrow">Vista previa</span>
+              <FormField id="promotion-preview-price" label="Precio" layout="inline">
+                {(a11y) => <Input id="promotion-preview-price" className="w-28" type="number" min={0} value={sample} onChange={(e) => setSample(e.target.value)} density="compact" {...a11y} />}
+              </FormField>
             </div>
             <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
               {form.rewardType === 'free_service' ? (
@@ -357,9 +290,9 @@ export function PromotionForm({
             </div>
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
-          <Button type="submit" className="h-12 w-full font-semibold" disabled={isPending}>
+          <Button type="submit" size="touch" className="w-full font-semibold" disabled={isPending}>
             {isPending ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear promoción'}
           </Button>
         </form>

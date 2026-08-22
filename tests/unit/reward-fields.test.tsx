@@ -9,6 +9,8 @@ describe('RewardFields', () => {
     const html = renderToStaticMarkup(<RewardFields value={base} onChange={() => {}} services={[]} currency="CLP" />)
     expect(html).toContain('Porcentaje')
     expect(html).toContain('Descuento máximo')
+    expect(html.match(/data-slot="form-field"/g)).toHaveLength(2)
+    expect(html.match(/data-density="form"/g)).toHaveLength(2)
   })
   it('free_service oculta el input de valor', () => {
     const html = renderToStaticMarkup(<RewardFields value={{ ...base, rewardType: 'free_service' }} onChange={() => {}} services={[]} currency="CLP" />)
