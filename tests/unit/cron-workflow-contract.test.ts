@@ -167,7 +167,7 @@ describe('cron workflow contract', () => {
     expect(jobs[0].env?.CRON_SECRET).toBeUndefined()
     expect(workflow.permissions).toEqual({ contents: 'read' })
     expect(jobs[0]['timeout-minutes']).toBe(6)
-    expect(jobs[0].steps.some((step) => step.uses === 'actions/checkout@v4')).toBe(true)
+    expect(jobs[0].steps.some((step) => step.uses === 'actions/checkout@v7')).toBe(true)
     expect(runSteps(workflow).filter((step) => step.run?.includes('scripts/run-json-cron.sh')).every(
       (step) => step.env?.CRON_SECRET === '${{ secrets.CRON_SECRET }}',
     )).toBe(true)
@@ -244,7 +244,7 @@ describe('cron workflow contract', () => {
     expect(jobs).toHaveLength(1)
     expect(jobs[0]['timeout-minutes']).toBe(3)
     expect(jobs[0].env?.CRON_SECRET).toBeUndefined()
-    expect(jobs.flatMap((job) => job.steps).some((step) => step.uses === 'actions/checkout@v4')).toBe(true)
+    expect(jobs.flatMap((job) => job.steps).some((step) => step.uses === 'actions/checkout@v7')).toBe(true)
     expect(runSteps(workflow).every(
       (step) => step.env?.CRON_SECRET === '${{ secrets.CRON_SECRET }}',
     )).toBe(true)
