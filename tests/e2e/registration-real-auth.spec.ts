@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 import { prisma } from '@/lib/db'
+import { runIndependentRegistrationCleanup } from './helpers/registration-cleanup'
 
 const enabled = process.env.PLAYWRIGHT_REAL_REGISTRATION === 'true'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -30,6 +31,29 @@ test.describe('real Supabase registration', () => {
       await page.getByRole('button', { name: /crear cuenta/i }).click()
 
       await expect(page.getByRole('heading', { name: 'Verifica tu email' })).toBeVisible({ timeout: 20_000 })
+
+      const admin = createAdminClient()
+      const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+        type: 'magiclink',
+        email,
+        options: {
+          redirectTo: 'http://localhost:3000/auth/callback?next=/dashboard',
+        },
+      })
+      expect(linkError, 'Supabase must generate the disposable confirmation link').toBeNull()
+      if (!linkData.properties) {
+        throw new Error('Supabase did not return a disposable confirmation link')
+      }
+
+      await page.goto(linkData.properties.action_link)
+      await page.waitForURL('**/dashboard/onboarding')
+      await expect(page.getByRole('heading', { name: 'Configura tu negocio' })).toBeVisible()
+      for (let step = 0; step < 4; step += 1) {
+        await page.getByRole('button', { name: 'Siguiente' }).click()
+      }
+      await page.getByRole('button', { name: '¡Listo! Ir al dashboard' }).click()
+      await page.waitForURL('**/dashboard')
+      await expect(page.getByRole('heading', { name: /resumen de/i })).toBeVisible()
 
       await expect.poll(async () => prisma.user.findUnique({
         where: { email },
@@ -72,9 +96,7 @@ test.describe('real Supabase registration', () => {
 
 async function cleanupRegistration(email: string) {
   const databaseUser = await prisma.user.findUnique({ where: { email }, select: { id: true } })
-  const admin = createClient(supabaseUrl!, serviceRoleKey!, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
+  const admin = createAdminClient()
   let authUserId = databaseUser?.id
   if (!authUserId) {
     let page = 1
@@ -87,14 +109,24 @@ async function cleanupRegistration(email: string) {
     } while (true)
   }
 
-  if (authUserId) {
-    const { error } = await admin.auth.admin.deleteUser(authUserId)
-    if (error) throw error
-  }
-  if (databaseUser) {
-    await prisma.$transaction([
-      prisma.business.deleteMany({ where: { ownerUserId: databaseUser.id } }),
-      prisma.user.deleteMany({ where: { id: databaseUser.id } }),
-    ])
-  }
+  await runIndependentRegistrationCleanup({
+    auth: async () => {
+      if (!authUserId) return
+      const { error } = await admin.auth.admin.deleteUser(authUserId)
+      if (error) throw error
+    },
+    database: async () => {
+      if (!databaseUser) return
+      await prisma.$transaction([
+        prisma.business.deleteMany({ where: { ownerUserId: databaseUser.id } }),
+        prisma.user.deleteMany({ where: { id: databaseUser.id } }),
+      ])
+    },
+  })
+}
+
+function createAdminClient() {
+  return createClient(supabaseUrl!, serviceRoleKey!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
 }

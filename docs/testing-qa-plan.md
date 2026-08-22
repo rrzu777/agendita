@@ -78,7 +78,8 @@ npm run test:integration
 
 The regular E2E suite uses the read-only auth bypass and never writes to
 Supabase. The `Real registration E2E` workflow is a manual, isolated gate for
-the complete registration boundary. Configure the protected GitHub environment
+registration, provider callback exchange and authenticated dashboard access.
+Configure the protected GitHub environment
 `registration-e2e` with a disposable Supabase project that requires email
 confirmation:
 
@@ -86,9 +87,11 @@ confirmation:
   `REGISTRATION_SUPABASE_SERVICE_ROLE_KEY`;
 - variable `REGISTRATION_EMAIL_DOMAIN`, using a domain accepted by that project.
 
-The test creates a unique Auth user plus its local business, verifies the owner,
-trial, service templates and availability defaults, and removes both the Auth
-and PostgreSQL records in `finally`. Never point this workflow at production.
+The test creates a unique Auth user plus its local business, obtains and consumes
+a disposable provider-generated link, verifies the authenticated dashboard,
+owner, trial, service templates and availability defaults, and removes both the
+Auth and PostgreSQL records in `finally`. It does not validate outbound email
+delivery or a production email template. Never point this workflow at production.
 
 ---
 
