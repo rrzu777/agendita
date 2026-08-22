@@ -35,6 +35,7 @@ describe('marketing form system', () => {
     expect(dialog?.querySelectorAll('[data-slot="form-field"]').length).toBeGreaterThanOrEqual(9)
     expect(dialog?.querySelector<HTMLInputElement>('#promotion-name')?.getAttribute('data-density')).toBe('form')
     expect(dialog?.querySelector<HTMLTextAreaElement>('#promotion-description')?.getAttribute('data-density')).toBe('form')
+    expect(Array.from(dialog?.querySelectorAll('button') ?? []).find((item) => item.textContent === '% descuento')?.className).toContain('md:min-h-10')
     expect(dialog?.querySelector<HTMLButtonElement>('button[type="submit"]')?.getAttribute('data-size')).toBe('touch')
   })
 
@@ -49,6 +50,7 @@ describe('marketing form system', () => {
     expect(dialog?.querySelector<HTMLInputElement>('#campaign-name')?.getAttribute('data-density')).toBe('form')
     expect(dialog?.querySelector<HTMLSelectElement>('#campaign-promotion')?.getAttribute('data-density')).toBe('form')
     expect(dialog?.querySelector<HTMLTextAreaElement>('#campaign-message')?.getAttribute('data-density')).toBe('form')
+    expect(dialog?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')?.className).toContain('md:min-h-10')
     expect(dialog?.querySelector<HTMLButtonElement>('button[type="submit"]')?.getAttribute('data-size')).toBe('touch')
   })
 })

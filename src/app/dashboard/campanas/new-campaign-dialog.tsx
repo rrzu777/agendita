@@ -152,7 +152,7 @@ export function NewCampaignDialog({
                   type="button"
                   onClick={() => selectSegment(s)}
                   aria-pressed={segment === s}
-                  className={`rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${
+                  className={`min-h-11 rounded-xl px-3 py-2 text-sm font-semibold transition-colors md:min-h-10 ${
                     segment === s
                       ? 'bg-primary text-primary-foreground shadow-sm'
                       : 'text-muted-foreground hover:bg-muted'

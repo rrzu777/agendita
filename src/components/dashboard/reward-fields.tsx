@@ -50,7 +50,7 @@ export function RewardFields({
               type="button"
               onClick={() => update({ rewardType: opt.value })}
               aria-pressed={value.rewardType === opt.value}
-              className={`flex-1 rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${
+              className={`min-h-11 flex-1 rounded-xl px-3 py-2 text-sm font-semibold transition-colors md:min-h-10 ${
                 value.rewardType === opt.value
                   ? 'bg-primary text-primary-foreground shadow-sm'
                   : 'text-muted-foreground hover:bg-muted'
