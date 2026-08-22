@@ -1,0 +1,59 @@
+name: Real registration E2E
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: registration-e2e
+  cancel-in-progress: false
+
+jobs:
+  registration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: registration-e2e
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agendita_registration_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: production
+      APP_ENV: e2e
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agendita_registration_e2e
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/agendita_registration_e2e
+      APP_DOMAIN: localhost:3000
+      NEXT_PUBLIC_APP_DOMAIN: localhost:3000
+      PAYMENT_PROVIDER: mock
+      MERCADO_PAGO_ENVIRONMENT: sandbox
+      ALLOW_MOCK_PAYMENTS_IN_PRODUCTION: 'true'
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.REGISTRATION_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.REGISTRATION_SUPABASE_ANON_KEY }}
+      PLAYWRIGHT_REAL_REGISTRATION: 'true'
+      PLAYWRIGHT_REGISTRATION_EMAIL_DOMAIN: ${{ vars.REGISTRATION_EMAIL_DOMAIN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx prisma migrate deploy
+      - run: npm run db:seed
+      - run: npm run build
+      - run: npx playwright test tests/e2e/registration-real-auth.spec.ts --project=chromium
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.REGISTRATION_SUPABASE_SERVICE_ROLE_KEY }}

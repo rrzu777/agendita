@@ -47,7 +47,9 @@ export default function RegisterPage() {
         setError(res.error)
         return
       }
-      setSuccess(true)
+      if (res.data.requiresEmailConfirmation) {
+        setSuccess(true)
+      }
     } catch (err) {
       // Net de transporte: la action ya no lanza errores de negocio, pero un
       // fallo de red sí. `err.message` acá es ruido interno → genérico.

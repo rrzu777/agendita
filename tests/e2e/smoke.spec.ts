@@ -90,28 +90,6 @@ async function clickContinueButton(page: Page) {
 
 // ─── Auth flows ─────────────────────────────────────────────────────────────
 
-test.describe('auth - register', () => {
-  // Registration goes through Supabase Auth (supabase.auth.signUp). CI/E2E runs
-  // against a placeholder Supabase URL, so real sign-up can't complete here.
-  // The bypass only covers reads (getCurrentUser), not writes to Supabase.
-  test.skip('register → should create business and redirect to onboarding', async ({ page }) => {
-    const uniqueEmail = `playwright-${Date.now()}@test.com`
-    await page.goto('/register')
-    await page.getByLabel('Nombre').fill('Test Business Owner')
-    await page.getByLabel('Email').fill(uniqueEmail)
-    await page.getByLabel('Contraseña').fill('TestPassword123!')
-    // Select a category that has service templates
-    await page.locator('select[name="category"]').selectOption('nails')
-    // Accept terms
-    await page.locator('input[type="checkbox"]#accept-terms').check()
-    await page.getByRole('button', { name: /crear cuenta/i }).click()
-    // In dev/test with ENABLE_E2E_AUTH_BYPASS, no Supabase email confirmation needed
-    await page.waitForURL(/\/(dashboard|login)/, { timeout: 15_000 })
-    // Should end up on dashboard (newly created businesses may or may not have onboarding completed)
-    expect(page.url()).toMatch(/\/(onboarding|dashboard)/)
-  })
-})
-
 test.describe('auth - login', () => {
   test('login with valid credentials → should redirect to dashboard', async ({ page }) => {
     // Use the E2E auth bypass instead of real credentials to avoid Supabase dependency

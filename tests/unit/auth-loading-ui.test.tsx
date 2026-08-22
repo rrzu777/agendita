@@ -52,6 +52,21 @@ describe('auth loading UI', () => {
 
     await unmount()
   })
+
+  it('shows the email confirmation outcome returned by signup', async () => {
+    mockSignUp.mockResolvedValue({ ok: true, data: { requiresEmailConfirmation: true } })
+    const { default: RegisterPage } = await import('@/app/register/page')
+    const { container, unmount } = await render(<RegisterPage />)
+
+    setInputValue(container, '#name', 'Maria')
+    setInputValue(container, '#email', 'maria@example.com')
+    setInputValue(container, '#password', 'secret123')
+    await toggleCheckbox(container, '#accept-terms')
+    await submitForm(container)
+
+    expect(container.textContent).toContain('Verifica tu email')
+    await unmount()
+  })
 })
 
 async function render(element: React.ReactElement) {

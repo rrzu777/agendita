@@ -182,6 +182,10 @@ async function _signUp(formData: FormData) {
     throw new RegistrationError('Error al configurar tu cuenta. Intenta de nuevo o contacta soporte.', 'INTERNAL')
   }
 
+  if (!authData.session) {
+    return { requiresEmailConfirmation: true as const }
+  }
+
   redirect('/dashboard')
 }
 
