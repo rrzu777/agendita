@@ -97,4 +97,26 @@ for (const viewport of VIEWPORTS) {
     await expectHeight(page.getByLabel(/^Rubro/), 48)
     await expectNoHorizontalOverflow(page)
   })
+
+  test(`${viewport.name}: loyalty, review, and CSV controls share responsive form geometry`, async ({ page }) => {
+    setOwnerAuth(page)
+    await page.setViewportSize(viewport)
+
+    await page.goto('/dashboard/fidelizacion')
+    await expectHeight(page.getByLabel('Nombre de la unidad'), viewport.formHeight)
+    await expectHeight(page.locator('#pointsPerVisit'), viewport.formHeight)
+    await expectHeight(page.locator('#redemption-name'), viewport.formHeight)
+    await expectNoHorizontalOverflow(page)
+
+    await page.goto('/dashboard/reviews')
+    await expectHeight(page.getByRole('textbox', { name: 'Buscar reseñas' }), viewport.formHeight)
+    await expectHeight(page.getByRole('button', { name: 'Todas', exact: true }).first(), viewport.formHeight)
+    await expectNoHorizontalOverflow(page)
+
+    await page.goto('/dashboard/payments')
+    await expectHeight(page.getByLabel('Desde'), 32)
+    await expectHeight(page.getByLabel('Hasta'), 32)
+    await expectHeight(page.getByRole('button', { name: 'Exportar CSV' }), 32)
+    await expectNoHorizontalOverflow(page)
+  })
 }

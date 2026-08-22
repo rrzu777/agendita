@@ -2,8 +2,9 @@
 
 import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { NativeSelect } from '@/components/ui/native-select'
 import { upsertLoyaltyConfig } from '@/server/actions/loyalty'
 import type { LoyaltyConfig } from '@prisma/client'
 import { useVocabulary } from '@/components/vocabulary-provider'
@@ -94,10 +95,10 @@ export function LoyaltyConfigForm({ config }: { config: LoyaltyConfig | null }) 
         <span className="text-sm text-foreground">Revertir recompensas automáticas al reembolsar</span>
       </label>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      {saved && <p className="text-sm text-green-600">Guardado.</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      {saved && <p aria-live="polite" className="text-sm text-green-600">Guardado.</p>}
 
-      <Button type="submit" disabled={isPending}>
+      <Button type="submit" size="form" disabled={isPending}>
         {isPending ? 'Guardando…' : 'Guardar'}
       </Button>
     </form>
@@ -118,10 +119,19 @@ function Field({
   required?: boolean
 }) {
   return (
-    <div className="space-y-1.5">
-      <Label htmlFor={name}>{label}</Label>
-      <Input id={name} name={name} type={type} defaultValue={defaultValue} required={required} />
-    </div>
+    <FormField id={name} label={label} required={required}>
+      {(a11y) => (
+        <Input
+          {...a11y}
+          id={name}
+          name={name}
+          type={type}
+          density="form"
+          defaultValue={defaultValue}
+          required={required}
+        />
+      )}
+    </FormField>
   )
 }
 
@@ -132,21 +142,37 @@ function PointsLabelField({ defaultValue }: { defaultValue: string }) {
   const [choice, setChoice] = useState(isPreset ? defaultValue : 'otro')
 
   return (
-    <div className="space-y-1.5">
-      <Label htmlFor="pointsLabel-choice">Nombre de la unidad</Label>
-      <select
-        id="pointsLabel-choice"
-        value={choice}
-        onChange={(e) => setChoice(e.target.value)}
-        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-      >
-        {POINTS_LABEL_OPTIONS.map((o) => (
-          <option key={o} value={o}>{o}</option>
-        ))}
-        <option value="otro">Otro…</option>
-      </select>
+    <div className="grid gap-3">
+      <FormField id="pointsLabel-choice" label="Nombre de la unidad">
+        {(a11y) => (
+          <NativeSelect
+            {...a11y}
+            id="pointsLabel-choice"
+            density="form"
+            value={choice}
+            onChange={(e) => setChoice(e.target.value)}
+          >
+            {POINTS_LABEL_OPTIONS.map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+            <option value="otro">Otro…</option>
+          </NativeSelect>
+        )}
+      </FormField>
       {choice === 'otro' ? (
-        <Input name="pointsLabel" defaultValue={isPreset ? '' : defaultValue} placeholder="Ej. corazones" required />
+        <FormField id="pointsLabel" label="Unidad personalizada" required>
+          {(a11y) => (
+            <Input
+              {...a11y}
+              id="pointsLabel"
+              name="pointsLabel"
+              density="form"
+              defaultValue={isPreset ? '' : defaultValue}
+              placeholder="Ej. corazones"
+              required
+            />
+          )}
+        </FormField>
       ) : (
         <input type="hidden" name="pointsLabel" value={choice} />
       )}

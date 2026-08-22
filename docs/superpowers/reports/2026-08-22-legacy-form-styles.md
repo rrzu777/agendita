@@ -1,43 +1,42 @@
 # Legacy form styles — final inventory
 
 Date: 2026-08-22
-Branch base: `19dbe900e5f6a2d13353386aa0471d25b3ad4162`
+Branch base: `4b4b6c98476f0f1ad7ddb81df76a9b57f0b88859`
 
 ## Closed in this rollout
 
 - `studio-input`: **0 product consumers and 0 CSS definitions**.
 - Shared native select: `src/components/ui/native-select.tsx` with `compact`, `form`, and `touch` densities.
-- Migrated surfaces: operational bookings, manual payments, customers, promotion/campaign dialogs, reward fields, auth, and the public customer step.
-- Guard: `tests/unit/legacy-form-style-guard.test.ts` scans `src/**/*.{css,ts,tsx}` and rejects any reintroduction of `studio-input`.
+- Migrated surfaces: operational bookings, manual payments, customers, promotion/campaign dialogs, reward fields, auth, the public customer step, Fidelización, Reseñas, and CSV date filters.
+- Guard: `tests/unit/legacy-form-style-guard.test.ts` scans `src/**/*.{css,ts,tsx}` and rejects `studio-input`, visible text-like native inputs, unapproved native selects, and product textareas outside the shared primitives.
 
 ## Native controls that remain
 
-The repository contains 53 literal JSX native controls in 28 files:
+The repository contains 44 literal JSX native controls in 25 files:
 
-- 44 `input`: 24 checkbox, 9 radio, 5 hidden, 2 file, 2 date, 1 text, and the shared `Input` primitive.
-- 7 `select`: 5 legacy/product consumers, 1 explicitly documented calendar selector, and the shared `NativeSelect` primitive.
-- 2 `textarea`: the public review form and the shared `Textarea` primitive.
+- 41 `input`: checkbox, radio, hidden, and file controls plus the shared `Input` primitive. There are no remaining product-native text, search, date, number, email, URL, tel, or password inputs.
+- 2 `select`: the explicitly documented compact calendar selector and the shared `NativeSelect` primitive.
+- 1 `textarea`: the shared `Textarea` primitive.
 
 Most are not migration candidates: hidden inputs preserve form payloads; checkbox/radio controls preserve native semantics; file inputs are intentionally hidden behind accessible buttons.
 
-## Remaining visual debt, prioritized
+## Visual debt disposition
 
-### P2 — migrate as coherent feature work
+The P2 visual-form inventory is closed. Fidelización now uses shared fields, inputs, selects, and form-size buttons without changing its schemas or server actions. Reseñas now has semantic filter/rating groups and shared search/comment controls. CSV date filters now use compact shared fields with explicit label associations.
 
-1. **Fidelización settings and automation**
-   - `src/app/dashboard/fidelizacion/automatic-rules.tsx`
-   - `src/app/dashboard/fidelizacion/loyalty-config-form.tsx`
-   - `src/app/dashboard/fidelizacion/redemption-catalog.tsx`
-   - Why: hand-written selects and mixed compact/default inputs make the page internally inconsistent. This should be a separate feature because the forms are dense, conditional, and business-rule heavy.
+Native checkbox, radio, hidden, and file elements are not counted as visual-form debt because replacing them would remove useful browser semantics or add abstraction without a product benefit.
 
-2. **Reviews**
-   - `src/app/dashboard/reviews/reviews-client.tsx`
-   - `src/app/review/[bookingId]/review-form.tsx`
-   - Why: hand-written search input and textarea duplicate focus, border, and error styles. Safe candidates for `Input density="form"` / `Textarea density="touch"` plus `FormField`.
+## Delivery evidence
 
-3. **CSV date filters**
-   - `src/components/dashboard/export-csv-button.tsx`
-   - Why: two hand-written date inputs duplicate the compact input primitive and labels lack explicit `htmlFor` links.
+- Fidelización: `e0fa74f`.
+- Reseñas: `15d1a2e`.
+- CSV: `5fd7c64`.
+- Architecture guard: `3cf6935`.
+- Responsive browser coverage: `5d39755`.
+- Full unit suite: 384 files passed; 3,511 tests passed and 1 skipped.
+- Production Playwright rollout: 15/15 passed at 375, 768, and 1,440 px.
+- TypeScript, Prisma validation/generation, and the Next.js production build passed.
+- ESLint completed with 0 errors and 29 pre-existing warnings outside this rollout.
 
 ### Intentional native exceptions
 
@@ -51,7 +50,8 @@ Most are not migration candidates: hidden inputs preserve form payloads; checkbo
 ```sh
 rg -n 'studio-input' src
 npm test -- tests/unit/legacy-form-style-guard.test.ts
-rg -n '<(input|select|textarea)\b' src --glob '*.{ts,tsx}'
+rg -n -U -o '<input\b[^>]*>' src --glob '*.{ts,tsx}'
+rg -n -U -o '<(select|textarea)\b[^>]*>' src --glob '*.{ts,tsx}'
 ```
 
-Expected: the first command returns no matches; the guard passes. The native-control search is an inventory, not a zero-target gate.
+Expected: the first command returns no matches; the guard passes. The native-control searches remain an auditable inventory, while the test enforces the approved semantic exceptions.

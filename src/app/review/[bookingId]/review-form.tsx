@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
+import { Textarea } from '@/components/ui/textarea'
 import { Star } from 'lucide-react'
 import { submitReview } from '@/server/actions/reviews'
 
@@ -56,17 +58,19 @@ export function ReviewForm({ bookingId, token }: ReviewFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="mt-6 space-y-5">
-      <div>
-        <label className="studio-eyebrow mb-2 block">Calificación</label>
+      <fieldset>
+        <legend className="studio-eyebrow mb-2 block">Calificación</legend>
         <div className="flex gap-1">
           {[1, 2, 3, 4, 5].map((star) => (
             <button
               key={star}
               type="button"
+              aria-label={`${star} ${star === 1 ? 'estrella' : 'estrellas'}`}
+              aria-pressed={rating === star}
               onClick={() => setRating(star)}
               onMouseEnter={() => setHoveredRating(star)}
               onMouseLeave={() => setHoveredRating(0)}
-              className="p-0.5 transition-transform active:scale-90"
+              className="flex size-12 items-center justify-center rounded-lg transition-transform focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-90"
             >
               <Star
                 className={`size-8 ${
@@ -78,31 +82,33 @@ export function ReviewForm({ bookingId, token }: ReviewFormProps) {
             </button>
           ))}
         </div>
-      </div>
+      </fieldset>
 
-      <div>
-        <label htmlFor="comment" className="studio-eyebrow mb-2 block">
-          Comentario <span className="text-muted-foreground">(opcional)</span>
-        </label>
-        <textarea
-          id="comment"
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          maxLength={1000}
-          rows={4}
-          className="w-full resize-none rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          placeholder="Comparte tu experiencia..."
-        />
-        <p className="mt-1 text-right text-xs text-muted-foreground">
-          {comment.length}/1000
-        </p>
-      </div>
+      <FormField
+        id="comment"
+        label={<>Comentario <span className="text-muted-foreground">(opcional)</span></>}
+        help={<span className="block text-right">{comment.length}/1000</span>}
+      >
+        {(a11y) => (
+          <Textarea
+            {...a11y}
+            id="comment"
+            density="touch"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            maxLength={1000}
+            rows={4}
+            className="resize-none rounded-xl"
+            placeholder="Comparte tu experiencia..."
+          />
+        )}
+      </FormField>
 
       {error && (
-        <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>
+        <p role="alert" className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>
       )}
 
-      <Button type="submit" disabled={!canSubmit || loading} className="h-12 w-full rounded-xl text-base font-semibold">
+      <Button type="submit" size="touch" disabled={!canSubmit || loading} className="w-full rounded-xl font-semibold">
         {loading ? 'Enviando...' : 'Enviar reseña'}
       </Button>
     </form>

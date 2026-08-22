@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
+import { Input } from '@/components/ui/input'
 import { Download } from 'lucide-react'
 
 function getCurrentMonthRange(): { from: string; to: string } {
@@ -70,45 +72,51 @@ export function ExportCSVButton() {
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-muted-foreground">Desde</label>
-        <input
-          type="date"
-          value={from}
-          onChange={(e) => {
-            setFrom(e.target.value)
-            setError(null)
-          }}
-          max={to || undefined}
-          className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-muted-foreground">Hasta</label>
-        <input
-          type="date"
-          value={to}
-          onChange={(e) => {
-            setTo(e.target.value)
-            setError(null)
-          }}
-          min={from || undefined}
-          className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-        />
-      </div>
+    <fieldset className="flex flex-wrap items-end gap-3">
+      <legend className="sr-only">Rango de fechas para exportar movimientos</legend>
+      <FormField id="ledger-export-from" label="Desde">
+        {(a11y) => (
+          <Input
+            {...a11y}
+            id="ledger-export-from"
+            type="date"
+            density="compact"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value)
+              setError(null)
+            }}
+            max={to || undefined}
+          />
+        )}
+      </FormField>
+      <FormField id="ledger-export-to" label="Hasta">
+        {(a11y) => (
+          <Input
+            {...a11y}
+            id="ledger-export-to"
+            type="date"
+            density="compact"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value)
+              setError(null)
+            }}
+            min={from || undefined}
+          />
+        )}
+      </FormField>
       <Button
         onClick={handleExport}
         disabled={loading}
         variant="outline"
-        className="h-9"
       >
         <Download className="mr-2 size-4" />
         {loading ? 'Exportando...' : 'Exportar CSV'}
       </Button>
       {error && (
-        <p className="w-full text-sm text-destructive">{error}</p>
+        <p role="alert" className="w-full text-sm text-destructive">{error}</p>
       )}
-    </div>
+    </fieldset>
   )
 }

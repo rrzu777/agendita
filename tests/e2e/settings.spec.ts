@@ -311,6 +311,10 @@ test.describe('settings mutable section journeys', () => {
       await page.getByRole('button', { name: 'Conectar Mercado Pago' }).click()
       await expect(page).toHaveURL(/\/dashboard\/settings\/payments\?success=connected$/)
       await expect(page.getByText('Cuenta MP conectada')).toBeVisible()
+      // La conexión navega mediante un form server-side, pero la desconexión usa
+      // un handler cliente. Esperar la hidratación evita que el click temprano
+      // sea inerte en runners lentos.
+      await page.waitForLoadState('networkidle')
 
       await page.getByRole('button', { name: 'Desconectar Mercado Pago' }).click()
       await expect(page.getByText('Cuenta desconectada')).toBeVisible()

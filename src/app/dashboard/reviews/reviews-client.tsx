@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -166,46 +167,56 @@ export function ReviewsClient({
 
       <div className="mb-6 flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-          <div className="grid grid-cols-4 gap-1 rounded-2xl border border-border bg-card p-1">
+          <fieldset className="grid grid-cols-4 gap-1 rounded-2xl border border-border bg-card p-1">
+            <legend className="sr-only">Estado de la reseña</legend>
             {statusOptions.map((opt) => (
               <button
                 key={opt.value}
+                type="button"
                 onClick={() => setStatus(opt.value)}
-                className={`min-w-0 rounded-xl px-1 py-2 text-xs font-semibold transition-colors sm:px-4 sm:text-sm ${
+                aria-pressed={status === opt.value}
+                className={`min-h-11 min-w-0 rounded-xl px-1 py-2 text-xs font-semibold transition-colors md:min-h-10 sm:px-4 sm:text-sm ${
                   status === opt.value ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted'
                 }`}
               >
                 {opt.label}
               </button>
             ))}
-          </div>
-          <div className="grid grid-cols-6 gap-1 rounded-2xl border border-border bg-card p-1">
+          </fieldset>
+          <fieldset className="grid grid-cols-6 gap-1 rounded-2xl border border-border bg-card p-1">
+            <legend className="sr-only">Calificación de la reseña</legend>
             {ratingOptions.map((opt) => (
               <button
                 key={opt.value}
+                type="button"
                 onClick={() => setRating(opt.value)}
-                className={`min-w-0 rounded-xl px-1 py-2 text-xs font-semibold transition-colors sm:px-3 sm:text-sm ${
+                aria-pressed={rating === opt.value}
+                className={`min-h-11 min-w-0 rounded-xl px-1 py-2 text-xs font-semibold transition-colors md:min-h-10 sm:px-3 sm:text-sm ${
                   rating === opt.value ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted'
                 }`}
               >
                 {opt.label}
               </button>
             ))}
-          </div>
+          </fieldset>
         </div>
         <div className="relative max-w-md">
+          <label htmlFor="reviews-search" className="sr-only">Buscar reseñas</label>
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
+          <Input
+            id="reviews-search"
             type="text"
+            density="form"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={`Buscar por ${vocabulary.client}, comentario o servicio...`}
-            className="w-full rounded-2xl border border-border bg-card py-2.5 pl-10 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="rounded-2xl pl-10 pr-11"
           />
           {search && (
             <button
+              type="button"
               onClick={() => setSearch('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="absolute right-0 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground md:size-10"
               aria-label="Limpiar búsqueda"
             >
               <X className="size-4" />
