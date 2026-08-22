@@ -40,7 +40,7 @@ tests/unit/
 - Use `vi.useFakeTimers()` + `vi.setSystemTime()` for deterministic dates
 - Mock Prisma with `vi.mock('@/lib/db/prisma', ...)`
 - No real dates -- all time-dependent tests use controlled clocks
-- Integration tests excluded via vitest.config.ts `exclude`
+- Integration tests excluded via vitest.config.mts `exclude`
 
 ### Integration Tests (`npm run test:integration`)
 

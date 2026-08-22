@@ -126,7 +126,7 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
       window.location.href = res.data.redirectUrl
       return
     }
-    window.location.href = `/paquetes/confirmation?purchaseId=${purchaseId}`
+    router.push(`/paquetes/confirmation?purchaseId=${purchaseId}`)
   }
 
   async function startTransfer(bank: BankTransferPublicInfo) {
