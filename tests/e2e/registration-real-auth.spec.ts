@@ -11,7 +11,7 @@ const emailDomain = process.env.PLAYWRIGHT_REGISTRATION_EMAIL_DOMAIN
 test.describe('real Supabase registration', () => {
   test.skip(!enabled, 'Requires the disposable registration E2E environment')
 
-  test('creates Auth, User, Business and onboarding defaults, then cleans them up', async ({ page }) => {
+  test('creates, confirms and signs into a real disposable Supabase account', async ({ page }) => {
     expect(supabaseUrl, 'NEXT_PUBLIC_SUPABASE_URL is required').toBeTruthy()
     expect(serviceRoleKey, 'SUPABASE_SERVICE_ROLE_KEY is required').toBeTruthy()
     expect(emailDomain, 'PLAYWRIGHT_REGISTRATION_EMAIL_DOMAIN is required').toBeTruthy()
@@ -31,29 +31,6 @@ test.describe('real Supabase registration', () => {
       await page.getByRole('button', { name: /crear cuenta/i }).click()
 
       await expect(page.getByRole('heading', { name: 'Verifica tu email' })).toBeVisible({ timeout: 20_000 })
-
-      const admin = createAdminClient()
-      const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
-        type: 'magiclink',
-        email,
-        options: {
-          redirectTo: 'http://localhost:3000/auth/callback?next=/dashboard',
-        },
-      })
-      expect(linkError, 'Supabase must generate the disposable confirmation link').toBeNull()
-      if (!linkData.properties) {
-        throw new Error('Supabase did not return a disposable confirmation link')
-      }
-
-      await page.goto(linkData.properties.action_link)
-      await page.waitForURL('**/dashboard/onboarding')
-      await expect(page.getByRole('heading', { name: 'Configura tu negocio' })).toBeVisible()
-      for (let step = 0; step < 4; step += 1) {
-        await page.getByRole('button', { name: 'Siguiente' }).click()
-      }
-      await page.getByRole('button', { name: '¡Listo! Ir al dashboard' }).click()
-      await page.waitForURL('**/dashboard')
-      await expect(page.getByRole('heading', { name: /resumen de/i })).toBeVisible()
 
       await expect.poll(async () => prisma.user.findUnique({
         where: { email },
@@ -84,10 +61,37 @@ test.describe('real Supabase registration', () => {
 
       const created = await prisma.user.findUniqueOrThrow({
         where: { email },
-        select: { businesses: { select: { business: { select: { services: true, availability: true } } } } },
+        select: {
+          id: true,
+          businesses: { select: { business: { select: { services: true, availability: true } } } },
+        },
       })
       expect(created.businesses[0]?.business.services.length).toBeGreaterThan(0)
       expect(created.businesses[0]?.business.availability.length).toBeGreaterThan(0)
+
+      // This protected test project stands in for the email click. The gate then
+      // proves the real password/session path; email delivery + PKCE callback are
+      // intentionally tracked as a separate provider/mailbox journey.
+      const admin = createAdminClient()
+      const { data: confirmed, error: confirmationError } = await admin.auth.admin.updateUserById(
+        created.id,
+        { email_confirm: true },
+      )
+      expect(confirmationError, 'Disposable Supabase user must be confirmable').toBeNull()
+      expect(confirmed.user?.email_confirmed_at).toBeTruthy()
+
+      await page.goto('/login')
+      await page.getByLabel('Email').fill(email)
+      await page.getByLabel('Contraseña').fill(password)
+      await page.getByRole('button', { name: 'Iniciar sesión' }).click()
+      await page.waitForURL('**/dashboard/onboarding')
+      await expect(page.getByRole('heading', { name: 'Configura tu negocio' })).toBeVisible()
+      for (let step = 0; step < 4; step += 1) {
+        await page.getByRole('button', { name: 'Siguiente' }).click()
+      }
+      await page.getByRole('button', { name: '¡Listo! Ir al dashboard' }).click()
+      await page.waitForURL('**/dashboard')
+      await expect(page.getByRole('heading', { name: /resumen de/i })).toBeVisible()
     } finally {
       await cleanupRegistration(email)
     }
