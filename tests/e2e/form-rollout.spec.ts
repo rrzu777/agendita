@@ -42,4 +42,20 @@ for (const viewport of VIEWPORTS) {
     await expectHeight(dialog.getByLabel('Método de pago'), 48)
     await expectNoHorizontalOverflow(page)
   })
+
+  test(`${viewport.name}: customer search and edit forms stay aligned`, async ({ page }) => {
+    setOwnerAuth(page)
+    await page.setViewportSize(viewport)
+
+    await page.goto('/dashboard/customers')
+    await expectHeight(page.getByRole('searchbox'), viewport.formHeight)
+    await expectHeight(page.getByRole('button', { name: 'Buscar', exact: true }), viewport.formHeight)
+    await expectNoHorizontalOverflow(page)
+
+    await page.locator('a[href^="/dashboard/customers/"]:visible').first().click()
+    await page.getByRole('button', { name: 'Editar datos' }).click()
+    await expectHeight(page.getByLabel('Nombre'), viewport.formHeight)
+    await expectHeight(page.getByLabel('Telefono'), viewport.formHeight)
+    await expectNoHorizontalOverflow(page)
+  })
 }

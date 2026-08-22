@@ -3,8 +3,8 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { updateCustomer } from '@/server/actions/customers'
 import type { CustomerDetail } from '@/server/actions/customers'
 import { Pencil, Check, X, Cake } from 'lucide-react'
@@ -111,68 +111,37 @@ export function CustomerEditForm({ customer }: CustomerEditFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <Label htmlFor="name">Nombre</Label>
-        <Input
-          id="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          maxLength={100}
-          className="studio-input"
-          disabled={isPending}
-        />
-      </div>
-      <div>
-        <Label htmlFor="phone">Telefono</Label>
-        <Input
-          id="phone"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          required
-          minLength={8}
-          maxLength={20}
-          className="studio-input"
-          disabled={isPending}
-        />
-      </div>
-      <div>
-        <Label htmlFor="email">Email</Label>
-        <Input
-          id="email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="opcional@ejemplo.com"
-          className="studio-input"
-          disabled={isPending}
-        />
-        <p className="mt-1 text-xs text-muted-foreground">Opcional</p>
-      </div>
-      <div>
-        <Label htmlFor="birthDate">Fecha de nacimiento</Label>
-        <Input
-          id="birthDate"
-          type="date"
-          value={birthDate}
-          onChange={(e) => setBirthDate(e.target.value)}
-          max={new Date().toISOString().slice(0, 10)}
-          className="studio-input"
-          disabled={isPending}
-        />
-        <p className="mt-1 text-xs text-muted-foreground">Opcional — para saludar en su cumpleaños</p>
-      </div>
+      <FormField id="name" label="Nombre" required>
+        {(a11y) => (
+          <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} density="form" disabled={isPending} {...a11y} />
+        )}
+      </FormField>
+      <FormField id="phone" label="Telefono" required>
+        {(a11y) => (
+          <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} required minLength={8} maxLength={20} density="form" disabled={isPending} {...a11y} />
+        )}
+      </FormField>
+      <FormField id="email" label="Email" help="Opcional">
+        {(a11y) => (
+          <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="opcional@ejemplo.com" density="form" disabled={isPending} {...a11y} />
+        )}
+      </FormField>
+      <FormField id="birthDate" label="Fecha de nacimiento" help="Opcional — para saludar en su cumpleaños">
+        {(a11y) => (
+          <Input id="birthDate" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} max={new Date().toISOString().slice(0, 10)} density="form" disabled={isPending} {...a11y} />
+        )}
+      </FormField>
       {error && (
-        <p className="text-xs text-destructive">{error}</p>
+        <p role="alert" className="text-xs text-destructive">{error}</p>
       )}
       <div className="flex gap-2">
-        <Button type="submit" size="sm" disabled={isPending}>
+        <Button type="submit" size="form" disabled={isPending}>
           <Check className="mr-1 size-3" />
           {isPending ? 'Guardando...' : 'Guardar'}
         </Button>
         <Button
           type="button"
-          size="sm"
+          size="form"
           variant="ghost"
           onClick={handleCancel}
           disabled={isPending}

@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Textarea } from '@/components/ui/textarea'
 import { updateCustomerNotes } from '@/server/actions/customers'
 import { Pencil, Check, X } from 'lucide-react'
@@ -69,29 +70,33 @@ export function CustomerNotesForm({ customerId, initialNotes }: CustomerNotesFor
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <Textarea
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-        placeholder="Notas solo visibles para ti y tu equipo..."
-        rows={5}
-        maxLength={2000}
-        className="studio-input resize-y"
-        disabled={isPending}
-      />
-      <p className="text-xs text-muted-foreground">
-        {notes.length}/2000
-      </p>
+      <FormField id="customer-notes" label="Notas internas" help={`${notes.length}/2000 · Solo visibles para ti y tu equipo`}>
+        {(a11y) => (
+          <Textarea
+            id="customer-notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Agrega contexto útil sobre esta clienta…"
+            rows={5}
+            maxLength={2000}
+            density="form"
+            className="resize-y"
+            disabled={isPending}
+            {...a11y}
+          />
+        )}
+      </FormField>
       {error && (
-        <p className="text-xs text-destructive">{error}</p>
+        <p role="alert" className="text-xs text-destructive">{error}</p>
       )}
       <div className="flex gap-2">
-        <Button type="submit" size="sm" disabled={isPending}>
+        <Button type="submit" size="form" disabled={isPending}>
           <Check className="mr-1 size-3" />
           {isPending ? 'Guardando...' : 'Guardar'}
         </Button>
         <Button
           type="button"
-          size="sm"
+          size="form"
           variant="ghost"
           onClick={handleCancel}
           disabled={isPending}
