@@ -128,7 +128,16 @@ export function CustomerEditForm({ customer }: CustomerEditFormProps) {
       </FormField>
       <FormField id="birthDate" label="Fecha de nacimiento" help="Opcional — para saludar en su cumpleaños">
         {(a11y) => (
-          <Input id="birthDate" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} max={new Date().toISOString().slice(0, 10)} density="form" disabled={isPending} {...a11y} />
+          <Input
+            id="birthDate"
+            type="date"
+            value={birthDate}
+            onChange={(e) => setBirthDate(e.target.value)}
+            max={new Date().toISOString().slice(0, 10)}
+            density="form"
+            disabled={isPending}
+            {...a11y}
+          />
         )}
       </FormField>
       {error && (

@@ -71,7 +71,15 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
           {(a11y) => <div className="relative"><Mail className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="booking-customer-email" className="pl-12" type="email" value={formData.customerEmail} onChange={e => setFormData({ ...formData, customerEmail: e.target.value })} placeholder="tu@email.com" density="touch" {...a11y} /></div>}
         </FormField>
         <FormField id="booking-customer-birthdate" label="Cumpleaños" help="Opcional">
-          {(a11y) => <Input id="booking-customer-birthdate" type="date" max={new Date().toISOString().slice(0, 10)} value={formData.customerBirthDate} onChange={e => setFormData({ ...formData, customerBirthDate: e.target.value })} density="touch" {...a11y} />}
+          {(a11y) => <Input
+            id="booking-customer-birthdate"
+            type="date"
+            max={new Date().toISOString().slice(0, 10)}
+            value={formData.customerBirthDate}
+            onChange={e => setFormData({ ...formData, customerBirthDate: e.target.value })}
+            density="touch"
+            {...a11y}
+          />}
         </FormField>
         {needsAddress && (
           <FormField id="booking-service-address" label="Dirección" required help="Vamos a tu domicilio: necesitamos saber a dónde.">

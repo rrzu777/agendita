@@ -477,7 +477,15 @@ export function NewBookingForm({ services, professionals, businessId, timezone, 
                 {(a11y) => <Input {...a11y} id="customerEmail" density="form" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} type="email" placeholder="cliente@email.com" />}
               </FormField>
               <FormField id="customerBirthDate" label="Cumpleaños (opcional)">
-                {(a11y) => <Input {...a11y} id="customerBirthDate" density="form" type="date" max={new Date().toISOString().slice(0, 10)} value={customerBirthDate} onChange={(e) => setCustomerBirthDate(e.target.value)} />}
+              {(a11y) => <Input
+                {...a11y}
+                id="customerBirthDate"
+                density="form"
+                type="date"
+                max={new Date().toISOString().slice(0, 10)}
+                value={customerBirthDate}
+                onChange={(e) => setCustomerBirthDate(e.target.value)}
+              />}
               </FormField>
             </div>
           </div>
