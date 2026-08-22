@@ -128,6 +128,15 @@ describe('CustomerDetailPage', () => {
     expect(html).not.toContain('Atendió la última vez')
   })
 
+  it('permite crear una reserva con la clienta preseleccionada sin poner PII en la URL', async () => {
+    const html = await renderPage()
+
+    expect(html).toContain('href="/dashboard/bookings/new?customerId=cust-1"')
+    expect(html).not.toContain('customerName=')
+    expect(html).not.toContain('customerPhone=')
+    expect(html).not.toContain('disabled="" title="Proximamente desde el panel"')
+  })
+
   it('el historial dice quién atiende cada cita, y calla cuando no hay persona', async () => {
     mockGetCustomerDetail.mockResolvedValue({
       ...baseDetail,
