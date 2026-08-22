@@ -2,8 +2,8 @@
 
 import { useId, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { createService, updateService } from '@/server/actions/services'
@@ -78,6 +78,7 @@ export function ServiceForm({
   triggerIcon?: ReactNode
   currency: string
 }) {
+  const formId = useId()
   const durationHoursId = useId()
   const durationMinutesId = useId()
   const [open, setOpen] = useState(false)
@@ -209,52 +210,64 @@ export function ServiceForm({
           </DialogDescription>
         </DialogHeader>
         <form action={handleSubmit} className="space-y-5">
-          <div className="space-y-2">
-            <Label className="studio-eyebrow">Nombre</Label>
-            <Input
-              className="studio-input"
-              name="name"
-              defaultValue={service?.name}
-              required
-              onChange={(e) => setPreviewName(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="studio-eyebrow">Descripción</Label>
-            <Textarea
-              className="min-h-24 rounded-lg border-border bg-card text-base focus-visible:border-primary focus-visible:ring-primary/20"
-              name="description"
-              defaultValue={service?.description || ''}
-              onChange={(e) => setPreviewDescription(e.target.value)}
-            />
-          </div>
+          <FormField id={`${formId}-name`} label="Nombre" required>
+            {(a11y) => (
+              <Input
+                {...a11y}
+                id={`${formId}-name`}
+                density="form"
+                name="name"
+                defaultValue={service?.name}
+                required
+                onChange={(e) => setPreviewName(e.target.value)}
+              />
+            )}
+          </FormField>
+          <FormField id={`${formId}-description`} label="Descripción">
+            {(a11y) => (
+              <Textarea
+                {...a11y}
+                id={`${formId}-description`}
+                density="form"
+                name="description"
+                defaultValue={service?.description || ''}
+                onChange={(e) => setPreviewDescription(e.target.value)}
+              />
+            )}
+          </FormField>
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="studio-eyebrow">Precio</Label>
-              <Input
-                className="studio-input"
-                name="price"
-                type="number"
-                defaultValue={service?.price}
-                required
-                onChange={(e) => setPreviewPrice(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="studio-eyebrow">Abono</Label>
-              <Input
-                className="studio-input"
-                name="depositAmount"
-                type="number"
-                defaultValue={service?.depositAmount}
-                required
-                onChange={(e) => setPreviewDeposit(e.target.value)}
-              />
-            </div>
+            <FormField id={`${formId}-price`} label="Precio" required>
+              {(a11y) => (
+                <Input
+                  {...a11y}
+                  id={`${formId}-price`}
+                  density="form"
+                  name="price"
+                  type="number"
+                  defaultValue={service?.price}
+                  required
+                  onChange={(e) => setPreviewPrice(e.target.value)}
+                />
+              )}
+            </FormField>
+            <FormField id={`${formId}-deposit`} label="Abono" required>
+              {(a11y) => (
+                <Input
+                  {...a11y}
+                  id={`${formId}-deposit`}
+                  density="form"
+                  name="depositAmount"
+                  type="number"
+                  defaultValue={service?.depositAmount}
+                  required
+                  onChange={(e) => setPreviewDeposit(e.target.value)}
+                />
+              )}
+            </FormField>
           </div>
 
-          <div className="space-y-2">
-            <Label className="studio-eyebrow">¿Cuánto dura?</Label>
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-foreground">¿Cuánto dura?</legend>
             {/* Valor real que viaja en el form; los chips solo lo controlan. */}
             <input type="hidden" name="durationMinutes" value={duration} />
             <div className="flex flex-wrap gap-2">
@@ -264,6 +277,7 @@ export function ServiceForm({
                   <button
                     key={min}
                     type="button"
+                    aria-pressed={active}
                     onClick={() => { setShowCustomDuration(false); setDurationParts(min) }}
                     className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
                       active
@@ -277,6 +291,7 @@ export function ServiceForm({
               })}
               <button
                 type="button"
+                aria-pressed={showCustomDuration}
                 onClick={() => setShowCustomDuration(true)}
                 className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
                   showCustomDuration
@@ -288,39 +303,43 @@ export function ServiceForm({
               </button>
             </div>
             <div className="grid grid-cols-2 gap-3 pt-1">
-              <div className="space-y-1">
-                <Label htmlFor={durationHoursId} className="text-xs font-medium text-muted-foreground">Horas</Label>
-                <Input
-                  id={durationHoursId}
-                  className="studio-input"
-                  type="number"
-                  min={0}
-                  max={8}
-                  step={1}
-                  value={durationHours}
-                  onChange={(e) => handleHoursChange(e.target.value)}
-                  inputMode="numeric"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor={durationMinutesId} className="text-xs font-medium text-muted-foreground">Minutos</Label>
-                <Input
-                  id={durationMinutesId}
-                  className="studio-input"
-                  type="number"
-                  min={0}
-                  max={durationHours >= 8 ? 0 : 59}
-                  step={5}
-                  value={durationRemainderMinutes}
-                  onChange={(e) => handleMinutesChange(e.target.value)}
-                  inputMode="numeric"
-                />
-              </div>
+              <FormField id={durationHoursId} label="Horas">
+                {(a11y) => (
+                  <Input
+                    {...a11y}
+                    id={durationHoursId}
+                    density="form"
+                    type="number"
+                    min={0}
+                    max={8}
+                    step={1}
+                    value={durationHours}
+                    onChange={(e) => handleHoursChange(e.target.value)}
+                    inputMode="numeric"
+                  />
+                )}
+              </FormField>
+              <FormField id={durationMinutesId} label="Minutos">
+                {(a11y) => (
+                  <Input
+                    {...a11y}
+                    id={durationMinutesId}
+                    density="form"
+                    type="number"
+                    min={0}
+                    max={durationHours >= 8 ? 0 : 59}
+                    step={5}
+                    value={durationRemainderMinutes}
+                    onChange={(e) => handleMinutesChange(e.target.value)}
+                    inputMode="numeric"
+                  />
+                )}
+              </FormField>
             </div>
             <p className="text-xs text-muted-foreground">
               Total: {duration > 0 ? formatDuration(duration) : '0 min'}
             </p>
-          </div>
+          </fieldset>
           <ModalityCheckboxes
             selected={modalities}
             onToggle={toggleModality}
@@ -332,36 +351,46 @@ export function ServiceForm({
             }
           />
 
-          <div>
-            <Label className="studio-eyebrow">Color</Label>
+          <fieldset>
+            <legend className="text-sm font-medium text-foreground">Color</legend>
             <div className="flex gap-2 mt-2">
               {PASTEL_COLORS.map((color) => (
                 <button
                   key={color}
                   type="button"
+                  aria-label={`Seleccionar color ${color}`}
+                  aria-pressed={selectedColor === color}
                   onClick={() => handleColorPick(color)}
                   className={`size-8 rounded-full border-2 transition ${selectedColor === color ? 'scale-110 border-primary' : 'border-transparent'}`}
                   style={{ backgroundColor: color }}
                 />
               ))}
             </div>
-            <div className="mt-2 flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">o ingresa:</span>
-              <Input
-                className="studio-input w-28 font-mono text-sm"
-                placeholder="#RRGGBB"
-                value={customHex}
-                onChange={(e) => handleHexChange(e.target.value)}
-                maxLength={7}
-              />
+            <div className="mt-3 flex items-end gap-2">
+              <div className="w-36">
+                <FormField id={`${formId}-color`} label="Código hexadecimal">
+                  {(a11y) => (
+                    <Input
+                      {...a11y}
+                      id={`${formId}-color`}
+                      density="form"
+                      className="font-mono"
+                      placeholder="#RRGGBB"
+                      value={customHex}
+                      onChange={(e) => handleHexChange(e.target.value)}
+                      maxLength={7}
+                    />
+                  )}
+                </FormField>
+              </div>
               {HEX_COLOR_REGEX.test(customHex) && (
-                <div className="size-6 rounded-full border border-border shrink-0" style={{ backgroundColor: customHex }} />
+                <div className="mb-2 size-6 shrink-0 rounded-full border border-border" style={{ backgroundColor: customHex }} />
               )}
             </div>
-          </div>
+          </fieldset>
 
           <div>
-            <Label className="studio-eyebrow mb-2 block">Vista previa</Label>
+            <p className="mb-2 text-sm font-medium text-foreground">Vista previa</p>
             <ServicePreview
               name={previewName}
               description={previewDescription}
@@ -374,14 +403,14 @@ export function ServiceForm({
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               <AlertCircle className="size-4 mt-0.5 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
-          <Button type="submit" className="h-12 w-full font-semibold" disabled={loading}>
-            {loading ? 'Guardando...' : 'Guardar'}
+          <Button type="submit" size="form" className="w-full font-semibold" disabled={loading}>
+            {loading ? 'Guardando…' : 'Guardar'}
           </Button>
         </form>
       </DialogContent>

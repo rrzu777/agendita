@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { createProfessional, updateProfessional } from '@/server/actions/professionals'
@@ -38,6 +38,7 @@ export function ProfessionalForm({
   onSuccess?: () => void
 }) {
   const v = useVocabulary()
+  const formId = useId()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -127,25 +128,36 @@ export function ProfessionalForm({
           </DialogDescription>
         </DialogHeader>
         <form action={handleSubmit} className="space-y-5">
-          <div className="space-y-2">
-            <Label className="studio-eyebrow">Nombre</Label>
-            <Input className="studio-input" name="name" defaultValue={professional?.name} required />
-          </div>
+          <FormField id={`${formId}-name`} label="Nombre" required>
+            {(a11y) => (
+              <Input
+                {...a11y}
+                id={`${formId}-name`}
+                density="form"
+                name="name"
+                defaultValue={professional?.name}
+                required
+              />
+            )}
+          </FormField>
 
-          <div className="space-y-2">
-            <Label className="studio-eyebrow">Presentación</Label>
-            <Textarea
-              className="min-h-20 rounded-lg border-border bg-card text-base focus-visible:border-primary focus-visible:ring-primary/20"
-              name="bio"
-              defaultValue={professional?.bio ?? ''}
-              placeholder="Una línea que tus clientas van a leer al elegir."
-            />
-          </div>
+          <FormField id={`${formId}-bio`} label="Presentación">
+            {(a11y) => (
+              <Textarea
+                {...a11y}
+                id={`${formId}-bio`}
+                density="form"
+                name="bio"
+                defaultValue={professional?.bio ?? ''}
+                placeholder="Una línea que tus clientas van a leer al elegir."
+              />
+            )}
+          </FormField>
 
-          <div>
-            <Label className="studio-eyebrow">¿Qué servicios hace?</Label>
+          <fieldset aria-describedby={serviceIds.length === 0 ? `${formId}-services-help` : undefined}>
+            <legend className="text-sm font-medium text-foreground">¿Qué servicios hace?</legend>
             {services.length === 0 ? (
-              <p className="mt-2 text-sm text-muted-foreground">
+              <p id={`${formId}-services-help`} className="mt-2 text-sm text-muted-foreground">
                 Todavía no tenés servicios activos. Creá uno y volvé para asignarlo.
               </p>
             ) : (
@@ -172,13 +184,13 @@ export function ProfessionalForm({
                   })}
                 </div>
                 {serviceIds.length === 0 && (
-                  <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+                  <p id={`${formId}-services-help`} className="mt-2 text-xs text-amber-700 dark:text-amber-400">
                     Sin ningún servicio asignado no va a aparecer al reservar.
                   </p>
                 )}
               </>
             )}
-          </div>
+          </fieldset>
 
           <ModalityCheckboxes
             selected={modalities}
@@ -188,13 +200,13 @@ export function ProfessionalForm({
           />
 
           {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               {error}
             </div>
           )}
 
-          <Button type="submit" className="w-full font-semibold" disabled={loading}>
-            {loading ? 'Guardando...' : 'Guardar'}
+          <Button type="submit" size="form" className="w-full font-semibold" disabled={loading}>
+            {loading ? 'Guardando…' : 'Guardar'}
           </Button>
         </form>
       </DialogContent>

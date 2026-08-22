@@ -1,6 +1,6 @@
 'use client'
 
-import { Label } from '@/components/ui/label'
+import { useId } from 'react'
 import { MODALITY_LABELS, MODALITY_HINTS, MODALITY_ORDER } from '@/lib/services/modality'
 import type { ServiceModality } from '@prisma/client'
 
@@ -25,9 +25,11 @@ export function ModalityCheckboxes({
   label: string
   hint: string
 }) {
+  const hintId = useId()
+
   return (
-    <div>
-      <Label className="studio-eyebrow">{label}</Label>
+    <fieldset aria-describedby={hintId}>
+      <legend className="text-sm font-medium text-foreground">{label}</legend>
       <div className="mt-2 space-y-2">
         {MODALITY_ORDER.map((modality) => {
           const checked = selected.includes(modality)
@@ -52,7 +54,7 @@ export function ModalityCheckboxes({
           )
         })}
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
-    </div>
+      <p id={hintId} className="mt-2 text-xs text-muted-foreground">{hint}</p>
+    </fieldset>
   )
 }
