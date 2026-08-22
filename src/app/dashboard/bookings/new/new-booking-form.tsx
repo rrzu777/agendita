@@ -38,6 +38,7 @@ interface NewBookingFormProps {
   businessId: string
   timezone: string
   currency: string
+  initialCustomer?: CustomerSearchResult | null
 }
 
 
@@ -51,7 +52,18 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   other: 'Otro',
 }
 
-export function NewBookingForm({ services, professionals, businessId, timezone, currency }: NewBookingFormProps) {
+export function NewBookingForm(props: NewBookingFormProps) {
+  return <NewBookingFormState key={props.initialCustomer?.id ?? 'unselected'} {...props} />
+}
+
+function NewBookingFormState({
+  services,
+  professionals,
+  businessId,
+  timezone,
+  currency,
+  initialCustomer = null,
+}: NewBookingFormProps) {
   const vocabulary = useVocabulary()
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -67,9 +79,9 @@ export function NewBookingForm({ services, professionals, businessId, timezone, 
   // null = todavía no eligió (o el servicio tiene una sola y no se pregunta).
   const [modality, setModality] = useState<ServiceModality | null>(null)
   const [serviceAddress, setServiceAddress] = useState('')
-  const [customerName, setCustomerName] = useState('')
-  const [customerPhone, setCustomerPhone] = useState('')
-  const [customerEmail, setCustomerEmail] = useState('')
+  const [customerName, setCustomerName] = useState(initialCustomer?.name ?? '')
+  const [customerPhone, setCustomerPhone] = useState(initialCustomer?.phone ?? '')
+  const [customerEmail, setCustomerEmail] = useState(initialCustomer?.email ?? '')
   const [customerBirthDate, setCustomerBirthDate] = useState('')
   // "Cualquiera" y no "sin persona" como arranque: si hay equipo elegible el
   // servidor reparte, y sin equipo `professionalFields` lo colapsa solo a nada.
@@ -79,7 +91,7 @@ export function NewBookingForm({ services, professionals, businessId, timezone, 
   const [internalNotes, setInternalNotes] = useState('')
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('none')
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(initialCustomer?.id ?? null)
 
   const { remaining: packageRemaining, usePackage, setUsePackage } =
     usePackageAvailability(businessId, customerPhone, serviceId)
@@ -420,6 +432,7 @@ export function NewBookingForm({ services, professionals, businessId, timezone, 
                     size="xs"
                     className="text-green-700"
                     onClick={clearCustomerSelection}
+                    aria-label="Quitar cliente seleccionado"
                   >
                     <X className="size-3.5" />
                   </Button>

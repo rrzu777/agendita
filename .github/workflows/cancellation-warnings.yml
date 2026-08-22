@@ -20,7 +20,7 @@ jobs:
       BASE_URL: ${{ vars.APP_BASE_URL || 'https://www.agendita.cl' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Send cancellation warnings
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}

@@ -150,11 +150,12 @@ export default async function CustomerDetailPage({ params }: Props) {
               WhatsApp
             </Button>
           )}
-          {/* TODO: Wire manual booking creation once the dashboard-safe booking flow is ready. */}
-          <Button variant="outline" size="sm" disabled title="Proximamente desde el panel">
-            <Plus className="mr-1 size-4" />
-            Nueva reserva
-          </Button>
+          <Link href={`/dashboard/bookings/new?customerId=${encodeURIComponent(customer.id)}`}>
+            <Button variant="outline" size="sm">
+              <Plus className="mr-1 size-4" />
+              Nueva reserva
+            </Button>
+          </Link>
         </div>
 
         {/* Financial summary */}
