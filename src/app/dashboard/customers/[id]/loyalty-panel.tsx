@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { adjustCustomerPoints, redeemPointsAsOwner } from '@/server/actions/loyalty'
 import { loyaltyReasonLabel, displayBalance, canAfford } from '@/lib/loyalty/view'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
 import type { LoyaltyLedger } from '@prisma/client'
 
@@ -67,14 +68,18 @@ export function LoyaltyPanel({
         </span>
       </div>
 
-      <form onSubmit={onAdjust} className="mt-3 flex flex-wrap items-end gap-2">
-        <Input name="delta" type="number" placeholder="±puntos" required className="w-28" />
-        <Input name="note" type="text" placeholder="Motivo" required className="flex-1" />
-        <Button type="submit" size="sm" disabled={isPending}>
+      <form onSubmit={onAdjust} className="mt-3 grid gap-3 sm:grid-cols-[minmax(8rem,0.35fr)_minmax(0,1fr)_auto] sm:items-end">
+        <FormField id="loyalty-delta" label="Puntos a ajustar" required>
+          {(a11y) => <Input id="loyalty-delta" name="delta" type="number" placeholder="± puntos" required density="form" {...a11y} />}
+        </FormField>
+        <FormField id="loyalty-note" label="Motivo del ajuste" required>
+          {(a11y) => <Input id="loyalty-note" name="note" type="text" placeholder="Ej. compensación" required density="form" {...a11y} />}
+        </FormField>
+        <Button type="submit" size="form" disabled={isPending}>
           Ajustar
         </Button>
       </form>
-      {error && <p className="mt-1 text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="mt-1 text-sm text-destructive">{error}</p>}
 
       {catalog.length > 0 && (
         <div className="mt-4">

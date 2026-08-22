@@ -91,7 +91,7 @@ const ALLOWED_RENDER_CLOCKS = new Map<string, string>([
     'fecha mínima del formulario; sólo cambia a medianoche',
   ],
   [
-    'src/app/dashboard/bookings/new/new-booking-form.tsx — <Input id="customerBirthDate" type="date" max={new Date().toISOString().slice(0, 10)} value={customerBirthDate} onChange={(e) => setCustomerBirthDate(e.target.value)} className="h-10" />',
+    'src/app/dashboard/bookings/new/new-booking-form.tsx — max={new Date().toISOString().slice(0, 10)}',
     'máximo del input de nacimiento; sólo cambia a medianoche',
   ],
   [
@@ -103,7 +103,7 @@ const ALLOWED_RENDER_CLOCKS = new Map<string, string>([
     'fecha mínima para reprogramar; sólo cambia a medianoche',
   ],
   [
-    'src/components/booking/step-customer.tsx — <Input className="studio-input" type="date" max={new Date().toISOString().slice(0, 10)}',
+    'src/components/booking/step-customer.tsx — max={new Date().toISOString().slice(0, 10)}',
     'máximo del input de nacimiento; sólo cambia a medianoche',
   ],
   [

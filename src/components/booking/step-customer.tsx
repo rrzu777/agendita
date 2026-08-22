@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { BookingData } from './wizard'
 import { requiresServiceAddress } from '@/lib/services/modality'
@@ -61,61 +61,38 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
       )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="space-y-2">
-          <Label className="studio-eyebrow">Nombre completo *</Label>
-          <div className="relative">
-            <User className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-            <Input className="studio-input pl-12" required minLength={2} value={formData.customerName}
-              onChange={e => setFormData({ ...formData, customerName: e.target.value })}
-              placeholder="Tu nombre" />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label className="studio-eyebrow">Teléfono *</Label>
-          <div className="relative">
-            <Phone className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-            <Input className="studio-input pl-12" required type="tel" value={formData.customerPhone}
-              onChange={e => setFormData({ ...formData, customerPhone: e.target.value })}
-              placeholder="+569..." />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label className="studio-eyebrow">Email (opcional)</Label>
-          <div className="relative">
-            <Mail className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-            <Input className="studio-input pl-12" type="email" value={formData.customerEmail}
-              onChange={e => setFormData({ ...formData, customerEmail: e.target.value })}
-              placeholder="tu@email.com" />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label className="studio-eyebrow">Cumpleaños (opcional)</Label>
-          <Input className="studio-input" type="date" max={new Date().toISOString().slice(0, 10)}
+        <FormField id="booking-customer-name" label="Nombre completo" required>
+          {(a11y) => <div className="relative"><User className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="booking-customer-name" className="pl-12" required minLength={2} value={formData.customerName} onChange={e => setFormData({ ...formData, customerName: e.target.value })} placeholder="Tu nombre" density="touch" {...a11y} /></div>}
+        </FormField>
+        <FormField id="booking-customer-phone" label="Teléfono" required>
+          {(a11y) => <div className="relative"><Phone className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="booking-customer-phone" className="pl-12" required type="tel" value={formData.customerPhone} onChange={e => setFormData({ ...formData, customerPhone: e.target.value })} placeholder="+569..." density="touch" {...a11y} /></div>}
+        </FormField>
+        <FormField id="booking-customer-email" label="Email" help="Opcional">
+          {(a11y) => <div className="relative"><Mail className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="booking-customer-email" className="pl-12" type="email" value={formData.customerEmail} onChange={e => setFormData({ ...formData, customerEmail: e.target.value })} placeholder="tu@email.com" density="touch" {...a11y} /></div>}
+        </FormField>
+        <FormField id="booking-customer-birthdate" label="Cumpleaños" help="Opcional">
+          {(a11y) => <Input
+            id="booking-customer-birthdate"
+            type="date"
+            max={new Date().toISOString().slice(0, 10)}
             value={formData.customerBirthDate}
-            onChange={e => setFormData({ ...formData, customerBirthDate: e.target.value })} />
-        </div>
+            onChange={e => setFormData({ ...formData, customerBirthDate: e.target.value })}
+            density="touch"
+            {...a11y}
+          />}
+        </FormField>
         {needsAddress && (
-          <div className="space-y-2">
-            <Label className="studio-eyebrow">Dirección *</Label>
-            <div className="relative">
-              <MapPin className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-              <Input className="studio-input pl-12" required value={formData.serviceAddress}
-                onChange={e => setFormData({ ...formData, serviceAddress: e.target.value })}
-                placeholder="Calle, número, depto, comuna" />
-            </div>
-            <p className="text-xs text-muted-foreground">Vamos a tu domicilio: necesitamos saber a dónde.</p>
-          </div>
+          <FormField id="booking-service-address" label="Dirección" required help="Vamos a tu domicilio: necesitamos saber a dónde.">
+            {(a11y) => <div className="relative"><MapPin className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="booking-service-address" className="pl-12" required value={formData.serviceAddress} onChange={e => setFormData({ ...formData, serviceAddress: e.target.value })} placeholder="Calle, número, depto, comuna" density="touch" {...a11y} /></div>}
+          </FormField>
         )}
-        <div className="space-y-2">
-          <Label className="studio-eyebrow">Notas (opcional)</Label>
-          <Textarea className="min-h-28 rounded-lg border-border bg-card text-base focus-visible:border-primary focus-visible:ring-primary/20" value={formData.customerNotes}
-            onChange={e => setFormData({ ...formData, customerNotes: e.target.value })}
-            placeholder="¿Algo que debamos saber?" />
-        </div>
+        <FormField id="booking-customer-notes" label="Notas" help="Opcional">
+          {(a11y) => <Textarea id="booking-customer-notes" value={formData.customerNotes} onChange={e => setFormData({ ...formData, customerNotes: e.target.value })} placeholder="¿Algo que debamos saber?" density="touch" {...a11y} />}
+        </FormField>
 
         <div className="mt-8 flex gap-3">
-          <Button type="button" variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
-          <Button type="submit" className="h-12 flex-1 rounded-full text-base font-semibold">
+          <Button type="button" variant="outline" size="touch" className="rounded-full" onClick={onBack}>Atrás</Button>
+          <Button type="submit" size="touch" className="flex-1 rounded-full font-semibold">
             Continuar al pago
           </Button>
         </div>

@@ -5,7 +5,9 @@ import { sellPackage, refundPackagePurchase } from '@/server/actions/packages'
 import { formatMoney } from '@/lib/money'
 import { formatShortDate } from '@/lib/format-date'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
 import { Badge } from '@/components/ui/badge'
 
 type PackagePurchaseItem = {
@@ -147,31 +149,26 @@ export function PackagePanel({
       {products.length > 0 && (
         <form onSubmit={onSell} className="mt-4 space-y-2 border-t border-border/60 pt-4">
           <h4 className="text-sm font-semibold text-primary">Vender paquete</h4>
-          <select
-            value={productId}
-            onChange={(e) => setProductId(e.target.value)}
-            className="studio-input w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
-          >
-            <option value="">Selecciona un paquete</option>
-            {products.map((prod) => (
-              <option key={prod.id} value={prod.id}>
-                {prod.name} — {formatMoney(prod.price, currency)}
-              </option>
-            ))}
-          </select>
-          <Input
-            value={method}
-            onChange={(e) => setMethod(e.target.value)}
-            placeholder="Método de pago (opcional)"
-            className="h-10"
-          />
-          <Button type="submit" size="sm" disabled={isPending || !productId}>
+          <FormField id="package-product" label="Paquete" required>
+            {(a11y) => (
+              <NativeSelect id="package-product" value={productId} onChange={(e) => setProductId(e.target.value)} density="form" required {...a11y}>
+                <option value="">Selecciona un paquete</option>
+                {products.map((prod) => (
+                  <option key={prod.id} value={prod.id}>{prod.name} — {formatMoney(prod.price, currency)}</option>
+                ))}
+              </NativeSelect>
+            )}
+          </FormField>
+          <FormField id="package-method" label="Método de pago" help="Opcional">
+            {(a11y) => <Input id="package-method" value={method} onChange={(e) => setMethod(e.target.value)} placeholder="Ej. efectivo" density="form" {...a11y} />}
+          </FormField>
+          <Button type="submit" size="form" disabled={isPending || !productId}>
             Vender
           </Button>
         </form>
       )}
 
-      {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
     </div>
   )
 }

@@ -133,10 +133,11 @@ export function CustomerList({ customers, nextCursor, stats, error, currency, se
               type="search"
               placeholder="Buscar por nombre, teléfono o email en todo el historial..."
               defaultValue={searchQuery}
-              className="studio-input pl-10"
+              density="form"
+              className="pl-10"
             />
           </div>
-          <Button type="submit" variant="outline">Buscar</Button>
+          <Button type="submit" variant="outline" size="form">Buscar</Button>
           {searchQuery && (
             <Button type="button" variant="ghost" asChild aria-label="Limpiar búsqueda">
               <Link href="/dashboard/customers"><X className="size-4" /></Link>

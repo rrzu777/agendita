@@ -3,8 +3,10 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { NativeSelect } from '@/components/ui/native-select'
+import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
 import { TimeInput } from '@/components/ui/time-input'
 import { createBookingFromDashboard } from '@/server/actions/bookings'
@@ -340,7 +342,7 @@ export function NewBookingForm({ services, professionals, businessId, timezone, 
       <CardContent className="p-6 md:p-8">
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && (
-            <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+            <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
               {error}
             </div>
           )}
@@ -348,51 +350,58 @@ export function NewBookingForm({ services, professionals, businessId, timezone, 
           <div className="grid gap-6 md:grid-cols-2">
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-primary">Servicio</h3>
-              <div className="space-y-2">
-                <Label htmlFor="serviceId">Servicio *</Label>
-                <select
-                  id="serviceId"
-                  value={serviceId}
-                  onChange={(e) => setServiceId(e.target.value)}
-                  required
-                  className="studio-input w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
-                >
-                  <option value="">Selecciona un servicio</option>
-                  {services.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} — {formatMoney(s.price, currency)} ({formatDuration(s.durationMinutes)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {serviceModalities.length > 1 && (
-                <div className="space-y-2">
-                  <Label htmlFor="modality">¿Dónde se atiende? *</Label>
-                  <select
-                    id="modality"
-                    value={effectiveModality ?? ''}
-                    onChange={(e) => setModality(e.target.value as ServiceModality)}
+              <FormField id="serviceId" label="Servicio" required>
+                {(a11y) => (
+                  <NativeSelect
+                    {...a11y}
+                    id="serviceId"
+                    density="form"
+                    value={serviceId}
+                    onChange={(e) => setServiceId(e.target.value)}
                     required
-                    className="studio-input w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
                   >
-                    {serviceModalities.map((m) => (
-                      <option key={m} value={m}>{MODALITY_LABELS[m]}</option>
+                    <option value="">Selecciona un servicio</option>
+                    {services.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} — {formatMoney(s.price, currency)} ({formatDuration(s.durationMinutes)})
+                      </option>
                     ))}
-                  </select>
-                </div>
+                  </NativeSelect>
+                )}
+              </FormField>
+              {serviceModalities.length > 1 && (
+                <FormField id="modality" label="¿Dónde se atiende?" required>
+                  {(a11y) => (
+                    <NativeSelect
+                      {...a11y}
+                      id="modality"
+                      density="form"
+                      value={effectiveModality ?? ''}
+                      onChange={(e) => setModality(e.target.value as ServiceModality)}
+                      required
+                    >
+                      {serviceModalities.map((m) => (
+                        <option key={m} value={m}>{MODALITY_LABELS[m]}</option>
+                      ))}
+                    </NativeSelect>
+                  )}
+                </FormField>
               )}
               <ProfessionalField choice={choice} pick={effectivePick} onChange={setPick} />
               {effectiveModality != null && requiresServiceAddress(effectiveModality) && (
-                <div className="space-y-2">
-                  <Label htmlFor="serviceAddress">Dirección *</Label>
-                  <Input
-                    id="serviceAddress"
-                    value={serviceAddress}
-                    onChange={(e) => setServiceAddress(e.target.value)}
-                    required
-                    placeholder="Calle, número, depto, comuna"
-                  />
-                </div>
+                <FormField id="serviceAddress" label="Dirección" required>
+                  {(a11y) => (
+                    <Input
+                      {...a11y}
+                      id="serviceAddress"
+                      density="form"
+                      value={serviceAddress}
+                      onChange={(e) => setServiceAddress(e.target.value)}
+                      required
+                      placeholder="Calle, número, depto, comuna"
+                    />
+                  )}
+                </FormField>
               )}
             </div>
 
@@ -416,20 +425,26 @@ export function NewBookingForm({ services, professionals, businessId, timezone, 
                   </Button>
                 </div>
               ) : (
-                <div ref={searchRef} className="relative space-y-2">
-                  <Label>Buscar cliente</Label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                    <Input
-                      value={customerSearch}
-                      onChange={(e) => handleCustomerSearch(e.target.value)}
-                      placeholder="Buscar por nombre o teléfono..."
-                      className="h-10 pl-10"
-                    />
-                    {searching && (
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">...</span>
+                <div ref={searchRef} className="relative">
+                  <FormField id="booking-customer-search" label="Buscar cliente">
+                    {(a11y) => (
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          {...a11y}
+                          id="booking-customer-search"
+                          density="form"
+                          value={customerSearch}
+                          onChange={(e) => handleCustomerSearch(e.target.value)}
+                          placeholder="Buscar por nombre o teléfono..."
+                          className="pl-10"
+                        />
+                        {searching && (
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">...</span>
+                        )}
+                      </div>
                     )}
-                  </div>
+                  </FormField>
 
                   {showSuggestions && suggestions.length > 0 && (
                     <div className="absolute z-10 w-full rounded-lg border border-border bg-background shadow-lg">
@@ -452,52 +467,68 @@ export function NewBookingForm({ services, professionals, businessId, timezone, 
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="customerName">Nombre *</Label>
-                <Input id="customerName" value={customerName} onChange={(e) => setCustomerName(e.target.value)} required placeholder="Nombre del cliente" className="h-10" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="customerPhone">Teléfono *</Label>
-                <Input id="customerPhone" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} required placeholder="+56912345678" className="h-10" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="customerEmail">Email (opcional)</Label>
-                <Input id="customerEmail" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} type="email" placeholder="cliente@email.com" className="h-10" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="customerBirthDate">Cumpleaños (opcional)</Label>
-                <Input id="customerBirthDate" type="date" max={new Date().toISOString().slice(0, 10)} value={customerBirthDate} onChange={(e) => setCustomerBirthDate(e.target.value)} className="h-10" />
-              </div>
+              <FormField id="customerName" label="Nombre" required>
+                {(a11y) => <Input {...a11y} id="customerName" density="form" value={customerName} onChange={(e) => setCustomerName(e.target.value)} required placeholder="Nombre del cliente" />}
+              </FormField>
+              <FormField id="customerPhone" label="Teléfono" required>
+                {(a11y) => <Input {...a11y} id="customerPhone" density="form" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} required placeholder="+56912345678" />}
+              </FormField>
+              <FormField id="customerEmail" label="Email (opcional)">
+                {(a11y) => <Input {...a11y} id="customerEmail" density="form" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} type="email" placeholder="cliente@email.com" />}
+              </FormField>
+              <FormField id="customerBirthDate" label="Cumpleaños (opcional)">
+              {(a11y) => <Input
+                {...a11y}
+                id="customerBirthDate"
+                density="form"
+                type="date"
+                max={new Date().toISOString().slice(0, 10)}
+                value={customerBirthDate}
+                onChange={(e) => setCustomerBirthDate(e.target.value)}
+              />}
+              </FormField>
             </div>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="date">Fecha *</Label>
-              <Input id="date" type="date" required min={today} value={date} onChange={(e) => setDate(e.target.value)} className="h-10" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="time">Hora *</Label>
-              <TimeInput id="time" value={time} onChange={setTime} ariaLabel="Hora" />
-            </div>
+            <FormField id="date" label="Fecha" required>
+              {(a11y) => <Input {...a11y} id="date" density="form" type="date" required min={today} value={date} onChange={(e) => setDate(e.target.value)} />}
+            </FormField>
+            <FormField id="time" label="Hora" required>
+              {(a11y) => (
+                <TimeInput
+                  id="time"
+                  density="form"
+                  value={time}
+                  onChange={setTime}
+                  ariaLabel="Hora"
+                  className="w-full"
+                  ariaDescribedBy={a11y['aria-describedby']}
+                  ariaInvalid={a11y['aria-invalid']}
+                />
+              )}
+            </FormField>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="internalNotes">Notas internas (opcional)</Label>
-            <textarea
-              id="internalNotes"
-              rows={2}
-              value={internalNotes}
-              onChange={(e) => setInternalNotes(e.target.value)}
-              className="studio-input w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-              placeholder="Ej: Llegó por WhatsApp, prefiere color rojo..."
-            />
-          </div>
+          <FormField id="internalNotes" label="Notas internas (opcional)">
+            {(a11y) => (
+              <Textarea
+                {...a11y}
+                id="internalNotes"
+                density="form"
+                rows={2}
+                value={internalNotes}
+                onChange={(e) => setInternalNotes(e.target.value)}
+                placeholder="Ej: Llegó por WhatsApp, prefiere color rojo..."
+              />
+            )}
+          </FormField>
 
           <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
-            <h4 className="text-sm font-semibold text-primary">Pago inicial</h4>
+            <fieldset>
+              <legend className="text-sm font-semibold text-primary">Pago inicial</legend>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="mt-3 flex flex-wrap gap-3">
               {paymentModeOptions.map(([value, label]) => (
                 <label
                   key={value}
@@ -519,20 +550,25 @@ export function NewBookingForm({ services, professionals, businessId, timezone, 
                 </label>
               ))}
             </div>
+            </fieldset>
 
             {paymentMode !== 'none' && (
-              <div className="space-y-2 border-t border-border/60 pt-3">
-                <Label htmlFor="paymentMethod">Método de pago</Label>
-                <select
-                  id="paymentMethod"
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-                  className="studio-input w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
-                >
-                  {(Object.entries(PAYMENT_METHOD_LABELS) as [PaymentMethod, string][]).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
+              <div className="border-t border-border/60 pt-3">
+                <FormField id="paymentMethod" label="Método de pago">
+                  {(a11y) => (
+                    <NativeSelect
+                      {...a11y}
+                      id="paymentMethod"
+                      density="form"
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                    >
+                      {(Object.entries(PAYMENT_METHOD_LABELS) as [PaymentMethod, string][]).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </NativeSelect>
+                  )}
+                </FormField>
               </div>
             )}
           </div>
@@ -558,9 +594,9 @@ export function NewBookingForm({ services, professionals, businessId, timezone, 
           )}
 
           <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
-            <Label htmlFor="promoCode" className="text-sm font-semibold text-primary">
-              Código de descuento (opcional)
-            </Label>
+            {appliedPromo && (
+              <p className="text-sm font-semibold text-primary">Código de descuento (opcional)</p>
+            )}
             {appliedPromo ? (
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -587,26 +623,32 @@ export function NewBookingForm({ services, professionals, businessId, timezone, 
                 </Button>
               </div>
             ) : (
-              <div className="flex gap-2">
-                <Input
-                  id="promoCode"
-                  value={promoCode}
-                  onChange={(e) => setPromoCode(e.target.value)}
-                  placeholder="Ingresa un código"
-                  className="h-10"
-                  disabled={promoPending}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleApplyPromo}
-                  disabled={promoPending || !promoCode.trim() || !serviceId}
-                >
-                  {promoPending ? 'Validando...' : 'Aplicar'}
-                </Button>
-              </div>
+              <FormField id="promoCode" label="Código de descuento (opcional)" error={promoError ?? undefined}>
+                {(a11y) => (
+                  <div className="flex gap-2">
+                    <Input
+                      {...a11y}
+                      id="promoCode"
+                      density="form"
+                      value={promoCode}
+                      onChange={(e) => setPromoCode(e.target.value)}
+                      placeholder="Ingresa un código"
+                      disabled={promoPending}
+                    />
+                    <Button
+                      type="button"
+                      size="form"
+                      variant="outline"
+                      onClick={handleApplyPromo}
+                      disabled={promoPending || !promoCode.trim() || !serviceId}
+                    >
+                      {promoPending ? 'Validando…' : 'Aplicar'}
+                    </Button>
+                  </div>
+                )}
+              </FormField>
             )}
-            {promoError && <p className="text-sm text-destructive">{promoError}</p>}
+            {appliedPromo && promoError && <p role="alert" className="text-sm text-destructive">{promoError}</p>}
           </div>
 
           {summary && (
@@ -668,14 +710,15 @@ export function NewBookingForm({ services, professionals, businessId, timezone, 
           <div className="flex gap-3">
             <Button
               type="button"
+              size="form"
               variant="outline"
               onClick={() => router.back()}
               disabled={loading}
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading} className="flex-1">
-              {loading ? 'Creando reserva...' : 'Crear reserva'}
+            <Button type="submit" size="form" disabled={loading} className="flex-1">
+              {loading ? 'Creando reserva…' : 'Crear reserva'}
             </Button>
           </div>
         </form>

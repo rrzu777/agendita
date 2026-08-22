@@ -220,7 +220,8 @@ export function CustomerPhotos({
                 maxLength={PHOTO_CAPTION_MAX}
                 placeholder="Nota…"
                 aria-label="Nota de la foto"
-                className="studio-input h-8 text-xs"
+                density="compact"
+                className="text-xs"
                 onBlur={(e) => handleCaption(photo, e.target.value)}
               />
             </div>

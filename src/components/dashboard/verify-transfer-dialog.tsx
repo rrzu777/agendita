@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { confirmBankTransfer, rejectBankTransfer } from '@/server/actions/bank-transfer-verify'
 import { formatManualPaymentMoney as formatMoney, rejectTransferConfirmMessage } from './manual-payment-utils'
 import type { PendingTransferKind } from './pending-transfers-section'
@@ -128,30 +128,33 @@ export function VerifyTransferDialog({
         )}
 
         <form onSubmit={handleConfirm} className="space-y-5">
-          <div className="space-y-2">
-            <Label className="studio-eyebrow" htmlFor="verify-transfer-amount">Monto recibido ({businessCurrency})</Label>
-            <Input
-              id="verify-transfer-amount"
-              className="studio-input"
-              type="number"
-              min={1}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              required
-            />
-          </div>
+          <FormField id="verify-transfer-amount" label={`Monto recibido (${businessCurrency})`} required>
+            {(a11y) => (
+              <Input
+                {...a11y}
+                id="verify-transfer-amount"
+                density="touch"
+                type="number"
+                min={1}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                required
+              />
+            )}
+          </FormField>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
           <div className="flex flex-col gap-2 sm:flex-row-reverse">
-            <Button type="submit" className="h-11 font-semibold sm:flex-1" disabled={isPending}>
+            <Button type="submit" size="touch" className="font-semibold sm:flex-1" disabled={isPending}>
               <CheckCircle2 className="mr-2 size-4" />
-              {isPending ? 'Procesando...' : `Verificar ${formatMoney(Number(amount) || 0, businessCurrency)}`}
+              {isPending ? 'Procesando…' : `Verificar ${formatMoney(Number(amount) || 0, businessCurrency)}`}
             </Button>
             <Button
               type="button"
               variant="outline"
-              className="h-11 font-semibold text-destructive hover:text-destructive sm:flex-1"
+              size="touch"
+              className="font-semibold text-destructive hover:text-destructive sm:flex-1"
               disabled={isPending}
               onClick={handleReject}
             >

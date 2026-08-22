@@ -4,8 +4,9 @@ import { useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { unstable_rethrow } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { NativeSelect } from '@/components/ui/native-select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { signUp } from '@/lib/auth/actions'
 import { CheckCircle2, Loader2, Lock, Mail, Sparkles, User } from 'lucide-react'
@@ -101,45 +102,22 @@ export default function RegisterPage() {
         <CardContent className="px-0">
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+              <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
                 {error}
               </div>
             )}
-            <div className="space-y-2">
-              <Label className="studio-eyebrow" htmlFor="name">Nombre</Label>
-              <div className="relative">
-                <User className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-                <Input className="studio-input pl-12" id="name" name="name" placeholder="Tu nombre" required />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="studio-eyebrow" htmlFor="email">Email</Label>
-              <div className="relative">
-                <Mail className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-                <Input className="studio-input pl-12" id="email" name="email" type="email" placeholder="hola@tunegocio.cl" required />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="studio-eyebrow" htmlFor="password">Contraseña</Label>
-              <div className="relative">
-                <Lock className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-                <Input className="studio-input pl-12" id="password" name="password" type="password" placeholder="Mínimo 6 caracteres" required minLength={6} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="studio-eyebrow" htmlFor="category">Rubro</Label>
-              <select
-                id="category"
-                name="category"
-                defaultValue="other"
-                className="studio-input h-12 w-full rounded-lg border border-border bg-card px-4 text-primary"
-                onChange={(e) => setUseServiceTemplate(e.target.value === 'nails')}
-              >
-                {categories.map((category) => (
-                  <option key={category.value} value={category.value}>{category.label}</option>
-                ))}
-              </select>
-            </div>
+            <FormField id="name" label="Nombre" required>
+              {(a11y) => <div className="relative"><User className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input className="pl-12" id="name" name="name" placeholder="Tu nombre" required density="touch" {...a11y} /></div>}
+            </FormField>
+            <FormField id="email" label="Email" required>
+              {(a11y) => <div className="relative"><Mail className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input className="pl-12" id="email" name="email" type="email" placeholder="hola@tunegocio.cl" required density="touch" {...a11y} /></div>}
+            </FormField>
+            <FormField id="password" label="Contraseña" required help="Mínimo 6 caracteres">
+              {(a11y) => <div className="relative"><Lock className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input className="pl-12" id="password" name="password" type="password" required minLength={6} density="touch" {...a11y} /></div>}
+            </FormField>
+            <FormField id="category" label="Rubro" required>
+              {(a11y) => <NativeSelect id="category" name="category" defaultValue="other" density="touch" onChange={(e) => setUseServiceTemplate(e.target.value === 'nails')} {...a11y}>{categories.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}</NativeSelect>}
+            </FormField>
             <div className="flex items-start gap-3">
               <input
                 type="checkbox"
@@ -179,7 +157,8 @@ export default function RegisterPage() {
             </div>
             <Button
               type="submit"
-              className="h-14 w-full rounded-full text-lg font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]"
+              size="touch"
+              className="w-full rounded-full font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]"
               disabled={loading || !acceptedTerms}
               data-auth-loading={loading ? 'true' : undefined}
               aria-busy={loading}

@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 
 export type ControlDensity = "compact" | "form" | "touch"
 
-const inputDensityClasses: Record<ControlDensity, string> = {
+export const inputDensityClasses: Record<ControlDensity, string> = {
   compact: "h-8 px-2.5 py-1 text-base md:text-sm",
   form: "h-11 bg-card px-3 py-2 text-base md:h-10 md:text-sm",
   touch: "min-h-12 bg-card px-4 py-2 text-base",
