@@ -20,6 +20,6 @@ jobs:
       BASE_URL: ${{ vars.APP_BASE_URL || 'https://www.agendita.cl' }}
       CRON_SECRET: ${{ secrets.CRON_SECRET }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check public and protected production health
         run: node scripts/check-production-health.cjs
