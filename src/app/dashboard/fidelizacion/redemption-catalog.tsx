@@ -3,7 +3,9 @@
 import { useState, useTransition } from 'react'
 import { upsertRedemptionOption, archiveRedemptionOption } from '@/server/actions/loyalty'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
 import { formatMoney } from '@/lib/money'
 import { useVocabulary } from '@/components/vocabulary-provider'
 
@@ -142,72 +144,54 @@ export function RedemptionCatalog({
         )}
       </ul>
 
-      <form onSubmit={onSubmit} className="mt-4 grid gap-2" key={editing?.id ?? 'new'}>
-        <Input
-          name="name"
-          placeholder="Nombre de la recompensa"
-          defaultValue={editing?.name}
-          required
-        />
-        <div className="flex flex-wrap gap-2">
-          <select
-            name="rewardType"
-            defaultValue={editing?.rewardType ?? 'free_service'}
-            className="rounded-md border border-border bg-background px-2 py-1 text-sm"
-          >
-            <option value="free_service">Servicio gratis</option>
-            <option value="percentage">% de descuento</option>
-            <option value="fixed_amount">Monto fijo</option>
-          </select>
-          <Input
-            name="rewardValue"
-            type="number"
-            placeholder="Valor"
-            defaultValue={editing?.rewardValue}
-            className="w-28"
-          />
-          <Input
-            name="pointsCost"
-            type="number"
-            min={1}
-            placeholder="Costo en puntos"
-            defaultValue={editing?.pointsCost ?? undefined}
-            required
-            className="w-36"
-          />
+      <form onSubmit={onSubmit} className="mt-4 grid gap-4" key={editing?.id ?? 'new'}>
+        <FormField id="redemption-name" label="Nombre de la recompensa" required>
+          {(a11y) => (
+            <Input {...a11y} id="redemption-name" name="name" density="form" defaultValue={editing?.name} required />
+          )}
+        </FormField>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <FormField id="redemption-rewardType" label="Tipo de beneficio">
+            {(a11y) => (
+              <NativeSelect {...a11y} id="redemption-rewardType" name="rewardType" density="form" defaultValue={editing?.rewardType ?? 'free_service'}>
+                <option value="free_service">Servicio gratis</option>
+                <option value="percentage">% de descuento</option>
+                <option value="fixed_amount">Monto fijo</option>
+              </NativeSelect>
+            )}
+          </FormField>
+          <FormField id="redemption-rewardValue" label="Valor del beneficio">
+            {(a11y) => (
+              <Input {...a11y} id="redemption-rewardValue" name="rewardValue" type="number" density="form" defaultValue={editing?.rewardValue} />
+            )}
+          </FormField>
+          <FormField id="redemption-pointsCost" label="Costo en puntos" required>
+            {(a11y) => (
+              <Input {...a11y} id="redemption-pointsCost" name="pointsCost" type="number" density="form" min={1} defaultValue={editing?.pointsCost ?? undefined} required />
+            )}
+          </FormField>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <Input
-            name="maxDiscount"
-            type="number"
-            placeholder="Tope descuento (opc.)"
-            defaultValue={editing?.maxDiscount ?? undefined}
-            className="w-44"
-          />
-          <Input
-            name="grantExpiryDays"
-            type="number"
-            min={1}
-            placeholder="Días vencimiento (opc.)"
-            defaultValue={editing?.grantExpiryDays ?? undefined}
-            className="w-44"
-          />
-          <Input
-            name="maxRedemptions"
-            type="number"
-            min={1}
-            placeholder="Stock total (opc.)"
-            defaultValue={editing?.maxRedemptions ?? undefined}
-            className="w-40"
-          />
-          <Input
-            name="maxPerCustomer"
-            type="number"
-            min={1}
-            placeholder={`Tope por ${vocabulary.client} (opc.)`}
-            defaultValue={editing?.maxPerCustomer ?? undefined}
-            className="w-44"
-          />
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <FormField id="redemption-maxDiscount" label="Tope de descuento" help="Opcional.">
+            {(a11y) => (
+              <Input {...a11y} id="redemption-maxDiscount" name="maxDiscount" type="number" density="form" defaultValue={editing?.maxDiscount ?? undefined} />
+            )}
+          </FormField>
+          <FormField id="redemption-grantExpiryDays" label="Vigencia" help="Opcional, en días.">
+            {(a11y) => (
+              <Input {...a11y} id="redemption-grantExpiryDays" name="grantExpiryDays" type="number" density="form" min={1} defaultValue={editing?.grantExpiryDays ?? undefined} />
+            )}
+          </FormField>
+          <FormField id="redemption-maxRedemptions" label="Stock total" help="Opcional.">
+            {(a11y) => (
+              <Input {...a11y} id="redemption-maxRedemptions" name="maxRedemptions" type="number" density="form" min={1} defaultValue={editing?.maxRedemptions ?? undefined} />
+            )}
+          </FormField>
+          <FormField id="redemption-maxPerCustomer" label={`Tope por ${vocabulary.client}`} help="Opcional.">
+            {(a11y) => (
+              <Input {...a11y} id="redemption-maxPerCustomer" name="maxPerCustomer" type="number" density="form" min={1} defaultValue={editing?.maxPerCustomer ?? undefined} />
+            )}
+          </FormField>
         </div>
         <label className="flex items-center gap-2 text-sm">
           <input
@@ -247,9 +231,9 @@ export function RedemptionCatalog({
           />
           Activa
         </label>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <div className="flex gap-2">
-          <Button type="submit" size="sm" disabled={isPending}>
+          <Button type="submit" size="form" disabled={isPending}>
             {editing ? 'Guardar cambios' : 'Agregar recompensa'}
           </Button>
           {editing && (

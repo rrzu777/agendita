@@ -4,7 +4,9 @@ import { useState, useTransition } from 'react'
 import { upsertAutomaticRule, archiveAutomaticRule } from '@/server/actions/loyalty'
 import { kindLabels } from '@/lib/loyalty/presets'
 import { Button } from '@/components/ui/button'
+import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
 import { formatMoney } from '@/lib/money'
 import { useVocabulary } from '@/components/vocabulary-provider'
 import type { Vocabulary } from '@/lib/vocabulary'
@@ -222,7 +224,8 @@ function RuleCard({
 
       <div className="mt-3 grid gap-3">
         {/* Selector de recompensa */}
-        <div className="flex flex-wrap items-center gap-3 text-sm">
+        <fieldset className="flex flex-wrap items-center gap-3 text-sm">
+          <legend className="sr-only">Tipo de recompensa</legend>
           <label className="flex items-center gap-1.5">
             <input
               type="radio"
@@ -243,51 +246,80 @@ function RuleCard({
             />
             Recompensa
           </label>
-        </div>
+        </fieldset>
 
         {rewardKind === 'points' ? (
-          <Input
-            name="rewardPoints"
-            type="number"
-            min={1}
-            placeholder={`Cantidad de ${pointsLabel}`}
-            defaultValue={rule?.rewardPoints ?? undefined}
-            className="w-48"
-          />
+          <div className="max-w-xs">
+            <FormField id={`${kind}-rewardPoints`} label="Puntos a entregar">
+              {(a11y) => (
+                <Input
+                  {...a11y}
+                  id={`${kind}-rewardPoints`}
+                  name="rewardPoints"
+                  type="number"
+                  density="form"
+                  min={1}
+                  placeholder={`Cantidad de ${pointsLabel}`}
+                  defaultValue={rule?.rewardPoints ?? undefined}
+                />
+              )}
+            </FormField>
+          </div>
         ) : (
           <div className="grid gap-2">
-            <div className="flex flex-wrap gap-2">
-              <select
-                name="rewardType"
-                defaultValue={rule?.rewardType ?? 'percentage'}
-                className="rounded-md border border-border bg-background px-2 py-1 text-sm"
-              >
-                <option value="percentage">% de descuento</option>
-                <option value="fixed_amount">Monto fijo</option>
-                <option value="free_service">Servicio gratis</option>
-              </select>
-              <Input
-                name="rewardValue"
-                type="number"
-                placeholder="Valor"
-                defaultValue={rule?.rewardValue}
-                className="w-28"
-              />
-              <Input
-                name="maxDiscount"
-                type="number"
-                placeholder={`Tope desc. (${currency})`}
-                defaultValue={rule?.maxDiscount ?? undefined}
-                className="w-40"
-              />
-              <Input
-                name="grantExpiryDays"
-                type="number"
-                min={1}
-                placeholder="Días vencimiento (opc.)"
-                defaultValue={rule?.grantExpiryDays ?? undefined}
-                className="w-44"
-              />
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <FormField id={`${kind}-rewardType`} label="Tipo de beneficio">
+                {(a11y) => (
+                  <NativeSelect
+                    {...a11y}
+                    id={`${kind}-rewardType`}
+                    name="rewardType"
+                    density="form"
+                    defaultValue={rule?.rewardType ?? 'percentage'}
+                  >
+                    <option value="percentage">% de descuento</option>
+                    <option value="fixed_amount">Monto fijo</option>
+                    <option value="free_service">Servicio gratis</option>
+                  </NativeSelect>
+                )}
+              </FormField>
+              <FormField id={`${kind}-rewardValue`} label="Valor del beneficio">
+                {(a11y) => (
+                  <Input
+                    {...a11y}
+                    id={`${kind}-rewardValue`}
+                    name="rewardValue"
+                    type="number"
+                    density="form"
+                    defaultValue={rule?.rewardValue}
+                  />
+                )}
+              </FormField>
+              <FormField id={`${kind}-maxDiscount`} label={`Tope de descuento (${currency})`}>
+                {(a11y) => (
+                  <Input
+                    {...a11y}
+                    id={`${kind}-maxDiscount`}
+                    name="maxDiscount"
+                    type="number"
+                    density="form"
+                    defaultValue={rule?.maxDiscount ?? undefined}
+                  />
+                )}
+              </FormField>
+              <FormField id={`${kind}-grantExpiryDays`} label="Vigencia de la recompensa" help="Opcional, en días.">
+                {(a11y) => (
+                  <Input
+                    {...a11y}
+                    id={`${kind}-grantExpiryDays`}
+                    name="grantExpiryDays"
+                    type="number"
+                    density="form"
+                    min={1}
+                    defaultValue={rule?.grantExpiryDays ?? undefined}
+                  />
+                )}
+              </FormField>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -323,75 +355,75 @@ function RuleCard({
 
         {/* Parámetros por kind */}
         {(kind === 'birthday' || kind === 'anniversary') && (
-          <Input
-            name="windowDays"
-            type="number"
-            min={0}
-            max={60}
-            placeholder="Ventana ± días"
-            defaultValue={cond.windowDays ?? undefined}
-            className="w-44"
-          />
+          <div className="max-w-xs">
+            <FormField
+              id={`${kind}-windowDays`}
+              label={kind === 'birthday' ? 'Ventana de cumpleaños' : 'Ventana de aniversario'}
+              help="Cantidad de días antes y después de la fecha."
+            >
+              {(a11y) => (
+                <Input
+                  {...a11y}
+                  id={`${kind}-windowDays`}
+                  name="windowDays"
+                  type="number"
+                  density="form"
+                  min={0}
+                  max={60}
+                  defaultValue={cond.windowDays ?? undefined}
+                />
+              )}
+            </FormField>
+          </div>
         )}
         {kind === 'winback' && (
-          <div className="flex flex-wrap gap-2">
-            <Input
-              name="inactivityDays"
-              type="number"
-              min={1}
-              placeholder="Días de inactividad"
-              defaultValue={cond.inactivityDays ?? undefined}
-              className="w-44"
-            />
-            <Input
-              name="cooldownDays"
-              type="number"
-              min={0}
-              placeholder="Días de espera (opc.)"
-              defaultValue={cond.cooldownDays ?? undefined}
-              className="w-44"
-            />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField id={`${kind}-inactivityDays`} label="Días de inactividad">
+              {(a11y) => (
+                <Input {...a11y} id={`${kind}-inactivityDays`} name="inactivityDays" type="number" density="form" min={1} defaultValue={cond.inactivityDays ?? undefined} />
+              )}
+            </FormField>
+            <FormField id={`${kind}-cooldownDays`} label="Días de espera" help="Opcional.">
+              {(a11y) => (
+                <Input {...a11y} id={`${kind}-cooldownDays`} name="cooldownDays" type="number" density="form" min={0} defaultValue={cond.cooldownDays ?? undefined} />
+              )}
+            </FormField>
           </div>
         )}
         {kind === 'referral' && (
-          <select
-            name="beneficiary"
-            defaultValue={cond.beneficiary ?? 'both'}
-            className="w-56 rounded-md border border-border bg-background px-2 py-1 text-sm"
-          >
-            <option value="both">{vocabulary.bothParties} ({vocabulary.referrerNoun} y {vocabulary.referredNoun})</option>
-            <option value="referrer">Solo {vocabulary.referrer}</option>
-            <option value="referred">Solo {vocabulary.referredPerson}</option>
-          </select>
+          <div className="max-w-sm">
+            <FormField id={`${kind}-beneficiary`} label="Quién recibe la recompensa">
+              {(a11y) => (
+                <NativeSelect {...a11y} id={`${kind}-beneficiary`} name="beneficiary" density="form" defaultValue={cond.beneficiary ?? 'both'}>
+                  <option value="both">{vocabulary.bothParties} ({vocabulary.referrerNoun} y {vocabulary.referredNoun})</option>
+                  <option value="referrer">Solo {vocabulary.referrer}</option>
+                  <option value="referred">Solo {vocabulary.referredPerson}</option>
+                </NativeSelect>
+              )}
+            </FormField>
+          </div>
         )}
 
         {/* Comunes */}
-        <div className="flex flex-wrap gap-2">
-          <Input
-            name="priority"
-            type="number"
-            min={0}
-            max={1000}
-            placeholder="Prioridad"
-            defaultValue={rule?.priority ?? 0}
-            className="w-32"
-          />
-          <Input
-            name="maxPerCustomer"
-            type="number"
-            min={1}
-            placeholder={`Tope por ${vocabulary.client} (opc.)`}
-            defaultValue={rule?.maxPerCustomer ?? undefined}
-            className="w-48"
-          />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField id={`${kind}-priority`} label="Prioridad" help="Mayor número, mayor prioridad.">
+            {(a11y) => (
+              <Input {...a11y} id={`${kind}-priority`} name="priority" type="number" density="form" min={0} max={1000} defaultValue={rule?.priority ?? 0} />
+            )}
+          </FormField>
+          <FormField id={`${kind}-maxPerCustomer`} label={`Tope por ${vocabulary.client}`} help="Opcional.">
+            {(a11y) => (
+              <Input {...a11y} id={`${kind}-maxPerCustomer`} name="maxPerCustomer" type="number" density="form" min={1} defaultValue={rule?.maxPerCustomer ?? undefined} />
+            )}
+          </FormField>
         </div>
       </div>
 
-      {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
-      {saved && <p className="mt-2 text-sm text-green-600">Guardado.</p>}
+      {error && <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
+      {saved && <p aria-live="polite" className="mt-2 text-sm text-green-600">Guardado.</p>}
 
       <div className="mt-3 flex gap-2">
-        <Button type="submit" size="sm" disabled={isPending}>
+        <Button type="submit" size="form" disabled={isPending}>
           {rule ? 'Guardar cambios' : 'Crear regla'}
         </Button>
         {rule?.isActive && (
