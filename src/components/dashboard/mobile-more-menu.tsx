@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, type FormEvent } from 'react'
+import { flushSync } from 'react-dom'
 import { LogOut, MoreHorizontal } from 'lucide-react'
 import { GuardedLink } from '@/components/dashboard/unsaved-changes-provider'
 import {
@@ -24,6 +25,9 @@ type MobileMoreMenuProps = {
 
 export function MobileMoreMenu({ items, pathname, onSignOut }: MobileMoreMenuProps) {
   const [open, setOpen] = useState(false)
+  const closeForTour = () => {
+    flushSync(() => setOpen(false))
+  }
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -69,7 +73,7 @@ export function MobileMoreMenu({ items, pathname, onSignOut }: MobileMoreMenuPro
               )
             })}
           </ul>
-          <TourHelpMenu className="mt-3 border-t border-border pt-3" />
+          <TourHelpMenu className="mt-3 border-t border-border pt-3" onAcceptedStart={closeForTour} />
           <form action={signOut} onSubmit={onSignOut} className="mt-3 border-t border-border pt-3">
             <button
               type="submit"

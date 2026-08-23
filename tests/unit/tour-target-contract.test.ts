@@ -8,6 +8,18 @@ import {
 } from '@/components/dashboard/tours/tour-definitions'
 
 describe('tour target contract', () => {
+  it('keeps the exact unique target set required by the dashboard introduction', () => {
+    expect(Object.keys(TOUR_TARGET_FILES).sort()).toEqual([
+      'bookings-new',
+      'dashboard-checklist',
+      'nav-desktop',
+      'nav-mobile-more',
+      'tour-help',
+    ])
+    expect(new Set(Object.keys(TOUR_TARGET_FILES)).size)
+      .toBe(Object.keys(TOUR_TARGET_FILES).length)
+  })
+
   it('keeps every declared static target on its declared product surface', () => {
     for (const [targetId, files] of Object.entries(TOUR_TARGET_FILES)) {
       for (const file of files) {

@@ -34,6 +34,7 @@ import {
 } from '@/components/dashboard/tours/dashboard-tour-provider'
 import { useDashboardTours } from '@/components/dashboard/tours/tour-context'
 import { TourInvitation } from '@/components/dashboard/tours/tour-invitation'
+import { MobileMoreMenu } from '@/components/dashboard/mobile-more-menu'
 import type { TourDefinition } from '@/components/dashboard/tours/tour-types'
 
 const definition = {
@@ -150,7 +151,7 @@ describe('DashboardTourProvider', () => {
   type ProviderOptions = Pick<
     ComponentProps<typeof DashboardTourProvider>,
     'role' | 'onboardingCompleted' | 'toursEnabled'
-  > & { dirty?: boolean; withPromptSurface?: boolean; withInvitation?: boolean }
+  > & { dirty?: boolean; withPromptSurface?: boolean; withInvitation?: boolean; withMobileMore?: boolean }
 
   async function renderProvider({
     dirty = false,
@@ -159,6 +160,7 @@ describe('DashboardTourProvider', () => {
     toursEnabled = true,
     withPromptSurface = false,
     withInvitation = false,
+    withMobileMore = false,
   }: Partial<ProviderOptions> = {}) {
     await act(async () => root.render(
       <UnsavedChangesProvider>
@@ -171,6 +173,7 @@ describe('DashboardTourProvider', () => {
           {withPromptSurface && <div data-interruptive-surface>Install prompt</div>}
           <Controls />
           {withInvitation && <TourInvitation />}
+          {withMobileMore && <MobileMoreMenu items={[]} pathname={pathname} onSignOut={() => undefined} />}
         </DashboardTourProvider>
       </UnsavedChangesProvider>,
     ))
@@ -410,9 +413,51 @@ describe('DashboardTourProvider', () => {
     document.body.appendChild(blockingSurface)
     await settle()
 
-    expect(document.querySelector('[role="dialog"]')?.textContent)
-      .toContain('Termina o descarta tus cambios para continuar')
-    expect(buttonNamed('Siguiente').disabled).toBe(true)
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.querySelector('[data-testid="active"]')?.textContent).toBe('dashboard_intro:0')
+  })
+
+  it('hides the mobile tour overlay for an aria-modal-only interruptive surface', async () => {
+    mobileViewport = true
+    await renderProvider()
+    await click('Iniciar recorrido')
+    expect(document.querySelector('[data-slot="sheet-overlay"]')).not.toBeNull()
+    const blockingSurface = document.createElement('div')
+    blockingSurface.dataset.interruptiveSurface = ''
+    blockingSurface.setAttribute('aria-modal', 'true')
+    document.body.appendChild(blockingSurface)
+    await settle()
+
+    expect(document.querySelector('[data-slot="sheet-overlay"]')).toBeNull()
+    expect(getComputedStyle(blockingSurface).display).not.toBe('none')
+    expect(document.querySelector('[data-testid="active"]')?.textContent).toBe('dashboard_intro:0')
+  })
+
+  it('closes Más before opening the replay Sheet at 375px', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 })
+    mobileViewport = true
+    mockGetTourProgress.mockResolvedValue({
+      ok: true,
+      data: [{ key: 'dashboard_intro', version: 1, status: 'completed', lastStep: 1 }],
+    })
+    mockLoadTourDefinition.mockResolvedValue({
+      ...definition,
+      steps: definition.steps.map((step) => ({ ...step, targetId: 'nav-mobile-more' })),
+    })
+    await renderProvider({ withMobileMore: true })
+
+    await click('Más')
+    await click('Ayuda y recorridos')
+    const help = document.querySelector('[aria-label="Recorridos disponibles"]') as HTMLElement
+    const replay = Array.from(help.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Repetir recorrido')
+    await act(async () => replay?.click())
+    await settle()
+
+    expect(window.innerWidth).toBe(375)
+    expect(document.querySelectorAll('[data-slot="sheet-overlay"]')).toHaveLength(1)
+    expect(Array.from(document.querySelectorAll('[data-slot="sheet-content"]'))
+      .some((sheet) => sheet.textContent?.includes('Más opciones'))).toBe(false)
   })
 
   it('keeps a mounted lower-priority prompt hidden until the tour closes', async () => {

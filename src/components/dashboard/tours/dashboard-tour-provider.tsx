@@ -30,11 +30,13 @@ import type { TourDefinition, TourStep, TourViewport } from './tour-types'
 
 const MOBILE_VIEWPORT_QUERY = '(max-width: 767px)'
 const STEP_PERSISTENCE_DEBOUNCE_MS = 200
+const OPEN_INTERRUPTIVE_SURFACE_SELECTOR =
+  '[data-interruptive-surface][data-state="open"], [data-interruptive-surface][aria-modal="true"]'
+const LOWER_PRIORITY_SURFACE_SELECTOR =
+  '[data-interruptive-surface]:not([data-state="open"]):not([aria-modal="true"])'
 
 function hasOpenInterruptiveSurface(): boolean {
-  return document.querySelector(
-    '[data-interruptive-surface][data-state="open"], [data-interruptive-surface][aria-modal="true"]',
-  ) !== null
+  return document.querySelector(OPEN_INTERRUPTIVE_SURFACE_SELECTOR) !== null
 }
 
 function useInterruptiveSurfaceOpen(): boolean {
@@ -592,10 +594,10 @@ export function DashboardTourProvider({
       <div className="contents" data-tour-active={session ? '' : undefined}>
         {children}
         {session && (
-          <style>{'[data-tour-active] [data-interruptive-surface]:not([data-state="open"]) { display: none !important; }'}</style>
+          <style>{`[data-tour-active] ${LOWER_PRIORITY_SURFACE_SELECTOR} { display: none !important; }`}</style>
         )}
       </div>
-      {session?.target && activeStep && (
+      {!interruptiveSurfaceOpen && session?.target && activeStep && (
         <TourSurface
           step={activeStep}
           stepNumber={session.position + 1}
