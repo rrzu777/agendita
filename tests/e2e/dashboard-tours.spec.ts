@@ -84,6 +84,21 @@ async function expectActiveTourSurfaceWithinViewport(page: Page) {
   })).toBe(true)
 }
 
+async function expectHighlightAroundTarget(page: Page, targetId: string) {
+  await expect.poll(() => page.evaluate((id) => {
+    const target = document.querySelector<HTMLElement>(`[data-tour-id="${id}"]`)
+    const highlight = document.querySelector<HTMLElement>('[data-tour-highlight]')
+    if (!target || !highlight) return false
+    const targetRect = target.getBoundingClientRect()
+    const highlightRect = highlight.getBoundingClientRect()
+    const tolerance = 6
+    return Math.abs(highlightRect.left - (targetRect.left - 4)) <= tolerance
+      && Math.abs(highlightRect.top - (targetRect.top - 4)) <= tolerance
+      && Math.abs(highlightRect.width - (targetRect.width + 8)) <= tolerance
+      && Math.abs(highlightRect.height - (targetRect.height + 8)) <= tolerance
+  }, targetId)).toBe(true)
+}
+
 async function readTourProgress(
   fixture: DashboardFixture,
   tour: { key: string; version: number },
@@ -296,6 +311,8 @@ test('an available bookings microtour can be dismissed once and only manually re
     await page.goto('/dashboard/bookings')
     await startTourFromHelp(page, 1440, BOOKINGS_TOUR.title, 'Iniciar recorrido')
     await expectTourStatus(fixture, BOOKINGS_TOUR, 'in_progress')
+    await expect.poll(async () => (await readTourProgress(fixture, BOOKINGS_TOUR))?.offeredAt)
+      .not.toBeNull()
 
     await page.keyboard.press('Escape')
     await expect(page.getByRole('heading', { name: '¿Omitir este recorrido?' })).toBeVisible()
@@ -336,13 +353,29 @@ for (const scenario of [
       }
 
       await startTourFromHelp(page, scenario.width, BOOKINGS_TOUR.title, 'Iniciar recorrido')
-      await finishTour(page, [
-        'Crea una reserva',
-        'Busca una reserva',
-        'Revisa transferencias',
-        'Consulta el estado y saldo',
-        'Gestiona la reserva',
-      ])
+      const steps = scenario.withBooking
+        ? [
+            ['Crea una reserva', 'bookings-new'],
+            ['Busca una reserva', 'bookings-search'],
+            ['Aquí verás el estado y saldo', 'bookings-status'],
+            ['Aquí gestionarás cada reserva', 'bookings-actions'],
+          ] as const
+        : [
+            ['Crea una reserva', 'bookings-new'],
+            ['Busca una reserva', 'bookings-search'],
+            ['Aquí verás transferencias por revisar', 'bookings-empty'],
+            ['Aquí verás el estado y saldo', 'bookings-empty'],
+            ['Aquí gestionarás cada reserva', 'bookings-empty'],
+          ] as const
+      for (const [index, [title, targetId]] of steps.entries()) {
+        await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+        await expectHighlightAroundTarget(page, targetId)
+        await page.getByRole('button', {
+          name: index === steps.length - 1 ? 'Terminar' : 'Siguiente',
+          exact: true,
+        }).click()
+      }
+      await expectTourSurfacesClosed(page)
       await expectTourStatus(fixture, BOOKINGS_TOUR, 'completed')
       await expectNoHorizontalOverflow(page)
     } finally {

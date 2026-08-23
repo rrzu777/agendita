@@ -22,12 +22,14 @@ describe('TourHelpMenu', () => {
   let container: HTMLDivElement
   let root: Root
   const start = vi.fn<DashboardTourContextValue['start']>()
+  const offer = vi.fn<DashboardTourContextValue['offer']>()
 
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
     start.mockResolvedValue(undefined)
+    offer.mockResolvedValue(undefined)
   })
 
   afterEach(async () => {
@@ -49,7 +51,7 @@ describe('TourHelpMenu', () => {
         next: vi.fn(),
         previous: vi.fn(),
         dismiss: vi.fn(),
-        offer: vi.fn(),
+        offer,
         closeReplay: vi.fn(),
       }}>
         <TourHelpMenu {...options} />
@@ -92,6 +94,8 @@ describe('TourHelpMenu', () => {
 
     await act(async () => startAvailable?.click())
 
+    expect(offer).toHaveBeenCalledWith('bookings')
+    expect(offer).toHaveBeenCalledBefore(start)
     expect(start).toHaveBeenCalledWith('bookings')
   })
 

@@ -248,6 +248,21 @@ describe('TourSurface', () => {
     expect(document.querySelector<HTMLElement>('[data-tour-anchor]')?.style.top).toBe('162px')
   })
 
+  it('recomputes the active target rectangle after a sibling class changes layout', async () => {
+    const sibling = document.createElement('aside')
+    document.body.insertBefore(sibling, target)
+    await renderSurface('desktop')
+    rect = new DOMRect(200, 150, 160, 44)
+
+    await act(async () => {
+      sibling.classList.add('collapsed')
+      await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    })
+
+    expect(document.querySelector<HTMLElement>('[data-tour-anchor]')?.style.left).toBe('280px')
+    expect(document.querySelector<HTMLElement>('[data-tour-anchor]')?.style.top).toBe('172px')
+  })
+
   it('ignores child-list mutations owned by the tour portal and surface', async () => {
     await renderSurface('desktop')
     const requestAnimationFrame = vi.spyOn(window, 'requestAnimationFrame')

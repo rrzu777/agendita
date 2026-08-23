@@ -141,7 +141,8 @@ function useTargetRect(target: HTMLElement, onFailure: () => void) {
           && (record.target === target || record.target.contains(target))
         ))
         const externalLayoutChanged = records.some((record) => (
-          record.type === 'childList' && !isTourSurfaceMutation(record)
+          (record.type === 'childList' || record.type === 'attributes')
+          && !isTourSurfaceMutation(record)
         ))
         if (target.isConnected && !targetVisibilityChanged && !externalLayoutChanged) return
         if (!readTargetRect(target)) {

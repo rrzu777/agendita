@@ -430,7 +430,7 @@ export function DashboardTourProvider({
     const runtime = sessionRef.current
     if (!runtime || hasUnsavedChanges || interruptiveSurfaceOpen) return
 
-    if (runtime.position >= runtime.visibleStepIndexes.length - 1) {
+    const completeRuntime = async () => {
       const finalStep = runtime.visibleStepIndexes[runtime.position]
       const { key, definition, replay } = runtime
       cancelStepPersistence()
@@ -445,6 +445,10 @@ export function DashboardTourProvider({
         await enqueuePersistence(key, definition.version, { type: 'step', step: finalStep })
         await enqueuePersistence(key, definition.version, { type: 'complete' })
       }
+    }
+
+    if (runtime.position >= runtime.visibleStepIndexes.length - 1) {
+      await completeRuntime()
       return
     }
 
@@ -458,7 +462,11 @@ export function DashboardTourProvider({
     })
     if (!mountedRef.current || runtime.generation !== sessionGenerationRef.current) return
     if (!located) {
-      invalidateSession()
+      const remainingStepsAreOptional = runtime.visibleStepIndexes
+        .slice(runtime.position + 1)
+        .every((index) => runtime.definition.steps[index].targetKind === 'data')
+      if (remainingStepsAreOptional) await completeRuntime()
+      else invalidateSession()
       return
     }
 

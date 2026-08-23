@@ -462,6 +462,7 @@ describe('DashboardTourProvider', () => {
     pathname = '/dashboard/bookings'
     target.dataset.tourId = 'bookings-new'
     appendTourTarget('bookings-search')
+    appendTourTarget('bookings-status')
     const { definition: bookings } = await import('@/components/dashboard/tours/definitions/bookings')
     mockLoadTourDefinition.mockResolvedValue(bookings)
     await renderProvider()
@@ -471,12 +472,10 @@ describe('DashboardTourProvider', () => {
     await click('Siguiente')
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Busca una reserva')
     await click('Siguiente')
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Revisa transferencias')
+    await settle(350)
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Aquí verás el estado y saldo')
     await click('Siguiente')
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Consulta el estado y saldo')
-    await click('Siguiente')
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Gestiona la reserva')
-    await click('Terminar')
+    await settle(350)
 
     expect(document.querySelector('[data-testid="active"]')?.textContent).toBe('none')
     expect(mockRecordTourProgress).toHaveBeenCalledWith({

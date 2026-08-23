@@ -31,7 +31,7 @@ export function TourHelpMenu({ className, compact = false, onAcceptedStart }: To
   const [open, setOpen] = useState(false)
   const compactTriggerRef = useRef<HTMLButtonElement>(null)
   const compactPopoverWasOpenRef = useRef(false)
-  const { helpTours, start } = useDashboardTours()
+  const { helpTours, offer, start } = useDashboardTours()
 
   useEffect(() => {
     if (!compact) return
@@ -102,6 +102,9 @@ export function TourHelpMenu({ className, compact = false, onAcceptedStart }: To
                   compactTriggerRef.current?.focus({ preventScroll: true })
                 }
                 await onAcceptedStart?.()
+                if (tour.status === 'available' || tour.status === 'in_progress') {
+                  await offer(tour.key)
+                }
                 if (tour.status === 'completed' || tour.status === 'dismissed') {
                   await start(tour.key, { replay: true })
                   return

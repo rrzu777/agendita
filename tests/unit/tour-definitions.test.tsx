@@ -29,11 +29,11 @@ describe('dashboard tour definitions', () => {
 
     expect(bookings.steps.find((step) => step.id === 'status')).toMatchObject({
       targetId: 'bookings-status',
-      fallbackTargetId: 'bookings-search',
+      fallbackTargetId: 'bookings-empty',
     })
     expect(bookings.steps.find((step) => step.id === 'transfer')).toMatchObject({
       targetId: 'bookings-transfer',
-      fallbackTargetId: 'bookings-search',
+      fallbackTargetId: 'bookings-empty',
     })
     expect(payments.steps.map((step) => step.targetId)).toEqual(expect.arrayContaining([
       'payments-stats',
@@ -59,7 +59,7 @@ describe('dashboard tour definitions', () => {
       expect(definition.steps.length).toBeLessThanOrEqual(5)
     }
     expect(bookings.steps.find((step) => step.id === 'actions')).toMatchObject({
-      fallbackTargetId: 'bookings-search',
+      fallbackTargetId: 'bookings-empty',
     })
   })
 
