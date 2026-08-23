@@ -174,7 +174,7 @@ describe('tour progress actions', () => {
     expect(mocks.transaction).not.toHaveBeenCalled()
   })
 
-  it('preserves completion and its timestamp when a stale step arrives', async () => {
+  it('returns completed progress without writing when a stale step arrives', async () => {
     const completedAt = new Date('2026-08-22T17:00:00.000Z')
     mocks.findUnique.mockResolvedValue({
       id: 'progress-1',
@@ -190,12 +190,6 @@ describe('tour progress actions', () => {
       dismissedAt: null,
       updatedAt: completedAt,
     })
-    mocks.upsert.mockResolvedValue({
-      status: 'completed',
-      lastStep: 3,
-      completedAt,
-    })
-
     const result = await recordTourProgress({
       key: 'bookings',
       version: 1,
@@ -206,14 +200,16 @@ describe('tour progress actions', () => {
       ok: true,
       data: { key: 'bookings', version: 1, status: 'completed', lastStep: 3 },
     })
-    expect(mocks.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      update: expect.objectContaining({ completedAt }),
-    }))
+    expect(mocks.advisoryLock).toHaveBeenCalledWith(
+      tx,
+      'tour:user-1:business-1:bookings:1',
+    )
+    expect(mocks.advisoryLock.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.findUnique.mock.invocationCallOrder[0])
+    expect(mocks.upsert).not.toHaveBeenCalled()
   })
 
-  it('uses the accepted event time once for duplicate completion', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-08-22T18:00:00.000Z'))
+  it('returns completed progress without writing for duplicate completion', async () => {
     const original = new Date('2026-08-22T17:00:00.000Z')
     mocks.findUnique.mockResolvedValue({
       status: 'completed',
@@ -223,19 +219,54 @@ describe('tour progress actions', () => {
       completedAt: original,
       dismissedAt: null,
     })
-    mocks.upsert.mockResolvedValue({ status: 'completed', lastStep: 3 })
+    await expect(recordTourProgress({
+      key: 'bookings', version: 1, event: { type: 'complete' },
+    })).resolves.toEqual({
+      ok: true,
+      data: { key: 'bookings', version: 1, status: 'completed', lastStep: 3 },
+    })
+    expect(mocks.upsert).not.toHaveBeenCalled()
+  })
 
-    try {
-      await recordTourProgress({
-        key: 'bookings', version: 1, event: { type: 'complete' },
-      })
+  it('returns dismissed progress without writing for duplicate dismissal', async () => {
+    mocks.findUnique.mockResolvedValue({
+      status: 'dismissed',
+      lastStep: 1,
+      offeredAt: null,
+      startedAt: null,
+      completedAt: null,
+      dismissedAt: new Date('2026-08-22T17:00:00.000Z'),
+    })
 
-      expect(mocks.upsert).toHaveBeenCalledWith(expect.objectContaining({
-        update: expect.objectContaining({ completedAt: original }),
-      }))
-    } finally {
-      vi.useRealTimers()
-    }
+    await expect(recordTourProgress({
+      key: 'settings', version: 1, event: { type: 'dismiss' },
+    })).resolves.toEqual({
+      ok: true,
+      data: { key: 'settings', version: 1, status: 'dismissed', lastStep: 1 },
+    })
+    expect(mocks.upsert).not.toHaveBeenCalled()
+  })
+
+  it('still upserts legal non-terminal step progression', async () => {
+    mocks.findUnique.mockResolvedValue({
+      status: 'in_progress',
+      lastStep: 2,
+      offeredAt: null,
+      startedAt: new Date('2026-08-22T16:00:00.000Z'),
+      completedAt: null,
+      dismissedAt: null,
+    })
+    mocks.upsert.mockResolvedValue({ status: 'in_progress', lastStep: 3 })
+
+    await expect(recordTourProgress({
+      key: 'bookings', version: 1, event: { type: 'step', step: 3 },
+    })).resolves.toEqual({
+      ok: true,
+      data: { key: 'bookings', version: 1, status: 'in_progress', lastStep: 3 },
+    })
+    expect(mocks.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      update: expect.objectContaining({ status: 'in_progress', lastStep: 3 }),
+    }))
   })
 
   it('surfaces user validation errors through the action result boundary', async () => {

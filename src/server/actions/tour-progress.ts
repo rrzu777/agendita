@@ -187,6 +187,9 @@ async function _recordTourProgress(
     const current = await tx.userTourProgress.findUnique({
       where: { userId_businessId_tourKey_tourVersion: identity },
     })
+    if (current?.status === 'completed' || current?.status === 'dismissed') {
+      return { status: current.status, lastStep: current.lastStep }
+    }
     const next = nextTourState(
       current
         ? { status: current.status, lastStep: current.lastStep }

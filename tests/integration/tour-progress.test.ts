@@ -178,41 +178,88 @@ describe('persisted tour progress', () => {
     })
   })
 
-  it('keeps duplicate completion and dismissal timestamps idempotent', async () => {
+  it('keeps duplicate completion and dismissal rows fully idempotent', async () => {
     setAuth(USER_ONE, BUSINESS_ONE)
     await unwrap(recordTourProgress({
       key: 'dashboard_intro', version: 1, event: { type: 'complete' },
     }))
-    const completedOnce = await prisma.userTourProgress.findFirstOrThrow({
-      where: { userId: USER_ONE, businessId: BUSINESS_ONE, tourKey: 'dashboard_intro' },
+    const completedIdentity = {
+      userId: USER_ONE,
+      businessId: BUSINESS_ONE,
+      tourKey: 'dashboard_intro',
+      tourVersion: 1,
+    }
+    const completedSentinel = new Date('2020-01-01T00:00:00.000Z')
+    const completedOnce = await prisma.userTourProgress.update({
+      where: { userId_businessId_tourKey_tourVersion: completedIdentity },
+      data: { updatedAt: completedSentinel },
     })
     await unwrap(recordTourProgress({
       key: 'dashboard_intro', version: 1, event: { type: 'complete' },
     }))
-    const completedTwice = await prisma.userTourProgress.findFirstOrThrow({
-      where: { userId: USER_ONE, businessId: BUSINESS_ONE, tourKey: 'dashboard_intro' },
+    const completedTwice = await prisma.userTourProgress.findUniqueOrThrow({
+      where: { userId_businessId_tourKey_tourVersion: completedIdentity },
     })
 
     await unwrap(recordTourProgress({
       key: 'settings', version: 1, event: { type: 'dismiss' },
     }))
-    const dismissedOnce = await prisma.userTourProgress.findFirstOrThrow({
-      where: { userId: USER_ONE, businessId: BUSINESS_ONE, tourKey: 'settings' },
+    const dismissedIdentity = {
+      userId: USER_ONE,
+      businessId: BUSINESS_ONE,
+      tourKey: 'settings',
+      tourVersion: 1,
+    }
+    const dismissedSentinel = new Date('2020-02-01T00:00:00.000Z')
+    const dismissedOnce = await prisma.userTourProgress.update({
+      where: { userId_businessId_tourKey_tourVersion: dismissedIdentity },
+      data: { updatedAt: dismissedSentinel },
     })
     await unwrap(recordTourProgress({
       key: 'settings', version: 1, event: { type: 'dismiss' },
     }))
-    const dismissedTwice = await prisma.userTourProgress.findFirstOrThrow({
-      where: { userId: USER_ONE, businessId: BUSINESS_ONE, tourKey: 'settings' },
+    const dismissedTwice = await prisma.userTourProgress.findUniqueOrThrow({
+      where: { userId_businessId_tourKey_tourVersion: dismissedIdentity },
     })
 
     expect(completedTwice.completedAt).toEqual(completedOnce.completedAt)
+    expect(completedTwice.updatedAt).toEqual(completedSentinel)
     expect(completedTwice.status).toBe('completed')
     expect(dismissedTwice.dismissedAt).toEqual(dismissedOnce.dismissedAt)
+    expect(dismissedTwice.updatedAt).toEqual(dismissedSentinel)
     expect(dismissedTwice.status).toBe('dismissed')
     await expect(prisma.userTourProgress.count({
       where: { userId: USER_ONE, businessId: BUSINESS_ONE },
     })).resolves.toBe(2)
+  })
+
+  it('still writes legal non-terminal progression', async () => {
+    setAuth(USER_ONE, BUSINESS_ONE)
+    await unwrap(recordTourProgress({
+      key: 'bookings', version: 1, event: { type: 'start' },
+    }))
+    const identity = {
+      userId: USER_ONE,
+      businessId: BUSINESS_ONE,
+      tourKey: 'bookings',
+      tourVersion: 1,
+    }
+    const sentinel = new Date('2020-03-01T00:00:00.000Z')
+    await prisma.userTourProgress.update({
+      where: { userId_businessId_tourKey_tourVersion: identity },
+      data: { updatedAt: sentinel },
+    })
+
+    await unwrap(recordTourProgress({
+      key: 'bookings', version: 1, event: { type: 'step', step: 2 },
+    }))
+
+    const progressed = await prisma.userTourProgress.findUniqueOrThrow({
+      where: { userId_businessId_tourKey_tourVersion: identity },
+      select: { status: true, lastStep: true, updatedAt: true },
+    })
+    expect(progressed).toMatchObject({ status: 'in_progress', lastStep: 2 })
+    expect(progressed.updatedAt).not.toEqual(sentinel)
   })
 
   it('cascades progress when either its user or its business is deleted', async () => {
