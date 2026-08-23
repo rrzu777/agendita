@@ -1,4 +1,4 @@
-import { act, StrictMode } from 'react'
+import { act, StrictMode, type ComponentProps } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -19,6 +19,7 @@ vi.mock('@/components/dashboard/tours/tour-definitions', async (importOriginal) 
 }))
 
 let pathname = '/dashboard'
+let mobileViewport = false
 vi.mock('next/navigation', () => ({
   usePathname: () => pathname,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -47,7 +48,7 @@ const definition = {
       targetId: 'nav-desktop',
       title: 'Primer paso',
       body: 'Primera explicación.',
-      viewports: ['desktop'],
+      viewports: ['desktop', 'mobile'],
       waitMs: 20,
     },
     {
@@ -56,7 +57,7 @@ const definition = {
       targetId: 'nav-desktop',
       title: 'Segundo paso',
       body: 'Segunda explicación.',
-      viewports: ['desktop'],
+      viewports: ['desktop', 'mobile'],
       waitMs: 20,
     },
   ],
@@ -113,6 +114,7 @@ describe('DashboardTourProvider', () => {
 
   beforeEach(() => {
     pathname = '/dashboard'
+    mobileViewport = false
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -122,7 +124,7 @@ describe('DashboardTourProvider', () => {
     vi.spyOn(target, 'getBoundingClientRect').mockReturnValue(new DOMRect(20, 30, 100, 40))
     document.body.appendChild(target)
     vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
-      matches: false,
+      matches: query === '(max-width: 767px)' ? mobileViewport : false,
       media: query,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
@@ -144,13 +146,23 @@ describe('DashboardTourProvider', () => {
     vi.clearAllMocks()
   })
 
-  async function renderProvider({ dirty = false }: { dirty?: boolean } = {}) {
+  type ProviderOptions = Pick<
+    ComponentProps<typeof DashboardTourProvider>,
+    'role' | 'onboardingCompleted' | 'toursEnabled'
+  > & { dirty?: boolean }
+
+  async function renderProvider({
+    dirty = false,
+    role = 'owner',
+    onboardingCompleted = true,
+    toursEnabled = true,
+  }: Partial<ProviderOptions> = {}) {
     await act(async () => root.render(
       <UnsavedChangesProvider>
         <DashboardTourProvider
-          role="owner"
-          onboardingCompleted
-          toursEnabled
+          role={role}
+          onboardingCompleted={onboardingCompleted}
+          toursEnabled={toursEnabled}
         >
           <DirtyRegistration dirty={dirty} />
           <Controls />
@@ -380,6 +392,98 @@ describe('DashboardTourProvider', () => {
 
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Primer paso')
     expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('Carga obsoleta')
+  })
+
+  it.each([
+    ['the rollout flag turns off', { toursEnabled: false }],
+    ['the authenticated role changes', { role: 'admin' as const }],
+    ['onboarding becomes incomplete', { onboardingCompleted: false }],
+  ])('invalidates a pending start when %s', async (_label, override) => {
+    let resolveDefinition!: (value: TourDefinition) => void
+    mockLoadTourDefinition.mockReturnValue(new Promise<TourDefinition>((resolve) => {
+      resolveDefinition = resolve
+    }))
+    await renderProvider()
+    await click('Iniciar recorrido')
+
+    await renderProvider(override)
+    await act(async () => resolveDefinition(definition))
+    await settle()
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.querySelector('[data-tour-highlight]')).toBeNull()
+    expect(document.querySelector('[data-testid="active"]')?.textContent).toBe('none')
+  })
+
+  it.each([
+    ['the rollout flag turns off', { toursEnabled: false }],
+    ['the authenticated role changes', { role: 'admin' as const }],
+    ['onboarding becomes incomplete', { onboardingCompleted: false }],
+  ])('closes an active session when %s', async (_label, override) => {
+    await renderProvider()
+    await click('Iniciar recorrido')
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+
+    await renderProvider(override)
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.querySelector('[data-tour-highlight]')).toBeNull()
+    expect(document.querySelector('[data-testid="active"]')?.textContent).toBe('none')
+  })
+
+  it('closes a mobile tour and cleans active resources when its target is removed', async () => {
+    mobileViewport = true
+    const removeEventListener = vi.spyOn(window, 'removeEventListener')
+    const resizeDisconnect = vi.spyOn(globalThis.ResizeObserver.prototype, 'disconnect')
+    const mutationDisconnect = vi.spyOn(globalThis.MutationObserver.prototype, 'disconnect')
+    await renderProvider()
+    await click('Iniciar recorrido')
+    expect(document.querySelector('[data-slot="sheet-overlay"]')).not.toBeNull()
+    vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(42)
+    const cancelAnimationFrame = vi.spyOn(window, 'cancelAnimationFrame')
+    window.dispatchEvent(new Event('resize'))
+
+    target.remove()
+    await settle()
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.querySelector('[data-slot="sheet-overlay"]')).toBeNull()
+    expect(document.querySelector('[data-tour-highlight]')).toBeNull()
+    expect(resizeDisconnect).toHaveBeenCalled()
+    expect(mutationDisconnect).toHaveBeenCalled()
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(42)
+    expect(removeEventListener).toHaveBeenCalledWith('resize', expect.any(Function))
+    expect(removeEventListener).toHaveBeenCalledWith('scroll', expect.any(Function), true)
+  })
+
+  it('fails open without a mobile overlay when target measurement throws', async () => {
+    mobileViewport = true
+    vi.mocked(target.getBoundingClientRect).mockImplementation(() => {
+      throw new Error('measurement failed')
+    })
+    await renderProvider()
+
+    await click('Iniciar recorrido')
+    await settle()
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.querySelector('[data-slot="sheet-overlay"]')).toBeNull()
+    expect(document.querySelector('[data-tour-highlight]')).toBeNull()
+  })
+
+  it('fails open and removes the mobile overlay when ResizeObserver setup throws', async () => {
+    mobileViewport = true
+    vi.stubGlobal('ResizeObserver', vi.fn(function BrokenResizeObserver() {
+      throw new Error('resize observer unavailable')
+    }))
+    await renderProvider()
+
+    await click('Iniciar recorrido')
+    await settle()
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.querySelector('[data-slot="sheet-overlay"]')).toBeNull()
+    expect(document.querySelector('[data-tour-highlight]')).toBeNull()
   })
 
   it('does not advertise unknown state after a progress read failure but still permits explicit replay', async () => {

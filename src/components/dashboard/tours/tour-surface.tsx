@@ -38,39 +38,86 @@ export type TourSurfaceProps = {
   isLastStep: boolean
   restoreFocusTo?: HTMLElement | null
   restoreFocusOnUnmount?: boolean
+  onFailure?: () => void
   onPrevious: () => void
   onNext: () => void | Promise<void>
   onDismiss: () => void | Promise<void>
 }
 
-function useTargetRect(target: HTMLElement) {
-  const targetRect = useMemo(() => target.getBoundingClientRect(), [target])
+function readTargetRect(target: HTMLElement): DOMRect | null {
+  if (!target.isConnected) return null
+  try {
+    const rect = target.getBoundingClientRect()
+    return [rect.left, rect.top, rect.width, rect.height].every(Number.isFinite)
+      ? rect
+      : null
+  } catch {
+    return null
+  }
+}
+
+function useTargetRect(target: HTMLElement, onFailure: () => void) {
+  const targetRect = useMemo(() => readTargetRect(target), [target])
   const [measurement, setMeasurement] = useState(() => ({ target, rect: targetRect }))
   const frame = useRef<number | null>(null)
 
   useEffect(() => {
     let active = true
+    let resizeObserver: ResizeObserver | null = null
+    let removalObserver: MutationObserver | null = null
+    const cleanup = () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+      resizeObserver?.disconnect()
+      removalObserver?.disconnect()
+      if (frame.current !== null) {
+        window.cancelAnimationFrame(frame.current)
+        frame.current = null
+      }
+    }
+    const failOpen = () => {
+      if (!active) return
+      active = false
+      cleanup()
+      onFailure()
+    }
     const update = () => {
       if (frame.current !== null) return
       frame.current = window.requestAnimationFrame(() => {
         frame.current = null
-        if (active) setMeasurement({ target, rect: target.getBoundingClientRect() })
+        if (!active) return
+        const rect = readTargetRect(target)
+        if (!rect) {
+          failOpen()
+          return
+        }
+        setMeasurement({ target, rect })
       })
     }
-    const resizeObserver = new ResizeObserver(update)
 
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
-    resizeObserver.observe(target)
+    if (!targetRect) {
+      failOpen()
+      return cleanup
+    }
+
+    try {
+      resizeObserver = new ResizeObserver(update)
+      removalObserver = new MutationObserver(() => {
+        if (!target.isConnected) failOpen()
+      })
+      window.addEventListener('resize', update)
+      window.addEventListener('scroll', update, true)
+      resizeObserver.observe(target)
+      removalObserver.observe(document.documentElement, { childList: true, subtree: true })
+    } catch {
+      failOpen()
+    }
 
     return () => {
       active = false
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
-      resizeObserver.disconnect()
-      if (frame.current !== null) window.cancelAnimationFrame(frame.current)
+      cleanup()
     }
-  }, [target])
+  }, [onFailure, target, targetRect])
 
   return measurement.target === target ? measurement.rect : targetRect
 }
@@ -167,8 +214,14 @@ export function TourSurface(props: TourSurfaceProps) {
     viewport,
     restoreFocusTo,
     restoreFocusOnUnmount = true,
+    onFailure,
   } = props
-  const rect = useTargetRect(target)
+  const [failed, setFailed] = useState(false)
+  const failOpen = useCallback(() => {
+    setFailed(true)
+    onFailure?.()
+  }, [onFailure])
+  const rect = useTargetRect(target, failOpen)
   const [confirmingDismiss, setConfirmingDismiss] = useState(false)
   const reactId = useId()
   const titleId = `tour-title-${reactId}`
@@ -219,6 +272,8 @@ export function TourSurface(props: TourSurfaceProps) {
     descriptionId,
     onContinue: continueTour,
   }
+
+  if (failed || !rect) return null
 
   const highlightStyle = {
     left: rect.left - 4,

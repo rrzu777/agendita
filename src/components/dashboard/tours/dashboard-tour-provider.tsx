@@ -97,6 +97,7 @@ export function DashboardTourProvider({
   const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve())
   const routeRef = useRef(pathname)
   const viewportRef = useRef(viewport)
+  const eligibilityRef = useRef({ role, onboardingCompleted, toursEnabled })
 
   const setSession = useCallback((next: RuntimeSession | null) => {
     sessionRef.current = next
@@ -452,6 +453,10 @@ export function DashboardTourProvider({
     if (sessionRef.current?.replay) invalidateSession()
   }, [invalidateSession])
 
+  const failOpen = useCallback(() => {
+    invalidateSession()
+  }, [invalidateSession])
+
   useEffect(() => {
     if (routeRef.current === pathname) return
     routeRef.current = pathname
@@ -463,6 +468,18 @@ export function DashboardTourProvider({
     viewportRef.current = viewport
     invalidateSession()
   }, [invalidateSession, viewport])
+
+  useEffect(() => {
+    const previous = eligibilityRef.current
+    if (
+      previous.role === role
+      && previous.onboardingCompleted === onboardingCompleted
+      && previous.toursEnabled === toursEnabled
+    ) return
+
+    eligibilityRef.current = { role, onboardingCompleted, toursEnabled }
+    invalidateSession()
+  }, [invalidateSession, onboardingCompleted, role, toursEnabled])
 
   useEffect(() => {
     if (session) return
@@ -513,6 +530,7 @@ export function DashboardTourProvider({
           isLastStep={session.position === session.visibleStepIndexes.length - 1}
           restoreFocusTo={session.restoreFocusTo}
           restoreFocusOnUnmount={false}
+          onFailure={failOpen}
           onPrevious={previous}
           onNext={next}
           onDismiss={dismiss}
