@@ -84,12 +84,22 @@ export function TourHelpMenu({ className, compact = false, onAcceptedStart }: To
               void (async () => {
                 setOpen(false)
                 await onAcceptedStart?.()
-                await start(tour.key, { replay: true })
+                if (tour.status === 'completed' || tour.status === 'dismissed') {
+                  await start(tour.key, { replay: true })
+                  return
+                }
+                await start(tour.key)
               })()
             }}
           >
-            <RotateCcw className="mr-2 size-3.5" />
-            Repetir recorrido
+            {(tour.status === 'completed' || tour.status === 'dismissed') && (
+              <RotateCcw className="mr-2 size-3.5" />
+            )}
+            {tour.status === 'completed' || tour.status === 'dismissed'
+              ? 'Repetir recorrido'
+              : tour.status === 'in_progress'
+                ? 'Continuar recorrido'
+                : 'Iniciar recorrido'}
           </Button>
         </div>
       ))}

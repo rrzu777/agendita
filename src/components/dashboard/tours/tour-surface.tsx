@@ -47,8 +47,15 @@ export type TourSurfaceProps = {
 function readTargetRect(target: HTMLElement): DOMRect | null {
   if (!target.isConnected) return null
   try {
+    for (let current: HTMLElement | null = target; current; current = current.parentElement) {
+      const style = window.getComputedStyle(current)
+      if (style.display === 'none' || style.visibility === 'hidden') return null
+    }
+
     const rect = target.getBoundingClientRect()
     return [rect.left, rect.top, rect.width, rect.height].every(Number.isFinite)
+      && rect.width > 0
+      && rect.height > 0
       ? rect
       : null
   } catch {
@@ -102,13 +109,30 @@ function useTargetRect(target: HTMLElement, onFailure: () => void) {
 
     try {
       resizeObserver = new ResizeObserver(update)
-      removalObserver = new MutationObserver(() => {
-        if (!target.isConnected) failOpen()
+      removalObserver = new MutationObserver((records) => {
+        const targetVisibilityChanged = records.some((record) => (
+          record.type === 'attributes'
+          && record.target instanceof HTMLElement
+          && record.target !== document.body
+          && record.target !== document.documentElement
+          && (record.target === target || record.target.contains(target))
+        ))
+        if (target.isConnected && !targetVisibilityChanged) return
+        if (!readTargetRect(target)) {
+          failOpen()
+          return
+        }
+        update()
       })
       window.addEventListener('resize', update)
       window.addEventListener('scroll', update, true)
       resizeObserver.observe(target)
-      removalObserver.observe(document.documentElement, { childList: true, subtree: true })
+      removalObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class', 'hidden', 'style'],
+        childList: true,
+        subtree: true,
+      })
     } catch {
       failOpen()
     }
@@ -291,13 +315,18 @@ export function TourSurface(props: TourSurfaceProps) {
         style={highlightStyle}
       />
       {viewport === 'desktop' ? (
-        <Popover open onOpenChange={requestClose}>
+        <Popover open>
           <PopoverAnchor asChild>
             <div
               data-tour-anchor
               aria-hidden="true"
               className="pointer-events-none fixed"
-              style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
+              style={{
+                left: rect.left + rect.width / 2,
+                top: rect.top + rect.height / 2,
+                width: 1,
+                height: 1,
+              }}
             />
           </PopoverAnchor>
           <PopoverContent

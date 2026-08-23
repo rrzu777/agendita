@@ -1,8 +1,13 @@
 # Recorridos guiados del dashboard — Diseño
 
 **Fecha:** 2026-08-22
-**Estado:** propuesto para revisión
-**Rama:** `feature/dashboard-guided-tours`
+**Estado:** implementado (fase 1, detrás de flag)
+**Rama:** `feature/dashboard-guided-tours-exec`
+
+La implementación y la migración superaron los gates automatizados el
+2026-08-23. `DASHBOARD_TOURS_ENABLED` permanece en `false`: la validación física
+en iOS Safari y Android Chrome sigue pendiente y es un gate operativo antes de
+activar el entorno productivo.
 
 ## Contexto
 
@@ -405,15 +410,20 @@ atributos y comportamiento, no sólo screenshots.
 
 ## Rollout
 
-1. Entregar y verificar navegación “Más” + matriz de permisos sin tours.
-2. Entregar modelo, acciones y provider detrás de un flag server-side.
-3. Activar Primeros pasos para cuentas internas/QA.
-4. Activar Reservas, Pagos y Configuración gradualmente.
-5. Revisar métricas y feedback antes de fase 2.
+1. Aplicar la migración y verificar el esquema con
+   `DASHBOARD_TOURS_ENABLED=false`.
+2. Entregar y verificar navegación “Más” + matriz de permisos sin tours.
+3. Desplegar modelo, acciones y provider con el flag todavía apagado.
+4. Activar el flag global sólo en QA/canary y completar la matriz automatizada
+   y de dispositivos físicos.
+5. Activar el entorno productivo sólo con todos los gates verdes y observar las
+   métricas agregadas antes de considerar fase 2.
 
-El flag desactiva ofrecimientos automáticos y launchers nuevos sin afectar la
-navegación ni los datos guardados. No se requiere rollback de migración para
-apagar la experiencia.
+El flag server-side es global por despliegue y su valor ausente/default es
+`false`; esta fase no implementa cohortes por cuenta ni flags independientes por
+recorrido. Volverlo a `false` desactiva ofrecimientos y launchers nuevos sin
+afectar la navegación ni los datos guardados. No se requiere rollback de
+migración para apagar la experiencia.
 
 ## Riesgos y mitigaciones
 

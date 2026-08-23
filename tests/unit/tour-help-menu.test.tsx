@@ -82,6 +82,19 @@ describe('TourHelpMenu', () => {
     expect(start).toHaveBeenCalledWith('dashboard_intro', { replay: true })
   })
 
+  it('starts an available Help tour as a persisted session', async () => {
+    await render([
+      { key: 'bookings', title: 'Gestiona tus reservas', status: 'available' },
+    ])
+    await act(async () => container.querySelector('button')?.click())
+    const startAvailable = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Iniciar recorrido')
+
+    await act(async () => startAvailable?.click())
+
+    expect(start).toHaveBeenCalledWith('bookings')
+  })
+
   it('notifies its host before replay starts', async () => {
     const onAcceptedStart = vi.fn()
     await render([

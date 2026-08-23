@@ -98,7 +98,11 @@ export function DashboardSidebar({ user, business, role }: DashboardSidebarProps
           </button>
         </div>
 
-        <nav data-tour-id="nav-desktop" className={cn('min-h-0 flex-1 overflow-y-auto', collapsed ? 'px-2' : 'px-4')}>
+        <nav
+          data-tour-id="nav-desktop"
+          tabIndex={-1}
+          className={cn('min-h-0 flex-1 overflow-y-auto', collapsed ? 'px-2' : 'px-4')}
+        >
           <ul className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon

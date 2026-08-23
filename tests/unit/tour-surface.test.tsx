@@ -73,7 +73,7 @@ describe('TourSurface', () => {
     ))
   }
 
-  it('anchors an associated desktop dialog to a fixed target proxy', async () => {
+  it('anchors an associated desktop dialog to the center of a fixed target proxy', async () => {
     await renderSurface('desktop')
 
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')
@@ -84,8 +84,10 @@ describe('TourSurface', () => {
     expect(dialog?.dataset.slot).toBe('popover-content')
     expect(dialog?.className).toContain('pointer-events-auto')
     expect(anchor?.className).toContain('fixed')
-    expect(anchor?.style.left).toBe('40px')
-    expect(anchor?.style.width).toBe('120px')
+    expect(anchor?.style.left).toBe('100px')
+    expect(anchor?.style.top).toBe('82px')
+    expect(anchor?.style.width).toBe('1px')
+    expect(anchor?.style.height).toBe('1px')
     expect(title?.textContent).toBe(step.title)
     expect(description?.textContent).toBe(step.body)
     expect(document.querySelector('[data-tour-highlight]')?.className).toContain('pointer-events-none')
@@ -187,7 +189,7 @@ describe('TourSurface', () => {
     expect(requestAnimationFrame).toHaveBeenCalledTimes(1)
     await act(async () => queued[0]?.(1))
 
-    expect(document.querySelector<HTMLElement>('[data-tour-anchor]')?.style.left).toBe('80px')
+    expect(document.querySelector<HTMLElement>('[data-tour-anchor]')?.style.left).toBe('150px')
     window.dispatchEvent(new Event('resize'))
     await act(async () => root.unmount())
 
@@ -209,7 +211,23 @@ describe('TourSurface', () => {
       step: { ...step, id: 'new-booking', targetId: 'bookings-new' },
     })
 
-    expect(document.querySelector<HTMLElement>('[data-tour-anchor]')?.style.left).toBe('220px')
+    expect(document.querySelector<HTMLElement>('[data-tour-anchor]')?.style.left).toBe('265px')
+  })
+
+  it('fails open when the active target becomes hidden', async () => {
+    const onFailure = vi.fn()
+    await renderSurface('desktop', { onFailure })
+    vi.mocked(target.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 0, 0))
+    target.hidden = true
+
+    await act(async () => {
+      window.dispatchEvent(new Event('resize'))
+      await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    })
+
+    expect(onFailure).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.querySelector('[data-tour-highlight]')).toBeNull()
   })
 
   it('announces a dirty-form pause and prevents advancing', async () => {
