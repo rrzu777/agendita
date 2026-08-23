@@ -1,0 +1,275 @@
+'use client'
+
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { Button } from '@/components/ui/button'
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+} from '@/components/ui/popover'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import type { TourStep, TourViewport } from './tour-types'
+
+export type TourSurfaceProps = {
+  step: TourStep
+  stepNumber: number
+  totalSteps: number
+  viewport: TourViewport
+  target: HTMLElement
+  paused?: boolean
+  canGoPrevious: boolean
+  isLastStep: boolean
+  restoreFocusTo?: HTMLElement | null
+  restoreFocusOnUnmount?: boolean
+  onPrevious: () => void
+  onNext: () => void | Promise<void>
+  onDismiss: () => void | Promise<void>
+}
+
+function useTargetRect(target: HTMLElement) {
+  const targetRect = useMemo(() => target.getBoundingClientRect(), [target])
+  const [measurement, setMeasurement] = useState(() => ({ target, rect: targetRect }))
+  const frame = useRef<number | null>(null)
+
+  useEffect(() => {
+    let active = true
+    const update = () => {
+      if (frame.current !== null) return
+      frame.current = window.requestAnimationFrame(() => {
+        frame.current = null
+        if (active) setMeasurement({ target, rect: target.getBoundingClientRect() })
+      })
+    }
+    const resizeObserver = new ResizeObserver(update)
+
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    resizeObserver.observe(target)
+
+    return () => {
+      active = false
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+      resizeObserver.disconnect()
+      if (frame.current !== null) window.cancelAnimationFrame(frame.current)
+    }
+  }, [target])
+
+  return measurement.target === target ? measurement.rect : targetRect
+}
+
+type TourCardProps = Pick<
+  TourSurfaceProps,
+  'step' | 'stepNumber' | 'totalSteps' | 'paused' | 'canGoPrevious' | 'isLastStep' | 'onPrevious' | 'onNext' | 'onDismiss'
+> & {
+  confirmingDismiss: boolean
+  titleId: string
+  descriptionId: string
+  onContinue: () => void
+  mobile: boolean
+}
+
+function TourCard({
+  step,
+  stepNumber,
+  totalSteps,
+  paused,
+  canGoPrevious,
+  isLastStep,
+  onPrevious,
+  onNext,
+  onDismiss,
+  confirmingDismiss,
+  titleId,
+  descriptionId,
+  onContinue,
+  mobile,
+}: TourCardProps) {
+  const Header = mobile ? SheetHeader : PopoverHeader
+  const Title = mobile ? SheetTitle : PopoverTitle
+  const Description = mobile ? SheetDescription : PopoverDescription
+  const Footer = mobile ? SheetFooter : 'div'
+
+  return (
+    <>
+      <Header className={mobile ? undefined : 'p-1'}>
+        <Title id={titleId} role={mobile ? undefined : 'heading'} aria-level={mobile ? undefined : 2}>
+          {confirmingDismiss ? '¿Omitir este recorrido?' : step.title}
+        </Title>
+        <Description id={descriptionId}>
+          {confirmingDismiss
+            ? 'Puedes volver a iniciarlo más adelante desde Ayuda y recorridos.'
+            : step.body}
+        </Description>
+      </Header>
+
+      {!confirmingDismiss && (
+        <div className={mobile ? 'px-4' : 'px-1'}>
+          <p aria-label={`Paso ${stepNumber} de ${totalSteps}`} aria-live="polite" className="text-xs font-medium text-muted-foreground">
+            Paso {stepNumber} de {totalSteps}
+          </p>
+          {paused && (
+            <p role="status" className="mt-2 rounded-md bg-muted p-2 text-sm text-foreground">
+              Termina o descarta tus cambios para continuar
+            </p>
+          )}
+        </div>
+      )}
+
+      <Footer className={mobile ? undefined : 'flex flex-wrap justify-end gap-2 p-1'}>
+        {confirmingDismiss ? (
+          <>
+            <Button type="button" variant="outline" onClick={onContinue}>
+              Seguir recorrido
+            </Button>
+            <Button type="button" variant="destructive" onClick={() => { void onDismiss() }}>
+              Omitir recorrido
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button type="button" variant="ghost" onClick={() => { void onDismiss() }}>
+              Omitir recorrido
+            </Button>
+            <Button type="button" variant="outline" disabled={!canGoPrevious || paused} onClick={onPrevious}>
+              Atrás
+            </Button>
+            <Button type="button" disabled={paused} onClick={() => { void onNext() }}>
+              {isLastStep ? 'Terminar' : 'Siguiente'}
+            </Button>
+          </>
+        )}
+      </Footer>
+    </>
+  )
+}
+
+export function TourSurface(props: TourSurfaceProps) {
+  const {
+    target,
+    viewport,
+    restoreFocusTo,
+    restoreFocusOnUnmount = true,
+  } = props
+  const rect = useTargetRect(target)
+  const [confirmingDismiss, setConfirmingDismiss] = useState(false)
+  const reactId = useId()
+  const titleId = `tour-title-${reactId}`
+  const descriptionId = `tour-description-${reactId}`
+  const restoreFocusRef = useRef(restoreFocusTo)
+  const restoreFocusOnUnmountRef = useRef(restoreFocusOnUnmount)
+  const targetRef = useRef(target)
+
+  useEffect(() => {
+    restoreFocusRef.current = restoreFocusTo
+    restoreFocusOnUnmountRef.current = restoreFocusOnUnmount
+    targetRef.current = target
+  }, [restoreFocusOnUnmount, restoreFocusTo, target])
+
+  useEffect(() => {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    try {
+      target.scrollIntoView({
+        behavior: reducedMotion ? 'auto' : 'smooth',
+        block: 'center',
+        inline: 'nearest',
+      })
+    } catch {
+      // El recorrido es ayuda secundaria: un fallo de scroll nunca bloquea la UI.
+    }
+  }, [target, props.step.id])
+
+  useEffect(() => () => {
+    if (!restoreFocusOnUnmountRef.current) return
+    const focusTarget = restoreFocusRef.current?.isConnected
+      ? restoreFocusRef.current
+      : targetRef.current
+    if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true })
+  }, [])
+
+  const requestClose = useCallback((open: boolean) => {
+    if (!open) setConfirmingDismiss(true)
+  }, [])
+  const requestEscapeClose = useCallback((event: KeyboardEvent) => {
+    event.preventDefault()
+    setConfirmingDismiss(true)
+  }, [])
+  const continueTour = useCallback(() => setConfirmingDismiss(false), [])
+  const cardProps = {
+    ...props,
+    confirmingDismiss,
+    titleId,
+    descriptionId,
+    onContinue: continueTour,
+  }
+
+  const highlightStyle = {
+    left: rect.left - 4,
+    top: rect.top - 4,
+    width: rect.width + 8,
+    height: rect.height + 8,
+  }
+
+  return (
+    <>
+      <div
+        data-tour-highlight
+        aria-hidden="true"
+        className="pointer-events-none fixed z-[55] rounded-xl border-2 border-primary ring-4 ring-primary/20"
+        style={highlightStyle}
+      />
+      {viewport === 'desktop' ? (
+        <Popover open onOpenChange={requestClose}>
+          <PopoverAnchor asChild>
+            <div
+              data-tour-anchor
+              aria-hidden="true"
+              className="pointer-events-none fixed"
+              style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
+            />
+          </PopoverAnchor>
+          <PopoverContent
+            role="dialog"
+            aria-modal="false"
+            aria-labelledby={titleId}
+            aria-describedby={descriptionId}
+            className="pointer-events-auto z-[60] w-[min(22rem,calc(100vw-2rem))]"
+            onEscapeKeyDown={requestEscapeClose}
+          >
+            <TourCard {...cardProps} mobile={false} />
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <Sheet open onOpenChange={requestClose}>
+          <SheetContent
+            side="bottom"
+            showCloseButton={false}
+            aria-labelledby={titleId}
+            aria-describedby={descriptionId}
+            className="z-[60] max-h-[85dvh] rounded-t-2xl pb-[env(safe-area-inset-bottom)]"
+            onEscapeKeyDown={requestEscapeClose}
+          >
+            <TourCard {...cardProps} mobile />
+          </SheetContent>
+        </Sheet>
+      )}
+    </>
+  )
+}
