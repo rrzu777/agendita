@@ -1,10 +1,22 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { getDashboardNavItems } from '@/lib/dashboard/navigation'
 
 const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8')
 
 describe('dashboard navigation and action layout', () => {
+  it('keeps exactly three primary destinations in the mobile bar', () => {
+    const vocabulary = { Professionals: 'Profesionales', Clients: 'Clientes' } as never
+    const mobile = getDashboardNavItems(vocabulary, 'owner').filter((item) => item.mobile === 'primary')
+
+    expect(mobile.map((item) => item.href)).toEqual([
+      '/dashboard',
+      '/dashboard/bookings',
+      '/dashboard/calendar',
+    ])
+  })
+
   it('keeps the desktop sidebar in the viewport and scrolls only its navigation', () => {
     const sidebar = source('src/components/dashboard/sidebar.tsx')
 

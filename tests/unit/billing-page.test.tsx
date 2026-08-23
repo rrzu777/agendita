@@ -1,11 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-const mockGetCurrentUserWithBusiness = vi.hoisted(() => vi.fn())
 const mockGetCurrentSubscription = vi.hoisted(() => vi.fn())
+const mockRequireSettingsPageAccess = vi.hoisted(() => vi.fn())
+const mockRedirect = vi.hoisted(() => vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`) }))
 
-vi.mock('@/lib/auth/user', () => ({
-  getCurrentUserWithBusiness: mockGetCurrentUserWithBusiness,
+vi.mock('@/lib/business/settings-access', () => ({
+  requireSettingsPageAccess: mockRequireSettingsPageAccess,
 }))
 
 vi.mock('@/server/actions/subscriptions', () => ({
@@ -15,14 +16,13 @@ vi.mock('@/server/actions/subscriptions', () => ({
 }))
 
 vi.mock('next/navigation', () => ({
-  redirect: vi.fn(),
+  redirect: mockRedirect,
 }))
 
 describe('BillingPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetCurrentUserWithBusiness.mockResolvedValue({
-      user: { id: 'user-1' },
+    mockRequireSettingsPageAccess.mockResolvedValue({
       business: { subscriptionStatus: 'active' },
     })
     mockGetCurrentSubscription.mockResolvedValue({
@@ -63,5 +63,13 @@ describe('BillingPage', () => {
     // is the old hand-rolled markup this page used before migration.
     expect(html).not.toContain('<table class="w-full text-sm">')
     expect(html).toContain('data-slot="table"')
+  })
+
+  it('redirects staff before querying subscription data', async () => {
+    mockRequireSettingsPageAccess.mockImplementation(async () => mockRedirect('/dashboard'))
+    const { default: BillingPage } = await import('@/app/dashboard/billing/page')
+
+    await expect(BillingPage()).rejects.toThrow('REDIRECT:/dashboard')
+    expect(mockGetCurrentSubscription).not.toHaveBeenCalled()
   })
 })

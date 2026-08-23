@@ -6,69 +6,31 @@ import { cn } from '@/lib/utils'
 import { signOut } from '@/lib/auth/actions'
 import { GuardedLink, useUnsavedChanges } from '@/components/dashboard/unsaved-changes-provider'
 import type { User } from '@supabase/supabase-js'
-import type { Business } from '@prisma/client'
+import type { Business, BusinessRole } from '@prisma/client'
 import {
-  CalendarDays,
-  Clock3,
-  CreditCard,
-  LayoutDashboard,
   LogOut,
-  Megaphone,
-  MessageSquareText,
-  Package,
   PanelLeftClose,
   PanelLeftOpen,
-  ReceiptText,
-  Scissors,
-  Settings,
-  Sparkles,
-  Star,
-  Ticket,
-  Users,
-  UsersRound,
 } from 'lucide-react'
 import { useVocabulary } from '@/components/vocabulary-provider'
-import type { Vocabulary } from '@/lib/vocabulary'
-
-// El label de Equipo lo decide el rubro ("Barberos", "Manicuristas"), así que la
-// lista dejó de poder ser una constante de módulo.
-//
-// Ícono propio y no `Users`, que ya lo usa Clientes: dos ítems con el mismo ícono
-// se leen como el mismo lugar, y con el menú colapsado el ícono es lo ÚNICO que se
-// ve.
-function buildNavItems(v: Vocabulary) {
-  return [
-    { href: '/dashboard', label: 'Resumen', icon: LayoutDashboard },
-    { href: '/dashboard/bookings', label: 'Reservas', icon: MessageSquareText },
-    { href: '/dashboard/calendar', label: 'Calendario', icon: CalendarDays },
-    { href: '/dashboard/services', label: 'Servicios', icon: Scissors },
-    { href: '/dashboard/equipo', label: v.Professionals, icon: UsersRound },
-    { href: '/dashboard/availability', label: 'Horarios', icon: Clock3 },
-    { href: '/dashboard/customers', label: v.Clients, icon: Users },
-    { href: '/dashboard/payments', label: 'Pagos', icon: CreditCard },
-    { href: '/dashboard/promociones', label: 'Promociones', icon: Ticket },
-    { href: '/dashboard/fidelizacion', label: 'Fidelización', icon: Sparkles },
-    { href: '/dashboard/campanas', label: 'Campañas', icon: Megaphone },
-    { href: '/dashboard/paquetes', label: 'Paquetes', icon: Package },
-    { href: '/dashboard/billing', label: 'Facturación', icon: ReceiptText },
-    { href: '/dashboard/reviews', label: 'Reseñas', icon: Star },
-    { href: '/dashboard/settings', label: 'Configuración', icon: Settings },
-  ]
-}
+import { getDashboardNavItems, isDashboardNavItemActive } from '@/lib/dashboard/navigation'
+import { MobileMoreMenu } from '@/components/dashboard/mobile-more-menu'
 
 const COLLAPSE_KEY = 'agendita:sidebar-collapsed'
 
 interface DashboardSidebarProps {
   user: User
   business: Business | null
+  role: BusinessRole
 }
 
-export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
+export function DashboardSidebar({ user, business, role }: DashboardSidebarProps) {
   const v = useVocabulary()
-  const navItems = buildNavItems(v)
+  const navItems = getDashboardNavItems(v, role)
   const pathname = usePathname()
   const userName = user.user_metadata?.name || user.email?.split('@')[0] || 'Usuario'
-  const mobileItems = navItems.slice(0, 4)
+  const mobileItems = navItems.filter((item) => item.mobile === 'primary')
+  const mobileMoreItems = navItems.filter((item) => item.mobile === 'more')
   const { hasUnsavedChanges, requestNavigation } = useUnsavedChanges()
   const allowSignOut = useRef(false)
 
@@ -135,13 +97,11 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
           </button>
         </div>
 
-        <nav className={cn('min-h-0 flex-1 overflow-y-auto', collapsed ? 'px-2' : 'px-4')}>
+        <nav data-tour-id="nav-desktop" className={cn('min-h-0 flex-1 overflow-y-auto', collapsed ? 'px-2' : 'px-4')}>
           <ul className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon
-              const isActive = item.href === '/dashboard'
-                ? pathname === item.href
-                : pathname.startsWith(item.href)
+              const isActive = isDashboardNavItemActive(item, pathname)
 
               return (
                 <li key={item.href}>
@@ -189,17 +149,16 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
       </aside>
 
       <div className="fixed inset-x-0 bottom-0 z-50 border-t border-border/60 bg-card/95 px-3 py-2 backdrop-blur md:hidden">
-        <nav className="mx-auto grid max-w-md grid-cols-4 gap-1">
+        <nav aria-label="Navegación principal del dashboard" className="mx-auto grid max-w-md grid-cols-4 gap-1">
           {mobileItems.map((item) => {
             const Icon = item.icon
-            const isActive = item.href === '/dashboard'
-              ? pathname === item.href
-              : pathname.startsWith(item.href)
+            const isActive = isDashboardNavItemActive(item, pathname)
 
             return (
               <GuardedLink
                 key={item.href}
                 href={item.href}
+                aria-current={isActive ? 'page' : undefined}
                 className={cn(
                   'flex flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-[11px] font-semibold transition-colors',
                   isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground',
@@ -210,6 +169,7 @@ export function DashboardSidebar({ user, business }: DashboardSidebarProps) {
               </GuardedLink>
             )
           })}
+          <MobileMoreMenu items={mobileMoreItems} pathname={pathname} onSignOut={handleSignOut} />
         </nav>
       </div>
     </>

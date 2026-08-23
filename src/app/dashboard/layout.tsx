@@ -28,7 +28,7 @@ export default async function DashboardLayout({
     <VocabularyProvider value={getVocabulary(userData.business.category)}>
       <UnsavedChangesProvider>
         <div className="flex min-h-screen bg-background text-foreground">
-          <DashboardSidebar user={userData.user} business={userData.business} />
+          <DashboardSidebar user={userData.user} business={userData.business} role={userData.role ?? 'staff'} />
           <main className="min-w-0 flex-1 pb-24 md:pb-0">
             {children}
           </main>
