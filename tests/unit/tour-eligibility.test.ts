@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getAvailableTours } from '@/lib/tours/eligibility'
+import { TOUR_CATALOG, type TourKey } from '@/lib/tours/catalog'
+import { getLoadableTourKeys } from '@/components/dashboard/tours/tour-definitions'
 
 const base = {
   role: 'owner',
@@ -29,6 +31,14 @@ describe('getAvailableTours', () => {
       .not.toContainEqual(expect.objectContaining({ key: 'dashboard_intro' }))
   })
 
+  it('offers exactly the tours with a loadable definition', () => {
+    const offeredKeys = (Object.keys(TOUR_CATALOG) as TourKey[]).flatMap((key) => (
+      getAvailableTours({ ...base, pathname: TOUR_CATALOG[key].route }).map((tour) => tour.key)
+    ))
+
+    expect(offeredKeys).toEqual(getLoadableTourKeys())
+  })
+
   it('excludes a terminal snapshot for the current version', () => {
     expect(getAvailableTours({
       ...base,
@@ -40,6 +50,13 @@ describe('getAvailableTours', () => {
     expect(getAvailableTours({
       ...base,
       progress: [{ key: 'dashboard_intro', version: 1, status: 'in_progress', lastStep: 1 }],
+    })).toEqual([expect.objectContaining({ key: 'dashboard_intro', resumeStep: 1 })])
+  })
+
+  it('clamps oversized in-progress snapshots to the definition bound', () => {
+    expect(getAvailableTours({
+      ...base,
+      progress: [{ key: 'dashboard_intro', version: 1, status: 'in_progress', lastStep: 99 }],
     })).toEqual([expect.objectContaining({ key: 'dashboard_intro', resumeStep: 1 })])
   })
 

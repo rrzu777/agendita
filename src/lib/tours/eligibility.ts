@@ -1,5 +1,6 @@
 import type { BusinessRole } from '@prisma/client'
 import type { TourProgressSnapshot } from '@/server/actions/tour-progress'
+import { getTourStepBound } from '@/components/dashboard/tours/tour-definitions'
 import { TOUR_CATALOG, type TourKey } from './catalog'
 
 const SUPPORTED_VIEWPORTS = new Set(['mobile', 'desktop'])
@@ -29,7 +30,12 @@ export function getAvailableTours(context: TourEligibilityContext): AvailableTou
 
   return (Object.keys(TOUR_CATALOG) as TourKey[]).flatMap((key) => {
     const catalog = TOUR_CATALOG[key]
-    if (catalog.route !== context.pathname || !catalog.roles.some((role) => role === context.role)) {
+    const stepBound = getTourStepBound(key)
+    if (
+      stepBound === null
+      || catalog.route !== context.pathname
+      || !catalog.roles.some((role) => role === context.role)
+    ) {
       return []
     }
 
@@ -43,7 +49,9 @@ export function getAvailableTours(context: TourEligibilityContext): AvailableTou
       version: catalog.version,
       route: catalog.route,
       roles: catalog.roles,
-      resumeStep: snapshot?.status === 'in_progress' ? Math.max(0, snapshot.lastStep) : 0,
+      resumeStep: snapshot?.status === 'in_progress'
+        ? Math.min(Math.max(0, snapshot.lastStep), stepBound - 1)
+        : 0,
     }
 
     return context.canOffer?.(tour) === false ? [] : [tour]

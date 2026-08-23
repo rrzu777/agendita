@@ -23,7 +23,7 @@ describe('dashboard tour definitions', () => {
       key: 'dashboard_intro',
       version: 1,
       route: '/dashboard',
-      roles: ['owner'],
+      roles: ['owner', 'admin'],
       title: 'Introducción',
       steps: [
         {
@@ -46,5 +46,16 @@ describe('dashboard tour definitions', () => {
         },
       ],
     })).toThrow('duplicate step id')
+  })
+
+  it('rejects a definition that omits a catalog-authorized role', () => {
+    expect(() => assertTourDefinitionContract({
+      key: 'dashboard_intro',
+      version: 1,
+      route: '/dashboard',
+      roles: ['owner'],
+      title: 'Introducción',
+      steps: [],
+    })).toThrow('exactly match')
   })
 })

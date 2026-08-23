@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   TOUR_TARGET_FILES,
   assertTourDefinitionContract,
+  assertTourTargetManifestContract,
 } from '@/components/dashboard/tours/tour-definitions'
 
 describe('tour target contract', () => {
@@ -38,12 +39,12 @@ describe('tour target contract', () => {
 
     expect(() => assertTourDefinitionContract({
       ...invalidDefinition,
-      roles: ['owner'],
+      roles: ['owner', 'admin'],
     } as never)).toThrow('viewports')
 
     expect(() => assertTourDefinitionContract({
       ...invalidDefinition,
-      roles: ['owner'],
+      roles: ['owner', 'admin'],
       steps: [{ ...invalidDefinition.steps[0], viewports: ['desktop'] }],
     } as never)).toThrow('fallback')
   })
@@ -53,7 +54,7 @@ describe('tour target contract', () => {
       key: 'dashboard_intro',
       version: 1,
       route: '/dashboard',
-      roles: ['owner'],
+      roles: ['owner', 'admin'],
       title: 'Introducción',
       steps: [{
         id: 'untracked-target',
@@ -65,5 +66,12 @@ describe('tour target contract', () => {
         waitMs: 100,
       }],
     })).toThrow('target manifest')
+  })
+
+  it('rejects a target-manifest entry with no product files', () => {
+    expect(() => assertTourTargetManifestContract({ 'nav-desktop': [] }))
+      .toThrow('at least one product file')
+    expect(() => assertTourTargetManifestContract({ 'nav-desktop': [''] }))
+      .toThrow('non-empty')
   })
 })

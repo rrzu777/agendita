@@ -3,6 +3,7 @@ import type { TourDefinition, TourStep } from './tour-types'
 
 type TourDefinitionModule = { definition: TourDefinition }
 type TourDefinitionLoader = () => Promise<TourDefinitionModule>
+export type TourTargetManifest = Record<string, readonly string[]>
 
 export const TOUR_TARGET_FILES = {
   'nav-desktop': ['src/components/dashboard/sidebar.tsx'],
@@ -11,16 +12,37 @@ export const TOUR_TARGET_FILES = {
 
 // Las definiciones contextuales se incorporan a este mapa junto con sus targets.
 // Un mapa explícito mantiene los chunks y el typecheck deterministas.
-const TOUR_DEFINITION_LOADERS: Partial<Record<TourKey, TourDefinitionLoader>> = {
+const TOUR_DEFINITION_LOADERS = {
   dashboard_intro: () => import('./definitions/dashboard_intro'),
+} satisfies Partial<Record<TourKey, TourDefinitionLoader>>
+
+type LoadableTourKey = keyof typeof TOUR_DEFINITION_LOADERS
+
+const TOUR_DEFINITION_STEP_BOUNDS = {
+  dashboard_intro: 2,
+} satisfies Record<LoadableTourKey, number>
+
+export function getLoadableTourKeys(): LoadableTourKey[] {
+  return Object.keys(TOUR_DEFINITION_LOADERS) as LoadableTourKey[]
+}
+
+export function getTourStepBound(key: TourKey): number | null {
+  if (!isTourDefinitionLoadable(key)) {
+    return null
+  }
+  return TOUR_DEFINITION_STEP_BOUNDS[key]
+}
+
+export function isTourDefinitionLoadable(key: TourKey): key is LoadableTourKey {
+  return Object.hasOwn(TOUR_DEFINITION_LOADERS, key)
 }
 
 export async function loadTourDefinition(key: TourKey): Promise<TourDefinition> {
-  const loader = TOUR_DEFINITION_LOADERS[key]
-  if (!loader) {
+  if (!isTourDefinitionLoadable(key)) {
     throw new Error(`Tour definition is not available for ${key}`)
   }
 
+  const loader = TOUR_DEFINITION_LOADERS[key]
   const { definition } = await loader()
   assertTourDefinitionContract(definition)
   return definition
@@ -37,14 +59,39 @@ export function assertTourDefinitionContract(definition: TourDefinition): void {
   if (definition.roles.length === 0) {
     throw new Error('Tour definition must include roles')
   }
-  if (definition.roles.some((role) => !catalog.roles.some((allowedRole) => allowedRole === role))) {
-    throw new Error('Tour definition includes a role outside its catalog entry')
+  if (!rolesExactlyMatchCatalog(definition.roles, catalog.roles)) {
+    throw new Error('Tour definition roles must exactly match its catalog entry')
   }
 
+  assertTourTargetManifestContract()
   const stepIds = new Set<string>()
   for (const step of definition.steps) {
     assertStepContract(step, stepIds)
   }
+  const stepBound = getTourStepBound(definition.key)
+  if (stepBound === null || definition.steps.length !== stepBound) {
+    throw new Error('Tour definition steps must match its validated step bound')
+  }
+}
+
+export function assertTourTargetManifestContract(manifest: TourTargetManifest = TOUR_TARGET_FILES): void {
+  for (const [targetId, files] of Object.entries(manifest)) {
+    if (!targetId || files.length === 0) {
+      throw new Error('Tour target manifest entries need at least one product file')
+    }
+    if (files.some((file) => !file.trim())) {
+      throw new Error('Tour target manifest files must be non-empty')
+    }
+  }
+}
+
+function rolesExactlyMatchCatalog(
+  definitionRoles: readonly string[],
+  catalogRoles: readonly string[],
+): boolean {
+  return definitionRoles.length === catalogRoles.length
+    && definitionRoles.every((role) => catalogRoles.includes(role))
+    && catalogRoles.every((role) => definitionRoles.includes(role))
 }
 
 function assertStepContract(step: TourStep, stepIds: Set<string>): void {
