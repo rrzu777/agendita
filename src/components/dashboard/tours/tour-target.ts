@@ -5,12 +5,32 @@ type WaitForTourTargetOptions = {
   signal?: AbortSignal
 }
 
+function isVisibleTourTarget(target: HTMLElement): boolean {
+  try {
+    if (!target.isConnected) return false
+
+    for (let current: HTMLElement | null = target; current; current = current.parentElement) {
+      const style = window.getComputedStyle(current)
+      if (style.display === 'none' || style.visibility === 'hidden') return false
+    }
+
+    const rect = target.getBoundingClientRect()
+    return Number.isFinite(rect.width) && Number.isFinite(rect.height) && rect.width > 0 && rect.height > 0
+  } catch {
+    return false
+  }
+}
+
 function findTourTarget(targetId: string, fallbackTargetId?: string): HTMLElement | null {
   const targets = document.querySelectorAll<HTMLElement>('[data-tour-id]')
-  const primary = Array.from(targets).find((target) => target.dataset.tourId === targetId)
+  const primary = Array.from(targets).find((target) => (
+    target.dataset.tourId === targetId && isVisibleTourTarget(target)
+  ))
   if (primary) return primary
   if (!fallbackTargetId) return null
-  return Array.from(targets).find((target) => target.dataset.tourId === fallbackTargetId) ?? null
+  return Array.from(targets).find((target) => (
+    target.dataset.tourId === fallbackTargetId && isVisibleTourTarget(target)
+  )) ?? null
 }
 
 export async function waitForTourTarget({

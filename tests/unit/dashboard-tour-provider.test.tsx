@@ -75,6 +75,12 @@ function Controls() {
       <button type="button" onClick={() => { void tours.start('dashboard_intro', { replay: true }) }}>
         Repetir recorrido
       </button>
+      <button type="button" onClick={() => { void tours.start('bookings') }}>
+        Iniciar reservas
+      </button>
+      <button type="button" onClick={() => { void tours.start('settings') }}>
+        Iniciar configuración
+      </button>
       <button type="button" onClick={tours.closeReplay}>
         Cerrar repetición
       </button>
@@ -107,6 +113,15 @@ async function settle(delay = 0) {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, delay))
   })
+}
+
+function appendTourTarget(tourId: string) {
+  const element = document.createElement('div')
+  element.dataset.tourId = tourId
+  element.scrollIntoView = vi.fn()
+  vi.spyOn(element, 'getBoundingClientRect').mockReturnValue(new DOMRect(20, 30, 100, 40))
+  document.body.appendChild(element)
+  return element
 }
 
 describe('DashboardTourProvider', () => {
@@ -267,6 +282,61 @@ describe('DashboardTourProvider', () => {
     expect(document.querySelector('[data-testid="active"]')?.textContent).toBe('none')
     expect(mockRecordTourProgress).toHaveBeenCalledWith({
       key: 'dashboard_intro',
+      version: 1,
+      event: { type: 'complete' },
+    })
+  })
+
+  it('completes the route-local Settings tour on Profile without a policy form target', async () => {
+    pathname = '/dashboard/settings/profile'
+    target.dataset.tourId = 'settings-navigation'
+    appendTourTarget('settings-preview')
+    appendTourTarget('settings-save')
+    const { definition: settings } = await import('@/components/dashboard/tours/definitions/settings')
+    mockLoadTourDefinition.mockResolvedValue(settings)
+    await renderProvider()
+
+    await click('Iniciar configuración')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Ordena la configuración')
+    await click('Siguiente')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Revisa tu perfil público')
+    await click('Siguiente')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Guarda los cambios')
+    await click('Siguiente')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Define políticas y avisos')
+    await click('Terminar')
+
+    expect(document.querySelector('[data-testid="active"]')?.textContent).toBe('none')
+    expect(mockRecordTourProgress).toHaveBeenCalledWith({
+      key: 'settings',
+      version: 1,
+      event: { type: 'complete' },
+    })
+  })
+
+  it('completes Bookings when terminal rows have no action target', async () => {
+    pathname = '/dashboard/bookings'
+    target.dataset.tourId = 'bookings-new'
+    appendTourTarget('bookings-search')
+    const { definition: bookings } = await import('@/components/dashboard/tours/definitions/bookings')
+    mockLoadTourDefinition.mockResolvedValue(bookings)
+    await renderProvider()
+
+    await click('Iniciar reservas')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Crea una reserva')
+    await click('Siguiente')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Busca una reserva')
+    await click('Siguiente')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Revisa transferencias')
+    await click('Siguiente')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Consulta el estado y saldo')
+    await click('Siguiente')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Gestiona la reserva')
+    await click('Terminar')
+
+    expect(document.querySelector('[data-testid="active"]')?.textContent).toBe('none')
+    expect(mockRecordTourProgress).toHaveBeenCalledWith({
+      key: 'bookings',
       version: 1,
       event: { type: 'complete' },
     })
@@ -445,6 +515,8 @@ describe('DashboardTourProvider', () => {
       steps: definition.steps.map((step) => ({ ...step, targetId: 'nav-mobile-more' })),
     })
     await renderProvider({ withMobileMore: true })
+    const mobileMore = document.querySelector<HTMLElement>('[data-tour-id="nav-mobile-more"]')
+    vi.spyOn(mobileMore!, 'getBoundingClientRect').mockReturnValue(new DOMRect(20, 30, 100, 40))
 
     await click('Más')
     expect(document.querySelector('[data-mobile-more-sheet]')).not.toBeNull()
@@ -489,6 +561,8 @@ describe('DashboardTourProvider', () => {
       steps: definition.steps.map((step) => ({ ...step, targetId: 'nav-mobile-more' })),
     })
     await renderProvider({ withMobileMore: true })
+    const mobileMore = document.querySelector<HTMLElement>('[data-tour-id="nav-mobile-more"]')
+    vi.spyOn(mobileMore!, 'getBoundingClientRect').mockReturnValue(new DOMRect(20, 30, 100, 40))
 
     await click('Más')
     await click('Ayuda y recorridos')

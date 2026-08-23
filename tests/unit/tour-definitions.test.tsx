@@ -27,7 +27,7 @@ describe('dashboard tour definitions', () => {
 
     expect(bookings.steps.find((step) => step.id === 'status')).toMatchObject({
       targetId: 'bookings-status',
-      fallbackTargetId: 'bookings-empty',
+      fallbackTargetId: 'bookings-search',
     })
     expect(bookings.steps.find((step) => step.id === 'transfer')).toMatchObject({
       targetId: 'bookings-transfer',
@@ -40,16 +40,25 @@ describe('dashboard tour definitions', () => {
       'payments-history',
       'payments-settings',
     ]))
+    expect(payments.steps.find((step) => step.id === 'history')?.viewports)
+      .toEqual(['mobile', 'desktop'])
     expect(settings.steps.map((step) => step.targetId)).toEqual(expect.arrayContaining([
       'settings-navigation',
       'settings-preview',
       'settings-save',
-      'settings-policies',
     ]))
+    expect(settings.steps.find((step) => step.id === 'policies')).toMatchObject({
+      targetId: 'settings-navigation',
+      body: expect.stringContaining('Políticas y avisos'),
+    })
+    expect(settings.steps.some((step) => step.targetId === 'settings-policies')).toBe(false)
 
     for (const definition of [bookings, payments, settings]) {
       expect(definition.steps.length).toBeLessThanOrEqual(5)
     }
+    expect(bookings.steps.find((step) => step.id === 'actions')).toMatchObject({
+      fallbackTargetId: 'bookings-search',
+    })
   })
 
   it('rejects duplicate step identifiers', () => {

@@ -32,6 +32,7 @@ export function ManualPaymentDialog({
   triggerLabel = 'Registrar pago',
   triggerSize,
   triggerVariant,
+  triggerTourId,
   open: controlledOpen,
   onOpenChange,
   hideTrigger = false,
@@ -44,6 +45,7 @@ export function ManualPaymentDialog({
   triggerLabel?: string
   triggerSize?: React.ComponentProps<typeof Button>['size']
   triggerVariant?: React.ComponentProps<typeof Button>['variant']
+  triggerTourId?: string
   open?: boolean
   onOpenChange?: (open: boolean) => void
   hideTrigger?: boolean
@@ -178,6 +180,7 @@ export function ManualPaymentDialog({
       {!hideTrigger && (
         <DialogTrigger asChild>
           <Button
+            data-tour-id={triggerTourId}
             type="button"
             size={triggerSize}
             variant={triggerVariant}

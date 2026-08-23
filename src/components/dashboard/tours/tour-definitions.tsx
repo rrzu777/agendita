@@ -13,10 +13,13 @@ export const TOUR_TARGET_FILES = {
   'bookings-search': ['src/app/dashboard/bookings/page.tsx'],
   'bookings-transfer': ['src/components/dashboard/pending-transfers-section.tsx'],
   'bookings-status': ['src/app/dashboard/bookings/page.tsx'],
-  'bookings-actions': ['src/components/dashboard/booking-row-actions.tsx'],
+  'bookings-actions': [
+    'src/components/dashboard/booking-row-actions.tsx',
+    'src/app/dashboard/bookings/page.tsx',
+  ],
   'bookings-empty': ['src/app/dashboard/bookings/page.tsx'],
   'payments-stats': ['src/components/dashboard/finance-stats.tsx'],
-  'payments-register': ['src/components/dashboard/payment-form.tsx'],
+  'payments-register': ['src/components/dashboard/manual-payment-dialog.tsx'],
   'payments-filters': ['src/components/dashboard/export-csv-button.tsx'],
   'payments-history': ['src/components/dashboard/ledger-table.tsx'],
   'payments-history-empty': ['src/components/dashboard/ledger-table.tsx'],
@@ -24,7 +27,6 @@ export const TOUR_TARGET_FILES = {
   'settings-navigation': ['src/components/dashboard/settings/settings-navigation.tsx'],
   'settings-preview': ['src/components/dashboard/settings/public-profile-preview.tsx'],
   'settings-save': ['src/components/dashboard/settings/settings-save-bar.tsx'],
-  'settings-policies': ['src/components/dashboard/settings/policy-settings-form.tsx'],
   'tour-help': ['src/components/dashboard/tours/tour-help-menu.tsx'],
 } as const
 

@@ -1,7 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { waitForTourTarget } from '@/components/dashboard/tours/tour-target'
 
 describe('waitForTourTarget', () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(20, 30, 100, 40))
+  })
+
   afterEach(() => {
     document.body.replaceChildren()
     vi.useRealTimers()
@@ -41,6 +46,66 @@ describe('waitForTourTarget', () => {
     })
 
     expect(target?.dataset.tourId).toBe('bookings-empty')
+  })
+
+  it('skips a hidden desktop target and resolves the visible tablet target', async () => {
+    const desktopShell = document.createElement('div')
+    desktopShell.style.display = 'none'
+    const desktopTarget = document.createElement('div')
+    desktopTarget.dataset.tourId = 'payments-history'
+    desktopShell.appendChild(desktopTarget)
+    document.body.appendChild(desktopShell)
+
+    const tabletTarget = document.createElement('div')
+    tabletTarget.dataset.tourId = 'payments-history'
+    document.body.appendChild(tabletTarget)
+
+    await expect(waitForTourTarget({ targetId: 'payments-history', waitMs: 50 }))
+      .resolves.toBe(tabletTarget)
+  })
+
+  it('skips a zero-rect target and uses the visible fallback', async () => {
+    const collapsedTarget = document.createElement('div')
+    collapsedTarget.dataset.tourId = 'bookings-actions'
+    Object.defineProperty(collapsedTarget, 'getBoundingClientRect', {
+      value: () => new DOMRect(0, 0, 0, 0),
+    })
+    document.body.appendChild(collapsedTarget)
+
+    const fallback = document.createElement('div')
+    fallback.dataset.tourId = 'bookings-search'
+    Object.defineProperty(fallback, 'getBoundingClientRect', {
+      value: () => new DOMRect(20, 30, 100, 40),
+    })
+    document.body.appendChild(fallback)
+
+    await expect(waitForTourTarget({
+      targetId: 'bookings-actions',
+      fallbackTargetId: 'bookings-search',
+      waitMs: 50,
+    })).resolves.toBe(fallback)
+  })
+
+  it('fails open to the fallback when a target cannot be measured', async () => {
+    const unavailableTarget = document.createElement('div')
+    unavailableTarget.dataset.tourId = 'bookings-actions'
+    Object.defineProperty(unavailableTarget, 'getBoundingClientRect', {
+      value: () => { throw new Error('layout unavailable') },
+    })
+    document.body.appendChild(unavailableTarget)
+
+    const fallback = document.createElement('div')
+    fallback.dataset.tourId = 'bookings-search'
+    Object.defineProperty(fallback, 'getBoundingClientRect', {
+      value: () => new DOMRect(20, 30, 100, 40),
+    })
+    document.body.appendChild(fallback)
+
+    await expect(waitForTourTarget({
+      targetId: 'bookings-actions',
+      fallbackTargetId: 'bookings-search',
+      waitMs: 50,
+    })).resolves.toBe(fallback)
   })
 
   it('returns null after the bounded wait and disconnects the observer', async () => {

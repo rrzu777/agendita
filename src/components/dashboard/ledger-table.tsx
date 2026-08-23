@@ -58,7 +58,7 @@ export function LedgerTable({ entries, currency }: { entries: any[]; currency: s
   return (
     <>
       {/* Mobile: cards */}
-      <div className="space-y-3 lg:hidden">
+      <div data-tour-id="payments-history" className="space-y-3 lg:hidden">
         {rows.map(({ entry, amountClass, amountLabel }) => (
           <TableMobileCard
             key={entry.id}

@@ -44,7 +44,7 @@ export const definition = {
       fallbackTargetId: 'payments-history-empty',
       title: 'Consulta el historial',
       body: 'Aquí quedan registrados ingresos, abonos y ajustes.',
-      viewports: ['desktop'],
+      viewports: ['mobile', 'desktop'],
       waitMs: 300,
     },
     {

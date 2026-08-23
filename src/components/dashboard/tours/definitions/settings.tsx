@@ -40,9 +40,9 @@ export const definition = {
     {
       id: 'policies',
       targetKind: 'static',
-      targetId: 'settings-policies',
+      targetId: 'settings-navigation',
       title: 'Define políticas y avisos',
-      body: 'Estos controles definen condiciones y recordatorios de cancelación.',
+      body: 'Abre Políticas y avisos desde esta navegación para configurarlos.',
       viewports: ['mobile', 'desktop'],
       waitMs: 300,
     },
