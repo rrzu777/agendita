@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, type FormEvent } from 'react'
-import { flushSync } from 'react-dom'
 import { LogOut, MoreHorizontal } from 'lucide-react'
 import { GuardedLink } from '@/components/dashboard/unsaved-changes-provider'
 import {
@@ -26,7 +25,23 @@ type MobileMoreMenuProps = {
 export function MobileMoreMenu({ items, pathname, onSignOut }: MobileMoreMenuProps) {
   const [open, setOpen] = useState(false)
   const closeForTour = () => {
-    flushSync(() => setOpen(false))
+    setOpen(false)
+    return new Promise<void>((resolve) => {
+      const hasExited = () => (
+        document.querySelector('[data-mobile-more-sheet]') === null
+        && document.querySelector('[data-slot="sheet-overlay"]') === null
+      )
+      if (hasExited()) {
+        resolve()
+        return
+      }
+      const observer = new MutationObserver(() => {
+        if (!hasExited()) return
+        observer.disconnect()
+        resolve()
+      })
+      observer.observe(document.body, { childList: true, subtree: true })
+    })
   }
 
   return (
@@ -42,7 +57,7 @@ export function MobileMoreMenu({ items, pathname, onSignOut }: MobileMoreMenuPro
           <span>Más</span>
         </button>
       </SheetTrigger>
-      <SheetContent side="bottom" className="max-h-[85dvh] rounded-t-2xl pb-[env(safe-area-inset-bottom)]">
+      <SheetContent data-mobile-more-sheet="" side="bottom" className="max-h-[85dvh] rounded-t-2xl pb-[env(safe-area-inset-bottom)]">
         <SheetHeader>
           <SheetTitle>Más opciones</SheetTitle>
           <SheetDescription>Administra las demás áreas de tu negocio.</SheetDescription>

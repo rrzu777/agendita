@@ -433,7 +433,51 @@ describe('DashboardTourProvider', () => {
     expect(document.querySelector('[data-testid="active"]')?.textContent).toBe('dashboard_intro:0')
   })
 
-  it('closes Más before opening the replay Sheet at 375px', async () => {
+  it('waits for the animated Más Sheet exit before starting mobile replay at 375px', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 })
+    mobileViewport = true
+    mockGetTourProgress.mockResolvedValue({
+      ok: true,
+      data: [{ key: 'dashboard_intro', version: 1, status: 'completed', lastStep: 1 }],
+    })
+    mockLoadTourDefinition.mockResolvedValue({
+      ...definition,
+      steps: definition.steps.map((step) => ({ ...step, targetId: 'nav-mobile-more' })),
+    })
+    await renderProvider({ withMobileMore: true })
+
+    await click('Más')
+    expect(document.querySelector('[data-mobile-more-sheet]')).not.toBeNull()
+    await click('Ayuda y recorridos')
+    const help = document.querySelector('[aria-label="Recorridos disponibles"]') as HTMLElement
+    const replay = Array.from(help.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Repetir recorrido')
+    const exitingMoreContent = document.createElement('div')
+    exitingMoreContent.setAttribute('data-mobile-more-sheet', '')
+    exitingMoreContent.dataset.state = 'closed'
+    const exitingMoreOverlay = document.createElement('div')
+    exitingMoreOverlay.dataset.slot = 'sheet-overlay'
+    exitingMoreOverlay.dataset.state = 'closed'
+    document.body.append(exitingMoreContent, exitingMoreOverlay)
+    await act(async () => replay?.click())
+
+    expect(window.innerWidth).toBe(375)
+    expect(document.querySelectorAll('[data-slot="sheet-overlay"]')).toHaveLength(1)
+    expect(document.querySelector('[data-mobile-more-sheet]')).toBe(exitingMoreContent)
+    expect(document.querySelector('[data-testid="active"]')?.textContent).toBe('none')
+
+    await act(async () => {
+      exitingMoreContent.remove()
+      exitingMoreOverlay.remove()
+    })
+    await settle()
+
+    expect(document.querySelectorAll('[data-slot="sheet-overlay"]')).toHaveLength(1)
+    expect(Array.from(document.querySelectorAll('[data-slot="sheet-content"]'))
+      .some((sheet) => sheet.textContent?.includes('Más opciones'))).toBe(false)
+  })
+
+  it('starts mobile replay after a zero-duration Más Sheet exit at 375px', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 })
     mobileViewport = true
     mockGetTourProgress.mockResolvedValue({

@@ -4,6 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DashboardTourContext, type DashboardTourContextValue } from '@/components/dashboard/tours/tour-context'
 import { TourHelpMenu } from '@/components/dashboard/tours/tour-help-menu'
 
+async function waitForElementRemoval(selector: string) {
+  await act(async () => {
+    if (!document.querySelector(selector)) return
+    await new Promise<void>((resolve) => {
+      const observer = new MutationObserver(() => {
+        if (document.querySelector(selector)) return
+        observer.disconnect()
+        resolve()
+      })
+      observer.observe(document.body, { childList: true, subtree: true })
+    })
+  })
+}
+
 describe('TourHelpMenu', () => {
   let container: HTMLDivElement
   let root: Root
@@ -97,6 +111,7 @@ describe('TourHelpMenu', () => {
     expect(container.querySelector('[aria-label="Recorridos disponibles"]')).toBeNull()
 
     await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    await waitForElementRemoval('[data-slot="popover-content"]')
 
     expect(document.activeElement).toBe(trigger)
   })

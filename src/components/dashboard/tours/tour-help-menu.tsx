@@ -1,7 +1,7 @@
 'use client'
 
 import { CircleHelp, RotateCcw } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
@@ -10,13 +10,39 @@ import { useDashboardTours } from './tour-context'
 type TourHelpMenuProps = {
   className?: string
   compact?: boolean
-  onAcceptedStart?: () => void
+  onAcceptedStart?: () => void | Promise<void>
 }
 
 export function TourHelpMenu({ className, compact = false, onAcceptedStart }: TourHelpMenuProps) {
   const [open, setOpen] = useState(false)
   const compactTriggerRef = useRef<HTMLButtonElement>(null)
+  const compactPopoverWasOpenRef = useRef(false)
   const { helpTours, start } = useDashboardTours()
+
+  useEffect(() => {
+    if (!compact) return
+    if (open) {
+      compactPopoverWasOpenRef.current = true
+      return
+    }
+    if (!compactPopoverWasOpenRef.current) return
+    compactPopoverWasOpenRef.current = false
+
+    const selector = '[data-tour-help-popover]'
+    const restoreFocus = () => compactTriggerRef.current?.focus()
+    if (!document.querySelector(selector)) {
+      restoreFocus()
+      return
+    }
+
+    const observer = new MutationObserver(() => {
+      if (document.querySelector(selector)) return
+      observer.disconnect()
+      restoreFocus()
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [compact, open])
 
   if (helpTours.length === 0) return null
 
@@ -55,9 +81,11 @@ export function TourHelpMenu({ className, compact = false, onAcceptedStart }: To
             size="sm"
             className="shrink-0"
             onClick={() => {
-              setOpen(false)
-              onAcceptedStart?.()
-              void start(tour.key, { replay: true })
+              void (async () => {
+                setOpen(false)
+                await onAcceptedStart?.()
+                await start(tour.key, { replay: true })
+              })()
             }}
           >
             <RotateCcw className="mr-2 size-3.5" />
@@ -77,9 +105,9 @@ export function TourHelpMenu({ className, compact = false, onAcceptedStart }: To
             side="right"
             align="end"
             className="w-80 p-3"
+            data-tour-help-popover
             onCloseAutoFocus={(event) => {
               event.preventDefault()
-              compactTriggerRef.current?.focus()
             }}
           >
             {items}
