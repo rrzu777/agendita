@@ -33,7 +33,7 @@ function formatAmount(entry: { direction: string; amount: number }, currency: st
 export function LedgerTable({ entries, currency }: { entries: any[]; currency: string }) {
   if (entries.length === 0) {
     return (
-      <div className="studio-card overflow-hidden">
+      <div data-tour-id="payments-history-empty" className="studio-card overflow-hidden">
         <div className="flex flex-col items-center gap-3 py-12 text-center">
           <div className="flex size-14 items-center justify-center rounded-full bg-muted">
             <CreditCard className="size-7 text-muted-foreground" />
@@ -77,7 +77,7 @@ export function LedgerTable({ entries, currency }: { entries: any[]; currency: s
       </div>
 
       {/* Desktop: table */}
-      <div className="hidden lg:block studio-card overflow-hidden">
+      <div data-tour-id="payments-history" className="hidden lg:block studio-card overflow-hidden">
         <Table fixed className={TABLE_MIN_WIDTH}>
           <TableHeader>
             <TableRow className="bg-muted/50">

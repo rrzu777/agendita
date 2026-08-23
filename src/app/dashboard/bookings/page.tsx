@@ -51,7 +51,7 @@ const PENDING_BALANCE_BADGE_CLASS =
 
 function EmptyState() {
   return (
-    <div className="studio-card p-8 text-center">
+    <div data-tour-id="bookings-empty" className="studio-card p-8 text-center">
       <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-muted">
         <CalendarDays className="size-7 text-muted-foreground" />
       </div>
@@ -400,7 +400,7 @@ export default async function BookingsPage({
               Nueva reserva
             </Button>
           </Link>
-          <form className="flex w-full flex-col gap-2 sm:max-w-xl sm:flex-row sm:items-center" action="/dashboard/bookings">
+          <form data-tour-id="bookings-search" className="flex w-full flex-col gap-2 sm:max-w-xl sm:flex-row sm:items-center" action="/dashboard/bookings">
             {transferCursor && <input type="hidden" name="transferCursor" value={transferCursor} />}
             <Input
               name="booking"
@@ -511,7 +511,7 @@ export default async function BookingsPage({
                         // apilados no dicen cuál es la clienta y cuál el equipo.
                         secondary={booking.professional ? `Atiende: ${booking.professional.name}` : undefined}
                       />
-                      <TableCell className={BOOKING_STATUS_COLUMN}>
+                      <TableCell data-tour-id="bookings-status" className={BOOKING_STATUS_COLUMN}>
                         <div className="flex flex-col items-start gap-1">
                           {hasPendingDeclaredTransfer(booking) ? (
                             <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>

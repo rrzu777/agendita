@@ -10,6 +10,21 @@ export const TOUR_TARGET_FILES = {
   'nav-desktop': ['src/components/dashboard/sidebar.tsx'],
   'nav-mobile-more': ['src/components/dashboard/mobile-more-menu.tsx'],
   'bookings-new': ['src/app/dashboard/bookings/page.tsx'],
+  'bookings-search': ['src/app/dashboard/bookings/page.tsx'],
+  'bookings-transfer': ['src/components/dashboard/pending-transfers-section.tsx'],
+  'bookings-status': ['src/app/dashboard/bookings/page.tsx'],
+  'bookings-actions': ['src/components/dashboard/booking-row-actions.tsx'],
+  'bookings-empty': ['src/app/dashboard/bookings/page.tsx'],
+  'payments-stats': ['src/components/dashboard/finance-stats.tsx'],
+  'payments-register': ['src/components/dashboard/payment-form.tsx'],
+  'payments-filters': ['src/components/dashboard/export-csv-button.tsx'],
+  'payments-history': ['src/components/dashboard/ledger-table.tsx'],
+  'payments-history-empty': ['src/components/dashboard/ledger-table.tsx'],
+  'payments-settings': ['src/components/dashboard/sidebar.tsx'],
+  'settings-navigation': ['src/components/dashboard/settings/settings-navigation.tsx'],
+  'settings-preview': ['src/components/dashboard/settings/public-profile-preview.tsx'],
+  'settings-save': ['src/components/dashboard/settings/settings-save-bar.tsx'],
+  'settings-policies': ['src/components/dashboard/settings/policy-settings-form.tsx'],
   'tour-help': ['src/components/dashboard/tours/tour-help-menu.tsx'],
 } as const
 
@@ -17,12 +32,18 @@ export const TOUR_TARGET_FILES = {
 // Un mapa explícito mantiene los chunks y el typecheck deterministas.
 const TOUR_DEFINITION_LOADERS = {
   dashboard_intro: () => import('./definitions/dashboard_intro'),
+  bookings: () => import('./definitions/bookings'),
+  payments: () => import('./definitions/payments'),
+  settings: () => import('./definitions/settings'),
 } satisfies Partial<Record<TourKey, TourDefinitionLoader>>
 
 type LoadableTourKey = keyof typeof TOUR_DEFINITION_LOADERS
 
 const TOUR_DEFINITION_STEP_BOUNDS = {
   dashboard_intro: 2,
+  bookings: 5,
+  payments: 5,
+  settings: 4,
 } satisfies Record<LoadableTourKey, number>
 
 export function getLoadableTourKeys(): LoadableTourKey[] {

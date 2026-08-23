@@ -199,7 +199,7 @@ export function PendingTransfersSection({
   if (items.length === 0) return null
 
   return (
-    <section className="studio-card p-5">
+    <section data-tour-id="bookings-transfer" className="studio-card p-5">
       <div className="mb-4 flex items-center gap-2">
         <Landmark className="size-5 text-orange-600 dark:text-orange-400" />
         <h2 className="text-lg font-semibold text-primary">Transferencias por verificar</h2>

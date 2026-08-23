@@ -13,15 +13,16 @@ export function TableActions({
   primary,
   children,
   align = 'end',
+  ...props
 }: {
   primary?: React.ReactNode
   children?: React.ReactNode
   align?: 'start' | 'end'
-}) {
+} & React.ComponentProps<'div'>) {
   const items = React.Children.toArray(children).filter(Boolean)
   const hasMenu = items.length > 0
   return (
-    <div className="flex items-center justify-end gap-1">
+    <div className="flex items-center justify-end gap-1" {...props}>
       {primary && (
         <div data-slot="table-actions-primary" className="flex shrink-0 items-center justify-end gap-1">
           {primary}

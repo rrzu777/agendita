@@ -127,7 +127,7 @@ export function PolicySettingsForm({ businessId, initialValues }: PolicySettings
         </p>
       )}
 
-      <fieldset disabled={isSubmitting} aria-label="Campos de políticas" aria-busy={isSubmitting} className="space-y-10 disabled:opacity-70">
+      <fieldset data-tour-id="settings-policies" disabled={isSubmitting} aria-label="Campos de políticas" aria-busy={isSubmitting} className="space-y-10 disabled:opacity-70">
         <SettingsFormSection title="Cancelación y autogestión">
           <FormField
             id="policy-cutoff"

@@ -8,12 +8,27 @@ import {
 } from '@/components/dashboard/tours/tour-definitions'
 
 describe('tour target contract', () => {
-  it('keeps the exact unique target set required by the dashboard introduction', () => {
+  it('keeps the exact unique target set required by dashboard tours', () => {
     expect(Object.keys(TOUR_TARGET_FILES).sort()).toEqual([
+      'bookings-actions',
+      'bookings-empty',
       'bookings-new',
+      'bookings-search',
+      'bookings-status',
+      'bookings-transfer',
       'dashboard-checklist',
       'nav-desktop',
       'nav-mobile-more',
+      'payments-filters',
+      'payments-history',
+      'payments-history-empty',
+      'payments-register',
+      'payments-settings',
+      'payments-stats',
+      'settings-navigation',
+      'settings-policies',
+      'settings-preview',
+      'settings-save',
       'tour-help',
     ])
     expect(new Set(Object.keys(TOUR_TARGET_FILES)).size)

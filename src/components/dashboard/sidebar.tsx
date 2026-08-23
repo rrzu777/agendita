@@ -104,22 +104,40 @@ export function DashboardSidebar({ user, business, role }: DashboardSidebarProps
               const Icon = item.icon
               const isActive = isDashboardNavItemActive(item, pathname)
 
+              const linkClassName = cn(
+                'flex items-center rounded-lg text-sm font-semibold transition-colors',
+                collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-4 py-3',
+                isActive
+                  ? 'bg-primary text-primary-foreground shadow-[0_10px_22px_rgba(51,41,32,0.14)]'
+                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+              )
+              const linkContent = (
+                <>
+                  <Icon className="size-5 shrink-0" />
+                  {!collapsed && item.label}
+                </>
+              )
+
               return (
                 <li key={item.href}>
-                  <GuardedLink
-                    href={item.href}
-                    title={collapsed ? item.label : undefined}
-                    className={cn(
-                      'flex items-center rounded-lg text-sm font-semibold transition-colors',
-                      collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-4 py-3',
-                      isActive
-                        ? 'bg-primary text-primary-foreground shadow-[0_10px_22px_rgba(51,41,32,0.14)]'
-                        : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                    )}
-                  >
-                    <Icon className="size-5 shrink-0" />
-                    {!collapsed && item.label}
-                  </GuardedLink>
+                  {item.href === '/dashboard/settings' ? (
+                    <GuardedLink
+                      data-tour-id="payments-settings"
+                      href={item.href}
+                      title={collapsed ? item.label : undefined}
+                      className={linkClassName}
+                    >
+                      {linkContent}
+                    </GuardedLink>
+                  ) : (
+                    <GuardedLink
+                      href={item.href}
+                      title={collapsed ? item.label : undefined}
+                      className={linkClassName}
+                    >
+                      {linkContent}
+                    </GuardedLink>
+                  )}
                 </li>
               )
             })}
