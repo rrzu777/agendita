@@ -175,9 +175,10 @@ export function useUnsavedChanges() {
 type GuardedLinkProps = Omit<ComponentProps<typeof Link>, 'href' | 'onClick'> & {
   href: string
   onClick?: MouseEventHandler<HTMLAnchorElement>
+  onAcceptedNavigation?: () => void
 }
 
-export function GuardedLink({ href, onClick, target, replace = false, scroll, ...props }: GuardedLinkProps) {
+export function GuardedLink({ href, onClick, onAcceptedNavigation, target, replace = false, scroll, ...props }: GuardedLinkProps) {
   const router = useRouter()
   const { hasUnsavedChanges, requestNavigation } = useUnsavedChanges()
 
@@ -189,7 +190,6 @@ export function GuardedLink({ href, onClick, target, replace = false, scroll, ..
       && !event.currentTarget.hasAttribute('download')
     if (
       event.defaultPrevented
-      || !hasUnsavedChanges
       || event.button !== 0
       || event.metaKey
       || event.ctrlKey
@@ -198,8 +198,14 @@ export function GuardedLink({ href, onClick, target, replace = false, scroll, ..
       || !isOwnedSameTabNavigation
     ) return
 
+    if (!hasUnsavedChanges) {
+      onAcceptedNavigation?.()
+      return
+    }
+
     event.preventDefault()
     requestNavigation(() => {
+      onAcceptedNavigation?.()
       const options = scroll === undefined ? undefined : { scroll }
       if (replace) {
         if (options) router.replace(href, options)

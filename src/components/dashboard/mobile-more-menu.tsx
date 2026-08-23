@@ -53,7 +53,7 @@ export function MobileMoreMenu({ items, pathname, onSignOut }: MobileMoreMenuPro
                   <GuardedLink
                     href={item.href}
                     aria-current={isActive ? 'page' : undefined}
-                    onClick={() => setOpen(false)}
+                    onAcceptedNavigation={() => setOpen(false)}
                     className={cn(
                       'flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-semibold transition-colors',
                       isActive

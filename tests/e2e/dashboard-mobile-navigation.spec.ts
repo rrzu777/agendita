@@ -59,6 +59,26 @@ test.describe('dashboard mobile navigation', () => {
     await page.getByRole('button', { name: 'Seguir editando' }).click()
     await expect(page.getByRole('button', { name: 'Cerrar sesión' })).toBeFocused()
   })
+
+  test('keeps Más open when a dirty secondary navigation is cancelled', async ({ page }) => {
+    await page.goto('/dashboard/settings/profile')
+    await page.getByLabel('Descripción').fill(`Borrador secundario ${Date.now()}`)
+
+    await page.getByRole('button', { name: 'Más opciones' }).click()
+    const moreNavigation = page.getByRole('navigation', { name: 'Más secciones del dashboard' })
+    await moreNavigation.getByRole('link', { name: 'Pagos', exact: true }).click()
+
+    await expect(page.getByRole('dialog')).toContainText('Cambios sin guardar')
+    await page.getByRole('button', { name: 'Seguir editando' }).click()
+    await expect(page).toHaveURL('/dashboard/settings/profile')
+    await expect(moreNavigation.getByRole('link', { name: 'Pagos', exact: true })).toBeVisible()
+
+    await moreNavigation.getByRole('link', { name: 'Pagos', exact: true }).click()
+    await expect(page.getByRole('dialog')).toContainText('Cambios sin guardar')
+    await page.getByRole('button', { name: 'Descartar cambios' }).click()
+    await expect(page).toHaveURL('/dashboard/payments')
+    await expect(moreNavigation).toHaveCount(0)
+  })
 })
 
 test('staff mobile navigation omits Settings and Billing', async ({ page }) => {
