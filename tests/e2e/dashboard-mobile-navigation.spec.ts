@@ -1,6 +1,13 @@
 import { expect, test, type Page } from '@playwright/test'
 import { prisma } from '@/lib/db'
 import { setOwnerAuth } from './helpers/auth'
+import { assertSafeTestDatabaseUrl } from '../helpers/test-database-safety'
+import {
+  cleanupDashboardFixture,
+  createDashboardFixture,
+} from './helpers/dashboard-tour-fixture'
+
+assertSafeTestDatabaseUrl(process.env.DATABASE_URL)
 
 async function expectNoHorizontalOverflow(page: Page) {
   await expect.poll(() => page.evaluate(() => ({
@@ -82,19 +89,13 @@ test.describe('dashboard mobile navigation', () => {
 })
 
 test('staff mobile navigation omits Settings and Billing', async ({ page }) => {
-  const email = `dashboard-mobile-staff-${Date.now()}@e2e.agendita.test`
-  const business = await prisma.business.findUniqueOrThrow({
-    where: { slug: 'mimosnails' },
-    select: { id: true },
-  })
-  const staff = await prisma.user.create({ data: { email, name: 'Staff navegación móvil' } })
+  const fixture = await createDashboardFixture(prisma, { role: 'staff' })
 
   page.setExtraHTTPHeaders({
-    'x-e2e-test-user-email': email,
+    'x-e2e-test-user-email': fixture.email,
     'x-e2e-auth-secret': process.env.PLAYWRIGHT_E2E_AUTH_SECRET || 'e2e-secret-local',
   })
   await page.setViewportSize({ width: 375, height: 812 })
-  await prisma.businessUser.create({ data: { businessId: business.id, userId: staff.id, role: 'staff' } })
 
   try {
     await page.goto('/dashboard')
@@ -105,6 +106,6 @@ test('staff mobile navigation omits Settings and Billing', async ({ page }) => {
     await expect(moreNavigation.getByRole('link', { name: 'Facturación', exact: true })).toHaveCount(0)
     await expectNoHorizontalOverflow(page)
   } finally {
-    await prisma.user.delete({ where: { id: staff.id } })
+    await cleanupDashboardFixture(prisma, fixture)
   }
 })

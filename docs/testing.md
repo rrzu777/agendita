@@ -101,6 +101,11 @@ seed applied. The suite creates unique owner/admin/staff identities and business
 asserts tour state directly through Prisma and removes its fixtures in `finally`.
 It uses the local E2E auth bypass and does not write to Supabase.
 
+The E2E database preflight is fail-closed: the URL must use PostgreSQL on a
+loopback host, include explicit test credentials, contain no query/fragment and
+target an `agendita_*_test` or `agendita_*_e2e` database without
+`prod`/`production`/`live` name segments. It runs before any direct Prisma write.
+
 ## CI Pipeline
 
 `.github/workflows/ci.yml`:

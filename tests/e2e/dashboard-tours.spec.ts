@@ -1,6 +1,13 @@
 import { expect, test, type Page } from '@playwright/test'
-import type { BusinessRole } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { assertSafeTestDatabaseUrl } from '../helpers/test-database-safety'
+import {
+  cleanupDashboardFixture as cleanupFixture,
+  createDashboardFixture as createFixture,
+  type DashboardFixture,
+} from './helpers/dashboard-tour-fixture'
+
+assertSafeTestDatabaseUrl(process.env.DATABASE_URL)
 
 const E2E_SECRET = process.env.PLAYWRIGHT_E2E_AUTH_SECRET || 'e2e-secret-local'
 const INTRO_TOUR = {
@@ -38,90 +45,18 @@ const STAFF_MORE_DESTINATIONS = OWNER_MORE_DESTINATIONS.filter((label) => (
   label !== 'Facturación' && label !== 'Configuración'
 ))
 
-type DashboardFixture = {
-  businessId: string
-  email: string
-  userId: string
-}
-
-let fixtureSequence = 0
-
-function fixtureSuffix() {
-  fixtureSequence += 1
-  return `${Date.now()}-${process.pid}-${fixtureSequence}`
-}
-
 async function createDashboardFixture({
   role,
   withBooking = false,
 }: {
-  role: BusinessRole
+  role: 'owner' | 'admin' | 'staff'
   withBooking?: boolean
 }): Promise<DashboardFixture> {
-  const suffix = fixtureSuffix()
-  const email = `dashboard-tours-${role}-${suffix}@e2e.agendita.test`
-  const user = await prisma.user.create({
-    data: { email, name: `Dashboard Tours ${role}` },
-  })
-  const business = await prisma.business.create({
-    data: {
-      name: `Tours ${role} ${suffix}`,
-      slug: `tours-${role}-${suffix}`,
-      subdomain: `tours-${role}-${suffix}`,
-      ownerUserId: user.id,
-      city: 'Santiago',
-      onboardingCompletedAt: new Date(),
-    },
-  })
-
-  await prisma.businessUser.create({
-    data: { businessId: business.id, userId: user.id, role },
-  })
-
-  if (withBooking) {
-    const service = await prisma.service.create({
-      data: {
-        businessId: business.id,
-        name: 'Servicio E2E de recorridos',
-        durationMinutes: 60,
-        price: 20_000,
-        depositAmount: 5_000,
-        pastelColor: '#A3D8FF',
-      },
-    })
-    const customer = await prisma.customer.create({
-      data: {
-        businessId: business.id,
-        name: 'Cliente E2E recorridos',
-        phone: `+569${String(fixtureSequence).padStart(8, '0')}`,
-      },
-    })
-    const startDateTime = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-
-    await prisma.booking.create({
-      data: {
-        businessId: business.id,
-        serviceId: service.id,
-        customerId: customer.id,
-        startDateTime,
-        endDateTime: new Date(startDateTime.getTime() + 60 * 60 * 1000),
-        status: 'confirmed',
-        totalPrice: 20_000,
-        depositRequired: 5_000,
-        depositPaid: 5_000,
-        remainingBalance: 15_000,
-        finalAmount: 20_000,
-        paymentStatus: 'deposit_paid',
-      },
-    })
-  }
-
-  return { businessId: business.id, email, userId: user.id }
+  return createFixture(prisma, { role, withBooking })
 }
 
 async function cleanupDashboardFixture(fixture: DashboardFixture) {
-  await prisma.business.delete({ where: { id: fixture.businessId } })
-  await prisma.user.delete({ where: { id: fixture.userId } })
+  await cleanupFixture(prisma, fixture)
 }
 
 async function authenticate(page: Page, fixture: DashboardFixture) {
@@ -136,6 +71,17 @@ async function expectNoHorizontalOverflow(page: Page) {
     body: document.body.scrollWidth <= document.body.clientWidth,
     root: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
   }))).toEqual({ body: true, root: true })
+}
+
+async function expectActiveTourSurfaceWithinViewport(page: Page) {
+  const dialog = page.getByRole('dialog')
+  await expect.poll(() => dialog.evaluate((element) => {
+    const rect = element.getBoundingClientRect()
+    return rect.left >= 0
+      && rect.top >= 0
+      && rect.right <= window.innerWidth
+      && rect.bottom <= window.innerHeight
+  })).toBe(true)
 }
 
 async function readTourProgress(
@@ -256,6 +202,7 @@ for (const scenario of [
       await page.getByRole('button', { name: 'Iniciar recorrido', exact: true }).click()
       const dialog = page.getByRole('dialog')
       await expect(dialog).toBeVisible()
+      await expectActiveTourSurfaceWithinViewport(page)
       await expect.poll(() => page.evaluate(() => (
         (window as typeof window & { __tourScrollBehaviors?: string[] }).__tourScrollBehaviors ?? []
       ))).toContain('auto')

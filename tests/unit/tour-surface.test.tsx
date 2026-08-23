@@ -214,6 +214,38 @@ describe('TourSurface', () => {
     expect(document.querySelector<HTMLElement>('[data-tour-anchor]')?.style.left).toBe('265px')
   })
 
+  it('recomputes the active target rectangle after a sibling layout mutation', async () => {
+    await renderSurface('desktop')
+    rect = new DOMRect(180, 140, 160, 44)
+
+    await act(async () => {
+      const sibling = document.createElement('div')
+      document.body.insertBefore(sibling, target)
+      await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    })
+
+    expect(document.querySelector<HTMLElement>('[data-tour-anchor]')?.style.left).toBe('260px')
+    expect(document.querySelector<HTMLElement>('[data-tour-anchor]')?.style.top).toBe('162px')
+  })
+
+  it('ignores child-list mutations owned by the tour portal and surface', async () => {
+    await renderSurface('desktop')
+    const requestAnimationFrame = vi.spyOn(window, 'requestAnimationFrame')
+    const highlight = document.querySelector<HTMLElement>('[data-tour-highlight]')
+
+    await act(async () => {
+      highlight?.appendChild(document.createElement('span'))
+      const overlay = document.createElement('div')
+      overlay.dataset.slot = 'sheet-overlay'
+      const focusGuard = document.createElement('span')
+      focusGuard.dataset.radixFocusGuard = ''
+      document.body.append(overlay, focusGuard)
+      await Promise.resolve()
+    })
+
+    expect(requestAnimationFrame).not.toHaveBeenCalled()
+  })
+
   it('fails open when the active target becomes hidden', async () => {
     const onFailure = vi.fn()
     await renderSurface('desktop', { onFailure })

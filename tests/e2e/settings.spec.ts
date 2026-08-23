@@ -1,6 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 import { prisma } from '@/lib/db'
+import { assertSafeTestDatabaseUrl } from '../helpers/test-database-safety'
 import { setBusinessAuth, setOwnerAuth } from './helpers/auth'
+
+assertSafeTestDatabaseUrl(process.env.DATABASE_URL)
 
 const SETTINGS_ROUTES = [
   { slug: 'profile', label: 'Perfil público' },

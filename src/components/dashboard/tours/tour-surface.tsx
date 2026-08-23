@@ -63,6 +63,29 @@ function readTargetRect(target: HTMLElement): DOMRect | null {
   }
 }
 
+const TOUR_SURFACE_MUTATION_SELECTOR = [
+  '[data-tour-surface]',
+  '[data-slot="sheet-overlay"]',
+  '[data-radix-focus-guard]',
+].join(',')
+
+function isTourSurfaceMutation(record: MutationRecord): boolean {
+  if (
+    record.target instanceof Element
+    && record.target.closest(TOUR_SURFACE_MUTATION_SELECTOR)
+  ) return true
+
+  const changedNodes = [...record.addedNodes, ...record.removedNodes]
+  return changedNodes.length > 0 && changedNodes.every((node) => {
+    if (!(node instanceof Element)) {
+      return node.parentElement?.closest(TOUR_SURFACE_MUTATION_SELECTOR) !== null
+    }
+    return node.matches(TOUR_SURFACE_MUTATION_SELECTOR)
+      || node.closest(TOUR_SURFACE_MUTATION_SELECTOR) !== null
+      || node.querySelector(TOUR_SURFACE_MUTATION_SELECTOR) !== null
+  })
+}
+
 function useTargetRect(target: HTMLElement, onFailure: () => void) {
   const targetRect = useMemo(() => readTargetRect(target), [target])
   const [measurement, setMeasurement] = useState(() => ({ target, rect: targetRect }))
@@ -117,7 +140,10 @@ function useTargetRect(target: HTMLElement, onFailure: () => void) {
           && record.target !== document.documentElement
           && (record.target === target || record.target.contains(target))
         ))
-        if (target.isConnected && !targetVisibilityChanged) return
+        const externalLayoutChanged = records.some((record) => (
+          record.type === 'childList' && !isTourSurfaceMutation(record)
+        ))
+        if (target.isConnected && !targetVisibilityChanged && !externalLayoutChanged) return
         if (!readTargetRect(target)) {
           failOpen()
           return
@@ -310,6 +336,7 @@ export function TourSurface(props: TourSurfaceProps) {
     <>
       <div
         data-tour-highlight
+        data-tour-surface=""
         aria-hidden="true"
         className="pointer-events-none fixed z-[55] rounded-xl border-2 border-primary ring-4 ring-primary/20"
         style={highlightStyle}
@@ -319,6 +346,7 @@ export function TourSurface(props: TourSurfaceProps) {
           <PopoverAnchor asChild>
             <div
               data-tour-anchor
+              data-tour-surface=""
               aria-hidden="true"
               className="pointer-events-none fixed"
               style={{
@@ -330,6 +358,7 @@ export function TourSurface(props: TourSurfaceProps) {
             />
           </PopoverAnchor>
           <PopoverContent
+            data-tour-surface=""
             role="dialog"
             aria-modal="false"
             aria-labelledby={titleId}
@@ -343,6 +372,7 @@ export function TourSurface(props: TourSurfaceProps) {
       ) : (
         <Sheet open onOpenChange={requestClose}>
           <SheetContent
+            data-tour-surface=""
             side="bottom"
             showCloseButton={false}
             aria-labelledby={titleId}
