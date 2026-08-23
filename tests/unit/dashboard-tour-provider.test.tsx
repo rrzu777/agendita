@@ -33,6 +33,7 @@ import {
   DashboardTourProvider,
 } from '@/components/dashboard/tours/dashboard-tour-provider'
 import { useDashboardTours } from '@/components/dashboard/tours/tour-context'
+import { TourInvitation } from '@/components/dashboard/tours/tour-invitation'
 import type { TourDefinition } from '@/components/dashboard/tours/tour-types'
 
 const definition = {
@@ -149,13 +150,15 @@ describe('DashboardTourProvider', () => {
   type ProviderOptions = Pick<
     ComponentProps<typeof DashboardTourProvider>,
     'role' | 'onboardingCompleted' | 'toursEnabled'
-  > & { dirty?: boolean }
+  > & { dirty?: boolean; withPromptSurface?: boolean; withInvitation?: boolean }
 
   async function renderProvider({
     dirty = false,
     role = 'owner',
     onboardingCompleted = true,
     toursEnabled = true,
+    withPromptSurface = false,
+    withInvitation = false,
   }: Partial<ProviderOptions> = {}) {
     await act(async () => root.render(
       <UnsavedChangesProvider>
@@ -165,7 +168,9 @@ describe('DashboardTourProvider', () => {
           toursEnabled={toursEnabled}
         >
           <DirtyRegistration dirty={dirty} />
+          {withPromptSurface && <div data-interruptive-surface>Install prompt</div>}
           <Controls />
+          {withInvitation && <TourInvitation />}
         </DashboardTourProvider>
       </UnsavedChangesProvider>,
     ))
@@ -186,6 +191,17 @@ describe('DashboardTourProvider', () => {
       version: 1,
       event: { type: 'start' },
     })
+  })
+
+  it('hides the provider invitation when the rollout flag is absent or false', async () => {
+    await renderProvider({ toursEnabled: false, withInvitation: true })
+
+    expect(container.textContent).not.toContain('Conoce Agendita en 2 minutos')
+
+    await renderProvider({ toursEnabled: true, withInvitation: true })
+
+    expect(container.textContent).toContain('Conoce Agendita en 2 minutos')
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
   })
 
   it('keeps async guards live when React StrictMode replays effects', async () => {
@@ -370,6 +386,47 @@ describe('DashboardTourProvider', () => {
     await click('Siguiente')
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Primer paso')
     expect(mockRecordTourProgress).not.toHaveBeenCalled()
+  })
+
+  it('does not start above an already open interactive surface', async () => {
+    const blockingSurface = document.createElement('div')
+    blockingSurface.dataset.interruptiveSurface = ''
+    blockingSurface.dataset.state = 'open'
+    document.body.appendChild(blockingSurface)
+    await renderProvider()
+
+    await click('Iniciar recorrido')
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(mockRecordTourProgress).not.toHaveBeenCalled()
+  })
+
+  it('pauses an active tour when an interactive surface opens', async () => {
+    await renderProvider()
+    await click('Iniciar recorrido')
+    const blockingSurface = document.createElement('div')
+    blockingSurface.dataset.interruptiveSurface = ''
+    blockingSurface.dataset.state = 'open'
+    document.body.appendChild(blockingSurface)
+    await settle()
+
+    expect(document.querySelector('[role="dialog"]')?.textContent)
+      .toContain('Termina o descarta tus cambios para continuar')
+    expect(buttonNamed('Siguiente').disabled).toBe(true)
+  })
+
+  it('keeps a mounted lower-priority prompt hidden until the tour closes', async () => {
+    await renderProvider({ withPromptSurface: true })
+    const prompt = container.querySelector('[data-interruptive-surface]') as HTMLElement
+
+    await click('Iniciar recorrido')
+
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(getComputedStyle(prompt).display).toBe('none')
+
+    await click('Omitir recorrido')
+
+    expect(getComputedStyle(prompt).display).not.toBe('none')
   })
 
   it('ignores a superseded definition load through the generation guard', async () => {

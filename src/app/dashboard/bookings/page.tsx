@@ -395,7 +395,7 @@ export default async function BookingsPage({
       <div className="space-y-6 p-5 md:p-10">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Link href="/dashboard/bookings/new">
-            <Button size="form" className="font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]">
+            <Button data-tour-id="bookings-new" size="form" className="font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]">
               <Plus className="mr-2 size-4" />
               Nueva reserva
             </Button>

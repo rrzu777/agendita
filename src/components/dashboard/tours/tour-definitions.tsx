@@ -6,8 +6,11 @@ type TourDefinitionLoader = () => Promise<TourDefinitionModule>
 export type TourTargetManifest = Record<string, readonly string[]>
 
 export const TOUR_TARGET_FILES = {
+  'dashboard-checklist': ['src/components/dashboard/setup-checklist.tsx'],
   'nav-desktop': ['src/components/dashboard/sidebar.tsx'],
   'nav-mobile-more': ['src/components/dashboard/mobile-more-menu.tsx'],
+  'bookings-new': ['src/app/dashboard/bookings/page.tsx'],
+  'tour-help': ['src/components/dashboard/tours/tour-help-menu.tsx'],
 } as const
 
 // Las definiciones contextuales se incorporan a este mapa junto con sus targets.

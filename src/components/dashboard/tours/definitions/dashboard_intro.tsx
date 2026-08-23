@@ -8,7 +8,7 @@ export const definition = {
   version: tour.version,
   route: tour.route,
   roles: tour.roles,
-  title: 'Primeros pasos en Agendita',
+  title: tour.title,
   steps: [
     {
       id: 'desktop-navigation',

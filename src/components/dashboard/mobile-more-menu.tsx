@@ -14,6 +14,7 @@ import {
 import { cn } from '@/lib/utils'
 import { isDashboardNavItemActive, type DashboardNavItem } from '@/lib/dashboard/navigation'
 import { signOut } from '@/lib/auth/actions'
+import { TourHelpMenu } from '@/components/dashboard/tours/tour-help-menu'
 
 type MobileMoreMenuProps = {
   items: DashboardNavItem[]
@@ -68,6 +69,7 @@ export function MobileMoreMenu({ items, pathname, onSignOut }: MobileMoreMenuPro
               )
             })}
           </ul>
+          <TourHelpMenu className="mt-3 border-t border-border pt-3" />
           <form action={signOut} onSubmit={onSignOut} className="mt-3 border-t border-border pt-3">
             <button
               type="submit"

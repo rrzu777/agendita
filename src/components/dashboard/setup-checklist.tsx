@@ -50,7 +50,7 @@ export function SetupChecklist({ checklist }: { checklist: SetupChecklistData })
   const whatsappText = encodeURIComponent(`Reserva aquí: ${checklist.bookingUrl}`)
 
   return (
-    <section className="studio-card mb-8 border-border/60 bg-card p-5 md:p-6">
+    <section data-tour-id="dashboard-checklist" className="studio-card mb-8 border-border/60 bg-card p-5 md:p-6">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Checklist de adopción</p>

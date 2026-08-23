@@ -15,6 +15,7 @@ import {
 import { useVocabulary } from '@/components/vocabulary-provider'
 import { getDashboardNavItems, isDashboardNavItemActive } from '@/lib/dashboard/navigation'
 import { MobileMoreMenu } from '@/components/dashboard/mobile-more-menu'
+import { TourHelpMenu } from '@/components/dashboard/tours/tour-help-menu'
 
 const COLLAPSE_KEY = 'agendita:sidebar-collapsed'
 
@@ -126,6 +127,7 @@ export function DashboardSidebar({ user, business, role }: DashboardSidebarProps
         </nav>
 
         <div className={cn('border-t border-border/50', collapsed ? 'p-2' : 'p-4')}>
+          <TourHelpMenu className={collapsed ? 'mb-2' : 'mb-3'} compact={collapsed} />
           {!collapsed && (
             <div className="mb-3 rounded-xl bg-card p-4 ring-1 ring-border/60">
               <p className="truncate text-sm font-semibold text-primary">{userName}</p>

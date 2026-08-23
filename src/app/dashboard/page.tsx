@@ -14,6 +14,7 @@ import { bookingStatusLabel } from '@/lib/bookings/status-labels'
 import { SetupChecklist } from '@/components/dashboard/setup-checklist'
 import { PendingTransfersBanner } from '@/components/dashboard/pending-transfers-banner'
 import { PendingPackageTransfersBanner } from '@/components/dashboard/pending-package-transfers-banner'
+import { TourInvitation } from '@/components/dashboard/tours/tour-invitation'
 import { hasPendingBalanceTransfer, hasPendingDeclaredTransfer, pendingPackageTransferWhere } from '@/lib/bank-transfer/declared'
 import { businessScheduleWhere } from '@/lib/availability/scope'
 import { getVocabulary } from '@/lib/vocabulary'
@@ -73,6 +74,7 @@ export default async function DashboardPage() {
       <div className="p-5 md:p-10">
         <PendingTransfersBanner count={bookingSummary.pendingTransfers} />
         <PendingPackageTransfersBanner count={pendingPackageTransfersCount} />
+        <TourInvitation />
         <Card className="studio-card mb-8 border-border/60 bg-card">
           <CardContent className="p-6">
             <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">

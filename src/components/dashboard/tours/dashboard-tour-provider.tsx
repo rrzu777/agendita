@@ -18,10 +18,11 @@ import {
   recordTourProgress,
   type TourProgressSnapshot,
 } from '@/server/actions/tour-progress'
-import { loadTourDefinition } from './tour-definitions'
+import { isTourDefinitionLoadable, loadTourDefinition } from './tour-definitions'
 import {
   DashboardTourContext,
   type DashboardTourContextValue,
+  type DashboardTourHelpItem,
 } from './tour-context'
 import { TourSurface } from './tour-surface'
 import { waitForTourTarget } from './tour-target'
@@ -29,6 +30,31 @@ import type { TourDefinition, TourStep, TourViewport } from './tour-types'
 
 const MOBILE_VIEWPORT_QUERY = '(max-width: 767px)'
 const STEP_PERSISTENCE_DEBOUNCE_MS = 200
+
+function hasOpenInterruptiveSurface(): boolean {
+  return document.querySelector(
+    '[data-interruptive-surface][data-state="open"], [data-interruptive-surface][aria-modal="true"]',
+  ) !== null
+}
+
+function useInterruptiveSurfaceOpen(): boolean {
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    const update = () => setOpen(hasOpenInterruptiveSurface())
+    update()
+    const observer = new MutationObserver(update)
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ['aria-modal', 'data-state'],
+      childList: true,
+      subtree: true,
+    })
+    return () => observer.disconnect()
+  }, [])
+
+  return open
+}
 
 type RuntimeSession = {
   key: TourKey
@@ -81,6 +107,7 @@ export function DashboardTourProvider({
   const pathname = usePathname()
   const viewport = useTourViewport()
   const { hasUnsavedChanges } = useUnsavedChanges()
+  const interruptiveSurfaceOpen = useInterruptiveSurfaceOpen()
   const [progress, setProgress] = useState<TourProgressSnapshot[]>([])
   const [progressKnown, setProgressKnown] = useState(false)
   const [session, setSessionState] = useState<RuntimeSession | null>(null)
@@ -98,6 +125,7 @@ export function DashboardTourProvider({
   const routeRef = useRef(pathname)
   const viewportRef = useRef(viewport)
   const eligibilityRef = useRef({ role, onboardingCompleted, toursEnabled })
+  const offeredToursRef = useRef(new Set<string>())
 
   const setSession = useCallback((next: RuntimeSession | null) => {
     sessionRef.current = next
@@ -184,6 +212,26 @@ export function DashboardTourProvider({
     })
   }, [onboardingCompleted, pathname, progress, progressKnown, role, toursEnabled, viewport])
 
+  const helpTours = useMemo<DashboardTourHelpItem[]>(() => {
+    if (!progressKnown || !toursEnabled || !onboardingCompleted) return []
+
+    return (Object.keys(TOUR_CATALOG) as TourKey[]).flatMap((key) => {
+      const catalog = TOUR_CATALOG[key]
+      if (
+        !catalog.roles.some((allowedRole) => allowedRole === role)
+        || catalog.route !== pathname
+        || !isTourDefinitionLoadable(key)
+      ) return []
+
+      const snapshot = progress.find((item) => item.key === key && item.version === catalog.version)
+      return [{
+        key,
+        title: catalog.title,
+        status: snapshot?.status ?? 'available',
+      }]
+    })
+  }, [onboardingCompleted, pathname, progress, progressKnown, role, toursEnabled])
+
   const locateTarget = useCallback(async ({
     definition,
     visibleStepIndexes,
@@ -235,7 +283,7 @@ export function DashboardTourProvider({
 
   const start = useCallback<DashboardTourContextValue['start']>(async (key, options) => {
     const replay = options?.replay === true
-    if (!toursEnabled || !onboardingCompleted) return
+    if (!toursEnabled || !onboardingCompleted || hasOpenInterruptiveSurface()) return
 
     const available = availableTours.find((tour) => tour.key === key)
     const catalog = TOUR_CATALOG[key]
@@ -321,6 +369,15 @@ export function DashboardTourProvider({
     viewport,
   ])
 
+  const offer = useCallback<DashboardTourContextValue['offer']>(async (key) => {
+    const available = availableTours.find((tour) => tour.key === key)
+    if (!available) return
+    const identity = `${key}:${available.version}`
+    if (offeredToursRef.current.has(identity)) return
+    offeredToursRef.current.add(identity)
+    await enqueuePersistence(key, available.version, { type: 'offer' })
+  }, [availableTours, enqueuePersistence])
+
   const scheduleStepPersistence = useCallback((runtime: RuntimeSession, step: number) => {
     if (runtime.replay || step <= highestScheduledStepRef.current) return
     highestScheduledStepRef.current = step
@@ -347,7 +404,7 @@ export function DashboardTourProvider({
 
   const next = useCallback<DashboardTourContextValue['next']>(async () => {
     const runtime = sessionRef.current
-    if (!runtime || hasUnsavedChanges) return
+    if (!runtime || hasUnsavedChanges || interruptiveSurfaceOpen) return
 
     if (runtime.position >= runtime.visibleStepIndexes.length - 1) {
       const finalStep = runtime.visibleStepIndexes[runtime.position]
@@ -397,12 +454,13 @@ export function DashboardTourProvider({
     locateTarget,
     scheduleStepPersistence,
     setSession,
+    interruptiveSurfaceOpen,
     updateLocalProgress,
   ])
 
   const previous = useCallback<DashboardTourContextValue['previous']>(() => {
     const runtime = sessionRef.current
-    if (!runtime || runtime.position === 0 || hasUnsavedChanges) return
+    if (!runtime || runtime.position === 0 || hasUnsavedChanges || interruptiveSurfaceOpen) return
     const previousTarget = runtime.target
     setSession({ ...runtime, target: null })
 
@@ -426,11 +484,23 @@ export function DashboardTourProvider({
         lastTarget: located.target,
       })
     })
-  }, [hasUnsavedChanges, invalidateSession, locateTarget, setSession])
+  }, [hasUnsavedChanges, interruptiveSurfaceOpen, invalidateSession, locateTarget, setSession])
 
-  const dismiss = useCallback<DashboardTourContextValue['dismiss']>(async () => {
+  const dismiss = useCallback<DashboardTourContextValue['dismiss']>(async (requestedKey) => {
     const runtime = sessionRef.current
-    if (!runtime) return
+    if (!runtime) {
+      const available = availableTours.find((tour) => tour.key === requestedKey)
+      if (!available) return
+      updateLocalProgress({
+        key: available.key,
+        version: available.version,
+        status: 'dismissed',
+        lastStep: available.resumeStep,
+      })
+      await enqueuePersistence(available.key, available.version, { type: 'dismiss' })
+      return
+    }
+    if (requestedKey && runtime.key !== requestedKey) return
     const { key, definition, replay, visibleStepIndexes, position } = runtime
     const pendingStep = pendingStepRef.current
     cancelStepPersistence()
@@ -447,7 +517,7 @@ export function DashboardTourProvider({
       await enqueuePersistence(key, definition.version, { type: 'step', step: pendingStep })
     }
     await enqueuePersistence(key, definition.version, { type: 'dismiss' })
-  }, [cancelStepPersistence, enqueuePersistence, invalidateSession, updateLocalProgress])
+  }, [availableTours, cancelStepPersistence, enqueuePersistence, invalidateSession, updateLocalProgress])
 
   const closeReplay = useCallback<DashboardTourContextValue['closeReplay']>(() => {
     if (sessionRef.current?.replay) invalidateSession()
@@ -503,6 +573,7 @@ export function DashboardTourProvider({
 
   const value = useMemo<DashboardTourContextValue>(() => ({
     available: availableTours.map((tour) => tour.key),
+    helpTours,
     active: session
       ? { key: session.key, step: session.visibleStepIndexes[session.position] }
       : null,
@@ -510,14 +581,20 @@ export function DashboardTourProvider({
     next,
     previous,
     dismiss,
+    offer,
     closeReplay,
-  }), [availableTours, closeReplay, dismiss, next, previous, session, start])
+  }), [availableTours, closeReplay, dismiss, helpTours, next, offer, previous, session, start])
 
   const activeStep = session?.definition.steps[session.visibleStepIndexes[session.position]]
 
   return (
     <DashboardTourContext.Provider value={value}>
-      {children}
+      <div className="contents" data-tour-active={session ? '' : undefined}>
+        {children}
+        {session && (
+          <style>{'[data-tour-active] [data-interruptive-surface]:not([data-state="open"]) { display: none !important; }'}</style>
+        )}
+      </div>
       {session?.target && activeStep && (
         <TourSurface
           step={activeStep}
@@ -525,7 +602,7 @@ export function DashboardTourProvider({
           totalSteps={session.visibleStepIndexes.length}
           viewport={viewport}
           target={session.target}
-          paused={hasUnsavedChanges}
+          paused={hasUnsavedChanges || interruptiveSurfaceOpen}
           canGoPrevious={session.position > 0}
           isLastStep={session.position === session.visibleStepIndexes.length - 1}
           restoreFocusTo={session.restoreFocusTo}

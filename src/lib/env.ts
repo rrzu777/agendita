@@ -132,6 +132,17 @@ export function getSubscriptionEnforcementEnabled(): boolean {
   return configured ?? false
 }
 
+export function getDashboardToursEnabled(): boolean {
+  const configured = process.env.DASHBOARD_TOURS_ENABLED
+  if (configured === undefined) return false
+  if (!isStrictBoolean(configured)) {
+    throw new Error(
+      `Invalid boolean value for DASHBOARD_TOURS_ENABLED: "${configured}". Expected "true" or "false".`,
+    )
+  }
+  return configured.toLowerCase() === 'true'
+}
+
 /**
  * Validates required environment variables.
  * Returns { errors, warnings } — never throws, never logs to console.
@@ -340,6 +351,18 @@ export function validateEnv(): EnvValidationResult {
       key: 'SUBSCRIPTION_ENFORCEMENT_ENABLED',
       message:
         'SUBSCRIPTION_ENFORCEMENT_ENABLED must be "true" or "false" when configured.',
+    })
+  }
+
+  const dashboardToursEnabled = process.env.DASHBOARD_TOURS_ENABLED
+  if (
+    dashboardToursEnabled !== undefined
+    && !isStrictBoolean(dashboardToursEnabled)
+  ) {
+    errors.push({
+      key: 'DASHBOARD_TOURS_ENABLED',
+      message:
+        'DASHBOARD_TOURS_ENABLED must be "true" or "false" when configured.',
     })
   }
 
