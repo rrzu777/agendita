@@ -22,6 +22,7 @@ export function SettingsSaveBar(props: SettingsSaveBarProps) {
 
   return (
     <div
+      data-tour-id="settings-save"
       className={cn(
         'pointer-events-none z-30 -mx-5 mt-8 px-5 pb-2 pt-5 md:-mx-4 md:px-4 lg:mx-0 lg:px-0',
         shouldDock &&

@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 const mocks = vi.hoisted(() => ({
-  getCurrentUserWithBusiness: vi.fn(),
   getCurrentSubscription: vi.fn(),
+  requireSettingsPageAccess: vi.fn(),
 }))
 
-vi.mock('@/lib/auth/user', () => ({
-  getCurrentUserWithBusiness: (...args: unknown[]) => mocks.getCurrentUserWithBusiness(...args),
+vi.mock('@/lib/business/settings-access', () => ({
+  requireSettingsPageAccess: (...args: unknown[]) => mocks.requireSettingsPageAccess(...args),
 }))
 
 vi.mock('@/server/actions/subscriptions', () => ({
@@ -15,8 +15,6 @@ vi.mock('@/server/actions/subscriptions', () => ({
   startSubscriptionAction: vi.fn(),
   cancelSubscriptionAction: vi.fn(),
 }))
-
-vi.mock('next/navigation', () => ({ redirect: vi.fn() }))
 
 import BillingPage from './page'
 
@@ -49,9 +47,10 @@ async function render(input: {
   businessStatus?: string
 } = {}) {
   const value = input.subscription ?? subscription()
-  mocks.getCurrentUserWithBusiness.mockResolvedValue({
+  mocks.requireSettingsPageAccess.mockResolvedValue({
     user: { id: 'user-1' },
     business: { subscriptionStatus: input.businessStatus ?? value.status },
+    role: 'owner',
   })
   mocks.getCurrentSubscription.mockResolvedValue({ subscription: value, payments: [] })
   return renderToStaticMarkup(await BillingPage({
@@ -168,8 +167,8 @@ describe('owner subscription billing experience', () => {
   })
 
   it('never renders provider identifiers returned by the safe read model', async () => {
-    mocks.getCurrentUserWithBusiness.mockResolvedValue({
-      user: { id: 'user-1' }, business: { subscriptionStatus: 'active' },
+    mocks.requireSettingsPageAccess.mockResolvedValue({
+      user: { id: 'user-1' }, business: { subscriptionStatus: 'active' }, role: 'admin',
     })
     mocks.getCurrentSubscription.mockResolvedValue({
       subscription: subscription(),

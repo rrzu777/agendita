@@ -1,7 +1,6 @@
-import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { getCurrentUserWithBusiness } from '@/lib/auth/user'
+import { requireSettingsPageAccess } from '@/lib/business/settings-access'
 import { getCurrentSubscription } from '@/server/actions/subscriptions'
 import { getSubscriptionStatusLabel } from '@/lib/subscriptions/enforcement'
 import { BadgeCheck, CircleAlert, CircleX, Clock } from 'lucide-react'
@@ -36,17 +35,7 @@ export default async function BillingPage({
   searchParams?: Promise<{ subscription?: string }>
 } = {}) {
   const callbackStatus = (await searchParams)?.subscription
-  const userData = await getCurrentUserWithBusiness()
-
-  if (!userData?.user) {
-    redirect('/login')
-  }
-
-  if (!userData?.business) {
-    redirect('/recover-business')
-  }
-
-  const business = userData.business
+  const { business } = await requireSettingsPageAccess()
   const { subscription, payments } = await getCurrentSubscription()
   const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL
 

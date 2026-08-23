@@ -23,7 +23,7 @@ export function PublicProfilePreview({
   const initials = name.trim().slice(0, 2).toUpperCase() || '•'
 
   return (
-    <aside aria-label="Vista previa del perfil público" className="xl:sticky xl:top-8 xl:self-start">
+    <aside data-tour-id="settings-preview" aria-label="Vista previa del perfil público" className="xl:sticky xl:top-8 xl:self-start">
       <div className="space-y-4 rounded-xl border border-border/70 bg-card p-5 shadow-sm">
         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
           <Globe className="size-4" aria-hidden="true" />

@@ -51,7 +51,7 @@ const PENDING_BALANCE_BADGE_CLASS =
 
 function EmptyState() {
   return (
-    <div className="studio-card p-8 text-center">
+    <div data-tour-id="bookings-empty" className="studio-card p-8 text-center">
       <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-muted">
         <CalendarDays className="size-7 text-muted-foreground" />
       </div>
@@ -116,7 +116,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           <h3 className="text-lg font-semibold text-primary truncate">{booking.service?.name || 'Servicio'}</h3>
           <p className="text-sm text-muted-foreground">{formatBookingNumber(booking.bookingNumber, booking.id)}</p>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
+        <div data-tour-id="bookings-status" className="flex shrink-0 flex-col items-end gap-1">
           {isPendingTransfer ? (
             <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>
           ) : (
@@ -202,7 +202,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
       </div>
 
       {booking.status === 'confirmed' && (
-        <div className="mt-4 grid grid-cols-2 gap-2 border-t border-border/50 pt-4">
+        <div data-tour-id="bookings-actions" className="mt-4 grid grid-cols-2 gap-2 border-t border-border/50 pt-4">
           <form action={async () => {
             'use server'
             // Sin UI de error en esta card (vista móvil): si falla, la reserva
@@ -243,7 +243,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
         </div>
       )}
       {booking.status === 'pending_confirmation' && (
-        <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
+        <div data-tour-id="bookings-actions" className="mt-4 flex gap-2 border-t border-border/50 pt-4">
           <form action={async () => {
             'use server'
             // Misma semántica silenciosa que "Completar" de arriba: la card móvil
@@ -261,7 +261,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
         </div>
       )}
       {booking.status === 'pending_payment' && (
-        <div className="mt-4 border-t border-border/50 pt-4">
+        <div data-tour-id="bookings-actions" className="mt-4 border-t border-border/50 pt-4">
           {/* El motivo va escrito y no en un title: acá hay ancho, y es táctil —
               en un teléfono nadie descubre un tooltip. */}
           {paymentBlockedReason && (
@@ -286,7 +286,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
       {booking.status === 'completed' && canRegisterPayment && (
         // Recobro (spec FU-B4b-3 §6): completed con saldo (post-chargeback o
         // saldo tras atender) — solo registrar pago, sin cancelar/reprogramar.
-        <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
+        <div data-tour-id="bookings-actions" className="mt-4 flex gap-2 border-t border-border/50 pt-4">
           <ManualPaymentDialog
             bookings={[booking]}
             now={now}
@@ -299,7 +299,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
         </div>
       )}
       {reviveState && (
-        <div className="mt-4 flex gap-2 border-t border-border/50 pt-4">
+        <div data-tour-id="bookings-actions" className="mt-4 flex gap-2 border-t border-border/50 pt-4">
           <ReviveBookingButton
             bookingId={booking.id}
             serviceName={booking.service?.name || 'Servicio'}
@@ -395,12 +395,12 @@ export default async function BookingsPage({
       <div className="space-y-6 p-5 md:p-10">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Link href="/dashboard/bookings/new">
-            <Button size="form" className="font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]">
+            <Button data-tour-id="bookings-new" size="form" className="font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]">
               <Plus className="mr-2 size-4" />
               Nueva reserva
             </Button>
           </Link>
-          <form className="flex w-full flex-col gap-2 sm:max-w-xl sm:flex-row sm:items-center" action="/dashboard/bookings">
+          <form data-tour-id="bookings-search" className="flex w-full flex-col gap-2 sm:max-w-xl sm:flex-row sm:items-center" action="/dashboard/bookings">
             {transferCursor && <input type="hidden" name="transferCursor" value={transferCursor} />}
             <Input
               name="booking"
@@ -511,7 +511,7 @@ export default async function BookingsPage({
                         // apilados no dicen cuál es la clienta y cuál el equipo.
                         secondary={booking.professional ? `Atiende: ${booking.professional.name}` : undefined}
                       />
-                      <TableCell className={BOOKING_STATUS_COLUMN}>
+                      <TableCell data-tour-id="bookings-status" className={BOOKING_STATUS_COLUMN}>
                         <div className="flex flex-col items-start gap-1">
                           {hasPendingDeclaredTransfer(booking) ? (
                             <span className={PENDING_TRANSFER_BADGE_CLASS}>Transferencia por verificar</span>

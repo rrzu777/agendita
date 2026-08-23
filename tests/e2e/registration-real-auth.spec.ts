@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 import { prisma } from '@/lib/db'
+import { assertSafeTestDatabaseUrl } from '../helpers/test-database-safety'
 import { runIndependentRegistrationCleanup } from './helpers/registration-cleanup'
+
+assertSafeTestDatabaseUrl(process.env.DATABASE_URL)
 
 const enabled = process.env.PLAYWRIGHT_REAL_REGISTRATION === 'true'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL

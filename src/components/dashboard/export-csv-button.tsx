@@ -72,7 +72,7 @@ export function ExportCSVButton() {
   }
 
   return (
-    <fieldset className="flex flex-wrap items-end gap-3">
+    <fieldset data-tour-id="payments-filters" className="flex flex-wrap items-end gap-3">
       <legend className="sr-only">Rango de fechas para exportar movimientos</legend>
       <FormField id="ledger-export-from" label="Desde">
         {(a11y) => (

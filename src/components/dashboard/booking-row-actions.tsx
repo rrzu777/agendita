@@ -113,7 +113,7 @@ export function BookingRowActions({
 
   return (
     <>
-      <TableActions primary={primary}>
+      <TableActions data-tour-id="bookings-actions" primary={primary}>
         {contactMenu}
         {isConfirmed && (
           <DropdownMenuItem asChild>

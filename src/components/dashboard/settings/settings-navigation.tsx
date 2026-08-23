@@ -10,7 +10,7 @@ export function SettingsNavigation() {
   const currentSection = SETTINGS_SECTIONS.find((section) => section.href === pathname)?.key
 
   return (
-    <nav aria-label="Secciones de configuración" className="overflow-x-auto border-b border-border/60 lg:overflow-visible lg:border-b-0">
+    <nav aria-label="Secciones de configuración" data-tour-id="settings-navigation" className="overflow-x-auto border-b border-border/60 lg:overflow-visible lg:border-b-0">
       <ul className="flex min-w-max gap-1 px-1 lg:min-w-0 lg:flex-col lg:gap-0 lg:px-0">
         {SETTINGS_SECTIONS.map((section) => {
           const isCurrent = section.key === currentSection

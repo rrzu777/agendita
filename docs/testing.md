@@ -6,7 +6,7 @@
 # Install dependencies
 npm ci
 
-# Run all unit tests (563 tests, 32 files)
+# Run all unit tests
 npm test
 
 # Run integration tests (requires local Postgres)
@@ -78,6 +78,33 @@ npm run test:e2e
 - Public pages load (landing, book listing, business profile)
 - Login/register pages are accessible
 - Dashboard routes redirect unauthenticated users to `/login`
+- Dashboard navigation and guided tours at 375, 768 and 1440 px
+
+#### Dashboard guided tours
+
+The tours are disabled by default. Enable `DASHBOARD_TOURS_ENABLED` only for the
+Playwright process that exercises them; do not leave it in a shared local or CI
+environment unintentionally.
+
+```bash
+DATABASE_URL="$LOCAL_TEST_DATABASE_URL" \
+DIRECT_URL="$LOCAL_TEST_DATABASE_URL" \
+DASHBOARD_TOURS_ENABLED=true \
+npx playwright test \
+  tests/e2e/dashboard-mobile-navigation.spec.ts \
+  tests/e2e/dashboard-tours.spec.ts \
+  --project=chromium
+```
+
+Use a disposable PostgreSQL 16 database with all migrations and the regular E2E
+seed applied. The suite creates unique owner/admin/staff identities and businesses,
+asserts tour state directly through Prisma and removes its fixtures in `finally`.
+It uses the local E2E auth bypass and does not write to Supabase.
+
+The E2E database preflight is fail-closed: the URL must use PostgreSQL on a
+loopback host, include explicit test credentials, contain no query/fragment and
+target an `agendita_*_test` or `agendita_*_e2e` database without
+`prod`/`production`/`live` name segments. It runs before any direct Prisma write.
 
 ## CI Pipeline
 
