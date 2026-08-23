@@ -19,6 +19,7 @@ model User {
   businesses BusinessUser[]
   customers  Customer[]
   authorizedPushSubscriptions PushSubscription[] @relation("PushSubscriptionAuthorizedUser")
+  tourProgress UserTourProgress[]
 }
 
 enum SubscriptionStatus {
@@ -144,6 +145,7 @@ model Business {
   customerPhotos                     CustomerPhoto[]
   professionals                      Professional[]
   pushSubscriptions    PushSubscription[]
+  tourProgress         UserTourProgress[]
 }
 
 enum PaymentAccountStatus {
@@ -429,6 +431,34 @@ model BusinessUser {
   // getUser corre `findFirst({ where: { userId } })` en CADA navegación
   // autenticada; el unique de arriba arranca por businessId y no sirve.
   @@index([userId])
+}
+
+model UserTourProgress {
+  id          String     @id @default(cuid())
+  userId      String
+  businessId  String
+  tourKey     String
+  tourVersion Int
+  status      TourStatus
+  lastStep    Int        @default(0)
+  offeredAt   DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  dismissedAt DateTime?
+  updatedAt   DateTime   @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, businessId, tourKey, tourVersion])
+  @@index([businessId, status, updatedAt])
+}
+
+enum TourStatus {
+  available
+  in_progress
+  completed
+  dismissed
 }
 
 enum BusinessRole {
