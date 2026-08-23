@@ -7,6 +7,7 @@ import { prisma } from '@/lib/db'
 import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
 import {
   TOUR_CATALOG,
+  TOUR_STEP_BOUNDS,
   type TourKey,
   type TourProgressEvent,
 } from '@/lib/tours/catalog'
@@ -77,7 +78,12 @@ function parseInput(input: RecordTourProgressInput): {
       }
     case 'step': {
       const step = eventCandidate.step
-      if (!Number.isInteger(step) || (step as number) < 0 || (step as number) > POSTGRES_INTEGER_MAX) {
+      if (
+        !Number.isInteger(step)
+        || (step as number) < 0
+        || (step as number) >= TOUR_STEP_BOUNDS[key]
+        || (step as number) > POSTGRES_INTEGER_MAX
+      ) {
         throw new UserError('Paso del recorrido inválido')
       }
       return {

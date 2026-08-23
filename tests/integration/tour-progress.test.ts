@@ -330,13 +330,13 @@ describe('persisted tour progress', () => {
       },
     })).resolves.toBe(1)
 
-    await Promise.all([5, 1, 8, 3, 2].map((step) =>
+    await Promise.all([4, 1, 3, 2, 0].map((step) =>
       unwrap(recordTourProgress({
         key: 'bookings', version: 1, event: { type: 'step', step },
       }))))
     await expect(prisma.userTourProgress.findFirstOrThrow({
       where: { userId: USER_ONE, businessId: BUSINESS_ONE, tourKey: 'bookings' },
       select: { lastStep: true },
-    })).resolves.toEqual({ lastStep: 8 })
+    })).resolves.toEqual({ lastStep: 4 })
   })
 })

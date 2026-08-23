@@ -219,14 +219,14 @@ for (const scenario of [
         await page.getByRole('button', { name: 'Seguir recorrido' }).click()
       }
 
-      await page.getByRole('button', { name: 'Terminar' }).click()
-      await expectTourSurfacesClosed(page)
+      await finishTour(page, [
+        'Tu mapa de preparación',
+        scenario.width < 768 ? 'Más secciones en tu teléfono' : 'Navega por tu negocio',
+        'Crea una reserva',
+        'Vuelve cuando lo necesites',
+      ])
       await expectTourStatus(fixture, INTRO_TOUR, 'completed')
-      const focusTarget = page.locator(
-        scenario.width < 768
-          ? '[data-tour-id="nav-mobile-more"]'
-          : '[data-tour-id="nav-desktop"]',
-      )
+      const focusTarget = page.locator('[data-tour-id="tour-help"]:visible')
       await expect(focusTarget).toBeFocused()
 
       await page.reload()
@@ -241,10 +241,14 @@ for (const scenario of [
       if (scenario.width === 1440) {
         const beforeReplay = await readTourProgress(fixture, INTRO_TOUR)
         await startTourFromHelp(page, scenario.width, INTRO_TOUR.title, 'Repetir recorrido')
-        await page.getByRole('button', { name: 'Terminar' }).click()
-        await expectTourSurfacesClosed(page)
+        await finishTour(page, [
+          'Tu mapa de preparación',
+          'Navega por tu negocio',
+          'Crea una reserva',
+          'Vuelve cuando lo necesites',
+        ])
         await expect.poll(() => readTourProgress(fixture, INTRO_TOUR)).toEqual(beforeReplay)
-        await expect(page.locator('[data-tour-id="nav-desktop"]')).toBeFocused()
+        await expect(page.locator('[data-tour-id="tour-help"]:visible')).toBeFocused()
       }
 
       await expectNoHorizontalOverflow(page)

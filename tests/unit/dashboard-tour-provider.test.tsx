@@ -35,6 +35,23 @@ import {
 import { useDashboardTours } from '@/components/dashboard/tours/tour-context'
 import { TourInvitation } from '@/components/dashboard/tours/tour-invitation'
 import { MobileMoreMenu } from '@/components/dashboard/mobile-more-menu'
+import { TourHelpMenu } from '@/components/dashboard/tours/tour-help-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet'
 import type { TourDefinition } from '@/components/dashboard/tours/tour-types'
 
 const definition = {
@@ -93,6 +110,38 @@ function Controls() {
 function DirtyRegistration({ dirty }: { dirty: boolean }) {
   useUnsavedChangesRegistration({ scope: 'profile', isDirty: dirty, discard: vi.fn() })
   return null
+}
+
+function ProductDialog() {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button type="button">Abrir diálogo de producto</button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Diálogo de producto</DialogTitle>
+          <DialogDescription>Acción iniciada por la persona.</DialogDescription>
+        </DialogHeader>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ProductSheet() {
+  return (
+    <Sheet>
+      <SheetTrigger asChild>
+        <button type="button">Abrir panel de producto</button>
+      </SheetTrigger>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Panel de producto</SheetTitle>
+          <SheetDescription>Acción iniciada por la persona.</SheetDescription>
+        </SheetHeader>
+      </SheetContent>
+    </Sheet>
+  )
 }
 
 function buttonNamed(name: string) {
@@ -166,13 +215,22 @@ describe('DashboardTourProvider', () => {
   type ProviderOptions = Pick<
     ComponentProps<typeof DashboardTourProvider>,
     'role' | 'onboardingCompleted' | 'toursEnabled'
-  > & { dirty?: boolean; withPromptSurface?: boolean; withInvitation?: boolean; withMobileMore?: boolean }
+  > & {
+    dirty?: boolean
+    productSurface?: 'dialog' | 'sheet'
+    withCompactHelp?: boolean
+    withPromptSurface?: boolean
+    withInvitation?: boolean
+    withMobileMore?: boolean
+  }
 
   async function renderProvider({
     dirty = false,
     role = 'owner',
     onboardingCompleted = true,
+    productSurface,
     toursEnabled = true,
+    withCompactHelp = false,
     withPromptSurface = false,
     withInvitation = false,
     withMobileMore = false,
@@ -186,7 +244,10 @@ describe('DashboardTourProvider', () => {
         >
           <DirtyRegistration dirty={dirty} />
           {withPromptSurface && <div data-interruptive-surface>Install prompt</div>}
+          {productSurface === 'dialog' && <ProductDialog />}
+          {productSurface === 'sheet' && <ProductSheet />}
           <Controls />
+          {withCompactHelp && <TourHelpMenu compact />}
           {withInvitation && <TourInvitation />}
           {withMobileMore && <MobileMoreMenu items={[]} pathname={pathname} onSignOut={() => undefined} />}
         </DashboardTourProvider>
@@ -198,7 +259,7 @@ describe('DashboardTourProvider', () => {
   it('never auto-starts and records start only after explicit activation', async () => {
     await renderProvider()
 
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.querySelector('[data-tour-surface][role="dialog"]')).toBeNull()
     expect(document.querySelector('[data-testid="available"]')?.textContent).toBe('dashboard_intro')
 
     await click('Iniciar recorrido')
@@ -209,6 +270,89 @@ describe('DashboardTourProvider', () => {
       version: 1,
       event: { type: 'start' },
     })
+  })
+
+  it('does not read progress or install a global interruptive observer while ineligible or idle', async () => {
+    const NativeMutationObserver = globalThis.MutationObserver
+    const observedTargets: Node[] = []
+    class TrackingMutationObserver implements MutationObserver {
+      private readonly observer: MutationObserver
+
+      constructor(callback: MutationCallback) {
+        this.observer = new NativeMutationObserver(callback)
+      }
+
+      disconnect() {
+        this.observer.disconnect()
+      }
+
+      observe(targetNode: Node, options?: MutationObserverInit) {
+        observedTargets.push(targetNode)
+        this.observer.observe(targetNode, options)
+      }
+
+      takeRecords() {
+        return this.observer.takeRecords()
+      }
+    }
+    vi.stubGlobal('MutationObserver', TrackingMutationObserver)
+
+    await renderProvider({ role: 'staff' })
+
+    expect(mockGetTourProgress).not.toHaveBeenCalled()
+    expect(observedTargets).not.toContain(document.body)
+
+    await renderProvider({ role: 'owner' })
+
+    expect(mockGetTourProgress).toHaveBeenCalledTimes(1)
+    expect(observedTargets).not.toContain(document.body)
+
+    await renderProvider({ role: 'owner', toursEnabled: false })
+
+    expect(mockGetTourProgress).toHaveBeenCalledTimes(1)
+    expect(observedTargets).not.toContain(document.body)
+  })
+
+  it('observes interruptive surfaces only during a pending start and aborts under a real Dialog', async () => {
+    let resolveDefinition!: (value: TourDefinition) => void
+    mockLoadTourDefinition.mockReturnValue(new Promise<TourDefinition>((resolve) => {
+      resolveDefinition = resolve
+    }))
+    const NativeMutationObserver = globalThis.MutationObserver
+    const observedTargets: Node[] = []
+    class TrackingMutationObserver implements MutationObserver {
+      private readonly observer: MutationObserver
+
+      constructor(callback: MutationCallback) {
+        this.observer = new NativeMutationObserver(callback)
+      }
+
+      disconnect() {
+        this.observer.disconnect()
+      }
+
+      observe(targetNode: Node, options?: MutationObserverInit) {
+        observedTargets.push(targetNode)
+        this.observer.observe(targetNode, options)
+      }
+
+      takeRecords() {
+        return this.observer.takeRecords()
+      }
+    }
+    vi.stubGlobal('MutationObserver', TrackingMutationObserver)
+    await renderProvider({ productSurface: 'dialog' })
+
+    await click('Iniciar recorrido')
+
+    expect(observedTargets).toContain(document.body)
+    await click('Abrir diálogo de producto')
+    await act(async () => resolveDefinition(definition))
+    await settle()
+
+    expect(document.querySelector('[data-testid="active"]')?.textContent).toBe('none')
+    expect(document.querySelector('[data-tour-highlight]')).toBeNull()
+    expect(document.querySelector('[data-slot="dialog-content"]')).not.toBeNull()
   })
 
   it('hides the provider invitation when the rollout flag is absent or false', async () => {
@@ -474,17 +618,24 @@ describe('DashboardTourProvider', () => {
     expect(mockRecordTourProgress).not.toHaveBeenCalled()
   })
 
-  it('pauses an active tour when an interactive surface opens', async () => {
-    await renderProvider()
+  it.each([
+    ['Dialog', 'dialog' as const, 'Abrir diálogo de producto', 'dialog-content'],
+    ['Sheet', 'sheet' as const, 'Abrir panel de producto', 'sheet-content'],
+  ])('pauses and resumes an active tour around a real shared %s', async (_label, productSurface, triggerName, slot) => {
+    await renderProvider({ productSurface })
     await click('Iniciar recorrido')
-    const blockingSurface = document.createElement('div')
-    blockingSurface.dataset.interruptiveSurface = ''
-    blockingSurface.dataset.state = 'open'
-    document.body.appendChild(blockingSurface)
+    await click(triggerName)
     await settle()
 
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.querySelector('[data-tour-surface][role="dialog"]')).toBeNull()
     expect(document.querySelector('[data-testid="active"]')?.textContent).toBe('dashboard_intro:0')
+    expect(document.querySelector(`[data-slot="${slot}"]`)).not.toBeNull()
+
+    await click('Close')
+    await settle()
+
+    expect(document.querySelector(`[data-slot="${slot}"]`)).toBeNull()
+    expect(document.querySelector('[data-tour-surface][role="dialog"]')).not.toBeNull()
   })
 
   it('hides the mobile tour overlay for an aria-modal-only interruptive surface', async () => {
@@ -576,6 +727,33 @@ describe('DashboardTourProvider', () => {
     expect(document.querySelectorAll('[data-slot="sheet-overlay"]')).toHaveLength(1)
     expect(Array.from(document.querySelectorAll('[data-slot="sheet-content"]'))
       .some((sheet) => sheet.textContent?.includes('Más opciones'))).toBe(false)
+  })
+
+  it('waits for compact Help presence to exit before starting replay and focuses the tour', async () => {
+    mockGetTourProgress.mockResolvedValue({
+      ok: true,
+      data: [{ key: 'dashboard_intro', version: 1, status: 'completed', lastStep: 1 }],
+    })
+    await renderProvider({ withCompactHelp: true })
+    const helpTrigger = document.querySelector<HTMLButtonElement>('[data-tour-id="tour-help"]')
+    await act(async () => helpTrigger?.click())
+    const replay = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-tour-help-popover] button'))
+      .find((button) => button.textContent?.includes('Repetir recorrido'))
+    const exitingPresence = document.createElement('div')
+    exitingPresence.dataset.tourHelpPopover = ''
+    exitingPresence.dataset.state = 'closed'
+    document.body.appendChild(exitingPresence)
+
+    await act(async () => replay?.click())
+
+    expect(document.querySelector('[data-testid="active"]')?.textContent).toBe('none')
+
+    await act(async () => exitingPresence.remove())
+    await settle()
+
+    const tourDialog = document.querySelector<HTMLElement>('[data-tour-surface][role="dialog"]')
+    expect(tourDialog).not.toBeNull()
+    expect(tourDialog?.contains(document.activeElement)).toBe(true)
   })
 
   it('keeps a mounted lower-priority prompt hidden until the tour closes', async () => {

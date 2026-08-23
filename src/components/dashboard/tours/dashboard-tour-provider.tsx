@@ -11,7 +11,12 @@ import {
   type ReactNode,
 } from 'react'
 import { useUnsavedChanges } from '@/components/dashboard/unsaved-changes-provider'
-import { TOUR_CATALOG, type TourKey, type TourProgressEvent } from '@/lib/tours/catalog'
+import {
+  roleCanUseAnyTour,
+  TOUR_CATALOG,
+  type TourKey,
+  type TourProgressEvent,
+} from '@/lib/tours/catalog'
 import { getAvailableTours, type AvailableTour } from '@/lib/tours/eligibility'
 import {
   getTourProgress,
@@ -30,19 +35,25 @@ import type { TourDefinition, TourStep, TourViewport } from './tour-types'
 
 const MOBILE_VIEWPORT_QUERY = '(max-width: 767px)'
 const STEP_PERSISTENCE_DEBOUNCE_MS = 200
-const OPEN_INTERRUPTIVE_SURFACE_SELECTOR =
-  '[data-interruptive-surface][data-state="open"], [data-interruptive-surface][aria-modal="true"]'
+const INTERRUPTIVE_SURFACE_SELECTOR = [
+  '[data-interruptive-surface][data-state="open"]',
+  '[data-interruptive-surface][aria-modal="true"]',
+  '[data-slot="dialog-content"]',
+  '[data-slot="sheet-content"]',
+].join(',')
 const LOWER_PRIORITY_SURFACE_SELECTOR =
   '[data-interruptive-surface]:not([data-state="open"]):not([aria-modal="true"])'
 
 function hasOpenInterruptiveSurface(): boolean {
-  return document.querySelector(OPEN_INTERRUPTIVE_SURFACE_SELECTOR) !== null
+  return Array.from(document.querySelectorAll<HTMLElement>(INTERRUPTIVE_SURFACE_SELECTOR))
+    .some((surface) => surface.closest('[data-tour-surface]') === null)
 }
 
-function useInterruptiveSurfaceOpen(): boolean {
+function useInterruptiveSurfaceOpen(enabled: boolean): boolean {
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
+    if (!enabled) return
     const update = () => setOpen(hasOpenInterruptiveSurface())
     update()
     const observer = new MutationObserver(update)
@@ -53,9 +64,9 @@ function useInterruptiveSurfaceOpen(): boolean {
       subtree: true,
     })
     return () => observer.disconnect()
-  }, [])
+  }, [enabled])
 
-  return open
+  return enabled && open
 }
 
 type RuntimeSession = {
@@ -109,10 +120,13 @@ export function DashboardTourProvider({
   const pathname = usePathname()
   const viewport = useTourViewport()
   const { hasUnsavedChanges } = useUnsavedChanges()
-  const interruptiveSurfaceOpen = useInterruptiveSurfaceOpen()
   const [progress, setProgress] = useState<TourProgressSnapshot[]>([])
   const [progressKnown, setProgressKnown] = useState(false)
   const [session, setSessionState] = useState<RuntimeSession | null>(null)
+  const [pendingStartGeneration, setPendingStartGeneration] = useState<number | null>(null)
+  const interruptiveSurfaceOpen = useInterruptiveSurfaceOpen(
+    session !== null || pendingStartGeneration !== null,
+  )
   const sessionRef = useRef<RuntimeSession | null>(null)
   const mountedRef = useRef(true)
   const sessionGenerationRef = useRef(0)
@@ -183,7 +197,7 @@ export function DashboardTourProvider({
 
   useEffect(() => {
     const generation = ++progressGenerationRef.current
-    if (!toursEnabled || !onboardingCompleted) return
+    if (!toursEnabled || !onboardingCompleted || !roleCanUseAnyTour(role)) return
     void getTourProgress()
       .then((result) => {
         if (!mountedRef.current || generation !== progressGenerationRef.current) return
@@ -300,63 +314,71 @@ export function DashboardTourProvider({
       ? document.activeElement
       : null
     const generation = beginSession()
+    setPendingStartGeneration(generation)
 
-    let definition: TourDefinition
     try {
-      definition = await loadTourDefinition(key)
-    } catch {
-      if (generation === sessionGenerationRef.current) invalidateSession()
-      return
-    }
-    if (!mountedRef.current || generation !== sessionGenerationRef.current) return
-    if (
-      definition.route !== pathname
-      || !definition.roles.some((allowedRole) => allowedRole === role)
-    ) {
-      invalidateSession()
-      return
-    }
+      let definition: TourDefinition
+      try {
+        definition = await loadTourDefinition(key)
+      } catch {
+        if (generation === sessionGenerationRef.current) invalidateSession()
+        return
+      }
+      if (!mountedRef.current || generation !== sessionGenerationRef.current) return
+      if (
+        hasOpenInterruptiveSurface()
+        || definition.route !== pathname
+        || !definition.roles.some((allowedRole) => allowedRole === role)
+      ) {
+        invalidateSession()
+        return
+      }
 
-    const visibleStepIndexes = definition.steps.flatMap((step, index) => (
-      step.viewports.includes(viewport) ? [index] : []
-    ))
-    if (visibleStepIndexes.length === 0) {
-      invalidateSession()
-      return
+      const visibleStepIndexes = definition.steps.flatMap((step, index) => (
+        step.viewports.includes(viewport) ? [index] : []
+      ))
+      if (visibleStepIndexes.length === 0) {
+        invalidateSession()
+        return
+      }
+
+      const resumeDefinitionIndex = replay ? visibleStepIndexes[0] : (available?.resumeStep ?? visibleStepIndexes[0])
+      const resumePosition = Math.max(0, visibleStepIndexes.indexOf(resumeDefinitionIndex))
+      highestScheduledStepRef.current = visibleStepIndexes[resumePosition]
+
+      if (!replay) {
+        void enqueuePersistence(key, definition.version, { type: 'start' })
+      }
+
+      const located = await locateTarget({
+        definition,
+        visibleStepIndexes,
+        startPosition: resumePosition,
+        direction: 1,
+        sessionGeneration: generation,
+      })
+      if (!mountedRef.current || generation !== sessionGenerationRef.current) return
+      if (!located || hasOpenInterruptiveSurface()) {
+        invalidateSession()
+        return
+      }
+
+      setSession({
+        key,
+        definition,
+        visibleStepIndexes,
+        position: located.position,
+        target: located.target,
+        lastTarget: located.target,
+        replay,
+        restoreFocusTo,
+        generation,
+      })
+    } finally {
+      if (mountedRef.current) {
+        setPendingStartGeneration((current) => current === generation ? null : current)
+      }
     }
-
-    const resumeDefinitionIndex = replay ? visibleStepIndexes[0] : (available?.resumeStep ?? visibleStepIndexes[0])
-    const resumePosition = Math.max(0, visibleStepIndexes.indexOf(resumeDefinitionIndex))
-    highestScheduledStepRef.current = visibleStepIndexes[resumePosition]
-
-    if (!replay) {
-      void enqueuePersistence(key, definition.version, { type: 'start' })
-    }
-
-    const located = await locateTarget({
-      definition,
-      visibleStepIndexes,
-      startPosition: resumePosition,
-      direction: 1,
-      sessionGeneration: generation,
-    })
-    if (!mountedRef.current || generation !== sessionGenerationRef.current) return
-    if (!located) {
-      invalidateSession()
-      return
-    }
-
-    setSession({
-      key,
-      definition,
-      visibleStepIndexes,
-      position: located.position,
-      target: located.target,
-      lastTarget: located.target,
-      replay,
-      restoreFocusTo,
-      generation,
-    })
   }, [
     availableTours,
     beginSession,

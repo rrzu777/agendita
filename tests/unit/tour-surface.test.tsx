@@ -173,6 +173,26 @@ describe('TourSurface', () => {
     })
   })
 
+  it.each(['desktop', 'mobile'] as const)('disables tour surface motion on %s', async (viewport) => {
+    await renderSurface(viewport)
+
+    const dialogClasses = document.querySelector<HTMLElement>('[role="dialog"]')?.className.split(' ') ?? []
+    expect(dialogClasses).toEqual(expect.arrayContaining([
+      'motion-reduce:animate-none',
+      'motion-reduce:duration-0',
+      'motion-reduce:transition-none',
+    ]))
+
+    if (viewport === 'mobile') {
+      const overlayClasses = document.querySelector<HTMLElement>('[data-slot="sheet-overlay"]')?.className.split(' ') ?? []
+      expect(overlayClasses).toEqual(expect.arrayContaining([
+        'motion-reduce:animate-none',
+        'motion-reduce:duration-0',
+        'motion-reduce:transition-none',
+      ]))
+    }
+  })
+
   it('throttles rect updates and removes active layout listeners on unmount', async () => {
     const queued: FrameRequestCallback[] = []
     const requestAnimationFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {

@@ -146,6 +146,9 @@ describe('tour progress actions', () => {
     ['wrong version', { key: 'bookings', version: 2, event: { type: 'start' } }],
     ['negative step', { key: 'bookings', version: 1, event: { type: 'step', step: -1 } }],
     ['fractional step', { key: 'bookings', version: 1, event: { type: 'step', step: 1.5 } }],
+    ['step outside the tour definition', {
+      key: 'bookings', version: 1, event: { type: 'step', step: 5 },
+    }],
     ['out-of-range step', {
       key: 'bookings', version: 1, event: { type: 'step', step: 2_147_483_648 },
     }],

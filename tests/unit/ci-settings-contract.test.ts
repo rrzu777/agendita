@@ -17,6 +17,12 @@ describe('CI settings contracts', () => {
     expect(job('e2e', '')).toContain("MERCADO_PAGO_ENVIRONMENT: 'sandbox'")
   })
 
+  it('builds and runs the dashboard tour E2E artifact with the server-only rollout flag enabled', () => {
+    expect(job('build', 'e2e')).toContain("DASHBOARD_TOURS_ENABLED: 'true'")
+    expect(job('e2e', '')).toContain("DASHBOARD_TOURS_ENABLED: 'true'")
+    expect(workflow).not.toContain('NEXT_PUBLIC_DASHBOARD_TOURS_ENABLED')
+  })
+
   it('runs the complete unit suite serially to avoid worker-pressure flakes', () => {
     const unit = job('unit', 'integration')
 

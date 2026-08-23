@@ -128,4 +128,31 @@ describe('TourHelpMenu', () => {
 
     expect(document.activeElement).toBe(trigger)
   })
+
+  it('waits for compact Popover presence to exit before starting a replay', async () => {
+    await render([
+      { key: 'dashboard_intro', title: 'Primeros pasos en Agendita', status: 'completed' },
+    ], { compact: true })
+    const trigger = container.querySelector('button') as HTMLButtonElement
+    await act(async () => trigger.click())
+    const replay = Array.from(document.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes('Repetir recorrido'))
+    const exitingPresence = document.createElement('div')
+    exitingPresence.dataset.tourHelpPopover = ''
+    exitingPresence.dataset.state = 'closed'
+    document.body.appendChild(exitingPresence)
+    start.mockImplementationOnce(async () => {
+      expect(document.querySelector('[data-tour-help-popover]')).toBeNull()
+      expect(document.activeElement).toBe(trigger)
+    })
+
+    await act(async () => replay?.click())
+
+    expect(start).not.toHaveBeenCalled()
+
+    await act(async () => exitingPresence.remove())
+    await waitForElementRemoval('[data-tour-help-popover]')
+
+    expect(start).toHaveBeenCalledWith('dashboard_intro', { replay: true })
+  })
 })

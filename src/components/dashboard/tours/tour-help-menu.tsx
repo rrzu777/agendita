@@ -13,6 +13,20 @@ type TourHelpMenuProps = {
   onAcceptedStart?: () => void | Promise<void>
 }
 
+function waitForCompactPopoverExit(): Promise<void> {
+  const selector = '[data-tour-help-popover]'
+  if (!document.querySelector(selector)) return Promise.resolve()
+
+  return new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      if (document.querySelector(selector)) return
+      observer.disconnect()
+      resolve()
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+  })
+}
+
 export function TourHelpMenu({ className, compact = false, onAcceptedStart }: TourHelpMenuProps) {
   const [open, setOpen] = useState(false)
   const compactTriggerRef = useRef<HTMLButtonElement>(null)
@@ -83,6 +97,10 @@ export function TourHelpMenu({ className, compact = false, onAcceptedStart }: To
             onClick={() => {
               void (async () => {
                 setOpen(false)
+                if (compact) {
+                  await waitForCompactPopoverExit()
+                  compactTriggerRef.current?.focus({ preventScroll: true })
+                }
                 await onAcceptedStart?.()
                 if (tour.status === 'completed' || tour.status === 'dismissed') {
                   await start(tour.key, { replay: true })

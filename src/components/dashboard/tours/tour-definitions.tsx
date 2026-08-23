@@ -1,4 +1,4 @@
-import { TOUR_CATALOG, type TourKey } from '@/lib/tours/catalog'
+import { TOUR_CATALOG, TOUR_STEP_BOUNDS, type TourKey } from '@/lib/tours/catalog'
 import type { TourDefinition, TourStep } from './tour-types'
 
 type TourDefinitionModule = { definition: TourDefinition }
@@ -12,6 +12,7 @@ export const TOUR_TARGET_FILES = {
   'bookings-new': ['src/app/dashboard/bookings/page.tsx'],
   'bookings-search': ['src/app/dashboard/bookings/page.tsx'],
   'bookings-transfer': ['src/components/dashboard/pending-transfers-section.tsx'],
+  'dashboard-new-booking': ['src/app/dashboard/page.tsx'],
   'bookings-status': ['src/app/dashboard/bookings/page.tsx'],
   'bookings-actions': [
     'src/components/dashboard/booking-row-actions.tsx',
@@ -27,7 +28,10 @@ export const TOUR_TARGET_FILES = {
   'settings-navigation': ['src/components/dashboard/settings/settings-navigation.tsx'],
   'settings-preview': ['src/components/dashboard/settings/public-profile-preview.tsx'],
   'settings-save': ['src/components/dashboard/settings/settings-save-bar.tsx'],
-  'tour-help': ['src/components/dashboard/tours/tour-help-menu.tsx'],
+  'tour-help': [
+    'src/components/dashboard/tours/tour-help-menu.tsx',
+    'src/components/dashboard/mobile-more-menu.tsx',
+  ],
 } as const
 
 // Las definiciones contextuales se incorporan a este mapa junto con sus targets.
@@ -41,13 +45,6 @@ const TOUR_DEFINITION_LOADERS = {
 
 type LoadableTourKey = keyof typeof TOUR_DEFINITION_LOADERS
 
-const TOUR_DEFINITION_STEP_BOUNDS = {
-  dashboard_intro: 2,
-  bookings: 5,
-  payments: 5,
-  settings: 4,
-} satisfies Record<LoadableTourKey, number>
-
 export function getLoadableTourKeys(): LoadableTourKey[] {
   return Object.keys(TOUR_DEFINITION_LOADERS) as LoadableTourKey[]
 }
@@ -56,7 +53,7 @@ export function getTourStepBound(key: TourKey): number | null {
   if (!isTourDefinitionLoadable(key)) {
     return null
   }
-  return TOUR_DEFINITION_STEP_BOUNDS[key]
+  return TOUR_STEP_BOUNDS[key]
 }
 
 export function isTourDefinitionLoadable(key: TourKey): key is LoadableTourKey {

@@ -57,7 +57,7 @@ describe('getAvailableTours', () => {
     expect(getAvailableTours({
       ...base,
       progress: [{ key: 'dashboard_intro', version: 1, status: 'in_progress', lastStep: 99 }],
-    })).toEqual([expect.objectContaining({ key: 'dashboard_intro', resumeStep: 1 })])
+    })).toEqual([expect.objectContaining({ key: 'dashboard_intro', resumeStep: 4 })])
   })
 
   it('honors an optional feature or data predicate', () => {

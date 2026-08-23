@@ -5,17 +5,19 @@ import {
 } from '@/components/dashboard/tours/tour-definitions'
 
 describe('dashboard tour definitions', () => {
-  it('lazy-loads the versioned introduction with viewport-specific navigation steps', async () => {
-    await expect(loadTourDefinition('dashboard_intro')).resolves.toMatchObject({
+  it('loads a coherent four-step introduction on every viewport', async () => {
+    const introduction = await loadTourDefinition('dashboard_intro')
+
+    expect(introduction).toMatchObject({
       key: 'dashboard_intro',
       version: 1,
       route: '/dashboard',
       roles: ['owner', 'admin'],
-      steps: [
-        expect.objectContaining({ targetId: 'nav-desktop', viewports: ['desktop'] }),
-        expect.objectContaining({ targetId: 'nav-mobile-more', viewports: ['mobile'] }),
-      ],
     })
+    expect(introduction.steps.filter((step) => step.viewports.includes('desktop')).map((step) => step.targetId))
+      .toEqual(['dashboard-checklist', 'nav-desktop', 'dashboard-new-booking', 'tour-help'])
+    expect(introduction.steps.filter((step) => step.viewports.includes('mobile')).map((step) => step.targetId))
+      .toEqual(['dashboard-checklist', 'nav-mobile-more', 'dashboard-new-booking', 'tour-help'])
   })
 
   it('lazy-loads contextual tours with bounded data alternatives', async () => {

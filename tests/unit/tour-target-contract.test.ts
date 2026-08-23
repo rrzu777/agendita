@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
@@ -17,6 +17,7 @@ describe('tour target contract', () => {
       'bookings-status',
       'bookings-transfer',
       'dashboard-checklist',
+      'dashboard-new-booking',
       'nav-desktop',
       'nav-mobile-more',
       'payments-filters',
@@ -39,6 +40,22 @@ describe('tour target contract', () => {
       for (const file of files) {
         expect(existsSync(resolve(process.cwd(), file)), targetId).toBe(true)
       }
+    }
+  })
+
+  it('binds every manifest target to an exact data-tour-id attribute in product markup', () => {
+    for (const [targetId, files] of Object.entries(TOUR_TARGET_FILES)) {
+      const escapedTarget = targetId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const directAttribute = new RegExp(`data-tour-id\\s*=\\s*["']${escapedTarget}["']`)
+      const exactExpression = new RegExp(
+        `data-tour-id\\s*=\\s*\\{[^}\\n]*["']${escapedTarget}["'][^}\\n]*\\}`,
+      )
+      const declared = files.some((file) => {
+        const source = readFileSync(resolve(process.cwd(), file), 'utf8')
+        return directAttribute.test(source) || exactExpression.test(source)
+      })
+
+      expect(declared, `${targetId} must be attached to actual product markup`).toBe(true)
     }
   })
 

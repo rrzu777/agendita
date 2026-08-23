@@ -27,6 +27,22 @@ export const TOUR_CATALOG = {
 
 export type TourKey = keyof typeof TOUR_CATALOG
 
+// Server-safe logical bounds. Client definitions validate their exact length
+// against this map, while Server Actions can reject impossible progress without
+// importing JSX or lazy component loaders.
+export const TOUR_STEP_BOUNDS = {
+  dashboard_intro: 5,
+  bookings: 5,
+  payments: 5,
+  settings: 4,
+} satisfies Record<TourKey, number>
+
+export function roleCanUseAnyTour(role: string): boolean {
+  return (Object.keys(TOUR_CATALOG) as TourKey[]).some((key) => (
+    TOUR_CATALOG[key].roles.some((allowedRole) => allowedRole === role)
+  ))
+}
+
 export type TourProgressEvent =
   | { type: 'offer' }
   | { type: 'start' }
