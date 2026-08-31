@@ -1,5 +1,5 @@
 import 'server-only'
-import type { DailyMetricCell, Grain, MetricKey, Population } from '@/lib/analytics/report-types'
+import type { DailyMetricCell, FlowBreakdownsReport, Grain, MetricKey, Population } from '@/lib/analytics/report-types'
 import { ratio } from '@/lib/analytics/daily-metrics'
 import { startOfLocalDay } from '@/lib/availability/timezone'
 import { ANALYTICS_POLICY as policy } from '@/lib/analytics/policy'
@@ -14,6 +14,7 @@ import { getLocalDateStr } from '@/lib/availability/timezone'
 import { isDoomedBooking } from '@/lib/payments/confirmation-state'
 import { getBookingFunnelUrl } from '@/lib/business/urls'
 import { analyticsCoverage, readAnalyticsCohort, type AvailabilityDiagnostics } from './repository'
+import { readOwnerAnalyticsFlowBreakdowns } from './flow-breakdowns'
 
 export function summarizeAnalyticsCells(cells: DailyMetricCell[], grain: Grain = 'total', dimensionKey?: string) {
   function counter(population: Population, metricKey: MetricKey) {
@@ -49,6 +50,7 @@ type Summary = ReturnType<typeof summarizeAnalyticsCells>
 type Ratio = Summary['complete']['conversion']
 export interface AnalyticsOpportunity { key: 'availability_empty' | 'overdue_approval'; numerator: number; denominator: number | null; rate: number | null; href: string; message: string; diagnostics: { status: 'available' | 'not_queried' | 'not_retained' | 'not_applicable'; reasons: Record<string, number>; converted: number | null } }
 export interface OwnerAnalyticsReport extends Summary {
+  flowBreakdowns: FlowBreakdownsReport
   definitionVersion: 1
   period: { from: string; to: string; timezone: string; cutoffAt: string; previousFrom: string; previousTo: string }
   capture: { enabled: boolean; collectionOpen: boolean; activatedAt: string | null; status: 'enabled' | 'disabled' | 'paused' }
@@ -93,7 +95,7 @@ export async function getOwnerAnalyticsReport(input: unknown = {}, now = new Dat
   if (length < 1 || length > 90 || from < addAnalyticsDays(today, -90) || to > addAnalyticsDays(today, 1)) throw new UserError('El detalle admite hasta 90 días dentro de la retención vigente.')
   const previousFrom = addAnalyticsDays(from, -length)
   const configured = Boolean(getAnalyticsCaptureConfig(businessId))
-  return prisma.$transaction(async tx => {
+  const report = await prisma.$transaction<Omit<OwnerAnalyticsReport, 'flowBreakdowns'>>(async tx => {
     if (p.acquisitionLinkId && !await tx.acquisitionLink.findFirst({ where: { businessId, id: p.acquisitionLinkId }, select: { id: true } })) throw new UserError('Enlace no disponible.')
     if (p.serviceId && !await tx.service.findFirst({ where: { businessId, id: p.serviceId }, select: { id: true } }) && !await tx.analyticsDailyMetric.findFirst({ where: { businessId, grain: 'service', dimensionKey: p.serviceId, retentionExpiresAt: { gt: now } }, select: { id: true } })) throw new UserError('Servicio no disponible.')
     const stored = await tx.analyticsDailyMetric.findMany({ where: { businessId, cohortLocalDate: { gte: new Date(previousFrom), lt: new Date(to) }, retentionExpiresAt: { gt: now } }, orderBy: [{ cohortLocalDate: 'asc' }, { id: 'asc' }], take: 20001 })
@@ -217,6 +219,8 @@ export async function getOwnerAnalyticsReport(input: unknown = {}, now = new Dat
       filter: { channel: p.channel ?? null, acquisitionLinkId: p.acquisitionLinkId ?? null, serviceId: p.serviceId ?? null, scope: 'independent_grains', unsupportedIntersections: true },
     }
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, maxWait: 5000, timeout: 15000 })
+  const flowBreakdowns = await readOwnerAnalyticsFlowBreakdowns({ businessId, from, to, channel: p.channel, acquisitionLinkId: p.acquisitionLinkId, serviceId: p.serviceId }, now)
+  return { ...report, flowBreakdowns }
 }
 
 function groupedObserved(cells: DailyMetricCell[], prefix: string, grain: Grain, key?: string) {

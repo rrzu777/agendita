@@ -1,5 +1,6 @@
 import type { SelectionContext } from './contracts'
-import type { AttemptFact, AttemptProjection, BookingFact, Milestone, ObservedEvent } from './report-types'
+import type { AttemptFact, AttemptFlow, AttemptProjection, BookingFact, FlowErrorKey, Milestone, ObservedEvent } from './report-types'
+import { FLOW_ERROR_KEYS } from './flow-breakdowns'
 
 const order: Milestone[] = ['started', 'service', 'professional', 'date', 'time', 'customer', 'payment', 'submit']
 function sameService(a: SelectionContext | null, b: SelectionContext | null): boolean {
@@ -37,11 +38,14 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
   const seenIds = new Map<string, string>()
   const seenSequences = new Map<number, string>()
   let lastSequence = 0
+  const flow: AttemptFlow = { professional: null, payment: null, errors: [] }
+  const flowErrors = new Set<FlowErrorKey>()
 
   function invalidate(from: Milestone) {
     for (const milestone of order.slice(order.indexOf(from))) evidence.delete(milestone)
     if (order.indexOf(from) <= order.indexOf('time')) timeBucket = null
-    if (order.indexOf(from) <= order.indexOf('payment')) { paymentKey = null; offeredMethods = []; selectedMethod = null }
+    if (order.indexOf(from) <= order.indexOf('professional')) flow.professional = null
+    if (order.indexOf(from) <= order.indexOf('payment')) { paymentKey = null; offeredMethods = []; selectedMethod = null; flow.payment = null }
   }
   function prefix(): Milestone[] {
     const result: Milestone[] = []
@@ -86,6 +90,7 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
     if (!('selectionRevision' in event)) continue
     if (event.selectionRevision < revision) continue
     if (event.selectionRevision > revision) {
+      flowErrors.clear()
       // A repeated service snapshot cannot explain which upstream selection changed.
       // Only the observed transition can justify preserving compatible old milestones.
       if (event.type !== 'selection_context_changed') { gap = true; invalidate('service'); context = null; localDate = null }
@@ -99,6 +104,11 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
       case 'service_considered': considered.add(event.data.serviceId); break
       case 'selection_context_changed': {
         const next = event.data.context
+        flowErrors.clear()
+        if (!sameContext(context, next) || ['service', 'modality', 'professional', 'restore'].includes(event.data.reason)) {
+          flow.professional = next ? { kind: next.professional.kind, choice: 'not_observed' } : null
+        }
+        const nextProfessional = flow.professional
         if (!sameService(context, next) || ['service', 'modality'].includes(event.data.reason)) {
           invalidate('service'); requiredProfessional = false
         } else if (!sameContext(context, next) || event.data.reason === 'professional') {
@@ -108,15 +118,19 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
         } else if (event.data.reason === 'time') invalidate('time')
         else if (event.data.reason === 'payment') invalidate('payment')
         context = next
+        flow.professional = nextProfessional
         localDate = event.data.localDate
         break
       }
       case 'service_selected': {
         const next = { serviceId: event.data.serviceId, modality: event.data.modality, professional: event.data.professional }
+        if (!sameContext(context, next)) { flowErrors.clear(); flow.professional = null }
         if (!sameService(context, next)) { invalidate('service'); localDate = null }
         else if (!sameContext(context, next)) { evidence.delete('professional'); invalidate('time') }
         context = next
         requiredProfessional = event.data.professionalStepRequired
+        if (!requiredProfessional) flow.professional = { kind: next.professional.kind, choice: 'not_required' }
+        else if (flow.professional?.choice !== 'explicit') flow.professional = { kind: next.professional.kind, choice: 'not_observed' }
         selected.add(context.serviceId)
         lastObservedStep = 'service'
         mark('service')
@@ -124,14 +138,15 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
       }
       case 'professional_selected':
         if (!sameService(context, event.data) || !requiredProfessional || event.data.professional.kind === 'none') { gap = true; break }
-        if (!sameContext(context, event.data)) { evidence.delete('professional'); invalidate('time') }
+        if (!sameContext(context, event.data)) { flowErrors.clear(); evidence.delete('professional'); invalidate('time') }
         context = event.data
+        flow.professional = { kind: event.data.professional.kind, choice: 'explicit' }
         lastObservedStep = 'professional'
         mark('professional')
         break
       case 'date_selected':
         if (!compatible(event.data)) break
-        if (localDate !== event.data.localDate) invalidate('date')
+        if (localDate !== event.data.localDate) { flowErrors.clear(); invalidate('date') }
         localDate = event.data.localDate
         lastObservedStep = 'date'
         mark('date')
@@ -139,7 +154,7 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
       case 'time_selected':
         if (!compatible(event.data) || localDate !== event.data.localDate) { gap = true; break }
         // Broad buckets cannot establish identity of an exact time; context_changed carries actual changes.
-        if (timeBucket !== event.data.timeBucket) invalidate('time')
+        if (timeBucket !== event.data.timeBucket) { flowErrors.clear(); invalidate('time') }
         timeBucket = event.data.timeBucket
         lastObservedStep = 'time'
         mark('time')
@@ -149,7 +164,7 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
         const key = canonical([revision, context, localDate])
         if (event.data.requestGeneration <= (generations.get(key) ?? 0)) break
         generations.set(key, event.data.requestGeneration)
-        if (event.data.result === 'error') availability.hasError = true
+        if (event.data.result === 'error') { availability.hasError = true; flowErrors.add('availability:error') }
         else {
           availability.hasValidResult = true
           if (event.data.result === 'empty') {
@@ -163,12 +178,16 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
       case 'customer_step_completed': lastObservedStep = 'customer'; mark('customer'); break
       // Validation alone does not establish that the current payment preparation changed.
       // Actual changes arrive as selection_context_changed/payment_branch_viewed.
-      case 'promotion_result': break
+      case 'promotion_result':
+        if (event.data.result === 'rejected') flowErrors.add(`promotion:rejected:${event.data.category}`)
+        else if (event.data.result === 'error') flowErrors.add(`promotion:error:${event.data.category}`)
+        break
       case 'payment_branch_viewed': {
         const next = canonical(event.data)
         if (paymentKey !== next) invalidate('payment')
         paymentKey = next
         offeredMethods = event.data.offeredMethods
+        flow.payment = { ...event.data, offeredMethods: [...event.data.offeredMethods], selectedMethod: flow.payment?.selectedMethod ?? null }
         lastObservedStep = 'payment'
         mark('payment')
         break
@@ -177,8 +196,10 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
         if (!offeredMethods.includes(event.data.method)) { gap = true; break }
         if (selectedMethod !== event.data.method) invalidate('submit')
         selectedMethod = event.data.method
+        if (flow.payment) flow.payment.selectedMethod = event.data.method
         break
       case 'booking_submit_result':
+        if (event.data.result !== 'submitted') flowErrors.add(`submission:${event.data.result}:${event.data.category ?? 'unknown'}`)
         if (event.data.result === 'submitted' && context) {
           mark('submit')
           submissions.push({ revision, context, complete: prefix().includes('submit') })
@@ -194,6 +215,7 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
   const mature = now >= attempt.conversionDeadlineAt
   return {
     attempt, mature, converted, bookingsCreated: validBookings.length, conversionPathComplete, maxCoherentMilestones, maxCoherentContext,
+    flow: { ...flow, errors: FLOW_ERROR_KEYS.filter(key => flowErrors.has(key)) },
     finalContext: context, finalRevision: revision, lastObservedStep, quality: gap ? 'incomplete' : 'observed',
     outcome: !mature ? 'in_progress' : converted ? 'converted' : gap || lastObservedStep === null ? 'measurement_incomplete' : 'known_interruption',
     consideredServices: [...considered].sort(), selectedServices: [...selected].sort(), convertedServices,

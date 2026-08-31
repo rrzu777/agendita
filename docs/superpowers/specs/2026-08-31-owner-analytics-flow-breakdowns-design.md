@@ -115,9 +115,11 @@ No necesita leer Booking: este bloque describe observaciones, no conversiones.
 
 Límites por lectura: máximo10000fuentes (sesiones+intentos) en TODO el rango antes
 de filtrar, nunca más que el tope existente10000fuentes/cohorte; máximo200eventos
-por intento y50000eventos en total. Leer fuentes con sentinela10001; eventos por
+por intento y50000eventos de intento en total. Leer fuentes con sentinela10001; eventos por
 páginas de50intentos con sentinela10001. No truncar. El conteo de sesiones sólo
-sirve de guardia de carga, no agrega visitas a los denominadores. Predicados por
+sirve de guardia de carga, no agrega visitas a los denominadores. No se leen sus
+eventos de superficie: verificar acceptedEventCount se refiere a streams de intento.
+Predicados por
 negocio, rango elapsed acotado que cubre offsets y fecha de cohorte congelada.
 No ampliar estos límites silenciosamente; el mensaje recomienda acortar el rango.
 

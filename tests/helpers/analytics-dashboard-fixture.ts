@@ -1,6 +1,7 @@
 import type { OwnerAnalyticsReport } from '@/server/analytics/reports'
 
 export const analyticsDashboardFixture = {
+  flowBreakdowns: { status: 'not_retained', from: '2026-08-01', to: '2026-08-29', cutoffAt: '2026-08-29T00:00:00.000Z', timezones: ['America/Santiago'], scope: 'all_attempts', groups: null },
   definitionVersion: 1,
   period: { from: '2026-08-01', to: '2026-08-29', timezone: 'America/Santiago', cutoffAt: '2026-08-29T00:00:00.000Z', previousFrom: '2026-07-04', previousTo: '2026-08-01' },
   capture: { enabled: true, collectionOpen: true, activatedAt: '2026-08-01T00:00:00.000Z', status: 'enabled' },

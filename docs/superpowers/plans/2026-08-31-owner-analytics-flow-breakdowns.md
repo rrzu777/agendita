@@ -23,12 +23,12 @@
 - Limits:10000 combined sessions+attempts/range before filtering,200events/attempt,50000events/range; sentinel reads. RepeatableRead maxWait5000/timeout15000.
 - Read relevant installed Next guides before code; apply_patch edits; TDD evidence. Task review before final task commit (controller commits after review).
 - No worker subagents. Controller owns review and the final full matrix. Workers run focused suites only; do not duplicate the global matrix.
-- Safe tests: `env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin HOME="$HOME" DATABASE_URL=postgresql://analytics:analytics@127.0.0.1:55439/agendita_owner_analytics_test DIRECT_URL=postgresql://analytics:analytics@127.0.0.1:55439/agendita_owner_analytics_test NEXT_PUBLIC_SUPABASE_URL=https://analytics-e2e.invalid NEXT_PUBLIC_SUPABASE_ANON_KEY=analytics-e2e-anon-key PAYMENT_PROVIDER=manual OWNER_ANALYTICS_ENABLED=false` prefix; do not set APP_DOMAIN in units. PostgreSQL already provisioned, no migration necessary. Verify container identity before DB tests: `7a4bd7873b37268337d08f8836295b429931c5197ea73c167d7afa88e58a5344`, label codex.task=owner-analytics-goal, no mounts, localhost55439. Never touch other containers.
+- Safe tests: `env -i PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin HOME="$HOME" DATABASE_URL=postgresql://analytics:analytics@127.0.0.1:55439/agendita_owner_analytics_test DIRECT_URL=postgresql://analytics:analytics@127.0.0.1:55439/agendita_owner_analytics_test NEXT_PUBLIC_SUPABASE_URL=https://analytics-e2e.invalid NEXT_PUBLIC_SUPABASE_ANON_KEY=analytics-e2e-anon-key PAYMENT_PROVIDER=manual OWNER_ANALYTICS_ENABLED=false` prefix; do not set APP_DOMAIN in units. PostgreSQL already provisioned with55existing migrations. Verify current replacement container before DB tests: `4a5acd250822a94195a1167a98cb6f29b4ca3a514dd870e2eec73337ee1f6d01`, label codex.task=owner-analytics-goal, no host/data-volume mounts, localhost55439, CPU1/memory512MiB. Former container7a4bd787 exited after tmpfs256m filled during boundary fixture; see ledger/runbook. Never touch other containers.
 
 ## File structure and shared interfaces
 
-- `src/lib/analytics/flow-breakdowns.ts`: DTO types, enum-key distributions and pure grouping; no server imports.
-- `src/lib/analytics/report-types.ts` + `funnel.ts`: `AttemptProjection.flow` with current professional/payment/errors from the shared reducer.
+- `src/lib/analytics/flow-breakdowns.ts`: enum-key distributions and pure grouping; no server imports.
+- `src/lib/analytics/report-types.ts` + `funnel.ts`: DTO types and `AttemptProjection.flow` with current professional/payment/errors from the shared reducer.
 - `src/server/analytics/flow-breakdowns.ts`: bounded server-only raw reader, safe statuses; no capture or mutations.
 - `src/server/analytics/reports.ts`: required `flowBreakdowns: FlowBreakdownsReport`, called after existing authorized summary transaction succeeds.
 - `src/components/dashboard/analytics/flow-breakdowns.tsx`: accessible read-only section using the DTO, existing Card/table styling.
@@ -46,8 +46,8 @@ interface FlowBreakdownsReport {
 }
 // Group entryKind complete/partial and maturity mature/in_progress; exactly four.
 // Each carries attempts, incompleteCapture, and enum-count records:
-// professional (kind + explicit/not_required/not_observed), paymentScreen,
-// paymentCondition, offeredMethods, selectedMethod, errors.
+// professional (kind + explicit/not_required/not_observed), screen,
+// condition, offeredMethods, selectedMethod, errors.
 // Singular distributions include not_observed; offeredMethods includes
 // not_observed and none_offered, mutually exclusive with actual methods.
 ```
@@ -65,7 +65,7 @@ interface FlowBreakdownsReport {
 - Produces `AttemptProjection.flow`, `FlowBreakdownsReport`, `FlowBreakdownGroup`, `report.flowBreakdowns` and pure grouping function `aggregateFlowBreakdowns(projections: AttemptProjection[]): FlowBreakdownGroup[]`.
 - Internal `readOwnerAnalyticsFlowBreakdowns({businessId,from,to,channel?,acquisitionLinkId?,serviceId?},now)` is server-only, not a server action/public endpoint; only authorized report calls it. It owns the separate read transaction and catches only its failures.
 
-- [ ] **Step 1: RED reducer/group contracts.** Use existing `tests/helpers/analytics-fixtures.ts`. Example assertion:
+- [x] **Step 1: RED reducer/group contracts.** Use existing `tests/helpers/analytics-fixtures.ts`. Example assertion:
 
 ```ts
 const p = reduceFunnelAttempt({attempt: attempt(), events: completePath(), bookings: [], now})
@@ -75,9 +75,9 @@ expect(aggregateFlowBreakdowns([p])[0]).toMatchObject({entryKind: 'complete', ma
 
 Test explicit anyone/person vs automatic/required-unobserved/none; no preselected method; A→B and lost revisions clear stale details; date change preserves compatible professional; payment/package/promo changes clear payment; partial entry observes valid payment without inventing previous steps; replay/out-of-order/stale availability generation; error enums deduplicated/current-context only; cutoffs/deadlines. Existing funnel numerical outputs must remain unchanged.
 
-- [ ] **Step 2: Run RED.** `npm run test:unit -- tests/unit/analytics-flow-breakdowns.test.ts --maxWorkers=1`. Record missing API/assertion output, not setup failures as evidence.
-- [ ] **Step 3: Implement projection and grouping.** Add flow state to existing switch/invalidation points; do not create a second event reducer. `payment` holds screen/condition/offeredMethods/selectedMethod or null, professional holds kind/choice or null, errors is a closed-key set flattened in stable order. Group each attempt exactly once in its entry/maturity bucket, enum counts only, sorted stable DTO keys. Keep history metrics untouched.
-- [ ] **Step 4: RED PostgreSQL/DAL boundary.** Add fixtures scoped to two synthetic businesses. Assert real report flow results and minimal serialization, roles and foreign/multi filters; current final service vs considered service; historical frozen timezone; boundary/read cutoff; pre-purge expired rows; frozen marker even after all raw removed; mismatched accepted count; invalid stored payload; unknown version; empty vs unavailable; 10000source and50000event limits with sentinel guards. Test server query rejection yields `status:error`, `groups:null` while original summary remains accessible.
+- [x] **Step 2: Run RED.** `npm run test:unit -- tests/unit/analytics-flow-breakdowns.test.ts --maxWorkers=1`. Record missing API/assertion output, not setup failures as evidence.
+- [x] **Step 3: Implement projection and grouping.** Add flow state to existing switch/invalidation points; do not create a second event reducer. `payment` holds screen/condition/offeredMethods/selectedMethod or null, professional holds kind/choice or null, errors is a closed-key set flattened in stable order. Group each attempt exactly once in its entry/maturity bucket, enum counts only, sorted stable DTO keys. Keep history metrics untouched.
+- [x] **Step 4: RED PostgreSQL/DAL boundary.** Add fixtures scoped to two synthetic businesses. Assert real report flow results and minimal serialization, roles and foreign/multi filters; current final service vs considered service; historical frozen timezone; boundary/read cutoff; pre-purge expired rows; frozen marker even after all raw removed; mismatched accepted count; invalid stored payload; unknown version; empty vs unavailable; 10000source and50000event limits with sentinel guards. Test server query rejection yields `status:error`, `groups:null` while original summary remains accessible.
 
 ```ts
 const report = await getOwnerAnalyticsReport({from: '2026-08-10', to: '2026-08-11'}, now)
@@ -88,9 +88,9 @@ expect(report.flowBreakdowns.groups).toEqual(expect.arrayContaining([
 expect(JSON.stringify(report.flowBreakdowns)).not.toContain(privateAttemptId)
 ```
 
-- [ ] **Step 5: Implement bounded read/integration.** Read markers and source headers before events; validate bounds/expiry/version/frozen markers. Source and event caps checked before returning any counts. Page50attempts; parse through analyticsEventSchema, require accepted count consistency, call the same reducer with empty bookings. Channel/link filter immutable acquisition; service filter finalContext only. Read all candidates before filters for honest availability. Use the separate RepeatableRead transaction; on exception return error only for details. A main-report auth/filter failure still rejects normally.
-- [ ] **Step 6: Verify focused matrix and static checks.** Unit new+analytics-funnel/daily-metrics/reports, integration new+analytics-report-isolation/retention/rollups; typecheck, ESLint changed TS/TSX, git diff --check. Do not run full unrelated suites. Report exact commands, RED/GREEN output, changed files and unresolved concerns to task report.
-- [ ] **Step 7: Controller task review → fixes/re-review → verify → commit.** No implementation worker commits before the review gate; snapshot working diff with review-package's working-tree support if available, else a tooling-generated patch artifact. Intended commit `feat(analytics): project retained flow breakdowns for owner reports`.
+- [x] **Step 5: Implement bounded read/integration.** Read markers and source headers before events; validate bounds/expiry/version/frozen markers. Session headers only serve load/expiry/version guards; do not fetch session surface events. Source and attempt-event caps checked before returning any counts. Page50attempts; parse through analyticsEventSchema, require attempt accepted count consistency, call the same reducer with empty bookings. Channel/link filter immutable acquisition; service filter finalContext only. Read all candidates before filters for honest availability. Use the separate RepeatableRead transaction; on exception return error only for details. A main-report auth/filter failure still rejects normally.
+- [x] **Step 6: Verify focused matrix and static checks.** Unit new+analytics-funnel/daily-metrics/reports, integration new+analytics-report-isolation/retention/rollups; typecheck, ESLint changed TS/TSX, git diff --check. Do not run full unrelated suites. Report exact commands, RED/GREEN output, changed files and unresolved concerns to task report.
+- [x] **Step 7: Controller task review → fixes/re-review → verify → commit.** No implementation worker commits before the review gate; snapshot working diff with review-package's working-tree support if available, else a tooling-generated patch artifact. Intended commit `feat(analytics): project retained flow breakdowns for owner reports`.
 
 ### Task 2: Dashboard breakdowns and synthetic desktop/mobile proof
 
