@@ -1,11 +1,38 @@
-# Auditoría de cumplimiento — goal activo
+# Auditoría de cumplimiento — métricas para dueños
 
 2026-08-31. Baseline inspeccionado: `602009e69a67ba969d125df52311682662aa4bbe`;
 N1 corregido en `a3a9737223d304b844d2a68ed214c24bdbe1375d`. Objetivo completo:
 implementar el MVP aprobado del spec/plan, no sólo cerrar una lista de review.
 La lectura íntegra del spec830líneas y plan287líneas contradice el cierre previo
-porque faltaban G1/G2. G1 ya se cerró como se detalla abajo; G2 sigue pendiente.
-No se marca el goal logrado.
+porque faltaban G1/G2. G1 ya se cerró como se detalla abajo. El usuario aprobó
+ejecutar G2; backend/UI revisados y guardados en `f4342e3`/`55d7fe3`. El cierre
+conjunto quedó validado localmente; no se equipara con activación en producción.
+
+La revisión integral de `c5ea714..55d7fe3` confirmó G2 y encontró I1
+(instrumentación operativa del colector, spec§9) y M1 (etiqueta de conversión sin
+interés, no sin recorrido). Ambos corregidos en `5e95834`, re-reviewPASS sin
+hallazgos abiertos. El ajuste de fixture `dd226dc` también pasó review independiente.
+
+## Resultado vigente del cierre
+
+MVP aprobado completo a nivel de implementación local. Sobre producto `5e95834`:
+3960unit aprobadas+1skip opt-in (429archivos,444.11s). Después sólo cambió el
+setup del test50k en `dd226dc`: fullintegration519/519 (73archivos,164.84s),
+E2E público8/8(29.3s),dashboard7/7(22.7s),typecheck,lint124archivos ybuild
+(59/59páginas estáticas) todos exit0. Prisma válido y55migraciones aplicadas
+únicamente en DB sintética; bash-n/diffcheck0. Evidencia y límites en el runbook.
+
+La revisión final no tiene hallazgos abiertos. Se comprobaron las aserciones de
+§10 y el suplemento G2 contra código, no sólo nombres de tests o checkboxes.
+Se preservan los fallos previos: el50kINSERT demoró34.292s frente al primerDAL
+1.540s; se separó setup60s de cuerpo30s, sin cambiar límites productivos. La
+full final conserva50000/50001 y el cuerpo tarda3.234s. No se afirma haber
+optimizado la inserción ni demostrado su causa de variabilidad.
+
+Sin bloqueos pendientes de implementación del MVP. Permanecen gates de
+despliegue/piloto: privacidad, infraestructura/capacidad representativa, alertas,
+proxy/orígenes, CI remoto y autorización de migración/captura. IA semanal y
+retención13meses siguen fuera del alcance aprobado, no implícitamente completadas.
 
 ## Hallazgos actuales y evidencia
 
@@ -13,7 +40,9 @@ No se marca el goal logrado.
 | --- | --- | --- |
 | N1: identidad de etiqueta durante respuesta pendiente | `analytics-option-picker.tsx:34`; consumidores reales en `analytics-controls.test.tsx` service/promotion; RED2fallos4.75s por NombreA conIDB, GREEN30/30controles/dashboard/links8.48s; typecheck/lint0; reviewer4 PASS | Corregido |
 | G1: editar etiqueta visible actual de enlace | Spec§6/planTask2; commit `6b07579576cbc95d0cc41e0eb3c8bfa05eb9e7d9` agrega acción protegida owner/admin y edición inline, incluida etiqueta de enlace archivado. Verificación propia controles/acciones/enlaces24/24 en7.98s, DB19/19 en4.16s ytypecheck0; snapshots de enlaces/sesiones/intentos/eventos/Booking/agregados sólo cambian `campaignName`. Review independiente exacta del diff7archivos: PASS spec/calidad, sin hallazgos accionables | Implementado y revisado |
-| G2: desgloses de profesional/pago/errores | Spec§7.3 y§4; `report-types.ts`/`funnel.ts`/`reports.ts`/dashboard no exponen distribuciones propias. Eventos capturados e hitos genéricos no cumplen la presentación | Falta implementación; precisión de contrato propuesta |
+| G2: desgloses de profesional/pago/errores | Spec§7.3 y§4; contrato adicional aprobado con «ok dale ejecuta». `f4342e3` agrega proyección/lectura retenida,51unit/51DB focales; `55d7fe3` agrega presentación,46unit/7E2E focales. Ambas revisiones spec/calidad APPROVED; Minor de dos asserts resuelto,2/2E2E yre-reviewPASS; matriz final superior | Implementado, revisado y validado localmente |
+| I1: observabilidad técnica del colector | Spec§9; `5e95834` agrega una muestra terminal por HTTP y categorías de receipts después de commit,38paresmáximos. Pruebas reales de snapshots/rollback/fallos de sink, sinPII ni cambios de respuesta | Corregido y re-reviewPASS; límites por instancia explícitos |
+| M1: etiqueta de service.unobservedConversions | `5e95834` cambia a «Conversiones sin interés observado»; regresión reductor/agregador/render prueba camino completo sininterés y2Bookings→1conversión | Corregido y re-reviewPASS; fórmula sin cambios |
 | No IA,13meses,recuperación comercial ni activación productiva en el MVP | Spec§1/§11 y GlobalConstraints del plan los excluyen explícitamente; no son funcionalidades implícitas de esta continuación | Exclusión aprobada preservada |
 
 ## Evidencia existente que no se convierte en una prueba de completitud
@@ -38,8 +67,8 @@ remoto, producción, privacidad legal o capacidad diaria real.
 
 Esta matriz distingue aserciones leídas de ejecución nueva. No asigna PASS global
 a un requisito porque el nombre de un test lo mencione. Los archivos están bajo
-`tests/`; la matriz final deberá incluir la verificación de G1/G2 y el resto de
-fronteras antes de cerrar el goal.
+`tests/`; esta inspección precedió a la matriz final superior, que incluye G1/G2
+y las fronteras del MVP antes de cerrar el goal.
 
 | Contrato del spec | Aserciones inspeccionadas | Alcance/límite |
 | --- | --- | --- |
@@ -47,7 +76,7 @@ fronteras antes de cerrar el goal.
 | §10, fixtures4–6: eventos/reservas/servicios | `unit/analytics-funnel.test.ts`: 30eventos+2Bookings→1conversión/2reservas; sininterés conserva conversión; A→B conserva máximo de A pero no camino completo de B | Aserciones sobre proyección, sin multiplicación por join |
 | Ventana, pasos opcionales y contexto | `unit/analytics-funnel.test.ts`: borde inferior inclusivo/deadline exclusivo/tenant ajeno; falta de profesional; cambios de fecha/profesional/pago; promoción rechazada no invalida economía sin cambio | La exposición de elección explícita/pantalla/método sigue siendo G2 |
 | Consentimiento tardío, modalidad y login | `unit/analytics-wizard.test.tsx`: opt-in tras abrir tarjeta→partial sin interés reconstruido; anyone sólo tras clic; restore conserva intento/revisión sin eventos duplicados; selección B con hora perdida mantiene Booking y camino incompleto | Wizard/store/reductor reales; pasos fecha/hora/customer y pago mockeados; no sustituye E2E público |
-| DAL autorizado, alcance y datos mínimos | `integration/analytics-report-isolation.test.ts`: rechaza tenant cliente/filtro ajeno/intersección/rolstaff/sinusuario; excluye IDs/secretos del DTO; separa completos/parciales maduros/en curso bajo canal/enlace | Prueba PostgreSQL existente; rerun integrado final pendiente |
+| DAL autorizado, alcance y datos mínimos | `integration/analytics-report-isolation.test.ts`: rechaza tenant cliente/filtro ajeno/intersección/rolstaff/sinusuario; excluye IDs/secretos del DTO; separa completos/parciales maduros/en curso bajo canal/enlace | Prueba PostgreSQL incluida en519/519 finales |
 | Corte, zonas y comparación | Mismo archivo: fuentes futuras excluidas; cohortes UTC/Santiago permanecen congeladas; 28d frente2d→delta null, coberturas iguales→delta50pp | No representa seguimiento equivalente de estados actuales de Booking |
 | Publicación atómica | `integration/analytics-rollups.test.ts`: 3marcadores; revisiones concurrentes homogéneas; fallo inyectado trasdelete restaura publicación; claves desaparecidas eliminadas; DST sin duplicar/omitir | Prueba con PostgreSQL y fallos sintéticos, no producción |
 | Retención y continuidad | `integration/analytics-retention.test.ts`: 10000filas máximo y continuación idempotente; alerta/pausa12h; snapshot reservado/Booking conservada; freeze antespurga; fallo de agregado no prolonga crudo; borrado tenant sin huérfanos | Capacidad productiva y alertas externas siguen siendo gate operativo |
@@ -56,8 +85,9 @@ fronteras antes de cerrar el goal.
 
 Baseline `f9eca68`, pruebas ampliadas en
 `175179da4d3330cf55264a4437731ec6e22397be`. La continuación anterior fue progreso:
-implementó G1 y corrigió el estado documental. La aprobación de G2 no ha llegado;
-este trabajo completa evidencia existente sin introducir su contrato pendiente.
+implementó G1 y corrigió el estado documental. En ese checkpoint no había llegado
+la aprobación de G2; ese trabajo completó evidencia existente sin introducir su
+contrato pendiente.
 
 | Contrato | Fuente/aserciones inspeccionadas | Evidencia y límites |
 | --- | --- | --- |
@@ -112,27 +142,27 @@ rotura identificada. Typecheck/lint de ambos archivos/diffcheck posteriores exit
 La fixture pública quedó eliminada (count0) y sin listeners locales3555/3556;
 la PostgreSQL exclusiva se conserva para continuar G2.
 
-El cierre integral aún exige G2 y su validación end-to-end, la matriz final
-conjunta y los límites operativos ya documentados. No repetir suites sin cambios
-como sustituto de aprobar/implementar ese requisito pendiente.
+En ese checkpoint el cierre integral exigía G2 y su validación end-to-end, la
+matriz final conjunta y los límites operativos ya documentados. No repetir suites
+sin cambios como sustituto de implementar ese requisito.
 
-## Trabajo para demostrar el final
+## Cumplimiento final y gates separados
 
 1. G1 completado/revisado en `6b07579576cbc95d0cc41e0eb3c8bfa05eb9e7d9`, con
    UI+acción protegida y prueba DB de identidad/atribución/histórico intactos.
-2. Aprobar la precisión de G2, implementar su reductor/lectura acotada/presentación
-   y verificar las fronteras descritas en el documento de diseño adicional.
-3. Reconciliar requisito por requisito §10 y las tareas contra artefactos y
-   aserciones reales; ejecutar el cierre integrado sobre el código final, no
-   reutilizar una corrida anterior como si incluyera cambios posteriores.
-4. Actualizar spec/plan/runbook que aún dicen «no iniciada» o «todo completado»
-   cuando esos estados son históricos. Conservar decisiones/evidencia anterior.
+2. G2 aprobado con «ok dale ejecuta»: reductor/lectura acotada revisados en
+   `f4342e3`; presentación/fronteras verificadas en `55d7fe3`.
+3. §10 y suplemento reconciliados contra artefactos/aserciones reales; cierre
+   integrado sobre código final, con la única modificación de fixture explicada.
+4. Spec/plan/runbook actualizados y evidencia histórica conservada; no se presenta
+   una corrida antigua como prueba de código modificado posteriormente.
 5. Mantener separados los gates de activación: CI remoto autorizado, migración,
    proxy/orígenes, política/smallcells, infraestructura/capacidad, alertas y piloto.
    Nada de ello se activa para fabricar checks verdes.
 
-Las dos continuaciones produjeron avances concretos: N1/G1 primero; después,
-pruebas de Booking sin consentimiento, corrección del reloj del fixture y matriz
-de evidencia ampliada. La misma aprobación pendiente de G2 se ha mantenido en
-ambas. Sigue siendo un requisito sin implementar, no una exclusión nueva del MVP.
-El goal permanece activo; no se declara logrado ni se reinician tareas cerradas.
+Las continuaciones anteriores produjeron N1/G1, pruebas de Booking sin
+consentimiento, corrección del reloj del fixture y una matriz ampliada. La
+aprobación pendiente de G2 bloqueó entonces el cierre; la nueva instrucción del
+usuario la resuelve. No se reinician tareas cerradas ni se convierte G2 en una
+exclusión del MVP. La validación conjunta superior cierra ahora el MVP local;
+no autoriza publicación, merge, migración ni captura productiva.

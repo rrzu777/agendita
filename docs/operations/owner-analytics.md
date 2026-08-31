@@ -1,6 +1,67 @@
 # Owner analytics: handoff operativo
 
-Estado vigente, 2026-08-31: **implementación todavía incompleta**. La auditoría posterior al cierre de review detectó dos requisitos omitidos. G1, editar etiquetas de campañas, ya está implementado y revisado en `6b07579`. Quedan G2, desgloses propios de profesional/pago/errores, y la validación conjunta final. N1 ya fue corregido en `a3a9737`. Ver `owner-analytics-completion-audit.md` para el seguimiento actual; los checkpoints inferiores son evidencia histórica, no una declaración de cumplimiento integral. Captura y mantenimiento productivos **no activados**. Este documento no autoriza migración, deploy, push, PR, cron, comunicaciones ni pruebas con cuentas/datos reales. Retención de 13 meses e IA semanal requieren decisiones separadas; no están implementadas.
+Estado vigente, 2026-08-31: **MVP implementado, revisado y validado localmente**. N1, G1 y G2 están cerrados (`a3a9737`, `6b07579`, `f4342e3`/`55d7fe3`). La fixwave `5e95834` completa contadores técnicos del colector y corrige una etiqueta; re-review PASS sin hallazgos abiertos. El ajuste de fixture `dd226dc` también pasó revisión y la matriz integrada final. Ver `owner-analytics-completion-audit.md` para evidencia vigente; los checkpoints inferiores son históricos. Captura y mantenimiento productivos **no activados**. Este documento no autoriza migración, deploy, push, PR, cron, comunicaciones ni pruebas con cuentas/datos reales. Retención de 13 meses e IA semanal requieren decisiones separadas; no están implementadas.
+
+## Verificación final vigente
+
+Producto final `5e958346597661e5ddae88677542d5a6d4e75abd`; último cambio de test
+`dd226dcc919e533290f9ce85eee15891df893833`. Después sólo se actualizó documentación.
+Todos los comandos usaron el entorno limpio de la receta inferior, Node22,
+DB sintética exclusiva y ejecución secuencial. Nada invocó `vercel-build`.
+
+| Comprobación | Resultado final |
+| --- | --- |
+| Fullunit `npm run test:unit -- --maxWorkers=1 --testTimeout=60000` | 429archivos;3960pass,1skip opt-in de red real,0fallos;444.11s;exit0 |
+| Fullintegration `OWNER_ANALYTICS_MEASURE_LOCAL=true npm run test:integration -- --maxWorkers=1 --testTimeout=60000` | 73archivos;519/519;164.84s;exit0 |
+| Público `npx playwright test --config=playwright.owner-analytics-public.config.ts` | 8/8;29.3s;exit0 |
+| Dashboard `npx playwright test --config=playwright.owner-analytics.config.ts` | 7/7;22.7s;exit0 |
+| `npm run typecheck`; ESLint de124archivos TS/TSX/JS/MJS cambiados contra baseoriginal | Ambos exit0;sin errores/warnings de lint |
+| `npm run build` con configuración sintética de producción | exit0;compilación2.3s,TypeScript6.0s,59/59páginas estáticas generadas |
+| Prisma validate/migrate status; `bash -n scripts/run-owner-analytics-cron.sh`; `git diff --check` | Esquema válido,55migraciones locales al día;exit0;no ejecución de cron |
+
+La preparación50k y su prueba conservan relojes separados60s/30s. En la full
+final, el archivo20casos tardó50.713s y el cuerpo50k3.234s: mismo volumen y
+aserciones, sin ampliar maxWait5s/timeout15s del DAL. Los fallos anteriores y su
+diagnóstico quedan abajo, no se reinterpretan como verdes ni como tuning resuelto.
+La unidad fue ejecutada sobre el mismo producto final; el único cambio posterior
+antes de la matriz restante fue el setup de un test de integración.
+
+Warnings esperados: emails omitidos por ausencia deliberada de Resend en el
+E2E público; ForbiddenError de la prueba staff. No hubo PANIC/ECONNRESET de Next
+en los E2E finales. Root inspeccionó capturas finales de detalle desktop, alcance
+filtrado móvil y viewport móvil; las aserciones verifican teclado y ausencia de
+overflow horizontal. No es QA de dispositivo físico, CI remoto ni producción.
+
+## Entrega y limpieza local
+
+Worktree y rama `feature/owner-analytics` conservados; sin merge/push/PR/deploy.
+Canonical permanece en `216f47e345b585ffa0dd6603af8b327e5698533a`, con sus mismos
+dos documentos originales sin seguimiento, sin modificaciones por esta ejecución.
+DB de QA terminó con0negocios/usuarios/sesiones/intentos/eventos; sin listeners
+3555/3556. Se verificó ID/nombre/labels/mounts y se detuvo sólo el contenedor
+`4a5acd250822a94195a1167a98cb6f29b4ca3a514dd870e2eec73337ee1f6d01`
+(`agendita-owner-analytics-flow-01a055ad`), salida0/OOMfalse. No se eliminó;
+su disco local queda retenido. El contenedor anterior agotado sigue detenido.
+
+Sólo el scratch de este plan fue trasladado recuperablemente a
+`/Users/robertozamorautrera/.Trash/agendita-owner-analytics-flow-sdd-20260831-dd226dc`.
+Incluye ledger, briefs, revisiones, reports, `closed-unit.log` y
+`verified-{integration,public,dashboard,typecheck,lint,build}.log`, además de
+corridas fallidas/diagnóstico. No se tocaron directorios de otros planes.
+Capturas finales permanecen en `test-results/owner-analytics/`; dependencias
+propias y documentación versionada permanecen en el worktree.
+
+## Decisiones de esta continuación (orden de adopción)
+
+1. Revisar diffs sin commit antes de guardarlos, por precedencia de build-review-ship;
+   coste: bookkeeping temporal adicional, sin efecto productivo.
+2. Sustituir tmpfs agotado por disco local en la DB sintética; coste: almacenamiento
+   temporal y recrear fixtures, sin pérdida de datos reales.
+3. Completar contadores operativos del colector exigidos por§9 fuera del alcance
+   estricto de archivos G2; coste: instrumentación/pruebas adicionales y muestras
+   efímeras por instancia, sin nueva tabla ni servicio externo.
+4. Separar setup50k60s de aserciones30s por INSERT medido34.292s; coste: hasta30s
+   adicionales de preparación fría, no más tiempo para lecturas del producto.
 
 ## Qué mide y qué no
 
@@ -84,11 +145,179 @@ En `/dashboard/metricas`, owner/admin dispone de presets7/28/90 y rango personal
 
 El bloque «Control de captura» opera `setAnalyticsCollectionEnabled`: «Cerrar captura» depende de `collectionOpen`, **no** de que `capture.enabled` sea true. Así puede cerrarse un período viejo con global apagado o Redis ausente antes de la reactivación descrita arriba. «Abrir captura» no evita ningún gate: con configuración inválida muestra rechazo y no crea un período. Esta UI no modifica variables de entorno ni autoriza un piloto.
 
-«Crear enlace» permite una promoción propia opcional, con asociación inmutable; no aplica código, modifica precio ni autoriza canje. Se muestra el nombre cuando está disponible en las opciones, o «nombre no disponible» junto al ID histórico. Sólo archivar/copiar siguen permitidos sobre enlaces existentes. La selección de promoción sigue la elegibilidad de asociación de la acción existente (pertenencia al negocio), no la elegibilidad económica de redención.
+«Crear enlace» permite una promoción propia opcional, con asociación inmutable; no aplica código, modifica precio ni autoriza canje. Se muestra el nombre cuando está disponible en las opciones, o «nombre no disponible» junto al ID histórico. Los enlaces existentes permiten archivar/copiar y editar su etiqueta visible actual; no modificar su atribución. La selección de promoción sigue la elegibilidad de asociación de la acción existente (pertenencia al negocio), no la elegibilidad económica de redención.
 
 La pantalla presenta por separado conversión completa/parcial y particiones convertido/interrupción conocida/medición incompleta. El embudo termina en reserva verificada con recorrido completo, sin ocultar reservas de recorrido incompleto. Gráfico y tabla distinguen intentos completos de sus reservas creadas; atendidas y canjes son estado al consultar de todas las reservas/redenciones creadas en período y no responden al filtro histórico. Las atendidas repetidas en filas de poblaciones del mismo servicio no deben sumarse. Disponibilidad vacía y errores también se muestran sin exigir umbral de oportunidad. Diagnóstico `not_queried` significa no consultado para ese rango/filtro, no purgado; sólo se presenta detalle cuando la consulta acotada lo demuestra.
 
 ## Checkpoints y evidencia
+
+### Cierre integrado posterior a G2
+
+Código evaluado: `5e958346597661e5ddae88677542d5a6d4e75abd` (documentación
+posterior no modifica código). Corrida secuencial final: unit429/429archivos,
+3960pass/1skip/0fail,444.11s,exit0. Mismo skip opt-in de red real, sin activarlo.
+La integración secuencial volvió a fallar sólo en50k:518pass/1timeout,73archivos,
+154.39s,exit1. No había unit/Next/build concurrentes, así que el solapamiento no
+es explicación suficiente. Esa cadena se detuvo; no ejecutó E2E/tipado/lint/build.
+Se investigó la diferencia entre caso aislado y fixtures previos
+del mismo archivo, sin cambiar volumen ni DAL. Los resultados inferiores
+de55d7fe3 son baseline previo a la fixwave, no verificación del código final.
+
+Reproducción del comando global exacto con sondas temporales:518pass/1fail,
+164.28s. Preparar el fixture tardó34.292s en el INSERT50k; la primera lectura
+del reporte tardó1.540s. PostgreSQL mostró INSERT activo25s sin espera; no era
+una consulta del DAL. Focals previos (últimos3 y archivo20) insertaban en~3.3s;
+no se demostró la razón de variabilidad de planes/FK/estadísticas. No se aplica
+tuning ni ANALYZE como supuesto fix de producto.
+
+Decisión de QA: separar la preparación masiva en beforeAll anidado con60s,
+conservar30s para el cuerpo con ambas aserciones50.000/50.001 y los límites de
+espera5s/transacción15s del DAL. El límite antiguo sumaba preparación y prueba;
+al vencer durante INSERT, teardown competía con el cuerpo pendiente. Coste:
+hasta30s adicionales de fixture frío, no más plazo para lecturas del producto.
+Mismos50kdatos, restricciones y assertions; sin ocultar errores ni reducir carga.
+Sondas temporales retiradas. Corrección de test en `dd226dcc919e533290f9ce85eee15891df893833`;
+review independiente PASS sin hallazgos, focal20/20 en22.59s, cuerpo50k3.305s,
+lint/tipado/diff0. Ningún cambio a código productivo o unit tras `5e95834`;
+la corrida de3960unit sigue cubriendo el producto final. La matriz restante
+pasó secuencialmente sobre `dd226dc`, sin otras pruebas/Next/build concurrentes;
+resultados vigentes en la tabla inicial.
+
+Baseline de código `55d7fe3a6f32d0b1263d23646bf18e566d70471d`: fullunit428archivos,
+3938pass/1skip/0fail en462.94s, exit0. Skip preexistente de red real opt-in
+`payment-qa-network-deny`, no activado. Se conservaron logs de fallos simulados;
+no advertencias inesperadas de framework en esta corrida. Typecheck propio0,
+ESLint122archivos cambiados contra baseoriginal0errores/warnings, Prisma validate0,
+55migraciones locales al día, bash-n del driver y diffcheck0. No se ejecutó cron.
+
+Primera fullintegration73archivos:515pass/1fallo,171.12s,exit1. Único fallo:
+`analytics-flow-breakdowns.test.ts`50.000/50.001eventos agotó timeout explícito30s
+del test (que prevalece sobre CLI60s) mientras corría fullunit en otro proceso.
+Sin cambiar código, fixture, timeout ni límites, reproducción focal cuando unit
+terminó pasó1/1(19filtrados),case6.461s,total7.80s. Contención de QA es hipótesis,
+no causa demostrada. No se declara esa full verde; el cierre DB se repite solo
+después de la fixwave. Límites del DAL maxWait5s/timeout15s permanecen intactos.
+
+Revisión integral `c5ea714..55d7fe3`: ningún Critical ni defecto propio de G2;
+Important I1 falta instrumentación operativa del colector exigida por spec§9,
+Minor M1 «Sin recorrido» debería ser «Conversiones sin interés observado».
+Se agrupan en una única fixwave; no cambia fórmula, captura, Booking ni gates.
+
+Fixwave implementada: `collector-metrics.ts` y el límite HTTP compartido registran
+una muestra terminal por solicitud y cada receipt sólo después del commit.
+Familias `analytics_collector_{session|attempt|events}_{terminal}` y
+`analytics_collector_receipt_{accepted_stored|replay_identical|rejected_*}`:
+30combinaciones request/outcome y8de receipts como máximo, con listas cerradas.
+Terminales incluyen success, disabled_context y las8categorías de error existentes.
+Los HTTP200 con rechazos parciales quedan visibles. Gap-only no inventa eventos;
+rollback no registra receipts; bootstrap/replay cuentan solicitudes, no identidades.
+Duración de request monotónica; duración de receipt0 (no latencia por evento).
+
+Se reutiliza `recordOperationalMetric`: memoria por instancia best-effort y el
+endpoint protegido de métricas existente (cache30s). Reinicios/fallos pueden
+perder muestras; no son totales de flota, métricas durables de negocio ni prueba
+de entrega al scraper. Sin nuevos backends, etiquetas de tenant/cliente, tokens,
+IPs o payload; una falla del sink no cambia captura, respuesta ni Booking.
+La compatibilidad de scrape/procesos serverless sigue requiriendo validación
+operativa del destino. No se activaron métricas externas ni alertas.
+
+M1 sólo cambia la etiqueta. La regresión usa reductor/agregador reales: trayectoria
+completa sin service_considered y dosBookings del mismo intento-servicio producen
+una conversión sin interés observado. No se cambia fórmula ni llama reservas al
+contador de conversiones.
+
+RED previo:17fail/17passunit2.64s y2fail/1passDB1.66s por snapshots vacíos/etiqueta;
+otro RED de cuatro categorías/escenarios conserva las mismas aserciones exactas.
+Pruebas de mutación de cada guarda de sink fallaron como se esperaba y se
+restauraron; GREEN final focal68unit/5archivos2.80s y37DB/1archivo5.21s,
+TypeScript sin incremental/ESLint/diff0. Re-review scoped del diferencial exacto
+sobre `55d7fe3`: I1/M1ADDRESSED, sin nueva Critical/Important/Minor; commit final de
+código `5e958346597661e5ddae88677542d5a6d4e75abd`. Root typecheck independiente0.
+La matriz final corre con ambas guardas restauradas; no se consideran RED de
+producto los fallos deliberados de mutación.
+
+Decisión adicional: completar observabilidad local exigida por el MVP aunque
+esté fuera de la propiedad de archivos de G2. Coste: instrumentación/pruebas
+adicionales y contadores efímeros por instancia; sin tabla, IDs de negocio,
+datos personales, backend externo ni activación de alertas productivas.
+
+### G2: desgloses del flujo observado
+
+Contrato adicional aprobado con «ok dale ejecuta». Backend implementado/revisado
+en `f4342e318ca64ca1fe23802c227179ea2718d0f9`; presentación implementada con revisión
+spec/calidad aprobada, cierre conjunto validado localmente. Diseño/plan: `2026-08-31-owner-analytics-flow-breakdowns-design.md` y
+`2026-08-31-owner-analytics-flow-breakdowns.md`, bajo docs/superpowers.
+
+Se usa el último contexto observado, no el máximo histórico ni una persona. El
+reductor compartido agrega evidencia de profesional (tipo y modo), pantalla,
+condición/métodos de pago y errores cerrados. Métodos ofrecidos/errores no son
+aditivos; sin evidencia es «no observado», no un hecho negativo. Selección de
+método no prueba cobro. Cuatro grupos distintos: completa/parcial × madura/en curso.
+
+`flowBreakdowns` lee crudo retenido en el rango exacto del reporte, sin ampliar
+presets a hoy. Zona/fecha congeladas, corte explícito. Canal/enlace usan origen
+inmutable; servicio significa servicio del último contexto válido, no cualquier
+interés pasado. Nada se agrega al histórico diario ni a sus tablas/dimensiones.
+No hay nuevas migraciones ni dependencia. La lectura usa una transacción propia
+RepeatableRead maxWait5s/timeout15s después del resumen autorizado, para aislar
+fallos; comparte el corte temporal, no el snapshot físico del resumen anterior.
+
+Límites de detalle:10000sesiones+intentos/rango antes de filtros,200eventos/intento,
+50000eventos de intento/rango; páginas50intentos y sentinelas. Sesiones se leen
+sólo como guardia de carga/retención/versión. No hay lectura de eventos de superficie
+ni de Booking en este bloque. `available`/`empty` llevan grupos; `not_retained`,
+`incomplete_source`, `limit_exceeded`, `error` llevan groups:null. Marcador congelado
+o fuente vencida no entrega detalle parcial. Inconsistencia de contador/payload/
+versión no se presenta como cero; un fallo del detalle no oculta el resumen.
+
+Task1: RED22/22 por proyección/agrupación faltantes; RED adicional por none_offered;
+RED PostgreSQL real por campo del reporte ausente. GREEN51/51unit(3.34s),51/51DB
+(29.27s), typecheck/lint/diffcheck0. DB incluye límites reales10000/10001 y
+50000/50001, retención, tenant/rol/filtros, fuentes corruptas, corte y fallo SQL
+aislado. Versiones futuras se simulan en resultado de consulta porque CHECKv1
+impide persistirv2; no se relajó esquema. Revisión independiente: spec/calidad
+APPROVED, sin hallazgos accionables. Root typecheck propio0 antes del commit.
+
+Task2: RED funcional15fallos/15pass en2.98s (14de UI y1del dashboard); la
+ausencia de módulo inicial no se contabiliza como RED funcional. E2E real RED1
+por sección ausente en11.3s. GREEN focal46/46unit(9.63s), dashboard7/7(23.8s),
+typecheck/lint/diff0. El fixture persistido produce poblaciones3/2/1/4 y conserva
+los casos previos de G1, captura, staff y navegación móvil. Los estados vacío y
+fuente incompleta se ejercitan en el dashboard real sin perder el resumen;
+los seis estados y cuatro alcances tienen contratos unitarios.
+
+La revisión independiente aprobó spec/calidad sin Critical/Important; señaló
+dos asserts faltantes para respaldar completamente el filtrado2/0/0/0. Corregidos
+con2/2E2E(11.7s) y re-reviewPASS antes del commit `55d7fe3`. Root inspeccionó capturas del bloque desktop/móvil y
+servicio filtrado: tablas legibles, cuatro poblaciones y foco nativo. Capturas
+en `test-results/owner-analytics/flow-breakdowns-{desktop,mobile}{,-service}.png`;
+no equivalen a dispositivo físico ni producción.
+
+Fallos de setup separados: snapshot de fixture usaba id en vez de professionalId;
+se corrigió y adelantó registro de ownership para cleanup. Se borró sólo el negocio
+sintético huérfano exacto en DB exclusiva. Dos corridas verdes intermedias emitían
+stream cerrado/ECONNRESET por navegación inmediata del test; sincronizar requests
+antes de reload/navegación/restauración quitó esos avisos. La última7/7 conserva
+sólo ForbiddenError deliberado de staff. Fixture final0negocios/0usuarios y sin
+listeners3555/3556. No se silenció output ni cambió configuración productiva.
+
+Durante el fixture50000eventos, el antiguo contenedor7a4bd787 agotó tmpfs256MiB:
+PANIC53100 al escribir WAL, recovery sin espacio, exit1/OOMKilledfalse;19/20casos
+habían pasado. No fue RED de producto ni prueba de capacidad productiva. Se
+conservaron sus logs/contenedor detenido; los datos sintéticos tmpfs se perdieron.
+El reemplazo aislado es `agendita-owner-analytics-flow-01a055ad`, ID
+`4a5acd250822a94195a1167a98cb6f29b4ca3a514dd870e2eec73337ee1f6d01`, labels
+`codex.task=owner-analytics-goal` y `codex.purpose=flow-breakdowns-tests`, localhost55439,
+misma DB/credenciales sintéticas, CPU1/memoria512MiB. PGDATA usa disco local del
+contenedor (`/tmp/agendita-owner-analytics-pgdata`), sin binds/volúmenes de datos;
+el path de volumen por defecto está cubierto con tmpfs1MiB no usado. WALmax128MB/
+min32MB.55migraciones existentes aplicadas sólo a esta DB. Suite focal completa
+posterior verde. No se aumentó RAM ni se tocó otro contenedor.
+
+Decisiones de esta ejecución: revisión antes de commit también para el trabajo
+delegado (coste: artefacto temporal de diff), y reemplazo de tmpfs agotado por disco
+local ante presión de memoria (coste: espacio temporal y recrear fixtures). No
+cambian el contrato de producto ni los gates de activación.
 
 ### Continuación de cumplimiento: N1 y G1
 
@@ -97,14 +326,14 @@ Booking guardada sinmetadatosanalytics al no responder, rechazar o retirar permi
 y se alinea el reloj del fixture dearchivo con captureNow tras un fallo23514 real.
 Resultado:53/53integración seleccionada,8/8E2E públicos,typecheck/lint0 yre-review
 focal PASS. Matriz, RED y comandos en `owner-analytics-completion-audit.md`.
-No equivale a cierre global ni implementa G2; el contrato adicional sigue pendiente
-de aprobación y la validación conjunta debe hacerse tras completar ese requisito.
+No equivalía a cierre global ni implementaba G2; en ese checkpoint el contrato
+adicional seguía pendiente de aprobación. La continuación G2 se documenta arriba.
 
 N1 `a3a9737223d304b844d2a68ed214c24bdbe1375d`: corregida etiqueta asíncrona
 fuera de identidad. G1 `6b07579576cbc95d0cc41e0eb3c8bfa05eb9e7d9`: siete
 archivos, edición de etiqueta con acción protegida y pruebas UI/DB/E2E.
 Revisión independiente exacta `a3a9737..6b07579`: PASS spec/calidad, sin hallazgos
-accionables. No es un PASS global del MVP: G2 permanece sin implementar.
+accionables. No era un PASS global del MVP: G2 permanecía sin implementar entonces.
 
 G1 RED: controles/acción2fallos15pass3.54s; DBexport ausente1fallo18filtrados1.43s.
 Iteraciones de tests: helper de botón-icono y selector E2E parcial ambiguo se
@@ -129,7 +358,7 @@ Reproducir G1 con el prefijo limpio de la sección de reproducción:
 `.superpowers/sdd/2026-08-31-owner-analytics-goal-completion/label-report.md`
 y archivos `label-*.log` del mismo directorio, excluidos de Git.
 
-Nueva PostgreSQL de pruebas retenida para continuar: container
+PostgreSQL usada en ese checkpoint, sustituida durante G2 como se detalla arriba: container
 `agendita-owner-analytics-goal-01a055ad`, ID
 `7a4bd7873b37268337d08f8836295b429931c5197ea73c167d7afa88e58a5344`,
 label `codex.task=owner-analytics-goal`, localhost55439, DB

@@ -1,10 +1,12 @@
-# Desgloses del flujo — contrato propuesto para completar §7.3
+# Desgloses del flujo — contrato para completar §7.3
 
-Estado: aprobado por el usuario («ok dale ejecuta»); implementación en curso. Es una precisión de
+Estado: aprobado por el usuario («ok dale ejecuta»); implementado y revisado en
+`f4342e3`/`55d7fe3`, con validación conjunta final aprobada sobre producto `5e95834`
+y fixture `dd226dc`. Es una precisión de
 un requisito omitido del MVP aprobado, no IA, analítica financiera ni otro cubo.
 Fuente: `2026-08-30-owner-analytics-design.md` §4, §5, §7.3 y §10.
 
-## Resultado visible propuesto
+## Resultado visible
 
 En Métricas, una sección «Detalle del flujo observado» muestra conteos de intentos
 por tipo de elección profesional, pantalla/condición de pago, métodos ofrecidos

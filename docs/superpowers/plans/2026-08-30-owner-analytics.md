@@ -12,13 +12,14 @@
 
 **Autorización:** el usuario aprobó implementar el diseño y confirmó crear el worktree con “ok dale ejecuta”. Worktree: `.worktrees/owner-analytics`, rama `feature/owner-analytics`. No autorizó despliegue, activación, envío de mensajes, cobros reales ni cambios remotos.
 
-**Estado vigente, 2026-08-31:** implementación aún incompleta. Los checkboxes y
-resultados siguientes conservan el seguimiento histórico, pero la auditoría
-posterior encontró G1 (editar etiquetas) y G2 (desgloses profesional/pago/errores)
-omitidos. G1 se completó y revisó en `6b07579`; G2 y la validación conjunta final
-siguen pendientes. N1 fue corregido en `a3a9737`. Consultar
-`docs/operations/owner-analytics-completion-audit.md`; los checks anteriores no
-demuestran cumplimiento integral ni validan los cambios posteriores.
+**Estado vigente, 2026-08-31:** código del MVP implementado y revisado hasta
+`5e95834`, con validación conjunta final aprobada y ajuste de fixture `dd226dc`.
+G1 se cerró en `6b07579`, G2 en
+`f4342e3`/`55d7fe3`, N1 en `a3a9737`; la fixwave final completa contadores técnicos
+del colector y corrige la etiqueta de conversiones sin interés observado.
+Los checkboxes/resultados inferiores conservan seguimiento histórico; el cierre
+vigente está en `docs/operations/owner-analytics-completion-audit.md`. No incluye
+activación productiva ni reutiliza pruebas antiguas como evidencia de código nuevo.
 
 ## Global Constraints
 

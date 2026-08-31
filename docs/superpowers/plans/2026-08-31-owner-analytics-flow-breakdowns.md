@@ -129,12 +129,22 @@ fix wave, unchanged capture/financial semantics, no activation/new storage.
 - [x] RED/GREEN collector terminal request and committed receipt categories through existing per-instance operational sink; finite labels, noPII, instrumentation fail-open, statuses/headers/budgets/transaction semantics intact.
 - [x] RED/GREEN «Conversiones sin interés observado», including coherent path without interest and twoBookings→one attempt-service conversion; no formula change.
 - [x] Focused checks → one scoped independent re-review → controller commit.
-- [ ] Final global checks on fixed code; DB suite alone (prior50kfixture timedout with unit overlap, unchanged isolated test passed).
+- [x] Final global checks on fixed code:3960unit+1opt-in skip,519integration,8public+7dashboardE2E,typecheck/lint124/build all pass. DB suite ran alone; earlier combined and sequential failures remain documented.
+
+Verification follow-up: exact sequential reproduction locates timeout in bulk
+fixture INSERT34.292s, before DAL1.540s. Separate the50k fixture into a nested
+beforeAll60s; keep testbody30s and product5s/15s limits. Same rows/assertions,
+no tuning/ANALYZE; remove probes, review test-only patch and rerun full DB.
+The source of bulk timing variability is not claimed proven.
+
+Completed test-only follow-up `dd226dc`, independent review PASS;20focused tests,
+lint/typecheck/diff0. Full integration then519/519 in164.84s,50k body3.234s.
+Final product remains `5e95834`, no product/unit changes after3960unit pass.
 
 ### Acceptance and handoff
 
-- Audit supplement cases and original§10 against actual assertions; no capture-only claim for presentation.
-- Whole branch review with focused G2 seams and previous audit as context; not redispatch completed tasks.
-- Full unit and integration once on final code, both synthetic E2E suites, typecheck/lint changed branch files/build (never vercel-build). Record actual failed runs and exact fixes, not only green summaries.
-- Reconcile spec/plan/runbook/completion audit: G1/G2 implemented only after evidence; production/IA13months gates remain explicit.
-- Commit local work and leave branch/worktree intact for user; no publishing/integration without request.
+- [x] Audit supplement cases and original§10 against actual assertions; no capture-only claim for presentation.
+- [x] Whole branch review with focused G2 seams and previous audit as context; not redispatch completed tasks. Final I1/M1 re-review and fixture review PASS, no open findings.
+- [x] Full unit and integration on final code, both synthetic E2E suites, typecheck/lint changed branch files/build (never vercel-build). Actual failed runs and fixes preserved, not only green summaries.
+- [x] Reconcile spec/plan/runbook/completion audit: G1/G2 implemented only after evidence; production/IA13months gates remain explicit.
+- [x] Commit local work and leave branch/worktree intact for user; no publishing/integration without request.

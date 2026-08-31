@@ -2,20 +2,21 @@
 
 **Fecha:** 2026-08-30
 
-**Estado:** alcance de producto aprobado; diseño técnico para revisión.
+**Estado:** diseño técnico aprobado; MVP implementado, revisado y validado localmente.
 
-**Implementación:** en curso en `.worktrees/owner-analytics`. La auditoría de
-cumplimiento del 2026-08-31 detectó dos requisitos omitidos. La edición de etiquetas
-de campañas ya fue implementada y revisada en `6b07579`; quedan pendientes los
-desgloses propios de profesional/pago/errores y la validación conjunta final. El
-detalle vigente está en `docs/operations/owner-analytics-completion-audit.md`.
-No incluye activación en producción.
+**Implementación:** código del MVP implementado y revisado en
+`.worktrees/owner-analytics`, rama `feature/owner-analytics`, producto `5e95834`
+y ajuste de fixture `dd226dc`.
+G1 (etiquetas de campañas), G2 (profesional/pago/errores) y hallazgos finales del
+colector/etiqueta de conversión están corregidos. La validación conjunta final
+pasó; evidencia vigente en `docs/operations/owner-analytics-completion-audit.md`.
+No incluye activación en producción ni IA semanal.
 
 **Revisión de gaps:** separar poblaciones completas/parciales, invalidar selecciones
 obsoletas, registrar interés previo a modalidad, distinguir restricciones de
 agenda de falta de capacidad y conservar histórico agregado con plazo explícito.
 
-**Decisión de almacenamiento propuesta:** seis tablas nuevas en la misma PostgreSQL,
+**Decisión de almacenamiento implementada:** seis tablas nuevas en la misma PostgreSQL,
 no una tabla por KPI, campaña o servicio. Reservas, pagos y canjes siguen siendo
 las fuentes transaccionales existentes. Retención cruda de 90 días; histórico
 agregado de 13 meses sujeto a aprobación de finalidad, privacidad y borrado.
@@ -770,7 +771,8 @@ de declarar validada la funcionalidad.
 
 ### Ejemplos sintéticos obligatorios
 
-Son fixtures de diseño, no pruebas ejecutadas de una implementación:
+Estos ejemplos definen los contratos numéricos; no sustituyen la evidencia de
+ejecución registrada en la auditoría de cumplimiento:
 
 1. Diez intentos completos maduros, cuatro con reserva, de los que tres tienen
    recorrido completo y uno no: conversión principal **4/10 = 40 %**; último hito
