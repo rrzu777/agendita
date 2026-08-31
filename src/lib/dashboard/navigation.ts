@@ -1,6 +1,7 @@
 import type { BusinessRole } from '@prisma/client'
 import type { LucideIcon } from 'lucide-react'
 import {
+  ChartNoAxesCombined,
   CalendarDays,
   Clock3,
   CreditCard,
@@ -45,6 +46,7 @@ function dashboardNavDefinitions(vocabulary: Vocabulary): DashboardNavItem[] {
     { href: '/dashboard/fidelizacion', label: 'Fidelización', icon: Sparkles, roles: operationalRoles, mobile: 'more', tourId: 'dashboard-loyalty' },
     { href: '/dashboard/campanas', label: 'Campañas', icon: Megaphone, roles: operationalRoles, mobile: 'more', tourId: 'dashboard-campaigns' },
     { href: '/dashboard/paquetes', label: 'Paquetes', icon: Package, roles: operationalRoles, mobile: 'more', tourId: 'dashboard-packages' },
+    { href: '/dashboard/metricas', label: 'Métricas', icon: ChartNoAxesCombined, roles: managementRoles, mobile: 'more', tourId: 'dashboard-analytics' },
     { href: '/dashboard/billing', label: 'Facturación', icon: ReceiptText, roles: managementRoles, mobile: 'more', tourId: 'dashboard-billing' },
     { href: '/dashboard/reviews', label: 'Reseñas', icon: Star, roles: operationalRoles, mobile: 'more', tourId: 'dashboard-reviews' },
     { href: '/dashboard/settings', label: 'Configuración', icon: Settings, roles: managementRoles, mobile: 'more', tourId: 'dashboard-settings' },

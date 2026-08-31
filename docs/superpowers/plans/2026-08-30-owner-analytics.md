@@ -191,7 +191,7 @@ expect(report.comparison.status).toBe('coverage_not_comparable')
 - Tras `completeAttempt`, los efectos pasivos/retry de checkout no reabren captura. Una selección explícita que inicia otro flujo puede rearmarla en la misma instancia, con intento nuevo/parcial si empieza a mitad; conserva el stream anterior y no cambia idempotencia financiera.
 - Nuevo resultado de disponibilidad `{slots, emptyReason}` desde el mismo generador; el action legacy sigue devolviendo `TimeSlot[]` para consumidores no migrados. `unknown` cuando no puede demostrarse una causa única.
 
-- [ ] Escribir test rojo que renderice provider + wizard sin consentimiento y pruebe cero bootstraps/eventos/identificadores; reservar y rechazar métricas siguen disponibles.
+- [x] Escribir test rojo que renderice provider + wizard sin consentimiento y pruebe cero bootstraps/eventos/identificadores; reservar y rechazar métricas siguen disponibles.
 
 ```tsx
 expect(screen.getByRole('button', { name: 'Permitir métricas' })).toBeEnabled()
@@ -200,13 +200,13 @@ expect(analyticsRequests).toEqual([])
 expect(analyticsStorageKeys()).toEqual([])
 ```
 
-- [ ] Implementar preferencia180d por negocio/origen, botones equivalentes y retirada accesible; nada de analytics antes de optar. Mantener aceptación contractual de Booking completamente separada.
-- [ ] Persistir en una sola escritura atómica el evento, secuencia y revisión antes de enviar; manejar storage ausente, cola llena, eventos >5min, replays, respuestas parciales y crash tras commit. Protocolo de propiedad de pestaña evita escritores concurrentes de storage clonado; si no se garantiza, la copia no captura.
-- [ ] Registrar vistas sólo tras hidratación/visibilidad, no prefetch. Abrir tarjeta multimodal produce interés; elegir modalidad produce selección. Reutilizar claves de `wizard-steps.ts`; conservar contexto válido tras login y declarar parcial si no se puede recuperar.
-- [ ] Instrumentar disponibilidad con generación por petición y revisión de selección. Corregir el guard de respuesta obsoleta en el seam necesario sin cambiar las reglas de agenda. Diagnósticos de ventana/lead-time/no ofrecido/capacidad desde el mismo cálculo, no deducciones en UI.
-- [ ] Registrar pantalla de `pantallaDeDatos`, condición económica y método explícito separados. Validación de promo sin código crudo; submit y salida a checkout no son pago ni confirmación. Una respuesta asíncrona antigua no cambia la evidencia vigente.
-- [ ] Cubrir service A→hora A→B→pérdida hora B→Booking B, cualquier profesional, restore, promo100%, paquete, transferencia y configuración sin pago online.
-- [ ] Verificación/revisión antes del commit local `feat: instrument booking funnel with optional consent`.
+- [x] Implementar preferencia180d por negocio/origen, botones equivalentes y retirada accesible; nada de analytics antes de optar. Mantener aceptación contractual de Booking completamente separada.
+- [x] Persistir en una sola escritura atómica el evento, secuencia y revisión antes de enviar; manejar storage ausente, cola llena, eventos >5min, replays, respuestas parciales y crash tras commit. Protocolo de propiedad de pestaña evita escritores concurrentes de storage clonado; si no se garantiza, la copia no captura.
+- [x] Registrar vistas sólo tras hidratación/visibilidad, no prefetch. Abrir tarjeta multimodal produce interés; elegir modalidad produce selección. Reutilizar claves de `wizard-steps.ts`; conservar contexto válido tras login y declarar parcial si no se puede recuperar.
+- [x] Instrumentar disponibilidad con generación por petición y revisión de selección. Corregir el guard de respuesta obsoleta en el seam necesario sin cambiar las reglas de agenda. Diagnósticos de ventana/lead-time/no ofrecido/capacidad desde el mismo cálculo, no deducciones en UI.
+- [x] Registrar pantalla de `pantallaDeDatos`, condición económica y método explícito separados. Validación de promo sin código crudo; submit y salida a checkout no son pago ni confirmación. Una respuesta asíncrona antigua no cambia la evidencia vigente.
+- [x] Cubrir service A→hora A→B→pérdida hora B→Booking B, cualquier profesional, restore, promo100%, paquete, transferencia y configuración sin pago online.
+- [x] Verificación/revisión antes del commit local `feat: instrument booking funnel with optional consent`.
 
 ## Task 5: Dashboard de métricas y enlaces
 
