@@ -181,3 +181,47 @@ jobs:
       - run: npm run db:seed
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+
+  owner-analytics-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: analytics
+          POSTGRES_PASSWORD: analytics
+          POSTGRES_DB: agendita_owner_analytics_test
+        ports:
+          - 55439:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://analytics:analytics@127.0.0.1:55439/agendita_owner_analytics_test
+      DIRECT_URL: postgresql://analytics:analytics@127.0.0.1:55439/agendita_owner_analytics_test
+      NODE_ENV: test
+      NEXT_PUBLIC_SUPABASE_URL: https://analytics-e2e.invalid
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: analytics-e2e-anon-key
+      PAYMENT_PROVIDER: manual
+      OWNER_ANALYTICS_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: Install owner analytics E2E system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends redis-server redis-tools openssl
+          redis-server --version
+          redis-cli --version
+          openssl version
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test --config=playwright.owner-analytics-public.config.ts
+      - run: npx playwright test --config=playwright.owner-analytics.config.ts

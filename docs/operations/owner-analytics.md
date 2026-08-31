@@ -4,6 +4,24 @@ Estado vigente, 2026-08-31: **MVP implementado, revisado y validado localmente**
 
 ## Verificación final vigente
 
+### Checkpoint de publicación y CI (PR197)
+
+El usuario autorizó publicar y después corregir CI/hacer merge al quedar verde.
+El primer run remoto `33403295661` sobre `b802d91` pasó unit, integración,
+lint, tipado y build; E2E falló al recolectar ambas suites analytics desde el
+config general, con `NODE_ENV=production` y DB `agendita_e2e`. Los guards
+rechazaron ese entorno correctamente. Los15E2E locales anteriores usaban sus
+configs dedicados: esa evidencia no cubría el cableado del job general en CI.
+
+La corrección está acotada al routing/configuración y su regresión: mantener
+todas las suites no-analytics en el job general; ambas suites analytics pasan
+a un job dedicado con sus launchers existentes, DB exclusiva y Redis/OpenSSL.
+No se modifica ningún guard, fuente de métricas, captura o política productiva.
+El estado remoto/merge se verifica sobre el head exacto del PR, no se deduce
+de los resultados locales inferiores. Plan: `2026-08-31-owner-analytics-ci.md`.
+
+### Matriz local de cierre del MVP
+
 Producto final `5e958346597661e5ddae88677542d5a6d4e75abd`; último cambio de test
 `dd226dcc919e533290f9ce85eee15891df893833`. Después sólo se actualizó documentación.
 Todos los comandos usaron el entorno limpio de la receta inferior, Node22,
