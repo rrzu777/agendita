@@ -2,11 +2,31 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { AnalyticsDashboard, buildMetricsHref } from '@/components/dashboard/analytics/analytics-dashboard'
 import Loading from '@/app/dashboard/metricas/loading'
+import { reduceFunnelAttempt } from '@/lib/analytics/funnel'
+import { aggregateDailyMetrics } from '@/lib/analytics/daily-metrics'
+import { attempt, booking, completePath, coverage, now } from '../helpers/analytics-fixtures'
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 
 import { analyticsDashboardFixture as report } from '../helpers/analytics-dashboard-fixture'
 
 describe('AnalyticsDashboard', () => {
+  it('labels a complete path with two bookings as one service conversion without observed interest', () => {
+    // A missing consideration event is not a missing path; close its sequence gap too.
+    const events = completePath().filter(row => row.event.type !== 'service_considered').map((row, index) => ({ ...row, event: { ...row.event, sequence: index + 1 } }))
+    const projection = reduceFunnelAttempt({ attempt: attempt(), events, bookings: [booking(), booking('booking-2')], now })
+    expect(projection).toMatchObject({ converted: true, conversionPathComplete: true, bookingsCreated: 2, consideredServices: [], convertedServicesWithoutInterest: ['service-a'] })
+    const cells = aggregateDailyMetrics({ sessions: [], attempts: [projection], coverage: [coverage], definitionVersion: 1 })
+    const unobserved = cells.find(cell => cell.metricKey === 'service_conversion_unobserved' && cell.dimensionKey === 'service-a' && cell.population === 'complete_attempts')!
+    expect(unobserved).toMatchObject({ numerator: 1 })
+    expect(cells.find(cell => cell.metricKey === 'service_conversion' && cell.dimensionKey === 'service-a')).toMatchObject({ numerator: 0, denominator: 0 })
+    const host = document.createElement('div')
+    host.innerHTML = renderToStaticMarkup(<AnalyticsDashboard report={{ ...report, services: { ...report.services, rows: [{ ...report.services.rows[0], id: 'service-a', interest: 0, selected: 1, conversion: { numerator: 0, denominator: 0, rate: null }, unobservedConversions: unobserved.numerator }] } }} />)
+    const table = host.querySelector('table[aria-label="Servicios observados"]')!
+    const headers = [...table.querySelectorAll('th')].map(cell => cell.textContent)
+    expect(headers).toContain('Conversiones sin interés observado')
+    expect(headers).not.toContain('Sin recorrido')
+    expect(table.querySelectorAll('tbody tr td')[headers.indexOf('Conversiones sin interés observado')].textContent).toBe('1')
+  })
   it('keeps retained flow detail visible even when the historical summary is unavailable', () => {
     const host = document.createElement('div')
     host.innerHTML = renderToStaticMarkup(<AnalyticsDashboard report={{ ...report, coverage: { ...report.coverage, status: 'unavailable' } }} />)

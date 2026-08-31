@@ -13,6 +13,8 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { POST as sessionPOST } from '@/app/api/analytics/[slug]/session/route'
 import { POST as attemptPOST } from '@/app/api/analytics/[slug]/attempt/route'
 import { POST as eventsPOST } from '@/app/api/analytics/[slug]/events/route'
+import * as operational from '@/lib/metrics/operational'
+import * as repository from '@/server/analytics/repository'
 
 requireAnalyticsTestDatabase()
 const execute = vi.hoisted(() => vi.fn())
@@ -28,6 +30,15 @@ async function boot() {
   const attempt = await bootstrapAnalyticsAttempt(context, { bootstrapKey: randomUUID(), credential: session.credential, entryKind: 'complete' }, captureNow)
   expect(attempt).toHaveProperty('credential')
   return { session, attempt }
+}
+
+const routeParams = { params: Promise.resolve({ slug: businessId }) }
+const routeRequest = (body: unknown) => new Request(`${context.origin}/api/analytics/${businessId}/events`, { method: 'POST', body: JSON.stringify(body), headers: { origin: context.origin, 'content-type': 'application/json', 'x-forwarded-for': '192.0.2.87' } })
+function metricCounts() {
+  return new Map(operational.getOperationalMetricsSnapshot().samples.map(sample => [`${sample.operation}:${sample.outcome}`, sample.count]))
+}
+function metricDelta(before: Map<string, number>) {
+  return Object.fromEntries([...metricCounts()].flatMap(([key, count]) => count === (before.get(key) ?? 0) ? [] : [[key, count - (before.get(key) ?? 0)]]))
 }
 
 describe('real PostgreSQL bootstrap and ingest serialization', () => {
@@ -48,6 +59,101 @@ describe('real PostgreSQL bootstrap and ingest serialization', () => {
   })
   afterEach(() => vi.unstubAllEnvs())
   afterAll(async () => { await prisma.business.deleteMany({ where: { id: { in: [businessId, `${businessId}-foreign`] } } }); await prisma.$disconnect() })
+
+  it('collector counts committed mixed HTTP200 receipts, retries, gap-only and all finite rejection categories', async () => {
+    const before = metricCounts()
+    const input = sessionInput()
+    const sessionResponse = await sessionPOST(routeRequest(input), routeParams)
+    expect(sessionResponse.status).toBe(200)
+    const session = await sessionResponse.json()
+    const retry = await sessionPOST(routeRequest(input), routeParams)
+    expect(await retry.json()).toEqual(session)
+    expect(await prisma.analyticsSession.count({ where: { businessId } })).toBe(1)
+    const attemptResponse = await attemptPOST(routeRequest({ bootstrapKey: randomUUID(), credential: session.credential, entryKind: 'complete' }), routeParams)
+    expect(attemptResponse.status).toBe(200)
+    const attempt = await attemptResponse.json()
+    const accepted = event(1)
+    const mixed = await eventsPOST(routeRequest({ credential: attempt.credential, events: [
+      accepted, accepted, { ...accepted, sequence: 2 },
+      { eventId: randomUUID(), type: 'private-payload-event-type' },
+      { version: 1, eventId: randomUUID(), sequence: 3, type: 'public_profile_viewed', data: {} },
+      event(4, { type: 'service_considered', data: { serviceId: `${businessId}-foreign-service` } }),
+    ] }), routeParams)
+    expect(mixed.status).toBe(200)
+    expect(mixed.headers.get('cache-control')).toBe('no-store')
+    expect((await mixed.json()).receipts.map(({ status, category }: { status: string; category: string }) => [status, category])).toEqual([
+      ['accepted', 'stored'], ['replay', 'identical'], ['rejected', 'conflict'], ['rejected', 'invalid_event'], ['rejected', 'wrong_scope'], ['rejected', 'foreign_dimension'],
+    ])
+    expect(await prisma.bookingFunnelEvent.count({ where: { businessId } })).toBe(1)
+    expect.soft(metricDelta(before)).toEqual({
+      'analytics_collector_session_success:success': 2,
+      'analytics_collector_attempt_success:success': 1,
+      'analytics_collector_events_success:success': 1,
+      'analytics_collector_receipt_accepted_stored:success': 1,
+      'analytics_collector_receipt_replay_identical:success': 1,
+      'analytics_collector_receipt_rejected_conflict:user_error': 1,
+      'analytics_collector_receipt_rejected_invalid_event:user_error': 1,
+      'analytics_collector_receipt_rejected_wrong_scope:user_error': 1,
+      'analytics_collector_receipt_rejected_foreign_dimension:user_error': 1,
+    })
+    const beforeGap = metricCounts()
+    const gap = await eventsPOST(routeRequest({ credential: attempt.credential, events: [], captureGap: true }), routeParams)
+    expect(await gap.json()).toEqual({ receipts: [], captureGapRecorded: true })
+    expect.soft(metricDelta(beforeGap)).toEqual({ 'analytics_collector_events_success:success': 1 })
+    await prisma.bookingFunnelAttempt.update({ where: { id: attempt.id }, data: { acceptedEventCount: 200 } })
+    const beforeLimit = metricCounts()
+    const limited = await eventsPOST(routeRequest({ credential: attempt.credential, events: [event(2)] }), routeParams)
+    expect(limited.status).toBe(200)
+    expect((await limited.json()).receipts[0]).toMatchObject({ status: 'rejected', category: 'stream_limit' })
+    expect.soft(metricDelta(beforeLimit)).toEqual({ 'analytics_collector_events_success:success': 1, 'analytics_collector_receipt_rejected_stream_limit:user_error': 1 })
+    execute.mockResolvedValueOnce(1).mockResolvedValueOnce(0) // Rate permits; atomic capture budget denies.
+    const beforeBudget = metricCounts()
+    const budget = await eventsPOST(routeRequest({ credential: attempt.credential, events: [event(3), event(4)] }), routeParams)
+    expect(budget.status).toBe(200)
+    expect((await budget.json()).receipts.map((receipt: { category: string }) => receipt.category)).toEqual(['budget', 'budget'])
+    expect.soft(metricDelta(beforeBudget)).toEqual({ 'analytics_collector_events_success:success': 1, 'analytics_collector_receipt_rejected_budget:user_error': 2 })
+    expect(await prisma.analyticsCollectionPeriod.findFirst({ where: { businessId, endedAt: { not: null } } })).toMatchObject({ closeReason: 'budget' })
+    const serialized = JSON.stringify(operational.getOperationalMetricsSnapshot().samples)
+    for (const forbidden of [businessId, context.origin, session.id, attempt.id, attempt.credential, accepted.eventId, '192.0.2.87', 'private-payload-event-type', 'service_considered']) expect(serialized).not.toContain(forbidden)
+    expect(operational.getOperationalMetricsSnapshot().samples.filter(sample => sample.operation.startsWith('analytics_collector_receipt_')).every(sample => sample.durationMs === 0)).toBe(true)
+  })
+
+  it('collector emits no receipts when PostgreSQL rolls back after the complete batch callback', async () => {
+    const session = await (await sessionPOST(routeRequest(sessionInput()), routeParams)).json()
+    const attempt = await (await attemptPOST(routeRequest({ bootstrapKey: randomUUID(), credential: session.credential, entryKind: 'complete' }), routeParams)).json()
+    const before = metricCounts()
+    const realWrite = repository.withAnalyticsWrite
+    const write = vi.spyOn(repository, 'withAnalyticsWrite').mockImplementationOnce((tenant, work) => realWrite(tenant, async tx => {
+      const pending = await work(tx)
+      expect(pending).toMatchObject({ receipts: [{ status: 'accepted', category: 'stored' }] })
+      throw new Error('synthetic-private-after-batch-rollback')
+    }))
+    try {
+      const response = await eventsPOST(routeRequest({ credential: attempt.credential, events: [event(1)] }), routeParams)
+      expect(response.status).toBe(503)
+      expect(await response.json()).toEqual({ category: 'unavailable' })
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(await prisma.bookingFunnelEvent.count({ where: { businessId } })).toBe(0)
+      expect(await prisma.bookingFunnelAttempt.findUnique({ where: { id: attempt.id } })).toMatchObject({ acceptedEventCount: 0, knownCaptureGap: false })
+      expect(metricDelta(before)).toEqual({ 'analytics_collector_events_unavailable:error': 1 })
+      expect(JSON.stringify(operational.getOperationalMetricsSnapshot())).not.toContain('synthetic-private-after-batch-rollback')
+    } finally { write.mockRestore() }
+  })
+
+  it('collector sink failure cannot roll back a committed receipt or change its HTTP response', async () => {
+    const session = await (await sessionPOST(routeRequest(sessionInput()), routeParams)).json()
+    const attempt = await (await attemptPOST(routeRequest({ bootstrapKey: randomUUID(), credential: session.credential, entryKind: 'complete' }), routeParams)).json()
+    const record = vi.spyOn(operational, 'recordOperationalMetric').mockImplementation(() => { throw new Error('synthetic-metric-sink-failure') })
+    const accepted = event(1)
+    try {
+      const response = await eventsPOST(routeRequest({ credential: attempt.credential, events: [accepted] }), routeParams)
+      expect(response.status).toBe(200)
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(await response.json()).toEqual({ receipts: [{ index: 0, eventId: accepted.eventId, status: 'accepted', category: 'stored' }] })
+      expect(await prisma.bookingFunnelEvent.count({ where: { businessId } })).toBe(1)
+      expect(await prisma.bookingFunnelAttempt.findUnique({ where: { id: attempt.id } })).toMatchObject({ acceptedEventCount: 1, knownCaptureGap: false })
+    } finally { record.mockRestore() }
+  })
 
   it('concurrent session retries and a lost response recover one row and identical credential', async () => {
     const input = sessionInput()

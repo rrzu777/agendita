@@ -1,5 +1,6 @@
 import 'server-only'
 import { createHash } from 'node:crypto'
+import { performance } from 'node:perf_hooks'
 import { z } from 'zod'
 import { ANALYTICS_POLICY as policy } from './policy'
 import { resolvePublicAnalyticsContext, type PublicAnalyticsContext } from './public-context'
@@ -10,6 +11,7 @@ import { normalizeAcquisition } from './attribution'
 import { signAnalyticsCredential, verifyAnalyticsCredential, verifyExpiredAnalyticsParentForRecovery, type AnalyticsClaims } from './credential'
 import { formatInTimeZone } from 'date-fns-tz'
 import { claimsForSession, claimsForAttempt, closeAnalyticsCollection, collectionIsOpen, eventDimensions, eventDimensionsBelong, withAnalyticsWrite } from '@/server/analytics/repository'
+import { recordCollectorReceipts, recordCollectorRequest, type CollectorOperation, type CollectorTerminalCategory } from './collector-metrics'
 
 export type CaptureErrorCategory = 'invalid_request' | 'invalid_credential' | 'disabled' | 'expired' | 'conflict' | 'rate_limit' | 'budget' | 'unavailable'
 export class AnalyticsCaptureError extends Error {
@@ -190,12 +192,17 @@ export async function ingestAnalyticsBatch(context: PublicAnalyticsContext, inpu
   })
 }
 
-export async function handleAnalyticsPost(request: Request, slug: string, kind: 'session' | 'attempt' | 'events'): Promise<Response> {
+export async function handleAnalyticsPost(request: Request, slug: string, kind: CollectorOperation): Promise<Response> {
   const headers = { 'Cache-Control': 'no-store' }
+  const startedAt = performance.now()
+  let terminal: CollectorTerminalCategory = 'unavailable'
   try {
     const input = await readAnalyticsBody(request)
     const context = await resolvePublicAnalyticsContext(request, slug)
-    if (!context) return Response.json({ category: 'disabled' }, { status: 403, headers })
+    if (!context) {
+      terminal = 'disabled_context'
+      return Response.json({ category: 'disabled' }, { status: 403, headers })
+    }
     let identity: string
     if (kind === 'events') {
       const parsed = parseAnalyticsBatch(input)
@@ -205,11 +212,19 @@ export async function handleAnalyticsPost(request: Request, slug: string, kind: 
       identity = claims.scope === 'attempt' ? `attempt:${claims.attemptId}` : `session:${claims.sessionId}`
     } else identity = await getClientIp(request)
     if (!await checkAnalyticsRateLimit({ businessId: context.businessId, kind: kind === 'events' ? 'batch' : 'bootstrap', identity })) throw new AnalyticsCaptureError('rate_limit')
-    const result = kind === 'session' ? await bootstrapAnalyticsSession(context, input) : kind === 'attempt' ? await bootstrapAnalyticsAttempt(context, input) : await ingestAnalyticsBatch(context, input)
+    let result: AnalyticsBootstrapReceipt | BatchReceipt
+    if (kind === 'events') {
+      result = await ingestAnalyticsBatch(context, input)
+      recordCollectorReceipts(result)
+    } else result = kind === 'session' ? await bootstrapAnalyticsSession(context, input) : await bootstrapAnalyticsAttempt(context, input)
+    terminal = 'success'
     return Response.json(result, { headers })
   } catch (error) {
     const category = error instanceof AnalyticsCaptureError ? error.category : 'unavailable'
+    terminal = category
     const status = category === 'invalid_request' ? 400 : category === 'invalid_credential' || category === 'disabled' ? 403 : category === 'expired' || category === 'conflict' ? 409 : category === 'rate_limit' || category === 'budget' ? 429 : 503
     return Response.json({ category }, { status, headers })
+  } finally {
+    recordCollectorRequest(kind, terminal, startedAt)
   }
 }

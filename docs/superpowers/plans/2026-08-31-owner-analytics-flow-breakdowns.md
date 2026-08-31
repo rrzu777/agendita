@@ -119,6 +119,20 @@ expect(screen.getByText(/no se reconstruye/i)).toBeVisible()
 
 ## Final acceptance (controller, after both tasks)
 
+### Final review fix wave (original MVP requirements)
+
+Whole-branch review of `c5ea714..55d7fe3`: G2 compliant, no Critical. One Important:
+original spec§9 collector operational counters missing; one Minor: service table
+«Sin recorrido» mislabels conversions without observed interest. Single grouped
+fix wave, unchanged capture/financial semantics, no activation/new storage.
+
+- [x] RED/GREEN collector terminal request and committed receipt categories through existing per-instance operational sink; finite labels, noPII, instrumentation fail-open, statuses/headers/budgets/transaction semantics intact.
+- [x] RED/GREEN «Conversiones sin interés observado», including coherent path without interest and twoBookings→one attempt-service conversion; no formula change.
+- [x] Focused checks → one scoped independent re-review → controller commit.
+- [ ] Final global checks on fixed code; DB suite alone (prior50kfixture timedout with unit overlap, unchanged isolated test passed).
+
+### Acceptance and handoff
+
 - Audit supplement cases and original§10 against actual assertions; no capture-only claim for presentation.
 - Whole branch review with focused G2 seams and previous audit as context; not redispatch completed tasks.
 - Full unit and integration once on final code, both synthetic E2E suites, typecheck/lint changed branch files/build (never vercel-build). Record actual failed runs and exact fixes, not only green summaries.
