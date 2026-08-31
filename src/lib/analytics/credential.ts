@@ -34,7 +34,9 @@ export function signAnalyticsCredential(claims: AnalyticsClaims, secret: string)
   const payload = Buffer.from(JSON.stringify(analyticsClaimsSchema.parse(claims))).toString('base64url')
   return `${payload}.${createHmac('sha256', secret).update(payload).digest('base64url')}`
 }
-export function verifyAnalyticsCredential(token: string, options: { secret: string; businessId: string; origin: string; now: Date }): AnalyticsClaims | null {
+type VerificationContext = { secret: string; businessId: string; origin: string; now: Date }
+/** Internal authenticity only; callers below impose their distinct temporal contract. */
+function authenticClaims(token: string, options: VerificationContext): AnalyticsClaims | null {
   if (!validSecret(options.secret) || token.length > 4096 || !Number.isFinite(options.now.getTime())) return null
   const parts = token.split('.')
   if (parts.length !== 2 || !parts.every((part) => /^[A-Za-z0-9_-]+$/.test(part))) return null
@@ -46,11 +48,25 @@ export function verifyAnalyticsCredential(token: string, options: { secret: stri
     const parsed = analyticsClaimsSchema.safeParse(JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')))
     if (!parsed.success) return null
     const claims = parsed.data
-    const start = Date.parse(claims.scope === 'attempt' ? claims.attemptStartedAt : claims.sessionStartedAt)
-    const end = Date.parse(claims.scope === 'attempt' ? claims.conversionDeadlineAt : claims.sessionExpiresAt)
-    if (claims.businessId !== options.businessId || claims.origin !== normalizeAnalyticsOrigin(options.origin) || options.now.getTime() < start || options.now.getTime() >= end) return null
+    if (claims.businessId !== options.businessId || claims.origin !== normalizeAnalyticsOrigin(options.origin)) return null
     return claims
   } catch { return null }
+}
+export function verifyAnalyticsCredential(token: string, options: VerificationContext): AnalyticsClaims | null {
+  const claims = authenticClaims(token, options)
+  if (!claims) return null
+  const start = Date.parse(claims.scope === 'attempt' ? claims.attemptStartedAt : claims.sessionStartedAt)
+  const end = Date.parse(claims.scope === 'attempt' ? claims.conversionDeadlineAt : claims.sessionExpiresAt)
+  return options.now.getTime() >= start && options.now.getTime() < end ? claims : null
+}
+
+/** Not an event/Booking credential. Only bootstrap may use this binding, after
+ * checking the original DB claims and an already-existing, still-live attempt. */
+export function verifyExpiredAnalyticsParentForRecovery(token: string, options: VerificationContext): Extract<AnalyticsClaims, { scope: 'session' }> | null {
+  const claims = authenticClaims(token, options)
+  if (!claims || claims.scope !== 'session') return null
+  const expiredAt = Date.parse(claims.sessionExpiresAt)
+  return options.now.getTime() >= expiredAt && options.now.getTime() < expiredAt + policy.conversionWindowMs ? claims : null
 }
 /** Call only with the result of verifyAnalyticsCredential at the booking boundary. No database dependency. */
 export function credentialBookingSnapshot(claims: AnalyticsClaims | null, selectionRevision?: number) {

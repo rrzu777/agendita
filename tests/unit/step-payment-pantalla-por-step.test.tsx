@@ -84,6 +84,25 @@ const bookingData = {
  * componente decide solo.
  */
 describe('StepPayment — la pantalla la manda el step', () => {
+  it.each(['withdraw', 'new-attempt'] as const)('keeps a valid economic preview across %s without attributing its old observation', async (change) => {
+    const { StepPayment } = await import('@/components/booking/step-payment')
+    capture.changeSelection({ reason: 'time', context: null, localDate: null })
+    let resolve!: (value: unknown) => void
+    mockPreviewPromotion.mockImplementationOnce(() => new Promise(r => { resolve = r }))
+    const container = document.createElement('div'); document.body.append(container); const root = createRoot(container)
+    try {
+      await act(async () => root.render(<StepPayment data={bookingData} updateData={vi.fn()} businessId="biz-1" timezone={TZ} currency="CLP" cancellationPolicyRevision="revision-1" selfServiceCutoffHours={24} manualHoldHours={24} onSuccess={vi.fn()} onBack={vi.fn()} />))
+      const input = container.querySelector<HTMLInputElement>('#promo-code')!
+      await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'PRIVATE100'); input.dispatchEvent(new Event('input', { bubbles: true })) })
+      await clickButton(container, 'Aplicar')
+      capture.withdrawConsent()
+      if (change === 'new-attempt') { capture.chooseConsent(true); capture.open(); capture.startAttempt('partial'); capture.changeSelection({ reason: 'time', context: null, localDate: null }) }
+      await act(async () => resolve({ ok: true, data: { ok: true, promotionId: 'promotion-1', discount: 20000, finalAmount: 0 } }))
+      expect(container.textContent).toContain('Precio final')
+      expect(container.textContent).toContain('Quitar')
+      expect(capture.snapshot()?.queue.some(q => q.event.type === 'promotion_result') ?? false).toBe(false)
+    } finally { await act(async () => root.unmount()); container.remove() }
+  })
   it('late opt-in at payment observes only the current visible branch with a partial attempt', async () => {
     const { StepPayment } = await import('@/components/booking/step-payment')
     capture.discardState(); capture.open()

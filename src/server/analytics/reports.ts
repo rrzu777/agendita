@@ -47,7 +47,7 @@ const inputSchema = z.strictObject({ days: z.union([z.literal(7), z.literal(28),
 export type OwnerAnalyticsReportInput = z.input<typeof inputSchema>
 type Summary = ReturnType<typeof summarizeAnalyticsCells>
 type Ratio = Summary['complete']['conversion']
-export interface AnalyticsOpportunity { key: 'availability_empty' | 'overdue_approval'; numerator: number; denominator: number | null; rate: number | null; href: string; message: string; diagnostics: { status: 'available' | 'not_retained' | 'not_applicable'; reasons: Record<string, number>; converted: number | null } }
+export interface AnalyticsOpportunity { key: 'availability_empty' | 'overdue_approval'; numerator: number; denominator: number | null; rate: number | null; href: string; message: string; diagnostics: { status: 'available' | 'not_queried' | 'not_retained' | 'not_applicable'; reasons: Record<string, number>; converted: number | null } }
 export interface OwnerAnalyticsReport extends Summary {
   definitionVersion: 1
   period: { from: string; to: string; timezone: string; cutoffAt: string; previousFrom: string; previousTo: string }
@@ -72,7 +72,7 @@ export interface OwnerAnalyticsReport extends Summary {
 
 export function buildAnalyticsOpportunities(empty: Ratio, diagnostics: AvailabilityDiagnostics | null, overdue: number): AnalyticsOpportunity[] {
   const opportunities: AnalyticsOpportunity[] = []
-  if (empty.denominator >= 20 && empty.numerator >= 5 && empty.rate !== null && empty.rate >= 0.3) opportunities.push({ key: 'availability_empty', ...empty, href: '/dashboard/availability', message: 'Se encontraron búsquedas sin horarios; revisa fechas, plazos permitidos y profesionales solicitados. No prueba ventas perdidas ni falta de capacidad.', diagnostics: { status: diagnostics ? 'available' : 'not_retained', reasons: diagnostics?.reasons ?? {}, converted: diagnostics?.converted ?? null } })
+  if (empty.denominator >= 20 && empty.numerator >= 5 && empty.rate !== null && empty.rate >= 0.3) opportunities.push({ key: 'availability_empty', ...empty, href: '/dashboard/availability', message: 'Se encontraron búsquedas sin horarios; revisa fechas, plazos permitidos y profesionales solicitados. No prueba ventas perdidas ni falta de capacidad.', diagnostics: { status: diagnostics ? 'available' : 'not_queried', reasons: diagnostics?.reasons ?? {}, converted: diagnostics?.converted ?? null } })
   if (overdue > 0) opportunities.push({ key: 'overdue_approval', numerator: overdue, denominator: null, rate: null, href: '/dashboard/bookings', message: 'Hay solicitudes con plazo de respuesta vencido al consultar. No son holds de pago ni una causa inferida del embudo.', diagnostics: { status: 'not_applicable', reasons: {}, converted: null } })
   return opportunities.slice(0, 3)
 }

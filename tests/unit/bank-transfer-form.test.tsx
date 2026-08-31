@@ -16,7 +16,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush, refresh: vi.fn() }),
 }))
 vi.mock('next/link', () => ({
-  default: ({ children, ...props }: { children?: React.ReactNode }) => <a {...props}>{children}</a>,
+  default: ({ children, replace, ...props }: { children?: React.ReactNode; replace?: boolean }) => { void replace; return <a {...props}>{children}</a> },
 }))
 vi.mock('@/server/actions/bank-transfer-settings', () => ({
   saveBankTransferAccount: mockSaveBankTransferAccount,

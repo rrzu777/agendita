@@ -1,0 +1,27 @@
+import type { OwnerAnalyticsReport } from '@/server/analytics/reports'
+
+export const analyticsDashboardFixture = {
+  definitionVersion: 1,
+  period: { from: '2026-08-01', to: '2026-08-29', timezone: 'America/Santiago', cutoffAt: '2026-08-29T00:00:00.000Z', previousFrom: '2026-07-04', previousTo: '2026-08-01' },
+  capture: { enabled: true, collectionOpen: true, activatedAt: '2026-08-01T00:00:00.000Z', status: 'enabled' },
+  coverage: { status: 'complete', cohorts: [], warnings: [] },
+  visits: 14,
+  visitToAttempt: { numerator: 10, denominator: 14, rate: 10 / 14 },
+  complete: { attempts: 10, conversion: { numerator: 4, denominator: 10, rate: 0.4 }, bookingsCreated: 5, pathComplete: 3, pathIncomplete: 1, knownInterruptions: 4, measurementIncomplete: 2, availabilityEmpty: { numerator: 3, denominator: 10, rate: 0.3 }, availabilityErrors: 1 },
+  partial: { attempts: 3, conversion: { numerator: 2, denominator: 3, rate: 2 / 3 }, bookingsCreated: 2, pathComplete: 1, pathIncomplete: 1, knownInterruptions: 0, measurementIncomplete: 1, availabilityEmpty: { numerator: 0, denominator: 0, rate: null }, availabilityErrors: 0 },
+  comparison: { status: 'comparable', deltaPercentagePoints: 5, previousConversion: { numerator: 3, denominator: 10, rate: 0.3 } },
+  recent: { visits: 2, visitToAttempt: { numerator: 1, denominator: 2, rate: 0.5 }, complete: { attempts: 1, conversion: { numerator: 0, denominator: 0, rate: null }, bookingsCreated: 0, pathComplete: 0, pathIncomplete: 0, knownInterruptions: 0, measurementIncomplete: 0, availabilityEmpty: { numerator: 0, denominator: 0, rate: null }, availabilityErrors: 0 }, partial: { attempts: 0, conversion: { numerator: 0, denominator: 0, rate: null }, bookingsCreated: 0, pathComplete: 0, pathIncomplete: 0, knownInterruptions: 0, measurementIncomplete: 0, availabilityEmpty: { numerator: 0, denominator: 0, rate: null }, availabilityErrors: 0 }, status: 'provisional', from: '2026-08-28', to: '2026-08-30', cutoffAt: '2026-08-29T12:00:00.000Z', timezones: ['America/Santiago'], inProgress: { complete: 1, partial: 0 } },
+  suppression: { applied: false, note: 'No aplica.' },
+  trend: [{ date: '2026-08-28', timezone: 'America/Santiago', complete: { attempts: 10, conversion: { numerator: 4, denominator: 10, rate: 0.4 }, bookingsCreated: 5, pathComplete: 3, pathIncomplete: 1, knownInterruptions: 4, measurementIncomplete: 2, availabilityEmpty: { numerator: 3, denominator: 10, rate: 0.3 }, availabilityErrors: 1 }, partial: { attempts: 3, conversion: { numerator: 2, denominator: 3, rate: 2 / 3 }, bookingsCreated: 2, pathComplete: 1, pathIncomplete: 1, knownInterruptions: 0, measurementIncomplete: 1, availabilityEmpty: { numerator: 0, denominator: 0, rate: null }, availabilityErrors: 0 }, visits: 14 }],
+  funnel: [{ population: 'complete_attempts', milestone: 'started', count: 10 }, { population: 'complete_attempts', milestone: 'service', count: 9 }, { population: 'complete_attempts', milestone: 'professional', count: 6 }, { population: 'complete_attempts', milestone: 'date', count: 7 }, { population: 'complete_attempts', milestone: 'time', count: 6 }, { population: 'complete_attempts', milestone: 'customer', count: 5 }, { population: 'complete_attempts', milestone: 'payment', count: 4 }, { population: 'complete_attempts', milestone: 'submit', count: 3 }],
+  quality: [{ population: 'complete_attempts', lastStep: 'payment', count: 4 }],
+  services: { rows: [{ id: 'svc-1', label: 'Manicure', population: 'complete_attempts', interest: 9, selected: 8, conversion: { numerator: 4, denominator: 8, rate: 0.5 }, unobservedConversions: 1 }], page: 1, pageSize: 25, total: 1 },
+  channels: { rows: [{ id: 'instagram', summary: { visits: 9, visitToAttempt: { numerator: 6, denominator: 9, rate: 2 / 3 }, complete: { attempts: 6, conversion: { numerator: 2, denominator: 6, rate: 1 / 3 }, bookingsCreated: 2, pathComplete: 1, pathIncomplete: 1, knownInterruptions: 0, measurementIncomplete: 0, availabilityEmpty: { numerator: 0, denominator: 0, rate: null }, availabilityErrors: 0 }, partial: { attempts: 0, conversion: { numerator: 0, denominator: 0, rate: null }, bookingsCreated: 0, pathComplete: 0, pathIncomplete: 0, knownInterruptions: 0, measurementIncomplete: 0, availabilityEmpty: { numerator: 0, denominator: 0, rate: null }, availabilityErrors: 0 } } }], scope: 'independent_grain' },
+  links: { rows: [], page: 1, pageSize: 25, total: 0 },
+  acquisitionLinks: { rows: [{ id: 'link-1', channel: 'instagram', campaignName: 'Lanzamiento', promotionId: null, createdAt: '2026-08-01T00:00:00.000Z', archivedAt: null, url: 'https://example.test/book?acq=token' }], page: 1, pageSize: 25, total: 1 },
+  currentBookings: { label: 'estado al consultar', scope: 'all_bookings_created_in_period', counts: [{ status: 'pending_confirmation', count: 2 }], overdueApproval: { count: 1, lowerBound: false }, attendedByService: [{ serviceId: 'svc-1', count: 1 }] },
+  redemptions: { label: 'canjes al consultar', scope: 'all_redemptions_created_in_period', rows: [], page: 1, pageSize: 25, hasMore: false },
+  opportunities: [],
+  opportunityNote: 'Sin señales adicionales.',
+  filter: { channel: null, acquisitionLinkId: null, serviceId: null, scope: 'independent_grains', unsupportedIntersections: true },
+} satisfies OwnerAnalyticsReport

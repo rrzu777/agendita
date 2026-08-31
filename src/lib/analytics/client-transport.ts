@@ -49,13 +49,27 @@ export function createAnalyticsTransport(store: AnalyticsStore, slug: string, op
         const observed = snapshot?.queue.some((q) => q.stream === stream.key || (stream.kind === 'session' && snapshot.streams.some((s) => s.key === q.stream && s.parent === stream.key)))
         if (!observed && !stream.gap) continue
         const parent = store.snapshot()?.streams.find((s) => s.key === stream.parent)
-        if (stream.kind === 'attempt' && (!parent?.receipt || Date.parse(parent.receipt.expiresAt) <= store.now())) continue
+        const sends = stream.bootstrapSends ?? stream.retries
+        if (sends >= 1 + policy.transientRetries) {
+          store.mutate(next => { const s = next.streams.find(s => s.key === stream.key); if (s) s.disabled = true })
+          continue
+        }
+        if (stream.kind === 'attempt') {
+          if (!parent?.receipt) continue
+          const parentEnd = Date.parse(parent.receipt.expiresAt)
+          // Only retry an already-sent bootstrap, with its original parent/key.
+          // Server recovery independently requires an existing still-live DB attempt.
+          if (parentEnd <= store.now() && !(sends > 0 && stream.createdAt < parentEnd && store.now() < parentEnd + policy.conversionWindowMs)) continue
+        }
+        // Write-ahead send budget survives a crash after DB commit but before
+        // response/catch. Storage failure must prevent the network request.
+        if (!store.mutate(next => { const s = next.streams.find(s => s.key === stream.key); if (s) { s.bootstrapSends = sends + 1; s.retryAt = store.now() + 1000 * 2 ** (sends + 1) } })) continue
         try {
           const payload = stream.kind === 'session'
             ? { bootstrapKey: stream.key, consent: true, consentVersion: 1, ...options.acquisition }
             : { bootstrapKey: stream.key, credential: parent!.receipt!.credential, entryKind: stream.entryKind }
           const receipt = bootstrapSchema.parse(await post(stream.kind, payload))
-          store.mutate((next) => { const s = next.streams.find((s) => s.key === stream.key); if (s) { s.receipt = receipt; s.retries = 0 } })
+          store.mutate((next) => { const s = next.streams.find((s) => s.key === stream.key); if (s) { s.receipt = receipt; s.retries = 0; s.retryAt = 0 } })
         } catch (error) { failure(stream, [], error) }
       }
     }

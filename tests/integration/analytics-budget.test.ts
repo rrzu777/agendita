@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { once } from 'node:events'
+import { stopHarnessChild } from '../config/owner-analytics-harness-cleanup.mjs'
 import { configureCapture, captureNow } from '../helpers/analytics-capture'
 import { reserveAnalyticsBudget, checkAnalyticsRateLimit } from '@/lib/analytics/budget'
 
@@ -32,8 +32,9 @@ describe('actual isolated Redis EVAL budget concurrency', () => {
   })
   afterEach(() => vi.unstubAllEnvs())
   afterAll(async () => {
-    if (child && child.exitCode === null) { child.kill('SIGTERM'); await once(child, 'exit') }
+    const stopped = await stopHarnessChild(child)
     if (directory) await rm(directory, { recursive: true, force: true })
+    if (!stopped) throw new Error('Owned Redis did not exit within the bounded cleanup window')
   })
   it('atomically limits concurrent tenants globally without charging either counter on denial', async () => {
     configureCapture('redis-a,redis-b')

@@ -19,6 +19,13 @@ afterEach(() => {
 })
 
 describe('AcquisitionLinks', () => {
+  it('offers an optional promotion association without applying a coupon', () => {
+    const host = document.createElement('div')
+    host.innerHTML = renderToStaticMarkup(<AcquisitionLinks links={{ ...links, rows: [{ ...links.rows[0], promotionId: 'promotion-existing' }] }} />)
+    expect(host.querySelector('[aria-label="Promoción opcional"]')).not.toBeNull()
+    expect(host.textContent).toContain('promotion-existing')
+    expect(host.textContent).toContain('No aplica un cupón automáticamente')
+  })
   it('renders a manageable registry link even before an aggregate has traffic', () => {
     const markup = renderToStaticMarkup(<AcquisitionLinks links={links} />)
 

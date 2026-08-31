@@ -243,7 +243,10 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     if (!code || !data.serviceId) return
     const generation = ++promoGeneration.current
     const revision = analytics.revision()
-    const current = () => generation === promoGeneration.current && revision === analytics.revision()
+    const attemptIdentity = analytics.attemptIdentity()
+    // Consent changes affect observation, never the customer's valid price preview.
+    const current = () => generation === promoGeneration.current
+    const observable = () => current() && attemptIdentity !== null && attemptIdentity === analytics.attemptIdentity() && revision === analytics.revision()
     setPromoPending(true)
     setPromoError(null)
     try {
@@ -255,23 +258,23 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       })
       if (!current()) return
       if (!res.ok) {
-        analytics.track({ type: 'promotion_result', data: { result: 'error', category: 'unknown' } })
+        if (observable()) analytics.track({ type: 'promotion_result', data: { result: 'error', category: 'unknown' } })
         setPromoError(res.error)
         setAppliedPromo(null)
         return
       }
       if (res.data.ok) {
-        if (res.data.promotionId) analytics.track({ type: 'promotion_result', data: { result: 'accepted', promotionId: res.data.promotionId } })
+        if (observable() && res.data.promotionId) analytics.track({ type: 'promotion_result', data: { result: 'accepted', promotionId: res.data.promotionId } })
         setAppliedPromo({ code, discount: res.data.discount, finalAmount: res.data.finalAmount })
         setPromoError(null)
       } else {
-        analytics.track({ type: 'promotion_result', data: { result: 'rejected', category: res.data.category ?? 'unknown' } })
+        if (observable()) analytics.track({ type: 'promotion_result', data: { result: 'rejected', category: res.data.category ?? 'unknown' } })
         setPromoError(res.data.message)
         setAppliedPromo(null)
       }
     } catch {
       if (!current()) return
-      analytics.track({ type: 'promotion_result', data: { result: 'error', category: 'network' } })
+      if (observable()) analytics.track({ type: 'promotion_result', data: { result: 'error', category: 'network' } })
       setPromoError('No se pudo validar el código')
       setAppliedPromo(null)
     } finally {

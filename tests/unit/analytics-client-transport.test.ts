@@ -6,16 +6,81 @@ function setup() {
   const values = new Map<string, string>()
   const storage = { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => { values.set(k, v) }, removeItem: (k: string) => { values.delete(k) } }
   let clock = Date.parse('2026-08-31T10:00:00Z')
-  const store = createAnalyticsStore({ businessId: 'salon', origin: 'https://example.test', storage, preferences: storage, now: () => clock })
+  const options = { businessId: 'salon', origin: 'https://example.test', storage, preferences: storage, now: () => clock }
+  const store = createAnalyticsStore(options)
   store.chooseConsent(true); store.open(); store.startAttempt('complete')
   const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
     const body = JSON.parse(init.body as string)
     if ('events' in body) return Response.json({ receipts: body.events.map((e: { eventId: string }, index: number) => ({ index, eventId: e.eventId, status: 'accepted', category: 'stored' })), ...(body.captureGap ? { captureGapRecorded: true } : {}) })
     return Response.json({ id: crypto.randomUUID(), credential: body.bootstrapKey, startedAt: new Date(clock).toISOString(), expiresAt: new Date(clock + 86400000).toISOString(), retentionExpiresAt: new Date(clock + 90 * 86400000).toISOString() })
   })
-  return { store, fetcher, advance: (ms: number) => { clock += ms } }
+  return { store, fetcher, storage, advance: (ms: number) => { clock += ms }, restore: () => { const next = createAnalyticsStore(options); next.open(); return next } }
 }
 describe('durable capture transport', () => {
+  it('bounds repeated pre-catch crashes to the initial bootstrap and two durable retries', async () => {
+    const setupResult = setup()
+    let store = setupResult.store
+    const { fetcher, restore, advance } = setupResult
+    for (let send = 0; send < 3; send++) {
+      let release!: (response: Response) => void
+      fetcher.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+      const transport = createAnalyticsTransport(store, 'salon', { fetcher })
+      const pending = transport.flush()
+      expect(fetcher).toHaveBeenCalledTimes(send + 1)
+      expect(store.snapshot()!.streams[0].retries).toBe(0)
+      transport.stop(); store.stop()
+      release(Response.json({})); await pending
+      store = restore()
+      await createAnalyticsTransport(store, 'salon', { fetcher }).flush()
+      expect(fetcher).toHaveBeenCalledTimes(send + 1) // persisted backoff also survives.
+      advance(10000)
+    }
+    await createAnalyticsTransport(store, 'salon', { fetcher }).flush()
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    expect(store.snapshot()!.streams[0].disabled).toBe(true)
+    expect(new Set(fetcher.mock.calls.map(([, init]) => JSON.parse(init.body as string).bootstrapKey)).size).toBe(1)
+  })
+  it('does not send a bootstrap if its preflight state cannot be persisted', async () => {
+    const { store, fetcher } = setup()
+    vi.spyOn(store, 'mutate').mockReturnValue(false)
+    await createAnalyticsTransport(store, 'salon', { fetcher }).flush()
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+  it('preserves a still-valid Booking credential when durable bootstrap preflight storage fails', async () => {
+    const { store, fetcher, storage, advance } = setup()
+    const transport = createAnalyticsTransport(store, 'salon', { fetcher })
+    await transport.flush()
+    advance(86400000 - 1000); store.completeAttempt(); store.startAttempt('complete'); await transport.flush()
+    const credential = store.bookingCredential()!.credential
+    advance(2000); store.view({ type: 'booking_entry_viewed', data: {} }, 'renewed')
+    const persist = storage.setItem
+    vi.spyOn(storage, 'setItem').mockImplementationOnce(persist).mockImplementation(() => { throw new Error('synthetic quota') })
+    fetcher.mockClear()
+    await transport.flush()
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(store.snapshot()).toBeNull()
+    expect(store.bookingCredential()).toEqual({ credential })
+  })
+  it.each(['unsent', 'outer-bound', 'withdraw-in-flight'] as const)('bounds expired-parent client recovery for %s', async kind => {
+    const { store, fetcher, advance } = setup()
+    const transport = createAnalyticsTransport(store, 'salon', { fetcher })
+    await transport.flush()
+    advance(86400000 - 1000)
+    store.completeAttempt(); store.startAttempt('complete')
+    if (kind !== 'unsent') { fetcher.mockRejectedValueOnce(new Error('lost attempt response')); await transport.flush() }
+    advance(kind === 'outer-bound' ? 86400000 + 1000 : 5000)
+    fetcher.mockClear()
+    if (kind === 'withdraw-in-flight') {
+      let resolve!: (response: Response) => void
+      fetcher.mockImplementationOnce(() => new Promise(r => { resolve = r }))
+      const pending = transport.flush()
+      expect(fetcher).toHaveBeenCalledTimes(1)
+      store.withdrawConsent(); transport.stop()
+      resolve(Response.json({ id: crypto.randomUUID(), credential: 'synthetic-late-recovery', startedAt: new Date(store.now() - 5000).toISOString(), expiresAt: new Date(store.now() + 86400000 - 5000).toISOString(), retentionExpiresAt: new Date(store.now() + 89 * 86400000).toISOString() }))
+      await pending
+      expect(store.snapshot()).toBeNull(); expect(store.bookingCredential()).toBeUndefined()
+    } else { await transport.flush(); expect(fetcher).not.toHaveBeenCalled() }
+  })
   it('bounds each signed UTF-8 envelope by both 20 events and 16 KiB', async () => {
     const { store, fetcher } = setup()
     const transport = createAnalyticsTransport(store, 'salon', { fetcher })
@@ -108,8 +173,9 @@ describe('durable capture transport', () => {
     let resolve!: (res: Response) => void
     fetcher.mockImplementationOnce(() => new Promise((r) => { resolve = r }))
     const transport = createAnalyticsTransport(store, 'salon', { fetcher })
-    const before = store.snapshot()
-    const pending = transport.flush(); transport.stop()
+    const pending = transport.flush()
+    const before = store.snapshot() // Includes the durable preflight, never the late receipt.
+    transport.stop()
     resolve(Response.json({ id: crypto.randomUUID(), credential: 'late', startedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(), retentionExpiresAt: new Date(Date.now() + 90 * 86400000).toISOString() }))
     await pending
     expect(store.snapshot()).toEqual(before)

@@ -13,6 +13,12 @@ import { hasAnalyticsRetentionBacklog } from '@/lib/analytics/public-context'
 import { closeAnalyticsCollection, withAnalyticsWrite } from '@/server/analytics/repository'
 import { getBookingFunnelUrl } from '@/lib/business/urls'
 import { getOwnerAnalyticsReport as readOwnerAnalyticsReport } from '@/server/analytics/reports'
+import { getOwnerAnalyticsOptions as readOwnerAnalyticsOptions } from '@/server/analytics/options'
+
+export const getOwnerAnalyticsOptions = action(async (input: unknown) => {
+  await requireBusinessRole(['owner', 'admin'])
+  return readOwnerAnalyticsOptions(input)
+})
 
 export const getOwnerAnalyticsReport = action(async (input: unknown = {}) => {
   await requireBusinessRole(['owner', 'admin'])

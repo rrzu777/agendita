@@ -251,6 +251,15 @@ expect(screen.getByRole('table', { name: 'Tendencia diaria' })).toBeVisible()
 - [x] Ejecutar integración sobre base loopback exclusiva validada; inspeccionar tablas/FKs/índices reales, carreras y purga. Medir throughput sintético de ingesta/drenaje antes de recomendar presupuestos del piloto.
 - [x] QA de navegador local desktop/móvil con consentimiento, campaña→servicio→hora→reserva y dashboard. Confirmar que offline/errores de captura no rompen la reserva; no confundir unit tests con E2E.
 - [ ] Revisión final independiente de toda la rama y cierre de hallazgos. Documentar checks ejecutados, no ejecutados y motivos.
+  - Enmienda de revisión final: recuperar un intento persistido vigente tras
+    perder la respuesta aunque venza su sesión padre, mediante binding firmado
+    original y coincidencias exactas; sin crear intentos con padre vencido,
+    extender deadlines ni relajar verificadores ordinarios. Ventana de recovery
+    menor que sessionExpiresAt+24h, mismos gates y reintentos acotados; ver spec.
+  - Opciones de controles mediante DAL owner/admin separado y prop UI mínima,
+    con búsqueda/paginación hasta100 por petición y continuidad accesible. No
+    mezclar opciones operativas en métricas DTO; añadir `not_queried` para la
+    disponibilidad de diagnósticos que no se consultaron, sin simular purga.
 - [x] Runbook: migración aditiva, orden de despliegue, flags/allowlist/periodos, secreto propio, presupuestos medidos, consentimiento, retención, kill switch, mantenimiento con captura apagada y rollback sin borrar hechos transaccionales.
 - [x] Entregar commits locales y rutas exactas. Mantener producción sin cambios: no push, PR, merge, deploy, cron real ni activación. Para13meses e IA pedir decisión específica en su etapa, no ampliar este MVP por iniciativa propia.
 

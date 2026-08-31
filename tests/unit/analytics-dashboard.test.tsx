@@ -2,35 +2,57 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { AnalyticsDashboard, buildMetricsHref } from '@/components/dashboard/analytics/analytics-dashboard'
 import Loading from '@/app/dashboard/metricas/loading'
-import type { OwnerAnalyticsReport } from '@/server/analytics/reports'
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 
-const report = {
-  definitionVersion: 1,
-  period: { from: '2026-08-01', to: '2026-08-29', timezone: 'America/Santiago', cutoffAt: '2026-08-29T00:00:00.000Z', previousFrom: '2026-07-04', previousTo: '2026-08-01' },
-  capture: { enabled: true, collectionOpen: true, activatedAt: '2026-08-01T00:00:00.000Z', status: 'enabled' },
-  coverage: { status: 'complete', cohorts: [], warnings: [] },
-  visits: 14,
-  visitToAttempt: { numerator: 10, denominator: 14, rate: 10 / 14 },
-  complete: { attempts: 10, conversion: { numerator: 4, denominator: 10, rate: 0.4 }, bookingsCreated: 5, pathComplete: 3, pathIncomplete: 1, knownInterruptions: 2, measurementIncomplete: 1, availabilityEmpty: { numerator: 3, denominator: 10, rate: 0.3 }, availabilityErrors: 1 },
-  partial: { attempts: 3, conversion: { numerator: 2, denominator: 3, rate: 2 / 3 }, bookingsCreated: 2, pathComplete: 1, pathIncomplete: 1, knownInterruptions: 0, measurementIncomplete: 1, availabilityEmpty: { numerator: 0, denominator: 0, rate: null }, availabilityErrors: 0 },
-  comparison: { status: 'comparable', deltaPercentagePoints: 5, previousConversion: { numerator: 3, denominator: 10, rate: 0.3 } },
-  recent: { visits: 2, visitToAttempt: { numerator: 1, denominator: 2, rate: 0.5 }, complete: { attempts: 1, conversion: { numerator: 0, denominator: 0, rate: null }, bookingsCreated: 0, pathComplete: 0, pathIncomplete: 0, knownInterruptions: 0, measurementIncomplete: 0, availabilityEmpty: { numerator: 0, denominator: 0, rate: null }, availabilityErrors: 0 }, partial: { attempts: 0, conversion: { numerator: 0, denominator: 0, rate: null }, bookingsCreated: 0, pathComplete: 0, pathIncomplete: 0, knownInterruptions: 0, measurementIncomplete: 0, availabilityEmpty: { numerator: 0, denominator: 0, rate: null }, availabilityErrors: 0 }, status: 'provisional', from: '2026-08-28', to: '2026-08-30', cutoffAt: '2026-08-29T12:00:00.000Z', timezones: ['America/Santiago'], inProgress: { complete: 1, partial: 0 } },
-  suppression: { applied: false, note: 'No aplica.' },
-  trend: [{ date: '2026-08-28', timezone: 'America/Santiago', complete: { attempts: 10, conversion: { numerator: 4, denominator: 10, rate: 0.4 }, bookingsCreated: 5, pathComplete: 3, pathIncomplete: 1, knownInterruptions: 2, measurementIncomplete: 1, availabilityEmpty: { numerator: 3, denominator: 10, rate: 0.3 }, availabilityErrors: 1 }, partial: { attempts: 3, conversion: { numerator: 2, denominator: 3, rate: 2 / 3 }, bookingsCreated: 2, pathComplete: 1, pathIncomplete: 1, knownInterruptions: 0, measurementIncomplete: 1, availabilityEmpty: { numerator: 0, denominator: 0, rate: null }, availabilityErrors: 0 }, visits: 14 }],
-  funnel: [{ population: 'complete_attempts', milestone: 'started', count: 10 }, { population: 'complete_attempts', milestone: 'service', count: 9 }, { population: 'complete_attempts', milestone: 'professional', count: 6 }, { population: 'complete_attempts', milestone: 'date', count: 7 }, { population: 'complete_attempts', milestone: 'time', count: 6 }, { population: 'complete_attempts', milestone: 'customer', count: 5 }, { population: 'complete_attempts', milestone: 'payment', count: 4 }, { population: 'complete_attempts', milestone: 'submit', count: 3 }],
-  quality: [{ population: 'complete_attempts', lastStep: 'payment', count: 2 }],
-  services: { rows: [{ id: 'svc-1', label: 'Manicure', population: 'complete_attempts', interest: 9, selected: 8, conversion: { numerator: 4, denominator: 8, rate: 0.5 }, unobservedConversions: 1 }], page: 1, pageSize: 25, total: 1 },
-  channels: { rows: [{ id: 'instagram', summary: { visits: 9, visitToAttempt: { numerator: 6, denominator: 9, rate: 2 / 3 }, complete: { attempts: 6, conversion: { numerator: 2, denominator: 6, rate: 1 / 3 }, bookingsCreated: 2, pathComplete: 1, pathIncomplete: 1, knownInterruptions: 0, measurementIncomplete: 0, availabilityEmpty: { numerator: 0, denominator: 0, rate: null }, availabilityErrors: 0 }, partial: { attempts: 0, conversion: { numerator: 0, denominator: 0, rate: null }, bookingsCreated: 0, pathComplete: 0, pathIncomplete: 0, knownInterruptions: 0, measurementIncomplete: 0, availabilityEmpty: { numerator: 0, denominator: 0, rate: null }, availabilityErrors: 0 } } }], scope: 'independent_grain' },
-  links: { rows: [], page: 1, pageSize: 25, total: 0 },
-  acquisitionLinks: { rows: [{ id: 'link-1', channel: 'instagram', campaignName: 'Lanzamiento', promotionId: null, createdAt: '2026-08-01T00:00:00.000Z', archivedAt: null, url: 'https://example.test/book?acq=token' }], page: 1, pageSize: 25, total: 1 },
-  currentBookings: { label: 'estado al consultar', scope: 'all_bookings_created_in_period', counts: [{ status: 'pending_confirmation', count: 2 }], overdueApproval: { count: 1, lowerBound: false }, attendedByService: [{ serviceId: 'svc-1', count: 1 }] },
-  redemptions: { label: 'canjes al consultar', scope: 'all_redemptions_created_in_period', rows: [], page: 1, pageSize: 25, hasMore: false },
-  opportunities: [],
-  opportunityNote: 'Sin señales adicionales.',
-  filter: { channel: null, acquisitionLinkId: null, serviceId: null, scope: 'independent_grains', unsupportedIntersections: true },
-} satisfies OwnerAnalyticsReport
+import { analyticsDashboardFixture as report } from '../helpers/analytics-dashboard-fixture'
 
 describe('AnalyticsDashboard', () => {
+  it('plots both complete attempts and their created bookings with a textual equivalent', () => {
+    const host = document.createElement('div')
+    host.innerHTML = renderToStaticMarkup(<AnalyticsDashboard report={report} />)
+    expect(host.querySelector('svg[aria-label="Tendencia visual de intentos completos y sus reservas creadas"]')).not.toBeNull()
+    expect(host.querySelectorAll('polyline[data-series="bookings"]')).toHaveLength(1)
+    expect(host.querySelector('[aria-label="Tendencia diaria"]')?.textContent).toContain('Reservas creadas completas')
+  })
+  it('shows required separate populations, verified endpoint, quality partition and operational service attendance', () => {
+    const host = document.createElement('div')
+    host.innerHTML = renderToStaticMarkup(<AnalyticsDashboard report={{ ...report, complete: { ...report.complete, knownInterruptions: 4, measurementIncomplete: 2 } }} />)
+    expect(host.textContent).toContain('67% · 2 de 3 intentos parciales')
+    expect(host.textContent).toContain('Reservas creadas · entrada completa')
+    expect(host.textContent).toContain('4 convertidos + 4 interrupciones conocidas + 2 con medición incompleta = 10 intentos maduros')
+    expect(host.querySelector('[aria-label="Recorrido observado"]')?.textContent).toContain('Reserva verificada con recorrido completo3')
+    expect(host.querySelector('[aria-label="Tendencia diaria"]')?.textContent).toContain('Reservas creadas completas')
+    expect(host.querySelector('[aria-label="Servicios observados"]')?.textContent).toContain('Atendidas al consultar')
+    expect(host.textContent).toContain('9 visitas · 6 intentos completos')
+    expect(host.textContent).toContain('3 de 10 intentos con búsqueda')
+    expect(host.textContent).toContain('Errores de disponibilidad: 1')
+    expect(host.textContent).toContain('2 visitas recientes')
+  })
+  it('keeps verified path-incomplete conversions visible without any milestone rows', () => {
+    const host = document.createElement('div')
+    host.innerHTML = renderToStaticMarkup(<AnalyticsDashboard report={{ ...report, funnel: [] }} />)
+    expect(host.textContent).toContain('Recorrido incompleto: 1 conversión')
+  })
+  it('offers labeled custom dates, independent-grain filters and an operable capture surface', () => {
+    const host = document.createElement('div')
+    host.innerHTML = renderToStaticMarkup(<AnalyticsDashboard report={report} />)
+    expect(host.querySelector('input[type="date"][name="from"]')).not.toBeNull()
+    expect(host.querySelector('input[type="date"][name="to"]')).not.toBeNull()
+    expect(host.querySelector('[aria-label="Tipo de filtro histórico"]')).not.toBeNull()
+    expect(host.textContent).toContain('Cerrar captura')
+  })
+  it('keeps an explicit range through the actual async page and rendered next-page link', async () => {
+    vi.resetModules()
+    vi.doMock('@/lib/auth/server', () => ({ requireBusinessRole: vi.fn().mockResolvedValue({}) }))
+    vi.doMock('@/server/analytics/reports', () => ({ getOwnerAnalyticsReport: vi.fn().mockResolvedValue({ ...report, services: { ...report.services, total: 50 } }) }))
+    vi.doMock('@/components/dashboard/header', () => ({ DashboardHeader: () => <header /> }))
+    try {
+      const Page = (await import('@/app/dashboard/metricas/page')).default
+      const markup = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ from: report.period.from, to: report.period.to }) }))
+      expect(markup).toContain('from=2026-08-01&amp;to=2026-08-29&amp;page=2')
+      expect(markup).not.toContain('days=28&amp;page=2')
+    } finally { vi.doUnmock('@/lib/auth/server'); vi.doUnmock('@/server/analytics/reports'); vi.doUnmock('@/components/dashboard/header') }
+  })
   it('renders a route-local loading state', () => {
     expect(renderToStaticMarkup(<Loading />)).toContain('Cargando métricas')
   })
@@ -83,7 +105,7 @@ describe('AnalyticsDashboard', () => {
     expect(markup).toContain('Pendiente de confirmación: 3')
     expect(markup).toContain('Hay aprobaciones vencidas.')
     expect(markup).toContain('6 de 20')
-    expect(markup).toContain('no_slots: 4')
+    expect(markup).toContain('Sin horarios: 4')
     expect(markup).toContain('2 con conversión')
   })
 
@@ -122,7 +144,9 @@ describe('AnalyticsDashboard', () => {
   })
 
   it('orders the observed milestones semantically instead of relying on database row order', () => {
-    const markup = renderToStaticMarkup(<AnalyticsDashboard report={{ ...report, funnel: [...report.funnel].reverse() }} />)
+    const host = document.createElement('div')
+    host.innerHTML = renderToStaticMarkup(<AnalyticsDashboard report={{ ...report, funnel: [...report.funnel].reverse() }} />)
+    const markup = host.querySelector('[aria-label="Recorrido observado"]')!.textContent!
 
     expect(markup.indexOf('Inicio')).toBeLessThan(markup.indexOf('Servicio'))
     expect(markup.indexOf('Servicio')).toBeLessThan(markup.indexOf('Profesional (opcional)'))

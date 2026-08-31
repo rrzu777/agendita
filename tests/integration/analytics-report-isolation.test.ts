@@ -15,6 +15,14 @@ async function ownerFixture() {
 }
 const period = { from: '2026-08-01', to: '2026-08-02' }
 describe('report authorization, current evidence and isolated DTO', () => {
+  it.each([false, true])('does not claim retained raw diagnostics were purged for a closed report (channel filter: %s)', async channel => {
+    const f = await ownerFixture()
+    await publishAnalyticsCohort(f.cohort)
+    await prisma.analyticsDailyMetric.updateMany({ where: { businessId: f.businessId, population: 'complete_attempts', metricKey: 'availability_empty' }, data: { numerator: 6, denominator: 20 } })
+    expect(await prisma.bookingFunnelEvent.count({ where: { businessId: f.businessId, retentionExpiresAt: { gt: f.cohort.now } } })).toBe(1)
+    const report = await getOwnerAnalyticsReport({ ...period, ...(channel ? { channel: 'instagram' } : {}) }, f.cohort.now)
+    expect(report.opportunities[0]?.diagnostics.status).toBe('not_queried')
+  })
   it('authorizes DAL independently and rejects caller tenant, foreign filters and impossible intersections', async () => {
     await ownerFixture()
     await expect(getOwnerAnalyticsReport({ ...period, businessId: 'foreign' })).rejects.toThrow()

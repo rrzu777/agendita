@@ -6,6 +6,10 @@ import { bootstrapAnalyticsSession, bootstrapAnalyticsAttempt, ingestAnalyticsBa
 import { prisma } from '@/lib/db'
 import { verifyAnalyticsCredential } from '@/lib/analytics/credential'
 import { captureSecret } from '../helpers/analytics-capture'
+import { createAnalyticsStore } from '@/lib/analytics/client-store'
+import { createAnalyticsTransport } from '@/lib/analytics/client-transport'
+import { getBookingAnalyticsSnapshot } from '@/lib/analytics/booking-snapshot'
+import { formatInTimeZone } from 'date-fns-tz'
 import { POST as sessionPOST } from '@/app/api/analytics/[slug]/session/route'
 import { POST as attemptPOST } from '@/app/api/analytics/[slug]/attempt/route'
 import { POST as eventsPOST } from '@/app/api/analytics/[slug]/events/route'
@@ -52,6 +56,96 @@ describe('real PostgreSQL bootstrap and ingest serialization', () => {
     expect(await bootstrapAnalyticsSession(context, { ...input, utmSource: 'facebook' }, new Date(captureNow.getTime() + 1000))).toEqual(a)
     expect(await prisma.analyticsSession.count({ where: { businessId } })).toBe(1)
   })
+  it('recovers the committed attempt through the real client after its parent expires and never resurrects withdrawal', async () => {
+    let clock = captureNow.getTime()
+    const values = new Map<string, string>()
+    const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) }, removeItem: (key: string) => { values.delete(key) } }
+    const store = createAnalyticsStore({ businessId, origin: context.origin, storage, preferences: storage, now: () => clock })
+    store.chooseConsent(true); store.open(); store.view({ type: 'booking_entry_viewed', data: {} }, 'entry')
+    let lost = true
+    let committed: Awaited<ReturnType<typeof bootstrapAnalyticsAttempt>> | undefined
+    const fetcher = vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string)
+      if (url.endsWith('/session')) return Response.json(await bootstrapAnalyticsSession(context, body, new Date(clock)))
+      if (url.endsWith('/attempt')) {
+        const result = await bootstrapAnalyticsAttempt(context, body, new Date(clock))
+        if (lost) { lost = false; committed = result; throw new Error('synthetic response lost after PostgreSQL commit') }
+        return Response.json(result)
+      }
+      return Response.json(await ingestAnalyticsBatch(context, body, new Date(clock)))
+    })
+    const transport = createAnalyticsTransport(store, businessId, { fetcher })
+    await transport.flush()
+    const parent = store.snapshot()!.streams[0].receipt!
+    clock = Date.parse(parent.expiresAt) - 1000
+    store.startAttempt('complete'); await transport.flush()
+    expect(await prisma.bookingFunnelAttempt.count({ where: { businessId } })).toBe(1)
+    expect(store.bookingCredential()).toBeUndefined()
+    clock += 5000; await transport.flush()
+    expect(store.bookingCredential()?.credential === committed!.credential).toBe(true)
+    expect(JSON.stringify(store.snapshot()!.streams.find(s => s.kind === 'attempt')!.receipt) === JSON.stringify(committed)).toBe(true)
+    expect(fetcher.mock.calls.filter(([url]) => url.endsWith('/attempt'))).toHaveLength(2)
+    expect(await prisma.bookingFunnelAttempt.count({ where: { businessId } })).toBe(1)
+    expect(verifyAnalyticsCredential(parent.credential, { businessId, origin: context.origin, secret: captureSecret, now: new Date(clock) })).toBeNull()
+    expect(getBookingAnalyticsSnapshot({ credential: parent.credential, businessId, origin: context.origin, now: new Date(clock) })).toBeNull()
+    expect(getBookingAnalyticsSnapshot({ credential: committed!.credential, businessId, origin: context.origin, now: new Date(committed!.expiresAt) })).toBeNull()
+    await expect(ingestAnalyticsBatch(context, { credential: parent.credential, events: [], captureGap: true }, new Date(clock))).rejects.toMatchObject({ category: 'invalid_credential' })
+    store.withdrawConsent(); transport.stop(); clock += 5000; await transport.flush()
+    expect(store.snapshot()).toBeNull(); expect(store.bookingCredential()).toBeUndefined()
+    expect(fetcher.mock.calls.filter(([url]) => url.endsWith('/attempt'))).toHaveLength(2)
+  })
+  it('recovers a committed bootstrap after a crash before catch using the persisted store across parent expiry', async () => {
+    let clock = captureNow.getTime()
+    const values = new Map<string, string>()
+    const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) }, removeItem: (key: string) => { values.delete(key) } }
+    const options = { businessId, origin: context.origin, storage, preferences: storage, now: () => clock }
+    const store = createAnalyticsStore(options)
+    store.chooseConsent(true); store.open(); store.view({ type: 'booking_entry_viewed', data: {} }, 'entry')
+    let committed: Awaited<ReturnType<typeof bootstrapAnalyticsAttempt>> | undefined
+    let reachedCommit!: () => void
+    let releaseLostResponse!: () => void
+    const ready = new Promise<void>(resolve => { reachedCommit = resolve })
+    const fetcher = vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string)
+      if (url.endsWith('/session')) return Response.json(await bootstrapAnalyticsSession(context, body, new Date(clock)))
+      if (url.endsWith('/attempt')) {
+        const result = await bootstrapAnalyticsAttempt(context, body, new Date(clock))
+        if (!committed) {
+          committed = result
+          reachedCommit()
+          return new Promise<Response>(resolve => { releaseLostResponse = () => resolve(Response.json(result)) })
+        }
+        return Response.json(result)
+      }
+      return Response.json(await ingestAnalyticsBatch(context, body, new Date(clock)))
+    })
+    const transport = createAnalyticsTransport(store, businessId, { fetcher })
+    await transport.flush()
+    const parent = store.snapshot()!.streams[0].receipt!
+    clock = Date.parse(parent.expiresAt) - 1000
+    store.startAttempt('complete')
+    const oldFlight = transport.flush()
+    await ready // DB committed, but no response/rejection/catch ran in the client.
+    const original = store.snapshot()!.streams.find(s => s.kind === 'attempt')!
+    expect(original.retries).toBe(0); expect(original.receipt).toBeUndefined()
+    expect(await prisma.bookingFunnelAttempt.count({ where: { businessId } })).toBe(1)
+    transport.stop(); store.stop()
+    clock += 5000
+    const restored = createAnalyticsStore(options)
+    expect(restored.open()).toBe(true)
+    const recovery = createAnalyticsTransport(restored, businessId, { fetcher })
+    try {
+      await recovery.flush()
+      expect(restored.bookingCredential()?.credential === committed!.credential).toBe(true)
+      expect(restored.snapshot()!.streams.find(s => s.key === original.key)!.receipt?.expiresAt).toBe(committed!.expiresAt)
+      expect(fetcher.mock.calls.filter(([url]) => url.endsWith('/attempt'))).toHaveLength(2)
+      expect(await prisma.bookingFunnelAttempt.count({ where: { businessId } })).toBe(1)
+      expect(await prisma.analyticsSession.count({ where: { businessId } })).toBe(1)
+      restored.withdrawConsent(); recovery.stop()
+      const denied = createAnalyticsStore(options)
+      expect(denied.open()).toBe(false); expect(denied.bookingCredential()).toBeUndefined()
+    } finally { recovery.stop(); transport.stop(); releaseLostResponse(); await oldFlight }
+  })
   it('gap-only controls persist atomically, replay idempotently and cost budget without event rows', async () => {
     const { attempt } = await boot()
     const input = { credential: attempt.credential, events: [], captureGap: true }
@@ -68,6 +162,34 @@ describe('real PostgreSQL bootstrap and ingest serialization', () => {
     execute.mockResolvedValue(0)
     expect(await ingestAnalyticsBatch(context, input, captureNow)).toEqual({ receipts: [], captureGapRecorded: true })
     expect(await prisma.analyticsCollectionPeriod.findFirst({ where: { businessId, endedAt: { not: null } } })).toMatchObject({ closeReason: 'budget' })
+  })
+  it.each(['absent', 'wrong-entry', 'other-session', 'foreign-business', 'wrong-origin', 'tampered', 'changed-db-claims', 'deadline', 'outer-bound', 'future-attempt', 'before-session', 'after-session', 'closed-period', 'config-off'] as const)('rejects expired-parent recovery for %s without creating or extending an attempt', async kind => {
+    const session = await bootstrapAnalyticsSession(context, sessionInput(), captureNow)
+    const bootstrapKey = randomUUID()
+    const startedAt = new Date(+captureNow + 86400000 - 1000)
+    const original = await bootstrapAnalyticsAttempt(context, { bootstrapKey, credential: session.credential, entryKind: 'complete' }, startedAt)
+    const input = { bootstrapKey, credential: session.credential, entryKind: 'complete' }
+    let now = new Date(+captureNow + 86400000 + 1000)
+    let target = context
+    if (kind === 'absent') input.bootstrapKey = randomUUID()
+    if (kind === 'wrong-entry') input.entryKind = 'partial'
+    if (kind === 'other-session') input.credential = (await bootstrapAnalyticsSession(context, sessionInput(), captureNow)).credential
+    if (kind === 'foreign-business') { target = { ...context, businessId: `${businessId}-foreign` }; configureCapture(target.businessId) }
+    if (kind === 'wrong-origin') target = { ...context, origin: 'https://elsewhere.test' }
+    if (kind === 'tampered') input.credential = 'x' + input.credential.slice(1)
+    if (kind === 'changed-db-claims') await prisma.analyticsSession.update({ where: { id: session.id }, data: { channel: 'facebook' } })
+    if (kind === 'deadline') now = new Date(original.expiresAt)
+    if (kind === 'outer-bound') now = new Date(+captureNow + 2 * 86400000)
+    if (kind === 'future-attempt' || kind === 'before-session' || kind === 'after-session') {
+      const invalidStart = kind === 'future-attempt' ? new Date(+now + 1) : kind === 'before-session' ? new Date(+captureNow - 1) : new Date(session.expiresAt)
+      await prisma.bookingFunnelAttempt.update({ where: { id: original.id }, data: { startedAt: invalidStart, conversionDeadlineAt: new Date(+invalidStart + 86400000), retentionExpiresAt: new Date(Math.min(Date.parse(session.retentionExpiresAt), +invalidStart + 90 * 86400000)), cohortLocalDate: new Date(formatInTimeZone(invalidStart, context.timezone, 'yyyy-MM-dd')) } })
+    }
+    if (kind === 'closed-period') await prisma.analyticsCollectionPeriod.updateMany({ where: { businessId }, data: { endedAt: now, closeReason: 'operator' } })
+    if (kind === 'config-off') vi.stubEnv('OWNER_ANALYTICS_ENABLED', 'false')
+    const deadlineBefore = (await prisma.bookingFunnelAttempt.findUniqueOrThrow({ where: { id: original.id } })).conversionDeadlineAt
+    await expect(bootstrapAnalyticsAttempt(target, input, now)).rejects.toBeDefined()
+    expect(await prisma.bookingFunnelAttempt.count({ where: { businessId } })).toBe(1)
+    expect((await prisma.bookingFunnelAttempt.findUniqueOrThrow({ where: { id: original.id } })).conversionDeadlineAt).toEqual(deadlineBefore)
   })
   it('requires consent and current version; expired bootstrap identity cannot be reused', async () => {
     await expect(bootstrapAnalyticsSession(context, { ...sessionInput(), consent: false }, captureNow)).rejects.toMatchObject({ category: 'invalid_request' })

@@ -7,7 +7,7 @@ import { getAnalyticsCaptureConfig, reserveAnalyticsBudget, checkAnalyticsRateLi
 import { getClientIp } from '@/lib/rate-limit'
 import { analyticsEventSchema, dimensionIdSchema, eventScope } from './contracts'
 import { normalizeAcquisition } from './attribution'
-import { signAnalyticsCredential, verifyAnalyticsCredential, type AnalyticsClaims } from './credential'
+import { signAnalyticsCredential, verifyAnalyticsCredential, verifyExpiredAnalyticsParentForRecovery, type AnalyticsClaims } from './credential'
 import { formatInTimeZone } from 'date-fns-tz'
 import { claimsForSession, claimsForAttempt, closeAnalyticsCollection, collectionIsOpen, eventDimensions, eventDimensionsBelong, withAnalyticsWrite } from '@/server/analytics/repository'
 
@@ -113,7 +113,9 @@ export async function bootstrapAnalyticsAttempt(context: PublicAnalyticsContext,
   const parsed = attemptSchema.safeParse(input)
   if (!parsed.success) throw new AnalyticsCaptureError('invalid_request')
   const data = parsed.data
-  const verified = verifyAnalyticsCredential(data.credential, { secret: config.secret, businessId: context.businessId, origin: context.origin, now })
+  const verificationContext = { secret: config.secret, businessId: context.businessId, origin: context.origin, now }
+  const liveParent = verifyAnalyticsCredential(data.credential, verificationContext)
+  const verified = liveParent ?? verifyExpiredAnalyticsParentForRecovery(data.credential, verificationContext)
   if (!verified || verified.scope !== 'session') throw new AnalyticsCaptureError('invalid_credential')
   const claims = await withAnalyticsWrite(context.businessId, async (tx) => {
     if (!await collectionIsOpen(tx, context.businessId)) throw new AnalyticsCaptureError('disabled')
@@ -123,9 +125,11 @@ export async function bootstrapAnalyticsAttempt(context: PublicAnalyticsContext,
     const existing = await tx.bookingFunnelAttempt.findUnique({ where: { businessId_bootstrapKey: { businessId: context.businessId, bootstrapKey: data.bootstrapKey } } })
     if (existing) {
       if (existing.sessionId !== session.id || existing.origin !== context.origin || existing.entryKind !== data.entryKind) throw new AnalyticsCaptureError('conflict')
-      if (existing.conversionDeadlineAt <= now || existing.startedAt > now) throw new AnalyticsCaptureError('expired')
+      if (existing.conversionDeadlineAt <= now || existing.startedAt > now || existing.startedAt < session.startedAt || existing.startedAt >= session.expiresAt) throw new AnalyticsCaptureError('expired')
       return claimsForAttempt(session, existing)
     }
+    // Recovery can return only the original attempt: never create from a dead parent.
+    if (!liveParent) throw new AnalyticsCaptureError('expired')
     if (!await reserveAnalyticsBudget({ businessId: context.businessId, cost: 1, now })) {
       await closeAnalyticsCollection(tx, context.businessId, now, 'budget')
       return null

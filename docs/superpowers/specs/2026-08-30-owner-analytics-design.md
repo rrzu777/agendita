@@ -442,6 +442,19 @@ No se necesitan IDs de personas o sesiones para consultar esta tabla.
   la misma identidad; el cliente inicia otra con una nueva clave. La recuperación
   exige también el mismo origen web; las claves no se publican ni se registran.
   Sin storage disponible se omite la captura, sin afectar el wizard.
+- Recuperación de respuesta perdida en el borde de 24h: exclusivamente el POST
+  de bootstrap de intento puede autenticar el binding firmado original de una
+  sesión ya vencida para recuperar un intento **ya persistido y aún vigente**.
+  Exige coincidencia exacta de negocio, origen, sesión, clave de bootstrap y tipo
+  de entrada, claims originales de sesión contra DB e inicio del intento dentro
+  de la ventana original del padre. No acepta un inicio futuro ni recuperación
+  a partir de `sessionExpiresAt + 24h`, y nunca amplía el deadline del intento.
+  Si no existe ese intento, el padre vencido no permite crear otro. Firma,
+  consentimiento, período, configuración y rate limit siguen obligatorios.
+  La verificación ordinaria de eventos/Booking/sesión conserva su rechazo de
+  credenciales vencidas: esta excepción es una recuperación idempotente acotada,
+  no un modo genérico para omitir expiración. El cliente puede reintentar con el
+  binding original retenido sólo para este caso, bajo sus límites de reintento.
 - El bootstrap valida negocio activo, URL pública canónica y consentimiento. El
   negocio se resuelve mediante host/slug verificados, no confiando en `businessId`
   o headers de tenant aportados libremente por el navegador.
@@ -536,6 +549,17 @@ sólo en navegación. Toda consulta deriva `businessId` de la sesión autenticad
 Integrar el destino en `src/lib/dashboard/navigation.ts` de la base actualizada,
 incluyendo “Más” en móvil. Reutilizar componentes y vocabulario del dashboard.
 No duplicar el antiguo array privado del sidebar ni reconstruir tours.
+
+Los controles de filtros y promoción opcional consumen opciones operativas desde
+un DAL owner/admin separado, mediante una prop UI distinta del reporte de métricas.
+Respuestas mínimas `{id,label}` y paginación/búsqueda acotada, máximo 100 por
+petición con indicación de continuidad; ninguna entidad posterior al primer lote
+debe resultar inaccesible por un límite silencioso. Derivar siempre el negocio de
+sesión. Las opciones históricas de enlaces archivados/servicios disponibles no se
+confunden con promociones elegibles para crear un enlace nuevo. Un fallo de carga
+de opciones muestra error local, no convierte el informe en cero. El contrato de
+diagnósticos distingue `not_queried` de ausencia real por retención, sin afirmar
+que una fuente fue purgada sólo porque esa consulta no la leyó.
 
 Contenido:
 

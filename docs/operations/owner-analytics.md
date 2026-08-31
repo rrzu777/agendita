@@ -6,7 +6,9 @@ Estado: implementación local, captura y mantenimiento productivos **no activado
 
 Sesiones e intentos seudónimos opt-in, no personas únicas ni leads. Las entradas completas y parciales son poblaciones separadas. Conversión significa Booking creada dentro de `[attemptStartedAt, conversionDeadlineAt)` de 24 horas; no pago, asistencia ni evento visual. Los estados transaccionales/canjes se consultan por separado. Los numeradores son subconjuntos de sus denominadores; sumar contadores compatibles y dividir, nunca promediar porcentajes diarios. Los granos total/canal/enlace/servicio son independientes; no sumar servicios ni reconstruir cruces históricos ausentes.
 
-La fuente conserva zona de negocio congelada por cohorte. Un cambio de zona no mueve la historia; la madurez requiere fin del día local +24 horas +1 hora de conciliación, respetando DST. Recientes son provisionales y no entran en el denominador maduro. Error/no disponible/captura deshabilitada no equivalen a cero observado. Sólo owner/admin pueden leer y mutar, con controles independientes en página, DAL y acción y negocio derivado de sesión.
+La recuperación de un bootstrap de intento comprometido puede usar su padre vencido sólo con el binding original y dentro del límite adicional autorizado (sexta Ruling); no crea intentos nuevos ni modifica permisos de eventos/Booking. El cliente persiste contador de envíos y backoff **antes** de POST, por lo que un crash antes del catch no reinicia el máximo inicial+2. El campo opcional mantiene compatibilidad con estado v1; sin persistencia no envía. Una credencial Booking aún válida se conserva mediante el fallback existente si falla storage.
+
+La fuente conserva zona de negocio congelada por cohorte. Un cambio de zona no mueve la historia; la madurez requiere fin del día local +24 horas +1 hora de conciliación, respetando DST. Recientes son provisionales: sus intentos aún en curso no entran en denominadores maduros y sus resultados no se mezclan con la serie cerrada. Error/no disponible/captura deshabilitada no equivalen a cero observado. Sólo owner/admin pueden leer y mutar, con controles independientes en página, DAL y acción y negocio derivado de sesión.
 
 ## Gates antes de cualquier piloto
 
@@ -52,7 +54,7 @@ Límites de lectura: páginas raw de 50; 201 eventos/1001 Bookings sentinela por
 
 Rollback conservador: desactivar captura, cerrar períodos, mantener mantenimiento/alertas activo hasta cumplir retención, restaurar versión de app compatible con migración aditiva si procede. No revertir migration a ciegas, no borrar hechos de Booking/pagos/canjes ni reinterpretar adquisiciones previas; archivar enlaces, no editarlos retroactivamente. Mantener agregados ya publicados hasta su vencimiento. Si rollback elimina el ejecutable de mantenimiento, acordar un proceso compatible que siga purgando: apagar captura no suspende obligaciones de retención.
 
-## Cinco decisiones registradas (orden real)
+## Siete decisiones registradas (orden real)
 
 | Ruling | Motivo | Coste si es incorrecta |
 | --- | --- | --- |
@@ -61,6 +63,18 @@ Rollback conservador: desactivar captura, cerrar períodos, mantener mantenimien
 | Tras Booking, no rearmar por retry/visibilidad; nueva selección explícita rearma intento parcial preservando stream previo | Guard hasta desmontar perdería otra reserva iniciada con Atrás; rearme pasivo inflaría intentos | Dividir o perder intentos en transiciones; exige pruebas de ambos lados sin tocar idempotencia |
 | Prop UI opcional `periodMode` validado por página, sin cambiar DTO/DAL | DTO normaliza fechas y pierde preset/rango; inferirlo cambia recientes al paginar | Desincronización navegación/consulta o rehacer contrato UI; cobertura default28,7/28/90 y rango |
 | `logging.serverFunctions:false` en configuración Next | Next16 imprime argumentos de Server Functions en desarrollo, incluido token analytics recibido por Booking | Se pierde el log automático de nombre/argumentos/duración de esas funciones en dev; requests/warnings/errores conservan sus defaults. No afecta producción ni la ejecución de acciones |
+| Recuperar sólo intento ya existente con binding de padre vencido | Bootstrap del intento pudo hacer commit cerca del vencimiento de sesión y perder su respuesta | Si se implementa mal: reemisión indebida de credenciales y ampliación de autoridad temporal. Verificador dedicado exige firma/origen/negocio/claims DB, misma clave/sesión/entrada, inicio dentro de ventana original y deadline vivo; límite estricto `now < sessionExpiresAt+24h`. Mayor superficie de seguridad y regresiones necesarias. Nunca crea con padre vencido, amplía deadline ni relaja eventos/Booking; cliente conserva límites de retry/consentimiento |
+| Opciones operativas owner/admin separadas de métricas y diagnóstico `not_queried` | Filtros/promoción necesitan opciones navegables, y no consultar crudo no demuestra purga | Si se implementa mal: consultas adicionales o desincronización UI/reporte/historia. Una consulta SQL de máximo101 filas sentinela (máximo100 identidades devueltas), sin lookup adicional de selección, por página/búsqueda; transacción read-only repeatable-read de5s. Fuera de página conserva ID actual con nombre no disponible explícito; carga/error propios y continuación/búsqueda. Sólo IDs/etiquetas tenant. Enlaces archivados/servicios históricos no implican elegibilidad de cupón; el nombre de promoción puede requerir cargar opciones. `not_queried` no reconstruye diagnósticos ausentes |
+
+## Superficie operativa disponible
+
+En `/dashboard/metricas`, owner/admin dispone de presets7/28/90 y rango personalizado (inicio incluido, final excluido), un filtro a la vez (canal/enlace/servicio) y búsqueda/páginas de opciones. Cambiar filtro vuelve a página1; la navegación conserva modo/fechas y resincroniza los controles con la consulta del servidor. Las opciones no amplían el DTO estadístico: quedan separadas de los contadores. Una búsqueda fallida muestra error local, no ceros. Enlaces archivados y servicios eliminados con agregado aún retenido pueden seleccionarse para historia; las etiquetas eliminadas se indican explícitamente.
+
+El bloque «Control de captura» opera `setAnalyticsCollectionEnabled`: «Cerrar captura» depende de `collectionOpen`, **no** de que `capture.enabled` sea true. Así puede cerrarse un período viejo con global apagado o Redis ausente antes de la reactivación descrita arriba. «Abrir captura» no evita ningún gate: con configuración inválida muestra rechazo y no crea un período. Esta UI no modifica variables de entorno ni autoriza un piloto.
+
+«Crear enlace» permite una promoción propia opcional, con asociación inmutable; no aplica código, modifica precio ni autoriza canje. Se muestra el nombre cuando está disponible en las opciones, o «nombre no disponible» junto al ID histórico. Sólo archivar/copiar siguen permitidos sobre enlaces existentes. La selección de promoción sigue la elegibilidad de asociación de la acción existente (pertenencia al negocio), no la elegibilidad económica de redención.
+
+La pantalla presenta por separado conversión completa/parcial y particiones convertido/interrupción conocida/medición incompleta. El embudo termina en reserva verificada con recorrido completo, sin ocultar reservas de recorrido incompleto. Gráfico y tabla distinguen intentos completos de sus reservas creadas; atendidas y canjes son estado al consultar de todas las reservas/redenciones creadas en período y no responden al filtro histórico. Las atendidas repetidas en filas de poblaciones del mismo servicio no deben sumarse. Disponibilidad vacía y errores también se muestran sin exigir umbral de oportunidad. Diagnóstico `not_queried` significa no consultado para ese rango/filtro, no purgado; sólo se presenta detalle cuando la consulta acotada lo demuestra.
 
 ## Checkpoints y evidencia
 
@@ -68,17 +82,17 @@ Base de rama: `c5ea7146e936ab41a8df60e79c3fbd34a84cdf1a`; planificación `5dddec
 
 Checkpoints finales completos: T1 `1a8920bedf9df02ae7d7a6cf8606419d2bb2b20f`; T2 `4e9b47ea0fc3b4011c447694b3c3e6d9f88dab59`; T3 `5ef75b6560c496e16025f7752904505bf1a9e534`; T4 `94d85fc3e6b7588dae56b499c608ff0fce59b1ac`; T5 `fb8eb828eac4d76af2b2833d8ec83cd39b58a09e`.
 
-Task6 código, tests y handoff verificados: `579ddd502e1e6f317d433d5741b7d4b3aa3b9ff3`. El commit posterior sólo registra este checkpoint documental. Revisión Task6 y revisión independiente de toda la rama aún pendientes del controller; ningún push/PR/deploy realizado.
+Task6 código, tests y handoff verificados: `579ddd502e1e6f317d433d5741b7d4b3aa3b9ff3`. El commit posterior `696359dac1b283bcbbd568bede707113fe7b9647` sólo registra este checkpoint documental. En ese momento seguían pendientes revisión Task6 y revisión de rama; es estado histórico, no el gate actual. Ningún push/PR/deploy realizado.
 
 Revisión Task6 round1 sobre `696359dac1b283bcbbd568bede707113fe7b9647`: el cierre del harness podía esperar un segundo `exit` imposible cuando Next ya había terminado por señal (`exitCode=null`, `signalCode=SIGTERM`). Corrección sólo en soporte de tests: comprobar ambos campos, suscribir antes de señalizar y acotar espera por hijo a1s SIGTERM+1s SIGKILL; si no llega salida, devolver fallo, marcar exit1 y continuar limpieza posterior. No se modificó código productivo ni gates. Prueba `tests/unit/analytics-public-harness.test.ts`: Node22, RED3fail/1pass3.78s antes del fix; GREEN4/4pass476ms. Tres casos usan hijos Node reales (ya señalizado, cierre normal, SIGTERM ignorado); un EventEmitter modela ausencia excepcional de `exit` incluso trasSIGKILL y comprueba liberación de listeners/retorno acotado. Smoke `qa npx playwright test --config playwright.owner-analytics-public.config.ts -g 'guest can decline'`:1/1pass8.7s; fixture pública0 y sin listeners3555/3556 al terminar. No se repitieron suites completas. Reproducir focal con `qa npm run test:unit -- tests/unit/analytics-public-harness.test.ts --maxWorkers=1 --testTimeout=10000`. Sin nueva Ruling; cierre de contrato de cleanup ya existente.
 
-Checkpoint del fix round1: `90b48b65ae214b846b1b75210a85469a6166b4ca`; typecheck posterior exit0,4.28s y lint de los tres archivos de código del fix sin warnings. El commit documental siguiente sólo registra este SHA/evidencia. Re-review y revisión de rama permanecen pendientes del controller.
+Checkpoint del fix round1: `90b48b65ae214b846b1b75210a85469a6166b4ca`; typecheck posterior exit0,4.28s y lint de los tres archivos de código del fix sin warnings. El commit documental siguiente `37ad3473a6788f5c48561985dc09f47d7d206a9c` registra este SHA/evidencia. Task6 y su re-review fueron aprobadas; la revisión de toda la rama `c5ea7146e936ab41a8df60e79c3fbd34a84cdf1a..37ad3473a6788f5c48561985dc09f47d7d206a9c` ya ocurrió y originó I1–I7. El gate de revisión actual es la aprobación scoped de la fixwave final, a cargo del controller.
 
 Proceso: Tasks1–4 y fix T5 round1 tienen RED/GREEN registrado. T5 rounds2/3 **no tienen RED funcional antes de implementación**; typecheck fallido no sustituye TDD. Se añadieron luego regresiones funcionales y E2E verdes. Task6 reproduce primero la fuga del stub `scrollIntoView` y restaura descriptor en `finally`, con comprobación después de cada test. No reconstruir evidencia RED retrospectiva.
 
 ### Verificación local Task6
 
-Corrida de2026-08-31, Node22, un worker. Resultados exactos, sin reconstruir una «suite global verde» que no ocurrió:
+Corrida **original de Task6** de2026-08-31, Node22, un worker. Resultados históricos exactos, sin reconstruir una «suite global verde» que no ocurrió en esa fase:
 
 | Verificación | Resultado observado |
 | --- | --- |
@@ -106,11 +120,45 @@ Dos problemas del fixture público se corrigieron sin cambiar producción: subdo
 
 Entorno medido: Node22.22.3; Next16.3.2; Prisma5.22.0; PostgreSQL16.14 aarch64 `postgres:16-alpine`, contenedor dedicado `agendita-owner-analytics-test-01a055ad`, puerto loopback55439, límite1CPU/512MiB, shared_buffers32MB, max_connections30. Host Apple M1 8CPU/16GiB compartido con otras cargas no interrumpidas. No extrapolar a hardware/latencia productivos.
 
+### Fixwave final: fronteras y evidencia durable
+
+Base exacta `37ad3473a6788f5c48561985dc09f47d7d206a9c`. I1 separa precio válido de observación vigente (identidad de intento+revisión); I2 preserva rango desde página real hasta paginación. I3 recupera sólo intento existente con firma/binding original; DB commit seguido de respuesta perdida o crash antes del catch recupera la misma credencial, sin extender deadline. I4 presenta cada población/partición y alcance operativo explícitamente. I5 añade controles accesibles y opciones acotadas; I6 asociación opcional de promoción sin aplicación económica; I7 conecta apertura/cierre con todos los gates. Minor: diagnóstico no consultado veraz, etiquetas españolas, helper Redis de cierre acotado y mock local `replace` corregido. La brecha T5 histórica permanece.
+
+RED observado **antes** de cada corrección: los comandos siguientes usan `qa` de la sección de reproducción y `--maxWorkers=1`; se indican filtros sólo para volver a ejecutar la frontera. No dependen de conservar el scratch:
+
+| Frontera / comando | RED real | GREEN focal posterior |
+| --- | --- | --- |
+| `npm run test:unit -- tests/unit/step-payment-pantalla-por-step.test.tsx tests/unit/analytics-dashboard.test.tsx` | 3fail/17pass,4.68s: retiro descarta precio, intento nuevo recibe observación vieja, rango se pierde | Filtro `economic preview\|obsolete promotion\|actual async page`:5pass/18filtrados,3.91s |
+| `npm run test:integration -- tests/integration/analytics-ingest.test.ts -t 'recovers the committed attempt'` | 1fail/18filtrados,1.80s: commit con respuesta perdida cruza vencimiento de padre | Archivo33/33pass,7.16s, incluidas14negativas binding/firma/tenant/tiempo/período/config |
+| Mismo archivo `-t 'crash before catch'` | 1fail/33filtrados,1.40s: persistido retries0, fetch pendiente tras commit; store nuevo sin credencial | Archivo34/34pass,4.78s, misma fila/deadline y retirada sin resurrección |
+| `npm run test:unit -- tests/unit/analytics-client-transport.test.ts -t 'pre-catch crashes\|preflight state'` | 2fail/12filtrados,1.01s: envíos no acotados entre crashes y POST sin persistencia | Transport/store/credential/Booking39/39pass,3.23s; presupuesto+backoff durable, storage failure conserva Booking válida |
+| `npm run test:unit -- tests/unit/analytics-dashboard.test.tsx -t 'required separate\|path-incomplete\|operable capture'` | 3fail/11filtrados,2.52s: métricas/superficies omitidas | Consumidores completos incluidos en focal12archivos86/86pass,23.93s |
+| `npm run test:unit -- tests/unit/analytics-links.test.tsx -t 'optional promotion'` | 1fail/4filtrados,2.89s | Selector, asociación enviada y fallo explícito en consumidores finales |
+| `npm run test:integration -- tests/integration/analytics-report-isolation.test.ts -t 'does not claim retained'` | 2fail/15filtrados,2.07s: había raw retenido pero decía no retenido | Archivo17/17pass; discriminador `not_queried`, no inferencia de purga |
+| `npm run test:unit -- tests/unit/legacy-form-style-guard.test.ts tests/unit/analytics-controls.test.tsx` | 2fail/9pass,3.44s: selects fuera de primitivo y fallback fuera de página no explícito | Primitivo compartido sin excepción; controles preservan filtro al buscar/paginar/aplicar |
+| `npm run test:integration -- tests/integration/analytics-options.test.ts` | Primero módulo nuevo ausente (RED estructural, no SQL funcional). Más tarde1fail1.98s: selección extra sobre100 identidades | DB1/1pass2.40s:102enlaces100+2, búsqueda, archivo/historia, autorización,100identidades máximo y selección en página |
+
+También hubo RED funcional de dos series/nombre promoción (2fail3.46s), fechas invertidas (1fail1.83s), sincronización de controles tras navegación real (1fail2.07s) y audit de autorización en acción (1fail/2pass1.44s). Greens:2pass3.42s; controls7/7pass2.64s antes del caso adicional de fallback; audit+acciones8/8pass2.38s. No se silenció ningún audit ni warning global.
+
+Primera fullunit de esta ola:426archivos,425pass/1fail;3890pass/1fail/1skip,707.52s. Fallo propio confirmado: los dos nuevos selectores omitían `NativeSelect`; no preexistente. Se corrigió tras RED focal y se añadió límite estricto de opciones. Esta corrida fallida se conserva, separada del cierre posterior.
+
+**Fullunit de cierre**, después del último fix write-ahead I3 y E2E público: `qa npm run test:unit -- --maxWorkers=1 --testTimeout=60000`,426/426archivos aprobados,3895pass/1skip/0fail,446.99s (real447.78s). Entorno limpio sin APP_DOMAIN overrides, mismo código congelado. El skip es la prueba opt-in de red real `payment-qa-network-deny`, no fue activada. No reinterpreta las full fallidas anteriores como verdes.
+
+**Integración completa de cierre** serial: `qa env OWNER_ANALYTICS_MEASURE_LOCAL=true npm run test:integration -- --maxWorkers=1 --testTimeout=60000`,71/71archivos y477/477tests,0fallos,111.86s (real112.59s). Incluye las ocho suites analytics —schema,ingest,budget,booking-snapshot,rollups,retention,report-isolation,options— y todas las regresiones Booking/pagos/promociones del repositorio, usando dependencias externas simuladas y DB exclusiva. Typecheck separado exit0,8.02s. Lint focal de todos los115archivos TS/TSX/JS/MJS de la rama contra base original, incluidos nuevos archivos:0errores/0warnings,5.95s.
+
+Build sintético de cierre con el comando seguro de abajo: exit0,17.33s; Prisma5.22 generado528ms, Next16.3.2 compiló3.0s, TypeScript8.7s,59/59páginas441ms. No `vercel-build`, migración ni cron ejecutados. `git diff --check` exit0. Al terminar, puertos3555/3556 sin listeners y ningún launcher/Next/Redis temporal propio activo; PostgreSQL exclusivo permanece running (1CPU/512MiB) para revisión. Sólo hay `.env.example` y `.env.test.example`, no archivos de entorno activos.
+
+E2E de cierre: dashboard4/4pass17.3s; público5/5pass23.6s después del último cambio I3. Owner/staff, teclado375px y ausencia de overflow global; fecha/filtro→página2; promoción por nombre; cerrar con globaloff/Redis ausente; reabrir con config inválida no crea período. Público valida deny/bot/member, Booking sintética desktop/móvil, transporte fallido y hora estable con grant/withdraw. Root inspeccionó PNG frías en scrollTop. No auth/login/servicios externos reales.
+
+Un rerun intermedio de capturas falló4casos antes de llegar a la página por panic Rust al restaurar caché Turbopack (`Restore of All ... restoring failed`). Con Next propio detenido se movió sólo `.next/dev/cache/turbopack` a `.next/dev/cache/turbopack-final-qa-panic-20260831`, recuperable; rerun frío4/4pass. Causa específica no demostrada: no se afirma preexistencia, ni SIGKILL, ni build/dev simultáneo (no se había ejecutado build). No se cambió configuración de caché ni se tocaron otras apps.
+
 ### Mediciones locales y coste de transporte
 
 Collector real:2bootstraprows en1034.244ms;3lotes de20eventos aceptados en841.417ms (compilación fría),251.732ms y251.235ms;60filas comprobadas en PostgreSQL. Control gap-only101.246ms (respuesta+consulta de verificación),0eventrows.63unidades reservadas=60eventos+2bootstraps+1gap, excluyendo apertura de período fixture. Transporte: Next→HTTPSloopback3556→adapter REST de prueba→`redis-cli`→Redis7.0.11 Unix efímero/Lua real→PostgreSQL. El subprocess síncrono añade coste artificial; no es Upstash hospedado. Certificado temporal confiado sólo por proceso Next, sin desactivar TLS ni alterar trust global. Los tests Redis de integración ejercitan Lua real pero mockean REST, frontera distinta.
 
 Drenaje real PostgreSQL:12064unidades fuente={61sessions,1attempt,12001events,1snapshotBooking};10000limpiadas/borradas en472.468ms y2064en314.789ms, Booking preservada. Otra muestra limpia1snapshot y congela44celdas en142.436ms. Daily:30celdas antes,6elegibles/6borradas/cero vencidas restantes;10cohortes publicadas,30celdas después,138.286ms. La llamada incluye publicación/reemplazo de celdas, no sólo DELETE; `published` cuenta cohortes, no filas. Los días de período sin tráfico también consumen almacenamiento. Límites de recursos declarados son configuración del entorno, no perfil continuo de CPU/RSS ni medición de picos.
+
+Muestras nuevas de la fixwave, misma frontera/recursos: collector2bootstraprows918.197ms;3lotes20eventos900.416/171.446/178.113ms (60filas), gap98.074ms sin filas,63unidades reservadas. Drenaje fuente12064:10000en369.243ms+2064en203.960ms, Booking conservada; snapshot1+freeze44celdas35.733ms. Daily30antes/6elegibles/6borradas/0vencidas/10cohortespublicadas/30después132.676ms. Incluyen transporte/consultas o mantenimiento completo según la frontera anterior; no multiplicar estas muestras por un día para certificar cuota/throughput productivos.
 
 ### Reproducción segura local
 

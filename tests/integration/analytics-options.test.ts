@@ -1,0 +1,45 @@
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
+import { prisma, seedAnalyticsReport } from '../helpers/analytics-report-db'
+import { getOwnerAnalyticsOptions } from '@/server/analytics/options'
+import { publishAnalyticsCohort } from '@/server/analytics/maintenance'
+const auth = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/auth/user', () => ({ getCurrentUserWithBusiness: auth }))
+const ids: string[] = []
+afterEach(() => vi.unstubAllEnvs())
+afterAll(async () => { await prisma.business.deleteMany({ where: { id: { in: ids } } }); await prisma.$disconnect() })
+
+describe('bounded authenticated analytics option consumer', () => {
+  it('continues beyond 100, searches historical/archived labels and isolates tenants without capture', async () => {
+    vi.stubEnv('OWNER_ANALYTICS_ENABLED', 'false')
+    const f = await seedAnalyticsReport(); ids.push(f.businessId)
+    const other = await seedAnalyticsReport(); ids.push(other.businessId)
+    auth.mockResolvedValue({ user: { id: 'synthetic' }, role: 'owner', business: { id: f.businessId } })
+    await publishAnalyticsCohort(f.cohort)
+    await prisma.acquisitionLink.createMany({ data: Array.from({ length: 102 }, (_, i) => ({ businessId: f.businessId, campaignName: `Fixture ${String(i).padStart(3, '0')}`, channel: 'instagram', token: crypto.randomUUID(), createdAt: new Date('2026-08-01T00:00:00Z'), archivedAt: i === 101 ? new Date('2026-08-02T00:00:00Z') : null })) })
+    await prisma.acquisitionLink.create({ data: { businessId: other.businessId, campaignName: 'FOREIGN ONLY', channel: 'instagram', token: crypto.randomUUID() } })
+    const first = await getOwnerAnalyticsOptions({ kind: 'link' }, f.cohort.now)
+    const second = await getOwnerAnalyticsOptions({ kind: 'link', page: 2 }, f.cohort.now)
+    expect(first.rows).toHaveLength(100); expect(first.hasMore).toBe(true)
+    expect(second.rows).toHaveLength(2); expect(second.hasMore).toBe(false)
+    const outsidePage = await getOwnerAnalyticsOptions({ kind: 'link', selectedId: second.rows[1].id }, f.cohort.now)
+    expect(outsidePage.rows).toHaveLength(100)
+    expect(outsidePage.selected).toBeNull()
+    const selectedPage = await getOwnerAnalyticsOptions({ kind: 'link', page: 2, selectedId: second.rows[1].id }, f.cohort.now)
+    expect(selectedPage.selected).toEqual(second.rows[1])
+    expect(second.rows[1].label).toContain('archivado')
+    expect((await getOwnerAnalyticsOptions({ kind: 'link', search: '101' }, f.cohort.now)).rows).toHaveLength(1)
+    expect((await getOwnerAnalyticsOptions({ kind: 'link', search: 'FOREIGN' }, f.cohort.now)).rows).toEqual([])
+    expect((await getOwnerAnalyticsOptions({ kind: 'service', search: 'historical-service' }, f.cohort.now)).rows).toMatchObject([{ id: 'historical-service', label: expect.stringContaining('eliminado') }])
+    const promotion = await prisma.promotion.create({ data: { businessId: f.businessId, name: 'Own association', rewardType: 'fixed_amount', rewardValue: 1 } })
+    await prisma.promotion.create({ data: { businessId: other.businessId, name: 'Foreign association', rewardType: 'fixed_amount', rewardValue: 1 } })
+    expect((await getOwnerAnalyticsOptions({ kind: 'promotion' }, f.cohort.now)).rows).toEqual([{ id: promotion.id, label: 'Own association' }])
+    await expect(getOwnerAnalyticsOptions({ kind: 'link', businessId: other.businessId })).rejects.toThrow()
+    await expect(getOwnerAnalyticsOptions({ kind: 'link', page: 0 })).rejects.toThrow()
+    auth.mockResolvedValue({ user: { id: 'synthetic' }, role: 'admin', business: { id: f.businessId } })
+    expect((await getOwnerAnalyticsOptions({ kind: 'promotion' }, f.cohort.now)).rows).toHaveLength(1)
+    auth.mockResolvedValue({ user: { id: 'staff' }, role: 'staff', business: { id: f.businessId } })
+    await expect(getOwnerAnalyticsOptions({ kind: 'promotion' })).rejects.toThrow()
+    auth.mockResolvedValue(null)
+    await expect(getOwnerAnalyticsOptions({ kind: 'promotion' })).rejects.toThrow()
+  })
+})
