@@ -86,7 +86,9 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
     if (!('selectionRevision' in event)) continue
     if (event.selectionRevision < revision) continue
     if (event.selectionRevision > revision) {
-      if (!['selection_context_changed', 'service_selected'].includes(event.type)) { gap = true; invalidate('service'); context = null; localDate = null }
+      // A repeated service snapshot cannot explain which upstream selection changed.
+      // Only the observed transition can justify preserving compatible old milestones.
+      if (event.type !== 'selection_context_changed') { gap = true; invalidate('service'); context = null; localDate = null }
       revision = event.selectionRevision
     }
     switch (event.type) {
@@ -159,7 +161,9 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
         break
       }
       case 'customer_step_completed': lastObservedStep = 'customer'; mark('customer'); break
-      case 'promotion_result': invalidate('payment'); break
+      // Validation alone does not establish that the current payment preparation changed.
+      // Actual changes arrive as selection_context_changed/payment_branch_viewed.
+      case 'promotion_result': break
       case 'payment_branch_viewed': {
         const next = canonical(event.data)
         if (paymentKey !== next) invalidate('payment')

@@ -9,5 +9,5 @@ export function normalizeAcquisition(input: unknown): AcquisitionSource {
   }
   const source = typeof value.utmSource === 'string' ? value.utmSource.trim().toLowerCase() : ''
   const channels: Record<string, AcquisitionSource['channel']> = { instagram: 'instagram', ig: 'instagram', facebook: 'facebook', fb: 'facebook', whatsapp: 'whatsapp', google: 'google', referral: 'referral', other: 'other' }
-  return { channel: source ? channels[source] ?? 'unknown' : value.referrer ? 'unknown' : 'direct', normalizationVersion: 1, acquisitionLinkId: null }
+  return { channel: source ? Object.hasOwn(channels, source) ? channels[source] : 'unknown' : value.referrer ? 'unknown' : 'direct', normalizationVersion: 1, acquisitionLinkId: null }
 }

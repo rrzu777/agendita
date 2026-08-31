@@ -61,4 +61,24 @@ describe('coherent observed funnel and authoritative conversion', () => {
     const events = [event(1, 'step_viewed', { step: 'customer' }), event(2, 'customer_step_completed'), event(3, 'payment_branch_viewed', { screen: 'sin-abono', condition: 'no_deposit', offeredMethods: [] })]
     expect(reduceFunnelAttempt({ attempt: attempt('partial-1', 'partial'), events, bookings: [], now })).toMatchObject({ quality: 'observed', outcome: 'known_interruption', lastObservedStep: 'payment', conversionPathComplete: false })
   })
+  it.each([8, 9])('does not carry an old path into a new revision through service_selected at sequence %i', (sequence) => {
+    const events = [...completePath().slice(0, 7), event(sequence, 'service_selected', { ...contextA, professionalStepRequired: false }, 2), event(sequence + 1, 'booking_submit_result', { result: 'submitted' }, 2)]
+    expect(reduceFunnelAttempt({ attempt: attempt(), events, bookings: [{ ...booking(), analyticsSelectionRevision: 2 }], now })).toMatchObject({ converted: true, conversionPathComplete: false, quality: 'incomplete', finalRevision: 2, finalContext: contextA })
+  })
+  it.each([
+    { result: 'rejected', category: 'ineligible' },
+    { result: 'error', category: 'network' },
+    { result: 'accepted', promotionId: 'promotion-a' },
+  ])('preserves the payment path after $result promotion validation without an economic change', (result) => {
+    const events = [...completePath().slice(0, 7), event(8, 'promotion_result', result), event(9, 'booking_submit_result', { result: 'submitted' })]
+    expect(reduceFunnelAttempt({ attempt: attempt(), events, bookings: [booking()], now })).toMatchObject({ converted: true, conversionPathComplete: true, quality: 'observed' })
+  })
+  it('requires the changed payment preparation to be observed after an effective promotion change', () => {
+    const beforePayment = [...completePath().slice(0, 7), event(8, 'promotion_result', { result: 'accepted', promotionId: 'promotion-a' }), event(9, 'selection_context_changed', { reason: 'payment', context: contextA, localDate: '2026-08-10' }, 2)]
+    const bookings = [{ ...booking(), analyticsSelectionRevision: 2 }]
+    const missingBranch = [...beforePayment, event(10, 'booking_submit_result', { result: 'submitted' }, 2)]
+    expect(reduceFunnelAttempt({ attempt: attempt(), events: missingBranch, bookings, now })).toMatchObject({ converted: true, conversionPathComplete: false, quality: 'incomplete' })
+    const observedBranch = [...beforePayment, event(10, 'payment_branch_viewed', { screen: 'sin-abono', condition: 'promotion_zero', offeredMethods: [] }, 2), event(11, 'booking_submit_result', { result: 'submitted' }, 2)]
+    expect(reduceFunnelAttempt({ attempt: attempt(), events: observedBranch, bookings, now })).toMatchObject({ converted: true, conversionPathComplete: true, quality: 'observed' })
+  })
 })

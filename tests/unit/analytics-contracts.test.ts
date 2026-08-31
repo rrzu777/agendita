@@ -34,4 +34,7 @@ describe('closed analytics inputs', () => {
     expect(normalizeAcquisition({ verifiedLink: { id: 'link-a', channel: 'whatsapp' }, utmSource: 'google' })).toEqual({ channel: 'whatsapp', normalizationVersion: 1, acquisitionLinkId: 'link-a' })
     expect(normalizeAcquisition({})).toEqual({ channel: 'direct', normalizationVersion: 1, acquisitionLinkId: null })
   })
+  it.each(['constructor', '__proto__'])('maps inherited object key %s to unknown acquisition', (utmSource) => {
+    expect(normalizeAcquisition({ utmSource })).toEqual({ channel: 'unknown', normalizationVersion: 1, acquisitionLinkId: null })
+  })
 })
