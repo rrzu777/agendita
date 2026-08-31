@@ -9,8 +9,8 @@ import { analyticsDashboardFixture as report } from '../helpers/analytics-dashbo
 import { clickButton } from '../helpers/react-dom'
 import type { AnalyticsOptionPage } from '@/server/analytics/options'
 
-const mocks = vi.hoisted(() => ({ options: vi.fn(), capture: vi.fn(), create: vi.fn(), refresh: vi.fn() }))
-vi.mock('@/server/actions/analytics', () => ({ getOwnerAnalyticsOptions: mocks.options, setAnalyticsCollectionEnabled: mocks.capture, createAcquisitionLink: mocks.create, archiveAcquisitionLink: vi.fn() }))
+const mocks = vi.hoisted(() => ({ options: vi.fn(), capture: vi.fn(), create: vi.fn(), rename: vi.fn(), refresh: vi.fn() }))
+vi.mock('@/server/actions/analytics', () => ({ getOwnerAnalyticsOptions: mocks.options, setAnalyticsCollectionEnabled: mocks.capture, createAcquisitionLink: mocks.create, renameAcquisitionLink: mocks.rename, archiveAcquisitionLink: vi.fn() }))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: mocks.refresh }) }))
 let host: HTMLDivElement, root: Root
 beforeEach(() => {
@@ -25,6 +25,38 @@ async function select(label: string, value: string) {
 }
 
 describe('actual analytics management controls', () => {
+  it('edits the current label with cancel, pending and failure states without changing props or pagination', async () => {
+    const links = structuredClone(report.acquisitionLinks)
+    const label = links.rows[0].campaignName
+    const pagination = { label: 'Página 2', previousHref: '/dashboard/metricas?from=2026-08-01&to=2026-08-29&page=1&channel=instagram', nextHref: null }
+    await act(async () => root.render(<AcquisitionLinks links={links} pagination={pagination} />))
+    expect(host.querySelector(`button[aria-label="Editar etiqueta de ${label}"]`)).not.toBeNull()
+    await act(async () => { host.querySelector<HTMLButtonElement>(`button[aria-label="Editar etiqueta de ${label}"]`)!.click() })
+    const input = host.querySelector<HTMLInputElement>('[aria-label="Etiqueta actual del enlace"]')!
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Nueva etiqueta'); input.dispatchEvent(new Event('input', { bubbles: true })) })
+    await clickButton(host, 'Cancelar edición')
+    expect(mocks.rename).not.toHaveBeenCalled()
+    await act(async () => { host.querySelector<HTMLButtonElement>(`button[aria-label="Editar etiqueta de ${label}"]`)!.click() })
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Etiqueta actual del enlace"]')!.value).toBe(label)
+    await act(async () => { const draft = host.querySelector<HTMLInputElement>('[aria-label="Etiqueta actual del enlace"]')!; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(draft, 'Nueva etiqueta'); draft.dispatchEvent(new Event('input', { bubbles: true })) })
+    let finish!: (result: { ok: false; error: string }) => void
+    mocks.rename.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    await clickButton(host, 'Guardar etiqueta')
+    expect(mocks.rename).toHaveBeenLastCalledWith({ id: links.rows[0].id, campaignName: 'Nueva etiqueta' })
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="Guardar etiqueta"]')!.disabled).toBe(true)
+    expect(host.textContent).not.toContain('Etiqueta actualizada.')
+    await act(async () => finish({ ok: false, error: 'Enlace no disponible' }))
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('Enlace no disponible')
+    expect(links).toEqual(report.acquisitionLinks)
+    expect(host.querySelector<HTMLAnchorElement>('a')!.getAttribute('href')).toBe(pagination.previousHref)
+    mocks.rename.mockResolvedValueOnce({ ok: true, data: { renamed: true } })
+    await clickButton(host, 'Guardar etiqueta')
+    expect(host.textContent).toContain('Etiqueta actualizada.')
+    expect(host.querySelector('[aria-label="Etiqueta actual del enlace"]')).toBeNull()
+    // The action's revalidated RSC supplies current labels, never a mutated input prop.
+    await act(async () => root.render(<AcquisitionLinks links={{ ...links, rows: [{ ...links.rows[0], campaignName: 'Nueva etiqueta' }] }} pagination={pagination} />))
+    expect(host.querySelector('[aria-label="Enlaces de adquisición"]')?.textContent).toContain('Nueva etiqueta')
+  })
   it('resets displayed controls to the new server query after preset or filter navigation', async () => {
     await act(async () => root.render(<AnalyticsDashboard report={report} periodMode={{ days: 28 }} />))
     await act(async () => root.render(<AnalyticsDashboard report={{ ...report, period: { ...report.period, from: '2026-08-22' }, filter: { ...report.filter, channel: 'facebook' } }} periodMode={{ days: 7 }} />))

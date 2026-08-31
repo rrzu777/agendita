@@ -1,19 +1,22 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { configureCapture } from '../helpers/analytics-capture'
-import { createAcquisitionLink, archiveAcquisitionLink, setAnalyticsCollectionEnabled } from '@/server/actions/analytics'
+import { createAcquisitionLink, archiveAcquisitionLink, renameAcquisitionLink, setAnalyticsCollectionEnabled } from '@/server/actions/analytics'
 
 const auth = vi.hoisted(() => vi.fn())
+const rate = vi.hoisted(() => vi.fn())
+const revalidate = vi.hoisted(() => vi.fn())
 const db = vi.hoisted(() => ({ acquisitionLink: { create: vi.fn(), updateMany: vi.fn() }, promotion: { findFirst: vi.fn() }, analyticsCollectionPeriod: { findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn() }, $queryRaw: vi.fn(), $executeRaw: vi.fn(), $transaction: vi.fn() }))
 vi.mock('@/lib/auth/user', () => ({ getCurrentUserWithBusiness: auth, getCurrentUser: async () => null }))
 vi.mock('@/lib/db', () => ({ prisma: db }))
 vi.mock('@/lib/upstash-rest', () => ({ executeUpstashCommand: async () => 1 }))
-vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
-vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: async () => ({ success: true }) }))
+vi.mock('next/cache', () => ({ revalidatePath: revalidate }))
+vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: rate }))
 
 describe('owner/admin acquisition and collection mutations', () => {
   beforeEach(() => {
     configureCapture(); vi.clearAllMocks()
+    rate.mockResolvedValue({ success: true })
     auth.mockResolvedValue({ user: { id: 'owner' }, role: 'owner', business: { id: 'biz-a', slug: 'salon', subdomain: 'salon', timezone: 'America/Santiago', isActive: true } })
     db.$transaction.mockImplementation((fn) => fn(db)); db.$queryRaw.mockResolvedValue([{ oldest: null }])
     db.analyticsCollectionPeriod.findFirst.mockResolvedValue(null)
@@ -24,6 +27,16 @@ describe('owner/admin acquisition and collection mutations', () => {
     db.promotion.findFirst.mockResolvedValue(null)
   })
   afterEach(() => vi.unstubAllEnvs())
+  it('renames only the tenant label atomically and returns no attribution identity', async () => {
+    expect(typeof renameAcquisitionLink).toBe('function')
+    expect(await renameAcquisitionLink({ id: 'link-a', campaignName: '  Nueva  ' })).toEqual({ ok: true, data: { renamed: true } })
+    expect(db.acquisitionLink.updateMany).toHaveBeenCalledWith({ where: { businessId: 'biz-a', id: 'link-a' }, data: { campaignName: 'Nueva' } })
+    expect(rate).toHaveBeenCalledWith('owner-analytics-manage', 30, 60000)
+    expect(revalidate).toHaveBeenCalledWith('/dashboard/metricas')
+  })
+  it.each(['a', 'x'.repeat(80)])('accepts trimmed label boundary length %s', async campaignName => {
+    expect(await renameAcquisitionLink({ id: 'link-a', campaignName })).toEqual({ ok: true, data: { renamed: true } })
+  })
   it('denies every mutation for staff even with caller-supplied business identity', async () => {
     auth.mockResolvedValue({ user: { id: 'staff' }, role: 'staff', business: { id: 'biz-a' } })
     for (const result of [await createAcquisitionLink({ channel: 'instagram', campaignName: 'Campaña' }), await archiveAcquisitionLink('link-a'), await setAnalyticsCollectionEnabled(false)]) expect(result.ok).toBe(false)

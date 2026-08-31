@@ -49,7 +49,7 @@ describe('AcquisitionLinks', () => {
   it('invokes create and visibly reports an ok:false response without success or refresh', async () => {
     vi.resetModules()
     const create = vi.fn().mockResolvedValue({ ok: false, error: 'No autorizado.' })
-    vi.doMock('@/server/actions/analytics', () => ({ createAcquisitionLink: create, archiveAcquisitionLink: vi.fn() }))
+    vi.doMock('@/server/actions/analytics', () => ({ createAcquisitionLink: create, archiveAcquisitionLink: vi.fn(), renameAcquisitionLink: vi.fn(), getOwnerAnalyticsOptions: vi.fn().mockResolvedValue({ ok: true, data: { rows: [], selected: null, page: 1, hasMore: false } }) }))
     const { AcquisitionLinks: InteractiveLinks } = await import('@/components/dashboard/analytics/acquisition-links')
     HTMLElement.prototype.scrollIntoView = vi.fn()
     const host = document.createElement('div')
