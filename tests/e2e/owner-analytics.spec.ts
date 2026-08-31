@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { prisma, seedAnalyticsReport } from '../helpers/analytics-report-db'
+import { prisma, seedAnalyticsFlowObservations, seedAnalyticsReport } from '../helpers/analytics-report-db'
 import { assertSafeTestDatabaseUrl } from '../helpers/test-database-safety'
 
 const secret = 'owner-analytics-e2e-secret'
-const fixture = { ownerEmail: '', staffEmail: '', businessId: '', ownerId: '', staffId: '', promotionId: '' }
+const fixture = { ownerEmail: '', staffEmail: '', businessId: '', ownerId: '', staffId: '', promotionId: '', serviceId: '', attemptId: '' }
 const matureDate = new Date()
 matureDate.setUTCHours(0, 0, 0, 0)
 matureDate.setUTCDate(matureDate.getUTCDate() - 3)
@@ -15,6 +15,9 @@ const periodToDate = new Date(matureDate)
 periodToDate.setUTCDate(periodToDate.getUTCDate() + 1)
 const periodTo = periodToDate.toISOString().slice(0, 10)
 const metricsUrl = `/dashboard/metricas?from=${periodFrom}&to=${periodTo}`
+const flowEnd = new Date()
+flowEnd.setUTCDate(flowEnd.getUTCDate() + 1)
+const flowMetricsUrl = `/dashboard/metricas?from=${periodFrom}&to=${flowEnd.toISOString().slice(0, 10)}`
 
 assertSafeTestDatabaseUrl(process.env.DATABASE_URL)
 
@@ -37,6 +40,8 @@ function observeRuntimeErrors(page: import('@playwright/test').Page) {
 test.beforeAll(async () => {
   const suffix = randomUUID()
   const report = await seedAnalyticsReport(matureDate.toISOString().slice(0, 10), 'UTC')
+  fixture.businessId = report.businessId
+  await seedAnalyticsFlowObservations(report)
   const acquisitionLink = await prisma.acquisitionLink.create({ data: { businessId: report.businessId, token: `e2e${suffix.replaceAll('-', '')}`, channel: 'instagram', campaignName: 'Campaña de muestra' } })
   const promotion = await prisma.promotion.create({ data: { businessId: report.businessId, name: 'Bienvenida', code: `E2E-${suffix}`, rewardType: 'fixed_amount', rewardValue: 1000 } })
   const booking = await prisma.booking.findUniqueOrThrow({ where: { id: report.booking.id }, select: { customerId: true } })
@@ -84,13 +89,85 @@ test.beforeAll(async () => {
   const staff = await prisma.user.create({ data: { email: `staff-analytics-${suffix}@e2e.agendita.test`, name: 'Staff analytics' } })
   await prisma.business.update({ where: { id: report.businessId }, data: { ownerUserId: owner.id, onboardingCompletedAt: new Date() } })
   await prisma.businessUser.createMany({ data: [{ businessId: report.businessId, userId: owner.id, role: 'owner' }, { businessId: report.businessId, userId: staff.id, role: 'staff' }] })
-  Object.assign(fixture, { ownerEmail: owner.email, staffEmail: staff.email, businessId: report.businessId, ownerId: owner.id, staffId: staff.id, promotionId: promotion.id })
+  Object.assign(fixture, { ownerEmail: owner.email, staffEmail: staff.email, businessId: report.businessId, ownerId: owner.id, staffId: staff.id, promotionId: promotion.id, serviceId: report.service.id, attemptId: report.attempt.id })
 })
 
 test.afterAll(async () => {
-  await prisma.business.delete({ where: { id: fixture.businessId } })
+  if (fixture.businessId) await prisma.business.deleteMany({ where: { id: fixture.businessId } })
   await prisma.user.deleteMany({ where: { id: { in: [fixture.ownerId, fixture.staffId] } } })
   await prisma.$disconnect()
+})
+
+for (const layout of ['desktop', 'mobile'] as const) {
+  test(`owner reads retained flow populations and final-service scope on ${layout}`, async ({ page }) => {
+    await setFixtureHeaders(page, fixture.ownerEmail)
+    if (layout === 'mobile') await page.setViewportSize({ width: 375, height: 812 })
+    const runtimeErrors = observeRuntimeErrors(page)
+    await page.goto(flowMetricsUrl)
+    const flow = page.getByRole('region', { name: 'Detalle del flujo observado', exact: true })
+    await expect(flow.getByRole('heading', { name: 'Detalle del flujo observado' })).toBeVisible()
+    await expect(flow).toContainText('Detalle disponible')
+    await expect(flow).toContainText('(fin exclusivo)')
+    await expect(flow).toContainText('UTC')
+    for (const [label, count] of [['Entrada completa · maduros', 3], ['Entrada completa · en curso', 2], ['Entrada parcial · maduros', 1], ['Entrada parcial · en curso', 4]] as const) {
+      await expect(flow.getByRole('region', { name: label, exact: true }).locator('[data-flow-count]')).toHaveText(`${count} intento${count === 1 ? '' : 's'} observado${count === 1 ? '' : 's'}`)
+    }
+    const mature = flow.getByRole('region', { name: 'Entrada completa · maduros', exact: true })
+    const expand = mature.locator('summary')
+    await expand.focus()
+    await page.keyboard.press('Enter')
+    await expect(mature.locator('details')).toHaveAttribute('open', '')
+    await expect(mature.getByRole('table', { name: 'Elección profesional', exact: true })).toContainText('Persona específica · elección explícita1')
+    await expect(mature.getByRole('table', { name: 'Elección profesional', exact: true })).toContainText('Cualquier profesional · paso no requerido1')
+    await expect(mature.getByRole('table', { name: 'Elección profesional', exact: true })).toContainText('No observado1')
+    await expect(mature.getByRole('table', { name: 'Pantalla de pago', exact: true })).toContainText('Cobro1')
+    await expect(mature.getByRole('table', { name: 'Condición económica', exact: true })).toContainText('Paquete1')
+    await expect(mature.getByRole('table', { name: 'Métodos ofrecidos', exact: true })).toContainText('Ningún método ofrecido1')
+    await expect(mature.getByRole('table', { name: 'Método elegido', exact: true })).toContainText('Transferencia1')
+    await expect(mature.getByRole('table', { name: 'Errores observados', exact: true })).toContainText('Disponibilidad · error1')
+    await expect(mature.getByRole('table', { name: 'Errores observados', exact: true })).toContainText('Promoción rechazada · inválida1')
+    await expect(mature.getByRole('table', { name: 'Errores observados', exact: true })).toContainText('Envío con error · red1')
+    await expect(flow).toContainText('Elegido no significa pagado')
+    await expect(flow).toContainText('Métodos ofrecidos y errores no son aditivos')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await flow.screenshot({ path: `test-results/owner-analytics/flow-breakdowns-${layout}.png` })
+    await expand.press('Enter')
+    await expect(mature.getByRole('table', { name: 'Elección profesional', exact: true })).toBeHidden()
+    await page.waitForLoadState('networkidle')
+    await page.goto(`${flowMetricsUrl}&serviceId=${fixture.serviceId}`)
+    await expect(flow).toContainText('Servicio del último contexto observado')
+    await expect(flow).toContainText('no incluye todos los servicios considerados')
+    await expect(flow.getByRole('region', { name: 'Entrada completa · maduros', exact: true }).locator('[data-flow-count]')).toHaveText('2 intentos observados')
+    await expect(flow.getByRole('region', { name: 'Entrada completa · en curso', exact: true }).locator('[data-flow-count]')).toHaveText('0 intentos observados')
+    await expect(flow.getByRole('region', { name: 'Entrada parcial · maduros', exact: true })).toContainText('Sin intentos observados')
+    await expect(flow.getByRole('region', { name: 'Entrada parcial · en curso', exact: true }).locator('[data-flow-count]')).toHaveText('0 intentos observados')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.waitForLoadState('networkidle')
+    await flow.screenshot({ path: `test-results/owner-analytics/flow-breakdowns-${layout}-service.png` })
+    expect(runtimeErrors).toEqual([])
+  })
+}
+
+test('owner sees empty versus incomplete retained detail without losing historical metrics', async ({ page }) => {
+  await setFixtureHeaders(page, fixture.ownerEmail)
+  const flow = page.getByRole('region', { name: 'Detalle del flujo observado', exact: true })
+  await page.goto(`${metricsUrl}&channel=direct`)
+  await expect(flow).toContainText('Sin intentos observados en este rango')
+  await expect(flow).toContainText('no confirma tráfico cero ni captura activa')
+  await expect(flow.getByRole('table')).toHaveCount(0)
+  await page.waitForLoadState('networkidle')
+  const before = await prisma.bookingFunnelAttempt.findUniqueOrThrow({ where: { id: fixture.attemptId }, select: { acceptedEventCount: true } })
+  try {
+    await prisma.bookingFunnelAttempt.update({ where: { id: fixture.attemptId }, data: { acceptedEventCount: before.acceptedEventCount + 1 } })
+    await page.goto(metricsUrl)
+    await expect(flow).toContainText('Fuente incompleta')
+    await expect(flow.getByRole('table')).toHaveCount(0)
+    await expect(page.getByText('Conversión en 24 h')).toBeVisible()
+    await expect(page.getByRole('table', { name: 'Tendencia diaria' })).toBeVisible()
+    await page.waitForLoadState('networkidle')
+  } finally {
+    await prisma.bookingFunnelAttempt.update({ where: { id: fixture.attemptId }, data: before })
+  }
 })
 
 test('owner sees mature metrics, can create a zero-traffic link, and keeps it after reload', async ({ page }) => {
@@ -110,6 +187,7 @@ test('owner sees mature metrics, can create a zero-traffic link, and keeps it af
   await page.getByLabel('Promoción opcional', { exact: true }).selectOption(fixture.promotionId)
   await page.getByRole('button', { name: 'Crear enlace' }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Enlace creado:' })).toBeVisible()
+  await page.waitForLoadState('networkidle')
   await page.reload()
   await expect(page.getByRole('table', { name: 'Enlaces de adquisición' })).toContainText('Enlace sin tráfico')
   await expect(page.getByRole('button', { name: 'Copiar Enlace sin tráfico' })).toBeVisible()

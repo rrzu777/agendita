@@ -7,6 +7,12 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 import { analyticsDashboardFixture as report } from '../helpers/analytics-dashboard-fixture'
 
 describe('AnalyticsDashboard', () => {
+  it('keeps retained flow detail visible even when the historical summary is unavailable', () => {
+    const host = document.createElement('div')
+    host.innerHTML = renderToStaticMarkup(<AnalyticsDashboard report={{ ...report, coverage: { ...report.coverage, status: 'unavailable' } }} />)
+    expect(host.querySelector('section[aria-label="Detalle del flujo observado"]')).not.toBeNull()
+    expect(host.querySelector('section[aria-label="Detalle del flujo observado"]')?.textContent).toContain('Detalle no retenido')
+  })
   it('plots both complete attempts and their created bookings with a textual equivalent', () => {
     const host = document.createElement('div')
     host.innerHTML = renderToStaticMarkup(<AnalyticsDashboard report={report} />)

@@ -102,7 +102,7 @@ expect(JSON.stringify(report.flowBreakdowns)).not.toContain(privateAttemptId)
 - Consumes Task1 `FlowBreakdownsReport` and `OwnerAnalyticsReport.flowBreakdowns`.
 - Produces `FlowBreakdowns({report}: {report: FlowBreakdownsReport})`, rendered by AnalyticsDashboard. No client query or mutation.
 
-- [ ] **Step 1: RED rendering contract.** Seed four populations with asymmetric values; assert names/counts never mixed, singular unknown evidence not «no eligió», explicit vs optional professional, payment screen/condition/method distinct and chosen not paid. Offered methods/errors explicitly non-additive. All six statuses have distinct text, unavailable renders no count tables.
+- [x] **Step 1: RED rendering contract.** Seed four populations with asymmetric values; assert names/counts never mixed, singular unknown evidence not «no eligió», explicit vs optional professional, payment screen/condition/method distinct and chosen not paid. Offered methods/errors explicitly non-additive. All six statuses have distinct text, unavailable renders no count tables.
 
 ```tsx
 render(<FlowBreakdowns report={unavailableFlow} />)
@@ -111,11 +111,11 @@ expect(screen.queryByRole('table')).not.toBeInTheDocument()
 expect(screen.getByText(/no se reconstruye/i)).toBeVisible()
 ```
 
-- [ ] **Step 2: Run RED.** `npm run test:unit -- tests/unit/analytics-flow-breakdowns-ui.test.tsx --maxWorkers=1`; capture missing behavior before code.
-- [ ] **Step 3: Implement read-only UI.** Existing Card/text/table style, responsive stacked content with local overflow only; no redesign/library. Four population sections with headings and counts, closed Spanish label maps and no raw enums/IDs. Group each dimension in compact tables/list; collapse verbose breakdowns with native details/summary if useful (keyboard accessible, no forced animation). Display window exclusive end, cutoff, zones, scope incl final_service exact meaning. Explain max90d/limits and evidence, unknown not negative, selected not paid, errors not causal. Render outside historical-summary success conditional. Avoid duplicating main conversion KPIs.
-- [ ] **Step 4: RED then GREEN real dashboard E2E.** Extend existing synthetic fixture to include retained professional/payment/error observations; no real accounts. Actual dashboard must show count/labels across desktop and mobile, final-service filter scope and unknown/status labels. Assert keyboard expansion, no page horizontal overflow, table/text alternative. Screenshot both layouts for controller inspection.
-- [ ] **Step 5: Verify.** New UI unit+analytics-dashboard/controls/links, `npx playwright test --config=playwright.owner-analytics.config.ts`, typecheck, changed ESLint, diff-check. Preserve fixture cleanup and no3555/3556 listeners. Record RED/GREEN and screenshot paths.
-- [ ] **Step 6: Controller review → fixes/re-review → verification → commit.** Intended commit `feat(analytics): show professional payment and error breakdowns`.
+- [x] **Step 2: Run RED.** `npm run test:unit -- tests/unit/analytics-flow-breakdowns-ui.test.tsx --maxWorkers=1`; capture missing behavior before code.
+- [x] **Step 3: Implement read-only UI.** Existing Card/text/table style, responsive stacked content with local overflow only; no redesign/library. Four population sections with headings and counts, closed Spanish label maps and no raw enums/IDs. Group each dimension in compact tables/list; collapse verbose breakdowns with native details/summary if useful (keyboard accessible, no forced animation). Display window exclusive end, cutoff, zones, scope incl final_service exact meaning. Explain max90d/limits and evidence, unknown not negative, selected not paid, errors not causal. Render outside historical-summary success conditional. Avoid duplicating main conversion KPIs.
+- [x] **Step 4: RED then GREEN real dashboard E2E.** Extend existing synthetic fixture to include retained professional/payment/error observations; no real accounts. Actual dashboard must show count/labels across desktop and mobile, final-service filter scope and unknown/status labels. Assert keyboard expansion, no page horizontal overflow, table/text alternative. Screenshot both layouts for controller inspection.
+- [x] **Step 5: Verify.** New UI unit+analytics-dashboard/controls/links, `npx playwright test --config=playwright.owner-analytics.config.ts`, typecheck, changed ESLint, diff-check. Preserve fixture cleanup and no3555/3556 listeners. Record RED/GREEN and screenshot paths.
+- [x] **Step 6: Controller review → fixes/re-review → verification → commit.** Intended commit `feat(analytics): show professional payment and error breakdowns`.
 
 ## Final acceptance (controller, after both tasks)
 
