@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { AnalyticsDashboard, buildMetricsHref } from '@/components/dashboard/analytics/analytics-dashboard'
 import Loading from '@/app/dashboard/metricas/loading'
 import type { OwnerAnalyticsReport } from '@/server/analytics/reports'
@@ -102,6 +102,23 @@ describe('AnalyticsDashboard', () => {
     expect(buildMetricsHref(report, { days: 28 }, 2)).toContain('days=28&page=2')
     expect(buildMetricsHref(report, { days: 90 }, 2)).toContain('days=90&page=2')
     expect(buildMetricsHref(report, { days: null }, 2)).toContain('from=2026-08-01&to=2026-08-29&page=2')
+  })
+
+  it('passes implicit preset 28 from the actual async page when searchParams is empty', async () => {
+    vi.resetModules()
+    const requireBusinessRole = vi.fn().mockResolvedValue({})
+    const getOwnerAnalyticsReport = vi.fn().mockResolvedValue(report)
+    vi.doMock('@/lib/auth/server', () => ({ requireBusinessRole }))
+    vi.doMock('@/server/analytics/reports', () => ({ getOwnerAnalyticsReport }))
+    vi.doMock('@/components/dashboard/header', () => ({ DashboardHeader: () => <header /> }))
+    vi.doMock('@/components/dashboard/analytics/analytics-dashboard', () => ({ AnalyticsDashboard: ({ periodMode }: { periodMode: { days: number | null } }) => <output data-period-days={String(periodMode.days)} /> }))
+    const Page = (await import('@/app/dashboard/metricas/page')).default
+    const markup = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }))
+
+    expect(requireBusinessRole).toHaveBeenCalledWith(['owner', 'admin'])
+    expect(getOwnerAnalyticsReport).toHaveBeenCalledWith({})
+    expect(markup).toContain('data-period-days="28"')
+    vi.doUnmock('@/lib/auth/server'); vi.doUnmock('@/server/analytics/reports'); vi.doUnmock('@/components/dashboard/header'); vi.doUnmock('@/components/dashboard/analytics/analytics-dashboard')
   })
 
   it('orders the observed milestones semantically instead of relying on database row order', () => {
