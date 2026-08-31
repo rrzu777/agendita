@@ -12,6 +12,12 @@ import { getAnalyticsCaptureConfig, reserveAnalyticsBudget } from '@/lib/analyti
 import { hasAnalyticsRetentionBacklog } from '@/lib/analytics/public-context'
 import { closeAnalyticsCollection, withAnalyticsWrite } from '@/server/analytics/repository'
 import { getBookingFunnelUrl } from '@/lib/business/urls'
+import { getOwnerAnalyticsReport as readOwnerAnalyticsReport } from '@/server/analytics/reports'
+
+export const getOwnerAnalyticsReport = action(async (input: unknown = {}) => {
+  await requireBusinessRole(['owner', 'admin'])
+  return readOwnerAnalyticsReport(input)
+})
 
 const linkSchema = z.strictObject({
   channel: channelSchema,

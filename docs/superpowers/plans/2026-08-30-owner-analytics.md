@@ -118,7 +118,7 @@ expect(analyticsEventSchema.safeParse({
 - `getBookingAnalyticsSnapshot({credential, selectionRevision, businessId, origin, now}): VerifiedBookingAnalyticsSnapshot | null`, sin consulta externa ni mutación de intentos.
 - Actions autorizadas: `createAcquisitionLink(input)`, `archiveAcquisitionLink(id)`, `setAnalyticsCollectionEnabled(enabled)`. Esta última exige los gates de configuración/privacidad/piloto; desactivar siempre debe ser posible y no habilita el flag global.
 
-- [ ] Escribir tests rojos de origen/header falsificado, tenant cruzado, opt-out, configuración incompleta, límite global/tenant y bootstrap con respuesta perdida.
+- [x] Escribir tests rojos de origen/header falsificado, tenant cruzado, opt-out, configuración incompleta, límite global/tenant y bootstrap con respuesta perdida.
 
 ```ts
 expect(getBookingAnalyticsSnapshot({
@@ -127,14 +127,14 @@ expect(getBookingAnalyticsSnapshot({
 })).toBeNull()
 ```
 
-- [ ] Ejecutar los tests focales y registrar el rojo. Implementar el contexto público sin reutilizar ciegamente `getTenantFromRequest()` en `/api`: el proxy actual excluye API antes de sanear su header interno.
-- [ ] Implementar idempotencia con unicidad en DB y recuperación tras conflicto/commit con respuesta perdida. Payload canónico idéntico es replay; conflicto de ID o secuencia marca captura incompleta. Serializar límites de 200 eventos por stream para evitar sobrepasarlos con lotes concurrentes.
-- [ ] Añadir presets de rate limit aislados o llamar el limitador con action y límites explícitos. Un EVAL comprueba ambos presupuestos antes de incrementarlos; reservas de presupuesto sin escritura posterior pueden perder capacidad de captura, nunca producir gastos/datos de negocio extra.
-- [ ] Validar tamaño real antes de parsear, Content-Type, Origin exacto, consent version, scope y IDs de dimensiones del tenant. Token inválido en captura rechaza el lote; en Booking sólo omite analytics.
-- [ ] Copiar los claims verificados exclusivamente en `tx.booking.create`; no cambiar retornos idempotentes ni la equivalencia de inputs financieros. No incluir analytics en precio, notificaciones, cupos o transacciones accesorias.
-- [ ] Enlaces de adquisición opacos: canal/campaña/promoción inmutables, archivar sin reatribuir histórico; nombre visible editable sólo como etiqueta actual. Preservar `ref` separado al propagar `acq`/UTMs permitidos y `continuar=1`.
-- [ ] Probar concurrentemente replays, límite de stream, FK de sesión cruzada y reservas con token inválido/expirado. Verificar que el estado transaccional y la idempotencia de Booking no cambian.
-- [ ] Verificación focal, typecheck/lint y revisión independiente antes del commit local `feat: collect consented owner analytics safely`.
+- [x] Ejecutar los tests focales y registrar el rojo. Implementar el contexto público sin reutilizar ciegamente `getTenantFromRequest()` en `/api`: el proxy actual excluye API antes de sanear su header interno.
+- [x] Implementar idempotencia con unicidad en DB y recuperación tras conflicto/commit con respuesta perdida. Payload canónico idéntico es replay; conflicto de ID o secuencia marca captura incompleta. Serializar límites de 200 eventos por stream para evitar sobrepasarlos con lotes concurrentes.
+- [x] Añadir presets de rate limit aislados o llamar el limitador con action y límites explícitos. Un EVAL comprueba ambos presupuestos antes de incrementarlos; reservas de presupuesto sin escritura posterior pueden perder capacidad de captura, nunca producir gastos/datos de negocio extra.
+- [x] Validar tamaño real antes de parsear, Content-Type, Origin exacto, consent version, scope y IDs de dimensiones del tenant. Token inválido en captura rechaza el lote; en Booking sólo omite analytics.
+- [x] Copiar los claims verificados exclusivamente en `tx.booking.create`; no cambiar retornos idempotentes ni la equivalencia de inputs financieros. No incluir analytics en precio, notificaciones, cupos o transacciones accesorias.
+- [x] Enlaces de adquisición opacos: canal/campaña/promoción inmutables, archivar sin reatribuir histórico; nombre visible editable sólo como etiqueta actual. Preservar `ref` separado al propagar `acq`/UTMs permitidos y `continuar=1`.
+- [x] Probar concurrentemente replays, límite de stream, FK de sesión cruzada y reservas con token inválido/expirado. Verificar que el estado transaccional y la idempotencia de Booking no cambian.
+- [x] Verificación focal, typecheck/lint y revisión independiente antes del commit local `feat: collect consented owner analytics safely`.
 
 ## Task 3: Cohortes diarias, consultas y mantenimiento
 
