@@ -45,8 +45,8 @@ Antes de ejecutar:
 - [x] Copiar spec/plan al worktree con su contenido íntegro; originales conservados en checkout principal.
 - [x] Instalar dependencias propias con `npm ci --ignore-scripts`; 819 paquetes, sin enlazar `node_modules`.
 - [x] Usar URLs sintéticas loopback al generar/validar Prisma. No cargar `.env.local` del proyecto.
-- [ ] Ejecutar baseline unitario y typecheck en la base exacta; clasificar cualquier fallo antes de modificar producción.
-- [ ] Crear una base local desechable exclusiva `agendita_owner_analytics_test`. Validar host loopback y nombre exacto de **DATABASE_URL y DIRECT_URL** antes de migrar/integrar; no confiar sólo en que una URL contenga “test”.
+- [x] Ejecutar baseline unitario y typecheck en la base exacta; 402 archivos/3674 pruebas aprobadas y una omitida, typecheck aprobado. Evidencia en el ledger.
+- [x] Crear una base local desechable exclusiva `agendita_owner_analytics_test`; PostgreSQL16 en 127.0.0.1:55439, ambas URLs sintéticas explícitas, 54 migraciones base aplicadas. No usar el guard genérico como única verificación.
 
 ## Module and interface map
 
