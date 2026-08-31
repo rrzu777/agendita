@@ -143,7 +143,7 @@ test('late opt-in and withdrawal do not erase the selected booking hour', async 
   await expect(page.getByRole('heading', { name: 'Tus datos', exact: true })).toBeVisible()
 })
 
-for (const consent of ['declined', 'withdrawn'] as const) {
+for (const consent of ['absent', 'declined', 'withdrawn'] as const) {
   test(`Booking commits without analytics after consent is ${consent}`, async ({ page }) => {
     // Catches making analytics mandatory, retaining a withdrawn credential, or
     // sending new capture requests while completing a non-consented reservation.
@@ -152,6 +152,7 @@ for (const consent of ['declined', 'withdrawn'] as const) {
     const requests: string[] = []
     page.on('request', request => { if (request.url().includes('/api/analytics/')) requests.push(request.url()) })
     await page.goto(bookingPath)
+    expect(requests).toEqual([])
     if (consent === 'withdrawn') {
       const bootstrapped = page.waitForResponse(response => response.url().endsWith(`/api/analytics/${fixture.slug}/attempt`) && response.ok())
       await page.getByRole('button', { name: 'Permitir métricas', exact: true }).click()
@@ -159,10 +160,10 @@ for (const consent of ['declined', 'withdrawn'] as const) {
       await page.waitForLoadState('networkidle')
       requests.length = 0 // Capture was permitted only before the withdrawal click.
       await page.getByRole('button', { name: 'Retirar permiso de métricas' }).click()
-    } else {
+    } else if (consent === 'declined') {
       await page.getByRole('button', { name: 'Continuar sin métricas', exact: true }).click()
     }
-    await pickTime(page, consent === 'declined' ? 8 : 9)
+    await pickTime(page, { absent: 10, declined: 8, withdrawn: 9 }[consent])
     await confirmBooking(page)
     const created = await prisma.booking.findMany({ where: { businessId: fixture.businessId, id: { notIn: before.map(row => row.id) } } })
     expect(created).toHaveLength(1)
