@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { prisma, seedAnalyticsReport } from '../helpers/analytics-report-db'
 import { getOwnerAnalyticsReport } from '@/server/analytics/reports'
 import { publishAnalyticsCohort } from '@/server/analytics/maintenance'
@@ -162,16 +162,24 @@ describe('retained flow report PostgreSQL boundary', () => {
       FROM "BookingFunnelAttempt" a CROSS JOIN generate_series(202, 10001) s WHERE a.id = ${f.attempt.id}::uuid`
     expect((await getOwnerAnalyticsReport(period, f.cohort.now)).flowBreakdowns).toMatchObject({ status: 'limit_exceeded', groups: null })
   }, 30000)
-  it('accepts exactly 50000 events but discards the entire detail on the 50001st, including previous pages', async () => {
-    const f = await fixture()
-    await replaceEvents(f, [])
-    const attempts = Array.from({ length: 250 }, () => ({ ...f.attempt, id: randomUUID(), bootstrapKey: randomUUID(), acceptedEventCount: 200 }))
-    await prisma.bookingFunnelAttempt.createMany({ data: attempts })
-    await prisma.$executeRaw`INSERT INTO "BookingFunnelEvent" (id, "businessId", "sessionId", "attemptId", "eventId", version, scope, type, "streamKey", sequence, "selectionRevision", fingerprint, data, "receivedAt", "retentionExpiresAt")
-      SELECT gen_random_uuid(), a."businessId", a."sessionId", a.id, gen_random_uuid(), 1, 'attempt'::"AnalyticsEventScope", 'step_viewed'::"AnalyticsEventType", 'attempt:' || a.id::text, s, 1, repeat('a', 64), '{"step":"payment"}'::jsonb, a."startedAt", a."retentionExpiresAt"
-      FROM "BookingFunnelAttempt" a CROSS JOIN generate_series(1, 200) s WHERE a."businessId" = ${f.businessId} AND a."acceptedEventCount" = 200`
-    expect((await getOwnerAnalyticsReport(period, f.cohort.now)).flowBreakdowns.status).toBe('available')
-    await replaceEvents(f, [event(1, 'step_viewed', { step: 'payment' })])
-    expect((await getOwnerAnalyticsReport(period, f.cohort.now)).flowBreakdowns).toMatchObject({ status: 'limit_exceeded', groups: null })
-  }, 30000)
+  describe('50000-event report boundary', () => {
+    let f: Fixture
+    // Cold SQL fixture construction is not the report's behavioral deadline.
+    // Await the complete insert before the 30s test body and eventual cleanup.
+    beforeAll(async () => {
+      f = await fixture()
+      await replaceEvents(f, [])
+      const attempts = Array.from({ length: 250 }, () => ({ ...f.attempt, id: randomUUID(), bootstrapKey: randomUUID(), acceptedEventCount: 200 }))
+      await prisma.bookingFunnelAttempt.createMany({ data: attempts })
+      await prisma.$executeRaw`INSERT INTO "BookingFunnelEvent" (id, "businessId", "sessionId", "attemptId", "eventId", version, scope, type, "streamKey", sequence, "selectionRevision", fingerprint, data, "receivedAt", "retentionExpiresAt")
+        SELECT gen_random_uuid(), a."businessId", a."sessionId", a.id, gen_random_uuid(), 1, 'attempt'::"AnalyticsEventScope", 'step_viewed'::"AnalyticsEventType", 'attempt:' || a.id::text, s, 1, repeat('a', 64), '{"step":"payment"}'::jsonb, a."startedAt", a."retentionExpiresAt"
+        FROM "BookingFunnelAttempt" a CROSS JOIN generate_series(1, 200) s WHERE a."businessId" = ${f.businessId} AND a."acceptedEventCount" = 200`
+    }, 60000)
+
+    it('accepts exactly 50000 events but discards the entire detail on the 50001st, including previous pages', async () => {
+      expect((await getOwnerAnalyticsReport(period, f.cohort.now)).flowBreakdowns.status).toBe('available')
+      await replaceEvents(f, [event(1, 'step_viewed', { step: 'payment' })])
+      expect((await getOwnerAnalyticsReport(period, f.cohort.now)).flowBreakdowns).toMatchObject({ status: 'limit_exceeded', groups: null })
+    }, 30000)
+  })
 })
