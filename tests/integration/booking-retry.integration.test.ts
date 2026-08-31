@@ -3,8 +3,13 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import { requireTestDatabase } from './setup'
 import { unwrap, expectActionError } from './helpers/action-result'
 import { cancellationPolicyRevision } from '@/lib/bookings/cancellation-policy-revision'
+import { requireAnalyticsTestDatabase } from '../helpers/analytics-database'
+import { captureSecret, configureCapture, liveCaptureClaims } from '../helpers/analytics-capture'
+import { signAnalyticsCredential } from '@/lib/analytics/credential'
+import { randomUUID } from 'node:crypto'
 
 requireTestDatabase()
+requireAnalyticsTestDatabase()
 
 // El reintento de pago: la clienta apretó "Intentar de nuevo" o volvió del
 // checkout y re-envió, y el wizard manda la MISMA idempotencyKey. El fast path
@@ -40,6 +45,7 @@ vi.mock('@/lib/auth/user', () => ({
   getCurrentUser: async () => null,
   getConfirmedSessionUser: async () => null,
 }))
+vi.mock('next/headers', () => ({ headers: async () => new Headers({ origin: 'https://salon.agendita.test' }) }))
 
 describe('reintento de pago con la misma idempotencyKey', () => {
   let prisma: PrismaClient
@@ -104,13 +110,36 @@ describe('reintento de pago con la misma idempotencyKey', () => {
 
   /** Devuelve el ActionResult crudo: los casos que esperan éxito lo pasan por
    *  `unwrap`, los que esperan el rechazo por `expectActionError`. */
-  async function reservar(key: string, startDateTime: Date = START) {
+  async function reservar(key: string, startDateTime: Date = START, analytics?: unknown) {
     const { createBooking } = await import('@/server/actions/bookings')
     return createBooking({
       serviceId, customerName: 'Ana', customerPhone: '+56911300001',
-      startDateTime, acceptedTerms: true, cancellationPolicyRevision: POLICY_REVISION, idempotencyKey: key,
+      startDateTime, acceptedTerms: true, cancellationPolicyRevision: POLICY_REVISION, idempotencyKey: key, analytics,
     }, BIZ)
   }
+
+  it('persists only the first signed analytics snapshot and preserves it across a different retry credential', async () => {
+    configureCapture(BIZ)
+    try {
+      const claims = liveCaptureClaims(BIZ)
+      const metadata = { credential: signAnalyticsCredential(claims, captureSecret), selectionRevision: 4 }
+      const first = await unwrap(reservar('analytics-snapshot-retry', START, metadata))
+      expect(first.analyticsAttemptId).toBe('13b83f98-9d17-44bd-b06b-23ea3ca9f19c')
+      const secondClaims = { ...claims, scope: 'attempt' as const, attemptId: randomUUID(), attemptStartedAt: claims.sessionStartedAt, conversionDeadlineAt: claims.sessionExpiresAt }
+      const retried = await unwrap(reservar('analytics-snapshot-retry', START, { credential: signAnalyticsCredential(secondClaims, captureSecret), selectionRevision: 9 }))
+      expect(retried.id).toBe(first.id)
+      const stored = await prisma.booking.findUniqueOrThrow({ where: { id: first.id } })
+      expect(stored).toMatchObject({ analyticsAttemptId: first.analyticsAttemptId, analyticsSelectionRevision: 4, totalPrice: 20000, depositRequired: 5000 })
+      expect(await prisma.booking.count({ where: { businessId: BIZ } })).toBe(1)
+      expect(await prisma.analyticsSession.count({ where: { businessId: BIZ } })).toBe(0)
+    } finally { vi.unstubAllEnvs() }
+  })
+
+  it.each([17, 'wrong-shape', { credential: 'bad-signature' }, { credential: 'x'.repeat(20000) }])('malformed analytics never rejects a real reservation: %j', async (analytics) => {
+    const booking = await unwrap(reservar('analytics-malformed', START, analytics))
+    expect(booking).toMatchObject({ analyticsAttemptId: null, totalPrice: 20000, depositRequired: 5000 })
+    expect(await prisma.booking.count({ where: { businessId: BIZ } })).toBe(1)
+  })
 
   /** Vencer el hold es lo que abre la ventana: el horario queda ofrecible para
    *  otra clienta y la reserva, inpagable para `initiatePayment`. */

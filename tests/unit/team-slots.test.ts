@@ -15,7 +15,7 @@ vi.mock('@/lib/availability/effective-blocks', () => ({
   getEffectiveBlocks: (...args: unknown[]) => getEffectiveBlocks(...args),
 }))
 
-const { getTeamAvailableSlots } = await import('@/lib/availability/team-slots')
+const { getTeamAvailableSlots, getTeamAvailableSlotsResult } = await import('@/lib/availability/team-slots')
 
 // Lunes. En junio Santiago está en UTC-4, así que la regla 09:00–12:00 local es
 // 13:00Z–16:00Z y un servicio de 60' da tres horas: 13, 14 y 15.
@@ -66,6 +66,13 @@ beforeEach(() => {
 })
 
 describe('los horarios de "cualquiera disponible"', () => {
+  it('typed anyone result preserves legacy slots and only unifies proven equal diagnoses', async () => {
+    const input = { businessId: 'biz-1', service: SERVICE, date: DIA, requestedModality: 'on_site' as const, timezone: 'America/Santiago', slotOptions: OPCIONES }
+    expect(await getTeamAvailableSlotsResult(input)).toEqual({ slots: await pedir(), emptyReason: null })
+    expect((await getTeamAvailableSlotsResult({ ...input, slotOptions: { ...OPCIONES, bookingWindowDays: 0 } })).emptyReason).toBe('outside_booking_window')
+    mockPrisma.availabilityRule.findMany.mockResolvedValue([regla(null), regla('ana', '09:00', '12:00', false)])
+    expect((await getTeamAvailableSlotsResult({ ...input, slotOptions: { ...OPCIONES, bookingWindowDays: 0 } })).emptyReason).toBe('unknown')
+  })
   /**
    * Es el punto de la feature: dos personas libres a las 15:00 son UN horario en
    * pantalla. Sin deduplicar, la clienta ve la misma hora repetida tantas veces como

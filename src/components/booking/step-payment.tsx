@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { usePublicAnalytics } from '@/components/analytics/public-analytics'
+import { formatInTimeZone } from 'date-fns-tz'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -126,6 +128,11 @@ type Paso =
   | { k: 'transfer-declared'; reserva: ReservaEnTransferencia }
 
 export function StepPayment({ data, updateData, businessId, timezone, currency, cancellationPolicy, cancellationPolicyRevision, selfServiceCutoffHours, manualHoldHours, referralToken, onSuccess, onBack }: { data: BookingData; updateData: (partial: Partial<BookingData>) => void; businessId: string; timezone: string; currency: string; cancellationPolicy?: string | null; cancellationPolicyRevision: string; selfServiceCutoffHours: number; manualHoldHours: number; referralToken?: string; onSuccess: (result: BookingCreated) => void; onBack: () => void }) {
+  const analytics = usePublicAnalytics()
+  const promoGeneration = useRef(0)
+  const economicEvidence = useRef('')
+  const branchEvidence = useRef('')
+  const evidenceIdentity = useRef<string | null>(null)
   const [paso, setPaso] = useState<Paso>({ k: 'review' })
   const [bankInfo, setBankInfo] = useState<BankTransferPublicInfo | null>(null)
   const [method, setMethod] = useState<'online' | 'transfer'>('online')
@@ -182,9 +189,64 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
   const noDepositNeeded = effectiveDeposit <= 0
   const isFreeService = effectiveFinalPrice <= 0
 
+  useEffect(() => {
+    const counter = promoGeneration
+    // Requests are scoped to the actual customer/service input, not a shared boolean.
+    /* eslint-disable react-hooks/set-state-in-effect -- reset only when the preview's input identity changes */
+    setPromoPending(false)
+    setAppliedPromo(null)
+    setPromoError(null)
+    /* eslint-enable react-hooks/set-state-in-effect */
+    return () => { counter.current++ }
+  }, [businessId, data.serviceId, data.customerPhone, data.serviceModality])
+
+  const paymentScreen = pantallaDeDatos({ noDepositNeeded, availability })
+  const economicCondition = packageCovers ? 'package' : appliedPromo && appliedPromo.finalAmount <= 0 ? 'promotion_zero' : isFreeService ? 'free_service' : noDepositNeeded ? 'no_deposit' : 'deposit_required'
+  const offeredMethods: ('online' | 'transfer' | 'manual')[] = paymentScreen === 'verificando' ? [] : paymentScreen === 'sin-abono' ? ['manual'] : paymentScreen === 'sin-pago-online' ? [bankInfo ? 'transfer' : 'manual'] : bankInfo ? ['online', 'transfer'] : ['online']
+  const branchKey = JSON.stringify([paymentScreen, economicCondition, offeredMethods])
+  // Amounts remain only in component memory for invalidation; never in analytics state/events.
+  const economicKey = JSON.stringify([effectiveFinalPrice, effectiveDeposit, packageCovers])
+  useEffect(() => {
+    if (!analytics.ready || paso.k !== 'review') return
+    function observe() {
+      if (document.visibilityState !== 'visible') return
+      // Child effects run before Wizard's effect when consent arrives here.
+      // Existing attempts are reused; this only starts partial when none is valid.
+      analytics.startAttempt('partial')
+      const identity = analytics.attemptIdentity()
+      if (!identity) return
+      if (evidenceIdentity.current !== identity) {
+        evidenceIdentity.current = identity
+        economicEvidence.current = ''
+        branchEvidence.current = ''
+      }
+      if (economicEvidence.current && economicEvidence.current !== economicKey) {
+        analytics.changeSelection({ reason: 'payment', context: data.serviceId && data.serviceModality ? { serviceId: data.serviceId, modality: data.serviceModality, professional: data.professional.kind === 'person' ? { kind: 'person', professionalId: data.professional.id } : data.professional } : null, localDate: data.date ? formatInTimeZone(data.date, timezone, 'yyyy-MM-dd') : null })
+        branchEvidence.current = ''
+      }
+      economicEvidence.current = economicKey
+      const observedKey = `${identity}:${branchKey}:${analytics.revision()}`
+      if (branchEvidence.current !== observedKey) {
+        analytics.track({ type: 'payment_branch_viewed', data: { screen: paymentScreen, condition: economicCondition, offeredMethods } })
+        branchEvidence.current = observedKey
+      }
+    }
+    observe()
+    document.addEventListener('visibilitychange', observe)
+    return () => document.removeEventListener('visibilitychange', observe)
+    // Closed keys encode the actual rendered fields, avoiding unstable array dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analytics.ready, paso.k, branchKey, economicKey])
+
   async function handleApplyPromo() {
     const code = promoCode.trim()
     if (!code || !data.serviceId) return
+    const generation = ++promoGeneration.current
+    const revision = analytics.revision()
+    const attemptIdentity = analytics.attemptIdentity()
+    // Consent changes affect observation, never the customer's valid price preview.
+    const current = () => generation === promoGeneration.current
+    const observable = () => current() && attemptIdentity !== null && attemptIdentity === analytics.attemptIdentity() && revision === analytics.revision()
     setPromoPending(true)
     setPromoError(null)
     try {
@@ -194,27 +256,34 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         serviceId: data.serviceId,
         phone: data.customerPhone || undefined,
       })
+      if (!current()) return
       if (!res.ok) {
+        if (observable()) analytics.track({ type: 'promotion_result', data: { result: 'error', category: 'unknown' } })
         setPromoError(res.error)
         setAppliedPromo(null)
         return
       }
       if (res.data.ok) {
+        if (observable() && res.data.promotionId) analytics.track({ type: 'promotion_result', data: { result: 'accepted', promotionId: res.data.promotionId } })
         setAppliedPromo({ code, discount: res.data.discount, finalAmount: res.data.finalAmount })
         setPromoError(null)
       } else {
+        if (observable()) analytics.track({ type: 'promotion_result', data: { result: 'rejected', category: res.data.category ?? 'unknown' } })
         setPromoError(res.data.message)
         setAppliedPromo(null)
       }
     } catch {
+      if (!current()) return
+      if (observable()) analytics.track({ type: 'promotion_result', data: { result: 'error', category: 'network' } })
       setPromoError('No se pudo validar el código')
       setAppliedPromo(null)
     } finally {
-      setPromoPending(false)
+      if (generation === promoGeneration.current) setPromoPending(false)
     }
   }
 
   function handleRemovePromo() {
+    promoGeneration.current++
     setAppliedPromo(null)
     setPromoCode('')
     setPromoError(null)
@@ -297,6 +366,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
   /* eslint-disable react-hooks/set-state-in-effect -- intentional reset-before-async-fetch
      so stale availability isn't shown while re-checking; guarded by the deps. */
   useEffect(() => {
+    let cancelled = false
     if (noDepositNeeded) {
       setAvailability(null)
       setAvailabilityError('')
@@ -306,10 +376,12 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     setAvailabilityError('')
     Promise.all([getOnlinePaymentAvailability(businessId), getBankTransferInfo(businessId)])
       .then(([avail, bank]) => {
+        if (cancelled) return
         setAvailability(avail)
         setBankInfo(bank)
       })
       .catch(() => {
+        if (cancelled) return
         const reason = 'No pudimos verificar pago online. Puedes confirmar la reserva y el negocio coordinará el abono.'
         setAvailabilityError(reason)
         setAvailability({
@@ -320,6 +392,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         })
         setBankInfo(null)
       })
+    return () => { cancelled = true }
   }, [businessId, noDepositNeeded])
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -340,7 +413,9 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
   // Argumentos comunes de createBooking a los tres handlers (online / manual /
   // transferencia). Cada handler pasa solo lo que difiere (p.ej. paymentMethod).
   function bookingInput(extra?: { paymentMethod?: typeof BANK_TRANSFER_METHOD }) {
+    const attribution = analytics.bookingCredential()
     return {
+      ...(attribution ? { analytics: attribution } : {}),
       serviceId: data.serviceId!,
       customerName: data.customerName,
       customerPhone: data.customerPhone,
@@ -371,16 +446,20 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
    *  de un caso imposible — y un guard silencioso sería un botón que no hace
    *  nada, que es el síntoma exacto del #159. */
   async function handleTransferBooking(bank: BankTransferPublicInfo) {
+    analytics.track({ type: 'payment_method_selected', data: { method: 'transfer' } })
+    analytics.track({ type: 'booking_submit_result', data: { result: 'submitted' } })
     setPaso({ k: 'processing' })
     setErrorMessage('')
     try {
       const res = await createBooking(bookingInput({ paymentMethod: BANK_TRANSFER_METHOD }), businessId)
       if (!res.ok) {
+        analytics.track({ type: 'booking_submit_result', data: { result: 'rejected', category: 'unknown' } })
         setErrorMessage(res.error)
         setPaso({ k: 'error' })
         return
       }
       const booking = res.data
+      analytics.completeAttempt()
       retainPushGrant(booking)
       setPaso({
         k: 'transfer-details',
@@ -398,6 +477,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         },
       })
     } catch (err) {
+      analytics.track({ type: 'booking_submit_result', data: { result: 'error', category: 'network' } })
       console.error('Transfer booking error:', err)
       setErrorMessage('Error al crear la reserva')
       setPaso({ k: 'error' })
@@ -473,17 +553,20 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
   }
 
   async function handleManualBooking() {
+    analytics.track({ type: 'booking_submit_result', data: { result: 'submitted' } })
     setPaso({ k: 'processing' })
     setErrorMessage('')
 
     try {
       const res = await createBooking(bookingInput(), businessId)
       if (!res.ok) {
+        analytics.track({ type: 'booking_submit_result', data: { result: 'rejected', category: 'unknown' } })
         setErrorMessage(res.error)
         setPaso({ k: 'error' })
         return
       }
       const booking = res.data
+      analytics.completeAttempt()
 
       retainPushGrant(booking)
 
@@ -493,6 +576,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       // confirme a mano: ahí queda esperando y todavía no hay nada que agendar.
       onSuccess(resultado(booking, mode, booking.status === 'confirmed'))
     } catch (err) {
+      analytics.track({ type: 'booking_submit_result', data: { result: 'error', category: 'network' } })
       console.error('Booking error:', err)
       setErrorMessage('Error al crear la reserva')
       setPaso({ k: 'error' })
@@ -508,14 +592,19 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       return
     }
 
+    analytics.track({ type: 'booking_submit_result', data: { result: 'submitted' } })
+    let bookingCreated = false
     try {
       const res = await createBooking(bookingInput(), businessId)
       if (!res.ok) {
+        analytics.track({ type: 'booking_submit_result', data: { result: 'rejected', category: 'unknown' } })
         setErrorMessage(res.error)
         setPaso({ k: 'error' })
         return
       }
       const booking = res.data
+      bookingCreated = true
+      const binding = analytics.completeAttempt()
 
       retainPushGrant(booking)
 
@@ -535,6 +624,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       // Redirect-based providers (Mercado Pago): redirigir al usuario al checkout externo.
       // No llamar verifyAndConfirmPayment: la confirmación ocurre via webhook.
       if (paymentResult.redirectUrl) {
+        if (binding) analytics.track({ type: 'checkout_redirected', data: { provider: 'mercado_pago' } }, binding)
         window.location.href = paymentResult.redirectUrl
         return
       }
@@ -568,6 +658,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       // `booking` de acá se leyó antes de cobrar y todavía dice pendiente.
       onSuccess(resultado(booking, 'paid', true))
     } catch (err) {
+      if (!bookingCreated) analytics.track({ type: 'booking_submit_result', data: { result: 'error', category: 'network' } })
       console.error('Payment error:', err)
       setErrorMessage('Error al procesar el pago')
       setPaso({ k: 'error' })
@@ -825,7 +916,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
               <button
                 key={key}
                 type="button"
-                onClick={() => setMethod(key)}
+                onClick={() => { analytics.track({ type: 'payment_method_selected', data: { method: key } }); setMethod(key) }}
                 className={`rounded-xl border p-4 text-left text-sm transition-colors ${method === key ? 'border-primary bg-primary/5' : 'border-border'}`}
               >
                 <span className="block font-semibold text-primary">{title}</span>

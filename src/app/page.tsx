@@ -1,9 +1,12 @@
 import Link from 'next/link'
 import { BusinessProfile } from '@/components/public/business-profile'
+import { PublicAnalytics } from '@/components/analytics/public-analytics'
+import { isPublicAnalyticsEligible } from '@/lib/analytics/public-context'
 import { getPublicBusinessBySubdomain } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { getAccountCta, getFunnelSession } from '@/lib/customers/session-prefill'
 import { prisma } from '@/lib/db'
+import { appendPublicAcquisitionSearch } from '@/lib/business/urls'
 import { CalendarCheck, Wallet, Bell } from 'lucide-react'
 
 const features = [
@@ -60,22 +63,25 @@ function LandingPage() {
   )
 }
 
-export default async function HomePage() {
+export default async function HomePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const tenant = await getTenantFromRequest()
 
   if (tenant) {
     const business = await getPublicBusinessBySubdomain(tenant.subdomain)
 
     if (business) {
+      const search = await searchParams
       const session = await getFunnelSession(business.id)
       const hasPackages = (await prisma.packageProduct.count({ where: { businessId: business.id, isActive: true } })) > 0
       return (
+        <PublicAnalytics businessId={business.id} slug={business.slug} timezone={business.timezone || 'America/Santiago'} eligible={await isPublicAnalyticsEligible(business.id)} surface="profile">
         <BusinessProfile
           business={business}
-          bookingHref="/book"
-          accountCta={getAccountCta(session, business.slug)}
+          bookingHref={appendPublicAcquisitionSearch('/book', search)}
+          accountCta={getAccountCta(session, business.slug, search)}
           packagesHref={hasPackages ? '/paquetes' : undefined}
         />
+        </PublicAnalytics>
       )
     }
   }

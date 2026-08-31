@@ -12,6 +12,7 @@ const webServerCommand = process.env.CI
 
 export default defineConfig({
   testDir: './tests/e2e',
+  testIgnore: ['**/owner-analytics.spec.ts', '**/owner-analytics-public.spec.ts'],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

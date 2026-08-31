@@ -1,6 +1,6 @@
 import type { ServiceModality } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { generateSlots, type GenerateSlotsOptions, type TimeSlot } from '@/lib/availability/slots'
+import { generateSlotsResult, type AvailableSlotsResult, type GenerateSlotsOptions, type TimeSlot } from '@/lib/availability/slots'
 import { getBusinessDayRange } from '@/lib/availability/timezone'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 import {
@@ -53,7 +53,7 @@ import {
  * lectura más caliente del producto para todo el mundo, por una función que sólo usan
  * los negocios con equipo. Merece su propio PR y su propia medición.
  */
-export async function getTeamAvailableSlots({
+export async function getTeamAvailableSlotsResult({
   businessId,
   service,
   date,
@@ -68,7 +68,7 @@ export async function getTeamAvailableSlots({
   requestedModality: ServiceModality | null | undefined
   timezone: string
   slotOptions: GenerateSlotsOptions
-}): Promise<TimeSlot[]> {
+}): Promise<AvailableSlotsResult> {
   // La MISMA resolución que hace `resolveBookingDraft` antes de escribir: con una sola
   // modalidad el servicio la impone y lo que pidió el navegador se ignora. Filtrar por
   // la pedida sería dejar afuera a gente que sí puede atender —o peor, ofrecer los
@@ -112,8 +112,9 @@ export async function getTeamAvailableSlots({
   // siempre inicio + duración del servicio: dos personas libres a la misma hora
   // producen slots idénticos.
   const porInstante = new Map<number, TimeSlot>()
+  const reasons = new Set<AvailableSlotsResult['emptyReason']>()
   for (const persona of personas) {
-    const slots = generateSlots(
+    const result = generateSlotsResult(
       date,
       service.durationMinutes,
       rulesForProfessional(reglas, persona.id),
@@ -121,8 +122,14 @@ export async function getTeamAvailableSlots({
       reservas.filter((b) => bookingBlocksProfessional(b, persona.id)),
       slotOptions,
     )
-    for (const slot of slots) porInstante.set(slot.start.getTime(), slot)
+    reasons.add(result.emptyReason)
+    for (const slot of result.slots) porInstante.set(slot.start.getTime(), slot)
   }
 
-  return [...porInstante.values()].sort((a, b) => a.start.getTime() - b.start.getTime())
+  const slots = [...porInstante.values()].sort((a, b) => a.start.getTime() - b.start.getTime())
+  return { slots, emptyReason: slots.length ? null : !personas.length ? 'not_offered' : reasons.size === 1 ? [...reasons][0] ?? 'unknown' : 'unknown' }
+}
+
+export async function getTeamAvailableSlots(input: Parameters<typeof getTeamAvailableSlotsResult>[0]): Promise<TimeSlot[]> {
+  return (await getTeamAvailableSlotsResult(input)).slots
 }

@@ -1,6 +1,33 @@
+import { normalizeAcquisition } from '@/lib/analytics/attribution'
+
 type BusinessUrlInput = {
   slug: string
   subdomain: string | null
+}
+
+export type PublicSearchInput = URLSearchParams | Record<string, string | string[] | undefined>
+/** Navigation allowlist; never forwards credentials, contact fields, arbitrary UTMs or a redirect target. */
+export function publicAcquisitionSearch(input: PublicSearchInput): string {
+  const get = (key: string) => {
+    const value = input instanceof URLSearchParams ? input.getAll(key) : input[key]
+    return Array.isArray(value) ? value.length === 1 ? value[0] : undefined : value
+  }
+  const result = new URLSearchParams()
+  const ref = get('ref'), acq = get('acq'), source = get('utm_source'), medium = get('utm_medium'), campaign = get('utm_campaign')
+  if (ref && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref)) result.set('ref', ref)
+  if (acq && /^[A-Za-z0-9_-]{22,64}$/.test(acq)) result.set('acq', acq)
+  if (source && source.length <= 80) result.set('utm_source', normalizeAcquisition({ utmSource: source }).channel)
+  if (medium && ['social', 'paid_social', 'organic', 'cpc', 'ppc', 'email', 'referral', 'messaging', 'qr'].includes(medium.toLowerCase())) result.set('utm_medium', medium.toLowerCase())
+  if (campaign && /^[A-Za-z0-9_-]{1,128}$/.test(campaign)) result.set('utm_campaign', campaign)
+  if (get('continuar') === '1') result.set('continuar', '1')
+  return result.toString()
+}
+export function appendPublicAcquisitionSearch(path: string, input: PublicSearchInput): string {
+  const search = publicAcquisitionSearch(input)
+  return search ? `${path}${path.includes('?') ? '&' : '?'}${search}` : path
+}
+export function getBookingLoginUrl(slug: string, input: PublicSearchInput = {}): string {
+  return `/ingresar?next=${encodeURIComponent(appendPublicAcquisitionSearch(`/ir/${slug}`, input))}`
 }
 
 function getConfiguredAppDomain() {

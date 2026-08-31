@@ -33,6 +33,7 @@ vi.mock('@/server/actions/revalidate-business', () => ({
 }))
 vi.mock('@/lib/availability/slots', () => ({
   generateSlots: (...a: unknown[]) => mockGenerateSlots(...a),
+  generateSlotsResult: (...a: unknown[]) => ({ slots: mockGenerateSlots(...a), emptyReason: 'unknown' }),
 }))
 
 const { getAvailableTimeSlots } = await import('@/server/actions/availability')

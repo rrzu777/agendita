@@ -1,5 +1,6 @@
 import { getCurrentUser } from '@/lib/auth/user'
 import { prisma } from '@/lib/db'
+import { getBookingLoginUrl, type PublicSearchInput } from '@/lib/business/urls'
 
 export interface FunnelSession {
   email: string
@@ -11,10 +12,10 @@ export interface FunnelSession {
 /** CTA de cuenta de la landing pública: con Customer vinculada va al detalle
  *  del negocio; sin vincular, a /mi (home, nunca 404ea); anónima, a ingresar
  *  con retorno vía /ir/[slug]. */
-export function getAccountCta(session: FunnelSession | null, businessSlug: string): { label: 'Ingresar' | 'Mi cuenta'; href: string } {
+export function getAccountCta(session: FunnelSession | null, businessSlug: string, search: PublicSearchInput = {}): { label: 'Ingresar' | 'Mi cuenta'; href: string } {
   return session
     ? { label: 'Mi cuenta', href: session.hasCustomer ? `/mi/${businessSlug}` : '/mi' }
-    : { label: 'Ingresar', href: `/ingresar?next=${encodeURIComponent(`/ir/${businessSlug}`)}` }
+    : { label: 'Ingresar', href: getBookingLoginUrl(businessSlug, search) }
 }
 
 /** Sesión de clienta para el funnel público: email de la sesión + datos de su

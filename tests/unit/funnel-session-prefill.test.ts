@@ -7,10 +7,19 @@ const { mockGetCurrentUser, mockFindFirst } = vi.hoisted(() => ({
 vi.mock('@/lib/auth/user', () => ({ getCurrentUser: mockGetCurrentUser }))
 vi.mock('@/lib/db', () => ({ prisma: { customer: { findFirst: mockFindFirst } } }))
 
-import { getFunnelSession } from '@/lib/customers/session-prefill'
+import { getFunnelSession, getAccountCta } from '@/lib/customers/session-prefill'
 
 describe('getFunnelSession', () => {
   beforeEach(() => vi.clearAllMocks())
+  it('account login preserves acquisition without changing signed-in customer destination', () => {
+    const cta = getAccountCta(null, 'salon', { acq: 'abcdefghijklmnopqrstuv' })
+    expect(new URL(cta.href, 'https://example.test').searchParams.get('next')).toBe('/ir/salon?acq=abcdefghijklmnopqrstuv')
+    expect(getAccountCta({ name: 'Ana', phone: '', email: '', hasCustomer: true }, 'salon', { acq: 'abcdefghijklmnopqrstuv' }).href).toBe('/mi/salon')
+  })
+  it('never transports a capture credential or revision in login/account URLs', () => {
+    const cta = getAccountCta(null, 'salon', { acq: 'abcdefghijklmnopqrstuv', credential: 'signed-secret', selectionRevision: '5', analyticsSessionId: 'session-secret' })
+    expect(cta.href).not.toMatch(/signed-secret|selectionRevision|session-secret/)
+  })
 
   it('sin sesión → null', async () => {
     mockGetCurrentUser.mockResolvedValue(null)

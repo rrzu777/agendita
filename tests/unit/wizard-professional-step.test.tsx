@@ -19,7 +19,7 @@ vi.mock('@/server/actions/bank-transfer-public', () => ({
 }))
 vi.mock('@/server/actions/promotions', () => ({ previewPromotion: vi.fn() }))
 vi.mock('@/server/actions/availability', () => ({
-  getAvailableTimeSlots: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+  getAvailableTimeSlotsResult: vi.fn().mockResolvedValue({ ok: true, data: { slots: [], emptyReason: 'unknown' } }),
 }))
 
 const { BookingWizard } = await import('@/components/booking/wizard')

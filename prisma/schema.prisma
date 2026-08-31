@@ -146,6 +146,12 @@ model Business {
   professionals                      Professional[]
   pushSubscriptions    PushSubscription[]
   tourProgress         UserTourProgress[]
+  analyticsSessions    AnalyticsSession[]
+  analyticsAttempts    BookingFunnelAttempt[]
+  analyticsEvents      BookingFunnelEvent[]
+  acquisitionLinks     AcquisitionLink[]
+  analyticsPeriods     AnalyticsCollectionPeriod[]
+  analyticsDailyMetrics AnalyticsDailyMetric[]
 }
 
 enum PaymentAccountStatus {
@@ -744,6 +750,21 @@ model Booking {
   transferReminderBusinessSentAt DateTime? // CAS del recordatorio a la dueña (declarada sin verificar)
   pushSubscriptionEntitlements   PushSubscriptionBooking[]
 
+  // Optional verified scalar snapshot: never a FK and never part of booking idempotency.
+  analyticsVersion              Int?
+  analyticsSessionId            String? @db.Uuid
+  analyticsAttemptId            String? @db.Uuid
+  analyticsAttemptStartedAt     DateTime?
+  analyticsConversionDeadlineAt DateTime?
+  analyticsRetentionExpiresAt   DateTime?
+  analyticsChannel              AnalyticsChannel?
+  analyticsNormalizationVersion Int?
+  analyticsAcquisitionLinkId    String?
+  analyticsSelectionRevision   Int?
+
+  @@index([businessId, analyticsAttemptId, createdAt])
+  @@index([analyticsRetentionExpiresAt, id])
+
   @@unique([businessId, idempotencyKey])
   @@unique([businessId, bookingNumber])
   @@index([businessId, status, startDateTime, endDateTime])
@@ -766,6 +787,215 @@ model Booking {
   // Las citas de una persona: el filtro del calendario y el chequeo de si se
   // la puede borrar.
   @@index([professionalId])
+}
+
+enum AnalyticsChannel {
+  direct
+  instagram
+  facebook
+  whatsapp
+  google
+  referral
+  other
+  unknown
+}
+
+enum AnalyticsEntryKind {
+  complete
+  partial
+}
+
+enum AnalyticsEventScope {
+  session
+  attempt
+}
+
+enum AnalyticsEventType {
+  public_profile_viewed
+  booking_entry_viewed
+  funnel_started
+  step_viewed
+  service_considered
+  service_selected
+  professional_selected
+  date_selected
+  time_selected
+  availability_result
+  customer_step_completed
+  promotion_result
+  payment_branch_viewed
+  payment_method_selected
+  booking_submit_result
+  selection_context_changed
+  checkout_redirected
+}
+
+enum AnalyticsPopulation {
+  sessions
+  complete_attempts
+  partial_attempts
+}
+
+enum AnalyticsGrain {
+  total
+  channel
+  acquisition_link
+  service
+}
+
+enum AnalyticsPublicationState {
+  provisional
+  closed
+  failed
+}
+
+enum AnalyticsCoverageState {
+  complete
+  partial
+  disabled
+  unknown
+}
+
+model AnalyticsSession {
+  id                    String @id @default(uuid()) @db.Uuid
+  businessId            String
+  bootstrapKey          String @db.Uuid
+  origin                String @db.VarChar(300)
+  consentVersion        Int
+  definitionVersion     Int
+  startedAt             DateTime
+  expiresAt             DateTime
+  retentionExpiresAt    DateTime
+  businessTimeZone       String @db.VarChar(100)
+  cohortLocalDate        DateTime @db.Date
+  channel               AnalyticsChannel
+  normalizationVersion  Int
+  acquisitionLinkId     String?
+  acceptedEventCount    Int @default(0)
+  knownCaptureGap       Boolean @default(false)
+  business              Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  attempts              BookingFunnelAttempt[]
+  events                BookingFunnelEvent[]
+
+  @@unique([businessId, id])
+  @@unique([businessId, bootstrapKey])
+  @@index([businessId, startedAt, id])
+  @@index([retentionExpiresAt, id])
+}
+
+model BookingFunnelAttempt {
+  id                    String @id @default(uuid()) @db.Uuid
+  businessId            String
+  sessionId             String @db.Uuid
+  bootstrapKey          String @db.Uuid
+  origin                String @db.VarChar(300)
+  startedAt             DateTime
+  conversionDeadlineAt  DateTime
+  retentionExpiresAt    DateTime
+  entryKind             AnalyticsEntryKind
+  definitionVersion     Int
+  businessTimeZone      String @db.VarChar(100)
+  cohortLocalDate       DateTime @db.Date
+  channel               AnalyticsChannel
+  normalizationVersion  Int
+  acquisitionLinkId     String?
+  acceptedEventCount    Int @default(0)
+  knownCaptureGap       Boolean @default(false)
+  business              Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  session               AnalyticsSession @relation(fields: [businessId, sessionId], references: [businessId, id], onDelete: Cascade)
+  events                BookingFunnelEvent[]
+
+  @@unique([businessId, sessionId, id])
+  @@unique([businessId, bootstrapKey])
+  @@index([businessId, startedAt, id])
+  @@index([retentionExpiresAt, id])
+}
+
+model BookingFunnelEvent {
+  id                   String @id @default(uuid()) @db.Uuid
+  businessId           String
+  sessionId            String @db.Uuid
+  attemptId            String? @db.Uuid
+  eventId              String @db.Uuid
+  version              Int
+  scope                AnalyticsEventScope
+  type                 AnalyticsEventType
+  streamKey            String @db.VarChar(50)
+  sequence             Int
+  selectionRevision    Int?
+  fingerprint          String @db.Char(64)
+  data                 Json
+  // Historical dimension IDs intentionally have no service/professional FKs.
+  serviceId            String?
+  modality             ServiceModality?
+  professionalId       String?
+  receivedAt           DateTime @default(now())
+  retentionExpiresAt   DateTime
+  business             Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  session              AnalyticsSession @relation(fields: [businessId, sessionId], references: [businessId, id], onDelete: Cascade)
+  attempt              BookingFunnelAttempt? @relation(fields: [businessId, sessionId, attemptId], references: [businessId, sessionId, id], onDelete: Cascade)
+
+  @@unique([businessId, eventId])
+  @@unique([businessId, streamKey, sequence])
+  @@index([businessId, receivedAt])
+  @@index([businessId, attemptId, sequence])
+  @@index([businessId, sessionId])
+  @@index([retentionExpiresAt, id])
+}
+
+model AcquisitionLink {
+  id             String @id @default(cuid())
+  businessId     String
+  token          String @unique @db.VarChar(64)
+  channel        AnalyticsChannel
+  campaignName   String @db.VarChar(100)
+  promotionId    String?
+  createdAt      DateTime @default(now())
+  archivedAt     DateTime?
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, id])
+  @@index([businessId, archivedAt, createdAt])
+}
+
+model AnalyticsCollectionPeriod {
+  id                   String @id @default(uuid()) @db.Uuid
+  businessId           String
+  definitionVersion    Int
+  consentVersion       Int
+  businessTimeZone     String @db.VarChar(100)
+  startedAt            DateTime
+  endedAt              DateTime?
+  closeReason          String? @db.VarChar(32)
+  business             Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, startedAt, id])
+}
+
+model AnalyticsDailyMetric {
+  id                   String @id @default(uuid()) @db.Uuid
+  businessId           String
+  cohortLocalDate      DateTime @db.Date
+  businessTimeZone     String @db.VarChar(100)
+  definitionVersion    Int
+  population           AnalyticsPopulation
+  grain                AnalyticsGrain
+  dimensionKey         String @db.VarChar(128)
+  metricKey            String @db.VarChar(64)
+  numerator            Int
+  denominator          Int
+  revision             Int
+  state                AnalyticsPublicationState
+  coverage             AnalyticsCoverageState
+  calculatedAt         DateTime
+  cutoffAt             DateTime
+  frozenAt             DateTime?
+  retentionExpiresAt   DateTime
+  business             Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, cohortLocalDate, businessTimeZone, definitionVersion, population, grain, dimensionKey, metricKey], map: "AnalyticsDailyMetric_cell_key")
+  @@index([businessId, cohortLocalDate])
+  @@index([retentionExpiresAt, id])
 }
 
 model PushSubscription {

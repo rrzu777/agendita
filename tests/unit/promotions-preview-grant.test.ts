@@ -22,11 +22,11 @@ beforeEach(() => vi.clearAllMocks())
 describe('previewPromotion — grant', () => {
   it('un grant activo devuelve el descuento', async () => {
     ;(prisma.promotionGrant.findFirst as any).mockResolvedValue({ id: 'g1', expiresAt: null,
-      promotion: { appliesToAll: true, services: [], minSpend: null, rewardType: 'percentage', rewardValue: 50, maxDiscount: null } })
+      promotion: { id: 'promotion-1', appliesToAll: true, services: [], minSpend: null, rewardType: 'percentage', rewardValue: 50, maxDiscount: null } })
     ;(prisma.service.findFirst as any).mockResolvedValue({ id: 's1', price: 1000 })
     const res = await previewPromotion({ businessId: 'b1', code: 'ABC123', serviceId: 's1' })
     expect(res.ok).toBe(true)
-    expect(res.ok && res.data).toMatchObject({ ok: true, discount: 500, finalAmount: 500 })
+    expect(res.ok && res.data).toMatchObject({ ok: true, discount: 500, finalAmount: 500, promotionId: 'promotion-1' })
   })
   it('un grant vencido devuelve inválido genérico', async () => {
     ;(prisma.promotionGrant.findFirst as any).mockResolvedValue({ id: 'g1', expiresAt: new Date('2000-01-01'),

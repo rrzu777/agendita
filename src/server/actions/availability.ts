@@ -6,8 +6,8 @@ import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
-import { generateSlots } from '@/lib/availability/slots'
-import { getTeamAvailableSlots } from '@/lib/availability/team-slots'
+import { generateSlotsResult } from '@/lib/availability/slots'
+import { getTeamAvailableSlotsResult } from '@/lib/availability/team-slots'
 import { parseProfessionalPick, type ProfessionalPick } from '@/lib/professionals/eligible'
 import { getBusinessDayRange } from '@/lib/availability/timezone'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
@@ -141,7 +141,7 @@ async function _getAvailableTimeSlots(input: AvailableSlotsInput) {
   // `getTeamAvailableSlots` para por qué las lecturas van enteras y se reparten en
   // memoria.
   if (professional.kind === 'anyone') {
-    return getTeamAvailableSlots({
+    return getTeamAvailableSlotsResult({
       businessId,
       service,
       date,
@@ -186,10 +186,11 @@ async function _getAvailableTimeSlots(input: AvailableSlotsInput) {
     throw new UserError(PROFESSIONAL_UNAVAILABLE_MESSAGE)
   }
 
-  return generateSlots(date, service.durationMinutes, availabilityRules, timeBlocks, bookings, slotOptions)
+  return generateSlotsResult(date, service.durationMinutes, availabilityRules, timeBlocks, bookings, slotOptions)
 }
 
-export const getAvailableTimeSlots = action(_getAvailableTimeSlots)
+export const getAvailableTimeSlotsResult = action(_getAvailableTimeSlots)
+export const getAvailableTimeSlots = action(async (input: AvailableSlotsInput) => (await _getAvailableTimeSlots(input)).slots)
 
 async function _getAvailableSlotsForReschedule(bookingId: string, date: Date) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])

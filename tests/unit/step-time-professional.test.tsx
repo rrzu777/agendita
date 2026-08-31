@@ -2,9 +2,14 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import type { BookingData } from '@/components/booking/wizard'
+import { createAnalyticsStore } from '@/lib/analytics/client-store'
+import { reduceFunnelAttempt } from '@/lib/analytics/funnel'
+import { attempt, now } from '../helpers/analytics-fixtures'
 
-const getAvailableTimeSlots = vi.hoisted(() => vi.fn())
-vi.mock('@/server/actions/availability', () => ({ getAvailableTimeSlots }))
+const getAvailableTimeSlotsResult = vi.hoisted(() => vi.fn())
+const capture = vi.hoisted(() => ({ ready: false, revision: vi.fn(() => 1), attemptIdentity: vi.fn(() => 'fixture'), track: vi.fn(), nextAvailabilityGeneration: vi.fn((): number | null => 1) }))
+vi.mock('@/server/actions/availability', () => ({ getAvailableTimeSlotsResult }))
+vi.mock('@/components/analytics/public-analytics', () => ({ usePublicAnalytics: () => capture }))
 
 const { StepTime } = await import('@/components/booking/step-time')
 
@@ -19,8 +24,11 @@ describe('los horarios que pide el paso de la hora', () => {
   let container: HTMLDivElement
 
   beforeEach(() => {
-    getAvailableTimeSlots.mockReset()
-    getAvailableTimeSlots.mockResolvedValue({ ok: true, data: [] })
+    capture.ready = false; capture.revision.mockReset().mockReturnValue(1); capture.track.mockReset()
+    capture.nextAvailabilityGeneration.mockReset().mockReturnValue(1)
+    capture.attemptIdentity.mockReset().mockReturnValue('fixture')
+    getAvailableTimeSlotsResult.mockReset()
+    getAvailableTimeSlotsResult.mockResolvedValue({ ok: true, data: { slots: [], emptyReason: null } })
   })
 
   afterEach(() => {
@@ -40,6 +48,80 @@ describe('los horarios que pide el paso de la hora', () => {
     })
   }
 
+  it('a remounted same-date query remains observable through the real funnel reducer', async () => {
+    const values = new Map<string, string>()
+    const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) }, removeItem: (key: string) => { values.delete(key) } }
+    const options = { businessId: 'biz-1', origin: 'https://example.test', storage, preferences: storage }
+    let store = createAnalyticsStore(options)
+    store.chooseConsent(true); store.open(); store.startAttempt('complete')
+    const context = { serviceId: 'svc-1', modality: 'on_site' as const, professional: { kind: 'none' as const } }
+    store.track({ type: 'service_selected', data: { ...context, professionalStepRequired: false } })
+    store.track({ type: 'date_selected', data: { ...context, localDate: '2026-06-15' } })
+    capture.ready = true
+    capture.track.mockImplementation((event) => store.track(event))
+    capture.attemptIdentity.mockImplementation(() => store.snapshot()!.active!)
+    capture.nextAvailabilityGeneration.mockImplementation(() => store.nextAvailabilityGeneration()!)
+    getAvailableTimeSlotsResult.mockResolvedValueOnce({ ok: true, data: { slots: [{ start: new Date('2026-06-15T18:00:00Z'), end: new Date('2026-06-15T18:30:00Z') }], emptyReason: null } })
+    await montar(base)
+    act(() => root!.unmount()); root = null
+    // Restore durable capture state as well as remounting the time step.
+    store = createAnalyticsStore(options); store.open()
+    getAvailableTimeSlotsResult.mockResolvedValueOnce({ ok: true, data: { slots: [], emptyReason: 'no_capacity' } })
+    await montar(base)
+    const state = store.snapshot()!
+    const result = reduceFunnelAttempt({ attempt: attempt(), events: state.queue.map((item) => ({ event: item.event, receivedAt: attempt().startedAt })), bookings: [], now })
+    expect(result.availability).toMatchObject({ hasValidResult: true, hasEmpty: true, emptyReasons: ['no_capacity'] })
+    expect(state.queue.flatMap(({ event }) => event.type === 'availability_result' ? [event.data.requestGeneration] : [])).toEqual([1, 2])
+  })
+  it('failed capture generation persistence cannot leave available booking data loading forever', async () => {
+    capture.ready = true; capture.revision.mockReturnValue(2)
+    capture.nextAvailabilityGeneration.mockImplementation(() => {
+      // Store's write-failure boundary discards capture state, not the Booking request.
+      capture.revision.mockReturnValue(1); capture.attemptIdentity.mockReturnValue('')
+      return null
+    })
+    await montar(base)
+    expect(container.textContent).toContain('No hay horarios disponibles')
+    expect(container.textContent).not.toContain('Cargando')
+    expect(capture.track).not.toHaveBeenCalled()
+  })
+
+  it('consent grant and withdrawal preserve a selected slot still valid for the same Booking context', async () => {
+    const slot = { start: new Date('2026-06-15T18:00:00Z'), end: new Date('2026-06-15T18:30:00Z') }
+    getAvailableTimeSlotsResult.mockResolvedValue({ ok: true, data: { slots: [slot], emptyReason: null } })
+    await montar(base)
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('14:00'))!.click())
+    const selected = vi.fn()
+    for (const allowed of [true, false]) {
+      capture.ready = allowed; capture.attemptIdentity.mockReturnValue(allowed ? 'new-attempt' : '')
+      await act(async () => root!.render(<StepTime businessId="biz-1" timezone="America/Santiago" data={base} onSelect={selected} onBack={() => {}} />))
+      const next = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Continuar')!
+      expect(next.disabled).toBe(false)
+      await act(async () => next.click())
+      expect(selected).toHaveBeenLastCalledWith(slot)
+    }
+  })
+
+  it('refresh cannot retain a selected slot that is no longer offered', async () => {
+    const slot = { start: new Date('2026-06-15T18:00:00Z'), end: new Date('2026-06-15T18:30:00Z') }
+    getAvailableTimeSlotsResult.mockResolvedValueOnce({ ok: true, data: { slots: [slot], emptyReason: null } })
+    await montar(base)
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('14:00'))!.click())
+    getAvailableTimeSlotsResult.mockResolvedValueOnce({ ok: true, data: { slots: [{ start: new Date('2026-06-15T19:00:00Z'), end: new Date('2026-06-15T19:30:00Z') }], emptyReason: null } })
+    capture.ready = true
+    await act(async () => root!.render(<StepTime businessId="biz-1" timezone="America/Santiago" data={base} onSelect={() => {}} onBack={() => {}} />))
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Continuar')!.disabled).toBe(true)
+  })
+
+  it('a real professional change clears selection even if the same hour is offered', async () => {
+    const slot = { start: new Date('2026-06-15T18:00:00Z'), end: new Date('2026-06-15T18:30:00Z') }
+    getAvailableTimeSlotsResult.mockResolvedValue({ ok: true, data: { slots: [slot], emptyReason: null } })
+    await montar(base)
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('14:00'))!.click())
+    await act(async () => root!.render(<StepTime businessId="biz-1" timezone="America/Santiago" data={{ ...base, professional: { kind: 'anyone' } }} onSelect={() => {}} onBack={() => {}} />))
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Continuar')!.disabled).toBe(true)
+  })
+
   /**
    * Es el punto de la feature: con persona los horarios salen de SU agenda. Si este
    * argumento vuelve a ser `null`, la pantalla ofrece las horas del negocio y la
@@ -47,7 +129,7 @@ describe('los horarios que pide el paso de la hora', () => {
    */
   it('los pide a nombre de la persona elegida', async () => {
     await montar({ ...base, professional: { kind: 'person', id: 'p-1' }, professionalName: 'Juan' })
-    expect(getAvailableTimeSlots).toHaveBeenCalledWith({
+    expect(getAvailableTimeSlotsResult).toHaveBeenCalledWith({
       businessId: 'biz-1', serviceId: 'svc-1', date: base.date,
       professional: { kind: 'person', id: 'p-1' }, modality: 'on_site',
     })
@@ -55,7 +137,7 @@ describe('los horarios que pide el paso de la hora', () => {
 
   it('sin persona, los del negocio', async () => {
     await montar(base)
-    expect(getAvailableTimeSlots).toHaveBeenCalledWith({
+    expect(getAvailableTimeSlotsResult).toHaveBeenCalledWith({
       businessId: 'biz-1', serviceId: 'svc-1', date: base.date,
       professional: { kind: 'none' }, modality: 'on_site',
     })
@@ -68,15 +150,39 @@ describe('los horarios que pide el paso de la hora', () => {
    */
   it('con "cualquiera" manda la elección y la modalidad', async () => {
     await montar({ ...base, professional: { kind: 'anyone' }, serviceModality: 'at_home' } as BookingData)
-    expect(getAvailableTimeSlots).toHaveBeenCalledWith({
+    expect(getAvailableTimeSlotsResult).toHaveBeenCalledWith({
       businessId: 'biz-1', serviceId: 'svc-1', date: base.date,
       professional: { kind: 'anyone' }, modality: 'at_home',
     })
   })
 
   it('nombra a la persona junto al servicio y la fecha', async () => {
-    getAvailableTimeSlots.mockResolvedValue({ ok: true, data: [{ start: new Date('2026-06-15T18:00:00Z'), end: new Date('2026-06-15T18:30:00Z') }] })
+    getAvailableTimeSlotsResult.mockResolvedValue({ ok: true, data: { slots: [{ start: new Date('2026-06-15T18:00:00Z'), end: new Date('2026-06-15T18:30:00Z') }], emptyReason: null } })
     await montar({ ...base, professional: { kind: 'person', id: 'p-1' }, professionalName: 'Juan' })
     expect(container.textContent).toContain('Corte · Juan')
+  })
+  it('a late previous request cannot overwrite the current professional slots', async () => {
+    let first!: (value: unknown) => void
+    let second!: (value: unknown) => void
+    getAvailableTimeSlotsResult.mockImplementationOnce(() => new Promise((resolve) => { first = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { second = resolve }))
+    await montar(base)
+    await act(async () => root!.render(<StepTime businessId="biz-1" timezone="America/Santiago" data={{ ...base, professional: { kind: 'anyone' } }} onSelect={() => {}} onBack={() => {}} />))
+    await act(async () => second({ ok: true, data: { slots: [{ start: new Date('2026-06-15T19:00:00Z'), end: new Date('2026-06-15T19:30:00Z') }], emptyReason: null } }))
+    await act(async () => first({ ok: true, data: { slots: [], emptyReason: null } }))
+    expect(container.textContent).toContain('15:00')
+    expect(container.textContent).not.toContain('No hay horarios disponibles')
+  })
+  it('restarts a pending query when consent or restore changes its capture revision', async () => {
+    let first!: (value: unknown) => void
+    getAvailableTimeSlotsResult.mockImplementationOnce(() => new Promise((resolve) => { first = resolve }))
+    await montar(base)
+    capture.ready = true; capture.revision.mockReturnValue(2)
+    await act(async () => root!.render(<StepTime businessId="biz-1" timezone="America/Santiago" data={base} onSelect={() => {}} onBack={() => {}} />))
+    await act(async () => first({ ok: true, data: { slots: [{ start: new Date('2026-06-15T19:00:00Z'), end: new Date('2026-06-15T19:30:00Z') }], emptyReason: null } }))
+    expect(getAvailableTimeSlotsResult).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('No hay horarios disponibles')
+    expect(container.textContent).not.toContain('Cargando')
+    expect(capture.track).toHaveBeenCalledTimes(1)
   })
 })

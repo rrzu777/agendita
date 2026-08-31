@@ -1,0 +1,26 @@
+name: Owner analytics maintenance (opt-in)
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: owner-analytics-maintenance
+  cancel-in-progress: false
+jobs:
+  maintenance:
+    # Unset/false by default. Separate from capture and the transactional crons.
+    if: ${{ vars.OWNER_ANALYTICS_MAINTENANCE_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Drain bounded analytics continuations
+        env:
+          OWNER_ANALYTICS_CRON_URL: ${{ vars.OWNER_ANALYTICS_CRON_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: bash scripts/run-owner-analytics-cron.sh

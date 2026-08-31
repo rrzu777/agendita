@@ -5,10 +5,10 @@ import { StepTime } from '@/components/booking/step-time'
 import type { BookingData } from '@/components/booking/wizard'
 
 vi.mock('@/server/actions/availability', () => ({
-  getAvailableTimeSlots: vi.fn(),
+  getAvailableTimeSlotsResult: vi.fn(),
 }))
 
-import { getAvailableTimeSlots } from '@/server/actions/availability'
+import { getAvailableTimeSlotsResult } from '@/server/actions/availability'
 
 const data = {
   date: new Date('2026-07-09T16:00:00Z'),
@@ -43,7 +43,7 @@ describe('StepTime states', () => {
   }
 
   it('shows a retryable error state, not "No hay horarios", when the fetch fails', async () => {
-    vi.mocked(getAvailableTimeSlots).mockResolvedValue({ ok: false, error: 'Demasiadas solicitudes. Intenta de nuevo en unos minutos.' })
+    vi.mocked(getAvailableTimeSlotsResult).mockResolvedValue({ ok: false, error: 'Demasiadas solicitudes. Intenta de nuevo en unos minutos.' })
     await render()
     expect(container.textContent).toContain('No pudimos cargar los horarios')
     expect(container.textContent).toContain('Demasiadas solicitudes')
@@ -53,7 +53,7 @@ describe('StepTime states', () => {
   })
 
   it('shows a retryable error state on a transport failure (rejected promise)', async () => {
-    vi.mocked(getAvailableTimeSlots).mockRejectedValue(new Error('boom'))
+    vi.mocked(getAvailableTimeSlotsResult).mockRejectedValue(new Error('boom'))
     await render()
     expect(container.textContent).toContain('No pudimos cargar los horarios')
     const retry = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Reintentar'))
@@ -61,29 +61,29 @@ describe('StepTime states', () => {
   })
 
   it('retry button re-fetches and can recover', async () => {
-    vi.mocked(getAvailableTimeSlots)
+    vi.mocked(getAvailableTimeSlotsResult)
       .mockResolvedValueOnce({ ok: false, error: 'boom' })
-      .mockResolvedValueOnce({ ok: true, data: [{ start: new Date('2026-07-09T13:00:00Z'), end: new Date('2026-07-09T14:30:00Z') }] })
+      .mockResolvedValueOnce({ ok: true, data: { slots: [{ start: new Date('2026-07-09T13:00:00Z'), end: new Date('2026-07-09T14:30:00Z') }], emptyReason: null } })
     await render()
     const retry = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Reintentar'))!
     await act(async () => {
       retry.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(vi.mocked(getAvailableTimeSlots)).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(getAvailableTimeSlotsResult)).toHaveBeenCalledTimes(2)
     expect(container.textContent).toContain('Elige una hora')
   })
 
   it('empty state explains the minimum lead time', async () => {
-    vi.mocked(getAvailableTimeSlots).mockResolvedValue({ ok: true, data: [] })
+    vi.mocked(getAvailableTimeSlotsResult).mockResolvedValue({ ok: true, data: { slots: [], emptyReason: null } })
     await render()
     expect(container.textContent).toContain('No hay horarios disponibles')
     expect(container.textContent).toContain('2 horas de anticipación')
   })
 
   it('renders slot times in the business timezone', async () => {
-    vi.mocked(getAvailableTimeSlots).mockResolvedValue({
+    vi.mocked(getAvailableTimeSlotsResult).mockResolvedValue({
       ok: true,
-      data: [{ start: new Date('2026-07-09T13:00:00Z'), end: new Date('2026-07-09T14:30:00Z') }],
+      data: { slots: [{ start: new Date('2026-07-09T13:00:00Z'), end: new Date('2026-07-09T14:30:00Z') }], emptyReason: null },
     })
     await render()
     // 13:00Z = 22:00 en Tokio; con el código viejo se renderizaba la hora de la máquina
@@ -91,9 +91,9 @@ describe('StepTime states', () => {
   })
 
   it('slot grid shows the lead time hint', async () => {
-    vi.mocked(getAvailableTimeSlots).mockResolvedValue({
+    vi.mocked(getAvailableTimeSlotsResult).mockResolvedValue({
       ok: true,
-      data: [{ start: new Date('2026-07-09T13:00:00Z'), end: new Date('2026-07-09T14:30:00Z') }],
+      data: { slots: [{ start: new Date('2026-07-09T13:00:00Z'), end: new Date('2026-07-09T14:30:00Z') }], emptyReason: null },
     })
     await render()
     expect(container.textContent).toContain('Elige una hora')

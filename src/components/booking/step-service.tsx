@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { usePublicAnalytics } from '@/components/analytics/public-analytics'
 import { BookingData } from './wizard'
 import type { Service, ServiceModality } from '@prisma/client'
 import { formatDuration } from '@/lib/format-duration'
@@ -13,6 +14,7 @@ interface StepServiceProps {
   services: Service[]
   currency: string
   onSelect: (data: Partial<BookingData>) => void
+  onInteraction?: () => void
 }
 
 /** Campos denormalizados del servicio en BookingData, sin la modalidad. */
@@ -28,7 +30,8 @@ function serviceFields(service: Service, modalities: ServiceModality[]) {
   }
 }
 
-export function StepService({ data, services, currency, onSelect }: StepServiceProps) {
+export function StepService({ data, services, currency, onSelect, onInteraction }: StepServiceProps) {
+  const analytics = usePublicAnalytics()
   // Servicio cuya tarjeta está desplegada esperando que elija dónde. Un solo id:
   // abrir otro cierra el anterior.
   const [pickingModalityFor, setPickingModalityFor] = useState<string | null>(null)
@@ -66,6 +69,8 @@ export function StepService({ data, services, currency, onSelect }: StepServiceP
             <div key={service.id}>
             <button
               onClick={() => {
+                onInteraction?.()
+                if (!needsModalityChoice || !isPicking) analytics.track({ type: 'service_considered', data: { serviceId: service.id } })
                 if (needsModalityChoice) {
                   setPickingModalityFor(isPicking ? null : service.id)
                   return

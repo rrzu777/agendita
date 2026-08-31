@@ -5,6 +5,9 @@ import { getPublicBusinessBySlug } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { getAccountCta, getFunnelSession } from '@/lib/customers/session-prefill'
 import { prisma } from '@/lib/db'
+import { appendPublicAcquisitionSearch } from '@/lib/business/urls'
+import { PublicAnalytics } from '@/components/analytics/public-analytics'
+import { isPublicAnalyticsEligible } from '@/lib/analytics/public-context'
 
 // El CTA de cuenta lee la sesión (cookies) → la page es por-request. La anotación
 // ISR anterior (revalidate = 300) ya no aplicaba (getTenantFromRequest lee headers).
@@ -12,6 +15,7 @@ export const dynamic = 'force-dynamic'
 
 interface ProfilePageProps {
   params: Promise<{ slug: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }
 
 export async function generateMetadata({ params }: ProfilePageProps): Promise<Metadata> {
@@ -26,8 +30,9 @@ export async function generateMetadata({ params }: ProfilePageProps): Promise<Me
   }
 }
 
-export default async function PublicProfilePage({ params }: ProfilePageProps) {
+export default async function PublicProfilePage({ params, searchParams }: ProfilePageProps) {
   const { slug } = await params
+  const search = await searchParams
   const tenant = await getTenantFromRequest()
 
   if (tenant) {
@@ -35,7 +40,7 @@ export default async function PublicProfilePage({ params }: ProfilePageProps) {
       notFound()
     }
 
-    redirect('/')
+    redirect(appendPublicAcquisitionSearch('/', search))
   }
 
   const business = await getPublicBusinessBySlug(slug)
@@ -48,10 +53,13 @@ export default async function PublicProfilePage({ params }: ProfilePageProps) {
   const hasPackages = (await prisma.packageProduct.count({ where: { businessId: business.id, isActive: true } })) > 0
 
   return (
+    <PublicAnalytics businessId={business.id} slug={business.slug} timezone={business.timezone || 'America/Santiago'} eligible={await isPublicAnalyticsEligible(business.id)} surface="profile">
     <BusinessProfile
       business={business}
-      accountCta={getAccountCta(session, business.slug)}
+      bookingHref={appendPublicAcquisitionSearch(`/book/${business.slug}`, search)}
+      accountCta={getAccountCta(session, business.slug, search)}
       packagesHref={hasPackages ? `/paquetes/${business.slug}` : undefined}
     />
+    </PublicAnalytics>
   )
 }
