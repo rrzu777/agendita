@@ -40,6 +40,7 @@ describe('AnalyticsDashboard', () => {
     expect(markup).toContain('Conversión en 24 h')
     expect(markup).toContain('71% · 10 de 14 visitas llegan a intento')
     expect(markup).toContain('4 de 10 intentos')
+    expect(markup).toContain('Sin señales adicionales.')
     expect(markup).toContain('Pendiente de confirmación: 2')
     expect(markup).toContain('Entrada completa')
     expect(markup).toContain('Pago')

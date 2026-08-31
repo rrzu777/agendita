@@ -28,7 +28,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   await requireBusinessRole(['owner', 'admin'])
   const input = reportInput(await searchParams)
   const report = await getOwnerAnalyticsReport(input)
-  const days = input.days === 7 || input.days === 28 || input.days === 90 ? input.days : null
+  const days = input.days === undefined ? 28 : input.days === 7 || input.days === 28 || input.days === 90 ? input.days : null
   return (
     <div>
       <DashboardHeader title="Métricas" subtitle="Observa el recorrido de reserva medido y qué conviene revisar después." />
