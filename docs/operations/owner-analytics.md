@@ -68,6 +68,8 @@ Base de rama: `c5ea7146e936ab41a8df60e79c3fbd34a84cdf1a`; planificación `5dddec
 
 Checkpoints finales completos: T1 `1a8920bedf9df02ae7d7a6cf8606419d2bb2b20f`; T2 `4e9b47ea0fc3b4011c447694b3c3e6d9f88dab59`; T3 `5ef75b6560c496e16025f7752904505bf1a9e534`; T4 `94d85fc3e6b7588dae56b499c608ff0fce59b1ac`; T5 `fb8eb828eac4d76af2b2833d8ec83cd39b58a09e`.
 
+Task6 código, tests y handoff verificados: `579ddd502e1e6f317d433d5741b7d4b3aa3b9ff3`. El commit posterior sólo registra este checkpoint documental. Revisión Task6 y revisión independiente de toda la rama aún pendientes del controller; ningún push/PR/deploy realizado.
+
 Proceso: Tasks1–4 y fix T5 round1 tienen RED/GREEN registrado. T5 rounds2/3 **no tienen RED funcional antes de implementación**; typecheck fallido no sustituye TDD. Se añadieron luego regresiones funcionales y E2E verdes. Task6 reproduce primero la fuga del stub `scrollIntoView` y restaura descriptor en `finally`, con comprobación después de cada test. No reconstruir evidencia RED retrospectiva.
 
 ### Verificación local Task6
