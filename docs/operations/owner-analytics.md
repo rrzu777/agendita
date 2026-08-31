@@ -92,6 +92,14 @@ La pantalla presenta por separado conversión completa/parcial y particiones con
 
 ### Continuación de cumplimiento: N1 y G1
 
+Continuación posterior: `175179d` + `c6c2daf` amplían únicamente tests. Se verifica
+Booking guardada sinmetadatosanalytics al no responder, rechazar o retirar permiso,
+y se alinea el reloj del fixture dearchivo con captureNow tras un fallo23514 real.
+Resultado:53/53integración seleccionada,8/8E2E públicos,typecheck/lint0 yre-review
+focal PASS. Matriz, RED y comandos en `owner-analytics-completion-audit.md`.
+No equivale a cierre global ni implementa G2; el contrato adicional sigue pendiente
+de aprobación y la validación conjunta debe hacerse tras completar ese requisito.
+
 N1 `a3a9737223d304b844d2a68ed214c24bdbe1375d`: corregida etiqueta asíncrona
 fuera de identidad. G1 `6b07579576cbc95d0cc41e0eb3c8bfa05eb9e7d9`: siete
 archivos, edición de etiqueta con acción protegida y pruebas UI/DB/E2E.
