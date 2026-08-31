@@ -2,7 +2,10 @@
 
 import { getBookingLoginUrl } from '@/lib/business/urls'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { formatInTimeZone } from 'date-fns-tz'
+import { usePublicAnalytics } from '@/components/analytics/public-analytics'
+import type { SelectionContext } from '@/lib/analytics/contracts'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
@@ -117,6 +120,9 @@ interface BookingWizardProps {
 }
 
 export function BookingWizard({ businessId, slug, business, timezone, currency, services, professionals, professionalWords, cancellationPolicy, cancellationPolicyRevision, selfServiceCutoffHours, manualHoldHours, referralToken, session }: BookingWizardProps) {
+  const analytics = usePublicAnalytics()
+  const restoredAnalytics = useRef<{ data: BookingData; step: StepKey } | null>(null)
+  const lastObservedStep = useRef('')
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState<StepKey>('service')
   const [data, setData] = useState<BookingData>(() => applySessionPrefill(initialData, session))
@@ -150,10 +156,11 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
     if (typeof window === 'undefined') return
     if (!new URLSearchParams(window.location.search).has('continuar')) return
     const key = wizardStorageKey(businessId)
-    const raw = sessionStorage.getItem(key)
-    sessionStorage.removeItem(key)
+    let raw: string | null = null
+    try { raw = sessionStorage.getItem(key); sessionStorage.removeItem(key) } catch { return }
     const restored = restoreWizardState(raw, services, professionals)
     if (!restored) return
+    restoredAnalytics.current = { data: restored, step: entryStepAfterRestore(restored, derivar(restored).steps) }
     /* eslint-disable react-hooks/set-state-in-effect -- one-time restore from sessionStorage on mount, gated by ?continuar=1 */
     setData(applySessionPrefill(restored, session))
     setCurrentStep(entryStepAfterRestore(restored, derivar(restored).steps))
@@ -161,14 +168,48 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar
   }, [])
 
+  function context(d: BookingData): SelectionContext | null {
+    return d.serviceId && d.serviceModality ? { serviceId: d.serviceId, modality: d.serviceModality, professional: d.professional.kind === 'person' ? { kind: 'person', professionalId: d.professional.id } : d.professional } : null
+  }
+  function localDate(d: BookingData) { return d.date ? formatInTimeZone(d.date, timezone, 'yyyy-MM-dd') : null }
+  // Local-only selection identity. Never includes the customer form or travels as an event.
+  function signature(d: BookingData) { return JSON.stringify([context(d), localDate(d), d.timeSlot?.start.toISOString() ?? null]) }
+  function changed(reason: 'service' | 'modality' | 'professional' | 'date' | 'time', next: BookingData) {
+    analytics.changeSelection({ reason, context: context(next), localDate: localDate(next) })
+  }
+  useEffect(() => {
+    if (!analytics.ready || currentStep === 'confirmation') return
+    function observe() {
+      if (document.visibilityState !== 'visible') return
+      const restored = restoredAnalytics.current
+      const observed = restored?.data ?? data
+      const step = restored?.step ?? currentStep
+      analytics.startAttempt(step === 'service' && !observed.serviceId && !new URLSearchParams(window.location.search).has('continuar') ? 'complete' : 'partial')
+      analytics.reconcileSelection(signature(observed))
+      const key = `${step}:${analytics.revision()}`
+      if (lastObservedStep.current !== key) {
+        analytics.track({ type: 'step_viewed', data: { step } })
+        lastObservedStep.current = key
+      }
+      restoredAnalytics.current = null
+    }
+    observe()
+    document.addEventListener('visibilitychange', observe)
+    return () => document.removeEventListener('visibilitychange', observe)
+    // Data is reconciled at entry and explicit handlers; contact edits are not observations.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analytics.ready, currentStep])
+
   function handleLoginCta(partial: Partial<BookingData>) {
     const merged = { ...data, ...partial }
     const raw = serializeWizardState(merged)
-    if (raw) sessionStorage.setItem(wizardStorageKey(businessId), raw)
+    try { if (raw) sessionStorage.setItem(wizardStorageKey(businessId), raw) } catch { /* login remains available */ }
+    analytics.rememberSelection(signature(merged))
     router.push(getBookingLoginUrl(slug, new URLSearchParams(window.location.search)))
   }
 
   function updateData(partial: Partial<BookingData>) {
+    analytics.rememberSelection(signature({ ...data, ...partial }))
     setData(prev => ({ ...prev, ...partial }))
   }
 
@@ -212,7 +253,11 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
             const siguiente = derivar({ ...data, ...service })
             // La persona elegida sobrevive si también hace el servicio nuevo; si no,
             // se suelta. Es la misma cuenta que hace el restore.
-            updateData({ ...service, ...professionalFields(siguiente.choice, data.professional) })
+            const next = { ...data, ...service, ...professionalFields(siguiente.choice, data.professional) }
+            if (data.serviceId !== next.serviceId || data.serviceModality !== next.serviceModality) changed(data.serviceId !== next.serviceId ? 'service' : 'modality', next)
+            const selected = context(next)
+            if (selected) analytics.track({ type: 'service_selected', data: { ...selected, professionalStepRequired: siguiente.steps.some((s) => s.key === 'professional') } })
+            updateData(next)
             setCurrentStep(stepAfter(siguiente.steps, 'service'))
           }} />
         )}
@@ -228,6 +273,10 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
               // una persona a "cualquiera" —la unión ofrece horas que ella no tenía—
               // y al revés.
               const cambio = !samePick(data.professional, pick)
+              const selected = { ...data, ...professionalFields(choice, pick) }
+              if (cambio) changed('professional', selected)
+              const selectedContext = context(selected)
+              if (selectedContext) analytics.track({ type: 'professional_selected', data: selectedContext })
               updateData({
                 ...professionalFields(choice, pick),
                 ...(cambio ? { timeSlot: null, idempotencyKey: null } : {}),
@@ -239,6 +288,10 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
         )}
         {currentStep === 'date' && (
           <StepDate data={data} timezone={timezone} onSelect={(date) => {
+            const next = { ...data, date }
+            if (localDate(data) !== localDate(next)) changed('date', next)
+            const selected = context(next)
+            if (selected) analytics.track({ type: 'date_selected', data: { ...selected, localDate: localDate(next)! } })
             updateData({ date })
             nextStep()
           }} onBack={prevStep} />
@@ -265,6 +318,10 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
               // `onSelect` es su único setter). El server igual rechaza la key que
               // no corresponde, que es el fail-closed de verdad.
               const cambioDeHora = data.timeSlot?.start.getTime() !== timeSlot.start.getTime()
+              if (cambioDeHora) changed('time', { ...data, timeSlot })
+              const selected = context(data)
+              const hour = Number(formatInTimeZone(timeSlot.start, timezone, 'H'))
+              if (selected && localDate(data)) analytics.track({ type: 'time_selected', data: { ...selected, localDate: localDate(data)!, timeBucket: hour < 6 ? '00_06' : hour < 12 ? '06_12' : hour < 18 ? '12_18' : '18_24' } })
               updateData(cambioDeHora ? { timeSlot, idempotencyKey: null } : { timeSlot })
               nextStep()
             }} onBack={prevStep} />
@@ -277,6 +334,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
         )}
         {currentStep === 'customer' && data.timeSlot && (
           <StepCustomer data={data} sessionEmail={session?.email ?? null} onLoginCta={handleLoginCta} onSubmit={(customerData) => {
+            analytics.track({ type: 'customer_step_completed', data: {} })
             updateData(customerData)
             nextStep()
           }} onBack={prevStep} />

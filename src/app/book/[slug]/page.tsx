@@ -6,6 +6,8 @@ import { getBookingBusinessBySlug } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { getFunnelSession } from '@/lib/customers/session-prefill'
 import { appendPublicAcquisitionSearch } from '@/lib/business/urls'
+import { PublicAnalytics } from '@/components/analytics/public-analytics'
+import { isPublicAnalyticsEligible } from '@/lib/analytics/public-context'
 
 // Los referralToken son UUID v4 (crypto.randomUUID). Validar la forma reduce la
 // superficie y evita lookups innecesarios con tokens arbitrarios.
@@ -40,11 +42,13 @@ export default async function BookPage({ params, searchParams }: BookPageProps) 
   const session = await getFunnelSession(business.id)
 
   return (
+    <PublicAnalytics businessId={business.id} slug={business.slug} timezone={business.timezone || 'America/Santiago'} eligible={await isPublicAnalyticsEligible(business.id)} surface="booking">
     <BookingBusinessPage
       business={business}
       profileHref={`/b/${business.slug}`}
       referralToken={referralToken}
       session={session}
     />
+    </PublicAnalytics>
   )
 }

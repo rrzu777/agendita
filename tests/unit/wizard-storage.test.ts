@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { serializeWizardState, restoreWizardState, wizardStorageKey } from '@/lib/bookings/wizard-storage'
 import type { BookingData } from '@/components/booking/wizard'
 import { ANYONE_LABEL, type FunnelProfessional } from '@/lib/professionals/eligible'
+import { analyticsStorageKeys } from '@/lib/analytics/client-store'
 
 const NOW = new Date('2026-07-11T12:00:00Z').getTime()
 
@@ -25,6 +26,12 @@ const data: BookingData = {
 }
 
 describe('wizardStorageKey', () => {
+  it('is isolated from analytics state and never serializes analytics credentials with the contact form', () => {
+    expect(Object.values(analyticsStorageKeys('b1', 'https://salon.test'))).not.toContain(wizardStorageKey('b1'))
+    const raw = serializeWizardState({ ...data, analytics: { credential: 'private-token' } } as BookingData, NOW)
+    expect(raw).not.toContain('private-token')
+    expect(raw).not.toContain('analytics')
+  })
   it('es por negocio', () => {
     expect(wizardStorageKey('b1')).not.toBe(wizardStorageKey('b2'))
   })

@@ -3,7 +3,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { BookingData } from './wizard'
-import { getAvailableTimeSlots } from '@/server/actions/availability'
+import { getAvailableTimeSlotsResult } from '@/server/actions/availability'
+import { usePublicAnalytics } from '@/components/analytics/public-analytics'
+import { formatInTimeZone } from 'date-fns-tz'
 import { pickCacheKey } from '@/lib/professionals/eligible'
 import { LEAD_TIME_MINUTES } from '@/lib/availability/constants'
 import { formatBookingDate, formatBookingTime } from '@/lib/bookings/format-booking-datetime'
@@ -20,18 +22,28 @@ interface StepTimeProps {
 }
 
 export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepTimeProps) {
+  const analytics = usePublicAnalytics()
+  const selectionRevision = analytics.revision()
   const pickKey = pickCacheKey(data.professional)
   const [slots, setSlots] = useState<{ start: Date; end: Date }[]>([])
   const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
-  const ignoreRef = useRef(false)
+  const generationRef = useRef(0)
 
   useEffect(() => {
     if (!data.date || !data.serviceId) return
 
-    ignoreRef.current = false
+    const generation = ++generationRef.current
+    const revision = analytics.revision()
+    let cancelled = false
+    const current = () => !cancelled && generationRef.current === generation && analytics.revision() === revision
+    const queryId = analytics.ready ? crypto.randomUUID() : null
+    function observe(result: 'available' | 'empty' | 'error', reason?: 'outside_booking_window' | 'lead_time_restricted' | 'not_offered' | 'no_capacity' | 'unknown') {
+      if (!queryId || !data.serviceId || !data.serviceModality || !data.date) return
+      analytics.track({ type: 'availability_result', data: { serviceId: data.serviceId, modality: data.serviceModality, professional: data.professional.kind === 'person' ? { kind: 'person', professionalId: data.professional.id } : data.professional, localDate: formatInTimeZone(data.date, timezone, 'yyyy-MM-dd'), queryId, requestGeneration: generation, result, ...(result === 'empty' ? { reason: reason ?? 'unknown' } : {}) } })
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting loading state before fetch is a standard UI pattern
     setLoading(true)
     setError(null)
@@ -41,7 +53,7 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     // negocio, si no tiene propio), sus bloqueos y los del negocio, y las citas que
     // le tapan la hora. Con "cualquiera disponible", la unión de los de todo el
     // equipo elegible. Sin nadie, el horario del negocio de siempre.
-    getAvailableTimeSlots({
+    getAvailableTimeSlotsResult({
       businessId,
       serviceId: data.serviceId,
       date: data.date,
@@ -49,32 +61,35 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
       modality: data.serviceModality,
     })
       .then((res) => {
-        if (ignoreRef.current) return
+        if (!current()) return
         if (!res.ok) {
           setSlots([])
           setError(res.error)
+          observe('error')
           return
         }
-        setSlots(res.data)
+        setSlots(res.data.slots)
+        observe(res.data.slots.length ? 'available' : 'empty', res.data.emptyReason ?? undefined)
       })
       .catch(() => {
-        if (ignoreRef.current) return
+        if (!current()) return
         setSlots([])
         setError('No se pudieron cargar los horarios')
+        observe('error')
       })
       .finally(() => {
-        if (!ignoreRef.current) setLoading(false)
+        if (current()) setLoading(false)
       })
 
     return () => {
-      ignoreRef.current = true
+      cancelled = true
     }
     // La elección entra como clave y no como objeto: `professionalFields` arma uno
     // NUEVO en cada llamada, así que la identidad cambiaría sin que cambie la
     // elección y esto es la lectura más caliente del producto. `pickKey` la
     // representa entera —`kind` más el id—, así que no se pierde nada.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `pickKey` representa a `data.professional`
-  }, [businessId, data.date, data.serviceId, pickKey, data.serviceModality, retryKey])
+  }, [businessId, data.date, data.serviceId, pickKey, data.serviceModality, retryKey, analytics.ready, selectionRevision])
 
   if (loading) {
     return (

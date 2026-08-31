@@ -25,7 +25,7 @@ describe('previewPromotion', () => {
     mockPrisma.service.findFirst.mockResolvedValue({ id: 'svc1', price: 20000 })
     const res = await previewPromotion({ businessId: 'biz-1', code: 'VERANO20', serviceId: 'svc1' })
     expect(res.ok).toBe(true)
-    expect(res.ok && res.data).toMatchObject({ ok: true, discount: 4000, finalAmount: 16000 })
+    expect(res.ok && res.data).toMatchObject({ ok: true, discount: 4000, finalAmount: 16000, promotionId: 'p1' })
   })
   it('normalizes the phone before the customer lookup', async () => {
     mockPrisma.promotion.findFirst.mockResolvedValue({ id: 'p1', isActive: true, validFrom: null, validUntil: null, maxRedemptions: null, maxPerCustomer: 1, minSpend: null, appliesToAll: true, rewardType: 'percentage', rewardValue: 20, maxDiscount: null, redemptionCount: 0, services: [] })

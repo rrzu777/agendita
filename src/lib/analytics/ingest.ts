@@ -52,7 +52,7 @@ export function canonicalAnalyticsFingerprint(input: unknown): string {
   return createHash('sha256').update(canonical(input)).digest('hex')
 }
 
-const batchSchema = z.strictObject({ credential: z.string().min(1).max(4096), events: z.array(z.unknown()).min(1).max(policy.batchEvents) })
+const batchSchema = z.strictObject({ credential: z.string().min(1).max(4096), events: z.array(z.unknown()).max(policy.batchEvents), captureGap: z.literal(true).optional() }).refine((value) => value.events.length > 0 || value.captureGap === true)
 export function parseAnalyticsBatch(input: unknown) {
   const parsed = batchSchema.safeParse(input)
   if (!parsed.success) throw new AnalyticsCaptureError('invalid_request')
@@ -61,7 +61,7 @@ export function parseAnalyticsBatch(input: unknown) {
 
 export interface AnalyticsBootstrapReceipt { id: string; credential: string; startedAt: string; expiresAt: string; retentionExpiresAt: string }
 export type EventReceiptCategory = 'stored' | 'identical' | 'invalid_event' | 'wrong_scope' | 'foreign_dimension' | 'conflict' | 'stream_limit' | 'budget'
-export interface BatchReceipt { receipts: { index: number; eventId: string | null; status: 'accepted' | 'replay' | 'rejected'; category: EventReceiptCategory }[] }
+export interface BatchReceipt { receipts: { index: number; eventId: string | null; status: 'accepted' | 'replay' | 'rejected'; category: EventReceiptCategory }[]; captureGapRecorded?: true }
 
 const tokenSchema = z.string().regex(/^[A-Za-z0-9_-]{22,64}$/)
 const sessionSchema = z.strictObject({ bootstrapKey: z.uuid(), consent: z.literal(true), consentVersion: z.literal(1), acq: tokenSchema.optional(), utmSource: z.string().max(80).optional(), utmMedium: z.string().max(80).optional(), utmCampaign: z.string().max(128).optional(), referrerHost: z.string().max(253).regex(/^[a-z0-9.-]+$/i).optional() })
@@ -150,9 +150,9 @@ export async function ingestAnalyticsBatch(context: PublicAnalyticsContext, inpu
     const streamKey = attempt ? `attempt:${attempt.id}` : `session:${session.id}`
     const stream = attempt ?? session
     let count = stream.acceptedEventCount
-    let knownCaptureGap = stream.knownCaptureGap
+    let knownCaptureGap = stream.knownCaptureGap || data.captureGap === true
     const receipts: BatchReceipt['receipts'] = []
-    const budget = await reserveAnalyticsBudget({ businessId: context.businessId, cost: data.events.length, now })
+    const budget = await reserveAnalyticsBudget({ businessId: context.businessId, cost: Math.max(1, data.events.length), now })
     if (!budget) await closeAnalyticsCollection(tx, context.businessId, now, 'budget')
     for (const [index, raw] of data.events.entries()) {
       const parsed = analyticsEventSchema.safeParse(raw)
@@ -182,7 +182,7 @@ export async function ingestAnalyticsBatch(context: PublicAnalyticsContext, inpu
     const update = { acceptedEventCount: count, knownCaptureGap }
     if (attempt) await tx.bookingFunnelAttempt.update({ where: { id: attempt.id }, data: update })
     else await tx.analyticsSession.update({ where: { id: session.id }, data: update })
-    return { receipts }
+    return { receipts, ...(data.captureGap ? { captureGapRecorded: true as const } : {}) }
   })
 }
 

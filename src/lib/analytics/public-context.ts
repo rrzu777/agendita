@@ -13,6 +13,19 @@ export interface PublicAnalyticsContext {
   origin: string
 }
 
+/** Rendering hint only: no identity or network writes. The POST boundary still verifies origin. */
+export async function isPublicAnalyticsEligible(businessId: string): Promise<boolean> {
+  try {
+    if (!getAnalyticsCaptureConfig(businessId)) return false
+    const business = await prisma.business.findUnique({ where: { id: businessId }, select: { isActive: true } })
+    if (!business?.isActive) return false
+    const period = await prisma.analyticsCollectionPeriod.findFirst({ where: { businessId, endedAt: null, definitionVersion: 1, consentVersion: 1 }, select: { id: true } })
+    if (!period || await hasAnalyticsRetentionBacklog()) return false
+    const user = await getCurrentUser()
+    return !user || !await prisma.businessUser.findFirst({ where: { businessId, userId: user.id }, select: { id: true } })
+  } catch { return false }
+}
+
 /** Uses each global retention index. Missing cleanup capacity must never silently enable capture. */
 export async function hasAnalyticsRetentionBacklog(now = new Date()): Promise<boolean> {
   const rows = await prisma.$queryRaw<{ oldest: Date | null }[]>`

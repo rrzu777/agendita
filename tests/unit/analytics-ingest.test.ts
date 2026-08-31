@@ -3,6 +3,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { readAnalyticsBody, canonicalAnalyticsFingerprint, parseAnalyticsBatch } from '@/lib/analytics/ingest'
 
 describe('strict bounded capture input', () => {
+  it('accepts only the closed gap control, allowing empty events only with true', () => {
+    expect(parseAnalyticsBatch({ credential: 'x', events: [], captureGap: true })).toEqual({ credential: 'x', events: [], captureGap: true })
+    for (const value of [{ events: [] }, { events: [], captureGap: false }, { events: [], captureGap: 'phone' }, { events: [], captureGap: true, detail: 'private' }]) {
+      expect(() => parseAnalyticsBatch({ credential: 'x', ...value })).toThrow()
+    }
+  })
   const request = (body: string, headers = {}) => new Request('https://salon.agendita.test/api/analytics/salon/events', { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body })
   it('parses JSON only inside the real UTF-8 byte budget', async () => {
     expect(await readAnalyticsBody(request('{"consentVersion":1}'))).toEqual({ consentVersion: 1 })

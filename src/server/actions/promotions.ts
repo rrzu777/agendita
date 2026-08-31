@@ -148,7 +148,7 @@ async function _getPromotionRedemptions(promotionId: string) {
 
 export const getPromotionRedemptions = action(_getPromotionRedemptions)
 
-const GENERIC_INVALID = { ok: false as const, message: 'Código inválido o no aplicable' }
+const GENERIC_INVALID = { ok: false as const, message: 'Código inválido o no aplicable', category: 'unknown' as const }
 
 /** Preview público: NO crea canje. Tenant-scoped + rate-limited + respuesta genérica
  *  (no revela si el código existe). Se envuelve con action() solo por la red de
@@ -182,7 +182,7 @@ async function _previewPromotion(input: { businessId: string; code: string; serv
       if (!p.appliesToAll && !p.services.some((s: { id: string }) => s.id === input.serviceId)) return GENERIC_INVALID
       if (p.minSpend != null && service.price < p.minSpend) return GENERIC_INVALID
       const discount = computeDiscount({ ...p, serviceIds: p.services.map((s: { id: string }) => s.id) } as Parameters<typeof computeDiscount>[0], service.price)
-      return { ok: true as const, discount, finalAmount: service.price - discount }
+      return { ok: true as const, discount, finalAmount: service.price - discount, promotionId: p.id }
     }
 
     // Rama código (triggerType='code') — reusa `service`, ya no se vuelve a buscar
@@ -210,7 +210,7 @@ async function _previewPromotion(input: { businessId: string; code: string; serv
       serviceId: input.serviceId, totalPrice: service.price, customerRedemptions, now: new Date(),
     })
     if (!result.ok) return GENERIC_INVALID
-    return { ok: true as const, discount: result.discount, finalAmount: service.price - result.discount }
+    return { ok: true as const, discount: result.discount, finalAmount: service.price - result.discount, promotionId: promo.id }
   } catch {
     return GENERIC_INVALID
   }

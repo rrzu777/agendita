@@ -10,6 +10,12 @@ export interface TimeSlot {
   end: Date
 }
 
+export type AvailabilityEmptyReason = 'outside_booking_window' | 'lead_time_restricted' | 'not_offered' | 'no_capacity' | 'unknown'
+export interface AvailableSlotsResult { slots: TimeSlot[]; emptyReason: AvailabilityEmptyReason | null }
+
+/** Compatibility adapter: all consumers use the exact same generator. */
+export function generateSlots(...args: Parameters<typeof generateSlotsResult>): TimeSlot[] { return generateSlotsResult(...args).slots }
+
 export interface BookingLike extends SlotOccupancyFields {
   startDateTime: Date
   endDateTime: Date
@@ -56,14 +62,14 @@ export interface GenerateSlotsOptions {
  * lead time solo filtra candidatos: el grid no se corre con el reloj, los
  * slots desaparecen al cruzar el corte pero nunca cambian de hora.
  */
-export function generateSlots(
+export function generateSlotsResult(
   date: Date,
   durationMinutes: number,
   rules: AvailabilityRuleLike[],
   blocks: TimeBlockLike[],
   bookings: BookingLike[],
   options: GenerateSlotsOptions = {}
-): TimeSlot[] {
+): AvailableSlotsResult {
   const {
     timezone = 'America/Santiago',
     now = new Date(),
@@ -77,7 +83,7 @@ export function generateSlots(
   const localDayOfWeek = getLocalDayOfWeek(date, timezone)
 
   const rule = rules.find((r) => r.dayOfWeek === localDayOfWeek && r.isActive)
-  if (!rule) return []
+  if (!rule) return { slots: [], emptyReason: 'not_offered' }
 
   // Construir timestamps UTC reales para inicio y fin de disponibilidad
   const availabilityStart = localDateTimeToUtc(localDateStr, rule.startTime, timezone)
@@ -121,15 +127,28 @@ export function generateSlots(
 
   // Slots anclados al inicio de cada intervalo libre (agenda compacta)
   const slots: TimeSlot[] = []
+  const excluded = new Set<AvailabilityEmptyReason>()
   for (const interval of freeIntervals) {
     let current = interval.start
     while (addMinutes(current, durationMinutes) <= interval.end) {
       if (current >= cutoff && current <= maxStart) {
         slots.push({ start: new Date(current), end: addMinutes(current, durationMinutes) })
+      } else {
+        if (current < cutoff) excluded.add('lead_time_restricted')
+        if (current > maxStart) excluded.add('outside_booking_window')
       }
       current = addMinutes(current, stepMinutes)
     }
   }
 
-  return slots
+  if (slots.length) return { slots, emptyReason: null }
+  // Diagnose from the very intervals/cutoffs used above. Multiple restrictions
+  // remain unknown; a fully occupied date outside the window is not "capacity".
+  if (addMinutes(availabilityStart, durationMinutes) > availabilityEnd) excluded.add('not_offered')
+  if (obstacles.length) {
+    excluded.add('no_capacity')
+    if (availabilityStart < cutoff) excluded.add('lead_time_restricted')
+    if (addMinutes(availabilityEnd, -durationMinutes) > maxStart) excluded.add('outside_booking_window')
+  }
+  return { slots, emptyReason: excluded.size === 1 ? [...excluded][0] : 'unknown' }
 }

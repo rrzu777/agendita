@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { BusinessProfile } from '@/components/public/business-profile'
+import { PublicAnalytics } from '@/components/analytics/public-analytics'
+import { isPublicAnalyticsEligible } from '@/lib/analytics/public-context'
 import { getPublicBusinessBySubdomain } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { getAccountCta, getFunnelSession } from '@/lib/customers/session-prefill'
@@ -72,12 +74,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       const session = await getFunnelSession(business.id)
       const hasPackages = (await prisma.packageProduct.count({ where: { businessId: business.id, isActive: true } })) > 0
       return (
+        <PublicAnalytics businessId={business.id} slug={business.slug} timezone={business.timezone || 'America/Santiago'} eligible={await isPublicAnalyticsEligible(business.id)} surface="profile">
         <BusinessProfile
           business={business}
           bookingHref={appendPublicAcquisitionSearch('/book', search)}
           accountCta={getAccountCta(session, business.slug, search)}
           packagesHref={hasPackages ? '/paquetes' : undefined}
         />
+        </PublicAnalytics>
       )
     }
   }

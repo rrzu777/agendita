@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { configureCapture } from '../helpers/analytics-capture'
-import { resolvePublicAnalyticsContext } from '@/lib/analytics/public-context'
+import { isPublicAnalyticsEligible, resolvePublicAnalyticsContext } from '@/lib/analytics/public-context'
 
 const db = vi.hoisted(() => ({ business: { findUnique: vi.fn() }, analyticsCollectionPeriod: { findFirst: vi.fn() }, businessUser: { findFirst: vi.fn() }, $queryRaw: vi.fn() }))
 const user = vi.hoisted(() => vi.fn())
@@ -20,6 +20,16 @@ describe('public analytics context resolves actual canonical origin, never proxy
   const request = (origin = 'https://salon.agendita.test', extra = {}) => new Request(`${origin}/api/analytics/salon/session`, { method: 'POST', headers: { origin, ...extra } })
   it('resolves the active tenant through canonical subdomain, app host or exact custom domain', async () => {
     for (const origin of ['https://salon.agendita.test', 'https://agendita.test', 'https://salon.example.test']) expect(await resolvePublicAnalyticsContext(request(origin), 'salon')).toMatchObject({ businessId: 'biz-a', timezone: 'America/Santiago', origin })
+  })
+  it('SSR exposes only a boolean and fails closed for configuration, periods, staff and read errors', async () => {
+    expect(await isPublicAnalyticsEligible('biz-a')).toBe(true)
+    expect(await isPublicAnalyticsEligible('biz-b')).toBe(false)
+    db.analyticsCollectionPeriod.findFirst.mockResolvedValueOnce(null)
+    expect(await isPublicAnalyticsEligible('biz-a')).toBe(false)
+    user.mockResolvedValue({ id: 'staff' }); db.businessUser.findFirst.mockResolvedValue({ id: 'member' })
+    expect(await isPublicAnalyticsEligible('biz-a')).toBe(false)
+    db.business.findUnique.mockRejectedValueOnce(new Error('offline'))
+    expect(await isPublicAnalyticsEligible('biz-a')).toBe(false)
   })
   it('ignores forged internal headers, rejecting an unconfigured host', async () => {
     expect(await resolvePublicAnalyticsContext(request('https://evil.test', { 'x-business-subdomain': 'salon', 'x-forwarded-host': 'salon.agendita.test' }), 'salon')).toBeNull()

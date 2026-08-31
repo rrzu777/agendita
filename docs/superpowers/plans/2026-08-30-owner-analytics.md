@@ -114,6 +114,7 @@ expect(analyticsEventSchema.safeParse({
 - `resolvePublicAnalyticsContext(request, slug): Promise<PublicAnalyticsContext | null>` devuelve negocio activo, zona y origen exacto. Ignora `x-business-subdomain` y `x-forwarded-host` sin confianza explícita; verifica el host público contra dominio configurado/subdominio/customDomain del negocio.
 - `bootstrapAnalyticsSession(context, input)`, `bootstrapAnalyticsAttempt(context, input)`: `{id, credential, startedAt, expiresAt, retentionExpiresAt}`. Input de intento exige credencial de sesión y clave bootstrap independiente.
 - `ingestAnalyticsBatch(context, {credential, events}): Promise<BatchReceipt>`; cada recibo es `accepted | replay | rejected`, con categoría cerrada.
+- Extensión de integración Task4: lote opcional `captureGap: true`, cero eventos sólo con esa señal, confirmación `captureGapRecorded: true` tras marcar el stream existente; mismas credencial/tenancy/rate gates y presupuesto mínimo1. Sin cambio del schema de eventos ni DB.
 - `reserveAnalyticsBudget({businessId, cost, now}): Promise<boolean>`: reserva global y tenant en un solo EVAL distribuido; fallo cerrado, sin compartir buckets de pagos/reservas.
 - `getBookingAnalyticsSnapshot({credential, selectionRevision, businessId, origin, now}): VerifiedBookingAnalyticsSnapshot | null`, sin consulta externa ni mutación de intentos.
 - Actions autorizadas: `createAcquisitionLink(input)`, `archiveAcquisitionLink(id)`, `setAnalyticsCollectionEnabled(enabled)`. Esta última exige los gates de configuración/privacidad/piloto; desactivar siempre debe ser posible y no habilita el flag global.
@@ -153,7 +154,7 @@ expect(getBookingAnalyticsSnapshot({
 - `publishAnalyticsCohort({businessId, localDate, timezone, definitionVersion, now}): Promise<CohortPublicationResult>`.
 - `runOwnerAnalyticsMaintenance({now, maxRows, cursor}): Promise<{errors:number, deleted:number, published:number, hasMore:boolean, nextCursor:string|null}>`.
 
-- [ ] Escribir tests rojos de suma ponderada, cero/sin datos, madurez, una conversión con dos Bookings, cobertura desigual y filtros de otro negocio.
+- [x] Escribir tests rojos de suma ponderada, cero/sin datos, madurez, una conversión con dos Bookings, cobertura desigual y filtros de otro negocio.
 
 ```ts
 expect(report.complete.conversion).toEqual({ numerator: 4, denominator: 10, rate: 0.4 })
@@ -161,22 +162,25 @@ expect(report.partial.conversion).toEqual({ numerator: 2, denominator: 3, rate: 
 expect(report.comparison.status).toBe('coverage_not_comparable')
 ```
 
-- [ ] Implementar lecturas acotadas y proyección por intento/par intento-servicio antes de joins. No cargar todo el histórico de eventos en JS ni paginar miles de filas en el browser. El worker puede procesar páginas acotadas de intentos, con máximo 200 eventos por intento, para aplicar el reductor compartido.
-- [ ] Publicar sólo cohortes cuyas ventanas estén cerradas más una hora de reconciliación. Dentro de una transacción y lock de cohorte reemplazar todas las celdas y marcador, incluyendo grupos que desaparecieron; ninguna lectura mezcla revisiones.
-- [ ] Implementar granos independientes total/canal/enlace/servicio; los filtros históricos incompatibles se rechazan explícitamente. No consolidar estados actuales de Booking, dinero ni canjes mutables como si fueran resultados históricos fijos.
-- [ ] Congelar revisión válida antes de la primera purga de una fuente de la cohorte; conservarla hasta su vencimiento. Fuente ausente sin revisión válida produce histórico no disponible, no cero. Una falla de rollup nunca prolonga retención.
-- [ ] Limpiar eventos/intentos/sesiones y snapshots con presupuesto reservado, lotes y continuaciones. Borrar sólo columnas analytics de Booking, nunca la reserva. Cerrar/registrar cobertura al pausar por backlog o límites.
-- [ ] Cron con `hasValidBearerSecret`, errores explícitos y `errors: 0` sólo cuando corresponde. El script itera continuaciones con límite temporal y devuelve fallo si queda backlog peligroso. No habilitar variable del workflow ni invocarlo en producción.
-- [ ] Probar carreras publicación/purga, reintentos, eliminaciones selectivas, backlog >10.000 y tenant deletion en la base local exclusiva; verificar índices con planes de consulta de fixtures representativos.
-- [ ] Verificación/revisión antes del commit local `feat: aggregate and retain owner analytics cohorts`.
+- [x] Implementar lecturas acotadas y proyección por intento/par intento-servicio antes de joins. No cargar todo el histórico de eventos en JS ni paginar miles de filas en el browser. El worker puede procesar páginas acotadas de intentos, con máximo 200 eventos por intento, para aplicar el reductor compartido.
+- [x] Publicar sólo cohortes cuyas ventanas estén cerradas más una hora de reconciliación. Dentro de una transacción y lock de cohorte reemplazar todas las celdas y marcador, incluyendo grupos que desaparecieron; ninguna lectura mezcla revisiones.
+- [x] Implementar granos independientes total/canal/enlace/servicio; los filtros históricos incompatibles se rechazan explícitamente. No consolidar estados actuales de Booking, dinero ni canjes mutables como si fueran resultados históricos fijos.
+- [x] Congelar revisión válida antes de la primera purga de una fuente de la cohorte; conservarla hasta su vencimiento. Fuente ausente sin revisión válida produce histórico no disponible, no cero. Una falla de rollup nunca prolonga retención.
+- [x] Limpiar eventos/intentos/sesiones y snapshots con presupuesto reservado, lotes y continuaciones. Borrar sólo columnas analytics de Booking, nunca la reserva. Cerrar/registrar cobertura al pausar por backlog o límites.
+- [x] Cron con `hasValidBearerSecret`, errores explícitos y `errors: 0` sólo cuando corresponde. El script itera continuaciones con límite temporal y devuelve fallo si queda backlog peligroso. No habilitar variable del workflow ni invocarlo en producción.
+- [x] Probar carreras publicación/purga, reintentos, eliminaciones selectivas, backlog >10.000 y tenant deletion en la base local exclusiva; verificar índices con planes de consulta de fixtures representativos.
+- [x] Verificación/revisión antes del commit local `feat: aggregate and retain owner analytics cohorts`. Checkpoints `afcf728` + `5ef75b6`; revisión independiente y focal aprobadas, sin hallazgos abiertos. Evidencia en report/ledger.
 
 ## Task 4: Consentimiento y captura resiliente del flujo público
 
 **Files:**
 - Create: `src/lib/analytics/client-store.ts`, `client-transport.ts`, `src/components/analytics/public-analytics.tsx`.
-- Modify: `src/components/public/business-profile.tsx`, `src/components/booking/wizard.tsx`, `step-service.tsx`, `step-time.tsx`, `step-payment.tsx` y `step-customer.tsx` sólo en sus puntos de interacción.
+- Modify: `src/components/public/business-profile.tsx`, `src/components/booking/wizard.tsx`, `step-service.tsx`, `step-time.tsx`, `step-payment.tsx` y, si requiere un seam adicional, `step-customer.tsx`, sólo en sus puntos de interacción. La finalización de datos puede observarse en el callback real `StepCustomer.onSubmit` del wizard; no exige modificar el hijo si su contrato existente basta. La vista del perfil puede observarse desde el provider montado en su página, sin modificar BusinessProfile si no hace falta.
 - Modify: `src/app/b/[slug]/page.tsx`, `src/app/page.tsx`, `src/app/book/[slug]/page.tsx`, `src/app/book/page.tsx`.
 - Modify: `src/lib/availability/slots.ts`, `src/server/actions/availability.ts`, `src/server/actions/promotions.ts` para resultados tipados compatibles.
+- Modify: `src/lib/availability/team-slots.ts` para resultado tipado de cualquier profesional desde el mismo cálculo, conservando adapter legacy; razones diferentes o no demostrables → `unknown`.
+- Extend: `src/lib/analytics/ingest.ts` y tests unit/integration de ingesta para la señal `captureGap` del contrato Task2; no modificar schema de eventos ni DB. La pérdida local conocida omite sólo selectionRevision del snapshot, no la credencial ni la conversión.
+- Extend: `src/lib/analytics/public-context.ts` con elegibilidad SSR server-only booleana compartida por las cuatro páginas, sin bootstrap en GET ni serializar configuración privada; fallo, inactivo, configuración incompleta o período cerrado → false. Cubrir con tests focales de contexto público.
 - Create: `tests/unit/analytics-client-store.test.ts`, `analytics-client-transport.test.ts`, `public-analytics.test.tsx`, `analytics-wizard.test.tsx`, `analytics-availability.test.ts`.
 - Extend: suites de `wizard-storage`, `funnel-session-prefill`, `step-time-professional` y `step-payment` que existan en la base.
 
@@ -184,6 +188,7 @@ expect(report.comparison.status).toBe('coverage_not_comparable')
 - `PublicAnalytics` provider con negocio público/slug/zona/configuración de elegibilidad, nunca secreto de firma; provider común para perfil y wizard.
 - `usePublicAnalytics()`: `track(event)`, `changeSelection(context)`, `startAttempt(entryType)`, `bookingCredential()`, `completeAttempt()`, `withdrawConsent()`; todas seguras/no-op sin consentimiento o sin contexto.
 - `bookingCredential()` devuelve únicamente token firmado y revisión para `bookingInput()`, sin esperar captura ni red.
+- Tras `completeAttempt`, los efectos pasivos/retry de checkout no reabren captura. Una selección explícita que inicia otro flujo puede rearmarla en la misma instancia, con intento nuevo/parcial si empieza a mitad; conserva el stream anterior y no cambia idempotencia financiera.
 - Nuevo resultado de disponibilidad `{slots, emptyReason}` desde el mismo generador; el action legacy sigue devolviendo `TimeSlot[]` para consumidores no migrados. `unknown` cuando no puede demostrarse una causa única.
 
 - [ ] Escribir test rojo que renderice provider + wizard sin consentimiento y pruebe cero bootstraps/eventos/identificadores; reservar y rechazar métricas siguen disponibles.

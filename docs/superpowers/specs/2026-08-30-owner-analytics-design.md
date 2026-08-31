@@ -81,6 +81,10 @@ Alternativas consideradas:
 - Un **intento** empieza al abrir el wizard. Se conserva entre pasos, recargas,
   reintentos y el viaje a login. Una reserva terminada y un nuevo flujo generan
   otro intento; la sesión puede contener varios.
+  Tras crear Booking, reintentar su checkout o volver visible la misma pantalla
+  no abre otro intento. Una nueva selección real de reserva que inicia otro flujo
+  sí puede abrirlo dentro del mismo wizard; si la observación arranca a mitad,
+  se declara parcial. El stream anterior conserva su identidad y cola pendiente.
 - La ventana de conversión es de **24 horas desde el inicio del intento**. La
   expiración de la sesión no invalida un intento todavía vigente. Cada uno tiene
   su propia credencial y plazo; no se usa la clave de idempotencia de pagos como
@@ -467,6 +471,14 @@ No se necesitan IDs de personas o sesiones para consultar esta tabla.
 - Registrar huecos/descartes conocidos sin copiar el payload rechazado. Estos
   diagnósticos no detectan eventos que el navegador nunca consiguió generar; por
   eso "último observado" no se presenta como conocimiento del abandono real.
+  El lote admite la señal opcional cerrada `captureGap: true`; puede llevar cero
+  eventos únicamente con esa señal. Con la misma credencial, origen, controles de
+  captura y límites, marca idempotentemente `knownCaptureGap` del stream existente,
+  sin crear eventos ni incrementar su contador. El recibo confirma
+  `captureGapRecorded: true` sólo tras persistirla. Todo lote reserva al menos una
+  unidad de presupuesto. Si hay pérdida local conocida, la reserva conserva su
+  credencial válida pero omite `selectionRevision`: cuenta la conversión sin
+  acreditar un recorrido observado completo, incluso si la señal no pudo llegar.
 - Fallos y límites de analytics no bloquean navegación o reserva. El navegador no
   muestra errores de analytics al cliente; el panel de dueños sí diferencia falta
   de datos, captura desactivada y fallo del reporte de un resultado cero.
