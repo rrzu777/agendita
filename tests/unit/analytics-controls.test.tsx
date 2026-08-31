@@ -7,6 +7,7 @@ import { AcquisitionLinks } from '@/components/dashboard/analytics/acquisition-l
 import { AnalyticsDashboard } from '@/components/dashboard/analytics/analytics-dashboard'
 import { analyticsDashboardFixture as report } from '../helpers/analytics-dashboard-fixture'
 import { clickButton } from '../helpers/react-dom'
+import type { AnalyticsOptionPage } from '@/server/analytics/options'
 
 const mocks = vi.hoisted(() => ({ options: vi.fn(), capture: vi.fn(), create: vi.fn(), refresh: vi.fn() }))
 vi.mock('@/server/actions/analytics', () => ({ getOwnerAnalyticsOptions: mocks.options, setAnalyticsCollectionEnabled: mocks.capture, createAcquisitionLink: mocks.create, archiveAcquisitionLink: vi.fn() }))
@@ -99,6 +100,36 @@ describe('actual analytics management controls', () => {
     expect(mocks.create).toHaveBeenCalledWith({ channel: 'instagram', campaignName: 'Campaña', promotionId: 'owned-1' })
     expect(host.textContent).toContain('Promoción no disponible')
     expect(host.textContent).not.toContain('Enlace creado:')
+  })
+  it.each(['service', 'promotion'] as const)('keeps the current %s identity and never borrows a stale selection label after pagination', async kind => {
+    const first = { id: 'owned-a', label: 'Nombre A' }
+    const second = { id: 'owned-b', label: 'Nombre B' }
+    mocks.options.mockResolvedValueOnce({ ok: true, data: { rows: [first, second], page: 1, hasMore: true, selected: kind === 'service' ? first : null } })
+    await act(async () => root.render(kind === 'service'
+      ? <AnalyticsControls report={{ ...report, filter: { ...report.filter, serviceId: first.id } }} periodMode={{ days: 28 }} />
+      : <AcquisitionLinks links={report.acquisitionLinks} />))
+    const label = kind === 'service' ? 'Servicio histórico' : 'Promoción opcional'
+    await select(label, first.id)
+    let resolvePage!: (value: { ok: true; data: AnalyticsOptionPage }) => void
+    mocks.options.mockReturnValueOnce(new Promise<{ ok: true; data: AnalyticsOptionPage }>(resolve => { resolvePage = resolve }))
+    await clickButton(host, 'Más opciones')
+    expect(mocks.options).toHaveBeenLastCalledWith({ kind, page: 2, search: '', selectedId: first.id })
+    await select(label, second.id)
+    expect(host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!.selectedOptions[0].textContent).toBe('Nombre B')
+    await act(async () => resolvePage({ ok: true, data: { rows: [first], page: 2, hasMore: false, selected: first } }))
+    const current = host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!
+    expect(current.value).toBe('owned-b')
+    expect(current.selectedOptions[0].textContent).not.toContain('Nombre A')
+    expect(current.selectedOptions[0].textContent).toContain('owned-b')
+    if (kind === 'service') {
+      expect(new FormData(host.querySelector('form')!).get('serviceId')).toBe('owned-b')
+    } else {
+      mocks.create.mockResolvedValueOnce({ ok: false, error: 'Creación no disponible' })
+      const input = host.querySelector<HTMLInputElement>('#analytics-campaign')!
+      await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Campaña'); input.dispatchEvent(new Event('input', { bubbles: true })) })
+      await clickButton(host, 'Crear enlace')
+      expect(mocks.create).toHaveBeenCalledWith({ channel: 'instagram', campaignName: 'Campaña', promotionId: 'owned-b' })
+    }
   })
   it('names a retained promotion association from the separate options response', async () => {
     await act(async () => root.render(<AcquisitionLinks links={{ ...report.acquisitionLinks, rows: [{ ...report.acquisitionLinks.rows[0], promotionId: 'owned-1' }] }} />))

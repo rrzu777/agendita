@@ -31,7 +31,7 @@ export function AnalyticsOptionPicker({ kind, label, value, onChange, name, onOp
     return () => { stale = true }
   }, [kind, query, onOptions])
   const rows = result?.rows ?? []
-  const selected = result?.selected
+  const selected = result?.selected?.id === value ? result.selected : null
   return <div className="min-w-0 space-y-2">
     <label className="block text-sm font-medium" htmlFor={`analytics-option-${kind}`}>{label}</label>
     <NativeSelect id={`analytics-option-${kind}`} name={name} aria-label={label} value={value} onChange={event => onChange(event.target.value)} className="h-10 bg-background">
