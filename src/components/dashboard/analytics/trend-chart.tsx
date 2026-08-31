@@ -17,7 +17,7 @@ export function TrendChart({ trend, coverage, unavailable }: { trend: OwnerAnaly
 
   return (
     <figure aria-labelledby="trend-title" className="space-y-3">
-      <svg viewBox="0 0 100 100" role="img" aria-label="Tendencia visual de intentos completos" className="h-40 w-full rounded-lg bg-secondary/30 p-3" preserveAspectRatio="none">
+      <svg data-segments={segments.length} viewBox="0 0 100 100" role="img" aria-label="Tendencia visual de intentos completos" className="h-40 w-full rounded-lg bg-secondary/30 p-3" preserveAspectRatio="none">
         <line x1="4" x2="96" y1="88" y2="88" stroke="currentColor" strokeOpacity=".25" vectorEffect="non-scaling-stroke" />
         {segments.map((points, index) => <polyline key={index} points={points.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" className="text-primary" />)}
         {segments.flat().map(point => <circle key={point.key} cx={point.x} cy={point.y} r="2" fill="currentColor" className="text-primary" />)}

@@ -218,7 +218,7 @@ expect(analyticsStorageKeys()).toEqual([])
 - Create: `tests/e2e/owner-analytics.spec.ts`.
 
 **Interfaces:**
-- `AnalyticsDashboard({report: OwnerAnalyticsReport})`, DTO del Task3, sin consultas directas desde componentes de gráficos.
+- `AnalyticsDashboard({report: OwnerAnalyticsReport, periodMode?})`, DTO del Task3 y modo de período UI transmitido por la página tras validar la consulta. El modo conserva preset7/28/90 frente a rango explícito al paginar, sin inferirlo de fechas normalizadas ni modificar el DTO/DAL. Sin consultas directas desde componentes de gráficos.
 - Filtros mediante searchParams cerrados/validados en servidor; acciones Task2 para gestión de enlaces. Paginación25 por defecto y máximo100 con orden estable.
 
 - [ ] Test rojo: owner/admin ven Métricas en desktop y Más móvil; staff no lo ve ni puede consultar/mutar por llamada directa. Error de reporte nunca se representa como cero.

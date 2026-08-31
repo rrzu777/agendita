@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AnalyticsDashboard } from '@/components/dashboard/analytics/analytics-dashboard'
+import { AnalyticsDashboard, buildMetricsHref } from '@/components/dashboard/analytics/analytics-dashboard'
+import Loading from '@/app/dashboard/metricas/loading'
 import type { OwnerAnalyticsReport } from '@/server/analytics/reports'
 
 const report = {
@@ -30,6 +31,9 @@ const report = {
 } satisfies OwnerAnalyticsReport
 
 describe('AnalyticsDashboard', () => {
+  it('renders a route-local loading state', () => {
+    expect(renderToStaticMarkup(<Loading />)).toContain('Cargando métricas')
+  })
   it('shows observed conversion, incomplete measurement and an accessible daily trend table', () => {
     const markup = renderToStaticMarkup(<AnalyticsDashboard report={report} />)
 
@@ -43,6 +47,8 @@ describe('AnalyticsDashboard', () => {
     expect(markup).toContain('Recorrido incompleto')
     expect(markup).toContain('<table')
     expect(markup).toContain('aria-label="Tendencia diaria"')
+    expect(markup).toContain('+5 puntos porcentuales')
+    expect(markup).toContain('aún no entran al denominador maduro')
   })
 
   it('labels unavailable reports instead of showing a zero-valued graph', () => {
@@ -81,12 +87,20 @@ describe('AnalyticsDashboard', () => {
   })
 
   it('shows a missing middle cohort as a coverage discontinuity', () => {
-    const markup = renderToStaticMarkup(<AnalyticsDashboard report={{ ...report, coverage: { ...report.coverage, status: 'partial', cohorts: [{ date: '2026-08-01', timezone: 'UTC', version: 1, coverage: 'complete', state: 'closed', frozen: true, calculatedAt: '2026-08-02T00:00:00.000Z' }, { date: '2026-08-02', timezone: 'UTC', version: 1, coverage: 'unknown', state: 'unavailable', frozen: false, calculatedAt: null }, { date: '2026-08-03', timezone: 'UTC', version: 1, coverage: 'complete', state: 'closed', frozen: true, calculatedAt: '2026-08-04T00:00:00.000Z' }] }, trend: [report.trend[0], { ...report.trend[0], date: '2026-08-03' }] }} />)
+    const markup = renderToStaticMarkup(<AnalyticsDashboard report={{ ...report, coverage: { ...report.coverage, status: 'partial', cohorts: [{ date: '2026-08-01', timezone: 'America/Santiago', version: 1, coverage: 'complete', state: 'closed', frozen: true, calculatedAt: '2026-08-02T00:00:00.000Z' }, { date: '2026-08-02', timezone: 'America/Santiago', version: 1, coverage: 'unknown', state: 'unavailable', frozen: false, calculatedAt: null }, { date: '2026-08-03', timezone: 'America/Santiago', version: 1, coverage: 'complete', state: 'closed', frozen: true, calculatedAt: '2026-08-04T00:00:00.000Z' }] }, trend: [{ ...report.trend[0], date: '2026-08-01' }, { ...report.trend[0], date: '2026-08-03' }] }} />)
 
     expect(markup).toContain('Cobertura por cohorte')
     expect(markup).toContain('2026-08-02')
     expect(markup).toContain('No disponible')
     expect(markup).toContain('Discontinuidades de cobertura')
+    expect(markup).toContain('data-segments="2"')
+  })
+
+  it('preserves preset mode across pages and uses explicit dates only for an explicit range', () => {
+    expect(buildMetricsHref(report, { days: 7 }, 2)).toContain('days=7&page=2')
+    expect(buildMetricsHref(report, { days: 28 }, 2)).toContain('days=28&page=2')
+    expect(buildMetricsHref(report, { days: 90 }, 2)).toContain('days=90&page=2')
+    expect(buildMetricsHref(report, { days: null }, 2)).toContain('from=2026-08-01&to=2026-08-29&page=2')
   })
 
   it('orders the observed milestones semantically instead of relying on database row order', () => {

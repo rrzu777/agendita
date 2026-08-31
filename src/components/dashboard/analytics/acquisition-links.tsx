@@ -17,6 +17,10 @@ const channels = [
   ['instagram', 'Instagram'], ['facebook', 'Facebook'], ['whatsapp', 'WhatsApp'], ['google', 'Google'], ['referral', 'Referido'], ['direct', 'Directo'], ['other', 'Otro'],
 ] as const
 
+export function acquisitionActionMessage(result: { ok: boolean; error?: string; data?: { url: string } }) {
+  return result.ok ? `Enlace creado: ${result.data?.url ?? ''}` : result.error ?? 'No se pudo crear el enlace.'
+}
+
 export function AcquisitionLinks({ links, pagination = { label: `Página ${links.page}`, previousHref: null, nextHref: null } }: { links: OwnerAnalyticsReport['acquisitionLinks']; pagination?: AnalyticsPagination }) {
   const [channel, setChannel] = useState<(typeof channels)[number][0]>('instagram')
   const [campaignName, setCampaignName] = useState('')
@@ -26,9 +30,9 @@ export function AcquisitionLinks({ links, pagination = { label: `Página ${links
   function create() {
     startTransition(async () => {
       const result = await createAcquisitionLink({ channel, campaignName })
-      if (!result.ok) return setMessage(result.error)
+      if (!result.ok) return setMessage(acquisitionActionMessage(result))
       setCampaignName('')
-      setMessage(`Enlace creado: ${result.data.url}`)
+      setMessage(acquisitionActionMessage(result))
     })
   }
 

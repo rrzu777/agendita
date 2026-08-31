@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AcquisitionLinks } from '@/components/dashboard/analytics/acquisition-links'
+import { AcquisitionLinks, acquisitionActionMessage } from '@/components/dashboard/analytics/acquisition-links'
 import type { OwnerAnalyticsReport } from '@/server/analytics/reports'
 
 const links = {
@@ -25,5 +25,9 @@ describe('AcquisitionLinks', () => {
     expect(markup).toContain('Página 1 de 2')
     expect(markup).toContain('Siguiente enlaces')
     expect(markup).toContain('from=2026-08-01&amp;to=2026-08-29&amp;channel=instagram&amp;page=2')
+  })
+
+  it('keeps an ok:false action response visible instead of reporting success', () => {
+    expect(acquisitionActionMessage({ ok: false, error: 'No autorizado.' })).toBe('No autorizado.')
   })
 })
