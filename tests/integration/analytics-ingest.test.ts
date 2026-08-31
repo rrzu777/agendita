@@ -300,7 +300,8 @@ describe('real PostgreSQL bootstrap and ingest serialization', () => {
     expect(verifyAnalyticsCredential(receipt.credential, { businessId, origin: context.origin, secret: captureSecret, now: captureNow })?.acquisition.channel).toBe('unknown')
   })
   it('archiving a link blocks new attribution without rewriting the first source of an existing session', async () => {
-    const link = await prisma.acquisitionLink.create({ data: { businessId, token: randomUUID().replaceAll('-', ''), channel: 'instagram', campaignName: 'Synthetic season' } })
+    // All lifecycle timestamps use the fixture clock, never PostgreSQL wall time.
+    const link = await prisma.acquisitionLink.create({ data: { businessId, token: randomUUID().replaceAll('-', ''), channel: 'instagram', campaignName: 'Synthetic season', createdAt: new Date(captureNow.getTime() - 1000) } })
     const input = { ...sessionInput(), acq: link.token, utmSource: 'facebook' }
     const first = await bootstrapAnalyticsSession(context, input, captureNow)
     await prisma.acquisitionLink.update({ where: { id: link.id }, data: { archivedAt: captureNow } })

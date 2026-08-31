@@ -142,3 +142,39 @@ test('late opt-in and withdrawal do not erase the selected booking hour', async 
   await next.click()
   await expect(page.getByRole('heading', { name: 'Tus datos', exact: true })).toBeVisible()
 })
+
+for (const consent of ['declined', 'withdrawn'] as const) {
+  test(`Booking commits without analytics after consent is ${consent}`, async ({ page }) => {
+    // Catches making analytics mandatory, retaining a withdrawn credential, or
+    // sending new capture requests while completing a non-consented reservation.
+    await page.setExtraHTTPHeaders(auth)
+    const before = await prisma.booking.findMany({ where: { businessId: fixture.businessId }, select: { id: true } })
+    const requests: string[] = []
+    page.on('request', request => { if (request.url().includes('/api/analytics/')) requests.push(request.url()) })
+    await page.goto(bookingPath)
+    if (consent === 'withdrawn') {
+      const bootstrapped = page.waitForResponse(response => response.url().endsWith(`/api/analytics/${fixture.slug}/attempt`) && response.ok())
+      await page.getByRole('button', { name: 'Permitir métricas', exact: true }).click()
+      await bootstrapped
+      await page.waitForLoadState('networkidle')
+      requests.length = 0 // Capture was permitted only before the withdrawal click.
+      await page.getByRole('button', { name: 'Retirar permiso de métricas' }).click()
+    } else {
+      await page.getByRole('button', { name: 'Continuar sin métricas', exact: true }).click()
+    }
+    await pickTime(page, consent === 'declined' ? 8 : 9)
+    await confirmBooking(page)
+    const created = await prisma.booking.findMany({ where: { businessId: fixture.businessId, id: { notIn: before.map(row => row.id) } } })
+    expect(created).toHaveLength(1)
+    expect(created[0]).toMatchObject({
+      serviceId: fixture.serviceId, totalPrice: 10000, depositRequired: 0,
+      analyticsVersion: null, analyticsSessionId: null, analyticsAttemptId: null,
+      analyticsAttemptStartedAt: null, analyticsConversionDeadlineAt: null,
+      analyticsRetentionExpiresAt: null, analyticsChannel: null,
+      analyticsNormalizationVersion: null, analyticsAcquisitionLinkId: null,
+      analyticsSelectionRevision: null,
+    })
+    expect(requests).toEqual([])
+    expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith('owner-analytics:')))).toEqual([])
+  })
+}
