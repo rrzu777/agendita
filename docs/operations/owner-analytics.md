@@ -1,6 +1,6 @@
 # Owner analytics: handoff operativo
 
-Estado: implementación y revisión local completadas, con **un defecto menor N1 documentado**, sin Critical/Important abiertos. Captura y mantenimiento productivos **no activados**. Este documento no autoriza migración, deploy, push, PR, cron, comunicaciones ni pruebas con cuentas/datos reales. Retención de 13 meses e IA semanal requieren decisiones separadas; no están implementadas. La revisión independiente de toda la rama y la única re-review de correcciones finalizaron; N1 queda pendiente antes del piloto.
+Estado vigente, 2026-08-31: **implementación todavía incompleta**. La auditoría posterior al cierre de review detectó dos requisitos omitidos. G1, editar etiquetas de campañas, ya está implementado y revisado en `6b07579`. Quedan G2, desgloses propios de profesional/pago/errores, y la validación conjunta final. N1 ya fue corregido en `a3a9737`. Ver `owner-analytics-completion-audit.md` para el seguimiento actual; los checkpoints inferiores son evidencia histórica, no una declaración de cumplimiento integral. Captura y mantenimiento productivos **no activados**. Este documento no autoriza migración, deploy, push, PR, cron, comunicaciones ni pruebas con cuentas/datos reales. Retención de 13 meses e IA semanal requieren decisiones separadas; no están implementadas.
 
 ## Qué mide y qué no
 
@@ -54,7 +54,10 @@ Límites de lectura: páginas raw de 50; 201 eventos/1001 Bookings sentinela por
 
 Rollback conservador: desactivar captura, cerrar períodos, mantener mantenimiento/alertas activo hasta cumplir retención, restaurar versión de app compatible con migración aditiva si procede. No revertir migration a ciegas, no borrar hechos de Booking/pagos/canjes ni reinterpretar adquisiciones previas; archivar enlaces, no editarlos retroactivamente. Mantener agregados ya publicados hasta su vencimiento. Si rollback elimina el ejecutable de mantenimiento, acordar un proceso compatible que siga purgando: apagar captura no suspende obligaciones de retención.
 
-## Ocho decisiones registradas (orden real)
+## Ocho decisiones históricas registradas (orden real)
+
+La octava decisión de aplazar N1 quedó superada por su corrección en `a3a9737`;
+se conserva aquí para no borrar la justificación y el riesgo aceptados entonces.
 
 | Ruling | Motivo | Coste si es incorrecta |
 | --- | --- | --- |
@@ -69,6 +72,14 @@ Rollback conservador: desactivar captura, cerrar períodos, mantener mantenimien
 
 ## Superficie operativa disponible
 
+En Métricas → Enlaces de adquisición, owner/admin puede editar la etiqueta actual
+(1–80 caracteres) de un enlace propio, incluso archivado. Guardar conserva token,
+canal, promoción, fechas, atribución y celdas históricas; no reactiva un archivado.
+El registro y el reporte usan el nombre actual, sin versionado histórico de nombres.
+Una escritura tenant+id y revalidación por guardado, límite de gestión30/min y
+misma validación conservadora de texto que creación. Ediciones concurrentes:
+último guardado exitoso, sin lock/versionado adicional.
+
 En `/dashboard/metricas`, owner/admin dispone de presets7/28/90 y rango personalizado (inicio incluido, final excluido), un filtro a la vez (canal/enlace/servicio) y búsqueda/páginas de opciones. Cambiar filtro vuelve a página1; la navegación conserva modo/fechas y resincroniza los controles con la consulta del servidor. Las opciones no amplían el DTO estadístico: quedan separadas de los contadores. Una búsqueda fallida muestra error local, no ceros. Enlaces archivados y servicios eliminados con agregado aún retenido pueden seleccionarse para historia; las etiquetas eliminadas se indican explícitamente.
 
 El bloque «Control de captura» opera `setAnalyticsCollectionEnabled`: «Cerrar captura» depende de `collectionOpen`, **no** de que `capture.enabled` sea true. Así puede cerrarse un período viejo con global apagado o Redis ausente antes de la reactivación descrita arriba. «Abrir captura» no evita ningún gate: con configuración inválida muestra rechazo y no crea un período. Esta UI no modifica variables de entorno ni autoriza un piloto.
@@ -78,6 +89,47 @@ El bloque «Control de captura» opera `setAnalyticsCollectionEnabled`: «Cerrar
 La pantalla presenta por separado conversión completa/parcial y particiones convertido/interrupción conocida/medición incompleta. El embudo termina en reserva verificada con recorrido completo, sin ocultar reservas de recorrido incompleto. Gráfico y tabla distinguen intentos completos de sus reservas creadas; atendidas y canjes son estado al consultar de todas las reservas/redenciones creadas en período y no responden al filtro histórico. Las atendidas repetidas en filas de poblaciones del mismo servicio no deben sumarse. Disponibilidad vacía y errores también se muestran sin exigir umbral de oportunidad. Diagnóstico `not_queried` significa no consultado para ese rango/filtro, no purgado; sólo se presenta detalle cuando la consulta acotada lo demuestra.
 
 ## Checkpoints y evidencia
+
+### Continuación de cumplimiento: N1 y G1
+
+N1 `a3a9737223d304b844d2a68ed214c24bdbe1375d`: corregida etiqueta asíncrona
+fuera de identidad. G1 `6b07579576cbc95d0cc41e0eb3c8bfa05eb9e7d9`: siete
+archivos, edición de etiqueta con acción protegida y pruebas UI/DB/E2E.
+Revisión independiente exacta `a3a9737..6b07579`: PASS spec/calidad, sin hallazgos
+accionables. No es un PASS global del MVP: G2 permanece sin implementar.
+
+G1 RED: controles/acción2fallos15pass3.54s; DBexport ausente1fallo18filtrados1.43s.
+Iteraciones de tests: helper de botón-icono y selector E2E parcial ambiguo se
+corrigieron localmente; no se ocultaron fallos ni cambiaron guards globales.
+Final implementer:45/45unit6archivos23.88s,19/19DB7.14s,4/4E2E26.0s,
+lint7archivos exit0/5.64s. Verificación propia del controller:24/24unit7.98s,
+19/19DB4.16s,typecheck exit0. Sin nueva fullsuite ni build; se reservan para
+cerrar G2 y verificar todo el código final conjuntamente.
+
+Typecheck inicialmente falló por una cola duplicada inválida en
+`.next/dev/types/routes.d.ts`; se reprodujo con Next ya detenido. Se conservó
+únicamente ese directorio generado en `/tmp/agendita-label-types-TUdovo/types`,
+y `next typegen` oficial produjo `.next/types`; typecheck posterior exit0/24.35s,
+confirmado también por el controller. Causa específica de escritura no demostrada;
+no se editó código de aplicación ni se borró `.next` entero para resolverlo.
+
+Reproducir G1 con el prefijo limpio de la sección de reproducción:
+`npm run test:unit -- tests/unit/analytics-controls.test.tsx tests/unit/analytics-actions.test.ts tests/unit/analytics-links.test.tsx tests/unit/server-actions-auth.test.ts tests/unit/legacy-form-style-guard.test.ts tests/unit/analytics-dashboard.test.tsx --maxWorkers=1`,
+`npm run test:integration -- tests/integration/analytics-link-label.test.ts --maxWorkers=1`,
+`npx playwright test --config=playwright.owner-analytics.config.ts`,
+`npm run typecheck`. Logs y reporte completos en
+`.superpowers/sdd/2026-08-31-owner-analytics-goal-completion/label-report.md`
+y archivos `label-*.log` del mismo directorio, excluidos de Git.
+
+Nueva PostgreSQL de pruebas retenida para continuar: container
+`agendita-owner-analytics-goal-01a055ad`, ID
+`7a4bd7873b37268337d08f8836295b429931c5197ea73c167d7afa88e58a5344`,
+label `codex.task=owner-analytics-goal`, localhost55439, DB
+`agendita_owner_analytics_test`, 1CPU/512MiB/tmpfs256MiB sin binds de host.
+Sólo esa DB recibió las55migraciones y fixtures sintéticos; Next propio terminó.
+El container antiguo mencionado abajo fue eliminado en el checkpoint anterior.
+
+### Checkpoints históricos de Tasks1–6
 
 Base de rama: `c5ea7146e936ab41a8df60e79c3fbd34a84cdf1a`; planificación `5dddecc`. T1 `1b9cc04`→`1a8920b`; T2 `f62132e`→`4e9b47e`; T3 `afcf728`→`5ef75b6`; T4 `2e433af`→`94d85fc`; T5 `5d8182d`→`e39ecfe`→`3516dd1`→`8280aee`→`fb8eb82`. Task6 parte del SHA completo `fb8eb828eac4d76af2b2833d8ec83cd39b58a09e`.
 
@@ -93,7 +145,7 @@ Checkpoint de código de la fixwave final: `d8f38f8229c153c6838f00789dd36f09fdaa
 
 **Gate final, 2026-08-31:** revisión scoped independiente de `37ad3473a6788f5c48561985dc09f47d7d206a9c..41eb7460fdfd8eacbece37507050222faa15e7c6`: I1–I7 y M1–M5 ADDRESSED; Spec PASS y calidad PASS con Minor N1. Sin nueva Critical/Important. Se contrastaron código y logs; no se repitieron suites. El controller adjudicó N1 mediante la octava Ruling. La documentación posterior no cambia el código verificado. Rama `feature/owner-analytics` y worktree aislado conservados; sin merge/push/PR/deploy.
 
-**N1 pendiente:** `src/components/dashboard/analytics/analytics-option-picker.tsx:39` puede mostrar nombre A con valor B si cambia la selección mientras carga otra página que incluye A pero no B. Reproducción focal del reviewer en memoria confirmó el problema; el ID enviado permanece B. Afecta filtros y selector de promoción, no cruza negocios ni aplica cupones. Corregir antes del piloto, usando etiqueta auxiliar sólo cuando su ID coincida y cubriendo la carrera con una regresión. Las suites completas verdes no eliminan este defecto conocido.
+**N1, hallazgo histórico ya corregido:** el selector podía mostrar nombre A con valor B si cambiaba la selección durante una respuesta pendiente. `a3a9737` exige `selected.id === value` antes de usar la etiqueta auxiliar. Las regresiones ejercitan los consumidores reales de servicio y promoción: RED2fallos antes del fix; GREEN30/30 en controles/dashboard/enlaces, typecheck y lint exit0. Revisión independiente del diff: PASS. Esta verificación focal no sustituye la matriz final pendiente tras G1/G2.
 
 **Limpieza final:** se validaron ID, nombre, etiqueta `codex.task=owner-analytics`, ausencia de mounts y tmpfs del contenedor exclusivo `agendita-owner-analytics-test-01a055ad` (`69feae899b17c1f7d4a89c48b71d04c351e14e2d22c48d99d76c761f5d2c692e`) y se detuvo/eliminó sólo ese contenedor. Su base sintética efímera no es recuperable; se reproduce con migraciones/fixtures, sin pérdida de datos reales. Para volver a ejecutar la receta inferior hay que recrear primero una base exclusiva equivalente. Los logs/reportes/ledger de este plan se movieron, sin borrado irreversible, a `/Users/robertozamorautrera/.Trash/agendita-owner-analytics-sdd-20260831-41eb746`; el handoff mínimo queda versionado aquí. Las capturas `test-results/owner-analytics*`, dependencias propias, rama y worktree se conservan. No se tocaron otros contenedores ni el checkout principal.
 

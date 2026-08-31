@@ -12,6 +12,14 @@
 
 **Autorización:** el usuario aprobó implementar el diseño y confirmó crear el worktree con “ok dale ejecuta”. Worktree: `.worktrees/owner-analytics`, rama `feature/owner-analytics`. No autorizó despliegue, activación, envío de mensajes, cobros reales ni cambios remotos.
 
+**Estado vigente, 2026-08-31:** implementación aún incompleta. Los checkboxes y
+resultados siguientes conservan el seguimiento histórico, pero la auditoría
+posterior encontró G1 (editar etiquetas) y G2 (desgloses profesional/pago/errores)
+omitidos. G1 se completó y revisó en `6b07579`; G2 y la validación conjunta final
+siguen pendientes. N1 fue corregido en `a3a9737`. Consultar
+`docs/operations/owner-analytics-completion-audit.md`; los checks anteriores no
+demuestran cumplimiento integral ni validan los cambios posteriores.
+
 ## Global Constraints
 
 - Base comprobada mediante `git ls-remote origin refs/heads/main`: `c5ea7146e936ab41a8df60e79c3fbd34a84cdf1a`. El checkout principal sigue en `216f47e345b585ffa0dd6603af8b327e5698533a`, rama de tours; no implementar sobre esa base antigua.

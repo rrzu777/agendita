@@ -4,7 +4,12 @@
 
 **Estado:** alcance de producto aprobado; diseño técnico para revisión.
 
-**Implementación:** no iniciada. No incluye activación en producción.
+**Implementación:** en curso en `.worktrees/owner-analytics`. La auditoría de
+cumplimiento del 2026-08-31 detectó dos requisitos omitidos. La edición de etiquetas
+de campañas ya fue implementada y revisada en `6b07579`; quedan pendientes los
+desgloses propios de profesional/pago/errores y la validación conjunta final. El
+detalle vigente está en `docs/operations/owner-analytics-completion-audit.md`.
+No incluye activación en producción.
 
 **Revisión de gaps:** separar poblaciones completas/parciales, invalidar selecciones
 obsoletas, registrar interés previo a modalidad, distinguir restricciones de
