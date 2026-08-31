@@ -18,4 +18,12 @@ describe('AcquisitionLinks', () => {
     expect(markup).toContain('https://analytics.e2e.test/book?acq=opaque-token')
     expect(markup).toContain('Copiar Nuevo sin tráfico')
   })
+
+  it('renders next-page navigation preserving the supplied metrics query', () => {
+    const markup = renderToStaticMarkup(<AcquisitionLinks links={{ ...links, total: 26 }} pagination={{ previousHref: null, nextHref: '/dashboard/metricas?from=2026-08-01&to=2026-08-29&channel=instagram&page=2', label: 'Página 1 de 2' }} />)
+
+    expect(markup).toContain('Página 1 de 2')
+    expect(markup).toContain('Siguiente enlaces')
+    expect(markup).toContain('from=2026-08-01&amp;to=2026-08-29&amp;channel=instagram&amp;page=2')
+  })
 })

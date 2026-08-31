@@ -9,12 +9,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { OwnerAnalyticsReport } from '@/server/analytics/reports'
+import Link from 'next/link'
+import { Button as LinkButton } from '@/components/ui/button'
+import type { AnalyticsPagination } from './analytics-tables'
 
 const channels = [
   ['instagram', 'Instagram'], ['facebook', 'Facebook'], ['whatsapp', 'WhatsApp'], ['google', 'Google'], ['referral', 'Referido'], ['direct', 'Directo'], ['other', 'Otro'],
 ] as const
 
-export function AcquisitionLinks({ links }: { links: OwnerAnalyticsReport['acquisitionLinks'] }) {
+export function AcquisitionLinks({ links, pagination = { label: `Página ${links.page}`, previousHref: null, nextHref: null } }: { links: OwnerAnalyticsReport['acquisitionLinks']; pagination?: AnalyticsPagination }) {
   const [channel, setChannel] = useState<(typeof channels)[number][0]>('instagram')
   const [campaignName, setCampaignName] = useState('')
   const [message, setMessage] = useState<string | null>(null)
@@ -63,7 +66,7 @@ export function AcquisitionLinks({ links }: { links: OwnerAnalyticsReport['acqui
           <tbody>{links.rows.length === 0 ? <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">No hay enlaces creados todavía.</td></tr> : links.rows.map((link) => <tr key={link.id} className="border-b hover:bg-muted/50"><td className="p-2 font-medium text-primary">{link.campaignName}</td><td className="p-2">{channels.find(([value]) => value === link.channel)?.[1] ?? link.channel}</td><td className="max-w-[18rem] truncate p-2 font-mono text-xs" title={link.url}>{link.url}</td><td className="p-2">{link.archivedAt ? 'Archivado' : 'Activo'}</td><td className="space-x-1 p-2 text-right"><Button type="button" size="icon-sm" variant="outline" aria-label={`Copiar ${link.campaignName}`} onClick={() => void copy(link.url)}><Copy /></Button>{!link.archivedAt && <Button type="button" size="icon-sm" variant="outline" aria-label={`Archivar ${link.campaignName}`} disabled={pending} onClick={() => archive(link.id)}><Archive /></Button>}</td></tr>)}</tbody>
         </table>
       </div>
-      <p className="text-xs text-muted-foreground">{links.total} enlace{links.total === 1 ? '' : 's'} en el registro. {pending && <span className="inline-flex items-center gap-1"><Check className="size-3" />Procesando…</span>}</p>
+      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground"><span>{pagination.label} · {links.total} enlace{links.total === 1 ? '' : 's'} en el registro. {pending && <span className="inline-flex items-center gap-1"><Check className="size-3" />Procesando…</span>}</span>{pagination.previousHref && <LinkButton asChild size="sm" variant="outline"><Link href={pagination.previousHref}>Anterior</Link></LinkButton>}{pagination.nextHref && <LinkButton asChild size="sm" variant="outline"><Link href={pagination.nextHref}>Siguiente enlaces</Link></LinkButton>}</div>
     </section>
   )
 }

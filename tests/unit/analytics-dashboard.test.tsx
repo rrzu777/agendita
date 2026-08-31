@@ -59,6 +59,36 @@ describe('AnalyticsDashboard', () => {
     expect(markup).not.toContain('Período reciente en curso')
   })
 
+  it('identifies the population of each repeated last step and makes the selected scope explicit', () => {
+    const markup = renderToStaticMarkup(<AnalyticsDashboard report={{ ...report, filter: { ...report.filter, channel: 'instagram' }, quality: [{ population: 'complete_attempts', lastStep: 'payment', count: 4 }, { population: 'partial_attempts', lastStep: 'payment', count: 2 }] }} />)
+
+    expect(markup).toContain('Pago · entrada completa')
+    expect(markup).toContain('Pago · entrada parcial')
+    expect(markup).toContain('Período seleccionado: 2026-08-01 a 2026-08-29')
+    expect(markup).toContain('Filtro activo: Canal: instagram')
+    expect(markup).toContain('Zona: America/Santiago')
+  })
+
+  it('keeps operational states and diagnostic opportunities when mature metrics are absent', () => {
+    const markup = renderToStaticMarkup(<AnalyticsDashboard report={{ ...report, visits: 0, complete: { ...report.complete, attempts: 0 }, partial: { ...report.partial, attempts: 0 }, coverage: { ...report.coverage, status: 'disabled' }, currentBookings: { ...report.currentBookings, counts: [{ status: 'pending_confirmation', count: 3 }], overdueApproval: { count: 3, lowerBound: false } }, opportunities: [{ key: 'overdue_approval', numerator: 3, denominator: null, rate: null, href: '/dashboard/bookings', message: 'Hay aprobaciones vencidas.', diagnostics: { status: 'not_applicable', reasons: {}, converted: null } }, { key: 'availability_empty', numerator: 6, denominator: 20, rate: 0.3, href: '/dashboard/availability', message: 'Hay búsquedas sin horarios.', diagnostics: { status: 'available', reasons: { no_slots: 4 }, converted: 2 } }] }} />)
+
+    expect(markup).toContain('Aún no hay datos maduros')
+    expect(markup).toContain('Pendiente de confirmación: 3')
+    expect(markup).toContain('Hay aprobaciones vencidas.')
+    expect(markup).toContain('6 de 20')
+    expect(markup).toContain('no_slots: 4')
+    expect(markup).toContain('2 con conversión')
+  })
+
+  it('shows a missing middle cohort as a coverage discontinuity', () => {
+    const markup = renderToStaticMarkup(<AnalyticsDashboard report={{ ...report, coverage: { ...report.coverage, status: 'partial', cohorts: [{ date: '2026-08-01', timezone: 'UTC', version: 1, coverage: 'complete', state: 'closed', frozen: true, calculatedAt: '2026-08-02T00:00:00.000Z' }, { date: '2026-08-02', timezone: 'UTC', version: 1, coverage: 'unknown', state: 'unavailable', frozen: false, calculatedAt: null }, { date: '2026-08-03', timezone: 'UTC', version: 1, coverage: 'complete', state: 'closed', frozen: true, calculatedAt: '2026-08-04T00:00:00.000Z' }] }, trend: [report.trend[0], { ...report.trend[0], date: '2026-08-03' }] }} />)
+
+    expect(markup).toContain('Cobertura por cohorte')
+    expect(markup).toContain('2026-08-02')
+    expect(markup).toContain('No disponible')
+    expect(markup).toContain('Discontinuidades de cobertura')
+  })
+
   it('orders the observed milestones semantically instead of relying on database row order', () => {
     const markup = renderToStaticMarkup(<AnalyticsDashboard report={{ ...report, funnel: [...report.funnel].reverse() }} />)
 
