@@ -1,6 +1,6 @@
 # Desgloses del flujo — contrato propuesto para completar §7.3
 
-Estado: propuesta pendiente de aprobación; no implementada. Es una precisión de
+Estado: aprobado por el usuario («ok dale ejecuta»); implementación en curso. Es una precisión de
 un requisito omitido del MVP aprobado, no IA, analítica financiera ni otro cubo.
 Fuente: `2026-08-30-owner-analytics-design.md` §4, §5, §7.3 y §10.
 
@@ -68,9 +68,75 @@ históricas que el selector prohíbe. Fecha de cohorte y zona congelada se conse
 - Evidencia funcional RED/GREEN en reductor→DAL→UI, integración con PostgreSQL
   exclusiva y prueba desktop/móvil de alcance/etiquetas.
 
-## Aprobación pendiente
+## Precisión técnica para ejecución
 
-Se pidió al usuario confirmar esta semántica de último contexto observado,
-poblaciones separadas y detalle sólo desde crudo retenido. No se considera aprobado
-por la existencia del documento. La edición de etiquetas G1 avanza por separado,
-porque ya estaba definida en el diseño original.
+La sección usa exactamente `[report.period.from, report.period.to)`, por fecha de
+cohorte y zona congeladas de cada fuente. No amplía un preset para incluir hoy;
+el bloque reciente existente conserva su período propio. Se publican las zonas
+presentes y el corte; sin zona presente se explica la zona actual del selector.
+
+El DTO `flowBreakdowns` tiene `status` (`available`, `empty`, `not_retained`,
+`incomplete_source`, `limit_exceeded`, `error`), `from`, `to`, `cutoffAt`,
+`timezones`, `scope` (`all_attempts`, `channel`, `acquisition_link`,
+`final_service`) y `groups`. Sólo available/empty llevan cuatro grupos:
+completo/maduro, completo/en curso, parcial/maduro y parcial/en curso. Los demás
+estados llevan `groups: null`, nunca una cuenta parcial ni ceros inventados.
+Cada grupo contiene intentos y cuántos tienen captura incompleta; distribuciones
+de profesional (tipo y modo: explícito, paso no requerido, no observado), pantalla,
+condición, método elegido y métodos ofrecidos; categorías de error. Sin observación
+de pantalla/método/profesional se cuenta `not_observed`, no un hecho negativo.
+Los métodos ofrecidos y errores son no aditivos; no se calculan tasas nuevas.
+
+La proyección agrega evidencia al reductor existente; no cambia sus hitos,
+conversión, reservas ni disponibilidad histórica. `flow` conserva sólo enums,
+sin ID profesional. Profesional automático requiere snapshot `service_selected`
+con paso no requerido; explícito requiere `professional_selected` válido. Un
+contexto restaurado sin ese snapshot sólo permite modo no observado. Los cambios
+de servicio/modalidad/profesional invalidan esa elección según las mismas reglas
+de contexto; cambios de fecha/hora/pago conservan la elección compatible.
+Pantalla/condición/métodos se invalidan con la preparación de pago existente;
+una entrada parcial puede observarlos sin rellenar hitos anteriores. Un salto de
+revisión sin transición borra el detalle dependiente del contexto anterior.
+
+Errores se acumulan como un conjunto por categoría en el contexto de selección
+vigente. Toda transición de contexto/revisión vacía el conjunto; resultados
+asíncronos de revisión/generación anterior se ignoran. Un resultado exitoso posterior
+en el mismo contexto no borra el hecho de haber observado el error. Claves cerradas:
+`availability:error`; `promotion:rejected:{invalid,expired,ineligible,limit_reached,unknown}`;
+`promotion:error:{network,unavailable,unknown}`;
+`submission:{rejected,error}:{validation,slot_unavailable,unauthorized,network,unknown}`.
+La categoría opcional de envío ausente se normaliza a unknown.
+
+El DAL server-only se invoca únicamente después de autorizar/validar los filtros
+del reporte. Lee en una transacción RepeatableRead propia, con el mismo corte,
+sin cache, maxWait5s/timeout15s. Así, una excepción real de consulta/timeout del
+detalle no aborta la transacción del resumen ya calculado. No es un nuevo endpoint.
+No necesita leer Booking: este bloque describe observaciones, no conversiones.
+
+Límites por lectura: máximo10000fuentes (sesiones+intentos) en TODO el rango antes
+de filtrar, nunca más que el tope existente10000fuentes/cohorte; máximo200eventos
+por intento y50000eventos en total. Leer fuentes con sentinela10001; eventos por
+páginas de50intentos con sentinela10001. No truncar. El conteo de sesiones sólo
+sirve de guardia de carga, no agrega visitas a los denominadores. Predicados por
+negocio, rango elapsed acotado que cubre offsets y fecha de cohorte congelada.
+No ampliar estos límites silenciosamente; el mensaje recomienda acortar el rango.
+
+Antes de entregar grupos verificar toda fuente del rango, aun si un filtro la
+excluiría. Marcadores frozen o fuentes vencidas significan not_retained. Discrepancia
+acceptedEventCount/eventos, payload persistido inválido o versión no soportada
+significan incomplete_source. Las marcas conocidas de captura/huecos de secuencia
+sin pérdida de filas siguen como calidad de observación, no purga inventada.
+Una lectura correcta sin intentos es empty (no afirma tráfico cero ni captura activa).
+Todo fallo abandona el detalle completo, no publica el prefijo leído.
+
+Canal/enlace usan la atribución inmutable del intento. Servicio selecciona sólo
+el último contexto válido (`finalContext.serviceId`), no cualquier interés pasado;
+la UI dice «servicio del último contexto observado». No cruza filtros ni cambia
+las tablas históricas de interés/conversión. Conteos y DTO no incluyen identidades
+de sesiones/intentos/eventos, tokens, datos personales ni IDs de profesional.
+
+## Aprobación
+
+El usuario confirmó la ejecución después de la solicitud de aprobación. La
+precisión técnica anterior fija límites conservadores y contratos internos dentro
+de esa semántica; no introduce nuevos fines, retención, IA ni activación productiva.
