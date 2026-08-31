@@ -1,6 +1,6 @@
 # Owner analytics: handoff operativo
 
-Estado: implementación local, captura y mantenimiento productivos **no activados**. Este documento no autoriza migración, deploy, push, PR, cron, comunicaciones ni pruebas con cuentas/datos reales. Retención de 13 meses e IA semanal requieren decisiones separadas; no están implementadas. La revisión independiente final de rama pertenece al controller y permanece pendiente hasta su cierre explícito.
+Estado: implementación local, captura y mantenimiento productivos **no activados**. Este documento no autoriza migración, deploy, push, PR, cron, comunicaciones ni pruebas con cuentas/datos reales. Retención de 13 meses e IA semanal requieren decisiones separadas; no están implementadas. La revisión independiente de toda la rama ya ocurrió; sólo queda pendiente la aprobación scoped de esta fixwave por el controller.
 
 ## Qué mide y qué no
 
@@ -12,7 +12,7 @@ La fuente conserva zona de negocio congelada por cohorte. Un cambio de zona no m
 
 ## Gates antes de cualquier piloto
 
-1. Autorización explícita para el entorno y el SHA exacto; revisión final de toda la rama, CI real y revisión de migración sobre copia representativa.
+1. Autorización explícita para el entorno y el SHA exacto; aprobación scoped de los hallazgos de la revisión de rama ya realizada, CI real y revisión de migración sobre copia representativa.
 2. Decisión de privacidad: datos seudónimos vinculables a Booking, consentimiento opcional no preseleccionado y no condicionado a reservar; aviso de 90 días más tolerancia de borrado; política de eliminación/small cells. Este MVP owner-only no aplica supresión de celdas pequeñas y no promete anonimización.
 3. Redis distribuido real, TLS/proxy/orígenes configurados verificados y presupuestos positivos medidos. Verificar en el despliegue que Origin, Host y `request.url` canónico coinciden; localhost E2E no prueba esta compatibilidad en producción. Con mismatch, conservar rechazo fail-closed, no habilitar `trustHostHeader` ni falsificar headers para hacer pasar QA. Sin fallback en memoria, incluso en desarrollo/E2E. HMAC específico de analytics de al menos 32 bytes, distinto de las credenciales de otros sistemas, almacenado como secreto server-only.
 4. Demostrar drenaje sostenible en infraestructura representativa con datos retenidos, contención y carga Booking concurrente; alertas operadas, backlog controlado y continuaciones. El microbenchmark local inferior no certifica capacidad diaria.
@@ -87,6 +87,8 @@ Task6 código, tests y handoff verificados: `579ddd502e1e6f317d433d5741b7d4b3aa3
 Revisión Task6 round1 sobre `696359dac1b283bcbbd568bede707113fe7b9647`: el cierre del harness podía esperar un segundo `exit` imposible cuando Next ya había terminado por señal (`exitCode=null`, `signalCode=SIGTERM`). Corrección sólo en soporte de tests: comprobar ambos campos, suscribir antes de señalizar y acotar espera por hijo a1s SIGTERM+1s SIGKILL; si no llega salida, devolver fallo, marcar exit1 y continuar limpieza posterior. No se modificó código productivo ni gates. Prueba `tests/unit/analytics-public-harness.test.ts`: Node22, RED3fail/1pass3.78s antes del fix; GREEN4/4pass476ms. Tres casos usan hijos Node reales (ya señalizado, cierre normal, SIGTERM ignorado); un EventEmitter modela ausencia excepcional de `exit` incluso trasSIGKILL y comprueba liberación de listeners/retorno acotado. Smoke `qa npx playwright test --config playwright.owner-analytics-public.config.ts -g 'guest can decline'`:1/1pass8.7s; fixture pública0 y sin listeners3555/3556 al terminar. No se repitieron suites completas. Reproducir focal con `qa npm run test:unit -- tests/unit/analytics-public-harness.test.ts --maxWorkers=1 --testTimeout=10000`. Sin nueva Ruling; cierre de contrato de cleanup ya existente.
 
 Checkpoint del fix round1: `90b48b65ae214b846b1b75210a85469a6166b4ca`; typecheck posterior exit0,4.28s y lint de los tres archivos de código del fix sin warnings. El commit documental siguiente `37ad3473a6788f5c48561985dc09f47d7d206a9c` registra este SHA/evidencia. Task6 y su re-review fueron aprobadas; la revisión de toda la rama `c5ea7146e936ab41a8df60e79c3fbd34a84cdf1a..37ad3473a6788f5c48561985dc09f47d7d206a9c` ya ocurrió y originó I1–I7. El gate de revisión actual es la aprobación scoped de la fixwave final, a cargo del controller.
+
+Checkpoint de código de la fixwave final: `d8f38f8229c153c6838f00789dd36f09fdaa903d` (32archivos, incluye enmiendas sexta/séptima de spec/plan). Fullunit, integración, E2E afectados, tipado, lint y build de cierre abajo se ejecutaron sobre ese código antes de commitear. El commit documental siguiente sólo registra este SHA y aclara estado de revisión; no implica aprobación scoped ni activación.
 
 Proceso: Tasks1–4 y fix T5 round1 tienen RED/GREEN registrado. T5 rounds2/3 **no tienen RED funcional antes de implementación**; typecheck fallido no sustituye TDD. Se añadieron luego regresiones funcionales y E2E verdes. Task6 reproduce primero la fuga del stub `scrollIntoView` y restaura descriptor en `finally`, con comprobación después de cada test. No reconstruir evidencia RED retrospectiva.
 
