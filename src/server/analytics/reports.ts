@@ -121,22 +121,32 @@ export async function getOwnerAnalyticsReport(input: unknown = {}, now = new Dat
         cohorts.push({ date: day, timezone: business.timezone, version: 1, coverage, state: coverage === 'disabled' ? 'disabled' : now < range.closeAfter ? 'provisional' : 'unavailable', frozen: false, calculatedAt: null })
       }
     }
-    const recentFrom = [from, addAnalyticsDays(today, -2)].sort().at(-1)!
-    const recentTo = to > today ? to : today === to ? addAnalyticsDays(today, 1) : to
+    function recentBounds(timezone: string) {
+      const localToday = getLocalDateStr(now, timezone)
+      const tomorrow = addAnalyticsDays(localToday, 1)
+      // Presets include today provisionally; an explicit historical range is never widened.
+      return { from: [p.from ?? addAnalyticsDays(localToday, -(p.days ?? 28)), addAnalyticsDays(localToday, -2)].sort().at(-1)!, to: p.to ? [p.to, tomorrow].sort()[0] : tomorrow }
+    }
+    const currentRecent = recentBounds(business.timezone)
+    const recentRanges = new Map([[business.timezone, currentRecent]])
     const recentCells: DailyMetricCell[] = []
-    const inProgress = { complete: 0, partial: 0 }
     const diagnostics: AvailabilityDiagnostics = { eligible: 0, affected: 0, converted: 0, reasons: {} }
     let recentAvailable = true
     const recentIdentities = new Map<string, { day: string; timezone: string; version: number }>()
-    for (let day = recentFrom; day < recentTo; day = addAnalyticsDays(day, 1)) recentIdentities.set(JSON.stringify([day, business.timezone, 1]), { day, timezone: business.timezone, version: 1 })
-    if (recentFrom < recentTo) {
-      const where = { businessId, cohortLocalDate: { gte: new Date(recentFrom), lt: new Date(recentTo) }, startedAt: { gte: new Date(+analyticsDayRange(recentFrom, business.timezone).start - 86400000), lte: now } }
+    for (let day = currentRecent.from; day < currentRecent.to; day = addAnalyticsDays(day, 1)) recentIdentities.set(JSON.stringify([day, business.timezone, 1]), { day, timezone: business.timezone, version: 1 })
+    {
+      // Discover by elapsed time BEFORE applying calendar bounds in each source's frozen zone.
+      // Four elapsed days cover three local calendar dates plus offset/DST boundaries.
+      const where = { businessId, startedAt: { gte: new Date(+now - 4 * policy.conversionWindowMs), lte: now } }
       const args = { by: ['cohortLocalDate', 'businessTimeZone', 'definitionVersion'] as ['cohortLocalDate', 'businessTimeZone', 'definitionVersion'], where, orderBy: { cohortLocalDate: 'asc' as const }, take: 101 }
       const sessions = await tx.analyticsSession.groupBy(args)
       const attempts = await tx.bookingFunnelAttempt.groupBy(args)
       if (sessions.length > 100 || attempts.length > 100) recentAvailable = false
       else for (const c of [...sessions, ...attempts]) {
         const day = c.cohortLocalDate.toISOString().slice(0, 10)
+        const bounds = recentBounds(c.businessTimeZone)
+        if (day < bounds.from || day >= bounds.to) continue
+        recentRanges.set(c.businessTimeZone, bounds)
         recentIdentities.set(JSON.stringify([day, c.businessTimeZone, c.definitionVersion]), { day, timezone: c.businessTimeZone, version: c.definitionVersion })
       }
     }
@@ -145,12 +155,17 @@ export async function getOwnerAnalyticsReport(input: unknown = {}, now = new Dat
       if (now >= range.closeAfter) continue
       try {
         const raw = await readAnalyticsCohort(tx, { businessId, cohortLocalDate: day, businessTimeZone: timezone, definitionVersion: version, cohortEndAt: range.end, calculatedAt: now, cutoffAt: now, revision: 1, state: 'provisional', coverage: 'unknown', frozenAt: null, retentionExpiresAt: new Date(+range.end + policy.aggregateRetentionMs) }, range.start)
-        recentCells.push(...raw.cells); inProgress.complete += raw.inProgress.complete; inProgress.partial += raw.inProgress.partial
+        recentCells.push(...raw.cells)
         diagnostics.eligible += raw.diagnostics.eligible; diagnostics.affected += raw.diagnostics.affected; diagnostics.converted += raw.diagnostics.converted
         for (const [reason, n] of Object.entries(raw.diagnostics.reasons)) diagnostics.reasons[reason] = (diagnostics.reasons[reason] ?? 0) + n
       } catch { recentAvailable = false }
     }
-    const recent = { ...summarizeAnalyticsCells(recentAvailable ? recentCells : [], grain, key), status: recentAvailable ? 'provisional' as const : 'unavailable' as const, from: recentFrom, to: recentTo, cutoffAt: now.toISOString(), timezones: [...new Set([...recentIdentities.values()].map(c => c.timezone))], inProgress: recentAvailable ? inProgress : { complete: 0, partial: 0 } }
+    const recentFrom = [...recentRanges.values()].map(r => r.from).sort()[0]
+    const recentTo = [...recentRanges.values()].map(r => r.to).sort().at(-1)!
+    const recentSummary = summarizeAnalyticsCells(recentAvailable ? recentCells : [], grain, key)
+    // The denominator is precisely the mature subset of the SAME population and selected grain.
+    const inProgress = { complete: recentSummary.complete.attempts - recentSummary.complete.conversion.denominator, partial: recentSummary.partial.attempts - recentSummary.partial.conversion.denominator }
+    const recent = { ...recentSummary, status: recentAvailable ? 'provisional' as const : 'unavailable' as const, from: recentFrom, to: recentTo, cutoffAt: now.toISOString(), timezones: [...new Set([...recentIdentities.values()].map(c => c.timezone))], inProgress }
     const comparable = (rows: DailyMetricCell[], start: string, end: string) => {
       for (let day = start; day < end; day = addAnalyticsDays(day, 1)) { const m = rows.filter(c => c.cohortLocalDate === day && c.metricKey === '__publication__'); if (m.length !== 3 || m.some(c => c.coverage !== 'complete' || c.businessTimeZone !== business.timezone || c.definitionVersion !== 1)) return false }
       return true

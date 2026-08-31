@@ -65,6 +65,48 @@ describe('report authorization, current evidence and isolated DTO', () => {
     auth.mockResolvedValue({ user: { id: 'synthetic' }, role: 'owner', business: { id: f.businessId, timezone: 'America/Santiago' } })
     expect(await getOwnerAnalyticsReport(period, new Date('2026-08-01T15:00:00Z'))).toMatchObject({ recent: { visits: 1, complete: { attempts: 1 }, timezones: expect.arrayContaining(['UTC']) } })
   })
+  it.each([
+    ['UTC', 'America/Santiago', '2026-08-02', '2026-08-02T00:30:00Z', '2026-08-02T02:00:00Z'],
+    ['America/Santiago', 'UTC', '2026-08-01', '2026-08-02T02:30:00Z', '2026-08-02T03:00:00Z'],
+  ])('discovers recent %s cohorts after switching to %s across a local-date boundary', async (timezone, currentZone, day, start, cutoff) => {
+    const f = await seedAnalyticsReport(day, timezone); ids.push(f.businessId)
+    const startedAt = new Date(start), now = new Date(cutoff)
+    const expiresAt = new Date(+startedAt + 86400000), retentionExpiresAt = new Date(+startedAt + 90 * 86400000)
+    await prisma.analyticsSession.update({ where: { id: f.session.id }, data: { startedAt, expiresAt, retentionExpiresAt } })
+    await prisma.bookingFunnelAttempt.update({ where: { id: f.attempt.id }, data: { startedAt, conversionDeadlineAt: expiresAt, retentionExpiresAt } })
+    await prisma.bookingFunnelEvent.update({ where: { id: f.event.id }, data: { receivedAt: startedAt, retentionExpiresAt } })
+    await prisma.business.update({ where: { id: f.businessId }, data: { timezone: currentZone } })
+    auth.mockResolvedValue({ user: { id: 'synthetic' }, role: 'owner', business: { id: f.businessId, timezone: currentZone } })
+    // A later server-stamped source in the same frozen day must remain outside this cutoff.
+    const future = new Date(+now + 60000)
+    const futureSession = await prisma.analyticsSession.create({ data: { ...f.session, id: crypto.randomUUID(), bootstrapKey: crypto.randomUUID(), startedAt: future, expiresAt: new Date(+future + 86400000), retentionExpiresAt: new Date(+future + 90 * 86400000) } })
+    await prisma.bookingFunnelAttempt.create({ data: { ...f.attempt, id: crypto.randomUUID(), bootstrapKey: crypto.randomUUID(), sessionId: futureSession.id, startedAt: future, conversionDeadlineAt: futureSession.expiresAt, retentionExpiresAt: futureSession.retentionExpiresAt } })
+    const report = await getOwnerAnalyticsReport({}, now)
+    expect(report.recent).toMatchObject({ visits: 1, complete: { attempts: 1, conversion: { numerator: 0, denominator: 0, rate: null } }, inProgress: { complete: 1, partial: 0 }, cutoffAt: now.toISOString(), timezones: expect.arrayContaining([timezone]) })
+    // Explicit historical bounds remain exclusive calendar dates, not a request for current activity.
+    const to = day, from = new Date(+new Date(day) - 86400000).toISOString().slice(0, 10)
+    expect((await getOwnerAnalyticsReport({ from, to }, now)).recent).toMatchObject({ visits: 0, complete: { attempts: 0 }, inProgress: { complete: 0, partial: 0 } })
+  })
+  it.each(['channel', 'link'] as const)('does not include organic open attempts in a %s-filtered recent population', async kind => {
+    const f = await ownerFixture()
+    const link = await prisma.acquisitionLink.create({ data: { businessId: f.businessId, token: crypto.randomUUID(), channel: 'instagram', campaignName: 'Filtered fixture' } })
+    await prisma.analyticsSession.update({ where: { id: f.session.id }, data: { channel: 'direct' } })
+    await prisma.bookingFunnelAttempt.update({ where: { id: f.attempt.id }, data: { channel: 'direct' } })
+    await prisma.bookingFunnelAttempt.create({ data: { ...f.attempt, id: crypto.randomUUID(), bootstrapKey: crypto.randomUUID(), entryKind: 'partial', channel: 'direct' } })
+    const filter = kind === 'channel' ? { channel: 'instagram' } : { acquisitionLinkId: link.id }
+    expect((await getOwnerAnalyticsReport({ ...period, ...filter }, new Date('2026-08-01T15:00:00Z'))).recent).toMatchObject({ complete: { attempts: 0, conversion: { denominator: 0 } }, partial: { attempts: 0, conversion: { denominator: 0 } }, inProgress: { complete: 0, partial: 0 } })
+  })
+  it.each(['channel', 'link'] as const)('separates mature and open complete/partial attempts in the same %s-filtered population', async kind => {
+    const f = await ownerFixture()
+    const link = await prisma.acquisitionLink.create({ data: { businessId: f.businessId, token: crypto.randomUUID(), channel: 'instagram', campaignName: 'Mixed fixture' } })
+    await prisma.analyticsSession.update({ where: { id: f.session.id }, data: { acquisitionLinkId: link.id } })
+    await prisma.bookingFunnelAttempt.update({ where: { id: f.attempt.id }, data: { acquisitionLinkId: link.id } })
+    const organic = await prisma.analyticsSession.create({ data: { ...f.session, id: crypto.randomUUID(), bootstrapKey: crypto.randomUUID(), channel: 'direct' } })
+    for (const entryKind of ['complete', 'partial'] as const) for (const matched of [true, false]) await prisma.bookingFunnelAttempt.create({ data: { ...f.attempt, id: crypto.randomUUID(), bootstrapKey: crypto.randomUUID(), sessionId: matched ? f.session.id : organic.id, entryKind, channel: matched ? 'instagram' : 'direct', acquisitionLinkId: matched ? link.id : null, startedAt: new Date('2026-08-01T14:00:00Z'), conversionDeadlineAt: new Date('2026-08-02T14:00:00Z') } })
+    const filter = kind === 'channel' ? { channel: 'instagram' } : { acquisitionLinkId: link.id }
+    const report = await getOwnerAnalyticsReport({ ...period, ...filter }, new Date('2026-08-02T13:00:00Z'))
+    expect(report.recent).toMatchObject({ complete: { attempts: 2, conversion: { numerator: 1, denominator: 1, rate: 1 } }, partial: { attempts: 1, conversion: { numerator: 0, denominator: 0, rate: null } }, inProgress: { complete: 1, partial: 1 } })
+  })
   it('lists manageable tenant links before they have any historical traffic', async () => {
     const f = await ownerFixture()
     const link = await prisma.acquisitionLink.create({ data: { businessId: f.businessId, token: 'synthetic-public-link-token', channel: 'instagram', campaignName: 'Synthetic launch' } })
