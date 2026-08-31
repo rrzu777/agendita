@@ -10,13 +10,16 @@ describe('bounded analytics retention independent of capture', () => {
     const f = await seedAnalyticsReport(); ids.push(f.businessId)
     await publishAnalyticsCohort(f.cohort)
     const now = new Date(+f.session.retentionExpiresAt + 1)
+    const snapshotStart = performance.now()
     const result = await runOwnerAnalyticsMaintenance({ now, maxRows: 1 })
+    const snapshotElapsedMs = performance.now() - snapshotStart
     expect(result.deleted).toBe(1)
     expect(result.hasMore).toBe(true)
     expect(await prisma.booking.findUnique({ where: { id: f.booking.id } })).toMatchObject({ analyticsAttemptId: null, analyticsVersion: null })
     const frozen = await prisma.analyticsDailyMetric.findMany({ where: { businessId: f.businessId } })
     expect(frozen.length).toBeGreaterThan(3)
     expect(frozen.every(r => r.frozenAt !== null)).toBe(true)
+    if (process.env.OWNER_ANALYTICS_MEASURE_LOCAL === 'true') console.log(JSON.stringify({ metric: 'local-snapshot-freeze', snapshotsCleared: result.deleted, elapsedMs: snapshotElapsedMs, dailyCellsFrozen: frozen.length }))
     expect((await publishAnalyticsCohort({ ...f.cohort, now })).status).toBe('frozen')
     const drained = await runOwnerAnalyticsMaintenance({ now, cursor: result.nextCursor })
     expect(drained.errors).toBe(0)
@@ -42,17 +45,36 @@ describe('bounded analytics retention independent of capture', () => {
     const now = new Date(+f.session.retentionExpiresAt + 12 * 3600000)
     const count = async () => await prisma.bookingFunnelEvent.count({ where: { businessId: f.businessId } }) + await prisma.bookingFunnelAttempt.count({ where: { businessId: f.businessId } }) + await prisma.analyticsSession.count({ where: { businessId: f.businessId } }) + await prisma.booking.count({ where: { businessId: f.businessId, analyticsVersion: { not: null } } })
     const before = await count()
+    const firstStart = performance.now()
     const first = await runOwnerAnalyticsMaintenance({ now, maxRows: 50000 })
+    const firstElapsedMs = performance.now() - firstStart
     expect(first.deleted).toBe(10000)
     expect(before - await count()).toBe(10000)
     expect(first).toMatchObject({ hasMore: true, nextCursor: 'cleanup:v1', errors: 0 })
     expect(await prisma.analyticsCollectionPeriod.findFirst({ where: { businessId: f.businessId } })).toMatchObject({ closeReason: 'backlog', endedAt: now })
     expect(warn).toHaveBeenCalledWith('[owner-analytics] retention_backlog', { overdueHours: 12, beyondTolerance: false })
+    const secondStart = performance.now()
     const second = await runOwnerAnalyticsMaintenance({ now, cursor: first.nextCursor })
+    const secondElapsedMs = performance.now() - secondStart
     expect(second.errors).toBe(0)
     expect(await count()).toBe(0)
     expect((await runOwnerAnalyticsMaintenance({ now, cursor: first.nextCursor })).deleted).toBe(0)
     expect(await prisma.booking.count({ where: { id: f.booking.id } })).toBe(1)
+    if (process.env.OWNER_ANALYTICS_MEASURE_LOCAL === 'true') {
+      const dailyRows = await prisma.analyticsDailyMetric.count({ where: { businessId: f.businessId } })
+      const dailyNow = new Date(+now + 2 * 86400000)
+      const expiredWhere = { businessId: f.businessId, retentionExpiresAt: { lte: dailyNow } }
+      const dailyEligible = await prisma.analyticsDailyMetric.count({ where: expiredWhere })
+      const dailyStart = performance.now()
+      const daily = await runOwnerAnalyticsMaintenance({ now: dailyNow })
+      const dailyElapsedMs = performance.now() - dailyStart
+      const dailyRowsAfter = await prisma.analyticsDailyMetric.count({ where: { businessId: f.businessId } })
+      console.log(JSON.stringify({ metric: 'local-postgres-drain', before, sourceRows: { sessions: 61, attempts: 1, events: 12001, snapshots: 1 }, samples: [{ deleted: first.deleted, elapsedMs: firstElapsedMs }, { deleted: second.deleted, elapsedMs: secondElapsedMs }], dailyRows, dailyEligible, dailyDeleted: daily.deleted, dailyPublished: daily.published, dailyRowsAfter, dailyElapsedMs, bookingsPreserved: 1 }))
+      expect(dailyEligible).toBeGreaterThan(0)
+      expect(daily.deleted).toBe(dailyEligible)
+      // A call can publish other still-retained period cohorts after deleting expired cells.
+      expect(await prisma.analyticsDailyMetric.count({ where: expiredWhere })).toBe(0)
+    }
   })
   it('coordinates publication and purge races, then expires daily history at its own 90d boundary', async () => {
     const f = await seedAnalyticsReport(); ids.push(f.businessId)

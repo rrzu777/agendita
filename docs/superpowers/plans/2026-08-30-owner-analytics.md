@@ -221,7 +221,7 @@ expect(analyticsStorageKeys()).toEqual([])
 - `AnalyticsDashboard({report: OwnerAnalyticsReport, periodMode?})`, DTO del Task3 y modo de período UI transmitido por la página tras validar la consulta. El modo conserva preset7/28/90 frente a rango explícito al paginar, sin inferirlo de fechas normalizadas ni modificar el DTO/DAL. Sin consultas directas desde componentes de gráficos.
 - Filtros mediante searchParams cerrados/validados en servidor; acciones Task2 para gestión de enlaces. Paginación25 por defecto y máximo100 con orden estable.
 
-- [ ] Test rojo: owner/admin ven Métricas en desktop y Más móvil; staff no lo ve ni puede consultar/mutar por llamada directa. Error de reporte nunca se representa como cero.
+- [x] Test rojo: owner/admin ven Métricas en desktop y Más móvil; staff no lo ve ni puede consultar/mutar por llamada directa. Error de reporte nunca se representa como cero.
 
 ```tsx
 expect(screen.getByText('Conversión en 24 h')).toBeVisible()
@@ -230,28 +230,31 @@ expect(screen.getByText('Recorrido incompleto')).toBeVisible()
 expect(screen.getByRole('table', { name: 'Tendencia diaria' })).toBeVisible()
 ```
 
-- [ ] Usar DashboardHeader, Cards, Button, Select/Table y estilo cálido existente; SVG ligeros con datos tabulares equivalentes. No introducir un sistema visual o biblioteca de charts nuevo.
-- [ ] Resumen + tendencia + embudo observado + último paso + servicios + adquisición/canjes + oportunidades. Mostrar parcial/completo, en curso, madurez, cobertura, fecha de activación y corte. Estados actuales de reservas en bloque separado sin deltas de seguimiento desigual.
-- [ ] Oportunidades: regla20/5/30% con cautela y diagnóstico de disponibilidad; cola de aprobación vencida desde `approvalExpiresAt` y la rama `pending_confirmation` de `isDoomedBooking`. Sin consejos de descuento/precio/inversión basados en abandono.
-- [ ] Histórico sólo dentro de retención vigente90d, sin prometer13meses. Dinero enlaza a Pagos. IA no aparece como resultado generado ni como automatización habilitada.
-- [ ] Probar teclado, móvil, contraste, estados loading/error/vacío/deshabilitado y tablas accesibles. Fixture E2E sintética y local; no usar cuentas reales.
-- [ ] Verificación/revisión antes del commit local `feat: add owner acquisition and funnel dashboard`.
+- [x] Usar DashboardHeader, Cards, Button, Select/Table y estilo cálido existente; SVG ligeros con datos tabulares equivalentes. No introducir un sistema visual o biblioteca de charts nuevo.
+- [x] Resumen + tendencia + embudo observado + último paso + servicios + adquisición/canjes + oportunidades. Mostrar parcial/completo, en curso, madurez, cobertura, fecha de activación y corte. Estados actuales de reservas en bloque separado sin deltas de seguimiento desigual.
+- [x] Oportunidades: regla20/5/30% con cautela y diagnóstico de disponibilidad; cola de aprobación vencida desde `approvalExpiresAt` y la rama `pending_confirmation` de `isDoomedBooking`. Sin consejos de descuento/precio/inversión basados en abandono.
+- [x] Histórico sólo dentro de retención vigente90d, sin prometer13meses. Dinero enlaza a Pagos. IA no aparece como resultado generado ni como automatización habilitada.
+- [x] Probar teclado, móvil, contraste, estados loading/error/vacío/deshabilitado y tablas accesibles. Fixture E2E sintética y local; no usar cuentas reales.
+- [x] Verificación/revisión antes del commit local `feat: add owner acquisition and funnel dashboard`.
 
 ## Task 6: Verificación integrada y handoff operativo
 
 **Files:**
 - Create: `docs/operations/owner-analytics.md`.
 - Extend: `.env.example` con nombres y valores desactivados/sintéticos, sin secretos.
+- Modify: `next.config.mjs` únicamente con `logging.serverFunctions: false` para evitar argumentos/credenciales en el registro automático de desarrollo de Next16; mantener peticiones, advertencias y errores. Cubrir configuración y salida real de E2E sin copiar tokens.
 - Extend: tests de tareas anteriores sólo cuando QA revele regresiones concretas.
 - Update: este plan y ledger con resultados, gates pendientes y SHAs.
 
-- [ ] Ejecutar todas las suites nuevas y regresiones de Booking, pagos, promociones, navegación y login contra fixtures locales. Reproducir cualquier fallo en base antes de clasificarlo como preexistente.
-- [ ] Ejecutar typecheck, lint de archivos afectados, build con env sintético y generación Prisma propia. No usar `vercel-build`: incluye despliegue de migraciones.
-- [ ] Ejecutar integración sobre base loopback exclusiva validada; inspeccionar tablas/FKs/índices reales, carreras y purga. Medir throughput sintético de ingesta/drenaje antes de recomendar presupuestos del piloto.
-- [ ] QA de navegador local desktop/móvil con consentimiento, campaña→servicio→hora→reserva y dashboard. Confirmar que offline/errores de captura no rompen la reserva; no confundir unit tests con E2E.
+- [x] Ejecutar todas las suites nuevas y regresiones de Booking, pagos, promociones, navegación y login contra fixtures locales. Reproducir cualquier fallo en base antes de clasificarlo como preexistente.
+- [x] Ejecutar typecheck, lint de archivos afectados, build con env sintético y generación Prisma propia. No usar `vercel-build`: incluye despliegue de migraciones.
+- [x] Ejecutar integración sobre base loopback exclusiva validada; inspeccionar tablas/FKs/índices reales, carreras y purga. Medir throughput sintético de ingesta/drenaje antes de recomendar presupuestos del piloto.
+- [x] QA de navegador local desktop/móvil con consentimiento, campaña→servicio→hora→reserva y dashboard. Confirmar que offline/errores de captura no rompen la reserva; no confundir unit tests con E2E.
 - [ ] Revisión final independiente de toda la rama y cierre de hallazgos. Documentar checks ejecutados, no ejecutados y motivos.
-- [ ] Runbook: migración aditiva, orden de despliegue, flags/allowlist/periodos, secreto propio, presupuestos medidos, consentimiento, retención, kill switch, mantenimiento con captura apagada y rollback sin borrar hechos transaccionales.
-- [ ] Entregar commits locales y rutas exactas. Mantener producción sin cambios: no push, PR, merge, deploy, cron real ni activación. Para13meses e IA pedir decisión específica en su etapa, no ampliar este MVP por iniciativa propia.
+- [x] Runbook: migración aditiva, orden de despliegue, flags/allowlist/periodos, secreto propio, presupuestos medidos, consentimiento, retención, kill switch, mantenimiento con captura apagada y rollback sin borrar hechos transaccionales.
+- [x] Entregar commits locales y rutas exactas. Mantener producción sin cambios: no push, PR, merge, deploy, cron real ni activación. Para13meses e IA pedir decisión específica en su etapa, no ampliar este MVP por iniciativa propia.
+
+Task6 evidencia: unit completa424archivos3860pass/9fail/1skip; comparación de base y corrección de entorno/registros de test→focal43/43pass. Integración completa70archivos457pass/1fallo de aserción de medición→retención+rollups focal14/14pass. No se afirma corrida global verde ni revisión independiente completada. Público5/5+rerun visual2/2, dashboard3/3; typecheck/lint/Prisma/build verdes. Cinco Rulings, comandos, tiempos, coste ingesta/drenaje y gates sin activar en `docs/operations/owner-analytics.md`.
 
 ## Preflight self-review
 

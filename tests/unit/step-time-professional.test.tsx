@@ -86,6 +86,42 @@ describe('los horarios que pide el paso de la hora', () => {
     expect(capture.track).not.toHaveBeenCalled()
   })
 
+  it('consent grant and withdrawal preserve a selected slot still valid for the same Booking context', async () => {
+    const slot = { start: new Date('2026-06-15T18:00:00Z'), end: new Date('2026-06-15T18:30:00Z') }
+    getAvailableTimeSlotsResult.mockResolvedValue({ ok: true, data: { slots: [slot], emptyReason: null } })
+    await montar(base)
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('14:00'))!.click())
+    const selected = vi.fn()
+    for (const allowed of [true, false]) {
+      capture.ready = allowed; capture.attemptIdentity.mockReturnValue(allowed ? 'new-attempt' : '')
+      await act(async () => root!.render(<StepTime businessId="biz-1" timezone="America/Santiago" data={base} onSelect={selected} onBack={() => {}} />))
+      const next = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Continuar')!
+      expect(next.disabled).toBe(false)
+      await act(async () => next.click())
+      expect(selected).toHaveBeenLastCalledWith(slot)
+    }
+  })
+
+  it('refresh cannot retain a selected slot that is no longer offered', async () => {
+    const slot = { start: new Date('2026-06-15T18:00:00Z'), end: new Date('2026-06-15T18:30:00Z') }
+    getAvailableTimeSlotsResult.mockResolvedValueOnce({ ok: true, data: { slots: [slot], emptyReason: null } })
+    await montar(base)
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('14:00'))!.click())
+    getAvailableTimeSlotsResult.mockResolvedValueOnce({ ok: true, data: { slots: [{ start: new Date('2026-06-15T19:00:00Z'), end: new Date('2026-06-15T19:30:00Z') }], emptyReason: null } })
+    capture.ready = true
+    await act(async () => root!.render(<StepTime businessId="biz-1" timezone="America/Santiago" data={base} onSelect={() => {}} onBack={() => {}} />))
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Continuar')!.disabled).toBe(true)
+  })
+
+  it('a real professional change clears selection even if the same hour is offered', async () => {
+    const slot = { start: new Date('2026-06-15T18:00:00Z'), end: new Date('2026-06-15T18:30:00Z') }
+    getAvailableTimeSlotsResult.mockResolvedValue({ ok: true, data: { slots: [slot], emptyReason: null } })
+    await montar(base)
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('14:00'))!.click())
+    await act(async () => root!.render(<StepTime businessId="biz-1" timezone="America/Santiago" data={{ ...base, professional: { kind: 'anyone' } }} onSelect={() => {}} onBack={() => {}} />))
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Continuar')!.disabled).toBe(true)
+  })
+
   /**
    * Es el punto de la feature: con persona los horarios salen de SU agenda. Si este
    * argumento vuelve a ser `null`, la pantalla ofrece las horas del negocio y la

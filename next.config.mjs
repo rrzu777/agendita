@@ -5,6 +5,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Next16 dev logs action arguments by default; these can include signed analytics credentials.
+  // Preserve request logging and all normal warnings/errors, but never dump action arguments.
+  logging: {
+    serverFunctions: false,
+  },
   typescript: {
     ignoreBuildErrors: false,
   },

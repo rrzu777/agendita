@@ -53,6 +53,8 @@ const PUBLICAS: Record<string, string> = {
   // --- Funnel público de reserva: la clienta no tiene cuenta.
   'src/server/actions/availability.ts#getAvailableTimeSlots':
     'el calendario público; rate limit por IP y sólo responde de negocios activos',
+  'src/server/actions/availability.ts#getAvailableTimeSlotsResult':
+    'adapter diagnóstico del mismo calendario público: delega en _getAvailableTimeSlots con idéntico rate limit y validación de negocio/servicio/profesional',
   'src/server/actions/bookings.ts#createBooking': 'reservar es todo el punto del funnel público',
   'src/server/actions/promotions.ts#previewPromotion':
     'preview NO autoritativa del wizard (la validación real va en createBooking); rate limit propio',

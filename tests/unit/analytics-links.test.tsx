@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { clickButton, flushPromises } from '../helpers/react-dom'
 import { AcquisitionLinks, acquisitionActionMessage } from '@/components/dashboard/analytics/acquisition-links'
 import type { OwnerAnalyticsReport } from '@/server/analytics/reports'
@@ -12,6 +12,11 @@ const links = {
   pageSize: 25,
   total: 1,
 } satisfies OwnerAnalyticsReport['acquisitionLinks']
+
+const originalScrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView')
+afterEach(() => {
+  expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView')).toEqual(originalScrollIntoView)
+})
 
 describe('AcquisitionLinks', () => {
   it('renders a manageable registry link even before an aggregate has traffic', () => {
@@ -43,17 +48,22 @@ describe('AcquisitionLinks', () => {
     const host = document.createElement('div')
     document.body.append(host)
     const root = createRoot(host)
-    await act(async () => { root.render(<InteractiveLinks links={links} pagination={{ previousHref: null, nextHref: null, label: 'Página 1 de 1' }} />) })
-    const input = host.querySelector<HTMLInputElement>('#analytics-campaign')!
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
-    await act(async () => { setter.call(input, 'Fallará'); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })) })
-    await clickButton(host, 'Crear enlace')
-    await flushPromises()
-    expect(create).toHaveBeenCalledWith({ channel: 'instagram', campaignName: 'Fallará' })
-    expect(host.textContent).toContain('No autorizado.')
-    expect(host.textContent).not.toContain('Enlace creado:')
-    await act(async () => root.unmount())
-    host.remove()
-    vi.doUnmock('@/server/actions/analytics')
+    try {
+      await act(async () => { root.render(<InteractiveLinks links={links} pagination={{ previousHref: null, nextHref: null, label: 'Página 1 de 1' }} />) })
+      const input = host.querySelector<HTMLInputElement>('#analytics-campaign')!
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+      await act(async () => { setter.call(input, 'Fallará'); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })) })
+      await clickButton(host, 'Crear enlace')
+      await flushPromises()
+      expect(create).toHaveBeenCalledWith({ channel: 'instagram', campaignName: 'Fallará' })
+      expect(host.textContent).toContain('No autorizado.')
+      expect(host.textContent).not.toContain('Enlace creado:')
+    } finally {
+      await act(async () => root.unmount())
+      host.remove()
+      vi.doUnmock('@/server/actions/analytics')
+      if (originalScrollIntoView) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView)
+      else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+    }
   })
 })

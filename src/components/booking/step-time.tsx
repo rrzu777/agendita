@@ -32,11 +32,15 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
   const [error, setError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
   const generationRef = useRef(0)
+  const queryContextRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!data.date || !data.serviceId) return
 
     const generation = ++generationRef.current
+    const queryContext = JSON.stringify([businessId, data.serviceId, data.date.toISOString(), pickKey, data.serviceModality])
+    const sameBookingContext = queryContextRef.current === queryContext
+    queryContextRef.current = queryContext
     const revision = analytics.revision()
     let cancelled = false
     const current = () => !cancelled && generationRef.current === generation
@@ -51,7 +55,9 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting loading state before fetch is a standard UI pattern
     setLoading(true)
     setError(null)
-    setSelectedSlot(null)
+    // Consent/revision refreshes must not erase an otherwise valid Booking choice.
+    // Actual dimension changes still invalidate immediately; responses revalidate the slot.
+    if (!sameBookingContext) setSelectedSlot(null)
 
     // Con persona, los horarios son los SUYOS: su horario semanal (o el del
     // negocio, si no tiene propio), sus bloqueos y los del negocio, y las citas que
@@ -68,16 +74,21 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
         if (!current()) return
         if (!res.ok) {
           setSlots([])
+          setSelectedSlot(null)
           setError(res.error)
           observe('error')
           return
         }
         setSlots(res.data.slots)
+        setSelectedSlot(selected => selected
+          ? res.data.slots.find(slot => slot.start.getTime() === selected.start.getTime() && slot.end.getTime() === selected.end.getTime()) ?? null
+          : null)
         observe(res.data.slots.length ? 'available' : 'empty', res.data.emptyReason ?? undefined)
       })
       .catch(() => {
         if (!current()) return
         setSlots([])
+        setSelectedSlot(null)
         setError('No se pudieron cargar los horarios')
         observe('error')
       })
