@@ -5,6 +5,8 @@ import { prisma } from '@/lib/db'
 import type { Booking, Prisma } from '@prisma/client'
 import { BookingStatus, BookingPaymentStatus, PaymentType, ServiceModality } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
+import { headers } from 'next/headers'
+import { getBookingAnalyticsSnapshot } from '@/lib/analytics/booking-snapshot'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { revalidateBusinessPublicPaths } from './revalidate-business'
 import { requireBusiness, requireBusinessRole, ForbiddenError } from '@/lib/auth/server'
@@ -478,6 +480,8 @@ async function _createBooking(data: {
   promotionCode?: string
   skipPackage?: boolean
   referralToken?: string
+  // Optional, untrusted telemetry: deliberately NOT part of createBookingSchema.
+  analytics?: unknown
   paymentMethod?: typeof BANK_TRANSFER_METHOD
   modality?: ServiceModality
   serviceAddress?: string
@@ -629,6 +633,13 @@ async function _createBooking(data: {
     }
   }
 
+  const analytics = data.analytics && typeof data.analytics === 'object' && !Array.isArray(data.analytics)
+    ? data.analytics as { credential?: unknown; selectionRevision?: unknown } : null
+  let analyticsOrigin = ''
+  if (typeof analytics?.credential === 'string' && analytics.credential.length <= 4096) {
+    try { analyticsOrigin = (await headers()).get('origin') ?? '' } catch { /* Analytics cannot reject a reservation. */ }
+  }
+
   try {
     const created = await prisma.$transaction(async (tx) => {
       // Linealiza la aceptación con Settings y con el contador de reservas. El
@@ -698,6 +709,8 @@ async function _createBooking(data: {
 
       const booking = await tx.booking.create({
         data: {
+          // Verify locally only at first insert; neither replay path rewrites the original snapshot.
+          ...getBookingAnalyticsSnapshot({ credential: analytics?.credential, selectionRevision: analytics?.selectionRevision, businessId, origin: analyticsOrigin, now: new Date() }),
           businessId,
           serviceId: data.serviceId,
           customerId: customer.id,

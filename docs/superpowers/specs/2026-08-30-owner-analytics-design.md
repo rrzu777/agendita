@@ -595,7 +595,8 @@ de ventas perdidas. Separar errores de carga y señalar si esos intentos crearon
 una reserva dentro de su ventana de conversión.
 
 Segunda regla: solicitudes con plazo de respuesta del negocio vencido. Usar
-`approvalExpiresAt` y la semántica de `isDoomedHold` vigente; no mezclar con
+`approvalExpiresAt` y la rama `pending_confirmation` de `isDoomedBooking`
+(`src/lib/payments/confirmation-state.ts`) vigente; no mezclar con
 `holdExpiresAt` de pago. Es una cola operativa al momento de consulta, no un motivo
 inferido del funnel. Enlazar a Reservas.
 

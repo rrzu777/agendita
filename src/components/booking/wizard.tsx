@@ -1,5 +1,7 @@
 'use client'
 
+import { getBookingLoginUrl } from '@/lib/business/urls'
+
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
@@ -163,7 +165,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
     const merged = { ...data, ...partial }
     const raw = serializeWizardState(merged)
     if (raw) sessionStorage.setItem(wizardStorageKey(businessId), raw)
-    router.push(`/ingresar?next=${encodeURIComponent(`/ir/${slug}`)}`)
+    router.push(getBookingLoginUrl(slug, new URLSearchParams(window.location.search)))
   }
 
   function updateData(partial: Partial<BookingData>) {

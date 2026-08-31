@@ -79,7 +79,7 @@ Los nombres exportados definidos abajo forman el contrato entre tareas. Si un ca
 - `aggregateDailyMetrics({sessions, attempts, coverage, definitionVersion}): DailyMetricCell[]`; poblaciones y dimensiones cerradas, contadores enteros y marcador de publicación.
 - `ratio(numerator, denominator): number | null`; nunca infinito ni porcentaje precalculado persistido.
 
-- [ ] Escribir primero fixtures manuales de los seis ejemplos del spec. Los tests deben fallar por falta de comportamiento, no por errores del entorno.
+- [x] Escribir primero fixtures manuales de los seis ejemplos del spec. Los tests deben fallar por falta de comportamiento, no por errores del entorno.
 
 ```ts
 expect(ratio(4, 10)).toBe(0.4)
@@ -92,12 +92,12 @@ expect(analyticsEventSchema.safeParse({
 }).success).toBe(false)
 ```
 
-- [ ] Ejecutar `npm run test:unit -- tests/unit/analytics-contracts.test.ts tests/unit/analytics-credential.test.ts tests/unit/analytics-funnel.test.ts tests/unit/analytics-daily-metrics.test.ts` y registrar el rojo.
-- [ ] Implementar la unión estricta, normalización, HMAC con comparación segura y validación de todos los claims. Un token de otro tenant/origen, vencido, alterado o de sesión no produce snapshot.
-- [ ] Implementar el reductor por secuencia/revisión. No unir hitos incompatibles; no inventar pasos automáticos; huecos conocidos separan interrupción de medición incompleta. Numerador de conversión por servicio es subconjunto del denominador de interés observado maduro.
-- [ ] Crear los seis modelos del spec y snapshot escalar nullable de Booking. Incluir FKs compuestas sesión/intento/evento, checks de alcance y snapshot, unicidades de ID/secuencia y claves no nulas de celdas diarias; índices de consulta y limpieza. IDs históricos de servicio/profesional no llevan FK restrictiva ni cascade.
-- [ ] Preparar una migración aditiva manual; validar con Prisma y aplicar sólo a la base local exclusiva. Los tests intentan realmente insertar cruces de sesión del mismo tenant, duplicados y snapshots parciales; deben ser rechazados por PostgreSQL.
-- [ ] Ejecutar pruebas focales, integración de esquema, typecheck, lint y revisión independiente antes del commit local `feat: define owner analytics contracts and storage`.
+- [x] Ejecutar `npm run test:unit -- tests/unit/analytics-contracts.test.ts tests/unit/analytics-credential.test.ts tests/unit/analytics-funnel.test.ts tests/unit/analytics-daily-metrics.test.ts` y registrar el rojo.
+- [x] Implementar la unión estricta, normalización, HMAC con comparación segura y validación de todos los claims. Un token de otro tenant/origen, vencido, alterado o de sesión no produce snapshot.
+- [x] Implementar el reductor por secuencia/revisión. No unir hitos incompatibles; no inventar pasos automáticos; huecos conocidos separan interrupción de medición incompleta. Numerador de conversión por servicio es subconjunto del denominador de interés observado maduro.
+- [x] Crear los seis modelos del spec y snapshot escalar nullable de Booking. Incluir FKs compuestas sesión/intento/evento, checks de alcance y snapshot, unicidades de ID/secuencia y claves no nulas de celdas diarias; índices de consulta y limpieza. IDs históricos de servicio/profesional no llevan FK restrictiva ni cascade.
+- [x] Preparar una migración aditiva manual; validar con Prisma y aplicar sólo a la base local exclusiva. Los tests intentan realmente insertar cruces de sesión del mismo tenant, duplicados y snapshots parciales; deben ser rechazados por PostgreSQL.
+- [x] Ejecutar pruebas focales, integración de esquema, typecheck, lint y revisión independiente. Checkpoints locales `1b9cc04` + fix `1a8920b`; revisión aprobada, 36 unitarias y 7 PostgreSQL. Detalle y regresiones en ledger/report.
 
 ## Task 2: Captura pública, atribución y vínculo con reservas
 
@@ -227,7 +227,7 @@ expect(screen.getByRole('table', { name: 'Tendencia diaria' })).toBeVisible()
 
 - [ ] Usar DashboardHeader, Cards, Button, Select/Table y estilo cálido existente; SVG ligeros con datos tabulares equivalentes. No introducir un sistema visual o biblioteca de charts nuevo.
 - [ ] Resumen + tendencia + embudo observado + último paso + servicios + adquisición/canjes + oportunidades. Mostrar parcial/completo, en curso, madurez, cobertura, fecha de activación y corte. Estados actuales de reservas en bloque separado sin deltas de seguimiento desigual.
-- [ ] Oportunidades: regla20/5/30% con cautela y diagnóstico de disponibilidad; cola de aprobación vencida desde `approvalExpiresAt`/`isDoomedHold`. Sin consejos de descuento/precio/inversión basados en abandono.
+- [ ] Oportunidades: regla20/5/30% con cautela y diagnóstico de disponibilidad; cola de aprobación vencida desde `approvalExpiresAt` y la rama `pending_confirmation` de `isDoomedBooking`. Sin consejos de descuento/precio/inversión basados en abandono.
 - [ ] Histórico sólo dentro de retención vigente90d, sin prometer13meses. Dinero enlaza a Pagos. IA no aparece como resultado generado ni como automatización habilitada.
 - [ ] Probar teclado, móvil, contraste, estados loading/error/vacío/deshabilitado y tablas accesibles. Fixture E2E sintética y local; no usar cuentas reales.
 - [ ] Verificación/revisión antes del commit local `feat: add owner acquisition and funnel dashboard`.

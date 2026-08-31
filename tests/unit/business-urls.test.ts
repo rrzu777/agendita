@@ -44,6 +44,22 @@ describe('getBusinessPublicUrl', () => {
   })
 })
 
+describe('public acquisition navigation', () => {
+  it('preserves referral separately and only bounded allowlisted acquisition values', async () => {
+    const { publicAcquisitionSearch } = await load()
+    const result = new URLSearchParams(publicAcquisitionSearch(new URLSearchParams('ref=74d2b4a1-c53a-41d5-a145-5318f1d2d382&acq=abcdefghijklmnopqrstuv&utm_source=IG&utm_medium=social&utm_campaign=link-public&credential=secret&email=name@example.com&continuar=1')))
+    expect(Object.fromEntries(result)).toEqual({ ref: '74d2b4a1-c53a-41d5-a145-5318f1d2d382', acq: 'abcdefghijklmnopqrstuv', utm_source: 'instagram', utm_medium: 'social', utm_campaign: 'link-public', continuar: '1' })
+    expect(publicAcquisitionSearch({ acq: ['first', 'second'], ref: 'malformed', utm_medium: 'private text', continuar: 'arbitrary' })).toBe('')
+  })
+  it('keeps the same allowed context through login alias and restores continuar independently', async () => {
+    const { getBookingLoginUrl, appendPublicAcquisitionSearch } = await load()
+    const search = new URLSearchParams('acq=abcdefghijklmnopqrstuv&ref=74d2b4a1-c53a-41d5-a145-5318f1d2d382')
+    const login = new URL(getBookingLoginUrl('salon', search), 'https://agendita.test')
+    expect(login.searchParams.get('next')).toBe('/ir/salon?ref=74d2b4a1-c53a-41d5-a145-5318f1d2d382&acq=abcdefghijklmnopqrstuv')
+    expect(appendPublicAcquisitionSearch('/book', search)).toBe('/book?ref=74d2b4a1-c53a-41d5-a145-5318f1d2d382&acq=abcdefghijklmnopqrstuv')
+  })
+})
+
 describe('getBookingConfirmationUrl', () => {
   it('subdomain business → apex subdomain confirmation path', async () => {
     process.env.NEXT_PUBLIC_APP_DOMAIN = 'www.agendita.cl'

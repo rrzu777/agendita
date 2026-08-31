@@ -1,4 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { captureSecret, configureCapture, liveCaptureClaims } from '../helpers/analytics-capture'
+import { signAnalyticsCredential } from '@/lib/analytics/credential'
+
+const analyticsHeaders = vi.hoisted(() => vi.fn())
+vi.mock('next/headers', () => ({ headers: analyticsHeaders }))
 import { ForbiddenError } from '../helpers/auth-errors'
 import { BookingStatus, BookingPaymentStatus } from '@prisma/client'
 import { UserError } from '@/lib/actions/result'
@@ -428,6 +433,45 @@ describe('createBooking idempotency', () => {
     expect(result.ok).toBe(false)
     expect(!result.ok && result.error).toContain('política de cancelación se actualizó')
     expect(create).not.toHaveBeenCalled()
+  })
+
+  describe('optional analytics never changes financial/idempotent booking behavior', () => {
+    beforeEach(() => {
+      configureCapture('biz-1')
+      analyticsHeaders.mockResolvedValue(new Headers({ origin: 'https://salon.agendita.test' }))
+      mockPrisma.booking.findUnique.mockResolvedValue(null)
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(mockPrisma))
+      mockPrisma.booking.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'booking-analytics', ...data, service: { name: 'Manicure' }, customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null } }))
+    })
+    afterEach(() => vi.unstubAllEnvs())
+    const metadata = () => ({ credential: signAnalyticsCredential(liveCaptureClaims('biz-1'), captureSecret), selectionRevision: 7 })
+    it('copies verified signed snapshot only when creating a new Booking', async () => {
+      const result = await createBooking({ ...baseInput, analytics: metadata() }, 'biz-1')
+      expect(result).toMatchObject({ ok: true, data: { analyticsAttemptId: '13b83f98-9d17-44bd-b06b-23ea3ca9f19c', analyticsChannel: 'instagram', analyticsSelectionRevision: 7, totalPrice: 10000, depositRequired: 5000 } })
+    })
+    it.each([null, 42, [], 'invalid', { credential: 123 }, { credential: 'invalid-signature' }, { credential: 'x'.repeat(20000) }])('ignores malformed analytics %j and preserves normal reservation', async (analytics) => {
+      const result = await createBooking({ ...baseInput, analytics }, 'biz-1')
+      expect(result).toMatchObject({ ok: true, data: { totalPrice: 10000, depositRequired: 5000 } })
+      expect(result.ok && result.data.analyticsAttemptId).toBeUndefined()
+    })
+    it('an analytics header read failure cannot abort the reservation', async () => {
+      analyticsHeaders.mockRejectedValueOnce(new Error('headers unavailable'))
+      expect(await createBooking({ ...baseInput, analytics: metadata() }, 'biz-1')).toMatchObject({ ok: true })
+    })
+    it('fast replay retains original snapshot without reading analytics headers', async () => {
+      const original = { id: 'booking-original', businessId: 'biz-1', serviceId: baseInput.serviceId, status: BookingStatus.confirmed, startDateTime: baseInput.startDateTime, professionalId: null, customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null }, discountAmount: 0, depositRequired: 0, depositPaid: 0, analyticsAttemptId: 'original-attempt' }
+      mockPrisma.booking.findUnique.mockResolvedValueOnce(original)
+      expect(await createBooking({ ...baseInput, analytics: metadata() }, 'biz-1')).toMatchObject({ ok: true, data: { id: 'booking-original', analyticsAttemptId: 'original-attempt' } })
+      expect(analyticsHeaders).not.toHaveBeenCalled()
+      expect(mockPrisma.booking.create).not.toHaveBeenCalled()
+    })
+    it('P2002 recovery returns winner snapshot without rewriting attribution', async () => {
+      const original = { id: 'booking-winner', businessId: 'biz-1', serviceId: baseInput.serviceId, status: BookingStatus.confirmed, startDateTime: baseInput.startDateTime, professionalId: null, customer: { id: 'cust-1', name: 'Juan', phone: '+56912345678', email: null }, discountAmount: 0, depositRequired: 0, depositPaid: 0, analyticsAttemptId: 'winner-attempt' }
+      mockPrisma.booking.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(original)
+      mockPrisma.booking.create.mockRejectedValueOnce({ code: 'P2002', meta: { target: ['businessId_idempotencyKey'] } })
+      expect(await createBooking({ ...baseInput, analytics: metadata() }, 'biz-1')).toMatchObject({ ok: true, data: { id: 'booking-winner', analyticsAttemptId: 'winner-attempt' } })
+      expect(mockPrisma.booking.update).not.toHaveBeenCalled()
+    })
   })
 
   it('snapshots the exact policy values protected by the booking transaction lock', async () => {
