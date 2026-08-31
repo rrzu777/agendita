@@ -36,13 +36,14 @@ const OWNER_MORE_DESTINATIONS = [
   'Fidelización',
   'Campañas',
   'Paquetes',
+  'Métricas',
   'Facturación',
   'Reseñas',
   'Configuración',
 ] as const
 
 const STAFF_MORE_DESTINATIONS = OWNER_MORE_DESTINATIONS.filter((label) => (
-  label !== 'Facturación' && label !== 'Configuración'
+  label !== 'Facturación' && label !== 'Configuración' && label !== 'Métricas'
 ))
 
 async function createDashboardFixture({
@@ -291,6 +292,7 @@ test('staff mobile navigation is role-filtered and never offers tours', async ({
     await expect(moreNavigation.getByRole('link')).toHaveCount(STAFF_MORE_DESTINATIONS.length)
     await expect(moreNavigation.getByRole('link', { name: 'Configuración', exact: true })).toHaveCount(0)
     await expect(moreNavigation.getByRole('link', { name: 'Facturación', exact: true })).toHaveCount(0)
+    await expect(moreNavigation.getByRole('link', { name: 'Métricas', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Ayuda y recorridos' })).toHaveCount(0)
     await expectNoHorizontalOverflow(page)
     await expect.poll(() => prisma.userTourProgress.count({

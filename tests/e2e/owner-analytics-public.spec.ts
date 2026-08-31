@@ -38,6 +38,31 @@ async function confirmBooking(page: Page) {
   await expect(page.getByRole('heading', { name: /Reserva (recibida|confirmada)|Confirmación/ })).toBeVisible({ timeout: 30_000 })
 }
 
+async function navigateDesktopConsentThroughHydration(page: Page) {
+  let releaseScripts: () => void = () => {}
+  const scriptsReleased = new Promise<void>((resolve) => { releaseScripts = resolve })
+  let heldScripts = 0
+  const scriptRoute = '**/_next/static/**/*.js'
+  await page.route(scriptRoute, async (route) => {
+    heldScripts++
+    await scriptsReleased
+    await route.continue()
+  })
+  try {
+    await page.goto(bookingPath, { waitUntil: 'commit' })
+    const consent = page.getByRole('button', { name: 'Permitir métricas', exact: true })
+    await expect(consent).toBeVisible()
+    await expect.poll(() => heldScripts).toBeGreaterThan(0)
+    await expect(consent).toBeDisabled()
+    releaseScripts()
+    await expect(consent).toBeEnabled()
+    return consent
+  } finally {
+    releaseScripts()
+    await page.unroute(scriptRoute)
+  }
+}
+
 test('guest can decline on mobile without an analytics identity or request; campaign survives login navigation', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   const requests: string[] = []
@@ -92,9 +117,11 @@ for (const degraded of [false, true]) {
     if (degraded) await page.setViewportSize({ width: 375, height: 812 })
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
-    await page.goto(bookingPath)
+    let consent = page.getByRole('button', { name: 'Permitir métricas', exact: true })
+    if (degraded) await page.goto(bookingPath)
+    else consent = await navigateDesktopConsentThroughHydration(page)
     const attemptReady = page.waitForResponse(response => response.url().endsWith(`/api/analytics/${fixture.slug}/attempt`) && response.ok())
-    await page.getByRole('button', { name: 'Permitir métricas', exact: true }).click()
+    await consent.click()
     const attempt = await (await attemptReady).json()
     if (degraded) await page.route(`**/api/analytics/${fixture.slug}/events`, route => route.abort('internetdisconnected'))
     await pickTime(page, degraded ? 5 : 4)

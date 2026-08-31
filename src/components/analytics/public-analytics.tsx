@@ -44,12 +44,14 @@ export function PublicAnalytics({ children, businessId, slug, eligible, surface 
   const completed = useRef(false)
   const completedBinding = useRef<string | undefined>(undefined)
   const [choice, setChoice] = useState<boolean | null>(null)
+  const [consentReady, setConsentReady] = useState(false)
   const [ready, setReady] = useState(false)
   const [revision, setRevision] = useState(1)
   const [captureIdentity, setCaptureIdentity] = useState<string | null>(null)
 
   useEffect(() => {
     if (!eligible) return
+    let disposed = false
     completed.current = false
     completedBinding.current = undefined
     try {
@@ -57,7 +59,8 @@ export function PublicAnalytics({ children, businessId, slug, eligible, surface 
       if (store.current.consent() !== true) store.current.discardState()
       setChoice(store.current.consent())
     } catch { store.current = null }
-    return () => { writer.current = false; transport.current?.stop(); release.current?.(); store.current?.stop() }
+    queueMicrotask(() => { if (!disposed && store.current) setConsentReady(true) })
+    return () => { disposed = true; writer.current = false; transport.current?.stop(); release.current?.(); store.current?.stop() }
   }, [businessId, eligible])
 
   useEffect(() => {
@@ -111,8 +114,10 @@ export function PublicAnalytics({ children, businessId, slug, eligible, surface 
   }, [ready, surface])
 
   function choose(allowed: boolean) {
+    const current = store.current
+    if (!current) return
     if (!allowed) { writer.current = false; transport.current?.stop(); release.current?.(); completedBinding.current = undefined; setReady(false) }
-    store.current?.chooseConsent(allowed)
+    current.chooseConsent(allowed)
     setChoice(allowed)
   }
   const api = useMemo<PublicCapture>(() => {
@@ -164,7 +169,7 @@ export function PublicAnalytics({ children, businessId, slug, eligible, surface 
       {choice === null ? <>
         <h2 className="font-heading text-base font-semibold">Métricas opcionales de esta reserva</h2>
         <p className="mt-2 text-muted-foreground">Puedes ayudar al negocio a entender el recorrido de reserva. Son datos seudónimos, vinculables a la reserva; no incluimos tus datos de contacto. Se conservan hasta 90 días, con hasta 24 horas adicionales para eliminarlos. Puedes reservar sin permitir métricas.</p>
-        <div className="mt-4 flex flex-wrap gap-3">{[['Permitir métricas', true], ['Continuar sin métricas', false]].map(([label, allowed]) => <button key={String(label)} type="button" onClick={() => choose(allowed === true)} className="min-h-11 flex-1 rounded-full border border-border px-4 py-2 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">{label}</button>)}</div>
+        <div className="mt-4 flex flex-wrap gap-3">{[['Permitir métricas', true], ['Continuar sin métricas', false]].map(([label, allowed]) => <button key={String(label)} type="button" disabled={!consentReady} onClick={() => choose(allowed === true)} className="min-h-11 flex-1 rounded-full border border-border px-4 py-2 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">{label}</button>)}</div>
       </> : <>
         <p>{choice ? 'Métricas permitidas para este negocio.' : 'Métricas no permitidas para este negocio.'} Esta preferencia dura 180 días.</p>
         <button type="button" className="mt-2 min-h-11 font-semibold underline focus-visible:outline-2" onClick={() => choice ? choose(false) : setChoice(null)}>{choice ? 'Retirar permiso de métricas' : 'Cambiar preferencia de métricas'}</button>

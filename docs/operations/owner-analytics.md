@@ -13,12 +13,34 @@ config general, con `NODE_ENV=production` y DB `agendita_e2e`. Los guards
 rechazaron ese entorno correctamente. Los15E2E locales anteriores usaban sus
 configs dedicados: esa evidencia no cubría el cableado del job general en CI.
 
-La corrección está acotada al routing/configuración y su regresión: mantener
+La primera corrección se acotó al routing/configuración y su regresión: mantener
 todas las suites no-analytics en el job general; ambas suites analytics pasan
 a un job dedicado con sus launchers existentes, DB exclusiva y Redis/OpenSSL.
-No se modifica ningún guard, fuente de métricas, captura o política productiva.
+Ese primer cambio no modificó ningún guard, fuente de métricas o política productiva.
 El estado remoto/merge se verifica sobre el head exacto del PR, no se deduce
 de los resultados locales inferiores. Plan: `2026-08-31-owner-analytics-ci.md`.
+
+El run `33405786279` sobre `6ca52c7` ejecutó las suites y detectó dos fallos:
+la lista del tour móvil no incluía el nuevo enlace Métricas (12 esperados/13
+reales), y el caso público desktop agotó la espera de bootstrap sin emitir
+ninguna petición de sesión. Los otros7casos públicos pasaron; unit, integración,
+lint, tipado, build y preview también pasaron.
+
+La continuación corrige la expectativa de navegación preservando la exclusión
+de staff, y protege el consentimiento temprano: sus botones permanecen
+deshabilitados hasta inicializar el store del navegador. Booking no depende de
+esa espera. Una regresión determinista demuestra que antes podía pulsarse el
+botón previo al efecto de inicialización; una nueva prueba de navegador retiene
+los scripts y verifica SSR deshabilitado → hidratación → consentimiento → intento.
+El orden exacto de eventos del fallo remoto no fue capturado: la atribución a
+esa carrera no se presenta como confirmada sólo por el log. No se aumentan
+timeouts/reintentos ni se relajan guardas, políticas o comprobaciones del flujo.
+
+Checkpoint local de esta continuación: revisión independiente Spec/Quality PASS,
+59/59unitarias relacionadas, público8/8 (33.4s), tours9/9 (27.0s) y build correcto
+(59/59páginas). La comprobación SSR comparte el caso desktop existente: no añade
+bootstraps ni modifica el límite10/minuto. Los resultados remotos anteriores
+siguen fallidos; el merge requiere otro run verde sobre el SHA que incluya este fix.
 
 ### Matriz local de cierre del MVP
 

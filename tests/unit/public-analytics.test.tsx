@@ -1,4 +1,4 @@
-import { act, useEffect } from 'react'
+import { act, useEffect, useLayoutEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PublicAnalytics, usePublicAnalytics } from '@/components/analytics/public-analytics'
@@ -41,7 +41,25 @@ function NewSelectionProbe() {
   const analytics = usePublicAnalytics()
   return <><button onClick={() => analytics.changeSelection({ reason: 'time', context: { serviceId: 'svc', modality: 'on_site', professional: { kind: 'none' } }, localDate: '2026-08-31' })}>Nueva hora explícita</button><button onClick={() => { const binding = analytics.completeAttempt(); if (binding) analytics.track({ type: 'checkout_redirected', data: { provider: 'mercado_pago' } }, binding) }}>Salida checkout posterior</button></>
 }
+function EarlyConsentProbe({ onAttempt }: { onAttempt: (disabled: boolean) => void }) {
+  useLayoutEffect(() => {
+    const consent = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Permitir métricas')!
+    onAttempt(consent.disabled)
+    consent.click()
+  }, [onAttempt])
+  return null
+}
 describe('public opt-in boundary', () => {
+  it('keeps consent controls inert until their browser store is initialized', async () => {
+    let disabledBeforeProviderEffect = false
+    const host = document.createElement('div'); document.body.append(host); root = createRoot(host)
+    await act(async () => root!.render(<PublicAnalytics businessId="salon" slug="salon" timezone="UTC" eligible surface="booking"><EarlyConsentProbe onAttempt={(disabled) => { disabledBeforeProviderEffect = disabled }} /></PublicAnalytics>))
+    const preference = analyticsStorageKeys('salon', window.location.origin).preference
+    expect(disabledBeforeProviderEffect).toBe(true)
+    expect(window.localStorage.getItem(preference)).toBeNull()
+    await clickButton(host, 'Permitir métricas')
+    expect(JSON.parse(window.localStorage.getItem(preference)!)).toMatchObject({ allowed: true })
+  })
   it('availability observes a newly started attempt even when its revision stays one', async () => {
     const { StepTime } = await import('@/components/booking/step-time')
     slots.mockResolvedValue({ ok: true, data: { slots: [], emptyReason: 'no_capacity' } })
