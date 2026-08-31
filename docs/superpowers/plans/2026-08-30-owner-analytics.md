@@ -250,7 +250,7 @@ expect(screen.getByRole('table', { name: 'Tendencia diaria' })).toBeVisible()
 - [x] Ejecutar typecheck, lint de archivos afectados, build con env sintético y generación Prisma propia. No usar `vercel-build`: incluye despliegue de migraciones.
 - [x] Ejecutar integración sobre base loopback exclusiva validada; inspeccionar tablas/FKs/índices reales, carreras y purga. Medir throughput sintético de ingesta/drenaje antes de recomendar presupuestos del piloto.
 - [x] QA de navegador local desktop/móvil con consentimiento, campaña→servicio→hora→reserva y dashboard. Confirmar que offline/errores de captura no rompen la reserva; no confundir unit tests con E2E.
-- [ ] Revisión final independiente de toda la rama y cierre de hallazgos. Documentar checks ejecutados, no ejecutados y motivos.
+- [x] Revisión final independiente de toda la rama y cierre/adjudicación de hallazgos. I1–I7/M1–M5 corregidos; única re-review PASS con Minor N1 explícitamente aplazado antes del piloto (etiqueta asíncrona de selección, ID correcto). Octava Ruling y evidencia en runbook; no se afirma cero defectos.
   - Enmienda de revisión final: recuperar un intento persistido vigente tras
     perder la respuesta aunque venza su sesión padre, mediante binding firmado
     original y coincidencias exactas; sin crear intentos con padre vencido,
@@ -263,7 +263,9 @@ expect(screen.getByRole('table', { name: 'Tendencia diaria' })).toBeVisible()
 - [x] Runbook: migración aditiva, orden de despliegue, flags/allowlist/periodos, secreto propio, presupuestos medidos, consentimiento, retención, kill switch, mantenimiento con captura apagada y rollback sin borrar hechos transaccionales.
 - [x] Entregar commits locales y rutas exactas. Mantener producción sin cambios: no push, PR, merge, deploy, cron real ni activación. Para13meses e IA pedir decisión específica en su etapa, no ampliar este MVP por iniciativa propia.
 
-Task6 evidencia: unit completa424archivos3860pass/9fail/1skip; comparación de base y corrección de entorno/registros de test→focal43/43pass. Integración completa70archivos457pass/1fallo de aserción de medición→retención+rollups focal14/14pass. No se afirma corrida global verde ni revisión independiente completada. Público5/5+rerun visual2/2, dashboard3/3; typecheck/lint/Prisma/build verdes. Cinco Rulings, comandos, tiempos, coste ingesta/drenaje y gates sin activar en `docs/operations/owner-analytics.md`.
+Task6 evidencia histórica inicial: unit completa424archivos3860pass/9fail/1skip; comparación de base y corrección de entorno/registros de test→focal43/43pass. Integración completa70archivos457pass/1fallo de aserción de medición→retención+rollups focal14/14pass. Ese checkpoint no fue una corrida global verde ni revisión final completada. Público5/5+rerun visual2/2, dashboard3/3; typecheck/lint/Prisma/build verdes.
+
+Cierre final sobre código `d8f38f8229c153c6838f00789dd36f09fdaa903d`, re-review sobre HEAD documental `41eb7460fdfd8eacbece37507050222faa15e7c6`:426archivos/3895unit pass+1skip;71archivos/477DBpass;5público+4dashboardE2E; typecheck/lint115archivos/build exit0. Revisión independiente PASS con N1 menor adjudicado, ocho Rulings y gates externos íntegros en `docs/operations/owner-analytics.md`. Se conserva la brecha T5 RED histórica. Sin activación productiva.
 
 ## Preflight self-review
 
