@@ -7,6 +7,7 @@ import { createServer as createTcpServer } from 'node:net'
 import { once } from 'node:events'
 import { createInterface } from 'node:readline'
 import { databaseUrl, fixture, guardedPrisma, seedPublicFixture, cleanPublicFixture } from './owner-analytics-public-fixture.mjs'
+import { stopHarnessChild } from './owner-analytics-harness-cleanup.mjs'
 
 for (const name of ['.env', '.env.local', '.env.development', '.env.development.local']) {
   if (existsSync(join(process.cwd(), name))) throw new Error(`Refusing environment file ${name}`)
@@ -26,9 +27,9 @@ async function stop(code = 0) {
   if (stopping) return
   stopping = true
   for (const child of [next, redis]) {
-    if (child && child.exitCode === null) {
-      child.kill('SIGTERM')
-      await once(child, 'exit')
+    if (!await stopHarnessChild(child)) {
+      console.error('Owned analytics QA child did not exit within cleanup deadline')
+      code = 1
     }
   }
   if (adapter?.listening) await new Promise(resolve => adapter.close(resolve))
