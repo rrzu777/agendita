@@ -9,6 +9,7 @@ import { analyticsStorageKeys } from '@/lib/analytics/client-store'
 import type { BookingData } from '@/components/booking/wizard'
 import { clickButton } from '../helpers/react-dom'
 const createBooking = vi.hoisted(() => vi.fn())
+const slots = vi.hoisted(() => vi.fn())
 vi.mock('@/server/actions/bookings', () => ({ createBooking }))
 vi.mock('@/server/actions/promotions', () => ({ previewPromotion: vi.fn() }))
 vi.mock('@/server/actions/payments', () => ({ getOnlinePaymentAvailability: vi.fn().mockResolvedValue({ available: true, provider: 'mercado_pago', isMock: false }), initiatePayment: vi.fn().mockResolvedValue({ ok: false, error: 'Checkout fixture failed' }), verifyAndConfirmPayment: vi.fn() }))
@@ -16,7 +17,7 @@ vi.mock('@/server/actions/bank-transfer-public', () => ({ getBankTransferInfo: v
 vi.mock('@/server/actions/packages', () => ({ getActivePackagesForCustomer: vi.fn().mockResolvedValue({ ok: true, data: { remaining: 0 } }) }))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('next/dynamic', () => ({ default: () => () => null }))
-vi.mock('@/server/actions/availability', () => ({ getAvailableTimeSlotsResult: vi.fn() }))
+vi.mock('@/server/actions/availability', () => ({ getAvailableTimeSlotsResult: slots }))
 
 let root: Root | undefined
 beforeEach(() => {
@@ -41,6 +42,51 @@ function NewSelectionProbe() {
   return <><button onClick={() => analytics.changeSelection({ reason: 'time', context: { serviceId: 'svc', modality: 'on_site', professional: { kind: 'none' } }, localDate: '2026-08-31' })}>Nueva hora explícita</button><button onClick={() => { const binding = analytics.completeAttempt(); if (binding) analytics.track({ type: 'checkout_redirected', data: { provider: 'mercado_pago' } }, binding) }}>Salida checkout posterior</button></>
 }
 describe('public opt-in boundary', () => {
+  it('availability observes a newly started attempt even when its revision stays one', async () => {
+    const { StepTime } = await import('@/components/booking/step-time')
+    slots.mockResolvedValue({ ok: true, data: { slots: [], emptyReason: 'no_capacity' } })
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: async (_name: string, _options: unknown, callback: (lock: object) => Promise<void>) => callback({}) } })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 503 })))
+    const data = { serviceId: 'svc', serviceModality: 'on_site', professional: { kind: 'none' }, date: new Date('2026-08-31T12:00:00Z') } as BookingData
+    const host = document.createElement('div'); document.body.append(host); root = createRoot(host)
+    await act(async () => root!.render(<PublicAnalytics businessId="salon" slug="salon" timezone="UTC" eligible surface="booking"><StepTime data={data} businessId="salon" timezone="UTC" onSelect={vi.fn()} onBack={vi.fn()} /><BookingProbe /></PublicAnalytics>))
+    await clickButton(host, 'Permitir métricas')
+    const state = JSON.parse(window.sessionStorage.getItem(analyticsStorageKeys('salon', window.location.origin).state)!)
+    expect(state.queue.filter((item: { event: { type: string } }) => item.event.type === 'availability_result')).toHaveLength(1)
+  })
+  it('reconsent at payment bootstraps a new evidenced attempt and keeps its credential on Booking', async () => {
+    const { StepPayment } = await import('@/components/booking/step-payment')
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: async (_name: string, _options: unknown, callback: (lock: object) => Promise<void>) => callback({}) } })
+    const batches: { credential: string; events: { type: string }[] }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string)
+      if (body.events) {
+        batches.push(body)
+        return Response.json({ receipts: body.events.map((event: { eventId: string }, index: number) => ({ index, eventId: event.eventId, status: 'accepted', category: 'stored' })) })
+      }
+      return Response.json({ id: crypto.randomUUID(), credential: body.bootstrapKey, startedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(), retentionExpiresAt: new Date(Date.now() + 90 * 86400000).toISOString() })
+    }))
+    createBooking.mockResolvedValue({ ok: true, data: { id: 'reconsented-booking', status: 'confirmed', modality: 'on_site', professional: null } })
+    const data = { serviceId: 'svc', serviceName: 'Corte', servicePrice: 1000, serviceDeposit: 0, serviceDuration: 30, serviceModality: 'on_site', professional: { kind: 'none' }, date: new Date('2026-08-31T12:00:00Z'), timeSlot: { start: new Date('2026-08-31T14:00:00Z'), end: new Date('2026-08-31T14:30:00Z') }, customerName: 'Synthetic', customerPhone: '+56900000000', customerEmail: 'synthetic@example.test' } as BookingData
+    const host = document.createElement('div'); document.body.append(host); root = createRoot(host)
+    await act(async () => root!.render(<PublicAnalytics businessId="salon" slug="salon" timezone="UTC" eligible surface="booking"><StepPayment data={data} updateData={vi.fn()} businessId="salon" timezone="UTC" currency="CLP" cancellationPolicyRevision="v1" selfServiceCutoffHours={24} manualHoldHours={24} onSuccess={vi.fn()} onBack={vi.fn()} /></PublicAnalytics>))
+    const read = () => JSON.parse(window.sessionStorage.getItem(analyticsStorageKeys('salon', window.location.origin).state)!)
+    await clickButton(host, 'Permitir métricas')
+    const first = read().active
+    expect(batches.some((batch) => batch.credential === first && batch.events.some((event) => event.type === 'payment_branch_viewed'))).toBe(true)
+    await clickButton(host, 'Retirar permiso de métricas')
+    expect(read()).toBeNull()
+    await clickButton(host, 'Cambiar preferencia de métricas')
+    await clickButton(host, 'Permitir métricas')
+    const state = read(), second = state.active
+    expect(second).not.toBe(first)
+    expect(batches.some((batch) => batch.credential === second && batch.events.some((event) => event.type === 'payment_branch_viewed'))).toBe(true)
+    expect(state.streams.find((stream: { key: string }) => stream.key === second)).toMatchObject({ entryKind: 'partial', receipt: { credential: second } })
+    expect(host.querySelector<HTMLInputElement>('#accept-terms')!.checked).toBe(false)
+    await act(async () => host.querySelector<HTMLInputElement>('#accept-terms')!.click())
+    await clickButton(host, 'Confirmar reserva', { match: 'contains' })
+    expect(createBooking.mock.calls.at(-1)![0].analytics).toEqual({ credential: second, selectionRevision: 1 })
+  })
   it('checkout retry and visibility cannot reopen a completed attempt; an explicit new selection can', async () => {
     const { StepPayment } = await import('@/components/booking/step-payment')
     Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: async (_name: string, _options: unknown, callback: (lock: object) => Promise<void>) => callback({}) } })

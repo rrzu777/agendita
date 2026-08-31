@@ -132,6 +132,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
   const promoGeneration = useRef(0)
   const economicEvidence = useRef('')
   const branchEvidence = useRef('')
+  const evidenceIdentity = useRef<string | null>(null)
   const [paso, setPaso] = useState<Paso>({ k: 'review' })
   const [bankInfo, setBankInfo] = useState<BankTransferPublicInfo | null>(null)
   const [method, setMethod] = useState<'online' | 'transfer'>('online')
@@ -212,12 +213,19 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       // Child effects run before Wizard's effect when consent arrives here.
       // Existing attempts are reused; this only starts partial when none is valid.
       analytics.startAttempt('partial')
+      const identity = analytics.attemptIdentity()
+      if (!identity) return
+      if (evidenceIdentity.current !== identity) {
+        evidenceIdentity.current = identity
+        economicEvidence.current = ''
+        branchEvidence.current = ''
+      }
       if (economicEvidence.current && economicEvidence.current !== economicKey) {
         analytics.changeSelection({ reason: 'payment', context: data.serviceId && data.serviceModality ? { serviceId: data.serviceId, modality: data.serviceModality, professional: data.professional.kind === 'person' ? { kind: 'person', professionalId: data.professional.id } : data.professional } : null, localDate: data.date ? formatInTimeZone(data.date, timezone, 'yyyy-MM-dd') : null })
         branchEvidence.current = ''
       }
       economicEvidence.current = economicKey
-      const observedKey = `${branchKey}:${analytics.revision()}`
+      const observedKey = `${identity}:${branchKey}:${analytics.revision()}`
       if (branchEvidence.current !== observedKey) {
         analytics.track({ type: 'payment_branch_viewed', data: { screen: paymentScreen, condition: economicCondition, offeredMethods } })
         branchEvidence.current = observedKey

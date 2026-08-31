@@ -11,6 +11,7 @@ export interface ClientStream {
   key: string; kind: 'session' | 'attempt'; parent?: string; entryKind?: 'complete' | 'partial'
   receipt?: BootstrapReceipt; sequence: number; completed: boolean; gap: boolean
   retries: number; retryAt: number; disabled: boolean; gapRecorded?: boolean; completedRevision?: number; createdAt: number
+  availabilityGeneration?: number
 }
 export interface QueueItem { stream: string; event: AnalyticsEventInput; queuedAt: number; retries: number; retryAt: number }
 export interface ClientState {
@@ -23,7 +24,7 @@ export interface StoreOptions {
 }
 
 const timestamp = z.number().finite().nonnegative()
-const streamSchema = z.strictObject({ key: z.uuid(), kind: z.enum(['session', 'attempt']), parent: z.uuid().optional(), entryKind: z.enum(['complete', 'partial']).optional(), receipt: z.strictObject({ id: z.uuid(), credential: z.string().min(1).max(4096), startedAt: z.iso.datetime(), expiresAt: z.iso.datetime(), retentionExpiresAt: z.iso.datetime() }).optional(), sequence: z.number().int().nonnegative().max(2147483647), completed: z.boolean(), gap: z.boolean(), retries: z.number().int().nonnegative(), retryAt: timestamp, disabled: z.boolean(), gapRecorded: z.boolean().optional(), completedRevision: z.number().int().positive().optional(), createdAt: timestamp })
+const streamSchema = z.strictObject({ key: z.uuid(), kind: z.enum(['session', 'attempt']), parent: z.uuid().optional(), entryKind: z.enum(['complete', 'partial']).optional(), receipt: z.strictObject({ id: z.uuid(), credential: z.string().min(1).max(4096), startedAt: z.iso.datetime(), expiresAt: z.iso.datetime(), retentionExpiresAt: z.iso.datetime() }).optional(), sequence: z.number().int().nonnegative().max(2147483647), completed: z.boolean(), gap: z.boolean(), retries: z.number().int().nonnegative(), retryAt: timestamp, disabled: z.boolean(), gapRecorded: z.boolean().optional(), completedRevision: z.number().int().positive().optional(), createdAt: timestamp, availabilityGeneration: z.number().int().nonnegative().max(100000).optional() })
 const stateSchema = z.strictObject({ version: z.literal(1), owner: z.uuid(), streams: z.array(streamSchema).max(200), session: z.uuid(), active: z.uuid().nullable(), revision: z.number().int().positive().max(2147483647), selection: z.unknown(), selectionSignature: z.string().max(1500).optional(), viewed: z.array(z.string().max(150)).max(30).optional(), queue: z.array(z.strictObject({ stream: z.uuid(), event: analyticsEventSchema, queuedAt: timestamp, retries: z.number().int().nonnegative(), retryAt: timestamp })).max(policy.queueEvents) })
 
 /** Preference is origin-local, additionally namespaced by the exact origin and tenant. */
@@ -39,8 +40,10 @@ export function createAnalyticsStore(options: StoreOptions) {
   const keys = analyticsStorageKeys(options.businessId, options.origin)
   let state: ClientState | null = null
   let healthy = true
+  let bookingFallback: Pick<BootstrapReceipt, 'credential' | 'expiresAt'> | null = null
   function clear() {
     state = null
+    bookingFallback = null
     try { options.storage.removeItem(keys.state) } catch { healthy = false }
   }
   function consent(): boolean | null {
@@ -52,7 +55,13 @@ export function createAnalyticsStore(options: StoreOptions) {
   function commit(next: ClientState): boolean {
     if (!healthy || consent() !== true) return false
     try { options.storage.setItem(keys.state, JSON.stringify(next)); state = next; return true }
-    catch { healthy = false; state = null; return false }
+    catch {
+      // The server-signed token remains valid even if this event was not durable.
+      // Keep only Booking's attribution in memory; no queue, sequence or revision can be trusted.
+      const receipt = next.streams.find((stream) => stream.key === next.active)?.receipt
+      bookingFallback = receipt ? { credential: receipt.credential, expiresAt: receipt.expiresAt } : null
+      healthy = false; state = null; return false
+    }
   }
   function mutate(change: (next: ClientState) => void): boolean {
     if (!state || !healthy || consent() !== true) return false
@@ -117,6 +126,17 @@ export function createAnalyticsStore(options: StoreOptions) {
       })
     },
     track(draft: AnalyticsDraft, binding?: string) { mutate((next) => add(next, draft, binding)) },
+    nextAvailabilityGeneration(): number | null {
+      let generation: number | null = null
+      const committed = mutate((next) => {
+        const attempt = next.streams.find((stream) => stream.key === next.active)
+        if (!attempt || !valid(attempt) || attempt.disabled) return
+        const previous = attempt.availabilityGeneration ?? 0
+        if (previous >= 100000) { attempt.gap = true; return }
+        generation = attempt.availabilityGeneration = previous + 1
+      })
+      return committed ? generation : null
+    },
     view(draft: AnalyticsDraft, key: string) {
       mutate((next) => {
         renewSession(next)
@@ -138,12 +158,14 @@ export function createAnalyticsStore(options: StoreOptions) {
       mutate((next) => { next.revision++; next.selection = data; add(next, { type: 'selection_context_changed', data }) })
     },
     completeAttempt() {
+      bookingFallback = null
       const binding = state?.active ?? undefined
       mutate((next) => { const attempt = next.streams.find((s) => s.key === next.active); if (attempt) { attempt.completed = true; attempt.completedRevision = next.revision }; next.active = null })
       return binding
     },
     bookingCredential() {
-      if (!healthy || consent() !== true) return undefined
+      if (consent() !== true) return undefined
+      if (!healthy) return bookingFallback && Date.parse(bookingFallback.expiresAt) > now() ? { credential: bookingFallback.credential } : undefined
       const attempt = state?.streams.find((s) => s.key === state?.active)
       return attempt?.receipt && Date.parse(attempt.receipt.expiresAt) > now() ? { credential: attempt.receipt.credential, ...(!attempt.gap ? { selectionRevision: state!.revision } : {}) } : undefined
     },
@@ -157,7 +179,7 @@ export function createAnalyticsStore(options: StoreOptions) {
       })
     },
     withdrawConsent() { this.chooseConsent(false) },
-    stop() { healthy = false; state = null },
+    stop() { healthy = false; state = null; bookingFallback = null },
   }
 }
 export type AnalyticsStore = ReturnType<typeof createAnalyticsStore>

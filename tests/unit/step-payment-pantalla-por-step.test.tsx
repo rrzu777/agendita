@@ -11,7 +11,7 @@ const initiate = vi.hoisted(() => vi.fn())
 const bankInfo = vi.hoisted(() => vi.fn())
 const packages = vi.hoisted(() => vi.fn())
 let capture: AnalyticsStore
-vi.mock('@/components/analytics/public-analytics', () => ({ usePublicAnalytics: () => ({ ready: true, startAttempt: (kind: 'partial' | 'complete') => capture.startAttempt(kind), track: (...args: Parameters<AnalyticsStore['track']>) => capture.track(...args), changeSelection: (data: Parameters<AnalyticsStore['changeSelection']>[0]) => capture.changeSelection(data), revision: () => capture.snapshot()?.revision ?? 1, bookingCredential: () => capture.bookingCredential(), completeAttempt: () => capture.completeAttempt() }) }))
+vi.mock('@/components/analytics/public-analytics', () => ({ usePublicAnalytics: () => ({ ready: true, startAttempt: (kind: 'partial' | 'complete') => capture.startAttempt(kind), track: (...args: Parameters<AnalyticsStore['track']>) => capture.track(...args), changeSelection: (data: Parameters<AnalyticsStore['changeSelection']>[0]) => capture.changeSelection(data), revision: () => capture.snapshot()?.revision ?? 1, attemptIdentity: () => capture.snapshot()?.active ?? null, bookingCredential: () => capture.bookingCredential(), completeAttempt: () => capture.completeAttempt() }) }))
 beforeEach(() => {
   vi.clearAllMocks()
   onlineAvailability.mockResolvedValue({ available: false, provider: null, isMock: false })

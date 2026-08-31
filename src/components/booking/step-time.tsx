@@ -24,6 +24,7 @@ interface StepTimeProps {
 export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepTimeProps) {
   const analytics = usePublicAnalytics()
   const selectionRevision = analytics.revision()
+  const captureIdentity = analytics.attemptIdentity()
   const pickKey = pickCacheKey(data.professional)
   const [slots, setSlots] = useState<{ start: Date; end: Date }[]>([])
   const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null)
@@ -38,11 +39,14 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     const generation = ++generationRef.current
     const revision = analytics.revision()
     let cancelled = false
-    const current = () => !cancelled && generationRef.current === generation && analytics.revision() === revision
-    const queryId = analytics.ready ? crypto.randomUUID() : null
+    const current = () => !cancelled && generationRef.current === generation
+    const requestGeneration = analytics.ready ? analytics.nextAvailabilityGeneration() : null
+    const queryId = requestGeneration === null ? null : crypto.randomUUID()
     function observe(result: 'available' | 'empty' | 'error', reason?: 'outside_booking_window' | 'lead_time_restricted' | 'not_offered' | 'no_capacity' | 'unknown') {
-      if (!queryId || !data.serviceId || !data.serviceModality || !data.date) return
-      analytics.track({ type: 'availability_result', data: { serviceId: data.serviceId, modality: data.serviceModality, professional: data.professional.kind === 'person' ? { kind: 'person', professionalId: data.professional.id } : data.professional, localDate: formatInTimeZone(data.date, timezone, 'yyyy-MM-dd'), queryId, requestGeneration: generation, result, ...(result === 'empty' ? { reason: reason ?? 'unknown' } : {}) } })
+      // Capture identity/revision can disappear on a storage failure; that must not hide Booking's slots.
+      if (analytics.revision() !== revision || analytics.attemptIdentity() !== captureIdentity) return
+      if (!queryId || requestGeneration === null || !data.serviceId || !data.serviceModality || !data.date) return
+      analytics.track({ type: 'availability_result', data: { serviceId: data.serviceId, modality: data.serviceModality, professional: data.professional.kind === 'person' ? { kind: 'person', professionalId: data.professional.id } : data.professional, localDate: formatInTimeZone(data.date, timezone, 'yyyy-MM-dd'), queryId, requestGeneration, result, ...(result === 'empty' ? { reason: reason ?? 'unknown' } : {}) } })
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting loading state before fetch is a standard UI pattern
     setLoading(true)
@@ -89,7 +93,7 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     // elección y esto es la lectura más caliente del producto. `pickKey` la
     // representa entera —`kind` más el id—, así que no se pierde nada.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `pickKey` representa a `data.professional`
-  }, [businessId, data.date, data.serviceId, pickKey, data.serviceModality, retryKey, analytics.ready, selectionRevision])
+  }, [businessId, data.date, data.serviceId, pickKey, data.serviceModality, retryKey, analytics.ready, selectionRevision, captureIdentity])
 
   if (loading) {
     return (

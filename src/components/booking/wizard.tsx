@@ -123,6 +123,8 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
   const analytics = usePublicAnalytics()
   const restoredAnalytics = useRef<{ data: BookingData; step: StepKey } | null>(null)
   const lastObservedStep = useRef('')
+  // A boolean UI fact only: no identity, event or storage before consent.
+  const hasInteracted = useRef(false)
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState<StepKey>('service')
   const [data, setData] = useState<BookingData>(() => applySessionPrefill(initialData, session))
@@ -184,9 +186,11 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
       const restored = restoredAnalytics.current
       const observed = restored?.data ?? data
       const step = restored?.step ?? currentStep
-      analytics.startAttempt(step === 'service' && !observed.serviceId && !new URLSearchParams(window.location.search).has('continuar') ? 'complete' : 'partial')
+      analytics.startAttempt(step === 'service' && !hasInteracted.current && !observed.serviceId && !new URLSearchParams(window.location.search).has('continuar') ? 'complete' : 'partial')
       analytics.reconcileSelection(signature(observed))
-      const key = `${step}:${analytics.revision()}`
+      const identity = analytics.attemptIdentity()
+      if (!identity) return
+      const key = `${identity}:${step}:${analytics.revision()}`
       if (lastObservedStep.current !== key) {
         analytics.track({ type: 'step_viewed', data: { step } })
         lastObservedStep.current = key
@@ -242,7 +246,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
 
       <section className="rounded-[2rem] border border-border/50 bg-card p-5 shadow-[var(--cream-shadow)] sm:p-8">
         {currentStep === 'service' && (
-          <StepService data={data} services={services} currency={currency} onSelect={(service) => {
+          <StepService data={data} services={services} currency={currency} onInteraction={() => { hasInteracted.current = true }} onSelect={(service) => {
             // Se deriva del estado SIGUIENTE, no del de este render: `steps` todavía
             // se calculó con el servicio anterior y avanzar con esa lista saltearía
             // el paso que acaba de aparecer.

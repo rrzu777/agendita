@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createAnalyticsStore } from '@/lib/analytics/client-store'
+import { createAnalyticsTransport } from '@/lib/analytics/client-transport'
 
 function storage() {
   const values = new Map<string, string>()
@@ -7,6 +8,23 @@ function storage() {
 }
 
 describe('consented atomic analytics state', () => {
+  it('a failed atomic write stops capture but retains the valid signed Booking token without revision', async () => {
+    const local = storage(), tab = storage()
+    let now = Date.parse('2026-08-31T10:00:00Z')
+    const store = createAnalyticsStore({ businessId: 'salon', origin: 'https://example.test', storage: tab, preferences: local, now: () => now })
+    store.chooseConsent(true); store.open(); store.startAttempt('complete')
+    store.mutate((state) => { state.streams.find((s) => s.key === state.active)!.receipt = { id: crypto.randomUUID(), credential: 'signed-before-storage-failure', startedAt: new Date(now).toISOString(), expiresAt: new Date(now + 86400000).toISOString(), retentionExpiresAt: new Date(now + 90 * 86400000).toISOString() } })
+    let writes = 0, sends = 0
+    tab.setItem = () => { writes++; throw new Error('quota') }
+    store.changeSelection({ reason: 'time', context: null, localDate: null })
+    expect(store.bookingCredential()).toEqual({ credential: 'signed-before-storage-failure' })
+    expect(store.snapshot()).toBeNull()
+    store.track({ type: 'step_viewed', data: { step: 'payment' } })
+    await createAnalyticsTransport(store, 'salon', { fetcher: async () => { sends++; return Response.json({}) } }).flush()
+    expect(writes).toBe(1); expect(sends).toBe(0)
+    now += 86400000
+    expect(store.bookingCredential()).toBeUndefined()
+  })
   it('creates no identity, queue or storage before opt-in, including attempted interactions', () => {
     const local = storage(), tab = storage()
     let identities = 0

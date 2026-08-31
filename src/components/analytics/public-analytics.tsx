@@ -14,11 +14,13 @@ interface PublicCapture {
   completeAttempt(): string | undefined
   withdrawConsent(): void
   revision(): number
+  attemptIdentity(): string | null
+  nextAvailabilityGeneration(): number | null
   rememberSelection(signature: string): void
   reconcileSelection(signature: string): void
 }
 const noop = () => {}
-const disabled: PublicCapture = { ready: false, track: noop, changeSelection: noop, startAttempt: noop, bookingCredential: () => undefined, completeAttempt: () => undefined, withdrawConsent: noop, revision: () => 1, rememberSelection: noop, reconcileSelection: noop }
+const disabled: PublicCapture = { ready: false, track: noop, changeSelection: noop, startAttempt: noop, bookingCredential: () => undefined, completeAttempt: () => undefined, withdrawConsent: noop, revision: () => 1, attemptIdentity: () => null, nextAvailabilityGeneration: () => null, rememberSelection: noop, reconcileSelection: noop }
 const Context = createContext<PublicCapture>(disabled)
 export function usePublicAnalytics() { return useContext(Context) }
 
@@ -44,6 +46,7 @@ export function PublicAnalytics({ children, businessId, slug, eligible, surface 
   const [choice, setChoice] = useState<boolean | null>(null)
   const [ready, setReady] = useState(false)
   const [revision, setRevision] = useState(1)
+  const [captureIdentity, setCaptureIdentity] = useState<string | null>(null)
 
   useEffect(() => {
     if (!eligible) return
@@ -87,6 +90,7 @@ export function PublicAnalytics({ children, businessId, slug, eligible, surface 
       writer.current = true
       transport.current = createAnalyticsTransport(current, slug, { acquisition: acquisition() })
       setRevision(current.snapshot()?.revision ?? 1)
+      setCaptureIdentity(current.snapshot()?.active ?? null)
       setReady(true)
       await new Promise<void>((resolve) => { release.current = resolve })
       writer.current = false
@@ -113,7 +117,11 @@ export function PublicAnalytics({ children, businessId, slug, eligible, surface 
   }
   const api = useMemo<PublicCapture>(() => {
     const active = () => writer.current ? store.current : null
-    const publishRevision = () => setRevision(active()?.snapshot()?.revision ?? 1)
+    const publishRevision = () => {
+      const snapshot = active()?.snapshot()
+      setRevision(snapshot?.revision ?? 1)
+      setCaptureIdentity(snapshot?.active ?? null)
+    }
     return {
       ready,
       track: (event, binding) => { if (document.visibilityState === 'visible') active()?.track(event, binding) },
@@ -134,18 +142,21 @@ export function PublicAnalytics({ children, businessId, slug, eligible, surface 
       completeAttempt: () => {
         completed.current = true
         const binding = active()?.completeAttempt()
+        publishRevision()
         if (binding) completedBinding.current = binding
         // An idempotent Booking retry may reach checkout later in this same flow.
         return completedBinding.current
       },
       withdrawConsent: () => choose(false),
       revision: () => active()?.snapshot()?.revision ?? 1,
+      attemptIdentity: () => active()?.snapshot()?.active ?? null,
+      nextAvailabilityGeneration: () => active()?.nextAvailabilityGeneration() ?? null,
       rememberSelection: (signature) => { active()?.rememberSelection(signature) },
       reconcileSelection: (signature) => { if (!completed.current) { active()?.reconcileSelection(signature); publishRevision() } },
     }
-    // Revision changes restart pending observations; refs still guard ownership synchronously.
+    // Identity/revision changes restart pending observations; refs guard ownership synchronously.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, revision])
+  }, [ready, revision, captureIdentity])
 
   return <Context value={api}>
     {children}
