@@ -84,16 +84,19 @@ export async function bootstrapAnalyticsSession(context: PublicAnalyticsContext,
   const parsed = sessionSchema.safeParse(input)
   if (!parsed.success) throw new AnalyticsCaptureError('invalid_request')
   const data = parsed.data
-  if (data.consentVersion !== config.consentVersion) throw new AnalyticsCaptureError('invalid_request')
   const claims = await withAnalyticsWrite(context.businessId, async (tx) => {
-    if (!await collectionIsOpen(tx, context.businessId, config.consentVersion)) throw new AnalyticsCaptureError('disabled')
     const existing = await tx.analyticsSession.findUnique({ where: { businessId_bootstrapKey: { businessId: context.businessId, bootstrapKey: data.bootstrapKey } } })
     if (existing) {
       if (existing.origin !== context.origin) throw new AnalyticsCaptureError('conflict')
-      if (existing.consentVersion !== config.consentVersion) throw new AnalyticsCaptureError('invalid_request')
+      if (existing.consentVersion !== data.consentVersion) throw new AnalyticsCaptureError('invalid_request')
       if (existing.expiresAt <= now || existing.startedAt > now) throw new AnalyticsCaptureError('expired')
       return claimsForSession(existing)
     }
+    // New sessions must use the active source contract. Existing sessions are
+    // handled above so a consent-version rotation can finish their original
+    // 24-hour window without relabelling them as the new version.
+    if (data.consentVersion !== config.consentVersion) throw new AnalyticsCaptureError('invalid_request')
+    if (!await collectionIsOpen(tx, context.businessId, config.consentVersion)) throw new AnalyticsCaptureError('disabled')
     if (!await reserveAnalyticsBudget({ businessId: context.businessId, cost: 1, now })) {
       await closeAnalyticsCollection(tx, context.businessId, now, 'budget')
       return null
@@ -121,16 +124,18 @@ export async function bootstrapAnalyticsAttempt(context: PublicAnalyticsContext,
   const liveParent = verifyAnalyticsCredential(data.credential, verificationContext)
   const verified = liveParent ?? verifyExpiredAnalyticsParentForRecovery(data.credential, verificationContext)
   if (!verified || verified.scope !== 'session') throw new AnalyticsCaptureError('invalid_credential')
-  if (verified.consentVersion !== config.consentVersion) throw new AnalyticsCaptureError('invalid_credential')
   const claims = await withAnalyticsWrite(context.businessId, async (tx) => {
-    if (!await collectionIsOpen(tx, context.businessId, config.consentVersion)) throw new AnalyticsCaptureError('disabled')
     const session = await tx.analyticsSession.findFirst({ where: { businessId: context.businessId, id: verified.sessionId, origin: context.origin } })
-    if (!session || session.consentVersion !== config.consentVersion || canonicalAnalyticsFingerprint(claimsForSession(session)) !== canonicalAnalyticsFingerprint(verified)) throw new AnalyticsCaptureError('invalid_credential')
+    if (!session || canonicalAnalyticsFingerprint(claimsForSession(session)) !== canonicalAnalyticsFingerprint(verified)) throw new AnalyticsCaptureError('invalid_credential')
+    // A session from the previous source contract may create/replay its
+    // already-authorized attempt until the original session/attempt deadline.
+    // A session using the active contract still depends on an open period.
+    if (session.consentVersion === config.consentVersion && !await collectionIsOpen(tx, context.businessId, config.consentVersion)) throw new AnalyticsCaptureError('disabled')
     if (session.bootstrapKey === data.bootstrapKey.toLowerCase()) throw new AnalyticsCaptureError('conflict')
     const existing = await tx.bookingFunnelAttempt.findUnique({ where: { businessId_bootstrapKey: { businessId: context.businessId, bootstrapKey: data.bootstrapKey } } })
     if (existing) {
       if (existing.sessionId !== session.id || existing.origin !== context.origin || existing.entryKind !== data.entryKind) throw new AnalyticsCaptureError('conflict')
-      if (existing.consentVersion !== config.consentVersion) throw new AnalyticsCaptureError('invalid_credential')
+      if (existing.consentVersion !== session.consentVersion) throw new AnalyticsCaptureError('invalid_credential')
       if (existing.conversionDeadlineAt <= now || existing.startedAt > now || existing.startedAt < session.startedAt || existing.startedAt >= session.expiresAt) throw new AnalyticsCaptureError('expired')
       return claimsForAttempt(session, existing)
     }
@@ -152,12 +157,14 @@ export async function ingestAnalyticsBatch(context: PublicAnalyticsContext, inpu
   const data = parseAnalyticsBatch(input)
   const claims = verifyAnalyticsCredential(data.credential, { secret: config.secret, businessId: context.businessId, origin: context.origin, now })
   if (!claims) throw new AnalyticsCaptureError('invalid_credential')
-  if (claims.consentVersion !== config.consentVersion) throw new AnalyticsCaptureError('invalid_credential')
   return withAnalyticsWrite(context.businessId, async (tx) => {
-    if (!await collectionIsOpen(tx, context.businessId, config.consentVersion)) throw new AnalyticsCaptureError('disabled')
     const session = await tx.analyticsSession.findFirst({ where: { businessId: context.businessId, id: claims.sessionId, origin: context.origin } })
     const attempt = claims.scope === 'attempt' ? await tx.bookingFunnelAttempt.findFirst({ where: { businessId: context.businessId, sessionId: claims.sessionId, id: claims.attemptId, origin: context.origin } }) : null
-    if (!session || session.consentVersion !== config.consentVersion || (claims.scope === 'attempt' && (!attempt || attempt.consentVersion !== config.consentVersion)) || canonicalAnalyticsFingerprint(attempt ? claimsForAttempt(session, attempt) : claimsForSession(session)) !== canonicalAnalyticsFingerprint(claims)) throw new AnalyticsCaptureError('invalid_credential')
+    if (!session || (claims.scope === 'attempt' && (!attempt || attempt.consentVersion !== session.consentVersion)) || canonicalAnalyticsFingerprint(attempt ? claimsForAttempt(session, attempt) : claimsForSession(session)) !== canonicalAnalyticsFingerprint(claims)) throw new AnalyticsCaptureError('invalid_credential')
+    // During a source-version rotation an already issued credential is still
+    // valid for its original bounded window. Same-version streams still obey
+    // the active collection gate, so an operator disable remains fail-closed.
+    if (session.consentVersion === config.consentVersion && !await collectionIsOpen(tx, context.businessId, config.consentVersion)) throw new AnalyticsCaptureError('disabled')
     const streamKey = attempt ? `attempt:${attempt.id}` : `session:${session.id}`
     const stream = attempt ?? session
     let count = stream.acceptedEventCount

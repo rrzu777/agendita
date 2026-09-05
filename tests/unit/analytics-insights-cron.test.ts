@@ -50,4 +50,11 @@ describe('weekly insights cron route', () => {
     expect(heartbeat.progress).toHaveBeenCalledWith(expect.objectContaining({ runId: '11111111-1111-4111-8111-111111111111', leaseToken: '22222222-2222-4222-8222-222222222222', batchSequence: 4, hasMore: true, nextCursor: 'next' }))
     expect(heartbeat.finish).not.toHaveBeenCalled()
   })
+
+  it('fails closed when the terminal heartbeat fence is lost', async () => {
+    heartbeat.finish.mockResolvedValueOnce(false)
+    const response = await POST(request())
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ error: 'stale_run' })
+  })
 })

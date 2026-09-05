@@ -6,7 +6,7 @@ Estado vigente, 2026-09-05: **MVP y extensión semanal implementados, revisados 
 
 Evidencia fresca de la rama `feature/owner-analytics-operations-ai` (commit
 `ad816d7` más la reconciliación documental posterior): `npm run test:unit`
-pasó `446/446` archivos, `4033` tests y 1 skip; la integración completa pasó
+pasó `446/446` archivos, `4036` tests y 1 skip; la integración completa pasó
 `76/76` archivos y `530/530` tests sobre una PostgreSQL disposable con 59
 migraciones. El E2E público pasó `8/8` y el dashboard owner `7/7`. El skip es
 `payment-qa-network-deny`, una prueba opt-in de red real que permanece apagada.
@@ -550,7 +550,8 @@ La captura pública y el período de colección usan v1 por defecto. La ruta v2 
 está implementada detrás de `OWNER_ANALYTICS_CAPTURE_CONSENT_VERSION=2`: la
 acción owner/admin cierra el periodo v1 con `version_change`, abre v2 sin
 solapamiento, y cliente/ingesta/claims/mantenimiento/coverage conservan la
-procedencia. Clientes v1 en vuelo se rechazan después de la rotación y los
+procedencia. Nuevos bootstraps v1 se rechazan después de la rotación, pero los
+tokens v1 ya emitidos terminan su ventana original sin ser convertidos; los
 desgloses/reportes v1 no mezclan la fuente v2. La bandera continúa apagada;
 la procedencia del esquema no autoriza activación. Durante `warning`/`critical` el monitor puede drenar alertas
 operativas de incidentes ya creadas, pero no digest semanales; en

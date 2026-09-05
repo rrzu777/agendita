@@ -34,6 +34,7 @@ export async function POST(request: Request) {
     const heartbeatFinished = result.nextCursor === null
       ? await finishAnalyticsJobRun({ jobKey: ANALYTICS_WEEKLY_INSIGHTS_JOB, runId: activeRun.runId, leaseToken: activeRun.leaseToken, status: 'succeeded', result: { errors: 0, hasMore: false, nextCursor: null } })
       : false
+    if (result.nextCursor === null && !heartbeatFinished) return Response.json({ error: 'stale_run' }, { status: 409, headers })
     return Response.json({ ...result, runId: activeRun.runId, leaseToken: activeRun.leaseToken, batchSequence: activeRun.batchSequence, nextBatchSequence: activeRun.batchSequence + 1, heartbeatFinished }, { status: 200, headers })
   } catch {
     if (run) await finishAnalyticsJobRun({ jobKey: ANALYTICS_WEEKLY_INSIGHTS_JOB, runId: run.runId, leaseToken: run.leaseToken, status: 'failed', result: { errors: 1 } }).catch(() => undefined)

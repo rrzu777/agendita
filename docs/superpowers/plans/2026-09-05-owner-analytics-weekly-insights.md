@@ -39,16 +39,20 @@
       disposable exclusiva con las 59 migraciones desde cero.
 - [x] Suite unitaria completa del repositorio y suite de integración completa
       ejecutadas en serie sobre el código actual: unit `446/446` archivos,
-      `4033` tests pass y 1 skip; integración `76/76` archivos y `530` tests
+      `4036` tests pass y 1 skip; integración `76/76` archivos y `530` tests
       pass. El skip unitario es la prueba opt-in de red real y no se activa.
 - [x] Ruta de captura `consentVersion=2`: cerrar v1 y abrir v2 sin solapamiento,
       enrutar cliente/ingesta/repositorio/mantenimiento por la versión activa y
-      probar una fuente v2 aislada, rechazo de clientes v1 en vuelo y publicación
-      de cohortes v2 sin mezcla. Las migraciones
+      probar una fuente v2 aislada, rechazo de nuevos bootstraps v1, finalización
+      etiquetada de tokens v1 en vuelo y publicación de cohortes v2 sin mezcla. Las migraciones
       `20260905140000_owner_analytics_consent_v2` y
       `20260905150000_owner_analytics_booking_consent_snapshot` relajan los
       CHECK heredados sólo a `{1,2}` y conservan la procedencia en snapshots
       Booking; el valor por defecto y la activación siguen siendo v1.
+- [x] Fixwave de cierre: tokens v1 ya emitidos conservan su ventana acotada,
+      nuevas bootstraps v1 se rechazan tras rotación, errores de red/truncamiento
+      del proveedor se clasifican sin reintentos incorrectos y un fence perdido
+      en el cierre de cron devuelve conflicto en vez de éxito falso.
 - [ ] Activación staged; requiere revisión legal, proveedor y autorización
       independiente, y no se simula con la evidencia local.
 
@@ -204,16 +208,18 @@
       disabled-by-default versioned capture switch, close any open v1 period
       before opening v2, pass the selected version through public eligibility,
       browser storage/transport, signed claims, ingest, maintenance and
-      coverage queries, and add PostgreSQL tests for v1/v2 isolation and
-      rotation. Activation is intentionally not part of this plan.
+      coverage queries, preserve the original bounded window for tokens already
+      issued under v1, reject new v1 bootstraps, and add PostgreSQL tests for
+      v1/v2 isolation and rotation. Activation is intentionally not part of this
+      plan.
 - [x] **Step 2a: Run Prisma validate, typecheck, lint, focused
       operational/weekly tests, and existing analytics E2E contracts.** The
-      current analytics unit matrix (41 files/309 tests), PostgreSQL analytics
+      current analytics unit matrix (41 files/312 tests), PostgreSQL analytics
       matrix (13 files/130 tests, including v2 rotation/publication/retention), public
       E2E (8/8), and owner dashboard E2E (7/7) pass. Full-repository unit status
       and full integration status are recorded below.
 - [x] **Step 2b: Run the full unit suite and integration suite.** Unit
-      `446/446` archivos, `4033` tests y 1 skip; integración `76/76` archivos,
+      `446/446` archivos, `4036` tests y 1 skip; integración `76/76` archivos,
       `530/530` tests; ambos exit 0 sobre la DB disposable de 59 migraciones.
 - [x] **Step 3: Verify every new flag remains false/empty and no real OpenAI/Resend request occurs in CI.**
 - [x] **Step 4: Record exact SHAs and limitations; do not call this active production capture until the explicit pilot gate is met.**

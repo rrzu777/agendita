@@ -27,7 +27,8 @@ defecto y el entorno actual siguen en v1. La migración
 dos versiones y
 la acción owner/admin cierra un período v1 con `version_change` antes de abrir
 v2. Antes de cualquier activación hay que verificar esa rotación, el rechazo de
-clientes v1 en vuelo y la exclusión de semanas mixtas.
+nuevos bootstraps v1, la finalización etiquetada de tokens v1 en vuelo y la
+exclusión de semanas mixtas.
 Antes de activar IA aún debe verificarse este comportamiento con un proveedor
 simulado/staged y un presupuesto real; un presupuesto de llamadas por sí solo no
 es evidencia suficiente de control de costo.

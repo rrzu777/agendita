@@ -8,7 +8,7 @@ const ALLOWED_MODEL = 'gpt-5.6-luna'
 
 export type NarrativeResult =
   | { status: 'succeeded'; narrative: WeeklyNarrative; providerRequestId: string | null; outputTokens: number | null }
-  | { status: 'failed'; errorCode: 'provider_not_configured' | 'provider_timeout' | 'rate_limited' | 'provider_5xx' | 'provider_rejected' | 'schema_invalid' | 'refused' | 'config_invalid'; retryable: boolean; retryAfterMs?: number }
+  | { status: 'failed'; errorCode: 'provider_not_configured' | 'provider_timeout' | 'provider_network' | 'rate_limited' | 'provider_5xx' | 'provider_rejected' | 'schema_invalid' | 'refused' | 'config_invalid'; retryable: boolean; retryAfterMs?: number }
 
 function retryAfterMs(error: { headers?: Headers | null }, now: Date): number | undefined {
   const raw = error.headers?.get('retry-after')
@@ -21,8 +21,10 @@ function retryAfterMs(error: { headers?: Headers | null }, now: Date): number | 
 
 function mapProviderError(error: unknown, now: Date): Extract<NarrativeResult, { status: 'failed' }> {
   if (error instanceof OpenAI.APIConnectionTimeoutError) return { status: 'failed', errorCode: 'provider_timeout', retryable: true }
+  if (error instanceof OpenAI.APIConnectionError) return { status: 'failed', errorCode: 'provider_network', retryable: true }
   if (error instanceof OpenAI.APIError) {
     if (error.status === 429) return { status: 'failed', errorCode: 'rate_limited', retryable: true, retryAfterMs: retryAfterMs(error, now) }
+    if (error.status === 408) return { status: 'failed', errorCode: 'provider_timeout', retryable: true, retryAfterMs: retryAfterMs(error, now) }
     if (typeof error.status === 'number' && error.status >= 500) return { status: 'failed', errorCode: 'provider_5xx', retryable: true, retryAfterMs: retryAfterMs(error, now) }
     if (error.status === 401 || error.status === 403) return { status: 'failed', errorCode: 'provider_rejected', retryable: false }
   }
@@ -79,7 +81,7 @@ export async function narrateWeeklyFacts(input: { facts: CanonicalWeeklyFacts; m
       ],
       text: { format: zodTextFormat(weeklyNarrativeSchema, 'weekly_owner_insight') },
     })
-    if (response.status === 'incomplete') return { status: 'failed', errorCode: 'provider_rejected', retryable: true }
+    if (response.status === 'incomplete') return { status: 'failed', errorCode: 'schema_invalid', retryable: false }
     const raw = response.output_text
     if (!raw) return { status: 'failed', errorCode: 'refused', retryable: false }
     let parsed: unknown

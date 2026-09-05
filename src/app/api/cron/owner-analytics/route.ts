@@ -49,6 +49,7 @@ export async function POST(request: Request) {
           result: { ...result, durationMs: 0 },
         })
       : false
+    if (terminal && !finished) return Response.json({ errors: 1, error: 'stale_run' }, { status: 409, headers })
     const body = { ...result, runId: activeRun.runId, leaseToken: activeRun.leaseToken, batchSequence: activeRun.batchSequence, nextBatchSequence: activeRun.batchSequence + 1, heartbeatFinished: finished }
     return Response.json(body, { status: result.errors ? 500 : 200, headers })
   } catch {

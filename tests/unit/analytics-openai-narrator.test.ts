@@ -1,19 +1,21 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const { clientState, MockAPIError, MockTimeoutError, MockOpenAI } = vi.hoisted(() => {
+const { clientState, MockAPIError, MockConnectionError, MockTimeoutError, MockOpenAI } = vi.hoisted(() => {
   const state = { response: null as unknown, create: vi.fn() }
   class APIError extends Error { status?: number; headers?: Headers; constructor(message: string, status?: number, headers?: Headers) { super(message); this.status = status; this.headers = headers } }
+  class ConnectionError extends APIError {}
   class TimeoutError extends Error {}
   class OpenAIClient {
     static APIError = APIError
+    static APIConnectionError = ConnectionError
     static APIConnectionTimeoutError = TimeoutError
     responses = { create: state.create }
     constructor(public options: unknown) {}
   }
-  return { clientState: state, MockAPIError: APIError, MockTimeoutError: TimeoutError, MockOpenAI: OpenAIClient }
+  return { clientState: state, MockAPIError: APIError, MockConnectionError: ConnectionError, MockTimeoutError: TimeoutError, MockOpenAI: OpenAIClient }
 })
-vi.mock('openai', () => ({ default: MockOpenAI, APIError: MockAPIError, APIConnectionTimeoutError: MockTimeoutError }))
+vi.mock('openai', () => ({ default: MockOpenAI, APIError: MockAPIError, APIConnectionError: MockConnectionError, APIConnectionTimeoutError: MockTimeoutError }))
 
 import { narrateWeeklyFacts } from '@/server/analytics/weekly-insights/openai-narrator'
 
@@ -56,5 +58,13 @@ describe('weekly OpenAI narrator', () => {
     vi.stubEnv('OPENAI_API_KEY', 'synthetic')
     clientState.create.mockRejectedValue(new MockAPIError('busy', 429, new Headers({ 'retry-after': '7200' })))
     await expect(narrateWeeklyFacts({ facts, model: 'gpt-5.6-luna', now: new Date('2026-09-05T12:00:00.000Z') })).resolves.toMatchObject({ status: 'failed', errorCode: 'rate_limited', retryable: true, retryAfterMs: 7200000 })
+  })
+
+  it('retries generic connection failures but treats truncated output as terminal', async () => {
+    vi.stubEnv('OPENAI_API_KEY', 'synthetic')
+    clientState.create.mockRejectedValueOnce(new MockConnectionError('network down'))
+    await expect(narrateWeeklyFacts({ facts, model: 'gpt-5.6-luna', now: new Date() })).resolves.toMatchObject({ status: 'failed', errorCode: 'provider_network', retryable: true })
+    clientState.create.mockResolvedValueOnce({ id: 'resp_incomplete', status: 'incomplete', output_text: '' })
+    await expect(narrateWeeklyFacts({ facts, model: 'gpt-5.6-luna', now: new Date() })).resolves.toMatchObject({ status: 'failed', errorCode: 'schema_invalid', retryable: false })
   })
 })

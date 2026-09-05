@@ -38,6 +38,14 @@ describe('separate authenticated analytics cron', () => {
     expect(response.status).toBe(500)
     expect(await response.json()).toEqual({ errors: 1, error: 'maintenance_failed' })
   })
+
+  it('fails closed when a terminal maintenance run loses its heartbeat fence', async () => {
+    maintenance.mockResolvedValue({ errors: 0, deleted: 1, published: 0, hasMore: false, nextCursor: null, backlog: { dangerous: false } })
+    heartbeat.finish.mockResolvedValueOnce(false)
+    const response = await POST(new Request('https://analytics.invalid/api/cron/owner-analytics', { method: 'POST', headers: { authorization: 'Bearer synthetic-cron-secret' } }))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ errors: 1, error: 'stale_run' })
+  })
 })
 
 describe('bounded continuation shell driver with no network', () => {

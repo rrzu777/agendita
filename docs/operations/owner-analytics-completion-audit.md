@@ -192,7 +192,7 @@ fallaban casos no relacionados de `payment-qa-runner-safety` y
 producción, Resend, OpenAI ni workflow externo.
 
 Verificación fresca sobre el código actual, posterior a la ruta source-consent
-v2: `npm run test:unit` pasó `446/446` archivos, `4033` tests y 1 skip, sin
+v2 y la fixwave de cierre: `npm run test:unit` pasó `446/446` archivos, `4036` tests y 1 skip, sin
 fallos, en 170.21 s. La integración completa serializada pasó `76/76` archivos
 y `530/530` tests en 125.48 s sobre una PostgreSQL disposable con las 59
 migraciones desde cero. El skip es la prueba opt-in de red real
@@ -271,12 +271,14 @@ heredados de sesión/periodo para aceptar sólo v1/v2 y
 `20260905150000_owner_analytics_booking_consent_snapshot` conserva la versión
 en snapshots Booking; owner/admin cierra v1 con
 `version_change` antes de abrir v2; el resolver público, storage/transport,
-claims, ingesta, cobertura, mantenimiento y publicación llevan la versión. Un
-cliente v1 en vuelo queda rechazado tras la rotación, y la publicación v2 no
-mezcla filas v1. La prueba de ingesta cubre rotación y credencial; rollups cubre
-publicación v2 aislada. La matriz actual de analytics pasó 41 archivos/309
+claims, ingesta, cobertura, mantenimiento y publicación llevan la versión. Los
+nuevos bootstraps v1 quedan rechazados tras la rotación, mientras los tokens v1
+ya emitidos pueden terminar su ventana original etiquetados como v1; la
+publicación v2 no mezcla filas v1. La prueba de ingesta cubre esa rotación y
+credencial; rollups cubre publicación v2 aislada. La fixwave también cubre errores
+de red/truncamiento del narrador y fences perdidos de cron. La matriz actual de analytics pasó 41 archivos/312
 unitarias y 13 archivos/130 integraciones PostgreSQL; el E2E público/dashboard
 permanece 8/8 y 7/7. Además, la corrida completa actual pasó 446/446 archivos
-unitarios (4033 tests, 1 skip) y 76/76 archivos de integración (530 tests).
+unitarios (4036 tests, 1 skip) y 76/76 archivos de integración (530 tests).
 Esto prueba el código en DB disposable, no una fuente v2 productiva ni
 activación del piloto.
