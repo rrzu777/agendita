@@ -27,3 +27,8 @@ export function getOwnerAnalyticsOperationsConfig(): OwnerAnalyticsOperationsCon
   }
   return { monitorEnabled, alertsEnabled, alertEmails }
 }
+
+/** Shared interpretation for the production-health repository variable. */
+export function getOwnerAnalyticsMonitorExpected(): boolean {
+  return getOptionalEnvBoolean('OWNER_ANALYTICS_MONITOR_EXPECTED') ?? false
+}

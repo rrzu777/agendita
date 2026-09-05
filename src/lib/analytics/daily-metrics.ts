@@ -44,7 +44,7 @@ export function metricDefinition(key: string): MetricDefinition | null {
 }
 
 function sameCohort(a: CohortIdentity, b: CohortIdentity): boolean {
-  return a.businessId === b.businessId && a.cohortLocalDate === b.cohortLocalDate && a.businessTimeZone === b.businessTimeZone && a.definitionVersion === b.definitionVersion
+  return a.businessId === b.businessId && a.cohortLocalDate === b.cohortLocalDate && a.businessTimeZone === b.businessTimeZone && a.definitionVersion === b.definitionVersion && (a.consentVersion ?? 1) === (b.consentVersion ?? 1)
 }
 function dimensions(acquisition: AcquisitionSource): [Grain, string][] {
   return [['total', 'total'], ['channel', acquisition.channel], ['acquisition_link', acquisition.acquisitionLinkId ?? 'unknown']]
@@ -65,7 +65,7 @@ export function aggregateDailyMetrics({ sessions, attempts, coverage, definition
       const key = JSON.stringify([population, grain, dimensionKey, metricKey])
       let cell = index.get(key)
       if (!cell) {
-        cell = { businessId: cohort.businessId, cohortLocalDate: cohort.cohortLocalDate, businessTimeZone: cohort.businessTimeZone, definitionVersion, population, grain, dimensionKey, metricKey, numerator: 0, denominator: 0, revision: cohort.revision, state, coverage: cohort.coverage, calculatedAt: cohort.calculatedAt, cutoffAt: cohort.cutoffAt, frozenAt: cohort.frozenAt, retentionExpiresAt: cohort.retentionExpiresAt }
+        cell = { businessId: cohort.businessId, cohortLocalDate: cohort.cohortLocalDate, businessTimeZone: cohort.businessTimeZone, definitionVersion, consentVersion: cohort.consentVersion ?? 1, population, grain, dimensionKey, metricKey, numerator: 0, denominator: 0, revision: cohort.revision, state, coverage: cohort.coverage, calculatedAt: cohort.calculatedAt, cutoffAt: cohort.cutoffAt, frozenAt: cohort.frozenAt, retentionExpiresAt: cohort.retentionExpiresAt }
         index.set(key, cell)
       }
       cell.numerator += numerator; cell.denominator += denominator

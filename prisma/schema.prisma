@@ -20,6 +20,8 @@ model User {
   customers  Customer[]
   authorizedPushSubscriptions PushSubscription[] @relation("PushSubscriptionAuthorizedUser")
   tourProgress UserTourProgress[]
+  analyticsInsightPreferences AnalyticsInsightPreference[] @relation("AnalyticsInsightPreferenceRecipient")
+  analyticsEmailDeliveries AnalyticsEmailDelivery[] @relation("AnalyticsEmailDeliveryRecipient")
 }
 
 enum SubscriptionStatus {
@@ -152,6 +154,8 @@ model Business {
   acquisitionLinks     AcquisitionLink[]
   analyticsPeriods     AnalyticsCollectionPeriod[]
   analyticsDailyMetrics AnalyticsDailyMetric[]
+  analyticsInsightPreference AnalyticsInsightPreference?
+  weeklyInsights AnalyticsWeeklyInsight[]
 }
 
 enum PaymentAccountStatus {
@@ -900,6 +904,31 @@ enum AnalyticsEmailNotificationKind {
   weekly_digest
 }
 
+enum AnalyticsInsightStatus {
+  insufficient_data
+  deterministic_ready
+  generating
+  ready
+  generation_failed
+  expired
+}
+
+enum AnalyticsInsightGenerationStatus {
+  not_requested
+  pending
+  running
+  succeeded
+  failed
+  manual_review
+}
+
+enum AnalyticsInsightAttemptStatus {
+  running
+  succeeded
+  failed
+  manual_review
+}
+
 model AnalyticsJobHeartbeat {
   jobKey                 String            @id @db.VarChar(64)
   currentRunId           String?           @db.Uuid
@@ -950,6 +979,7 @@ model AnalyticsEmailDelivery {
   id                    String                         @id @default(uuid()) @db.Uuid
   incidentId            String?                        @db.Uuid
   weeklyInsightId       String?                        @db.Uuid
+  recipientUserId       String?
   dedupeKey             String                         @unique @db.VarChar(220)
   notificationKind      AnalyticsEmailNotificationKind
   payloadHash           String                         @db.Char(64)
@@ -970,11 +1000,79 @@ model AnalyticsEmailDelivery {
   createdAt             DateTime                       @default(now())
   updatedAt             DateTime                       @updatedAt
   incident              AnalyticsOperationalIncident?  @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  weeklyInsight         AnalyticsWeeklyInsight?        @relation(fields: [weeklyInsightId], references: [id], onDelete: Cascade)
+  recipientUser         User?                          @relation("AnalyticsEmailDeliveryRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
 
   @@index([status, nextAttemptAt])
   @@index([incidentId])
   @@index([weeklyInsightId])
+  @@index([recipientUserId])
   @@index([retentionExpiresAt])
+}
+
+model AnalyticsInsightPreference {
+  id                String   @id @default(uuid()) @db.Uuid
+  businessId        String   @unique
+  recipientUserId   String?
+  enabled           Boolean  @default(false)
+  aiNarrativeEnabled Boolean @default(false)
+  emailEnabled      Boolean  @default(false)
+  privacyVersion    Int?
+  acceptedAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  business          Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  recipientUser     User?    @relation("AnalyticsInsightPreferenceRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+
+  @@index([recipientUserId])
+}
+
+model AnalyticsWeeklyInsight {
+  id                    String                         @id @default(uuid()) @db.Uuid
+  businessId            String
+  weekStart             DateTime                       @db.Date
+  weekEnd               DateTime                       @db.Date
+  businessTimeZone      String                         @db.VarChar(100)
+  sourceConsentVersion  Int
+  status                AnalyticsInsightStatus
+  generationStatus      AnalyticsInsightGenerationStatus @default(not_requested)
+  facts                 Json
+  narrative             Json?
+  reasonCode            String?                        @db.VarChar(64)
+  inputHash             String                         @db.Char(64)
+  sourceExpiresAt       DateTime
+  retentionExpiresAt    DateTime
+  narrativeGeneratedAt  DateTime?
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
+  business              Business                       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  generationAttempts    AnalyticsInsightGenerationAttempt[]
+  deliveries            AnalyticsEmailDelivery[]
+
+  @@unique([businessId, weekStart])
+  @@index([businessId, status, weekStart])
+  @@index([retentionExpiresAt])
+}
+
+model AnalyticsInsightGenerationAttempt {
+  id                String                        @id @default(uuid()) @db.Uuid
+  weeklyInsightId   String                        @db.Uuid
+  attemptNumber     Int
+  status            AnalyticsInsightAttemptStatus
+  leaseToken        String?                       @db.Uuid
+  leaseExpiresAt    DateTime?
+  requestedAt       DateTime                      @default(now())
+  completedAt       DateTime?
+  providerRequestId String?                       @db.VarChar(160)
+  inputHash         String                        @db.Char(64)
+  outputTokens      Int?
+  errorCode         String?                       @db.VarChar(64)
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+  weeklyInsight     AnalyticsWeeklyInsight        @relation(fields: [weeklyInsightId], references: [id], onDelete: Cascade)
+
+  @@unique([weeklyInsightId, attemptNumber])
+  @@index([status, leaseExpiresAt])
 }
 
 model AnalyticsSession {
@@ -1099,6 +1197,7 @@ model AnalyticsDailyMetric {
   cohortLocalDate      DateTime @db.Date
   businessTimeZone     String @db.VarChar(100)
   definitionVersion    Int
+  consentVersion       Int              @default(1)
   population           AnalyticsPopulation
   grain                AnalyticsGrain
   dimensionKey         String @db.VarChar(128)

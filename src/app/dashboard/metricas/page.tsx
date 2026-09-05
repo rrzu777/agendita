@@ -2,6 +2,7 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { AnalyticsDashboard } from '@/components/dashboard/analytics/analytics-dashboard'
 import { requireBusinessRole } from '@/lib/auth/server'
 import { getOwnerAnalyticsReport } from '@/server/analytics/reports'
+import { readWeeklyInsights } from '@/server/actions/weekly-insights'
 
 type SearchParams = Record<string, string | string[] | undefined>
 
@@ -28,11 +29,13 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   await requireBusinessRole(['owner', 'admin'])
   const input = reportInput(await searchParams)
   const report = await getOwnerAnalyticsReport(input)
+  let weeklyInsights = null
+  try { weeklyInsights = await readWeeklyInsights({ limit: 4 }) } catch { weeklyInsights = null }
   const days = input.from !== undefined || input.to !== undefined ? null : input.days === undefined ? 28 : input.days === 7 || input.days === 28 || input.days === 90 ? input.days : null
   return (
     <div>
       <DashboardHeader title="Métricas" subtitle="Observa el recorrido de reserva medido y qué conviene revisar después." />
-      <AnalyticsDashboard report={report} periodMode={{ days }} />
+      <AnalyticsDashboard report={report} periodMode={{ days }} weeklyInsights={weeklyInsights} />
     </div>
   )
 }

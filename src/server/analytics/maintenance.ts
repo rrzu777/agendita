@@ -24,7 +24,7 @@ export async function publishAnalyticsCohort(input: CohortPublicationInput): Pro
     const previous = await tx.analyticsDailyMetric.findFirst({ where: { ...where, metricKey: '__publication__' } })
     if (previous?.frozenAt) return { status: 'frozen', revision: previous.revision }
     if (previous && previous.cutoffAt >= input.now) return { status: 'stale', revision: previous.revision }
-    const coverage: CohortCoverage = { businessId: input.businessId, cohortLocalDate: input.localDate, businessTimeZone: input.timezone, definitionVersion: input.definitionVersion, cohortEndAt: day.end, calculatedAt: input.now, cutoffAt: input.now, revision: (previous?.revision ?? 0) + 1, state: 'closed', coverage: await analyticsCoverage(tx, input.businessId, input.timezone, input.definitionVersion, day.start, day.end, Boolean(getAnalyticsCaptureConfig(input.businessId))), frozenAt: null, retentionExpiresAt: new Date(+day.end + policy.aggregateRetentionMs) }
+    const coverage: CohortCoverage = { businessId: input.businessId, cohortLocalDate: input.localDate, businessTimeZone: input.timezone, definitionVersion: input.definitionVersion, consentVersion: 1, cohortEndAt: day.end, calculatedAt: input.now, cutoffAt: input.now, revision: (previous?.revision ?? 0) + 1, state: 'closed', coverage: await analyticsCoverage(tx, input.businessId, input.timezone, input.definitionVersion, day.start, day.end, Boolean(getAnalyticsCaptureConfig(input.businessId))), frozenAt: null, retentionExpiresAt: new Date(+day.end + policy.aggregateRetentionMs) }
     const { cells } = await readAnalyticsCohort(tx, coverage, day.start)
     await tx.analyticsDailyMetric.deleteMany({ where })
     for (let offset = 0; offset < cells.length; offset += 1000) await tx.analyticsDailyMetric.createMany({ data: cells.slice(offset, offset + 1000).map(c => ({ ...c, cohortLocalDate: new Date(c.cohortLocalDate) })) })
@@ -42,7 +42,7 @@ async function freezeCohort(tx: Prisma.TransactionClient, input: CohortPublicati
     await tx.analyticsDailyMetric.updateMany({ where: { ...where, frozenAt: null }, data: { frozenAt: input.now } })
     return
   }
-  const coverage: CohortCoverage = { businessId: input.businessId, cohortLocalDate: input.localDate, businessTimeZone: input.timezone, definitionVersion: input.definitionVersion, cohortEndAt: day.end, calculatedAt: input.now, cutoffAt: input.now, revision: Math.max(0, ...markers.map(m => m.revision)) + 1, state: 'failed', coverage: 'unknown', frozenAt: input.now, retentionExpiresAt: new Date(+day.end + policy.aggregateRetentionMs) }
+  const coverage: CohortCoverage = { businessId: input.businessId, cohortLocalDate: input.localDate, businessTimeZone: input.timezone, definitionVersion: input.definitionVersion, consentVersion: 1, cohortEndAt: day.end, calculatedAt: input.now, cutoffAt: input.now, revision: Math.max(0, ...markers.map(m => m.revision)) + 1, state: 'failed', coverage: 'unknown', frozenAt: input.now, retentionExpiresAt: new Date(+day.end + policy.aggregateRetentionMs) }
   await tx.analyticsDailyMetric.deleteMany({ where })
   await tx.analyticsDailyMetric.createMany({ data: aggregateDailyMetrics({ sessions: [], attempts: [], coverage: [coverage], definitionVersion: input.definitionVersion }).map(c => ({ ...c, cohortLocalDate: new Date(c.cohortLocalDate) })) })
 }
@@ -102,6 +102,48 @@ export async function analyticsRetentionStatus(now: Date) {
   return { hasExpired: Boolean(oldest && oldest <= now), overdueMs, dangerous: overdueMs >= policy.backlogPauseMs, beyondTolerance: overdueMs >= 86400000 }
 }
 
+/** Deletes only expired derived operational/weekly payloads. Raw capture and
+ * current heartbeats are intentionally outside this purge. The CTE keeps the
+ * parent/child order explicit and counts actual rows within the invocation. */
+async function purgeAnalyticsOperations(now: Date, limit: number): Promise<number> {
+  const rows = await prisma.$queryRaw<{ deleted: bigint }[]>(Prisma.sql`
+    WITH expired_reports AS MATERIALIZED (
+      SELECT id FROM "AnalyticsWeeklyInsight"
+      WHERE "retentionExpiresAt" <= ${now}
+      ORDER BY "retentionExpiresAt", id
+      LIMIT ${limit}
+    ), expired_incidents AS MATERIALIZED (
+      SELECT id FROM "AnalyticsOperationalIncident"
+      WHERE "activeKey" IS NULL
+        AND "retentionExpiresAt" IS NOT NULL
+        AND "retentionExpiresAt" <= ${now}
+      ORDER BY "retentionExpiresAt", id
+      LIMIT ${limit}
+    ), deleted_deliveries AS (
+      DELETE FROM "AnalyticsEmailDelivery" d
+      WHERE d."retentionExpiresAt" <= ${now}
+         OR d."weeklyInsightId" IN (SELECT id FROM expired_reports)
+      RETURNING 1
+    ), deleted_attempts AS (
+      DELETE FROM "AnalyticsInsightGenerationAttempt" a
+      WHERE a."weeklyInsightId" IN (SELECT id FROM expired_reports)
+      RETURNING 1
+    ), deleted_reports AS (
+      DELETE FROM "AnalyticsWeeklyInsight" r
+      WHERE r.id IN (SELECT id FROM expired_reports)
+      RETURNING 1
+    ), deleted_incidents AS (
+      DELETE FROM "AnalyticsOperationalIncident" i
+      WHERE i.id IN (SELECT id FROM expired_incidents)
+      RETURNING 1
+    )
+    SELECT (SELECT count(*) FROM deleted_deliveries)
+         + (SELECT count(*) FROM deleted_attempts)
+         + (SELECT count(*) FROM deleted_reports)
+         + (SELECT count(*) FROM deleted_incidents) AS deleted`)
+  return Number(rows[0]?.deleted ?? 0)
+}
+
 type PublicationCursor = { businessId: string; localDate: string; timezone: string; definitionVersion: number }
 function decodeCursor(cursor?: string | null): PublicationCursor | null {
   if (!cursor || cursor === 'cleanup:v1') return null
@@ -132,6 +174,8 @@ export async function runOwnerAnalyticsMaintenance(input: { now?: Date; maxRows?
   const maxRows = Math.min(input.maxRows ?? policy.cleanupInvocationRows, policy.cleanupInvocationRows)
   const after = decodeCursor(input.cursor)
   const result = { errors: 0, deleted: 0, published: 0, hasMore: false, nextCursor: null as string | null, backlog: await analyticsRetentionStatus(now) }
+  try { result.deleted += await purgeAnalyticsOperations(now, Math.min(1000, maxRows)) }
+  catch { result.errors++; recordOperationalMetric('owner_analytics_operations_purge', 'error', 0) }
   if (result.backlog.dangerous || process.env.OWNER_ANALYTICS_ENABLED !== 'true') {
     // Bound transitions too. Public collector already fails closed globally at the 12h threshold.
     const periods = await prisma.analyticsCollectionPeriod.findMany({ where: { endedAt: null }, select: { businessId: true }, orderBy: { businessId: 'asc' }, take: 1000 })

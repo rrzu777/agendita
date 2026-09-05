@@ -11,6 +11,8 @@ export interface CohortIdentity {
   cohortLocalDate: string
   businessTimeZone: string
   definitionVersion: number
+  /** Consent provenance is optional for v1 compatibility; persisted metrics default it to 1. */
+  consentVersion?: number
 }
 export interface SessionFact extends CohortIdentity {
   id: string

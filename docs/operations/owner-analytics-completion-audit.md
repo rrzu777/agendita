@@ -166,3 +166,30 @@ aprobación pendiente de G2 bloqueó entonces el cierre; la nueva instrucción d
 usuario la resuelve. No se reinician tareas cerradas ni se convierte G2 en una
 exclusión del MVP. La validación conjunta superior cierra ahora el MVP local;
 no autoriza publicación, merge, migración ni captura productiva.
+
+## Continuación 2026-09-05: gaps operativos y weekly insights
+
+La auditoría del plan encontró y cerró estos gaps antes de implementar: el
+health-check podía omitir un monitor habilitado; el endpoint aceptaba body/query;
+un heartbeat podía cerrar después de vencer el lease; un job running podía parecer
+stale aunque avanzara; una re-ejecución semanal podía borrar una narrativa lista;
+el outbox no revalidaba rol/preferencia del destinatario; y el purge podía mezclar
+payloads con incidentes activos. Quedaron cubiertos por pruebas de route/script,
+CAS, `lastProgressAt`, hash de snapshot, claim de outbox y SQL de purge acotado.
+
+La implementación local agrega los commits `937cbf5` (schema operacional),
+`d299031` (heartbeat), `c35a138` (monitor/incidentes/outbox) y el trabajo actual
+de schema/facts/generation/dashboard. Validaciones nuevas ejecutadas: Prisma
+validate/generate, typecheck, lint focal, 5 archivos de weekly selector/facts/
+generation/narrator/cron (10 tests), 4 suites operativas (14 tests), health-check
+(10 tests) y dashboard/selector/facts (salvo un fallo preexistente de localStorage
+en `analytics-privacy.test.tsx`). No se ejecutó DB de producción, Resend, OpenAI,
+workflow externo ni migración real. La suite de privacidad falló por el entorno
+jsdom (`window.localStorage` undefined), no por la copia de privacidad; requiere
+repetición con el harness estándar antes de declarar matriz completa.
+
+Las flags siguen false/vacías. La prueba de activación requiere migraciones
+`20260905120000_owner_analytics_operations` y
+`20260905130000_owner_analytics_weekly_insights`, revisión legal, allowlist,
+presupuesto, destinatarios y siete días de medición v2. Ver
+`docs/operations/owner-analytics-insights-activation.md`.

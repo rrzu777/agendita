@@ -1,4 +1,5 @@
 import 'server-only'
+import { createHash } from 'node:crypto'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { sendAnalyticsOperationalEmail } from '@/lib/notifications/email-provider'
@@ -11,6 +12,8 @@ const IDEMPOTENCY_WINDOW_MS = 23 * 60 * 60 * 1000
 export type DeliveryClaim = {
   id: string
   incidentId?: string | null
+  weeklyInsightId?: string | null
+  recipientUserId?: string | null
   notificationKind: string
   dedupeKey: string
   recipients: string[]
@@ -38,8 +41,22 @@ export async function claimAnalyticsEmailDelivery(now = new Date()): Promise<Del
       ],
     },
     orderBy: { createdAt: 'asc' },
+    include: { weeklyInsight: { select: { businessId: true } } },
   })
   if (!row) return null
+  if (row.weeklyInsightId) {
+    const businessId = row.weeklyInsight?.businessId
+    const [preference, membership] = row.recipientUserId && businessId
+      ? await Promise.all([
+          prisma.analyticsInsightPreference.findUnique({ where: { businessId }, select: { emailEnabled: true, recipientUserId: true } }),
+          prisma.businessUser.findFirst({ where: { businessId, userId: row.recipientUserId, role: { in: ['owner', 'admin'] } }, select: { id: true } }),
+        ])
+      : [null, null]
+    if (!preference?.emailEnabled || preference.recipientUserId !== row.recipientUserId || !membership) {
+      await prisma.analyticsEmailDelivery.updateMany({ where: { id: row.id, status: row.status }, data: { status: 'cancelled', leaseToken: null, leaseExpiresAt: null } })
+      return null
+    }
+  }
   const leaseToken = randomUUID()
   const leaseExpiresAt = new Date(now.getTime() + DELIVERY_LEASE_MS)
   const updated = await prisma.analyticsEmailDelivery.updateMany({
@@ -47,7 +64,25 @@ export async function claimAnalyticsEmailDelivery(now = new Date()): Promise<Del
     data: { status: 'sending', leaseToken, leaseExpiresAt, attempts: { increment: 1 }, firstProviderAttemptAt: row.firstProviderAttemptAt ?? now },
   })
   if (updated.count !== 1) return null
-  return { id: row.id, incidentId: row.incidentId, notificationKind: row.notificationKind, dedupeKey: row.dedupeKey, recipients: recipientsFromJson(row.recipients), subject: row.subject, htmlBody: row.htmlBody, textBody: row.textBody, leaseToken, attempts: row.attempts + 1, firstProviderAttemptAt: row.firstProviderAttemptAt ?? now }
+  return { id: row.id, incidentId: row.incidentId, weeklyInsightId: row.weeklyInsightId, recipientUserId: row.recipientUserId, notificationKind: row.notificationKind, dedupeKey: row.dedupeKey, recipients: recipientsFromJson(row.recipients), subject: row.subject, htmlBody: row.htmlBody, textBody: row.textBody, leaseToken, attempts: row.attempts + 1, firstProviderAttemptAt: row.firstProviderAttemptAt ?? now }
+}
+
+export async function queueWeeklyInsightDigest(input: { weeklyInsightId: string; recipientUserId: string; recipientEmail: string; now?: Date }): Promise<boolean> {
+  const insight = await prisma.analyticsWeeklyInsight.findUnique({ where: { id: input.weeklyInsightId }, select: { id: true, facts: true, narrative: true, sourceExpiresAt: true } })
+  if (!insight || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.recipientEmail)) return false
+  const now = input.now ?? new Date()
+  const facts = insight.facts && typeof insight.facts === 'object' ? insight.facts as { conversion?: { numerator?: number; denominator?: number }; matureCompleteAttempts?: number } : {}
+  const narrative = insight.narrative && typeof insight.narrative === 'object' ? insight.narrative as { summary?: string } : null
+  const subject = '[Agendita] Resumen semanal de métricas'
+  const summary = narrative?.summary?.replace(/[<>]/g, '') || `Intentos completos maduros: ${facts.matureCompleteAttempts ?? 0}. Conversión: ${facts.conversion?.numerator ?? 0} de ${facts.conversion?.denominator ?? 0}.`
+  const textBody = `${subject}\n\n${summary}`
+  try {
+    await prisma.analyticsEmailDelivery.create({ data: { weeklyInsightId: insight.id, recipientUserId: input.recipientUserId, dedupeKey: `analytics-weekly:${insight.id}:weekly_digest`, notificationKind: 'weekly_digest', payloadHash: createHash('sha256').update(JSON.stringify({ recipientEmail: input.recipientEmail, subject, textBody })).digest('hex'), recipients: [input.recipientEmail], subject, htmlBody: `<p>${summary}</p>`, textBody, retentionExpiresAt: new Date(Math.min(insight.sourceExpiresAt.getTime(), now.getTime() + 90 * 24 * 60 * 60 * 1000)) } })
+    return true
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') return false
+    throw error
+  }
 }
 
 export async function deliverAnalyticsEmailClaim(claim: DeliveryClaim, now = new Date()): Promise<{ status: 'sent' | 'failed' | 'manual_review' | 'skipped'; messageId?: string }> {

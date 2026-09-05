@@ -35,7 +35,7 @@ export interface CohortRead { cells: DailyMetricCell[]; inProgress: { complete: 
 
 /** Server-only bounded pages. Reduce events and Booking separately BEFORE aggregation; never a fan-out join. */
 export async function readAnalyticsCohort(tx: Prisma.TransactionClient, coverage: CohortCoverage, start: Date): Promise<CohortRead> {
-  const identity = { businessId: coverage.businessId, businessTimeZone: coverage.businessTimeZone, definitionVersion: coverage.definitionVersion, cohortLocalDate: new Date(coverage.cohortLocalDate) }
+  const identity = { businessId: coverage.businessId, businessTimeZone: coverage.businessTimeZone, definitionVersion: coverage.definitionVersion, cohortLocalDate: new Date(coverage.cohortLocalDate), consentVersion: coverage.consentVersion ?? 1 }
   const window = { gte: start, lt: new Date(Math.min(+coverage.cohortEndAt, +coverage.cutoffAt + 1)) }
   const cells = new Map<string, DailyMetricCell>()
   const result: CohortRead = { cells: [], inProgress: { complete: 0, partial: 0 }, diagnostics: { eligible: 0, affected: 0, converted: 0, reasons: {} } }
