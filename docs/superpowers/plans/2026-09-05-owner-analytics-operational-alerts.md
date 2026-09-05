@@ -22,10 +22,11 @@
       activación/rollback.
 - [x] El heartbeat semanal comparte el contrato de fencing y el driver conserva
       el cursor confirmado para reanudar una corrida acotada.
-- [ ] Aplicar migraciones y ejecutar pruebas PostgreSQL/CI/staged; siguen siendo
-      gates externos y no se simulan con typecheck o build. Las migraciones y
-      pruebas PostgreSQL sí quedaron ejecutadas en bases disposable locales;
-      CI remoto, staging y producción siguen pendientes.
+- [x] Aplicar las migraciones en una DB disposable y ejecutar las pruebas
+      PostgreSQL locales desde cero; las 57 migraciones y la matriz operativa
+      pasan.
+- [ ] Ejecutar CI remoto, staging y producción; siguen siendo gates externos y
+      no se simulan con typecheck o build.
 
 ## Global Constraints
 
@@ -137,5 +138,9 @@
 - [x] **Step 1: Add failing retention tests** for resolved incidents and delivery payloads, open incident preservation, 90-day expiry, and independent purge when heartbeat monitoring is disabled.
 - [x] **Step 2: Implement bounded purge.** Purge only expired resolved incidents and delivery payloads; never purge the current heartbeat or unresolved incident.
 - [x] **Step 3: Document activation gates and the total-app-down limitation.** Record manual heartbeat run, synthetic incident, external GitHub failure, and recipient verification evidence requirements.
-- [ ] **Step 4: Run the focused operational suite, Prisma validation, typecheck, lint, and the existing full unit suite.** Focal operational/analytics suites pass; repository-wide unit run remains non-green on unrelated payment/bank-transfer tests under this environment.
+- [x] **Step 4a: Run the focused operational suite, Prisma validation,
+      typecheck, and lint.** Focal operational/analytics suites pass.
+- [ ] **Step 4b: Run the existing full unit suite.** The repository-wide run
+      remains non-green on unrelated payment/bank-transfer tests under this
+      environment.
 - [x] **Step 5: Commit `docs(analytics): document operational alert activation gates`.**

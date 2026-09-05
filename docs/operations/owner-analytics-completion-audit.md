@@ -236,3 +236,8 @@ posterior pasó 8/8; el fallo anterior por columna inexistente ya no se reproduc
 - Emails semanales también exigen la preferencia global `enabled`; una lista de
   destinatarios malformada se ignora cuando alertas están apagadas y falla cerrado
   sólo al habilitarlas.
+
+La verificación E2E dedicada posterior pasó completa sobre esta rama: contrato
+público `8/8` y dashboard owner `7/7`, ambos usando sus harnesses de servidor y
+DB disposable. Esto cierra la validación E2E de analytics; no convierte en verde
+la suite unitaria completa del repositorio ni activa staging/producción.

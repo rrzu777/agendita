@@ -30,8 +30,10 @@
       de la transacción; una preferencia revocada no genera una nueva llamada.
 - [x] El job conserva facts determinísticos cuando operaciones está unhealthy,
       pero suspende nuevas generaciones y emails hasta volver a `healthy`.
-- [ ] Pruebas PostgreSQL de aislamiento/retención y activación staged; requieren
-      DB exclusiva, revisión legal, proveedor y autorización independiente.
+- [x] Pruebas PostgreSQL de aislamiento/retención ejecutadas sobre una DB
+      disposable exclusiva con las 57 migraciones desde cero.
+- [ ] Activación staged; requiere revisión legal, proveedor y autorización
+      independiente, y no se simula con la evidencia local.
 
 ## Global Constraints
 
@@ -161,7 +163,11 @@
 - [x] **Step 2: Implement weekly digest outbox creation.** Use one stable `weeklyInsightId:weekly_digest` key, freeze recipients/payload, and never generate a new AI report from an email retry.
 - [x] **Step 3: Implement delivery worker reuse.** Revalidate authorization before retry, preserve the original recipient/payload after an attempt, and reconcile ambiguous sends without duplicate keys.
 - [x] **Step 4: Extend maintenance purge.** Hide and delete expired weekly insights, generation attempts, and outbox payloads within the bounded budget; retain current heartbeat and unresolved incidents.
-- [ ] **Step 5: Run focused email/retention/integration tests and the full unit suite.** Focal analytics tests pass; the repository-wide run remains non-green on unrelated payment/bank-transfer tests under this environment.
+- [x] **Step 5: Run focused email/retention/integration tests.** Focal analytics
+      tests pass, incluida la matriz PostgreSQL disposable.
+- [ ] **Step 5b: Run the full unit suite.** The repository-wide run remains
+      non-green on unrelated `payment-qa-runner-safety`/`bank-transfer-form`
+      tests under this environment.
 - [x] **Step 6: Commit `feat(analytics): deliver opt-in weekly insight emails`.**
 
 ### Task 6: Staged verification and handoff
@@ -172,7 +178,13 @@
 - Modify: `docs/operations/owner-analytics-insights-activation.md`
 
 - [x] **Step 1: Document flags, migrations, runbook, synthetic provider tests, privacy/legal gate, and seven-day measurement gate.**
-- [ ] **Step 2: Run Prisma validate, typecheck, lint, focused operational/weekly tests, full unit tests, and existing analytics E2E contracts.** The focused analytics matrix and PostgreSQL matrix pass; the repository-wide unit run remains non-green on unrelated `payment-qa-runner-safety`/`bank-transfer-form` cases under this environment, and analytics E2E still requires the dedicated server harness.
+- [x] **Step 2a: Run Prisma validate, typecheck, lint, focused
+      operational/weekly tests, and existing analytics E2E contracts.** The
+      focused analytics matrix (45 files/331 tests), PostgreSQL matrix (4
+      suites/19 tests), public E2E (8/8), and owner dashboard E2E (7/7) pass.
+- [ ] **Step 2b: Run the full unit suite.** The repository-wide run remains
+      non-green on unrelated `payment-qa-runner-safety`/`bank-transfer-form`
+      cases under this environment.
 - [x] **Step 3: Verify every new flag remains false/empty and no real OpenAI/Resend request occurs in CI.**
 - [x] **Step 4: Record exact SHAs and limitations; do not call this active production capture until the explicit pilot gate is met.**
 - [x] **Step 5: Commit `docs(analytics): document weekly insights activation runbook`.**
