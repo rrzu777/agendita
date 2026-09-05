@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   requirePlatformAdminUser: vi.fn(),
@@ -78,6 +78,15 @@ describe('recurring billing admin authorization', () => {
 })
 
 describe('adminSetComplimentaryPeriod', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-31T12:00:00.000Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('requires a future date and a non-empty reason', async () => {
     const { adminSetComplimentaryPeriod } = await import('./admin')
     await expect(adminSetComplimentaryPeriod('biz-1', 'fecha-inválida', 'familia'))

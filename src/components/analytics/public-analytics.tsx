@@ -175,6 +175,7 @@ export function PublicAnalytics({ children, businessId, slug, eligible, surface 
         <button type="button" className="mt-2 min-h-11 font-semibold underline focus-visible:outline-2" onClick={() => choice ? choose(false) : setChoice(null)}>{choice ? 'Retirar permiso de métricas' : 'Cambiar preferencia de métricas'}</button>
         {choice && <p className="text-muted-foreground">Retirar el permiso elimina los identificadores locales y detiene los envíos; no borra retroactivamente los datos enviados.</p>}
       </>}
+      <a href="/privacy#metricas-reservas" target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex min-h-11 items-center font-semibold underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Privacidad de las métricas (abre otra pestaña)</a>
     </aside>}
   </Context>
 }
