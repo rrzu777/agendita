@@ -32,9 +32,10 @@ export async function runWeeklyInsightsJob(input: { now: Date; cursor: string | 
   for (const candidate of selected.candidates) {
     if (performance.now() + MIN_REMAINING_MS >= deadline) break
     const facts = await buildWeeklyFacts({ businessId: candidate.businessId, weekStart: candidate.weekStart, now: input.now })
-    const existing = await prisma.analyticsWeeklyInsight.findUnique({ where: { businessId_weekStart: { businessId: candidate.businessId, weekStart: candidate.weekStart } }, select: { id: true, inputHash: true, status: true } })
+    const existing = await prisma.analyticsWeeklyInsight.findUnique({ where: { businessId_weekStart: { businessId: candidate.businessId, weekStart: candidate.weekStart } }, select: { id: true, inputHash: true, status: true, generationStatus: true, reasonCode: true } })
     // A published narrative is an immutable snapshot. Late maintenance or a
     // repeated cursor must never erase it or silently replace its evidence.
+    const sameSnapshot = existing?.inputHash === facts.inputHash
     const updateData: Prisma.AnalyticsWeeklyInsightUpdateInput = existing?.status === 'ready'
       ? {}
       : {
@@ -44,8 +45,11 @@ export async function runWeeklyInsightsJob(input: { now: Date; cursor: string | 
           inputHash: facts.inputHash,
           sourceExpiresAt: facts.sourceExpiry,
           retentionExpiresAt: new Date(Math.min(facts.sourceExpiry.getTime(), candidate.sourceExpiresAt.getTime())),
-          reasonCode: facts.reasonCode ?? null,
-          ...(facts.status === 'deterministic_ready' ? { generationStatus: 'not_requested' as const, narrative: Prisma.JsonNull, narrativeGeneratedAt: null } : { generationStatus: 'not_requested' as const }),
+          ...(!sameSnapshot ? {
+            reasonCode: facts.reasonCode ?? null,
+            generationStatus: 'not_requested' as const,
+            ...(facts.status === 'deterministic_ready' ? { narrative: Prisma.JsonNull, narrativeGeneratedAt: null } : {}),
+          } : {}),
         }
     const insight = await prisma.analyticsWeeklyInsight.upsert({
       where: { businessId_weekStart: { businessId: candidate.businessId, weekStart: candidate.weekStart } },

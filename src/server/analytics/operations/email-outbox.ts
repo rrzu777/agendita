@@ -9,6 +9,9 @@ const RETRY_DELAY_MS = 15 * 60 * 1000
 const MAX_ATTEMPTS = 3
 const IDEMPOTENCY_WINDOW_MS = 23 * 60 * 60 * 1000
 
+export const OPERATIONAL_NOTIFICATION_KINDS = ['alert_open', 'alert_escalation', 'alert_reminder', 'alert_beyond_tolerance', 'alert_resolved'] as const
+type NotificationKind = typeof OPERATIONAL_NOTIFICATION_KINDS[number] | 'weekly_digest'
+
 export type DeliveryClaim = {
   id: string
   incidentId?: string | null
@@ -30,9 +33,10 @@ function recipientsFromJson(value: unknown): string[] {
   return value
 }
 
-export async function claimAnalyticsEmailDelivery(now = new Date()): Promise<DeliveryClaim | null> {
+export async function claimAnalyticsEmailDelivery(now = new Date(), notificationKinds?: readonly NotificationKind[]): Promise<DeliveryClaim | null> {
   const row = await prisma.analyticsEmailDelivery.findFirst({
     where: {
+      notificationKind: notificationKinds ? { in: [...notificationKinds] } : undefined,
       OR: [
         { status: 'pending', OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
         { status: 'failed', nextAttemptAt: { lte: now } },
@@ -49,10 +53,12 @@ export async function claimAnalyticsEmailDelivery(now = new Date()): Promise<Del
     const [preference, membership] = row.recipientUserId && businessId
       ? await Promise.all([
           prisma.analyticsInsightPreference.findUnique({ where: { businessId }, select: { enabled: true, emailEnabled: true, recipientUserId: true } }),
-          prisma.businessUser.findFirst({ where: { businessId, userId: row.recipientUserId, role: { in: ['owner', 'admin'] } }, select: { id: true } }),
+          prisma.businessUser.findFirst({ where: { businessId, userId: row.recipientUserId, role: { in: ['owner', 'admin'] } }, select: { id: true, user: { select: { email: true } } } }),
         ])
       : [null, null]
-    if (!preference?.enabled || !preference.emailEnabled || preference.recipientUserId !== row.recipientUserId || !membership) {
+    const frozenEmail = recipientsFromJson(row.recipients)[0]?.trim().toLowerCase()
+    const currentEmail = membership && 'user' in membership && membership.user?.email ? membership.user.email.trim().toLowerCase() : null
+    if (!preference?.enabled || !preference.emailEnabled || preference.recipientUserId !== row.recipientUserId || !membership || !currentEmail || currentEmail !== frozenEmail) {
       await prisma.analyticsEmailDelivery.updateMany({ where: { id: row.id, status: row.status }, data: { status: 'cancelled', leaseToken: null, leaseExpiresAt: null } })
       return null
     }
@@ -99,13 +105,13 @@ export async function deliverAnalyticsEmailClaim(claim: DeliveryClaim, now = new
   return { status: terminal ? 'manual_review' : 'failed' }
 }
 
-export async function drainAnalyticsEmailOutbox(input: { now?: Date; maxDeliveries?: number } = {}): Promise<{ sent: number; failed: number; pending: number }> {
+export async function drainAnalyticsEmailOutbox(input: { now?: Date; maxDeliveries?: number; notificationKinds?: readonly NotificationKind[] } = {}): Promise<{ sent: number; failed: number; pending: number }> {
   const now = input.now ?? new Date()
   const max = Math.min(input.maxDeliveries ?? 10, 25)
   let sent = 0
   let failed = 0
   for (let index = 0; index < max; index += 1) {
-    const claim = await claimAnalyticsEmailDelivery(now)
+    const claim = await claimAnalyticsEmailDelivery(now, input.notificationKinds)
     if (!claim) break
     const result = await deliverAnalyticsEmailClaim(claim, now)
     if (result.status === 'sent') sent += 1

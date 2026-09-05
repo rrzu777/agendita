@@ -12,7 +12,9 @@
 
 ## Estado de ejecución — 2026-09-05
 
-- [x] Persistencia semanal, consentimiento v2, preferencias y enlace al outbox.
+- [x] Persistencia semanal, procedencia `consentVersion` v1/v2, preferencias y
+      enlace al outbox. La captura pública sigue emitiendo sólo v1 hasta el
+      gate de activación; eso no equivale a tener una fuente v2 operativa.
 - [x] Selector local miércoles 09:00, cursor estable, facts determinísticos,
       denominadores explícitos y hash de snapshot.
 - [x] Claims de generación con máximo dos intentos, lease/fencing, Responses API
@@ -26,12 +28,19 @@
       reservado y reintento mínimo de una hora.
 - [x] `Retry-After` válido se persiste en `nextRetryAt`, con mínimo de una hora
       y tope de 24 horas; la bandera de IA sigue apagada hasta la activación staged.
-- [x] El claim de IA revalida opt-in, privacidad v2 y procedencia fuente v2 dentro
-      de la transacción; una preferencia revocada no genera una nueva llamada.
+- [x] El claim de IA revalida opt-in, privacidad v2 y que el snapshot ya declare
+      procedencia fuente v2 dentro de la transacción; una preferencia revocada
+      no genera una nueva llamada. La captura que produciría esa fuente sigue
+      siendo un paso pendiente separado.
 - [x] El job conserva facts determinísticos cuando operaciones está unhealthy,
       pero suspende nuevas generaciones y emails hasta volver a `healthy`.
 - [x] Pruebas PostgreSQL de aislamiento/retención ejecutadas sobre una DB
       disposable exclusiva con las 57 migraciones desde cero.
+- [ ] Ruta de captura `consentVersion=2`: cerrar v1 y abrir v2 sin solapamiento,
+      enrutar cliente/ingesta/repositorio/mantenimiento por la versión activa y
+      probar una semana v2 aislada más el rechazo de semanas mixtas. El esquema
+      ya conserva la procedencia, pero el código actual falla cerrado a v1;
+      este paso es requisito previo de cualquier llamada de IA.
 - [ ] Activación staged; requiere revisión legal, proveedor y autorización
       independiente, y no se simula con la evidencia local.
 
@@ -161,7 +170,11 @@
 
 - [x] **Step 1: Write failing tests** for deterministic-only email, frozen payload, preference revocation before send, recipient role loss, ambiguous delivery, three-attempt/23-hour cutoff, and source-bounded 90-day expiry.
 - [x] **Step 2: Implement weekly digest outbox creation.** Use one stable `weeklyInsightId:weekly_digest` key, freeze recipients/payload, and never generate a new AI report from an email retry.
-- [x] **Step 3: Implement delivery worker reuse.** Revalidate authorization before retry, preserve the original recipient/payload after an attempt, and reconcile ambiguous sends without duplicate keys.
+- [x] **Step 3: Implement delivery worker reuse.** Revalidate authorization and
+      the current recipient email before retry, preserve the original
+      recipient/payload after an attempt, and reconcile ambiguous sends without
+      duplicate keys. Incident alerts use a separate filtered drain so an
+      unhealthy monitor does not strand opening/escalation notifications.
 - [x] **Step 4: Extend maintenance purge.** Hide and delete expired weekly insights, generation attempts, and outbox payloads within the bounded budget; retain current heartbeat and unresolved incidents.
 - [x] **Step 5: Run focused email/retention/integration tests.** Focal analytics
       tests pass, incluida la matriz PostgreSQL disposable.
@@ -178,10 +191,16 @@
 - Modify: `docs/operations/owner-analytics-insights-activation.md`
 
 - [x] **Step 1: Document flags, migrations, runbook, synthetic provider tests, privacy/legal gate, and seven-day measurement gate.**
+- [ ] **Step 1a: Implement and stage source-consent v2.** Add a disabled-by-default
+      versioned capture switch, close any open v1 period before opening v2, pass
+      the selected version through public eligibility, browser storage/transport,
+      signed claims, ingest, maintenance and coverage queries, and add a
+      PostgreSQL test proving v1/v2 isolation and mixed-week rejection. Do not
+      enable it as part of this plan.
 - [x] **Step 2a: Run Prisma validate, typecheck, lint, focused
       operational/weekly tests, and existing analytics E2E contracts.** The
-      focused analytics matrix (45 files/331 tests), PostgreSQL matrix (4
-      suites/19 tests), public E2E (8/8), and owner dashboard E2E (7/7) pass.
+      focused analytics matrix (45 files/335 tests), PostgreSQL matrix (5
+      suites/22 tests), public E2E (8/8), and owner dashboard E2E (7/7) pass.
 - [ ] **Step 2b: Run the full unit suite.** The repository-wide run remains
       non-green on unrelated `payment-qa-runner-safety`/`bank-transfer-form`
       cases under this environment.

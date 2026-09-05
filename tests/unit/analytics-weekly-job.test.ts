@@ -50,4 +50,14 @@ describe('weekly insights side-effect gate', () => {
     expect(claim).not.toHaveBeenCalled()
     expect(queue).not.toHaveBeenCalled()
   })
+
+  it('preserves a generation failure when the source snapshot hash is unchanged', async () => {
+    db.analyticsWeeklyInsight.findUnique.mockResolvedValue({ id: 'weekly-1', inputHash: 'a'.repeat(64), status: 'generation_failed', generationStatus: 'manual_review' })
+    db.analyticsInsightPreference.findUnique.mockResolvedValue({ enabled: false, aiNarrativeEnabled: false, emailEnabled: false, privacyVersion: null, recipientUserId: null, recipientUser: null })
+    await expect(runWeeklyInsightsJob({ now, cursor: null })).resolves.toEqual({ processed: 1, nextCursor: null })
+    const update = db.analyticsWeeklyInsight.upsert.mock.calls.at(-1)?.[0]?.update as Record<string, unknown>
+    expect(update).not.toHaveProperty('generationStatus')
+    expect(update).not.toHaveProperty('narrative')
+    expect(update).not.toHaveProperty('reasonCode')
+  })
 })

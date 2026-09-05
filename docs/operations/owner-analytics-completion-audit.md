@@ -182,7 +182,7 @@ La implementación local agrega los commits `937cbf5` (schema operacional),
 de schema/facts/generation/dashboard. La fixwave final agrega `0ec27ef`
 (consentimiento, opt-in, privacidad del prompt y circuito operativo) y `5979414`
 (fixtures PostgreSQL de facts y presupuesto). Validaciones nuevas: 45 archivos
-unitarios analytics/operaciones, 331 tests, y 4 suites PostgreSQL con 19 tests
+unitarios analytics/operaciones, 335 tests, y 5 suites PostgreSQL con 22 tests
 pasando sobre una base disposable con las 57 migraciones desde cero; Prisma
 validate/generate, typecheck, lint y diff-check también pasan. El cleanup de
 `localStorage` del harness de privacidad fue corregido. La corrida unitaria
@@ -230,9 +230,10 @@ posterior pasó 8/8; el fallo anterior por columna inexistente ya no se reproduc
   pasa a `generation_failed`; no queda un `running` huérfano sin reintento.
 - Si el proveedor omite `output_tokens`, el presupuesto cobra el tope solicitado;
   así un usage incompleto no permite sobrepasar el límite semanal.
-- El monitor no drena Resend mientras el estado sea `warning`, `critical` o
-  `not_initialized`. El job puede persistir facts determinísticos, pero suspende
-  nuevas llamadas AI/emails hasta que la operación vuelva a `healthy`.
+- Durante `warning`/`critical` el monitor drena sólo alertas operativas ya
+  creadas; suspende digest semanales. En `not_initialized` no drena ningún
+  outbox. El job puede persistir facts determinísticos, pero suspende nuevas
+  llamadas AI/emails hasta que la operación vuelva a `healthy`.
 - Emails semanales también exigen la preferencia global `enabled`; una lista de
   destinatarios malformada se ignora cuando alertas están apagadas y falla cerrado
   sólo al habilitarlas.
@@ -241,3 +242,19 @@ La verificación E2E dedicada posterior pasó completa sobre esta rama: contrato
 público `8/8` y dashboard owner `7/7`, ambos usando sus harnesses de servidor y
 DB disposable. Esto cierra la validación E2E de analytics; no convierte en verde
 la suite unitaria completa del repositorio ni activa staging/producción.
+
+### Revisión final de gaps operativos — 2026-09-05
+
+La revisión independiente posterior cerró seis defectos de consistencia local:
+alertas creadas durante incidentes ya no quedan retenidas hasta recovery, los
+inicios concurrentes del heartbeat se serializan con advisory lock, el motor de
+facts detecta truncamiento mediante sentinel, una re-ejecución con el mismo hash
+preserva fallos de generación, y el outbox cancela un digest cuyo email actual
+ya no coincide con el destinatario congelado. La suite focal quedó en
+45 archivos/335 tests; la matriz PostgreSQL adicional quedó en 5 suites/22
+tests; E2E público y dashboard permanecen 8/8 y 7/7.
+
+El esquema soporta procedencia `consentVersion` v1/v2, pero la captura pública
+de esta rama sigue siendo v1. Se añadió al plan el trabajo pendiente para cerrar
+v1/abrir v2 sin solapamiento, enrutar toda la captura y probar aislamiento antes
+de habilitar IA. Por ello no se afirma que exista una fuente v2 productiva.

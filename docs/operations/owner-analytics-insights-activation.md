@@ -18,7 +18,11 @@ tokens, limita llamadas por semana, aplica circuito half-open y espera al menos
 una hora entre reintentos y persiste un `Retry-After` válido entre una y 24 horas.
 El claim exige consentimiento fuente v2 y revalida el opt-in dentro de la
 transacción; si el monitor operacional está habilitado y no está `healthy`, se
-persisten facts determinísticos pero no se llama a IA ni se drena el outbox.
+persisten facts determinísticos, no se llama a IA y sólo se drenan alertas
+operativas (no digest semanales). En `not_initialized` no se drena ningún
+outbox. El código de captura pública sigue en v1: antes de cualquier activación
+hay que desplegar y verificar el paso de ruta source-consent v2 del plan,
+incluido el cierre de v1/apertura de v2 sin solapamiento.
 Antes de activar IA aún debe verificarse este comportamiento con un proveedor
 simulado/staged y un presupuesto real; un presupuesto de llamadas por sí solo no
 es evidencia suficiente de control de costo.
@@ -31,6 +35,9 @@ es evidencia suficiente de control de costo.
 - Outbox: apertura, escalamiento, recordatorio, resolución, ambigüedad y corte de 23 h; verificar que los incidentes activos no se purgan.
 - Weekly: semana v1 sólo determinística, semana v2 con al menos 20 intentos maduros, semana mixta excluida, cursor repetido idempotente y hash estable.
 - Consentimiento: activar/desactivar IA y email desde owner/admin; revocar email antes de send cancela la entrega y perder el rol cancela el retry.
+- Consentimiento fuente: con la bandera aún apagada, demostrar que v1 continúa
+  siendo la única versión capturable; en staged, cerrar v1/abrir v2, crear una
+  semana v2 completa y excluir una semana mixta antes de cualquier proveedor.
 - Health-check externo: respuesta malformed/unreachable/`warning` debe fallar sólo cuando `OWNER_ANALYTICS_MONITOR_EXPECTED=true`; con `false` debe omitir la llamada.
 
 ## Rollback

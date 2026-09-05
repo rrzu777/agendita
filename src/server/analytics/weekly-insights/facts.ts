@@ -32,7 +32,12 @@ function rate(numerator: number, denominator: number): number | null { return de
 
 export async function buildWeeklyFacts(input: { businessId: string; weekStart: Date; now: Date }): Promise<WeeklyFactsResult> {
   const config = getOwnerAnalyticsInsightsConfig()
-  const rows = await prisma.analyticsDailyMetric.findMany({ where: { businessId: input.businessId, cohortLocalDate: { gte: input.weekStart, lt: new Date(input.weekStart.getTime() + 7 * 24 * 60 * 60 * 1000) }, retentionExpiresAt: { gt: input.now }, state: 'closed', coverage: 'complete' }, orderBy: [{ cohortLocalDate: 'asc' }, { id: 'asc' }], take: 20000 })
+  const rows = await prisma.analyticsDailyMetric.findMany({ where: { businessId: input.businessId, cohortLocalDate: { gte: input.weekStart, lt: new Date(input.weekStart.getTime() + 7 * 24 * 60 * 60 * 1000) }, retentionExpiresAt: { gt: input.now }, state: 'closed', coverage: 'complete' }, orderBy: [{ cohortLocalDate: 'asc' }, { id: 'asc' }], take: 20001 })
+  if (rows.length > 20000) {
+    const sourceConsentVersion = rows.some(row => row.consentVersion === 2) ? 2 : 1
+    const sourceExpiry = new Date(Math.min(...rows.map(row => row.retentionExpiresAt.getTime())))
+    return { status: 'insufficient_data', sourceConsentVersion, facts: null, sourceExpiry, inputHash: hash({ businessId: input.businessId, weekStart: input.weekStart.toISOString(), reason: 'incomplete_source', overflow: true }), reasonCode: 'incomplete_source' }
+  }
   const rawCells = asCells(rows as unknown as Array<Record<string, unknown>>)
   const markerGroups = new Map<string, DailyMetricCell[]>()
   for (const row of rawCells.filter(row => row.metricKey === '__publication__')) { const key = `${row.cohortLocalDate}|${row.businessTimeZone}|${row.definitionVersion}|${row.consentVersion ?? 1}|${row.revision}`; const group = markerGroups.get(key) ?? []; group.push(row); markerGroups.set(key, group) }

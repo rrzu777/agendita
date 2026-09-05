@@ -30,7 +30,7 @@ describe('analytics email outbox', () => {
     db.updateMany.mockResolvedValue({ count: 1 })
     db.count.mockResolvedValue(1)
     db.analyticsInsightPreference.findUnique.mockResolvedValue({ enabled: true, emailEnabled: true, recipientUserId: 'user-1' })
-    db.businessUser.findFirst.mockResolvedValue({ id: 'membership-1' })
+    db.businessUser.findFirst.mockResolvedValue({ id: 'membership-1', user: { email: 'ops@example.com' } })
     send.mockResolvedValue({ success: true, messageId: 'msg_1' })
   })
   afterEach(() => vi.clearAllMocks())
@@ -56,6 +56,14 @@ describe('analytics email outbox', () => {
   it('cancels a weekly delivery when the global preference was disabled', async () => {
     db.findFirst.mockResolvedValue({ ...row, weeklyInsightId: 'weekly-1', recipientUserId: 'user-1', weeklyInsight: { businessId: 'biz-a' } })
     db.analyticsInsightPreference.findUnique.mockResolvedValue({ enabled: false, emailEnabled: true, recipientUserId: 'user-1' })
+    await expect(claimAnalyticsEmailDelivery(now)).resolves.toBeNull()
+    expect(db.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'cancelled' }) }))
+  })
+
+  it('cancels a weekly delivery when the frozen recipient email changed', async () => {
+    db.findFirst.mockResolvedValue({ ...row, weeklyInsightId: 'weekly-1', recipientUserId: 'user-1', weeklyInsight: { businessId: 'biz-a' } })
+    db.analyticsInsightPreference.findUnique.mockResolvedValue({ enabled: true, emailEnabled: true, recipientUserId: 'user-1' })
+    db.businessUser.findFirst.mockResolvedValue({ id: 'membership-1', user: { email: 'new@example.com' } })
     await expect(claimAnalyticsEmailDelivery(now)).resolves.toBeNull()
     expect(db.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'cancelled' }) }))
   })

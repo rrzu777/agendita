@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const db = vi.hoisted(() => ({
   transaction: vi.fn(),
+  executeRaw: vi.fn(),
   findUnique: vi.fn(),
   upsert: vi.fn(),
   updateMany: vi.fn(),
@@ -32,6 +33,7 @@ const now = new Date('2026-09-05T12:00:00.000Z')
 describe('durable analytics heartbeat fencing', () => {
   beforeEach(() => {
     db.transaction.mockImplementation(async (callback: (tx: unknown) => unknown) => callback({
+      $executeRaw: db.executeRaw,
       analyticsJobHeartbeat: { findUnique: db.findUnique, upsert: db.upsert },
     }))
     db.findUnique.mockResolvedValue(null)
@@ -53,6 +55,7 @@ describe('durable analytics heartbeat fencing', () => {
       update: expect.objectContaining({ lastStatus: 'running', nextBatchSequence: 1 }),
       select: { nextBatchSequence: true },
     }))
+    expect(db.executeRaw).toHaveBeenCalled()
   })
 
   it('refuses a second worker while the lease is live', async () => {

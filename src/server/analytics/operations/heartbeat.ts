@@ -52,6 +52,7 @@ export async function startAnalyticsJobRun(jobKey: AnalyticsJobKey, now = new Da
   const leaseToken = randomUUID()
   const leaseExpiresAt = new Date(now.getTime() + RUN_LEASE_MS)
   const row = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${jobKey}, 0))`
     const current = await tx.analyticsJobHeartbeat.findUnique({ where: { jobKey }, select: { lastStatus: true, leaseExpiresAt: true, lastResult: true } })
     if (current?.lastStatus === 'running' && current.leaseExpiresAt && current.leaseExpiresAt > now) {
       throw new Error('analytics_job_busy')

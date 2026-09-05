@@ -50,4 +50,13 @@ describe('weekly deterministic facts', () => {
     expect(result.reasonCode).toBe('incomplete_source')
     expect(result.facts).toBeNull()
   })
+
+  it('rejects a source page that reaches the bounded-row sentinel', async () => {
+    findMany.mockResolvedValue(Array.from({ length: 20001 }, (_, index) => row(index % 7, { id: `overflow-${index}` })))
+    const result = await buildWeeklyFacts({ businessId: 'biz-a', weekStart, now: new Date('2026-09-05T12:00:00.000Z') })
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 20001 }))
+    expect(result.status).toBe('insufficient_data')
+    expect(result.reasonCode).toBe('incomplete_source')
+    expect(result.facts).toBeNull()
+  })
 })

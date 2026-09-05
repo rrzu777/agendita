@@ -1,5 +1,6 @@
 import 'server-only'
 import { createHash } from 'node:crypto'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { analyticsRetentionStatus } from '@/server/analytics/maintenance'
 import { getOwnerAnalyticsOperationsConfig, type OwnerAnalyticsOperationsConfig } from '@/lib/analytics/operations/config'
@@ -65,7 +66,7 @@ function alertText(signal: OperationalSignal, kind: string): { subject: string; 
   return { subject: `[Agendita] ${title}`, html: `<p>${title}: ${label}.</p><p>${details}</p>`, text: `${title}: ${label}. ${details}` }
 }
 
-async function createDelivery(tx: any, input: { incidentId: string; sequence: number; kind: 'alert_open' | 'alert_escalation' | 'alert_reminder' | 'alert_beyond_tolerance' | 'alert_resolved'; signal: OperationalSignal; config: OwnerAnalyticsOperationsConfig; now: Date }): Promise<void> {
+async function createDelivery(tx: Prisma.TransactionClient, input: { incidentId: string; sequence: number; kind: 'alert_open' | 'alert_escalation' | 'alert_reminder' | 'alert_beyond_tolerance' | 'alert_resolved'; signal: OperationalSignal; config: OwnerAnalyticsOperationsConfig; now: Date }): Promise<void> {
   if (!input.config.alertsEnabled || input.config.alertEmails.length === 0) return
   const content = alertText(input.signal, input.kind)
   const dedupeKey = `analytics-incident:${input.incidentId}:${input.kind}:${input.sequence}`
@@ -114,6 +115,10 @@ async function resolveHealthyIncident(type: OperationalSignal['incidentType'], n
     const incident = await tx.analyticsOperationalIncident.findUnique({ where: { activeKey: key } })
     if (!incident) return
     const shouldNotify = config.alertsEnabled && incident.lastNotificationStatus === 'sent'
+    await tx.analyticsEmailDelivery.updateMany({
+      where: { incidentId: incident.id, status: { in: ['pending', 'failed', 'ambiguous'] } },
+      data: { status: 'cancelled', leaseToken: null, leaseExpiresAt: null },
+    })
     await tx.analyticsOperationalIncident.update({ where: { id: incident.id }, data: { activeKey: null, resolvedAt: now, healthySince: now, retentionExpiresAt: new Date(now.getTime() + INCIDENT_RETENTION_MS) } })
     if (shouldNotify) {
       const signal: OperationalSignal = { incidentType: type, severity: incident.severity, details: { resolvedAt: now.toISOString() }, beyondTolerance: false }

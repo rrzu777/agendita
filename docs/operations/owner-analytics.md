@@ -537,4 +537,12 @@ Los emails se congelan en `AnalyticsEmailDelivery`, con hash de payload, una cla
 
 La segunda migración aditiva `20260905130000_owner_analytics_weekly_insights` agrega preferencias, snapshots semanales, intentos de generación, enlace weekly del outbox y `consentVersion` en agregados. El selector espera el miércoles 09:00 local, sólo usa siete cohortes cerradas de la misma zona/definición/consentimiento y devuelve cursor estable. Facts son determinísticos, con numeradores y denominadores explícitos, máximo tres señales y hash de entrada. La IA sólo se puede reclamar con bandera global, allowlist de negocios, privacidad aprobada, modelo `gpt-5.6-luna`, presupuesto positivo, consentimiento v2 y al menos 20 intentos maduros; usa Responses API, `store:false`, Structured Outputs, 700 tokens, 15 s y `maxRetries:0`. Si falla, el dashboard conserva facts determinísticos. Todas las flags siguen `false`/vacías.
 
+La captura pública y el período de colección siguen siendo v1 en esta rama. La
+procedencia v1/v2 del esquema no implica que exista una fuente v2 activa: antes
+de la IA hay que implementar el cambio de versión con cierre de v1, apertura
+v2 sin solapamiento, routing de cliente/ingesta/mantenimiento y prueba de
+aislamiento. Durante `warning`/`critical` el monitor puede drenar alertas
+operativas de incidentes ya creadas, pero no digest semanales; en
+`not_initialized` no drena ningún outbox.
+
 Antes de activar el monitor o insights se requiere aplicar ambas migraciones, probar rollback/restauración sobre copia, configurar `OWNER_ANALYTICS_MONITOR_EXPECTED` y el workflow de insights como variables de repositorio sólo después de revisión de privacidad/legal, proveedor, destinatarios, presupuesto y una prueba sintética de email/IA. Health-check omite el monitor mientras esa variable sea `false` y sólo falla por `warning`, `critical`, `not_initialized` o respuesta inválida cuando se espera explícitamente. Ver `owner-analytics-insights-activation.md`.

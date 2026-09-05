@@ -6,7 +6,7 @@ const drain = vi.hoisted(() => vi.fn())
 const findHeartbeat = vi.hoisted(() => vi.fn())
 
 vi.mock('@/server/analytics/operations/incidents', () => ({ evaluateOwnerAnalyticsOperations: evaluate }))
-vi.mock('@/server/analytics/operations/email-outbox', () => ({ drainAnalyticsEmailOutbox: drain }))
+vi.mock('@/server/analytics/operations/email-outbox', () => ({ drainAnalyticsEmailOutbox: drain, OPERATIONAL_NOTIFICATION_KINDS: ['alert_open', 'alert_escalation', 'alert_reminder', 'alert_beyond_tolerance', 'alert_resolved'] }))
 vi.mock('@/lib/db', () => ({ prisma: { analyticsJobHeartbeat: { findUnique: findHeartbeat } } }))
 
 import { POST } from '@/app/api/cron/owner-analytics-monitor/route'
@@ -58,7 +58,7 @@ describe('owner analytics monitor route', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ state: 'critical', heartbeat: { consecutiveFailures: 4 }, deliveries: { sent: 0, failed: 0, pending: 0 } })
     expect(findHeartbeat).toHaveBeenCalledWith(expect.objectContaining({ where: { jobKey: 'owner_analytics_maintenance' } }))
-    expect(drain).not.toHaveBeenCalled()
+    expect(drain).toHaveBeenCalledWith({ maxDeliveries: 10, notificationKinds: ['alert_open', 'alert_escalation', 'alert_reminder', 'alert_beyond_tolerance', 'alert_resolved'] })
   })
 
   it('drains a bounded outbox when operations are healthy', async () => {
@@ -72,5 +72,16 @@ describe('owner analytics monitor route', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ state: 'healthy', deliveries: { sent: 1 } })
     expect(drain).toHaveBeenCalledWith({ maxDeliveries: 10 })
+  })
+
+  it('does not drain an outbox before the monitor has initialized', async () => {
+    vi.stubEnv('OWNER_ANALYTICS_OPERATIONAL_MONITOR_ENABLED', 'true')
+    vi.stubEnv('OWNER_ANALYTICS_ALERTS_ENABLED', 'true')
+    vi.stubEnv('OWNER_ANALYTICS_ALERT_EMAILS', 'ops@example.com')
+    evaluate.mockResolvedValue({ state: 'not_initialized', incidents: [], backlog: { overdueMs: 0, dangerous: false, beyondTolerance: false, hasExpired: false } })
+    const response = await POST(request())
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ state: 'not_initialized', deliveries: { sent: 0, failed: 0, pending: 0 } })
+    expect(drain).not.toHaveBeenCalled()
   })
 })
