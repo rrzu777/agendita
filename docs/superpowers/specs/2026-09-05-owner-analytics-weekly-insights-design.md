@@ -44,8 +44,8 @@ No incluye:
 
 El subsistema tiene cinco unidades:
 
-1. **Selector semanal:** descubre negocios habilitados cuya semana anterior está
-   cerrada y aún no tiene reporte.
+1. **Selector semanal:** descubre semanas cerradas sin reporte y retoma estados
+   reintentables cuyo `nextRetryAt` venció, antes de crear trabajo nuevo.
 2. **Motor de hechos:** lee métricas y desgloses propios, comprueba cobertura y
    calcula señales canónicas.
 3. **Catálogo de acciones:** asocia cada señal elegible a acciones permitidas.
@@ -53,8 +53,15 @@ El subsistema tiene cinco unidades:
 5. **Publicador:** persiste el reporte y, si existe opt-in, envía ese mismo
    artefacto a un único owner/admin.
 
-Un workflow separado corre cada hora. El servidor procesa como máximo 25
-negocios por invocación y devuelve cursor. La elegibilidad horaria se calcula en
+Un workflow separado corre cada hora. La ruta tiene máximo 60 segundos, deadline
+cooperativo de 40 segundos y concurrencia de proveedor 1. Descubre hasta 25
+candidatos, pero sólo reclama trabajo si quedan al menos 20 segundos: 15 de
+request y 5 de persistencia. Consultas/transacciones se acotan a 5 segundos.
+El driver tiene presupuesto global de 8 minutos y hasta 20 requests. Guarda
+cursor de recorrido en `AnalyticsJobHeartbeat` con jobKey `weekly_insights`,
+lease y fencing definidos en el spec operacional. Retoma el cursor en la próxima
+ejecución y vuelve al inicio sólo al completar el recorrido; así evita inanición.
+La elegibilidad horaria se calcula en
 la zona del negocio: miércoles desde las 09:00 se genera la semana local anterior
 de lunes 00:00 a lunes 00:00. El margen hasta el miércoles reduce cohortes aún
 madurando o publicaciones tardías.
@@ -87,7 +94,10 @@ sección de privacidad versión 2.
 
 ### `AnalyticsWeeklyInsight`
 
-Una fila por negocio, semana y conjunto de versiones.
+Una fila por negocio y fecha local de inicio de semana, con clave única
+`businessId + weekStart`. Zona y límites UTC se congelan al crearla. Un cambio
+de zona no crea otro reporte para esa fecha ni permite intervalos solapados con
+reportes ya existentes; la semana de transición se marca incompatible.
 
 | Campo | Contrato |
 | --- | --- |
@@ -102,29 +112,68 @@ Una fila por negocio, semana y conjunto de versiones.
 | `model` | modelo efectivo nullable |
 | `providerResponseId` | ID técnico nullable; nunca se expone al owner |
 | `inputTokens`, `outputTokens` | uso reportado nullable |
-| `generationAttempts`, `lastFailureCode`, `nextRetryAt` | control durable de reintento |
-| `emailStatus`, `emailAttempts`, `emailedAt`, `emailFailureCode` | entrega del artefacto persistido |
+| `generationAttempts`, `lastFailureCode`, `nextRetryAt` | resumen de intentos durables |
+| `leaseToken`, `leaseExpiresAt`, `generationState` | CAS; `idle`, `running`, `retry_wait` o `terminal` |
+| `revision`, `sourceRevisionHash`, `deliveryLockedAt` | control de revisión y congelación de contenido |
+| `emailStatus` | proyección del estado en `AnalyticsEmailDelivery` |
 | `generatedAt`, `retentionExpiresAt` | expiración máxima de 90 días |
 
-Clave única: negocio + semana + zona + `definitionVersion` + `engineVersion` +
-`promptVersion`. Antes de una llamada al proveedor se crea/reclama la fila y se
-incrementa `generationAttempts` en transacción. Esto permite contar también
-llamadas fallidas y aplicar un presupuesto global sin otra tabla.
+Cambiar modelo/prompt/motor no crea otro reporte ni reinicia presupuesto. Antes
+del primer intento de proveedor pueden refrescarse hechos y aumentar revisión.
+Al reclamar generación se congelan hechos, inputHash y versiones para sus dos
+intentos; al reclamar email se congela además el payload de entrega. Un reporte
+`ready` es terminal. No hay regeneración automática después de éxito ni de email.
+La UI muestra fecha de corte: es un snapshot, no un reflejo mutable del dashboard.
+
+Estados `generation_failed` recuperables se retoman al vencer `nextRetryAt`;
+`insufficient_data` por publicación pendiente se revisa cada hora hasta viernes
+09:00 local. Falta permanente de cobertura/retención y bajo volumen maduro son
+terminales. El selector hace catch-up hasta dos semanas atrasadas y nunca envía
+backfill más antiguo. Activar IA después de entregar el resumen aplica a semanas
+futuras. Apagar IA durante un retry deja el reporte determinista terminal.
+
+### `AnalyticsInsightGenerationAttempt`
+
+Tabla adicional por reserva de llamada: `id`, `weeklyInsightId`, `attemptNumber`
+(único por reporte), `budgetWeekStartUtc`, `reservedAt`, `startedAt`, `finishedAt`,
+`leaseToken`, `status` (`reserved`, `succeeded`, `failed`, `ambiguous`, `cancelled`),
+`failureCode`, `providerResponseId`, `inputTokens`, `outputTokens`,
+`retentionExpiresAt`. No almacena prompt, texto de error ni respuesta cruda.
+Cada reserva consume presupuesto aunque el worker muera antes de enviar; nunca
+se libera una reserva ambigua. Se conservan hasta 90 días desde reservar y sin
+PII; borrar el informe anula su FK, no borra reservas del presupuesto vigente.
+El job semanal usa la fila singleton de heartbeat para `circuitOpenUntil` y
+`probeLeaseUntil`, actualizados bajo el mismo lock global del presupuesto.
 
 `AnalyticsDailyMetric` incorpora `consentVersion` a su grano y clave única. Las
 filas históricas se backfillean como versión 1 y nunca son elegibles para IA. La
-nueva captura consentida se publica como versión 2; no se mezclan versiones en
-un reporte ni se reinterpretan datos antiguos.
+nueva captura consentida se publica como versión 2. Antes de activar v2, una
+migración aditiva propaga versión a intentos y snapshots de Booking desde su
+sesión; fuentes sin procedencia verificable quedan `unknown` y fuera de IA.
+Credenciales, transporte, bootstrap, eventos, períodos, agregado, freeze/purga y
+DAL deben transportar/verificar la versión fuente, no el valor global actual.
+
+El despliegue primero soporta lectura de ambas versiones manteniendo emisión v1.
+La activación v2 posterior cierra períodos v1 y abre v2 sin solapamiento, requiere
+nuevo consentimiento explícito y no reutiliza aceptación almacenada v1. Tokens
+v1 en vuelo pueden finalizar dentro de su ventana original, siempre etiquetados
+v1; no se convierten a v2. Los nuevos flujos usan v2. Las claves y consultas
+históricas incluyen consentimiento en todas sus dimensiones y marcadores.
 
 ## 5. Elegibilidad y calidad
 
 El motor sólo usa la semana anterior cuando se cumplen todas estas condiciones:
 
-- existen los siete marcadores diarios esperados;
+- existen marcadores de publicación para los siete días y cada población
+  utilizada; no se confunden con las celdas métricas del mismo día;
 - todos están `closed`, con cobertura `complete`, misma zona y misma definición;
-- todos tienen `consentVersion=2`; datos o períodos versión 1 quedan excluidos;
-- no hay período de captura cerrado o deshabilitado dentro de la semana;
-- hay al menos 20 intentos `complete` maduros;
+- el resumen determinista admite semanas íntegramente v1 o íntegramente v2;
+  una semana mixta muestra el motivo de incompatibilidad. La narrativa
+  IA requiere siete días íntegramente v2, sin fuentes v1/unknown ni mezcla;
+- los períodos cubren el intervalo completo sin huecos; que un período termine
+  después del intervalo no invalida su cobertura histórica;
+- para recomendaciones/IA hay al menos 20 intentos `complete` maduros; por debajo
+  se muestran conteos deterministas y aviso de muestra insuficiente, sin consejo;
 - la consulta de desgloses crudos, cuando una señal la necesita, responde
   `complete` y sigue dentro de retención;
 - numerador y denominador de cada comparación pertenecen a la misma población.
@@ -145,16 +194,23 @@ calculada localmente, período, comparación nullable, nivel de evidencia y
 `actionIds` permitidos. Los porcentajes mostrados se derivan otra vez desde los
 enteros persistidos para evitar inconsistencias.
 
-Se emiten como máximo tres señales, ordenadas por evidencia y alcance:
+Todas las señales comerciales usan intentos completos maduros, separan
+convertidos/interrupciones conocidas/medición incompleta y excluyen estos últimos
+de inferencias de interrupción. `confidence` es `limited` para todo este MVP y
+se calcula en servidor: los umbrales son heurísticos, no significancia estadística.
+Las comparaciones de servicio/canal quedan como desglose descriptivo sin ranking
+ni recomendación automática hasta validar una regla de incertidumbre adecuada.
+
+Se emiten como máximo tres señales; prioridad fija disponibilidad, paso, pago,
+luego mayor número afectado y desempate por código. Calidad aparece aparte y
+nunca compite con recomendaciones comerciales:
 
 | Señal | Requisito adicional | Acciones permitidas |
 | --- | --- | --- |
-| `availability_empty_high` | al menos 5 intentos afectados y tasa >=30%; diagnóstico `no_capacity` sólo si fue demostrado | revisar cobertura de agenda; probar nuevos bloques en fechas consultadas |
-| `step_drop_high` | al menos 5 interrupciones conocidas; caída >=25 puntos entre pasos válidos | revisar claridad del paso; probar simplificación guiada |
-| `payment_branch_drop_high` | al menos 5 afectados; pantalla/método observado con cobertura completa | revisar instrucciones y métodos ofrecidos; probar copy aclaratorio |
-| `service_conversion_gap` | ambos servicios con >=10 intentos y brecha >=20 puntos | revisar disponibilidad/configuración del servicio; comparar su presentación |
-| `channel_conversion_gap` | ambos canales con >=10 intentos y brecha >=20 puntos | revisar coherencia del enlace/campaña fuera de analytics; repetir medición |
-| `capture_quality_risk` | parciales o gaps >=10% del total observado | corregir cobertura antes de tomar decisiones comerciales |
+| `availability_empty_high` | intentos con >=1 resultado vacío vigente / intentos con >=1 resultado vigente no erróneo; denominador >=20, afectados >=5 y tasa >=30% | revisar reglas/fechas consultadas; probar cupos sólo si la subpoblación `no_capacity` satisface por sí misma esos umbrales |
+| `step_drop_high` | interrupciones conocidas cuyo último paso válido es S / intentos con paso S observado válido; denominador >=20, afectados >=5 y tasa >=25%; misma rama aplicable, revisiones obsoletas excluidas | revisar claridad del paso |
+| `payment_branch_drop_high` | interrupciones conocidas en pago / intentos con esa pantalla de pago válida observada; denominador >=20, afectados >=5 y tasa >=25%; no interpreta espera posterior a Booking como interrupción | revisar instrucciones y métodos ofrecidos |
+| `capture_quality_risk` | unión de intentos parciales y con gap / total de intentos observados, sin doble conteo; >=10% | advertencia determinista de calidad separada de IA |
 
 Los nombres de campañas, servicios y profesionales no entran en el input de IA.
 La UI puede resolver nombres propios después, desde consultas tenant autorizadas,
@@ -172,7 +228,7 @@ reasoning.effort: none
 store: false
 max_output_tokens: 700
 timeout de cliente: 15 segundos
-reintentos automáticos del SDK: máximo 1
+reintentos automáticos del SDK: 0
 ```
 
 `gpt-5.6-luna` está orientado a cargas sensibles a costo y soporta Responses API
@@ -188,7 +244,7 @@ valida además con Zod. El esquema contiene:
 - `findings`: máximo tres, cada uno con `factId`, `headline`, `explanation` y
   exactamente uno o dos `actionIds` recibidos;
 - `caveats`: de cero a tres códigos allowlisted;
-- `confidence`: `limited`, `moderate` o `strong`.
+- la confianza se añade desde el motor; el modelo no devuelve ese campo.
 
 La aplicación rechaza IDs no entregados, números nuevos, porcentajes en campos de
 texto, acciones ajenas al catálogo, más elementos o strings fuera de límite. Una
@@ -224,19 +280,24 @@ OWNER_ANALYTICS_AI_MAX_OUTPUT_TOKENS_PER_CALL=700
 OWNER_ANALYTICS_AI_MAX_ATTEMPTS_PER_REPORT=2
 ```
 
-El claim transaccional toma un advisory lock PostgreSQL global, suma
-`generationAttempts` de la semana y reserva una llamada antes de liberar el
-lock. Así dos workers no pueden sobrepasar el presupuesto. Sin límite global
-positivo no hay llamadas. Cada reporte admite dos intentos de proveedor como
-máximo. El SDK maneja un único reintento elegible;
-Agendita no agrega otro loop inmediato. Un segundo intento de reporte puede
-ocurrir en una ejecución posterior, después de una hora, con el mismo
-`inputHash`.
+Un advisory lock PostgreSQL global protege la comprobación de presupuesto,
+circuit breaker y reserva de llamada. La semana de gasto es lunes 00:00 UTC a
+lunes 00:00 UTC según `reservedAt`, nunca la semana analizada. Se cuentan todas
+las reservas en `AnalyticsInsightGenerationAttempt`. Sin límite positivo no se
+llama. Cada informe admite dos reservas totales, incluso tras cambios de versión.
+Cada reserva autoriza un único request HTTP; SDK sin retries. Lease de generación
+de 45 segundos y finalización CAS con token: respuesta tardía se descarta. Lease
+expirado queda `ambiguous`, consume presupuesto y puede habilitar un segundo
+intento después de una hora, con igual inputHash. No se garantiza una única
+facturación ante timeout; sí máximo dos requests y un solo informe publicado.
 
-No se reintentan errores de autenticación, billing, schema o configuración. Si
-hay cinco fallas consecutivas de proveedor durante seis horas, se abre el circuit
-breaker lógico: no se reservan nuevas llamadas por seis horas y se conserva sólo
-salida determinista. Su estado se deriva de filas durables, no de memoria.
+No se reintentan errores de autenticación, billing, schema, negativa o configuración.
+Timeout, red, 5xx y rate limit temporal admiten el segundo intento, con
+`nextRetryAt=max(ahora+1h, Retry-After válido)` y jitter hasta 60 segundos.
+Cinco resultados fallidos/ambiguos consecutivos, ordenados por finalización e ID
+dentro de seis horas, abren el circuito seis horas. Un éxito rompe la secuencia.
+Vencido el plazo, sólo una reserva obtiene probe lease; éxito cierra circuito,
+falla/ambigüedad lo reabre. No se recalcula el vencimiento por cada lectura.
 
 Los tokens reportados se almacenan para auditoría. El límite de input se valida
 antes del request con el tokenizador compatible; el límite de output es del
@@ -259,7 +320,15 @@ El dashboard muestra:
 El email toma el reporte ya persistido. No dispara una nueva generación. Incluye
 la misma evidencia, caveats y enlace a `/dashboard/metricas`; no incluye datos de
 clientes ni pixel de seguimiento propio. Su envío se reclama en transacción y
-usa una clave idempotente por `weeklyInsightId + recipientBusinessUserId`.
+usa la outbox `AnalyticsEmailDelivery` del spec operacional, con clave única
+`weeklyInsightId:weekly_digest` independiente de destinatario/revisión. El
+payload y email se congelan en el primer claim. Cambio de email, rol, destinatario
+u opt-in cancela entregas aún no iniciadas; después de un intento no se sustituye
+el destinatario bajo la misma clave ni se crea otra entrega automáticamente.
+Reintentos revalidan autorización y usan el mismo payload. Revocar no puede
+recuperar un email ya aceptado por el proveedor. Se aplican lease, tres llamadas
+y corte de 23 horas de la outbox. Un fallo de generación ya enviado como resumen
+determinista no provoca otro email al recuperarse la IA.
 
 Si IA está desactivada o falla, el negocio puede ver/recibir el resumen
 determinista. Si faltan datos confiables, no se envía un “consejo” vacío; el
@@ -285,8 +354,14 @@ notas, hora exacta, evento crudo, nombre de negocio, campaña, promoción, servi
 o profesional. El aislamiento tenant se aplica antes de calcular; no existe una
 consulta cross-tenant para generar el reporte.
 
-Reportes, hechos y metadatos de proveedor vencen como máximo a los 90 días. El
-mantenimiento purga `AnalyticsWeeklyInsight` vencidos. Deshabilitar IA evita
+Reportes, hechos y payload de email vencen en el mínimo de: fin UTC de la semana
+más 90 días y vencimiento más temprano de las fuentes utilizadas (incluida la
+semana de comparación). Ese vencimiento se fija al crear y sólo puede acortarse;
+reintentos/revisiones no lo extienden. El DAL oculta vencidos inmediatamente y
+la purga acotada dispone de hasta 24 horas, como el mantenimiento existente.
+Las reservas de llamada sin contenido tienen su plazo técnico separado de 90
+días desde reserva y conservan presupuesto aunque se borre el informe.
+El mantenimiento purga `AnalyticsWeeklyInsight` vencidos. Deshabilitar IA evita
 nuevas llamadas; no elimina antes de plazo un reporte ya generado, salvo acción
 explícita de borrado definida por privacidad.
 
@@ -302,7 +377,10 @@ explícita de borrado definida por privacidad.
 - Preferencia cambia durante el job: revalidar opt-in, rol y destinatario justo
   antes de llamar y antes de enviar.
 - Captura/operaciones se vuelven no saludables: suspender nuevas generaciones y
-  emails; no borrar reportes existentes.
+  emails hasta recuperar operación. Cerrar captura voluntariamente después de
+  la semana no invalida hechos históricos; revocar opt-in sí cancela nuevas
+  llamadas/envíos. Una revocación se revalida antes del request; no se promete
+  retirar datos ya aceptados por el proveedor.
 
 ## 12. Pruebas y gates de salida
 
@@ -313,15 +391,21 @@ Pruebas unitarias:
 - umbrales, orden y máximo de tres señales;
 - ninguna tasa calculada por el modelo ni dimensión libre en el prompt;
 - schema Zod/JSON, refusals, truncamiento, IDs inventados y strings límite;
-- presupuesto, circuit breaker y dos intentos máximos.
+- presupuesto por semana de gasto UTC, circuito half-open y dos requests reales máximos;
+- cohortes v1/v2 mixtas, tokens v1 en vuelo y procedencia desconocida;
+- ramas opcionales, denominadores exactos y acciones sólo con diagnóstico demostrado.
 
 Pruebas de integración PostgreSQL:
 
-- claim concurrente produce una llamada lógica por reporte;
+- claims concurrentes, worker muerto y respuestas tardías respetan lease/fencing;
+- upgrade de prompt/modelo no duplica informe, email ni presupuesto;
+- reanudar cursor no pierde candidatos y deadline impide reclamar trabajo excesivo;
+- retención se conserva tras revisión, comparación y reintento;
+- envío ambiguo mantiene payload/destinatario y corta retries a las 23 horas;
 - suma global de intentos no excede el presupuesto;
 - aislamiento por negocio y validación de recipient role;
 - purga a 90 días;
-- cambio de opt-in durante ejecución cancela llamada/envío;
+- cambio de opt-in antes del request cancela llamada/envío; después no promete retractación;
 - email reutiliza exactamente el reporte persistido.
 
 Pruebas HTTP/UI:
@@ -342,3 +426,22 @@ Gates operacionales antes de activación:
 
 Código desplegado, migraciones aplicadas o CI verde no activan ninguno de esos
 gates por sí solos.
+
+## 13. Cierre de la revisión de gaps
+
+El conjunto requiere seis tablas nuevas: heartbeat, incidentes, outbox de emails,
+preferencias, informes e intentos de generación. La outbox se entrega con alertas
+y se amplía aditivamente con la FK semanal. Orden de implementación: operaciones
+y entrega durable; transición de consentimiento; motor/reportes; narrador y UI.
+
+| Gap revisado | Contrato corregido |
+| --- | --- |
+| Presupuesto y circuito | Una reserva por request, SDK sin retry, historial de resultados y half-open exclusivo |
+| Recuperación de workers/envíos | Leases, CAS, payload congelado y corte de idempotencia |
+| Heartbeat engañoso | Éxito sólo al completar recorrido, no cada lote |
+| Consentimiento v2 | Compatibilidad v1/v2 en toda la cadena y resumen v1 sin IA |
+| Duplicados y reanudación | Identidad estable negocio-semana y estados reintentables explícitos |
+| Duración de lotes | Deadline, concurrencia 1, margen antes de reclamar y cursor durable |
+| Calidad de recomendaciones | Denominadores, ramas y confianza del servidor; comparaciones sólo descriptivas |
+| Retención | Vencimiento inmutable ligado a fuentes; política operacional separada |
+| Monitor y purga | Skip esperado externo, detección de apagado inesperado y purga independiente del heartbeat |

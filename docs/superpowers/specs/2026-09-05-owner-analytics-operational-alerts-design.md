@@ -69,16 +69,28 @@ Una fila por trabajo, con `jobKey` único. Para este alcance sólo existe
 | `currentRunId` | UUID de la ejecución más reciente iniciada |
 | `lastStartedAt` | inicio autoritativo del servidor |
 | `lastCompletedAt` | término más reciente aceptado |
-| `lastSuccessAt` | último término sin errores |
+| `lastSuccessAt` | último recorrido completo sin errores ni continuaciones pendientes |
 | `lastStatus` | `running`, `succeeded`, `partial` o `failed` |
 | `consecutiveFailures` | aumenta en `partial/failed`, vuelve a cero en éxito |
 | `consecutiveSuccesses` | aumenta en éxito, vuelve a cero en `partial/failed` |
 | `lastResult` | JSON cerrado: `errors`, `deleted`, `published`, `hasMore`, `overdueMs`, `dangerous`, `beyondTolerance`, `durationMs` |
 | `updatedAt` | reloj de persistencia |
 
-Al iniciar, una transacción asigna un `currentRunId` nuevo y marca `running`. Al
-terminar, el `UPDATE` exige ese mismo `currentRunId`; un request antiguo que
-finalice tarde no puede reemplazar el estado de uno más nuevo. El JSON no admite
+El driver genera un `runId` para todo el recorrido horario y lo conserva entre
+continuaciones. La fila añade `leaseToken`, `leaseExpiresAt`, `lastProgressAt`,
+`nextBatchSequence` y `runErrors`. El lease de ejecución dura 11 minutos, por
+encima del límite total del driver, y no se amplía con cada lote. Cada lote lleva
+`runId` y secuencia; un CAS reclama la secuencia esperada y rechaza duplicados
+concurrentes. Reintentar un lote cuya respuesta se perdió falla cerrado para ese
+recorrido; el siguiente recorrido puede repetir mantenimiento idempotente.
+
+Un lote con `hasMore=true` actualiza progreso, nunca `lastSuccessAt`. Sólo el
+lote terminal con `hasMore=false`, cero errores acumulados y sin retención
+vencida marca éxito. El driver comunica agotamiento/error mediante finalización
+protegida; si muere sin comunicarlo, el monitor expira el lease y registra un
+único fracaso. Contadores de éxito/falla avanzan una vez por `runId`, mediante
+CAS. Un nuevo recorrido no pisa un lease activo. La finalización exige el token
+vigente; un request antiguo no puede reemplazar un recorrido posterior. El JSON no admite
 IDs de negocio, emails, payloads de eventos ni texto de excepciones.
 
 ### `AnalyticsOperationalIncident`
@@ -98,6 +110,7 @@ Una fila por ciclo de vida de incidente.
 | `lastNotificationStatus` | `pending`, `sent`, `failed` o `skipped` |
 | `lastNotificationCode` | enum interno cerrado, nunca respuesta cruda del proveedor |
 | `details` | JSON cerrado con edad, contador o atraso; sin PII ni IDs tenant |
+| `healthySince` | primera evaluación sana; se borra al reaparecer la señal |
 | `retentionExpiresAt` | 90 días después de resolver |
 
 `activeKey` resuelve concurrencia sin depender de un índice parcial no expresable
@@ -118,14 +131,19 @@ El evaluador usa hora del servidor y estas reglas exactas:
 | Retención vencida | atraso desde 2 h y menor que 12 h | desde 12 h; el cierre de captura existente permanece | dos evaluaciones sin atraso, separadas por al menos 15 min |
 | Retención fuera de tolerancia | no aplica | desde 24 h; misma clave de backlog, detalles actualizados y escalamiento inmediato si aún no era crítico | misma regla anterior |
 
-`hasMore=true` no es por sí solo una falla: el driver está diseñado para
-continuaciones acotadas. Sí queda en el heartbeat para diagnóstico. Cualquier
-`errors > 0` produce estado `partial`. Excepción, timeout o respuesta no válida
-produce `failed`.
+`hasMore=true` representa progreso. Agotar el recorrido sin llegar al lote
+terminal produce `partial`; excepción o lease vencido produce `failed`.
+Los dos éxitos necesarios para resolver son dos recorridos completos distintos.
+La condición de 24 horas de atraso tiene su propio hito de notificación
+`beyond_tolerance`, aunque la severidad ya fuera crítica a las 12 horas.
 
-El endpoint retorna un estado global `healthy`, `warning`, `critical` o
-`not_initialized`. El script de salud sale distinto de cero en `warning`,
-`critical`, respuesta inválida, timeout o error HTTP; por lo tanto GitHub Actions
+El endpoint retorna `healthy`, `warning`, `critical`, `not_initialized` o
+`not_enabled`. Con la variable externa de repositorio
+`OWNER_ANALYTICS_MONITOR_EXPECTED=true`, el script exige monitor habilitado e
+inicializado y sale distinto de cero ante cualquier estado distinto de
+`healthy`, respuesta inválida, timeout o error HTTP. Si esa variable está apagada,
+`not_enabled` es un skip esperado y no rompe los checks existentes; si el endpoint
+está habilitado se evalúa igualmente su salud. Por lo tanto GitHub Actions
 también conserva evidencia externa aunque falle el correo interno.
 
 Un atraso positivo menor a 2 horas queda visible en la respuesta como
@@ -145,11 +163,32 @@ Se envía correo únicamente cuando:
 - permanece abierto por 12 horas desde el último envío;
 - se resuelve después de haber sido notificado.
 
-Antes de llamar a Resend, una transacción reclama el envío y registra `pending`.
-La clave idempotente deriva de `incidentId + notificationKind + severity +
-notificationSequence`, dentro de la ventana soportada por el proveedor. Éxito,
-rechazo, falta de configuración y resultado ambiguo quedan registrados. Un fallo
-de email nunca cambia el resultado del mantenimiento, la captura ni Booking.
+### `AnalyticsEmailDelivery`: outbox durable compartida
+
+Se añade una tercera tabla operacional, reutilizada por el subsistema semanal.
+Campos: `id`, `incidentId?`, `weeklyInsightId?` (este último FK se añade en la
+migración semanal), `dedupeKey` único, `notificationKind`, `payloadHash`, payload
+HTML/texto y destinatarios congelados, `status`, `leaseToken`, `leaseExpiresAt`,
+`firstProviderAttemptAt`, `attempts`, `nextAttemptAt`, `providerMessageId?`,
+`lastFailureCode`, `sentAt`, `retentionExpiresAt`. Exactamente un padre obligatorio;
+su pertenencia y cascada se refuerzan en DB. Los emails de destinatarios sólo
+existen en esta tabla de entrega, no en detalles de incidentes ni prompts.
+
+Estados: `pending`, `sending`, `sent`, `failed`, `ambiguous`, `manual_review`,
+`cancelled`. Un claim CAS otorga lease de 90 segundos; request al proveedor
+máximo 15 segundos, sin reintentos automáticos. Una finalización exige token
+vigente. Lease vencido tras comenzar envío se considera ambiguo. Reintentos
+usan la misma clave, destinatarios y contenido; máximo tres llamadas con
+separación de 15 minutos. A las 23 horas desde el primer intento se suspende
+reenvío automático y pasa a `manual_review`, siguiendo el patrón de suscripciones
+existente; verificar la ventana soportada por Resend antes de implementar.
+
+La clave de alerta usa incidente + hito + secuencia durable; repetir evaluación
+no crea otra secuencia. Apertura, escalamiento, hito 24h, recordatorio y resolución
+son entregas distintas. Un envío pendiente previo se cancela al resolver si no
+comenzó; si es ambiguo se reconcilia sin cambiar su payload. No se envía resolución
+antes de confirmar alguna alerta previa. Falta de configuración deja entrega
+pendiente sin gastar intento. Fallas del proveedor no afectan mantenimiento.
 
 `OWNER_ANALYTICS_ALERTS_ENABLED=false` evita llamadas al proveedor pero no evita
 heartbeat, evaluación ni persistencia del incidente. Así se puede validar el
@@ -157,8 +196,12 @@ sistema antes de habilitar correo.
 
 ## 7. Endpoints, workflows y configuración
 
-- `POST /api/cron/owner-analytics` mantiene su contrato y ahora registra el
-  heartbeat alrededor de la ejecución esperada.
+- `POST /api/cron/owner-analytics` añade `runId` y secuencia de lote al driver;
+  conserva `cursor` y los campos de resultado. Driver y ruta se despliegan
+  coordinadamente. Requests legacy pueden ejecutar mantenimiento, pero no
+  acreditar salud de un recorrido instrumentado.
+- `POST /api/cron/owner-analytics-run-finish` acepta sólo runId/token y código
+  cerrado de error/agotamiento, exige `CRON_SECRET` y finaliza por CAS.
 - `POST /api/cron/owner-analytics-monitor` exige Bearer `CRON_SECRET`, no acepta
   body ni query params y devuelve `Cache-Control: no-store`.
 - `scripts/check-production-health.cjs` consulta el monitor además de los checks
@@ -180,19 +223,26 @@ el secreto ya usados por production health no se duplican.
 ## 8. Retención, seguridad y privacidad
 
 - Heartbeat conserva sólo la última ejecución; no es un log histórico.
-- Incidentes resueltos se purgan a los 90 días por mantenimiento acotado.
+- Incidentes resueltos se purgan a los 90 días desde resolución. Los abiertos
+  conservan únicamente estado operativo actual hasta resolver; no acumulan
+  observaciones históricas. Esta política operativa es distinta de la retención
+  de datos del funnel. Payloads/destinatarios de entregas de alertas vencen a los
+  90 días de crear la entrega; claves técnicas de dedupe permanecen hasta purgar
+  su incidente. El endpoint de lectura no expone contenido vencido.
 - Detalles y códigos son allowlists; no se persisten stack traces ni mensajes de
   excepción.
 - Los endpoints usan comparación segura del Bearer existente, `no-store`, método
   único y validación estricta.
-- El sistema no recibe ni devuelve datos de clientes, campañas o negocios.
+- El monitor no devuelve datos de clientes, campañas, negocios o destinatarios.
 - La migración es aditiva. Rollback de aplicación puede dejar tablas sin uso; no
   se eliminan mientras existan incidentes dentro de retención.
 
 ## 9. Fallos y recuperación
 
-- Si escribir inicio de heartbeat falla, el mantenimiento no comienza: responde
-  error para que el workflow externo lo observe.
+- Si falla exclusivamente el registro de heartbeat, se intenta la purga acotada
+  existente y se devuelve error operacional después; no se acredita éxito ni se
+  publica una cohorte bajo ese recorrido. Si la DB completa está caída, ambas
+  operaciones fallarán; no se promete drenaje en ese caso.
 - Si el trabajo termina pero no puede guardar su término, responde error; la
   siguiente evaluación verá `running` obsoleto.
 - Si evaluar incidentes falla, el endpoint falla cerrado y GitHub Actions marca
@@ -216,13 +266,16 @@ Pruebas de integración PostgreSQL:
 - finalización antigua no pisa un `currentRunId` nuevo;
 - dos evaluadores concurrentes crean un solo incidente y un solo claim;
 - purga elimina sólo incidentes resueltos vencidos;
-- falla de heartbeat impide ejecutar el trabajo;
+- falla exclusiva de heartbeat permite intentar purga y sigue reportando error;
+- continuaciones exitosas seguidas de agotamiento nunca acreditan éxito;
+- lease vencido, finalización tardía y lote duplicado no duplican contadores;
+- resultado ambiguo recupera la misma entrega y respeta ventana de 23 horas;
 - falla de email no afecta datos de analytics ni Booking.
 
 Pruebas HTTP/workflow:
 
 - auth, método, query/body, `no-store` y esquema de respuesta;
-- script sale 0 sólo en `healthy` y falla en los demás estados operables;
+- matriz de monitor esperado/habilitado, incluyendo skip inicial y desactivación inesperada;
 - proveedor mock verifica destinatarios internos e idempotencia.
 
 Antes del piloto se exige evidencia real de: una ejecución manual exitosa,
