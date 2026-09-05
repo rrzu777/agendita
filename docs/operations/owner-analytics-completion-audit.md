@@ -216,7 +216,7 @@ half-open y la espera durable de una a 24 horas, incluyendo `Retry-After` válid
 La bandera de IA continúa apagada por los gates legales, de proveedor y staged;
 no por falta de ese control local.
 
-Smoke test posterior: PostgreSQL 17 efímero local aplicó las 57 migraciones desde
+Smoke test histórico posterior: PostgreSQL 17 efímero local aplicó las 57 migraciones desde
 cero, incluyendo `20260905120000_owner_analytics_operations` y
 `20260905130000_owner_analytics_weekly_insights`; se inspeccionaron las FKs y el
 `num_nonnulls(incidentId, weeklyInsightId)=1`. El contenedor fue detenido y no
