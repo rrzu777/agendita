@@ -34,7 +34,7 @@ export async function readOwnerAnalyticsFlowBreakdowns(input: FlowReadInput, now
     return await prisma.$transaction(async tx => {
       const cohortLocalDate = { gte: new Date(from), lt: new Date(to) }
       const markers = await tx.analyticsDailyMetric.findMany({
-        where: { businessId, cohortLocalDate, metricKey: '__publication__' },
+        where: { businessId, consentVersion: 1, cohortLocalDate, metricKey: '__publication__' },
         select: { businessTimeZone: true, definitionVersion: true, frozenAt: true, retentionExpiresAt: true },
         orderBy: { id: 'asc' }, take: SOURCE_LIMIT + 1,
       })
@@ -44,7 +44,7 @@ export async function readOwnerAnalyticsFlowBreakdowns(input: FlowReadInput, now
       if (markers.some(m => m.definitionVersion !== 1)) return unavailable('incomplete_source')
       // One elapsed day on either side covers all supported UTC offsets and DST.
       // Calendar membership is still the source's immutable cohort date, not today's zone.
-      const where = { businessId, cohortLocalDate, startedAt: { gte: new Date(+new Date(from) - 86400000), lt: new Date(+new Date(to) + 86400000), lte: now } }
+      const where = { businessId, consentVersion: 1, cohortLocalDate, startedAt: { gte: new Date(+new Date(from) - 86400000), lt: new Date(+new Date(to) + 86400000), lte: now } }
       const sessions = await tx.analyticsSession.findMany({ where,
         select: { businessTimeZone: true, definitionVersion: true, retentionExpiresAt: true, normalizationVersion: true, consentVersion: true },
         orderBy: { id: 'asc' }, take: SOURCE_LIMIT + 1,

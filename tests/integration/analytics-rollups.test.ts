@@ -13,6 +13,17 @@ describe('atomic analytics publications in PostgreSQL', () => {
     expect(rows.filter(r => r.metricKey === '__publication__')).toHaveLength(3)
     expect(rows.find(r => r.metricKey === 'conversion' && r.grain === 'total' && r.population === 'complete_attempts')).toMatchObject({ numerator: 1, denominator: 1, revision: 1 })
   })
+  it('publishes v2 cohorts without mixing v1 source rows or coverage periods', async () => {
+    const f = await seedAnalyticsReport(); ids.push(f.businessId)
+    await prisma.analyticsCollectionPeriod.updateMany({ where: { businessId: f.businessId }, data: { consentVersion: 2 } })
+    await prisma.analyticsSession.update({ where: { id: f.session.id }, data: { consentVersion: 2 } })
+    await prisma.bookingFunnelAttempt.update({ where: { id: f.attempt.id }, data: { consentVersion: 2 } })
+    expect((await publishAnalyticsCohort({ ...f.cohort, consentVersion: 2 })).status).toBe('published')
+    const rows = await prisma.analyticsDailyMetric.findMany({ where: { businessId: f.businessId } })
+    expect(rows.length).toBeGreaterThan(0)
+    expect(new Set(rows.map(r => r.consentVersion))).toEqual(new Set([2]))
+    expect(rows.find(r => r.metricKey === 'conversion' && r.grain === 'total' && r.population === 'complete_attempts')).toMatchObject({ numerator: 1, denominator: 1 })
+  })
   it('removes disappeared service keys after selective cleanup, rejects stale cutoff, and preserves failed previous revision', async () => {
     const f = await seedAnalyticsReport(); ids.push(f.businessId)
     await publishAnalyticsCohort(f.cohort)

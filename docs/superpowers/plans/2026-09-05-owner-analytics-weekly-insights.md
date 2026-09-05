@@ -13,8 +13,9 @@
 ## Estado de ejecución — 2026-09-05
 
 - [x] Persistencia semanal, procedencia `consentVersion` v1/v2, preferencias y
-      enlace al outbox. La captura pública sigue emitiendo sólo v1 hasta el
-      gate de activación; eso no equivale a tener una fuente v2 operativa.
+      enlace al outbox. La ruta pública ahora soporta v1/v2 detrás de una
+      bandera versionada; v1 sigue siendo el valor por defecto y v2 no está
+      activado.
 - [x] Selector local miércoles 09:00, cursor estable, facts determinísticos,
       denominadores explícitos y hash de snapshot.
 - [x] Claims de generación con máximo dos intentos, lease/fencing, Responses API
@@ -30,17 +31,20 @@
       y tope de 24 horas; la bandera de IA sigue apagada hasta la activación staged.
 - [x] El claim de IA revalida opt-in, privacidad v2 y que el snapshot ya declare
       procedencia fuente v2 dentro de la transacción; una preferencia revocada
-      no genera una nueva llamada. La captura que produciría esa fuente sigue
-      siendo un paso pendiente separado.
+      no genera una nueva llamada. La captura v2 existe detrás de la bandera,
+      pero sigue sin activarse.
 - [x] El job conserva facts determinísticos cuando operaciones está unhealthy,
       pero suspende nuevas generaciones y emails hasta volver a `healthy`.
 - [x] Pruebas PostgreSQL de aislamiento/retención ejecutadas sobre una DB
-      disposable exclusiva con las 57 migraciones desde cero.
-- [ ] Ruta de captura `consentVersion=2`: cerrar v1 y abrir v2 sin solapamiento,
+      disposable exclusiva con las 59 migraciones desde cero.
+- [x] Ruta de captura `consentVersion=2`: cerrar v1 y abrir v2 sin solapamiento,
       enrutar cliente/ingesta/repositorio/mantenimiento por la versión activa y
-      probar una semana v2 aislada más el rechazo de semanas mixtas. El esquema
-      ya conserva la procedencia, pero el código actual falla cerrado a v1;
-      este paso es requisito previo de cualquier llamada de IA.
+      probar una fuente v2 aislada, rechazo de clientes v1 en vuelo y publicación
+      de cohortes v2 sin mezcla. Las migraciones
+      `20260905140000_owner_analytics_consent_v2` y
+      `20260905150000_owner_analytics_booking_consent_snapshot` relajan los
+      CHECK heredados sólo a `{1,2}` y conservan la procedencia en snapshots
+      Booking; el valor por defecto y la activación siguen siendo v1.
 - [ ] Activación staged; requiere revisión legal, proveedor y autorización
       independiente, y no se simula con la evidencia local.
 
@@ -191,16 +195,18 @@
 - Modify: `docs/operations/owner-analytics-insights-activation.md`
 
 - [x] **Step 1: Document flags, migrations, runbook, synthetic provider tests, privacy/legal gate, and seven-day measurement gate.**
-- [ ] **Step 1a: Implement and stage source-consent v2.** Add a disabled-by-default
-      versioned capture switch, close any open v1 period before opening v2, pass
-      the selected version through public eligibility, browser storage/transport,
-      signed claims, ingest, maintenance and coverage queries, and add a
-      PostgreSQL test proving v1/v2 isolation and mixed-week rejection. Do not
-      enable it as part of this plan.
+- [x] **Step 1a: Implement source-consent v2 behind the staged gate.** Add a
+      disabled-by-default versioned capture switch, close any open v1 period
+      before opening v2, pass the selected version through public eligibility,
+      browser storage/transport, signed claims, ingest, maintenance and
+      coverage queries, and add PostgreSQL tests for v1/v2 isolation and
+      rotation. Activation is intentionally not part of this plan.
 - [x] **Step 2a: Run Prisma validate, typecheck, lint, focused
       operational/weekly tests, and existing analytics E2E contracts.** The
-      focused analytics matrix (45 files/335 tests), PostgreSQL matrix (5
-      suites/22 tests), public E2E (8/8), and owner dashboard E2E (7/7) pass.
+      current analytics unit matrix (41 files/309 tests), PostgreSQL analytics
+      matrix (13 files/130 tests, including v2 rotation/publication/retention), public
+      E2E (8/8), and owner dashboard E2E (7/7) pass. Full-repository unit status
+      remains tracked separately below.
 - [ ] **Step 2b: Run the full unit suite.** The repository-wide run remains
       non-green on unrelated `payment-qa-runner-safety`/`bank-transfer-form`
       cases under this environment.

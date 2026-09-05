@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { createAnalyticsStore, type AnalyticsDraft, type AnalyticsStore, type SelectionChange } from '@/lib/analytics/client-store'
 import { createAnalyticsTransport, type TransportOptions } from '@/lib/analytics/client-transport'
 import { publicAcquisitionSearch } from '@/lib/business/urls'
+import type { AnalyticsConsentVersion } from '@/lib/analytics/policy'
 
 interface PublicCapture {
   ready: boolean
@@ -36,7 +37,7 @@ function acquisition(): TransportOptions['acquisition'] {
 }
 
 /** Small nonblocking preference card; never shares Booking's contractual checkbox. */
-export function PublicAnalytics({ children, businessId, slug, eligible, surface }: { children: ReactNode; businessId: string; slug: string; timezone: string; eligible: boolean; surface: 'booking' | 'profile' }) {
+export function PublicAnalytics({ children, businessId, slug, consentVersion = 1, eligible, surface }: { children: ReactNode; businessId: string; slug: string; timezone: string; consentVersion?: AnalyticsConsentVersion; eligible: boolean; surface: 'booking' | 'profile' }) {
   const store = useRef<AnalyticsStore | null>(null)
   const transport = useRef<ReturnType<typeof createAnalyticsTransport> | null>(null)
   const release = useRef<(() => void) | null>(null)
@@ -55,13 +56,13 @@ export function PublicAnalytics({ children, businessId, slug, eligible, surface 
     completed.current = false
     completedBinding.current = undefined
     try {
-      store.current = createAnalyticsStore({ businessId, origin: window.location.origin, storage: window.sessionStorage, preferences: window.localStorage })
+      store.current = createAnalyticsStore({ businessId, origin: window.location.origin, storage: window.sessionStorage, preferences: window.localStorage, consentVersion })
       if (store.current.consent() !== true) store.current.discardState()
       setChoice(store.current.consent())
     } catch { store.current = null }
     queueMicrotask(() => { if (!disposed && store.current) setConsentReady(true) })
     return () => { disposed = true; writer.current = false; transport.current?.stop(); release.current?.(); store.current?.stop() }
-  }, [businessId, eligible])
+  }, [businessId, consentVersion, eligible])
 
   useEffect(() => {
     function synchronize(event: StorageEvent) {
@@ -91,7 +92,7 @@ export function PublicAnalytics({ children, businessId, slug, eligible, surface 
     void navigator.locks.request(`owner-analytics:${owner}`, { mode: 'exclusive', ifAvailable: true }, async (lock) => {
       if (!lock || disposed) return
       writer.current = true
-      transport.current = createAnalyticsTransport(current, slug, { acquisition: acquisition() })
+      transport.current = createAnalyticsTransport(current, slug, { consentVersion, acquisition: acquisition() })
       setRevision(current.snapshot()?.revision ?? 1)
       setCaptureIdentity(current.snapshot()?.active ?? null)
       setReady(true)
@@ -99,7 +100,7 @@ export function PublicAnalytics({ children, businessId, slug, eligible, surface 
       writer.current = false
     }).catch(() => {})
     return () => { disposed = true; writer.current = false; transport.current?.stop(); release.current?.() }
-  }, [businessId, choice, eligible, slug])
+  }, [businessId, choice, consentVersion, eligible, slug])
 
   useEffect(() => {
     if (!ready) return

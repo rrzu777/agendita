@@ -304,6 +304,22 @@ describe('real PostgreSQL bootstrap and ingest serialization', () => {
     await bootstrapAnalyticsSession(context, input, captureNow)
     await expect(bootstrapAnalyticsSession(context, input, new Date(captureNow.getTime() + 86400000))).rejects.toMatchObject({ category: 'expired' })
   })
+  it('keeps consent v2 source rows isolated and rejects stale v1 clients during a staged rotation', async () => {
+    const oldSession = await bootstrapAnalyticsSession(context, sessionInput(), captureNow)
+    vi.stubEnv('OWNER_ANALYTICS_CAPTURE_CONSENT_VERSION', '2')
+    await prisma.analyticsCollectionPeriod.updateMany({ where: { businessId, endedAt: null }, data: { endedAt: captureNow, closeReason: 'operator' } })
+    await prisma.analyticsCollectionPeriod.create({ data: { businessId, definitionVersion: 1, consentVersion: 2, businessTimeZone: context.timezone, startedAt: captureNow } })
+    await expect(bootstrapAnalyticsAttempt(context, { bootstrapKey: randomUUID(), credential: oldSession.credential, entryKind: 'complete' }, captureNow)).rejects.toMatchObject({ category: 'invalid_credential' })
+    const input = { bootstrapKey: randomUUID(), consent: true as const, consentVersion: 2 as const }
+    const receipt = await bootstrapAnalyticsSession(context, input, captureNow)
+    const stored = await prisma.analyticsSession.findUniqueOrThrow({ where: { id: receipt.id } })
+    expect(stored.consentVersion).toBe(2)
+    expect(verifyAnalyticsCredential(receipt.credential, { businessId, origin: context.origin, secret: captureSecret, now: captureNow })?.consentVersion).toBe(2)
+    await expect(bootstrapAnalyticsSession(context, { ...input, bootstrapKey: randomUUID(), consentVersion: 1 }, captureNow)).rejects.toMatchObject({ category: 'invalid_request' })
+    const attempt = await bootstrapAnalyticsAttempt(context, { bootstrapKey: randomUUID(), credential: receipt.credential, entryKind: 'complete' }, captureNow)
+    expect((await ingestAnalyticsBatch(context, { credential: attempt.credential, events: [event(1)] }, captureNow)).receipts[0].status).toBe('accepted')
+    expect(await prisma.bookingFunnelAttempt.findUniqueOrThrow({ where: { id: attempt.id } })).toMatchObject({ consentVersion: 2 })
+  })
   it('attempt bootstrap requires its own key, same session and origin on replay', async () => {
     const input = sessionInput()
     const session = await bootstrapAnalyticsSession(context, input, captureNow)

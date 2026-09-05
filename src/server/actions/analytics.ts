@@ -71,16 +71,20 @@ export const setAnalyticsCollectionEnabled = action(async (enabled: boolean) => 
   const { businessId, business } = await requireBusinessRole(['owner', 'admin'])
   if (typeof enabled !== 'boolean') throw new UserError('Configuración inválida')
   const now = new Date()
+  const config = enabled ? getAnalyticsCaptureConfig(businessId) : null
   // Disabling has no config, Redis, budget or rate-limit dependency.
-  if (enabled && (!business.isActive || !getAnalyticsCaptureConfig(businessId) || await hasAnalyticsRetentionBacklog(now))) throw new UserError('La captura aún no cumple los requisitos de configuración, privacidad o piloto.')
+  if (enabled && (!business.isActive || !config || await hasAnalyticsRetentionBacklog(now))) throw new UserError('La captura aún no cumple los requisitos de configuración, privacidad o piloto.')
   const result = await withAnalyticsWrite(businessId, async (tx) => {
     if (!enabled) {
       await closeAnalyticsCollection(tx, businessId, now, 'operator')
       return { enabled: false }
     }
     if (!await reserveAnalyticsBudget({ businessId, cost: 1, now })) throw new UserError('El limitador distribuido o el presupuesto de métricas no está disponible.')
-    const existing = await tx.analyticsCollectionPeriod.findFirst({ where: { businessId, endedAt: null }, select: { id: true } })
-    if (!existing) await tx.analyticsCollectionPeriod.create({ data: { businessId, definitionVersion: 1, consentVersion: 1, businessTimeZone: business.timezone, startedAt: now } })
+    const existing = await tx.analyticsCollectionPeriod.findFirst({ where: { businessId, endedAt: null }, select: { id: true, consentVersion: true } })
+    if (existing?.consentVersion !== (config?.consentVersion ?? 1)) {
+      if (existing) await tx.analyticsCollectionPeriod.update({ where: { id: existing.id }, data: { endedAt: now, closeReason: 'version_change' } })
+      await tx.analyticsCollectionPeriod.create({ data: { businessId, definitionVersion: 1, consentVersion: config?.consentVersion ?? 1, businessTimeZone: business.timezone, startedAt: now } })
+    }
     return { enabled: true }
   })
   revalidatePath('/dashboard/metricas')

@@ -2,7 +2,7 @@ import 'server-only'
 import { executeUpstashCommand } from '@/lib/upstash-rest'
 import { dimensionIdSchema } from './contracts'
 import { createHash } from 'node:crypto'
-import { ANALYTICS_POLICY } from './policy'
+import { ANALYTICS_POLICY, type AnalyticsConsentVersion } from './policy'
 
 export async function checkAnalyticsRateLimit({ businessId, kind, identity }: { businessId: string; kind: 'bootstrap' | 'batch'; identity: string }): Promise<boolean> {
   const config = getAnalyticsCaptureConfig(businessId)
@@ -28,6 +28,12 @@ function positiveInteger(value: string | undefined): number | null {
   return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 2147483647 ? parsed : null
 }
 
+/** A version change is an explicit staged operation. Invalid values fail closed. */
+export function getConfiguredAnalyticsConsentVersion(): AnalyticsConsentVersion | null {
+  const raw = process.env.OWNER_ANALYTICS_CAPTURE_CONSENT_VERSION?.trim() || '1'
+  return raw === '1' ? 1 : raw === '2' ? 2 : null
+}
+
 /** Operational attestations are not validation evidence: operators must verify the pilot before setting them. */
 export function getAnalyticsCaptureConfig(businessId: string) {
   const env = process.env
@@ -37,14 +43,15 @@ export function getAnalyticsCaptureConfig(businessId: string) {
   const globalLimit = positiveInteger(env.OWNER_ANALYTICS_GLOBAL_DAILY_BUDGET)
   const tenantLimit = positiveInteger(env.OWNER_ANALYTICS_TENANT_DAILY_BUDGET)
   const verifiedDailyDrain = positiveInteger(env.OWNER_ANALYTICS_VERIFIED_DAILY_DRAIN)
+  const consentVersion = getConfiguredAnalyticsConsentVersion()
   const restUrl = env.UPSTASH_REDIS_REST_URL
   const restToken = env.UPSTASH_REDIS_REST_TOKEN
-  if (Buffer.byteLength(secret) < 32 || !globalLimit || !tenantLimit || !verifiedDailyDrain || tenantLimit > globalLimit || globalLimit >= verifiedDailyDrain || !restUrl || !restToken) return null
+  if (!consentVersion || Buffer.byteLength(secret) < 32 || !globalLimit || !tenantLimit || !verifiedDailyDrain || tenantLimit > globalLimit || globalLimit >= verifiedDailyDrain || !restUrl || !restToken) return null
   try {
     const url = new URL(restUrl)
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) return null
   } catch { return null }
-  return { secret, globalLimit, tenantLimit, restUrl, restToken }
+  return { secret, globalLimit, tenantLimit, restUrl, restToken, consentVersion }
 }
 
 // Both keys share one Redis Cluster hash slot. A denied reservation changes neither counter.

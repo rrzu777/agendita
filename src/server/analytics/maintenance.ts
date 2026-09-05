@@ -9,10 +9,11 @@ import { getLocalDateStr } from '@/lib/availability/timezone'
 import { analyticsDayRange } from './reports'
 import { analyticsCoverage, closeAnalyticsCollection, readAnalyticsCohort, withAnalyticsWrite } from './repository'
 import { recordOperationalMetric } from '@/lib/metrics/operational'
+import type { AnalyticsConsentVersion } from '@/lib/analytics/policy'
 
-export interface CohortPublicationInput { businessId: string; localDate: string; timezone: string; definitionVersion: number; now: Date }
+export interface CohortPublicationInput { businessId: string; localDate: string; timezone: string; definitionVersion: number; consentVersion?: AnalyticsConsentVersion; now: Date }
 export interface CohortPublicationResult { status: 'published' | 'not_mature' | 'stale' | 'frozen' | 'expired'; revision: number }
-function cohortWhere(input: CohortPublicationInput) { return { businessId: input.businessId, cohortLocalDate: new Date(input.localDate), businessTimeZone: input.timezone, definitionVersion: input.definitionVersion } }
+function cohortWhere(input: CohortPublicationInput) { return { businessId: input.businessId, cohortLocalDate: new Date(input.localDate), businessTimeZone: input.timezone, definitionVersion: input.definitionVersion, consentVersion: input.consentVersion ?? 1 } }
 
 export async function publishAnalyticsCohort(input: CohortPublicationInput): Promise<CohortPublicationResult> {
   const day = analyticsDayRange(input.localDate, input.timezone)
@@ -24,7 +25,7 @@ export async function publishAnalyticsCohort(input: CohortPublicationInput): Pro
     const previous = await tx.analyticsDailyMetric.findFirst({ where: { ...where, metricKey: '__publication__' } })
     if (previous?.frozenAt) return { status: 'frozen', revision: previous.revision }
     if (previous && previous.cutoffAt >= input.now) return { status: 'stale', revision: previous.revision }
-    const coverage: CohortCoverage = { businessId: input.businessId, cohortLocalDate: input.localDate, businessTimeZone: input.timezone, definitionVersion: input.definitionVersion, consentVersion: 1, cohortEndAt: day.end, calculatedAt: input.now, cutoffAt: input.now, revision: (previous?.revision ?? 0) + 1, state: 'closed', coverage: await analyticsCoverage(tx, input.businessId, input.timezone, input.definitionVersion, day.start, day.end, Boolean(getAnalyticsCaptureConfig(input.businessId))), frozenAt: null, retentionExpiresAt: new Date(+day.end + policy.aggregateRetentionMs) }
+    const coverage: CohortCoverage = { businessId: input.businessId, cohortLocalDate: input.localDate, businessTimeZone: input.timezone, definitionVersion: input.definitionVersion, consentVersion: input.consentVersion ?? 1, cohortEndAt: day.end, calculatedAt: input.now, cutoffAt: input.now, revision: (previous?.revision ?? 0) + 1, state: 'closed', coverage: await analyticsCoverage(tx, input.businessId, input.timezone, input.definitionVersion, day.start, day.end, Boolean(getAnalyticsCaptureConfig(input.businessId)), input.consentVersion ?? 1), frozenAt: null, retentionExpiresAt: new Date(+day.end + policy.aggregateRetentionMs) }
     const { cells } = await readAnalyticsCohort(tx, coverage, day.start)
     await tx.analyticsDailyMetric.deleteMany({ where })
     for (let offset = 0; offset < cells.length; offset += 1000) await tx.analyticsDailyMetric.createMany({ data: cells.slice(offset, offset + 1000).map(c => ({ ...c, cohortLocalDate: new Date(c.cohortLocalDate) })) })
@@ -42,30 +43,30 @@ async function freezeCohort(tx: Prisma.TransactionClient, input: CohortPublicati
     await tx.analyticsDailyMetric.updateMany({ where: { ...where, frozenAt: null }, data: { frozenAt: input.now } })
     return
   }
-  const coverage: CohortCoverage = { businessId: input.businessId, cohortLocalDate: input.localDate, businessTimeZone: input.timezone, definitionVersion: input.definitionVersion, consentVersion: 1, cohortEndAt: day.end, calculatedAt: input.now, cutoffAt: input.now, revision: Math.max(0, ...markers.map(m => m.revision)) + 1, state: 'failed', coverage: 'unknown', frozenAt: input.now, retentionExpiresAt: new Date(+day.end + policy.aggregateRetentionMs) }
+  const coverage: CohortCoverage = { businessId: input.businessId, cohortLocalDate: input.localDate, businessTimeZone: input.timezone, definitionVersion: input.definitionVersion, consentVersion: input.consentVersion ?? 1, cohortEndAt: day.end, calculatedAt: input.now, cutoffAt: input.now, revision: Math.max(0, ...markers.map(m => m.revision)) + 1, state: 'failed', coverage: 'unknown', frozenAt: input.now, retentionExpiresAt: new Date(+day.end + policy.aggregateRetentionMs) }
   await tx.analyticsDailyMetric.deleteMany({ where })
   await tx.analyticsDailyMetric.createMany({ data: aggregateDailyMetrics({ sessions: [], attempts: [], coverage: [coverage], definitionVersion: input.definitionVersion }).map(c => ({ ...c, cohortLocalDate: new Date(c.cohortLocalDate) })) })
 }
 
 type CleanupKind = 'booking' | 'event' | 'attempt' | 'session' | 'daily'
 const tables = { booking: 'Booking', event: 'BookingFunnelEvent', attempt: 'BookingFunnelAttempt', session: 'AnalyticsSession', daily: 'AnalyticsDailyMetric' } as const
-const snapshotNulls = { analyticsVersion: null, analyticsSessionId: null, analyticsAttemptId: null, analyticsAttemptStartedAt: null, analyticsConversionDeadlineAt: null, analyticsRetentionExpiresAt: null, analyticsChannel: null, analyticsNormalizationVersion: null, analyticsAcquisitionLinkId: null, analyticsSelectionRevision: null }
-type CleanupRow = { id: string; businessId: string; sessionId?: string; attemptId?: string | null; analyticsSessionId?: string | null; analyticsAttemptId?: string | null; analyticsAttemptStartedAt?: Date | null }
+const snapshotNulls = { analyticsVersion: null, analyticsConsentVersion: null, analyticsSessionId: null, analyticsAttemptId: null, analyticsAttemptStartedAt: null, analyticsConversionDeadlineAt: null, analyticsRetentionExpiresAt: null, analyticsChannel: null, analyticsNormalizationVersion: null, analyticsAcquisitionLinkId: null, analyticsSelectionRevision: null }
+type CleanupRow = { id: string; businessId: string; sessionId?: string; attemptId?: string | null; analyticsSessionId?: string | null; analyticsAttemptId?: string | null; analyticsAttemptStartedAt?: Date | null; analyticsConsentVersion?: number | null }
 
 async function freezeSources(tx: Prisma.TransactionClient, businessId: string, kind: CleanupKind, rows: CleanupRow[], now: Date) {
   if (kind === 'daily') return
   const sessionIds = rows.map(r => kind === 'session' ? r.id : r.sessionId ?? r.analyticsSessionId).filter((v): v is string => Boolean(v))
   const attemptIds = rows.map(r => kind === 'attempt' ? r.id : r.attemptId ?? r.analyticsAttemptId).filter((v): v is string => Boolean(v))
-  const sessions = await tx.analyticsSession.findMany({ where: { businessId, id: { in: sessionIds } }, select: { cohortLocalDate: true, businessTimeZone: true, definitionVersion: true }, take: 1000 })
-  const attempts = await tx.bookingFunnelAttempt.findMany({ where: { businessId, id: { in: attemptIds } }, select: { id: true, cohortLocalDate: true, businessTimeZone: true, definitionVersion: true }, take: 1000 })
+  const sessions = await tx.analyticsSession.findMany({ where: { businessId, id: { in: sessionIds } }, select: { cohortLocalDate: true, businessTimeZone: true, definitionVersion: true, consentVersion: true }, take: 1000 })
+  const attempts = await tx.bookingFunnelAttempt.findMany({ where: { businessId, id: { in: attemptIds } }, select: { id: true, cohortLocalDate: true, businessTimeZone: true, definitionVersion: true, consentVersion: true }, take: 1000 })
   // Scalar Booking snapshots can outlive their attempt. Freeze existing frozen-zone publications too.
   const knownAttempts = new Set(attempts.map(a => a.id))
-  const snapshotStarts = rows.flatMap(r => r.analyticsAttemptStartedAt && (!r.analyticsAttemptId || !knownAttempts.has(r.analyticsAttemptId)) ? [r.analyticsAttemptStartedAt] : [])
-  const existing = snapshotStarts.length ? await tx.analyticsDailyMetric.findMany({ where: { businessId, metricKey: '__publication__', population: 'complete_attempts', retentionExpiresAt: { gt: now } }, select: { cohortLocalDate: true, businessTimeZone: true, definitionVersion: true }, take: 1000 }) : []
+  const snapshotStarts = rows.flatMap(r => r.analyticsAttemptStartedAt && (!r.analyticsAttemptId || !knownAttempts.has(r.analyticsAttemptId)) ? [{ startedAt: r.analyticsAttemptStartedAt, consentVersion: r.analyticsConsentVersion === 2 ? 2 : r.analyticsConsentVersion === 1 ? 1 : null }] : [])
+  const existing = snapshotStarts.length ? await tx.analyticsDailyMetric.findMany({ where: { businessId, metricKey: '__publication__', population: 'complete_attempts', retentionExpiresAt: { gt: now } }, select: { cohortLocalDate: true, businessTimeZone: true, definitionVersion: true, consentVersion: true }, take: 1000 }) : []
   const fallback = snapshotStarts.length ? await tx.business.findUnique({ where: { id: businessId }, select: { timezone: true } }) : null
-  const cohorts = [...sessions, ...attempts, ...existing.filter(c => snapshotStarts.some(s => getLocalDateStr(s, c.businessTimeZone) === c.cohortLocalDate.toISOString().slice(0, 10))), ...snapshotStarts.flatMap(s => fallback ? [{ cohortLocalDate: new Date(getLocalDateStr(s, fallback.timezone)), businessTimeZone: fallback.timezone, definitionVersion: 1 }] : [])]
-  const unique = new Map(cohorts.map(c => [JSON.stringify([c.cohortLocalDate, c.businessTimeZone, c.definitionVersion]), c]))
-  for (const c of unique.values()) await freezeCohort(tx, { businessId, localDate: c.cohortLocalDate.toISOString().slice(0, 10), timezone: c.businessTimeZone, definitionVersion: c.definitionVersion, now })
+  const cohorts = [...sessions, ...attempts, ...existing.filter(c => snapshotStarts.some(s => getLocalDateStr(s.startedAt, c.businessTimeZone) === c.cohortLocalDate.toISOString().slice(0, 10) && (s.consentVersion === null || s.consentVersion === c.consentVersion))), ...snapshotStarts.flatMap(s => fallback ? [{ cohortLocalDate: new Date(getLocalDateStr(s.startedAt, fallback.timezone)), businessTimeZone: fallback.timezone, definitionVersion: 1, consentVersion: s.consentVersion ?? 1 }] : [])]
+  const unique = new Map(cohorts.map(c => [JSON.stringify([c.cohortLocalDate, c.businessTimeZone, c.definitionVersion, c.consentVersion]), c]))
+  for (const c of unique.values()) await freezeCohort(tx, { businessId, localDate: c.cohortLocalDate.toISOString().slice(0, 10), timezone: c.businessTimeZone, definitionVersion: c.definitionVersion, consentVersion: c.consentVersion === 2 ? 2 : 1, now })
 }
 
 async function cleanupBatch(kind: CleanupKind, now: Date, limit: number): Promise<number> {
@@ -76,7 +77,7 @@ async function cleanupBatch(kind: CleanupKind, now: Date, limit: number): Promis
   const oldest = await prisma.$queryRaw<{ businessId: string }[]>(Prisma.sql`SELECT t."businessId" FROM ${table} t WHERE ${expiry} <= ${now} ${noChildren} ORDER BY ${expiry}, id LIMIT 1`)
   if (!oldest.length) return 0
   return withAnalyticsWrite(oldest[0].businessId, async tx => {
-    const fields = kind === 'booking' ? Prisma.sql`t.id, t."businessId", t."analyticsSessionId", t."analyticsAttemptId", t."analyticsAttemptStartedAt"` : kind === 'event' ? Prisma.sql`t.id, t."businessId", t."sessionId", t."attemptId"` : kind === 'attempt' ? Prisma.sql`t.id, t."businessId", t."sessionId"` : Prisma.sql`t.id, t."businessId"`
+    const fields = kind === 'booking' ? Prisma.sql`t.id, t."businessId", t."analyticsSessionId", t."analyticsAttemptId", t."analyticsAttemptStartedAt", t."analyticsConsentVersion"` : kind === 'event' ? Prisma.sql`t.id, t."businessId", t."sessionId", t."attemptId"` : kind === 'attempt' ? Prisma.sql`t.id, t."businessId", t."sessionId"` : Prisma.sql`t.id, t."businessId"`
     const rows = await tx.$queryRaw<CleanupRow[]>(Prisma.sql`SELECT ${fields} FROM ${table} t WHERE t."businessId" = ${oldest[0].businessId} AND ${expiry} <= ${now} ${noChildren} ORDER BY ${expiry}, id LIMIT ${limit} FOR UPDATE`)
     if (!rows.length) return 0
     await freezeSources(tx, oldest[0].businessId, kind, rows, now)
@@ -144,13 +145,13 @@ async function purgeAnalyticsOperations(now: Date, limit: number): Promise<numbe
   return Number(rows[0]?.deleted ?? 0)
 }
 
-type PublicationCursor = { businessId: string; localDate: string; timezone: string; definitionVersion: number }
+type PublicationCursor = { businessId: string; localDate: string; timezone: string; definitionVersion: number; consentVersion: AnalyticsConsentVersion }
 function decodeCursor(cursor?: string | null): PublicationCursor | null {
   if (!cursor || cursor === 'cleanup:v1') return null
   if (cursor.length > 1024) throw new Error('Invalid analytics maintenance cursor')
   try {
     const value = JSON.parse(Buffer.from(cursor, 'base64url').toString())
-    if (Object.keys(value).sort().join() !== 'businessId,definitionVersion,localDate,timezone' || typeof value.businessId !== 'string' || value.businessId.length > 128 || value.definitionVersion !== 1) throw new Error()
+    if (Object.keys(value).sort().join() !== 'businessId,consentVersion,definitionVersion,localDate,timezone' || typeof value.businessId !== 'string' || value.businessId.length > 128 || value.definitionVersion !== 1 || ![1, 2].includes(value.consentVersion)) throw new Error()
     analyticsDayRange(value.localDate, value.timezone)
     return value
   } catch { throw new Error('Invalid analytics maintenance cursor') }
@@ -158,13 +159,13 @@ function decodeCursor(cursor?: string | null): PublicationCursor | null {
 
 async function publicationCandidates(now: Date, after: PublicationCursor | null) {
   const lower = new Date(+now - policy.aggregateRetentionMs)
-  const cursorFilter = after ? Prisma.sql`AND ("businessId", "localDate", timezone, "definitionVersion") > (${after.businessId}, ${after.localDate}, ${after.timezone}, ${after.definitionVersion})` : Prisma.empty
+  const cursorFilter = after ? Prisma.sql`AND ("businessId", "localDate", timezone, "definitionVersion", "consentVersion") > (${after.businessId}, ${after.localDate}, ${after.timezone}, ${after.definitionVersion}, ${after.consentVersion})` : Prisma.empty
   return prisma.$queryRaw<PublicationCursor[]>(Prisma.sql`WITH candidates AS (
-    SELECT "businessId", "cohortLocalDate"::text AS "localDate", "businessTimeZone" AS timezone, "definitionVersion" FROM "AnalyticsSession" WHERE "startedAt" >= ${lower}
-    UNION SELECT "businessId", "cohortLocalDate"::text, "businessTimeZone", "definitionVersion" FROM "BookingFunnelAttempt" WHERE "startedAt" >= ${lower}
-    UNION SELECT "businessId", "cohortLocalDate"::text, "businessTimeZone", "definitionVersion" FROM "AnalyticsDailyMetric" WHERE "retentionExpiresAt" > ${now} AND "frozenAt" IS NULL AND "metricKey" = '__publication__'
-    UNION SELECT p."businessId", d.day::date::text, p."businessTimeZone", p."definitionVersion" FROM "AnalyticsCollectionPeriod" p CROSS JOIN LATERAL generate_series(GREATEST((p."startedAt" AT TIME ZONE 'UTC' AT TIME ZONE p."businessTimeZone")::date, (${lower} AT TIME ZONE p."businessTimeZone")::date), LEAST((COALESCE(p."endedAt", ${now}) AT TIME ZONE 'UTC' AT TIME ZONE p."businessTimeZone")::date, (${now} AT TIME ZONE p."businessTimeZone")::date), interval '1 day') d(day)
-  ) SELECT * FROM candidates WHERE "definitionVersion" = 1 ${cursorFilter} ORDER BY "businessId", "localDate", timezone, "definitionVersion" LIMIT 11`)
+    SELECT "businessId", "cohortLocalDate"::text AS "localDate", "businessTimeZone" AS timezone, "definitionVersion", "consentVersion" FROM "AnalyticsSession" WHERE "startedAt" >= ${lower}
+    UNION SELECT "businessId", "cohortLocalDate"::text, "businessTimeZone", "definitionVersion", "consentVersion" FROM "BookingFunnelAttempt" WHERE "startedAt" >= ${lower}
+    UNION SELECT "businessId", "cohortLocalDate"::text, "businessTimeZone", "definitionVersion", "consentVersion" FROM "AnalyticsDailyMetric" WHERE "retentionExpiresAt" > ${now} AND "frozenAt" IS NULL AND "metricKey" = '__publication__'
+    UNION SELECT p."businessId", d.day::date::text, p."businessTimeZone", p."definitionVersion", p."consentVersion" FROM "AnalyticsCollectionPeriod" p CROSS JOIN LATERAL generate_series(GREATEST((p."startedAt" AT TIME ZONE 'UTC' AT TIME ZONE p."businessTimeZone")::date, (${lower} AT TIME ZONE p."businessTimeZone")::date), LEAST((COALESCE(p."endedAt", ${now}) AT TIME ZONE 'UTC' AT TIME ZONE p."businessTimeZone")::date, (${now} AT TIME ZONE p."businessTimeZone")::date), interval '1 day') d(day)
+  ) SELECT * FROM candidates WHERE "definitionVersion" = 1 AND "consentVersion" IN (1, 2) ${cursorFilter} ORDER BY "businessId", "localDate", timezone, "definitionVersion", "consentVersion" LIMIT 11`)
 }
 
 export async function runOwnerAnalyticsMaintenance(input: { now?: Date; maxRows?: number; cursor?: string | null } = {}) {

@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/auth/user'
 import { getAppUrl, getBusinessPublicUrl } from '@/lib/business/urls'
 import { normalizeAnalyticsOrigin } from './credential'
 import { getAnalyticsCaptureConfig } from './budget'
+import type { AnalyticsConsentVersion } from './policy'
 import { ANALYTICS_POLICY } from './policy'
 
 export interface PublicAnalyticsContext {
@@ -11,6 +12,9 @@ export interface PublicAnalyticsContext {
   slug: string
   timezone: string
   origin: string
+  /** Resolver populates this; test/internal callers may omit it because the
+   * server derives the active source contract from configuration. */
+  consentVersion?: AnalyticsConsentVersion
 }
 
 /** Rendering hint only: no identity or network writes. The POST boundary still verifies origin. */
@@ -19,7 +23,8 @@ export async function isPublicAnalyticsEligible(businessId: string): Promise<boo
     if (!getAnalyticsCaptureConfig(businessId)) return false
     const business = await prisma.business.findUnique({ where: { id: businessId }, select: { isActive: true } })
     if (!business?.isActive) return false
-    const period = await prisma.analyticsCollectionPeriod.findFirst({ where: { businessId, endedAt: null, definitionVersion: 1, consentVersion: 1 }, select: { id: true } })
+    const config = getAnalyticsCaptureConfig(businessId)
+    const period = config && await prisma.analyticsCollectionPeriod.findFirst({ where: { businessId, endedAt: null, definitionVersion: 1, consentVersion: config.consentVersion }, select: { id: true } })
     if (!period || await hasAnalyticsRetentionBacklog()) return false
     const user = await getCurrentUser()
     return !user || !await prisma.businessUser.findFirst({ where: { businessId, userId: user.id }, select: { id: true } })
@@ -51,7 +56,8 @@ export async function resolvePublicAnalyticsContext(request: Request, slug: stri
     if (request.headers.has('x-owner-analytics-probe') || /bot|crawler|spider|headless|uptime|probe/i.test(request.headers.get('user-agent') ?? '')) return null
     if (!process.env.NEXT_PUBLIC_APP_DOMAIN && !process.env.APP_DOMAIN) return null
     const business = await prisma.business.findUnique({ where: { slug }, select: { id: true, slug: true, subdomain: true, customDomain: true, isActive: true, timezone: true } })
-    if (!business?.isActive || !getAnalyticsCaptureConfig(business.id)) return null
+    const config = business?.isActive ? getAnalyticsCaptureConfig(business.id) : null
+    if (!business?.isActive || !config) return null
     new Intl.DateTimeFormat('en', { timeZone: business.timezone }).format()
     const origins = new Set([new URL(getAppUrl()).origin, new URL(getBusinessPublicUrl(business)).origin])
     if (business.customDomain) {
@@ -59,10 +65,10 @@ export async function resolvePublicAnalyticsContext(request: Request, slug: stri
       if (custom) origins.add(custom)
     }
     if (!origins.has(origin)) return null
-    const period = await prisma.analyticsCollectionPeriod.findFirst({ where: { businessId: business.id, endedAt: null, definitionVersion: 1, consentVersion: 1 }, select: { id: true } })
+    const period = await prisma.analyticsCollectionPeriod.findFirst({ where: { businessId: business.id, endedAt: null, definitionVersion: 1, consentVersion: config.consentVersion }, select: { id: true } })
     if (!period || await hasAnalyticsRetentionBacklog()) return null
     const user = await getCurrentUser()
     if (user && await prisma.businessUser.findFirst({ where: { businessId: business.id, userId: user.id }, select: { id: true } })) return null
-    return { businessId: business.id, slug: business.slug, timezone: business.timezone, origin }
+    return { businessId: business.id, slug: business.slug, timezone: business.timezone, origin, consentVersion: config.consentVersion }
   } catch { return null }
 }

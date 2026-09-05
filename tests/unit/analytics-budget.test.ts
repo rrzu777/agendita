@@ -9,8 +9,12 @@ describe('analytics capture configuration and atomic budget boundary', () => {
   beforeEach(() => { configureCapture(); execute.mockReset().mockResolvedValue(1) })
   afterEach(() => vi.unstubAllEnvs())
   it('accepts only explicit and complete configuration', () => {
-    expect(getAnalyticsCaptureConfig('biz-a')).not.toBeNull()
+    expect(getAnalyticsCaptureConfig('biz-a')).toMatchObject({ consentVersion: 1 })
     expect(getAnalyticsCaptureConfig('biz-b')).toBeNull()
+  })
+  it('fails closed for an unsupported source consent version', () => {
+    vi.stubEnv('OWNER_ANALYTICS_CAPTURE_CONSENT_VERSION', '3')
+    expect(getAnalyticsCaptureConfig('biz-a')).toBeNull()
   })
   it.each(['OWNER_ANALYTICS_ENABLED', 'OWNER_ANALYTICS_PRIVACY_APPROVED', 'OWNER_ANALYTICS_PILOT_APPROVED', 'OWNER_ANALYTICS_SECRET', 'OWNER_ANALYTICS_GLOBAL_DAILY_BUDGET', 'OWNER_ANALYTICS_TENANT_DAILY_BUDGET', 'OWNER_ANALYTICS_VERIFIED_DAILY_DRAIN', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'])('fails closed with missing %s', (key) => {
     vi.stubEnv(key, '')

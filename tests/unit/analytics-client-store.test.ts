@@ -8,6 +8,20 @@ function storage() {
 }
 
 describe('consented atomic analytics state', () => {
+  it('isolates v2 consent and tab state from the v1 namespace', () => {
+    const local = storage(), tab = storage()
+    const v1 = createAnalyticsStore({ businessId: 'salon', origin: 'https://example.test', storage: tab, preferences: local, consentVersion: 1 })
+    const v2 = createAnalyticsStore({ businessId: 'salon', origin: 'https://example.test', storage: tab, preferences: local, consentVersion: 2 })
+    v1.chooseConsent(true); v1.open(); v1.startAttempt('complete')
+    expect(v2.consent()).toBeNull()
+    expect(v2.open()).toBe(false)
+    v2.chooseConsent(true); v2.open()
+    expect(v1.keys.state).not.toBe(v2.keys.state)
+    expect(v1.keys.preference).not.toBe(v2.keys.preference)
+    expect(v2.snapshot()?.streams).toHaveLength(1)
+    expect(v2.snapshot()?.active).toBeNull()
+  })
+
   it('a failed atomic write stops capture but retains the valid signed Booking token without revision', async () => {
     const local = storage(), tab = storage()
     let now = Date.parse('2026-08-31T10:00:00Z')

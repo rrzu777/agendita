@@ -1,5 +1,5 @@
 import { analyticsEventSchema, eventScope, type AnalyticsEventInput } from './contracts'
-import { ANALYTICS_POLICY as policy } from './policy'
+import { ANALYTICS_POLICY as policy, type AnalyticsConsentVersion } from './policy'
 import { z } from 'zod'
 
 type Draft<E = AnalyticsEventInput> = E extends AnalyticsEventInput ? Pick<E, 'type' | 'data'> : never
@@ -20,6 +20,7 @@ export interface ClientState {
 }
 export interface StoreOptions {
   businessId: string; origin: string; storage: StoragePort; preferences: StoragePort
+  consentVersion?: AnalyticsConsentVersion
   now?: () => number; uuid?: () => string
 }
 
@@ -28,16 +29,17 @@ const streamSchema = z.strictObject({ key: z.uuid(), kind: z.enum(['session', 'a
 const stateSchema = z.strictObject({ version: z.literal(1), owner: z.uuid(), streams: z.array(streamSchema).max(200), session: z.uuid(), active: z.uuid().nullable(), revision: z.number().int().positive().max(2147483647), selection: z.unknown(), selectionSignature: z.string().max(1500).optional(), viewed: z.array(z.string().max(150)).max(30).optional(), queue: z.array(z.strictObject({ stream: z.uuid(), event: analyticsEventSchema, queuedAt: timestamp, retries: z.number().int().nonnegative(), retryAt: timestamp })).max(policy.queueEvents) })
 
 /** Preference is origin-local, additionally namespaced by the exact origin and tenant. */
-export function analyticsStorageKeys(businessId: string, origin: string) {
+export function analyticsStorageKeys(businessId: string, origin: string, consentVersion: AnalyticsConsentVersion = 1) {
   const scope = encodeURIComponent(`${origin}|${businessId}`)
-  return { preference: `owner-analytics:consent:v1:${scope}`, state: `owner-analytics:tab:v1:${scope}` }
+  return { preference: `owner-analytics:consent:v${consentVersion}:${scope}`, state: `owner-analytics:tab:v${consentVersion}:${scope}` }
 }
 
 /** All mutations use one sessionStorage replacement. Failure disables capture, never Booking. */
 export function createAnalyticsStore(options: StoreOptions) {
   const now = options.now ?? Date.now
   const uuid = options.uuid ?? (() => crypto.randomUUID())
-  const keys = analyticsStorageKeys(options.businessId, options.origin)
+  const consentVersion = options.consentVersion ?? 1
+  const keys = analyticsStorageKeys(options.businessId, options.origin, consentVersion)
   let state: ClientState | null = null
   let healthy = true
   let bookingFallback: Pick<BootstrapReceipt, 'credential' | 'expiresAt'> | null = null
@@ -49,7 +51,7 @@ export function createAnalyticsStore(options: StoreOptions) {
   function consent(): boolean | null {
     try {
       const value = JSON.parse(options.preferences.getItem(keys.preference) ?? 'null')
-      return value?.version === 1 && typeof value.allowed === 'boolean' && value.expiresAt > now() ? value.allowed : null
+      return value?.version === consentVersion && typeof value.allowed === 'boolean' && value.expiresAt > now() ? value.allowed : null
     } catch { return null }
   }
   function commit(next: ClientState): boolean {
@@ -97,7 +99,7 @@ export function createAnalyticsStore(options: StoreOptions) {
     mutate,
     chooseConsent(allowed: boolean) {
       if (!allowed) clear()
-      try { options.preferences.setItem(keys.preference, JSON.stringify({ version: 1, allowed, expiresAt: now() + policy.consentPreferenceMs })) }
+      try { options.preferences.setItem(keys.preference, JSON.stringify({ version: consentVersion, allowed, expiresAt: now() + policy.consentPreferenceMs })) }
       catch { clear(); healthy = false }
     },
     /** Caller MUST acquire the origin-wide owner lock before recording or transporting. */

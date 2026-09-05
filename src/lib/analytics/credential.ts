@@ -15,7 +15,7 @@ const timestamp = z.iso.datetime({ precision: 3 })
 const common = {
   version: z.literal(1), businessId: dimensionIdSchema, sessionId: z.uuid(),
   origin: z.string().max(300).refine((origin) => normalizeAnalyticsOrigin(origin) === origin),
-  consentVersion: z.literal(1), definitionVersion: z.literal(1), sessionStartedAt: timestamp,
+  consentVersion: z.union([z.literal(1), z.literal(2)]), definitionVersion: z.literal(1), sessionStartedAt: timestamp,
   sessionExpiresAt: timestamp, retentionExpiresAt: timestamp, acquisition: acquisitionSchema,
 }
 export const analyticsClaimsSchema = z.discriminatedUnion('scope', [
@@ -72,7 +72,7 @@ export function verifyExpiredAnalyticsParentForRecovery(token: string, options: 
 export function credentialBookingSnapshot(claims: AnalyticsClaims | null, selectionRevision?: number) {
   if (!claims || claims.scope !== 'attempt') return null
   return {
-    analyticsVersion: claims.version, analyticsSessionId: claims.sessionId, analyticsAttemptId: claims.attemptId,
+    analyticsVersion: claims.version, analyticsConsentVersion: claims.consentVersion, analyticsSessionId: claims.sessionId, analyticsAttemptId: claims.attemptId,
     analyticsAttemptStartedAt: new Date(claims.attemptStartedAt), analyticsConversionDeadlineAt: new Date(claims.conversionDeadlineAt),
     analyticsRetentionExpiresAt: new Date(claims.retentionExpiresAt), analyticsChannel: claims.acquisition.channel,
     analyticsNormalizationVersion: claims.acquisition.normalizationVersion, analyticsAcquisitionLinkId: claims.acquisition.acquisitionLinkId,

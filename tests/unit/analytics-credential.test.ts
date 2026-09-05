@@ -12,10 +12,16 @@ const claims = {
 }
 const options = { secret, businessId: 'business-a', origin: 'https://www.agendita.cl', now: new Date('2026-08-02T01:00:00Z') }
 describe('signed analytics credentials', () => {
+  it('signs and verifies a v2 source credential without accepting other versions', () => {
+    const v2 = { ...claims, consentVersion: 2 as const }
+    expect(verifyAnalyticsCredential(signAnalyticsCredential(v2, secret), options)).toEqual(v2)
+    expect(() => signAnalyticsCredential({ ...claims, consentVersion: 3 as 1 }, secret)).toThrow()
+  })
+
   it('retains attempt validity after session expiry and copies verified attribution', () => {
     const verified = verifyAnalyticsCredential(signAnalyticsCredential(claims, secret), options)
     expect(verified).toEqual(claims)
-    expect(credentialBookingSnapshot(verified, 2)).toMatchObject({ analyticsAttemptId: claims.attemptId, analyticsChannel: 'instagram', analyticsSelectionRevision: 2 })
+    expect(credentialBookingSnapshot(verified, 2)).toMatchObject({ analyticsAttemptId: claims.attemptId, analyticsConsentVersion: 1, analyticsChannel: 'instagram', analyticsSelectionRevision: 2 })
   })
   it('rejects altered, expired, wrong-tenant, wrong-origin and malformed credentials', () => {
     const token = signAnalyticsCredential(claims, secret)

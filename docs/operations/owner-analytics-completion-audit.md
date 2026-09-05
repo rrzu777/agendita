@@ -181,7 +181,7 @@ La implementación local agrega los commits `937cbf5` (schema operacional),
 `d299031` (heartbeat), `c35a138` (monitor/incidentes/outbox) y el trabajo actual
 de schema/facts/generation/dashboard. La fixwave final agrega `0ec27ef`
 (consentimiento, opt-in, privacidad del prompt y circuito operativo) y `5979414`
-(fixtures PostgreSQL de facts y presupuesto). Validaciones nuevas: 45 archivos
+(fixtures PostgreSQL de facts y presupuesto). Validaciones históricas: 45 archivos
 unitarios analytics/operaciones, 335 tests, y 5 suites PostgreSQL con 22 tests
 pasando sobre una base disposable con las 57 migraciones desde cero; Prisma
 validate/generate, typecheck, lint y diff-check también pasan. El cleanup de
@@ -191,8 +191,10 @@ relacionados de `payment-qa-runner-safety` y `bank-transfer-form`; no se atribuy
 a analytics. No se ejecutó DB de producción, Resend, OpenAI ni workflow externo.
 
 Las flags siguen false/vacías. La prueba de activación requiere migraciones
-`20260905120000_owner_analytics_operations` y
-`20260905130000_owner_analytics_weekly_insights`, revisión legal, allowlist,
+`20260905120000_owner_analytics_operations`,
+`20260905130000_owner_analytics_weekly_insights` y
+`20260905140000_owner_analytics_consent_v2` y
+`20260905150000_owner_analytics_booking_consent_snapshot`, revisión legal, allowlist,
 presupuesto, destinatarios y siete días de medición v2. Ver
 `docs/operations/owner-analytics-insights-activation.md`.
 
@@ -254,7 +256,16 @@ ya no coincide con el destinatario congelado. La suite focal quedó en
 45 archivos/335 tests; la matriz PostgreSQL adicional quedó en 5 suites/22
 tests; E2E público y dashboard permanecen 8/8 y 7/7.
 
-El esquema soporta procedencia `consentVersion` v1/v2, pero la captura pública
-de esta rama sigue siendo v1. Se añadió al plan el trabajo pendiente para cerrar
-v1/abrir v2 sin solapamiento, enrutar toda la captura y probar aislamiento antes
-de habilitar IA. Por ello no se afirma que exista una fuente v2 productiva.
+La actualización de esta rama implementa ese paso pendiente detrás de una
+bandera apagada: `20260905140000_owner_analytics_consent_v2` cambia los CHECK
+heredados de sesión/periodo para aceptar sólo v1/v2 y
+`20260905150000_owner_analytics_booking_consent_snapshot` conserva la versión
+en snapshots Booking; owner/admin cierra v1 con
+`version_change` antes de abrir v2; el resolver público, storage/transport,
+claims, ingesta, cobertura, mantenimiento y publicación llevan la versión. Un
+cliente v1 en vuelo queda rechazado tras la rotación, y la publicación v2 no
+mezcla filas v1. La prueba de ingesta cubre rotación y credencial; rollups cubre
+publicación v2 aislada. La matriz actual de analytics pasó 41 archivos/309
+unitarias y 13 archivos/130 integraciones PostgreSQL; el E2E público/dashboard
+permanece 8/8 y 7/7. Esto prueba el código en DB disposable, no una fuente v2
+productiva ni activación del piloto.

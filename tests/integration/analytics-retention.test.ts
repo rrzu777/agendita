@@ -117,6 +117,23 @@ describe('bounded analytics retention independent of capture', () => {
     expect(await prisma.analyticsDailyMetric.count({ where: { businessId: f.businessId, businessTimeZone: 'Pacific/Auckland' } })).toBe(0)
   })
 
+  it('uses the Booking snapshot consent version after v2 raw parents are already gone', async () => {
+    const f = await seedAnalyticsReport(); ids.push(f.businessId)
+    await prisma.analyticsCollectionPeriod.updateMany({ where: { businessId: f.businessId }, data: { consentVersion: 2 } })
+    await prisma.analyticsSession.update({ where: { id: f.session.id }, data: { consentVersion: 2 } })
+    await prisma.bookingFunnelAttempt.update({ where: { id: f.attempt.id }, data: { consentVersion: 2 } })
+    await prisma.booking.update({ where: { id: f.booking.id }, data: { analyticsConsentVersion: 2 } })
+    await publishAnalyticsCohort({ ...f.cohort, consentVersion: 2 })
+    await prisma.bookingFunnelEvent.deleteMany({ where: { businessId: f.businessId } })
+    await prisma.analyticsSession.delete({ where: { id: f.session.id } })
+    const result = await runOwnerAnalyticsMaintenance({ now: new Date(+f.session.retentionExpiresAt + 1), maxRows: 1 })
+    expect(result.deleted).toBe(1)
+    const rows = await prisma.analyticsDailyMetric.findMany({ where: { businessId: f.businessId, cohortLocalDate: new Date('2026-08-01') } })
+    expect(rows.length).toBeGreaterThan(0)
+    expect(new Set(rows.map(row => row.consentVersion))).toEqual(new Set([2]))
+    expect(rows.every(row => row.frozenAt !== null)).toBe(true)
+  })
+
   it('purges expired weekly payloads and resolved incidents without touching active incidents', async () => {
     const businessId = `analytics-ops-${randomUUID()}`
     ids.push(businessId)

@@ -66,9 +66,10 @@ describe('actual PostgreSQL tenant, scope, replay and nullable snapshot constrai
     const booking = await prisma.booking.create({ data: base })
     await expect(prisma.booking.update({ where: { id: booking.id }, data: { analyticsAttemptId: attemptId } })).rejects.toThrow()
     await expect(prisma.booking.update({ where: { id: booking.id }, data: { analyticsAcquisitionLinkId: 'unverified-link' } })).rejects.toThrow()
-    const complete = { analyticsVersion: 1, analyticsSessionId: sessionId, analyticsAttemptId: attemptId, analyticsAttemptStartedAt: start, analyticsConversionDeadlineAt: end, analyticsRetentionExpiresAt: retention, analyticsChannel: 'direct' as const, analyticsNormalizationVersion: 1 }
+    const complete = { analyticsVersion: 1, analyticsConsentVersion: 1, analyticsSessionId: sessionId, analyticsAttemptId: attemptId, analyticsAttemptStartedAt: start, analyticsConversionDeadlineAt: end, analyticsRetentionExpiresAt: retention, analyticsChannel: 'direct' as const, analyticsNormalizationVersion: 1 }
     // Created after the conversion window: domain write succeeds; reducer excludes attribution.
     await expect(prisma.booking.update({ where: { id: booking.id }, data: complete })).resolves.toMatchObject({ analyticsAttemptId: attemptId })
+    await expect(prisma.booking.update({ where: { id: booking.id }, data: { analyticsConsentVersion: 3 } })).rejects.toThrow()
     await expect(prisma.booking.create({ data: { ...base, ...complete } })).resolves.toMatchObject({ analyticsAttemptId: attemptId })
     await prisma.analyticsSession.delete({ where: { id: sessionId } })
     expect((await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })).analyticsAttemptId).toBe(attemptId)

@@ -6,6 +6,7 @@ import { analyticsEventSchema, selectionContextSchema, type AnalyticsEventInput 
 import { aggregateDailyMetrics } from '@/lib/analytics/daily-metrics'
 import { reduceFunnelAttempt } from '@/lib/analytics/funnel'
 import type { AttemptFact, CohortCoverage, DailyMetricCell, SessionFact } from '@/lib/analytics/report-types'
+import type { AnalyticsConsentVersion } from '@/lib/analytics/policy'
 
 /** Analytics-only lock, never taken by Booking. Serializes tenant event IDs, stream caps and operator transitions. */
 export async function withAnalyticsWrite<T>(businessId: string, work: (tx: Prisma.TransactionClient) => Promise<T>, isolationLevel?: Prisma.TransactionIsolationLevel): Promise<T> {
@@ -22,8 +23,8 @@ export async function withAnalyticsWrite<T>(businessId: string, work: (tx: Prism
   }
 }
 
-export async function collectionIsOpen(tx: Prisma.TransactionClient, businessId: string) {
-  return Boolean(await tx.analyticsCollectionPeriod.findFirst({ where: { businessId, endedAt: null, consentVersion: 1, definitionVersion: 1, business: { isActive: true } }, select: { id: true } }))
+export async function collectionIsOpen(tx: Prisma.TransactionClient, businessId: string, consentVersion: 1 | 2 = 1) {
+  return Boolean(await tx.analyticsCollectionPeriod.findFirst({ where: { businessId, endedAt: null, consentVersion, definitionVersion: 1, business: { isActive: true } }, select: { id: true } }))
 }
 
 export async function closeAnalyticsCollection(tx: Prisma.TransactionClient, businessId: string, now: Date, closeReason: 'budget' | 'operator' | 'backlog' | 'kill_switch') {
@@ -95,8 +96,8 @@ export async function readAnalyticsCohort(tx: Prisma.TransactionClient, coverage
   return result
 }
 
-export async function analyticsCoverage(tx: Prisma.TransactionClient, businessId: string, timezone: string, version: number, start: Date, end: Date, captureConfigured: boolean) {
-  const periods = await tx.analyticsCollectionPeriod.findMany({ where: { businessId, startedAt: { lt: end }, OR: [{ endedAt: null }, { endedAt: { gt: start } }] }, orderBy: { startedAt: 'asc' }, take: 1001 })
+export async function analyticsCoverage(tx: Prisma.TransactionClient, businessId: string, timezone: string, version: number, start: Date, end: Date, captureConfigured: boolean, consentVersion: AnalyticsConsentVersion = 1) {
+  const periods = await tx.analyticsCollectionPeriod.findMany({ where: { businessId, consentVersion, startedAt: { lt: end }, OR: [{ endedAt: null }, { endedAt: { gt: start } }] }, orderBy: { startedAt: 'asc' }, take: 1001 })
   if (periods.length > 1000) return 'unknown' as const
   if (!periods.length) return 'disabled' as const
   if (periods.some(p => p.businessTimeZone !== timezone || p.definitionVersion !== version || (!p.endedAt && !captureConfigured) || p.closeReason === 'kill_switch')) return 'unknown' as const
@@ -109,9 +110,10 @@ export async function analyticsCoverage(tx: Prisma.TransactionClient, businessId
 }
 
 export function claimsForSession(session: AnalyticsSession): Extract<AnalyticsClaims, { scope: 'session' }> {
+  if (session.consentVersion !== 1 && session.consentVersion !== 2) throw new Error('Invalid analytics consent version')
   return {
     version: 1, scope: 'session', businessId: session.businessId, sessionId: session.id, origin: session.origin,
-    consentVersion: 1, definitionVersion: 1, sessionStartedAt: session.startedAt.toISOString(), sessionExpiresAt: session.expiresAt.toISOString(), retentionExpiresAt: session.retentionExpiresAt.toISOString(),
+    consentVersion: session.consentVersion, definitionVersion: 1, sessionStartedAt: session.startedAt.toISOString(), sessionExpiresAt: session.expiresAt.toISOString(), retentionExpiresAt: session.retentionExpiresAt.toISOString(),
     acquisition: { channel: session.channel, normalizationVersion: 1, acquisitionLinkId: session.acquisitionLinkId },
   }
 }

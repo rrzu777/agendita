@@ -19,7 +19,7 @@ describe('public analytics context resolves actual canonical origin, never proxy
   afterEach(() => vi.unstubAllEnvs())
   const request = (origin = 'https://salon.agendita.test', extra = {}) => new Request(`${origin}/api/analytics/salon/session`, { method: 'POST', headers: { origin, ...extra } })
   it('resolves the active tenant through canonical subdomain, app host or exact custom domain', async () => {
-    for (const origin of ['https://salon.agendita.test', 'https://agendita.test', 'https://salon.example.test']) expect(await resolvePublicAnalyticsContext(request(origin), 'salon')).toMatchObject({ businessId: 'biz-a', timezone: 'America/Santiago', origin })
+    for (const origin of ['https://salon.agendita.test', 'https://agendita.test', 'https://salon.example.test']) expect(await resolvePublicAnalyticsContext(request(origin), 'salon')).toMatchObject({ businessId: 'biz-a', timezone: 'America/Santiago', origin, consentVersion: 1 })
   })
   it('SSR exposes only a boolean and fails closed for configuration, periods, staff and read errors', async () => {
     expect(await isPublicAnalyticsEligible('biz-a')).toBe(true)

@@ -756,6 +756,7 @@ model Booking {
 
   // Optional verified scalar snapshot: never a FK and never part of booking idempotency.
   analyticsVersion              Int?
+  analyticsConsentVersion      Int?
   analyticsSessionId            String? @db.Uuid
   analyticsAttemptId            String? @db.Uuid
   analyticsAttemptStartedAt     DateTime?

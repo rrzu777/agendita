@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db'
 import { appendPublicAcquisitionSearch } from '@/lib/business/urls'
 import { PublicAnalytics } from '@/components/analytics/public-analytics'
 import { isPublicAnalyticsEligible } from '@/lib/analytics/public-context'
+import { getConfiguredAnalyticsConsentVersion } from '@/lib/analytics/budget'
 
 // El CTA de cuenta lee la sesión (cookies) → la page es por-request. La anotación
 // ISR anterior (revalidate = 300) ya no aplicaba (getTenantFromRequest lee headers).
@@ -53,7 +54,7 @@ export default async function PublicProfilePage({ params, searchParams }: Profil
   const hasPackages = (await prisma.packageProduct.count({ where: { businessId: business.id, isActive: true } })) > 0
 
   return (
-    <PublicAnalytics businessId={business.id} slug={business.slug} timezone={business.timezone || 'America/Santiago'} eligible={await isPublicAnalyticsEligible(business.id)} surface="profile">
+    <PublicAnalytics businessId={business.id} slug={business.slug} timezone={business.timezone || 'America/Santiago'} consentVersion={getConfiguredAnalyticsConsentVersion() ?? 1} eligible={await isPublicAnalyticsEligible(business.id)} surface="profile">
     <BusinessProfile
       business={business}
       bookingHref={appendPublicAcquisitionSearch(`/book/${business.slug}`, search)}

@@ -1,3 +1,5 @@
+export type AnalyticsConsentVersion = 1 | 2
+
 /** Defaults are fail-closed. Enabling capture additionally requires validated budgets and a distributed limiter. */
 export const ANALYTICS_POLICY = Object.freeze({
   enabledByDefault: false, version: 1, definitionVersion: 1, consentVersion: 1,
