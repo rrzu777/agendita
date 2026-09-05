@@ -204,6 +204,34 @@ export async function sendSubscriptionEmail(input: {
   }
 }
 
+/**
+ * A single frozen outbox payload is sent with one provider idempotency key.
+ * Callers own retry/lease policy so a provider timeout cannot create a second
+ * payload or silently change recipients.
+ */
+export async function sendAnalyticsOperationalEmail(input: {
+  to: string[]
+  subject: string
+  html: string
+  text: string
+  idempotencyKey: string
+}): Promise<EmailResult> {
+  const resend = getResend()
+  const from = getFromEmail()
+  if (!resend) return { success: false, skipped: 'RESEND_API_KEY no configurada', errorCode: 'provider_not_configured' }
+  if (!from) return { success: false, skipped: 'FROM_EMAIL no configurado', errorCode: 'sender_not_configured' }
+  try {
+    const { data, error } = await resend.batch.send(
+      input.to.map((to) => ({ from, to, subject: input.subject, html: input.html, text: input.text })),
+      { idempotencyKey: input.idempotencyKey },
+    )
+    if (error) return { success: false, error: error.message, errorCode: error.name || 'provider_rejected' }
+    return { success: true, messageId: data?.id }
+  } catch {
+    return { success: false, error: 'provider_unavailable', errorCode: 'provider_ambiguous' }
+  }
+}
+
 async function getBusinessOwnerEmails(businessId: string): Promise<{ email: string; name: string | null }[]> {
   const users = await prisma.businessUser.findMany({
     where: {

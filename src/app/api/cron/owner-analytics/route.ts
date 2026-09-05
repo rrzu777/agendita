@@ -16,6 +16,8 @@ export async function POST(request: Request) {
   if (!hasValidBearerSecret(request, process.env.CRON_SECRET)) return Response.json({ error: 'Unauthorized' }, { status: 401, headers })
   const url = new URL(request.url)
   if ([...url.searchParams.keys()].some(key => key !== 'cursor') || url.searchParams.getAll('cursor').length > 1 || (url.searchParams.get('cursor')?.length ?? 0) > 1024) return Response.json({ errors: 1, error: 'invalid_request' }, { status: 400, headers })
+  const requestBody = await request.text()
+  if (requestBody.trim()) return Response.json({ errors: 1, error: 'invalid_request' }, { status: 400, headers })
   const runId = request.headers.get('x-analytics-run-id')
   const leaseToken = request.headers.get('x-analytics-lease-token')
   const batchHeader = request.headers.get('x-analytics-batch-sequence')

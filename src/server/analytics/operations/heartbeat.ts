@@ -131,7 +131,7 @@ export async function finishAnalyticsJobRun(input: {
   const result = boundedResult(input.result)
   const successful = input.status === 'succeeded'
   const updated = await prisma.analyticsJobHeartbeat.updateMany({
-    where: { jobKey: input.jobKey, currentRunId: input.runId, leaseToken: input.leaseToken },
+    where: { jobKey: input.jobKey, currentRunId: input.runId, leaseToken: input.leaseToken, leaseExpiresAt: { gt: now } },
     data: {
       lastCompletedAt: now,
       lastStatus: input.status,

@@ -21,6 +21,13 @@ function installRedirectResponse(location = 'https://www.agendita.cl/instalar') 
   return new Response(null, { status: 307, headers: { location } })
 }
 
+function monitorResponse(state = 'healthy', httpStatus = 200) {
+  return new Response(JSON.stringify({ state }), {
+    status: httpStatus,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
 describe('production health monitor', () => {
   it('checks both public and protected health before succeeding', async () => {
     const fetchImpl = vi
@@ -107,5 +114,81 @@ describe('production health monitor', () => {
     })
 
     expect(result.ok).toBe(false)
+  })
+
+  it('skips the monitor probe while the repository variable is disabled', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(healthResponse('ok'))
+      .mockResolvedValueOnce(healthResponse('ok'))
+      .mockResolvedValueOnce(installPageResponse())
+      .mockResolvedValueOnce(installRedirectResponse())
+
+    const result = await checkProductionHealth({
+      baseUrl: 'https://www.agendita.cl',
+      cronSecret: 'secret',
+      fetchImpl,
+      sleep: vi.fn(),
+      monitorExpected: false,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.monitor).toEqual({ ok: true, skipped: true, httpStatus: 0 })
+    expect(fetchImpl).toHaveBeenCalledTimes(4)
+  })
+
+  it('requires a healthy monitor state when explicitly expected', async () => {
+    const fetchImpl = vi.fn(async (url) => {
+      const target = String(url)
+      if (target.endsWith('/api/health')) return healthResponse('ok')
+      if (target.endsWith('/dependencies')) return healthResponse('ok')
+      if (target.includes('install-smoke.')) return installRedirectResponse()
+      if (target.endsWith('/instalar')) return installPageResponse()
+      return monitorResponse('warning')
+    })
+
+    const result = await checkProductionHealth({
+      baseUrl: 'https://www.agendita.cl',
+      cronSecret: 'secret',
+      fetchImpl,
+      sleep: vi.fn(),
+      attempts: 1,
+      monitorExpected: true,
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.monitor).toEqual({ ok: false, httpStatus: 200, state: 'warning' })
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://www.agendita.cl/api/cron/owner-analytics-monitor',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer secret', 'Cache-Control': 'no-store' },
+      }),
+    )
+  })
+
+  it('fails closed for malformed monitor JSON and retries it', async () => {
+    const malformed = new Response('not-json', { status: 200, headers: { 'content-type': 'text/plain' } })
+    const fetchImpl = vi.fn(async (url) => {
+      const target = String(url)
+      if (target.endsWith('/api/health')) return healthResponse('ok')
+      if (target.endsWith('/dependencies')) return healthResponse('ok')
+      if (target.includes('install-smoke.')) return installRedirectResponse()
+      if (target.endsWith('/instalar')) return installPageResponse()
+      return malformed.clone()
+    })
+
+    const result = await checkProductionHealth({
+      baseUrl: 'https://www.agendita.cl',
+      cronSecret: 'secret',
+      fetchImpl,
+      sleep: vi.fn(),
+      attempts: 2,
+      monitorExpected: true,
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.monitor).toEqual({ ok: false, httpStatus: 200, state: 'invalid_response' })
+    expect(fetchImpl).toHaveBeenCalledTimes(10)
   })
 })

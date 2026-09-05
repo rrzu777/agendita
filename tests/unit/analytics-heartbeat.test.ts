@@ -79,7 +79,7 @@ describe('durable analytics heartbeat fencing', () => {
       result: { errors: 0, hasMore: false }, now,
     })).resolves.toBe(true)
     expect(db.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { jobKey: 'owner_analytics_maintenance', currentRunId: runId, leaseToken },
+      where: { jobKey: 'owner_analytics_maintenance', currentRunId: runId, leaseToken, leaseExpiresAt: { gt: now } },
       data: expect.objectContaining({ lastSuccessAt: now, lastStatus: 'succeeded', consecutiveFailures: 0 }),
     }))
   })
