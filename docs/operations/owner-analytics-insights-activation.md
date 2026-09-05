@@ -16,6 +16,9 @@ El cron weekly usa el mismo heartbeat durable que maintenance: las continuacione
 transportan `runId`, `leaseToken`, secuencia y cursor confirmado. El job reserva
 tokens, limita llamadas por semana, aplica circuito half-open y espera al menos
 una hora entre reintentos y persiste un `Retry-After` válido entre una y 24 horas.
+El claim exige consentimiento fuente v2 y revalida el opt-in dentro de la
+transacción; si el monitor operacional está habilitado y no está `healthy`, se
+persisten facts determinísticos pero no se llama a IA ni se drena el outbox.
 Antes de activar IA aún debe verificarse este comportamiento con un proveedor
 simulado/staged y un presupuesto real; un presupuesto de llamadas por sí solo no
 es evidencia suficiente de control de costo.

@@ -30,12 +30,15 @@ describe('owner analytics operations configuration', () => {
     expect(() => getOwnerAnalyticsOperationsConfig()).toThrow('OWNER_ANALYTICS_ALERT_EMAILS')
   })
 
-  it('rejects malformed flags and recipients', () => {
+  it('rejects malformed flags and recipients only when the feature is enabled', () => {
     vi.stubEnv('OWNER_ANALYTICS_OPERATIONAL_MONITOR_ENABLED', 'yes')
     expect(() => getOwnerAnalyticsOperationsConfig()).toThrow('OWNER_ANALYTICS_OPERATIONAL_MONITOR_ENABLED')
 
     vi.stubEnv('OWNER_ANALYTICS_OPERATIONAL_MONITOR_ENABLED', 'false')
     vi.stubEnv('OWNER_ANALYTICS_ALERT_EMAILS', 'not an email')
+    expect(getOwnerAnalyticsOperationsConfig()).toMatchObject({ alertsEnabled: false, alertEmails: [] })
+
+    vi.stubEnv('OWNER_ANALYTICS_ALERTS_ENABLED', 'true')
     expect(() => getOwnerAnalyticsOperationsConfig()).toThrow('OWNER_ANALYTICS_ALERT_EMAILS')
   })
 })

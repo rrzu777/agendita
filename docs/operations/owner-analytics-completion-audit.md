@@ -179,14 +179,16 @@ CAS, `lastProgressAt`, hash de snapshot, claim de outbox y SQL de purge acotado.
 
 La implementación local agrega los commits `937cbf5` (schema operacional),
 `d299031` (heartbeat), `c35a138` (monitor/incidentes/outbox) y el trabajo actual
-de schema/facts/generation/dashboard. Validaciones nuevas ejecutadas: Prisma
-validate/generate, typecheck, lint focal, 5 archivos de weekly selector/facts/
-generation/narrator/cron (10 tests), 4 suites operativas (14 tests), health-check
-(10 tests) y dashboard/selector/facts (salvo un fallo preexistente de localStorage
-en `analytics-privacy.test.tsx`). No se ejecutó DB de producción, Resend, OpenAI,
-workflow externo ni migración real. La suite de privacidad falló por el entorno
-jsdom (`window.localStorage` undefined), no por la copia de privacidad; requiere
-repetición con el harness estándar antes de declarar matriz completa.
+de schema/facts/generation/dashboard. La fixwave final agrega `0ec27ef`
+(consentimiento, opt-in, privacidad del prompt y circuito operativo) y `5979414`
+(fixtures PostgreSQL de facts y presupuesto). Validaciones nuevas: 45 archivos
+unitarios analytics/operaciones, 331 tests, y 4 suites PostgreSQL con 19 tests
+pasando sobre una base disposable con las 57 migraciones desde cero; Prisma
+validate/generate, typecheck, lint y diff-check también pasan. El cleanup de
+`localStorage` del harness de privacidad fue corregido. La corrida unitaria
+completa del repositorio sigue separada: bajo este entorno fallan casos no
+relacionados de `payment-qa-runner-safety` y `bank-transfer-form`; no se atribuyen
+a analytics. No se ejecutó DB de producción, Resend, OpenAI ni workflow externo.
 
 Las flags siguen false/vacías. La prueba de activación requiere migraciones
 `20260905120000_owner_analytics_operations` y
@@ -215,3 +217,22 @@ Ese smoke también expuso y cerró una omisión de consentimiento: `BookingFunne
 ahora conserva la versión heredada de su sesión, el índice único diario incluye
 esa dimensión y los desgloses rechazan fuentes mezcladas. La retención focal
 posterior pasó 8/8; el fallo anterior por columna inexistente ya no se reproduce.
+
+### Fixwave adicional de gaps — 2026-09-05
+
+- El claim de IA exige `sourceConsentVersion=2`, el snapshot también debe declarar
+  v2 y la preferencia `enabled + aiNarrativeEnabled + privacyVersion=2` se revisa
+  dentro de la misma transacción. Una semana v1 nunca llega al proveedor.
+- Los `factId` de servicios se reemplazan por aliases ordinales (`service_signal_N`)
+  antes de construir el prompt; el ID canónico se restaura sólo al persistir la
+  narrativa. El proveedor no recibe `serviceId`, nombre ni handle de tenant.
+- Un lease de generación #2 vencido se finaliza como `manual_review` y el reporte
+  pasa a `generation_failed`; no queda un `running` huérfano sin reintento.
+- Si el proveedor omite `output_tokens`, el presupuesto cobra el tope solicitado;
+  así un usage incompleto no permite sobrepasar el límite semanal.
+- El monitor no drena Resend mientras el estado sea `warning`, `critical` o
+  `not_initialized`. El job puede persistir facts determinísticos, pero suspende
+  nuevas llamadas AI/emails hasta que la operación vuelva a `healthy`.
+- Emails semanales también exigen la preferencia global `enabled`; una lista de
+  destinatarios malformada se ignora cuando alertas están apagadas y falla cerrado
+  sólo al habilitarlas.

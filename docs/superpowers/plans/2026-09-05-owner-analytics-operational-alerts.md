@@ -23,7 +23,9 @@
 - [x] El heartbeat semanal comparte el contrato de fencing y el driver conserva
       el cursor confirmado para reanudar una corrida acotada.
 - [ ] Aplicar migraciones y ejecutar pruebas PostgreSQL/CI/staged; siguen siendo
-      gates externos y no se simulan con typecheck o build.
+      gates externos y no se simulan con typecheck o build. Las migraciones y
+      pruebas PostgreSQL sí quedaron ejecutadas en bases disposable locales;
+      CI remoto, staging y producción siguen pendientes.
 
 ## Global Constraints
 
@@ -48,13 +50,13 @@
 - Produces Prisma models `AnalyticsJobHeartbeat`, `AnalyticsOperationalIncident`, and `AnalyticsEmailDelivery`.
 - Produces validated server helpers `getOwnerAnalyticsOperationsConfig()` and `getOwnerAnalyticsMonitorExpected()`.
 
-- [ ] **Step 1: Write failing schema/config tests** covering default-disabled flags, strict booleans, valid alert email lists, unique dedupe key, and nullable incident/report parent constraints.
-- [ ] **Step 2: Run `npm test -- tests/unit/analytics-operational-schema.test.ts --run` and verify failure because models/helpers do not exist.**
-- [ ] **Step 3: Add Prisma enums/models and indexes.** `AnalyticsJobHeartbeat.jobKey` is the primary key; `AnalyticsEmailDelivery.dedupeKey` is unique; incident `activeKey` is nullable unique; delivery has exactly one nullable incident/weekly parent for now and `notificationKind`, payload hash, frozen recipients, lease, attempts, and expiry fields.
-- [ ] **Step 4: Add an additive SQL migration.** Use PostgreSQL checks for bounded enums, `CHECK (num_nonnulls(incident_id, weekly_insight_id)=1)`, indexes for active incidents and retryable deliveries, and no destructive rewrite of current analytics tables.
-- [ ] **Step 5: Add env example and server validation.** Empty alert recipients and false flags are valid; malformed configured values return explicit validation errors only when the corresponding feature is enabled.
-- [ ] **Step 6: Run Prisma validation and the focused tests.**
-- [ ] **Step 7: Commit `feat(analytics): add durable operational schema`.**
+- [x] **Step 1: Write failing schema/config tests** covering default-disabled flags, strict booleans, valid alert email lists, unique dedupe key, and nullable incident/report parent constraints.
+- [x] **Step 2: Run `npm test -- tests/unit/analytics-operational-schema.test.ts --run` and verify failure because models/helpers do not exist.**
+- [x] **Step 3: Add Prisma enums/models and indexes.** `AnalyticsJobHeartbeat.jobKey` is the primary key; `AnalyticsEmailDelivery.dedupeKey` is unique; incident `activeKey` is nullable unique; delivery has exactly one nullable incident/weekly parent for now and `notificationKind`, payload hash, frozen recipients, lease, attempts, and expiry fields.
+- [x] **Step 4: Add an additive SQL migration.** Use PostgreSQL checks for bounded enums, `CHECK (num_nonnulls(incident_id, weekly_insight_id)=1)`, indexes for active incidents and retryable deliveries, and no destructive rewrite of current analytics tables.
+- [x] **Step 5: Add env example and server validation.** Empty alert recipients and false flags are valid; malformed configured values return explicit validation errors only when the corresponding feature is enabled.
+- [x] **Step 6: Run Prisma validation and the focused tests.**
+- [x] **Step 7: Commit `feat(analytics): add durable operational schema`.**
 
 ### Task 2: Implement fenced maintenance heartbeat and complete-run driver
 
@@ -72,13 +74,13 @@
 - `finishAnalyticsJobRun(input: {runId:string; leaseToken:string; status:'succeeded'|'partial'|'failed'; result:HeartbeatResult; now:Date}): Promise<boolean>`.
 - `runOwnerAnalyticsMaintenance(input): Promise<MaintenanceResult>` remains the public service boundary.
 
-- [ ] **Step 1: Add failing tests** for stale completion fencing, duplicate batch sequence, progress not updating `lastSuccessAt`, complete run updating success counters once, and lease expiry producing failure.
-- [ ] **Step 2: Run focused tests and verify failure.**
-- [ ] **Step 3: Implement heartbeat transactions with `currentRunId`, lease token, expected sequence, `lastProgressAt`, cumulative errors, and complete-run counters.** Use CAS updates; reject an old token without throwing into Booking code.
-- [ ] **Step 4: Wrap the existing driver in the cron route/driver.** Generate one run ID for the whole cursor loop, record each response, and finish only after the shell driver reaches terminal `hasMore=false`. Preserve legacy route response fields.
-- [ ] **Step 5: Extend the shell script to pass an opaque run token/cursor contract and call a guarded finish endpoint.** Existing legacy execution must fail the workflow rather than claim a successful heartbeat when the continuation budget is exhausted.
-- [ ] **Step 6: Run focused heartbeat/cron tests and typecheck.**
-- [ ] **Step 7: Commit `feat(analytics): fence maintenance heartbeat runs`.**
+- [x] **Step 1: Add failing tests** for stale completion fencing, duplicate batch sequence, progress not updating `lastSuccessAt`, complete run updating success counters once, and lease expiry producing failure.
+- [x] **Step 2: Run focused tests and verify failure.**
+- [x] **Step 3: Implement heartbeat transactions with `currentRunId`, lease token, expected sequence, `lastProgressAt`, cumulative errors, and complete-run counters.** Use CAS updates; reject an old token without throwing into Booking code.
+- [x] **Step 4: Wrap the existing driver in the cron route/driver.** Generate one run ID for the whole cursor loop, record each response, and finish only after the shell driver reaches terminal `hasMore=false`. Preserve legacy route response fields.
+- [x] **Step 5: Extend the shell script to pass an opaque run token/cursor contract and call a guarded finish endpoint.** Existing legacy execution must fail the workflow rather than claim a successful heartbeat when the continuation budget is exhausted.
+- [x] **Step 6: Run focused heartbeat/cron tests and typecheck.**
+- [x] **Step 7: Commit `feat(analytics): fence maintenance heartbeat runs`.**
 
 ### Task 3: Add incident evaluator and durable email outbox worker
 
@@ -95,13 +97,13 @@
 - `claimAnalyticsEmailDelivery(input: {deliveryId:string; now:Date}): Promise<DeliveryClaim|null>`.
 - `deliverAnalyticsEmailClaim(claim: DeliveryClaim): Promise<DeliveryResult>`.
 
-- [ ] **Step 1: Write failing unit tests** for all threshold edges: 2h15/4h heartbeat, 2/4 failures, 2h/12h/24h backlog, open/escalate/remind/resolve, and disabled/expected monitor states.
-- [ ] **Step 2: Write failing integration tests** for concurrent evaluators, one active incident, one notification hito, old heartbeat completion, outbox lease expiry, and same-key ambiguous retry.
-- [ ] **Step 3: Implement pure threshold/state transitions.** Keep details allowlisted and compute `activeKey`, severity, hito sequence, and resolution from durable rows only.
-- [ ] **Step 4: Implement transactional incident upsert and delivery creation.** Never put recipient emails in incident details; freeze subject/body/recipient list into the outbox payload and hash it.
-- [ ] **Step 5: Add a generic Resend outbox send path with `maxRetries:0`, 15-second provider timeout, lease CAS, statuses `pending/sending/sent/failed/ambiguous/manual_review/cancelled`, and 23-hour cutoff.** Reuse existing provider formatting and idempotency support.
-- [ ] **Step 6: Run focused unit/integration tests.**
-- [ ] **Step 7: Commit `feat(analytics): add durable operational incidents and outbox`.**
+- [x] **Step 1: Write failing unit tests** for all threshold edges: 2h15/4h heartbeat, 2/4 failures, 2h/12h/24h backlog, open/escalate/remind/resolve, and disabled/expected monitor states.
+- [x] **Step 2: Write failing integration tests** for concurrent evaluators, one active incident, one notification hito, old heartbeat completion, outbox lease expiry, and same-key ambiguous retry.
+- [x] **Step 3: Implement pure threshold/state transitions.** Keep details allowlisted and compute `activeKey`, severity, hito sequence, and resolution from durable rows only.
+- [x] **Step 4: Implement transactional incident upsert and delivery creation.** Never put recipient emails in incident details; freeze subject/body/recipient list into the outbox payload and hash it.
+- [x] **Step 5: Add a generic Resend outbox send path with `maxRetries:0`, 15-second provider timeout, lease CAS, statuses `pending/sending/sent/failed/ambiguous/manual_review/cancelled`, and 23-hour cutoff.** Reuse existing provider formatting and idempotency support.
+- [x] **Step 6: Run focused unit/integration tests.**
+- [x] **Step 7: Commit `feat(analytics): add durable operational incidents and outbox`.**
 
 ### Task 4: Add independent monitor route and production-health integration
 
@@ -117,12 +119,12 @@
 - `POST /api/cron/owner-analytics-monitor` returns `{state, heartbeat, incidents, deliveries}` with no tenant/customer payload.
 - `checkProductionHealth()` accepts an optional monitor probe and preserves the expected-disabled skip.
 
-- [ ] **Step 1: Add failing route/auth and monitor matrix tests.** Cover no body/query, wrong Bearer, `not_enabled`, expected-enabled `not_initialized`, warning/critical, and `no-store`.
-- [ ] **Step 2: Extend the production health helper tests** for the monitor URL, expected flag, retries, malformed JSON, and failing state.
-- [ ] **Step 3: Implement the route and script probe.** The app evaluates incidents and drains bounded outbox deliveries; the script fails only when monitor is expected and unhealthy, while preserving old checks when it is intentionally disabled.
-- [ ] **Step 4: Add repository variable `OWNER_ANALYTICS_MONITOR_EXPECTED` to the workflow environment without enabling it.** Keep `CRON_SECRET` server-only.
-- [ ] **Step 5: Run route/script tests and lint changed files.**
-- [ ] **Step 6: Commit `feat(analytics): monitor durable operations from production health`.**
+- [x] **Step 1: Add failing route/auth and monitor matrix tests.** Cover no body/query, wrong Bearer, `not_enabled`, expected-enabled `not_initialized`, warning/critical, and `no-store`.
+- [x] **Step 2: Extend the production health helper tests** for the monitor URL, expected flag, retries, malformed JSON, and failing state.
+- [x] **Step 3: Implement the route and script probe.** The app evaluates incidents and drains bounded outbox deliveries; the script fails only when monitor is expected and unhealthy, while preserving old checks when it is intentionally disabled.
+- [x] **Step 4: Add repository variable `OWNER_ANALYTICS_MONITOR_EXPECTED` to the workflow environment without enabling it.** Keep `CRON_SECRET` server-only.
+- [x] **Step 5: Run route/script tests and lint changed files.**
+- [x] **Step 6: Commit `feat(analytics): monitor durable operations from production health`.**
 
 ### Task 5: Retention, documentation, and end-to-end verification
 
@@ -132,8 +134,8 @@
 - Modify: `docs/operations/owner-analytics-completion-audit.md`
 - Test: `tests/integration/analytics-retention.test.ts`
 
-- [ ] **Step 1: Add failing retention tests** for resolved incidents and delivery payloads, open incident preservation, 90-day expiry, and independent purge when heartbeat monitoring is disabled.
-- [ ] **Step 2: Implement bounded purge.** Purge only expired resolved incidents and delivery payloads; never purge the current heartbeat or unresolved incident.
-- [ ] **Step 3: Document activation gates and the total-app-down limitation.** Record manual heartbeat run, synthetic incident, external GitHub failure, and recipient verification evidence requirements.
-- [ ] **Step 4: Run the focused operational suite, Prisma validation, typecheck, lint, and the existing full unit suite.**
-- [ ] **Step 5: Commit `docs(analytics): document operational alert activation gates`.**
+- [x] **Step 1: Add failing retention tests** for resolved incidents and delivery payloads, open incident preservation, 90-day expiry, and independent purge when heartbeat monitoring is disabled.
+- [x] **Step 2: Implement bounded purge.** Purge only expired resolved incidents and delivery payloads; never purge the current heartbeat or unresolved incident.
+- [x] **Step 3: Document activation gates and the total-app-down limitation.** Record manual heartbeat run, synthetic incident, external GitHub failure, and recipient verification evidence requirements.
+- [ ] **Step 4: Run the focused operational suite, Prisma validation, typecheck, lint, and the existing full unit suite.** Focal operational/analytics suites pass; repository-wide unit run remains non-green on unrelated payment/bank-transfer tests under this environment.
+- [x] **Step 5: Commit `docs(analytics): document operational alert activation gates`.**
