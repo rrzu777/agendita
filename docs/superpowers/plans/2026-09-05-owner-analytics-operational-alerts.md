@@ -23,7 +23,7 @@
 - [x] El heartbeat semanal comparte el contrato de fencing y el driver conserva
       el cursor confirmado para reanudar una corrida acotada.
 - [x] Aplicar las migraciones en una DB disposable y ejecutar las pruebas
-      PostgreSQL locales desde cero; las 57 migraciones y la matriz operativa
+      PostgreSQL locales desde cero; las 59 migraciones y la matriz operativa
       pasan.
 - [ ] Ejecutar CI remoto, staging y producción; siguen siendo gates externos y
       no se simulan con typecheck o build.
@@ -141,6 +141,6 @@
 - [x] **Step 4a: Run the focused operational suite, Prisma validation,
       typecheck, and lint.** Focal operational/analytics suites pass.
 - [x] **Step 4b: Run the existing full unit suite.** `npm run test:unit` pasó
-      `446/446` archivos, `4033` tests y 1 skip, sin fallos. El skip es la
+      `446/446` archivos, `4036` tests y 1 skip, sin fallos. El skip es la
       prueba opt-in de red real `payment-qa-network-deny`.
 - [x] **Step 5: Commit `docs(analytics): document operational alert activation gates`.**
