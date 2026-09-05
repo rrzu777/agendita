@@ -191,7 +191,7 @@
 - [x] **Step 5: Run focused email/retention/integration tests.** Focal analytics
       tests pass, incluida la matriz PostgreSQL disposable.
 - [x] **Step 5b: Run the full unit suite.** `npm run test:unit` pasó
-      `446/446` archivos, `4033` tests y 1 skip, sin fallos, en ejecución
+      `446/446` archivos, `4036` tests y 1 skip, sin fallos, en ejecución
       serializada por Vitest. El skip es la prueba opt-in de red real
       `payment-qa-network-deny`.
 - [x] **Step 6: Commit `feat(analytics): deliver opt-in weekly insight emails`.**
