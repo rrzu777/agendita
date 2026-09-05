@@ -79,27 +79,35 @@ export async function claimWeeklyGeneration(input: { weeklyInsightId: string; no
   return prisma.$transaction(async tx => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('owner-analytics-weekly-generation', 0))`
     if (!await generationCircuitAllows(tx, input.now)) return null
-    const insight = await tx.analyticsWeeklyInsight.findUnique({ where: { id: input.weeklyInsightId }, select: { id: true, businessId: true, status: true, generationStatus: true, facts: true, inputHash: true, sourceExpiresAt: true, weekStart: true } })
-    if (!insight || insight.sourceExpiresAt <= input.now || !['deterministic_ready', 'generation_failed'].includes(insight.status)) return null
+    const insight = await tx.analyticsWeeklyInsight.findUnique({ where: { id: input.weeklyInsightId }, select: { id: true, businessId: true, status: true, generationStatus: true, sourceConsentVersion: true, facts: true, inputHash: true, sourceExpiresAt: true, weekStart: true } })
+    if (!insight || insight.sourceExpiresAt <= input.now || insight.sourceConsentVersion !== 2 || (insight.facts as { sourceConsentVersion?: unknown } | null)?.sourceConsentVersion !== 2 || !['deterministic_ready', 'generation_failed'].includes(insight.status)) return null
     if (!config.businessIds.includes(insight.businessId)) return null
+    const preference = await tx.analyticsInsightPreference.findUnique({ where: { businessId: insight.businessId }, select: { enabled: true, aiNarrativeEnabled: true, privacyVersion: true } })
+    if (!preference?.enabled || !preference.aiNarrativeEnabled || preference.privacyVersion !== 2) return null
     const latest = await tx.analyticsInsightGenerationAttempt.findFirst({ where: { weeklyInsightId: insight.id }, orderBy: { attemptNumber: 'desc' }, select: { id: true, attemptNumber: true, status: true, leaseExpiresAt: true, completedAt: true, nextRetryAt: true } })
     if (latest?.status === 'running' && latest.leaseExpiresAt && latest.leaseExpiresAt > input.now) return null
     if (latest?.status === 'succeeded' || latest?.status === 'manual_review') return null
     if (latest?.status === 'failed' && latest.nextRetryAt && latest.nextRetryAt > input.now) return null
     if (latest?.status === 'failed' && latest.completedAt && input.now.getTime() - latest.completedAt.getTime() < RETRY_DELAY_MS) return null
+    if (latest?.status === 'running' && (!latest.leaseExpiresAt || latest.leaseExpiresAt <= input.now)) {
+      const terminalLease = latest.attemptNumber >= MAX_ATTEMPTS
+      const expired = await tx.analyticsInsightGenerationAttempt.updateMany({
+        where: { id: latest.id, status: 'running', leaseExpiresAt: latest.leaseExpiresAt ? { lte: input.now } : undefined },
+        data: { status: terminalLease ? 'manual_review' : 'failed', errorCode: 'lease_expired', completedAt: input.now, leaseToken: null, leaseExpiresAt: null, ...(terminalLease ? { nextRetryAt: null } : {}) },
+      })
+      if (expired.count !== 1) return null
+      if (terminalLease) {
+        await tx.analyticsWeeklyInsight.update({ where: { id: insight.id }, data: { status: 'generation_failed', generationStatus: 'manual_review', reasonCode: 'lease_expired' } })
+        return null
+      }
+    }
     const attemptNumber = (latest?.attemptNumber ?? 0) + 1
     if (attemptNumber > MAX_ATTEMPTS) return null
-    if (latest?.status === 'running') {
-      await tx.analyticsInsightGenerationAttempt.updateMany({
-        where: { id: latest.id, status: 'running', leaseExpiresAt: { lte: input.now } },
-        data: { status: 'failed', errorCode: 'lease_expired', completedAt: input.now, leaseToken: null, leaseExpiresAt: null },
-      })
-    }
     const periodStart = utcWeekStart(input.now)
     const calls = await tx.analyticsInsightGenerationAttempt.count({ where: { createdAt: { gte: periodStart } } })
     if (calls >= config.weeklyCallBudget) return null
     const usage = await tx.analyticsInsightGenerationAttempt.findMany({ where: { createdAt: { gte: periodStart } }, select: { status: true, outputTokens: true } })
-    const spentTokens = usage.reduce((sum: number, row: { status: string; outputTokens: number | null }) => sum + (row.outputTokens ?? 0), 0)
+    const spentTokens = usage.reduce((sum: number, row: { status: string; outputTokens: number | null }) => sum + (row.status === 'running' ? 0 : row.outputTokens ?? config.maxOutputTokens), 0)
     const reservedTokens = usage.filter((row: { status: string }) => row.status === 'running').length * config.maxOutputTokens
     const remainingTokens = config.weeklyTokenBudget - spentTokens - reservedTokens
     if (remainingTokens <= 0) return null

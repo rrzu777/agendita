@@ -48,11 +48,11 @@ export async function claimAnalyticsEmailDelivery(now = new Date()): Promise<Del
     const businessId = row.weeklyInsight?.businessId
     const [preference, membership] = row.recipientUserId && businessId
       ? await Promise.all([
-          prisma.analyticsInsightPreference.findUnique({ where: { businessId }, select: { emailEnabled: true, recipientUserId: true } }),
+          prisma.analyticsInsightPreference.findUnique({ where: { businessId }, select: { enabled: true, emailEnabled: true, recipientUserId: true } }),
           prisma.businessUser.findFirst({ where: { businessId, userId: row.recipientUserId, role: { in: ['owner', 'admin'] } }, select: { id: true } }),
         ])
       : [null, null]
-    if (!preference?.emailEnabled || preference.recipientUserId !== row.recipientUserId || !membership) {
+    if (!preference?.enabled || !preference.emailEnabled || preference.recipientUserId !== row.recipientUserId || !membership) {
       await prisma.analyticsEmailDelivery.updateMany({ where: { id: row.id, status: row.status }, data: { status: 'cancelled', leaseToken: null, leaseExpiresAt: null } })
       return null
     }

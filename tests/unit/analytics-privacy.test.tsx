@@ -11,8 +11,8 @@ afterEach(() => {
   act(() => root?.unmount())
   root = undefined
   document.body.replaceChildren()
-  window.localStorage.clear()
-  window.sessionStorage.clear()
+  window.localStorage?.clear()
+  window.sessionStorage?.clear()
 })
 
 describe('analytics privacy notice access without losing the booking', () => {

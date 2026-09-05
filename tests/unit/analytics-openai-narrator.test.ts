@@ -48,7 +48,8 @@ describe('weekly OpenAI narrator', () => {
     await narrateWeeklyFacts({ facts: withService, model: 'gpt-5.6-luna', now: new Date() })
     const request = clientState.create.mock.calls.at(-1)?.[0] as { input: Array<{ content: string }> }
     expect(request.input[1].content).not.toContain('service-secret-id')
-    expect(request.input[1].content).toContain('service_opaque_low_interest_to_conversion')
+    expect(request.input[1].content).toContain('service_signal_1')
+    expect(request.input[1].content).not.toContain('service_opaque_low_interest_to_conversion')
   })
 
   it('maps a provider Retry-After header to a durable retry hint', async () => {

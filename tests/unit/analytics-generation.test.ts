@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const tx = vi.hoisted(() => ({
   $executeRaw: vi.fn(),
   analyticsJobHeartbeat: { findUnique: vi.fn(), upsert: vi.fn(), updateMany: vi.fn() },
+  analyticsInsightPreference: { findUnique: vi.fn() },
   analyticsWeeklyInsight: { findUnique: vi.fn(), update: vi.fn() },
   analyticsInsightGenerationAttempt: { findFirst: vi.fn(), count: vi.fn(), findMany: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
 }))
@@ -22,7 +23,8 @@ describe('weekly generation leases', () => {
     tx.analyticsJobHeartbeat.findUnique.mockResolvedValue(null)
     tx.analyticsJobHeartbeat.upsert.mockResolvedValue({ jobKey: 'weekly_insights' })
     tx.analyticsJobHeartbeat.updateMany.mockResolvedValue({ count: 1 })
-    tx.analyticsWeeklyInsight.findUnique.mockResolvedValue({ id: 'weekly-1', businessId: 'biz-a', status: 'deterministic_ready', generationStatus: 'not_requested', facts, inputHash: 'a'.repeat(64), sourceExpiresAt: new Date('2026-11-30T00:00:00Z'), weekStart: new Date('2026-08-24T00:00:00Z') })
+    tx.analyticsInsightPreference.findUnique.mockResolvedValue({ enabled: true, aiNarrativeEnabled: true, privacyVersion: 2 })
+    tx.analyticsWeeklyInsight.findUnique.mockResolvedValue({ id: 'weekly-1', businessId: 'biz-a', status: 'deterministic_ready', generationStatus: 'not_requested', sourceConsentVersion: 2, facts, inputHash: 'a'.repeat(64), sourceExpiresAt: new Date('2026-11-30T00:00:00Z'), weekStart: new Date('2026-08-24T00:00:00Z') })
     tx.analyticsInsightGenerationAttempt.findFirst.mockResolvedValue(null)
     tx.analyticsInsightGenerationAttempt.count.mockResolvedValue(0)
     tx.analyticsInsightGenerationAttempt.findMany.mockResolvedValue([])
@@ -38,6 +40,28 @@ describe('weekly generation leases', () => {
     expect(tx.analyticsInsightGenerationAttempt.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'running', leaseExpiresAt: new Date(now.getTime() + 45000) }) }))
     tx.analyticsInsightGenerationAttempt.findFirst.mockResolvedValue({ id: 'attempt-1', attemptNumber: 1, status: 'running', leaseExpiresAt: new Date(now.getTime() + 1000) })
     await expect(claimWeeklyGeneration({ weeklyInsightId: 'weekly-1', now })).resolves.toBeNull()
+  })
+
+  it('never claims AI generation for a v1 source snapshot', async () => {
+    tx.analyticsWeeklyInsight.findUnique.mockResolvedValueOnce({
+      id: 'weekly-1',
+      businessId: 'biz-a',
+      status: 'deterministic_ready',
+      generationStatus: 'not_requested',
+      facts: { ...facts, sourceConsentVersion: 1 },
+      inputHash: 'a'.repeat(64),
+      sourceConsentVersion: 1,
+      sourceExpiresAt: new Date('2026-11-30T00:00:00Z'),
+      weekStart: new Date('2026-08-24T00:00:00Z'),
+    })
+    await expect(claimWeeklyGeneration({ weeklyInsightId: 'weekly-1', now })).resolves.toBeNull()
+    expect(tx.analyticsInsightGenerationAttempt.create).not.toHaveBeenCalled()
+  })
+
+  it('revalidates the AI opt-in inside the claim transaction', async () => {
+    tx.analyticsInsightPreference.findUnique.mockResolvedValueOnce({ enabled: true, aiNarrativeEnabled: false, privacyVersion: null })
+    await expect(claimWeeklyGeneration({ weeklyInsightId: 'weekly-1', now })).resolves.toBeNull()
+    expect(tx.analyticsInsightGenerationAttempt.create).not.toHaveBeenCalled()
   })
 
   it('fences a late result after lease expiry', async () => {
@@ -68,10 +92,29 @@ describe('weekly generation leases', () => {
     expect(tx.analyticsInsightGenerationAttempt.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: 'attempt-1', status: 'running' }), data: expect.objectContaining({ status: 'failed', errorCode: 'lease_expired' }) }))
   })
 
+  it('terminates an expired second lease instead of leaving it running forever', async () => {
+    tx.analyticsInsightGenerationAttempt.findFirst.mockResolvedValue({ id: 'attempt-2', attemptNumber: 2, status: 'running', leaseExpiresAt: new Date(now.getTime() - 1), completedAt: null })
+    await expect(claimWeeklyGeneration({ weeklyInsightId: 'weekly-1', now })).resolves.toBeNull()
+    expect(tx.analyticsInsightGenerationAttempt.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: 'attempt-2', status: 'running', leaseExpiresAt: { lte: now } }),
+      data: expect.objectContaining({ status: 'manual_review', errorCode: 'lease_expired' }),
+    }))
+    expect(tx.analyticsWeeklyInsight.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'generation_failed', generationStatus: 'manual_review', reasonCode: 'lease_expired' }),
+    }))
+  })
+
   it('caps the provider output request to the remaining weekly token budget', async () => {
     vi.stubEnv('OWNER_ANALYTICS_INSIGHTS_WEEKLY_TOKEN_BUDGET', '100')
     const claim = await claimWeeklyGeneration({ weeklyInsightId: 'weekly-1', now })
     expect(claim).toMatchObject({ maxOutputTokens: 100 })
+  })
+
+  it('charges the token cap when a provider omits usage', async () => {
+    vi.stubEnv('OWNER_ANALYTICS_INSIGHTS_WEEKLY_TOKEN_BUDGET', '700')
+    tx.analyticsInsightGenerationAttempt.findMany.mockResolvedValue([{ status: 'succeeded', outputTokens: null }])
+    await expect(claimWeeklyGeneration({ weeklyInsightId: 'weekly-1', now })).resolves.toBeNull()
+    expect(tx.analyticsInsightGenerationAttempt.create).not.toHaveBeenCalled()
   })
 
   it('blocks claims while the provider circuit is open', async () => {

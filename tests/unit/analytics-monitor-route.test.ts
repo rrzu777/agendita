@@ -48,17 +48,29 @@ describe('owner analytics monitor route', () => {
     expect(drain).not.toHaveBeenCalled()
   })
 
-  it('returns operational state and bounded delivery result when enabled', async () => {
+  it('suspends email delivery while operations are unhealthy', async () => {
     vi.stubEnv('OWNER_ANALYTICS_OPERATIONAL_MONITOR_ENABLED', 'true')
     vi.stubEnv('OWNER_ANALYTICS_ALERTS_ENABLED', 'true')
     vi.stubEnv('OWNER_ANALYTICS_ALERT_EMAILS', 'ops@example.com')
     evaluate.mockResolvedValue({ state: 'critical', incidents: [{ incidentType: 'heartbeat_stale', severity: 'critical', details: { staleMs: 14400000 }, beyondTolerance: false }], backlog: { overdueMs: 0, dangerous: false, beyondTolerance: false, hasExpired: false } })
     findHeartbeat.mockResolvedValue({ lastStatus: 'failed', lastStartedAt: new Date('2026-09-05T00:00:00.000Z'), lastCompletedAt: null, lastSuccessAt: null, lastProgressAt: null, consecutiveFailures: 4, consecutiveSuccesses: 0, runErrors: 2, nextBatchSequence: 3 })
+    const response = await POST(request())
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ state: 'critical', heartbeat: { consecutiveFailures: 4 }, deliveries: { sent: 0, failed: 0, pending: 0 } })
+    expect(findHeartbeat).toHaveBeenCalledWith(expect.objectContaining({ where: { jobKey: 'owner_analytics_maintenance' } }))
+    expect(drain).not.toHaveBeenCalled()
+  })
+
+  it('drains a bounded outbox when operations are healthy', async () => {
+    vi.stubEnv('OWNER_ANALYTICS_OPERATIONAL_MONITOR_ENABLED', 'true')
+    vi.stubEnv('OWNER_ANALYTICS_ALERTS_ENABLED', 'true')
+    vi.stubEnv('OWNER_ANALYTICS_ALERT_EMAILS', 'ops@example.com')
+    evaluate.mockResolvedValue({ state: 'healthy', incidents: [], backlog: { overdueMs: 0, dangerous: false, beyondTolerance: false, hasExpired: false } })
+    findHeartbeat.mockResolvedValue({ lastStatus: 'succeeded', lastStartedAt: new Date('2026-09-05T11:00:00.000Z'), lastCompletedAt: new Date('2026-09-05T11:01:00.000Z'), lastSuccessAt: new Date('2026-09-05T11:01:00.000Z'), lastProgressAt: new Date('2026-09-05T11:01:00.000Z'), consecutiveFailures: 0, consecutiveSuccesses: 2, runErrors: 0, nextBatchSequence: null })
     drain.mockResolvedValue({ sent: 1, failed: 0, pending: 0 })
     const response = await POST(request())
     expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({ state: 'critical', heartbeat: { consecutiveFailures: 4 }, deliveries: { sent: 1 } })
-    expect(findHeartbeat).toHaveBeenCalledWith(expect.objectContaining({ where: { jobKey: 'owner_analytics_maintenance' } }))
+    expect(await response.json()).toMatchObject({ state: 'healthy', deliveries: { sent: 1 } })
     expect(drain).toHaveBeenCalledWith({ maxDeliveries: 10 })
   })
 })

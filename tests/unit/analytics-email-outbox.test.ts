@@ -1,9 +1,15 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const db = vi.hoisted(() => ({ findFirst: vi.fn(), updateMany: vi.fn(), count: vi.fn() }))
+const db = vi.hoisted(() => ({
+  findFirst: vi.fn(),
+  updateMany: vi.fn(),
+  count: vi.fn(),
+  analyticsInsightPreference: { findUnique: vi.fn() },
+  businessUser: { findFirst: vi.fn() },
+}))
 const send = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/db', () => ({ prisma: { analyticsEmailDelivery: db } }))
+vi.mock('@/lib/db', () => ({ prisma: { analyticsEmailDelivery: db, analyticsInsightPreference: db.analyticsInsightPreference, businessUser: db.businessUser } }))
 vi.mock('@/lib/notifications/email-provider', () => ({ sendAnalyticsOperationalEmail: send }))
 
 import { claimAnalyticsEmailDelivery, deliverAnalyticsEmailClaim } from '@/server/analytics/operations/email-outbox'
@@ -23,6 +29,8 @@ describe('analytics email outbox', () => {
     db.findFirst.mockResolvedValue(row)
     db.updateMany.mockResolvedValue({ count: 1 })
     db.count.mockResolvedValue(1)
+    db.analyticsInsightPreference.findUnique.mockResolvedValue({ enabled: true, emailEnabled: true, recipientUserId: 'user-1' })
+    db.businessUser.findFirst.mockResolvedValue({ id: 'membership-1' })
     send.mockResolvedValue({ success: true, messageId: 'msg_1' })
   })
   afterEach(() => vi.clearAllMocks())
@@ -43,6 +51,13 @@ describe('analytics email outbox', () => {
     expect(result).toEqual({ status: 'sent', messageId: 'msg_1' })
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: row.dedupeKey }))
     expect(db.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'sent', providerMessageId: 'msg_1' }) }))
+  })
+
+  it('cancels a weekly delivery when the global preference was disabled', async () => {
+    db.findFirst.mockResolvedValue({ ...row, weeklyInsightId: 'weekly-1', recipientUserId: 'user-1', weeklyInsight: { businessId: 'biz-a' } })
+    db.analyticsInsightPreference.findUnique.mockResolvedValue({ enabled: false, emailEnabled: true, recipientUserId: 'user-1' })
+    await expect(claimAnalyticsEmailDelivery(now)).resolves.toBeNull()
+    expect(db.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'cancelled' }) }))
   })
 
   it('retries an ambiguous result with the same delivery and stops at the cutoff', async () => {

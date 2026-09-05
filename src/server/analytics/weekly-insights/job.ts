@@ -7,6 +7,8 @@ import { buildWeeklyFacts } from './facts'
 import { claimWeeklyGeneration, finalizeWeeklyGeneration } from './generation'
 import { narrateWeeklyFacts } from './openai-narrator'
 import { queueWeeklyInsightDigest } from '@/server/analytics/operations/email-outbox'
+import { evaluateOwnerAnalyticsOperations } from '@/server/analytics/operations/incidents'
+import { getOwnerAnalyticsOperationsConfig } from '@/lib/analytics/operations/config'
 
 const JOB_DEADLINE_MS = 40 * 1000
 const MIN_REMAINING_MS = 20 * 1000
@@ -14,6 +16,15 @@ const MIN_REMAINING_MS = 20 * 1000
 export async function runWeeklyInsightsJob(input: { now: Date; cursor: string | null }): Promise<{ processed: number; nextCursor: string | null }> {
   const config = getOwnerAnalyticsInsightsConfig()
   if (!config.enabled) return { processed: 0, nextCursor: null }
+  let sideEffectsAllowed = true
+  try {
+    const operationsConfig = getOwnerAnalyticsOperationsConfig()
+    if (operationsConfig.monitorEnabled) sideEffectsAllowed = (await evaluateOwnerAnalyticsOperations(input.now)).state === 'healthy'
+  } catch {
+    // A malformed/unknown operational gate must fail closed for provider and
+    // email side effects, while deterministic facts may still be persisted.
+    sideEffectsAllowed = false
+  }
   const deadline = performance.now() + JOB_DEADLINE_MS
   const selected = await selectWeeklyInsightCandidates({ now: input.now, cursor: input.cursor, limit: 20 })
   let processed = 0
@@ -42,13 +53,13 @@ export async function runWeeklyInsightsJob(input: { now: Date; cursor: string | 
       update: updateData,
       select: { id: true },
     })
-    if (facts.status === 'deterministic_ready' && facts.facts && performance.now() + MIN_REMAINING_MS < deadline) {
-      const preference = await prisma.analyticsInsightPreference.findUnique({ where: { businessId: candidate.businessId }, select: { aiNarrativeEnabled: true, emailEnabled: true, privacyVersion: true, recipientUserId: true, recipientUser: { select: { email: true } } } })
-      if (preference?.aiNarrativeEnabled && preference.privacyVersion === 2) {
+    if (sideEffectsAllowed && facts.status === 'deterministic_ready' && facts.facts && performance.now() + MIN_REMAINING_MS < deadline) {
+      const preference = await prisma.analyticsInsightPreference.findUnique({ where: { businessId: candidate.businessId }, select: { enabled: true, aiNarrativeEnabled: true, emailEnabled: true, privacyVersion: true, recipientUserId: true, recipientUser: { select: { email: true } } } })
+      if (preference?.enabled && preference.aiNarrativeEnabled && preference.privacyVersion === 2) {
         const claim = await claimWeeklyGeneration({ weeklyInsightId: insight.id, now: input.now })
         if (claim) await finalizeWeeklyGeneration({ claim, result: await narrateWeeklyFacts({ facts: claim.facts, model: config.model, now: input.now, maxOutputTokens: claim.maxOutputTokens }), now: input.now })
       }
-      if (preference?.emailEnabled && preference.recipientUserId && preference.recipientUser?.email) await queueWeeklyInsightDigest({ weeklyInsightId: insight.id, recipientUserId: preference.recipientUserId, recipientEmail: preference.recipientUser.email, now: input.now })
+      if (preference?.enabled && preference.emailEnabled && preference.recipientUserId && preference.recipientUser?.email) await queueWeeklyInsightDigest({ weeklyInsightId: insight.id, recipientUserId: preference.recipientUserId, recipientEmail: preference.recipientUser.email, now: input.now })
     }
     processed += 1
     lastProcessed = candidate

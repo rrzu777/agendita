@@ -33,7 +33,21 @@ export async function narrateWeeklyFacts(input: { facts: CanonicalWeeklyFacts; m
   if (input.model !== ALLOWED_MODEL) return { status: 'failed', errorCode: 'config_invalid', retryable: false }
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) return { status: 'failed', errorCode: 'provider_not_configured', retryable: false }
-  const factIds = new Set([...input.facts.signals.map(signal => signal.factId), ...input.facts.services.map(service => service.factId)])
+  const serviceFactAliases = new Map<string, string>()
+  const safeServices = input.facts.services.map((service, index) => {
+    const safeFactId = `service_signal_${index + 1}`
+    serviceFactAliases.set(safeFactId, service.factId)
+    return {
+      factId: safeFactId,
+      interest: service.interest,
+      selected: service.selected,
+      conversionNumerator: service.conversionNumerator,
+      conversionDenominator: service.conversionDenominator,
+      conversionRate: service.conversionRate,
+      actionId: service.actionId,
+    }
+  })
+  const factIds = new Set([...input.facts.signals.map(signal => signal.factId), ...safeServices.map(service => service.factId)])
   const actionIds = new Set([...input.facts.signals.map(signal => signal.actionId), ...input.facts.services.map(service => service.actionId)])
   // Keep the provider contract deliberately smaller than the persisted
   // snapshot. Service IDs are useful for tenant-local rendering, but are not
@@ -49,15 +63,7 @@ export async function narrateWeeklyFacts(input: { facts: CanonicalWeeklyFacts; m
     conversion: input.facts.conversion,
     visitToAttempt: input.facts.visitToAttempt,
     signals: input.facts.signals,
-    services: input.facts.services.map(service => ({
-      factId: service.factId,
-      interest: service.interest,
-      selected: service.selected,
-      conversionNumerator: service.conversionNumerator,
-      conversionDenominator: service.conversionDenominator,
-      conversionRate: service.conversionRate,
-      actionId: service.actionId,
-    })),
+    services: safeServices,
     caveats: input.facts.caveats,
   }
   try {
@@ -80,7 +86,15 @@ export async function narrateWeeklyFacts(input: { facts: CanonicalWeeklyFacts; m
     try { parsed = JSON.parse(raw) } catch { return { status: 'failed', errorCode: 'schema_invalid', retryable: false } }
     let narrative: WeeklyNarrative
     try { narrative = validateWeeklyNarrative(parsed, factIds, actionIds) } catch { return { status: 'failed', errorCode: 'schema_invalid', retryable: false } }
-    return { status: 'succeeded', narrative, providerRequestId: response.id ?? null, outputTokens: response.usage?.output_tokens ?? null }
+    return {
+      status: 'succeeded',
+      narrative: {
+        ...narrative,
+        findings: narrative.findings.map(finding => ({ ...finding, factId: serviceFactAliases.get(finding.factId) ?? finding.factId })),
+      },
+      providerRequestId: response.id ?? null,
+      outputTokens: response.usage?.output_tokens ?? null,
+    }
   } catch (error) {
     return mapProviderError(error, input.now)
   }
