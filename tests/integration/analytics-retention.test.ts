@@ -116,4 +116,25 @@ describe('bounded analytics retention independent of capture', () => {
     await runOwnerAnalyticsMaintenance({ now: new Date(+f.session.retentionExpiresAt + 1), maxRows: 1 })
     expect(await prisma.analyticsDailyMetric.count({ where: { businessId: f.businessId, businessTimeZone: 'Pacific/Auckland' } })).toBe(0)
   })
+
+  it('purges expired weekly payloads and resolved incidents without touching active incidents', async () => {
+    const businessId = `analytics-ops-${randomUUID()}`
+    ids.push(businessId)
+    await prisma.business.create({ data: { id: businessId, name: 'Synthetic ops', slug: businessId, subdomain: businessId, ownerUserId: 'synthetic-owner', city: 'Santiago' } })
+    const now = new Date('2026-12-01T00:00:00Z')
+    const expired = new Date('2026-11-01T00:00:00Z')
+    const report = await prisma.analyticsWeeklyInsight.create({ data: { businessId, weekStart: new Date('2026-10-19T00:00:00Z'), weekEnd: new Date('2026-10-26T00:00:00Z'), businessTimeZone: 'America/Santiago', sourceConsentVersion: 1, status: 'deterministic_ready', generationStatus: 'not_requested', facts: { version: 1, matureCompleteAttempts: 20 }, inputHash: 'a'.repeat(64), sourceExpiresAt: expired, retentionExpiresAt: expired } })
+    await prisma.analyticsInsightGenerationAttempt.create({ data: { weeklyInsightId: report.id, attemptNumber: 1, status: 'failed', inputHash: report.inputHash, errorCode: 'provider_timeout' } })
+    await prisma.analyticsEmailDelivery.create({ data: { weeklyInsightId: report.id, dedupeKey: `retention:${report.id}`, notificationKind: 'weekly_digest', payloadHash: 'b'.repeat(64), recipients: ['ops@example.com'], subject: 'Synthetic', htmlBody: '<p>synthetic</p>', textBody: 'synthetic', retentionExpiresAt: expired } })
+    const resolved = await prisma.analyticsOperationalIncident.create({ data: { activeKey: null, incidentType: 'heartbeat_stale', severity: 'warning', openedAt: expired, lastObservedAt: expired, resolvedAt: expired, details: { staleMs: 1 }, retentionExpiresAt: expired } })
+    const active = await prisma.analyticsOperationalIncident.create({ data: { activeKey: `retention-active-${randomUUID()}`, incidentType: 'retention_backlog', severity: 'critical', openedAt: expired, lastObservedAt: now, details: { overdueMs: 1 }, retentionExpiresAt: expired } })
+
+    const result = await runOwnerAnalyticsMaintenance({ now, maxRows: 100 })
+    expect(result.errors).toBe(0)
+    expect(result.deleted).toBeGreaterThanOrEqual(4)
+    expect(await prisma.analyticsWeeklyInsight.findUnique({ where: { id: report.id } })).toBeNull()
+    expect(await prisma.analyticsOperationalIncident.findUnique({ where: { id: resolved.id } })).toBeNull()
+    expect(await prisma.analyticsOperationalIncident.findUnique({ where: { id: active.id } })).not.toBeNull()
+    await prisma.analyticsOperationalIncident.delete({ where: { id: active.id } })
+  })
 })
