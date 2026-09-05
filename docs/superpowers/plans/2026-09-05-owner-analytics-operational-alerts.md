@@ -10,6 +10,19 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-05-owner-analytics-operational-alerts-design.md`
 
+## Estado de ejecución — 2026-09-05
+
+- [x] Schema/configuración aditiva, flags fail-closed y constraints de outbox.
+- [x] Heartbeat con lease, cursor/sequence, CAS y driver de continuaciones.
+- [x] Evaluador de incidentes, thresholds, advisory locks y outbox Resend
+      idempotente con revalidación weekly de destinatario.
+- [x] Monitor autenticado independiente, body/query guard, health-check opcional
+      y workflow preparado sin activación.
+- [x] Purge acotado de payloads semanales/incidentes resueltos y runbook de
+      activación/rollback.
+- [ ] Aplicar migraciones y ejecutar pruebas PostgreSQL/CI/staged; siguen siendo
+      gates externos y no se simulan con typecheck o build.
+
 ## Global Constraints
 
 - `OWNER_ANALYTICS_OPERATIONAL_MONITOR_ENABLED=false` and `OWNER_ANALYTICS_ALERTS_ENABLED=false` by default.

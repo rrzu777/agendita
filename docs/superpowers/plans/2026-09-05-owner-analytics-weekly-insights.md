@@ -10,6 +10,19 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-05-owner-analytics-weekly-insights-design.md`
 
+## Estado de ejecución — 2026-09-05
+
+- [x] Persistencia semanal, consentimiento v2, preferencias y enlace al outbox.
+- [x] Selector local miércoles 09:00, cursor estable, facts determinísticos,
+      denominadores explícitos y hash de snapshot.
+- [x] Claims de generación con máximo dos intentos, lease/fencing, Responses API
+      `store:false`, Structured Outputs y degradación determinística.
+- [x] Cron, acciones owner/admin, controles de preferencias, dashboard, privacidad
+      y workflow opt-in.
+- [x] Email weekly congelado, revalidación de rol/preferencia y purge acotado.
+- [ ] Pruebas PostgreSQL de aislamiento/retención y activación staged; requieren
+      DB exclusiva, revisión legal, proveedor y autorización independiente.
+
 ## Global Constraints
 
 - `OWNER_ANALYTICS_INSIGHTS_ENABLED=false`; no provider call without a positive global budget, explicit business allowlist, owner opt-in, privacy version 2, and source consent gate.
