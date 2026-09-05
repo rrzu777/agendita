@@ -186,9 +186,17 @@ unitarios analytics/operaciones, 335 tests, y 5 suites PostgreSQL con 22 tests
 pasando sobre una base disposable con las 57 migraciones desde cero; Prisma
 validate/generate, typecheck, lint y diff-check también pasan. El cleanup de
 `localStorage` del harness de privacidad fue corregido. La corrida unitaria
-completa del repositorio sigue separada: bajo este entorno fallan casos no
-relacionados de `payment-qa-runner-safety` y `bank-transfer-form`; no se atribuyen
-a analytics. No se ejecutó DB de producción, Resend, OpenAI ni workflow externo.
+completa que se documenta en ese checkpoint es histórica: bajo ese entorno
+fallaban casos no relacionados de `payment-qa-runner-safety` y
+`bank-transfer-form`; no se atribuyeron a analytics. No se ejecutó DB de
+producción, Resend, OpenAI ni workflow externo.
+
+Verificación fresca sobre el código actual, posterior a la ruta source-consent
+v2: `npm run test:unit` pasó `446/446` archivos, `4033` tests y 1 skip, sin
+fallos, en 170.21 s. La integración completa serializada pasó `76/76` archivos
+y `530/530` tests en 125.48 s sobre una PostgreSQL disposable con las 59
+migraciones desde cero. El skip es la prueba opt-in de red real
+`payment-qa-network-deny`; no se activó ningún proveedor externo.
 
 Las flags siguen false/vacías. La prueba de activación requiere migraciones
 `20260905120000_owner_analytics_operations`,
@@ -242,8 +250,9 @@ posterior pasó 8/8; el fallo anterior por columna inexistente ya no se reproduc
 
 La verificación E2E dedicada posterior pasó completa sobre esta rama: contrato
 público `8/8` y dashboard owner `7/7`, ambos usando sus harnesses de servidor y
-DB disposable. Esto cierra la validación E2E de analytics; no convierte en verde
-la suite unitaria completa del repositorio ni activa staging/producción.
+DB disposable. Esto cierra la validación E2E de analytics; junto con la corrida
+unitaria/integrada fresca anterior, no quedan fallos locales conocidos. Estas
+pruebas no activan staging/producción.
 
 ### Revisión final de gaps operativos — 2026-09-05
 
@@ -267,5 +276,7 @@ cliente v1 en vuelo queda rechazado tras la rotación, y la publicación v2 no
 mezcla filas v1. La prueba de ingesta cubre rotación y credencial; rollups cubre
 publicación v2 aislada. La matriz actual de analytics pasó 41 archivos/309
 unitarias y 13 archivos/130 integraciones PostgreSQL; el E2E público/dashboard
-permanece 8/8 y 7/7. Esto prueba el código en DB disposable, no una fuente v2
-productiva ni activación del piloto.
+permanece 8/8 y 7/7. Además, la corrida completa actual pasó 446/446 archivos
+unitarios (4033 tests, 1 skip) y 76/76 archivos de integración (530 tests).
+Esto prueba el código en DB disposable, no una fuente v2 productiva ni
+activación del piloto.

@@ -140,7 +140,7 @@
 - [x] **Step 3: Document activation gates and the total-app-down limitation.** Record manual heartbeat run, synthetic incident, external GitHub failure, and recipient verification evidence requirements.
 - [x] **Step 4a: Run the focused operational suite, Prisma validation,
       typecheck, and lint.** Focal operational/analytics suites pass.
-- [ ] **Step 4b: Run the existing full unit suite.** The repository-wide run
-      remains non-green on unrelated payment/bank-transfer tests under this
-      environment.
+- [x] **Step 4b: Run the existing full unit suite.** `npm run test:unit` pasó
+      `446/446` archivos, `4033` tests y 1 skip, sin fallos. El skip es la
+      prueba opt-in de red real `payment-qa-network-deny`.
 - [x] **Step 5: Commit `docs(analytics): document operational alert activation gates`.**

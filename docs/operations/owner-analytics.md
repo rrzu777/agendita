@@ -4,6 +4,15 @@ Estado vigente, 2026-09-05: **MVP y extensión semanal implementados, revisados 
 
 ## Verificación final vigente
 
+Evidencia fresca de la rama `feature/owner-analytics-operations-ai` (commit
+`ad816d7` más la reconciliación documental posterior): `npm run test:unit`
+pasó `446/446` archivos, `4033` tests y 1 skip; la integración completa pasó
+`76/76` archivos y `530/530` tests sobre una PostgreSQL disposable con 59
+migraciones. El E2E público pasó `8/8` y el dashboard owner `7/7`. El skip es
+`payment-qa-network-deny`, una prueba opt-in de red real que permanece apagada.
+Estas corridas validan el código local; no activan proveedor, staging ni
+producción.
+
 ### Checkpoint de publicación y CI (PR197)
 
 El usuario autorizó publicar y después corregir CI/hacer merge al quedar verde.

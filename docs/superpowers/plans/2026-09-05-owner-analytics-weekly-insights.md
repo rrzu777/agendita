@@ -37,6 +37,10 @@
       pero suspende nuevas generaciones y emails hasta volver a `healthy`.
 - [x] Pruebas PostgreSQL de aislamiento/retención ejecutadas sobre una DB
       disposable exclusiva con las 59 migraciones desde cero.
+- [x] Suite unitaria completa del repositorio y suite de integración completa
+      ejecutadas en serie sobre el código actual: unit `446/446` archivos,
+      `4033` tests pass y 1 skip; integración `76/76` archivos y `530` tests
+      pass. El skip unitario es la prueba opt-in de red real y no se activa.
 - [x] Ruta de captura `consentVersion=2`: cerrar v1 y abrir v2 sin solapamiento,
       enrutar cliente/ingesta/repositorio/mantenimiento por la versión activa y
       probar una fuente v2 aislada, rechazo de clientes v1 en vuelo y publicación
@@ -182,9 +186,10 @@
 - [x] **Step 4: Extend maintenance purge.** Hide and delete expired weekly insights, generation attempts, and outbox payloads within the bounded budget; retain current heartbeat and unresolved incidents.
 - [x] **Step 5: Run focused email/retention/integration tests.** Focal analytics
       tests pass, incluida la matriz PostgreSQL disposable.
-- [ ] **Step 5b: Run the full unit suite.** The repository-wide run remains
-      non-green on unrelated `payment-qa-runner-safety`/`bank-transfer-form`
-      tests under this environment.
+- [x] **Step 5b: Run the full unit suite.** `npm run test:unit` pasó
+      `446/446` archivos, `4033` tests y 1 skip, sin fallos, en ejecución
+      serializada por Vitest. El skip es la prueba opt-in de red real
+      `payment-qa-network-deny`.
 - [x] **Step 6: Commit `feat(analytics): deliver opt-in weekly insight emails`.**
 
 ### Task 6: Staged verification and handoff
@@ -206,10 +211,10 @@
       current analytics unit matrix (41 files/309 tests), PostgreSQL analytics
       matrix (13 files/130 tests, including v2 rotation/publication/retention), public
       E2E (8/8), and owner dashboard E2E (7/7) pass. Full-repository unit status
-      remains tracked separately below.
-- [ ] **Step 2b: Run the full unit suite.** The repository-wide run remains
-      non-green on unrelated `payment-qa-runner-safety`/`bank-transfer-form`
-      cases under this environment.
+      and full integration status are recorded below.
+- [x] **Step 2b: Run the full unit suite and integration suite.** Unit
+      `446/446` archivos, `4033` tests y 1 skip; integración `76/76` archivos,
+      `530/530` tests; ambos exit 0 sobre la DB disposable de 59 migraciones.
 - [x] **Step 3: Verify every new flag remains false/empty and no real OpenAI/Resend request occurs in CI.**
 - [x] **Step 4: Record exact SHAs and limitations; do not call this active production capture until the explicit pilot gate is met.**
 - [x] **Step 5: Commit `docs(analytics): document weekly insights activation runbook`.**
