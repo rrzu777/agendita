@@ -136,7 +136,7 @@ export async function bootstrapAnalyticsAttempt(context: PublicAnalyticsContext,
       await closeAnalyticsCollection(tx, context.businessId, now, 'budget')
       return null
     }
-    const created = await tx.bookingFunnelAttempt.create({ data: { businessId: context.businessId, sessionId: session.id, bootstrapKey: data.bootstrapKey, origin: context.origin, startedAt: now, conversionDeadlineAt: new Date(now.getTime() + policy.conversionWindowMs), retentionExpiresAt: session.retentionExpiresAt, entryKind: data.entryKind, definitionVersion: 1, businessTimeZone: context.timezone, cohortLocalDate: new Date(formatInTimeZone(now, context.timezone, 'yyyy-MM-dd')), channel: session.channel, normalizationVersion: session.normalizationVersion, acquisitionLinkId: session.acquisitionLinkId } })
+    const created = await tx.bookingFunnelAttempt.create({ data: { businessId: context.businessId, sessionId: session.id, bootstrapKey: data.bootstrapKey, origin: context.origin, consentVersion: session.consentVersion, startedAt: now, conversionDeadlineAt: new Date(now.getTime() + policy.conversionWindowMs), retentionExpiresAt: session.retentionExpiresAt, entryKind: data.entryKind, definitionVersion: 1, businessTimeZone: context.timezone, cohortLocalDate: new Date(formatInTimeZone(now, context.timezone, 'yyyy-MM-dd')), channel: session.channel, normalizationVersion: session.normalizationVersion, acquisitionLinkId: session.acquisitionLinkId } })
     return claimsForAttempt(session, created)
   })
   if (!claims) throw new AnalyticsCaptureError('budget')

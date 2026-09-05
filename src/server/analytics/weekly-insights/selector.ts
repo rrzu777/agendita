@@ -30,7 +30,7 @@ function decodeCursor(cursor: string | null): { businessId: string; weekStart: s
   } catch { throw new Error('Invalid weekly insights cursor') }
 }
 
-function encodeCursor(candidate: WeeklyCandidate): string {
+export function encodeWeeklyInsightsCursor(candidate: Pick<WeeklyCandidate, 'businessId' | 'weekStart'>): string {
   return Buffer.from(JSON.stringify({ businessId: candidate.businessId, weekStart: candidate.weekStart.toISOString().slice(0, 10) })).toString('base64url')
 }
 
@@ -84,5 +84,5 @@ export async function selectWeeklyInsightCandidates(input: { now: Date; cursor: 
   }
   result.sort((a, b) => a.businessId.localeCompare(b.businessId) || a.weekStart.getTime() - b.weekStart.getTime())
   const page = result.slice(0, input.limit)
-  return { candidates: page, nextCursor: result.length > page.length ? encodeCursor(page.at(-1)!) : null }
+  return { candidates: page, nextCursor: result.length > page.length ? encodeWeeklyInsightsCursor(page.at(-1)!) : null }
 }

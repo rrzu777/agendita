@@ -25,15 +25,16 @@ export async function POST(request: Request) {
   let run: Awaited<ReturnType<typeof startAnalyticsJobRun>> | null = null
   try {
     run = runId && leaseToken && batchHeader
-      ? { jobKey: ANALYTICS_MAINTENANCE_JOB, runId, leaseToken, batchSequence: Number(batchHeader) }
+      ? { jobKey: ANALYTICS_MAINTENANCE_JOB, runId, leaseToken, batchSequence: Number(batchHeader), resumeCursor: null }
       : await startAnalyticsJobRun(ANALYTICS_MAINTENANCE_JOB)
-    if (run.batchSequence > 100000) return Response.json({ errors: 1, error: 'invalid_run' }, { status: 400, headers })
-    const result = await runOwnerAnalyticsMaintenance({ cursor: url.searchParams.get('cursor') })
+    const activeRun = run!
+    if (activeRun.batchSequence > 100000) return Response.json({ errors: 1, error: 'invalid_run' }, { status: 400, headers })
+    const result = await runOwnerAnalyticsMaintenance({ cursor: url.searchParams.get('cursor') ?? activeRun.resumeCursor })
     await recordAnalyticsJobProgress({
       jobKey: ANALYTICS_MAINTENANCE_JOB,
-      runId: run.runId,
-      leaseToken: run.leaseToken,
-      batchSequence: run.batchSequence,
+      runId: activeRun.runId,
+      leaseToken: activeRun.leaseToken,
+      batchSequence: activeRun.batchSequence,
       hasMore: result.hasMore,
       errors: result.errors,
       nextCursor: result.nextCursor,
@@ -42,13 +43,13 @@ export async function POST(request: Request) {
     const finished = terminal
       ? await finishAnalyticsJobRun({
           jobKey: ANALYTICS_MAINTENANCE_JOB,
-          runId: run.runId,
-          leaseToken: run.leaseToken,
+          runId: activeRun.runId,
+          leaseToken: activeRun.leaseToken,
           status: result.errors === 0 && !result.backlog.dangerous ? 'succeeded' : 'partial',
           result: { ...result, durationMs: 0 },
         })
       : false
-    const body = { ...result, runId: run.runId, leaseToken: run.leaseToken, batchSequence: run.batchSequence, nextBatchSequence: run.batchSequence + 1, heartbeatFinished: finished }
+    const body = { ...result, runId: activeRun.runId, leaseToken: activeRun.leaseToken, batchSequence: activeRun.batchSequence, nextBatchSequence: activeRun.batchSequence + 1, heartbeatFinished: finished }
     return Response.json(body, { status: result.errors ? 500 : 200, headers })
   } catch {
     if (run) await finishAnalyticsJobRun({ jobKey: ANALYTICS_MAINTENANCE_JOB, runId: run.runId, leaseToken: run.leaseToken, status: 'failed', result: { errors: 1 } }).catch(() => undefined)

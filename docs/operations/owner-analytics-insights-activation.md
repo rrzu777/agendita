@@ -12,6 +12,14 @@ Estado de esta implementación: código y pruebas locales en la rama de trabajo;
 6. Para weekly insights, habilitar el workflow sólo con `OWNER_ANALYTICS_INSIGHTS_CRON_ENABLED=true`. Mantener la bandera de aplicación global apagada hasta que existan siete días completos de medición v2; luego activar un negocio de allowlist y confirmar facts, hash, retención y aislamiento tenant.
 7. Activar IA y email semanal de forma independiente. Un fallo del proveedor debe dejar estado determinístico y no bloquear Booking/captura.
 
+El cron weekly usa el mismo heartbeat durable que maintenance: las continuaciones
+transportan `runId`, `leaseToken`, secuencia y cursor confirmado. El job reserva
+tokens, limita llamadas por semana, aplica circuito half-open y espera al menos
+una hora entre reintentos y persiste un `Retry-After` válido entre una y 24 horas.
+Antes de activar IA aún debe verificarse este comportamiento con un proveedor
+simulado/staged y un presupuesto real; un presupuesto de llamadas por sí solo no
+es evidencia suficiente de control de costo.
+
 ## Evidencia mínima del piloto
 
 - SHA exacto, migración y rollback verificados.

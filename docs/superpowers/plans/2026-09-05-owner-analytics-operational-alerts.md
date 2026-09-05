@@ -20,6 +20,8 @@
       y workflow preparado sin activación.
 - [x] Purge acotado de payloads semanales/incidentes resueltos y runbook de
       activación/rollback.
+- [x] El heartbeat semanal comparte el contrato de fencing y el driver conserva
+      el cursor confirmado para reanudar una corrida acotada.
 - [ ] Aplicar migraciones y ejecutar pruebas PostgreSQL/CI/staged; siguen siendo
       gates externos y no se simulan con typecheck o build.
 

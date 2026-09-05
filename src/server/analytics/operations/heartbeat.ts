@@ -24,6 +24,7 @@ export type AnalyticsJobRun = {
   runId: string
   leaseToken: string
   batchSequence: number
+  resumeCursor: string | null
 }
 
 function assertUuid(value: string, label: string): void {
@@ -51,11 +52,14 @@ export async function startAnalyticsJobRun(jobKey: AnalyticsJobKey, now = new Da
   const leaseToken = randomUUID()
   const leaseExpiresAt = new Date(now.getTime() + RUN_LEASE_MS)
   const row = await prisma.$transaction(async (tx) => {
-    const current = await tx.analyticsJobHeartbeat.findUnique({ where: { jobKey }, select: { lastStatus: true, leaseExpiresAt: true } })
+    const current = await tx.analyticsJobHeartbeat.findUnique({ where: { jobKey }, select: { lastStatus: true, leaseExpiresAt: true, lastResult: true } })
     if (current?.lastStatus === 'running' && current.leaseExpiresAt && current.leaseExpiresAt > now) {
       throw new Error('analytics_job_busy')
     }
-    return tx.analyticsJobHeartbeat.upsert({
+    const resumeCursor = current?.lastStatus === 'running' || current?.lastStatus === 'partial' || current?.lastStatus === 'failed'
+      ? (typeof current.lastResult === 'object' && current.lastResult !== null && !Array.isArray(current.lastResult) && typeof (current.lastResult as { nextCursor?: unknown }).nextCursor === 'string' ? (current.lastResult as { nextCursor: string }).nextCursor : null)
+      : null
+    const heartbeat = await tx.analyticsJobHeartbeat.upsert({
       where: { jobKey },
       create: {
         jobKey,
@@ -80,8 +84,9 @@ export async function startAnalyticsJobRun(jobKey: AnalyticsJobKey, now = new Da
       },
       select: { nextBatchSequence: true },
     })
+    return { ...heartbeat, resumeCursor }
   })
-  return { jobKey, runId, leaseToken, batchSequence: row.nextBatchSequence ?? 1 }
+  return { jobKey, runId, leaseToken, batchSequence: row.nextBatchSequence ?? 1, resumeCursor: row.resumeCursor }
 }
 
 export async function recordAnalyticsJobProgress(input: {

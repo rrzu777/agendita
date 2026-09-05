@@ -1067,6 +1067,7 @@ model AnalyticsInsightGenerationAttempt {
   inputHash         String                        @db.Char(64)
   outputTokens      Int?
   errorCode         String?                       @db.VarChar(64)
+  nextRetryAt       DateTime?
   createdAt         DateTime                      @default(now())
   updatedAt         DateTime                      @updatedAt
   weeklyInsight     AnalyticsWeeklyInsight        @relation(fields: [weeklyInsightId], references: [id], onDelete: Cascade)
@@ -1108,6 +1109,7 @@ model BookingFunnelAttempt {
   sessionId             String @db.Uuid
   bootstrapKey          String @db.Uuid
   origin                String @db.VarChar(300)
+  consentVersion        Int @default(1)
   startedAt             DateTime
   conversionDeadlineAt  DateTime
   retentionExpiresAt    DateTime
@@ -1213,7 +1215,7 @@ model AnalyticsDailyMetric {
   retentionExpiresAt   DateTime
   business             Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  @@unique([businessId, cohortLocalDate, businessTimeZone, definitionVersion, population, grain, dimensionKey, metricKey], map: "AnalyticsDailyMetric_cell_key")
+  @@unique([businessId, cohortLocalDate, businessTimeZone, definitionVersion, consentVersion, population, grain, dimensionKey, metricKey], map: "AnalyticsDailyMetric_cell_key")
   @@index([businessId, cohortLocalDate])
   @@index([retentionExpiresAt, id])
 }

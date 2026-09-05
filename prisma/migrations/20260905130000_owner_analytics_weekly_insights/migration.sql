@@ -6,7 +6,15 @@ CREATE TYPE "AnalyticsInsightGenerationStatus" AS ENUM ('not_requested', 'pendin
 CREATE TYPE "AnalyticsInsightAttemptStatus" AS ENUM ('running', 'succeeded', 'failed', 'manual_review');
 
 ALTER TABLE "AnalyticsDailyMetric"
-  ADD COLUMN "consentVersion" INTEGER NOT NULL DEFAULT 1;
+  ADD COLUMN "consentVersion" INTEGER NOT NULL DEFAULT 1,
+  ADD CONSTRAINT "AnalyticsDailyMetric_consent_check" CHECK ("consentVersion" IN (1, 2));
+
+ALTER TABLE "BookingFunnelAttempt"
+  ADD COLUMN "consentVersion" INTEGER NOT NULL DEFAULT 1,
+  ADD CONSTRAINT "BookingFunnelAttempt_consent_check" CHECK ("consentVersion" IN (1, 2));
+
+DROP INDEX "AnalyticsDailyMetric_cell_key";
+CREATE UNIQUE INDEX "AnalyticsDailyMetric_cell_key" ON "AnalyticsDailyMetric"("businessId", "cohortLocalDate", "businessTimeZone", "definitionVersion", "consentVersion", "population", "grain", "dimensionKey", "metricKey");
 
 CREATE TABLE "AnalyticsInsightPreference" (
   "id" UUID NOT NULL,
@@ -58,6 +66,7 @@ CREATE TABLE "AnalyticsInsightGenerationAttempt" (
   "inputHash" CHAR(64) NOT NULL,
   "outputTokens" INTEGER,
   "errorCode" VARCHAR(64),
+  "nextRetryAt" TIMESTAMP(3),
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "AnalyticsInsightGenerationAttempt_pkey" PRIMARY KEY ("id")

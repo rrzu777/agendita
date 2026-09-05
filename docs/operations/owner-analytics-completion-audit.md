@@ -193,3 +193,25 @@ Las flags siguen false/vacías. La prueba de activación requiere migraciones
 `20260905130000_owner_analytics_weekly_insights`, revisión legal, allowlist,
 presupuesto, destinatarios y siete días de medición v2. Ver
 `docs/operations/owner-analytics-insights-activation.md`.
+
+La revisión de gaps de esta continuación también corrigió el cron semanal: ahora
+usa el heartbeat `weekly_insights` con `runId`/`leaseToken`/secuencia, conserva el
+último cursor confirmado y no declara éxito hasta agotar continuaciones. El job
+ya no reabre un reporte `ready`, y el prompt de proveedor excluye handles de
+servicios/tenant que no son necesarios para la narrativa. También quedaron
+cerrados el presupuesto de tokens reservado, el circuito persistido con probe
+half-open y la espera durable de una a 24 horas, incluyendo `Retry-After` válido.
+La bandera de IA continúa apagada por los gates legales, de proveedor y staged;
+no por falta de ese control local.
+
+Smoke test posterior: PostgreSQL 17 efímero local aplicó las 57 migraciones desde
+cero, incluyendo `20260905120000_owner_analytics_operations` y
+`20260905130000_owner_analytics_weekly_insights`; se inspeccionaron las FKs y el
+`num_nonnulls(incidentId, weeklyInsightId)=1`. El contenedor fue detenido y no
+contenía datos de negocio. Esto valida sintaxis/orden local, no migración en
+staging ni producción.
+
+Ese smoke también expuso y cerró una omisión de consentimiento: `BookingFunnelAttempt`
+ahora conserva la versión heredada de su sesión, el índice único diario incluye
+esa dimensión y los desgloses rechazan fuentes mezcladas. La retención focal
+posterior pasó 8/8; el fallo anterior por columna inexistente ya no se reproduce.

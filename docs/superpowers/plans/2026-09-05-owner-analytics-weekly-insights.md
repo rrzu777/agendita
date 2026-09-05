@@ -20,6 +20,12 @@
 - [x] Cron, acciones owner/admin, controles de preferencias, dashboard, privacidad
       y workflow opt-in.
 - [x] Email weekly congelado, revalidación de rol/preferencia y purge acotado.
+- [x] Cron semanal con cursor, lease, fencing y heartbeat durable; una corrida
+      interrumpida puede continuar desde el último cursor confirmado.
+- [x] Circuit breaker persistido con probe half-open, presupuesto de tokens
+      reservado y reintento mínimo de una hora.
+- [x] `Retry-After` válido se persiste en `nextRetryAt`, con mínimo de una hora
+      y tope de 24 horas; la bandera de IA sigue apagada hasta la activación staged.
 - [ ] Pruebas PostgreSQL de aislamiento/retención y activación staged; requieren
       DB exclusiva, revisión legal, proveedor y autorización independiente.
 
@@ -101,7 +107,7 @@
 
 - [ ] **Step 1: Add official `openai` dependency and failing adapter tests** with a mocked Responses client.
 - [ ] **Step 2: Define Zod/JSON Schema** with summary max 320 chars, max three findings, received `factId/actionId` enums, caveats enum, and no model-owned confidence.
-- [ ] **Step 3: Implement global PostgreSQL advisory lock budget.** Reserve one `AnalyticsInsightGenerationAttempt` per actual HTTP request, enforce max two/report and weekly call/token limits, and persist circuit breaker probe state in the weekly heartbeat.
+- [x] **Step 3: Implement global PostgreSQL advisory lock budget.** Reserve one `AnalyticsInsightGenerationAttempt` per actual HTTP request, enforce max two/report and weekly call/token limits, and persist circuit breaker probe state in the weekly heartbeat. Retry-After válido queda en `nextRetryAt` con límites de una a 24 horas.
 - [ ] **Step 4: Implement server-only Responses adapter.** Use `store:false`, `text.format` strict schema, `reasoning.effort:'none'`, 700 output cap, 15-second timeout, `maxRetries:0`, and canonical input only.
 - [ ] **Step 5: Implement lease/fencing.** A 45-second generation lease and CAS finalization discard late results; timeout/rate-limit/5xx may schedule one second attempt after one hour; auth/billing/schema/refusal/config errors are terminal.
 - [ ] **Step 6: Validate returned IDs and fact references against the frozen snapshot.** Store usage/provider ID only; never store prompt/raw response/provider error text.

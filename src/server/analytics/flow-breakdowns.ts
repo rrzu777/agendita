@@ -51,13 +51,13 @@ export async function readOwnerAnalyticsFlowBreakdowns(input: FlowReadInput, now
       })
       if (sessions.length > SOURCE_LIMIT) return unavailable('limit_exceeded')
       const attempts = await tx.bookingFunnelAttempt.findMany({ where,
-        select: { id: true, businessId: true, sessionId: true, startedAt: true, conversionDeadlineAt: true, entryKind: true, definitionVersion: true, businessTimeZone: true, cohortLocalDate: true, channel: true, normalizationVersion: true, acquisitionLinkId: true, knownCaptureGap: true, acceptedEventCount: true, retentionExpiresAt: true },
+        select: { id: true, businessId: true, sessionId: true, startedAt: true, conversionDeadlineAt: true, entryKind: true, definitionVersion: true, businessTimeZone: true, cohortLocalDate: true, channel: true, normalizationVersion: true, acquisitionLinkId: true, knownCaptureGap: true, acceptedEventCount: true, retentionExpiresAt: true, consentVersion: true },
         orderBy: { id: 'asc' }, take: SOURCE_LIMIT + 1,
       })
       if (sessions.length + attempts.length > SOURCE_LIMIT) return unavailable('limit_exceeded')
       for (const source of [...sessions, ...attempts]) timezones.add(source.businessTimeZone)
       if ([...sessions, ...attempts].some(s => s.retentionExpiresAt <= now)) return unavailable('not_retained')
-      if ([...sessions, ...attempts].some(s => s.definitionVersion !== 1 || s.normalizationVersion !== 1) || sessions.some(s => s.consentVersion !== 1)) return unavailable('incomplete_source')
+      if ([...sessions, ...attempts].some(s => s.definitionVersion !== 1 || s.normalizationVersion !== 1) || [...sessions, ...attempts].some(s => s.consentVersion !== 1)) return unavailable('incomplete_source')
       const projections: AttemptProjection[] = []
       let eventCount = 0
       for (let offset = 0; offset < attempts.length; offset += PAGE_SIZE) {
