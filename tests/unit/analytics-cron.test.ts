@@ -6,7 +6,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 const maintenance = vi.hoisted(() => vi.fn())
+const heartbeat = vi.hoisted(() => ({
+  start: vi.fn(async () => ({ jobKey: 'owner_analytics_maintenance', runId: '11111111-1111-4111-8111-111111111111', leaseToken: '22222222-2222-4222-8222-222222222222', batchSequence: 1 })),
+  progress: vi.fn(async () => undefined),
+  finish: vi.fn(async () => true),
+}))
 vi.mock('@/server/analytics/maintenance', () => ({ runOwnerAnalyticsMaintenance: maintenance }))
+vi.mock('@/server/analytics/operations/heartbeat', () => ({
+  ANALYTICS_MAINTENANCE_JOB: 'owner_analytics_maintenance',
+  startAnalyticsJobRun: heartbeat.start,
+  recordAnalyticsJobProgress: heartbeat.progress,
+  finishAnalyticsJobRun: heartbeat.finish,
+  isUuid: (value: unknown) => typeof value === 'string' && /^[0-9a-f-]{36}$/i.test(value),
+}))
 describe('separate authenticated analytics cron', () => {
   beforeEach(() => { vi.stubEnv('CRON_SECRET', 'synthetic-cron-secret'); maintenance.mockReset() })
   afterEach(() => vi.unstubAllEnvs())
@@ -38,10 +50,11 @@ describe('bounded continuation shell driver with no network', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   }
   it('continues until drained but fails if dangerous backlog remains beyond request budget', () => {
-    const more = { errors: 0, hasMore: true, nextCursor: 'cleanup:v1', backlog: { dangerous: true } }
-    expect(run([more, { errors: 0, hasMore: false, nextCursor: null }]).status).toBe(0)
+    const more = { errors: 0, hasMore: true, nextCursor: 'cleanup:v1', backlog: { dangerous: true }, runId: '11111111-1111-4111-8111-111111111111', leaseToken: '22222222-2222-4222-8222-222222222222', nextBatchSequence: 2 }
+    const done = { errors: 0, hasMore: false, nextCursor: null, backlog: { dangerous: false }, runId: more.runId, leaseToken: more.leaseToken, nextBatchSequence: 3 }
+    expect(run([more, done]).status).toBe(0)
     expect(run([more]).status).toBe(1)
-    expect(run([{ errors: 1, hasMore: false }]).status).toBe(1)
-    expect(run([{ hasMore: false }]).status).toBe(1)
+    expect(run([{ errors: 1, hasMore: false, runId: more.runId, leaseToken: more.leaseToken, nextBatchSequence: 2 }]).status).toBe(1)
+    expect(run([{ hasMore: false, runId: more.runId, leaseToken: more.leaseToken, nextBatchSequence: 2 }]).status).toBe(1)
   })
 })
