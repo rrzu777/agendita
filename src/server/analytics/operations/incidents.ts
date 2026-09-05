@@ -110,6 +110,7 @@ async function resolveHealthyIncident(type: OperationalSignal['incidentType'], n
   if (!ready) return
   const key = `owner_analytics_maintenance:${type}`
   await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`
     const incident = await tx.analyticsOperationalIncident.findUnique({ where: { activeKey: key } })
     if (!incident) return
     const shouldNotify = config.alertsEnabled && incident.lastNotificationStatus === 'sent'

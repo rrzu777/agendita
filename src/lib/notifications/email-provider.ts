@@ -225,7 +225,10 @@ export async function sendAnalyticsOperationalEmail(input: {
       input.to.map((to) => ({ from, to, subject: input.subject, html: input.html, text: input.text })),
       { idempotencyKey: input.idempotencyKey },
     )
-    if (error) return { success: false, error: error.message, errorCode: error.name || 'provider_rejected' }
+    if (error) {
+      const providerCode = typeof error.name === 'string' && /^[a-z0-9_-]{1,64}$/i.test(error.name) ? error.name : 'provider_rejected'
+      return { success: false, error: error.message, errorCode: providerCode }
+    }
     return { success: true, messageId: data?.id }
   } catch {
     return { success: false, error: 'provider_unavailable', errorCode: 'provider_ambiguous' }
