@@ -856,6 +856,127 @@ enum AnalyticsCoverageState {
   unknown
 }
 
+enum AnalyticsJobStatus {
+  running
+  succeeded
+  partial
+  failed
+}
+
+enum AnalyticsIncidentType {
+  heartbeat_stale
+  maintenance_failures
+  retention_backlog
+}
+
+enum AnalyticsIncidentSeverity {
+  warning
+  critical
+}
+
+enum AnalyticsIncidentNotificationStatus {
+  pending
+  sent
+  failed
+  skipped
+}
+
+enum AnalyticsEmailDeliveryStatus {
+  pending
+  sending
+  sent
+  failed
+  ambiguous
+  manual_review
+  cancelled
+}
+
+enum AnalyticsEmailNotificationKind {
+  alert_open
+  alert_escalation
+  alert_reminder
+  alert_beyond_tolerance
+  alert_resolved
+  weekly_digest
+}
+
+model AnalyticsJobHeartbeat {
+  jobKey                 String            @id @db.VarChar(64)
+  currentRunId           String?           @db.Uuid
+  leaseToken             String?           @db.Uuid
+  leaseExpiresAt         DateTime?
+  lastStartedAt          DateTime?
+  lastCompletedAt        DateTime?
+  lastSuccessAt          DateTime?
+  lastProgressAt         DateTime?
+  lastStatus             AnalyticsJobStatus?
+  nextBatchSequence      Int?
+  runErrors              Int               @default(0)
+  consecutiveFailures    Int               @default(0)
+  consecutiveSuccesses   Int               @default(0)
+  circuitOpenUntil       DateTime?
+  probeLeaseUntil        DateTime?
+  lastResult             Json?
+  updatedAt              DateTime          @updatedAt
+
+  @@index([lastStatus, lastSuccessAt])
+  @@index([leaseExpiresAt])
+}
+
+model AnalyticsOperationalIncident {
+  id                       String                              @id @default(uuid()) @db.Uuid
+  activeKey                String?                             @unique @db.VarChar(160)
+  incidentType             AnalyticsIncidentType
+  severity                 AnalyticsIncidentSeverity
+  openedAt                 DateTime
+  lastObservedAt           DateTime
+  resolvedAt               DateTime?
+  lastNotifiedSeverity     AnalyticsIncidentSeverity?
+  lastNotificationAt       DateTime?
+  notificationAttempts     Int                                 @default(0)
+  lastNotificationStatus   AnalyticsIncidentNotificationStatus?
+  lastNotificationCode     String?                             @db.VarChar(64)
+  details                  Json
+  healthySince             DateTime?
+  retentionExpiresAt       DateTime?
+  updatedAt                DateTime                            @updatedAt
+  deliveries               AnalyticsEmailDelivery[]
+
+  @@index([incidentType, resolvedAt])
+  @@index([retentionExpiresAt])
+}
+
+model AnalyticsEmailDelivery {
+  id                    String                         @id @default(uuid()) @db.Uuid
+  incidentId            String?                        @db.Uuid
+  weeklyInsightId       String?                        @db.Uuid
+  dedupeKey             String                         @unique @db.VarChar(220)
+  notificationKind      AnalyticsEmailNotificationKind
+  payloadHash           String                         @db.Char(64)
+  recipients            Json
+  subject               String                         @db.VarChar(200)
+  htmlBody              String                         @db.Text
+  textBody              String                         @db.Text
+  status                AnalyticsEmailDeliveryStatus  @default(pending)
+  leaseToken            String?                        @db.Uuid
+  leaseExpiresAt        DateTime?
+  firstProviderAttemptAt DateTime?
+  attempts              Int                            @default(0)
+  nextAttemptAt         DateTime?
+  providerMessageId     String?                        @db.VarChar(160)
+  lastFailureCode       String?                        @db.VarChar(64)
+  sentAt                DateTime?
+  retentionExpiresAt    DateTime
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
+  incident              AnalyticsOperationalIncident?  @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([incidentId])
+  @@index([weeklyInsightId])
+  @@index([retentionExpiresAt])
+}
+
 model AnalyticsSession {
   id                    String @id @default(uuid()) @db.Uuid
   businessId            String
