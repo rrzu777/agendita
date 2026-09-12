@@ -1,6 +1,7 @@
 'use client'
 
-import { getBookingLoginUrl } from '@/lib/business/urls'
+import { getBookingReturnPath } from '@/lib/business/urls'
+import { signInWithGoogle } from '@/lib/auth/actions'
 
 import { useEffect, useRef, useState } from 'react'
 import { formatInTimeZone } from 'date-fns-tz'
@@ -8,7 +9,6 @@ import { usePublicAnalytics } from '@/components/analytics/public-analytics'
 import type { SelectionContext } from '@/lib/analytics/contracts'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import { useRouter } from 'next/navigation'
 import { StepService } from './step-service'
 import { StepProfessional } from './step-professional'
 import { StepDate } from './step-date'
@@ -125,7 +125,6 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
   const lastObservedStep = useRef('')
   // A boolean UI fact only: no identity, event or storage before consent.
   const hasInteracted = useRef(false)
-  const router = useRouter()
   const [currentStep, setCurrentStep] = useState<StepKey>('service')
   const [data, setData] = useState<BookingData>(() => applySessionPrefill(initialData, session))
   // La reserva ya escrita, tal como la devolvió el servidor: es lo único que
@@ -204,12 +203,16 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analytics.ready, currentStep])
 
-  function handleLoginCta(partial: Partial<BookingData>) {
+  async function handleLoginCta(partial: Partial<BookingData>) {
     const merged = { ...data, ...partial }
     const raw = serializeWizardState(merged)
     try { if (raw) sessionStorage.setItem(wizardStorageKey(businessId), raw) } catch { /* login remains available */ }
     analytics.rememberSelection(signature(merged))
-    router.push(getBookingLoginUrl(slug, new URLSearchParams(window.location.search)))
+    const search = new URLSearchParams(window.location.search)
+    // Browser Back from Google must restore the draft just like /ir does.
+    search.set('continuar', '1')
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}?${search}`)
+    await signInWithGoogle(getBookingReturnPath(slug, search))
   }
 
   function updateData(partial: Partial<BookingData>) {

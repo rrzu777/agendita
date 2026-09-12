@@ -5,7 +5,7 @@ import { BookingBusinessPage } from '@/components/booking/booking-business-page'
 import { getBookingBusinessBySlug } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { getFunnelSession } from '@/lib/customers/session-prefill'
-import { appendPublicAcquisitionSearch } from '@/lib/business/urls'
+import { appendPublicAcquisitionSearch, getBookingFunnelUrl, publicAcquisitionSearch } from '@/lib/business/urls'
 import { PublicAnalytics } from '@/components/analytics/public-analytics'
 import { isPublicAnalyticsEligible } from '@/lib/analytics/public-context'
 import { getConfiguredAnalyticsConsentVersion } from '@/lib/analytics/budget'
@@ -38,6 +38,12 @@ export default async function BookPage({ params, searchParams }: BookPageProps) 
 
   if (!business) {
     notFound()
+  }
+
+  // The OAuth return uses the canonical tenant host. Start the draft there too:
+  // sessionStorage cannot carry a draft from www to a different subdomain.
+  if (business.subdomain) {
+    redirect(getBookingFunnelUrl(business, publicAcquisitionSearch(search)))
   }
 
   const session = await getFunnelSession(business.id)

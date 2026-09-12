@@ -225,7 +225,7 @@ test.describe('main beta flows', () => {
     await page.getByPlaceholder('Tu nombre').fill(customerName)
     await page.getByPlaceholder('+569...').fill(customerPhone)
     await page.getByPlaceholder('tu@email.com').fill(customerEmail)
-    await page.getByRole('button', { name: 'Continuar al pago' }).click()
+    await page.getByRole('button', { name: 'Revisar mi reserva' }).click()
 
     // With no per-business online payment account connected, the flow uses the
     // manual fallback ("Confirmar reserva" → pending) instead of online "Pago de

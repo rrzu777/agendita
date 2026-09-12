@@ -11,6 +11,8 @@ import { attempt, booking, now } from '../helpers/analytics-fixtures'
 
 let store: AnalyticsStore
 let captureReady = true
+const googleLogin = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+vi.mock('@/lib/auth/actions', () => ({ signInWithGoogle: googleLogin }))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('next/dynamic', () => ({ default: () => () => <p>Payment boundary</p> }))
 vi.mock('@/components/analytics/public-analytics', () => ({ usePublicAnalytics: () => ({ ready: captureReady, track: store.track, startAttempt: store.startAttempt, changeSelection: store.changeSelection, revision: () => store.snapshot()?.revision ?? 1, attemptIdentity: () => store.snapshot()?.active ?? null, rememberSelection: store.rememberSelection, reconcileSelection: (s: string) => store.reconcileSelection(s) }) }))
@@ -78,6 +80,8 @@ describe('wizard evidence follows actual interactions', () => {
     await clickButton(host, 'Corte', { match: 'contains' }); await clickButton(host, 'Fecha fixture'); await clickButton(host, 'Hora fixture')
     const before = store.snapshot()!
     await clickButton(host, 'Login fixture')
+    expect(googleLogin).toHaveBeenLastCalledWith('/ir/salon?continuar=1')
+    expect(window.location.search).toBe('?continuar=1')
     act(() => root.unmount()); root = createRoot(host)
     window.history.replaceState({}, '', '/?continuar=1')
     render([service('Corte')])

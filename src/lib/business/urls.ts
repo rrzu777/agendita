@@ -20,6 +20,8 @@ export function publicAcquisitionSearch(input: PublicSearchInput): string {
   if (medium && ['social', 'paid_social', 'organic', 'cpc', 'ppc', 'email', 'referral', 'messaging', 'qr'].includes(medium.toLowerCase())) result.set('utm_medium', medium.toLowerCase())
   if (campaign && /^[A-Za-z0-9_-]{1,128}$/.test(campaign)) result.set('utm_campaign', campaign)
   if (get('continuar') === '1') result.set('continuar', '1')
+  const professional = get('professional')
+  if (professional && /^[A-Za-z0-9_-]{1,128}$/.test(professional)) result.set('professional', professional)
   return result.toString()
 }
 export function appendPublicAcquisitionSearch(path: string, input: PublicSearchInput): string {
@@ -27,7 +29,10 @@ export function appendPublicAcquisitionSearch(path: string, input: PublicSearchI
   return search ? `${path}${path.includes('?') ? '&' : '?'}${search}` : path
 }
 export function getBookingLoginUrl(slug: string, input: PublicSearchInput = {}): string {
-  return `/ingresar?next=${encodeURIComponent(appendPublicAcquisitionSearch(`/ir/${slug}`, input))}`
+  return `/ingresar?next=${encodeURIComponent(getBookingReturnPath(slug, input))}`
+}
+export function getBookingReturnPath(slug: string, input: PublicSearchInput = {}): string {
+  return appendPublicAcquisitionSearch(`/ir/${encodeURIComponent(slug)}`, input)
 }
 
 function getConfiguredAppDomain() {

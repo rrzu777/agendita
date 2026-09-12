@@ -139,7 +139,7 @@ const createBookingSchema = z.object({
   customerPhone: z.string().min(8).max(20),
   customerEmail: z.string().email().optional().or(z.literal('')),
   customerBirthDate: z.string().optional().or(z.literal(''))
-    .refine((v) => !v || isValidBirthDateString(v), 'Fecha de cumpleaños inválida'),
+    .refine((v) => !v || isValidBirthDateString(v), 'Fecha de nacimiento inválida'),
   startDateTime: z.date(),
   idempotencyKey: z.string().min(1).max(64).optional(),
   acceptedTerms: z.boolean(),
@@ -1139,7 +1139,7 @@ const createBookingFromDashboardSchema = z.object({
   customerPhone: z.string().min(8).max(20),
   customerEmail: z.string().email().optional().or(z.literal('')),
   customerBirthDate: z.string().optional().or(z.literal(''))
-    .refine((v) => !v || isValidBirthDateString(v), 'Fecha de cumpleaños inválida'),
+    .refine((v) => !v || isValidBirthDateString(v), 'Fecha de nacimiento inválida'),
   startDateTime: z.date(),
   internalNotes: z.string().max(500).optional(),
   markDepositPaid: z.boolean().optional().default(false),

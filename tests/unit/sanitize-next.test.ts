@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { authErrorRedirectPath, sanitizeNext } from '@/lib/auth/sanitize-next'
 
 describe('sanitizeNext', () => {
+  it.each(['/\t/evil.example', '/\n/evil.example', '/\r/evil.example', '/\\evil.example'])('rejects a browser-normalized external destination: %j', (next) => {
+    expect(sanitizeNext(next, '/mi')).toBe('/mi')
+  })
   it('returns /dashboard when null', () => {
     expect(sanitizeNext(null)).toBe('/dashboard')
   })
@@ -32,6 +35,10 @@ describe('sanitizeNext', () => {
 })
 
 describe('authErrorRedirectPath', () => {
+  it('preserves a booking return target on cancelled or failed OAuth', () => {
+    expect(authErrorRedirectPath('/ir/mimos?professional=ana', 'missing_code'))
+      .toBe('/ingresar?error=missing_code&next=%2Fir%2Fmimos%3Fprofessional%3Dana')
+  })
   it('trata /paquetes/* como flujo de clienta y vuelve a /ingresar', () => {
     const url = authErrorRedirectPath('/paquetes/demo?comprar=abc', 'oauth')
     expect(url.startsWith('/ingresar')).toBe(true)
