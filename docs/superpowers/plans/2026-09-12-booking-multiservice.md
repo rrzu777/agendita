@@ -44,6 +44,10 @@ expect(publicAcquisitionSearch({ professional: 'ana', email: 'private@example.te
 
 ## Track 2 — Atomic multiservice booking and legacy compatibility
 
+Delivery boundary: split into 2a (additive schema and pure selection/snapshot/allocation helpers, not exposed by booking actions) and 2b (atomic writes, discount semantics and every reader). Each receives its own review, verification and commit. This keeps the catalogue/payment compatibility change independently reviewable before enabling any multiservice endpoint.
+
+Track 2a: implemented selection validation, immutable snapshot shapes, integer eligible-line allocation, persisted-duration/name helpers and additive BookingService table. No endpoints consume these helpers yet. Unit 26 passed; local migration applied; schema plus legacy booking/modality/professional integration regressions 29 passed. Two independent reviews found no blockers; low precondition/rounding-boundary coverage notes addressed. Typecheck, lint and synthetic build passed. No historical backfill, production migration or public multiselect activation performed.
+
 **Files:** `prisma/schema.prisma`, additive migration, `src/lib/bookings/{selection,draft,service-lines,recompute,discount,retry,notifications}.ts`, `src/lib/professionals/{eligible,assign}.ts`, `src/lib/availability/{team-slots,reschedule-slots}.ts`, `src/server/actions/{bookings,my-bookings,availability,revive-booking}.ts`, booking read projections and consumers, package/promotion helpers and integration tests.
 
 **Interfaces:** A bounded selection normalizer accepts legacy `serviceId` or `serviceIds`; contradictory payloads reject. `resolveBookingDraft` produces authoritative ordered service lines and aggregate interval/amounts. BookingService snapshots persist with the same transaction as Booking. Legacy readers use one fallback line when no detail exists; new readers show all service names. A shared selection predicate checks EVERY selected service for professional eligibility.

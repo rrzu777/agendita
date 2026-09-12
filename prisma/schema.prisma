@@ -671,6 +671,26 @@ model Customer {
   @@index([userId])
 }
 
+/// Immutable booking-time catalogue snapshots. Legacy bookings intentionally have no lines.
+/// serviceId is an audit identifier, not a cascading catalogue relation.
+model BookingService {
+  id              String @id @default(cuid())
+  bookingId       String
+  serviceId       String
+  position        Int
+  name            String
+  durationMinutes Int
+  price           Int
+  depositAmount   Int
+  discountAmount  Int @default(0)
+  finalAmount     Int
+  booking         Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, position])
+  @@unique([bookingId, serviceId])
+  @@index([serviceId, bookingId])
+}
+
 model Booking {
   id             String        @id @default(cuid())
   businessId     String
@@ -728,7 +748,8 @@ model Booking {
   updatedAt         DateTime  @updatedAt
 
   business                       Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  service                        Service              @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  service                        Service              @relation(fields: [serviceId], references: [id], onDelete: NoAction)
+  serviceLines                   BookingService[]
   customer                       Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
   // NO SetNull: convertiría las citas de quien se borra en reservas sin persona,
   // que por la semántica de null chocan contra TODO el equipo — un salón de 4 se
