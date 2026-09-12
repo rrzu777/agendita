@@ -17,7 +17,7 @@ describe('Vercel migration guard', () => {
 
   it('keeps automatic production deploys but disables unsafe branch previews', () => {
     expect(vercelConfig.git.deploymentEnabled).toEqual({
-      '*': false,
+      '**': false,
       main: true,
     })
   })
