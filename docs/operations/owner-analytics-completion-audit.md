@@ -13,6 +13,16 @@ La revisión integral de `c5ea714..55d7fe3` confirmó G2 y encontró I1
 interés, no sin recorrido). Ambos corregidos en `5e95834`, re-reviewPASS sin
 hallazgos abiertos. El ajuste de fixture `dd226dc` también pasó review independiente.
 
+## Actualización de despliegue — 2026-09-12
+
+La implementación completa fue mergeada en el PR #199 y desplegada en
+producción. Las 59 migraciones están aplicadas sin pendientes; maintenance y el
+monitor agregado están activos, con heartbeat inicializado y estado `healthy`
+verificado por el health-check protegido. Captura, piloto, privacidad, alertas,
+insights, IA y emails siguen apagados. Los PR #200/#201 deshabilitaron los deploys Preview
+automáticos —incluidas ramas con `/`— y agregaron un guard que impide migraciones en `VERCEL_ENV=preview`,
+porque Preview compartía credenciales de producción. Staging se desestimó.
+
 ## Resultado vigente del cierre
 
 MVP aprobado completo a nivel de implementación local. Sobre producto `5e95834`:

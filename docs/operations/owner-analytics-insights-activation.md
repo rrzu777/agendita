@@ -1,6 +1,13 @@
 # Activación staged de alertas e insights semanales
 
-Estado de esta implementación: código y pruebas locales en la rama de trabajo; flags apagadas, sin migración aplicada a producción, sin llamadas reales a Resend/OpenAI y sin scheduler habilitado.
+Estado operativo al 2026-09-12: código desplegado en producción desde
+`b943773a777740471c32f9364795c206dd3509c9`; las cuatro migraciones aditivas
+están aplicadas. Maintenance y el monitor agregado están habilitados, el
+heartbeat fue inicializado y el health-check protegido observó `healthy` con
+`OWNER_ANALYTICS_MONITOR_EXPECTED=true`. Captura, piloto, aprobación de
+privacidad, alertas, insights, IA y emails permanecen apagados. No se creó ni se
+usó staging; los deploys Preview automáticos quedaron deshabilitados porque ese
+entorno compartía credenciales productivas.
 
 ## Orden seguro
 
