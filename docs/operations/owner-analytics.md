@@ -1,8 +1,17 @@
 # Owner analytics: handoff operativo
 
-Estado vigente, 2026-08-31: **MVP implementado, revisado y validado localmente**. N1, G1 y G2 están cerrados (`a3a9737`, `6b07579`, `f4342e3`/`55d7fe3`). La fixwave `5e95834` completa contadores técnicos del colector y corrige una etiqueta; re-review PASS sin hallazgos abiertos. El ajuste de fixture `dd226dc` también pasó revisión y la matriz integrada final. Ver `owner-analytics-completion-audit.md` para evidencia vigente; los checkpoints inferiores son históricos. Captura y mantenimiento productivos **no activados**. Este documento no autoriza migración, deploy, push, PR, cron, comunicaciones ni pruebas con cuentas/datos reales. Retención de 13 meses e IA semanal requieren decisiones separadas; no están implementadas.
+Estado vigente, 2026-09-05: **MVP y extensión semanal implementados, revisados y validados localmente**. N1, G1 y G2 están cerrados (`a3a9737`, `6b07579`, `f4342e3`/`55d7fe3`). La rama de operaciones/IA mantiene todas las flags apagadas y ahora incluye la ruta de captura versionada v1/v2; v1 sigue por defecto y v2 no está activado. Ver `owner-analytics-completion-audit.md` y el plan semanal para la evidencia vigente; los checkpoints inferiores son históricos. Captura, mantenimiento, scheduler, email y proveedor productivos **no activados**. Este documento no autoriza migración, deploy, push, PR, cron, comunicaciones ni pruebas con cuentas/datos reales.
 
 ## Verificación final vigente
+
+Evidencia fresca de la rama `feature/owner-analytics-operations-ai` (commit
+`5ee8541`, fixwave de cierre incluida): `npm run test:unit`
+pasó `446/446` archivos, `4036` tests y 1 skip; la integración completa pasó
+`76/76` archivos y `530/530` tests sobre una PostgreSQL disposable con 59
+migraciones. El E2E público pasó `8/8` y el dashboard owner `7/7`. El skip es
+`payment-qa-network-deny`, una prueba opt-in de red real que permanece apagada.
+Estas corridas validan el código local; no activan proveedor, staging ni
+producción.
 
 ### Checkpoint de publicación y CI (PR197)
 
@@ -528,3 +537,24 @@ Los comandos son receta de reproducción, no una nueva autorización para ejecut
 ### Método de presupuesto del piloto
 
 Medir requests recibidos/aceptados, sesiones+intentos, eventos reales, snapshots limpiados y celdas publicadas/purgadas; registrar tamaño de muestra, elapsed, replays/gap controls, latencia/red, memoria/CPU/locks y expiración oldest. Calcular demanda conservadora de filas por cohorte incluyendo cardinalidad de granos y publicación/reemplazos, no sólo eventos. Reservar holgura para reintentos, controles, bursts, otras tareas y caída/recovery del scheduler. Comparar drenaje sostenido y recuperación del backlog con carga Booking simultánea y volumen de 90 días. Sólo entonces fijar presupuesto global/negocio y `VERIFIED_DAILY_DRAIN`; no se recomienda ningún número diario certificado a partir de esta corrida local. Los valores 20000/10000/40000 del harness son únicamente gates sintéticos de pruebas, no aprobación ni capacidad recomendada.
+
+## Extensión operativa: alertas e insights semanales (implementación local)
+
+La rama `feature/owner-analytics-operations-ai` agrega, sin activar captura, un heartbeat con fencing por `runId`/`leaseToken`, incidentes operativos y outbox de email. El monitor independiente `POST /api/cron/owner-analytics-monitor` rechaza body/query, devuelve `no-store` y expone sólo estado agregado. La alerta de retención se abre desde 2 h, escala a crítico al umbral de backlog peligroso (12 h) y marca beyond-tolerance a 24 h; el heartbeat usa warning 2 h 15 y crítico 4 h. Un job en progreso usa `lastProgressAt`, no se declara exitoso hasta cerrar todas las continuaciones y un cierre después de vencer el lease se descarta por CAS.
+
+Los emails se congelan en `AnalyticsEmailDelivery`, con hash de payload, una clave idempotente, lease, máximo tres intentos y corte automático de 23 h. El destinatario weekly se revalida contra la preferencia y el rol owner/admin antes de reclamar; retirar email cancela entregas pendientes. El purge acotado sólo borra payloads, intentos, snapshots semanales e incidentes resueltos vencidos; no borra heartbeat actual ni incidentes activos.
+
+La segunda migración aditiva `20260905130000_owner_analytics_weekly_insights` agrega preferencias, snapshots semanales, intentos de generación, enlace weekly del outbox y `consentVersion` en agregados. La migración `20260905140000_owner_analytics_consent_v2` reemplaza los CHECK heredados que fijaban v1 por límites explícitos `{1,2}` para sesiones y periodos, y `20260905150000_owner_analytics_booking_consent_snapshot` conserva la versión en snapshots Booking cuando los padres ya expiraron. El selector espera el miércoles 09:00 local, sólo usa siete cohortes cerradas de la misma zona/definición/consentimiento y devuelve cursor estable. Facts son determinísticos, con numeradores y denominadores explícitos, máximo tres señales y hash de entrada. La IA sólo se puede reclamar con bandera global, allowlist de negocios, privacidad aprobada, modelo `gpt-5.6-luna`, presupuesto positivo, consentimiento v2 y al menos 20 intentos maduros; usa Responses API, `store:false`, Structured Outputs, 700 tokens, 15 s y `maxRetries:0`. Si falla, el dashboard conserva facts determinísticos. Todas las flags siguen `false`/vacías.
+
+La captura pública y el período de colección usan v1 por defecto. La ruta v2 ya
+está implementada detrás de `OWNER_ANALYTICS_CAPTURE_CONSENT_VERSION=2`: la
+acción owner/admin cierra el periodo v1 con `version_change`, abre v2 sin
+solapamiento, y cliente/ingesta/claims/mantenimiento/coverage conservan la
+procedencia. Nuevos bootstraps v1 se rechazan después de la rotación, pero los
+tokens v1 ya emitidos terminan su ventana original sin ser convertidos; los
+desgloses/reportes v1 no mezclan la fuente v2. La bandera continúa apagada;
+la procedencia del esquema no autoriza activación. Durante `warning`/`critical` el monitor puede drenar alertas
+operativas de incidentes ya creadas, pero no digest semanales; en
+`not_initialized` no drena ningún outbox.
+
+Antes de activar el monitor o insights se requiere aplicar las cuatro migraciones aditivas de operaciones/weekly/consentimiento/snapshot, probar rollback/restauración sobre copia, configurar `OWNER_ANALYTICS_MONITOR_EXPECTED` y el workflow de insights como variables de repositorio sólo después de revisión de privacidad/legal, proveedor, destinatarios, presupuesto y una prueba sintética de email/IA. Health-check omite el monitor mientras esa variable sea `false` y sólo falla por `warning`, `critical`, `not_initialized` o respuesta inválida cuando se espera explícitamente. Ver `owner-analytics-insights-activation.md`.

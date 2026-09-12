@@ -1,10 +1,10 @@
 import { z } from 'zod'
 import type { AnalyticsStore, ClientStream, QueueItem } from './client-store'
-import { ANALYTICS_POLICY as policy } from './policy'
+import { ANALYTICS_POLICY as policy, type AnalyticsConsentVersion } from './policy'
 
 const bootstrapSchema = z.strictObject({ id: z.uuid(), credential: z.string().min(1).max(4096), startedAt: z.iso.datetime(), expiresAt: z.iso.datetime(), retentionExpiresAt: z.iso.datetime() })
 const receiptSchema = z.strictObject({ receipts: z.array(z.strictObject({ index: z.number().int().min(0).max(19), eventId: z.uuid().nullable(), status: z.enum(['accepted', 'replay', 'rejected']), category: z.enum(['stored', 'identical', 'invalid_event', 'wrong_scope', 'foreign_dimension', 'conflict', 'stream_limit', 'budget']) })).max(20), captureGapRecorded: z.literal(true).optional() })
-export interface TransportOptions { fetcher?: (url: string, init: RequestInit) => Promise<Response>; acquisition?: { acq?: string; utmSource?: string; utmMedium?: string; utmCampaign?: string; referrerHost?: string } }
+export interface TransportOptions { fetcher?: (url: string, init: RequestInit) => Promise<Response>; consentVersion?: AnalyticsConsentVersion; acquisition?: { acq?: string; utmSource?: string; utmMedium?: string; utmCampaign?: string; referrerHost?: string } }
 
 /** One flight, bounded retries and immutable stream bindings survive remounts and lost replies. */
 export function createAnalyticsTransport(store: AnalyticsStore, slug: string, options: TransportOptions = {}) {
@@ -66,7 +66,7 @@ export function createAnalyticsTransport(store: AnalyticsStore, slug: string, op
         if (!store.mutate(next => { const s = next.streams.find(s => s.key === stream.key); if (s) { s.bootstrapSends = sends + 1; s.retryAt = store.now() + 1000 * 2 ** (sends + 1) } })) continue
         try {
           const payload = stream.kind === 'session'
-            ? { bootstrapKey: stream.key, consent: true, consentVersion: 1, ...options.acquisition }
+            ? { bootstrapKey: stream.key, consent: true, consentVersion: options.consentVersion ?? 1, ...options.acquisition }
             : { bootstrapKey: stream.key, credential: parent!.receipt!.credential, entryKind: stream.entryKind }
           const receipt = bootstrapSchema.parse(await post(stream.kind, payload))
           store.mutate((next) => { const s = next.streams.find((s) => s.key === stream.key); if (s) { s.receipt = receipt; s.retries = 0; s.retryAt = 0 } })

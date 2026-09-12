@@ -89,6 +89,9 @@ describe('DST America/Santiago', () => {
   })
 
   it('roundtrip assertSlotIsAvailable works across DST boundary', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(testNow)
+
     // Usamos domingo 06 septiembre 2026, ya en UTC-3 (DST activo)
     const sundayDst = new Date('2026-09-06T04:00:00Z')
     const rules = [{ dayOfWeek: 0, startTime: '09:00', endTime: '18:00', isActive: true }]
@@ -97,17 +100,21 @@ describe('DST America/Santiago', () => {
     expect(slots.length).toBeGreaterThan(0)
     const firstSlot = slots[0]
 
-    const tx = makeTx()
-    await assertSlotIsAvailable({
-      tx,
-      businessId: 'biz-dst',
-      serviceId: 'svc-dst',
-      startDateTime: firstSlot.start,
-      endDateTime: firstSlot.end,
-      timezone,
-      professionalId: null,
-    })
+    try {
+      const tx = makeTx()
+      await assertSlotIsAvailable({
+        tx,
+        businessId: 'biz-dst',
+        serviceId: 'svc-dst',
+        startDateTime: firstSlot.start,
+        endDateTime: firstSlot.end,
+        timezone,
+        professionalId: null,
+      })
 
-    expect(formatInTimeZone(firstSlot.start, timezone, 'yyyy-MM-dd HH:mm')).toBe('2026-09-06 09:00')
+      expect(formatInTimeZone(firstSlot.start, timezone, 'yyyy-MM-dd HH:mm')).toBe('2026-09-06 09:00')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -20,6 +20,8 @@ model User {
   customers  Customer[]
   authorizedPushSubscriptions PushSubscription[] @relation("PushSubscriptionAuthorizedUser")
   tourProgress UserTourProgress[]
+  analyticsInsightPreferences AnalyticsInsightPreference[] @relation("AnalyticsInsightPreferenceRecipient")
+  analyticsEmailDeliveries AnalyticsEmailDelivery[] @relation("AnalyticsEmailDeliveryRecipient")
 }
 
 enum SubscriptionStatus {
@@ -152,6 +154,8 @@ model Business {
   acquisitionLinks     AcquisitionLink[]
   analyticsPeriods     AnalyticsCollectionPeriod[]
   analyticsDailyMetrics AnalyticsDailyMetric[]
+  analyticsInsightPreference AnalyticsInsightPreference?
+  weeklyInsights AnalyticsWeeklyInsight[]
 }
 
 enum PaymentAccountStatus {
@@ -752,6 +756,7 @@ model Booking {
 
   // Optional verified scalar snapshot: never a FK and never part of booking idempotency.
   analyticsVersion              Int?
+  analyticsConsentVersion      Int?
   analyticsSessionId            String? @db.Uuid
   analyticsAttemptId            String? @db.Uuid
   analyticsAttemptStartedAt     DateTime?
@@ -856,6 +861,222 @@ enum AnalyticsCoverageState {
   unknown
 }
 
+enum AnalyticsJobStatus {
+  running
+  succeeded
+  partial
+  failed
+}
+
+enum AnalyticsIncidentType {
+  heartbeat_stale
+  maintenance_failures
+  retention_backlog
+}
+
+enum AnalyticsIncidentSeverity {
+  warning
+  critical
+}
+
+enum AnalyticsIncidentNotificationStatus {
+  pending
+  sent
+  failed
+  skipped
+}
+
+enum AnalyticsEmailDeliveryStatus {
+  pending
+  sending
+  sent
+  failed
+  ambiguous
+  manual_review
+  cancelled
+}
+
+enum AnalyticsEmailNotificationKind {
+  alert_open
+  alert_escalation
+  alert_reminder
+  alert_beyond_tolerance
+  alert_resolved
+  weekly_digest
+}
+
+enum AnalyticsInsightStatus {
+  insufficient_data
+  deterministic_ready
+  generating
+  ready
+  generation_failed
+  expired
+}
+
+enum AnalyticsInsightGenerationStatus {
+  not_requested
+  pending
+  running
+  succeeded
+  failed
+  manual_review
+}
+
+enum AnalyticsInsightAttemptStatus {
+  running
+  succeeded
+  failed
+  manual_review
+}
+
+model AnalyticsJobHeartbeat {
+  jobKey                 String            @id @db.VarChar(64)
+  currentRunId           String?           @db.Uuid
+  leaseToken             String?           @db.Uuid
+  leaseExpiresAt         DateTime?
+  lastStartedAt          DateTime?
+  lastCompletedAt        DateTime?
+  lastSuccessAt          DateTime?
+  lastProgressAt         DateTime?
+  lastStatus             AnalyticsJobStatus?
+  nextBatchSequence      Int?
+  runErrors              Int               @default(0)
+  consecutiveFailures    Int               @default(0)
+  consecutiveSuccesses   Int               @default(0)
+  circuitOpenUntil       DateTime?
+  probeLeaseUntil        DateTime?
+  lastResult             Json?
+  updatedAt              DateTime          @updatedAt
+
+  @@index([lastStatus, lastSuccessAt])
+  @@index([leaseExpiresAt])
+}
+
+model AnalyticsOperationalIncident {
+  id                       String                              @id @default(uuid()) @db.Uuid
+  activeKey                String?                             @unique @db.VarChar(160)
+  incidentType             AnalyticsIncidentType
+  severity                 AnalyticsIncidentSeverity
+  openedAt                 DateTime
+  lastObservedAt           DateTime
+  resolvedAt               DateTime?
+  lastNotifiedSeverity     AnalyticsIncidentSeverity?
+  lastNotificationAt       DateTime?
+  notificationAttempts     Int                                 @default(0)
+  lastNotificationStatus   AnalyticsIncidentNotificationStatus?
+  lastNotificationCode     String?                             @db.VarChar(64)
+  details                  Json
+  healthySince             DateTime?
+  retentionExpiresAt       DateTime?
+  updatedAt                DateTime                            @updatedAt
+  deliveries               AnalyticsEmailDelivery[]
+
+  @@index([incidentType, resolvedAt])
+  @@index([retentionExpiresAt])
+}
+
+model AnalyticsEmailDelivery {
+  id                    String                         @id @default(uuid()) @db.Uuid
+  incidentId            String?                        @db.Uuid
+  weeklyInsightId       String?                        @db.Uuid
+  recipientUserId       String?
+  dedupeKey             String                         @unique @db.VarChar(220)
+  notificationKind      AnalyticsEmailNotificationKind
+  payloadHash           String                         @db.Char(64)
+  recipients            Json
+  subject               String                         @db.VarChar(200)
+  htmlBody              String                         @db.Text
+  textBody              String                         @db.Text
+  status                AnalyticsEmailDeliveryStatus  @default(pending)
+  leaseToken            String?                        @db.Uuid
+  leaseExpiresAt        DateTime?
+  firstProviderAttemptAt DateTime?
+  attempts              Int                            @default(0)
+  nextAttemptAt         DateTime?
+  providerMessageId     String?                        @db.VarChar(160)
+  lastFailureCode       String?                        @db.VarChar(64)
+  sentAt                DateTime?
+  retentionExpiresAt    DateTime
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
+  incident              AnalyticsOperationalIncident?  @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  weeklyInsight         AnalyticsWeeklyInsight?        @relation(fields: [weeklyInsightId], references: [id], onDelete: Cascade)
+  recipientUser         User?                          @relation("AnalyticsEmailDeliveryRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+
+  @@index([status, nextAttemptAt])
+  @@index([incidentId])
+  @@index([weeklyInsightId])
+  @@index([recipientUserId])
+  @@index([retentionExpiresAt])
+}
+
+model AnalyticsInsightPreference {
+  id                String   @id @default(uuid()) @db.Uuid
+  businessId        String   @unique
+  recipientUserId   String?
+  enabled           Boolean  @default(false)
+  aiNarrativeEnabled Boolean @default(false)
+  emailEnabled      Boolean  @default(false)
+  privacyVersion    Int?
+  acceptedAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  business          Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  recipientUser     User?    @relation("AnalyticsInsightPreferenceRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+
+  @@index([recipientUserId])
+}
+
+model AnalyticsWeeklyInsight {
+  id                    String                         @id @default(uuid()) @db.Uuid
+  businessId            String
+  weekStart             DateTime                       @db.Date
+  weekEnd               DateTime                       @db.Date
+  businessTimeZone      String                         @db.VarChar(100)
+  sourceConsentVersion  Int
+  status                AnalyticsInsightStatus
+  generationStatus      AnalyticsInsightGenerationStatus @default(not_requested)
+  facts                 Json
+  narrative             Json?
+  reasonCode            String?                        @db.VarChar(64)
+  inputHash             String                         @db.Char(64)
+  sourceExpiresAt       DateTime
+  retentionExpiresAt    DateTime
+  narrativeGeneratedAt  DateTime?
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
+  business              Business                       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  generationAttempts    AnalyticsInsightGenerationAttempt[]
+  deliveries            AnalyticsEmailDelivery[]
+
+  @@unique([businessId, weekStart])
+  @@index([businessId, status, weekStart])
+  @@index([retentionExpiresAt])
+}
+
+model AnalyticsInsightGenerationAttempt {
+  id                String                        @id @default(uuid()) @db.Uuid
+  weeklyInsightId   String                        @db.Uuid
+  attemptNumber     Int
+  status            AnalyticsInsightAttemptStatus
+  leaseToken        String?                       @db.Uuid
+  leaseExpiresAt    DateTime?
+  requestedAt       DateTime                      @default(now())
+  completedAt       DateTime?
+  providerRequestId String?                       @db.VarChar(160)
+  inputHash         String                        @db.Char(64)
+  outputTokens      Int?
+  errorCode         String?                       @db.VarChar(64)
+  nextRetryAt       DateTime?
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+  weeklyInsight     AnalyticsWeeklyInsight        @relation(fields: [weeklyInsightId], references: [id], onDelete: Cascade)
+
+  @@unique([weeklyInsightId, attemptNumber])
+  @@index([status, leaseExpiresAt])
+}
+
 model AnalyticsSession {
   id                    String @id @default(uuid()) @db.Uuid
   businessId            String
@@ -889,6 +1110,7 @@ model BookingFunnelAttempt {
   sessionId             String @db.Uuid
   bootstrapKey          String @db.Uuid
   origin                String @db.VarChar(300)
+  consentVersion        Int @default(1)
   startedAt             DateTime
   conversionDeadlineAt  DateTime
   retentionExpiresAt    DateTime
@@ -978,6 +1200,7 @@ model AnalyticsDailyMetric {
   cohortLocalDate      DateTime @db.Date
   businessTimeZone     String @db.VarChar(100)
   definitionVersion    Int
+  consentVersion       Int              @default(1)
   population           AnalyticsPopulation
   grain                AnalyticsGrain
   dimensionKey         String @db.VarChar(128)
@@ -993,7 +1216,7 @@ model AnalyticsDailyMetric {
   retentionExpiresAt   DateTime
   business             Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  @@unique([businessId, cohortLocalDate, businessTimeZone, definitionVersion, population, grain, dimensionKey, metricKey], map: "AnalyticsDailyMetric_cell_key")
+  @@unique([businessId, cohortLocalDate, businessTimeZone, definitionVersion, consentVersion, population, grain, dimensionKey, metricKey], map: "AnalyticsDailyMetric_cell_key")
   @@index([businessId, cohortLocalDate])
   @@index([retentionExpiresAt, id])
 }

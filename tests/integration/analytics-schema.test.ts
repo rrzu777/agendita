@@ -66,9 +66,10 @@ describe('actual PostgreSQL tenant, scope, replay and nullable snapshot constrai
     const booking = await prisma.booking.create({ data: base })
     await expect(prisma.booking.update({ where: { id: booking.id }, data: { analyticsAttemptId: attemptId } })).rejects.toThrow()
     await expect(prisma.booking.update({ where: { id: booking.id }, data: { analyticsAcquisitionLinkId: 'unverified-link' } })).rejects.toThrow()
-    const complete = { analyticsVersion: 1, analyticsSessionId: sessionId, analyticsAttemptId: attemptId, analyticsAttemptStartedAt: start, analyticsConversionDeadlineAt: end, analyticsRetentionExpiresAt: retention, analyticsChannel: 'direct' as const, analyticsNormalizationVersion: 1 }
+    const complete = { analyticsVersion: 1, analyticsConsentVersion: 1, analyticsSessionId: sessionId, analyticsAttemptId: attemptId, analyticsAttemptStartedAt: start, analyticsConversionDeadlineAt: end, analyticsRetentionExpiresAt: retention, analyticsChannel: 'direct' as const, analyticsNormalizationVersion: 1 }
     // Created after the conversion window: domain write succeeds; reducer excludes attribution.
     await expect(prisma.booking.update({ where: { id: booking.id }, data: complete })).resolves.toMatchObject({ analyticsAttemptId: attemptId })
+    await expect(prisma.booking.update({ where: { id: booking.id }, data: { analyticsConsentVersion: 3 } })).rejects.toThrow()
     await expect(prisma.booking.create({ data: { ...base, ...complete } })).resolves.toMatchObject({ analyticsAttemptId: attemptId })
     await prisma.analyticsSession.delete({ where: { id: sessionId } })
     expect((await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })).analyticsAttemptId).toBe(attemptId)
@@ -77,6 +78,7 @@ describe('actual PostgreSQL tenant, scope, replay and nullable snapshot constrai
     const data = { businessId, cohortLocalDate: new Date('2026-07-31'), businessTimeZone: 'America/Santiago', definitionVersion: 1, population: 'complete_attempts' as const, grain: 'total' as const, dimensionKey: 'total', metricKey: 'conversion', numerator: 1, denominator: 2, revision: 1, state: 'closed' as const, coverage: 'complete' as const, calculatedAt: end, cutoffAt: end, retentionExpiresAt: retention }
     const stored = await prisma.analyticsDailyMetric.create({ data })
     await expect(prisma.analyticsDailyMetric.create({ data })).rejects.toMatchObject({ code: 'P2002' })
+    await expect(prisma.analyticsDailyMetric.create({ data: { ...data, consentVersion: 2 } })).resolves.toMatchObject({ consentVersion: 2 })
     for (const changed of [{ dimensionKey: '' }, { numerator: -1 }, { grain: 'service' as const, dimensionKey: 'service-a' }, { population: 'sessions' as const }, { numerator: 3 }]) await expect(prisma.analyticsDailyMetric.update({ where: { id: stored.id }, data: changed })).rejects.toThrow()
     await expect(prisma.$executeRaw`INSERT INTO "AnalyticsDailyMetric" ("id", "businessId", "cohortLocalDate", "businessTimeZone", "definitionVersion", "population", "grain", "dimensionKey", "metricKey", "numerator", "denominator", "revision", "state", "coverage", "calculatedAt", "cutoffAt", "retentionExpiresAt") VALUES (${randomUUID()}::uuid, ${businessId}, '2026-07-31', 'America/Santiago', 1, 'sessions', 'total', NULL, 'visits', 0, 0, 1, 'closed', 'complete', NOW(), NOW(), NOW())`).rejects.toThrow()
   })

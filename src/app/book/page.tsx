@@ -7,6 +7,7 @@ import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import { getFunnelSession } from '@/lib/customers/session-prefill'
 import { PublicAnalytics } from '@/components/analytics/public-analytics'
 import { isPublicAnalyticsEligible } from '@/lib/analytics/public-context'
+import { getConfiguredAnalyticsConsentVersion } from '@/lib/analytics/budget'
 
 // Los referralToken son UUID v4 (crypto.randomUUID). Validar la forma reduce la
 // superficie y evita lookups innecesarios con tokens arbitrarios.
@@ -29,7 +30,7 @@ export default async function BookIndexPage({
     if (business) {
       const session = await getFunnelSession(business.id)
       return (
-        <PublicAnalytics businessId={business.id} slug={business.slug} timezone={business.timezone || 'America/Santiago'} eligible={await isPublicAnalyticsEligible(business.id)} surface="booking">
+        <PublicAnalytics businessId={business.id} slug={business.slug} timezone={business.timezone || 'America/Santiago'} consentVersion={getConfiguredAnalyticsConsentVersion() ?? 1} eligible={await isPublicAnalyticsEligible(business.id)} surface="booking">
         <BookingBusinessPage
           business={business}
           profileHref="/"

@@ -166,3 +166,119 @@ aprobación pendiente de G2 bloqueó entonces el cierre; la nueva instrucción d
 usuario la resuelve. No se reinician tareas cerradas ni se convierte G2 en una
 exclusión del MVP. La validación conjunta superior cierra ahora el MVP local;
 no autoriza publicación, merge, migración ni captura productiva.
+
+## Continuación 2026-09-05: gaps operativos y weekly insights
+
+La auditoría del plan encontró y cerró estos gaps antes de implementar: el
+health-check podía omitir un monitor habilitado; el endpoint aceptaba body/query;
+un heartbeat podía cerrar después de vencer el lease; un job running podía parecer
+stale aunque avanzara; una re-ejecución semanal podía borrar una narrativa lista;
+el outbox no revalidaba rol/preferencia del destinatario; y el purge podía mezclar
+payloads con incidentes activos. Quedaron cubiertos por pruebas de route/script,
+CAS, `lastProgressAt`, hash de snapshot, claim de outbox y SQL de purge acotado.
+
+La implementación local agrega los commits `937cbf5` (schema operacional),
+`d299031` (heartbeat), `c35a138` (monitor/incidentes/outbox) y el trabajo actual
+de schema/facts/generation/dashboard. La fixwave final agrega `0ec27ef`
+(consentimiento, opt-in, privacidad del prompt y circuito operativo) y `5979414`
+(fixtures PostgreSQL de facts y presupuesto). Validaciones históricas: 45 archivos
+unitarios analytics/operaciones, 335 tests, y 5 suites PostgreSQL con 22 tests
+pasando sobre una base disposable con las 57 migraciones desde cero; Prisma
+validate/generate, typecheck, lint y diff-check también pasan. El cleanup de
+`localStorage` del harness de privacidad fue corregido. La corrida unitaria
+completa que se documenta en ese checkpoint es histórica: bajo ese entorno
+fallaban casos no relacionados de `payment-qa-runner-safety` y
+`bank-transfer-form`; no se atribuyeron a analytics. No se ejecutó DB de
+producción, Resend, OpenAI ni workflow externo.
+
+Verificación fresca sobre el código actual, posterior a la ruta source-consent
+v2 y la fixwave de cierre: `npm run test:unit` pasó `446/446` archivos, `4036` tests y 1 skip, sin
+fallos, en 170.21 s. La integración completa serializada pasó `76/76` archivos
+y `530/530` tests en 125.48 s sobre una PostgreSQL disposable con las 59
+migraciones desde cero. El skip es la prueba opt-in de red real
+`payment-qa-network-deny`; no se activó ningún proveedor externo.
+
+Las flags siguen false/vacías. La prueba de activación requiere migraciones
+`20260905120000_owner_analytics_operations`,
+`20260905130000_owner_analytics_weekly_insights` y
+`20260905140000_owner_analytics_consent_v2` y
+`20260905150000_owner_analytics_booking_consent_snapshot`, revisión legal, allowlist,
+presupuesto, destinatarios y siete días de medición v2. Ver
+`docs/operations/owner-analytics-insights-activation.md`.
+
+La revisión de gaps de esta continuación también corrigió el cron semanal: ahora
+usa el heartbeat `weekly_insights` con `runId`/`leaseToken`/secuencia, conserva el
+último cursor confirmado y no declara éxito hasta agotar continuaciones. El job
+ya no reabre un reporte `ready`, y el prompt de proveedor excluye handles de
+servicios/tenant que no son necesarios para la narrativa. También quedaron
+cerrados el presupuesto de tokens reservado, el circuito persistido con probe
+half-open y la espera durable de una a 24 horas, incluyendo `Retry-After` válido.
+La bandera de IA continúa apagada por los gates legales, de proveedor y staged;
+no por falta de ese control local.
+
+Smoke test histórico posterior: PostgreSQL 17 efímero local aplicó las 57 migraciones desde
+cero, incluyendo `20260905120000_owner_analytics_operations` y
+`20260905130000_owner_analytics_weekly_insights`; se inspeccionaron las FKs y el
+`num_nonnulls(incidentId, weeklyInsightId)=1`. El contenedor fue detenido y no
+contenía datos de negocio. Esto valida sintaxis/orden local, no migración en
+staging ni producción.
+
+Ese smoke también expuso y cerró una omisión de consentimiento: `BookingFunnelAttempt`
+ahora conserva la versión heredada de su sesión, el índice único diario incluye
+esa dimensión y los desgloses rechazan fuentes mezcladas. La retención focal
+posterior pasó 8/8; el fallo anterior por columna inexistente ya no se reproduce.
+
+### Fixwave adicional de gaps — 2026-09-05
+
+- El claim de IA exige `sourceConsentVersion=2`, el snapshot también debe declarar
+  v2 y la preferencia `enabled + aiNarrativeEnabled + privacyVersion=2` se revisa
+  dentro de la misma transacción. Una semana v1 nunca llega al proveedor.
+- Los `factId` de servicios se reemplazan por aliases ordinales (`service_signal_N`)
+  antes de construir el prompt; el ID canónico se restaura sólo al persistir la
+  narrativa. El proveedor no recibe `serviceId`, nombre ni handle de tenant.
+- Un lease de generación #2 vencido se finaliza como `manual_review` y el reporte
+  pasa a `generation_failed`; no queda un `running` huérfano sin reintento.
+- Si el proveedor omite `output_tokens`, el presupuesto cobra el tope solicitado;
+  así un usage incompleto no permite sobrepasar el límite semanal.
+- Durante `warning`/`critical` el monitor drena sólo alertas operativas ya
+  creadas; suspende digest semanales. En `not_initialized` no drena ningún
+  outbox. El job puede persistir facts determinísticos, pero suspende nuevas
+  llamadas AI/emails hasta que la operación vuelva a `healthy`.
+- Emails semanales también exigen la preferencia global `enabled`; una lista de
+  destinatarios malformada se ignora cuando alertas están apagadas y falla cerrado
+  sólo al habilitarlas.
+
+La verificación E2E dedicada posterior pasó completa sobre esta rama: contrato
+público `8/8` y dashboard owner `7/7`, ambos usando sus harnesses de servidor y
+DB disposable. Esto cierra la validación E2E de analytics; junto con la corrida
+unitaria/integrada fresca anterior, no quedan fallos locales conocidos. Estas
+pruebas no activan staging/producción.
+
+### Revisión final de gaps operativos — 2026-09-05
+
+La revisión independiente posterior cerró seis defectos de consistencia local:
+alertas creadas durante incidentes ya no quedan retenidas hasta recovery, los
+inicios concurrentes del heartbeat se serializan con advisory lock, el motor de
+facts detecta truncamiento mediante sentinel, una re-ejecución con el mismo hash
+preserva fallos de generación, y el outbox cancela un digest cuyo email actual
+ya no coincide con el destinatario congelado. La suite focal quedó en
+45 archivos/335 tests; la matriz PostgreSQL adicional quedó en 5 suites/22
+tests; E2E público y dashboard permanecen 8/8 y 7/7.
+
+La actualización de esta rama implementa ese paso pendiente detrás de una
+bandera apagada: `20260905140000_owner_analytics_consent_v2` cambia los CHECK
+heredados de sesión/periodo para aceptar sólo v1/v2 y
+`20260905150000_owner_analytics_booking_consent_snapshot` conserva la versión
+en snapshots Booking; owner/admin cierra v1 con
+`version_change` antes de abrir v2; el resolver público, storage/transport,
+claims, ingesta, cobertura, mantenimiento y publicación llevan la versión. Los
+nuevos bootstraps v1 quedan rechazados tras la rotación, mientras los tokens v1
+ya emitidos pueden terminar su ventana original etiquetados como v1; la
+publicación v2 no mezcla filas v1. La prueba de ingesta cubre esa rotación y
+credencial; rollups cubre publicación v2 aislada. La fixwave también cubre errores
+de red/truncamiento del narrador y fences perdidos de cron. La matriz actual de analytics pasó 41 archivos/312
+unitarias y 13 archivos/130 integraciones PostgreSQL; el E2E público/dashboard
+permanece 8/8 y 7/7. Además, la corrida completa actual pasó 446/446 archivos
+unitarios (4036 tests, 1 skip) y 76/76 archivos de integración (530 tests).
+Esto prueba el código en DB disposable, no una fuente v2 productiva ni
+activación del piloto.

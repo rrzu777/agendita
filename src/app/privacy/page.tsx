@@ -77,7 +77,24 @@ export default function PrivacyPage() {
             continuar al pago. El panel está restringido a propietarios
             y administradores del negocio correspondiente. Los recuentos pueden ser pequeños y no se
             garantiza anonimato por agruparlos. Este piloto no incluye envíos a modelos de IA ni mensajes
-            comerciales automáticos basados en tu recorrido.
+            comerciales automáticos basados en tu recorrido. La versión vigente del piloto no envía
+            estos datos a modelos de IA mientras el análisis semanal permanezca desactivado.
+          </p>
+          <h3 className="mb-2 mt-5 font-semibold">Insights semanales opcionales</h3>
+          <p>
+            Si una persona propietaria activa explícitamente la versión 2 de esta función, Agendita
+            puede calcular un resumen semanal agregado de cohortes cerradas. Sólo se envían a un
+            proveedor de IA aprobado cifras, porcentajes, identificadores técnicos de hechos y
+            acciones canónicas; no se envían nombres, emails, teléfonos, reservas individuales,
+            pagos, texto libre ni identificadores de clientes. La salida se valida contra un esquema
+            cerrado y, si el proveedor falla, se muestra sólo el resumen determinístico.
+          </p>
+          <p>
+            El proveedor de IA recibe una solicitud sin almacenamiento de conversación, con un plazo
+            de 15 segundos y un límite de respuesta. Los snapshots semanales y sus intentos caducan
+            como máximo 90 días después de la fuente más antigua; retirar el permiso detiene nuevos
+            trabajos y cancela envíos aún no iniciados. El email semanal es independiente del permiso
+            de análisis asistido y usa un destinatario owner/admin elegido por el negocio.
           </p>
           <h3 className="mb-2 mt-5 font-semibold">Plazos y almacenamiento en tu navegador</h3>
           <p>

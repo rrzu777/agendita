@@ -17,6 +17,15 @@ function setup() {
   return { store, fetcher, storage, advance: (ms: number) => { clock += ms }, restore: () => { const next = createAnalyticsStore(options); next.open(); return next } }
 }
 describe('durable capture transport', () => {
+  it('sends the configured consent version in the session bootstrap', async () => {
+    const setupResult = setup()
+    const store = createAnalyticsStore({ businessId: 'salon', origin: 'https://example.test', storage: setupResult.storage, preferences: setupResult.storage, consentVersion: 2 })
+    store.chooseConsent(true); store.open(); store.view({ type: 'booking_entry_viewed', data: {} }, 'entry')
+    await createAnalyticsTransport(store, 'salon', { fetcher: setupResult.fetcher, consentVersion: 2 }).flush()
+    const sessionBody = JSON.parse(setupResult.fetcher.mock.calls[0][1].body as string)
+    expect(sessionBody.consentVersion).toBe(2)
+  })
+
   it('bounds repeated pre-catch crashes to the initial bootstrap and two durable retries', async () => {
     const setupResult = setup()
     let store = setupResult.store

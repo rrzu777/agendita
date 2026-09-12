@@ -19,6 +19,7 @@ jobs:
     env:
       BASE_URL: ${{ vars.APP_BASE_URL || 'https://www.agendita.cl' }}
       CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      OWNER_ANALYTICS_MONITOR_EXPECTED: ${{ vars.OWNER_ANALYTICS_MONITOR_EXPECTED || 'false' }}
     steps:
       - uses: actions/checkout@v7
       - name: Check public and protected production health

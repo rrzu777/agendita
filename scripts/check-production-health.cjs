@@ -102,19 +102,49 @@ async function probeTenantRedirect(url, canonicalUrl, fetchImpl) {
   }
 }
 
+async function probeAnalyticsMonitor(url, cronSecret, fetchImpl) {
+  try {
+    const response = await fetchImpl(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${cronSecret}`,
+        'Cache-Control': 'no-store',
+      },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+    let payload
+    try {
+      const value = await response.json()
+      payload = value && typeof value === 'object' && !Array.isArray(value)
+        ? { state: typeof value.state === 'string' ? value.state : 'invalid_response' }
+        : { state: 'invalid_response' }
+    } catch {
+      payload = { state: 'invalid_response' }
+    }
+    return {
+      ok: response.ok && payload.state === 'healthy',
+      httpStatus: response.status,
+      state: payload.state,
+    }
+  } catch {
+    return { ok: false, httpStatus: 0, state: 'unreachable' }
+  }
+}
+
 async function checkProductionHealth({
   baseUrl,
   cronSecret,
   fetchImpl = fetch,
   sleep = sleepFor,
   attempts = 3,
+  monitorExpected = false,
 }) {
   const normalizedBaseUrl = baseUrl.replace(/\/$/, '')
   const installUrls = installerUrls(normalizedBaseUrl)
   let result
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    const [publicHealth, dependencies, installPage, tenantRedirect] = await Promise.all([
+    const [publicHealth, dependencies, installPage, tenantRedirect, monitor] = await Promise.all([
       probe(`${normalizedBaseUrl}/api/health`, {}, fetchImpl),
       probe(
         `${normalizedBaseUrl}/api/health/dependencies`,
@@ -123,13 +153,17 @@ async function checkProductionHealth({
       ),
       probeInstallPage(installUrls.canonical, fetchImpl),
       probeTenantRedirect(installUrls.tenant, installUrls.canonical, fetchImpl),
+      monitorExpected
+        ? probeAnalyticsMonitor(`${normalizedBaseUrl}/api/cron/owner-analytics-monitor`, cronSecret, fetchImpl)
+        : Promise.resolve({ ok: true, skipped: true, httpStatus: 0 }),
     ])
     result = {
-      ok: publicHealth.ok && dependencies.ok && installPage.ok && tenantRedirect.ok,
+      ok: publicHealth.ok && dependencies.ok && installPage.ok && tenantRedirect.ok && monitor.ok,
       publicHealth,
       dependencies,
       installPage,
       tenantRedirect,
+      monitor,
     }
 
     if (result.ok) return result
@@ -148,12 +182,17 @@ async function main() {
     return
   }
 
-  const result = await checkProductionHealth({ baseUrl, cronSecret })
+  const result = await checkProductionHealth({
+    baseUrl,
+    cronSecret,
+    monitorExpected: process.env.OWNER_ANALYTICS_MONITOR_EXPECTED === 'true',
+  })
   const output = {
     publicHealth: result.publicHealth,
     dependencies: result.dependencies,
     installPage: result.installPage,
     tenantRedirect: result.tenantRedirect,
+    monitor: result.monitor,
   }
 
   if (result.ok) {

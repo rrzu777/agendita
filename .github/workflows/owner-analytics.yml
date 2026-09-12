@@ -24,3 +24,39 @@ jobs:
           OWNER_ANALYTICS_CRON_URL: ${{ vars.OWNER_ANALYTICS_CRON_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: bash scripts/run-owner-analytics-cron.sh
+  weekly-insights:
+    # Disabled until privacy/legal review, provider budget and pilot gates pass.
+    if: ${{ vars.OWNER_ANALYTICS_INSIGHTS_CRON_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run bounded weekly insights job
+        env:
+          OWNER_ANALYTICS_INSIGHTS_CRON_URL: ${{ vars.OWNER_ANALYTICS_INSIGHTS_CRON_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          : "${OWNER_ANALYTICS_INSIGHTS_CRON_URL:?Missing insights cron URL}"
+          : "${CRON_SECRET:?Missing cron secret}"
+          cursor=''
+          run_id=''
+          lease_token=''
+          batch_sequence=''
+          for attempt in $(seq 1 20); do
+            url="$OWNER_ANALYTICS_INSIGHTS_CRON_URL"
+            if [ -n "$cursor" ]; then url="$url?cursor=$cursor"; fi
+            headers=(-H "Authorization: Bearer $CRON_SECRET")
+            if [ -n "$run_id" ]; then
+              headers+=(-H "X-Analytics-Run-Id: $run_id" -H "X-Analytics-Lease-Token: $lease_token" -H "X-Analytics-Batch-Sequence: $batch_sequence")
+            fi
+            body=$(curl --silent --show-error --fail-with-body --connect-timeout 10 --max-time 60 -X POST "${headers[@]}" "$url")
+            metadata=$(printf '%s' "$body" | node -e 'let b="";process.stdin.on("data",c=>b+=c).on("end",()=>{try{const r=JSON.parse(b);const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;if(!Number.isInteger(r.processed)||r.processed<0||!uuid.test(r.runId)||!uuid.test(r.leaseToken)||!Number.isInteger(r.nextBatchSequence)||r.nextBatchSequence<1)throw Error();if(r.nextCursor!==null&&(typeof r.nextCursor!=="string"||r.nextCursor.length>1024))throw Error();process.stdout.write([r.runId,r.leaseToken,String(r.nextBatchSequence),r.nextCursor||""] .join("\t"))}catch{process.exitCode=1}})')
+            IFS=$'\t' read -r run_id lease_token batch_sequence cursor <<< "$metadata"
+            if [ -z "$cursor" ]; then exit 0; fi
+          done
+          echo 'Weekly insights continuation budget exhausted' >&2
+          exit 1

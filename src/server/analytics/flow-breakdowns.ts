@@ -34,7 +34,7 @@ export async function readOwnerAnalyticsFlowBreakdowns(input: FlowReadInput, now
     return await prisma.$transaction(async tx => {
       const cohortLocalDate = { gte: new Date(from), lt: new Date(to) }
       const markers = await tx.analyticsDailyMetric.findMany({
-        where: { businessId, cohortLocalDate, metricKey: '__publication__' },
+        where: { businessId, consentVersion: 1, cohortLocalDate, metricKey: '__publication__' },
         select: { businessTimeZone: true, definitionVersion: true, frozenAt: true, retentionExpiresAt: true },
         orderBy: { id: 'asc' }, take: SOURCE_LIMIT + 1,
       })
@@ -44,20 +44,20 @@ export async function readOwnerAnalyticsFlowBreakdowns(input: FlowReadInput, now
       if (markers.some(m => m.definitionVersion !== 1)) return unavailable('incomplete_source')
       // One elapsed day on either side covers all supported UTC offsets and DST.
       // Calendar membership is still the source's immutable cohort date, not today's zone.
-      const where = { businessId, cohortLocalDate, startedAt: { gte: new Date(+new Date(from) - 86400000), lt: new Date(+new Date(to) + 86400000), lte: now } }
+      const where = { businessId, consentVersion: 1, cohortLocalDate, startedAt: { gte: new Date(+new Date(from) - 86400000), lt: new Date(+new Date(to) + 86400000), lte: now } }
       const sessions = await tx.analyticsSession.findMany({ where,
         select: { businessTimeZone: true, definitionVersion: true, retentionExpiresAt: true, normalizationVersion: true, consentVersion: true },
         orderBy: { id: 'asc' }, take: SOURCE_LIMIT + 1,
       })
       if (sessions.length > SOURCE_LIMIT) return unavailable('limit_exceeded')
       const attempts = await tx.bookingFunnelAttempt.findMany({ where,
-        select: { id: true, businessId: true, sessionId: true, startedAt: true, conversionDeadlineAt: true, entryKind: true, definitionVersion: true, businessTimeZone: true, cohortLocalDate: true, channel: true, normalizationVersion: true, acquisitionLinkId: true, knownCaptureGap: true, acceptedEventCount: true, retentionExpiresAt: true },
+        select: { id: true, businessId: true, sessionId: true, startedAt: true, conversionDeadlineAt: true, entryKind: true, definitionVersion: true, businessTimeZone: true, cohortLocalDate: true, channel: true, normalizationVersion: true, acquisitionLinkId: true, knownCaptureGap: true, acceptedEventCount: true, retentionExpiresAt: true, consentVersion: true },
         orderBy: { id: 'asc' }, take: SOURCE_LIMIT + 1,
       })
       if (sessions.length + attempts.length > SOURCE_LIMIT) return unavailable('limit_exceeded')
       for (const source of [...sessions, ...attempts]) timezones.add(source.businessTimeZone)
       if ([...sessions, ...attempts].some(s => s.retentionExpiresAt <= now)) return unavailable('not_retained')
-      if ([...sessions, ...attempts].some(s => s.definitionVersion !== 1 || s.normalizationVersion !== 1) || sessions.some(s => s.consentVersion !== 1)) return unavailable('incomplete_source')
+      if ([...sessions, ...attempts].some(s => s.definitionVersion !== 1 || s.normalizationVersion !== 1) || [...sessions, ...attempts].some(s => s.consentVersion !== 1)) return unavailable('incomplete_source')
       const projections: AttemptProjection[] = []
       let eventCount = 0
       for (let offset = 0; offset < attempts.length; offset += PAGE_SIZE) {

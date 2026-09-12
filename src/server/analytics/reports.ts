@@ -98,12 +98,15 @@ export async function getOwnerAnalyticsReport(input: unknown = {}, now = new Dat
   const report = await prisma.$transaction<Omit<OwnerAnalyticsReport, 'flowBreakdowns'>>(async tx => {
     if (p.acquisitionLinkId && !await tx.acquisitionLink.findFirst({ where: { businessId, id: p.acquisitionLinkId }, select: { id: true } })) throw new UserError('Enlace no disponible.')
     if (p.serviceId && !await tx.service.findFirst({ where: { businessId, id: p.serviceId }, select: { id: true } }) && !await tx.analyticsDailyMetric.findFirst({ where: { businessId, grain: 'service', dimensionKey: p.serviceId, retentionExpiresAt: { gt: now } }, select: { id: true } })) throw new UserError('Servicio no disponible.')
-    const stored = await tx.analyticsDailyMetric.findMany({ where: { businessId, cohortLocalDate: { gte: new Date(previousFrom), lt: new Date(to) }, retentionExpiresAt: { gt: now } }, orderBy: [{ cohortLocalDate: 'asc' }, { id: 'asc' }], take: 20001 })
+    // The existing dashboard contract is definition-v1. Keep v2 rows out of
+    // this summary until the panel exposes an explicit consent-version split;
+    // silently adding them would make historical rates incomparable.
+    const stored = await tx.analyticsDailyMetric.findMany({ where: { businessId, consentVersion: 1, cohortLocalDate: { gte: new Date(previousFrom), lt: new Date(to) }, retentionExpiresAt: { gt: now } }, orderBy: [{ cohortLocalDate: 'asc' }, { id: 'asc' }], take: 20001 })
     if (stored.length > 20000) throw new UserError('El período excede el límite de detalle; selecciona menos días.')
     const all = stored.map(c => ({ ...c, cohortLocalDate: c.cohortLocalDate.toISOString().slice(0, 10), metricKey: c.metricKey as MetricKey }))
     // Only complete publication revisions are readable; never mix a partly deleted/invalid revision.
     const groups = new Map<string, DailyMetricCell[]>()
-    for (const c of all) { const key = JSON.stringify([c.cohortLocalDate, c.businessTimeZone, c.definitionVersion]); const group = groups.get(key) ?? []; group.push(c); groups.set(key, group) }
+    for (const c of all) { const key = JSON.stringify([c.cohortLocalDate, c.businessTimeZone, c.definitionVersion, c.consentVersion ?? 1]); const group = groups.get(key) ?? []; group.push(c); groups.set(key, group) }
     const valid = [...groups.values()].filter(g => { const markers = g.filter(c => c.metricKey === '__publication__'); return markers.length === 3 && markers.every(c => c.state === 'closed') && g.every(c => c.revision === markers[0].revision && c.state === 'closed') }).flat()
     const cells = valid.filter(c => c.cohortLocalDate >= from)
     const prior = valid.filter(c => c.cohortLocalDate < from)
@@ -139,7 +142,7 @@ export async function getOwnerAnalyticsReport(input: unknown = {}, now = new Dat
     {
       // Discover by elapsed time BEFORE applying calendar bounds in each source's frozen zone.
       // Four elapsed days cover three local calendar dates plus offset/DST boundaries.
-      const where = { businessId, startedAt: { gte: new Date(+now - 4 * policy.conversionWindowMs), lte: now } }
+      const where = { businessId, consentVersion: 1, startedAt: { gte: new Date(+now - 4 * policy.conversionWindowMs), lte: now } }
       const args = { by: ['cohortLocalDate', 'businessTimeZone', 'definitionVersion'] as ['cohortLocalDate', 'businessTimeZone', 'definitionVersion'], where, orderBy: { cohortLocalDate: 'asc' as const }, take: 101 }
       const sessions = await tx.analyticsSession.groupBy(args)
       const attempts = await tx.bookingFunnelAttempt.groupBy(args)
@@ -156,7 +159,7 @@ export async function getOwnerAnalyticsReport(input: unknown = {}, now = new Dat
       const range = analyticsDayRange(day, timezone)
       if (now >= range.closeAfter) continue
       try {
-        const raw = await readAnalyticsCohort(tx, { businessId, cohortLocalDate: day, businessTimeZone: timezone, definitionVersion: version, cohortEndAt: range.end, calculatedAt: now, cutoffAt: now, revision: 1, state: 'provisional', coverage: 'unknown', frozenAt: null, retentionExpiresAt: new Date(+range.end + policy.aggregateRetentionMs) }, range.start)
+        const raw = await readAnalyticsCohort(tx, { businessId, cohortLocalDate: day, businessTimeZone: timezone, definitionVersion: version, consentVersion: 1, cohortEndAt: range.end, calculatedAt: now, cutoffAt: now, revision: 1, state: 'provisional', coverage: 'unknown', frozenAt: null, retentionExpiresAt: new Date(+range.end + policy.aggregateRetentionMs) }, range.start)
         recentCells.push(...raw.cells)
         diagnostics.eligible += raw.diagnostics.eligible; diagnostics.affected += raw.diagnostics.affected; diagnostics.converted += raw.diagnostics.converted
         for (const [reason, n] of Object.entries(raw.diagnostics.reasons)) diagnostics.reasons[reason] = (diagnostics.reasons[reason] ?? 0) + n

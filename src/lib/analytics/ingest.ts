@@ -66,7 +66,7 @@ export type EventReceiptCategory = 'stored' | 'identical' | 'invalid_event' | 'w
 export interface BatchReceipt { receipts: { index: number; eventId: string | null; status: 'accepted' | 'replay' | 'rejected'; category: EventReceiptCategory }[]; captureGapRecorded?: true }
 
 const tokenSchema = z.string().regex(/^[A-Za-z0-9_-]{22,64}$/)
-const sessionSchema = z.strictObject({ bootstrapKey: z.uuid(), consent: z.literal(true), consentVersion: z.literal(1), acq: tokenSchema.optional(), utmSource: z.string().max(80).optional(), utmMedium: z.string().max(80).optional(), utmCampaign: z.string().max(128).optional(), referrerHost: z.string().max(253).regex(/^[a-z0-9.-]+$/i).optional() })
+const sessionSchema = z.strictObject({ bootstrapKey: z.uuid(), consent: z.literal(true), consentVersion: z.union([z.literal(1), z.literal(2)]), acq: tokenSchema.optional(), utmSource: z.string().max(80).optional(), utmMedium: z.string().max(80).optional(), utmCampaign: z.string().max(128).optional(), referrerHost: z.string().max(253).regex(/^[a-z0-9.-]+$/i).optional() })
 const attemptSchema = z.strictObject({ bootstrapKey: z.uuid(), credential: z.string().max(4096), entryKind: z.enum(['complete', 'partial']) })
 export type AnalyticsSessionBootstrapInput = z.infer<typeof sessionSchema>
 export type AnalyticsAttemptBootstrapInput = z.infer<typeof attemptSchema>
@@ -85,13 +85,18 @@ export async function bootstrapAnalyticsSession(context: PublicAnalyticsContext,
   if (!parsed.success) throw new AnalyticsCaptureError('invalid_request')
   const data = parsed.data
   const claims = await withAnalyticsWrite(context.businessId, async (tx) => {
-    if (!await collectionIsOpen(tx, context.businessId)) throw new AnalyticsCaptureError('disabled')
     const existing = await tx.analyticsSession.findUnique({ where: { businessId_bootstrapKey: { businessId: context.businessId, bootstrapKey: data.bootstrapKey } } })
     if (existing) {
       if (existing.origin !== context.origin) throw new AnalyticsCaptureError('conflict')
+      if (existing.consentVersion !== data.consentVersion) throw new AnalyticsCaptureError('invalid_request')
       if (existing.expiresAt <= now || existing.startedAt > now) throw new AnalyticsCaptureError('expired')
       return claimsForSession(existing)
     }
+    // New sessions must use the active source contract. Existing sessions are
+    // handled above so a consent-version rotation can finish their original
+    // 24-hour window without relabelling them as the new version.
+    if (data.consentVersion !== config.consentVersion) throw new AnalyticsCaptureError('invalid_request')
+    if (!await collectionIsOpen(tx, context.businessId, config.consentVersion)) throw new AnalyticsCaptureError('disabled')
     if (!await reserveAnalyticsBudget({ businessId: context.businessId, cost: 1, now })) {
       await closeAnalyticsCollection(tx, context.businessId, now, 'budget')
       return null
@@ -103,7 +108,7 @@ export async function bootstrapAnalyticsSession(context: PublicAnalyticsContext,
     const referrerChannel = host && Object.hasOwn(referrerChannels, host) ? referrerChannels[host] : undefined
     const mediumSource = data.utmMedium ? data.utmMedium.toLowerCase() === 'referral' ? 'referral' : 'unknown' : undefined
     const acquisition = normalizeAcquisition({ verifiedLink: link, utmSource: data.utmSource || referrerChannel || mediumSource, referrer: host })
-    const created = await tx.analyticsSession.create({ data: { businessId: context.businessId, bootstrapKey: data.bootstrapKey, origin: context.origin, consentVersion: 1, definitionVersion: 1, startedAt: now, expiresAt: new Date(now.getTime() + policy.sessionWindowMs), retentionExpiresAt: new Date(now.getTime() + policy.rawRetentionMs), businessTimeZone: context.timezone, cohortLocalDate: new Date(formatInTimeZone(now, context.timezone, 'yyyy-MM-dd')), ...acquisition } })
+    const created = await tx.analyticsSession.create({ data: { businessId: context.businessId, bootstrapKey: data.bootstrapKey, origin: context.origin, consentVersion: config.consentVersion, definitionVersion: 1, startedAt: now, expiresAt: new Date(now.getTime() + policy.sessionWindowMs), retentionExpiresAt: new Date(now.getTime() + policy.rawRetentionMs), businessTimeZone: context.timezone, cohortLocalDate: new Date(formatInTimeZone(now, context.timezone, 'yyyy-MM-dd')), ...acquisition } })
     return claimsForSession(created)
   })
   if (!claims) throw new AnalyticsCaptureError('budget')
@@ -120,13 +125,17 @@ export async function bootstrapAnalyticsAttempt(context: PublicAnalyticsContext,
   const verified = liveParent ?? verifyExpiredAnalyticsParentForRecovery(data.credential, verificationContext)
   if (!verified || verified.scope !== 'session') throw new AnalyticsCaptureError('invalid_credential')
   const claims = await withAnalyticsWrite(context.businessId, async (tx) => {
-    if (!await collectionIsOpen(tx, context.businessId)) throw new AnalyticsCaptureError('disabled')
     const session = await tx.analyticsSession.findFirst({ where: { businessId: context.businessId, id: verified.sessionId, origin: context.origin } })
     if (!session || canonicalAnalyticsFingerprint(claimsForSession(session)) !== canonicalAnalyticsFingerprint(verified)) throw new AnalyticsCaptureError('invalid_credential')
+    // A session from the previous source contract may create/replay its
+    // already-authorized attempt until the original session/attempt deadline.
+    // A session using the active contract still depends on an open period.
+    if (session.consentVersion === config.consentVersion && !await collectionIsOpen(tx, context.businessId, config.consentVersion)) throw new AnalyticsCaptureError('disabled')
     if (session.bootstrapKey === data.bootstrapKey.toLowerCase()) throw new AnalyticsCaptureError('conflict')
     const existing = await tx.bookingFunnelAttempt.findUnique({ where: { businessId_bootstrapKey: { businessId: context.businessId, bootstrapKey: data.bootstrapKey } } })
     if (existing) {
       if (existing.sessionId !== session.id || existing.origin !== context.origin || existing.entryKind !== data.entryKind) throw new AnalyticsCaptureError('conflict')
+      if (existing.consentVersion !== session.consentVersion) throw new AnalyticsCaptureError('invalid_credential')
       if (existing.conversionDeadlineAt <= now || existing.startedAt > now || existing.startedAt < session.startedAt || existing.startedAt >= session.expiresAt) throw new AnalyticsCaptureError('expired')
       return claimsForAttempt(session, existing)
     }
@@ -136,7 +145,7 @@ export async function bootstrapAnalyticsAttempt(context: PublicAnalyticsContext,
       await closeAnalyticsCollection(tx, context.businessId, now, 'budget')
       return null
     }
-    const created = await tx.bookingFunnelAttempt.create({ data: { businessId: context.businessId, sessionId: session.id, bootstrapKey: data.bootstrapKey, origin: context.origin, startedAt: now, conversionDeadlineAt: new Date(now.getTime() + policy.conversionWindowMs), retentionExpiresAt: session.retentionExpiresAt, entryKind: data.entryKind, definitionVersion: 1, businessTimeZone: context.timezone, cohortLocalDate: new Date(formatInTimeZone(now, context.timezone, 'yyyy-MM-dd')), channel: session.channel, normalizationVersion: session.normalizationVersion, acquisitionLinkId: session.acquisitionLinkId } })
+    const created = await tx.bookingFunnelAttempt.create({ data: { businessId: context.businessId, sessionId: session.id, bootstrapKey: data.bootstrapKey, origin: context.origin, consentVersion: session.consentVersion, startedAt: now, conversionDeadlineAt: new Date(now.getTime() + policy.conversionWindowMs), retentionExpiresAt: session.retentionExpiresAt, entryKind: data.entryKind, definitionVersion: 1, businessTimeZone: context.timezone, cohortLocalDate: new Date(formatInTimeZone(now, context.timezone, 'yyyy-MM-dd')), channel: session.channel, normalizationVersion: session.normalizationVersion, acquisitionLinkId: session.acquisitionLinkId } })
     return claimsForAttempt(session, created)
   })
   if (!claims) throw new AnalyticsCaptureError('budget')
@@ -149,10 +158,13 @@ export async function ingestAnalyticsBatch(context: PublicAnalyticsContext, inpu
   const claims = verifyAnalyticsCredential(data.credential, { secret: config.secret, businessId: context.businessId, origin: context.origin, now })
   if (!claims) throw new AnalyticsCaptureError('invalid_credential')
   return withAnalyticsWrite(context.businessId, async (tx) => {
-    if (!await collectionIsOpen(tx, context.businessId)) throw new AnalyticsCaptureError('disabled')
     const session = await tx.analyticsSession.findFirst({ where: { businessId: context.businessId, id: claims.sessionId, origin: context.origin } })
     const attempt = claims.scope === 'attempt' ? await tx.bookingFunnelAttempt.findFirst({ where: { businessId: context.businessId, sessionId: claims.sessionId, id: claims.attemptId, origin: context.origin } }) : null
-    if (!session || (claims.scope === 'attempt' && !attempt) || canonicalAnalyticsFingerprint(attempt ? claimsForAttempt(session, attempt) : claimsForSession(session)) !== canonicalAnalyticsFingerprint(claims)) throw new AnalyticsCaptureError('invalid_credential')
+    if (!session || (claims.scope === 'attempt' && (!attempt || attempt.consentVersion !== session.consentVersion)) || canonicalAnalyticsFingerprint(attempt ? claimsForAttempt(session, attempt) : claimsForSession(session)) !== canonicalAnalyticsFingerprint(claims)) throw new AnalyticsCaptureError('invalid_credential')
+    // During a source-version rotation an already issued credential is still
+    // valid for its original bounded window. Same-version streams still obey
+    // the active collection gate, so an operator disable remains fail-closed.
+    if (session.consentVersion === config.consentVersion && !await collectionIsOpen(tx, context.businessId, config.consentVersion)) throw new AnalyticsCaptureError('disabled')
     const streamKey = attempt ? `attempt:${attempt.id}` : `session:${session.id}`
     const stream = attempt ?? session
     let count = stream.acceptedEventCount
