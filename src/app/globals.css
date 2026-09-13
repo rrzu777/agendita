@@ -50,42 +50,42 @@
 }
 
 :root {
-  --background: #fff8f1;
-  --foreground: #1e1b17;
+  --background: #f6f8f6;
+  --foreground: #20231f;
   --card: #ffffff;
-  --card-foreground: #1e1b17;
+  --card-foreground: #20231f;
   --popover: #ffffff;
-  --popover-foreground: #1e1b17;
-  --primary: #332920;
+  --popover-foreground: #20231f;
+  --primary: #20231f;
   --primary-foreground: #ffffff;
-  --secondary: #f4dbca;
-  --secondary-foreground: #332920;
-  --muted: #f4ede5;
-  --muted-foreground: #6d5b4e;
-  --accent: #efe0cd;
-  --accent-foreground: #332920;
+  --secondary: #f0f4f1;
+  --secondary-foreground: #20231f;
+  --muted: #f0f4f1;
+  --muted-foreground: #677069;
+  --accent: #f0f4f1;
+  --accent-foreground: #20231f;
   --destructive: #ba1a1a;
-  --border: #d0c4bc;
-  --input: #d0c4bc;
-  --ring: #695c51;
-  --chart-1: #4a3f35;
-  --chart-2: #6d5b4e;
-  --chart-3: #d4c4b6;
-  --chart-4: #f4dbca;
-  --chart-5: #efe0cd;
-  --radius: 0.5rem;
-  --sidebar: #faf3ea;
-  --sidebar-foreground: #1e1b17;
-  --sidebar-primary: #332920;
+  --border: #e2e7e2;
+  --input: #cfd7d0;
+  --ring: #4f5d54;
+  --chart-1: #4f5d54;
+  --chart-2: #74867b;
+  --chart-3: #9b6a78;
+  --chart-4: #b79065;
+  --chart-5: #81909f;
+  --radius: 0.875rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #20231f;
+  --sidebar-primary: #20231f;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f4dbca;
-  --sidebar-accent-foreground: #332920;
-  --sidebar-border: #d0c4bc;
-  --sidebar-ring: #695c51;
-  --surface-container: #f4ede5;
-  --surface-container-low: #faf3ea;
-  --surface-container-high: #eee7df;
-  --cream-shadow: 0 16px 48px rgba(51, 41, 32, 0.08);
+  --sidebar-accent: #f0f4f1;
+  --sidebar-accent-foreground: #20231f;
+  --sidebar-border: #e2e7e2;
+  --sidebar-ring: #4f5d54;
+  --surface-container: #f0f4f1;
+  --surface-container-low: #f6f8f6;
+  --surface-container-high: #e8eee9;
+  --cream-shadow: 0 12px 32px rgba(32, 35, 31, 0.06);
 }
 
 .dark {
@@ -131,6 +131,38 @@
   }
   html {
     @apply font-sans;
+    scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted-foreground) 45%, transparent) transparent;
+  }
+
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--muted-foreground) 45%, transparent);
+    background-clip: padding-box;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-business-theme] {
+    --primary: CanvasText !important;
+    --primary-foreground: Canvas !important;
+    --ring: Highlight !important;
   }
 }
 

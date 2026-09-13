@@ -32,6 +32,8 @@ describe('verifySettingsDraftBaseline', () => {
       addressText: '',
       city: 'Santiago',
       subdomain: 'mimosnails',
+      brandColor: '',
+      visualStyle: 'soft',
     }
     mockBusinessFindUniqueOrThrow.mockResolvedValue({
       ...current,
@@ -40,6 +42,7 @@ describe('verifySettingsDraftBaseline', () => {
       logoUrl: null,
       instagram: null,
       addressText: null,
+      brandColor: null,
     })
     const { verifySettingsDraftBaseline } = await import('@/server/actions/settings-draft-verifier')
 
@@ -59,6 +62,8 @@ describe('verifySettingsDraftBaseline', () => {
         addressText: true,
         city: true,
         subdomain: true,
+        brandColor: true,
+        visualStyle: true,
       },
     })
   })

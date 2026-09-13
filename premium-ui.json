@@ -1,0 +1,24 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["src"],
+  "locale": "es-CL",
+  "canonicalMap": "UX-CONTRACT.md",
+  "requiredCapabilities": ["Select/Listbox", "Date", "Form", "Scrollbar", "Toast", "CRUD"],
+  "ownership": {
+    "Select/Listbox": "native",
+    "Date": "native"
+  },
+  "requiredCommands": ["unit", "e2e", "typecheck", "lint", "build", "premium"],
+  "commands": {
+    "unit": "npm test",
+    "e2e": "npm run test:e2e",
+    "typecheck": "npm run typecheck",
+    "lint": "npm run lint",
+    "build": "npm run build",
+    "premium": "python3 /Users/robertozamorautrera/.codex/plugins/cache/openai-curated-remote/frontend-design-premium/1.4.0/skills/frontend-design-premium/scripts/audit_project.py . --mode strict"
+  },
+  "evidence": {
+    "crudFullFlow": "tests/e2e/settings.spec.ts",
+    "failurePaths": "tests/unit/profile-settings-form.test.tsx"
+  }
+}

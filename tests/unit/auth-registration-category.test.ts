@@ -98,6 +98,26 @@ describe('createBusinessForUser category templates', () => {
         expect.objectContaining({ businessId: 'biz-1', name: 'Corte de cabello' }),
       ]),
     })
+    expect(tx.business.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ visualStyle: 'contrast' }),
+    })
+  })
+
+  it('seeds a soft visual style for beauty categories without locking later edits', async () => {
+    const tx = setupTransaction()
+    const { createBusinessForUser } = await import('@/lib/business/create-for-user')
+
+    await createBusinessForUser({
+      userId: 'user-1',
+      email: 'owner@example.com',
+      name: 'Studio Uno',
+      subdomain: 'studiouno',
+      category: 'nails',
+    })
+
+    expect(tx.business.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ visualStyle: 'soft' }),
+    })
   })
 
   it('category other with useServiceTemplate does not create services', async () => {

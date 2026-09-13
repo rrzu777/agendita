@@ -7,6 +7,7 @@ import { VocabularyProvider } from '@/components/vocabulary-provider'
 import { UnsavedChangesProvider } from '@/components/dashboard/unsaved-changes-provider'
 import { DashboardTourProvider } from '@/components/dashboard/tours/dashboard-tour-provider'
 import { getDashboardToursEnabled } from '@/lib/env'
+import { BusinessTheme } from '@/components/theme/business-theme'
 
 export default async function DashboardLayout({
   children,
@@ -31,21 +32,23 @@ export default async function DashboardLayout({
   const toursEnabled = getDashboardToursEnabled()
 
   return (
-    <VocabularyProvider value={getVocabulary(userData.business.category)}>
-      <UnsavedChangesProvider>
-        <DashboardTourProvider
-          role={role}
-          onboardingCompleted={onboardingCompleted}
-          toursEnabled={toursEnabled}
-        >
-          <div className="flex min-h-screen bg-background text-foreground">
-            <DashboardSidebar user={userData.user} business={userData.business} role={role} />
-            <main className="min-w-0 flex-1 pb-24 md:pb-0">
-              {children}
-            </main>
-          </div>
-        </DashboardTourProvider>
-      </UnsavedChangesProvider>
-    </VocabularyProvider>
+    <BusinessTheme business={userData.business}>
+      <VocabularyProvider value={getVocabulary(userData.business.category)}>
+        <UnsavedChangesProvider>
+          <DashboardTourProvider
+            role={role}
+            onboardingCompleted={onboardingCompleted}
+            toursEnabled={toursEnabled}
+          >
+            <div className="flex min-h-screen bg-background text-foreground">
+              <DashboardSidebar user={userData.user} business={userData.business} role={role} />
+              <main className="min-w-0 flex-1 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-0">
+                {children}
+              </main>
+            </div>
+          </DashboardTourProvider>
+        </UnsavedChangesProvider>
+      </VocabularyProvider>
+    </BusinessTheme>
   )
 }

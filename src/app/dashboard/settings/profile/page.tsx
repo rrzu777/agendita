@@ -9,6 +9,7 @@ export default async function ProfileSettingsPage() {
     <ProfileSettingsForm
       businessId={business.id}
       slug={business.slug}
+      category={business.category}
       initialValues={toProfileSettingsFormValues(business)}
     />
   )

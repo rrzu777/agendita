@@ -51,7 +51,8 @@ const businessSettingsActions = await import('@/server/actions/business-settings
 const profileInput: ProfileSettingsInput = {
   name: 'Mi Negocio', bio: '', profileImageUrl: '', logoUrl: '',
   whatsapp: '9 1234 5678', instagram: '@minegocio', addressText: '',
-  city: 'Santiago', subdomain: 'mi-negocio',
+  city: 'Santiago', subdomain: 'mi-negocio', brandColor: '#B64D68',
+  visualStyle: 'soft',
 }
 
 const reservationInput: ReservationSettingsInput = {
@@ -74,6 +75,7 @@ describe('section-scoped business settings actions', () => {
       name: 'Mi Negocio', bio: null, profileImageUrl: null, logoUrl: null,
       whatsapp: '+56912345678', instagram: 'minegocio', addressText: null,
       city: 'Santiago', subdomain: 'mi-negocio',
+      brandColor: '#B64D68', visualStyle: 'soft',
       timezone: 'America/Santiago', slotStepMinutes: null, manualHoldHours: 24,
       requireBookingApproval: false, defaultMeetingUrl: null,
       selfServiceCutoffHours: 24, cancellationReminderEnabled: true,
@@ -253,10 +255,13 @@ describe('section-scoped business settings actions', () => {
 
     expect(call.where).toEqual({ id: 'biz-1' })
     expect(Object.keys(call.data).sort()).toEqual([
-      'addressText', 'bio', 'city', 'instagram', 'logoUrl', 'name',
-      'profileImageUrl', 'subdomain', 'whatsapp',
+      'addressText', 'bio', 'brandColor', 'city', 'instagram', 'logoUrl', 'name',
+      'profileImageUrl', 'subdomain', 'visualStyle', 'whatsapp',
     ])
-    expect(result).toMatchObject({ ok: true, data: { whatsapp: '+56912345678', bio: '' } })
+    expect(result).toMatchObject({
+      ok: true,
+      data: { whatsapp: '+56912345678', bio: '', brandColor: '#B64D68', visualStyle: 'soft' },
+    })
   })
 
   it('reservation update writes only reservation fields', async () => {

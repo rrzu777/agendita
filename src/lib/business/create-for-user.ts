@@ -19,6 +19,7 @@ import { generateDefaultSubdomain } from '@/lib/business/subdomain'
 import { randomBookingNumberBase } from '@/lib/bookings/number'
 import { RegistrationError } from '@/lib/auth/registration-error'
 import { DEFAULT_WEEKLY_SCHEDULE } from '@/lib/availability/weekly-schedule'
+import { defaultVisualStyleForCategory } from '@/lib/theme/business-theme'
 
 const BUSINESS_CATEGORIES = ['nails', 'barber', 'hair_salon', 'beauty', 'massage', 'therapy', 'other'] as const
 type BusinessCategoryInput = typeof BUSINESS_CATEGORIES[number]
@@ -109,6 +110,7 @@ export async function createBusinessForUser({ userId, email, name, subdomain, ca
       data: {
         name: name || 'Mi negocio',
         category: businessCategory,
+        visualStyle: defaultVisualStyleForCategory(businessCategory),
         slug,
         subdomain: finalSubdomain,
         ownerUserId: userId,

@@ -41,6 +41,8 @@ export function toProfileSettingsFormValues(business: {
   addressText: string | null
   city: string
   subdomain: string
+  brandColor: string | null
+  visualStyle: 'soft' | 'balanced' | 'contrast'
 }): ProfileSettingsInput {
   return {
     name: business.name,
@@ -52,6 +54,8 @@ export function toProfileSettingsFormValues(business: {
     addressText: business.addressText ?? '',
     city: business.city,
     subdomain: business.subdomain,
+    brandColor: business.brandColor ?? '',
+    visualStyle: business.visualStyle,
   }
 }
 

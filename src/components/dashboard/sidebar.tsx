@@ -8,12 +8,13 @@ import { GuardedLink, useUnsavedChanges } from '@/components/dashboard/unsaved-c
 import type { User } from '@supabase/supabase-js'
 import type { Business, BusinessRole } from '@prisma/client'
 import {
+  ChevronDown,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react'
 import { useVocabulary } from '@/components/vocabulary-provider'
-import { getDashboardNavItems, isDashboardNavItemActive } from '@/lib/dashboard/navigation'
+import { getDashboardNavGroups, isDashboardNavGroupActive, isDashboardNavItemActive } from '@/lib/dashboard/navigation'
 import { MobileMoreMenu } from '@/components/dashboard/mobile-more-menu'
 import { TourHelpMenu } from '@/components/dashboard/tours/tour-help-menu'
 
@@ -27,17 +28,20 @@ interface DashboardSidebarProps {
 
 export function DashboardSidebar({ user, business, role }: DashboardSidebarProps) {
   const v = useVocabulary()
-  const navItems = getDashboardNavItems(v, role)
+  const navGroups = getDashboardNavGroups(v, role)
   const pathname = usePathname()
   const userName = user.user_metadata?.name || user.email?.split('@')[0] || 'Usuario'
-  const mobileItems = navItems.filter((item) => item.mobile === 'primary')
-  const mobileMoreItems = navItems.filter((item) => item.mobile === 'more')
+  const mobileGroups = navGroups.filter((group) => group.mobile === 'primary')
+  const mobileMoreGroups = navGroups.filter((group) => group.mobile === 'more')
   const { hasUnsavedChanges, requestNavigation } = useUnsavedChanges()
   const allowSignOut = useRef(false)
 
   // Colapsado por defecto en tablet (md–lg) para dar aire al contenido; en
   // pantallas grandes arranca expandido. El usuario puede alternar y se recuerda.
   const [collapsed, setCollapsed] = useState(false)
+  const [openGroups, setOpenGroups] = useState<Set<string>>(
+    () => new Set(navGroups.filter((group) => group.items.length > 1).map((group) => group.key)),
+  )
 
   useEffect(() => {
     // Sincroniza el estado inicial desde un sistema externo (localStorage / media
@@ -52,6 +56,15 @@ export function DashboardSidebar({ user, business, role }: DashboardSidebarProps
     setCollapsed((prev) => {
       const next = !prev
       window.localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0')
+      return next
+    })
+  }
+
+  function toggleGroup(key: string) {
+    setOpenGroups((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
   }
@@ -73,7 +86,7 @@ export function DashboardSidebar({ user, business, role }: DashboardSidebarProps
       <aside
         className={cn(
           'sticky top-0 h-screen min-h-0 hidden shrink-0 flex-col border-r border-border/50 bg-sidebar transition-[width] duration-200 md:flex',
-          collapsed ? 'w-20' : 'w-72',
+          collapsed ? 'w-[5.125rem]' : 'w-[15.5rem]',
         )}
       >
         <div className={cn('flex items-center gap-2 p-4', collapsed ? 'justify-center' : 'justify-between px-6 pt-6')}>
@@ -92,7 +105,7 @@ export function DashboardSidebar({ user, business, role }: DashboardSidebarProps
             onClick={toggle}
             aria-label={collapsed ? 'Mostrar menú' : 'Ocultar menú'}
             title={collapsed ? 'Mostrar menú' : 'Ocultar menú'}
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            className="flex size-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             {collapsed ? <PanelLeftOpen className="size-5" /> : <PanelLeftClose className="size-5" />}
           </button>
@@ -103,44 +116,81 @@ export function DashboardSidebar({ user, business, role }: DashboardSidebarProps
           tabIndex={-1}
           className={cn('min-h-0 flex-1 overflow-y-auto', collapsed ? 'px-2' : 'px-4')}
         >
-          <ul className="space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon
-              const isActive = isDashboardNavItemActive(item, pathname)
-
-              const linkClassName = cn(
-                'flex items-center rounded-lg text-sm font-semibold transition-colors',
-                collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-4 py-3',
-                isActive
-                  ? 'bg-primary text-primary-foreground shadow-[0_10px_22px_rgba(51,41,32,0.14)]'
-                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-              )
-              const linkContent = (
-                <>
-                  <Icon className="size-5 shrink-0" />
-                  {!collapsed && item.label}
-                </>
-              )
+          <ul className="space-y-1.5">
+            {navGroups.map((group) => {
+              const Icon = group.icon
+              const isActive = isDashboardNavGroupActive(group, pathname)
+              const hasChildren = group.items.length > 1
+              const isOpen = openGroups.has(group.key) || isActive
+              const onlyItem = group.items[0]
 
               return (
-                <li key={item.href}>
-                  {item.href === '/dashboard/settings' ? (
+                <li key={group.key}>
+                  {!hasChildren ? (
                     <GuardedLink
-                      data-tour-id="payments-settings"
-                      href={item.href}
-                      title={collapsed ? item.label : undefined}
-                      className={linkClassName}
+                      data-tour-id={onlyItem.href === '/dashboard/settings' ? 'payments-settings' : undefined}
+                      href={group.href}
+                      aria-current={isActive ? 'page' : undefined}
+                      title={collapsed ? group.label : undefined}
+                      className={cn(
+                        'flex items-center rounded-lg text-sm font-semibold transition-colors',
+                        collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-4 py-3',
+                        isActive
+                          ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                          : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                      )}
                     >
-                      {linkContent}
+                      <Icon className="size-5 shrink-0" aria-hidden="true" />
+                      {!collapsed && group.label}
                     </GuardedLink>
                   ) : (
-                    <GuardedLink
-                      href={item.href}
-                      title={collapsed ? item.label : undefined}
-                      className={linkClassName}
-                    >
-                      {linkContent}
-                    </GuardedLink>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(group.key)}
+                        aria-expanded={isOpen}
+                        aria-label={collapsed ? group.label : undefined}
+                        title={collapsed ? group.label : undefined}
+                        className={cn(
+                          'flex min-h-11 w-full items-center rounded-lg py-2 text-left text-sm font-semibold transition-colors',
+                          collapsed ? 'justify-center px-0' : 'gap-3 px-4',
+                          isActive ? 'text-sidebar-primary' : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                        )}
+                      >
+                        <Icon className="size-5 shrink-0" aria-hidden="true" />
+                        {!collapsed && <span className="min-w-0 flex-1">{group.label}</span>}
+                        {!collapsed && <ChevronDown className={cn('size-4 transition-transform', isOpen && 'rotate-180')} aria-hidden="true" />}
+                      </button>
+                      {isOpen && (
+                        <ul className={cn(
+                          'mt-1 space-y-0.5',
+                          collapsed ? '' : 'ml-6 border-l border-sidebar-border pl-3',
+                        )}>
+                          {group.items.map((item) => {
+                            const ItemIcon = item.icon
+                            const itemActive = isDashboardNavItemActive(item, pathname)
+                            return (
+                              <li key={item.href}>
+                                <GuardedLink
+                                  href={item.href}
+                                  aria-current={itemActive ? 'page' : undefined}
+                                  title={collapsed ? item.label : undefined}
+                                  className={cn(
+                                    'flex min-h-11 items-center rounded-lg px-3 py-2 text-sm transition-colors',
+                                    collapsed && 'justify-center px-0',
+                                    itemActive
+                                      ? 'bg-sidebar-accent font-semibold text-sidebar-accent-foreground'
+                                      : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                                  )}
+                                >
+                                  {collapsed ? <ItemIcon className="size-4" aria-hidden="true" /> : item.label}
+                                </GuardedLink>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+                    </>
                   )}
                 </li>
               )
@@ -156,7 +206,7 @@ export function DashboardSidebar({ user, business, role }: DashboardSidebarProps
               <p className="truncate text-xs text-muted-foreground">{user.email}</p>
             </div>
           )}
-          <form action={signOut} onSubmit={handleSignOut}>
+          <form noValidate action={signOut} onSubmit={handleSignOut}>
             <button
               type="submit"
               title={collapsed ? 'Cerrar sesión' : undefined}
@@ -172,16 +222,16 @@ export function DashboardSidebar({ user, business, role }: DashboardSidebarProps
         </div>
       </aside>
 
-      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-border/60 bg-card/95 px-3 py-2 backdrop-blur md:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-border/60 bg-card/95 px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur md:hidden">
         <nav aria-label="Navegación principal del dashboard" className="mx-auto grid max-w-md grid-cols-4 gap-1">
-          {mobileItems.map((item) => {
-            const Icon = item.icon
-            const isActive = isDashboardNavItemActive(item, pathname)
+          {mobileGroups.map((group) => {
+            const Icon = group.icon
+            const isActive = isDashboardNavGroupActive(group, pathname)
 
             return (
               <GuardedLink
-                key={item.href}
-                href={item.href}
+                key={group.key}
+                href={group.href}
                 aria-current={isActive ? 'page' : undefined}
                 className={cn(
                   'flex flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-[11px] font-semibold transition-colors',
@@ -189,11 +239,11 @@ export function DashboardSidebar({ user, business, role }: DashboardSidebarProps
                 )}
               >
                 <Icon className="size-5" />
-                <span>{item.label}</span>
+                <span>{group.label}</span>
               </GuardedLink>
             )
           })}
-          <MobileMoreMenu items={mobileMoreItems} pathname={pathname} onSignOut={handleSignOut} />
+          <MobileMoreMenu groups={mobileMoreGroups} pathname={pathname} onSignOut={handleSignOut} />
         </nav>
       </div>
     </>
