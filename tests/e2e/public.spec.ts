@@ -121,9 +121,9 @@ test.describe('dashboard (e2e auth bypass)', () => {
     await page.goto('/dashboard')
     await page.waitForLoadState('networkidle')
     expect(page.url()).toContain('/dashboard')
-    await expect(page.getByRole('heading', { name: /Resumen de Mimos Nails/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Cabina del día' })).toBeVisible()
     await expect(page.getByText('Reservas hoy')).toBeVisible()
-    await expect(page.getByText('Próximas citas')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Agenda desde hoy' })).toBeVisible()
   })
 
   test('dashboard services page shows service list', async ({ page }) => {
@@ -263,7 +263,7 @@ test.describe('main beta flows', () => {
     await expect(page.getByText(serviceName)).toBeVisible({ timeout: 15000 })
     await page.waitForLoadState('networkidle')
 
-    await page.getByRole('link', { name: 'Disponibilidad' }).click()
+    await page.getByRole('complementary').getByRole('link', { name: 'Disponibilidad', exact: true }).click()
     await page.waitForURL('**/dashboard/availability')
     await selectTime(page, 'Lunes inicio', '10', '00')
     await page.getByRole('button', { name: 'Guardar', exact: true }).click()

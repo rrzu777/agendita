@@ -201,7 +201,7 @@ for (const scenario of [
       })
 
       await page.goto('/dashboard')
-      await expect(page.getByRole('heading', { name: /Resumen de Tours/ })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Cabina del día' })).toBeVisible()
       await expect(page.getByRole('heading', { name: 'Conoce Agendita en 2 minutos' })).toBeVisible()
       await expect(page.getByRole('dialog')).toHaveCount(0)
       await expectTourStatus(fixture, INTRO_TOUR, 'available')
@@ -249,7 +249,7 @@ for (const scenario of [
       await expect(focusTarget).toBeFocused()
 
       await page.reload()
-      await expect(page.getByRole('heading', { name: /Resumen de Tours/ })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Cabina del día' })).toBeVisible()
       if (scenario.width < 768) {
         await page.getByRole('button', { name: 'Más opciones' }).click()
       }
@@ -284,7 +284,7 @@ test('staff mobile navigation is role-filtered and never offers tours', async ({
     await authenticate(page, fixture)
     await page.setViewportSize({ width: 375, height: 812 })
     await page.goto('/dashboard')
-    await expect(page.getByRole('heading', { name: /Resumen de Tours/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Cabina del día' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Conoce Agendita en 2 minutos' })).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Más opciones' }).click()
