@@ -1,12 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { FormField } from '@/components/ui/form-field'
+import { useClientFormValidation } from '@/lib/forms/client-validation'
 
 type SubscriptionSummary = {
   status: string
@@ -50,20 +53,54 @@ export function AdminSubscriptionControls({ businessId, timezone, plans, subscri
   const [complimentaryUntil, setComplimentaryUntil] = useState('')
   const [complimentaryReason, setComplimentaryReason] = useState('')
   const [clearReason, setClearReason] = useState('')
+  const confirmationTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const configureTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const { errors: fieldErrors, validate, revalidateField } = useClientFormValidation()
+  const [pendingAction, setPendingAction] = useState<{
+    name: string
+    description: string
+    action: () => Promise<unknown>
+  } | null>(null)
 
-  async function execute(name: string, confirmation: string, action: () => Promise<unknown>) {
-    if (!window.confirm(confirmation)) return
-    setBusy(name)
+  function execute(
+    trigger: HTMLButtonElement,
+    name: string,
+    confirmation: string,
+    action: () => Promise<unknown>,
+  ) {
+    confirmationTriggerRef.current = trigger
+    setPendingAction({ name, description: confirmation, action })
+  }
+
+  async function runConfirmedAction() {
+    if (!pendingAction) return
+    setBusy(pendingAction.name)
     setMessage(null)
     try {
-      await action()
+      await pendingAction.action()
       setMessage('Acción completada')
       router.refresh()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Error inesperado')
     } finally {
       setBusy(null)
+      setPendingAction(null)
     }
+  }
+
+  function submitBillingConfiguration(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMessage(null)
+    if (!validate(event.currentTarget) || !configureTriggerRef.current) return
+    execute(
+      configureTriggerRef.current,
+      'configure',
+      `¿Guardar esta configuración${billingEnabled ? ' y habilitar el rollout' : ''}? Esto no realizará un cobro.`,
+      async () => {
+        const { adminConfigureBilling } = await import('@/server/actions/admin')
+        return adminConfigureBilling(businessId, { planId, trialDays: Number(trialDays), graceDays: Number(graceDays), billingEnabled })
+      },
+    )
   }
 
   if (!subscription) {
@@ -85,36 +122,38 @@ export function AdminSubscriptionControls({ businessId, timezone, plans, subscri
         <div><dt className="text-muted-foreground">Última reconciliación</dt><dd>{dateLabel(subscription.lastReconciledAt, timezone)}</dd></div>
       </dl>
 
-      <div className="space-y-3 border-t pt-4">
+      <form noValidate onSubmit={submitBillingConfiguration} onInput={revalidateField} className="space-y-3 border-t pt-4">
         <p className="font-semibold">Configuración de facturación</p>
         <div className="space-y-2">
-          <Label>Plan mensual</Label>
+          <Label htmlFor="billing-plan">Plan mensual <span aria-hidden="true">*</span></Label>
           <Select value={planId} onValueChange={setPlanId}>
-            <SelectTrigger><SelectValue placeholder="Selecciona un plan" /></SelectTrigger>
+            <SelectTrigger id="billing-plan" className="min-h-11" aria-required="true"><SelectValue placeholder="Selecciona un plan" /></SelectTrigger>
             <SelectContent>{plans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name} · ${plan.priceMonthly.toLocaleString('es-CL')}</SelectItem>)}</SelectContent>
           </Select>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2"><Label htmlFor="billing-trial">Días de trial</Label><Input id="billing-trial" type="number" min={0} max={365} value={trialDays} onChange={(event) => setTrialDays(event.target.value)} /></div>
-          <div className="space-y-2"><Label htmlFor="billing-grace">Días de gracia</Label><Input id="billing-grace" type="number" min={0} max={30} value={graceDays} onChange={(event) => setGraceDays(event.target.value)} /></div>
+          <FormField id="billing-trial" label="Días de prueba" required error={fieldErrors['billing-trial']}>
+            {(a11y) => <Input {...a11y} id="billing-trial" className="min-h-11" type="number" min={0} max={365} step={1} value={trialDays} onChange={(event) => setTrialDays(event.target.value)} required />}
+          </FormField>
+          <FormField id="billing-grace" label="Días de gracia" required error={fieldErrors['billing-grace']}>
+            {(a11y) => <Input {...a11y} id="billing-grace" className="min-h-11" type="number" min={0} max={30} step={1} value={graceDays} onChange={(event) => setGraceDays(event.target.value)} required />}
+          </FormField>
         </div>
-        <Label className="justify-between rounded-md border p-3">Habilitar rollout de cobro <Switch checked={billingEnabled} onCheckedChange={setBillingEnabled} /></Label>
-        <Button className="w-full" disabled={busy !== null || !planId} onClick={() => execute(
-          'configure',
-          `¿Guardar esta configuración${billingEnabled ? ' y habilitar el rollout' : ''}? Esto no realizará un cobro.`,
-          async () => {
-            const { adminConfigureBilling } = await import('@/server/actions/admin')
-            return adminConfigureBilling(businessId, { planId, trialDays: Number(trialDays), graceDays: Number(graceDays), billingEnabled })
-          },
-        )}>{busy === 'configure' ? 'Guardando…' : 'Guardar configuración'}</Button>
-      </div>
+        <Label className="min-h-11 justify-between rounded-md border p-3">Habilitar rollout de cobro <Switch checked={billingEnabled} onCheckedChange={setBillingEnabled} /></Label>
+        <Button ref={configureTriggerRef} type="submit" className="min-h-11 w-full" disabled={busy !== null || !planId}>{busy === 'configure' ? 'Guardando…' : 'Guardar configuración'}</Button>
+      </form>
 
       <div className="space-y-3 border-t pt-4">
         <p className="font-semibold">Exención family & friends</p>
         {subscription.complimentaryReason && <p className="text-sm text-muted-foreground">Motivo actual: {subscription.complimentaryReason}</p>}
-        <Input type="date" value={complimentaryUntil} onChange={(event) => setComplimentaryUntil(event.target.value)} />
-        <Input placeholder="Motivo obligatorio" value={complimentaryReason} onChange={(event) => setComplimentaryReason(event.target.value)} />
-        <Button variant="outline" className="w-full" disabled={busy !== null || !complimentaryUntil || !complimentaryReason.trim()} onClick={() => execute(
+        <FormField id="complimentary-until" label="Vigencia de la exención" required>
+          {(a11y) => <Input {...a11y} id="complimentary-until" className="min-h-11" type="date" value={complimentaryUntil} onChange={(event) => setComplimentaryUntil(event.target.value)} required />}
+        </FormField>
+        <FormField id="complimentary-reason" label="Motivo" required>
+          {(a11y) => <Input {...a11y} id="complimentary-reason" className="min-h-11" value={complimentaryReason} onChange={(event) => setComplimentaryReason(event.target.value)} required />}
+        </FormField>
+        <Button variant="outline" className="min-h-11 w-full" disabled={busy !== null || !complimentaryUntil || !complimentaryReason.trim()} onClick={(event) => execute(
+          event.currentTarget,
           'exempt', '¿Asignar o extender esta exención? No se solicitará tarjeta ni se generará un cobro.',
           async () => {
             const { adminSetComplimentaryPeriod } = await import('@/server/actions/admin')
@@ -122,8 +161,11 @@ export function AdminSubscriptionControls({ businessId, timezone, plans, subscri
           },
         )}>{busy === 'exempt' ? 'Guardando…' : 'Asignar o extender exención'}</Button>
         {subscription.complimentaryUntil && <>
-          <Input placeholder="Motivo para retirar" value={clearReason} onChange={(event) => setClearReason(event.target.value)} />
-          <Button variant="destructive" className="w-full" disabled={busy !== null || !clearReason.trim()} onClick={() => execute(
+          <FormField id="complimentary-clear-reason" label="Motivo para retirar" required>
+            {(a11y) => <Input {...a11y} id="complimentary-clear-reason" className="min-h-11" value={clearReason} onChange={(event) => setClearReason(event.target.value)} required />}
+          </FormField>
+          <Button variant="destructive" className="min-h-11 w-full" disabled={busy !== null || !clearReason.trim()} onClick={(event) => execute(
+            event.currentTarget,
             'clear', '¿Retirar la exención? Esto no cobrará ni creará un checkout automáticamente.',
             async () => {
               const { adminClearComplimentaryPeriod } = await import('@/server/actions/admin')
@@ -133,13 +175,35 @@ export function AdminSubscriptionControls({ businessId, timezone, plans, subscri
         </>}
       </div>
 
-      <Button variant="outline" className="w-full" disabled={busy !== null || !subscription.environment} onClick={() => execute(
+      <Button variant="outline" className="min-h-11 w-full" disabled={busy !== null || !subscription.environment} onClick={(event) => execute(
+        event.currentTarget,
         'reconcile', '¿Consultar Mercado Pago y aplicar únicamente el estado autoritativo?',
         async () => {
           const { adminReconcileSubscription } = await import('@/server/actions/admin')
           return adminReconcileSubscription(businessId)
         },
       )}>{busy === 'reconcile' ? 'Reconciliando…' : 'Reconciliar con proveedor'}</Button>
+
+      <Dialog open={pendingAction !== null} onOpenChange={(open) => { if (!open && busy === null) setPendingAction(null) }}>
+        <DialogContent
+          showCloseButton={false}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            confirmationTriggerRef.current?.focus()
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Confirmar acción administrativa</DialogTitle>
+            <DialogDescription>{pendingAction?.description}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild><Button size="form" variant="outline" className="min-h-11" disabled={busy !== null} onClick={() => window.setTimeout(() => confirmationTriggerRef.current?.focus(), 0)}>Volver</Button></DialogClose>
+            <Button size="form" variant={pendingAction?.name === 'clear' ? 'destructive' : 'default'} className="min-h-11" disabled={busy !== null || !pendingAction} onClick={runConfirmedAction}>
+              {busy !== null ? 'Procesando…' : 'Confirmar acción'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

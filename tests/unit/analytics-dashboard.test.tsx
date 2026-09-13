@@ -5,11 +5,19 @@ import Loading from '@/app/dashboard/metricas/loading'
 import { reduceFunnelAttempt } from '@/lib/analytics/funnel'
 import { aggregateDailyMetrics } from '@/lib/analytics/daily-metrics'
 import { attempt, booking, completePath, coverage, now } from '../helpers/analytics-fixtures'
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }), usePathname: () => '/dashboard/metricas' }))
+vi.mock('@/components/dashboard/unsaved-changes-provider', () => ({ GuardedLink: ({ href, children, ...props }: React.ComponentProps<'a'> & { href: string }) => <a href={href} {...props}>{children}</a> }))
 
 import { analyticsDashboardFixture as report } from '../helpers/analytics-dashboard-fixture'
 
 describe('AnalyticsDashboard', () => {
+  it('puts operational opportunities before capture health and methodology', () => {
+    const markup = renderToStaticMarkup(<AnalyticsDashboard report={report} />)
+
+    expect(markup.indexOf('Oportunidades para revisar')).toBeLessThan(markup.indexOf('Salud de la medición'))
+    expect(markup).toContain('<details')
+    expect(markup).toContain('Metodología y salud de captura')
+  })
   it('labels a complete path with two bookings as one service conversion without observed interest', () => {
     // A missing consideration event is not a missing path; close its sequence gap too.
     const events = completePath().filter(row => row.event.type !== 'service_considered').map((row, index) => ({ ...row, event: { ...row.event, sequence: index + 1 } }))
@@ -69,7 +77,7 @@ describe('AnalyticsDashboard', () => {
   })
   it('keeps an explicit range through the actual async page and rendered next-page link', async () => {
     vi.resetModules()
-    vi.doMock('@/lib/auth/server', () => ({ requireBusinessRole: vi.fn().mockResolvedValue({}) }))
+    vi.doMock('@/lib/auth/server', () => ({ requireBusinessRole: vi.fn().mockResolvedValue({ business: { category: 'other' }, role: 'owner' }) }))
     vi.doMock('@/server/analytics/reports', () => ({ getOwnerAnalyticsReport: vi.fn().mockResolvedValue({ ...report, services: { ...report.services, total: 50 } }) }))
     vi.doMock('@/components/dashboard/header', () => ({ DashboardHeader: () => <header /> }))
     try {
@@ -154,7 +162,7 @@ describe('AnalyticsDashboard', () => {
 
   it('passes implicit preset 28 from the actual async page when searchParams is empty', async () => {
     vi.resetModules()
-    const requireBusinessRole = vi.fn().mockResolvedValue({})
+    const requireBusinessRole = vi.fn().mockResolvedValue({ business: { category: 'other' }, role: 'owner' })
     const getOwnerAnalyticsReport = vi.fn().mockResolvedValue(report)
     vi.doMock('@/lib/auth/server', () => ({ requireBusinessRole }))
     vi.doMock('@/server/analytics/reports', () => ({ getOwnerAnalyticsReport }))

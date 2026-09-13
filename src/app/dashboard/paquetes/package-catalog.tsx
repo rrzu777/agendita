@@ -1,12 +1,15 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { upsertPackageProduct, archivePackageProduct } from '@/server/actions/packages'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatMoney } from '@/lib/money'
 import { useVocabulary } from '@/components/vocabulary-provider'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { FormField } from '@/components/ui/form-field'
+import { useClientFormValidation } from '@/lib/forms/client-validation'
 
 type Service = { id: string; name: string; price: number }
 type PackageProduct = {
@@ -44,11 +47,15 @@ export function PackageCatalog({
   const [isPending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<PackageProduct | null>(null)
+  const [archiveCandidate, setArchiveCandidate] = useState<PackageProduct | null>(null)
+  const { errors: fieldErrors, validate, revalidateField } = useClientFormValidation()
+  const archiveTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
     const form = e.currentTarget
+    if (!validate(form)) return
     const fd = new FormData(form)
     const appliesToAll = fd.get('appliesToAll') === 'on'
     const data = {
@@ -80,7 +87,6 @@ export function PackageCatalog({
   }
 
   function onArchive(id: string) {
-    if (!window.confirm('¿Desactivar este paquete?')) return
     start(async () => {
       try {
         const res = await archivePackageProduct(id)
@@ -89,6 +95,7 @@ export function PackageCatalog({
           return
         }
         router.refresh()
+        setArchiveCandidate(null)
       } catch {
         setError('Error')
       }
@@ -121,6 +128,7 @@ export function PackageCatalog({
               <Button
                 size="sm"
                 variant="ghost"
+                className="min-h-11"
                 onClick={() => setEditing(p)}
                 disabled={isPending}
               >
@@ -130,7 +138,11 @@ export function PackageCatalog({
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => onArchive(p.id)}
+                  className="min-h-11"
+                  onClick={(event) => {
+                    archiveTriggerRef.current = event.currentTarget
+                    setArchiveCandidate(p)
+                  }}
                   disabled={isPending}
                 >
                   Desactivar
@@ -140,54 +152,29 @@ export function PackageCatalog({
           </li>
         ))}
         {products.length === 0 && (
-          <li className="py-2 text-sm text-muted-foreground">Todavía no hay paquetes.</li>
+          <li className="py-4 text-sm text-muted-foreground">Aún no hay paquetes configurados. Completa el formulario para crear el primero.</li>
         )}
       </ul>
 
-      <form onSubmit={onSubmit} className="mt-4 grid gap-2" key={editing?.id ?? 'new'}>
-        <Input
-          name="name"
-          placeholder="Nombre del paquete"
-          defaultValue={editing?.name}
-          required
-        />
-        <div className="flex flex-wrap gap-2">
-          <Input
-            name="quantity"
-            type="number"
-            min={1}
-            placeholder="Cantidad"
-            defaultValue={editing?.quantity ?? undefined}
-            required
-            className="w-32"
-          />
-          <Input
-            name="bonusQuantity"
-            type="number"
-            min={0}
-            placeholder="Bonus (opc.)"
-            defaultValue={editing?.bonusQuantity ?? undefined}
-            className="w-32"
-          />
-          <Input
-            name="price"
-            type="number"
-            min={0}
-            placeholder="Precio"
-            defaultValue={editing?.price ?? undefined}
-            required
-            className="w-32"
-          />
-          <Input
-            name="expiryDays"
-            type="number"
-            min={1}
-            placeholder="Días vencimiento (opc.)"
-            defaultValue={editing?.expiryDays ?? undefined}
-            className="w-44"
-          />
+      <form noValidate onSubmit={onSubmit} onInput={revalidateField} className="mt-6 grid gap-4" key={editing?.id ?? 'new'}>
+        <FormField id="package-name" label="Nombre del paquete" required error={fieldErrors['package-name']}>
+          {(a11y) => <Input {...a11y} id="package-name" name="name" density="form" defaultValue={editing?.name} required />}
+        </FormField>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormField id="package-quantity" label="Sesiones incluidas" required error={fieldErrors['package-quantity']}>
+            {(a11y) => <Input {...a11y} id="package-quantity" name="quantity" density="form" type="number" min={1} defaultValue={editing?.quantity ?? undefined} required />}
+          </FormField>
+          <FormField id="package-bonus" label="Sesiones adicionales" optional error={fieldErrors['package-bonus']}>
+            {(a11y) => <Input {...a11y} id="package-bonus" name="bonusQuantity" density="form" type="number" min={0} defaultValue={editing?.bonusQuantity ?? undefined} />}
+          </FormField>
+          <FormField id="package-price" label={`Precio (${currency})`} required error={fieldErrors['package-price']}>
+            {(a11y) => <Input {...a11y} id="package-price" name="price" density="form" type="number" min={0} defaultValue={editing?.price ?? undefined} required />}
+          </FormField>
+          <FormField id="package-expiry" label="Vigencia en días" optional help="Si queda vacío, el paquete no vence." error={fieldErrors['package-expiry']}>
+            {(a11y) => <Input {...a11y} id="package-expiry" name="expiryDays" density="form" type="number" min={1} defaultValue={editing?.expiryDays ?? undefined} />}
+          </FormField>
         </div>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex min-h-11 items-center gap-3 text-sm">
           <input
             type="checkbox"
             name="appliesToAll"
@@ -203,7 +190,7 @@ export function PackageCatalog({
             </summary>
             <div className="mt-2 grid grid-cols-2 gap-1">
               {services.map((s) => (
-                <label key={s.id} className="flex items-center gap-2">
+                <label key={s.id} className="flex min-h-11 items-center gap-3">
                   <input
                     type="checkbox"
                     name={`svc_${s.id}`}
@@ -216,7 +203,7 @@ export function PackageCatalog({
             </div>
           </details>
         )}
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex min-h-11 items-center gap-3 text-sm">
           <input
             type="checkbox"
             name="isActive"
@@ -225,9 +212,9 @@ export function PackageCatalog({
           />
           Activo
         </label>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <div className="flex gap-2">
-          <Button type="submit" size="sm" disabled={isPending}>
+          <Button type="submit" size="sm" className="min-h-11" disabled={isPending}>
             {editing ? 'Guardar' : 'Crear paquete'}
           </Button>
           {editing && (
@@ -235,6 +222,7 @@ export function PackageCatalog({
               type="button"
               size="sm"
               variant="ghost"
+              className="min-h-11"
               onClick={() => setEditing(null)}
             >
               Cancelar
@@ -242,6 +230,27 @@ export function PackageCatalog({
           )}
         </div>
       </form>
+
+      <Dialog open={archiveCandidate !== null} onOpenChange={(open) => { if (!open && !isPending) setArchiveCandidate(null) }}>
+        <DialogContent
+          showCloseButton={false}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            archiveTriggerRef.current?.focus()
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Desactivar {archiveCandidate?.name}</DialogTitle>
+            <DialogDescription>El paquete dejará de ofrecerse para nuevas compras. Las compras existentes no se modifican.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild><Button size="form" variant="outline" className="min-h-11" disabled={isPending} onClick={() => window.setTimeout(() => archiveTriggerRef.current?.focus(), 0)}>Conservar paquete</Button></DialogClose>
+            <Button size="form" variant="destructive" className="min-h-11" disabled={isPending || !archiveCandidate} onClick={() => archiveCandidate && onArchive(archiveCandidate.id)}>
+              {isPending ? 'Desactivando…' : 'Desactivar paquete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }

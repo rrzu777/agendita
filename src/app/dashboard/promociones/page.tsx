@@ -13,8 +13,10 @@ import { formatMoney } from '@/lib/money'
 import { getVocabulary } from '@/lib/vocabulary'
 import { PromotionForm, type EditPromo } from './promotion-form'
 import { PromotionRowActions } from './promotion-row-actions'
+import { DashboardSectionNav } from '@/components/dashboard/dashboard-section-nav'
 
 type Promo = Awaited<ReturnType<typeof listPromotions>>[number]
+export const metadata = { title: 'Promociones — Agendita' }
 type PromoStatus = 'Inactiva' | 'Programada' | 'Vencida' | 'Agotada' | 'Activa'
 
 // Estado derivado (no persistido). El orden importa: una promo inactiva se
@@ -110,6 +112,7 @@ export default async function PromocionesPage() {
         subtitle={`Crea y administra códigos de descuento para tus ${getVocabulary(userData.business.category).clients}.`}
       />
       <div className="p-5 md:p-10">
+        <DashboardSectionNav section="growth" vocabulary={getVocabulary(userData.business.category)} role={userData.role ?? 'staff'} />
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="font-heading text-2xl font-semibold tracking-tight text-primary">Tus promociones</h2>

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { formatMoney } from '@/lib/money'
 import { useVocabulary } from '@/components/vocabulary-provider'
+import { useClientFormValidation } from '@/lib/forms/client-validation'
 
 type Service = { id: string; name: string; price: number }
 type RedemptionOption = {
@@ -50,11 +51,13 @@ export function RedemptionCatalog({
   const [isPending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<RedemptionOption | null>(null)
+  const { errors: fieldErrors, validate, revalidateField } = useClientFormValidation()
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
     const form = e.currentTarget
+    if (!validate(form)) return
     const fd = new FormData(form)
     const appliesToAll = fd.get('appliesToAll') === 'on'
     const data = {
@@ -144,14 +147,14 @@ export function RedemptionCatalog({
         )}
       </ul>
 
-      <form onSubmit={onSubmit} className="mt-4 grid gap-4" key={editing?.id ?? 'new'}>
-        <FormField id="redemption-name" label="Nombre de la recompensa" required>
+      <form noValidate onSubmit={onSubmit} onInput={revalidateField} className="mt-4 grid gap-4" key={editing?.id ?? 'new'}>
+        <FormField id="redemption-name" label="Nombre de la recompensa" required error={fieldErrors['redemption-name']}>
           {(a11y) => (
             <Input {...a11y} id="redemption-name" name="name" density="form" defaultValue={editing?.name} required />
           )}
         </FormField>
         <div className="grid gap-3 sm:grid-cols-3">
-          <FormField id="redemption-rewardType" label="Tipo de beneficio">
+          <FormField id="redemption-rewardType" label="Tipo de beneficio" error={fieldErrors['redemption-rewardType']}>
             {(a11y) => (
               <NativeSelect {...a11y} id="redemption-rewardType" name="rewardType" density="form" defaultValue={editing?.rewardType ?? 'free_service'}>
                 <option value="free_service">Servicio gratis</option>
@@ -160,34 +163,34 @@ export function RedemptionCatalog({
               </NativeSelect>
             )}
           </FormField>
-          <FormField id="redemption-rewardValue" label="Valor del beneficio">
+          <FormField id="redemption-rewardValue" label="Valor del beneficio" error={fieldErrors['redemption-rewardValue']}>
             {(a11y) => (
               <Input {...a11y} id="redemption-rewardValue" name="rewardValue" type="number" density="form" defaultValue={editing?.rewardValue} />
             )}
           </FormField>
-          <FormField id="redemption-pointsCost" label="Costo en puntos" required>
+          <FormField id="redemption-pointsCost" label="Costo en puntos" required error={fieldErrors['redemption-pointsCost']}>
             {(a11y) => (
               <Input {...a11y} id="redemption-pointsCost" name="pointsCost" type="number" density="form" min={1} defaultValue={editing?.pointsCost ?? undefined} required />
             )}
           </FormField>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <FormField id="redemption-maxDiscount" label="Tope de descuento" help="Opcional.">
+          <FormField id="redemption-maxDiscount" label="Tope de descuento" help="Opcional." error={fieldErrors['redemption-maxDiscount']}>
             {(a11y) => (
               <Input {...a11y} id="redemption-maxDiscount" name="maxDiscount" type="number" density="form" defaultValue={editing?.maxDiscount ?? undefined} />
             )}
           </FormField>
-          <FormField id="redemption-grantExpiryDays" label="Vigencia" help="Opcional, en días.">
+          <FormField id="redemption-grantExpiryDays" label="Vigencia" help="Opcional, en días." error={fieldErrors['redemption-grantExpiryDays']}>
             {(a11y) => (
               <Input {...a11y} id="redemption-grantExpiryDays" name="grantExpiryDays" type="number" density="form" min={1} defaultValue={editing?.grantExpiryDays ?? undefined} />
             )}
           </FormField>
-          <FormField id="redemption-maxRedemptions" label="Stock total" help="Opcional.">
+          <FormField id="redemption-maxRedemptions" label="Stock total" help="Opcional." error={fieldErrors['redemption-maxRedemptions']}>
             {(a11y) => (
               <Input {...a11y} id="redemption-maxRedemptions" name="maxRedemptions" type="number" density="form" min={1} defaultValue={editing?.maxRedemptions ?? undefined} />
             )}
           </FormField>
-          <FormField id="redemption-maxPerCustomer" label={`Tope por ${vocabulary.client}`} help="Opcional.">
+          <FormField id="redemption-maxPerCustomer" label={`Tope por ${vocabulary.client}`} help="Opcional." error={fieldErrors['redemption-maxPerCustomer']}>
             {(a11y) => (
               <Input {...a11y} id="redemption-maxPerCustomer" name="maxPerCustomer" type="number" density="form" min={1} defaultValue={editing?.maxPerCustomer ?? undefined} />
             )}

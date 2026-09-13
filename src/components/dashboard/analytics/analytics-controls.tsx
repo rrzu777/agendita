@@ -14,25 +14,38 @@ export function AnalyticsControls({ report, periodMode }: { report: OwnerAnalyti
   const [mode, setMode] = useState(periodMode.days ? String(periodMode.days) : 'custom')
   const [filter, setFilter] = useState(report.filter.channel ? 'channel' : report.filter.acquisitionLinkId ? 'acquisitionLinkId' : report.filter.serviceId ? 'serviceId' : '')
   const [value, setValue] = useState(report.filter.channel ?? report.filter.acquisitionLinkId ?? report.filter.serviceId ?? '')
-  const [error, setError] = useState<string | null>(null)
-  function validate(event: FormEvent<HTMLFormElement>) {
-    setError(null)
-    if (mode !== 'custom') return
-    const values = new FormData(event.currentTarget)
-    const from = Date.parse(`${values.get('from')}T00:00:00Z`), to = Date.parse(`${values.get('to')}T00:00:00Z`)
+  const [issue, setIssue] = useState<{ message: string; field: 'from' | 'to' } | null>(null)
+  function periodIssue(form: HTMLFormElement) {
+    if (mode !== 'custom') return null
+    const values = new FormData(form)
+    const from = Date.parse(`${values.get('from')}T00:00:00Z`)
+    const to = Date.parse(`${values.get('to')}T00:00:00Z`)
     const today = Date.parse(`${formatInTimeZone(new Date(report.period.cutoffAt), report.period.timezone, 'yyyy-MM-dd')}T00:00:00Z`)
     const day = 86400000
-    const message = !Number.isFinite(from) || !Number.isFinite(to) ? 'Completa ambas fechas.' : to <= from ? 'La fecha final debe ser posterior a la inicial; el día final no se incluye.' : to - from > 90 * day || from < today - 90 * day || to > today + day ? 'Selecciona entre 1 y 90 días dentro de los últimos 90 días, como máximo hasta mañana (excluido).' : null
-    if (message) { event.preventDefault(); setError(message) }
+    if (!Number.isFinite(from)) return { message: 'Completa la fecha inicial.', field: 'from' as const }
+    if (!Number.isFinite(to)) return { message: 'Completa la fecha final.', field: 'to' as const }
+    if (to <= from) return { message: 'La fecha final debe ser posterior a la inicial; el día final no se incluye.', field: 'to' as const }
+    if (from < today - 90 * day) return { message: 'Selecciona una fecha inicial dentro de los últimos 90 días.', field: 'from' as const }
+    if (to > today + day) return { message: 'La fecha final puede ser como máximo mañana (excluido).', field: 'to' as const }
+    if (to - from > 90 * day) return { message: 'El período puede abarcar como máximo 90 días.', field: 'to' as const }
+    return null
   }
-  return <form action="/dashboard/metricas" method="get" onSubmit={validate} aria-label="Filtros de métricas" className="space-y-4 rounded-xl border border-border bg-card p-4">
+  function validate(event: FormEvent<HTMLFormElement>) {
+    const nextIssue = periodIssue(event.currentTarget)
+    setIssue(nextIssue)
+    if (!nextIssue) return
+    event.preventDefault()
+    const field = event.currentTarget.elements.namedItem(nextIssue.field)
+    if (field instanceof HTMLElement) field.focus()
+  }
+  return <form noValidate action="/dashboard/metricas" method="get" onSubmit={validate} onInput={event => { if (issue) setIssue(periodIssue(event.currentTarget)) }} aria-label="Filtros de métricas" className="space-y-4 rounded-xl border border-border bg-card p-4">
     <div className="grid gap-3 sm:grid-cols-3">
-      <label className="space-y-2 text-sm font-medium"><span>Período</span><NativeSelect aria-label="Período de métricas" name={mode === 'custom' ? undefined : 'days'} value={mode} onChange={event => setMode(event.target.value)} className="h-10 bg-background">{[7, 28, 90].map(days => <option key={days} value={days}>{days} días</option>)}<option value="custom">Personalizado</option></NativeSelect></label>
-      <label className="space-y-2 text-sm font-medium"><span>Desde (incluido)</span><Input type="date" name="from" defaultValue={report.period.from} disabled={mode !== 'custom'} required /></label>
-      <label className="space-y-2 text-sm font-medium"><span>Hasta (excluido)</span><Input type="date" name="to" defaultValue={report.period.to} disabled={mode !== 'custom'} required /></label>
+      <label className="space-y-2 text-sm font-medium"><span>Período</span><NativeSelect aria-label="Período de métricas" name={mode === 'custom' ? undefined : 'days'} value={mode} onChange={event => { setMode(event.target.value); setIssue(null) }} className="h-10 bg-background">{[7, 28, 90].map(days => <option key={days} value={days}>{days} días</option>)}<option value="custom">Personalizado</option></NativeSelect></label>
+      <label className="space-y-2 text-sm font-medium"><span>Desde (incluido)</span><Input type="date" name="from" defaultValue={report.period.from} disabled={mode !== 'custom'} required aria-invalid={issue?.field === 'from'} aria-describedby={issue?.field === 'from' ? 'analytics-period-error' : undefined} /></label>
+      <label className="space-y-2 text-sm font-medium"><span>Hasta (excluido)</span><Input type="date" name="to" defaultValue={report.period.to} disabled={mode !== 'custom'} required aria-invalid={issue?.field === 'to'} aria-describedby={issue?.field === 'to' ? 'analytics-period-error' : undefined} /></label>
     </div>
     <p className="text-xs text-muted-foreground">El día inicial se incluye y el final no. Puedes consultar de 1 a 90 días, dentro de los últimos 90 días.</p>
-    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+    {issue && <p id="analytics-period-error" role="alert" className="text-sm text-destructive">{issue.message}</p>}
     <div className="grid gap-3 sm:grid-cols-2">
       <label className="space-y-2 text-sm font-medium"><span>Filtro histórico</span><NativeSelect aria-label="Tipo de filtro histórico" value={filter} onChange={event => { setFilter(event.target.value); setValue('') }} className="h-10 bg-background"><option value="">Sin filtro</option><option value="channel">Canal</option><option value="acquisitionLinkId">Enlace</option><option value="serviceId">Servicio</option></NativeSelect></label>
       {filter === 'channel' && <label className="space-y-2 text-sm font-medium"><span>Canal histórico</span><NativeSelect name="channel" aria-label="Canal histórico" value={value} required onChange={event => setValue(event.target.value)} className="h-10 bg-background"><option value="">Selecciona un canal</option>{Object.entries(channels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</NativeSelect></label>}

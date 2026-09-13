@@ -9,6 +9,9 @@ import { AutomaticRules } from './automatic-rules'
 import { PresetPicker } from './preset-picker'
 import { presetCatalog } from '@/lib/loyalty/presets'
 import { getVocabulary } from '@/lib/vocabulary'
+import { DashboardSectionNav } from '@/components/dashboard/dashboard-section-nav'
+
+export const metadata = { title: 'Fidelización — Agendita' }
 
 export default async function FidelizacionPage() {
   const userData = await getCurrentUserWithBusiness()
@@ -39,6 +42,7 @@ export default async function FidelizacionPage() {
         subtitle={`Programa de puntos para tus ${vocabulary.clients}.`}
       />
       <div className="p-5 md:p-10">
+        <DashboardSectionNav section="growth" vocabulary={vocabulary} role={userData.role ?? 'staff'} />
         <div className="mx-auto max-w-2xl">
           <PresetPicker presets={presetCatalog(vocabulary)} hasActiveProgram={config?.isActive ?? false} />
           <LoyaltyConfigForm config={config} />

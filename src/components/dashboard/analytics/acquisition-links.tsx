@@ -96,11 +96,11 @@ export function AcquisitionLinks({ links, pagination = { label: `Página ${links
           <tbody>{links.rows.length === 0 ? <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">No hay enlaces creados todavía.</td></tr> : links.rows.map((link) => (
             <tr key={link.id} className="border-b hover:bg-muted/50">
               <td className="p-2 font-medium text-primary">
-                {editing?.id === link.id ? <form aria-label="Editar etiqueta actual" aria-busy={pending} className="min-w-48 space-y-2" onSubmit={event => { event.preventDefault(); rename() }}>
+                {editing?.id === link.id ? <form noValidate aria-label="Editar etiqueta actual" aria-busy={pending} className="min-w-48 space-y-2" onSubmit={event => { event.preventDefault(); if (!editing.label.trim()) { setEditError('Completa este campo.'); document.getElementById(`analytics-label-${link.id}`)?.focus(); return } rename() }}>
                   <Label htmlFor={`analytics-label-${link.id}`}>Etiqueta actual del enlace</Label>
-                  <Input id={`analytics-label-${link.id}`} aria-label="Etiqueta actual del enlace" value={editing.label} maxLength={80} required disabled={pending} onChange={event => setEditing({ id: link.id, label: event.target.value })} />
+                  <Input id={`analytics-label-${link.id}`} aria-label="Etiqueta actual del enlace" aria-invalid={Boolean(editError)} aria-describedby={editError ? `analytics-label-${link.id}-error` : undefined} value={editing.label} maxLength={80} required disabled={pending} onChange={event => { setEditing({ id: link.id, label: event.target.value }); setEditError(null) }} />
                   <p className="text-xs font-normal text-muted-foreground">Sólo cambia el nombre visible actual, no el origen ni su historia.</p>
-                  {editError && <p role="alert" className="text-sm text-destructive">{editError}</p>}
+                  {editError && <p id={`analytics-label-${link.id}-error`} role="alert" className="text-sm text-destructive">{editError}</p>}
                   <div className="flex gap-2"><Button type="submit" size="sm" aria-label="Guardar etiqueta" disabled={pending || !editing.label.trim()}>{pending ? 'Guardando…' : 'Guardar etiqueta'}</Button><Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => { setEditing(null); setEditError(null) }}>Cancelar edición</Button></div>
                 </form> : link.campaignName}
                 <span className="block text-xs font-normal text-muted-foreground">{link.promotionId ? `Promoción asociada: ${promotionLabels[link.promotionId] ?? `nombre no disponible · ${link.promotionId}`}` : 'Sin promoción asociada'}</span>

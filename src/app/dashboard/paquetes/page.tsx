@@ -6,6 +6,10 @@ import { getServices } from '@/server/actions/services'
 import { formatMoney } from '@/lib/money'
 import { PendingPackageTransfers, type PendingPackageTransferItem } from '@/components/packages/pending-package-transfers'
 import { PackageCatalog } from './package-catalog'
+import { DashboardSectionNav } from '@/components/dashboard/dashboard-section-nav'
+import { getVocabulary } from '@/lib/vocabulary'
+
+export const metadata = { title: 'Paquetes — Agendita' }
 
 export default async function PaquetesPage() {
   const userData = await getCurrentUserWithBusiness()
@@ -41,6 +45,7 @@ export default async function PaquetesPage() {
         subtitle="Vendé paquetes de sesiones prepagadas."
       />
       <div className="p-5 md:p-10">
+        <DashboardSectionNav section="growth" vocabulary={getVocabulary(userData.business.category)} role={userData.role ?? 'staff'} />
         <div className="mx-auto max-w-2xl">
           <p className="text-sm text-muted-foreground">
             Total vendido: <span className="font-semibold text-primary">{formatMoney(salesTotal, currency)}</span>

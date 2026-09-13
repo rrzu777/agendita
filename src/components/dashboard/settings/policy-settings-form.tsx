@@ -110,7 +110,7 @@ export function PolicySettingsForm({ businessId, initialValues }: PolicySettings
   }
 
   return (
-    <form onSubmit={submitForm} className="min-w-0 space-y-10">
+    <form noValidate onSubmit={submitForm} className="min-w-0 space-y-10">
       {draft.recovery === 'restored' && (
         <p role="status" className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
           Recuperamos un borrador local para que puedas continuar editando.
@@ -132,6 +132,7 @@ export function PolicySettingsForm({ businessId, initialValues }: PolicySettings
           <FormField
             id="policy-cutoff"
             label="Ventana de autogestión (horas)"
+            required
             error={errors.selfServiceCutoffHours?.message}
             help={<>Hasta cuántas horas antes tus {vocabulary.clients} pueden cancelar o reprogramar por su cuenta. 0 = sin límite.</>}
           >
@@ -152,16 +153,17 @@ export function PolicySettingsForm({ businessId, initialValues }: PolicySettings
           <FormField
             id="policy-cancellation"
             label="Condiciones adicionales"
+            optional
             error={errors.cancellationPolicy?.message}
             help="Complementan la política y no deben repetir ni contradecir el límite estructurado de horas, que tiene prioridad."
           >
-            {(a11y) => <Textarea id="policy-cancellation" density="form" {...register('cancellationPolicy')} rows={3} {...a11y} />}
+            {(a11y) => <Textarea id="policy-cancellation" className="resize-none" density="form" {...register('cancellationPolicy')} rows={3} {...a11y} />}
           </FormField>
-          <FormField id="policy-booking" label="Política de reserva" error={errors.bookingPolicy?.message}>
-            {(a11y) => <Textarea id="policy-booking" density="form" {...register('bookingPolicy')} rows={3} {...a11y} />}
+          <FormField id="policy-booking" label="Política de reserva" optional error={errors.bookingPolicy?.message}>
+            {(a11y) => <Textarea id="policy-booking" className="resize-none" density="form" {...register('bookingPolicy')} rows={3} {...a11y} />}
           </FormField>
-          <FormField id="policy-deposit" label="Política de abono" error={errors.depositPolicy?.message}>
-            {(a11y) => <Textarea id="policy-deposit" density="form" {...register('depositPolicy')} rows={3} {...a11y} />}
+          <FormField id="policy-deposit" label="Política de abono" optional error={errors.depositPolicy?.message}>
+            {(a11y) => <Textarea id="policy-deposit" className="resize-none" density="form" {...register('depositPolicy')} rows={3} {...a11y} />}
           </FormField>
         </SettingsFormSection>
       </fieldset>

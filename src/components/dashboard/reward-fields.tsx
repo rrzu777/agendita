@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import type { ClientFieldErrors } from '@/lib/forms/client-validation'
 
 export interface RewardFieldsValue {
   rewardType: 'percentage' | 'fixed_amount' | 'free_service'
@@ -24,11 +25,13 @@ export function RewardFields({
   onChange,
   services,
   currency,
+  errors = {},
 }: {
   value: RewardFieldsValue
   onChange: (next: RewardFieldsValue) => void
   services: { id: string; name: string }[]
   currency: string
+  errors?: ClientFieldErrors
 }) {
   const update = (patch: Partial<RewardFieldsValue>) => onChange({ ...value, ...patch })
 
@@ -64,13 +67,13 @@ export function RewardFields({
 
       {value.rewardType !== 'free_service' && (
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField id="reward-value" label={value.rewardType === 'percentage' ? 'Porcentaje (1–100)' : `Monto (${currency})`} required>
+          <FormField id="reward-value" label={value.rewardType === 'percentage' ? 'Porcentaje (1–100)' : `Monto (${currency})`} required error={errors['reward-value']}>
             {(a11y) => (
               <Input id="reward-value" type="number" min={value.rewardType === 'percentage' ? 1 : 0} max={value.rewardType === 'percentage' ? 100 : undefined} value={value.rewardValue} onChange={(e) => update({ rewardValue: e.target.value })} required density="form" {...a11y} />
             )}
           </FormField>
           {value.rewardType === 'percentage' && (
-            <FormField id="reward-max-discount" label="Descuento máximo" help="Opcional">
+            <FormField id="reward-max-discount" label="Descuento máximo" help="Opcional" error={errors['reward-max-discount']}>
               {(a11y) => <Input id="reward-max-discount" type="number" min={1} value={value.maxDiscount} onChange={(e) => update({ maxDiscount: e.target.value })} density="form" {...a11y} />}
             </FormField>
           )}

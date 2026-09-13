@@ -3,12 +3,17 @@ import Link from 'next/link'
 import { getPlatformAdminUser } from '@/lib/auth/user'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
-import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { TruncatedCell } from '@/components/ui/truncated-cell'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
+import { DashboardPageHeader } from '@/components/dashboard/dashboard-page-header'
+import { DashboardPanel } from '@/components/dashboard/dashboard-panel'
+import { KpiStrip } from '@/components/dashboard/kpi-strip'
+import { buttonVariants } from '@/components/ui/button'
+
+export const metadata = { title: 'Administración — Agendita' }
 
 export default async function AdminPage() {
   const user = await getPlatformAdminUser()
@@ -32,34 +37,31 @@ export default async function AdminPage() {
 
   const totalBookings = businesses.reduce((sum, b) => sum + b._count.bookings, 0)
   const activeBusinesses = businesses.filter(b => b.subscriptionStatus !== 'cancelled').length
+  const attentionBusinesses = businesses.filter((business) =>
+    business.subscriptionStatus === 'past_due' || business.subscriptionStatus === 'suspended'
+  ).length
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-semibold text-primary">Panel de Administración</h1>
-        <p className="mt-1 text-muted-foreground">Soporte interno de Agendita</p>
-      </div>
+    <div className="-mx-6 -my-8">
+      <DashboardPageHeader title="Administración" subtitle="Estado operativo de las cuentas de Agendita." />
+      <div className="space-y-8 px-4 py-6 min-[1100px]:px-10">
+        <KpiStrip label="Resumen de cuentas" items={[
+          { label: 'Negocios registrados', value: businesses.length, description: 'Total en la plataforma' },
+          { label: 'Cuentas habilitadas', value: activeBusinesses, description: 'No canceladas' },
+          { label: 'Reservas registradas', value: totalBookings, description: 'Acumulado de las cuentas' },
+        ]} />
 
-      <div className="mb-8 grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardContent className="p-5">
-            <p className="text-sm font-semibold text-muted-foreground">Total negocios</p>
-            <p className="mt-1 text-3xl font-semibold text-primary">{businesses.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-5">
-            <p className="text-sm font-semibold text-muted-foreground">Negocios activos</p>
-            <p className="mt-1 text-3xl font-semibold text-primary">{activeBusinesses}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-5">
-            <p className="text-sm font-semibold text-muted-foreground">Total reservas</p>
-            <p className="mt-1 text-3xl font-semibold text-primary">{totalBookings}</p>
-          </CardContent>
-        </Card>
-      </div>
+        {attentionBusinesses > 0 && (
+          <DashboardPanel title="Requiere atención" description="Prioriza cuentas cuyo acceso o continuidad de pago puede estar afectado." tone="attention">
+            <p className="text-sm font-medium">{attentionBusinesses} {attentionBusinesses === 1 ? 'cuenta con pago pendiente o suspensión' : 'cuentas con pago pendiente o suspensión'}.</p>
+          </DashboardPanel>
+        )}
+
+        {businesses.length === 0 ? (
+          <DashboardPanel title="Aún no hay negocios registrados" description="La lista aparecerá cuando exista una cuenta en la plataforma.">
+            <Link href="/dashboard" className={buttonVariants({ variant: 'outline', size: 'form', className: 'min-h-11' })}>Volver al dashboard</Link>
+          </DashboardPanel>
+        ) : <>
 
       {/* Mobile: cards */}
       <div className="space-y-3 lg:hidden">
@@ -127,6 +129,8 @@ export default async function AdminPage() {
             ))}
           </TableBody>
         </Table>
+      </div>
+        </>}
       </div>
     </div>
   )

@@ -12,6 +12,10 @@ import { formatMoney } from '@/lib/money'
 import { TableMobileCard } from '@/components/ui/table-mobile-card'
 import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { SubscriptionActions } from './subscription-actions'
+import { DashboardSectionNav } from '@/components/dashboard/dashboard-section-nav'
+import { getVocabulary } from '@/lib/vocabulary'
+
+export const metadata = { title: 'Plan y facturación — Agendita' }
 
 const statusIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   trialing: Clock,
@@ -35,7 +39,7 @@ export default async function BillingPage({
   searchParams?: Promise<{ subscription?: string }>
 } = {}) {
   const callbackStatus = (await searchParams)?.subscription
-  const { business } = await requireSettingsPageAccess()
+  const { business, role } = await requireSettingsPageAccess()
   const { subscription, payments } = await getCurrentSubscription()
   const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL
 
@@ -44,6 +48,7 @@ export default async function BillingPage({
       <div>
         <DashboardHeader title="Facturación" subtitle="Gestiona tu plan y pagos de suscripción" />
         <div className="p-5 md:p-10">
+          <DashboardSectionNav section="finance" vocabulary={getVocabulary(business.category)} role={role} />
           <Card>
             <CardContent className="p-10 text-center">
               <CircleAlert className="mx-auto mb-3 size-10 text-muted-foreground" />
@@ -80,6 +85,7 @@ export default async function BillingPage({
     <div>
       <DashboardHeader title="Facturación" subtitle="Gestiona tu plan y pagos de suscripción" />
       <div className="p-5 md:p-10">
+        <DashboardSectionNav section="finance" vocabulary={getVocabulary(business.category)} role={role} />
         {callbackStatus && ['processing', 'active', 'failed'].includes(callbackStatus) && (
           <div className={cn(
             'mb-6 rounded-lg border p-4 text-sm',

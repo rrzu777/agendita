@@ -8,6 +8,9 @@ import {
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { getVocabulary } from '@/lib/vocabulary'
 import { ReviewsClient } from './reviews-client'
+import { DashboardSectionNav } from '@/components/dashboard/dashboard-section-nav'
+
+export const metadata = { title: 'Reseñas — Agendita' }
 
 export default async function ReviewsPage() {
   const userData = await getCurrentUserWithBusiness()
@@ -37,6 +40,7 @@ export default async function ReviewsPage() {
     <div>
       <DashboardHeader title="Reseñas" subtitle={`Modera y administra las reseñas de tus ${getVocabulary(userData.business.category).clients}.`} />
       <div className="p-5 md:p-10">
+        <DashboardSectionNav section="growth" vocabulary={getVocabulary(userData.business.category)} role={userData.role ?? 'staff'} />
         <ReviewsClient
           reviews={reviews}
           eligibleBookings={eligibleBookings}

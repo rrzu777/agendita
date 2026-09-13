@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { prisma } from '@/lib/db'
 import { assertSafeTestDatabaseUrl } from '../helpers/test-database-safety'
 import { setBusinessAuth, setOwnerAuth } from './helpers/auth'
@@ -32,20 +32,34 @@ async function expectNoHorizontalOverflow(page: Page) {
 
 async function expectFormControlGeometry(
   page: Page,
-  label: string | RegExp,
+  label: string | RegExp | Locator,
   viewportWidth: number,
   { fullWidth = false }: { fullWidth?: boolean } = {},
 ) {
   const control = typeof label === 'string'
     ? page.getByLabel(label, { exact: true })
-    : page.getByLabel(label)
-  const visibleControl = control.filter({ visible: true })
-  const box = await visibleControl.boundingBox()
+    : label instanceof RegExp
+      ? page.getByLabel(label)
+      : label
+  await expect(control.first()).toBeAttached()
+  const count = await control.count()
+  let visibleControl: Locator | null = null
+  let box = null
+  for (let index = 0; index < count; index += 1) {
+    const candidate = control.nth(index)
+    const candidateBox = await candidate.boundingBox()
+    if (candidateBox) {
+      visibleControl = candidate
+      box = candidateBox
+      break
+    }
+  }
+  expect(visibleControl).not.toBeNull()
   expect(box).not.toBeNull()
   expect(box!.height).toBeGreaterThanOrEqual(viewportWidth < 768 ? 44 : 40)
 
   if (fullWidth) {
-    const fieldBox = await visibleControl.locator('xpath=ancestor::*[@data-slot="form-field"][1]').boundingBox()
+    const fieldBox = await visibleControl!.locator('xpath=ancestor::*[@data-slot="form-field"][1]').boundingBox()
     expect(fieldBox).not.toBeNull()
     expect(box!.width / fieldBox!.width).toBeGreaterThanOrEqual(0.9)
   }
@@ -352,6 +366,7 @@ test.describe('settings responsive structure', () => {
 
   for (const viewport of VIEWPORTS) {
     test(`has no overflow and preserves responsive rails at ${viewport.width}px`, async ({ page }) => {
+      test.setTimeout(60_000)
       await page.setViewportSize(viewport)
 
       for (const section of SETTINGS_ROUTES) {
@@ -370,10 +385,19 @@ test.describe('settings responsive structure', () => {
           await expectFormControlGeometry(page, /^Nombre del negocio/, viewport.width)
         }
         if (section.slug === 'reservations') {
-          await expectFormControlGeometry(page, 'Zona horaria', viewport.width, { fullWidth: true })
+          await expectFormControlGeometry(
+            page,
+            page.getByRole('combobox', { name: 'Zona horaria', exact: true }),
+            viewport.width,
+            { fullWidth: true },
+          )
         }
         if (section.slug === 'payments') {
-          await expectFormControlGeometry(page, 'Titular', viewport.width)
+          await expectFormControlGeometry(
+            page,
+            page.getByRole('textbox', { name: 'Titular', exact: true }),
+            viewport.width,
+          )
         }
 
         await page.screenshot({

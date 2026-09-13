@@ -16,6 +16,10 @@ vi.mock('@/server/actions/subscriptions', () => ({
   cancelSubscriptionAction: vi.fn(),
 }))
 
+vi.mock('@/components/dashboard/unsaved-changes-provider', () => ({
+  GuardedLink: ({ href, children, ...props }: React.ComponentProps<'a'> & { href: string }) => <a href={href} {...props}>{children}</a>,
+}))
+
 import BillingPage from './page'
 
 const NOW = new Date('2026-08-11T12:00:00.000Z')

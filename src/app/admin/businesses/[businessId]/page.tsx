@@ -16,10 +16,16 @@ import { TABLE_COL, TABLE_MIN_WIDTH } from '@/components/ui/table-widths'
 import { AdminActions } from './admin-actions'
 import { CopyLinkButton } from './copy-link-button'
 import { AdminSubscriptionControls } from './admin-subscription-controls'
+import { DashboardPanel } from '@/components/dashboard/dashboard-panel'
+import { DashboardPageHeader } from '@/components/dashboard/dashboard-page-header'
+import { KpiStrip } from '@/components/dashboard/kpi-strip'
+import { buttonVariants } from '@/components/ui/button'
 
 interface BusinessDetailPageProps {
   params: Promise<{ businessId: string }>
 }
+
+export const metadata = { title: 'Detalle de negocio — Agendita' }
 
 export default async function BusinessDetailPage({ params }: BusinessDetailPageProps) {
   const user = await getPlatformAdminUser()
@@ -71,20 +77,17 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
     select: { id: true, name: true, priceMonthly: true },
     orderBy: { sortOrder: 'asc' },
   })
+  const accountNeedsAttention = status === 'past_due' || status === 'suspended' || status === 'cancelled'
 
   return (
-    <div>
-      <div className="mb-6 flex items-center gap-3">
-        <Link href="/admin" className="text-sm text-muted-foreground hover:text-primary">← Volver</Link>
-      </div>
-
-      <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold text-primary">{business.name}</h1>
-          <p className="mt-1 text-muted-foreground">
-            Creado {business.createdAt.toLocaleDateString('es-CL', { timeZone: tz })}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
+    <div className="-mx-6 -my-8">
+      <DashboardPageHeader
+        title={business.name}
+        subtitle={`Cuenta creada el ${business.createdAt.toLocaleDateString('es-CL', { timeZone: tz })}`}
+        action={<Link href="/admin" className={buttonVariants({ variant: 'outline', size: 'form', className: 'min-h-11' })}>Volver a negocios</Link>}
+      />
+      <div className="space-y-6 px-4 py-6 min-[1100px]:px-10">
+        <div className="flex flex-wrap gap-2">
             <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
               {business.plan?.name ?? 'Sin plan'}
             </span>
@@ -94,12 +97,26 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
             <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
               {business._count.bookings} reservas
             </span>
-          </div>
         </div>
-      </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
+        <KpiStrip label="Resumen del negocio" items={[
+          { label: 'Reservas', value: business._count.bookings, description: 'Histórico registrado' },
+          { label: 'Clientes', value: business._count.customers, description: 'Personas registradas' },
+          { label: 'Pagos', value: business._count.payments, description: 'Movimientos registrados' },
+        ]} />
+
+        <DashboardPanel
+          title="Salud de la cuenta"
+          description={accountNeedsAttention ? 'Hay un estado de suscripción que requiere revisión.' : 'La cuenta no presenta alertas de suscripción.'}
+          tone={accountNeedsAttention ? 'attention' : 'default'}
+        >
+          <p className="text-sm font-medium">
+            {accountNeedsAttention ? `Estado actual: ${getSubscriptionStatusLabel(status)}.` : 'Sin alertas operativas.'}
+          </p>
+        </DashboardPanel>
+
+      <div className="grid min-w-0 gap-6 lg:grid-cols-3">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
           <Card>
             <CardHeader>
               <CardTitle>Reservas recientes</CardTitle>
@@ -255,7 +272,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
           </Card>
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Facturación recurrente</CardTitle>
@@ -351,6 +368,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
             </CardContent>
           </Card>
         </div>
+      </div>
       </div>
     </div>
   )

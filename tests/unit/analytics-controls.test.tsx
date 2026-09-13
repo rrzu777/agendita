@@ -25,6 +25,23 @@ async function select(label: string, value: string) {
 }
 
 describe('actual analytics management controls', () => {
+  it('associates and focuses an empty inline rename before calling the action', async () => {
+    const label = report.acquisitionLinks.rows[0].campaignName
+    await act(async () => root.render(<AcquisitionLinks links={report.acquisitionLinks} />))
+    await act(async () => host.querySelector<HTMLButtonElement>(`button[aria-label="Editar etiqueta de ${label}"]`)!.click())
+    const input = host.querySelector<HTMLInputElement>('[aria-label="Etiqueta actual del enlace"]')!
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })) })
+    const form = input.closest('form')!
+    await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    expect(mocks.rename).not.toHaveBeenCalled()
+    expect(input.getAttribute('aria-describedby')).toContain(`${input.id}-error`)
+    expect(input.getAttribute('aria-invalid')).toBe('true')
+    expect(document.activeElement).toBe(input)
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Corregida'); input.dispatchEvent(new Event('input', { bubbles: true })) })
+    expect(input.getAttribute('aria-invalid')).toBe('false')
+    expect(host.querySelector(`#${input.id}-error`)).toBeNull()
+  })
+
   it('edits the current label with cancel, pending and failure states without changing props or pagination', async () => {
     const links = structuredClone(report.acquisitionLinks)
     const label = links.rows[0].campaignName
@@ -73,6 +90,38 @@ describe('actual analytics management controls', () => {
     await act(async () => { form.dispatchEvent(submit) })
     expect(submit.defaultPrevented).toBe(true)
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('La fecha final debe ser posterior')
+    expect(document.activeElement).toBe(host.querySelector<HTMLInputElement>('[name="to"]'))
+    expect(host.querySelector<HTMLInputElement>('[name="from"]')!.getAttribute('aria-invalid')).toBe('false')
+    expect(host.querySelector<HTMLInputElement>('[name="to"]')!.getAttribute('aria-describedby')).toBe('analytics-period-error')
+    host.querySelector<HTMLInputElement>('[name="from"]')!.value = '2026-08-28'
+    const to = host.querySelector<HTMLInputElement>('[name="to"]')!
+    await act(async () => { to.value = '2026-08-29'; to.dispatchEvent(new Event('input', { bubbles: true })) })
+    expect(host.querySelector('[role="alert"]')).toBeNull()
+    expect(to.getAttribute('aria-invalid')).toBe('false')
+  })
+  it('focuses the first missing custom date and moves the associated error as dates are corrected', async () => {
+    await act(async () => root.render(<AnalyticsControls report={report} periodMode={{ days: null }} />))
+    const form = host.querySelector('form')!
+    const from = host.querySelector<HTMLInputElement>('[name="from"]')!
+    const to = host.querySelector<HTMLInputElement>('[name="to"]')!
+    from.value = ''
+    to.value = ''
+
+    const submit = new Event('submit', { bubbles: true, cancelable: true })
+    await act(async () => { form.dispatchEvent(submit) })
+    expect(submit.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(from)
+    expect(from.getAttribute('aria-describedby')).toBe('analytics-period-error')
+    expect(to.getAttribute('aria-invalid')).toBe('false')
+
+    await act(async () => { from.value = '2026-08-28'; from.dispatchEvent(new Event('input', { bubbles: true })) })
+    expect(from.getAttribute('aria-invalid')).toBe('false')
+    expect(to.getAttribute('aria-describedby')).toBe('analytics-period-error')
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('fecha final')
+
+    await act(async () => { to.value = '2026-08-29'; to.dispatchEvent(new Event('input', { bubbles: true })) })
+    expect(host.querySelector('[role="alert"]')).toBeNull()
+    expect(to.getAttribute('aria-invalid')).toBe('false')
   })
   it('submits custom dates and exactly one grain, clearing incompatible fields and resetting page', async () => {
     await act(async () => root.render(<AnalyticsControls report={{ ...report, filter: { ...report.filter, channel: 'instagram' }, services: { ...report.services, page: 4 } }} periodMode={{ days: 28 }} />))

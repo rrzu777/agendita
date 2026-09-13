@@ -20,6 +20,7 @@ import {
 import { CAMPAIGN_PLACEHOLDERS, defaultMessageForSegment } from '@/lib/campaigns/message'
 import { segmentLabel } from '@/lib/campaigns/labels'
 import { useVocabulary } from '@/components/vocabulary-provider'
+import { useClientFormValidation } from '@/lib/forms/client-validation'
 
 export interface PromotionOption {
   id: string
@@ -70,14 +71,16 @@ export function NewCampaignDialog({
   const [message, setMessage] = useState(() => defaultMessageForSegment('birthday_month'))
   // Mientras el usuario no toque el mensaje, cambiar de segmento re-siembra el default.
   const [messageTouched, setMessageTouched] = useState(false)
+  const { errors: fieldErrors, validate, revalidateField } = useClientFormValidation()
 
   function selectSegment(next: CampaignSegmentType) {
     setSegment(next)
     if (!messageTouched) setMessage(defaultMessageForSegment(next))
   }
 
-  function handleSubmit() {
+  function handleSubmit(form: HTMLFormElement) {
     setError(null)
+    if (!validate(form)) return
     const segmentParams =
       segment === 'inactive'
         ? { inactiveDays: toIntOrNull(inactiveDays) ?? DEFAULT_INACTIVE_DAYS }
@@ -133,13 +136,15 @@ export function NewCampaignDialog({
         </DialogHeader>
 
         <form
+          noValidate
+          onInput={revalidateField}
           onSubmit={(e) => {
             e.preventDefault()
-            handleSubmit()
+            handleSubmit(e.currentTarget)
           }}
           className="space-y-5"
         >
-          <FormField id="campaign-name" label="Nombre" required>
+          <FormField id="campaign-name" label="Nombre" required error={fieldErrors['campaign-name']}>
             {(a11y) => <Input id="campaign-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} density="form" {...a11y} />}
           </FormField>
 
@@ -165,14 +170,14 @@ export function NewCampaignDialog({
           </fieldset>
 
           {segment === 'inactive' && (
-            <FormField id="campaign-inactive-days" label="Sin reservas hace (días)" required>
-              {(a11y) => <Input id="campaign-inactive-days" type="number" min={1} value={inactiveDays} onChange={(e) => setInactiveDays(e.target.value)} density="form" {...a11y} />}
+            <FormField id="campaign-inactive-days" label="Sin reservas hace (días)" required error={fieldErrors['campaign-inactive-days']}>
+              {(a11y) => <Input id="campaign-inactive-days" type="number" min={1} value={inactiveDays} onChange={(e) => setInactiveDays(e.target.value)} density="form" required {...a11y} />}
             </FormField>
           )}
 
           {segment === 'frequent' && (
-            <FormField id="campaign-frequent-min" label="Reservas mínimas" required>
-              {(a11y) => <Input id="campaign-frequent-min" type="number" min={1} value={frequentMin} onChange={(e) => setFrequentMin(e.target.value)} density="form" {...a11y} />}
+            <FormField id="campaign-frequent-min" label="Reservas mínimas" required error={fieldErrors['campaign-frequent-min']}>
+              {(a11y) => <Input id="campaign-frequent-min" type="number" min={1} value={frequentMin} onChange={(e) => setFrequentMin(e.target.value)} density="form" required {...a11y} />}
             </FormField>
           )}
 
@@ -204,7 +209,7 @@ export function NewCampaignDialog({
               promotions.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No hay promos en el catálogo. Creá una nueva.</p>
               ) : (
-                <FormField id="campaign-promotion" label="Promo del catálogo" required>
+                <FormField id="campaign-promotion" label="Promo del catálogo" required error={fieldErrors['campaign-promotion']}>
                   {(a11y) => (
                     <NativeSelect id="campaign-promotion" value={promotionId} onChange={(e) => setPromotionId(e.target.value)} density="form" required {...a11y}>
                       {promotions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -214,20 +219,20 @@ export function NewCampaignDialog({
               )
             ) : (
               <div className="space-y-4">
-                <FormField id="campaign-promo-name" label="Nombre de la promo" required>
+                <FormField id="campaign-promo-name" label="Nombre de la promo" required error={fieldErrors['campaign-promo-name']}>
                   {(a11y) => <Input id="campaign-promo-name" value={newPromoName} onChange={(e) => setNewPromoName(e.target.value)} required={promoMode === 'new'} maxLength={60} density="form" {...a11y} />}
                 </FormField>
-                <RewardFields value={reward} onChange={setReward} services={services} currency={currency} />
-                <FormField id="campaign-grant-expiry" label="Vence en X días" help="Opcional">
+                <RewardFields value={reward} onChange={setReward} services={services} currency={currency} errors={fieldErrors} />
+                <FormField id="campaign-grant-expiry" label="Vence en X días" help="Opcional" error={fieldErrors['campaign-grant-expiry']}>
                   {(a11y) => <Input id="campaign-grant-expiry" type="number" min={1} value={grantExpiryDays} onChange={(e) => setGrantExpiryDays(e.target.value)} density="form" {...a11y} />}
                 </FormField>
               </div>
             )}
           </fieldset>
 
-          <FormField id="campaign-message" label="Mensaje" required help={`Podés usar ${CAMPAIGN_PLACEHOLDERS.map((p) => `{${p}}`).join(' ')} y se reemplazan al enviar.`}>
+          <FormField id="campaign-message" label="Mensaje" required error={fieldErrors['campaign-message']} help={`Podés usar ${CAMPAIGN_PLACEHOLDERS.map((p) => `{${p}}`).join(' ')} y se reemplazan al enviar.`}>
             {(a11y) => (
-              <Textarea id="campaign-message" value={message} onChange={(e) => { setMessage(e.target.value); setMessageTouched(true) }} rows={4} maxLength={1000} required density="form" {...a11y} />
+              <Textarea id="campaign-message" className="resize-none" value={message} onChange={(e) => { setMessage(e.target.value); setMessageTouched(true) }} rows={4} maxLength={1000} required density="form" {...a11y} />
             )}
           </FormField>
 

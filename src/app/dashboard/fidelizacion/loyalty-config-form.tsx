@@ -8,17 +8,20 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { upsertLoyaltyConfig } from '@/server/actions/loyalty'
 import type { LoyaltyConfig } from '@prisma/client'
 import { useVocabulary } from '@/components/vocabulary-provider'
+import { useClientFormValidation, type ClientFieldErrors } from '@/lib/forms/client-validation'
 
 export function LoyaltyConfigForm({ config }: { config: LoyaltyConfig | null }) {
   const vocabulary = useVocabulary()
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const { errors: fieldErrors, validate, revalidateField } = useClientFormValidation()
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
     setSaved(false)
+    if (!validate(e.currentTarget)) return
     const fd = new FormData(e.currentTarget)
     const data = {
       isActive: fd.get('isActive') === 'on',
@@ -45,20 +48,21 @@ export function LoyaltyConfigForm({ config }: { config: LoyaltyConfig | null }) 
   }
 
   return (
-    <form onSubmit={onSubmit} className="studio-card space-y-5 p-6">
+    <form noValidate onSubmit={onSubmit} onInput={revalidateField} className="studio-card space-y-5 p-6">
       <label className="flex items-center gap-2">
         <input type="checkbox" name="isActive" defaultChecked={config?.isActive ?? false} className="size-4" />
         <span className="text-sm font-semibold text-foreground">Programa activo</span>
       </label>
 
-      <Field name="programName" label="Nombre del programa" defaultValue={config?.programName ?? ''} required />
-      <PointsLabelField defaultValue={config?.pointsLabel ?? 'puntos'} />
-      <Field name="pointsPerVisit" label="Puntos por visita" type="number" defaultValue={String(config?.pointsPerVisit ?? 0)} />
-      <Field name="spendPerPoint" label="Pesos por punto (cada $X = 1 punto; vacío = off)" type="number" defaultValue={config?.spendPerPoint != null ? String(config.spendPerPoint) : ''} />
-      <Field name="minSpendToEarn" label="Gasto mínimo para acreditar (vacío = sin mínimo)" type="number" defaultValue={config?.minSpendToEarn != null ? String(config.minSpendToEarn) : ''} />
-      <Field name="cardMessage" label="Mensaje en la tarjeta (opcional)" defaultValue={config?.cardMessage ?? ''} />
+      <Field errors={fieldErrors} name="programName" label="Nombre del programa" defaultValue={config?.programName ?? ''} required />
+      <PointsLabelField defaultValue={config?.pointsLabel ?? 'puntos'} errors={fieldErrors} />
+      <Field errors={fieldErrors} name="pointsPerVisit" label="Puntos por visita" type="number" defaultValue={String(config?.pointsPerVisit ?? 0)} />
+      <Field errors={fieldErrors} name="spendPerPoint" label="Pesos por punto (cada $X = 1 punto; vacío = off)" type="number" defaultValue={config?.spendPerPoint != null ? String(config.spendPerPoint) : ''} />
+      <Field errors={fieldErrors} name="minSpendToEarn" label="Gasto mínimo para acreditar (vacío = sin mínimo)" type="number" defaultValue={config?.minSpendToEarn != null ? String(config.minSpendToEarn) : ''} />
+      <Field errors={fieldErrors} name="cardMessage" label="Mensaje en la tarjeta (opcional)" defaultValue={config?.cardMessage ?? ''} />
 
       <Field
+        errors={fieldErrors}
         name="grantExpiryDays"
         label="Días para vencer una recompensa (vacío = no vence)"
         type="number"
@@ -111,15 +115,17 @@ function Field({
   defaultValue,
   type = 'text',
   required = false,
+  errors,
 }: {
   name: string
   label: string
   defaultValue: string
   type?: string
   required?: boolean
+  errors: ClientFieldErrors
 }) {
   return (
-    <FormField id={name} label={label} required={required}>
+    <FormField id={name} label={label} required={required} error={errors[name]}>
       {(a11y) => (
         <Input
           {...a11y}
@@ -137,7 +143,7 @@ function Field({
 
 const POINTS_LABEL_OPTIONS = ['puntos', 'estrellas', 'sellos', 'visitas']
 
-function PointsLabelField({ defaultValue }: { defaultValue: string }) {
+function PointsLabelField({ defaultValue, errors }: { defaultValue: string; errors: ClientFieldErrors }) {
   const isPreset = POINTS_LABEL_OPTIONS.includes(defaultValue)
   const [choice, setChoice] = useState(isPreset ? defaultValue : 'otro')
 
@@ -160,7 +166,7 @@ function PointsLabelField({ defaultValue }: { defaultValue: string }) {
         )}
       </FormField>
       {choice === 'otro' ? (
-        <FormField id="pointsLabel" label="Unidad personalizada" required>
+        <FormField id="pointsLabel" label="Unidad personalizada" required error={errors.pointsLabel}>
           {(a11y) => (
             <Input
               {...a11y}
