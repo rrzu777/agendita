@@ -24,7 +24,7 @@ const policyValues: PolicySettingsInput = {
 }
 
 function getControl(container: HTMLElement, label: string) {
-  const labelElement = Array.from(container.querySelectorAll('label')).find((element) => element.textContent === label)
+  const labelElement = Array.from(container.querySelectorAll('label')).find((element) => element.textContent?.replace('*', '').trim() === label)
   const controlId = labelElement?.getAttribute('for')
   const control = controlId ? container.querySelector<HTMLElement>(`#${controlId}`) : null
   if (!control) throw new Error(`Control not found for ${label}`)
@@ -114,6 +114,18 @@ describe('PolicySettingsForm', () => {
 
     expect(container.querySelectorAll('[data-slot="form-field"]')).toHaveLength(5)
     expect(container.querySelectorAll('[data-density="form"]')).toHaveLength(4)
+  })
+
+  it('marks structured policy controls required and free-text policies optional', async () => {
+    await renderPolicies()
+
+    expect(getInput(container, 'Ventana de autogestión (horas)').getAttribute('aria-required')).toBe('true')
+    expect(getControl(container, 'Avisar antes del límite de cancelación').getAttribute('aria-required')).toBe('true')
+    for (const label of ['Condiciones adicionales', 'Política de reserva', 'Política de abono']) {
+      const textarea = getTextarea(container, label)
+      expect(textarea.getAttribute('aria-required')).toBe('false')
+      expect(textarea.closest('[data-slot="form-field"]')?.textContent).toContain('Opcional')
+    }
   })
 
   it('keeps the cancellation cutoff immediately before its dependent push switch', async () => {

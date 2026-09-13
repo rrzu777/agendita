@@ -138,7 +138,7 @@ export function BankTransferForm({
   const noVerifyLimit = form.verifyHours.trim() === ''
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form noValidate onSubmit={handleSubmit} className="space-y-4">
       {draft.recovery === 'restored' && (
         <p role="status" className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
           Recuperamos un borrador local para que puedas continuar editando.
@@ -179,34 +179,35 @@ export function BankTransferForm({
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <FormField id="bt-holder" label="Titular">
+        <FormField id="bt-holder" label="Titular" required>
           {(a11y) => <Input id="bt-holder" density="form" value={form.accountHolder} onChange={e => set('accountHolder', e.target.value)} required {...a11y} />}
         </FormField>
-        <FormField id="bt-rut" label="RUT">
+        <FormField id="bt-rut" label="RUT" required>
           {(a11y) => <Input id="bt-rut" density="form" value={form.rut} onChange={e => set('rut', e.target.value)} required {...a11y} />}
         </FormField>
-        <FormField id="bt-bank" label="Banco">
+        <FormField id="bt-bank" label="Banco" required>
           {(a11y) => <Input id="bt-bank" density="form" value={form.bankName} onChange={e => set('bankName', e.target.value)} required {...a11y} />}
         </FormField>
-        <FormField id="bt-type" label="Tipo de cuenta">
+        <FormField id="bt-type" label="Tipo de cuenta" required>
           {(a11y) => <Input id="bt-type" density="form" value={form.accountType} onChange={e => set('accountType', e.target.value)} placeholder="corriente, vista, ahorro…" required {...a11y} />}
         </FormField>
-        <FormField id="bt-number" label="Número de cuenta">
+        <FormField id="bt-number" label="Número de cuenta" required>
           {(a11y) => <Input id="bt-number" density="form" value={form.accountNumber} onChange={e => set('accountNumber', e.target.value)} required {...a11y} />}
         </FormField>
-        <FormField id="bt-email" label="Email para avisos (opcional)">
+        <FormField id="bt-email" label="Email para avisos" optional>
           {(a11y) => <Input id="bt-email" density="form" type="email" value={form.email} onChange={e => set('email', e.target.value)} {...a11y} />}
         </FormField>
       </div>
 
-      <FormField id="bt-instructions" label={<>Instrucciones para {vocabulary.theClient} (opcional)</>}>
-        {(a11y) => <Textarea id="bt-instructions" density="form" value={form.instructions} onChange={e => set('instructions', e.target.value)} rows={2} placeholder="Ej: poné tu nombre y la fecha de la reserva en el asunto" {...a11y} />}
+      <FormField id="bt-instructions" label={<>Instrucciones para {vocabulary.theClient}</>} optional>
+        {(a11y) => <Textarea id="bt-instructions" className="resize-none" density="form" value={form.instructions} onChange={e => set('instructions', e.target.value)} rows={2} placeholder="Ej: poné tu nombre y la fecha de la reserva en el asunto" {...a11y} />}
       </FormField>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField
           id="bt-hold"
           label="Plazo para transferir (horas)"
+          required
           help={<>Cuánto tiempo se le reserva el horario a {vocabulary.theClient} para que transfiera y te avise.</>}
         >
           {(a11y) => <Input id="bt-hold" density="form" type="number" min={1} max={HOLD_HOURS_MAX} value={form.holdHours} onChange={e => set('holdHours', e.target.value)} required {...a11y} />}
@@ -214,6 +215,7 @@ export function BankTransferForm({
         <FormField
           id="bt-verify"
           label="Plazo para verificar (horas)"
+          optional
           help={noVerifyLimit
             ? <span className="text-orange-600">Vacío = sin límite: el horario queda retenido hasta que verifiques o rechaces la transferencia.</span>
             : 'Cuánto tiempo tenés para verificar una transferencia declarada antes de que la reserva expire sola.'}

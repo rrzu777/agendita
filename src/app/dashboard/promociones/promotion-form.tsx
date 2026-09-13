@@ -215,6 +215,7 @@ export function PromotionForm({
         </DialogHeader>
 
         <form
+          noValidate
           onSubmit={(e) => {
             e.preventDefault()
             handleSubmit()
@@ -226,7 +227,7 @@ export function PromotionForm({
           </FormField>
 
           <FormField id="promotion-description" label="Descripción" help="Opcional">
-            {(a11y) => <Textarea id="promotion-description" value={form.description} onChange={(e) => update('description', e.target.value)} rows={2} maxLength={500} density="form" {...a11y} />}
+            {(a11y) => <Textarea id="promotion-description" className="resize-none" value={form.description} onChange={(e) => update('description', e.target.value)} rows={2} maxLength={500} density="form" {...a11y} />}
           </FormField>
 
           <RewardFields

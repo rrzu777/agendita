@@ -11,8 +11,10 @@ import { getVocabulary } from '@/lib/vocabulary'
 import { formatMediumDate } from '@/lib/format-date'
 import { campaignChannel } from '@/lib/customers/channel'
 import { RecipientList } from './recipient-list'
+import { DashboardSectionNav } from '@/components/dashboard/dashboard-section-nav'
 
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Detalle de campaña — Agendita' }
 
 interface Props {
   params: Promise<{ id: string }>
@@ -50,6 +52,7 @@ export default async function CampaignDetailPage({ params }: Props) {
       <div>
         <DashboardHeader title="Campaña" subtitle="Detalle de campaña" />
         <div className="p-5 md:p-10">
+          <DashboardSectionNav section="growth" vocabulary={vocabulary} role={userData.role ?? 'staff'} />
           <div className="studio-card flex min-h-[320px] flex-col items-center justify-center p-8 text-center">
             <h2 className="text-xl font-semibold text-primary">Error al cargar</h2>
             <p className="mt-2 max-w-md text-muted-foreground">{error || 'No encontrada'}</p>
@@ -91,6 +94,7 @@ export default async function CampaignDetailPage({ params }: Props) {
         subtitle={`${segmentLabel(campaign.segmentType, vocabulary)} · ${campaign.promotion.name} · ${formatMediumDate(campaign.createdAt)}`}
       />
       <div className="p-5 md:p-10">
+        <DashboardSectionNav section="growth" vocabulary={vocabulary} role={userData.role ?? 'staff'} />
         {/* Back link (patrón customers/[id]) */}
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <Link href="/dashboard/campanas">

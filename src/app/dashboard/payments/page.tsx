@@ -8,6 +8,10 @@ import { getFinancialSummary, getLedgerEntriesPage } from '@/server/actions/ledg
 import { getManualPaymentBookings } from '@/server/actions/bookings'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { DashboardPagination, getSingleSearchParam } from '@/components/dashboard/dashboard-pagination'
+import { DashboardSectionNav } from '@/components/dashboard/dashboard-section-nav'
+import { getVocabulary } from '@/lib/vocabulary'
+
+export const metadata = { title: 'Cobros — Agendita' }
 
 export default async function PaymentsPage({
   searchParams,
@@ -43,6 +47,7 @@ export default async function PaymentsPage({
         subtitle="Controla abonos, pagos finales y movimientos."
       />
       <div className="space-y-8 p-5 md:p-10">
+        <DashboardSectionNav section="finance" vocabulary={getVocabulary(userData.business.category)} role={userData.role ?? 'staff'} className="mb-0" />
         <FinanceStats summary={summary} currency={currency} />
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

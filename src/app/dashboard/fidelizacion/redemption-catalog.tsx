@@ -144,7 +144,7 @@ export function RedemptionCatalog({
         )}
       </ul>
 
-      <form onSubmit={onSubmit} className="mt-4 grid gap-4" key={editing?.id ?? 'new'}>
+      <form noValidate onSubmit={onSubmit} className="mt-4 grid gap-4" key={editing?.id ?? 'new'}>
         <FormField id="redemption-name" label="Nombre de la recompensa" required>
           {(a11y) => (
             <Input {...a11y} id="redemption-name" name="name" density="form" defaultValue={editing?.name} required />

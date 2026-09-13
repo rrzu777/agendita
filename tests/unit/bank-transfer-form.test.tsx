@@ -56,6 +56,17 @@ const bankFormValues = {
 }
 
 describe('BankTransferForm', () => {
+  it('labels required and optional bank fields through the shared form contract', () => {
+    const html = renderToStaticMarkup(<UnsavedChangesProvider><BankTransferForm businessId="bta-form-biz" account={account} requireProof={false} proofUploadAvailable={false} /></UnsavedChangesProvider>)
+    const host = document.createElement('div')
+    host.innerHTML = html
+
+    expect(html).toContain('Titular<span aria-hidden="true"> *</span>')
+    expect(html).toContain('Número de cuenta<span aria-hidden="true"> *</span>')
+    expect(html).toContain('Email para avisos')
+    expect(html).toContain('>Opcional</span>')
+    expect(host.querySelector('form')?.noValidate).toBe(true)
+  })
   it('uses the shared dashboard form density for bank details', () => {
     const html = renderToStaticMarkup(<UnsavedChangesProvider><BankTransferForm businessId="bta-form-biz" account={account} requireProof={false} proofUploadAvailable={false} /></UnsavedChangesProvider>)
 
@@ -88,7 +99,7 @@ describe('BankTransferForm', () => {
 })
 
 function getInput(container: HTMLElement, label: string) {
-  const labelElement = Array.from(container.querySelectorAll('label')).find((element) => element.textContent === label)
+  const labelElement = Array.from(container.querySelectorAll('label')).find((element) => element.textContent?.replace('*', '').trim() === label)
   const inputId = labelElement?.getAttribute('for')
   const input = inputId ? container.querySelector<HTMLInputElement>(`#${inputId}`) : null
   if (!input) throw new Error(`Input not found for ${label}`)

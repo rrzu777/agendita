@@ -24,7 +24,7 @@ const reservationValues: ReservationSettingsInput = {
 }
 
 function getControl(container: HTMLElement, label: string) {
-  const labelElement = Array.from(container.querySelectorAll('label')).find((element) => element.textContent === label)
+  const labelElement = Array.from(container.querySelectorAll('label')).find((element) => element.textContent?.replace('*', '').trim() === label)
   const controlId = labelElement?.getAttribute('for')
   const control = controlId ? container.querySelector<HTMLElement>(`#${controlId}`) : null
   if (!control) throw new Error(`Control not found for ${label}`)
@@ -106,6 +106,16 @@ describe('ReservationSettingsForm', () => {
       expect(select.getAttribute('data-density')).toBe('form')
       expect(select.className).toContain('w-full')
     }
+  })
+
+  it('identifies required reservation controls and the optional meeting link', async () => {
+    await renderReservations()
+
+    expect(getControl(container, 'Zona horaria').getAttribute('aria-required')).toBe('true')
+    expect(getControl(container, 'Ofrecer horas de reserva').getAttribute('aria-required')).toBe('true')
+    expect(getInput(container, 'Reserva sin pago online (horas)').getAttribute('aria-required')).toBe('true')
+    expect(getInput(container, 'Sala de videollamada').getAttribute('aria-required')).toBe('false')
+    expect(Array.from(container.querySelectorAll('[data-slot="form-field"]')).find((field) => field.textContent?.includes('Sala de videollamada'))?.textContent).toContain('Opcional')
   })
 
   it('maps service duration and submits only reservation fields', async () => {

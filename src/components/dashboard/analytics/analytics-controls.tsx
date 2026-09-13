@@ -25,7 +25,7 @@ export function AnalyticsControls({ report, periodMode }: { report: OwnerAnalyti
     const message = !Number.isFinite(from) || !Number.isFinite(to) ? 'Completa ambas fechas.' : to <= from ? 'La fecha final debe ser posterior a la inicial; el día final no se incluye.' : to - from > 90 * day || from < today - 90 * day || to > today + day ? 'Selecciona entre 1 y 90 días dentro de los últimos 90 días, como máximo hasta mañana (excluido).' : null
     if (message) { event.preventDefault(); setError(message) }
   }
-  return <form action="/dashboard/metricas" method="get" onSubmit={validate} aria-label="Filtros de métricas" className="space-y-4 rounded-xl border border-border bg-card p-4">
+  return <form noValidate action="/dashboard/metricas" method="get" onSubmit={validate} aria-label="Filtros de métricas" className="space-y-4 rounded-xl border border-border bg-card p-4">
     <div className="grid gap-3 sm:grid-cols-3">
       <label className="space-y-2 text-sm font-medium"><span>Período</span><NativeSelect aria-label="Período de métricas" name={mode === 'custom' ? undefined : 'days'} value={mode} onChange={event => setMode(event.target.value)} className="h-10 bg-background">{[7, 28, 90].map(days => <option key={days} value={days}>{days} días</option>)}<option value="custom">Personalizado</option></NativeSelect></label>
       <label className="space-y-2 text-sm font-medium"><span>Desde (incluido)</span><Input type="date" name="from" defaultValue={report.period.from} disabled={mode !== 'custom'} required /></label>

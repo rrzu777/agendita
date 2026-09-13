@@ -2,6 +2,8 @@ import { ProfileSettingsForm } from '@/components/dashboard/settings/profile-set
 import { requireSettingsPageAccess } from '@/lib/business/settings-access'
 import { toProfileSettingsFormValues } from '@/lib/business/settings-form-values'
 
+export const metadata = { title: 'Perfil público — Agendita' }
+
 export default async function ProfileSettingsPage() {
   const { business } = await requireSettingsPageAccess()
 

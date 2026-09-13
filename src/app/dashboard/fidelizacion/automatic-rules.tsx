@@ -202,6 +202,7 @@ function RuleCard({
 
   return (
     <form
+      noValidate
       onSubmit={onSubmit}
       className="rounded-lg border border-border p-4"
       key={rule?.id ?? `new-${kind}`}

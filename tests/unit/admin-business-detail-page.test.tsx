@@ -15,6 +15,7 @@ vi.mock('@/lib/auth/user', () => ({
 vi.mock('next/navigation', () => ({
   redirect: vi.fn(),
   notFound: vi.fn(),
+  useRouter: () => ({ push: vi.fn() }),
 }))
 
 vi.mock('@/app/admin/businesses/[businessId]/admin-actions', () => ({
@@ -82,5 +83,7 @@ describe('BusinessDetailPage (admin)', () => {
     expect(html).toContain('$19.990')
     expect(html).not.toContain('<table class="w-full text-sm">')
     expect(html).toContain('data-slot="table"')
+    expect(html).toContain('Salud de la cuenta')
+    expect(html).toContain('Sin alertas operativas')
   })
 })

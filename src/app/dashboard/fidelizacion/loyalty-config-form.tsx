@@ -45,7 +45,7 @@ export function LoyaltyConfigForm({ config }: { config: LoyaltyConfig | null }) 
   }
 
   return (
-    <form onSubmit={onSubmit} className="studio-card space-y-5 p-6">
+    <form noValidate onSubmit={onSubmit} className="studio-card space-y-5 p-6">
       <label className="flex items-center gap-2">
         <input type="checkbox" name="isActive" defaultChecked={config?.isActive ?? false} className="size-4" />
         <span className="text-sm font-semibold text-foreground">Programa activo</span>

@@ -96,7 +96,7 @@ export function AcquisitionLinks({ links, pagination = { label: `Página ${links
           <tbody>{links.rows.length === 0 ? <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">No hay enlaces creados todavía.</td></tr> : links.rows.map((link) => (
             <tr key={link.id} className="border-b hover:bg-muted/50">
               <td className="p-2 font-medium text-primary">
-                {editing?.id === link.id ? <form aria-label="Editar etiqueta actual" aria-busy={pending} className="min-w-48 space-y-2" onSubmit={event => { event.preventDefault(); rename() }}>
+                {editing?.id === link.id ? <form noValidate aria-label="Editar etiqueta actual" aria-busy={pending} className="min-w-48 space-y-2" onSubmit={event => { event.preventDefault(); rename() }}>
                   <Label htmlFor={`analytics-label-${link.id}`}>Etiqueta actual del enlace</Label>
                   <Input id={`analytics-label-${link.id}`} aria-label="Etiqueta actual del enlace" value={editing.label} maxLength={80} required disabled={pending} onChange={event => setEditing({ id: link.id, label: event.target.value })} />
                   <p className="text-xs font-normal text-muted-foreground">Sólo cambia el nombre visible actual, no el origen ni su historia.</p>

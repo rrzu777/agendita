@@ -2,6 +2,8 @@ import { ReservationSettingsForm } from '@/components/dashboard/settings/reserva
 import { requireSettingsPageAccess } from '@/lib/business/settings-access'
 import { toReservationSettingsFormValues } from '@/lib/business/settings-form-values'
 
+export const metadata = { title: 'Configuración de reservas — Agendita' }
+
 export default async function ReservationSettingsPage() {
   const { business } = await requireSettingsPageAccess()
   const initialValues = toReservationSettingsFormValues(business)

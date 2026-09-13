@@ -129,7 +129,7 @@ export function ReservationSettingsForm({ businessId, initialValues }: Reservati
   }
 
   return (
-    <form onSubmit={submitForm} className="min-w-0 space-y-10">
+    <form noValidate onSubmit={submitForm} className="min-w-0 space-y-10">
       {draft.recovery === 'restored' && (
         <p role="status" className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
           Recuperamos un borrador local para que puedas continuar editando.
@@ -148,12 +148,13 @@ export function ReservationSettingsForm({ businessId, initialValues }: Reservati
 
       <fieldset disabled={isSubmitting} aria-label="Campos de reservas" aria-busy={isSubmitting} className="space-y-10 disabled:opacity-70">
         <SettingsFormSection title="Agenda" description="Cómo se ofrecen y retienen los horarios de reserva.">
-          <FormField id="reservation-timezone" label="Zona horaria" error={errors.timezone?.message}>
+          <FormField id="reservation-timezone" label="Zona horaria" required error={errors.timezone?.message}>
             {(a11y) => <Select value={timezone} onValueChange={(value) => setValue('timezone', value, { shouldDirty: true })}><SelectTrigger id="reservation-timezone" density="form" {...a11y}><SelectValue /></SelectTrigger><SelectContent>{TIMEZONES.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>}
           </FormField>
           <FormField
             id="reservation-slot-step"
             label="Ofrecer horas de reserva"
+            required
             error={errors.slotStepMinutes?.message}
             help={<>Cada cuánto se ofrecen horas de inicio en tu página de reservas. &quot;Según la duración del servicio&quot; deja las citas pegadas una tras otra (sin huecos), pero da menos opciones de hora a tus {vocabulary.clients}.</>}
           >
@@ -162,6 +163,7 @@ export function ReservationSettingsForm({ businessId, initialValues }: Reservati
           <FormField
             id="reservation-manual-hold"
             label="Reserva sin pago online (horas)"
+            required
             error={errors.manualHoldHours?.message}
             help={<>Si no tenés pago online ni transferencia configurados, cuántas horas se guarda el horario de cada ciclo de reserva mientras coordinás el abono. Pasado el plazo, la reserva expira sola. A quien reserve le prometemos este plazo o su cita, lo que pase antes. <GuardedLink href="/dashboard/settings/payments" prefetch={false} className="underline underline-offset-4">Configurar pagos</GuardedLink></>}
           >
@@ -177,6 +179,7 @@ export function ReservationSettingsForm({ businessId, initialValues }: Reservati
           <FormField
             id="reservation-approval"
             label="Confirmar cada reserva a mano"
+            required
             layout="inline"
             error={errors.requireBookingApproval?.message}
             help="Las reservas llegan como solicitudes y vos las aceptás o las rechazás. El horario queda tomado mientras tanto, y si no respondés en 24 horas se libera solo. No aplica a los servicios con abono: ahí el pago ya hace de filtro."
@@ -189,6 +192,7 @@ export function ReservationSettingsForm({ businessId, initialValues }: Reservati
           <FormField
             id="reservation-meeting-url"
             label="Sala de videollamada"
+            optional
             error={errors.defaultMeetingUrl?.message}
             help="Tu link fijo de Zoom o Meet. Se copia a cada reserva online cuando la toman, así que si lo cambiás, las citas ya avisadas conservan el que se mandó."
           >

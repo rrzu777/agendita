@@ -3,8 +3,11 @@ import { AnalyticsDashboard } from '@/components/dashboard/analytics/analytics-d
 import { requireBusinessRole } from '@/lib/auth/server'
 import { getOwnerAnalyticsReport } from '@/server/analytics/reports'
 import { readWeeklyInsights } from '@/server/actions/weekly-insights'
+import { DashboardSectionNav } from '@/components/dashboard/dashboard-section-nav'
+import { getVocabulary } from '@/lib/vocabulary'
 
 type SearchParams = Record<string, string | string[] | undefined>
+export const metadata = { title: 'Métricas — Agendita' }
 
 function numberParam(value: string | string[] | undefined) {
   if (typeof value !== 'string') return value
@@ -26,7 +29,7 @@ function reportInput(params: SearchParams) {
 }
 
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  await requireBusinessRole(['owner', 'admin'])
+  const { business, role } = await requireBusinessRole(['owner', 'admin'])
   const input = reportInput(await searchParams)
   const report = await getOwnerAnalyticsReport(input)
   let weeklyInsights = null
@@ -35,6 +38,9 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   return (
     <div>
       <DashboardHeader title="Métricas" subtitle="Observa el recorrido de reserva medido y qué conviene revisar después." />
+      <div className="px-5 pt-5 md:px-10 md:pt-8">
+        <DashboardSectionNav section="growth" vocabulary={getVocabulary(business.category)} role={role} className="mb-0" />
+      </div>
       <AnalyticsDashboard report={report} periodMode={{ days }} weeklyInsights={weeklyInsights} />
     </div>
   )

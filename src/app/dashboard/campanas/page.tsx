@@ -6,8 +6,10 @@ import { getServices } from '@/server/actions/services'
 import { CampaignList } from './campaign-list'
 import { NewCampaignDialog } from './new-campaign-dialog'
 import { getVocabulary } from '@/lib/vocabulary'
+import { DashboardSectionNav } from '@/components/dashboard/dashboard-section-nav'
 
 type Campaign = Awaited<ReturnType<typeof getCampaigns>>[number]
+export const metadata = { title: 'Campañas — Agendita' }
 type CampaignPromotion = Awaited<ReturnType<typeof listCampaignPromotions>>[number]
 
 export default async function CampanasPage() {
@@ -47,6 +49,7 @@ export default async function CampanasPage() {
         subtitle={`Enviá promos por WhatsApp o email a un grupo de ${vocabulary.clients}.`}
       />
       <div className="p-5 md:p-10">
+        <DashboardSectionNav section="growth" vocabulary={vocabulary} role={userData.role ?? 'staff'} />
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="font-heading text-2xl font-semibold tracking-tight text-primary">Tus campañas</h2>

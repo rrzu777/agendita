@@ -133,6 +133,7 @@ export function NewCampaignDialog({
         </DialogHeader>
 
         <form
+          noValidate
           onSubmit={(e) => {
             e.preventDefault()
             handleSubmit()
@@ -227,7 +228,7 @@ export function NewCampaignDialog({
 
           <FormField id="campaign-message" label="Mensaje" required help={`Podés usar ${CAMPAIGN_PLACEHOLDERS.map((p) => `{${p}}`).join(' ')} y se reemplazan al enviar.`}>
             {(a11y) => (
-              <Textarea id="campaign-message" value={message} onChange={(e) => { setMessage(e.target.value); setMessageTouched(true) }} rows={4} maxLength={1000} required density="form" {...a11y} />
+              <Textarea id="campaign-message" className="resize-none" value={message} onChange={(e) => { setMessage(e.target.value); setMessageTouched(true) }} rows={4} maxLength={1000} required density="form" {...a11y} />
             )}
           </FormField>
 

@@ -43,5 +43,18 @@ describe('AdminPage', () => {
     // markup this page used before migration.
     expect(html).not.toContain('<table class="w-full text-sm">')
     expect(html).toContain('data-slot="table"')
+    expect(html).toContain('Requiere atención')
+    expect(html).toContain('1 cuenta con pago pendiente o suspensión')
+  })
+
+  it('renders an explicit zero-data state with a useful next step', async () => {
+    mockPrisma.business.findMany.mockResolvedValue([])
+    const { default: AdminPage } = await import('@/app/admin/page')
+
+    const html = renderToStaticMarkup(await AdminPage())
+
+    expect(html).toContain('Aún no hay negocios registrados')
+    expect(html).toContain('Volver al dashboard')
+    expect(html).not.toContain('data-slot="table"')
   })
 })

@@ -23,7 +23,7 @@ export function SubscriptionActions({
   return (
     <>
       {canStartCheckout && (
-        <form action={startAction} className="space-y-2">
+        <form noValidate action={startAction} className="space-y-2">
           <Button type="submit" className="w-full" disabled={startPending}>
             {startPending ? 'Abriendo Mercado Pago…' : 'Activar mensualidad automática'}
           </Button>
@@ -35,7 +35,7 @@ export function SubscriptionActions({
         </form>
       )}
       {canCancel && (
-        <form action={cancelAction} className="space-y-2">
+        <form noValidate action={cancelAction} className="space-y-2">
           <Button type="submit" variant="outline" className="w-full" disabled={cancelPending}>
             {cancelPending ? 'Cancelando renovación…' : 'Cancelar al final del período'}
           </Button>

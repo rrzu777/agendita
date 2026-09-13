@@ -17,6 +17,8 @@ interface PaymentsSettingsPageProps {
   searchParams: Promise<{ success?: string; error?: string }>
 }
 
+export const metadata = { title: 'Configuración de pagos — Agendita' }
+
 export default async function PaymentsSettingsPage(props: PaymentsSettingsPageProps) {
   const { business } = await requireSettingsPageAccess()
   const { success, error } = await props.searchParams
@@ -110,7 +112,7 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
                   </div>
                 </div>
 
-                <form>
+                <form noValidate>
                   <input type="hidden" name="action" value="disconnect" />
                   <DisconnectButton />
                 </form>
@@ -129,7 +131,7 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
                   </div>
                 </div>
 
-                <form action={startMercadoPagoConnect}>
+                <form noValidate action={startMercadoPagoConnect}>
                   <Button type="submit" className="h-11">
                     <Link2 className="mr-2 size-4" />
                     Reconectar Mercado Pago
@@ -151,7 +153,7 @@ export default async function PaymentsSettingsPage(props: PaymentsSettingsPagePr
                   </div>
                 </div>
 
-                <form action={startMercadoPagoConnect}>
+                <form noValidate action={startMercadoPagoConnect}>
                   <Button type="submit" className="h-11">
                     <Link2 className="mr-2 size-4" />
                     Conectar Mercado Pago

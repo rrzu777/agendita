@@ -16,7 +16,7 @@ type DashboardContextNavProps = {
 }
 
 export function DashboardContextNav({ label, items, className }: DashboardContextNavProps) {
-  const pathname = usePathname()
+  const pathname = usePathname() ?? ''
 
   return (
     <nav aria-label={label} className={cn('overflow-x-auto', className)}>

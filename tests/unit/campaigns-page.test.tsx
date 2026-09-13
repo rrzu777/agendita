@@ -22,8 +22,12 @@ vi.mock('@/server/actions/services', () => ({
 // LANDMINE del repo: sin este mock renderToStaticMarkup explota con useRouter.
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+  usePathname: () => '/dashboard/campanas',
   redirect: vi.fn(),
   notFound: vi.fn(),
+}))
+vi.mock('@/components/dashboard/unsaved-changes-provider', () => ({
+  GuardedLink: ({ href, children, ...props }: React.ComponentProps<'a'> & { href: string }) => <a href={href} {...props}>{children}</a>,
 }))
 
 describe('CampanasPage', () => {
