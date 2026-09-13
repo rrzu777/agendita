@@ -101,3 +101,16 @@ Implementación local de las rutas 1–10 y 25 sobre `af02b2a`. No equivale a me
 Las once rutas conservaron un H1 y título de documento identificables y no mostraron overflow horizontal del documento en los tres tamaños. El calendario mensual conserva scroll interno deliberado. Las capturas se guardaron inicialmente en `output/playwright/operations-*.png`; la entrega local las conserva en `.superpowers/sdd/2026-09-13-full-ui-redesign/browser-evidence/` junto al informe `task-2-report.md` (artefactos locales ignorados por Git).
 
 La matriz de roles se verificó con tests, no con sesiones reales para cada rol. Carga conserva el skeleton de ruta; fallos y recuperación tienen cobertura unitaria, no una simulación completa de red en navegador. Los temas soft/contrast se revisaron en superficies representativas, no todas las combinaciones ruta/estado. Solo se utilizó `agendita_owner_analytics_test` en Postgres local aislado; los cambios temporales de estilo/rubro/onboarding se restauraron. No se crearon reservas, pagos ni mensajes reales.
+
+## Evidencia Task 3 — crecimiento, finanzas, configuración y admin (2026-09-13)
+
+Implementación local de las rutas 11–24 y 26–27 sobre `d7f5a20`. No equivale a merge ni a aprobación de CI: no se abrió PR ni se mutó producción.
+
+| Rutas | Evidencia automatizada | Navegador local real |
+|---|---|---|
+| 11–17 Crecimiento | Navegación derivada de la matriz canónica y filtrada por rol; jerarquía de oportunidades antes de metodología; campaña detalle; formularios de promociones, fidelización y paquetes | Lista y detalle en 390×844, 834×1112 y 1440×1000; H1, título, navegación `Crecimiento`, sin overflow ni boundary de error; estados con datos y vacíos representativos |
+| 18–19 Finanzas | Cálculos/estados existentes conservados; KPI con definición y ventanas; acciones de suscripción mantienen server actions | Ambas rutas en los tres tamaños; navegación `Finanzas`, tabla/tarjetas responsive y tema contrast sin overflow |
+| 20–24 Configuración | Alias a perfil; navegación local; required/optional, `noValidate`, draft y recuperación cubiertos por tests | Alias `/dashboard/settings` → `/dashboard/settings/profile`; cuatro destinos en los tres tamaños; tema soft representativo y ruta de pagos repetida con entorno sandbox explícito |
+| 26–27 Admin | Zero-state/lista, conteo de atención, salud de cuenta y formularios administrativos cubiertos por tests | Lista/detalle en los tres tamaños; se corrigió overflow por min-content a 390 px; diálogo de suspensión abierto/cerrado con Escape, reduced motion y foco devuelto al trigger de 44 px, sin ejecutar la acción |
+
+Todas las rutas verificadas mostraron un H1 y `document.title` identificables. Los temas `soft` y `contrast` se comprobaron en superficies representativas mediante `data-business-theme`; el fixture temporal de campaña se creó solo por Prisma en `agendita_owner_analytics_test`, no se envió, se eliminó al terminar y el tema se restauró a `balanced`. No se crearon reservas, pagos ni mensajes para este QA. Los estados de carga/error de red no se recorrieron en navegador para cada ruta: su cobertura indicada es automatizada o mediante los boundaries ya existentes, no una simulación exhaustiva.
