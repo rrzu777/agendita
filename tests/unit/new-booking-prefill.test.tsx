@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { UnsavedChangesProvider } from '@/components/dashboard/unsaved-changes-provider'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 
@@ -60,7 +61,7 @@ describe('dashboard booking customer prefill', () => {
     const page = await NewBookingPage({
       searchParams: Promise.resolve({ customerId: 'customer-1' }),
     })
-    const html = renderToStaticMarkup(page)
+    const html = renderToStaticMarkup(<UnsavedChangesProvider>{page}</UnsavedChangesProvider>)
 
     expect(mockCustomerFindFirst).toHaveBeenCalledWith({
       where: { id: 'customer-1', businessId: 'business-1' },
@@ -78,7 +79,7 @@ describe('dashboard booking customer prefill', () => {
     const page = await NewBookingPage({
       searchParams: Promise.resolve({ customerId: ['customer-1', 'customer-2'] }),
     })
-    const html = renderToStaticMarkup(page)
+    const html = renderToStaticMarkup(<UnsavedChangesProvider>{page}</UnsavedChangesProvider>)
 
     expect(mockCustomerFindFirst).not.toHaveBeenCalled()
     expect(html).toContain('Buscar por nombre o teléfono...')

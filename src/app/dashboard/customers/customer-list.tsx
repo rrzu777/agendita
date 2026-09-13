@@ -1,5 +1,7 @@
 'use client'
 
+import { KpiStrip } from '@/components/dashboard/kpi-strip'
+
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -68,11 +70,11 @@ export function CustomerList({ customers, nextCursor, stats, error, currency, se
 
   if (error) {
     return (
-      <div className="studio-card flex min-h-[320px] flex-col items-center justify-center p-8 text-center">
+      <div role="alert" className="studio-card shadow-none flex min-h-[320px] flex-col items-center justify-center p-8 text-center">
         <div className="mb-5 flex size-16 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
           <AlertCircle className="size-8" />
         </div>
-        <h2 className="text-xl font-semibold text-primary">Error al cargar</h2>
+        <h2 className="text-xl font-semibold text-foreground">Error al cargar</h2>
         <p className="mt-2 max-w-md text-muted-foreground">{error}</p>
         <Button className="mt-6" variant="outline" onClick={() => window.location.reload()}>
           Reintentar
@@ -83,11 +85,11 @@ export function CustomerList({ customers, nextCursor, stats, error, currency, se
 
   if (stats.total === 0) {
     return (
-      <div className="studio-card flex min-h-[320px] flex-col items-center justify-center p-8 text-center">
-        <div className="mb-5 flex size-16 items-center justify-center rounded-2xl bg-secondary text-primary">
+      <div className="studio-card shadow-none flex min-h-[320px] flex-col items-center justify-center p-8 text-center">
+        <div className="mb-5 flex size-16 items-center justify-center rounded-2xl bg-secondary text-foreground">
           <Users className="size-8" />
         </div>
-        <h2 className="text-xl font-semibold text-primary">Sin {v.clients}</h2>
+        <h2 className="text-xl font-semibold text-foreground">Sin {v.clients}</h2>
         <p className="mt-2 max-w-md text-muted-foreground">
           {v.TheClients} aparecerán aquí cuando realicen su primera reserva.
         </p>
@@ -101,27 +103,11 @@ export function CustomerList({ customers, nextCursor, stats, error, currency, se
 
   return (
     <div>
-      {/* Stats */}
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <div className="studio-card p-4">
-          <p className="studio-eyebrow">Total</p>
-          <p className="mt-1 text-2xl font-semibold text-primary sm:text-3xl">
-            {totalCustomers}
-          </p>
-        </div>
-        <div className="studio-card p-4">
-          <p className="studio-eyebrow">Con reservas</p>
-          <p className="mt-1 text-2xl font-semibold text-primary sm:text-3xl">
-            {withBookings}
-          </p>
-        </div>
-        <div className="studio-card p-4">
-          <p className="studio-eyebrow">Saldo pendiente</p>
-          <p className="mt-1 text-2xl font-semibold text-primary sm:text-3xl">
-            {withPending}
-          </p>
-        </div>
-      </div>
+      <KpiStrip label="Resumen de clientes" className="mb-6" items={[
+        { label: 'Total', value: totalCustomers, description: 'Todo el historial' },
+        { label: 'Con reservas', value: withBookings, description: 'Clientes con al menos una reserva' },
+        { label: 'Saldo pendiente', value: withPending, description: 'Clientes con saldo por pagar' },
+      ]} />
 
       {/* Search + Filters */}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -131,7 +117,8 @@ export function CustomerList({ customers, nextCursor, stats, error, currency, se
             <Input
               name="q"
               type="search"
-              placeholder="Buscar por nombre, teléfono o email en todo el historial..."
+              placeholder="Nombre, teléfono o email"
+              aria-label="Buscar clientes en todo el historial"
               defaultValue={searchQuery}
               density="form"
               className="pl-10"
@@ -147,24 +134,27 @@ export function CustomerList({ customers, nextCursor, stats, error, currency, se
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
+            aria-pressed={showPendingOnly}
             variant={showPendingOnly ? 'default' : 'outline'}
             onClick={() => setShowPendingOnly(!showPendingOnly)}
-            className="text-xs"
+            className="min-h-11 text-xs"
           >
             <Filter className="mr-1 size-3" />
             Saldo pendiente
           </Button>
           <Button
             size="sm"
+            aria-pressed={showFrequentOnly}
             variant={showFrequentOnly ? 'default' : 'outline'}
             onClick={() => setShowFrequentOnly(!showFrequentOnly)}
-            className="text-xs"
+            className="min-h-11 text-xs"
           >
             <Filter className="mr-1 size-3" />
             Frecuentes
           </Button>
           <Button
             size="sm"
+            aria-pressed={showRecentOnly}
             variant={showRecentOnly ? 'default' : 'outline'}
             onClick={() => {
               if (showRecentOnly) {
@@ -175,7 +165,7 @@ export function CustomerList({ customers, nextCursor, stats, error, currency, se
                 setShowRecentOnly(true)
               }
             }}
-            className="text-xs"
+            className="min-h-11 text-xs"
           >
             <Filter className="mr-1 size-3" />
             Recientes
@@ -190,7 +180,7 @@ export function CustomerList({ customers, nextCursor, stats, error, currency, se
                 setShowRecentOnly(false)
                 setRecentThreshold(null)
               }}
-              className="text-xs"
+              className="min-h-11 text-xs"
             >
               <X className="mr-1 size-3" />
               Limpiar
@@ -203,7 +193,7 @@ export function CustomerList({ customers, nextCursor, stats, error, currency, se
       </p>
 
       {filtered.length === 0 ? (
-        <div className="studio-card flex min-h-[200px] flex-col items-center justify-center p-8 text-center">
+        <div className="studio-card shadow-none flex min-h-[200px] flex-col items-center justify-center p-8 text-center">
           <p className="text-muted-foreground">
             {activeFilters > 0
               ? `No hay ${v.clients} con estos filtros en esta página.`
@@ -277,7 +267,7 @@ export function CustomerList({ customers, nextCursor, stats, error, currency, se
           </div>
 
           {/* Desktop: table */}
-          <div className="hidden lg:block studio-card overflow-hidden">
+          <div className="hidden lg:block studio-card shadow-none overflow-hidden">
             <Table fixed className={TABLE_MIN_WIDTH}>
               <TableHeader>
                 <TableRow className="bg-muted/50">
@@ -295,7 +285,7 @@ export function CustomerList({ customers, nextCursor, stats, error, currency, se
                 {filtered.map((customer) => (
                   <TableRow key={customer.id}>
                     <TruncatedCell
-                      className="font-semibold text-primary"
+                      className="font-semibold text-foreground"
                       primary={customer.name}
                       secondary={
                         customer.marketingOptOut ? (

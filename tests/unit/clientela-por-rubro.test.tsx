@@ -45,7 +45,7 @@ describe('la sección Clientes habla en el género del rubro', () => {
     )
 
     expect(html).toContain('name="q"')
-    expect(html).toContain('Buscar por nombre, teléfono o email en todo el historial')
+    expect(html).toContain('aria-label="Buscar clientes en todo el historial"')
     expect(html).toContain('q=Mart%C3%ADn&amp;cursor=customer-1')
   })
 })

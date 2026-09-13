@@ -22,8 +22,8 @@ export function SetupChecklist({ checklist }: { checklist: SetupChecklistData })
         const body = (
           <>
             <span className="flex min-w-0 items-center gap-3">
-              <Icon className={item.completed ? 'size-5 shrink-0 text-green-600' : 'size-5 shrink-0 text-muted-foreground'} />
-              <span className="font-medium text-primary">{item.label}</span>
+              <Icon className={item.completed ? 'size-5 shrink-0 text-success' : 'size-5 shrink-0 text-muted-foreground'} />
+              <span className="font-medium text-foreground">{item.label}</span>
             </span>
             <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
           </>
@@ -50,11 +50,11 @@ export function SetupChecklist({ checklist }: { checklist: SetupChecklistData })
   const whatsappText = encodeURIComponent(`Reserva aquí: ${checklist.bookingUrl}`)
 
   return (
-    <section data-tour-id="dashboard-checklist" className="studio-card mb-8 border-border/60 bg-card p-5 md:p-6">
+    <section data-tour-id="dashboard-checklist" className="studio-card shadow-none mb-8 border-border/60 bg-card p-5 md:p-6">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Checklist de adopción</p>
-          <h2 className="mt-1 text-2xl font-semibold text-primary">
+          <p className="text-sm font-medium text-muted-foreground">Configuración del negocio</p>
+          <h2 className="mt-1 text-2xl font-semibold text-foreground">
             {checklist.isReady ? 'Negocio listo para operar' : `${checklist.completedCount}/${checklist.totalCount} listo`}
           </h2>
         </div>
@@ -67,17 +67,15 @@ export function SetupChecklist({ checklist }: { checklist: SetupChecklistData })
             <Copy className="mr-2 size-4" />
             {copied === 'reserva' ? 'Reserva copiada' : 'Copiar reserva'}
           </Button>
-          <a href={`https://wa.me/?text=${whatsappText}`} target="_blank" rel="noopener noreferrer">
-            <Button type="button" className="w-full sm:w-auto">
+          <Button type="button" className="w-full sm:w-auto" asChild><a href={`https://wa.me/?text=${whatsappText}`} target="_blank" rel="noopener noreferrer">
               <MessageCircle className="mr-2 size-4" />
               WhatsApp
-            </Button>
-          </a>
+            </a></Button>
         </div>
       </div>
 
       {checklist.isReady ? (
-        <details className="rounded-xl border border-green-200 bg-green-50/60 p-4 text-sm text-green-900">
+        <details className="rounded-xl border border-success/20 bg-success/5 p-4 text-sm text-success">
           <summary className="cursor-pointer font-semibold">Todo configurado. Ver checklist</summary>
           <div className="mt-4">{content}</div>
         </details>

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { DashboardPageHeader } from '@/components/dashboard/dashboard-page-header'
 import { completeOnboarding, saveOnboardingStep } from '@/server/actions/onboarding'
 import {
   ArrowLeft,
@@ -106,57 +106,26 @@ export function OnboardingWizard({
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8 md:py-16">
-      <div className="mb-10 text-center">
-        <h1 className="text-4xl font-semibold tracking-normal text-primary md:text-5xl">
-          Configura tu negocio
-        </h1>
-        <p className="mt-3 text-lg text-muted-foreground">
-          Completa estos pasos para empezar a recibir reservas
-        </p>
-      </div>
-
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          {steps.map((step, i) => {
-            const Icon = step.icon
-            const isActive = i === currentStep
-            const isCompleted = i < currentStep
-            return (
-              <div key={step.key} className="flex items-center">
-                <div className={cn(
-                  'flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
-                  isActive && 'bg-primary text-primary-foreground',
-                  isCompleted && 'bg-green-100 text-green-800',
-                  !isActive && !isCompleted && 'bg-muted text-muted-foreground'
-                )}>
-                  {isCompleted ? (
-                    <CheckCircle2 className="size-3.5" />
-                  ) : (
-                    <Icon className="size-3.5" />
-                  )}
-                  <span className="hidden sm:inline">{step.label}</span>
-                </div>
-                {i < steps.length - 1 && (
-                  <div className={cn(
-                    'mx-1 h-px w-4 sm:w-8',
-                    i < currentStep ? 'bg-green-300' : 'bg-border'
-                  )} />
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </div>
+    <div>
+      <DashboardPageHeader title="Configura tu negocio" subtitle="Completa estos pasos para empezar a recibir reservas." />
+      <div className="mx-auto max-w-3xl space-y-6 p-4 min-[1100px]:p-10">
+      <ol aria-label="Pasos de configuración" className="flex gap-2 overflow-x-auto border-b border-border pb-4">
+        {steps.map((step, i) => {
+          const Icon = step.icon
+          return <li key={step.key} aria-current={i === currentStep ? 'step' : undefined} className={cn('flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium', i === currentStep ? 'bg-primary text-primary-foreground' : 'text-muted-foreground')}>
+            {i < currentStep ? <CheckCircle2 aria-hidden="true" className="size-4" /> : <Icon aria-hidden="true" className="size-4" />}
+            {step.label}
+          </li>
+        })}
+      </ol>
 
       {error && (
-        <div className="mb-6 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+        <div role="alert" className="mb-6 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
           {error}
         </div>
       )}
 
-      <Card>
-        <CardContent className="p-6 md:p-8">
+      <div className="min-h-[300px] rounded-xl border border-border bg-card p-4 md:p-6">
           {currentStep === 0 && <StepProfile business={business} publicUrl={publicUrl} />}
           {currentStep === 1 && <StepServices servicesCount={servicesCount} />}
           {currentStep === 2 && <StepSchedule availabilityCount={availabilityCount} />}
@@ -170,8 +139,7 @@ export function OnboardingWizard({
               onCopy={() => { navigator.clipboard.writeText(bookingUrl); setCopied(true) }}
             />
           )}
-        </CardContent>
-      </Card>
+      </div>
 
       <div className="mt-6 flex items-center justify-between">
         <Button
@@ -189,10 +157,11 @@ export function OnboardingWizard({
             <ArrowRight className="ml-2 size-4" />
           </Button>
         ) : (
-          <Button onClick={handleFinish} disabled={loading || servicesCount === 0 || availabilityCount === 0} className="shadow-[0_14px_32px_rgba(51,41,32,0.18)]">
+          <Button onClick={handleFinish} disabled={loading || servicesCount === 0 || availabilityCount === 0} className="min-h-11">
             {loading ? 'Finalizando...' : '¡Listo! Ir al dashboard'}
           </Button>
         )}
+      </div>
       </div>
     </div>
   )
@@ -247,12 +216,10 @@ function StepServices({ servicesCount }: { servicesCount: number }) {
       {servicesCount === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 text-sm text-amber-800">
           <p className="font-semibold mb-1">Agrega al menos un servicio</p>
-          <Link href="/dashboard/services">
-            <Button variant="outline" className="mt-2">Ir a Servicios</Button>
-          </Link>
+          <Button variant="outline" className="mt-2" asChild><Link href="/dashboard/services">Ir a Servicios</Link></Button>
         </div>
       ) : (
-        <div className="rounded-lg border border-green-200 bg-green-50/50 p-4 text-sm text-green-800">
+        <div className="rounded-lg border border-success/20 bg-success/5 p-4 text-sm text-success">
           <p>Servicios listos. Puedes agregar o editar más desde la sección Servicios.</p>
         </div>
       )}
@@ -276,12 +243,10 @@ function StepSchedule({ availabilityCount }: { availabilityCount: number }) {
       {availabilityCount === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 text-sm text-amber-800">
           <p className="font-semibold mb-1">Configura tus horarios</p>
-          <Link href="/dashboard/availability">
-            <Button variant="outline" className="mt-2">Ir a Horarios</Button>
-          </Link>
+          <Button variant="outline" className="mt-2" asChild><Link href="/dashboard/availability">Ir a Horarios</Link></Button>
         </div>
       ) : (
-        <div className="rounded-lg border border-green-200 bg-green-50/50 p-4 text-sm text-green-800">
+        <div className="rounded-lg border border-success/20 bg-success/5 p-4 text-sm text-success">
           <p>Horarios configurados. Puedes ajustarlos en la sección Horarios.</p>
         </div>
       )}
@@ -312,9 +277,7 @@ function StepPolicies() {
         </div>
       </div>
 
-      <Link href="/dashboard/settings">
-        <Button variant="outline">Ir a Configuración</Button>
-      </Link>
+      <Button variant="outline" asChild><Link href="/dashboard/settings">Ir a Configuración</Link></Button>
     </div>
   )
 }
@@ -334,8 +297,8 @@ function StepPublish({
 }) {
   return (
     <div className="space-y-6 text-center">
-      <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-green-100">
-        <CheckCircle2 className="size-8 text-green-600" />
+      <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-success/10">
+        <CheckCircle2 className="size-8 text-success" />
       </div>
       <div>
         <h2 className="text-2xl font-semibold text-primary">{canPublish ? '¡Tu negocio está listo!' : 'Faltan pasos para publicar'}</h2>
@@ -362,18 +325,14 @@ function StepPublish({
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
-        <a href={publicUrl} target="_blank" rel="noopener noreferrer">
-          <Button variant="outline">
+        <Button variant="outline" asChild><a href={publicUrl} target="_blank" rel="noopener noreferrer">
             <ExternalLink className="mr-2 size-4" />
             Ver perfil público
-          </Button>
-        </a>
-        <a href={bookingUrl} target="_blank" rel="noopener noreferrer">
-          <Button>
+          </a></Button>
+        <Button asChild><a href={bookingUrl} target="_blank" rel="noopener noreferrer">
             <CalendarCheck2 className="mr-2 size-4" />
             Ir a la página de reserva
-          </Button>
-        </a>
+          </a></Button>
       </div>
     </div>
   )

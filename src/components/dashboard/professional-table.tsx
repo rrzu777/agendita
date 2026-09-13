@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -35,24 +36,15 @@ export function ProfessionalTable({
   const displayed = showPaused ? sorted : sorted.filter(p => p.isActive)
   const reorderDisabled = !showPaused && pausedCount > 0
 
-  // Qué VA A cambiar según cuánta gente haya en agenda. La presencia de filas
-  // activas es el interruptor del multi-profesional —no hay ningún flag que
-  // configurar— así que este texto es el único lugar donde la dueña puede
-  // anticipar el salto de 1 a 2 antes de darlo.
-  //
-  // OJO EL TIEMPO VERBAL, no es un detalle de estilo: hoy dar de alta gente NO
-  // cambia nada al reservar. El horario por persona y la elección en el funnel
-  // vienen después, así que prometerlo en presente es decirle a la dueña que
-  // apretó un interruptor que todavía no está conectado — y el reporte que llega
-  // es "cargué a mis 3 barberos y no pasó nada".
+  // Copy follows the active-team funnel and the scoped availability editor.
   function switchHint(): string {
     if (activeCount === 0) {
       return 'Sin nadie en agenda, tu negocio funciona con un solo horario para todo y al reservar no se elige con quién.'
     }
     if (activeCount === 1) {
-      return 'Con una sola persona en agenda no va a haber nada que elegir al reservar: se va a asignar sola.'
+      return 'Con una sola persona en agenda no hay que elegir al reservar: se asigna automáticamente.'
     }
-    return `Con ${activeCount} personas en agenda, tus ${v.clients} van a poder elegir con quién se atienden.`
+    return `Con ${activeCount} personas en agenda, tus ${v.clients} pueden elegir con quién se atienden.`
   }
 
   function refresh() {
@@ -138,9 +130,9 @@ export function ProfessionalTable({
   return (
     <div>
       {error && (
-        <div className="mb-4 flex items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+        <div role="alert" className="mb-4 flex items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
           <span>{error}</span>
-          <button type="button" onClick={() => setError(null)} className="shrink-0 text-destructive/70 hover:text-destructive">
+          <button type="button" aria-label="Cerrar error" onClick={() => setError(null)} className="flex size-11 shrink-0 items-center justify-center rounded-lg text-destructive hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring">
             <X className="size-4" />
           </button>
         </div>
@@ -148,18 +140,11 @@ export function ProfessionalTable({
 
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
-          <h2 className="font-heading text-2xl font-semibold tracking-tight text-primary">Tu equipo</h2>
+          <h2 className="font-heading text-2xl font-semibold tracking-tight text-foreground">Tu equipo</h2>
           <p className="max-w-xl text-sm text-muted-foreground">{switchHint()}</p>
-          {/* Mientras la agenda por persona no esté, decirlo. Es la diferencia entre
-              "todavía no lo terminamos" y "cargué a mi equipo y la app no funciona". */}
-          {activeCount > 0 && (
-            <p className="mt-1 max-w-xl text-sm text-amber-700 dark:text-amber-400">
-              Por ahora sólo se guarda: al reservar todavía no se elige con quién, y el
-              horario sigue siendo uno para todo el negocio.
-            </p>
-          )}
+          <p className="mt-2 max-w-xl text-sm text-muted-foreground">Configura los horarios de cada persona en Disponibilidad.</p>
         </div>
-        <div className="flex shrink-0 items-center gap-4">
+        <div className="flex shrink-0 flex-wrap items-center gap-3">
           {pausedCount > 0 && (
             <div className="flex items-center gap-2">
               <Switch id="show-paused" checked={showPaused} onCheckedChange={setShowPaused} />
@@ -174,24 +159,24 @@ export function ProfessionalTable({
 
       {reorderDisabled && (
         <p className="mb-3 text-xs text-muted-foreground">
-          Activá &quot;Ver en pausa&quot; para reordenar.
+          Activa &quot;Ver en pausa&quot; para reordenar.
         </p>
       )}
 
       {displayed.length === 0 ? (
-        <div className="studio-card overflow-hidden py-12 text-center">
+        <div className="studio-card shadow-none overflow-hidden py-12 text-center">
           <div className="flex flex-col items-center gap-4">
             <div className="flex size-14 items-center justify-center rounded-full bg-muted">
               <Users className="size-7 text-muted-foreground" />
             </div>
             <div>
-              <p className="mb-1 text-base font-semibold text-primary">
+              <p className="mb-1 text-base font-semibold text-foreground">
                 {showPaused ? v.noProfessionals : 'Nadie en agenda'}
               </p>
               <p className="mx-auto max-w-md text-sm text-muted-foreground">
                 {showPaused
-                  ? 'Tu agenda funciona igual sin esto. Sumá a tu equipo para que más adelante cada persona tenga su propio horario y sus propias citas.'
-                  : 'Todo el equipo está en pausa. Volvé a poner a alguien en agenda cuando quieras que vuelva a contar.'}
+                  ? 'Tu agenda funciona con el horario del negocio. Agrega a tu equipo para asignar servicios y horarios por persona.'
+                  : 'Todo el equipo está en pausa. Vuelve a poner a alguien en agenda cuando quieras que vuelva a contar.'}
               </p>
             </div>
             {showPaused && (
@@ -201,7 +186,7 @@ export function ProfessionalTable({
         </div>
       ) : (
         <>
-          <div className="studio-card hidden overflow-hidden lg:block">
+          <div className="studio-card shadow-none hidden overflow-hidden lg:block">
             <Table fixed className={TABLE_MIN_WIDTH}>
               <TableHeader>
                 <TableRow className="bg-muted/50">
@@ -224,7 +209,7 @@ export function ProfessionalTable({
                             type="button"
                             onClick={() => handleMoveUp(fullIndex)}
                             disabled={reorderDisabled || fullIndex === 0}
-                            className="text-muted-foreground hover:text-primary disabled:cursor-not-allowed disabled:opacity-30"
+                            className="inline-flex size-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-30"
                             aria-label="Mover arriba"
                           >
                             <ChevronUp className="size-3.5" />
@@ -234,7 +219,7 @@ export function ProfessionalTable({
                             type="button"
                             onClick={() => handleMoveDown(fullIndex)}
                             disabled={reorderDisabled || fullIndex === sorted.length - 1}
-                            className="text-muted-foreground hover:text-primary disabled:cursor-not-allowed disabled:opacity-30"
+                            className="inline-flex size-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-30"
                             aria-label="Mover abajo"
                           >
                             <ChevronDown className="size-3.5" />
@@ -242,7 +227,7 @@ export function ProfessionalTable({
                         </div>
                       </TableCell>
                       <TruncatedCell
-                        className="font-semibold text-primary"
+                        className="font-semibold text-foreground"
                         primary={p.name}
                         secondary={p.bio}
                       />
@@ -282,6 +267,9 @@ export function ProfessionalTable({
                   { label: 'Dónde atiende', value: p.modalities.map((m) => MODALITY_LABELS[m]).join(', ') },
                 ]}
                 actions={
+                  <>
+                  <Button variant="ghost" size="icon" className="size-11" aria-label="Mover arriba" disabled={reorderDisabled || sorted.findIndex(item => item.id === p.id) === 0} onClick={() => handleMoveUp(sorted.findIndex(item => item.id === p.id))}><ChevronUp className="size-4" /></Button>
+                  <Button variant="ghost" size="icon" className="size-11" aria-label="Mover abajo" disabled={reorderDisabled || sorted.findIndex(item => item.id === p.id) === sorted.length - 1} onClick={() => handleMoveDown(sorted.findIndex(item => item.id === p.id))}><ChevronDown className="size-4" /></Button>
                   <ProfessionalRowActions
                     professional={p}
                     services={services}
@@ -290,6 +278,7 @@ export function ProfessionalTable({
                     onDelete={handleDelete}
                     onSuccess={refresh}
                   />
+                  </>
                 }
                 className={!p.isActive ? 'opacity-60' : ''}
               />

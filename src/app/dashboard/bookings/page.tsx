@@ -1,3 +1,4 @@
+import { KpiStrip } from '@/components/dashboard/kpi-strip'
 import { bookingServiceName } from '@/lib/bookings/service-lines'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
@@ -8,7 +9,7 @@ import { getVocabulary } from '@/lib/vocabulary'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { updateBookingStatus } from '@/server/actions/bookings'
+import { BookingStatusButton } from '@/components/dashboard/booking-status-button'
 import { CalendarDays, Clock, User, UserCheck, CreditCard, MapPin, Phone, Plus, RefreshCw } from 'lucide-react'
 import { BookingContactButtons } from '@/components/dashboard/booking-contact-buttons'
 import { CancelBookingButton } from '@/components/dashboard/cancel-booking-button'
@@ -45,18 +46,18 @@ export const BOOKING_STATUS_COLUMN = 'w-[232px]'
 export const BOOKING_TABLE_MIN_WIDTH = 'min-w-[980px]'
 
 const PENDING_TRANSFER_BADGE_CLASS =
-  'inline-flex items-center rounded-md border border-transparent bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800 dark:bg-orange-500/15 dark:text-orange-300'
+  'inline-flex items-center rounded-md border border-transparent bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning'
 
 const PENDING_BALANCE_BADGE_CLASS =
-  'inline-flex items-center rounded-md border border-transparent bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'
+  'inline-flex items-center rounded-md border border-transparent bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning'
 
 function EmptyState() {
   return (
-    <div data-tour-id="bookings-empty" className="studio-card p-8 text-center">
+    <div data-tour-id="bookings-empty" className="studio-card shadow-none p-8 text-center">
       <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-muted">
         <CalendarDays className="size-7 text-muted-foreground" />
       </div>
-      <h3 className="mb-2 text-lg font-semibold text-primary">No tienes reservas todavía</h3>
+      <h3 className="mb-2 text-lg font-semibold text-foreground">No tienes reservas todavía</h3>
       <p className="mb-6 text-sm text-muted-foreground">
         Cuando un cliente reserve a través de tu enlace, aparecerá aquí.
       </p>
@@ -111,10 +112,10 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
     : null
 
   return (
-    <article className="studio-card p-5">
-      <div className="mb-4 flex items-start justify-between gap-3">
+    <article className="studio-card shadow-none p-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-lg font-semibold text-primary truncate">{bookingServiceName(booking)}</h3>
+          <h3 className="break-words text-lg font-semibold text-foreground">{bookingServiceName(booking)}</h3>
           <p className="text-sm text-muted-foreground">{formatBookingNumber(booking.bookingNumber, booking.id)}</p>
         </div>
         <div data-tour-id="bookings-status" className="flex shrink-0 flex-col items-end gap-1">
@@ -140,19 +141,19 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
         </div>
         <div className="flex items-center gap-3 text-sm">
           <User className="size-4 text-muted-foreground" />
-          <span className="text-primary">{booking.customer?.name || 'Sin cliente'}</span>
+          <span className="text-foreground">{booking.customer?.name || 'Sin cliente'}</span>
         </div>
         {booking.professional && (
           <div className="flex items-center gap-3 text-sm">
             <UserCheck className="size-4 text-muted-foreground" />
             <span className="text-muted-foreground">
-              Atiende: <span className="text-primary">{booking.professional.name}</span>
+              Atiende: <span className="text-foreground">{booking.professional.name}</span>
             </span>
           </div>
         )}
         <div className="flex items-center gap-3 text-sm">
           <CreditCard className="size-4 text-muted-foreground" />
-          <span className={booking.paymentStatus === 'fully_paid' ? 'text-green-700' : 'text-primary'}>
+          <span className={booking.paymentStatus === 'fully_paid' ? 'text-success' : 'text-foreground'}>
             {formatMoney(booking.depositPaid, businessCurrency)} de {formatMoney(booking.finalAmount, businessCurrency)}
           </span>
           <PaymentRevertedBadge paymentStatus={booking.paymentStatus} />
@@ -162,7 +163,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           return (
             <div className="flex items-start gap-3 text-sm">
               <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 text-primary">
+              <span className="min-w-0 text-foreground">
                 {where.label}
                 {where.detail && (
                   <span className="block break-words text-xs text-muted-foreground">{where.detail}</span>
@@ -204,29 +205,15 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
 
       {booking.status === 'confirmed' && (
         <div data-tour-id="bookings-actions" className="mt-4 grid grid-cols-2 gap-2 border-t border-border/50 pt-4">
-          <form action={async () => {
-            'use server'
-            // Sin UI de error en esta card (vista móvil): si falla, la reserva
-            // simplemente no se completa (misma semántica silenciosa que
-            // TimeBlockList.handleDelete). El fallback con feedback vive en
-            // BookingRowActions (tabla de escritorio).
-            const res = await updateBookingStatus(booking.id, 'completed')
-            if (!res.ok) return
-          }}>
-            <Button type="submit" variant="outline" className="w-full h-10 text-sm font-semibold">
-              Completar
-            </Button>
-          </form>
+          <BookingStatusButton bookingId={booking.id} status="completed" label="Completar" pendingLabel="Completando…" errorLabel="Error al completar" className="min-h-11 w-full" />
           {/* prefetch={false}: esta card se renderiza por CADA reserva confirmada
               y getBookings() no está paginado; sin esto, cada fila visible haría
               un prefetch de su ruta de reprogramar (O(reservas)). Reprogramar es
               acción poco frecuente: fetch on-click alcanza. */}
-          <Link href={`/dashboard/bookings/${booking.id}/reschedule`} prefetch={false}>
-            <Button type="button" variant="outline" className="w-full h-10 text-sm font-semibold">
+          <Button type="button" variant="outline" className="w-full min-h-11 text-sm font-semibold" asChild><Link href={`/dashboard/bookings/${booking.id}/reschedule`} prefetch={false}>
               <RefreshCw className="mr-1 size-3" />
               Reprogramar
-            </Button>
-          </Link>
+            </Link></Button>
           <div>
             <CancelBookingButton bookingId={booking.id} size="default" />
           </div>
@@ -245,17 +232,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
       )}
       {booking.status === 'pending_confirmation' && (
         <div data-tour-id="bookings-actions" className="mt-4 flex gap-2 border-t border-border/50 pt-4">
-          <form action={async () => {
-            'use server'
-            // Misma semántica silenciosa que "Completar" de arriba: la card móvil
-            // no tiene dónde poner el error. El camino con feedback es la tabla.
-            const res = await updateBookingStatus(booking.id, 'confirmed')
-            if (!res.ok) return
-          }} className="flex-1">
-            <Button type="submit" className="w-full h-10 text-sm font-semibold">
-              Aceptar
-            </Button>
-          </form>
+          <div className="flex-1"><BookingStatusButton bookingId={booking.id} status="confirmed" label="Aceptar" pendingLabel="Aceptando…" errorLabel="Error al aceptar" variant="default" className="min-h-11 w-full" /></div>
           <div className="flex-1">
             <CancelBookingButton bookingId={booking.id} mode="reject" label="Rechazar" size="default" />
           </div>
@@ -268,7 +245,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           {paymentBlockedReason && (
             <p className="mb-3 text-sm text-muted-foreground">{paymentBlockedReason}</p>
           )}
-          <div className="flex gap-2">
+          <div className="grid grid-cols-2 gap-2 [&>button]:min-h-11">
             {canRegisterPayment && (
               <ManualPaymentDialog
                 bookings={[booking]}
@@ -277,7 +254,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
                 defaultBookingId={booking.id}
                 triggerLabel="Cobrar"
                 triggerVariant="outline"
-                triggerClassName="h-10 w-full min-w-0 text-sm font-semibold"
+                triggerClassName="min-h-11 w-full min-w-0 text-sm font-semibold"
               />
             )}
             <CancelBookingButton bookingId={booking.id} size="default" />
@@ -308,13 +285,15 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
             customerHasEmail={!!booking.customer?.email}
             canReopen={reviveState.canReopen}
             reopenDisabledReason={reviveState.reason}
-            triggerClassName="flex-1 h-10 text-sm font-semibold"
+            triggerClassName="flex-1 min-h-11 text-sm font-semibold"
           />
         </div>
       )}
     </article>
   )
 }
+
+export const metadata = { title: 'Reservas — Agendita' }
 
 export default async function BookingsPage({
   searchParams,
@@ -392,21 +371,17 @@ export default async function BookingsPage({
       <DashboardHeader
         title="Reservas"
         subtitle="Administra tus citas y el estado de tus reservas."
+        action={<Button asChild size="form"><Link href="/dashboard/bookings/new" data-tour-id="bookings-new"><Plus className="size-4" />Nueva reserva</Link></Button>}
       />
-      <div className="space-y-6 p-5 md:p-10">
+      <div className="mx-auto max-w-[1420px] space-y-6 p-4 min-[1100px]:p-10">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Link href="/dashboard/bookings/new">
-            <Button data-tour-id="bookings-new" size="form" className="font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]">
-              <Plus className="mr-2 size-4" />
-              Nueva reserva
-            </Button>
-          </Link>
           <form data-tour-id="bookings-search" className="flex w-full flex-col gap-2 sm:max-w-xl sm:flex-row sm:items-center" action="/dashboard/bookings">
             {transferCursor && <input type="hidden" name="transferCursor" value={transferCursor} />}
             <Input
               name="booking"
               type="search"
               placeholder="Buscar reserva #1234"
+              aria-label="Buscar por número de reserva"
               defaultValue={bookingSearch}
               density="form"
               className="min-w-0 flex-1"
@@ -419,26 +394,12 @@ export default async function BookingsPage({
             )}
           </form>
         </div>
-        <div className={`grid gap-4 ${requestCount > 0 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}`}>
-          <div className="studio-card p-4">
-            <p className="studio-eyebrow">Total</p>
-            <p className="mt-1 text-3xl font-semibold text-primary">{stats.total}</p>
-          </div>
-          {requestCount > 0 && (
-            <div className="studio-card p-4">
-              <p className="studio-eyebrow">Por confirmar</p>
-              <p className="mt-1 text-3xl font-semibold text-amber-700 dark:text-amber-300">{requestCount}</p>
-            </div>
-          )}
-          <div className="studio-card p-4">
-            <p className="studio-eyebrow">Confirmadas</p>
-            <p className="mt-1 text-3xl font-semibold text-primary">{confirmedCount}</p>
-          </div>
-          <div className="studio-card p-4">
-            <p className="studio-eyebrow">Pendientes de pago</p>
-            <p className="mt-1 text-3xl font-semibold text-primary">{pendingCount}</p>
-          </div>
-        </div>
+        <KpiStrip label="Resumen de reservas" items={[
+          { label: 'Total', value: stats.total, description: 'Todo el historial' },
+          { label: 'Por confirmar', value: requestCount, description: 'Solicitudes pendientes', tone: requestCount > 0 ? 'warning' : 'default' },
+          { label: 'Confirmadas', value: confirmedCount, description: 'Todo el historial' },
+          { label: 'Pendientes de pago', value: pendingCount, description: 'Según su estado actual' },
+        ]} />
 
         <PendingTransfersSection
           items={pendingTransfers}
@@ -456,18 +417,18 @@ export default async function BookingsPage({
         {stats.total === 0 ? (
           <EmptyState />
         ) : hasInvalidBookingSearch ? (
-          <div className="studio-card p-8 text-center">
-            <h3 className="text-lg font-semibold text-primary">Número de reserva inválido</h3>
-            <p className="mt-2 text-sm text-muted-foreground">Usá un número como #1234.</p>
+          <div className="studio-card shadow-none p-8 text-center">
+            <h3 className="text-lg font-semibold text-foreground">Número de reserva inválido</h3>
+            <p className="mt-2 text-sm text-muted-foreground">Usa un número como #1234.</p>
           </div>
         ) : bookingSearch && bookings.length === 0 ? (
-          <div className="studio-card p-8 text-center">
-            <h3 className="text-lg font-semibold text-primary">No encontramos esa reserva</h3>
+          <div className="studio-card shadow-none p-8 text-center">
+            <h3 className="text-lg font-semibold text-foreground">No encontramos esa reserva</h3>
             <p className="mt-2 text-sm text-muted-foreground">Verificá el número e intentá de nuevo.</p>
           </div>
         ) : bookings.length === 0 ? (
-          <div className="studio-card p-8 text-center">
-            <h3 className="text-lg font-semibold text-primary">Esta página ya no está disponible</h3>
+          <div className="studio-card shadow-none p-8 text-center">
+            <h3 className="text-lg font-semibold text-foreground">Esta página ya no está disponible</h3>
             <p className="mt-2 text-sm text-muted-foreground">Volvé al inicio de Reservas para cargar el historial actual.</p>
             <Button className="mt-5" variant="outline" asChild>
               <Link href="/dashboard/bookings">Ir al inicio</Link>
@@ -475,7 +436,7 @@ export default async function BookingsPage({
           </div>
         ) : (
           <>
-            <div className="hidden lg:block studio-card overflow-hidden">
+            <div className="hidden lg:block studio-card shadow-none overflow-hidden">
               <Table fixed className={BOOKING_TABLE_MIN_WIDTH}>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
@@ -491,7 +452,7 @@ export default async function BookingsPage({
                   {bookings.map((booking) => (
                     <TableRow key={booking.id}>
                       <TruncatedCell
-                        className="font-semibold text-primary"
+                        className="font-semibold text-foreground"
                         primary={bookingServiceName(booking)}
                         secondary={
                           isNotableModality(booking.modality)
@@ -525,7 +486,7 @@ export default async function BookingsPage({
                         </div>
                       </TableCell>
                       <TableCell className={`${TABLE_COL.money} whitespace-normal`}>
-                        <span className={booking.paymentStatus === 'fully_paid' ? 'font-semibold text-green-700' : 'font-semibold text-primary'}>
+                        <span className={booking.paymentStatus === 'fully_paid' ? 'font-semibold text-success' : 'font-semibold text-foreground'}>
                           {formatMoney(booking.depositPaid, businessCurrency)} / {formatMoney(booking.finalAmount, businessCurrency)}
                         </span>
                         {booking.remainingBalance > 0 && (

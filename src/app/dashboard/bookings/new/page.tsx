@@ -6,6 +6,8 @@ import { prisma } from '@/lib/db'
 import { funnelProfessionalsQueryFor, toFunnelProfessionals } from '@/lib/professionals/eligible'
 import { getVocabulary } from '@/lib/vocabulary'
 
+export const metadata = { title: 'Nueva reserva — Agendita' }
+
 export default async function NewBookingPage({
   searchParams,
 }: {
@@ -41,8 +43,8 @@ export default async function NewBookingPage({
 
   return (
     <div>
-      <DashboardHeader title="Nueva reserva" subtitle={`Crea una reserva manual para tus ${getVocabulary(userData.business.category).clients}`} />
-      <div className="p-5 md:p-10">
+      <DashboardHeader back={{ href: '/dashboard/bookings', label: 'Volver a reservas' }} title="Nueva reserva" subtitle={`Crea una reserva manual para tus ${getVocabulary(userData.business.category).clients}`} />
+      <div className="mx-auto max-w-[1420px] p-4 min-[1100px]:p-10">
         <NewBookingForm
           services={services}
           professionals={toFunnelProfessionals(team)}

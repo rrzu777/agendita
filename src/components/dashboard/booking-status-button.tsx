@@ -56,7 +56,7 @@ export function BookingStatusButton({
       >
         {pending ? pendingLabel : label}
       </Button>
-      {error && <span className="text-xs text-destructive">{error}</span>}
+      {error && <span role="alert" className="mt-1 text-xs text-destructive">{error}</span>}
     </div>
   )
 }

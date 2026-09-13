@@ -2,7 +2,9 @@ import { bookingServiceName } from '@/lib/bookings/service-lines'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DashboardPanel } from '@/components/dashboard/dashboard-panel'
+import { KpiStrip } from '@/components/dashboard/kpi-strip'
+import { formatInTimeZone } from 'date-fns-tz'
 import { Button } from '@/components/ui/button'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
 import { getDashboardBookingSummary } from '@/server/actions/bookings'
@@ -19,7 +21,9 @@ import { TourInvitation } from '@/components/dashboard/tours/tour-invitation'
 import { hasPendingBalanceTransfer, hasPendingDeclaredTransfer, pendingPackageTransferWhere } from '@/lib/bank-transfer/declared'
 import { businessScheduleWhere } from '@/lib/availability/scope'
 import { getVocabulary } from '@/lib/vocabulary'
-import { CalendarCheck2, CreditCard, ExternalLink, Plus, TrendingUp, Users } from 'lucide-react'
+import { CalendarCheck2, ExternalLink, Plus } from 'lucide-react'
+
+export const metadata = { title: 'Hoy — Agendita' }
 
 export default async function DashboardPage() {
   const userData = await getCurrentUserWithBusiness()
@@ -38,8 +42,10 @@ export default async function DashboardPage() {
 
   const business = userData.business
   const v = getVocabulary(business.category)
-  const [bookingSummary, summary, servicesCount, availabilityCount, connectedPaymentAccounts, pendingPackageTransfersCount] = await Promise.all([
-    getDashboardBookingSummary(new Date(), business.timezone || 'America/Santiago'),
+  const now = new Date()
+  const timezone = business.timezone || 'America/Santiago'
+  const [bookingSummary, summary, servicesCount, availabilityCount, connectedPaymentAccounts, pendingPackageTransfersCount, nextBooking] = await Promise.all([
+    getDashboardBookingSummary(now, timezone),
     getFinancialSummary(),
     prisma.service.count({ where: { businessId: business.id, isActive: true } }),
     // Progreso de onboarding ("¿ya configuró su horario?"), del SALÓN. Sin el filtro,
@@ -47,6 +53,12 @@ export default async function DashboardPage() {
     prisma.availabilityRule.count({ where: { ...businessScheduleWhere(business.id), isActive: true } }),
     prisma.paymentAccount.count({ where: { businessId: business.id, status: 'connected' } }),
     prisma.packagePurchase.count({ where: pendingPackageTransferWhere(business.id) }),
+    // A separate bounded read: the existing summary is only five records from midnight.
+    prisma.booking.findFirst({
+      where: { businessId: business.id, startDateTime: { gte: now }, status: { in: ['confirmed', 'pending_payment', 'pending_confirmation'] } },
+      orderBy: [{ startDateTime: 'asc' }, { id: 'asc' }],
+      select: { id: true, startDateTime: true, status: true, customer: { select: { name: true } }, service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } } },
+    }),
   ])
 
   const upcomingBookings = bookingSummary.upcoming
@@ -62,146 +74,101 @@ export default async function DashboardPage() {
     publicUrl,
     bookingUrl,
   })
-  const stats = [
-    { label: 'Reservas hoy', value: bookingSummary.today.toString(), hint: '+ hoy', icon: CalendarCheck2 },
-    { label: 'Ingresos mes', value: formatMoney(summary.incomeMonth, business.currency || 'CLP'), hint: 'Este mes', icon: CreditCard },
-    { label: 'Próximas reservas', value: upcomingBookings.length.toString(), hint: 'Agenda', icon: TrendingUp },
-    { label: 'Total reservas', value: bookingSummary.total.toString(), hint: 'Histórico', icon: Users },
-  ]
+  const currency = business.currency || 'CLP'
+  const pendingCount = bookingSummary.pendingTransfers + pendingPackageTransfersCount
+  const calendarFor = (date: Date) => `/dashboard/calendar?view=day&date=${formatInTimeZone(date, timezone, 'yyyy-MM-dd')}`
+  const dateLabel = (date: Date) => new Date(date).toLocaleDateString('es-CL', { day: 'numeric', month: 'long', timeZone: timezone })
+  const timeLabel = (date: Date) => new Date(date).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: timezone })
 
   return (
     <div>
-      <DashboardHeader title={`Resumen de ${business.name}`} subtitle="Aquí tienes el pulso de tu estudio hoy." />
-      <div className="p-5 md:p-10">
-        <div className="mb-6 flex justify-end">
-          <Button asChild size="form" className="font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]">
-            <Link href="/dashboard/bookings/new" data-tour-id="dashboard-new-booking">
-              <Plus className="mr-2 size-4" />
-              Nueva reserva
-            </Link>
-          </Button>
-        </div>
-        <PendingTransfersBanner count={bookingSummary.pendingTransfers} />
-        <PendingPackageTransfersBanner count={pendingPackageTransfersCount} />
+      <DashboardHeader
+        title="Cabina del día"
+        subtitle={`${business.name} · ${dateLabel(now)}`}
+        action={<Button asChild size="form"><Link href="/dashboard/bookings/new" data-tour-id="dashboard-new-booking"><Plus className="size-4" />Nueva reserva</Link></Button>}
+      />
+      <div className="mx-auto max-w-[1420px] space-y-6 p-4 min-[1100px]:p-10">
         <TourInvitation />
-        <Card className="studio-card mb-8 border-border/60 bg-card">
-          <CardContent className="p-6">
-            <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h3 className="mb-1 text-lg font-semibold text-primary">Tu perfil público</h3>
-                <p className="text-sm text-muted-foreground">
-                  Comparte este link con tus {v.clients} para que reserven
-                </p>
-                <code className="mt-3 inline-block max-w-full rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm text-primary">
-                  {publicUrl}
-                </code>
+        <div className="grid items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1.7fr)_minmax(280px,1fr)]">
+          <DashboardPanel title="Próxima cita" description="La siguiente reserva por comenzar." action={<Button asChild variant="outline"><Link href={calendarFor(nextBooking?.startDateTime ?? now)}>Ver calendario</Link></Button>}>
+            {nextBooking ? (
+              <div className="flex flex-col gap-5 min-[721px]:flex-row min-[721px]:items-center">
+                <div className="shrink-0">
+                  <p className="font-mono text-4xl font-medium tracking-tight tabular-nums">{timeLabel(nextBooking.startDateTime)}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{dateLabel(nextBooking.startDateTime)}</p>
+                </div>
+                <div className="min-w-0 min-[721px]:border-l min-[721px]:border-border min-[721px]:pl-5">
+                  <h3 className="break-words text-xl font-semibold">{nextBooking.customer?.name || v.Client}</h3>
+                  <p className="mt-1 break-words text-sm text-muted-foreground">{bookingServiceName(nextBooking)}</p>
+                  <p className="mt-3 text-sm font-medium">{bookingStatusLabel(nextBooking.status)}</p>
+                </div>
               </div>
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <a
-                  href={publicUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <Button variant="outline" className="h-11 rounded-lg font-semibold">
-                    <ExternalLink className="mr-2 size-4" />
-                    Ver perfil
-                  </Button>
-                </a>
-                <a
-                  href={bookingUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <Button className="h-11 rounded-lg font-semibold">
-                    <CalendarCheck2 className="mr-2 size-4" />
-                    Reservar
-                  </Button>
-                </a>
+            ) : (
+              <div className="py-4">
+                <p className="text-lg font-medium">No tienes citas por comenzar</p>
+                <p className="mt-2 text-sm text-muted-foreground">Puedes crear una reserva o compartir tu perfil público.</p>
               </div>
+            )}
+          </DashboardPanel>
+          <DashboardPanel title="Por resolver" tone={pendingCount > 0 ? 'attention' : 'default'}>
+            {pendingCount === 0 ? <p className="text-sm text-muted-foreground">Sin transferencias por verificar</p> : (
+              <div className="space-y-3">
+                <PendingTransfersBanner count={bookingSummary.pendingTransfers} />
+                <PendingPackageTransfersBanner count={pendingPackageTransfersCount} />
+              </div>
+            )}
+            <div className="mt-5 border-t border-border pt-4">
+              <p className="text-sm font-medium">Horario y capacidad</p>
+              <p className="mt-1 text-sm text-muted-foreground">Revisa los horarios del equipo y sus bloqueos antes de abrir nuevos cupos.</p>
+              <Button asChild variant="ghost" className="mt-2"><Link href="/dashboard/availability">Ver disponibilidad</Link></Button>
             </div>
-          </CardContent>
-        </Card>
+          </DashboardPanel>
+        </div>
+
+        <KpiStrip label="Resumen del negocio" items={[
+          { label: 'Reservas hoy', value: bookingSummary.today, description: 'Incluye todos los estados' },
+          { label: 'Ingresos del mes', value: formatMoney(summary.incomeMonth, currency), description: 'Ingresos registrados de reservas; no incluye paquetes' },
+          { label: 'Total reservas', value: bookingSummary.total, description: 'Histórico · todos los estados' },
+        ]} />
+
+        <DashboardPanel title="Agenda desde hoy" description="Hasta cinco reservas desde el inicio de hoy; puede incluir citas ya atendidas." action={<Button asChild variant="ghost"><Link href="/dashboard/calendar">Ver calendario completo</Link></Button>}>
+          {upcomingBookings.length === 0 ? (
+            <p className="py-4 text-sm text-muted-foreground">No hay reservas en este resumen. Comparte tu perfil público para recibir nuevas citas.</p>
+          ) : (
+            <ol className="divide-y divide-border">
+              {upcomingBookings.map((booking) => (
+                <li key={booking.id} className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 min-[721px]:flex-row min-[721px]:items-center min-[721px]:justify-between">
+                  <div className="flex min-w-0 items-start gap-4">
+                    <div className="w-28 shrink-0">
+                      <time dateTime={new Date(booking.startDateTime).toISOString()} className="font-mono text-lg tabular-nums">{timeLabel(booking.startDateTime)}</time>
+                      <p className="text-xs text-muted-foreground">{dateLabel(booking.startDateTime)}</p>
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="break-words font-medium">{booking.customer?.name || v.Client}</h3>
+                      <p className="break-words text-sm text-muted-foreground">{bookingServiceName(booking)}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
+                    <span className="rounded-md bg-muted px-2 py-1">{hasPendingDeclaredTransfer(booking) ? 'Por verificar' : bookingStatusLabel(booking.status)}</span>
+                    {hasPendingBalanceTransfer(booking) && <span className="rounded-md bg-warning/10 px-2 py-1 text-warning">Saldo por verificar</span>}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </DashboardPanel>
 
         <SetupChecklist checklist={checklist} />
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          {stats.map((stat) => {
-            const Icon = stat.icon
-            return (
-              <Card key={stat.label} className="studio-card border-border/60">
-                <CardHeader className="pb-1">
-                  <div className="mb-3 flex items-center justify-between">
-                    <div className="flex size-12 items-center justify-center rounded-xl bg-secondary text-primary">
-                      <Icon className="size-5" />
-                    </div>
-                    <span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">{stat.hint}</span>
-                  </div>
-                  <CardTitle className="text-sm font-semibold text-muted-foreground">{stat.label}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-4xl font-heading font-semibold tracking-tight text-primary">{stat.value}</div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-
-        <section className="mt-10">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-2xl font-heading font-semibold tracking-tight text-primary">Próximas citas</h2>
-            <Link href="/dashboard/calendar" className="text-sm font-semibold text-muted-foreground hover:text-primary">
-              Ver calendario completo
-            </Link>
+        <DashboardPanel title="Tu perfil público" description={`Comparte este enlace con tus ${v.clients} para que reserven.`}>
+          <div className="flex flex-col gap-4 min-[721px]:flex-row min-[721px]:items-center min-[721px]:justify-between">
+            <p className="min-w-0 break-all text-sm text-muted-foreground">{publicUrl}</p>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button asChild variant="outline"><a href={publicUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="size-4" />Ver perfil</a></Button>
+              <Button asChild variant="outline"><a href={bookingUrl} target="_blank" rel="noopener noreferrer"><CalendarCheck2 className="size-4" />Reservar</a></Button>
+            </div>
           </div>
-          {upcomingBookings.length === 0 ? (
-            <div className="studio-card p-8 text-center">
-              <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-muted">
-                <CalendarCheck2 className="size-7 text-muted-foreground" />
-              </div>
-              <h3 className="mb-2 text-lg font-semibold text-primary">No tienes reservas próximas</h3>
-              <p className="text-sm text-muted-foreground">
-                Comparte tu perfil público para recibir reservas de tus {v.clients}.
-              </p>
-              <code className="mt-3 inline-block rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm text-primary">
-                {publicUrl}
-              </code>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {upcomingBookings.map((booking) => (
-                <article key={booking.id} className="studio-card flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
-                  <div className="flex items-center gap-5">
-                    <div className="flex size-16 flex-col items-center justify-center rounded-xl bg-accent text-primary">
-                      <span className="text-xl font-semibold">
-                        {new Date(booking.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: business.timezone })}
-                      </span>
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-semibold text-primary">{booking.customer?.name || v.Client}</h3>
-                      <p className="text-sm font-semibold uppercase tracking-[0.1em] text-muted-foreground">{bookingServiceName(booking)}</p>
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-start gap-1 md:items-end">
-                    <span className="self-start rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground md:self-auto">
-                      {booking.status === 'confirmed'
-                        ? 'Confirmada'
-                        : hasPendingDeclaredTransfer(booking)
-                          ? 'Por verificar'
-                          : booking.status === 'pending_payment'
-                            ? 'Pendiente'
-                            : bookingStatusLabel(booking.status)}
-                    </span>
-                    {hasPendingBalanceTransfer(booking) && (
-                      <span className="self-start rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300 md:self-auto">
-                        Saldo por verificar
-                      </span>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+        </DashboardPanel>
       </div>
     </div>
   )

@@ -1,3 +1,4 @@
+import { KpiStrip } from '@/components/dashboard/kpi-strip'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { DashboardHeader } from '@/components/dashboard/header'
@@ -48,6 +49,8 @@ interface Props {
   params: Promise<{ id: string }>
 }
 
+export const metadata = { title: 'Detalle de cliente — Agendita' }
+
 export default async function CustomerDetailPage({ params }: Props) {
   const userData = await getCurrentUserWithBusiness()
 
@@ -81,15 +84,13 @@ export default async function CustomerDetailPage({ params }: Props) {
     return (
       <div>
         <DashboardHeader title={v.Client} subtitle={`Detalle de ${v.client}`} />
-        <div className="p-5 md:p-10">
-          <div className="studio-card flex min-h-[320px] flex-col items-center justify-center p-8 text-center">
-            <h2 className="text-xl font-semibold text-primary">Error al cargar</h2>
+        <div className="mx-auto max-w-[1420px] p-4 min-[1100px]:p-10">
+          <div className="studio-card shadow-none flex min-h-[320px] flex-col items-center justify-center p-8 text-center">
+            <h2 className="text-xl font-semibold text-foreground">Error al cargar</h2>
             <p className="mt-2 max-w-md text-muted-foreground">{error || 'No encontrada'}</p>
-            <Link href="/dashboard/customers">
-              <Button className="mt-6" variant="outline">
+            <Button className="mt-6" variant="outline" asChild><Link href="/dashboard/customers">
                 Volver a {v.clients}
-              </Button>
-            </Link>
+              </Link></Button>
           </div>
         </div>
       </div>
@@ -123,95 +124,50 @@ export default async function CustomerDetailPage({ params }: Props) {
   return (
     <div>
       <DashboardHeader title={customer.name} subtitle={`Detalle de ${v.client}`} />
-      <div className="p-5 md:p-10">
+      <div className="mx-auto max-w-[1420px] p-4 min-[1100px]:p-10">
         {/* Back + actions */}
         <div className="mb-6 flex flex-wrap items-center gap-3">
-          <Link href="/dashboard/customers">
-            <Button variant="ghost" size="sm">
+          <Button variant="ghost" size="sm" asChild><Link href="/dashboard/customers">
               <ArrowLeft className="mr-1 size-4" />
               Volver
-            </Button>
-          </Link>
+            </Link></Button>
           <div className="flex-1" />
           {hasWhatsapp ? (
-            <a
+            <Button variant="outline" size="sm" asChild><a
               href={`https://wa.me/${cleanPhone}`}
               target="_blank"
               rel="noopener noreferrer"
             >
-              <Button variant="outline" size="sm">
                 <MessageCircle className="mr-1 size-4" />
                 WhatsApp
-              </Button>
-            </a>
+              </a></Button>
           ) : (
             <Button variant="outline" size="sm" disabled title="Sin telefono valido">
               <MessageCircle className="mr-1 size-4" />
               WhatsApp
             </Button>
           )}
-          <Link href={`/dashboard/bookings/new?customerId=${encodeURIComponent(customer.id)}`}>
-            <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" asChild><Link href={`/dashboard/bookings/new?customerId=${encodeURIComponent(customer.id)}`}>
               <Plus className="mr-1 size-4" />
               Nueva reserva
-            </Button>
-          </Link>
+            </Link></Button>
         </div>
 
-        {/* Financial summary */}
-        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
-          <div className="studio-card p-4">
-            <p className="studio-eyebrow">Reservas</p>
-            <p className="mt-1 text-2xl font-semibold text-primary">
-              {customer.bookingCount}
-            </p>
-          </div>
-          <div className="studio-card p-4">
-            <p className="studio-eyebrow">Total</p>
-            <p className="mt-1 text-2xl font-semibold text-primary">
-              {formatMoney(customerTotalValue, currency)}
-            </p>
-          </div>
-          <div className="studio-card p-4">
-            <p className="studio-eyebrow">Total pagado</p>
-            <p className="mt-1 text-2xl font-semibold text-green-700">
-              {formatMoney(customer.totalPaidApproved, currency)}
-            </p>
-          </div>
-          <div className="studio-card p-4">
-            <p className="studio-eyebrow">Saldo pendiente</p>
-            <p
-              className={`mt-1 text-2xl font-semibold ${
-                customer.pendingBalance > 0 ? 'text-destructive' : 'text-primary'
-              }`}
-            >
-              {formatMoney(customer.pendingBalance, currency)}
-            </p>
-          </div>
-          <div className="studio-card p-4">
-            <p className="studio-eyebrow">Ultima reserva</p>
-            <p className="mt-1 text-lg font-semibold text-primary">
-              {customer.lastBookingAt
-                ? new Date(customer.lastBookingAt).toLocaleDateString('es-CL', { timeZone: businessTimezone })
-                : '—'}
-            </p>
-            {/* El sujeto es la persona del equipo, no la clienta: copy sin
-                género, mismo criterio que el "Atiende" invariable del panel. */}
-            {customer.lastAttendedBy && (
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Atendió la última vez: <span className="font-medium">{customer.lastAttendedBy}</span>
-              </p>
-            )}
-          </div>
-        </div>
+        <KpiStrip label="Resumen del historial" className="mb-6" items={[
+          { label: 'Reservas', value: customer.bookingCount, description: 'Todo el historial' },
+          { label: 'Total', value: formatMoney(customerTotalValue, currency), description: 'Pagos aprobados más saldo pendiente' },
+          { label: 'Total pagado', value: formatMoney(customer.totalPaidApproved, currency), description: 'Pagos aprobados', tone: 'success' },
+          { label: 'Saldo pendiente', value: formatMoney(customer.pendingBalance, currency), description: 'Por pagar', tone: customer.pendingBalance > 0 ? 'warning' : 'default' },
+          { label: 'Última reserva', value: customer.lastBookingAt ? new Date(customer.lastBookingAt).toLocaleDateString('es-CL', { timeZone: businessTimezone }) : 'Sin reservas', description: customer.lastAttendedBy ? `Atendió la última vez: ${customer.lastAttendedBy}` : 'Todo el historial' },
+        ]} />
 
         {/* Two column layout */}
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Left: contact + notes */}
           <div className="space-y-6 lg:col-span-1">
             {/* Contact info */}
-            <div className="studio-card p-4">
-              <h3 className="mb-4 text-lg font-semibold text-primary">Datos de contacto</h3>
+            <div className="studio-card shadow-none p-4">
+              <h3 className="mb-4 text-lg font-semibold text-foreground">Datos de contacto</h3>
               <CustomerEditForm customer={customer} />
               <MarketingOptOutToggle
                 customerId={customer.id}
@@ -220,8 +176,8 @@ export default async function CustomerDetailPage({ params }: Props) {
             </div>
 
             {/* Notes */}
-            <div className="studio-card p-4">
-              <h3 className="mb-3 text-lg font-semibold text-primary">Notas internas</h3>
+            <div className="studio-card shadow-none p-4">
+              <h3 className="mb-3 text-lg font-semibold text-foreground">Notas internas</h3>
               <p className="mb-3 text-xs text-muted-foreground">
                 Solo visibles para ti y tu equipo. {v.TheClient} no puede ver estas notas.
               </p>
@@ -253,8 +209,8 @@ export default async function CustomerDetailPage({ params }: Props) {
           {/* Right: history */}
           <div className="space-y-6 lg:col-span-2">
             {/* Fotos */}
-            <div className="studio-card p-4">
-              <h3 className="mb-3 text-lg font-semibold text-primary">Fotos</h3>
+            <div className="studio-card shadow-none p-4">
+              <h3 className="mb-3 text-lg font-semibold text-foreground">Fotos</h3>
               <CustomerPhotos
                 target={{ customerId: customer.id }}
                 initialPhotos={photos}
@@ -264,8 +220,8 @@ export default async function CustomerDetailPage({ params }: Props) {
             </div>
 
             {/* Bookings */}
-            <div className="studio-card p-4">
-              <h3 className="mb-4 text-lg font-semibold text-primary">Historial de reservas</h3>
+            <div className="studio-card shadow-none p-4">
+              <h3 className="mb-4 text-lg font-semibold text-foreground">Historial de reservas</h3>
               {customer.bookings.length === 0 ? (
                 <div className="flex min-h-[120px] flex-col items-center justify-center text-center">
                   <CalendarDays className="mb-2 size-6 text-muted-foreground" />
@@ -305,7 +261,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                   </div>
 
                   {/* Desktop: table */}
-                  <div className="hidden lg:block studio-card overflow-hidden">
+                  <div className="hidden lg:block studio-card shadow-none overflow-hidden">
                     <Table fixed className={TABLE_MIN_WIDTH}>
                       <TableHeader>
                         <TableRow className="bg-muted/50">
@@ -320,7 +276,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                         {customer.bookings.map((booking) => (
                           <TableRow key={booking.id}>
                             <TruncatedCell
-                              className="font-semibold text-primary"
+                              className="font-semibold text-foreground"
                               primary={booking.serviceName}
                               secondary={[
                                 formatBookingNumber(booking.bookingNumber, booking.id),
@@ -366,8 +322,8 @@ export default async function CustomerDetailPage({ params }: Props) {
             </div>
 
             {/* Payments */}
-            <div className="studio-card p-4">
-              <h3 className="mb-4 text-lg font-semibold text-primary">Historial de pagos</h3>
+            <div className="studio-card shadow-none p-4">
+              <h3 className="mb-4 text-lg font-semibold text-foreground">Historial de pagos</h3>
               {customer.payments.length === 0 ? (
                 <div className="flex min-h-[120px] flex-col items-center justify-center text-center">
                   <Banknote className="mb-2 size-6 text-muted-foreground" />
@@ -397,7 +353,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                   </div>
 
                   {/* Desktop: table */}
-                  <div className="hidden lg:block studio-card overflow-hidden">
+                  <div className="hidden lg:block studio-card shadow-none overflow-hidden">
                     <Table fixed className={TABLE_MIN_WIDTH}>
                       <TableHeader>
                         <TableRow className="bg-muted/50">

@@ -1,3 +1,4 @@
+import { DashboardCatalogueNav } from '@/components/dashboard/dashboard-catalogue-nav'
 import { redirect } from 'next/navigation'
 import { addDays } from 'date-fns'
 import { DashboardHeader } from '@/components/dashboard/header'
@@ -17,6 +18,8 @@ import { computeServiceFit, SERVICE_FIT_WINDOW_DAYS } from '@/lib/availability/s
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
 import { blockScopeFor } from '@/lib/availability/scope'
 import { blockOwnerLabel } from '@/lib/professionals/scope-label'
+
+export const metadata = { title: 'Disponibilidad — Agendita' }
 
 export default async function AvailabilityPage({
   searchParams,
@@ -78,7 +81,8 @@ export default async function AvailabilityPage({
   return (
     <div>
       <DashboardHeader title="Disponibilidad" subtitle="Configura tus horarios de atención y bloqueos." />
-      <div className="space-y-8 p-5 md:p-10">
+      <div className="mx-auto max-w-[1420px] space-y-6 p-4 min-[1100px]:p-10">
+        <DashboardCatalogueNav vocabulary={getVocabulary(userData.business.category)} role={userData.role ?? 'staff'} />
         <ServiceFitWarnings fits={serviceFits} vocabulary={v} scopeName={selected?.name ?? null} />
         <div className="space-y-6">
           <div className="flex items-center justify-between">

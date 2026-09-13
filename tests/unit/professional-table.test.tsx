@@ -90,57 +90,40 @@ describe('ProfessionalTable — el interruptor', () => {
     expect(render([person({ isActive: false })])).toContain('un solo horario para todo')
   })
 
-  it('con una sola persona en agenda avisa que se va a asignar sola', () => {
-    expect(render([person()])).toContain('se va a asignar sola')
+  it('con una sola persona en agenda avisa que se asigna automáticamente', () => {
+    expect(render([person()])).toContain('se asigna automáticamente')
   })
 
-  it('con dos o más dice cuántas hay y que van a poder elegir', () => {
+  it('con dos o más dice cuántas hay y que pueden elegir', () => {
     const markup = render([person(), person({ id: 'p-2', name: 'Ana', sortOrder: 1 })])
     expect(markup).toContain('Con 2 personas en agenda')
-    expect(markup).toContain('van a poder elegir')
+    expect(markup).toContain('pueden elegir')
   })
 
   // El aviso cuenta ACTIVOS, no filas. Si contara filas, poner a alguien en pausa
   // dejaría el texto de 2+ mintiendo.
   it('la gente en pausa no cuenta para el aviso', () => {
     const markup = render([person(), person({ id: 'p-2', name: 'Ana', sortOrder: 1, isActive: false })])
-    expect(markup).toContain('se va a asignar sola')
-    expect(markup).not.toContain('van a poder elegir')
+    expect(markup).toContain('se asigna automáticamente')
+    expect(markup).not.toContain('pueden elegir')
   })
 })
 
-// Este bloque existe por un hallazgo de la revisión: la pantalla decía "tus
-// clientas eligen con quién se atienden" en PRESENTE, y eso todavía no es cierto —
-// el horario por persona y la elección en el funnel llegan después. La dueña carga
-// a sus 3 barberos, la pantalla le confirma que ya funciona, abre el funnel y no
-// cambió nada. Eso entra como reporte de bug, no como "falta una parte".
-//
-// Estos casos se borran cuando el funnel por persona exista de verdad. Hasta
-// entonces son lo que impide que la promesa vuelva en presente sin que nadie lo note.
-describe('ProfessionalTable — no promete lo que todavía no funciona', () => {
-  const PRESENTE_PROHIBIDO = [
-    'eligen con quién se atienden',
-    'cada persona tiene su propio horario',
-    'nadie va a poder reservar con esta persona',
-  ]
-
-  it('con gente en agenda avisa que por ahora sólo se guarda', () => {
-    expect(render([person()])).toContain('Por ahora sólo se guarda')
-    expect(render([person(), person({ id: 'p-2', sortOrder: 1 })])).toContain(
-      'Por ahora sólo se guarda',
-    )
+// The professional-selection funnel and scoped schedules are now implemented.
+describe('ProfessionalTable — capacidades actuales', () => {
+  it('describes team selection and scoped availability without the obsolete not-yet-implemented warning', () => {
+    const markup = render([person(), person({ id: 'p-2', sortOrder: 1 })])
+    expect(markup).toContain('pueden elegir')
+    expect(markup).not.toContain('Por ahora sólo se guarda')
+    expect(markup).toContain('Configura los horarios de cada persona en Disponibilidad')
   })
 
-  it('sin nadie en agenda no muestra ese aviso, que no aplica', () => {
-    expect(render([])).not.toContain('Por ahora sólo se guarda')
-  })
-
-  it('no afirma en presente ninguna capacidad que no exista', () => {
-    for (const markup of [render([person()]), render([person(), person({ id: 'p-2', sortOrder: 1 })])]) {
-      for (const frase of PRESENTE_PROHIBIDO) {
-        expect(markup, frase).not.toContain(frase)
-      }
-    }
+  it('preserves reorder controls in the mobile representation', () => {
+    const markup = render([person(), person({ id: 'p-2', sortOrder: 1 })])
+    const document = new DOMParser().parseFromString(markup, 'text/html')
+    const mobile = document.querySelector('.lg\\:hidden')
+    expect(mobile?.querySelectorAll('button[aria-label="Mover arriba"]')).toHaveLength(2)
+    expect(mobile?.querySelectorAll('button[aria-label="Mover abajo"]')).toHaveLength(2)
   })
 })
 

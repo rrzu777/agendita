@@ -8,6 +8,8 @@ import { getSingleSearchParam } from '@/components/dashboard/dashboard-paginatio
 
 export const dynamic = 'force-dynamic'
 
+export const metadata = { title: 'Clientes — Agendita' }
+
 export default async function CustomersPage({
   searchParams,
 }: {
@@ -43,7 +45,7 @@ export default async function CustomersPage({
         title={v.Clients}
         subtitle="Historial y datos de contacto de quienes reservan contigo."
       />
-      <div className="p-5 md:p-10">
+      <div className="mx-auto max-w-[1420px] p-4 min-[1100px]:p-10">
         <CustomerList
           customers={customerPage?.items ?? []}
           nextCursor={customerPage?.nextCursor ?? null}

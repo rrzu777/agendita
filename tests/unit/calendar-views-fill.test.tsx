@@ -35,6 +35,17 @@ const baseProps = {
   professionals: [],
 }
 
+describe('CalendarViews — operation navigation', () => {
+  it('names the route view navigation and exposes its active view', () => {
+    const html = renderToStaticMarkup(<CalendarViews {...baseProps} view="week" date="2026-06-30" bookings={[]} />)
+    const document = new DOMParser().parseFromString(html, 'text/html')
+    const nav = document.querySelector('nav[aria-label="Vista del calendario"]')
+    expect(nav?.querySelector('[aria-current="page"]')?.textContent).toBe('Semana')
+    expect(html).toContain('Agenda de la semana')
+    expect(html).toContain('No hay citas ni bloqueos en este período')
+  })
+})
+
 const booking = {
   id: 'b1',
   startDateTime: '2026-06-30T17:00:00.000Z',

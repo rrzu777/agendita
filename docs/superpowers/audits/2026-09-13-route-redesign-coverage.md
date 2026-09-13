@@ -83,3 +83,21 @@ Cada PR debe actualizar esta matriz solo con evidencia real y adjuntar, para sus
 4. teclado, foco visible, reduced motion y ausencia de overflow horizontal;
 5. tema `soft` y `contrast` donde exista negocio/tenant;
 6. flujo terminal relevante sin pagos ni reservas reales creadas solo para QA.
+
+## Evidencia Task 2 — operaciones (2026-09-13)
+
+Implementación local de las rutas 1–10 y 25 sobre `af02b2a`. No equivale a merge ni a aprobación del gate completo: siguen pendientes revisión independiente, CI exact-HEAD y cobertura exhaustiva de estados/temas por ruta.
+
+| Rutas | Evidencia automatizada | Navegador local real |
+|---|---|---|
+| 1 Hoy | Próxima cita futura tenant-scoped, vacío honesto, KPI con definición y cero distinto de dato ausente | Cabina, agenda y acciones a 390×844, 834×1112 y 1440×1000; temas balanced, soft y contrast |
+| 2 Calendario | Vista activa, agenda semanal móvil, filtros por profesional, acciones originales, devolución de foco al trigger | Tres tamaños; semana con cita, drawer, Tab dentro del diálogo y Escape devuelve foco; reduced motion |
+| 3 Reservas | Paginación, tabla, acciones de fila; errores explícitos de Aceptar/Completar en tarjetas | Tres tamaños; overflow móvil detectado en Cobrar/Cancelar, corregido y repetido sin overflow |
+| 4–5 Crear/reprogramar | Prefill, persona, warnings y contrato de reprogramación existentes; proveedor de cambios sin guardar real | Ambos formularios, títulos y acciones visibles en tres tamaños, sin enviar una reserva |
+| 6–7 Clientes/detalle | Búsqueda global y cursor, vocabulario, detalle e historial existentes | Lista/detalle en tres tamaños, búsqueda sin resultados; sin editar datos |
+| 8–10 Catálogo | Navegación derivada de matriz owner/admin/staff; acciones Servicios/Equipo; orden móvil; copy de equipo actual | Servicios/Equipo/Disponibilidad en tres tamaños; abrir/cerrar diálogo de servicio sin guardar |
+| 25 Onboarding | Cinco pasos con nombre y paso actual; estructura sin controles interactivos anidados | Tres tamaños con fixture de onboarding incompleto y tema contrast; no se completó el wizard |
+
+Las once rutas conservaron un H1 y título de documento identificables y no mostraron overflow horizontal del documento en los tres tamaños. El calendario mensual conserva scroll interno deliberado. Las capturas se guardaron inicialmente en `output/playwright/operations-*.png`; la entrega local las conserva en `.superpowers/sdd/2026-09-13-full-ui-redesign/browser-evidence/` junto al informe `task-2-report.md` (artefactos locales ignorados por Git).
+
+La matriz de roles se verificó con tests, no con sesiones reales para cada rol. Carga conserva el skeleton de ruta; fallos y recuperación tienen cobertura unitaria, no una simulación completa de red en navegador. Los temas soft/contrast se revisaron en superficies representativas, no todas las combinaciones ruta/estado. Solo se utilizó `agendita_owner_analytics_test` en Postgres local aislado; los cambios temporales de estilo/rubro/onboarding se restauraron. No se crearon reservas, pagos ni mensajes reales.

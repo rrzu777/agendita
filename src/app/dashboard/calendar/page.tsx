@@ -61,6 +61,8 @@ function rangeForView(view: CalendarView, focusLocalDate: Date, timezone: string
   }
 }
 
+export const metadata = { title: 'Calendario — Agendita' }
+
 export default async function CalendarPage({
   searchParams,
 }: {
@@ -132,7 +134,7 @@ export default async function CalendarPage({
         title="Calendario"
         subtitle="Revisa tus citas por día, semana o mes."
       />
-      <div className="max-w-6xl p-5 md:p-10">
+      <div className="mx-auto max-w-[1420px] p-4 min-[1100px]:p-10">
         <CalendarViews
           bookings={serializeDates(visibleBookings)}
           timeBlocks={visibleBlocks.map((tb) => ({
