@@ -179,7 +179,6 @@ export function ReservationSettingsForm({ businessId, initialValues }: Reservati
           <FormField
             id="reservation-approval"
             label="Confirmar cada reserva a mano"
-            required
             layout="inline"
             error={errors.requireBookingApproval?.message}
             help="Las reservas llegan como solicitudes y vos las aceptás o las rechazás. El horario queda tomado mientras tanto, y si no respondés en 24 horas se libera solo. No aplica a los servicios con abono: ahí el pago ya hace de filtro."

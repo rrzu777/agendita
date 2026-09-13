@@ -2,12 +2,13 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const { mockUpsertConfig, mockUpsertRedemption, mockUpsertRule } = vi.hoisted(() => ({ mockUpsertConfig: vi.fn(), mockUpsertRedemption: vi.fn(), mockUpsertRule: vi.fn() }))
 vi.mock('@/server/actions/loyalty', () => ({
   archiveAutomaticRule: vi.fn(),
   archiveRedemptionOption: vi.fn(),
-  upsertAutomaticRule: vi.fn(),
-  upsertLoyaltyConfig: vi.fn(),
-  upsertRedemptionOption: vi.fn(),
+  upsertAutomaticRule: mockUpsertRule,
+  upsertLoyaltyConfig: mockUpsertConfig,
+  upsertRedemptionOption: mockUpsertRedemption,
 }))
 
 function controlByLabel(container: HTMLElement, text: string) {
@@ -33,6 +34,9 @@ describe('loyalty form system', () => {
   let root: Root
 
   beforeEach(() => {
+    mockUpsertConfig.mockReset()
+    mockUpsertRedemption.mockReset()
+    mockUpsertRule.mockReset()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -87,6 +91,18 @@ describe('loyalty form system', () => {
     expect(button(birthdayForm!, 'Guardar cambios').getAttribute('data-size')).toBe('form')
   })
 
+  it('blocks an out-of-range automatic-rule value and focuses its associated field', async () => {
+    const { AutomaticRules } = await import('@/app/dashboard/fidelizacion/automatic-rules')
+    await act(async () => root.render(<AutomaticRules rules={[]} services={[]} pointsLabel="puntos" currency="CLP" />))
+    const form = container.querySelector<HTMLFormElement>('form')!
+    const priority = form.querySelector<HTMLInputElement>('#birthday-priority')!
+    priority.value = '1001'
+    await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    expect(mockUpsertRule).not.toHaveBeenCalled()
+    expect(priority.getAttribute('aria-describedby')).toContain('birthday-priority-error')
+    expect(document.activeElement).toBe(priority)
+  })
+
   it('uses labeled form controls in the redemption editor', async () => {
     const { RedemptionCatalog } = await import('@/app/dashboard/fidelizacion/redemption-catalog')
     await act(async () => root.render(<RedemptionCatalog options={[]} services={[]} />))
@@ -95,5 +111,36 @@ describe('loyalty form system', () => {
     expect(controlByLabel(container, 'Tipo de beneficio').getAttribute('data-density')).toBe('form')
     expect(controlByLabel(container, 'Costo en puntos').getAttribute('data-density')).toBe('form')
     expect(button(container, 'Agregar recompensa').getAttribute('data-size')).toBe('form')
+  })
+
+  it('associates loyalty configuration errors and recovers without a premature action', async () => {
+    mockUpsertConfig.mockResolvedValue({ ok: true, data: {} })
+    const { LoyaltyConfigForm } = await import('@/app/dashboard/fidelizacion/loyalty-config-form')
+    await act(async () => root.render(<LoyaltyConfigForm config={null} />))
+    const form = container.querySelector('form')!
+    await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    const name = container.querySelector<HTMLInputElement>('#programName')!
+    expect(mockUpsertConfig).not.toHaveBeenCalled()
+    expect(name.getAttribute('aria-describedby')).toContain('programName-error')
+    expect(document.activeElement).toBe(name)
+    await act(async () => { name.value = 'Club'; form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await Promise.resolve() })
+    expect(mockUpsertConfig).toHaveBeenCalledTimes(1)
+  })
+
+  it('associates redemption errors and submits only after recovery', async () => {
+    mockUpsertRedemption.mockResolvedValue({ ok: true, data: {} })
+    const { RedemptionCatalog } = await import('@/app/dashboard/fidelizacion/redemption-catalog')
+    await act(async () => root.render(<RedemptionCatalog options={[]} services={[]} />))
+    const form = container.querySelector('form')!
+    await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    const name = container.querySelector<HTMLInputElement>('#redemption-name')!
+    expect(mockUpsertRedemption).not.toHaveBeenCalled()
+    expect(name.getAttribute('aria-describedby')).toContain('redemption-name-error')
+    expect(document.activeElement).toBe(name)
+    await act(async () => {
+      name.value = 'Corte gratis'; container.querySelector<HTMLInputElement>('#redemption-pointsCost')!.value = '10'
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await Promise.resolve()
+    })
+    expect(mockUpsertRedemption).toHaveBeenCalledTimes(1)
   })
 })

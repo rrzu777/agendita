@@ -108,12 +108,14 @@ describe('ReservationSettingsForm', () => {
     }
   })
 
-  it('identifies required reservation controls and the optional meeting link', async () => {
+  it('identifies required reservation values, keeps the boolean switch neutral, and labels the optional meeting link', async () => {
     await renderReservations()
 
     expect(getControl(container, 'Zona horaria').getAttribute('aria-required')).toBe('true')
     expect(getControl(container, 'Ofrecer horas de reserva').getAttribute('aria-required')).toBe('true')
     expect(getInput(container, 'Reserva sin pago online (horas)').getAttribute('aria-required')).toBe('true')
+    expect(getControl(container, 'Confirmar cada reserva a mano').getAttribute('aria-required')).toBe('false')
+    expect(getControl(container, 'Confirmar cada reserva a mano').closest('[data-slot="form-field"]')?.textContent).not.toContain('*')
     expect(getInput(container, 'Sala de videollamada').getAttribute('aria-required')).toBe('false')
     expect(Array.from(container.querySelectorAll('[data-slot="form-field"]')).find((field) => field.textContent?.includes('Sala de videollamada'))?.textContent).toContain('Opcional')
   })

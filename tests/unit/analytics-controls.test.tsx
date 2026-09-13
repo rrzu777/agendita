@@ -25,6 +25,20 @@ async function select(label: string, value: string) {
 }
 
 describe('actual analytics management controls', () => {
+  it('associates and focuses an empty inline rename before calling the action', async () => {
+    const label = report.acquisitionLinks.rows[0].campaignName
+    await act(async () => root.render(<AcquisitionLinks links={report.acquisitionLinks} />))
+    await act(async () => host.querySelector<HTMLButtonElement>(`button[aria-label="Editar etiqueta de ${label}"]`)!.click())
+    const input = host.querySelector<HTMLInputElement>('[aria-label="Etiqueta actual del enlace"]')!
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })) })
+    const form = input.closest('form')!
+    await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    expect(mocks.rename).not.toHaveBeenCalled()
+    expect(input.getAttribute('aria-describedby')).toContain(`${input.id}-error`)
+    expect(input.getAttribute('aria-invalid')).toBe('true')
+    expect(document.activeElement).toBe(input)
+  })
+
   it('edits the current label with cancel, pending and failure states without changing props or pagination', async () => {
     const links = structuredClone(report.acquisitionLinks)
     const label = links.rows[0].campaignName

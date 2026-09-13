@@ -287,4 +287,26 @@ describe('BankTransferForm unsaved bank details', () => {
 
     expect(container.textContent).toContain(recovery === 'restored' ? 'Recuperamos un borrador local' : 'Hay un borrador local de una versión anterior')
   })
+
+  it('blocks invalid bank details, associates the error, focuses it, and recovers', async () => {
+    mockSaveBankTransferAccount.mockResolvedValue({ ok: true, data: bankFormValues })
+    await act(async () => root.render(
+      <UnsavedChangesProvider><BankTransferForm businessId="biz-1" account={null} requireProof={false} proofUploadAvailable={false} /></UnsavedChangesProvider>,
+    ))
+    const form = container.querySelector('form')!
+    await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+
+    const holder = getInput(container, 'Titular')
+    expect(mockSaveBankTransferAccount).not.toHaveBeenCalled()
+    expect(holder.getAttribute('aria-invalid')).toBe('true')
+    expect(holder.getAttribute('aria-describedby')).toContain('bt-holder-error')
+    expect(document.activeElement).toBe(holder)
+
+    for (const [label, value] of [['Titular', 'María'], ['RUT', '12.345.678-9'], ['Banco', 'Banco'], ['Tipo de cuenta', 'vista'], ['Número de cuenta', '123']] as const) {
+      await setInput(container, label, value)
+    }
+    await act(async () => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await Promise.resolve() })
+    expect(mockSaveBankTransferAccount).toHaveBeenCalledTimes(1)
+    expect(holder.getAttribute('aria-invalid')).toBe('false')
+  })
 })

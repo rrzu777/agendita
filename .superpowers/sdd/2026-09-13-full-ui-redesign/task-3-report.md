@@ -93,6 +93,29 @@ Final score: **89/100**. No P0/P1 remains. Material P2 fixed during review: desk
 
 Ship call for this local track: ready for independent review and exact-HEAD CI, not merged/released.
 
+## Fix round 1 — revisión independiente
+
+Se resolvieron los tres hallazgos Important y los dos Minor de `task-3-review.md` con TDD:
+
+- Los formularios cambiados que usan `noValidate` ahora reproducen las constraints del navegador en cliente, muestran errores asociados mediante `aria-invalid`/`aria-describedby` y enfocan el primer control inválido. Banco, paquetes y fidelización tienen pruebas de bloqueo y recuperación; campañas/promociones prueban bloqueo/asociación/foco. También se cubrieron reglas automáticas y el renombre inline de adquisición, que estaban fuera de la enumeración del review pero pertenecían al mismo diff. Formularios sin campos (salida/OAuth/suscripción) no tienen constraints que reproducir; filtros de métricas conservan su validador client-side específico.
+- Los botones seguro y confirmatorio de los tres diálogos nuevos (suspensión admin, configuración de suscripción y desactivación de paquete) usan `size="form"` y sus controles reales se prueban, incluida devolución de foco.
+- `AdminActions` y `AdminSubscriptionControls` tienen pruebas conductuales directas para apertura, cancelar, foco, pending y fallo en una acción sensible representativa, con actions mockeadas y sin efectos externos. El ledger ya no generaliza esa evidencia a todas las acciones administrativas.
+- Los conteos de Reservas/Completadas/Canceladas dicen `Histórico del negocio`, coherente con las consultas tenant-wide sin ventana.
+- Los switches booleanos de aprobación y recordatorio dejaron de anunciarse como obligatorios; sus etiquetas y ayuda se conservan.
+
+Evidencia del round:
+
+- RED: cuatro suites fallaron por la ausencia del helper, el copy histórico y la semántica neutral de switches antes de implementar.
+- Validación enfocada actual: `bank-transfer-form.test.tsx` en proceso aislado — 1 archivo / 10 pruebas pasaron; los otros 10 archivos enfocados — 10 archivos / 56 pruebas pasaron. La corrida conjunta reprodujo una vez la flake heredada de aislamiento de `localStorage` en el caso de recuperación `conflict`; el mismo archivo pasó completo aislado inmediatamente después. Total verificado: 11 archivos / 66 pruebas.
+- `npm run lint` — pass.
+- `npm run typecheck` — pass.
+- `npm run build` sin variables — bloqueado como corresponde por validación de entorno faltante. Repetido con Postgres local aislado, dominios/credenciales públicas dummy, `PAYMENT_PROVIDER=manual` y Mercado Pago sandbox — pass; 61 páginas generadas.
+- Premium strict — 89 findings, idéntico al cierre anterior; no se introdujeron hallazgos nuevos. Los hallazgos siguen siendo los falsos positivos/inherited ya documentados.
+- `git diff --check` — pass.
+- Impeccable no se volvió a ejecutar: se respetó su techo explícito de una sola corrida.
+
+Revisión Shiro enfocada del round: **91/100** (claridad 19/20, jerarquía 13/15, usabilidad 15/15, consistencia 14/15, originalidad 12/15, accesibilidad 10/10, QA 8/10). La mejora proviene de recuperación inline verificable, foco y semántica booleana correcta. No queda P0/P1 ni P2 material de este review; el QA no sube porque no se repitió la matriz visual completa ni se ejecutaron proveedores reales.
+
 ## Remaining risks
 
 - CI and independent review have not run because this task explicitly forbids opening/pushing a PR.

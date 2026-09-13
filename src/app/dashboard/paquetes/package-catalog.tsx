@@ -9,6 +9,7 @@ import { formatMoney } from '@/lib/money'
 import { useVocabulary } from '@/components/vocabulary-provider'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { FormField } from '@/components/ui/form-field'
+import { useClientFormValidation } from '@/lib/forms/client-validation'
 
 type Service = { id: string; name: string; price: number }
 type PackageProduct = {
@@ -47,12 +48,14 @@ export function PackageCatalog({
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<PackageProduct | null>(null)
   const [archiveCandidate, setArchiveCandidate] = useState<PackageProduct | null>(null)
+  const { errors: fieldErrors, validate } = useClientFormValidation()
   const archiveTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
     const form = e.currentTarget
+    if (!validate(form)) return
     const fd = new FormData(form)
     const appliesToAll = fd.get('appliesToAll') === 'on'
     const data = {
@@ -154,20 +157,20 @@ export function PackageCatalog({
       </ul>
 
       <form noValidate onSubmit={onSubmit} className="mt-6 grid gap-4" key={editing?.id ?? 'new'}>
-        <FormField id="package-name" label="Nombre del paquete" required>
+        <FormField id="package-name" label="Nombre del paquete" required error={fieldErrors['package-name']}>
           {(a11y) => <Input {...a11y} id="package-name" name="name" density="form" defaultValue={editing?.name} required />}
         </FormField>
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField id="package-quantity" label="Sesiones incluidas" required>
+          <FormField id="package-quantity" label="Sesiones incluidas" required error={fieldErrors['package-quantity']}>
             {(a11y) => <Input {...a11y} id="package-quantity" name="quantity" density="form" type="number" min={1} defaultValue={editing?.quantity ?? undefined} required />}
           </FormField>
-          <FormField id="package-bonus" label="Sesiones adicionales" optional>
+          <FormField id="package-bonus" label="Sesiones adicionales" optional error={fieldErrors['package-bonus']}>
             {(a11y) => <Input {...a11y} id="package-bonus" name="bonusQuantity" density="form" type="number" min={0} defaultValue={editing?.bonusQuantity ?? undefined} />}
           </FormField>
-          <FormField id="package-price" label={`Precio (${currency})`} required>
+          <FormField id="package-price" label={`Precio (${currency})`} required error={fieldErrors['package-price']}>
             {(a11y) => <Input {...a11y} id="package-price" name="price" density="form" type="number" min={0} defaultValue={editing?.price ?? undefined} required />}
           </FormField>
-          <FormField id="package-expiry" label="Vigencia en días" optional help="Si queda vacío, el paquete no vence.">
+          <FormField id="package-expiry" label="Vigencia en días" optional help="Si queda vacío, el paquete no vence." error={fieldErrors['package-expiry']}>
             {(a11y) => <Input {...a11y} id="package-expiry" name="expiryDays" density="form" type="number" min={1} defaultValue={editing?.expiryDays ?? undefined} />}
           </FormField>
         </div>
@@ -241,8 +244,8 @@ export function PackageCatalog({
             <DialogDescription>El paquete dejará de ofrecerse para nuevas compras. Las compras existentes no se modifican.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <DialogClose asChild><Button variant="outline" disabled={isPending}>Conservar paquete</Button></DialogClose>
-            <Button variant="destructive" disabled={isPending || !archiveCandidate} onClick={() => archiveCandidate && onArchive(archiveCandidate.id)}>
+            <DialogClose asChild><Button size="form" variant="outline" disabled={isPending} onClick={() => window.setTimeout(() => archiveTriggerRef.current?.focus(), 0)}>Conservar paquete</Button></DialogClose>
+            <Button size="form" variant="destructive" disabled={isPending || !archiveCandidate} onClick={() => archiveCandidate && onArchive(archiveCandidate.id)}>
               {isPending ? 'Desactivando…' : 'Desactivar paquete'}
             </Button>
           </DialogFooter>

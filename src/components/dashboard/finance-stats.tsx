@@ -12,9 +12,9 @@ export function FinanceStats({ summary, currency }: { summary: any; currency: st
     { label: 'Paquetes del mes', value: formatMoney(summary.packageIncomeMonth, currency), description: 'Venta neta de reembolsos' },
     { label: 'Total abonado', value: formatMoney(summary.totalDeposited, currency), description: 'Abonos registrados' },
     { label: 'Pendiente por cobrar', value: formatMoney(summary.totalPending, currency), description: 'Saldo aún no registrado', tone: 'warning' as const },
-    { label: 'Reservas', value: summary.totalBookings, description: 'Total del período' },
-    { label: 'Completadas', value: summary.completedBookings, description: 'Total del período', tone: 'success' as const },
-    { label: 'Canceladas', value: summary.cancelledBookings, description: 'Total del período' },
+    { label: 'Reservas', value: summary.totalBookings, description: 'Histórico del negocio' },
+    { label: 'Completadas', value: summary.completedBookings, description: 'Histórico del negocio', tone: 'success' as const },
+    { label: 'Canceladas', value: summary.cancelledBookings, description: 'Histórico del negocio' },
     { label: 'Reembolsos', value: formatMoney(summary.totalRefunded, currency), description: 'Monto registrado' },
   ]
 

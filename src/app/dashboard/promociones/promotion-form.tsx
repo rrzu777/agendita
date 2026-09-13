@@ -13,6 +13,7 @@ import { createPromotion, updatePromotion } from '@/server/actions/promotions'
 import { computeDiscount } from '@/lib/promotions/evaluate'
 import { formatMoney } from '@/lib/money'
 import type { RewardType } from '@/lib/rewards/schema'
+import { useClientFormValidation } from '@/lib/forms/client-validation'
 
 interface ServiceOption {
   id: string
@@ -127,6 +128,7 @@ export function PromotionForm({
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(() => (editing ? stateFromPromo(editing) : emptyState()))
   const [sample, setSample] = useState('20000')
+  const { errors: fieldErrors, validate } = useClientFormValidation()
 
   const codeLocked = editing !== null && editing.redemptionCount > 0
 
@@ -158,8 +160,9 @@ export function PromotionForm({
     return { price, discount, final: price - discount }
   }, [sample, form.rewardType, form.rewardValue, form.maxDiscount, form.appliesToAll, form.serviceIds])
 
-  function handleSubmit() {
+  function handleSubmit(formElement: HTMLFormElement) {
     setError(null)
+    if (!validate(formElement)) return
     const payload = {
       name: form.name,
       description: form.description.trim() || null,
@@ -218,15 +221,15 @@ export function PromotionForm({
           noValidate
           onSubmit={(e) => {
             e.preventDefault()
-            handleSubmit()
+            handleSubmit(e.currentTarget)
           }}
           className="space-y-5"
         >
-          <FormField id="promotion-name" label="Nombre" required>
+          <FormField id="promotion-name" label="Nombre" required error={fieldErrors['promotion-name']}>
             {(a11y) => <Input id="promotion-name" value={form.name} onChange={(e) => update('name', e.target.value)} required maxLength={100} density="form" {...a11y} />}
           </FormField>
 
-          <FormField id="promotion-description" label="Descripción" help="Opcional">
+          <FormField id="promotion-description" label="Descripción" help="Opcional" error={fieldErrors['promotion-description']}>
             {(a11y) => <Textarea id="promotion-description" className="resize-none" value={form.description} onChange={(e) => update('description', e.target.value)} rows={2} maxLength={500} density="form" {...a11y} />}
           </FormField>
 
@@ -241,30 +244,31 @@ export function PromotionForm({
             onChange={(next) => setForm((prev) => ({ ...prev, ...next }))}
             services={services}
             currency={currency}
+            errors={fieldErrors}
           />
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <FormField id="promotion-valid-from" label="Vigente desde">
+            <FormField id="promotion-valid-from" label="Vigente desde" error={fieldErrors['promotion-valid-from']}>
               {(a11y) => <Input id="promotion-valid-from" type="date" value={form.validFrom} onChange={(e) => update('validFrom', e.target.value)} density="form" {...a11y} />}
             </FormField>
-            <FormField id="promotion-valid-until" label="Vigente hasta">
+            <FormField id="promotion-valid-until" label="Vigente hasta" error={fieldErrors['promotion-valid-until']}>
               {(a11y) => <Input id="promotion-valid-until" type="date" value={form.validUntil} onChange={(e) => update('validUntil', e.target.value)} density="form" {...a11y} />}
             </FormField>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            <FormField id="promotion-min-spend" label="Gasto mínimo" help="Opcional">
+            <FormField id="promotion-min-spend" label="Gasto mínimo" help="Opcional" error={fieldErrors['promotion-min-spend']}>
               {(a11y) => <Input id="promotion-min-spend" type="number" min={0} value={form.minSpend} onChange={(e) => update('minSpend', e.target.value)} density="form" {...a11y} />}
             </FormField>
-            <FormField id="promotion-max-redemptions" label="Usos máximos" help="Sin límite si se deja vacío">
+            <FormField id="promotion-max-redemptions" label="Usos máximos" help="Sin límite si se deja vacío" error={fieldErrors['promotion-max-redemptions']}>
               {(a11y) => <Input id="promotion-max-redemptions" type="number" min={1} value={form.maxRedemptions} onChange={(e) => update('maxRedemptions', e.target.value)} density="form" {...a11y} />}
             </FormField>
-            <FormField id="promotion-max-customer" label="Máx. por cliente" help="Sin límite si se deja vacío">
+            <FormField id="promotion-max-customer" label="Máx. por cliente" help="Sin límite si se deja vacío" error={fieldErrors['promotion-max-customer']}>
               {(a11y) => <Input id="promotion-max-customer" type="number" min={1} value={form.maxPerCustomer} onChange={(e) => update('maxPerCustomer', e.target.value)} density="form" {...a11y} />}
             </FormField>
           </div>
 
-          <FormField id="promotion-code" label="Código" help={codeLocked ? 'El código se bloquea tras el primer canje.' : 'Opcional, por ejemplo VERANO20'}>
+          <FormField id="promotion-code" label="Código" error={fieldErrors['promotion-code']} help={codeLocked ? 'El código se bloquea tras el primer canje.' : 'Opcional, por ejemplo VERANO20'}>
             {(a11y) => <Input id="promotion-code" className="uppercase" value={form.code} onChange={(e) => update('code', e.target.value.toUpperCase())} maxLength={40} disabled={codeLocked} density="form" {...a11y} />}
           </FormField>
 

@@ -141,7 +141,6 @@ export function PolicySettingsForm({ businessId, initialValues }: PolicySettings
           <FormField
             id="policy-cancellation-reminder"
             label="Avisar antes del límite de cancelación"
-            required
             layout="inline"
             error={errors.cancellationReminderEnabled?.message}
             help="Envía una notificación Web Push sólo para reservas futuras y vigentes con abono requerido o pagado y un límite mayor que 0. El aviso sale cuando el abono ya está pagado."

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { formatMoney } from '@/lib/money'
 import { useVocabulary } from '@/components/vocabulary-provider'
+import { useClientFormValidation } from '@/lib/forms/client-validation'
 import type { Vocabulary } from '@/lib/vocabulary'
 
 type Service = { id: string; name: string; price: number }
@@ -144,6 +145,7 @@ function RuleCard({
   const [isPending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const { errors: fieldErrors, validate } = useClientFormValidation()
   const cond = rule ? conditionsOf(rule) : {}
   const [rewardKind, setRewardKind] = useState<'points' | 'grant'>(
     rule ? rewardKindOf(rule) : 'points',
@@ -154,6 +156,7 @@ function RuleCard({
     setError(null)
     setSaved(false)
     const form = e.currentTarget
+    if (!validate(form)) return
     const fd = new FormData(form)
     const appliesToAll = fd.get('appliesToAll') === 'on'
     const data = {
@@ -251,7 +254,7 @@ function RuleCard({
 
         {rewardKind === 'points' ? (
           <div className="max-w-xs">
-            <FormField id={`${kind}-rewardPoints`} label="Puntos a entregar">
+            <FormField id={`${kind}-rewardPoints`} label="Puntos a entregar" error={fieldErrors[`${kind}-rewardPoints`]}>
               {(a11y) => (
                 <Input
                   {...a11y}
@@ -269,7 +272,7 @@ function RuleCard({
         ) : (
           <div className="grid gap-2">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <FormField id={`${kind}-rewardType`} label="Tipo de beneficio">
+              <FormField id={`${kind}-rewardType`} label="Tipo de beneficio" error={fieldErrors[`${kind}-rewardType`]}>
                 {(a11y) => (
                   <NativeSelect
                     {...a11y}
@@ -284,7 +287,7 @@ function RuleCard({
                   </NativeSelect>
                 )}
               </FormField>
-              <FormField id={`${kind}-rewardValue`} label="Valor del beneficio">
+              <FormField id={`${kind}-rewardValue`} label="Valor del beneficio" error={fieldErrors[`${kind}-rewardValue`]}>
                 {(a11y) => (
                   <Input
                     {...a11y}
@@ -296,7 +299,7 @@ function RuleCard({
                   />
                 )}
               </FormField>
-              <FormField id={`${kind}-maxDiscount`} label={`Tope de descuento (${currency})`}>
+              <FormField id={`${kind}-maxDiscount`} label={`Tope de descuento (${currency})`} error={fieldErrors[`${kind}-maxDiscount`]}>
                 {(a11y) => (
                   <Input
                     {...a11y}
@@ -308,7 +311,7 @@ function RuleCard({
                   />
                 )}
               </FormField>
-              <FormField id={`${kind}-grantExpiryDays`} label="Vigencia de la recompensa" help="Opcional, en días.">
+              <FormField id={`${kind}-grantExpiryDays`} label="Vigencia de la recompensa" help="Opcional, en días." error={fieldErrors[`${kind}-grantExpiryDays`]}>
                 {(a11y) => (
                   <Input
                     {...a11y}
@@ -361,6 +364,7 @@ function RuleCard({
               id={`${kind}-windowDays`}
               label={kind === 'birthday' ? 'Ventana de cumpleaños' : 'Ventana de aniversario'}
               help="Cantidad de días antes y después de la fecha."
+              error={fieldErrors[`${kind}-windowDays`]}
             >
               {(a11y) => (
                 <Input
@@ -379,12 +383,12 @@ function RuleCard({
         )}
         {kind === 'winback' && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField id={`${kind}-inactivityDays`} label="Días de inactividad">
+            <FormField id={`${kind}-inactivityDays`} label="Días de inactividad" error={fieldErrors[`${kind}-inactivityDays`]}>
               {(a11y) => (
                 <Input {...a11y} id={`${kind}-inactivityDays`} name="inactivityDays" type="number" density="form" min={1} defaultValue={cond.inactivityDays ?? undefined} />
               )}
             </FormField>
-            <FormField id={`${kind}-cooldownDays`} label="Días de espera" help="Opcional.">
+            <FormField id={`${kind}-cooldownDays`} label="Días de espera" help="Opcional." error={fieldErrors[`${kind}-cooldownDays`]}>
               {(a11y) => (
                 <Input {...a11y} id={`${kind}-cooldownDays`} name="cooldownDays" type="number" density="form" min={0} defaultValue={cond.cooldownDays ?? undefined} />
               )}
@@ -393,7 +397,7 @@ function RuleCard({
         )}
         {kind === 'referral' && (
           <div className="max-w-sm">
-            <FormField id={`${kind}-beneficiary`} label="Quién recibe la recompensa">
+            <FormField id={`${kind}-beneficiary`} label="Quién recibe la recompensa" error={fieldErrors[`${kind}-beneficiary`]}>
               {(a11y) => (
                 <NativeSelect {...a11y} id={`${kind}-beneficiary`} name="beneficiary" density="form" defaultValue={cond.beneficiary ?? 'both'}>
                   <option value="both">{vocabulary.bothParties} ({vocabulary.referrerNoun} y {vocabulary.referredNoun})</option>
@@ -407,12 +411,12 @@ function RuleCard({
 
         {/* Comunes */}
         <div className="grid gap-3 sm:grid-cols-2">
-          <FormField id={`${kind}-priority`} label="Prioridad" help="Mayor número, mayor prioridad.">
+          <FormField id={`${kind}-priority`} label="Prioridad" help="Mayor número, mayor prioridad." error={fieldErrors[`${kind}-priority`]}>
             {(a11y) => (
               <Input {...a11y} id={`${kind}-priority`} name="priority" type="number" density="form" min={0} max={1000} defaultValue={rule?.priority ?? 0} />
             )}
           </FormField>
-          <FormField id={`${kind}-maxPerCustomer`} label={`Tope por ${vocabulary.client}`} help="Opcional.">
+          <FormField id={`${kind}-maxPerCustomer`} label={`Tope por ${vocabulary.client}`} help="Opcional." error={fieldErrors[`${kind}-maxPerCustomer`]}>
             {(a11y) => (
               <Input {...a11y} id={`${kind}-maxPerCustomer`} name="maxPerCustomer" type="number" density="form" min={1} defaultValue={rule?.maxPerCustomer ?? undefined} />
             )}

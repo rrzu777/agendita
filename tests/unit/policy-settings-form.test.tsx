@@ -116,11 +116,12 @@ describe('PolicySettingsForm', () => {
     expect(container.querySelectorAll('[data-density="form"]')).toHaveLength(4)
   })
 
-  it('marks structured policy controls required and free-text policies optional', async () => {
+  it('marks numeric policy input required, keeps the boolean switch neutral, and free text optional', async () => {
     await renderPolicies()
 
     expect(getInput(container, 'Ventana de autogestión (horas)').getAttribute('aria-required')).toBe('true')
-    expect(getControl(container, 'Avisar antes del límite de cancelación').getAttribute('aria-required')).toBe('true')
+    expect(getControl(container, 'Avisar antes del límite de cancelación').getAttribute('aria-required')).toBe('false')
+    expect(getControl(container, 'Avisar antes del límite de cancelación').closest('[data-slot="form-field"]')?.textContent).not.toContain('*')
     for (const label of ['Condiciones adicionales', 'Política de reserva', 'Política de abono']) {
       const textarea = getTextarea(container, label)
       expect(textarea.getAttribute('aria-required')).toBe('false')
