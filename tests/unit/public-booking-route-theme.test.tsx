@@ -36,4 +36,13 @@ describe('tenant theme route layouts', () => {
     expect(html).toContain('data-visual-style="contrast"')
     expect(html).toContain('Cargando reserva canónica')
   })
+
+  it('degrada a shell neutral si falla el lookup del layout', async () => {
+    mocks.publicBusiness.mockRejectedValueOnce(new Error('db unavailable'))
+    mocks.tenant.mockRejectedValueOnce(new Error('db unavailable'))
+    const { default: ProfileLayout } = await import('@/app/b/[slug]/layout')
+    const { default: BookingLayout } = await import('@/app/book/layout')
+    await expect(ProfileLayout({ children: <p>Perfil</p>, params: Promise.resolve({ slug: 'barber' }) })).resolves.toBeTruthy()
+    await expect(BookingLayout({ children: <p>Reserva</p> })).resolves.toBeTruthy()
+  })
 })

@@ -90,6 +90,9 @@ describe('StepCustomer con sesión', () => {
       expect(host.querySelector('#booking-customer-name-error')?.textContent).toContain('Ingresa tu nombre')
       expect(host.querySelector('#booking-customer-phone-error')?.textContent).toContain('Ingresa un teléfono válido')
       expect(document.activeElement).toBe(host.querySelector('#booking-customer-name'))
+      const name = host.querySelector<HTMLInputElement>('#booking-customer-name')!
+      await act(async () => { name.value = 'M'; name.dispatchEvent(new Event('input', { bubbles: true })) })
+      expect(document.activeElement).toBe(name)
     } finally {
       await act(async () => root.unmount())
       host.remove()

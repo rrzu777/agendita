@@ -42,4 +42,11 @@ describe('public booking redesign', () => {
     expect(html).not.toContain('>Reseñas<')
     expect(html).toContain('Sin servicios disponibles')
   })
+
+  it('cada servicio puede preseleccionarse sin cerrar el carrito', () => {
+    const withService = { ...business, services: [{ id: 'svc-1', name: 'Corte', description: null, durationMinutes: 30, price: 12000, depositAmount: 0 }] } as unknown as PublicBusiness
+    const html = renderToStaticMarkup(<BusinessProfile business={withService} bookingHref="/book/barber-profit?ref=abc" />)
+    expect(html).toContain('Agregar a la reserva')
+    expect(html).toContain('/book/barber-profit?ref=abc&amp;service=svc-1')
+  })
 })

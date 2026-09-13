@@ -22,6 +22,8 @@ export function publicAcquisitionSearch(input: PublicSearchInput): string {
   if (get('continuar') === '1') result.set('continuar', '1')
   const professional = get('professional')
   if (professional && /^[A-Za-z0-9_-]{1,128}$/.test(professional)) result.set('professional', professional)
+  const service = get('service')
+  if (service && /^[A-Za-z0-9_-]{1,128}$/.test(service)) result.set('service', service)
   return result.toString()
 }
 export function appendPublicAcquisitionSearch(path: string, input: PublicSearchInput): string {

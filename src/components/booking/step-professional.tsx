@@ -15,9 +15,10 @@ interface StepProfessionalProps {
   options: FunnelProfessional[]
   selected: ProfessionalPick
   serviceName: string
-  /** "Elegí tu barbero" | "Elegí tu manicurista" — del vocabulario del rubro. */
+  /** Título del rubro, por ejemplo "Elige tu barbero" o "Elige tu manicurista". */
   title: string
   onSelect: (pick: ProfessionalPick) => void
+  onContinue: () => void
   onBack: () => void
 }
 
@@ -72,7 +73,7 @@ function OptionCard({
  * vuelve "la estilista" en un salón de estilistas varones. Es la misma regla que ya
  * sigue la pantalla de equipo del panel.
  */
-export function StepProfessional({ options, selected, serviceName, title, onSelect, onBack, preview }: StepProfessionalProps) {
+export function StepProfessional({ options, selected, serviceName, title, onSelect, onContinue, onBack, preview }: StepProfessionalProps) {
   const query = preview ? JSON.stringify([preview.businessId, wizardServiceIds(preview.data), preview.data.serviceModality, preview.timezone]) : ''
   const [result, setResult] = useState<{ query: string; value: Awaited<ReturnType<typeof getAvailabilityPreview>> } | null>(null)
   const [retry, setRetry] = useState(0)
@@ -121,11 +122,11 @@ export function StepProfessional({ options, selected, serviceName, title, onSele
         ))}
       </div>
 
-      {current && !current.ok && <div role="alert" className="mt-4 text-sm"><p>{current.error}</p><button type="button" className="underline" onClick={() => { setResult(null); setRetry(n => n + 1) }}>Reintentar consulta</button></div>}
+      {current && !current.ok && <div role="alert" className="mt-4 text-sm"><p>{current.error}</p><button type="button" className="inline-flex min-h-11 items-center px-2 underline" onClick={() => { setResult(null); setRetry(n => n + 1) }}>Reintentar consulta</button></div>}
 
       <div className="mt-8 flex gap-3">
         <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
-        <Button className="h-12 flex-1 rounded-full" onClick={() => onSelect(selected.kind === 'none' ? { kind: 'anyone' } : selected)}>Continuar</Button>
+        <Button className="h-12 flex-1 rounded-full" onClick={() => { if (selected.kind === 'none') onSelect({ kind: 'anyone' }); onContinue() }}>Continuar</Button>
       </div>
     </div>
   )

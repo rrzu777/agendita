@@ -713,12 +713,12 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     case 'transfer-details':
       return (
         <div>
-          <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Transferí el abono</h2>
-          <p className="mb-6 text-lg text-muted-foreground">Tu horario queda reservado mientras transferís</p>
+          <h2 className="mb-1.5 font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Transfiere el abono</h2>
+          <p className="mb-6 text-lg text-muted-foreground">Tu horario queda reservado mientras transfieres</p>
           {errorMessage && <p className="mb-4 text-sm text-destructive">{errorMessage}</p>}
           <TransferDetails bank={paso.bank} amount={effectiveDeposit} currency={currency} deadlinePhrase={holdDeadlinePhrase(paso.reserva, timezone)} declaring={declaring} onDeclare={(proof) => handleDeclare(paso.reserva, proof)} bookingId={paso.reserva.id} />
           <p className="mt-4 text-sm text-muted-foreground">
-            También podés avisar más tarde desde{' '}
+            También puedes avisar más tarde desde{' '}
             <Link className="font-semibold text-primary underline" href={`/book/confirmation?bookingId=${paso.reserva.id}`}>tu página de reserva</Link>
             {' '}(te mandamos los datos por email si dejaste uno).
           </p>
@@ -848,7 +848,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         {bankInfo && (
           <div className="mb-6 rounded-xl bg-blue-50 p-4 text-sm text-blue-800">
             <p className="font-semibold">Abono por transferencia bancaria</p>
-            <p className="mt-1">Te mostramos los datos de la cuenta y nos avisás cuando transfieras. El negocio verifica y confirma tu reserva.</p>
+            <p className="mt-1">Te mostramos los datos de la cuenta y nos avisas cuando transfieras. El negocio verifica y confirma tu reserva.</p>
           </div>
         )}
 
@@ -911,11 +911,11 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
       {bankInfo && (
         <div className="mb-6">
-          <p className="mb-2 text-sm font-semibold text-primary">¿Cómo querés pagar el abono?</p>
+          <p className="mb-2 text-sm font-semibold text-primary">¿Cómo quieres pagar el abono?</p>
           <div className="grid gap-3 sm:grid-cols-2">
             {([
               ['online', 'Pagar online', 'Tarjeta, débito o crédito'],
-              ['transfer', 'Transferencia bancaria', 'Te mostramos los datos y nos avisás cuando transfieras'],
+              ['transfer', 'Transferencia bancaria', 'Te mostramos los datos y nos avisas cuando transfieras'],
             ] as const).map(([key, title, desc]) => (
               <button
                 key={key}
@@ -959,7 +959,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       )}
 
       <div className="flex gap-3">
-        <Button variant="outline" onClick={onBack}>Atrás</Button>
+        <Button variant="outline" size="touch" onClick={onBack}>Atrás</Button>
         {bancoElegido ? (
           <Button className="h-12 flex-1 rounded-full text-base font-semibold" onClick={() => void handleTransferBooking(bancoElegido)} disabled={!acceptedTerms}>
             Continuar con transferencia

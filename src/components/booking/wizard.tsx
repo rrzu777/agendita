@@ -12,7 +12,7 @@ import dynamic from 'next/dynamic'
 import { StepService } from './step-service'
 import { StepProfessional } from './step-professional'
 import { StepDateTime } from './step-date-time'
-import { wizardServiceIds } from '@/lib/bookings/wizard-selection'
+import { wizardServiceFields, wizardServiceIds } from '@/lib/bookings/wizard-selection'
 import { formatDuration } from '@/lib/format-duration'
 import { formatMoney } from '@/lib/money'
 import { StepCustomer } from './step-customer'
@@ -132,6 +132,8 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
   // A boolean UI fact only: no identity, event or storage before consent.
   const hasInteracted = useRef(false)
   const appliedProfessionalLink = useRef(false)
+  const stepRegion = useRef<HTMLElement>(null)
+  const transitionRequested = useRef(false)
   const [currentStep, setCurrentStep] = useState<StepKey>('service')
   const [data, setData] = useState<BookingData>(() => applySessionPrefill(initialData, session))
   // La reserva ya escrita, tal como la devolvió el servidor: es lo único que
@@ -157,11 +159,52 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
   // a mitad del recorrido: un índice cambiaría de significado sin avisar.
   const { choice, steps } = derivar(data)
 
+  function goToStep(step: StepKey) {
+    transitionRequested.current = true
+    setCurrentStep(step)
+  }
+
+  useEffect(() => {
+    if (!transitionRequested.current) return
+    transitionRequested.current = false
+    stepRegion.current?.focus({ preventScroll: true })
+    stepRegion.current?.scrollIntoView?.({ block: 'start', behavior: 'auto' })
+  }, [currentStep])
+
   // Restaura el estado guardado antes del viaje a /ingresar (solo con ?continuar=1;
   // el storage se limpia siempre para no restaurar dos veces ni dejar residuo).
   useEffect(() => {
     if (typeof window === 'undefined') return
-    if (!new URLSearchParams(window.location.search).has('continuar')) return
+    const search = new URLSearchParams(window.location.search)
+    const linkedServices = search.getAll('service')
+    if (!search.has('continuar') && linkedServices.length === 1 && /^[A-Za-z0-9_-]{1,128}$/.test(linkedServices[0])) {
+      const linked = services.find(service => service.id === linkedServices[0])
+      if (linked) {
+        const selection = wizardServiceFields([linked.id], services)
+        setData(current => {
+          const selected = {
+            ...current,
+            ...selection,
+            serviceModality: selection.serviceModalities.length === 1 ? selection.serviceModalities[0] : null,
+          }
+          const linkedProfessionals = search.getAll('professional')
+          let previous = current.professional
+          if (linkedProfessionals.length === 1 && /^[A-Za-z0-9_-]{1,128}$/.test(linkedProfessionals[0])) {
+            previous = { kind: 'person', id: linkedProfessionals[0] }
+          }
+          appliedProfessionalLink.current = true
+          const selectedChoice = derivar(selected).choice
+          return {
+            ...selected,
+            ...(selectedChoice.kind === 'unavailable'
+              ? { professional: NO_PROFESSIONAL, professionalName: '' }
+              : professionalFields(selectedChoice, previous)),
+          }
+        })
+      }
+      return
+    }
+    if (!search.has('continuar')) return
     const key = wizardStorageKey(businessId)
     let raw: string | null = null
     try { raw = sessionStorage.getItem(key); sessionStorage.removeItem(key) } catch { return }
@@ -169,10 +212,8 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
     if (!restored) return
     appliedProfessionalLink.current = true
     restoredAnalytics.current = { data: restored, step: entryStepAfterRestore(restored, derivar(restored).steps) }
-    /* eslint-disable react-hooks/set-state-in-effect -- one-time restore from sessionStorage on mount, gated by ?continuar=1 */
     setData(applySessionPrefill(restored, session))
     setCurrentStep(entryStepAfterRestore(restored, derivar(restored).steps))
-    /* eslint-enable react-hooks/set-state-in-effect */
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar
   }, [])
 
@@ -229,11 +270,11 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
   }
 
   function nextStep() {
-    setCurrentStep(stepAfter(steps, currentStep))
+    goToStep(stepAfter(steps, currentStep))
   }
 
   function prevStep() {
-    setCurrentStep(stepBefore(steps, currentStep))
+    goToStep(stepBefore(steps, currentStep))
   }
 
   return (
@@ -246,9 +287,9 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
       {data.serviceId && currentStep !== 'service' && currentStep !== 'confirmation' && <aside aria-label="Tu selección" className="mb-5 space-y-2 px-2 text-sm">
         {(data.services ?? [{ id: data.serviceId, name: data.serviceName, price: data.servicePrice }]).map(service => <div key={service.id} className="flex justify-between gap-4"><span className="min-w-0 break-words">{service.name}</span><span className="shrink-0">{formatMoney(service.price, currency)}</span></div>)}
         <p className="font-semibold">{formatDuration(data.serviceDuration)} · Total {formatMoney(data.servicePrice, currency)} · {data.serviceDeposit ? `Abono ${formatMoney(data.serviceDeposit, currency)}` : 'Sin abono'}</p>
-        {data.professionalName && <p>Te atiende: {data.professionalName}{choice.kind === 'ask' && currentStep !== 'professional' && <button type="button" className="ml-3 underline" onClick={() => setCurrentStep('professional')}>Cambiar profesional</button>}</p>}
+        {data.professionalName && <p>Te atiende: {data.professionalName}{choice.kind === 'ask' && currentStep !== 'professional' && <button type="button" className="ml-2 inline-flex min-h-11 items-center px-2 underline" onClick={() => goToStep('professional')}>Cambiar profesional</button>}</p>}
       </aside>}
-      <section className="rounded-[var(--radius)] border border-border bg-card p-5 sm:p-8">
+      <section ref={stepRegion} id="booking-step-content" tabIndex={-1} aria-label={`Paso ${currentStep}`} className="scroll-mt-20 rounded-[var(--radius)] border border-border bg-card p-5 outline-none sm:p-8">
         {currentStep === 'service' && (
           <StepService data={data} services={services} currency={currency} selectionError={choice.kind === 'unavailable' ? 'Ningún profesional realiza todos estos servicios. Quita uno o resérvalos por separado.' : null}
             selectionCompatible={(serviceIds, modality) => professionalChoiceForServices(professionals, serviceIds, modality).kind !== 'unavailable'}
@@ -282,7 +323,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
             preview={{ businessId, timezone, data }}
             selected={data.professional}
             serviceName={data.serviceName}
-            title={professionalWords.chooseProfessional}
+            title={professionalWords.chooseProfessional.replace(/^Elegí(?:\s|$)/, (match) => match.endsWith(' ') ? 'Elige ' : 'Elige')}
             onSelect={(pick) => {
               // Cambiar de elección cambia la agenda: la hora que se había elegido
               // salió de otra y puede estar ocupada para esta. Vale igual al pasar de
@@ -297,8 +338,8 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
                 ...professionalFields(choice, pick),
                 ...(cambio ? { timeSlot: null, idempotencyKey: null } : {}),
               })
-              nextStep()
             }}
+            onContinue={nextStep}
             onBack={prevStep}
           />
         )}
@@ -319,7 +360,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
               const hour = Number(formatInTimeZone(timeSlot.start, timezone, 'H'))
               if (selected && localDate(data)) analytics.track({ type: 'time_selected', data: { ...selected, localDate: localDate(data)!, timeBucket: hour < 6 ? '00_06' : hour < 12 ? '06_12' : hour < 18 ? '12_18' : '18_24' } })
               updateData({ timeSlot, ...(different ? { idempotencyKey: null } : {}) })
-              setCurrentStep('customer')
+              goToStep('customer')
             }} onBack={prevStep}
           />
         )}
@@ -333,7 +374,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
         {currentStep === 'customer' && !data.timeSlot && (
           <div className="text-center py-8">
             <p className="text-muted-foreground mb-4">Primero debes seleccionar un horario</p>
-            <button onClick={() => setCurrentStep('date')} className="font-semibold text-primary underline">Volver a seleccionar horario</button>
+            <button onClick={() => goToStep('date')} className="inline-flex min-h-11 items-center px-3 font-semibold text-primary underline">Volver a seleccionar horario</button>
           </div>
         )}
         {currentStep === 'payment' && data.serviceId && data.timeSlot && (
@@ -345,7 +386,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
         {currentStep === 'payment' && (!data.serviceId || !data.timeSlot) && (
           <div className="text-center py-8">
             <p className="text-muted-foreground mb-4">Faltan datos de la reserva</p>
-            <button onClick={() => setCurrentStep('service')} className="font-semibold text-primary underline">Volver al inicio</button>
+            <button onClick={() => goToStep('service')} className="inline-flex min-h-11 items-center px-3 font-semibold text-primary underline">Volver al inicio</button>
           </div>
         )}
         {/* La confirmación pide la reserva de verdad. Antes entraba igual con
@@ -365,8 +406,8 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
              nuevo" —si la reserva sí existió, eso la haría reservar dos veces—
              sino mandarla a mirar sus reservas. */
           <div className="text-center py-8">
-            <p className="text-muted-foreground mb-4">No pudimos mostrar los datos de tu reserva. Si llegaste hasta el pago, revisá tus reservas antes de volver a intentar.</p>
-            <Link href={`/mi/${slug}`} className="font-semibold text-primary underline">Ver mis reservas</Link>
+            <p className="text-muted-foreground mb-4">No pudimos mostrar los datos de tu reserva. Si llegaste hasta el pago, revisa tus reservas antes de volver a intentar.</p>
+            <Link href={`/mi/${slug}`} className="inline-flex min-h-11 items-center px-3 font-semibold text-primary underline">Ver mis reservas</Link>
           </div>
         )}
       </section>

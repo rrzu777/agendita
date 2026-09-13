@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { unstable_rethrow } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { FormField } from '@/components/ui/form-field'
@@ -34,13 +34,6 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
   const formRef = useRef<HTMLFormElement>(null)
   const showSession = sessionEmail !== null && !dismissedSession
 
-  useEffect(() => {
-    const first = Object.keys(errors)[0]
-    if (!first) return
-    const ids: Record<string, string> = { customerName: 'booking-customer-name', customerPhone: 'booking-customer-phone', customerEmail: 'booking-customer-email', serviceAddress: 'booking-service-address' }
-    formRef.current?.querySelector<HTMLElement>(`#${ids[first]}`)?.focus()
-  }, [errors])
-
   function handleNotMe() {
     setDismissedSession(true)
     setFormData({ customerName: '', customerPhone: '', customerEmail: '', customerBirthDate: '', customerNotes: formData.customerNotes, serviceAddress: formData.serviceAddress })
@@ -56,6 +49,8 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
     setErrors(nextErrors)
     const first = Object.keys(nextErrors)[0]
     if (first) {
+      const ids: Record<string, string> = { customerName: 'booking-customer-name', customerPhone: 'booking-customer-phone', customerEmail: 'booking-customer-email', serviceAddress: 'booking-service-address' }
+      formRef.current?.querySelector<HTMLElement>(`#${ids[first]}`)?.focus()
       return
     }
     onSubmit(formData)
@@ -106,7 +101,7 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
       {showSession && (
         <p className="mb-6 text-sm text-muted-foreground">
           Reservando como {sessionEmail} ·{' '}
-          <button type="button" onClick={handleNotMe} className="font-semibold text-primary hover:underline">No soy yo</button>
+          <button type="button" onClick={handleNotMe} className="inline-flex min-h-11 items-center px-2 font-semibold text-primary hover:underline">No soy yo</button>
         </p>
       )}
 

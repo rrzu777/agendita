@@ -21,10 +21,15 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
   const v = getVocabulary(business.category)
   const identityImage = business.logoUrl || business.profileImageUrl
   const hasServices = business.services.length > 0
+  const serviceHref = (serviceId: string) => {
+    const url = new URL(bookingHref, 'https://agendita.invalid')
+    url.searchParams.set('service', serviceId)
+    return `${url.pathname}${url.search}${url.hash}`
+  }
 
   return (
     <BusinessTheme business={business}>
-      <main className="studio-shell min-h-screen pb-32">
+      <main className="studio-shell min-h-screen pb-[calc(7rem+env(safe-area-inset-bottom))]">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
           <header className="mb-8 flex min-h-11 items-center justify-end">
             {accountCta && (
@@ -73,7 +78,7 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
                   {business.services.map((service) => (
                     <article key={service.id} className="grid gap-2 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-6">
                       <div className="min-w-0"><h3 className="break-words font-heading text-lg font-semibold text-primary">{service.name}</h3>{service.description && <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{service.description}</p>}</div>
-                      <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground sm:justify-end"><span className="inline-flex items-center gap-1"><Clock className="size-4" />{formatDuration(service.durationMinutes)}</span><span className="font-semibold text-primary">{formatMoney(service.price, business.currency)}</span>{service.depositAmount > 0 && <span className="basis-full sm:text-right">Abono {formatMoney(service.depositAmount, business.currency)}</span>}</p>
+                      <div className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground sm:justify-end"><span className="inline-flex items-center gap-1"><Clock className="size-4" />{formatDuration(service.durationMinutes)}</span><span className="font-semibold text-primary">{formatMoney(service.price, business.currency)}</span>{service.depositAmount > 0 && <span className="basis-full sm:text-right">Abono {formatMoney(service.depositAmount, business.currency)}</span>}<Link href={serviceHref(service.id)} className="mt-2 inline-flex min-h-11 basis-full items-center justify-center rounded-lg border border-border px-3 font-semibold text-primary hover:bg-muted">Agregar a la reserva</Link></div>
                     </article>
                   ))}
                 </div>
@@ -90,7 +95,7 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
           {business.reviews.length > 0 && <section className="mt-10 border-t border-border pt-10" aria-labelledby="public-reviews-title"><div className="mb-4 flex items-end justify-between gap-4"><h2 id="public-reviews-title" className="font-heading text-2xl font-semibold text-primary">Reseñas</h2><span className="text-sm text-muted-foreground">{business._count.reviews} publicadas</span></div><div className="grid gap-4 md:grid-cols-3">{business.reviews.map((review) => <article key={review.id} className="rounded-[var(--radius)] border border-border bg-card p-5"><div className="flex items-start justify-between gap-3"><p className="font-semibold text-primary">{review.customer?.name || v.Client}</p><span className="flex shrink-0 gap-0.5" aria-label={`${review.rating} de 5 estrellas`}>{Array.from({ length: 5 }).map((_, index) => <Star key={index} className={`size-4 ${index < review.rating ? 'fill-primary text-primary' : 'text-muted-foreground/30'}`} />)}</span></div>{review.comment && <p className="mt-3 text-sm leading-relaxed text-foreground">{review.comment}</p>}</article>)}</div></section>}
         </div>
 
-        {hasServices && <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-4 py-3 sm:hidden"><Button asChild size="touch" className="w-full"><Link href={bookingHref}><CalendarDays className="size-5" />Reservar ahora</Link></Button></div>}
+        {hasServices && <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:hidden"><Button asChild size="touch" className="w-full"><Link href={bookingHref}><CalendarDays className="size-5" />Reservar ahora</Link></Button></div>}
       </main>
     </BusinessTheme>
   )

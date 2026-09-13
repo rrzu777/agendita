@@ -127,7 +127,7 @@ describe('StepPayment — el plazo que promete la pantalla de transferencia', ()
     // igual —hold corriendo, mail saliendo— y la clienta se queda mirando el
     // mismo botón.
     expect(container.textContent).toContain('BancoEstado')
-    expect(container.textContent).toContain('Tenés hasta tu cita')
+    expect(container.textContent).toContain('Tienes hasta tu cita')
     // El día siguiente es lo que decía antes, y es justamente lo que no puede decir.
     expect(container.textContent).not.toContain('4 de agosto')
     expect(container.textContent).not.toContain('04-08-2026')

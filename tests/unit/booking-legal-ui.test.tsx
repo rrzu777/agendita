@@ -25,7 +25,7 @@ vi.mock('@/server/actions/bank-transfer-public', () => ({
   declareBankTransfer: vi.fn(),
 }))
 
-const cancellationWarning = 'Podés cancelar o reprogramar hasta 24 horas antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.'
+const cancellationWarning = 'Puedes cancelar o reprogramar hasta 24 horas antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.'
 
 const bookingData = {
   serviceId: 'svc-1',

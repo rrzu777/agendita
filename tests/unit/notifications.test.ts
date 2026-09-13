@@ -123,7 +123,7 @@ describe('templates: bookingConfirmationCustomerHtml', () => {
 
   it('muestra el warning contractual antes de la política adicional', () => {
     const html = bookingConfirmationCustomerHtml(sampleBookingData)
-    const warning = 'Podés cancelar o reprogramar hasta 24 horas antes.'
+    const warning = 'Puedes cancelar o reprogramar hasta 24 horas antes.'
     expect(html).toContain(warning)
     expect(html.indexOf(warning)).toBeLessThan(html.indexOf('Cancela con 24h de anticipación'))
 
@@ -204,7 +204,7 @@ describe('templates: bookingConfirmationCustomerText', () => {
 
 describe('templates: bookingReceivedCustomer cancellation warning', () => {
   it('muestra el warning antes de la política adicional en html y texto', () => {
-    const warning = 'Podés cancelar o reprogramar hasta 24 horas antes.'
+    const warning = 'Puedes cancelar o reprogramar hasta 24 horas antes.'
     for (const output of [
       bookingReceivedCustomerHtml(sampleBookingData),
       bookingReceivedCustomerText(sampleBookingData),

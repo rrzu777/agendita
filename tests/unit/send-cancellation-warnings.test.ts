@@ -937,7 +937,7 @@ describe('sendCancellationWarnings', () => {
       expect.objectContaining({ endpoint: 'https://fcm.googleapis.com/fcm/send/device-one' }),
       {
         title: 'Mimos Nails',
-        body: 'Podés cancelar o reprogramar hasta 24 horas antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.',
+        body: 'Puedes cancelar o reprogramar hasta 24 horas antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.',
         url: 'https://www.agendita.cl/mi/mimos-nails',
       },
       7_200,

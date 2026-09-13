@@ -25,6 +25,7 @@ function render(category: BusinessCategory = 'barber', selected: ProfessionalPic
       serviceName="Corte"
       title={getVocabulary(category).chooseProfessional}
       onSelect={() => {}}
+      onContinue={() => {}}
       onBack={() => {}}
     />,
   )

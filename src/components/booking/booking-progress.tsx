@@ -32,7 +32,7 @@ export function BookingProgress({
         <p className="text-sm font-semibold text-primary">Paso {current + 1} de 6</p>
         <p className="text-right text-sm text-muted-foreground">{stages[current].label}</p>
       </div>
-      <ol className="grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-6">
+      <ol className="grid grid-cols-6 gap-1.5 sm:gap-2">
         {stages.map((stage, index) => {
           const complete = index < current
           const automatic = stage.key === 'professional' && professionalMode === 'automatic'
@@ -48,10 +48,10 @@ export function BookingProgress({
                 <span className={`flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${complete ? 'bg-primary text-primary-foreground' : active ? 'border border-primary text-primary' : 'border border-border text-muted-foreground'}`}>
                   {complete ? <Check className="size-3" aria-hidden="true" /> : index + 1}
                 </span>
-                <span className={`min-w-0 text-xs leading-4 ${active ? 'font-semibold text-primary' : 'text-muted-foreground'}`}>
+                <span className={`sr-only min-w-0 text-xs leading-4 sm:not-sr-only ${active ? 'font-semibold text-primary' : 'text-muted-foreground'}`}>
                   {stage.label}
                   {stage.key === 'professional' && (
-                    <span className="block text-[10px] leading-3">
+                    <span className="block text-xs leading-4">
                       {automatic ? 'Asignado automáticamente' : 'Opcional'}
                     </span>
                   )}

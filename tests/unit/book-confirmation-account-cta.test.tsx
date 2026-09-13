@@ -18,7 +18,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
 }))
 
-import BookingConfirmationPage from '@/app/book/confirmation/page'
+import BookingConfirmationPage, { generateViewport } from '@/app/book/confirmation/page'
 
 const searchParams = Promise.resolve({ bookingId: 'b1' })
 
@@ -28,7 +28,9 @@ function baseBooking(overrides: Record<string, unknown> = {}) {
     businessId: 'biz1',
     status: 'confirmed',
     paymentMethod: null,
+    paymentStatus: 'unpaid',
     holdExpiresAt: null,
+    approvalExpiresAt: null,
     bookingNumber: 4738,
     startDateTime: new Date('2026-07-20T15:00:00Z'),
     endDateTime: new Date('2026-07-20T16:00:00Z'),
@@ -38,6 +40,9 @@ function baseBooking(overrides: Record<string, unknown> = {}) {
     remainingBalance: 0,
     cancellationCutoffHours: 24,
     cancellationPolicySnapshot: null,
+    modality: 'on_site',
+    serviceAddress: null,
+    meetingUrl: null,
     business: {
       name: 'Salón Ana', slug: 'salon-ana', subdomain: null, timezone: 'America/Santiago',
       selfServiceCutoffHours: 24, cancellationPolicy: null,
@@ -61,6 +66,49 @@ describe('/book/confirmation — CTA de cuenta', () => {
     vi.unstubAllEnvs()
   })
 
+  it('usa el color real del tenant en el chrome del retorno de pago', async () => {
+    mockFindUnique.mockResolvedValue(baseBooking({ business: { ...baseBooking().business, brandColor: '#35524A' } }))
+    await expect(generateViewport({ searchParams })).resolves.toEqual({ themeColor: '#35524A' })
+  })
+
+  it('usa un color neutral si no puede resolver el tenant del retorno', async () => {
+    mockFindUnique.mockRejectedValueOnce(new Error('db unavailable'))
+    await expect(generateViewport({ searchParams })).resolves.toEqual({ themeColor: '#f7f7f4' })
+  })
+
+  it.each([
+    ['success', { status: 'confirmed' }, 'Reserva confirmada'],
+    ['verifying', { status: 'pending_payment', holdExpiresAt: new Date(Date.now() + 3_600_000), depositPaid: 0, remainingBalance: 20000, payments: [{ status: 'pending', provider: 'mercado_pago', providerPaymentId: 'mp-1', amount: 20000, proofKey: null }] }, 'Verificando tu pago'],
+    ['rejected', { status: 'pending_payment', holdExpiresAt: new Date(Date.now() + 3_600_000), depositPaid: 0, remainingBalance: 20000, payments: [{ status: 'rejected', provider: 'mercado_pago', providerPaymentId: 'mp-1', amount: 20000, proofKey: null }] }, 'Pago no aprobado'],
+    ['pending', { status: 'pending_payment', holdExpiresAt: new Date(Date.now() + 3_600_000), depositPaid: 0 }, 'Reserva pendiente de pago'],
+    ['expired', { status: 'expired', depositPaid: 0 }, 'Tu reserva expiró'],
+    ['cancelled', { status: 'cancelled', depositPaid: 0 }, 'Reserva cancelada'],
+  ])('mantiene identidad, progreso y estado observable en %s', async (_state, overrides, title) => {
+    mockGetCurrentUser.mockResolvedValue(null)
+    mockFindUnique.mockResolvedValue(baseBooking(overrides))
+
+    const html = renderToStaticMarkup(await BookingConfirmationPage({ searchParams }))
+
+    expect(html).toContain('Salón Ana')
+    expect(html).toContain('Paso 6 de 6')
+    expect(html).toContain(title)
+  })
+
+  it('ofrece un reintento explícito después de un pago rechazado', async () => {
+    mockGetCurrentUser.mockResolvedValue(null)
+    mockFindUnique.mockResolvedValue(baseBooking({
+      status: 'pending_payment',
+      holdExpiresAt: new Date(Date.now() + 3_600_000),
+      depositPaid: 0,
+      remainingBalance: 20000,
+      payments: [{ status: 'rejected', provider: 'mercado_pago', providerPaymentId: 'mp-1', amount: 20000, proofKey: null }],
+    }))
+
+    const html = renderToStaticMarkup(await BookingConfirmationPage({ searchParams }))
+    expect(html).toContain('Intentar de nuevo')
+    expect(html).toContain('href="/book/salon-ana"')
+  })
+
   it('confirmada, sin sesión, con email de cliente → invita a crear cuenta', async () => {
     mockGetCurrentUser.mockResolvedValue(null)
     mockFindUnique.mockResolvedValue(baseBooking())
@@ -68,6 +116,9 @@ describe('/book/confirmation — CTA de cuenta', () => {
     expect(html).toContain('Crea tu cuenta')
     expect(html).toContain('maria@example.com')
     expect(html).toContain('/ingresar?next=/mi')
+    expect(html).toContain('Salón Ana')
+    expect(html).toContain('Paso 6 de 6')
+    expect(html).not.toContain('confirmación por WhatsApp')
   })
 
   it('con transferencia pendiente declarable (canDeclare) → NO muestra el CTA de cuenta', async () => {

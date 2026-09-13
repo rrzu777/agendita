@@ -209,7 +209,7 @@ describe('StepPayment — la pantalla la manda el step', () => {
     expect(events.filter((e) => e.type === 'booking_submit_result').map((e) => e.data.result)).toEqual(['submitted'])
     expect(JSON.stringify(events)).not.toMatch(/PRIVATE100|customerPhone|amount|20000|5000/)
     if (kind === 'checkout_failed') expect(container.textContent).toContain('Checkout fixture failed')
-    if (kind === 'transfer') expect(container.textContent).toContain('Transferí el abono')
+    if (kind === 'transfer') expect(container.textContent).toContain('Transfiere el abono')
     await act(async () => root.unmount()); container.remove()
   })
   it('ignores an obsolete promotion preview after selection changes', async () => {
